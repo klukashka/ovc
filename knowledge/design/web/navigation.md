@@ -82,6 +82,17 @@ Every page of the web application, its address, who reaches it and where navigat
 - **Notification links** open the related page: lesson, submission, review, channel or student card.
 - **Filters and tabs** that change what is shown are reflected in the address, so reload and Back keep the view.
 
+## Interim behavior before sign-in exists
+
+Roadmap slice 1 ships the frames without accounts, so until slice 2 adds sessions and route guards:
+
+- every address above opens without a session, and the wrong-role, anonymous and unverified rules are not enforced yet;
+- tutor-only addresses render the tutor frame and student-only addresses the student frame;
+- an address both roles share (Schedule, Lesson, Messages, Notifications and the shared settings sections) renders the frame of the role whose sidebar or top bar link opened it, carried in the router's link state, and the tutor frame when it is opened directly;
+- token pages are placeholders that do not read their token yet, so the token-removal rule below starts with slice 2.
+
+Slice 2 replaces the link-state role with the signed-in user's role and removes this section.
+
 ## Token pages
 
 `/invite/{token}`, `/verify-email?token=`, `/reset-password?token=` and `/unsubscribe?token=` follow one rule:

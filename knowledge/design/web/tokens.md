@@ -1,6 +1,6 @@
 # Design tokens
 
-The values behind the quiet visual language described in [the product overview](../../../docs/product.md#visual-language) and decided in [ADR-0010](../../../docs/decisions/0010-quiet-visual-language.md). Tokens are CSS custom properties consumed through the Tailwind theme; components never use raw values. Contrast ratios below were computed with the WCAG 2.2 relative-luminance formula on 2026-10-20. The [clickable prototype](prototype/README.md) shows the tokens in use.
+The values behind the quiet visual language described in [the product overview](../../../docs/product.md#visual-language) and decided in [ADR-0010](../../../docs/decisions/0010-quiet-visual-language.md). Tokens are CSS custom properties consumed through the Tailwind theme, defined in `frontend/src/styles.css` with Tailwind's default palette, type scale, radii, shadows and breakpoints cleared; components never use raw values. Contrast ratios below were computed with the WCAG 2.2 relative-luminance formula on 2026-10-20. The [clickable prototype](prototype/README.md) shows the tokens in use.
 
 ## Principles
 
@@ -36,7 +36,7 @@ Times, dates and counts use tabular figures (`font-variant-numeric: tabular-nums
 ## Spacing, radius, elevation, layout
 
 - **Spacing:** a 4 px base with the steps 4, 8, 12, 16, 24, 32, 40, 48 and 64. Sections on a page are 40 apart; list rows have 13 px vertical padding.
-- **Radius:** `radius-s` 6 (sidebar items, small inputs, segmented controls), `radius-m` 8 (buttons, inputs), `radius-l` 10 (panels, dialogs), `radius-full` (avatars, state and tutor dots).
+- **Radius:** `radius-s` 6 (sidebar items, small inputs, segmented controls), `radius-m` 8 (buttons, inputs), `radius-l` 10 (panels, dialogs), `radius-full` (avatars, state and tutor dots). In the Tailwind theme they are `--radius-sm`, `--radius-md`, `--radius-lg` and `--radius-full` (utilities `rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-full`), because `rounded-s` is Tailwind's start-side utility.
 - **Elevation:** `shadow-raised` `0 8px 24px rgba(38,36,31,.12)` for menus, popovers and dialogs only. Dark theme uses a `border-strong` outline instead.
 - **Targets:** from 1024 px with a fine pointer, buttons and inputs are at least 40 px tall, sidebar items 32 px tall and the sidebar's icon buttons 28 × 28 px; below 1024 px or with a coarse or absent pointer (`pointer: coarse` or `pointer: none`), every target is at least 44 × 44 px. Links inside running text are exempt, as WCAG 2.5.8 allows.
 - **Layout widths:** the sidebar is 248 px; page content is centred with a maximum of 1120 px and side padding of 56 px; reading width is at most 720 px; the main column and a 300 px side column sit 64 px apart. Breakpoints are 768, 1024 and 1280 px.
@@ -65,6 +65,7 @@ Times, dates and counts use tabular figures (`font-variant-numeric: tabular-nums
 | `danger` | `#A3352A` | `#E58A7C` | Errors, destructive actions, wrong answers, cancelled |
 | `info` | `#3F5E7A` | `#93B3D1` | Submitted, informational |
 | `live` | `#A3352A` | `#E58A7C` | Lesson live now, recording (always with its word and the live dot) |
+| `scrim` | `rgba(38,36,31,.32)` | `rgba(0,0,0,.5)` | The dimmed page behind a modal overlay (decorative) |
 
 Measured contrast:
 

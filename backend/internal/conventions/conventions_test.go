@@ -143,3 +143,121 @@ func TestSQLHasNoCommentsBeyondGooseMarkers(t *testing.T) {
 		t.Fatalf("SQL comments:\n%s", strings.Join(problems, "\n"))
 	}
 }
+
+const repositoryRoot = "../../.."
+
+var skippedRepositoryDirectoryNames = map[string]bool{".git": true, "node_modules": true}
+
+var skippedRepositoryPaths = map[string]bool{
+	"bin": true, "backend/bin": true, "backend/tmp": true,
+	"frontend/dist": true, "frontend/test-results": true, "frontend/playwright-report": true,
+}
+
+var generatedRepositoryFiles = map[string]bool{"pnpm-lock.yaml": true}
+
+func hashCommentFiles(t *testing.T) []string {
+	t.Helper()
+	var files []string
+	err := filepath.WalkDir(repositoryRoot, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(repositoryRoot, path)
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() && (skippedRepositoryDirectoryNames[entry.Name()] || skippedRepositoryPaths[relative]) {
+			return filepath.SkipDir
+		}
+		if entry.IsDir() || generatedRepositoryFiles[entry.Name()] {
+			return nil
+		}
+		switch filepath.Ext(path) {
+		case ".sh", ".bash", ".yml", ".yaml":
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no shell or YAML files found")
+	}
+	return files
+}
+
+func opensQuote(previous rune) bool {
+	return strings.ContainsRune(" \t:=([{,-", previous)
+}
+
+func lineHasHashComment(line string) bool {
+	var quote rune
+	escaped := false
+	previous := ' '
+	for _, character := range line {
+		switch {
+		case escaped:
+			escaped = false
+		case quote == '"' && character == '\\':
+			escaped = true
+		case quote != 0:
+			if character == quote {
+				quote = 0
+			}
+		case (character == '"' || character == '\'') && opensQuote(previous):
+			quote = character
+		case character == '#' && (previous == ' ' || previous == '\t'):
+			return true
+		}
+		previous = character
+	}
+	return false
+}
+
+func TestShellAndYAMLHaveNoComments(t *testing.T) {
+	files := hashCommentFiles(t)
+
+	var problems []string
+	for _, path := range files {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for index, line := range strings.Split(string(content), "\n") {
+			if index == 0 && strings.HasPrefix(line, "#!") {
+				continue
+			}
+			if lineHasHashComment(line) {
+				problems = append(problems, path+":"+strconv.Itoa(index+1)+": comment")
+			}
+		}
+	}
+
+	if len(problems) > 0 {
+		t.Fatalf("shell and YAML comments:\n%s", strings.Join(problems, "\n"))
+	}
+}
+
+func TestHashCommentDetection(t *testing.T) {
+	cases := map[string]bool{
+		"# heading":                    true,
+		"  # indented":                 true,
+		"key: value # trailing":        true,
+		"key: 'value # quoted'":        false,
+		`echo "count is $#"`:           false,
+		"url: http://host/path#anchor": false,
+		"${#array[@]}":                 false,
+		"key: don't # explain":         true,
+		`key: "a \" # quoted"`:         false,
+		`key: "a" # after`:             true,
+	}
+
+	for line, expected := range cases {
+		found := lineHasHashComment(line)
+
+		if found != expected {
+			t.Errorf("lineHasHashComment(%q) = %v, want %v", line, found, expected)
+		}
+	}
+}

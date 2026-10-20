@@ -1,8 +1,8 @@
 # Development
 
-Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain, and on 2026-10-21 with Docker Compose services, security scanning and the backend scaffold; pending line-by-line owner review.
+Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain, and on 2026-10-21 with Docker Compose services, security scanning, the backend scaffold and the frontend scaffold; pending line-by-line owner review.
 
-How to set up, check and verify changes locally. Read [AGENTS.md](../AGENTS.md) before contributing. The repository currently contains documentation and agent configuration only; backend and frontend commands are registered here by [roadmap slice 1](roadmap.md#slice-1-scaffold-and-local-loop).
+How to set up, check and verify changes locally. Read [AGENTS.md](../AGENTS.md) before contributing. Backend and frontend commands were registered here by [roadmap slice 1](roadmap.md#slice-1-scaffold-and-local-loop); later slices extend them.
 
 ## Tool setup
 
@@ -10,7 +10,7 @@ Use Linux or macOS with Git, Bash, Docker with Compose v2 (Docker Desktop, Colim
 
 - Go: the version in [`tools/go.mod`](../tools/go.mod) (`go` and `toolchain` lines, matched by `backend/go.mod`), installed from [the official downloads](https://go.dev/dl/) or a package manager; the `toolchain` line lets newer Go installations fetch the pinned release.
 - Repository tools (Gitleaks and OSV-Scanner now; govulncheck and golangci-lint, built from the pinned versions into the ignored `bin/` directory because they must type-check the backend module; sqlc from slice 2): pinned as Go `tool` dependencies in `tools/go.mod`, with checksums in `tools/go.sum`, and run from the repository root as `go -C tools tool <tool>`. No separate installation is needed.
-- Node and pnpm: pinned by the frontend scaffold in `frontend/.node-version` and the `packageManager` field of `frontend/package.json`.
+- Node and pnpm: Node from `frontend/.node-version` and pnpm from the `packageManager` field of `frontend/package.json` ([versions](../knowledge/research/frontend-toolchain-2026-10-21.md)). Playwright's browsers are installed once with `pnpm --dir frontend exec playwright install chromium firefox webkit`.
 - lychee for link checks: installed with its [official instructions](https://lychee.cli.rs/installation/).
 
 Exact versions are recorded with their check dates in `knowledge/research/` when the scaffold pins them.
@@ -47,7 +47,7 @@ Run from the repository root; each must pass before a change is ready.
 
 - **Secrets in history:** `go -C tools tool gitleaks git --redact --no-banner ..` reports no leaks.
 - **Secrets about to be committed:** `go -C tools tool gitleaks git --staged --redact --no-banner ..` reports no leaks. Gitleaks never scans the working directory, so ignored environment files are never read.
-- **Known vulnerabilities in dependencies:** OSV-Scanner over each module and lockfile with an explicit path, starting with `go -C tools tool osv-scanner scan source --no-call-analysis=go --lockfile=go.mod` (the tools module has no packages of its own to call-analyse) and `go -C tools tool osv-scanner scan source --no-call-analysis=go --lockfile=../backend/go.mod` (the backend gets call analysis from `govulncheck` in the backend checks); `frontend/pnpm-lock.yaml` joins with the frontend scaffold. A pass is exit code 0. Accepted findings are listed in the `osv-scanner.toml` next to the scanned file, each with a reason and an `ignoreUntil` date, and explained in a dated triage table ([current triage](../knowledge/research/local-s3-2026-10-21.md#repository-tool-scan-triage)).
+- **Known vulnerabilities in dependencies:** OSV-Scanner over each module and lockfile with an explicit path, starting with `go -C tools tool osv-scanner scan source --no-call-analysis=go --lockfile=go.mod` (the tools module has no packages of its own to call-analyse) and `go -C tools tool osv-scanner scan source --no-call-analysis=go --lockfile=../backend/go.mod` (the backend gets call analysis from `govulncheck` in the backend checks); and `go -C tools tool osv-scanner scan source --lockfile=../frontend/pnpm-lock.yaml`. A pass is exit code 0. Accepted findings are listed in the `osv-scanner.toml` next to the scanned file, each with a reason and an `ignoreUntil` date, and explained in a dated triage table ([current triage](../knowledge/research/local-s3-2026-10-21.md#repository-tool-scan-triage)).
 
 ## Backend checks
 
@@ -72,7 +72,28 @@ Every command must exit 0. The tests include the package-layer architecture test
 
 ## Frontend checks
 
-Pending implementation in slice 1. The scaffold registers, at minimum: `pnpm --dir frontend install --frozen-lockfile`, `typecheck`, `lint`, `format:check`, `test` and `build` scripts, and the Playwright smoke run against a production build. Each later slice adds its parts of the pilot scenario suites.
+From `frontend/`:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm lint
+pnpm format:check
+pnpm test
+pnpm build
+pnpm api:check
+pnpm audit --audit-level high
+pnpm e2e
+```
+
+Every command must exit 0.
+
+- `lint` runs ESLint and the comment check, which rejects comments in every hand-written frontend file (scripts, styles, markup and configuration); the generated `src/lib/api/schema.ts` is exempt from both and from Prettier. The lint configuration forbids importing `vi` or `vitest` from Vitest at all, the test-double methods on them (`mock`, `doMock`, `importMock`, `mockObject`, `spyOn`, `fn`, `stubGlobal`, `stubEnv`, `useFakeTimers`, `setSystemTime`), replacing `fetch` by assignment, `Object.defineProperty`, `Reflect.set` or `Object.assign`, the mocking libraries `msw`, `nock`, `sinon`, `testdouble`, `tinyspy` and any module named `*mock*`, lint and TypeScript directives and explicit `any`; a Vitest suite proves each rule fires. The list names known techniques and is not exhaustive: the rule in AGENTS.md still applies to anything it misses. Shell scripts and YAML files anywhere in the repository are covered by the backend conventions test.
+- `api:check` regenerates the typed client from `go run ./cmd/api openapi`, which reads no settings, and fails when the committed `src/lib/api/schema.ts` differs; `pnpm api:generate` rewrites it after an API change.
+- `pnpm install` runs no dependency install scripts: `allowBuilds` in `pnpm-workspace.yaml` is empty and `strictDepBuilds` fails an install that would need one. `minimumReleaseAge` (14 days) makes pnpm refuse any direct or transitive version published less than two weeks before resolution, and `pnpm install --frozen-lockfile` re-verifies the lockfile against it.
+- `e2e` is the Playwright smoke in Chromium, Firefox and WebKit. It needs Docker Compose running and `OVC_TEST_DATABASE_ADMIN_URL` set as for the backend checks, pointing at the Compose PostgreSQL on a loopback host (the harness refuses any other host, because it creates and drops the database inside the Compose container). Its global setup builds the `api` and `worker` binaries, creates an `ovc_e2e_<random>_test` database with `createdb` inside the PostgreSQL container (the password travels in the environment, never in arguments), runs `api migrate`, starts both processes with an explicit environment on `127.0.0.1:18766`, and waits for `/api/v1/health/ready` with a deadline; Playwright serves the production build with `vite preview` on `127.0.0.1:4173`. Teardown stops both processes and drops the database; a process that exited before teardown, or did not exit cleanly after `SIGTERM`, fails the run. Process output goes to `frontend/test-results/deployment/`. The smoke uses one deployment for all its tests; the per-worker deployments described under the harness start with the first pilot suite in slice 2. Each later slice adds its parts of the pilot scenario suites.
+
+The development server (`pnpm dev`, `127.0.0.1:5173`) and the preview server (`127.0.0.1:4173`) listen on loopback only and proxy `/api` to `OVC_FRONTEND_API_TARGET` (default `http://127.0.0.1:8000`, documented in `frontend/.env.example`), so the browser talks to one origin as it will behind the production reverse proxy. Vite's own CORS handling is turned off on both servers (`cors: false`; by default Vite answers cross-origin requests from any `localhost` origin), and the smoke asserts on the preview server that neither a preflight nor a simple request from another local origin gets `Access-Control-Allow-Origin` (the development server shares the setting but is not exercised by the smoke). Both send `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`; the preview server also sends the page Content Security Policy. The headers are defined once in [`frontend/security-headers.ts`](../frontend/security-headers.ts), which the production reverse-proxy configuration must reproduce. The development server sends no CSP because the React refresh runtime injects an inline script.
 
 ## Local services
 

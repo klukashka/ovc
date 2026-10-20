@@ -56,7 +56,7 @@ REST under `/api/v1` (omitted from the paths below), JSON in and out except uplo
 - **SQL:** every business query is written in `backend/queries/` and compiled by sqlc (from slice 2), with `sqlc.narg` and `sqlc.slice` for optional filters and lists. Infrastructure statements (the readiness ping, `current_database()`, the test clock, migration bookkeeping, test database creation) are named constants with bound parameters in the package that owns them; test database names are generated and quoted with `pgx.Identifier`. No SQL is built from client input, and `NOTIFY` is sent as `pg_notify($1, $2)` with bound parameters.
 - **Headers:**
   - every response, including the static frontend, sends `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`;
-  - pages send a Content Security Policy with `default-src 'self'`, `script-src 'self'`, `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'`, `frame-src` limited to the conferencing subdomain, and `connect-src`, `img-src` and `media-src` limited to the OVC origin and the storage host;
+  - pages send a Content Security Policy with `default-src 'self'`, `script-src 'self'`, `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'`, `frame-src` limited to the conferencing subdomain, and `connect-src`, `img-src` and `media-src` limited to the OVC origin and the storage host; `style-src`, `font-src` and `form-action` are `'self'`, and until the conferencing subdomain and the storage host exist (slices 7 and 2) `frame-src` is `'none'` and the other sources are `'self'` only; the policy is defined once in `frontend/security-headers.ts`;
   - the fake test room is the only exception, and only under `OVC_TEST_CONTROL=1`.
 
 ## Accounts

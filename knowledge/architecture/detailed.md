@@ -89,6 +89,9 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `lib/api` | Typed API client generated from OpenAPI, error type, token handling |
 | `lib/realtime` | One reconnecting WebSocket client and typed subscriptions |
 | `lib/i18n` | i18next setup, ICU formatting, error-code messages, `ru` and `en` resources |
+| `lib/preferences` | Per-browser preferences before sign-in (language, theme, sidebar), with an in-memory store for tests |
+| `app` | Shared React contexts and hooks (preferences, media queries), the role sections and route handles the frames and pages read |
+| `components/frame` | Public and signed-in frames, sidebar and its overlay, language switch, focus on route change |
 | `components/ui` | Shared primitives built on the [tokens](../design/web/tokens.md) |
 | `routes` | Thin route components and role guards ([navigation](../design/web/navigation.md)) |
 
@@ -135,18 +138,20 @@ Exact versions are pinned in the lockfiles and recorded with check dates in `kno
 | Email | SMTP through a Russian provider; SMTP client chosen in slice 2 | Transactional email from the worker |
 | Conferencing | BigBlueButton 4.0, self-hosted | Whiteboard and recordings ([ADR-0004](../../docs/decisions/0004-bigbluebutton-primary-provider.md)) |
 | Go tooling | `gofmt`, `go vet`, golangci-lint, `govulncheck`, standard `testing` | Strict static checks and vulnerability scanning with the standard toolchain |
-| Frontend | React, Vite, TypeScript strict | Conventional SPA stack |
-| Frontend state | TanStack Query; generated OpenAPI client | No hand-rolled cache; schema parity |
-| Styling | Tailwind CSS over design tokens | Utility styling with shared primitives |
-| Localisation | i18next with ICU message format | Russian plurals, two languages |
-| Fonts | Golos Text, Literata, JetBrains Mono, self-hosted | Quiet text-first style with Cyrillic-first interface and book-serif titles ([ADR-0010](../../docs/decisions/0010-quiet-visual-language.md)), no external CDN |
-| Frontend tooling | pnpm, ESLint, Prettier, Vitest, Testing Library, Playwright | Lockfile-pinned, strict lint, real-browser tests |
+| Frontend | React 19.3, Vite 8.3 with `@vitejs/plugin-react`, TypeScript 6.0 strict | Conventional SPA stack; TypeScript 6 because typescript-eslint does not yet support 7 ([research](../research/frontend-toolchain-2026-10-21.md)) |
+| Routing | React Router 8.4 (data router) | Addresses from [navigation](../design/web/navigation.md) with route handles for page titles |
+| Frontend state | TanStack Query 5.104; client generated with openapi-typescript 7.13 and called through openapi-fetch 0.17 | No hand-rolled cache; schema parity checked by regeneration; openapi-typescript declares a TypeScript 5 peer and works with 6, accepted in `pnpm-workspace.yaml` |
+| Styling | Tailwind CSS 4.3 through `@tailwindcss/vite`, default palette, type scale, radii and shadows cleared so only the [tokens](../design/web/tokens.md) exist | Utility styling with shared primitives |
+| Localisation | i18next 26.4, react-i18next 17.0, i18next-icu 2.5 with intl-messageformat 12.1 (its peer, declared explicitly) | Russian plurals through ICU, two languages, typed keys |
+| Fonts | `@fontsource/golos-text`, `@fontsource/literata` and `@fontsource/jetbrains-mono` 5.3, Cyrillic and Latin subsets only | Quiet text-first style with Cyrillic-first interface and book-serif titles ([ADR-0010](../../docs/decisions/0010-quiet-visual-language.md)); WOFF2 files bundled under the OVC origin, no font CDN |
+| Icons | Own inline SVG components in `components/ui/icons.tsx` | One outline set per the tokens; no icon dependency |
+| Frontend tooling | pnpm 12.14 (no dependency install scripts, 14-day minimum release age), ESLint 9.39 with typescript-eslint 8.71 strict-type-checked, eslint-plugin-react-hooks 7.1, eslint-plugin-jsx-a11y 6.10 strict and `@eslint-community/eslint-plugin-eslint-comments` 4.8; Prettier 3.9; Vitest 5.0 with jsdom 30.1 and Testing Library 16.3 for the rare unit and component tests and the lint-rule fixtures; Playwright 1.63 | Lockfile-pinned, strict lint; ESLint 9 because jsx-a11y does not yet support 10 ([research](../research/frontend-toolchain-2026-10-21.md)) |
 | Local infrastructure | Docker Compose: PostgreSQL 18.6 and SeaweedFS 4.48, pinned by digest, published on loopback | One-command development environment; SeaweedFS chosen for its licence, maintenance and presigned `Content-Disposition` support ([research](../research/local-s3-2026-10-21.md)) |
 | Repository tools | Go module `tools/` pinning Gitleaks 8.30.1, OSV-Scanner 2.6.0, golangci-lint 2.14.0 and govulncheck 1.8.0 | Pinned versions with checksums ([security scanning](../../docs/development.md#security-scanning), [backend checks](../../docs/development.md#backend-checks)) |
 
 ## Configuration
 
-Settings are read once from the environment into one typed struct in `internal/core`. Every variable is documented in `backend/.env.example`, which a test checks against the settings loader; unknown values of boolean and enum variables are refused at start-up; the frontend reads only `VITE_`-prefixed build-time variables.
+Settings are read once from the environment into one typed struct in `internal/core`. Every variable is documented in `backend/.env.example`, which a test checks against the settings loader; unknown values of boolean and enum variables are refused at start-up. The frontend bundle reads no variables: it calls the API on its own origin. Its development and preview servers read `OVC_FRONTEND_API_TARGET` once in `vite.config.ts`, documented in `frontend/.env.example`.
 
 | Variable | Meaning |
 |---|---|
@@ -171,7 +176,7 @@ Settings are read once from the environment into one typed struct in `internal/c
 | `OVC_DB_POOL_SIZE` | Connections per process: 20 for the API and 10 for the worker by default, plus one dedicated listening connection per API instance |
 | `OVC_LOG_LEVEL`, `OVC_LOG_FORMAT` | Diagnostics level (`debug`, `info` by default, `warn`, `error`) and `json` (default) or `console` output |
 | `OVC_TEST_DATABASE_ADMIN_URL` | Tests only: a PostgreSQL URL allowed to create and drop the per-test databases |
-| `VITE_API_URL`, `VITE_WS_URL` | Frontend endpoints |
+| `OVC_FRONTEND_API_TARGET` | Frontend development and preview servers only: where they proxy `/api`, `http://127.0.0.1:8000` by default |
 
 ## Deployment shapes
 

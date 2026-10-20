@@ -1,0 +1,179 @@
+@import 'tailwindcss';
+
+@import '@fontsource/golos-text/cyrillic-400.css';
+@import '@fontsource/golos-text/latin-400.css';
+@import '@fontsource/golos-text/cyrillic-500.css';
+@import '@fontsource/golos-text/latin-500.css';
+@import '@fontsource/golos-text/cyrillic-600.css';
+@import '@fontsource/golos-text/latin-600.css';
+@import '@fontsource/literata/cyrillic-400.css';
+@import '@fontsource/literata/latin-400.css';
+@import '@fontsource/literata/cyrillic-400-italic.css';
+@import '@fontsource/literata/latin-400-italic.css';
+@import '@fontsource/jetbrains-mono/cyrillic-400.css';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme {
+  --color-*: initial;
+  --font-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --breakpoint-*: initial;
+
+  --breakpoint-tablet: 768px;
+  --breakpoint-desktop: 1024px;
+  --breakpoint-wide: 1280px;
+
+  --font-sans: 'Golos Text', system-ui, sans-serif;
+  --font-serif: 'Literata', Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --text-display: 36px;
+  --text-display--line-height: 44px;
+  --text-title: 28px;
+  --text-title--line-height: 36px;
+  --text-heading: 18px;
+  --text-heading--line-height: 26px;
+  --text-heading--font-weight: 500;
+  --text-body: 15px;
+  --text-body--line-height: 22px;
+  --text-body-phone: 16px;
+  --text-body-phone--line-height: 24px;
+  --text-strong: 15px;
+  --text-strong--line-height: 22px;
+  --text-strong--font-weight: 500;
+  --text-small: 14px;
+  --text-small--line-height: 20px;
+  --text-label: 13px;
+  --text-label--line-height: 18px;
+  --text-label--font-weight: 600;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-caption--font-weight: 500;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-full: 9999px;
+
+  --shadow-raised: 0 8px 24px rgba(38, 36, 31, 0.12);
+
+  --ease-quiet: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --container-sidebar: 248px;
+  --container-reading: 720px;
+  --container-page: 1232px;
+  --container-overlay-cap: 85vw;
+  --spacing-news-dot: 7px;
+  --duration-press: 120ms;
+  --duration-menu: 200ms;
+  --duration-dialog: 280ms;
+
+  --color-bg: #f7f4ee;
+  --color-surface: #fbf9f4;
+  --color-field: #ffffff;
+  --color-sidebar: #f1eee6;
+  --color-hover: #e7e3d9;
+  --color-border: #e2dcd0;
+  --color-border-strong: #8f8676;
+  --color-text: #26241f;
+  --color-text-muted: #6b655a;
+  --color-icon: #736c60;
+  --color-accent: #5e6b3a;
+  --color-accent-hover: #525e32;
+  --color-on-accent: #ffffff;
+  --color-accent-text: #4a5530;
+  --color-focus: #5e6b3a;
+  --color-success: #2e6b4f;
+  --color-warning: #8a5a12;
+  --color-danger: #a3352a;
+  --color-info: #3f5e7a;
+  --color-live: #a3352a;
+  --color-scrim: rgba(38, 36, 31, 0.32);
+}
+
+[data-theme='dark'] {
+  --color-bg: #1c1b18;
+  --color-surface: #23221e;
+  --color-field: #2a2925;
+  --color-sidebar: #201f1c;
+  --color-hover: #2e2d28;
+  --color-border: #37352f;
+  --color-border-strong: #7d7667;
+  --color-text: #ece8df;
+  --color-text-muted: #aba496;
+  --color-icon: #9c9587;
+  --color-accent: #a3b275;
+  --color-accent-hover: #b2c083;
+  --color-on-accent: #1c1b18;
+  --color-accent-text: #b7c48c;
+  --color-focus: #a3b275;
+  --color-success: #86c3a4;
+  --color-warning: #d9a75e;
+  --color-danger: #e58a7c;
+  --color-info: #93b3d1;
+  --color-live: #e58a7c;
+  --color-scrim: rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    min-height: 100dvh;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  dialog::backdrop {
+    background-color: var(--color-scrim);
+  }
+
+  @media (max-width: 767px) {
+    html {
+      font-size: var(--text-body-phone);
+      line-height: var(--text-body-phone--line-height);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility target {
+  min-width: 44px;
+  min-height: 44px;
+
+  @media (min-width: 1024px) and (pointer: fine) {
+    min-width: 28px;
+    min-height: 28px;
+  }
+}

@@ -1,0 +1,6 @@
+allowBuilds: {}
+strictDepBuilds: true
+peerDependencyRules:
+  allowedVersions:
+    openapi-typescript>typescript: '6'
+minimumReleaseAge: 20160
