@@ -55,4 +55,4 @@ Use the [ovc-verify skill](../.claude/skills/ovc-verify/SKILL.md) before plannin
 
 ## Changes and commits
 
-Every nontrivial change starts with an owner-approved plan, lives on its own branch, and is merged into `main` as one squash commit by the owner. Agents do not commit. A change that alters a contract updates its specification, requirement or decision record in the same change. New dependencies enter only with an implemented consumer and a recorded reason in the [stack table](../knowledge/architecture/detailed.md#stack-per-component).
+Every nontrivial change starts with an owner-approved plan, lives on its own branch, and is merged into `main` as one squash commit by the owner. Agents commit their own work once its checks pass and never push, merge, rebase or reset. A change that alters a contract updates its specification, requirement or decision record in the same change. New dependencies enter only with an implemented consumer and a recorded reason in the [stack table](../knowledge/architecture/detailed.md#stack-per-component).

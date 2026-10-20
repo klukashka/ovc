@@ -1,23 +1,17 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "defaultMode": "acceptEdits",
     "allow": [
       "Bash",
       "WebFetch",
-      "WebSearch",
-      "Read(.env.example)",
-      "Read(**/.env.example)",
-      "Edit(.env.example)",
-      "Edit(**/.env.example)",
-      "Write(.env.example)",
-      "Write(**/.env.example)"
+      "WebSearch"
     ],
     "ask": [
-      "Bash(git commit:*)",
-      "Bash(git push:*)",
-      "Bash(git merge:*)",
-      "Bash(git rebase:*)",
-      "Bash(git reset:*)"
+      "Bash(git push *)",
+      "Bash(git merge *)",
+      "Bash(git rebase *)",
+      "Bash(git reset *)"
     ],
     "deny": [
       "Read(.env)",
@@ -33,16 +27,17 @@
       "Read(**/.env.staging)",
       "Read(**/.env.secret)",
       "Read(**/.env.secrets)",
-      "Bash(sudo:*)",
-      "Edit(/etc/**)",
-      "Edit(/usr/**)",
-      "Edit(/System/**)",
-      "Edit(~/.ssh/**)",
-      "Edit(~/.aws/**)",
-      "Edit(~/.gnupg/**)"
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Bash(sudo *)",
+      "Edit(//etc/**)",
+      "Edit(//usr/**)",
+      "Edit(//System/**)"
     ]
   },
-  "env": {},
   "attribution": {
     "commit": "",
     "pr": ""

@@ -16,7 +16,8 @@ The repository is local only for now: there is no remote, no CI service and no i
 - **Acceptance criteria are checkable without asking a person**: a named test passes, a command prints a given result, an endpoint returns a given field.
 - **Decisions never live only in a conversation.** Once decided, a decision lands in the repository as a decision record, a requirement or a specification change. Large or uncertain changes start as a proposal in `docs/proposals/`.
 - **One change per branch.** Work on a branch named `feat/…`, `fix/…`, `chore/…` or `docs/…`, one coherent change per branch, merged into `main` as one squash commit whose subject names the change on its own.
-- **Agents never commit, push, merge or rewrite history.** The owner does. When asked for commits, output explicit, copy-pastable commands (`git status`, `git add …`, `git commit` with a heredoc message). Commit messages carry no AI attribution or co-author trailers.
+- **Agents commit their own work without asking**, once its checks pass: stage only the files the change touches, review the staged diff, and write a message whose subject names the change on its own. Commit messages carry no AI attribution or co-author trailers. Agents never push, merge, rebase or reset; those stay with the owner and require confirmation in `.claude/settings.json`.
+- On macOS the filesystem ignores case, so after a case-only rename reset the index (`git rm -r -f --cached . && git add -A`) and confirm the new spelling with `git ls-files` before committing.
 - When a hosted remote and CI are adopted, add the issue form, pull request template, labels and CI workflow in one change and amend this section.
 
 ## Development verification
