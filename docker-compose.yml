@@ -1,0 +1,39 @@
+name: ovc
+
+services:
+  postgres:
+    image: postgres:18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+    environment:
+      POSTGRES_USER: ${OVC_DEV_POSTGRES_USER:?set OVC_DEV_POSTGRES_USER, see .env.example}
+      POSTGRES_PASSWORD: ${OVC_DEV_POSTGRES_PASSWORD:?set OVC_DEV_POSTGRES_PASSWORD, see .env.example}
+      POSTGRES_DB: ovc_dev
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=scram-sha-256
+    ports:
+      - "127.0.0.1:${OVC_DEV_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d ovc_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  storage:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    command: ["server", "-s3", "-dir=/data", "-master.volumeSizeLimitMB=64"]
+    environment:
+      AWS_ACCESS_KEY_ID: ${OVC_DEV_STORAGE_ACCESS_KEY:?set OVC_DEV_STORAGE_ACCESS_KEY, see .env.example}
+      AWS_SECRET_ACCESS_KEY: ${OVC_DEV_STORAGE_SECRET_KEY:?set OVC_DEV_STORAGE_SECRET_KEY, see .env.example}
+    ports:
+      - "127.0.0.1:${OVC_DEV_STORAGE_PORT:-58333}:8333"
+    volumes:
+      - storage-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -S -O /dev/null http://127.0.0.1:8333/ 2>&1 | grep -q 'HTTP/1.1 403'"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  postgres-data:
+  storage-data:

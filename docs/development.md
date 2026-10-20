@@ -1,15 +1,15 @@
 # Development
 
-Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain; pending line-by-line owner review.
+Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain, and on 2026-10-21 with Docker Compose services and security scanning; pending line-by-line owner review.
 
 How to set up, check and verify changes locally. Read [AGENTS.md](../AGENTS.md) before contributing. The repository currently contains documentation and agent configuration only; backend and frontend commands are registered here by [roadmap slice 1](roadmap.md#slice-1-scaffold-and-local-loop).
 
 ## Tool setup
 
-Use Linux or macOS with Git, Bash, Docker, Node (for `npx`), a system `python3` (3.9 or newer, for the agent hooks in `.claude/hooks/`), a C compiler (for `go test -race`, which needs cgo) and the pinned toolchain:
+Use Linux or macOS with Git, Bash, Docker with Compose v2 (Docker Desktop, Colima or OrbStack all work), Node (for `npx`), a system `python3` (3.9 or newer, for the agent hooks in `.claude/hooks/`), a C compiler (for `go test -race`, which needs cgo) and the pinned toolchain:
 
-- Go: the version in `backend/go.mod` (`go` and `toolchain` lines), installed from [the official downloads](https://go.dev/dl/) or a package manager; the `toolchain` line lets newer Go installations fetch the pinned release.
-- golangci-lint, sqlc, goose and govulncheck: pinned by the slice 1 scaffold, as Go tool dependencies in `backend/go.mod` run with `go tool` where the tool supports it, otherwise as a pinned release binary documented here.
+- Go: the version in [`tools/go.mod`](../tools/go.mod) (`go` and `toolchain` lines, matched by `backend/go.mod`), installed from [the official downloads](https://go.dev/dl/) or a package manager; the `toolchain` line lets newer Go installations fetch the pinned release.
+- Repository tools (Gitleaks and OSV-Scanner now; govulncheck and golangci-lint with the backend scaffold, golangci-lint as a pinned release binary instead if it does not work as a `tool` dependency; sqlc from slice 2): pinned as Go `tool` dependencies in `tools/go.mod`, with checksums in `tools/go.sum`, and run from the repository root as `go -C tools tool <tool>`. No separate installation is needed.
 - Node and pnpm: pinned by the frontend scaffold in `frontend/.node-version` and the `packageManager` field of `frontend/package.json`.
 - lychee for link checks: installed with its [official instructions](https://lychee.cli.rs/installation/).
 
@@ -41,6 +41,14 @@ test "$parsed" -gt 0
 
 The link check is offline and validates relative links and heading anchors. Mermaid rendering downloads a headless browser on first use.
 
+## Security scanning
+
+Run from the repository root; each must pass before a change is ready.
+
+- **Secrets in history:** `go -C tools tool gitleaks git --redact --no-banner ..` reports no leaks.
+- **Secrets about to be committed:** `go -C tools tool gitleaks git --staged --redact --no-banner ..` reports no leaks. Gitleaks never scans the working directory, so ignored environment files are never read.
+- **Known vulnerabilities in dependencies:** OSV-Scanner over each module and lockfile with an explicit path, starting with `go -C tools tool osv-scanner scan source --no-call-analysis=go --lockfile=go.mod` (the tools module has no packages of its own to call-analyse; the backend gets `govulncheck` separately); the backend module and `frontend/pnpm-lock.yaml` join when they exist. A pass is exit code 0. Accepted findings are listed in the `osv-scanner.toml` next to the scanned file, each with a reason and an `ignoreUntil` date, and explained in a dated triage table ([current triage](../knowledge/research/local-s3-2026-10-21.md#repository-tool-scan-triage)).
+
 ## Backend checks
 
 Pending implementation in slice 1. The scaffold registers, at minimum, run from `backend/`: `go mod tidy -diff` (the module files are tidy), `test -z "$(gofmt -l .)"`, `go vet ./...`, `golangci-lint run`, `sqlc diff` (generated queries match the SQL), `govulncheck ./...`, and `go test -race ./...`. The test run includes the package-layer test and integration tests against PostgreSQL and a local S3-compatible server in Docker, with the worker driven through `Tick(now)`.
@@ -51,9 +59,15 @@ Pending implementation in slice 1. The scaffold registers, at minimum: `pnpm --d
 
 ## Local services
 
-Pending implementation in slice 1. The local environment has:
+The local environment has:
 
-- **Docker Compose** with PostgreSQL and a local S3-compatible server.
+- **Docker Compose** with PostgreSQL 18 and SeaweedFS as the local S3-compatible server ([research](../knowledge/research/local-s3-2026-10-21.md)), both images pinned by digest in [`docker-compose.yml`](../docker-compose.yml).
+  - Every port is published on `127.0.0.1` only; check with `docker compose config | grep host_ip`, which must print `host_ip: 127.0.0.1` for every port.
+  - The development credentials are required variables listed in [`.env.example`](../.env.example); copy it to the git-ignored `.env` next to it and fill in your own values. There are no default passwords, and PostgreSQL uses SCRAM authentication for every connection.
+  - Host ports default to 55432 (PostgreSQL) and 58333 (storage), away from a PostgreSQL that may already run on 5432; `OVC_DEV_POSTGRES_PORT` and `OVC_DEV_STORAGE_PORT` change them.
+  - SeaweedFS also runs its master, volume and filer services inside the container without authentication; they are not published to the host, and on Linux they are reachable from the host and other containers only on the Compose network. Development data only.
+  - Agents never run commands that print the interpolated credentials (`docker compose config` without a filter, `docker inspect`, `env` inside a container); the filtered `grep host_ip` form above is the only allowed use of `docker compose config`.
+  - The development database is `ovc_dev`. `docker compose up -d` starts both services; `docker compose ps` shows them `healthy` within a minute; `docker compose down` stops them and keeps the data volumes.
 - **Two processes**, both reading the same settings: the API (`go run ./cmd/api`, restarted on change by a file watcher chosen in slice 1) and the worker (`go run ./cmd/worker`, the `Tick(now)` loop).
 - **Fakes**:
   - the meeting provider is `fake`, because BigBlueButton runs only on a dedicated Ubuntu server and not on developer machines ([research](../knowledge/research/bigbluebutton-2026-10-20.md#server));

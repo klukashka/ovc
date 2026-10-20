@@ -1,6 +1,6 @@
 # Threat model
 
-Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after the security design review; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after the security design review; T-38 and T-39 added and T-19 amended 2026-10-21 with the local infrastructure; pending line-by-line owner review.
 
 The assets OVC protects, the actors who might threaten them, the trust boundaries, and the control that answers each threat, with a link to the specification that defines it. Every change that touches a trust boundary maps itself to the identifiers here and updates this file in the same change ([AGENTS.md](../AGENTS.md#security)).
 
@@ -23,6 +23,8 @@ The assets OVC protects, the actors who might threaten them, the trust boundarie
 - **Holder of a leaked link:** an invitation, a join link, a playback URL, an unsubscribe link or a tutor code.
 - **Forger of provider traffic:** someone who fakes BigBlueButton callbacks.
 - **Malicious uploader or author** using files or text against other users.
+- **Hostile web page or network peer** reaching a developer's local services.
+- **Compromised dependency author or registry** shipping malicious or vulnerable code, images or tools.
 
 ## Trust boundaries
 
@@ -32,6 +34,8 @@ The assets OVC protects, the actors who might threaten them, the trust boundarie
 4. Browser ↔ BigBlueButton: media flows outside OVC; access depends on join links bound to the meeting's create time.
 5. Worker ↔ SMTP provider and recipients' mailboxes: email content leaves OVC.
 6. Operator ↔ database through `ovc-admin`.
+7. Developer machine ↔ local network and browser: local services and test control routes must not be reachable from outside the machine.
+8. Repository ↔ supply chain: dependencies, container images and tools enter only pinned and scanned.
 
 ## Threats and controls
 
@@ -55,7 +59,7 @@ The assets OVC protects, the actors who might threaten them, the trust boundarie
 | T-16 | Clickjacking of OVC pages | OVC pages send `frame-ancestors 'none'` ([API conventions](../knowledge/specs/api.md#conventions)); only the BigBlueButton subdomain admits framing, and only by the OVC origin ([embedding](../knowledge/specs/realtime-and-video.md#embedding)) |
 | T-17 | Unsubscribe or email links used to act as the user | Unsubscribe tokens change one preference and never sign in; email links point only to OVC pages ([preferences](../knowledge/specs/notifications.md#preferences-and-unsubscribe)) |
 | T-18 | Personal data leaks to logs, emails, the provider or foreign services | Safe-content rules, digest without message text, participant data limited to display names, all processors in Russia ([observability](../knowledge/specs/observability.md#safe-content), [email](../knowledge/specs/notifications.md#email), [ADR-0008](decisions/0008-hosting-and-data-residency.md)) |
-| T-19 | Secret disclosure, including through agent tooling | Settings from the environment; environment files and keys ignored by Git, denied to agent file tools and refused by the `guard_secrets.py` hook for file tools and shell commands, except in heredoc bodies, which count as data ([AI development verification](../knowledge/reviews/ai-development-setup.md#minimal-inventory)); secrets absent from diagnostics and `meta_*` values ([ADR-0004](decisions/0004-bigbluebutton-primary-provider.md)) |
+| T-19 | Secret disclosure, including through agent tooling | Settings from the environment; environment files and keys ignored by Git, denied to agent file tools and refused by the `guard_secrets.py` hook for file tools and shell commands, except in heredoc bodies, which count as data ([AI development verification](../knowledge/reviews/ai-development-setup.md#minimal-inventory)); secrets absent from diagnostics and `meta_*` values ([ADR-0004](decisions/0004-bigbluebutton-primary-provider.md)); local development credentials are required Compose variables with no defaults, and Gitleaks scans history and staged changes with redaction but never the working directory ([security scanning](development.md#security-scanning)) |
 | T-20 | Resource exhaustion through connections, uploads, messages or emails | WebSocket authentication timeout, inbound frame limits, bounded outbound queues and ping timeout ([connection](../knowledge/specs/realtime-and-video.md#connection)); message rate limits and a daily per-student chat attachment cap, with the tutor able to delete attachments in their channels ([messages](../knowledge/specs/realtime-and-video.md#messages)); upload concurrency, limits and quotas ([upload flow](../knowledge/specs/files.md#upload-flow)); bounded pagination; digest frequency limits. Per-IP limits use the client address set by OVC's own reverse proxy, never a client-supplied header |
 | T-21 | A removed participant keeps access | Ending a relationship and removing a group member update channel membership, future audiences and writability in one transaction; message edits and deletes require current membership; the [join rule](../knowledge/specs/schedule.md#join-rule) refuses their further joins, including to live lessons. Residual risk: someone already connected or holding an earlier link stays until the meeting ends; the tutor's "Restart the room" cuts them off ([ending a relationship](../knowledge/specs/accounts.md#ending-a-relationship), [join flow](../knowledge/specs/realtime-and-video.md#join-flow)) |
 | T-22 | Operator misuse | `ovc-admin` actions are audited with the operator's system user; there is no operator HTTP surface ([administration command](../knowledge/specs/accounts.md#administration-command)) |
@@ -74,6 +78,8 @@ The assets OVC protects, the actors who might threaten them, the trust boundarie
 | T-36 | The end-to-end test control surface (clock, worker, mail sink) reachable in a real deployment | Routes and fakes exist only with `OVC_TEST_CONTROL=1`; the processes refuse it unless the meeting provider is fake, mail is the sink and the database is a test or development database; a test proves the routes are absent without it ([test harness](development.md#end-to-end-test-harness)) |
 | T-37 | Script injection that steals the access token | Access token held in memory only, never in Web Storage; Content Security Policy with `script-src 'self'`, `object-src 'none'`, `base-uri 'none'`, and `connect-src`, `img-src` and `media-src` limited to the OVC origin and the storage host ([API conventions](../knowledge/specs/api.md#conventions), [sessions](../knowledge/specs/accounts.md#sessions-and-passwords)) |
 | T-35 | Files used for header injection, content sniffing or embedded active content | RFC 6266 `Content-Disposition` with sanitised fallback, `Content-Type` from detection, `nosniff`, container inspection for office formats refusing macros and external relationships ([files](../knowledge/specs/files.md#contexts-and-limits)) |
+| T-38 | Development services reachable from the network or from a malicious page in the developer's browser | Compose publishes PostgreSQL and the storage S3 port on `127.0.0.1` only, which keeps the network out; against a local page, PostgreSQL requires SCRAM authentication and S3 requires SigV4 signatures with development credentials that have no defaults ([local services](development.md#local-services)). Residual risk: SeaweedFS's internal master, volume and filer services are unauthenticated and reachable on the Compose network (and from the host on Linux); development data only |
+| T-39 | A compromised or vulnerable dependency, image or tool | Lockfiles and `go.sum` committed; tools pinned in `tools/go.mod` with checksums; images pinned by digest; OSV-Scanner over every lockfile with dated triage of accepted findings ([security scanning](development.md#security-scanning)) |
 
 ## Limitations and out of scope
 

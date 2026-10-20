@@ -123,7 +123,7 @@ Exact versions are pinned in the lockfiles and recorded with check dates in `kno
 | HTTP and API contract | huma v2 on `net/http` | Typed handlers, input validation and OpenAPI 3.1 generated from code |
 | WebSockets | `coder/websocket` | Context-aware, maintained, standard `net/http` integration |
 | Database access and migrations | `pgx`, `sqlc`, `goose` with SQL files | Visible SQL compiled to typed functions; reviewed plain-SQL migrations |
-| Database and queue | PostgreSQL | Relational data, keyset pagination, leased `SKIP LOCKED` outbox, `LISTEN/NOTIFY` broadcaster |
+| Database and queue | PostgreSQL 18 | Relational data, keyset pagination, leased `SKIP LOCKED` outbox, `LISTEN/NOTIFY` broadcaster |
 | Timezones | Standard library `time` with the embedded `time/tzdata` database | IANA rules without a dependency, independent of the host's zone files |
 | Logging | Standard library `log/slog`, JSON | Structured, leveled diagnostics without a dependency |
 | Password hashing | Argon2id (library chosen in slice 2) | Current recommended password hash |
@@ -138,7 +138,8 @@ Exact versions are pinned in the lockfiles and recorded with check dates in `kno
 | Localisation | i18next with ICU message format | Russian plurals, two languages |
 | Fonts | Golos Text, Literata, JetBrains Mono, self-hosted | Quiet text-first style with Cyrillic-first interface and book-serif titles ([ADR-0010](../../docs/decisions/0010-quiet-visual-language.md)), no external CDN |
 | Frontend tooling | pnpm, ESLint, Prettier, Vitest, Testing Library, Playwright | Lockfile-pinned, strict lint, real-browser tests |
-| Local infrastructure | Docker Compose: PostgreSQL, local S3-compatible server | One-command development environment |
+| Local infrastructure | Docker Compose: PostgreSQL 18.6 and SeaweedFS 4.48, pinned by digest, published on loopback | One-command development environment; SeaweedFS chosen for its licence, maintenance and presigned `Content-Disposition` support ([research](../research/local-s3-2026-10-21.md)) |
+| Repository tools | Go module `tools/` pinning Gitleaks 8.30.1 and OSV-Scanner 2.6.0 as `tool` dependencies | Pinned versions with checksums, no separate installation ([security scanning](../../docs/development.md#security-scanning)) |
 
 ## Configuration
 

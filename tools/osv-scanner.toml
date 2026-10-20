@@ -1,0 +1,9 @@
+[[IgnoredVulns]]
+id = "GO-2025-4020"
+ignoreUntil = 2027-01-21T00:00:00Z
+reason = "rardecode is reached only through Gitleaks archive scanning, which the registered commands never enable; rardecode 2.2.0 breaks the archive library Gitleaks uses. Triage: knowledge/research/local-s3-2026-10-21.md"
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+ignoreUntil = 2027-01-21T00:00:00Z
+reason = "The advisory covers golang.org/x/crypto/openpgp, which no tool imports (go list -deps). Triage: knowledge/research/local-s3-2026-10-21.md"
