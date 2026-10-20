@@ -1,9 +1,10 @@
 # ADR-0003: Embed an open-source conferencing provider for video lessons
 
-- Status: accepted, 2026-10-20
+- Status: accepted, 2026-10-20; primary provider superseded by [ADR-0004](0004-bigbluebutton-primary-provider.md) on 2026-10-20 (the embedding-behind-an-adapter decision stands)
 - Reviewed: pending line-by-line owner review
 - Deciders: project owner
-- Related: [ADR-0002](0002-implementation-stack.md), [video specification](../../knowledge/specs/realtime-and-video.md#video), FR-4
+- Related: [ADR-0002](0002-implementation-stack.md), [video specification](../../knowledge/specs/realtime-and-video.md#video), FR-5
+- Superseded parts: the choice of Jitsi Meet as primary provider, token-gated Jitsi rooms and the public Jitsi instance for development ([ADR-0004](0004-bigbluebutton-primary-provider.md)); the course-based join authorization and the statement that students may be minors ([ADR-0005](0005-tutor-centric-domain.md)). The text below is kept as written for the record.
 
 ## Context
 
@@ -33,4 +34,4 @@ The backend creates one meeting per lesson with a random room name, authorizes j
 
 ## Where it is applied
 
-[Video specification](../../knowledge/specs/realtime-and-video.md#video), [provider interface](../../knowledge/specs/realtime-and-video.md#provider-interface), [threat T-5](../threat-model.md#threats-and-controls), [roadmap slice 6](../roadmap.md#slice-6-video-lessons).
+[Video specification](../../knowledge/specs/realtime-and-video.md#video), [provider interface](../../knowledge/specs/realtime-and-video.md#provider-interface), [threat T-10](../threat-model.md#threats-and-controls), [roadmap slice 7](../roadmap.md#slice-7-video-lessons-and-recordings).

@@ -22,4 +22,4 @@ Copy [template.md](template.md) to `NNNN-short-title.md` with the next free numb
 
 | Proposal | Status | Trigger |
 |---|---|---|
-| none yet | | |
+| [0001 Lesson and payment ledger](0001-payment-ledger.md) | deferred | tutors using the MVP ask to track what students owe, or the slice is scheduled |

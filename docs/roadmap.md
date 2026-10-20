@@ -1,48 +1,72 @@
 # Roadmap
 
-Status: draft written 2026-10-20; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product; pending line-by-line owner review.
 
-Build order, slice by slice. Each slice is runnable and reviewable on its own and ends with its checks registered in the [development guide](development.md). A slice is done when its feature works end to end locally through the real backend and the real frontend, its checks pass, and the documents it affects are updated.
+Build order, slice by slice. Each slice is runnable and reviewable on its own and ends with its checks registered in the [development guide](development.md). A slice is done when:
 
-## Slice 0: foundation
+- its requirements work end to end locally through the real backend, worker and frontend;
+- its segments of the [pilot scenarios](../knowledge/design/web/pilot-scenarios.md) pass;
+- its checks pass;
+- the documents it affects are updated.
 
-Repository, agent rules ([AGENTS.md](../AGENTS.md)), the [ovc-verify](../.claude/skills/ovc-verify/SKILL.md) skill, the two documentation layers, requirements, threat model and initial decision records. No application code. Active checks: Markdown lint, links and anchors, Mermaid diagrams.
+## Slice 0: foundation and product definition
+
+Repository, agent rules ([AGENTS.md](../AGENTS.md)), the [ovc-verify](../.claude/skills/ovc-verify/SKILL.md) skill, the two documentation layers, the [product overview](product.md), requirements, threat model, decision records, specifications and page design. No application code. Active checks: Markdown lint, links and anchors, Mermaid diagrams.
 
 ## Slice 1: scaffold and local loop
 
-- Backend: `uv` project, FastAPI application factory, typed settings, async database session, Alembic with a comment-free migration template, health route, structured logging bootstrap, request identifiers, the package-layer architecture test, the integration-test database fixture.
-- Frontend: `pnpm` project, Vite, React, strict TypeScript, Tailwind, router, typed API client, base layout, ESLint and Prettier, a Playwright smoke test.
-- Docker Compose for PostgreSQL. Security scanning tools selected and registered.
-- Done when the backend health route answers, the frontend renders its shell against it, and every slice-1 check in the development guide passes.
+- **Backend:**
+  - a `uv` project and a FastAPI application factory with typed settings;
+  - an async database session, and Alembic with a comment-free migration template;
+  - health routes, the structured logging bootstrap and request identifiers;
+  - the package-layer architecture test and the integration-test database fixture;
+  - an empty worker process with `tick(now)` and the fake clock.
+- **Frontend:** a `pnpm` project with Vite, React and strict TypeScript; Tailwind over the design tokens; self-hosted fonts; the router and i18n setup with `ru` and `en`; the typed API client; the public and role frames; ESLint and Prettier; a Playwright smoke test.
+- **Infrastructure:** Docker Compose for PostgreSQL and a local S3-compatible server. Security scanning tools are selected and registered.
+- **Done when** the health routes answer, the frontend renders its frames in both languages against them, and every slice-1 check passes.
 
-## Slice 2: accounts and sessions
+## Slice 2: accounts, sessions and email
 
-FR-1. Registration, login, refresh rotation with reuse detection, logout, current user, profile editing, avatar upload, role guards, admin deactivation. Frontend auth pages, token handling, route guards, profile page.
+FR-1, FR-16, FR-17. Registration with consent, email confirmation, sign-in throttling, sessions with refresh rotation, password reset and change, sign out everywhere, profile and preferences, avatars through storage, account deletion and purge, and `ovc-admin`. The outbox, the worker dispatcher, the mail adapter (SMTP and in-memory sink) and the first email templates are built here.
 
-## Slice 3: courses and enrolment
+## Slice 3: tutors, students and groups
 
-FR-2. Course creation and editing, join codes, adding and removing students, per-role course lists and membership.
+FR-2, FR-3. Student cards, invitations, tutor code and join requests, relationship end and reactivation, groups, and the student's tutors page. Relationship-scoped authorization guards and their denial tests.
 
-## Slice 4: calendar and lessons
+## Slice 4: realtime and in-app notifications
 
-FR-3. Lesson scheduling, editing and cancellation, the calendar across courses, timezone display, lesson status.
+FR-13.1, FR-13.3. The WebSocket gateway with first-frame authentication, the connection registry and broadcaster, `notification.new` and `entity.changed` frames, the bell, email preferences and one-click unsubscribe.
 
-## Slice 5: chat
+## Slice 5: schedule and reminders
 
-FR-5 and FR-7. WebSocket gateway with first-frame authentication, connection registry, in-process broadcaster, course and direct channels, persisted messages with history, presence and typing, notification frames. Frontend realtime client and chat UI.
+FR-4, FR-13.2 (lesson emails). One-off lessons and weekly series in the tutor's timezone, scoped edits and cancellations, overlap warnings, calendars, lesson status, the lesson page without video, and lesson reminders and change emails.
 
-## Slice 6: video lessons
+## Slice 6: chat and files
 
-FR-4. Meeting provider interface with Jitsi and fake implementations and shared contract tests, meeting creation for lessons, join authorization, moderator rule, ending lessons. Frontend embed with join and dispose lifecycle.
+FR-12, FR-14, the message digest. Direct and group channels, messages with attachments and previews, edit and delete, read markers and unread counts, presence and typing, upload contexts, quotas and usage, authorized downloads.
 
-## Slice 7: homework
+## Slice 7: video lessons and recordings
 
-FR-6. Uploads with bounds and cleanup, authorized downloads, assignments, submissions, grading and returning, the teacher's grading queue and the student's view of results.
+FR-5.
 
-## Slice 8: hardening and polish
+- **Probe first:** run the BigBlueButton probe on a remote test server (rendered recording format, embedding on every supported browser) and record the results in the [research file](../knowledge/research/bigbluebutton-2026-10-20.md).
+- **Then build:** the BigBlueButton and fake adapters with shared contract tests, meetings and join links, callbacks and reconciliation, recording copy, playback, retention and deletion, and the embedded room with the new-tab fallback.
 
-Accessibility pass, empty and error states, rate limits, demo seed data, performance baselines and budgets for NFR-2, a BigBlueButton adapter if needed.
+## Slice 8: library and builder
+
+FR-6, FR-7. Folders, materials, templates, all eight block types, normalisation version 1, restricted Markdown rendering, and the builder with preview.
+
+## Slice 9: issuing, completing and checking
+
+FR-8, FR-9, FR-10. Issues with snapshots, deadlines and answer policies, the student assignment page with autosave, submission and automatic scoring, the review queue and review screen with corrected files, returning and resubmitting, the answer-key contract test, and homework emails.
+
+## Slice 10: results, home pages and hardening
+
+FR-11, FR-15.
+
+- **Product:** results for students; analytics per issue and progress per student; Today with the first-run checklist; Home with the tutor filter.
+- **Hardening:** the accessibility pass, performance baselines and budgets for the non-functional requirements, and all four pilot scenarios passing in full.
 
 ## After the MVP
 
-Several backend instances with a cross-instance broadcaster, S3-compatible storage in production, email notifications, recordings, calendar export, an admin console, internationalization. Each starts as a [proposal](proposals/README.md) when it is designed but not scheduled.
+The [payment ledger](proposals/0001-payment-ledger.md), attendance from provider events, timed tests and multiple attempts, accounts with both roles, an administration web interface, push notifications, calendar export, thumbnails, malware scanning, and several API instances with a cross-instance broadcaster. Each starts as a [proposal](proposals/README.md) when it is designed but not scheduled.

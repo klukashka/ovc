@@ -29,9 +29,10 @@ record of academic data.
   header and in error bodies ([API conventions](api.md#conventions)).
 - Every WebSocket connection gets a connection identifier bound for its lifetime; every inbound frame
   gets its own frame identifier.
-- Records carry `user_id` and `role` once authenticated, and `course_id` where the operation is
-  course-scoped. Context is reset at the end of each request, connection or task so that concurrent
-  work never shares context.
+- Records carry `user_id` and `role` once authenticated, and `tutor_id` plus `relationship_id` or
+  `group_id` where the operation is scoped to them. Worker records carry the job name and the outbox
+  row identifier. Context is reset at the end of each request, connection, task or job so that
+  concurrent work never shares context.
 
 ## Safe content
 
@@ -39,9 +40,15 @@ Never written to diagnostics at any level, including `DEBUG` and exception outpu
 
 - passwords, access and refresh tokens, signing secrets, provider tokens, signed join URLs, cookies
   and `Authorization` headers;
-- chat message bodies, assignment instructions, submission text, feedback, uploaded file contents;
+- invitation, email-confirmation, password-reset and unsubscribe tokens, callback path tokens,
+  signed storage URLs, and the provider's `signed_parameters` value;
+- chat message bodies, assignment instructions and prompts, answers and answer keys, submission
+  text, feedback, tutor notes, uploaded file contents;
 - email addresses and full names (log the user identifier instead);
-- full request or response bodies.
+- full request or response bodies, and full URLs of routes that carry tokens in their path (log the
+  route template instead).
+
+The reverse proxy and any static-file server log route paths with token segments and query strings replaced by a placeholder, so token pages and callback routes never leave tokens or routing keys in access logs.
 
 Exception handlers log the exception type, the event and the correlation fields; exception messages
 from libraries that may embed request data are not logged verbatim. File names of uploads are logged
@@ -59,13 +66,18 @@ only after truncation and only at `DEBUG`.
 
 | Component | Required events from its first implementation |
 |---|---|
-| Application process | startup with configuration summary (no secrets), shutdown, unhandled exception |
-| Authentication | login succeeded and failed (no email in the record), refresh rotated, refresh reuse detected, logout |
+| Application and worker processes | startup with configuration summary (no secrets), shutdown, unhandled exception |
+| Accounts | sign-up, email confirmed, login succeeded and failed (no email in the record), throttled, refresh rotated, refresh reuse detected, logout and logout-all, password reset and change, account deleted, restored and purged |
+| Operator command | every command with operator system user, target user identifier and outcome |
+| Relationships and groups | invitation created, accepted and refused with reason code; join request created and decided; relationship ended; group created, membership changed, archived |
 | REST routers | one access record per request: method, route template, status, duration, request identifier |
 | WebSocket gateway | connection opened, authenticated, closed with code and reason, frame rejected |
+| Schedule | lesson or series created, edited with scope, split, cancelled; overlap warning returned; status changed, including automatic end by the status job; series horizon extended and skipped for inactive audiences |
 | Chat | message persisted, fan-out completed with recipient count and duration |
-| Meetings | room created, join authorized and refused, room ended, provider call failed |
-| Homework and uploads | assignment published, submission submitted, graded and returned, upload accepted and rejected with reason code |
+| Meetings and recordings | meeting created and re-created, join authorized and refused with reason code, meeting ended (hint received, confirmed), callback accepted and rejected with status, reconciliation batch, recording copied, held for quota, retried, failed, expired and deleted, provider copy deleted, provider call failed |
+| Homework | template saved, issue created, deadline changed and withdrawn, submission submitted (with late flag), autosave conflict, review revision published as checked, returned or updated, score override applied |
+| Files | upload accepted, rejected and aborted with reason code, quota exceeded, reference added and removed, file deleted |
+| Notifications and outbox | notification created, outbox row claimed, done (sent or obsolete), retried, lease reclaimed and dead with error code, digest sent, unsubscribe applied, email marked undeliverable, scheduled job run with batch size and duration |
 
 Tests assert on event names and fields for the outcomes above, and assert that forbidden content
 never appears in captured records.

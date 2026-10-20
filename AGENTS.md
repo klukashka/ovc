@@ -4,7 +4,7 @@ Rules for every coding agent and human contributor in this repository. They take
 
 ## Project
 
-OVC (Online Virtual Classroom) is a multi-teacher web platform: live video lessons through an embedded conferencing provider, real-time chat, a lesson calendar, and homework that teachers assign and grade and students submit. Any teacher of any subject can run courses; students enrol in them.
+OVC (Online Virtual Classroom) is a workspace for private tutors teaching adult students: video lessons through BigBlueButton with a whiteboard and recordings, direct and group chats, a schedule with weekly series, and homework built from self-checking tests and tasks the tutor checks. Each tutor runs their own practice of students and groups; one student account can study with several tutors. The [product overview](docs/product.md) explains the intent.
 
 Documentation has two layers. `docs/` is written for people: the [technical introduction](docs/technical-introduction.md), [functional](docs/requirements/functional.md) and [non-functional](docs/requirements/non-functional.md) requirements, the [threat model](docs/threat-model.md), the [roadmap](docs/roadmap.md), the [development guide](docs/development.md), the decision records in [`docs/decisions/`](docs/decisions/README.md) and the deferred changes in [`docs/proposals/`](docs/proposals/README.md). `knowledge/` is the reference layer loaded section by section: the normative specifications in `knowledge/specs/`, the module map, package layers, stack table, glossary and open questions in `knowledge/architecture/detailed.md`, and review records, analyses and research. [`knowledge/README.md`](knowledge/README.md) says which file to load for which task. Read the specification of a component and the decision records it cites before implementing it; when a specification and a decision record disagree, the decision record wins.
 
@@ -36,16 +36,25 @@ The repository is local only for now: there is no remote, no CI service and no i
 - **Static checks are strict and mandatory**: pyright in strict mode and ruff (lint and format, line length 120, quote style preserved) over all Python; TypeScript with `strict: true`, ESLint and Prettier over `frontend/`. Code that does not pass them is not finished.
 - **Fail fast.** No bare `except:`, no `except Exception` that swallows, logs-and-continues or returns a placeholder, no silent fallback values that hide a failure. Catch only what you can handle meaningfully and let everything else propagate. Every error that leaves the HTTP API or the WebSocket gateway is a structured error as specified in [the API specification](knowledge/specs/api.md#conventions).
 - **The HTTP API is the single implementation.** The web frontend is a thin client over the typed API client and contains no business rules or authorization decisions of its own; it may hide what the API would refuse, never grant what the API would refuse.
-- **Layers are explicit.** Backend code is layered as routers and WebSocket handlers → services → repositories, with external systems behind adapters, as tabled in [package layers](knowledge/architecture/detailed.md#package-layers). Only repositories touch the database; only adapters touch storage, the meeting provider and outbound notifications. A new package enters the table in the change that creates it, and an architecture test enforces the table from the first backend scaffold onward.
+- **Layers are explicit.** Backend code is layered as routers and WebSocket handlers → services → repositories, with external systems behind adapters, as tabled in [package layers](knowledge/architecture/detailed.md#package-layers). Only repositories touch business data in the database; the infrastructure adapters listed under package layers keep only their own state there. Only adapters touch storage, the meeting provider and outbound notifications. A new package enters the table in the change that creates it, and an architecture test enforces the table from the first backend scaffold onward.
 - **Configuration** is read once from the environment into one typed settings object; no scattered environment reads. Every variable is documented in `.env.example`. Constants such as roles, statuses and WebSocket frame types are enums in one place, not inline literals.
 - **Dependencies are deliberate.** Add one only when the standard library or an existing dependency cannot reasonably do the job, and record it with its reason in the [stack table](knowledge/architecture/detailed.md#stack-per-component); a dependency that changes a decided row of [ADR-0002](docs/decisions/0002-implementation-stack.md) needs a new decision record. Python dependencies are managed only with `uv` and frontend dependencies only with `pnpm`; `uv.lock` and `pnpm-lock.yaml` are committed and change only through those tools.
 
 ## Security
 
-- **Authorization is enforced server-side on every route and every WebSocket frame**, by role (teacher, student, admin) and by ownership: a student reaches only their own submissions and the courses they are enrolled in; a teacher only the courses they own. Never trust a client-supplied identifier without an ownership check. Return 404 rather than 403 where 403 would reveal that another user's resource exists.
+- **Authorization is enforced server-side on every route and every WebSocket frame**, by role (`tutor` or `student`) and by relationship scope ([ADR-0005](docs/decisions/0005-tutor-centric-domain.md)):
+  - a tutor reaches a student's data only through their own relationship with that student, never through another tutor's;
+  - a student reaches only their own work and the resources of tutors they have a relationship with;
+  - students never reach each other's work.
+
+  Resolve every client-supplied identifier within the caller's scope, and return `not_found` outside it.
+- **Answer keys stay on the server** until the answer visibility policy allows them. Student-facing schemas never contain key fields ([answer visibility](knowledge/specs/homework.md#answer-visibility)).
+- **Credentials in URLs** are allowed only where the specifications define them: invitation, email confirmation, password reset and unsubscribe links; per-request conferencing join links; and 5-minute signed storage URLs for authorized downloads and recordings. Each is bounded in lifetime and scope, never signs anyone in to OVC, and is never logged; pages that carry one send `Referrer-Policy: no-referrer`. Access and refresh tokens never appear in URLs. Every other credential travels in headers, bodies or `HttpOnly` cookies. Provider callback routing keys are not credentials and never authenticate anything on their own.
 - **Uploads** are bounded in size, checked against a content-type allowlist and stored under random keys. A download is authorized against the resource that owns the attachment, and no filesystem path is ever built from client input.
-- **Secrets** are never committed, logged or placed in URLs. `.env` is ignored; agents do not read it.
-- **Students may be minors.** Collect only the personal data a feature needs, and keep it out of logs, URLs and third-party requests. The conferencing provider receives a display name and a room, nothing else.
+- **Secrets**, including signing and encryption keys, the conferencing shared secret, storage and SMTP credentials and any other credential, are never committed, logged, sent to the browser or placed in URLs or provider `meta_*` values. Environment files (`.env`, `.env.local` and the other ignored variants) are ignored by Git; agents do not read them.
+- **Operator actions** exist only in the local `ovc-admin` command; there is no administrative HTTP surface.
+- **The end-to-end test control surface** (`/__test__/` routes, the shared test clock, the database mail sink viewer) exists only when `OVC_TEST_CONTROL=1`. The processes refuse that setting unless the meeting provider is `fake`, mail is the database sink, and the database is a test or development database. A test proves the routes are absent without it.
+- **Personal data is minimal and stays in Russia.** Collect only the personal data a feature needs, and keep it out of logs, URLs and third-party requests. The conferencing provider receives a display name, an opaque participant identifier and a role, nothing else. Never add a service outside Russia that receives user data ([ADR-0008](docs/decisions/0008-hosting-and-data-residency.md)).
 - Every change that touches a trust boundary maps itself to the [threat model](docs/threat-model.md) and updates it in the same change.
 
 ## Observability
@@ -68,20 +77,26 @@ The repository is local only for now: there is no remote, no CI service and no i
 
 - **Use Arrange–Act–Assert.** Write each test in three distinct, sequential phases separated by blank lines, made clear through descriptive names or extracted helpers, never comments.
 - **No mocks.** Forbidden: `unittest.mock`, `MagicMock`, `pytest-mock`, `monkeypatch`, patching modules, attributes or environment variables at runtime, stubbing HTTP clients at the transport level, `vi.mock`, mocked `fetch`, and any other technique that replaces behavior behind the code's back.
-- **Fakes are the only test doubles.** A fake is a real implementation of an adapter interface (an in-memory storage, a fake meeting provider, a fake clock, a recording notifier), selected through configuration or constructor injection and checked by the same contract tests as the production implementation. If code cannot be tested without patching, change its design so the dependency is injected.
-- **Unit tests are rare.** Write them only for intricate logic where a bug hides easily: grading arithmetic, recurrence and timezone conversion, permission rules, state machines (submission and lesson status). Do not unit-test glue code, data mapping, trivial accessors or framework behavior.
-- **Integration tests are the bulk.** Exercise real components together: the real FastAPI application over HTTP and WebSocket, the real PostgreSQL database in a local container, real local file storage in a temporary directory, with fakes only where an external conferencing or notification service would otherwise be called.
+- **Fakes are the only test doubles.** A fake is a real implementation of an adapter interface (a fake meeting provider, a mail sink, a fake clock; an in-memory storage and an in-process broadcaster for unit and contract tests only), selected through configuration or constructor injection and checked by the same contract tests as the production implementation. If code cannot be tested without patching, change its design so the dependency is injected.
+- **Unit tests are rare.** Write them only for intricate logic where a bug hides easily: scoring arithmetic, short-answer normalisation, recurrence and timezone conversion, permission rules, state machines (submission, lesson and relationship status). Do not unit-test glue code, data mapping, trivial accessors or framework behavior.
+- **Integration tests are the bulk.** Exercise real components together:
+  - the real FastAPI application over HTTP and WebSocket;
+  - the real worker through `tick(now)`;
+  - the real PostgreSQL database and a local S3-compatible server in containers.
+
+  Use fakes only where BigBlueButton, the SMTP provider or the clock would otherwise be involved.
 - **Tests are deterministic.** No `sleep` for synchronisation: wait on an explicit condition with a deadline. No real network beyond local containers and in-process servers. Time and randomness come from injected sources, and tests pass fake ones. A flaky test is a bug: fix its cause, never hide it with retries or longer timeouts.
-- **End-to-end tests are targeted.** A small Playwright set drives the built frontend against the real backend and covers every main happy path: register and log in, create and join a course, schedule and join a lesson, chat, assign, submit and grade homework.
+- **End-to-end tests are targeted.** The four [pilot scenarios](knowledge/design/web/pilot-scenarios.md) run as Playwright suites. They drive the production frontend build against the real backend, worker and database, with the fake meeting provider, the database mail sink and the shared fake clock. They cover the main journeys of both roles and the key refusals.
 - **The full local check run finishes in under 10 minutes.** Write tests so they can run in parallel. When a change threatens the budget, make tests faster or consolidate them; never drop coverage silently.
 
 ## Platforms
 
 - Supported development platforms: **Linux and macOS**. No Windows code paths, shims or path handling. POSIX assumptions are fine.
-- Supported browsers for the frontend: current Chromium, Firefox and Safari. The conferencing embed inherits the provider's own browser support.
+- Supported browsers for the frontend: current Chromium, Firefox and Safari, on desktop and on phones (Safari on iOS, Chrome on Android). The conferencing client inherits BigBlueButton's own browser support, and "open in a new tab" is always available.
+- BigBlueButton runs only on a dedicated Ubuntu server; local development and automated tests use the fake meeting provider ([development guide](docs/development.md#local-services)).
 
 ## Definition of done
 
-- Before reporting a task as done, run every check in [the development guide](docs/development.md) that exists for the current scaffold (format, lint, type check, tests, documentation checks) and see them pass. Report failures as they are.
+- Before reporting a task as done, run every check in [the development guide](docs/development.md) that exists for the current scaffold (format, lint, type check, tests, documentation checks) and see them pass. Report failures as they are. The manual live conferencing checks are the only exception: report them as passed or `unverified`.
 - Never make checks green by weakening them: no `skip` or `xfail` on failing tests, no deleted or loosened assertions, no relaxed linter, type-checker or test settings, no raised timeouts or budgets, unless changing that check is the approved task itself.
 - When the same review finding recurs, add the rule that prevents it to this file.

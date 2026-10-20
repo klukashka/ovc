@@ -1,51 +1,85 @@
 # Threat model
 
-Status: draft written 2026-10-20; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after the security design review; pending line-by-line owner review.
 
-The assets OVC protects, the actors who might threaten them, the trust boundaries, and the controls that answer each threat. Every change that touches a trust boundary maps itself to the threat identifiers here and updates this file in the same change ([AGENTS.md](../AGENTS.md#security)).
+The assets OVC protects, the actors who might threaten them, the trust boundaries, and the control that answers each threat, with a link to the specification that defines it. Every change that touches a trust boundary maps itself to the identifiers here and updates this file in the same change ([AGENTS.md](../AGENTS.md#security)).
 
 ## Assets
 
-- Accounts and sessions (credentials, refresh tokens).
-- Student personal data, including data about minors: names, emails, avatars, presence.
-- Academic records: submissions, attached files, grades and feedback.
-- Course content: assignments, attached files, chat history.
-- Live lessons: who can see and hear a class.
-- Platform secrets: token signing keys, conferencing and storage credentials.
+- **Accounts and sessions:** credentials, refresh tokens, email and reset tokens.
+- **Personal data** of adults: names, emails, avatars, presence, voices and faces in recordings.
+- **A tutor's practice:** student cards and private notes, groups, schedule, library, answer keys.
+- **Student work:** answers, files, scores, feedback, corrected files.
+- **Conversations:** direct and group chats with attachments.
+- **Live lessons:** who can see and hear them, and who can moderate.
+- **Platform secrets:** token signing keys, the BigBlueButton shared secret, storage and SMTP credentials.
 
 ## Actors
 
-- **Anonymous internet user** with no account.
-- **Student** of one course trying to reach another course or another student's work.
-- **Teacher** trying to reach another teacher's course.
-- **Former member** removed from a course, or with a stolen or stale token.
-- **Malicious uploader** using files or message content as an attack vehicle against other users or the server.
+- **Anonymous internet user** without an account.
+- **Student** of one tutor reaching another student's work, another tutor's data, or answer keys.
+- **Tutor** reaching another tutor's relationships with a shared student.
+- **Former participant:** an ended relationship, a removed group member, or a stale or stolen token.
+- **Holder of a leaked link:** an invitation, a join link, a playback URL, an unsubscribe link or a tutor code.
+- **Forger of provider traffic:** someone who fakes BigBlueButton callbacks.
+- **Malicious uploader or author** using files or text against other users.
 
 ## Trust boundaries
 
-1. Browser ↔ backend (REST and WebSocket): all client input is untrusted.
-2. Backend ↔ conferencing server: the backend is the only party that may assign moderator rights.
-3. Backend ↔ file storage: storage keys are internal; clients never address storage directly.
-4. Browser ↔ conferencing server: media flows outside OVC; access depends on room secrecy and provider tokens.
+1. Browser ↔ API (REST and WebSocket): all client input is untrusted, including identifiers.
+2. API ↔ BigBlueButton: only the API creates meetings and join links; callbacks into the API are untrusted until verified.
+3. API and worker ↔ object storage: storage keys are internal; browsers reach objects only through short-lived signed URLs issued after authorization.
+4. Browser ↔ BigBlueButton: media flows outside OVC; access depends on join links bound to the meeting's create time.
+5. Worker ↔ SMTP provider and recipients' mailboxes: email content leaves OVC.
+6. Operator ↔ database through `ovc-admin`.
 
 ## Threats and controls
 
 | ID | Threat | Controls |
 |---|---|---|
-| T-1 | Credential stuffing or brute-force login | Argon2id hashing, login throttling, generic failure messages |
-| T-2 | Stolen or replayed refresh token | Rotation on every refresh, reuse detection revokes the session, tokens never in URLs or logs |
-| T-3 | Horizontal access: a student reads another student's submission, or posts to a course they are not in | Ownership guards in shared dependencies on every route and frame; 404 for invisible resources; integration tests for each denial |
-| T-4 | Vertical access: a student performs teacher actions, or a teacher acts on another teacher's course | Role and course-ownership guards; tests per teacher-only route |
-| T-5 | Uninvited participant joins a lesson | Unguessable room names, join authorization by membership, backend-signed provider tokens in production |
-| T-6 | Malicious file upload (oversized, disguised type, path traversal) | Streaming size limit, content-based type allowlist, random storage keys, downloads authorized by owner, `nosniff` and attachment disposition |
-| T-7 | Script injection through messages, names, file names, instructions or feedback | Rendered as text; any rich-text rendering sanitized |
-| T-8 | Cross-site request forgery against cookie-held credentials | Bearer tokens for API calls; if the refresh token moves to a cookie, `SameSite=Strict`, `HttpOnly`, `Secure` and a CSRF check on the refresh route |
-| T-9 | Personal data leaks to logs, URLs or third parties | Safe-content rules in the [observability specification](../knowledge/specs/observability.md#safe-content); the provider receives only display names |
-| T-10 | Secret disclosure | Settings from the environment, `.env` ignored and unreadable by agents, no secrets in diagnostics |
-| T-11 | Resource exhaustion through connections, uploads or chat volume | Bounded uploads, WebSocket authentication timeout, per-user message rate limits, bounded pagination |
+| T-1 | Credential stuffing and brute-force sign-in | Argon2id, per-email and per-IP throttling, generic failure messages ([sessions and passwords](../knowledge/specs/accounts.md#sessions-and-passwords)) |
+| T-2 | Stolen or replayed refresh token | Rotation, reuse detection revoking the session, sign out everywhere, `HttpOnly` cookie ([sessions and passwords](../knowledge/specs/accounts.md#sessions-and-passwords)) |
+| T-3 | Account enumeration through sign-up, reset or invitation pages | `202` with no session for every sign-up, identical reset responses, invitation pages that always offer both paths, notice to the existing owner, card-creation limits per tutor ([registration](../knowledge/specs/accounts.md#registration-and-email-verification), [invitations](../knowledge/specs/accounts.md#invitations)) |
+| T-4 | Theft or reuse of confirmation and reset tokens | Hashed, single-use, short expiry, invalidated by newer tokens; reset revokes all sessions ([registration](../knowledge/specs/accounts.md#registration-and-email-verification)) |
+| T-5 | A tutor reaches another tutor's work with a shared student | Relationship-scoped resolution of every identifier, `not_found` outside scope ([ADR-0005](decisions/0005-tutor-centric-domain.md), [relationships](../knowledge/specs/accounts.md#tutorstudent-relationships), [API](../knowledge/specs/api.md)) |
+| T-6 | A student reaches another student's submission, or a group they left | Submissions resolved by owner; group access follows current membership ([groups](../knowledge/specs/accounts.md#groups), [pilot scenario 2](../knowledge/design/web/pilot-scenarios.md#scenario-2-group-homework-from-the-library)) |
+| T-7 | A forwarded invitation link is accepted by the wrong person | Email-bound invitations accept only the matching account; single use; 14-day expiry; regeneration revokes ([invitations](../knowledge/specs/accounts.md#invitations)) |
+| T-8 | Tutor codes are guessed or spammed | 8 characters from an unambiguous alphabet, per-student throttling, tutor approval of every request, regeneration ([tutor code](../knowledge/specs/accounts.md#tutor-code-and-join-requests)) |
+| T-9 | Answer keys leak to students before release | Separate student schemas, reveal rules on the server, random option identifiers, a contract test ([answer visibility](../knowledge/specs/homework.md#answer-visibility)) |
+| T-10 | An uninvited person joins a lesson | Authorization by roster or audience, join window and status; only a tutor join creates a meeting ([join flow](../knowledge/specs/realtime-and-video.md#join-flow)) |
+| T-11 | Recordings exposed through public playback links | Media copied into OVC storage and served only after authorization through 5-minute signed URLs; provider copies deleted after copying, on deletion in any state and after holds expire; the conferencing host serves playback paths to the worker only ([recordings](../knowledge/specs/realtime-and-video.md#recordings)) |
+| T-12 | Forged recording-ready or meeting-ended callbacks | Recording-ready accepted only with an `HS256` JWT signed by the shared secret whose `meeting_id` matches the routing key's meeting; the unsigned meeting-ended hint is confirmed with the provider, never ends a lesson, and its `recordingmarks` never settles reconciliation; idempotent upserts ([callbacks](../knowledge/specs/realtime-and-video.md#callbacks)) |
+| T-13 | Malicious uploads: oversized files, disguised types, path traversal | Streaming size limits, content-based type allowlists, random keys, no archives or executables, `nosniff` ([files](../knowledge/specs/files.md#contexts-and-limits)) |
+| T-14 | Script injection through messages, names, file names, prompts or feedback | Chat as plain text; one sanitising restricted-Markdown renderer; no raw HTML ([restricted Markdown](../knowledge/specs/homework.md#restricted-markdown)) |
+| T-15 | Cross-site request forgery against the refresh cookie | `__Host-` cookie with `SameSite=Strict`, exact `Origin` equality on the refresh route (a same-site subdomain does not qualify), refresh is the only cookie-authenticated route ([sessions and passwords](../knowledge/specs/accounts.md#sessions-and-passwords)) |
+| T-16 | Clickjacking of OVC pages | OVC pages send `frame-ancestors 'none'` ([API conventions](../knowledge/specs/api.md#conventions)); only the BigBlueButton subdomain admits framing, and only by the OVC origin ([embedding](../knowledge/specs/realtime-and-video.md#embedding)) |
+| T-17 | Unsubscribe or email links used to act as the user | Unsubscribe tokens change one preference and never sign in; email links point only to OVC pages ([preferences](../knowledge/specs/notifications.md#preferences-and-unsubscribe)) |
+| T-18 | Personal data leaks to logs, emails, the provider or foreign services | Safe-content rules, digest without message text, participant data limited to display names, all processors in Russia ([observability](../knowledge/specs/observability.md#safe-content), [email](../knowledge/specs/notifications.md#email), [ADR-0008](decisions/0008-hosting-and-data-residency.md)) |
+| T-19 | Secret disclosure | Settings from the environment, `.env` ignored and unreadable by agents, secrets absent from diagnostics and `meta_*` values ([ADR-0004](decisions/0004-bigbluebutton-primary-provider.md)) |
+| T-20 | Resource exhaustion through connections, uploads, messages or emails | WebSocket authentication timeout, inbound frame limits, bounded outbound queues and ping timeout ([connection](../knowledge/specs/realtime-and-video.md#connection)); message rate limits and a daily per-student chat attachment cap, with the tutor able to delete attachments in their channels ([messages](../knowledge/specs/realtime-and-video.md#messages)); upload concurrency, limits and quotas ([upload flow](../knowledge/specs/files.md#upload-flow)); bounded pagination; digest frequency limits. Per-IP limits use the client address set by OVC's own reverse proxy, never a client-supplied header |
+| T-21 | A removed participant keeps access | Ending a relationship and removing a group member update channel membership, future audiences and writability in one transaction; message edits and deletes require current membership; the [join rule](../knowledge/specs/schedule.md#join-rule) refuses their further joins, including to live lessons. Residual risk: someone already connected or holding an earlier link stays until the meeting ends; the tutor's "Restart the room" cuts them off ([ending a relationship](../knowledge/specs/accounts.md#ending-a-relationship), [join flow](../knowledge/specs/realtime-and-video.md#join-flow)) |
+| T-22 | Operator misuse | `ovc-admin` actions are audited with the operator's system user; there is no operator HTTP surface ([administration command](../knowledge/specs/accounts.md#administration-command)) |
+| T-23 | Email squatting: someone signs up with another person's email, directly or through a forwarded invitation link; acceptance races | Only an emailed invitation confirms an email on sign-up; other sign-ups stay unverified and are removed after 7 days; confirming from a browser without that account's session requires setting a new password and revokes every session, so the mailbox owner takes the account; a password reset confirms the email; invitations are reserved and consumed atomically ([registration](../knowledge/specs/accounts.md#registration-and-email-verification), [invitations](../knowledge/specs/accounts.md#invitations)) |
+| T-24 | Same-site attacks from the conferencing subdomain: refresh forgery, cookie tossing | Exact-origin refresh check, `__Host-` cookie that subdomains cannot overwrite, conferencing origin excluded from CORS ([sessions and passwords](../knowledge/specs/accounts.md#sessions-and-passwords)) |
+| T-25 | A leaked join link, especially a moderator link, is reused during the meeting | Links only in `POST` bodies, never stored or logged by OVC or kept by the client, bound to one meeting's create time; the slice 7 probe evaluates session-token joins. Residual risk: the link appears in the conferencing host's access logs and in new-tab history until that meeting ends ([join flow](../knowledge/specs/realtime-and-video.md#join-flow)) |
+| T-26 | Callback routing keys read from `meta_*` values | Routing keys are not secrets; only the JWT authenticates recording-ready, and meeting-ended is confirmed with the provider ([callbacks](../knowledge/specs/realtime-and-video.md#callbacks)) |
+| T-27 | Tokens leak through `Referer`, browser history or access logs | One rule for every token page (invitation, confirmation, reset, unsubscribe): `Referrer-Policy: no-referrer`, token removed from the address bar after reading, no third-party loads; token segments redacted in proxy logs ([token pages](../knowledge/design/web/navigation.md#token-pages), [observability](../knowledge/specs/observability.md#safe-content)) |
+| T-28 | Open redirect through the `next` parameter | Only a path starting with a single `/`, resolved with the URL parser and compared to the OVC origin ([navigation rules](../knowledge/design/web/navigation.md#rules)) |
+| T-29 | Stale WebSocket access after logout, blocking, ending or removal | Session and account checks on every frame, membership resolved at publish time, sockets closed on revocation ([connection](../knowledge/specs/realtime-and-video.md#connection)) |
+| T-30 | Inferring the answer key from per-question scores | Per-question automatic points and overrides of automatic questions withheld until answers are revealed; explanations carry no files. Accepted limitation: the total discloses correctness when an assignment has a single automatic question ([answer visibility](../knowledge/specs/homework.md#answer-visibility)) |
+| T-31 | Email abuse: invitation spam or phishing relay, mail bombing through resets or sign-ups, header or body injection | Smaller invitation budget for new tutors, per-recipient daily invitation caps, per-account daily confirmation and reset caps, per-IP sign-up and reset throttles, one duplicate-sign-up notice per day; user text HTML-escaped in email bodies and CR/LF-stripped and encoded in headers ([registration](../knowledge/specs/accounts.md#registration-and-email-verification), [invitations](../knowledge/specs/accounts.md#invitations), [email](../knowledge/specs/notifications.md#email)) |
+| T-32 | Unsubscribe tokens used beyond their purpose | Dedicated signing key, purpose, group and 90-day expiry claims, never signs in, nothing changes on `GET` ([preferences](../knowledge/specs/notifications.md#preferences-and-unsubscribe)) |
+| T-33 | Harassment through repeated join requests | Code-entry throttling, per-tutor cap on pending requests, decline and block ([tutor code](../knowledge/specs/accounts.md#tutor-code-and-join-requests)) |
+| T-34 | Personal data retained after deletion | Message bodies erased at purge, tutor purge covers cards and notes, recordings bounded by retention, backups retained 30 days, conferencing host logs retained 14 days ([account deletion](../knowledge/specs/accounts.md#account-deletion), [ADR-0008](decisions/0008-hosting-and-data-residency.md)) |
+| T-36 | The end-to-end test control surface (clock, worker, mail sink) reachable in a real deployment | Routes and fakes exist only with `OVC_TEST_CONTROL=1`; the processes refuse it unless the meeting provider is fake, mail is the sink and the database is a test or development database; a test proves the routes are absent without it ([test harness](development.md#end-to-end-test-harness)) |
+| T-37 | Script injection that steals the access token | Access token held in memory only, never in Web Storage; Content Security Policy with `script-src 'self'`, `object-src 'none'`, `base-uri 'none'`, and `connect-src`, `img-src` and `media-src` limited to the OVC origin and the storage host ([API conventions](../knowledge/specs/api.md#conventions), [sessions](../knowledge/specs/accounts.md#sessions-and-passwords)) |
+| T-35 | Files used for header injection, content sniffing or embedded active content | RFC 6266 `Content-Disposition` with sanitised fallback, `Content-Type` from detection, `nosniff`, container inspection for office formats refusing macros and external relationships ([files](../knowledge/specs/files.md#contexts-and-limits)) |
 
-## Out of scope
+## Limitations and out of scope
 
-- The security of the conferencing deployment itself (its own hardening, recording storage).
-- Compromise of the host or database by an operator.
-- Academic integrity concerns such as plagiarism.
+- Uploaded files are not scanned for malware in the MVP; risky kinds (archives, executables) are refused instead.
+- The hardening of the BigBlueButton host itself, whether its client loads external assets such as STUN servers (to be checked in the slice 7 probe for residency), and what participants record with their own devices.
+- The object-storage bucket policy and the operator's credentials, which are deployment obligations.
+- Message logs kept by the SMTP provider (limited to 30 days by the provider choice) and raw recording data on the conferencing host (deleted with the provider copy, to be confirmed by the slice 7 probe).
+- Compromise of hosts or the database by an operator.
+- Academic integrity: students sharing answers with each other outside OVC.

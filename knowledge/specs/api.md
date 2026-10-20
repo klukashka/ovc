@@ -1,121 +1,204 @@
 # API specification
 
-REST under `/api/v1`, JSON in and out. Authentication is `Authorization: Bearer <access JWT>`
-unless marked public. All list endpoints are paginated (`?limit=&cursor=`). Every error has the
-structured body defined under [conventions](#conventions). The WebSocket surface is specified in
-[realtime and video](realtime-and-video.md#chat). The frontend is a thin client over this API and
-holds no rules of its own.
+REST under `/api/v1` (omitted from the paths below), JSON in and out except uploads. Authentication is `Authorization: Bearer <access token>` unless marked otherwise. The WebSocket surface is in [realtime and video](realtime-and-video.md#chat). The frontend is a thin client over this API and holds no rules of its own. Behavior is defined in the domain specifications linked from each section; this file fixes paths, callers, codes and conventions.
 
-Legend: 🔓 public · 👤 any authenticated · 🎓 student · 🧑‍🏫 teacher (course owner) · 🛡️ admin.
+**Who:**
 
-## Auth
+| Value | Meaning |
+|---|---|
+| `public` | needs no session |
+| `user` | any signed-in account |
+| `unverified ok` | also open to accounts whose email is not confirmed; every other authenticated route requires a confirmed email and answers `403 email_not_verified` otherwise |
+| `tutor` | a tutor acting on their own resources |
+| `student` | a student acting on their own resources |
+| `audience` | the lesson's tutor, or a student in its current audience |
+| `roster` | the lesson's tutor, or a student in its frozen roster |
+| `member` | a channel member |
+| `author` | the author of the message |
+| `provider` | the meeting provider, authenticated as described under [callbacks](realtime-and-video.md#callbacks) |
 
-| Method | Path | Who | Purpose |
-|--------|------|-----|---------|
-| POST | `/api/v1/auth/register` | 🔓 | Create account (role teacher or student). |
-| POST | `/api/v1/auth/login` | 🔓 | Email+password → access + refresh tokens. |
-| POST | `/api/v1/auth/refresh` | 🔓* | Rotate refresh token → new access token. |
-| POST | `/api/v1/auth/logout` | 👤 | Revoke the current refresh token. |
-| GET  | `/api/v1/auth/me` | 👤 | Current user profile. |
-
-\* requires a valid refresh token (cookie or body), not an access token.
-
-## Users / profiles
-
-| Method | Path | Who | Purpose |
-|--------|------|-----|---------|
-| GET | `/api/v1/users/{id}` | 👤 | Public-ish profile (teacher bio/subject). |
-| PATCH | `/api/v1/users/me` | 👤 | Update own profile (name, bio, subject, timezone). |
-| POST | `/api/v1/users/me/avatar` | 👤 | Upload avatar (multipart). |
-
-## Courses
-
-| Method | Path | Who | Purpose |
-|--------|------|-----|---------|
-| GET | `/api/v1/courses` | 👤 | Courses I teach or am enrolled in. |
-| POST | `/api/v1/courses` | 🧑‍🏫 | Create a course. |
-| GET | `/api/v1/courses/{id}` | member | Course detail. |
-| PATCH | `/api/v1/courses/{id}` | 🧑‍🏫 | Update / archive. |
-| POST | `/api/v1/courses/{id}/enroll` | 🎓 | Self-enroll via `join_code`. |
-| GET | `/api/v1/courses/{id}/members` | member | List teacher + students. |
-| POST | `/api/v1/courses/{id}/members` | 🧑‍🏫 | Invite/add a student. |
-| DELETE | `/api/v1/courses/{id}/members/{userId}` | 🧑‍🏫 | Remove a student. |
-
-## Calendar / lessons
-
-| Method | Path | Who | Purpose |
-|--------|------|-----|---------|
-| GET | `/api/v1/courses/{id}/lessons` | member | Lessons for a course (date range filter). |
-| GET | `/api/v1/calendar` | 👤 | My upcoming lessons across all courses. |
-| POST | `/api/v1/courses/{id}/lessons` | 🧑‍🏫 | Schedule a lesson (+ optional video meeting). |
-| PATCH | `/api/v1/lessons/{id}` | 🧑‍🏫 | Reschedule / edit / cancel. |
-| POST | `/api/v1/lessons/{id}/join` | member | Authorize + return video join info (see below). |
-| POST | `/api/v1/lessons/{id}/end` | 🧑‍🏫 | Mark ended (and end the room if provider supports). |
-
-## Chat
-
-REST for history and channel listing; live delivery over the WebSocket described in
-[realtime and video](realtime-and-video.md#chat).
-
-| Method | Path | Who | Purpose |
-|--------|------|-----|---------|
-| GET | `/api/v1/channels` | 👤 | My channels (course channels + DMs). |
-| GET | `/api/v1/channels/{id}/messages` | member | Message history (keyset pagination). |
-| POST | `/api/v1/channels/{id}/messages` | member | Send a message (also broadcast over WS). |
-| POST | `/api/v1/channels/direct` | 👤 | Open/get a DM channel with another user. |
-| PATCH | `/api/v1/messages/{id}` | author | Edit own message. |
-| DELETE | `/api/v1/messages/{id}` | author / 🧑‍🏫 | Soft-delete. |
-
-## Homework — assignments
-
-| Method | Path | Who | Purpose |
-|--------|------|-----|---------|
-| GET | `/api/v1/courses/{id}/assignments` | member | List (students see only published). |
-| POST | `/api/v1/courses/{id}/assignments` | 🧑‍🏫 | Create (draft or published), with prompt attachments. |
-| GET | `/api/v1/assignments/{id}` | member | Detail + my submission status. |
-| PATCH | `/api/v1/assignments/{id}` | 🧑‍🏫 | Edit / publish / set due date. |
-| DELETE | `/api/v1/assignments/{id}` | 🧑‍🏫 | Delete (if no graded submissions). |
-
-## Homework — submissions & grading
-
-| Method | Path | Who | Purpose |
-|--------|------|-----|---------|
-| GET | `/api/v1/assignments/{id}/submissions` | 🧑‍🏫 | All submissions for grading. |
-| GET | `/api/v1/assignments/{id}/submission` | 🎓 | My own submission. |
-| PUT | `/api/v1/assignments/{id}/submission` | 🎓 | Create/update my submission (text + attachments). |
-| POST | `/api/v1/assignments/{id}/submission/submit` | 🎓 | Mark submitted (locks until returned). |
-| POST | `/api/v1/submissions/{id}/grade` | 🧑‍🏫 | Grade: points + feedback → status `graded`. |
-| POST | `/api/v1/submissions/{id}/return` | 🧑‍🏫 | Return for revision → status `returned`. |
-
-## Files / attachments
-
-| Method | Path | Who | Purpose |
-|--------|------|-----|---------|
-| POST | `/api/v1/uploads` | 👤 | Upload a file (multipart) → `{id, filename, content_type, size_bytes}`. Validated (size, type). |
-| GET | `/api/v1/attachments/{id}` | authorized | Download (authorized by the owning resource). |
-
-Uploads are a two-step flow: upload the file to get an attachment id, then reference that id when
-creating the assignment, submission or message. Until it is referenced, an attachment is owned by
-its uploader alone and is deleted after a bounded time. The storage key is internal and never
-returned. The download route re-checks authorization against the owning resource and never serves
-a file from a client-built path.
+- Every identifier in a path is resolved within the caller's scope, and anything outside it is `not_found`.
+- A student calling a tutor route, or the reverse, gets `not_found`.
+- Every authenticated request checks the session and account state ([roles and accounts](accounts.md#roles-and-accounts)).
 
 ## Conventions
 
 - **Errors:** every non-2xx response has the body
-  `{"error": {"code": "<stable_snake_case>", "message": "<human-readable>", "request_id": "<id>", "fields": [...]}}`.
-  `code` values are an enum in `ovc.domain` and are what clients branch on; `message` is for
-  display only; `fields` lists `{"path", "code", "message"}` for validation errors and is omitted
-  otherwise. No stack traces, SQL or internal identifiers ever appear in an error.
-- **Status codes:** 400 malformed request, 401 missing or expired token, 403 authenticated but not
-  allowed on a resource whose existence is already known to the caller, 404 not found or not
-  visible to the caller, 409 state conflict (for example grading a draft submission), 413 upload
-  too large, 415 content type not allowed, 422 validation, 429 throttled.
-- **Pagination:** keyset (`?limit=50&cursor=<opaque>`); responses include `next_cursor`, `null` at
-  the end.
-- **Identifiers** are UUIDs. **Timestamps** are ISO-8601 in UTC.
-- **Idempotency:** `PUT /submission`, grade and return endpoints are safe to retry.
-- **Request identity:** every response carries `X-Request-ID`; the same value appears in the error
-  body and in diagnostics ([observability](observability.md#correlation)).
-- Request and response schemas are the Pydantic models in `ovc.schemas`, published as OpenAPI at
-  `/api/docs` when the service runs.
+  `{"error": {"code": "<stable_snake_case>", "message": "<English fallback>", "request_id": "<id>", "fields": [...], "details": {...}}}`.
+  - `code` values are an enum in `ovc.domain`. The frontend translates them; `message` is a developer fallback, never shown as is.
+  - `fields` lists `{"path", "code"}` for validation errors.
+  - `details` carries structured data for a few codes, for example the conflicting lessons of `lesson_overlap`.
+  - No stack traces, SQL or internal identifiers appear in an error.
+- **Error codes:**
+
+  | Status | Codes |
+  |---|---|
+  | 400 | `bad_request` |
+  | 401 | `unauthenticated`, `token_expired`, `invalid_signature` (provider callbacks) |
+  | 403 | `email_not_verified`, `account_blocked`, `forbidden` (allowed to see, not to change) |
+  | 404 | `not_found` |
+  | 409 | `conflict` (stale version), `lesson_overlap`, `lesson_not_live`, `outside_join_window`, `not_editable`, `answer_frozen`, `already_linked`, `student_exists`, `relationship_not_active`, `audience_not_active`, `role_mismatch`, `invitation_invalid`, `invitation_email_mismatch`, `return_not_allowed`, `issue_has_submissions`, `channel_read_only`, `edit_window_passed` |
+  | 410 | `gone` (provider callbacks only) |
+  | 413 | `payload_too_large` |
+  | 415 | `unsupported_media_type` |
+  | 422 | `validation_failed`, `lesson_in_past`, `tutor_code_invalid` |
+  | 429 | `rate_limited`, `tutor_unavailable`, with `Retry-After` |
+  | 503 | `provider_unavailable` |
+  | 507 | `quota_exceeded` |
+
+- **Pagination:** every list route except `/calendar`, `/home`, `/tutors` and `/groups` is keyset paginated (`?limit=&cursor=`, default 30, maximum 100). Responses include `next_cursor`, which is `null` at the end.
+- **Identifiers** are UUIDs. **Timestamps** are ISO-8601 in UTC; the client converts them for display.
+- **Idempotency:** `PUT` routes and the submit, check, return, accept, decline, end, cancel and withdraw routes are safe to retry; repeating one in the same state returns the current state. Create routes (`POST /lessons`, `/students`, `/groups`, `/issues`, `/library/templates`) accept an `Idempotency-Key` header, and a repeated key returns the first result.
+- **Request identity:** every response carries `X-Request-ID`, which also appears in error bodies and diagnostics ([observability](observability.md#correlation)).
+- **Schemas** are the Pydantic models in `ovc.schemas`, published as OpenAPI at `/api/docs` outside production; production disables the docs. Student-facing and tutor-facing models are separate wherever their content differs ([answer visibility](homework.md#answer-visibility)).
+- **Headers:**
+  - every response, including the static frontend, sends `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`;
+  - pages send a Content Security Policy with `default-src 'self'`, `script-src 'self'`, `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'`, `frame-src` limited to the conferencing subdomain, and `connect-src`, `img-src` and `media-src` limited to the OVC origin and the storage host;
+  - the fake test room is the only exception, and only under `OVC_TEST_CONTROL=1`.
+
+## Accounts
+
+Behavior: [accounts](accounts.md).
+
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| POST | `/auth/register` | public | Sign up as tutor or student, with consent, language, browser timezone and an optional tutor code; always `202` with no session |
+| POST | `/auth/verify-email` | public | Confirm with `{token}` from a signed-in browser, or `{token, new_password}` from any other; returns the pending-link outcome |
+| POST | `/auth/verify-email/resend` | user, unverified ok | Send a new confirmation email |
+| POST | `/auth/login` | public | Email and password → access token and refresh cookie |
+| POST | `/auth/refresh` | refresh cookie, exact `Origin` | Rotate the refresh token → new access token; `204` with no token when there is no cookie |
+| POST | `/auth/logout` | user, unverified ok | Revoke the current session |
+| POST | `/auth/logout-all` | user, unverified ok | Revoke all sessions |
+| POST | `/auth/password/forgot` | public | Request a reset email (same response for any email) |
+| POST | `/auth/password/reset` | public | Set a new password with a reset token |
+| POST | `/auth/password/change` | user, unverified ok | Change password with the current one |
+| GET | `/users/me` | user, unverified ok | Own profile, role, state, preferences |
+| PATCH | `/users/me` | user, unverified ok | Name, avatar, language, timezone, theme; tutor bio and subjects |
+| DELETE | `/users/me` | user, unverified ok | Delete own account (password required) |
+| GET, PUT | `/users/me/email-preferences` | user, unverified ok | Optional email switches |
+| GET | `/unsubscribe/preview?token=` | public | The email group name for the confirmation page, nothing else |
+| POST | `/unsubscribe?token=` | public (signed token) | Turn off one email group; accepts the RFC 8058 body `List-Unsubscribe=One-Click`; idempotent |
+| GET | `/tutor/code` | tutor, unverified ok | Current tutor code (inactive until confirmed) |
+| POST | `/tutor/code/regenerate` | tutor | New code; the old one stops working |
+| GET, PATCH | `/tutor/settings` | tutor, unverified ok | Retention, quotas and usage, onboarding state |
+| GET | `/tutor/blocked-requesters` | tutor | Students blocked from sending requests |
+| DELETE | `/tutor/blocked-requesters/{studentId}` | tutor | Unblock |
+| GET | `/avatars/{id}` | public | Avatar image |
+
+## Students and groups
+
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| GET | `/students?state=&group=&q=` | tutor | Own relationships |
+| POST | `/students` | tutor | Create a student card with a link invitation |
+| GET | `/students/{id}` | tutor | Card: profile, groups, notes, lesson history, issues and scores, current link |
+| PATCH | `/students/{id}` | tutor | Display name, email (while invited), notes |
+| DELETE | `/students/{id}` | tutor | Withdraw an invited card |
+| POST | `/students/{id}/invitation` | tutor | Regenerate the link invitation (invited or ended cards) |
+| POST | `/students/{id}/invitation/send` | tutor | Email an invitation to the card's email |
+| POST | `/students/{id}/end` | tutor | End the relationship |
+| GET | `/students/{id}/progress` | tutor | Checked work over time |
+| GET | `/invitations/{token}` | public | Tutor profile for the invitation page; identical response for every invalid token |
+| POST | `/invitations/{token}/accept` | public or student | Accept with a new account (with browser timezone) or as the signed-in student |
+| POST | `/join-requests` | student | Send a request with a tutor code |
+| GET | `/join-requests` | tutor, student | Pending requests (tutor) or own requests (student) |
+| POST | `/join-requests/{id}/accept` | tutor | Accept |
+| POST | `/join-requests/{id}/decline` | tutor | Decline, optionally with `block: true` |
+| GET | `/tutors` | student | Own tutors, active and ended, with profile and colour |
+| GET | `/groups` | tutor | Own groups |
+| POST | `/groups` | tutor | Create with name, colour, members |
+| GET | `/groups/{id}` | tutor | Group detail, members, lessons, issues |
+| PATCH | `/groups/{id}` | tutor | Rename, recolour, add or remove members |
+| POST | `/groups/{id}/archive`, `/groups/{id}/unarchive` | tutor | Archive or restore |
+
+## Schedule
+
+Behavior: [schedule](schedule.md).
+
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| GET | `/calendar?from=&to=&tutor=` | user | Lessons in a range of at most 62 days |
+| POST | `/lessons` | tutor | Create a one-off lesson or a series; `409 lesson_overlap` until `allow_overlap` |
+| GET | `/lessons/{id}` | audience or roster | Lesson page data, including the second timezone, `room_open` and `embed_allowed` |
+| PATCH | `/lessons/{id}` | tutor | Edit with `scope`: `this` or `following`; `409 lesson_overlap` until `allow_overlap` |
+| POST | `/lessons/{id}/cancel` | tutor | Cancel with `scope`: `this` or `following` |
+| POST | `/lessons/{id}/materials` | tutor | Attach or detach library materials |
+| POST | `/lessons/{id}/join` | audience or roster | Join link ([join flow](realtime-and-video.md#join-flow)) |
+| POST | `/lessons/{id}/end` | tutor | End the lesson; the meeting ends through the outbox |
+| POST | `/lessons/{id}/restart-room` | tutor | End the open meeting and start a new one; earlier join links stop working |
+| GET | `/lessons/{id}/recordings` | roster | Recordings with state and expiry |
+| GET | `/recordings/{id}/playback` | roster | `{url, expires_at}` with a 5-minute signed media URL |
+| POST | `/recordings/{id}/retry` | tutor | Retry a copy held by the quota |
+| DELETE | `/recordings/{id}` | tutor | Delete a recording |
+| POST | `/integrations/bbb/{routing_key}/recording-ready` | provider | Recording-ready callback: 200, 401 or 410 |
+| GET | `/integrations/bbb/{routing_key}/ended` | provider | Meeting-ended hint: always 200 |
+
+## Chat
+
+Behavior: [chat](realtime-and-video.md#chat).
+
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| GET | `/channels` | user | Own channels with last message, unread count, writability |
+| GET | `/channels/{id}/messages` | member | History, keyset paginated |
+| POST | `/channels/{id}/messages` | member | Send (also delivered over WebSocket) |
+| PATCH | `/messages/{id}` | author | Edit within 24 hours |
+| DELETE | `/messages/{id}` | author; tutor in their group channel | Delete |
+| POST | `/channels/{id}/read` | member | Move the read marker |
+
+## Homework
+
+Behavior: [homework](homework.md).
+
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| GET | `/library?folder=&q=` | tutor, unverified ok | Folders, materials and templates |
+| POST | `/library/folders` | tutor, unverified ok | Create folder |
+| PATCH, DELETE | `/library/folders/{id}` | tutor, unverified ok | Rename, move, delete an empty folder |
+| POST | `/library/materials` | tutor, unverified ok | Create a material from an uploaded attachment |
+| PATCH, DELETE | `/library/materials/{id}` | tutor, unverified ok | Rename, move, delete |
+| POST | `/library/templates` | tutor, unverified ok | Create a template |
+| GET | `/library/templates/{id}` | tutor, unverified ok | Template with answer keys |
+| PUT | `/library/templates/{id}` | tutor, unverified ok | Replace title and blocks (with `version`) |
+| POST | `/library/templates/{id}/duplicate` | tutor, unverified ok | Copy |
+| DELETE | `/library/templates/{id}` | tutor, unverified ok | Delete |
+| POST | `/issues` | tutor | Issue a template to an active relationship or a group |
+| GET | `/issues?status=active\|withdrawn&group=&student=&needs_checking=` | tutor | Issued work with progress counts |
+| GET | `/issues/{id}` | tutor | Issue with snapshot and submissions |
+| PATCH | `/issues/{id}` | tutor | Change the deadline or the linked lesson |
+| POST | `/issues/{id}/withdraw` | tutor | Withdraw while nothing was submitted |
+| GET | `/issues/{id}/analytics` | tutor | Analytics |
+| GET | `/assignments?status=todo\|submitted\|checked\|closed&tutor=` | student | Own submissions across tutors (`todo` covers not started, draft and returned) |
+| GET | `/submissions/{id}` | student (own), tutor | Student schema or tutor schema of a submission |
+| PUT | `/submissions/{id}/answers` | student | Autosave changed answers with `version` and a save identifier |
+| POST | `/submissions/{id}/submit` | student | Submit or resubmit |
+| GET | `/review-queue?issue=&group=&student=` | tutor | Submissions needing checking, oldest first |
+| PUT | `/submissions/{id}/review` | tutor | Save the draft review revision |
+| POST | `/submissions/{id}/check` | tutor | Publish the named draft revision and mark checked |
+| POST | `/submissions/{id}/return` | tutor | Publish the named draft revision and return for revision |
+
+## Notifications and home pages
+
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| GET | `/notifications` | user, unverified ok | In-app notifications, newest first, with `unread_count` |
+| POST | `/notifications/read` | user, unverified ok | Mark some or all as read |
+| GET | `/home?tutor=` | user, unverified ok | Tutor: Today data. Student: Home data, optionally filtered by tutor. One request per page load |
+
+## Files
+
+Behavior: [files](files.md).
+
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| POST | `/uploads?context=&scope=` | user allowed to write to the scope (`channel:<id>` or `submission:<id>:<question id>`), unverified ok | Upload → `{id, filename, media_type, size_bytes}` |
+| GET | `/attachments/{id}` | anyone who can see a referencing item | `{url, expires_at}` with a 5-minute signed URL |
+
+## Health
+
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| GET | `/health/live` | public | Process is running |
+| GET | `/health/ready` | public | Database and storage reachable |
+
+The end-to-end test control surface is not part of this API. It exists only in test deployments ([development](../../docs/development.md#end-to-end-test-harness)).
