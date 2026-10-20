@@ -1,7 +1,7 @@
 # ADR-0011: Tiered verification
 
 - Status: accepted, 2026-10-20
-- Reviewed: decided by the project owner on 2026-10-20, including the explicit approval this policy reduction needs; wording pending line-by-line owner review
+- Reviewed: decided by the project owner on 2026-10-20, including the explicit approval this policy reduction needs; the after-fix rule amended on 2026-10-21 with the owner's approval; wording pending line-by-line owner review
 - Deciders: project owner
 - Related: [AGENTS.md](../../AGENTS.md#development-verification), [ovc-verify](../../.claude/skills/ovc-verify/SKILL.md), [roadmap](../roadmap.md), [ADR-0009](0009-owner-approved-exceptions-and-visibility.md)
 
@@ -16,7 +16,7 @@ Verification has three tiers. The coordinating agent picks the tier and decides 
 - **Trivial** (a typo, a broken link, an obvious one-line bug): the checks from the development guide, no independent review. A change that meets the security trigger is never trivial.
 - **Standard** (every other change inside a slice): the checks, plus one fresh independent reviewer who covers the complete diff with the short [standard checklist](../../.claude/skills/ovc-verify/references/standard.md), applying every relevant profile in one context.
   - A change that meets the **security trigger** also gets a separate fresh reviewer with the full [security profile](../../.claude/skills/ovc-verify/references/security.md). The trigger, defined once in [AGENTS.md](../../AGENTS.md#development-verification), covers any change, including a specification-only one, that touches a trust boundary or maps to a threat in the [threat model](../threat-model.md); agent configuration and verification policy always meet it.
-  - After fixes, the checks rerun. A fix to any security finding, from either reviewer, gets a fresh security-profile reviewer scoped to the fixes; otherwise a fresh standard reviewer, scoped to the fixes, runs only when a blocker or major finding was fixed or a contract changed.
+  - After fixes, the checks rerun. A fresh reviewer, scoped to the fixes, runs only when a blocker or major finding was fixed, a contract changed, or the fixes themselves meet the security trigger, and uses the security profile when such a finding concerned security, from either reviewer, or the fixes meet the trigger; other fixes to minor findings need only the checks. Severity is the reviewer's; the coordinator never downgrades it. (Amended 2026-10-21: re-reviewing every minor security fix produced an endless chain of new minor findings.)
 - **Slice** (when every planned change of a roadmap slice has merged, before the slice is closed): the full matrix of one fresh reviewer per affected component and profile, including performance measurements, over the cumulative diff since the previous slice closed. Findings are fixed in follow-up changes, and affected pairs are re-reviewed as before.
 
 The plan for a whole slice gets one standard reviewer before work starts; a slice or task plan that meets the security trigger also gets a security-profile reviewer before approval; other task plans are approved by the owner without a planning review. The commit that closes a slice is recorded under that slice in the roadmap and is the base of the next slice review.
