@@ -89,7 +89,7 @@ Pending implementation in slice 1, extended by each slice. The [pilot scenarios]
 
 ## Local review
 
-Use the [ovc-verify skill](../.claude/skills/ovc-verify/SKILL.md) before planning and before reporting readiness. Claude Code discovers it in `.claude/skills/ovc-verify`. The coordinating agent follows direct and transitive effects, splits affected components, and starts a fresh subagent per component/profile pair; reviewers run the applicable checks above. The [coverage checklist](../knowledge/reviews/ai-development-setup.md) lists component families, workloads and activation.
+Use the [ovc-verify skill](../.claude/skills/ovc-verify/SKILL.md) before planning and before reporting readiness. Claude Code discovers it in `.claude/skills/ovc-verify`. The skill picks one of three tiers ([ADR-0011](decisions/0011-tiered-verification.md)): trivial changes run the checks above; standard changes add one fresh reviewer with the standard checklist, plus a security reviewer when the change meets the security trigger defined in [AGENTS.md](../AGENTS.md#development-verification); when a roadmap slice is complete, the coordinating agent follows direct and transitive effects across the slice, splits affected components, and starts a fresh subagent per component/profile pair, and reviewers run the applicable checks above. The [coverage checklist](../knowledge/reviews/ai-development-setup.md) lists component families, workloads and activation.
 
 ## Changes and commits
 

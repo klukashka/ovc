@@ -1,17 +1,20 @@
 # Roadmap
 
-Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10 the same day; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10 and slice reviews added the same day; pending line-by-line owner review.
 
 Build order, slice by slice. Each slice is runnable and reviewable on its own and ends with its checks registered in the [development guide](development.md). A slice is done when:
 
 - its requirements work end to end locally through the real backend, worker and frontend;
 - its segments of the [pilot scenarios](../knowledge/design/web/pilot-scenarios.md) pass;
 - its checks pass;
-- the documents it affects are updated.
+- the documents it affects are updated;
+- its slice review ([ADR-0011](decisions/0011-tiered-verification.md)) over everything merged since the previous slice closed is resolved, and the closing commit is recorded under the slice as "Closed at `<commit>`". A commit may also be named by its subject when its identifier is not yet known.
 
 ## Slice 0: foundation and product definition
 
 Repository, agent rules ([AGENTS.md](../AGENTS.md)), the [ovc-verify](../.claude/skills/ovc-verify/SKILL.md) skill, the two documentation layers, the [product overview](product.md), requirements, threat model, decision records, specifications and page design. No application code. Active checks: Markdown lint, links and anchors, Mermaid diagrams.
+
+Closed at the commit "Introduce tiered verification", without a slice review: slice reviews start with slice 1.
 
 ## Slice 1: scaffold and local loop
 

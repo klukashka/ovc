@@ -23,10 +23,22 @@ The repository is local only for now: there is no remote, no CI service and no i
 
 ## Development verification
 
-- At task entry, before the implementation plan, the coordinating agent reads [ovc-verify](.claude/skills/ovc-verify/SKILL.md) and selects reviews and checks from the proposed scope. Before reporting readiness, repeat the selection from the complete diff and run the required independent reviews and checks. After fixes, re-review affected conclusions and rerun affected checks on the final working tree.
-- Identify directly and transitively affected components from the complete change and its contract, data-flow and resource-lifecycle consequences. Record why each component is included and who reviews each integration boundary. Assign a fresh independent agent to each affected component and applicable review profile; a single context applying several profiles does not satisfy this requirement.
-- Reviewers may subdivide their assigned component/profile scope with fresh contexts and inherited permissions; they do not restart the whole review or grant themselves implementation authority. The coordinator collects every required result and remains responsible for resolving findings.
-- Report review scope, reviewed working-tree state, command results and evidence to the owner. Distinguish passed, failed, blocked, pending implementation, unverified and not applicable, with a reason for every non-pass. Missing tools or unimplemented components are never passing checks.
+- **Pick a tier** ([ADR-0011](docs/decisions/0011-tiered-verification.md)). At task entry, before the implementation plan, the coordinating agent reads [ovc-verify](.claude/skills/ovc-verify/SKILL.md), picks the verification tier, decides whether the change meets the security trigger, and states both with reasons in the plan (for a trivial fix, in the readiness report). When in doubt, pick the higher tier and assume the trigger is met.
+  - **Trivial** (a typo, a broken link, an obvious one-line bug) runs the checks. A change that meets the security trigger is never trivial.
+  - **Standard** (every other change inside a slice) runs the checks and one fresh independent reviewer over the complete diff with the standard checklist, plus a separate fresh reviewer with the full security profile when the change meets the security trigger.
+  - **Slice** (every planned change of a roadmap slice has merged, before the slice closes) runs the full review below over the cumulative diff since the previous slice closed.
+- **Security trigger.** A change meets it, even when it changes only specifications, if it touches a trust boundary or maps to a threat in [the threat model](docs/threat-model.md). Examples, not a complete list:
+  - authentication, sessions, and tokens in links (invitation, confirmation, reset, unsubscribe);
+  - authorization and relationship scope on routes and WebSocket frames, and answer-key and score visibility;
+  - uploads, downloads, rendering of untrusted content, the content security policy and framing;
+  - secrets, the meeting provider and its callbacks, email content and the SMTP channel, outbound network calls;
+  - logging, redaction and correlation; purge and deletion; rate limits; redirects;
+  - `ovc-admin`, the end-to-end test control surface, dependencies;
+  - agent configuration and verification policy (`AGENTS.md`, `.claude/`), and the threat model itself.
+- **After fixes**, rerun the checks. A fix to any security finding, from either reviewer, gets a fresh security-profile reviewer scoped to the fixes. Otherwise, a fresh standard reviewer scoped to the fixes runs only when a blocker or major finding was fixed or a contract changed. Before readiness, recheck the tier and the security trigger against the final diff.
+- **Plans.** A slice plan gets one standard reviewer before work starts. A slice plan or task plan that meets the security trigger also gets a security-profile reviewer before approval. Other task plans need the owner's approval, not a planning review.
+- **Slice review.** Identify directly and transitively affected components from the slice's changes and their contract, data-flow and resource-lifecycle consequences. Record why each component is included and who reviews each integration boundary. Assign a fresh independent agent to each affected component and applicable review profile; a single context applying several profiles does not satisfy this requirement. Reviewers may subdivide their assigned component/profile scope with fresh contexts and inherited permissions; they do not restart the whole review or grant themselves implementation authority. The coordinator collects every required result, fixes findings in follow-up changes and re-reviews the affected pairs. Once OVC is deployed, a slice is not deployed before its slice review is resolved.
+- **Report** review scope, reviewed working-tree state, command results and evidence to the owner at every tier. Distinguish passed, failed, blocked, pending implementation, unverified and not applicable, with a reason for every non-pass. Missing tools or unimplemented components are never passing checks. Self-review is never an independent review.
 
 ## Code
 
