@@ -36,7 +36,7 @@ record of academic data.
 
 ## Safe content
 
-Never written to diagnostics at any level, including `DEBUG` and exception output:
+Never written to diagnostics at any level, including `DEBUG`, error and panic output:
 
 - passwords, access and refresh tokens, signing secrets, provider tokens, signed join URLs, cookies
   and `Authorization` headers;
@@ -50,9 +50,13 @@ Never written to diagnostics at any level, including `DEBUG` and exception outpu
 
 The reverse proxy and any static-file server log route paths with token segments and query strings replaced by a placeholder, so token pages and callback routes never leave tokens or routing keys in access logs.
 
-Exception handlers log the exception type, the event and the correlation fields; exception messages
-from libraries that may embed request data are not logged verbatim. File names of uploads are logged
-only after truncation and only at `DEBUG`.
+Error records carry the event, a stable error kind or API error code, and the correlation fields. The
+text of a wrapped error chain (`err.Error()`) is not logged verbatim, because library errors embed
+request data (for example a PostgreSQL constraint detail that contains an email); an error type that is
+known to carry no request data may expose a safe description through its own method. Panic records
+carry the event, the stack and the type of the panic value, never the value itself. The recovery
+middleware is the outermost HTTP handler, so the standard library's own panic logging never runs. File names of
+uploads are logged only after truncation and only at `DEBUG`.
 
 ## Output and failure behavior
 
@@ -60,13 +64,18 @@ only after truncation and only at `DEBUG`.
   deployments, `console` for development). Libraries and packages use bound loggers and never
   configure handlers.
 - Output is bounded: a record over a size limit is truncated with a marker, never dropped silently.
-- A failing log sink never fails a request or blocks the event loop.
+- A failing log sink never fails a request or blocks a request goroutine.
+- `http.Server.ErrorLog` and every library logger are bridged into `log/slog`, so nothing writes
+  unstructured output.
+- Every goroutine the backend starts (WebSocket readers and writers, the `NOTIFY` listener, worker
+  jobs) runs through one helper that recovers a panic, logs it as above and ends or restarts only that
+  goroutine, so one failure never crashes the process.
 
 ## Component coverage
 
 | Component | Required events from its first implementation |
 |---|---|
-| Application and worker processes | startup with configuration summary (no secrets), shutdown, unhandled exception |
+| Application and worker processes | startup with configuration summary (no secrets), shutdown, recovered panic |
 | Accounts | sign-up, email confirmed, login succeeded and failed (no email in the record), throttled, refresh rotated, refresh reuse detected, logout and logout-all, password reset and change, account deleted, restored and purged |
 | Operator command | every command with operator system user, target user identifier and outcome |
 | Relationships and groups | invitation created, accepted and refused with reason code; join request created and decided; relationship ended; group created, membership changed, archived |

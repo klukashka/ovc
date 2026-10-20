@@ -1,6 +1,6 @@
 # ADR-0002: Implementation stack
 
-- Status: accepted, 2026-10-20
+- Status: accepted, 2026-10-20; backend and Python tooling rows superseded by [ADR-0012](0012-go-backend.md) the same day
 - Reviewed: pending line-by-line owner review
 - Deciders: project owner
 - Related: [ADR-0003](0003-embedded-video-provider.md), [stack per component](../../knowledge/architecture/detailed.md#stack-per-component)

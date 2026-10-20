@@ -37,18 +37,18 @@ The database is the source of truth; the WebSocket is a delivery channel. Every 
 
 ### Connection
 
-- **Endpoint:** one WebSocket per browser tab at `WSS /api/v1/ws`. The URL carries no credentials, and the gateway accepts only connections whose `Origin` is the OVC origin.
+- **Endpoint:** one WebSocket per browser tab at `WSS /api/v1/ws`. The URL carries no credentials, and the gateway accepts only connections whose `Origin` is the OVC origin: `coder/websocket` is configured with that exact origin in `OriginPatterns`, never a wildcard that could admit the conferencing subdomain, and `InsecureSkipVerify` is never set.
 - **Authentication:**
   - the first client frame must be `{"type": "auth", "payload": {"access_token": "<JWT>"}}` within 5 seconds;
   - otherwise, or with an invalid or expired token, the server closes with code `4401`;
   - at most 500 unauthenticated sockets per instance are accepted;
   - the client refreshes its token and reconnects with exponential backoff and random jitter.
 - **Registry:**
-  - after authentication, the gateway registers the socket in the connection registry, which `ovc.realtime` owns, and removes it on every close path;
+  - after authentication, the gateway registers the socket in the connection registry, which `internal/realtime` owns, and removes it on every close path;
   - **presence is persisted:** while a user has a socket, the gateway extends `user.online_until` to now plus 90 seconds about once a minute, batching these updates per instance. When the user's last socket on the instance closes, it sets `online_until` and `last_seen_at` to now. `last_seen_at` is always a past instant: the time of the last connection activity. Every process and instance can therefore tell who is online.
 - **Bounds:**
   - **outbound:** each socket has a bounded queue of 256 frames or 1 MiB. A socket whose queue overflows is closed with `4429`, and the client reconnects and refetches; this is the contract that replaces delivery guarantees for slow consumers. Each frame is serialised once for all its recipients.
-  - **inbound:** frames are at most 16 KiB, and at most 20 frames per second per socket are accepted; typing frames are coalesced to one per channel every 2 seconds. Violations get an `error` frame, and repeated violations close the socket with `4429`.
+  - **inbound:** frames are at most 16 KiB (`SetReadLimit(16384)` on every connection), and at most 20 frames per second per socket are accepted; typing frames are coalesced to one per channel every 2 seconds. Violations get an `error` frame, and repeated violations close the socket with `4429`.
   - **liveness:** the server pings every 25 seconds and closes a socket with no pong for 60 seconds.
   - **database access:** each inbound frame uses its own short database session; no session is held per connection.
 - **Membership:**
@@ -58,7 +58,7 @@ The database is the source of truth; the WebSocket is a delivery channel. Every 
 
 ### Frame format
 
-Typed JSON frames; types and close codes are enums in `ovc.domain`, and payloads are Pydantic models in `ovc.schemas`.
+Typed JSON frames; types and close codes are enums in `internal/domain`, and payloads are structs in `internal/schemas`.
 
 | Direction | Types |
 |---|---|
@@ -105,11 +105,11 @@ sequenceDiagram
 
 ### Broadcaster
 
-- The broadcaster is an interface in `ovc.adapters`, so services can publish without importing the gateway.
+- The broadcaster is an interface in `internal/adapters`, so services can publish without importing the gateway.
 - **The production implementation** uses PostgreSQL `NOTIFY` after commit, with a small payload of identifiers (payloads are limited to 8,000 bytes).
 - **Delivery:**
   - the publishing API instance delivers to its local sockets directly from the frame it already holds;
-  - every other instance, and every publication from the worker or `ovc-admin`, is received on a dedicated listening connection per API instance, owned by `ovc.realtime`;
+  - every other instance, and every publication from the worker or `ovc-admin`, is received on a dedicated listening connection per API instance, owned by `internal/realtime`;
   - that instance loads the referenced rows in batches (`id = ANY(…)`) on a pool session, never on the listening connection, then delivers.
 - So worker notifications and revocations reach connected users, and several API instances work later.
 - **Tests** use the same implementation against the test database; an in-process fake checked by the same contract tests is allowed in unit and contract tests only.
@@ -127,17 +127,18 @@ BigBlueButton carries the media; OVC never relays it. OVC:
 
 ### Provider interface
 
-One interface in `ovc.adapters`, with a BigBlueButton implementation and a fake:
+One interface in `internal/adapters`, with a BigBlueButton implementation and a fake:
 
-```python
-class MeetingProvider(Protocol):
-    async def create_meeting(self, meeting: Meeting, presentation_url: str | None) -> ProviderCreateTime: ...
-    async def meeting_info(self, meeting: Meeting) -> MeetingInfo: ...
-    async def join_link(self, meeting: Meeting, participant: Participant) -> JoinLink: ...
-    async def end_meeting(self, meeting: Meeting) -> None: ...
-    async def list_recordings(self, meeting: Meeting) -> list[ProviderRecording]: ...
-    async def fetch_recording_media(self, recording: ProviderRecording) -> AsyncIterator[bytes]: ...
-    async def delete_recording(self, recording: ProviderRecording) -> None: ...
+```go
+type MeetingProvider interface {
+    CreateMeeting(ctx context.Context, meeting Meeting, presentationURL *string) (ProviderCreateTime, error)
+    MeetingInfo(ctx context.Context, meeting Meeting) (MeetingInfo, error)
+    JoinLink(ctx context.Context, meeting Meeting, participant Participant) (JoinLink, error)
+    EndMeeting(ctx context.Context, meeting Meeting) error
+    ListRecordings(ctx context.Context, meeting Meeting) ([]ProviderRecording, error)
+    FetchRecordingMedia(ctx context.Context, recording ProviderRecording) (io.ReadCloser, error)
+    DeleteRecording(ctx context.Context, recording ProviderRecording) error
+}
 ```
 
 - **`MeetingInfo`** distinguishes three cases from `getMeetingInfo`:
@@ -165,12 +166,12 @@ sequenceDiagram
   API->>API: apply the join rule, lock the lesson row for a tutor join
   alt tutor and no usable open meeting
     API->>API: insert meeting row with identifier and routing key, commit
-    API->>P: create_meeting
+    API->>P: CreateMeeting
     P-->>API: provider create time, stored on the row
   else student
-    API->>P: meeting_info(open meeting) must be created or running
+    API->>P: MeetingInfo(open meeting) must be created or running
   end
-  API->>P: join_link(meeting, participant)
+  API->>P: JoinLink(meeting, participant)
   P-->>API: JoinLink bound to the meeting create time
   API-->>S: {url, embed_allowed}
   S->>V: open the URL embedded or in a new tab
@@ -181,10 +182,10 @@ sequenceDiagram
 - **On a tutor join:**
   1. Under the lesson row lock, the request inspects the open meeting:
      - a meeting in state `creating` that is less than one minute old means another request is creating it; this request waits up to 10 seconds for it to become `open`, then reuses it;
-     - an `open` meeting is reused when `meeting_info` reports `created` or `running`;
+     - an `open` meeting is reused when `MeetingInfo` reports `created` or `running`;
      - on `not_found` the meeting is closed with reason `provider_not_found`;
      - with no usable meeting, a new row is inserted in state `creating` (identifier and routing key set), and the transaction commits.
-  2. Outside the transaction, `create_meeting` runs and returns the provider create time. The row becomes `open` with that time, the lesson becomes `live` if it was `scheduled`, and `entity.changed` is emitted.
+  2. Outside the transaction, `CreateMeeting` runs and returns the provider create time. The row becomes `open` with that time, the lesson becomes `live` if it was `scheduled`, and `entity.changed` is emitted.
   3. If the provider fails, the row is closed with reason `provider_error`, the lesson status is unchanged, and the response is `503 provider_unavailable`. A `creating` row older than one minute is treated as failed and closed.
 - **On a student join:**
   - the student gets `lesson_not_live` unless the lesson is `live` and its open meeting is `created` or `running`;
@@ -238,7 +239,7 @@ sequenceDiagram
 - **Meeting ended** (`GET /integrations/bbb/{routing_key}/ended`):
   - unsigned by the provider, so it is only a hint;
   - it is ignored for meetings created less than 2 minutes ago or with no recorded join, and debounced to one check per meeting per minute;
-  - OVC then calls `meeting_info` and closes the meeting only on `not_found`; if the meeting still exists, the worker checks again after 2 minutes, at most three times;
+  - OVC then calls `MeetingInfo` and closes the meeting only on `not_found`; if the meeting still exists, the worker checks again after 2 minutes, at most three times;
   - `recordingmarks` is recorded for diagnostics only and never settles reconciliation, because the hint is unauthenticated;
   - it never ends the lesson ([lesson status](schedule.md#lesson-status-and-join-window));
   - it always answers `200`.
@@ -275,7 +276,7 @@ stateDiagram-v2
 | `deleted` | A row not yet `available` becomes `failed` with reason `provider_deleted` |
 
 - **Reconciliation:**
-  - every 30 minutes the worker calls `list_recordings` with `state=any` for meetings ended within the last 7 days that are not yet settled, in batches of 20, at most 4 at a time, with timeouts;
+  - every 30 minutes the worker calls `ListRecordings` with `state=any` for meetings ended within the last 7 days that are not yet settled, in batches of 20, at most 4 at a time, with timeouts;
   - a meeting is settled when one of these holds:
     - its recordings are all past `processing`;
     - two consecutive results are empty at least 2 hours after it ended;

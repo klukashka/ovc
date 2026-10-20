@@ -25,10 +25,10 @@ REST under `/api/v1` (omitted from the paths below), JSON in and out except uplo
 
 - **Errors:** every non-2xx response has the body
   `{"error": {"code": "<stable_snake_case>", "message": "<English fallback>", "request_id": "<id>", "fields": [...], "details": {...}}}`.
-  - `code` values are an enum in `ovc.domain`. The frontend translates them; `message` is a developer fallback, never shown as is.
+  - `code` values are an enum in `internal/domain`. The frontend translates them; `message` is a developer fallback, never shown as is.
   - `fields` lists `{"path", "code"}` for validation errors.
   - `details` carries structured data for a few codes, for example the conflicting lessons of `lesson_overlap`.
-  - No stack traces, SQL or internal identifiers appear in an error.
+  - No stack traces, SQL or internal identifiers appear in an error, and no submitted value is echoed back: huma's default problem-details error is replaced through `huma.NewError` with this shape, and `fields` carries paths and codes only.
 - **Error codes:**
 
   | Status | Codes |
@@ -50,7 +50,9 @@ REST under `/api/v1` (omitted from the paths below), JSON in and out except uplo
 - **Identifiers** are UUIDs. **Timestamps** are ISO-8601 in UTC; the client converts them for display.
 - **Idempotency:** `PUT` routes and the submit, check, return, accept, decline, end, cancel and withdraw routes are safe to retry; repeating one in the same state returns the current state. Create routes (`POST /lessons`, `/students`, `/groups`, `/issues`, `/library/templates`) accept an `Idempotency-Key` header, and a repeated key returns the first result.
 - **Request identity:** every response carries `X-Request-ID`, which also appears in error bodies and diagnostics ([observability](observability.md#correlation)).
-- **Schemas** are the Pydantic models in `ovc.schemas`, published as OpenAPI at `/api/docs` outside production; production disables the docs. Student-facing and tutor-facing models are separate wherever their content differs ([answer visibility](homework.md#answer-visibility)).
+- **Schemas** are the Go structs in `internal/schemas`, validated by huma and published as OpenAPI at `/api/docs` outside production; production disables the docs. Student-facing and tutor-facing structs are separate wherever their content differs ([answer visibility](homework.md#answer-visibility)).
+- **Server limits:** the HTTP server sets `ReadHeaderTimeout` (10 s), `IdleTimeout` (120 s) and `MaxHeaderBytes` (16 KiB). Every request body has a default read deadline of 30 s, set per request through `http.ResponseController`, and JSON bodies are limited to 1 MiB. Upload routes raise the body limit and the read deadline to the [file limits](files.md) and stream the body instead of buffering it; the WebSocket route clears the deadline after the upgrade.
+- **SQL:** every query is written in `backend/queries/` and compiled by sqlc, with `sqlc.narg` and `sqlc.slice` for optional filters and lists; no SQL is built from strings, and `NOTIFY` is sent as `pg_notify($1, $2)` with bound parameters.
 - **Headers:**
   - every response, including the static frontend, sends `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`;
   - pages send a Content Security Policy with `default-src 'self'`, `script-src 'self'`, `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'`, `frame-src` limited to the conferencing subdomain, and `connect-src`, `img-src` and `media-src` limited to the OVC origin and the storage host;

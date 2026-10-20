@@ -17,7 +17,7 @@ Status: foundation and product definition. The product, design, rules and agent 
 
 ## Stack
 
-FastAPI, PostgreSQL and SQLAlchemy on Python 3.11 with a worker process; React, Vite and TypeScript; BigBlueButton; S3-compatible storage; everything hosted in Russia. Tooling: uv, pnpm, ruff, pyright strict, pytest and Playwright. See [ADR-0002](docs/decisions/0002-implementation-stack.md) and the [decision index](docs/decisions/README.md).
+A Go API server and worker on PostgreSQL (huma, pgx, sqlc, goose); React, Vite and TypeScript; BigBlueButton; S3-compatible storage; everything hosted in Russia. Tooling: gofmt, go vet, golangci-lint, govulncheck and `go test`; pnpm, ESLint, Prettier and Playwright. See [ADR-0012](docs/decisions/0012-go-backend.md), [ADR-0002](docs/decisions/0002-implementation-stack.md) and the [decision index](docs/decisions/README.md).
 
 ## Repository layout
 
@@ -28,7 +28,7 @@ ovc/
 │                   threat model, decisions, proposals, roadmap, development guide
 ├── knowledge/      agent reference layer: specifications, page design, architecture map,
 │                   reviews, research
-├── backend/        FastAPI service and worker (slice 1)
+├── backend/        Go API server, worker and ovc-admin (slice 1)
 ├── frontend/       React application (slice 1)
 └── .claude/        Claude Code settings, hook and the ovc-verify review skill
 ```

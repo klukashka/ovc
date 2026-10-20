@@ -1,15 +1,15 @@
 # Development
 
-Status: draft written 2026-10-20, amended the same day with local services; pending line-by-line owner review.
+Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain; pending line-by-line owner review.
 
 How to set up, check and verify changes locally. Read [AGENTS.md](../AGENTS.md) before contributing. The repository currently contains documentation and agent configuration only; backend and frontend commands are registered here by [roadmap slice 1](roadmap.md#slice-1-scaffold-and-local-loop).
 
 ## Tool setup
 
-Use Linux or macOS with Git, Bash, Docker, Node (for `npx`) and the pinned toolchain:
+Use Linux or macOS with Git, Bash, Docker, Node (for `npx`), a system `python3` (3.9 or newer, for the agent hooks in `.claude/hooks/`), a C compiler (for `go test -race`, which needs cgo) and the pinned toolchain:
 
-- Python: the version in [`.python-version`](../.python-version), installed with `uv python install`.
-- uv: installed with its [official installer](https://docs.astral.sh/uv/getting-started/installation/).
+- Go: the version in `backend/go.mod` (`go` and `toolchain` lines), installed from [the official downloads](https://go.dev/dl/) or a package manager; the `toolchain` line lets newer Go installations fetch the pinned release.
+- golangci-lint, sqlc, goose and govulncheck: pinned by the slice 1 scaffold, as Go tool dependencies in `backend/go.mod` run with `go tool` where the tool supports it, otherwise as a pinned release binary documented here.
 - Node and pnpm: pinned by the frontend scaffold in `frontend/.node-version` and the `packageManager` field of `frontend/package.json`.
 - lychee for link checks: installed with its [official instructions](https://lychee.cli.rs/installation/).
 
@@ -43,7 +43,7 @@ The link check is offline and validates relative links and heading anchors. Merm
 
 ## Backend checks
 
-Pending implementation in slice 1. The scaffold registers, at minimum: `uv lock --check`, `uv run ruff format --check .`, `uv run ruff check .`, `uv run pyright`, and `uv run pytest -q`. The pytest run includes the package-layer test and integration tests against PostgreSQL and a local S3-compatible server in Docker, with the worker driven through `tick(now)`.
+Pending implementation in slice 1. The scaffold registers, at minimum, run from `backend/`: `go mod tidy -diff` (the module files are tidy), `test -z "$(gofmt -l .)"`, `go vet ./...`, `golangci-lint run`, `sqlc diff` (generated queries match the SQL), `govulncheck ./...`, and `go test -race ./...`. The test run includes the package-layer test and integration tests against PostgreSQL and a local S3-compatible server in Docker, with the worker driven through `Tick(now)`.
 
 ## Frontend checks
 
@@ -54,7 +54,7 @@ Pending implementation in slice 1. The scaffold registers, at minimum: `pnpm --d
 Pending implementation in slice 1. The local environment has:
 
 - **Docker Compose** with PostgreSQL and a local S3-compatible server.
-- **Two processes**, both reading the same settings: the API (`uvicorn` with reload) and the worker (the `tick(now)` loop).
+- **Two processes**, both reading the same settings: the API (`go run ./cmd/api`, restarted on change by a file watcher chosen in slice 1) and the worker (`go run ./cmd/worker`, the `Tick(now)` loop).
 - **Fakes**:
   - the meeting provider is `fake`, because BigBlueButton runs only on a dedicated Ubuntu server and not on developer machines ([research](../knowledge/research/bigbluebutton-2026-10-20.md#server));
   - mail goes to the database sink. Development runs with `OVC_TEST_CONTROL=1` against a development database, so the sink is readable only through the harness route below.
@@ -77,7 +77,7 @@ Pending implementation in slice 1, extended by each slice. The [pilot scenarios]
   | Route | Effect |
   |---|---|
   | `POST /__test__/clock` | Set or advance the shared clock |
-  | `POST /__test__/tick` | Run one worker `tick(now)` to completion |
+  | `POST /__test__/tick` | Run one worker `Tick(now)` to completion |
   | `POST /__test__/mail` with `{to}` in the body | Read messages from the database mail sink, with their links |
   | `POST /__test__/presence` with `{user}` | Report whether the server sees the user online, so tests can wait for a socket close |
   | `POST /__test__/settings/embed` | Override `embed_allowed` for this deployment, until the next override |

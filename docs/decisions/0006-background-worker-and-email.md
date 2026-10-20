@@ -28,7 +28,7 @@ Sending email inside a request would couple user actions to the mail provider's 
   - retries with exponential backoff;
   - moves a row to `dead` after a bounded number of attempts, with a diagnostic event.
 - **Scheduled jobs** derive their work from current database state at run time. A reminder is built from the lesson as it is when the reminder is due, so a moved lesson never receives a stale reminder.
-- **Time is injected.** The worker exposes a single `tick(now)` step used by tests with a fake clock; production runs `tick` in a loop.
+- **Time is injected.** The worker exposes a single `Tick(now)` step used by tests with a fake clock; production runs `Tick` in a loop.
 - **Email** is the only external notification channel in the MVP:
   - sent over SMTP through a provider hosted in Russia;
   - with SPF, DKIM and DMARC configured;

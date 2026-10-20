@@ -108,7 +108,7 @@ The policy is one of `never`, `after_submission` or `after_check`. **Correct ans
 
 - **Because no points reach the student**, nothing reveals the key before the policy allows it ([T-30](../../docs/threat-model.md#threats-and-controls)).
 - **Explanations carry no attachments**, so no file reference can reveal them early.
-- **Separate schemas:** the student schemas are separate Pydantic models with no field for points, scores, correctness, accepted answers or explanations. The revealed data is a separate object, added only when the rules above hold.
+- **Separate schemas:** the student schemas are separate Go structs with no field for points, scores, correctness, accepted answers or explanations. The revealed data is a separate object, added only when the rules above hold.
 - **Option identifiers** are random UUIDs, not positions.
 - **A contract test** walks every student-facing response, WebSocket frame, notification payload and email for submissions in every state, and fails if any points or score field appears, or any key field appears before reveal.
 - **With `after_submission`, returning work is unavailable**, because the student has already seen the answers.

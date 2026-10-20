@@ -13,7 +13,7 @@ Active policy for how coding agents verify OVC changes. [AGENTS.md](../../AGENTS
     - It also scans unquoted heredoc bodies, and the file-access lines of quoted heredocs fed to interpreters.
     - It fails closed on malformed input. Commit messages, `git status`, `git log` and `git check-ignore` are not inspected.
     - **Recorded limitations:** names built at runtime, programs that open such files by themselves, and wrappers that hide `git` from the permission rules are not caught.
-  - **Post-edit hook:** reports Python syntax errors back to the agent. A post-edit hook reports Python syntax errors back to the agent.
+  - **Post-edit hook:** reports Python syntax errors, and Go files that `gofmt` cannot parse or would reformat, back to the agent; when `gofmt` is missing it reports that the file was not checked.
 
 There are no permanent specialist agents. Correctness spans every component contract, so separate architect, API, database, test-writing or frontend agents would duplicate ownership and drift from `AGENTS.md`. Browser and performance stay separate profiles because performance needs an uncontended machine and an explicit measured conclusion beyond successful interactions. Security owns threat-based reasoning beyond correctness. Routine changes get one fresh general-purpose reviewer applying the standard checklist, plus a fresh security reviewer when the change meets the security trigger defined in [AGENTS.md](../../AGENTS.md#development-verification); slice reviews run a fresh general-purpose subagent per component/profile pair. Reviewers never inherit the implementation conversation.
 
@@ -36,10 +36,10 @@ Use [the knowledge index](../README.md) for exact contracts. This checklist name
 | Library and builder | Folder depth, block schema validation, restricted Markdown sanitising, normalisation version | Templates at the 100-block limit; validation and render cost |
 | Issuing, submissions and review | Snapshots, answer visibility and the key-leak contract test, autosave versions, state machine, scoring and overrides, corrected files | Group issues at the size limit; autosave write rate; review queue query count |
 | Analytics | Final scores after overrides, per-question aggregates, purge effects | NFR-2.6 workload: 50 submissions × 100 questions |
-| Email, outbox and worker | Transactional outbox writes, `SKIP LOCKED` claiming, backoff and dead rows, idempotency keys, reminders from current state, digests, unsubscribe tokens, `tick(now)` determinism | Backlogs of thousands of rows; batch duration, connection use, no growth across repeated ticks |
+| Email, outbox and worker | Transactional outbox writes, `SKIP LOCKED` claiming, backoff and dead rows, idempotency keys, reminders from current state, digests, unsubscribe tokens, `Tick(now)` determinism | Backlogs of thousands of rows; batch duration, connection use, no growth across repeated ticks |
 | Uploads, storage and downloads | Streaming size limits, content-based type detection, random keys, binding rules, quotas, unbound cleanup, signed URLs | Large and concurrent uploads and downloads; memory independent of file size, temporary objects and descriptors released on success, rejection and disconnect |
 | HTTP API routers, schemas and error mapping | Route paths and callers match the API specification, the error-code catalogue and status codes, separate student and tutor schemas, pagination, security headers | Payload size per route; query count per request |
-| Domain rules (`ovc.domain`) | Normalisation, number parsing, scoring arithmetic, recurrence expansion, state transitions, with the unit tests `AGENTS.md` allows | Expansion of 100-lesson series; normalisation of 20,000-character answers |
+| Domain rules (`internal/domain`) | Normalisation, number parsing, scoring arithmetic, recurrence expansion, state transitions, with the unit tests `AGENTS.md` allows | Expansion of 100-lesson series; normalisation of 20,000-character answers |
 | End-to-end test harness | Control routes exist only under `OVC_TEST_CONTROL=1`, shared clock across processes, mail sink readable, fake room and signed fake callbacks | Suite isolation and parallel run time within the 10-minute budget |
 | Data model and migrations | Constraints, check constraints for exclusive pairs, indexes, migration up and down on a populated database | Migration time on representative data |
 | Configuration and processes | Settings validation, startup refusal on invalid configuration, logging bootstrap, graceful shutdown of the API and worker | Startup time; connections and tasks closed on shutdown |
@@ -54,7 +54,7 @@ Use [the knowledge index](../README.md) for exact contracts. This checklist name
 Checks activate with the capability they verify, following the [roadmap](../../docs/roadmap.md):
 
 - **Now (documentation only):** Markdown lint, offline link and anchor check, and Mermaid parsing over all Markdown are active and required.
-- **Backend scaffold (slice 1):** `uv lock --check`, ruff format and lint, pyright strict, pytest including the package-layer architecture test, and the integration test database container activate. Security scanning tools are selected and registered here.
+- **Backend scaffold (slice 1):** `go mod tidy -diff`, `gofmt`, `go vet`, golangci-lint, `sqlc diff`, `govulncheck`, and `go test -race` including the package-layer architecture test and the integration test database container activate. Security scanning tools are selected and registered here.
 - **Frontend scaffold (slice 1):** pnpm frozen install, TypeScript check, ESLint, Prettier check and production build activate. The first runnable shell activates Playwright boot, diagnostics and accessibility smoke and loading-performance measurement.
 - **Each later slice:** adds its integration tests, its Playwright journeys, its observability assertions and its performance workloads from the table above, registered as commands in the development guide in the same change.
 

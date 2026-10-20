@@ -1,6 +1,6 @@
 # Technical introduction
 
-Status: rewritten 2026-10-20 for the tutor-centric product; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product, backend language changed to Go the same day; pending line-by-line owner review.
 
 OVC (Online Virtual Classroom) is a workspace for private tutors teaching adult students: video lessons with a whiteboard and recordings, chats, a schedule, and homework built from self-checking tests and tasks the tutor checks. This page explains the parts of the system, what they exchange, and why the boundaries sit where they do. What the product does for its users is in the [product overview](product.md); the detailed maps are in [knowledge/architecture/detailed.md](../knowledge/architecture/detailed.md); the behavior contracts are in [knowledge/specs/](../knowledge/README.md).
 
@@ -21,7 +21,7 @@ graph LR
 ```
 
 - **The browser app** is a React application in Russian and English. It shows each user what they may do and holds no rules of its own.
-- **The API process** (FastAPI) owns every rule: who may see a student, a lesson, an assignment or a chat. It serves a REST API and one WebSocket for live chat and updates.
+- **The API process** (a Go server, [ADR-0012](decisions/0012-go-backend.md)) owns every rule: who may see a student, a lesson, an assignment or a chat. It serves a REST API and one WebSocket for live chat and updates.
 - **The worker process** performs everything that happens outside a request:
   - emails and reminders;
   - creating lessons of weekly series;

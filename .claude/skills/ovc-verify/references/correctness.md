@@ -45,7 +45,7 @@ Check behavior against the accepted contracts, the acceptance criteria and the c
   - outbox writes in the same transaction;
   - claiming, backoff and dead rows, idempotency keys;
   - reminders built from current lesson state, the digest conditions;
-  - unsubscribe tokens and determinism of `tick(now)`.
+  - unsubscribe tokens and determinism of `Tick(now)`.
 - **Files:** streaming limits, content-type detection, binding rules, quotas and usage, cleanup of unbound and orphaned objects, signed URLs.
 - **API and frontend client:**
   - request and response schemas agree with the specification;

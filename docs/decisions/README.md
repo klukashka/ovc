@@ -1,13 +1,13 @@
 # Architecture decision records
 
-Status: amended 2026-10-20 with ADR-0004 to ADR-0011; pending line-by-line owner review.
+Status: amended 2026-10-20 with ADR-0004 to ADR-0012; pending line-by-line owner review.
 
 One record per significant decision, in the MADR shape: context, decision, alternatives considered, consequences, where it is applied. Records are numbered in writing order and never renumbered; a record that changes an earlier one says so in its header (`Supersedes` / `Superseded by`), and the earlier record is kept with its status updated ([ADR-0001](0001-record-architecture-decisions.md)).
 
 | Record | Decision | Status |
 |---|---|---|
 | [ADR-0001](0001-record-architecture-decisions.md) | Record significant decisions as numbered MADR files; decisions win over specifications | accepted |
-| [ADR-0002](0002-implementation-stack.md) | FastAPI, PostgreSQL and React with uv, pnpm, ruff, pyright strict and Playwright | accepted |
+| [ADR-0002](0002-implementation-stack.md) | FastAPI, PostgreSQL and React with uv, pnpm, ruff, pyright strict and Playwright | accepted; backend and Python tooling superseded by ADR-0012 |
 | [ADR-0003](0003-embedded-video-provider.md) | Embed an open-source conferencing provider behind a meeting provider adapter; never build a media stack | accepted; primary provider superseded by ADR-0004 |
 | [ADR-0004](0004-bigbluebutton-primary-provider.md) | BigBlueButton is the primary provider; join links issued per request; recordings served only through OVC | accepted |
 | [ADR-0005](0005-tutor-centric-domain.md) | One role per account; tutor–student relationships and tutor-owned groups; relationship-scoped authorization | accepted |
@@ -17,6 +17,7 @@ One record per significant decision, in the MADR shape: context, decision, alter
 | [ADR-0009](0009-owner-approved-exceptions-and-visibility.md) | Owner-approved exceptions (credentials in URLs, adapter state in PostgreSQL, closing slow sockets), product refinements, and tutor-only scores | accepted |
 | [ADR-0010](0010-quiet-visual-language.md) | Quiet text-first visual language (Golos Text, Literata, olive accent, hairline rules), a sidebar for both roles, computers first | accepted |
 | [ADR-0011](0011-tiered-verification.md) | Tiered verification: checks for trivial changes, one standard reviewer (plus a security reviewer when the security trigger is met) for routine changes, the full component-by-profile review when a slice completes | accepted |
+| [ADR-0012](0012-go-backend.md) | Go backend: huma on net/http, pgx with sqlc, goose migrations, slog, golangci-lint; frontend unchanged | accepted |
 
 ## Writing a new record
 

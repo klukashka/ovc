@@ -43,8 +43,9 @@ Behavior for FR-4. Decisions: [ADR-0007](../../docs/decisions/0007-recurring-les
   - extension, splitting and "cancel following" all lock the series row (`FOR UPDATE`) and re-read the series end inside that transaction, so they never race;
   - extension inserts only keys that do not exist yet and skips series whose audience is no longer active or that have ended.
 - **Start instant:** each occurrence's start is computed in the series timezone from its date and the local start time, following RFC 5545.
-  - A local time that does not exist on that date, because clocks jump forward, is shifted forward by the length of the gap. In a timezone that skips 02:00–03:00, 02:30 becomes 03:30. This matches Python `zoneinfo` with `fold=0`.
+  - A local time that does not exist on that date, because clocks jump forward, is shifted forward by the length of the gap. In a timezone that skips 02:00–03:00, 02:30 becomes 03:30.
   - A local time that occurs twice, because clocks fall back, uses the earlier instant.
+  - Go's `time.Date` does not guarantee which instant it returns in either case, so the schedule code applies both rules itself.
   - Unit tests name both cases explicitly.
 - **Display:** times are shown in the viewer's timezone. The lesson page also shows the series timezone (for a one-off lesson, the tutor's timezone when the lesson was created) when it differs:
   - a tutor on a one-to-one lesson sees the student's timezone instead;

@@ -178,5 +178,5 @@ Each **email** is decided again when the worker sends it, not only when it is qu
 - **Bounds:** every job processes fixed-size batches through a partial index on its due column, within a time budget per run, and continues where it stopped: jobs that select by a window keep progress markers (reminders) or cursors in the job-run table (reconciliation). Purges delete in batches of bounded size per transaction.
 - **Testing:**
   - with `OVC_CLOCK=test` both loops are paused, and only the harness runs the worker;
-  - `tick(now)` runs one scheduler pass at `now` and then dispatches every due row until none remain;
+  - `Tick(now)` runs one scheduler pass at `now` and then dispatches every due row until none remain;
   - running it twice with the same `now` has no extra effect.
