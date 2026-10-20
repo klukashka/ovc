@@ -1,6 +1,6 @@
 # Functional requirements
 
-Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after design review; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after design review and for the student Home content (FR-15.3); pending line-by-line owner review.
 
 What OVC must do, numbered so that specifications, tests, pages and plans can cite them. Each section links the specification that defines the exact behavior. Roles are **tutor**, **student** and **operator** (command line only). The [product overview](../product.md) explains the intent; this file is normative.
 
@@ -155,7 +155,7 @@ Specified in [files](../../knowledge/specs/files.md).
 
 - **FR-15.1** The tutor's Today page shows today's lessons with join buttons, work needing checking, unread chats, upcoming deadlines and pending join requests.
 - **FR-15.2** A new tutor sees a first-run checklist (profile and timezone, invite a student, schedule a lesson, create an assignment) until it is completed or dismissed.
-- **FR-15.3** The student's Home page shows the next lesson with a join button, assignments to do ordered by deadline, and recently checked work, from all tutors, with a filter by tutor.
+- **FR-15.3** The student's Home page shows the next lesson with a join button, assignments to do ordered by deadline, recently checked work with the opening of the overall feedback and whether a corrected file came back, the lessons of the next seven days, and the student's tutors with a way to message them or enter a new tutor code, from all tutors, with a filter by tutor (amended 2026-10-20 by [ADR-0010](../decisions/0010-quiet-visual-language.md), pending owner review).
 
 Specified in [pages](../../knowledge/design/web/pages.md).
 

@@ -183,7 +183,7 @@ Behavior: [homework](homework.md).
 |---|---|---|---|
 | GET | `/notifications` | user, unverified ok | In-app notifications, newest first, with `unread_count` |
 | POST | `/notifications/read` | user, unverified ok | Mark some or all as read |
-| GET | `/home?tutor=` | user, unverified ok | Tutor: Today data. Student: Home data, optionally filtered by tutor. One request per page load |
+| GET | `/home?tutor=` | user, unverified ok | Tutor: Today data. Student: Home data, optionally filtered by tutor: the next lesson, submissions to do, the last five checked submissions, each with a feedback excerpt and a corrected-file flag taken only from the latest published review revision ([homework](homework.md#answer-visibility)) and never points (the excerpt is the overall feedback as plain text: Markdown markers removed, link text kept without the address, paragraphs and list items joined by single spaces, code kept as its text; kept whole when it has at most 140 characters, otherwise cut at the last word boundary within 139 characters (or at 139 characters when the first word is longer) and followed by an ellipsis, so it never exceeds 140 characters; `null` without overall feedback), lessons starting within the next seven days under the same visibility as `/calendar` ([schedule](schedule.md)) without cancelled ones, and the student's active tutors (name, avatar, colour, subjects, direct channel id). The `tutor` filter applies to every part except the tutors. One request per page load |
 
 ## Files
 

@@ -68,11 +68,11 @@ Each question has an explanation.
 | 7 | Anna | Assignment (phone) | `POST /uploads?context=answer&scope=submission:…`, `PUT /submissions/{id}/answers` ("went", "went", one photo), `POST /submissions/{id}/submit` | The draft saves while she types; after submitting she sees "Submitted", with no points of any kind and no correct answers |
 | 8 | Clock | — | `harness: POST /clock` past the deadline | — |
 | 9 | Boris | Assignment | Answers "goed", "Went ", one PDF; `POST /submissions/{id}/submit` | The submission is marked late; Maria's view shows `homework.auto_points` with 2, Boris's view shows no points |
-| 10 | Maria | Today, Review | `GET /review-queue`, `POST /uploads?context=corrected&scope=submission:…`, `PUT /submissions/{id}/review` (file question 6), `POST /submissions/{id}/check` | Anna's work is checked with a corrected file attached; the email to Anna is in the sink |
+| 10 | Maria | Today, Review | `GET /review-queue`, `POST /uploads?context=corrected&scope=submission:…`, `PUT /submissions/{id}/review` (file question 6, overall feedback "**Great work.** Check the word order in sentence 2."), `POST /submissions/{id}/check` | Anna's work is checked with a corrected file attached; the email to Anna is in the sink |
 | 11 | Maria | Review | `PUT /submissions/{id}/review` with a comment on the file question, `POST /submissions/{id}/return` | Boris's work is returned; only the file question is editable for him; the comment is visible |
 | 12 | Boris | Assignment | New upload, `POST /submissions/{id}/submit` | Resubmitted; back in Maria's queue; the resubmission email to Maria is in the sink |
 | 13 | Maria | Review | `PUT /submissions/{id}/review` (file question 4), `POST /submissions/{id}/check` | Boris's work is checked at 6 of 10 |
-| 14 | Anna | Results | `GET /submissions/{id}`, `GET /attachments/{id}` | Comments, the corrected file downloads, and correct answers with explanations; no points, total or percentage anywhere on the page or in the response |
+| 14 | Anna | Results, Home | `GET /submissions/{id}`, `GET /attachments/{id}`, `GET /home` | Comments, the corrected file downloads, and correct answers with explanations; Home lists the work under recently checked with the feedback excerpt "Great work. Check the word order in sentence 2." (Markdown removed) and the corrected-file note; no points, total or percentage anywhere on either page or in the submission and home responses |
 | 15 | Maria | Issue analytics | `GET /issues/{id}/analytics` | 2 of 2 submitted, 2 checked, 1 late; average 80%; single choice 50% correct, short text 100% correct; options "goed" 1 and "went" 1; top short answer "went" (2) |
 | 16 | Anna | Results | Opens Boris's submission address | Not found |
 
@@ -90,7 +90,7 @@ Seed:
 | 1 | Pavel | Sign up, confirm, Students | `POST /auth/register`, `POST /auth/verify-email`, `POST /students` with Anna's email, `POST /students/{id}/invitation/send` | The invitation email to Anna is in the sink |
 | 2 | Anna | Accept invitation (signed in) | `POST /invitations/{token}/accept` | Pavel is added; Anna's My tutors shows both tutors with their colours |
 | 3 | Pavel | Schedule, Builder, Issue dialog | `POST /lessons` (Monday at 10:00 his time), `POST /library/templates`, `POST /issues` | — |
-| 4 | Anna | Schedule, Home | `GET /calendar`, `GET /home` | Schedule shows lessons from both tutors, each with its tutor label; Home lists work from both; filtering by Pavel shows only his items |
+| 4 | Anna | Schedule, Home | `GET /calendar`, `GET /home` | Schedule shows lessons from both tutors, each with its tutor label; Home lists work and the next seven days' lessons from both, and both tutors in My tutors; filtering by Pavel shows only his items in every section except My tutors |
 | 5 | Pavel | Student card | `GET /students/{id}` | Only Pavel's lesson and work with Anna; none of Maria's |
 | 6 | Anna | Messages | `POST /uploads?context=chat&scope=channel:…`, `POST /channels/{id}/messages` with a picture | Maria sees the message live with a preview; the unread badge on Maria's Messages; Anna shows as online in Maria's chat header |
 | 7 | Boris | Messages | Types in the group chat composer and sends (`message.send`) | Anna and Maria see the typing indicator while he types, then the message live |

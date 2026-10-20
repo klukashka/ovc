@@ -25,14 +25,14 @@ Load the entry sections, follow their links, and read the governing decision bef
 | Uploads, quotas, downloads | [Files](specs/files.md) |
 | Logging, levels, correlation, redaction | [Observability](specs/observability.md) |
 | Assess a trust boundary or security claim | [Threat model](../docs/threat-model.md), then its linked contracts |
-| Build or change a page | [Pages](design/web/pages.md), [navigation](design/web/navigation.md), [states](design/web/states.md), [tokens](design/web/tokens.md), [frontend module map](architecture/detailed.md#frontend-frontendsrc) |
+| Build or change a page | [Pages](design/web/pages.md), [navigation](design/web/navigation.md), [states](design/web/states.md), [tokens](design/web/tokens.md), the [clickable prototype](design/web/prototype/README.md) as a visual reference, [frontend module map](architecture/detailed.md#frontend-frontendsrc) |
 | Write or extend an end-to-end test | [Pilot scenarios](design/web/pilot-scenarios.md), the [test harness](../docs/development.md#end-to-end-test-harness), then the pages and routes each step names |
 | Plan the next slice | [Roadmap](../docs/roadmap.md), [open implementation questions](architecture/detailed.md#open-implementation-questions), [non-functional requirements](../docs/requirements/non-functional.md) |
 
 ## Layout
 
 - `specs/` owns behavior.
-- `design/` owns detailed surface design: pages, navigation, states, tokens and pilot scenarios.
+- `design/` owns detailed surface design: pages, navigation, states, tokens, pilot scenarios and the clickable prototype.
 - `architecture/` owns maps, layers, stack and terminology.
 - `reviews/` holds review records, with `reviews/ai-development-setup.md` as the active-policy exception.
 - `research/` holds dated external evidence such as checked provider facts and versions; `analysis/` holds dated analyses such as measurement studies, created when the first one is written.

@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Главная · OVC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="prototype.js"></script>
+<style>
+.next { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: center; }
+.next-time { font-size: 26px; font-weight: 500; line-height: 1.2; }
+.feedback { font-family: Literata, Georgia, serif; font-style: italic; font-size: 16px; margin-top: 4px; }
+@media (max-width: 640px) { .next { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body data-role="student" data-page="home">
+<x-page>
+<main class="page">
+  <header class="page-head" style="margin-bottom: 24px">
+    <h1 class="serif page-title">Добрый вечер, Борис</h1>
+    <p class="page-sub">Сегодня урок с Анной в 18:00, одно задание нужно сдать завтра.</p>
+  </header>
+
+  <div class="segmented" role="group" aria-label="Репетитор">
+    <button type="button" id="filter-all" aria-pressed="{{ allPressed }}" onClick="{{ showAll }}">Все репетиторы</button>
+    <button type="button" id="filter-clay" aria-pressed="{{ clayPressed }}" onClick="{{ showClay }}"><span class="dot clay"></span>Анна · английский</button>
+    <button type="button" id="filter-slate" aria-pressed="{{ slatePressed }}" onClick="{{ showSlate }}"><span class="dot slate"></span>Игорь · математика</button>
+  </div>
+
+  <div class="two-col">
+    <div class="stack">
+      <section aria-labelledby="next-title">
+        <h2 id="next-title" class="label">Ближайший урок</h2>
+        <x-if value="{{ clayVisible }}">
+          <div class="panel next">
+            <div>
+              <div class="next-time num">Сегодня, 18:00–19:00</div>
+              <div style="margin-top: 6px"><span class="dot clay"></span>Анна Смирнова · Past simple: разговорная практика</div>
+              <div class="muted small" style="margin-top: 2px">Начало в 18:00 · комната откроется, когда подключится преподаватель</div>
+            </div>
+            <a href="student-lesson.html" class="quiet">Страница урока</a>
+          </div>
+        </x-if>
+        <x-if value="{{ slateOnly }}">
+          <div class="panel next">
+            <div>
+              <div class="next-time num">Четверг, 10:00–11:00</div>
+              <div style="margin-top: 6px"><span class="dot slate"></span>Игорь Лебедев · Производные</div>
+            </div>
+            <a href="student-lesson.html" class="quiet">Подробнее</a>
+          </div>
+        </x-if>
+      </section>
+
+      <section aria-labelledby="todo-title">
+        <h2 id="todo-title" class="label">К сдаче</h2>
+        <div class="list">
+          <x-if value="{{ clayVisible }}">
+            <a href="student-home.html" class="row task" style="grid-template-columns: minmax(0, 1fr) 200px 100px; align-items: center">
+              <div><span class="dot clay"></span><span style="font-weight: 500">Past simple, неделя 1</span><div class="small" style="padding-left: 16px"><span class="info">В работе</span> <span class="muted">· 1 из 3 ответов</span></div></div>
+              <span class="small warning">Скоро срок · завтра, 19 ноября, 23:59</span>
+              <span class="row-action">Продолжить</span>
+            </a>
+          </x-if>
+          <x-if value="{{ slateVisible }}">
+            <a href="student-home.html" class="row task" style="grid-template-columns: minmax(0, 1fr) 200px 100px; align-items: center">
+              <div><span class="dot slate"></span><span style="font-weight: 500">Пределы, листок 3</span><div class="small" style="padding-left: 16px"><span class="info">Нужно сделать</span> <span class="muted">· 8 заданий</span></div></div>
+              <span class="small muted">пт, 22 ноября, 23:59 · через 4 дня</span>
+              <span class="row-action">Начать</span>
+            </a>
+          </x-if>
+        </div>
+      </section>
+
+      <section aria-labelledby="checked-title">
+        <h2 id="checked-title" class="label">Проверено недавно</h2>
+        <x-if value="{{ clayVisible }}">
+          <div class="list">
+            <a href="student-home.html" class="row" style="grid-template-columns: minmax(0, 1fr) auto">
+              <div>
+                <span class="dot clay"></span><span style="font-weight: 500">Present perfect</span>
+                <div class="feedback" style="padding-left: 16px">«Отлично! Обратите внимание на since и for.»</div>
+                <div class="muted small" style="padding-left: 16px; margin-top: 2px">Анна приложила исправленный файл</div>
+              </div>
+              <span class="muted small">вчера</span>
+            </a>
+            <a href="student-home.html" class="row" style="grid-template-columns: minmax(0, 1fr) auto">
+              <div>
+                <span class="dot clay"></span><span style="font-weight: 500">Эссе: моя работа</span>
+                <div class="feedback" style="padding-left: 16px">«Хорошая структура. Добавьте больше связок между абзацами.»</div>
+              </div>
+              <span class="muted small">12 ноября</span>
+            </a>
+          </div>
+        </x-if>
+        <x-if value="{{ slateOnly }}">
+          <p class="muted">Игорь пока ничего не проверил.</p>
+        </x-if>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section aria-labelledby="week-title">
+        <h2 id="week-title" class="label">Ближайшие 7 дней</h2>
+        <div class="list">
+          <x-if value="{{ clayVisible }}">
+            <div class="row" style="grid-template-columns: 52px minmax(0, 1fr)"><span class="muted small">вт</span><div><span class="num">18:00</span> <span class="dot clay" style="margin-left: 6px"></span>Анна</div></div>
+          </x-if>
+          <x-if value="{{ slateVisible }}">
+            <div class="row" style="grid-template-columns: 52px minmax(0, 1fr)"><span class="muted small">чт</span><div><span class="num">10:00</span> <span class="dot slate" style="margin-left: 6px"></span>Игорь</div></div>
+          </x-if>
+          <x-if value="{{ clayVisible }}">
+            <div class="row" style="grid-template-columns: 52px minmax(0, 1fr)"><span class="muted small">пт</span><div><span class="num">18:00</span> <span class="dot clay" style="margin-left: 6px"></span>Анна</div></div>
+          </x-if>
+        </div>
+        <a href="student-home.html" class="small row-link" style="margin-top: 10px">Всё расписание</a>
+      </section>
+
+      <section aria-labelledby="tutors-title">
+        <h2 id="tutors-title" class="label">Мои репетиторы</h2>
+        <div class="list">
+          <div class="row" style="grid-template-columns: minmax(0, 1fr) auto"><div><span class="dot clay"></span>Анна Смирнова<div class="muted small" style="padding-left: 16px">английский</div></div><a href="student-home.html" class="small">Написать</a></div>
+          <div class="row" style="grid-template-columns: minmax(0, 1fr) auto"><div><span class="dot slate"></span>Игорь Лебедев<div class="muted small" style="padding-left: 16px">математика</div></div><a href="student-home.html" class="small">Написать</a></div>
+        </div>
+        <button type="button" class="text-btn small" style="margin-top: 10px"><svg class="icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>Ввести код репетитора</button>
+      </section>
+    </div>
+  </div>
+</main>
+</x-page>
+<script type="text/x-page">
+class Component extends PageLogic {
+  constructor(props) {
+    super(props);
+    this.state = { tutor: 'all' };
+  }
+  renderVals() {
+    const tutor = this.state.tutor;
+    const pressed = (key) => String(tutor === key);
+    return {
+      allPressed: pressed('all'),
+      clayPressed: pressed('clay'),
+      slatePressed: pressed('slate'),
+      clayVisible: tutor !== 'slate',
+      slateVisible: tutor !== 'clay',
+      slateOnly: tutor === 'slate',
+      showAll: () => this.setState({ tutor: 'all' }),
+      showClay: () => this.setState({ tutor: 'clay' }),
+      showSlate: () => this.setState({ tutor: 'slate' })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -17,7 +17,7 @@ FR-1.4, FR-1.8, FR-17.1.
 
 FR-1.1, FR-1.2.
 
-- `/signup` offers two large cards: "I teach" and "I study".
+- `/signup` offers two large choices, each a bordered panel: "I teach" and "I study".
 - **Form:**
   - name, email, password with a strength hint (minimum 10 characters), language (preselected from the browser), and a consent checkbox linking the privacy policy;
   - the student form also has an optional tutor code field.
@@ -50,7 +50,7 @@ FR-1.1, FR-1.5, FR-13.3. Single-purpose pages with one result message and one ne
 FR-15.1, FR-15.2, FR-2.3, FR-5.1.
 
 - **Greeting** with date.
-- **First-run checklist card**, until completed or dismissed:
+- **First-run checklist panel**, until completed or dismissed:
   - four steps (profile and timezone, invite a student, schedule a lesson, create an assignment) with check marks;
   - each step links to the place where it is done.
 - **Today's lessons:**
@@ -63,6 +63,7 @@ FR-15.1, FR-15.2, FR-2.3, FR-5.1.
 - **Join requests:** student name and email, with Accept, Decline, and "Decline and block" in a menu.
 - **Unread messages:** channels with unread counts.
 - **Upcoming deadlines:** issues due in the next 3 days with progress "{submitted}/{total}".
+- **Computer layout:** the greeting spans the page; the main column holds the checklist, today's lessons and needs checking; a 300 px side column holds join requests, upcoming deadlines and unread messages.
 - **Phone:** sections stack in the order above.
 
 ### Schedule
@@ -118,6 +119,7 @@ FR-4.6, FR-4.7, FR-5.1–FR-5.6.
   - a list with date, duration, state and "available until";
   - Play opens a player dialog;
   - the tutor has Delete, and Retry on a recording held because storage is full.
+- **Computer layout:** a thin top bar with breadcrumbs; the main column holds the video area (as a join panel until the user is in the room), materials, assignments and recordings; a 300 px side column "About the lesson" holds date and time, format (individual or group), audience, the series rule, a short "Before the lesson" hint (new tab, headphones, camera and microphone permission) and a link to the chat.
 - **Phone:** the video area becomes a large Join button that opens the room in a new tab, because phone browsers do not offer full-screen embedding reliably.
 
 ### Students
@@ -130,7 +132,7 @@ FR-2.1, FR-2.3, FR-2.5.
   - display name and optional email, then "Create invitation";
   - the result shows the link with Copy and, if an email was given, "Send by email".
 - **Pending join requests** appear at the top with Accept, Decline and, in a menu, "Decline and block".
-- **Empty:** an illustration with "Invite your first student" and "Share your tutor code {code}".
+- **Empty:** a heading with "Invite your first student" and "Share your tutor code {code}".
 
 ### Student card
 
@@ -174,7 +176,7 @@ FR-7, FR-8.1.
 
 - **Header:** a title field, autosave status ("Saved" or "Saving…"), Preview, and Issue.
 - **Block list:**
-  - each block is a card with a type label, a drag handle (keyboard: Move up and Move down buttons), Duplicate and Delete;
+  - each block is a section under a hairline rule, and the block being edited becomes a panel; each has a type label, a drag handle (keyboard: Move up and Move down buttons), Duplicate and Delete;
   - "Add block" opens a menu of the eight block types.
 - **Question editors:**
   - choice options with a correct toggle;
@@ -226,7 +228,7 @@ FR-10.
 
 FR-12.
 
-- **Channel list:** direct chats (student name) and group chats (group name and colour), with last message, time and unread badge; search.
+- **Channel list:** direct chats (student name) and group chats (group name and colour), with last message, time and unread count; search.
 - **Conversation:**
   - header with name, presence and a link to the student card or group;
   - a message list with day separators, attachments with image previews, edited and deleted states;
@@ -254,7 +256,7 @@ FR-1.4–FR-1.7, FR-5.6, FR-13.3, FR-14.2, FR-17.
 
 ### Notifications
 
-FR-13.1, FR-2.6. Address `/notifications`; the bell in the frame opens a panel with the latest 10 and a link to the page.
+FR-13.1, FR-2.6. Address `/notifications`; the Notifications item in the sidebar (the "bell") shows the unread count and opens a panel with the latest 10 and a link to the page.
 
 - **Rows:** icon, one-line text (for students with the tutor label), relative time, unread dot; clicking opens the related page and marks the row read.
 - **Actions:** "Mark all as read".
@@ -267,14 +269,17 @@ FR-13.1, FR-2.6. Address `/notifications`; the bell in the frame opens a panel w
 
 FR-15.3, FR-5.1, FR-2.6.
 
-- **Top:** the tutor filter (shown when the student has two or more tutors).
-- **Next lesson card:**
+- **Top:** the tutor filter, a segmented control "All tutors / {name}…" (shown when the student has two or more tutors).
+- **Next lesson panel:**
   - tutor label, title, and time with a countdown when under an hour;
-  - a full-width "Join" button when live and the room is open, otherwise "The room opens when your tutor joins" or "Starts at {time}".
-- **To do:** submissions to do ordered by deadline, with due-soon and overdue badges.
-- **Recently checked:** the last five checked submissions, with the tutor label and whether feedback is new.
+  - a "Join" button (full width on phones) when live and the room is open, otherwise "The room opens when your tutor joins" or "Starts at {time}".
+- **To do:** submissions to do ordered by deadline, with due-soon and overdue states and a Start or Continue action per row.
+- **Recently checked:** the last five checked submissions, with the tutor label, the opening of the overall feedback, whether a corrected file came back, and, once the open question in [the architecture](../../architecture/detailed.md#open-implementation-questions) is settled, whether feedback is new. No points.
+- **Next seven days** (side column): the student's lessons starting within seven days, cancelled ones left out, one row each with weekday, time and tutor label, and a link to the schedule.
+- **My tutors** (side column): each active tutor with label, subject and a Message link, and "Enter a tutor code"; the tutor filter does not hide this list.
 - **No tutor yet:** "Enter your tutor's code" with an input; with a pending request, "Request sent. Waiting for the tutor." instead.
-- **Phone first:** cards stack and the Join button stays within thumb reach.
+- **Computer layout:** greeting and a one-line summary of the day, the tutor filter, then a main column (next lesson panel, to do, recently checked) and a 300 px side column (next seven days, my tutors).
+- **Phone:** columns stack with the next lesson first, and the Join button stays within thumb reach.
 
 ### Schedule (student)
 
@@ -300,7 +305,7 @@ FR-9, FR-11.1.
 
 FR-2.6, FR-1.2, FR-2.7, FR-1.7.
 
-- **Cards:** each tutor's avatar, name, colour, subjects and bio, plus "Message".
+- **Rows:** each tutor's avatar, name, colour, subjects and bio, plus "Message".
 - **Add a tutor:** a field that takes a code.
 - **Pending requests:** "Request sent. Waiting for the tutor." (no name interpolation, so no grammatical case problems in Russian).
 - **Ended relationships:** listed under "Past tutors" with read-only chat, lessons, recordings until they expire, and results. They are left out of the Home filter by default.
@@ -315,7 +320,7 @@ Same as the tutor's, without tutor-only sections; direct channels are named by t
 - **Loading:**
   - skeletons in the shape of the content appear after 300 ms; nothing appears before;
   - buttons that start an action show a spinner and stay disabled until it completes.
-- **Empty states:** an illustration, a heading, one sentence and one primary action:
+- **Empty states:** a heading, one sentence and one primary action (an optional line illustration as in [tokens](tokens.md#illustration-and-iconography)):
 
   | Page | Message | Action |
   |---|---|---|
@@ -343,8 +348,8 @@ Same as the tutor's, without tutor-only sections; direct channels are named by t
   - deadlines show both an absolute time and a relative hint ("in 2 days").
 - **Responsive:**
   - "phone" means narrower than 768 px; every page works from 360 px;
-  - tutor pages are designed for 1280 px and degrade to a single column;
-  - student pages are designed for 390 px and expand to two columns from 1024 px.
+  - every page, for both roles, is designed for a 1280 px computer screen first and degrades to a single column ([ADR-0010](../../../docs/decisions/0010-quiet-visual-language.md));
+  - dedicated phone layouts are designed in slice 10 of the [roadmap](../../../docs/roadmap.md); until then the rules marked **Phone** above are the minimum.
 - **Keyboard and screen readers:**
   - every action is reachable by keyboard in visual order, with a visible focus ring;
   - dialogs trap focus and restore it on close;

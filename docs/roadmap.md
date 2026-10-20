@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: rewritten 2026-10-20 for the tutor-centric product; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10 the same day; pending line-by-line owner review.
 
 Build order, slice by slice. Each slice is runnable and reviewable on its own and ends with its checks registered in the [development guide](development.md). A slice is done when:
 
@@ -35,7 +35,7 @@ FR-2, FR-3. Student cards, invitations, tutor code and join requests, relationsh
 
 ## Slice 4: realtime and in-app notifications
 
-FR-13.1, FR-13.3. The WebSocket gateway with first-frame authentication, the connection registry and broadcaster, `notification.new` and `entity.changed` frames, the bell, email preferences and one-click unsubscribe.
+FR-13.1, FR-13.3. The WebSocket gateway with first-frame authentication, the connection registry and broadcaster, `notification.new` and `entity.changed` frames, the notifications panel, email preferences and one-click unsubscribe.
 
 ## Slice 5: schedule and reminders
 
@@ -65,6 +65,7 @@ FR-8, FR-9, FR-10. Issues with snapshots, deadlines and answer policies, the stu
 FR-11, FR-15.
 
 - **Product:** results for students; analytics per issue and progress per student; Today with the first-run checklist; Home with the tutor filter.
+- **Phone layouts:** dedicated phone layouts for every page and the phone navigation frame, replacing the interim one-column fallback ([ADR-0010](decisions/0010-quiet-visual-language.md)).
 - **Hardening:** the accessibility pass, performance baselines and budgets for the non-functional requirements, and all four pilot scenarios passing in full.
 
 ## After the MVP

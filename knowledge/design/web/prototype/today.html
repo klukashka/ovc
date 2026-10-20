@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сегодня · OVC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="prototype.js"></script>
+</head>
+<body data-role="tutor" data-page="today">
+<x-page>
+<main class="page">
+  <header class="page-head">
+    <h1 class="serif page-title">Вторник, 18 ноября</h1>
+    <p class="page-sub">Два урока и три работы на проверке.</p>
+  </header>
+
+  <div class="two-col">
+    <div class="stack">
+      <x-if value="{{ checklistOpen }}">
+        <section class="panel" aria-label="Начало работы">
+          <div style="display: flex; justify-content: space-between; align-items: baseline">
+            <h2 class="label" style="margin: 0">Начало работы · 2 из 4</h2>
+            <button type="button" class="text-btn small" onClick="{{ dismissChecklist }}">Скрыть</button>
+          </div>
+          <ol style="margin: 10px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 24px">
+            <li class="muted">Профиль и часовой пояс — <span class="success">готово</span></li>
+            <li class="muted">Пригласить первого ученика — <span class="success">готово</span></li>
+            <li><a href="today.html">Назначить первый урок</a></li>
+            <li><a href="builder.html">Создать первое задание</a></li>
+          </ol>
+        </section>
+      </x-if>
+
+      <section aria-labelledby="lessons-title">
+        <h2 id="lessons-title" class="label">Уроки</h2>
+        <div class="list">
+          <div class="row" style="grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center">
+            <span class="num" style="font-size: 17px; font-weight: 500">18:00</span>
+            <div><div style="font-weight: 500">Борис Петров</div><div class="muted">Past simple: разговорная практика</div></div>
+            <button type="button" class="btn">Начать урок</button>
+          </div>
+          <div class="row" style="grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center">
+            <span class="num muted" style="font-size: 17px; font-weight: 500">19:30</span>
+            <div><div style="font-weight: 500">Группа B1 · 4 ученика</div><div class="muted">Условные предложения</div></div>
+            <a href="today.html">Открыть</a>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="review-title">
+        <h2 id="review-title" class="label">На проверке · 3</h2>
+        <div class="list">
+          <a href="review.html" class="row" style="grid-template-columns: 170px minmax(0, 1fr) auto">
+            <span style="font-weight: 500">Борис Петров</span><span>Past simple, неделя 1</span><span class="muted small">вчера · <span class="warning">с опозданием</span></span>
+          </a>
+          <a href="review.html" class="row" style="grid-template-columns: 170px minmax(0, 1fr) auto">
+            <span style="font-weight: 500">Мария Ким</span><span>Эссе: мой город</span><span class="muted small">вчера</span>
+          </a>
+          <a href="review.html" class="row" style="grid-template-columns: 170px minmax(0, 1fr) auto">
+            <span style="font-weight: 500">Олег Соколов</span><span>Past simple, неделя 1</span><span class="muted small">2 дня назад</span>
+          </a>
+        </div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section aria-labelledby="requests-title">
+        <h2 id="requests-title" class="label">Заявки по коду</h2>
+        <div class="list">
+          <div class="row" style="grid-template-columns: minmax(0, 1fr); gap: 2px">
+            <div style="font-weight: 500">Елена Волкова</div>
+            <div class="muted small">elena.v@example.com · сегодня</div>
+            <x-if value="{{ requestPending }}">
+              <div style="display: flex; gap: 8px; margin-top: 10px">
+                <button type="button" class="quiet" onClick="{{ acceptRequest }}">Принять</button>
+                <button type="button" class="text-btn" style="padding: 0 8px">Отклонить</button>
+              </div>
+            </x-if>
+            <x-if value="{{ requestAccepted }}">
+              <div class="success" style="margin-top: 8px">Принята. Елена в списке учеников.</div>
+            </x-if>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="deadlines-title">
+        <h2 id="deadlines-title" class="label">Сроки в ближайшие 3 дня</h2>
+        <div class="list">
+          <div class="row" style="grid-template-columns: minmax(0, 1fr) auto"><span>Past simple, неделя 1 <span class="muted small">· сдали 1 из 4</span></span><span class="muted num small">ср, 20 ноября · через 2 дня</span></div>
+          <div class="row" style="grid-template-columns: minmax(0, 1fr) auto"><span>Эссе: мой город <span class="muted small">· сдали 2 из 3</span></span><span class="muted num small">чт, 21 ноября · через 3 дня</span></div>
+        </div>
+      </section>
+
+      <section aria-labelledby="unread-title">
+        <h2 id="unread-title" class="label">Непрочитанное</h2>
+        <div class="list">
+          <a href="today.html" class="row" style="grid-template-columns: minmax(0, 1fr); gap: 0">
+            <span style="font-weight: 500">Группа B1</span><span class="muted small">Мария: «А можно перенести на 20:00?»</span>
+          </a>
+          <a href="today.html" class="row" style="grid-template-columns: minmax(0, 1fr); gap: 0">
+            <span style="font-weight: 500">Борис Петров</span><span class="muted small">Отправил файл exercise4.pdf</span>
+          </a>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+</x-page>
+<script type="text/x-page">
+class Component extends PageLogic {
+  constructor(props) {
+    super(props);
+    this.state = { checklist: true, accepted: false };
+  }
+  renderVals() {
+    return {
+      checklistOpen: this.state.checklist,
+      dismissChecklist: () => this.setState({ checklist: false }),
+      requestPending: !this.state.accepted,
+      requestAccepted: this.state.accepted,
+      acceptRequest: () => this.setState({ accepted: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Non-functional requirements
 
-Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after design review; pending line-by-line owner review. Numeric targets are proposals until the owner accepts them and a measured baseline exists for the component they constrain.
+Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after design review and for computer-first layouts (NFR-5.2); pending line-by-line owner review. Numeric targets are proposals until the owner accepts them and a measured baseline exists for the component they constrain.
 
 ## NFR-1 Security and privacy
 
@@ -37,7 +37,7 @@ Proposed reference deployment for every target below: one API instance and one w
 ## NFR-5 Accessibility and usability
 
 - **NFR-5.1** The frontend meets WCAG 2.2 level AA in both themes, with contrast verified for every token pair ([tokens](../../knowledge/design/web/tokens.md#colours)).
-- **NFR-5.2** Every page works from 360 px wide; student pages are designed for phones first.
+- **NFR-5.2** Every page works from 360 px wide; every page, for both roles, is designed for computers first, and dedicated phone layouts follow in slice 10 ([ADR-0010](../decisions/0010-quiet-visual-language.md); amended 2026-10-20, pending owner review).
 - **NFR-5.3** All times are shown in the viewer's timezone; every page and email exists in Russian and English.
 
 ## NFR-6 Maintainability and verification

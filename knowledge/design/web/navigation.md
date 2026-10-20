@@ -5,15 +5,19 @@ Every page of the web application, its address, who reaches it and where navigat
 ## Frames
 
 - **Public frame:** logo, language switch (Русский / English), and sign-in or sign-up links. Used for every page reachable without a session.
-- **Tutor frame:**
-  - desktop and tablet: a left sidebar with Today, Schedule, Students, Groups, Homework and Messages, plus Settings at the bottom; a top bar with the notification bell and the avatar menu (Settings, Sign out);
-  - Homework opens `/homework/library` and has three tabs: Library, Issued and Needs checking;
-  - below 768 px: the sidebar collapses into a menu button.
-- **Student frame:**
-  - phone: a bottom bar with Home, Schedule, Homework, Messages and More (My tutors, Settings, Sign out); the notification bell sits in the top bar;
-  - 768 px and wider: the same items in a left sidebar.
-- Russian navigation labels use short forms at phone width ("Главная", "Расписание", "Задания", "Чаты", "Ещё").
-- Unread badges appear on Messages and on the bell; a needs-checking badge on Homework (tutor); a to-do badge on Homework (student).
+- **Signed-in frame (both roles)**, styled per [tokens](tokens.md#components) and decided in [ADR-0010](../../../docs/decisions/0010-quiet-visual-language.md):
+  - a 248 px left sidebar on the `sidebar` background, full height, scrolling on its own;
+  - at the top, the user's avatar initial and name; clicking it opens the account menu (Settings, Sign out); next to it, a "Hide sidebar" icon button;
+  - below, the role's sections as items with an outline icon, a label and an optional count, then Notifications (with the unread count) and Settings at the end of the list;
+  - when hidden on a computer, a "Show sidebar" icon button stays in the top-left corner and carries an `accent-text` dot when any section count or the unread-notification count is above zero (its accessible name then ends with "new items" / "есть новое"); the choice is remembered per browser;
+  - the page itself may have a thin top bar with breadcrumbs and the page's own actions (the builder, review and lesson pages), never a second navigation.
+- **Tutor sections:** Today, Schedule, Students, Groups, Homework (count: needs checking), Messages (count: unread). Homework opens `/homework/library` and has three tabs: Library, Issued and Needs checking.
+- **Student sections:** Home, Schedule, Homework (count: to do), Messages (count: unread), My tutors.
+- **Below 1024 px (interim frame for both roles, including phones until slice 10):**
+  - a top bar shows the "Show sidebar" button (with the same dot and accessible name), the page title and the Notifications button with its unread count as a number, so notifications stay one tap away;
+  - the sidebar opens as a modal overlay over a dimmed page: focus moves to the current item, Tab stays inside, `Esc` or a click on the dimmed page closes it and returns focus to the "Show sidebar" button; choosing an item closes it and navigates, and focus then moves to the new page's heading as for every route change;
+  - every touch target in the frame is at least 44 × 44 px.
+- **Phones (slice 10):** dedicated phone layouts and a possible bottom bar (Home, Schedule, Homework, Messages, More, with the short Russian labels "Главная", "Расписание", "Задания", "Чаты", "Ещё") are designed in slice 10 of the [roadmap](../../../docs/roadmap.md); until then the interim frame above applies.
 
 ## Public addresses
 

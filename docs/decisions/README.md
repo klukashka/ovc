@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Status: amended 2026-10-20 with ADR-0004 to ADR-0009; pending line-by-line owner review.
+Status: amended 2026-10-20 with ADR-0004 to ADR-0010; pending line-by-line owner review.
 
 One record per significant decision, in the MADR shape: context, decision, alternatives considered, consequences, where it is applied. Records are numbered in writing order and never renumbered; a record that changes an earlier one says so in its header (`Supersedes` / `Superseded by`), and the earlier record is kept with its status updated ([ADR-0001](0001-record-architecture-decisions.md)).
 
@@ -15,6 +15,7 @@ One record per significant decision, in the MADR shape: context, decision, alter
 | [ADR-0007](0007-recurring-lessons.md) | Weekly series in the tutor's timezone with materialised occurrences and scoped edits | accepted |
 | [ADR-0008](0008-hosting-and-data-residency.md) | All user data hosted in Russia; S3-compatible storage in the MVP; no foreign data processors | accepted |
 | [ADR-0009](0009-owner-approved-exceptions-and-visibility.md) | Owner-approved exceptions (credentials in URLs, adapter state in PostgreSQL, closing slow sockets), product refinements, and tutor-only scores | accepted |
+| [ADR-0010](0010-quiet-visual-language.md) | Quiet text-first visual language (Golos Text, Literata, olive accent, hairline rules), a sidebar for both roles, computers first | accepted |
 
 ## Writing a new record
 

@@ -1,6 +1,6 @@
 # Product
 
-Status: draft written 2026-10-20; pending line-by-line owner review.
+Status: draft written 2026-10-20, visual language revised the same day after the owner chose a direction on the prototype; pending line-by-line owner review.
 
 This page explains what OVC is, who it serves and how it feels to use. It is not normative: the binding statements are the [functional requirements](requirements/functional.md), and where this page and a requirement differ, the requirement wins.
 
@@ -27,7 +27,7 @@ The platform operator has no web interface in the first release; blocking and li
 ## What a student does
 
 1. Opens an invitation link (or signs up and enters a tutor code) and lands on their home page.
-2. Sees the next lesson with a large Join button, homework to do with deadlines, and recently checked work, from all tutors.
+2. Sees the next lesson with a Join button, homework to do with deadlines, recently checked work with the opening of the feedback and any corrected file, the lessons of the next seven days, and a list of their tutors to message or to add a new one by code, from all tutors.
 3. Joins lessons from a phone or a computer, and rewatches recordings.
 4. Completes homework on any device; answers save automatically; submits with one button.
 5. Reads feedback, downloads corrected files, and, when the tutor allows it, sees the correct answers and explanations. Scores are the tutor's working tool and are never shown to students.
@@ -45,7 +45,7 @@ The platform operator has no web interface in the first release; blocking and li
 
 | Tutor | Student |
 |---|---|
-| Today: lessons of the day, work to check, unread messages, deadlines, first-run checklist | Home: next lesson, homework to do, recently checked work |
+| Today: lessons of the day, work to check, unread messages, deadlines, first-run checklist | Home: next lesson, homework to do, recently checked work, next seven days, my tutors |
 | Schedule: week and month calendar | Schedule: all lessons from all tutors |
 | Students: list, student card, join requests | My tutors: list, enter a tutor code |
 | Groups: list and group page | — |
@@ -58,9 +58,10 @@ Element-by-element descriptions are in [the page design](../knowledge/design/web
 
 ## Visual language
 
-- **Warm and friendly.** Soft warm neutrals, one bright accent colour, rounded cards, generous spacing, friendly illustrations in empty states, light and dark themes.
-- **Calm about status.** One vocabulary of states (scheduled, live, needs checking, late, checked…) with a fixed colour and word each, and never colour alone.
-- **Desktop for the tutor, phone for the student.** The tutor's builder and review screens use the width of a computer screen and still work on a phone; the student's screens are designed for a phone first, with bottom navigation and a large Join button.
+- **Quiet and warm, like a good book on a desk.** Warm paper background, near-black ink text, book-style serif titles over a calm sans-serif interface, hairline rules instead of boxes, and one muted olive accent: filled only on the main action of each screen, and otherwise used sparingly for links, focus, selection and the few states that ask for action. Light and dark themes ([ADR-0010](decisions/0010-quiet-visual-language.md)).
+- **Calm about status.** One vocabulary of states (scheduled, live, needs checking, late, checked…) shown as a word with a small coloured dot, never colour alone and never loud pills.
+- **A sidebar like a document tool.** Both tutors and students navigate with a collapsible left sidebar: their name on top, sections with simple icons and counts.
+- **Computer first, phone later.** Every screen, including the student's, is designed for a computer first; phone layouts are adapted in a later step, and until then every page still works on a phone in one column.
 - **Two languages.** Russian and English throughout, chosen per user; dates, times and plurals follow the chosen language.
 
 ## Not in the first release

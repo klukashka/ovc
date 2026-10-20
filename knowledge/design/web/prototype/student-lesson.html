@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Урок · OVC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="prototype.js"></script>
+<style>
+.join { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: center; padding: 24px 26px; }
+.facts { display: grid; grid-template-columns: 110px minmax(0, 1fr); row-gap: 10px; font-size: 14px; }
+@media (max-width: 640px) { .join { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body data-role="student" data-page="home">
+<x-page>
+<header class="topbar">
+  <a href="student-home.html" class="small">Главная</a>
+  <span class="muted small">/ Урок 18 ноября</span>
+</header>
+
+<main class="page">
+  <header class="page-head">
+    <div class="label"><span class="dot clay"></span>Анна Смирнова · английский</div>
+    <h1 class="serif page-title">Past simple: разговорная практика</h1>
+  </header>
+
+  <div class="two-col">
+    <div class="stack">
+      <section class="panel join" aria-label="Вход в урок">
+        <div>
+          <div role="status" style="font-size: 18px; font-weight: 500; color: {{ stateColor }}"><span class="dot"></span>{{ stateText }}</div>
+          <div class="muted" style="margin-top: 2px">{{ hint }}</div>
+        </div>
+        <x-if value="{{ canJoin }}">
+          <button type="button" class="btn big" style="min-width: 200px">Войти в урок</button>
+        </x-if>
+        <x-if value="{{ waiting }}">
+          <button type="button" class="btn big" disabled style="min-width: 200px">Войти в урок</button>
+        </x-if>
+      </section>
+      <button type="button" class="text-btn small" id="next-state" onClick="{{ advance }}" style="margin-top: -28px; align-self: flex-start">Прототип: показать следующее состояние урока</button>
+
+      <section aria-labelledby="materials-title">
+        <h2 id="materials-title" class="label">Материалы к уроку</h2>
+        <div class="list">
+          <a href="student-lesson.html" class="row" style="grid-template-columns: minmax(0, 1fr) auto"><span>Irregular verbs.pdf</span><span class="muted num small">1,2 МБ</span></a>
+          <a href="student-lesson.html" class="row" style="grid-template-columns: minmax(0, 1fr) auto"><span>Слайды: Past simple.pdf</span><span class="muted num small">3,4 МБ</span></a>
+        </div>
+      </section>
+
+      <section aria-labelledby="task-title">
+        <h2 id="task-title" class="label">Задание к уроку</h2>
+        <div class="list">
+          <a href="student-home.html" class="row task" style="grid-template-columns: minmax(0, 1fr) 200px 100px; align-items: center">
+            <div><span style="font-weight: 500">Past simple, неделя 1</span><div class="small"><span class="info">В работе</span> <span class="muted">· 1 из 3 ответов</span></div></div>
+            <span class="small warning">Скоро срок · завтра, 19 ноября, 23:59</span>
+            <span class="row-action">Продолжить</span>
+          </a>
+        </div>
+      </section>
+
+      <section aria-labelledby="rec-title">
+        <h2 id="rec-title" class="label">Запись</h2>
+        <x-if value="{{ hasRecording }}">
+          <div class="list">
+            <a href="student-lesson.html" class="row" style="grid-template-columns: minmax(0, 1fr) auto"><span>Смотреть запись · 58 мин</span><span class="muted small">хранится до 16 февраля</span></a>
+          </div>
+        </x-if>
+        <x-if value="{{ noRecording }}">
+          <p class="muted">Если Анна включит запись, она появится здесь после урока.</p>
+        </x-if>
+      </section>
+    </div>
+
+    <aside class="stack">
+      <section aria-labelledby="facts-title">
+        <h2 id="facts-title" class="label">Об уроке</h2>
+        <div class="facts" style="border-top: 1px solid var(--border); padding-top: 14px">
+          <span class="muted">Когда</span><span class="num">вторник, 18 ноября<br>18:00–19:00</span>
+          <span class="muted">Формат</span><span>индивидуальный</span>
+          <span class="muted">Репетитор</span><span>Анна Смирнова</span>
+          <span class="muted">Повторяется</span><span>по вторникам и пятницам</span>
+        </div>
+      </section>
+      <section>
+        <h2 class="label">Перед уроком</h2>
+        <p class="small muted" style="border-top: 1px solid var(--border); padding-top: 14px">Видео откроется в новой вкладке. Понадобятся наушники и разрешение браузеру на камеру и микрофон.</p>
+        <a href="student-lesson.html" class="small row-link" style="margin-top: 10px">Написать Анне</a>
+      </section>
+    </aside>
+  </div>
+</main>
+</x-page>
+<script type="text/x-page">
+class Component extends PageLogic {
+  constructor(props) {
+    super(props);
+    this.state = { step: 0 };
+  }
+  renderVals() {
+    const steps = [
+      { text: 'Запланирован', color: 'var(--info)', hint: 'Начало в 18:00. Войти можно с 17:50.', mode: 'waiting' },
+      { text: 'Скоро начало', color: 'var(--accent-text)', hint: 'Комната откроется, когда подключится преподаватель. Страница обновится сама.', mode: 'waiting' },
+      { text: 'Идёт сейчас', color: 'var(--live)', hint: 'Анна уже в комнате. Видео откроется в новой вкладке.', mode: 'join' },
+      { text: 'Завершён', color: 'var(--success)', hint: 'Запись урока появится ниже, когда будет готова.', mode: 'ended' }
+    ];
+    const current = steps[this.state.step];
+    return {
+      stateText: current.text,
+      stateColor: current.color,
+      hint: current.hint,
+      canJoin: current.mode === 'join',
+      waiting: current.mode === 'waiting',
+      hasRecording: current.mode === 'ended',
+      noRecording: current.mode !== 'ended',
+      advance: () => this.setState({ step: (this.state.step + 1) % steps.length })
+    };
+  }
+}
+</script>
+</body>
+</html>

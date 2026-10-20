@@ -1,13 +1,13 @@
 # States, colours and words
 
-One vocabulary for every status in OVC. Each state has exactly one colour token from [tokens](tokens.md#colours) and one word per language, used identically in lists, cards, badges, emails and notifications; the lesson table also fixes icons, and the component library maps every other state to one icon. Status is never shown by colour alone: the word is always present. Phrases avoid interpolating names into positions that need a grammatical case in Russian.
+One vocabulary for every status in OVC. Each state has exactly one colour token from [tokens](tokens.md#colours) and one word per language, used identically in rows, panels, badges, emails and notifications; the lesson table also fixes icons, and the component library maps every other state to one icon. Status is never shown by colour alone: the word is always present. A "badge" in these documents is the state word in its colour, optionally after a small dot; a "count badge" is a number in `text-muted` beside a sidebar item; neither is a filled pill ([tokens](tokens.md#principles)). Phrases avoid interpolating names into positions that need a grammatical case in Russian.
 
 ## Lessons
 
 | State | When | Token | Icon | English | Русский |
 |---|---|---|---|---|---|
 | `scheduled` | before the tutor joins | `info` | calendar | Scheduled | Запланирован |
-| `scheduled`, join window open | 10 minutes before start | `accent` | door | Starting soon | Скоро начало |
+| `scheduled`, join window open | 10 minutes before start | `accent-text` | door | Starting soon | Скоро начало |
 | `live` | the tutor has joined | `live` | pulsing dot | Live now | Идёт сейчас |
 | `ended`, took place | after it ran | `success` | check | Ended | Завершён |
 | `ended`, did not take place | nobody joined | `text-muted` | dash | Did not take place | Не состоялся |
@@ -33,7 +33,7 @@ While the window is open and the lesson is not yet live, students see "The room 
 
 | State | Token | English | Русский |
 |---|---|---|---|
-| `submitted` | `accent` | Needs checking | Нужно проверить |
+| `submitted` | `accent-text` | Needs checking | Нужно проверить |
 | `checked` without manual questions | `success` | Checked automatically | Проверено автоматически |
 | `returned` | `warning` | Returned | Возвращено |
 | `checked` | `success` | Checked | Проверено |
@@ -49,7 +49,7 @@ While the window is open and the lesson is not yet live, students see "The room 
 | relationship `invited` | `info` | Invitation sent | Приглашение отправлено |
 | relationship `active` | — (no badge) | — | — |
 | relationship `ended` | `text-muted` | Ended | Занятия завершены |
-| join request `pending` | `accent` | Wants to join | Хочет заниматься |
+| join request `pending` | `accent-text` | Wants to join | Хочет заниматься |
 | invitation expired | `warning` | Invitation expired | Приглашение истекло |
 | group archived | `text-muted` | Archived | В архиве |
 
@@ -73,11 +73,11 @@ While the window is open and the lesson is not yet live, students see "The room 
 | edited | caption after the time | edited | изменено |
 | deleted | muted italic placeholder | Message deleted | Сообщение удалено |
 | read-only channel | banner above the composer, composer disabled | This chat is read-only | Чат доступен только для чтения |
-| unread | `accent` count badge | — | — |
+| unread | count badge beside Messages, and a bold channel name in the channel list | — | — |
 
 ## Tutor labels
 
-In every student view, items carry their tutor's label: a 4 px stripe or dot in the relationship colour plus the tutor's name (or initials in narrow layouts). The filter "All tutors / {name}" sits at the top of Home, Schedule and Homework.
+In every student view, items carry their tutor's label: an 8 px dot in the relationship colour plus the tutor's name (or initials in narrow layouts). The filter "All tutors / {name}" sits at the top of Home, Schedule and Homework.
 
 ## Time and scores
 

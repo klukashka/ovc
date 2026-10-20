@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Проверка работы · OVC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="prototype.js"></script>
+<style>
+.review { flex-grow: 1; display: grid; grid-template-columns: minmax(0, 1fr) 380px; }
+.review-main { padding: 40px 56px 64px; }
+.review-main > div { max-width: 720px; margin: 0 auto; }
+.review-side { border-left: 1px solid var(--border); background: var(--surface); padding: 32px 28px; display: flex; flex-direction: column; position: sticky; top: 0; height: calc(100vh - 57px); overflow-y: auto; }
+.q { padding: 20px 0; border-top: 1px solid var(--border); }
+.score { display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); font-size: 14px; }
+@media (max-width: 1000px) { .review { grid-template-columns: minmax(0, 1fr); } .review-side { position: static; height: auto; border-left: none; border-top: 1px solid var(--border); } .review-main { padding: 32px 20px; } }
+</style>
+</head>
+<body data-role="tutor" data-page="homework">
+<x-page>
+<header class="topbar">
+  <a href="today.html" class="small">На проверке</a>
+  <span class="muted small">/ Борис Петров · 1 из 3</span>
+  <span class="grow"></span>
+  <span class="small" style="color: {{ statusColor }}"><span class="dot"></span>{{ statusText }}</span>
+  <a href="review.html" class="quiet small" style="text-decoration: none; color: var(--text)">Следующая работа</a>
+</header>
+
+<div class="review">
+  <main class="review-main">
+    <div>
+      <div class="label">Борис Петров · сдано 17 ноября в 21:40 · <span class="warning">на день позже срока</span></div>
+      <h1 class="serif" style="font-size: 34px; line-height: 1.2; margin: 6px 0 28px">Past simple, неделя 1</h1>
+
+      <div class="q">
+        <div class="label">1 · проверено автоматически</div>
+        <div style="font-weight: 500">Yesterday I ___ to the cinema.</div>
+        <div style="margin-top: 6px">Ответ: <span class="danger">goed — неверно</span>; <span class="muted">верный ответ: went</span></div>
+      </div>
+      <div class="q">
+        <div class="label">2 · проверено автоматически</div>
+        <div style="font-weight: 500">Past simple от глагола «go»</div>
+        <div style="margin-top: 6px">Ответ: «Went » <span class="success">верно</span> <span class="muted">— регистр и пробелы не важны</span></div>
+      </div>
+      <div class="q" style="border-bottom: 1px solid var(--border)">
+        <div class="label">3 · ждёт вашей проверки</div>
+        <div style="font-weight: 500; margin-bottom: 12px">Фото упражнения 4</div>
+        <div class="muted" style="aspect-ratio: 4 / 3; border: 1px solid var(--border); border-radius: 8px; background: var(--sidebar); display: flex; align-items: center; justify-content: center">exercise4.pdf · 2 страницы</div>
+      </div>
+    </div>
+  </main>
+
+  <aside class="review-side" aria-label="Ваша проверка">
+    <div class="label">Ваша проверка · ученик баллов не видит</div>
+    <div class="score"><span>1. Yesterday I ___</span><span class="num muted">0 из 2</span></div>
+    <div class="score"><span>2. Past simple от «go»</span><span class="num muted">2 из 2</span></div>
+    <div class="score" style="border-bottom: 1px solid var(--border)">
+      <label for="q3-points">3. Фото упражнения</label>
+      <span class="num muted"><input id="q3-points" class="pts num" type="number" value="4" min="0" max="6"> из 6</span>
+    </div>
+
+    <label for="q3-comment" class="label" style="margin: 20px 0 6px">Комментарий к упражнению</label>
+    <textarea id="q3-comment" class="field" rows="3">Во втором и пятом предложениях перепутан порядок слов, я отметила их в файле.</textarea>
+    <button type="button" class="text-btn act" style="align-self: flex-start; margin-top: 8px; font-weight: 500">Приложить исправленный файл</button>
+
+    <label for="feedback" class="label" style="margin: 20px 0 6px">Общий отзыв</label>
+    <textarea id="feedback" class="field" rows="3">Хорошая работа с формами глаголов. Повторите таблицу неправильных глаголов к четвергу.</textarea>
+
+    <div style="display: flex; justify-content: space-between; margin-top: 20px"><span class="muted">Итого</span><span class="num" style="font-weight: 500">6 из 10</span></div>
+
+    <div style="flex-grow: 1; min-height: 24px"></div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <button type="button" class="btn" onClick="{{ check }}">Отметить проверенной</button>
+      <button type="button" class="quiet" onClick="{{ returnWork }}">Вернуть на доработку</button>
+      <span class="muted small" style="text-align: center">Черновик проверки сохраняется сам</span>
+    </div>
+  </aside>
+</div>
+</x-page>
+<script type="text/x-page">
+class Component extends PageLogic {
+  constructor(props) {
+    super(props);
+    this.state = { status: 'submitted' };
+  }
+  renderVals() {
+    const looks = {
+      submitted: { text: 'Нужно проверить', color: 'var(--accent-text)' },
+      returned: { text: 'Возвращено', color: 'var(--warning)' },
+      checked: { text: 'Проверено', color: 'var(--success)' }
+    };
+    const look = looks[this.state.status];
+    return {
+      statusText: look.text,
+      statusColor: look.color,
+      check: () => this.setState({ status: 'checked' }),
+      returnWork: () => this.setState({ status: 'returned' })
+    };
+  }
+}
+</script>
+</body>
+</html>

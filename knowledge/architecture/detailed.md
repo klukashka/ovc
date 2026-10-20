@@ -79,7 +79,7 @@ Media never passes through OVC. Every external effect that must not be lost goes
 | `features/builder` | Assignment builder and preview |
 | `features/homework` | Issue dialog, issued work, analytics, review queue and review screen, student assignment page and results |
 | `features/chat` | Channel list, conversation, composer, presence, typing |
-| `features/notifications` | Bell and list |
+| `features/notifications` | Sidebar notifications entry with unread count, notifications panel and list |
 | `features/settings` | Profile, account, notifications, teaching settings |
 | `lib/api` | Typed API client generated from OpenAPI, error type, token handling |
 | `lib/realtime` | One reconnecting WebSocket client and typed subscriptions |
@@ -131,7 +131,7 @@ Exact versions are pinned in the lockfiles and recorded with check dates in `kno
 | Frontend state | TanStack Query; generated OpenAPI client | No hand-rolled cache; schema parity |
 | Styling | Tailwind CSS over design tokens | Utility styling with shared primitives |
 | Localisation | i18next with ICU message format | Russian plurals, two languages |
-| Fonts | Nunito, JetBrains Mono, self-hosted | Warm style, Cyrillic, no external CDN |
+| Fonts | Golos Text, Literata, JetBrains Mono, self-hosted | Quiet text-first style with Cyrillic-first interface and book-serif titles ([ADR-0010](../../docs/decisions/0010-quiet-visual-language.md)), no external CDN |
 | Frontend tooling | pnpm, ESLint, Prettier, Vitest, Testing Library, Playwright | Lockfile-pinned, strict lint, real-browser tests |
 | Local infrastructure | Docker Compose: PostgreSQL, local S3-compatible server | One-command development environment |
 
@@ -211,3 +211,5 @@ Settings are read once from the environment into one typed object in `ovc.core`.
 | Thumbnails for image previews | Originals constrained by the client in the MVP | After MVP |
 | Malware scanning of uploads | Content-type allowlist and size limits are mandatory regardless | After MVP |
 | Offline queue for assignment answers beyond retrying | Autosave with versions | Slice 9 |
+| How the student's Home knows that checked feedback is new (a per-submission seen marker in the data model, or dropping the marker) | Home shows recently checked work without points | Slice 10 |
+| Phone navigation frame (a bottom bar or the interim top bar with an overlay sidebar) and phone layouts | Computer-first design; every page works from 360 px in one column meanwhile ([ADR-0010](../../docs/decisions/0010-quiet-visual-language.md)) | Slice 10 |
