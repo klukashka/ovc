@@ -29,7 +29,7 @@ An assignment is a title (1–200 characters) and an ordered list of 1 to 100 bl
 | `file` | prompt; allowed kinds (images, PDF, office documents, audio); maximum file count 1–5; points; explanation | by the tutor |
 
 - **Prompts** use the restricted Markdown subset and may attach up to 3 images. Option texts are plain text up to 500 characters.
-- **Points** are integers from 0 to 100 per question. The assignment's maximum is the sum. A template whose maximum is 0 (content only, or all questions worth 0) can be issued; its score shows as "not scored".
+- **Points** are integers from 0 to 100 per question. The assignment's maximum is the sum. A template whose maximum is 0 (content only, or all questions worth 0) can be issued; the tutor sees its score as "not scored". Students never see points ([answer visibility](#answer-visibility)).
 - **Explanations** are optional restricted Markdown, shown only when [answers are visible](#answer-visibility).
 - **Scoring of `multiple_choice`:**
   - **All or nothing:** the full points when the selected set equals the correct set exactly, otherwise 0.
@@ -93,23 +93,24 @@ The policy is one of `never`, `after_submission` or `after_check`. **Correct ans
 - `after_check`: their submission is `checked`;
 - `never`: never.
 
-**Tutor review content** (points for manual questions, comments, corrected files, feedback) is visible to the student only from the latest **published** review revision, whatever the policy. Overrides apply only to automatic questions; they count as per-question automatic points and follow that row of the table. A draft revision is never visible, and its corrected files cannot be downloaded by the student: corrected files are referenced by the revision's own identifier, and students are authorized only through the latest published revision.
+**Tutor review content visible to the student** (comments, corrected files, feedback) comes only from the latest **published** review revision, whatever the policy. Points the tutor sets or overrides stay tutor-only. Overrides apply only to automatic questions. A draft revision is never visible, and its corrected files cannot be downloaded by the student: corrected files are referenced by the revision's own identifier, and students are authorized only through the latest published revision.
 
 | Data | Before submission | After submission, not revealed | Revealed |
 |---|---|---|---|
 | Prompts, options (identifier and text), their own answers | yes | yes | yes |
-| Total automatic points | no | yes | yes |
-| Final score and percentage | no | once checked | once checked |
-| Automatic points per question | no | no | yes |
+| Status (to do, in progress, due soon, overdue, submitted, returned, checked, late) | yes | yes | yes |
 | Published review content | no | yes, once published | yes, once published |
 | Which options are correct, accepted answers, numeric value and tolerance | no | no | yes |
 | Explanations | no | no | yes |
+| Any points, totals, overrides, scores or percentages | never | never | never |
 
-- **Why per-question automatic points are withheld:** they would disclose the key, for example for a two-option question. The total can still disclose correctness when an assignment has a single automatic question; this is an accepted limitation ([T-30](../../docs/threat-model.md#threats-and-controls)).
+**Points are tutor-only** ([ADR-0009](../../docs/decisions/0009-owner-approved-exceptions-and-visibility.md)): no student-facing response, frame, notification or email contains points, totals, overrides, scores or percentages.
+
+- **Because no points reach the student**, nothing reveals the key before the policy allows it ([T-30](../../docs/threat-model.md#threats-and-controls)).
 - **Explanations carry no attachments**, so no file reference can reveal them early.
-- **Separate schemas:** the student schemas are separate Pydantic models with no field for correctness, per-question automatic points, accepted answers or explanations. The revealed data is a separate object, added only when the rules above hold.
+- **Separate schemas:** the student schemas are separate Pydantic models with no field for points, scores, correctness, accepted answers or explanations. The revealed data is a separate object, added only when the rules above hold.
 - **Option identifiers** are random UUIDs, not positions.
-- **A contract test** walks every student-facing response and WebSocket frame for an unrevealed submission, including notification payloads and lists, and fails if any key field appears.
+- **A contract test** walks every student-facing response, WebSocket frame, notification payload and email for submissions in every state, and fails if any points or score field appears, or any key field appears before reveal.
 - **With `after_submission`, returning work is unavailable**, because the student has already seen the answers.
 
 ## Submission lifecycle
@@ -141,7 +142,7 @@ stateDiagram-v2
   - The submission is **late** when its first submission came after the deadline.
   - A `file` question counts as answered with at least one file.
 - **Returned work** reopens only the manual questions; automatic answers and scores stay frozen. The published comments stay visible while revising, under every policy.
-- **Checked work:** `checked_at` is the first time it became checked. The tutor may publish updated review revisions, which notify the student with `submission.review_updated`.
+- **Checked work:** `checked_at` is the first time it became checked. The tutor may publish updated review revisions. They notify the student with `submission.review_updated` only when student-visible content (comments, corrected files, feedback) changed, so a points-only change reveals nothing.
 - **Closed** submissions are read-only and excluded from "to do" lists.
 - **After a relationship ends**, `submitted` work can still be checked but not returned.
 - **A student removed from a group** keeps their open work and may still submit it while their relationship is active.

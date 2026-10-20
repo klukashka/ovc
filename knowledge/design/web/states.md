@@ -26,8 +26,7 @@ While the window is open and the lesson is not yet live, students see "The room 
 | `submitted` | `info` | Submitted | Сдано |
 | `submitted`, late | `warning` | Submitted late | Сдано с опозданием |
 | `returned` | `warning` | Returned for revision | На доработке |
-| `checked` | `success` | Checked · {score} | Проверено · {score} |
-| `checked`, maximum 0 | `success` | Checked · not scored | Проверено · без оценки |
+| `checked` | `success` | Checked | Проверено |
 | `closed` | `text-muted` | Closed | Закрыто |
 
 ## Homework (tutor view)
@@ -82,7 +81,7 @@ In every student view, items carry their tutor's label: a 4 px stripe or dot in 
 
 ## Time and scores
 
-Strings with fixed keys, so tests assert by key and both languages stay in step.
+Strings with fixed keys, so tests assert by key and both languages stay in step. Score strings appear only in tutor views.
 
 | Key | English | Русский |
 |---|---|---|
@@ -109,7 +108,7 @@ The bundled timezone table gives each city in the form the string needs: "Moscow
   - dates and times use `Intl.DateTimeFormat` in the user's language and timezone;
   - Russian uses 24-hour time and day-month order ("12 нояб., 18:30"); English uses the `en-GB` format ("12 Nov, 18:30") so dates read the same for every English user and in tests;
   - relative times use `Intl.RelativeTimeFormat`;
-  - numbers and percentages use `Intl.NumberFormat`; `{score}` above is a percentage formatted this way.
+  - numbers and percentages use `Intl.NumberFormat`, including the `{percent}` in tutor score strings.
 - **Emails** use server-side templates with the same keys and plural rules.
 - **User content is never translated:** names, titles, messages, assignment text.
 - **Text expansion:** layouts tolerate 30 % longer strings; buttons do not truncate labels.

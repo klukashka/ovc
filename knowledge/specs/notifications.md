@@ -23,7 +23,7 @@ Behavior for FR-13 and the worker that delivers it. Decision: [ADR-0006](../../d
 | `issue.created` | each student of the issue | yes | yes | `homework` |
 | `issue.withdrawn` | each student of the issue | yes | no | — |
 | `submission.submitted` | tutor, for work with manual questions | yes | yes | `submissions` |
-| `submission.checked`, `submission.returned`, `submission.review_updated` | student | yes | yes | `results` |
+| `submission.checked`, `submission.returned`, `submission.review_updated` (only when comments, corrected files or feedback changed) | student | yes | yes | `results` |
 | `recording.available` | tutor and roster | yes | no | — |
 | `recording.held_quota` | tutor | yes | yes | required |
 | `recording.failed` | tutor | yes | no | — |
@@ -51,7 +51,7 @@ Behavior for FR-13 and the worker that delivers it. Decision: [ADR-0006](../../d
 ## Email
 
 - **Templates** exist per event, in Russian and English, as HTML and plain text. They are rendered at send time in the recipient's language and timezone with ICU plural rules.
-- **Content:** subject and body include only what the recipient may see. A message digest names channels and counts, never message text. Links point to OVC pages, never to provider or storage URLs.
+- **Content:** subject and body include only what the recipient may see; emails to students never contain points or scores. A message digest names channels and counts, never message text. Links point to OVC pages, never to provider or storage URLs.
 - **Escaping:** user-written text (names, titles) is HTML-escaped in HTML bodies and appears in plain text only as text.
 - **Headers:**
   - user-written text that reaches a header (names, titles) has CR and LF removed and is encoded with RFC 2047;

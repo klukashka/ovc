@@ -65,14 +65,14 @@ Each question has an explanation.
 | 4 | Maria | Groups | "New group", `POST /groups` | Group "B1 evening" with Anna and Boris; its chat exists |
 | 5 | Maria | Library, Builder | `POST /library/folders`, `POST /uploads?context=library`, `POST /library/materials`, `POST /library/templates`, `PUT /library/templates/{id}` | The template above is in the library; the preview shows its five blocks in order without answer keys |
 | 6 | Maria | Issue dialog | `POST /issues` (group, deadline in 2 days, answers after checking) | Both students get the assignment and an email |
-| 7 | Anna | Assignment (phone) | `POST /uploads?context=answer&scope=submission:…`, `PUT /submissions/{id}/answers` ("went", "went", one photo), `POST /submissions/{id}/submit` | The draft saves while she types; after submitting she sees `homework.auto_points` with 4, with no per-question points or correct answers |
+| 7 | Anna | Assignment (phone) | `POST /uploads?context=answer&scope=submission:…`, `PUT /submissions/{id}/answers` ("went", "went", one photo), `POST /submissions/{id}/submit` | The draft saves while she types; after submitting she sees "Submitted", with no points of any kind and no correct answers |
 | 8 | Clock | — | `harness: POST /clock` past the deadline | — |
-| 9 | Boris | Assignment | Answers "goed", "Went ", one PDF; `POST /submissions/{id}/submit` | The submission is marked late; `homework.auto_points` with 2 |
+| 9 | Boris | Assignment | Answers "goed", "Went ", one PDF; `POST /submissions/{id}/submit` | The submission is marked late; Maria's view shows `homework.auto_points` with 2, Boris's view shows no points |
 | 10 | Maria | Today, Review | `GET /review-queue`, `POST /uploads?context=corrected&scope=submission:…`, `PUT /submissions/{id}/review` (file question 6), `POST /submissions/{id}/check` | Anna's work is checked with a corrected file attached; the email to Anna is in the sink |
 | 11 | Maria | Review | `PUT /submissions/{id}/review` with a comment on the file question, `POST /submissions/{id}/return` | Boris's work is returned; only the file question is editable for him; the comment is visible |
 | 12 | Boris | Assignment | New upload, `POST /submissions/{id}/submit` | Resubmitted; back in Maria's queue; the resubmission email to Maria is in the sink |
 | 13 | Maria | Review | `PUT /submissions/{id}/review` (file question 4), `POST /submissions/{id}/check` | Boris's work is checked at 6 of 10 |
-| 14 | Anna | Results | `GET /submissions/{id}`, `GET /attachments/{id}` | `homework.score` with 10, 10 and 100%; per-question points and comments; the corrected file downloads; correct answers with explanations |
+| 14 | Anna | Results | `GET /submissions/{id}`, `GET /attachments/{id}` | Comments, the corrected file downloads, and correct answers with explanations; no points, total or percentage anywhere on the page or in the response |
 | 15 | Maria | Issue analytics | `GET /issues/{id}/analytics` | 2 of 2 submitted, 2 checked, 1 late; average 80%; single choice 50% correct, short text 100% correct; options "goed" 1 and "went" 1; top short answer "went" (2) |
 | 16 | Anna | Results | Opens Boris's submission address | Not found |
 

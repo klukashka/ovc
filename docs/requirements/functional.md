@@ -92,7 +92,7 @@ Specified in [issuing](../../knowledge/specs/homework.md#issuing), [answer visib
 
 - **FR-9.1** A student opens issued work, answers in any order, and their answers save automatically as a draft.
 - **FR-9.2** A student submits with one action after confirming. Work submitted after the deadline is marked late; the deadline does not block submission.
-- **FR-9.3** Automatically checked questions are scored on submission. Until answers are revealed, the student sees only the total of the automatic points, not the points per question.
+- **FR-9.3** Automatically checked questions are scored on submission. Points and scores are for the tutor only: the student never sees points, totals, overrides, scores or percentages, before or after checking.
 - **FR-9.4** The student never receives correct answers or explanations before the visibility policy allows it.
 
 Specified in [submission lifecycle](../../knowledge/specs/homework.md#submission-lifecycle).
@@ -108,7 +108,7 @@ Specified in [scoring and review](../../knowledge/specs/homework.md#scoring-and-
 
 ## FR-11 Results and analytics
 
-- **FR-11.1** A student sees their score, the tutor's comments, overall feedback and corrected files, and, once answers are revealed, the points per question and the correct answers with explanations.
+- **FR-11.1** A student sees the status of their work, the tutor's comments, overall feedback and corrected files, and, once answers are revealed, the correct answers with explanations next to their own answers. They never see points or scores.
 - **FR-11.2** For each issue the tutor sees how many students submitted, were checked and are late, the average score, the share of correct answers per question and the distribution of answers for choice questions.
 - **FR-11.3** For each student the tutor sees their scores across assignments over time.
 - **FR-11.4** Analytics use final scores after any tutor overrides.

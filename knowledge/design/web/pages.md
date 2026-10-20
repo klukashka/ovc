@@ -272,7 +272,7 @@ FR-15.3, FR-5.1, FR-2.6.
   - tutor label, title, and time with a countdown when under an hour;
   - a full-width "Join" button when live and the room is open, otherwise "The room opens when your tutor joins" or "Starts at {time}".
 - **To do:** submissions to do ordered by deadline, with due-soon and overdue badges.
-- **Recently checked:** the last five checked submissions with score.
+- **Recently checked:** the last five checked submissions, with the tutor label and whether feedback is new.
 - **No tutor yet:** "Enter your tutor's code" with an input; with a pending request, "Request sent. Waiting for the tutor." instead.
 - **Phone first:** cards stack and the Join button stays within thumb reach.
 
@@ -290,11 +290,11 @@ FR-9, FR-11.1.
   - large tap targets for options; native file picker and camera capture for file answers;
   - Submit confirms and lists any unanswered questions.
 - **After submission:**
-  - the total of the automatic points so far;
-  - per-question points, correct answers and explanations only when revealed.
+  - the status "Submitted", with no points at any time;
+  - correct answers and explanations next to their own answers, only when revealed.
 - **Save conflict:** if another device saved newer answers, a banner says "Your answers changed on another device". It offers "Load the latest" and keeps the unsaved local answers shown, so they can be reapplied.
 - **Returned work:** the tutor's comments are highlighted, and only the reopened questions are editable.
-- **Checked results:** total score and percentage, per-question points and comments, corrected files to download, overall feedback, and correct answers when allowed.
+- **Checked results:** per-question comments, corrected files to download, overall feedback, and correct answers with explanations when allowed. No points or scores.
 
 ### My tutors
 

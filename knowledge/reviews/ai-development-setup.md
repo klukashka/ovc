@@ -6,7 +6,14 @@ Active policy for how coding agents verify OVC changes. [AGENTS.md](../../AGENTS
 
 - `AGENTS.md` at the repository root holds every rule; `CLAUDE.md` imports it so Claude Code loads the same text.
 - One skill, `.claude/skills/ovc-verify`, with four review profiles: correctness, security, browser and performance.
-- `.claude/settings.json` sets permissions and one post-edit hook that reports Python syntax errors back to the agent. Secrets, private keys and credential directories are unreadable, which also blocks recognized shell readers such as `cat` but not a script that opens a file itself; system directories are not editable; commits run without confirmation, while push, merge, rebase and reset require it. Absolute paths in rules use the `//` prefix, because a single leading `/` is relative to the settings file.
+- `.claude/settings.json` sets permissions and two hooks.
+  - **Permissions:** secrets, private keys and credential directories are unreadable, and system directories are not editable. Commits and merges run without confirmation; the settings ask before agents push, rebase, reset, clean, force-delete branches, discard work with destructive checkouts, restores or stash drops, or rewrite history (amend, filter-branch, update-ref, reflog expiry). Absolute paths in rules use the `//` prefix, because a single leading `/` is relative to the settings file.
+  - **Secret guard hook** (`guard_secrets.py`, before file, search and shell tools). It refuses calls that name an environment file other than `.env.example`, `.envrc`, a private key or certificate, or a credential directory.
+    - Matching is case-insensitive, follows symlinks for file tools, and treats glob patterns that could match such files as matches.
+    - It also scans unquoted heredoc bodies, and the file-access lines of quoted heredocs fed to interpreters.
+    - It fails closed on malformed input. Commit messages, `git status`, `git log` and `git check-ignore` are not inspected.
+    - **Recorded limitations:** names built at runtime, programs that open such files by themselves, and wrappers that hide `git` from the permission rules are not caught.
+  - **Post-edit hook:** reports Python syntax errors back to the agent. A post-edit hook reports Python syntax errors back to the agent.
 
 There are no permanent specialist agents. Correctness spans every component contract, so separate architect, API, database, test-writing or frontend agents would duplicate ownership and drift from `AGENTS.md`. Browser and performance stay separate profiles because performance needs an uncontended machine and an explicit measured conclusion beyond successful interactions. Security owns threat-based reasoning beyond correctness. Each review runs in a fresh general-purpose subagent per component/profile pair, so reviewers do not inherit the implementation conversation.
 

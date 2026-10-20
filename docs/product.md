@@ -27,10 +27,10 @@ The platform operator has no web interface in the first release; blocking and li
 ## What a student does
 
 1. Opens an invitation link (or signs up and enters a tutor code) and lands on their home page.
-2. Sees the next lesson with a large Join button, homework to do with deadlines, and recent results, from all tutors.
+2. Sees the next lesson with a large Join button, homework to do with deadlines, and recently checked work, from all tutors.
 3. Joins lessons from a phone or a computer, and rewatches recordings.
 4. Completes homework on any device; answers save automatically; submits with one button.
-5. Reads feedback, downloads corrected files, and, when the tutor allows it, sees the correct answers and explanations.
+5. Reads feedback, downloads corrected files, and, when the tutor allows it, sees the correct answers and explanations. Scores are the tutor's working tool and are never shown to students.
 6. Chats with each tutor and with their groups, and receives email reminders before lessons.
 
 ## Principles
@@ -45,7 +45,7 @@ The platform operator has no web interface in the first release; blocking and li
 
 | Tutor | Student |
 |---|---|
-| Today: lessons of the day, work to check, unread messages, deadlines, first-run checklist | Home: next lesson, homework to do, recent results |
+| Today: lessons of the day, work to check, unread messages, deadlines, first-run checklist | Home: next lesson, homework to do, recently checked work |
 | Schedule: week and month calendar | Schedule: all lessons from all tutors |
 | Students: list, student card, join requests | My tutors: list, enter a tutor code |
 | Groups: list and group page | — |
