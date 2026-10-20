@@ -1,0 +1,63 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash",
+      "WebFetch",
+      "WebSearch",
+      "Read(.env.example)",
+      "Read(**/.env.example)",
+      "Edit(.env.example)",
+      "Edit(**/.env.example)",
+      "Write(.env.example)",
+      "Write(**/.env.example)"
+    ],
+    "ask": [
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git merge:*)",
+      "Bash(git rebase:*)",
+      "Bash(git reset:*)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(**/.env)",
+      "Read(**/*.env)",
+      "Read(**/.env.local)",
+      "Read(**/.env.*.local)",
+      "Read(**/.env.development)",
+      "Read(**/.env.dev)",
+      "Read(**/.env.test)",
+      "Read(**/.env.production)",
+      "Read(**/.env.prod)",
+      "Read(**/.env.staging)",
+      "Read(**/.env.secret)",
+      "Read(**/.env.secrets)",
+      "Bash(sudo:*)",
+      "Edit(/etc/**)",
+      "Edit(/usr/**)",
+      "Edit(/System/**)",
+      "Edit(~/.ssh/**)",
+      "Edit(~/.aws/**)",
+      "Edit(~/.gnupg/**)"
+    ]
+  },
+  "env": {},
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/post_edit_check.py\""
+          }
+        ]
+      }
+    ]
+  }
+}
