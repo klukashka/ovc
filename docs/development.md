@@ -1,6 +1,6 @@
 # Development
 
-Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain, and on 2026-10-21 with Docker Compose services and security scanning; pending line-by-line owner review.
+Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain, and on 2026-10-21 with Docker Compose services, security scanning and the backend scaffold; pending line-by-line owner review.
 
 How to set up, check and verify changes locally. Read [AGENTS.md](../AGENTS.md) before contributing. The repository currently contains documentation and agent configuration only; backend and frontend commands are registered here by [roadmap slice 1](roadmap.md#slice-1-scaffold-and-local-loop).
 
@@ -9,7 +9,7 @@ How to set up, check and verify changes locally. Read [AGENTS.md](../AGENTS.md) 
 Use Linux or macOS with Git, Bash, Docker with Compose v2 (Docker Desktop, Colima or OrbStack all work), Node (for `npx`), a system `python3` (3.9 or newer, for the agent hooks in `.claude/hooks/`), a C compiler (for `go test -race`, which needs cgo) and the pinned toolchain:
 
 - Go: the version in [`tools/go.mod`](../tools/go.mod) (`go` and `toolchain` lines, matched by `backend/go.mod`), installed from [the official downloads](https://go.dev/dl/) or a package manager; the `toolchain` line lets newer Go installations fetch the pinned release.
-- Repository tools (Gitleaks and OSV-Scanner now; govulncheck and golangci-lint with the backend scaffold, golangci-lint as a pinned release binary instead if it does not work as a `tool` dependency; sqlc from slice 2): pinned as Go `tool` dependencies in `tools/go.mod`, with checksums in `tools/go.sum`, and run from the repository root as `go -C tools tool <tool>`. No separate installation is needed.
+- Repository tools (Gitleaks and OSV-Scanner now; govulncheck and golangci-lint, built from the pinned versions into the ignored `bin/` directory because they must type-check the backend module; sqlc from slice 2): pinned as Go `tool` dependencies in `tools/go.mod`, with checksums in `tools/go.sum`, and run from the repository root as `go -C tools tool <tool>`. No separate installation is needed.
 - Node and pnpm: pinned by the frontend scaffold in `frontend/.node-version` and the `packageManager` field of `frontend/package.json`.
 - lychee for link checks: installed with its [official instructions](https://lychee.cli.rs/installation/).
 
@@ -47,11 +47,28 @@ Run from the repository root; each must pass before a change is ready.
 
 - **Secrets in history:** `go -C tools tool gitleaks git --redact --no-banner ..` reports no leaks.
 - **Secrets about to be committed:** `go -C tools tool gitleaks git --staged --redact --no-banner ..` reports no leaks. Gitleaks never scans the working directory, so ignored environment files are never read.
-- **Known vulnerabilities in dependencies:** OSV-Scanner over each module and lockfile with an explicit path, starting with `go -C tools tool osv-scanner scan source --no-call-analysis=go --lockfile=go.mod` (the tools module has no packages of its own to call-analyse; the backend gets `govulncheck` separately); the backend module and `frontend/pnpm-lock.yaml` join when they exist. A pass is exit code 0. Accepted findings are listed in the `osv-scanner.toml` next to the scanned file, each with a reason and an `ignoreUntil` date, and explained in a dated triage table ([current triage](../knowledge/research/local-s3-2026-10-21.md#repository-tool-scan-triage)).
+- **Known vulnerabilities in dependencies:** OSV-Scanner over each module and lockfile with an explicit path, starting with `go -C tools tool osv-scanner scan source --no-call-analysis=go --lockfile=go.mod` (the tools module has no packages of its own to call-analyse) and `go -C tools tool osv-scanner scan source --no-call-analysis=go --lockfile=../backend/go.mod` (the backend gets call analysis from `govulncheck` in the backend checks); `frontend/pnpm-lock.yaml` joins with the frontend scaffold. A pass is exit code 0. Accepted findings are listed in the `osv-scanner.toml` next to the scanned file, each with a reason and an `ignoreUntil` date, and explained in a dated triage table ([current triage](../knowledge/research/local-s3-2026-10-21.md#repository-tool-scan-triage)).
 
 ## Backend checks
 
-Pending implementation in slice 1. The scaffold registers, at minimum, run from `backend/`: `go mod tidy -diff` (the module files are tidy), `test -z "$(gofmt -l .)"`, `go vet ./...`, `golangci-lint run`, `sqlc diff` (generated queries match the SQL), `govulncheck ./...`, and `go test -race ./...`. The test run includes the package-layer test and integration tests against PostgreSQL and a local S3-compatible server in Docker, with the worker driven through `Tick(now)`.
+Build the pinned linters once per tools upgrade, from the repository root:
+
+```bash
+go -C tools build -o ../bin/ github.com/golangci/golangci-lint/v2/cmd/golangci-lint golang.org/x/vuln/cmd/govulncheck
+```
+
+Then, from `backend/`, with Docker Compose running and `OVC_TEST_DATABASE_ADMIN_URL` set to a PostgreSQL URL that may create databases (for example the `ovc` user on `ovc_dev`):
+
+```bash
+go mod tidy -diff
+test -z "$(gofmt -l .)"
+go vet ./...
+../bin/golangci-lint run ./...
+../bin/govulncheck ./...
+go test -race -count=1 ./...
+```
+
+Every command must exit 0. The tests include the package-layer architecture test (it parses the [package layers table](../knowledge/architecture/detailed.md#package-layers)), the no-comments and no-`any` conventions test, integration tests that each create and drop their own `ovc_<random>_test` database, and process tests that build the `api` and `worker` binaries and run them with an explicit environment. A missing or unreachable test database fails the run; nothing is skipped. `sqlc diff` joins this list in slice 2. The lint configuration excludes gosec's G204 (subprocess with variable arguments) and G304 (file path from a variable) for `_test.go` files only, because the process tests run the binaries they have just built and the convention tests read the repository's own files; production code keeps both rules.
 
 ## Frontend checks
 
@@ -68,7 +85,7 @@ The local environment has:
   - SeaweedFS also runs its master, volume and filer services inside the container without authentication; they are not published to the host, and on Linux they are reachable from the host and other containers only on the Compose network. Development data only.
   - Agents never run commands that print the interpolated credentials (`docker compose config` without a filter, `docker inspect`, `env` inside a container); the filtered `grep host_ip` form above is the only allowed use of `docker compose config`.
   - The development database is `ovc_dev`. `docker compose up -d` starts both services; `docker compose ps` shows them `healthy` within a minute; `docker compose down` stops them and keeps the data volumes.
-- **Two processes**, both reading the same settings: the API (`go run ./cmd/api`, restarted on change by a file watcher chosen in slice 1) and the worker (`go run ./cmd/worker`, the `Tick(now)` loop).
+- **Three commands**, all reading the same settings from the environment (copy `backend/.env.example`; nothing loads it automatically): `go run ./cmd/api migrate` applies the migrations with a role that may change the schema; `go run ./cmd/api` serves on `OVC_HTTP_ADDR` and refuses to start while migrations are pending; `go run ./cmd/worker` runs the `Tick(now)` loop. Restart them by hand after a change.
 - **Fakes**:
   - the meeting provider is `fake`, because BigBlueButton runs only on a dedicated Ubuntu server and not on developer machines ([research](../knowledge/research/bigbluebutton-2026-10-20.md#server));
   - mail goes to the database sink. Development runs with `OVC_TEST_CONTROL=1` against a development database, so the sink is readable only through the harness route below.
@@ -78,10 +95,11 @@ Automated tests never call a real BigBlueButton server, SMTP provider or product
 
 ## End-to-end test harness
 
-Pending implementation in slice 1, extended by each slice. The [pilot scenarios](../knowledge/design/web/pilot-scenarios.md) run against local test deployments: the real API, worker, database and storage in local containers, configured with `OVC_TEST_CONTROL=1` and `OVC_CLOCK=test`.
+Started in slice 1 (the clock and tick routes), extended by each slice. The [pilot scenarios](../knowledge/design/web/pilot-scenarios.md) run against local test deployments: the real API, worker, database and storage in local containers, configured with `OVC_TEST_CONTROL=1` and `OVC_CLOCK=test`.
 
 - **Safety:**
-  - both processes refuse to start with `OVC_TEST_CONTROL=1` unless the meeting provider is `fake`, mail is the database sink, and the database name marks a test or development database;
+  - both processes refuse to start with `OVC_TEST_CONTROL=1` unless the meeting provider is `fake`, mail is the database sink, `OVC_HTTP_ADDR` is a loopback IP literal, every database host is a loopback IP literal, `localhost` resolving only to loopback, or a Unix socket (checked before connecting), and `SELECT current_database()` matches `^[a-z0-9_]+_(test|dev)$`; they also refuse `OVC_CLOCK=test` without `OVC_TEST_CONTROL=1`;
+  - the control routes require `Content-Type: application/json`, bodies of at most 4 KiB and a loopback `Host` header, so a page in the developer's browser or a rebinding host name cannot drive them;
   - without the setting, none of the routes below exist, and a test proves it.
 - **Worker:** with `OVC_CLOCK=test` the worker's own loops are paused, so only harness ticks run jobs. Local development keeps `OVC_CLOCK=system`, so its worker loops run normally while the control routes and the mail viewer stay available.
 - **Clock:** the fake clock reads its current instant from a single test-clock row, so the API and the worker of one deployment share one time. Playwright sets the browser clock to the same instant with `page.clock`.

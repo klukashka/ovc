@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10, slice reviews and the Go backend added the same day; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10, slice reviews and the Go backend added the same day, slice 1 adjusted on 2026-10-21 (sqlc and `ovc-admin` moved to slice 2); pending line-by-line owner review.
 
 Build order, slice by slice. Each slice is runnable and reviewable on its own and ends with its checks registered in the [development guide](development.md). A slice is done when:
 
@@ -20,10 +20,10 @@ Closed at the commit "Introduce tiered verification", without a slice review: sl
 
 - **Backend:**
   - a Go module with the API server built on huma and typed settings ([ADR-0012](decisions/0012-go-backend.md));
-  - the `pgx` connection pool, `sqlc` code generation, and `goose` SQL migrations with a comment-free template;
+  - the `pgx` connection pool and `goose` SQL migrations applied by `api migrate`; `sqlc` arrives in slice 2 with the first repository, because slice 1 has no business queries;
   - health routes, the structured logging bootstrap and request identifiers;
   - the package-layer architecture test and the integration-test database fixture;
-  - an empty worker process with `Tick(now)` and the fake clock.
+  - an empty worker process with `Tick(now)`, the shared test clock and the first test control routes; `ovc-admin` arrives in slice 2.
 - **Frontend:** a `pnpm` project with Vite, React and strict TypeScript; Tailwind over the design tokens; self-hosted fonts; the router and i18n setup with `ru` and `en`; the typed API client; the public and role frames; ESLint and Prettier; a Playwright smoke test.
 - **Infrastructure:** Docker Compose for PostgreSQL and a local S3-compatible server. Security scanning tools are selected and registered.
 - **Done when** the health routes answer, the frontend renders its frames in both languages against them, and every slice-1 check passes.

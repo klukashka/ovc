@@ -46,3 +46,6 @@ backend/.data/
 
 # ---- Docker ----
 docker-compose.override.yml
+
+# ---- Repository tools ----
+/bin/

@@ -37,22 +37,23 @@ REST under `/api/v1` (omitted from the paths below), JSON in and out except uplo
   | 401 | `unauthenticated`, `token_expired`, `invalid_signature` (provider callbacks) |
   | 403 | `email_not_verified`, `account_blocked`, `forbidden` (allowed to see, not to change) |
   | 404 | `not_found` |
+  | 405 | `method_not_allowed` |
   | 409 | `conflict` (stale version), `lesson_overlap`, `lesson_not_live`, `outside_join_window`, `not_editable`, `answer_frozen`, `already_linked`, `student_exists`, `relationship_not_active`, `audience_not_active`, `role_mismatch`, `invitation_invalid`, `invitation_email_mismatch`, `return_not_allowed`, `issue_has_submissions`, `channel_read_only`, `edit_window_passed` |
   | 410 | `gone` (provider callbacks only) |
   | 413 | `payload_too_large` |
   | 415 | `unsupported_media_type` |
   | 422 | `validation_failed`, `lesson_in_past`, `tutor_code_invalid` |
   | 429 | `rate_limited`, `tutor_unavailable`, with `Retry-After` |
-  | 503 | `provider_unavailable` |
+  | 503 | `provider_unavailable`, `service_unavailable` (readiness) |
   | 507 | `quota_exceeded` |
 
 - **Pagination:** every list route except `/calendar`, `/home`, `/tutors` and `/groups` is keyset paginated (`?limit=&cursor=`, default 30, maximum 100). Responses include `next_cursor`, which is `null` at the end.
 - **Identifiers** are UUIDs. **Timestamps** are ISO-8601 in UTC; the client converts them for display.
 - **Idempotency:** `PUT` routes and the submit, check, return, accept, decline, end, cancel and withdraw routes are safe to retry; repeating one in the same state returns the current state. Create routes (`POST /lessons`, `/students`, `/groups`, `/issues`, `/library/templates`) accept an `Idempotency-Key` header, and a repeated key returns the first result.
-- **Request identity:** every response carries `X-Request-ID`, which also appears in error bodies and diagnostics ([observability](observability.md#correlation)).
-- **Schemas** are the Go structs in `internal/schemas`, validated by huma and published as OpenAPI at `/api/docs` outside production; production disables the docs. Student-facing and tutor-facing structs are separate wherever their content differs ([answer visibility](homework.md#answer-visibility)).
-- **Server limits:** the HTTP server sets `ReadHeaderTimeout` (10 s), `IdleTimeout` (120 s) and `MaxHeaderBytes` (16 KiB). Every request body has a default read deadline of 30 s, set per request through `http.ResponseController`, and JSON bodies are limited to 1 MiB. Upload routes raise the body limit and the read deadline to the [file limits](files.md) and stream the body instead of buffering it; the WebSocket route clears the deadline after the upgrade.
-- **SQL:** every query is written in `backend/queries/` and compiled by sqlc, with `sqlc.narg` and `sqlc.slice` for optional filters and lists; no SQL is built from strings, and `NOTIFY` is sent as `pg_notify($1, $2)` with bound parameters.
+- **Request identity:** every response carries `X-Request-ID`, which also appears in error bodies and diagnostics ([observability](observability.md#correlation)). An incoming `X-Request-ID` is kept only when it appears once and matches `^[A-Za-z0-9._-]{1,64}$`; otherwise the server generates a new one and never rejects the request.
+- **Schemas** are the Go structs in `internal/schemas`, validated by huma and published as OpenAPI JSON at `/api/docs/openapi.json` only when `OVC_API_DOCS_ENABLED=true` (off by default and in production), with no documentation UI; `api openapi` prints the same document without reading any setting. Student-facing and tutor-facing structs are separate wherever their content differs ([answer visibility](homework.md#answer-visibility)).
+- **Server limits:** the HTTP server sets `ReadHeaderTimeout` (10 s), `IdleTimeout` (120 s) and `MaxHeaderBytes` (16 KiB). Every request has a default read deadline and write deadline of 30 s, set per request through `http.ResponseController`, and JSON bodies are limited to 1 MiB (both also set on every huma operation, whose own defaults are 1 MiB and 5 s). Upload routes raise the body limit and the read deadline to the [file limits](files.md) and stream the body instead of buffering it; the WebSocket route clears the deadline after the upgrade.
+- **SQL:** every business query is written in `backend/queries/` and compiled by sqlc (from slice 2), with `sqlc.narg` and `sqlc.slice` for optional filters and lists. Infrastructure statements (the readiness ping, `current_database()`, the test clock, migration bookkeeping, test database creation) are named constants with bound parameters in the package that owns them; test database names are generated and quoted with `pgx.Identifier`. No SQL is built from client input, and `NOTIFY` is sent as `pg_notify($1, $2)` with bound parameters.
 - **Headers:**
   - every response, including the static frontend, sends `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`;
   - pages send a Content Security Policy with `default-src 'self'`, `script-src 'self'`, `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'`, `frame-src` limited to the conferencing subdomain, and `connect-src`, `img-src` and `media-src` limited to the OVC origin and the storage host;
@@ -200,7 +201,7 @@ Behavior: [files](files.md).
 
 | Method | Path | Who | Purpose |
 |---|---|---|---|
-| GET | `/health/live` | public | Process is running |
-| GET | `/health/ready` | public | Database and storage reachable |
+| GET | `/health/live` | public | Process is running: `{"status":"ok"}`; no I/O |
+| GET | `/health/ready` | public | Database reachable within 1 s (storage joins in slice 2): `{"status":"ready","checks":{"database":"ok"}}`, otherwise 503 `service_unavailable` without driver detail |
 
 The end-to-end test control surface is not part of this API. It exists only in test deployments ([development](../../docs/development.md#end-to-end-test-harness)).

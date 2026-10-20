@@ -65,8 +65,10 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `internal/worker` | Outbox dispatcher and scheduled jobs, the `Tick(now)` entry point | [Outbox and worker](../specs/notifications.md#outbox-and-worker) |
 | `internal/admin` | The `ovc-admin` command | [Administration command](../specs/accounts.md#administration-command) |
 | `internal/testcontrol` | The end-to-end test control routes, present only with `OVC_TEST_CONTROL=1` | [Test harness](../../docs/development.md#end-to-end-test-harness) |
+| `internal/testdb` | Test-only helper: one migrated PostgreSQL database per test, created from `OVC_TEST_DATABASE_ADMIN_URL` and dropped afterwards | [Development guide](../../docs/development.md#backend-checks) |
+| `internal/conventions` | Test-only package: the no-comments and no-`any` check and the package-layer architecture test, which parses the table below | [AGENTS.md](../../AGENTS.md#code) |
 | `migrations` | goose SQL migrations, embedded with `//go:embed` | [Data model](../specs/data-model.md) |
-| `cmd/api`, `cmd/worker`, `cmd/ovc-admin` | Composition roots: the API server, the worker process and the operator command | — |
+| `cmd/api`, `cmd/worker`, `cmd/ovc-admin` | Composition roots: the API server (with the `migrate` and `openapi` subcommands), the worker process and, from slice 2, the operator command; `cmd/internal/startup` holds their shared migration helpers | — |
 
 ### Frontend (`frontend/src/`)
 
@@ -92,7 +94,7 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 
 ## Package layers
 
-A package may import only the packages in its row (all paths under `backend/`; the standard library is always allowed, and a third-party library only in the packages that own its concern: `pgx` in `internal/core`, `internal/dbgen`, `internal/repositories` and `internal/adapters` (the last only for the adapters' own tables and `LISTEN`); goose in `cmd/*`, which apply the embedded migrations; huma in `internal/api` and `internal/schemas`; `coder/websocket` in `internal/realtime`; storage and mail clients in `internal/adapters`; each recorded in the [stack table](#stack-per-component)); packages under `internal/services` follow the `internal/services` row and may import each other only through their exported service interfaces. The architecture test that enforces this table lands with the backend scaffold ([roadmap slice 1](../../docs/roadmap.md#slice-1-scaffold-and-local-loop)) and checks Go imports; a new package enters the table in the change that creates it.
+A package may import only the packages in its row (all paths under `backend/`; the standard library is always allowed, and a third-party library only in the packages that own its concern: `pgx` in `internal/core`, `internal/dbgen`, `internal/repositories`, `internal/adapters` (only for the adapters' own tables and `LISTEN`) and `internal/testdb`; goose in `cmd/*`, which apply the embedded migrations, and in `internal/testdb`; huma in `internal/api` and `internal/schemas`; `coder/websocket` in `internal/realtime`; storage and mail clients in `internal/adapters`; each recorded in the [stack table](#stack-per-component)); packages under `internal/services` follow the `internal/services` row and may import each other only through their exported service interfaces. The architecture test that enforces this table lands with the backend scaffold ([roadmap slice 1](../../docs/roadmap.md#slice-1-scaffold-and-local-loop)) and checks the Go imports of non-test files (test files may also import `internal/testdb` and the packages they exercise); a new package enters the table in the change that creates it.
 
 Infrastructure adapters that keep their own state in PostgreSQL, namely the `NOTIFY` broadcaster, the database mail sink and the shared test clock, use the connection pool from `internal/core` for their own tables only. This is the single exception to "only repositories touch the database" in AGENTS.md. Business data is never read or written outside `internal/repositories`.
 
@@ -110,7 +112,8 @@ Infrastructure adapters that keep their own state in PostgreSQL, namely the `NOT
 | `internal/api` | `internal/domain`, `internal/core`, `internal/schemas`, `internal/services`, `internal/realtime` |
 | `internal/worker` | `internal/domain`, `internal/core`, `internal/services`, `internal/adapters` |
 | `internal/admin` | `internal/domain`, `internal/core`, `internal/services` |
-| `internal/testcontrol` | `internal/domain`, `internal/core`, `internal/services`, `internal/adapters`, `internal/worker` |
+| `internal/testcontrol` | `internal/domain`, `internal/core`, `internal/schemas`, `internal/services`, `internal/adapters`, `internal/worker` |
+| `internal/testdb` | `internal/core`, `migrations` (test helper; never imported by production code) |
 | `cmd/*` | every package |
 
 ## Stack per component
@@ -120,9 +123,9 @@ Exact versions are pinned in the lockfiles and recorded with check dates in `kno
 | Component | Choice | Reason |
 |---|---|---|
 | Backend language | Go, latest stable when slice 1 starts, pinned in `go.mod` | Compile-time checks, goroutines for WebSockets, single-binary deployment ([ADR-0012](../../docs/decisions/0012-go-backend.md)) |
-| HTTP and API contract | huma v2 on `net/http` | Typed handlers, input validation and OpenAPI 3.1 generated from code |
-| WebSockets | `coder/websocket` | Context-aware, maintained, standard `net/http` integration |
-| Database access and migrations | `pgx`, `sqlc`, `goose` with SQL files | Visible SQL compiled to typed functions; reviewed plain-SQL migrations |
+| HTTP and API contract | huma 2.39.1 on `net/http` | Typed handlers, input validation and OpenAPI 3.1 generated from code; defaults reviewed in [research](../research/toolchain-2026-10-21.md) |
+| WebSockets | `coder/websocket` (added in slice 4) | Context-aware, maintained, standard `net/http` integration |
+| Database access and migrations | `pgx` 5.10.0 and `goose` 3.28.0 with embedded SQL files; `sqlc` from slice 2 | Visible SQL compiled to typed functions; reviewed plain-SQL migrations with a session lock |
 | Database and queue | PostgreSQL 18 | Relational data, keyset pagination, leased `SKIP LOCKED` outbox, `LISTEN/NOTIFY` broadcaster |
 | Timezones | Standard library `time` with the embedded `time/tzdata` database | IANA rules without a dependency, independent of the host's zone files |
 | Logging | Standard library `log/slog`, JSON | Structured, leveled diagnostics without a dependency |
@@ -139,15 +142,16 @@ Exact versions are pinned in the lockfiles and recorded with check dates in `kno
 | Fonts | Golos Text, Literata, JetBrains Mono, self-hosted | Quiet text-first style with Cyrillic-first interface and book-serif titles ([ADR-0010](../../docs/decisions/0010-quiet-visual-language.md)), no external CDN |
 | Frontend tooling | pnpm, ESLint, Prettier, Vitest, Testing Library, Playwright | Lockfile-pinned, strict lint, real-browser tests |
 | Local infrastructure | Docker Compose: PostgreSQL 18.6 and SeaweedFS 4.48, pinned by digest, published on loopback | One-command development environment; SeaweedFS chosen for its licence, maintenance and presigned `Content-Disposition` support ([research](../research/local-s3-2026-10-21.md)) |
-| Repository tools | Go module `tools/` pinning Gitleaks 8.30.1 and OSV-Scanner 2.6.0 as `tool` dependencies | Pinned versions with checksums, no separate installation ([security scanning](../../docs/development.md#security-scanning)) |
+| Repository tools | Go module `tools/` pinning Gitleaks 8.30.1, OSV-Scanner 2.6.0, golangci-lint 2.14.0 and govulncheck 1.8.0 | Pinned versions with checksums ([security scanning](../../docs/development.md#security-scanning), [backend checks](../../docs/development.md#backend-checks)) |
 
 ## Configuration
 
-Settings are read once from the environment into one typed struct in `internal/core`. Every variable is documented in `backend/.env.example`; the frontend reads only `VITE_`-prefixed build-time variables.
+Settings are read once from the environment into one typed struct in `internal/core`. Every variable is documented in `backend/.env.example`, which a test checks against the settings loader; unknown values of boolean and enum variables are refused at start-up; the frontend reads only `VITE_`-prefixed build-time variables.
 
 | Variable | Meaning |
 |---|---|
-| `OVC_DATABASE_URL` | PostgreSQL connection URL |
+| `OVC_HTTP_ADDR` | API listen address, `127.0.0.1:8000` by default; a loopback IP literal is required with `OVC_TEST_CONTROL=1` |
+| `OVC_DATABASE_URL` | PostgreSQL connection URL, required; a `Secret` whose diagnostics show only hosts and database name |
 | `OVC_PUBLIC_URL` | Base URL used in emails and provider callbacks |
 | `OVC_JWT_SECRET` | Access-token signing key |
 | `OVC_UNSUBSCRIBE_SIGNING_SECRET` | Key for unsubscribe tokens only |
@@ -156,23 +160,24 @@ Settings are read once from the environment into one typed struct in `internal/c
 | `OVC_CORS_ORIGINS` | Explicit frontend origins |
 | `OVC_STORAGE_ENDPOINT`, `OVC_STORAGE_BUCKET`, `OVC_STORAGE_ACCESS_KEY`, `OVC_STORAGE_SECRET_KEY`, `OVC_STORAGE_BACKEND` | S3-compatible storage, or `memory` in tests |
 | `OVC_DEFAULT_FILE_QUOTA_BYTES`, `OVC_DEFAULT_RECORDING_QUOTA_BYTES` | Default tutor quotas |
-| `OVC_MEETING_PROVIDER` | `bbb` or `fake` |
+| `OVC_MEETING_PROVIDER` | `fake` (the only value accepted until `bbb` lands in slice 7) |
 | `OVC_BBB_URL`, `OVC_BBB_SECRET`, `OVC_BBB_CHECKSUM_ALGORITHM` | BigBlueButton server, shared secret, checksum algorithm |
 | `OVC_BBB_EMBED_ENABLED` | Embed the conferencing client in the lesson page; false until the slice 7 probe passes |
 | `OVC_SMTP_HOST`, `OVC_SMTP_PORT`, `OVC_SMTP_USERNAME`, `OVC_SMTP_PASSWORD`, `OVC_MAIL_FROM`, `OVC_MAIL_BACKEND` | Email, or the database `sink` in development and tests |
-| `OVC_API_DOCS_ENABLED` | Serve OpenAPI at `/api/docs`; false in production |
+| `OVC_API_DOCS_ENABLED` | `true` serves the OpenAPI JSON at `/api/docs/openapi.json`; `false` by default and in production |
 | `OVC_TEST_CONTROL` | Enable the test control routes and the mail sink viewer; refused unless the meeting provider is `fake`, mail is the sink and the database is a test or development database |
 | `OVC_CLOCK` | `system`, or `test` for the shared test clock (only with `OVC_TEST_CONTROL=1`) |
 | `OVC_BROADCASTER` | `postgres`, or `memory` for unit and contract tests |
 | `OVC_DB_POOL_SIZE` | Connections per process: 20 for the API and 10 for the worker by default, plus one dedicated listening connection per API instance |
-| `OVC_LOG_LEVEL`, `OVC_LOG_FORMAT` | Diagnostics level and `json` or `console` output |
+| `OVC_LOG_LEVEL`, `OVC_LOG_FORMAT` | Diagnostics level (`debug`, `info` by default, `warn`, `error`) and `json` (default) or `console` output |
+| `OVC_TEST_DATABASE_ADMIN_URL` | Tests only: a PostgreSQL URL allowed to create and drop the per-test databases |
 | `VITE_API_URL`, `VITE_WS_URL` | Frontend endpoints |
 
 ## Deployment shapes
 
 - **Local development:**
   - Docker Compose runs PostgreSQL and a local S3-compatible server;
-  - the API and the worker run with `go run ./cmd/api` and `go run ./cmd/worker`, restarted on change by a file watcher chosen in slice 1, and the frontend under the Vite dev server;
+  - `go run ./cmd/api migrate` applies migrations, then the API and the worker run with `go run ./cmd/api` and `go run ./cmd/worker`, restarted by hand, and the frontend under the Vite dev server;
   - the meeting provider is `fake` and mail goes to the database sink, viewable through a development-only page.
 - **Production:**
   - hosts in Russia ([ADR-0008](../../docs/decisions/0008-hosting-and-data-residency.md));
@@ -217,6 +222,6 @@ Settings are read once from the environment into one typed struct in `internal/c
 | Thumbnails for image previews | Originals constrained by the client in the MVP | After MVP |
 | Malware scanning of uploads | Content-type allowlist and size limits are mandatory regardless | After MVP |
 | Offline queue for assignment answers beyond retrying | Autosave with versions | Slice 9 |
-| HTTP server details: the read deadline for upload routes (a per-MiB rate with a ceiling), a per-request write deadline for ordinary routes, and swallowing `http.ErrAbortHandler` without logging in the outer recovery middleware; threat T-20 then cites the server limits | The limits in the [API conventions](../specs/api.md#conventions) | Slice 1 |
+| The read deadline for upload routes (a per-MiB rate with a ceiling) | Per-request read and write deadlines of 30 s, structured errors for every refusal ([API conventions](../specs/api.md#conventions)) | Slice 6 |
 | How the student's Home knows that checked feedback is new (a per-submission seen marker in the data model, or dropping the marker) | Home shows recently checked work without points | Slice 10 |
 | Phone navigation frame (a bottom bar or the interim top bar with an overlay sidebar) and phone layouts | Computer-first design; every page works from 360 px in one column meanwhile ([ADR-0010](../../docs/decisions/0010-quiet-visual-language.md)) | Slice 10 |
