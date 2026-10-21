@@ -446,3 +446,14 @@ func TestStorageOnLoopbackMayUsePlainHTTPAndKeysStayRedacted(t *testing.T) {
 		t.Fatal("a storage key was printed")
 	}
 }
+
+func TestTheAdministrationCommandNeedsOnlyTheDatabaseAndLogging(t *testing.T) {
+	databaseURL := url.URL{Scheme: "postgres", User: url.UserPassword("operator", "sentinel-password"), Host: "127.0.0.1:5432", Path: "/ovc"}
+	values := map[string]string{"OVC_DATABASE_URL": databaseURL.String()}
+
+	settings, err := core.Load(lookupFrom(values), core.ProcessAdmin)
+
+	if err != nil || settings.Process != core.ProcessAdmin {
+		t.Fatalf("the administration settings needed more than the database: %v", err)
+	}
+}

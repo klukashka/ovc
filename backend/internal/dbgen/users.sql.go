@@ -317,6 +317,61 @@ func (q *Queries) ListUnverifiedSince(ctx context.Context, arg ListUnverifiedSin
 	return items, nil
 }
 
+const listUsersForOperator = `-- name: ListUsersForOperator :many
+SELECT id, role, state, email, created_at FROM users
+WHERE ($1::text IS NULL OR role = $1::text)
+    AND ($2::text IS NULL OR state = $2::text)
+    AND ($3::text IS NULL OR email::text ILIKE $3::text ESCAPE '\')
+ORDER BY created_at, id
+LIMIT $4
+`
+
+type ListUsersForOperatorParams struct {
+	Role         *string
+	State        *string
+	EmailPattern *string
+	RowLimit     int32
+}
+
+type ListUsersForOperatorRow struct {
+	ID        domain.UserID
+	Role      domain.Role
+	State     domain.AccountState
+	Email     string
+	CreatedAt time.Time
+}
+
+func (q *Queries) ListUsersForOperator(ctx context.Context, arg ListUsersForOperatorParams) ([]ListUsersForOperatorRow, error) {
+	rows, err := q.db.Query(ctx, listUsersForOperator,
+		arg.Role,
+		arg.State,
+		arg.EmailPattern,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUsersForOperatorRow
+	for rows.Next() {
+		var i ListUsersForOperatorRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Role,
+			&i.State,
+			&i.Email,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockUserCredentials = `-- name: LockUserCredentials :one
 SELECT password_hash, state FROM users WHERE id = $1 FOR NO KEY UPDATE
 `
@@ -330,6 +385,29 @@ func (q *Queries) LockUserCredentials(ctx context.Context, id domain.UserID) (Lo
 	row := q.db.QueryRow(ctx, lockUserCredentials, id)
 	var i LockUserCredentialsRow
 	err := row.Scan(&i.PasswordHash, &i.State)
+	return i, err
+}
+
+const lockUserForOperator = `-- name: LockUserForOperator :one
+SELECT id, role, state, state_before_block FROM users WHERE email = $1 FOR UPDATE
+`
+
+type LockUserForOperatorRow struct {
+	ID               domain.UserID
+	Role             domain.Role
+	State            domain.AccountState
+	StateBeforeBlock *domain.AccountState
+}
+
+func (q *Queries) LockUserForOperator(ctx context.Context, email string) (LockUserForOperatorRow, error) {
+	row := q.db.QueryRow(ctx, lockUserForOperator, email)
+	var i LockUserForOperatorRow
+	err := row.Scan(
+		&i.ID,
+		&i.Role,
+		&i.State,
+		&i.StateBeforeBlock,
+	)
 	return i, err
 }
 
@@ -386,6 +464,72 @@ type ReplaceUserPasswordParams struct {
 
 func (q *Queries) ReplaceUserPassword(ctx context.Context, arg ReplaceUserPasswordParams) (int64, error) {
 	result, err := q.db.Exec(ctx, replaceUserPassword, arg.PasswordHash, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const restoreUser = `-- name: RestoreUser :execrows
+UPDATE users SET state = 'active', deleted_at = NULL, updated_at = $1::timestamptz
+WHERE id = $2 AND state = 'deleted' AND email_verified_at IS NOT NULL
+`
+
+type RestoreUserParams struct {
+	Now time.Time
+	ID  domain.UserID
+}
+
+func (q *Queries) RestoreUser(ctx context.Context, arg RestoreUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, restoreUser, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setTutorQuotas = `-- name: SetTutorQuotas :execrows
+UPDATE tutor_profiles
+SET file_quota_bytes = $1, recording_quota_bytes = $2, updated_at = $3::timestamptz
+WHERE user_id = $4
+`
+
+type SetTutorQuotasParams struct {
+	FileQuotaBytes      int64
+	RecordingQuotaBytes int64
+	Now                 time.Time
+	UserID              domain.UserID
+}
+
+func (q *Queries) SetTutorQuotas(ctx context.Context, arg SetTutorQuotasParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setTutorQuotas,
+		arg.FileQuotaBytes,
+		arg.RecordingQuotaBytes,
+		arg.Now,
+		arg.UserID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const unblockUser = `-- name: UnblockUser :execrows
+UPDATE users
+SET state = state_before_block,
+    state_before_block = NULL,
+    unverified_since = CASE WHEN state_before_block = 'unverified' THEN $1::timestamptz ELSE unverified_since END,
+    updated_at = $1::timestamptz
+WHERE id = $2 AND state = 'blocked'
+`
+
+type UnblockUserParams struct {
+	Now time.Time
+	ID  domain.UserID
+}
+
+func (q *Queries) UnblockUser(ctx context.Context, arg UnblockUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, unblockUser, arg.Now, arg.ID)
 	if err != nil {
 		return 0, err
 	}

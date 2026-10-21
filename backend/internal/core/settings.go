@@ -19,6 +19,7 @@ type Process string
 const (
 	ProcessAPI    Process = "api"
 	ProcessWorker Process = "worker"
+	ProcessAdmin  Process = "admin"
 )
 
 type ClockMode string
@@ -230,11 +231,13 @@ func Load(lookup Lookup, process Process) (Settings, error) {
 	}
 	settings.MailBackend = mail
 
-	publicURL, err := publicURLFrom(lookup, settings.TestControl)
-	if err != nil {
-		problems = append(problems, err)
+	if process != ProcessAdmin {
+		publicURL, err := publicURLFrom(lookup, settings.TestControl)
+		if err != nil {
+			problems = append(problems, err)
+		}
+		settings.PublicURL = publicURL
 	}
-	settings.PublicURL = publicURL
 
 	if process == ProcessWorker {
 		smtp, from, mailProblems := mailSettings(lookup, settings.MailBackend)

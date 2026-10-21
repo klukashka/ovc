@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	binaries = directory
-	for _, name := range []string{"api", "worker"} {
+	for _, name := range []string{"api", "worker", "ovc-admin"} {
 		build := exec.CommandContext(context.Background(), "go", "build", "-o", filepath.Join(binaries, name), "ovc/backend/cmd/"+name)
 		build.Stderr = os.Stderr
 		if err := build.Run(); err != nil {

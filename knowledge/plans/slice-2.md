@@ -824,6 +824,8 @@ These amendments, made after the standard and security planning reviews, overrid
 
 - **C8** delivers `DELETE /users/me`, the immediate purge of an unverified account (Q6), the hourly `accounts.purge` and `accounts.cleanup_unverified` jobs, and purge of every table slice 2 creates. The rate-limit cleanup job already landed in C5. Purge runs in a small `accounts.Purger` that needs only the store, the upload purger and logging, so the worker does not need the session keys. `storage_delete` payloads now carry the storage key, because purge deletes the attachment rows before the worker deletes their objects. The current-password check is shared by password change and deletion.
 
+- **C9** delivers `cmd/ovc-admin`, `internal/admin` and `internal/services/operators` with the account state machine as a domain rule, process tests for every subcommand, and the audit event. Since deleting an unverified account purges it at once (Q6), restore only ever returns an account to `active`; unblock into `unverified` restarts the 7-day clock (Q8). Block also discards pending email requests and tokens (amendment 4).
+
 ### E. New owner questions
 
 - **Q6, deleting an unverified account**, raised by the security planning review: purge it immediately and free the email (recommended), so a squatter cannot lock the real owner out for 30 days.

@@ -260,3 +260,13 @@ The tutor ends a relationship from the student card, after confirming. In one tr
 - `ovc-admin tutors set-quota <email> --files <bytes> --recordings <bytes>` changes a tutor's quotas; it refuses student accounts.
 
 Every command writes an audit diagnostic event with the operator's system user name.
+
+As implemented in slice 2:
+
+- **Settings:** the command needs only `OVC_DATABASE_URL` and the logging settings, refuses to run while migrations are pending, and writes its diagnostics to standard error; results go to standard output.
+- **Output:** `users list` prints one tab-separated line per account (identifier, role, state, email, creation time in UTC), at most 1000, oldest first; the `--email` filter matches a case-insensitive substring with `%`, `_` and `\` taken literally. The other commands print `done <identifier>`.
+- **Exit codes:** `0` on success, `1` for a refusal (`refused: no account has this email`, `the account's state does not allow this change`, `the account does not have the role this command needs`, `a quota must be between 0 and 2^50 bytes`) or a failure, and `2` with the usage text for an unknown command or malformed arguments. Messages never repeat the email.
+- **Block** also discards the account's unused email tokens and queued email requests; the revocation signal that closes live connections arrives with the broadcaster in slice 4.
+- **Unblock** into `unverified` restarts the 7-day clock, so the cleanup job does not remove the account at once. Blocked accounts are never removed by the cleanup or purge jobs.
+- **Failures before the command runs** (an unknown system user, an unreachable database, pending migrations) are audited as `admin.command` with outcome `failed`. Under `OVC_CLOCK=test` the command uses the shared test clock, like the API and the worker.
+- **Email lookup** is case-insensitive and trims spaces; every change locks the user row.

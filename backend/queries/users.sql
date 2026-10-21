@@ -86,3 +86,31 @@ SELECT state, deleted_at, unverified_since FROM users WHERE id = @id FOR UPDATE;
 
 -- name: DeleteUser :execrows
 DELETE FROM users WHERE id = @id;
+
+-- name: ListUsersForOperator :many
+SELECT id, role, state, email, created_at FROM users
+WHERE (sqlc.narg(role)::text IS NULL OR role = sqlc.narg(role)::text)
+    AND (sqlc.narg(state)::text IS NULL OR state = sqlc.narg(state)::text)
+    AND (sqlc.narg(email_pattern)::text IS NULL OR email::text ILIKE sqlc.narg(email_pattern)::text ESCAPE '\')
+ORDER BY created_at, id
+LIMIT sqlc.arg(row_limit);
+
+-- name: LockUserForOperator :one
+SELECT id, role, state, state_before_block FROM users WHERE email = @email FOR UPDATE;
+
+-- name: UnblockUser :execrows
+UPDATE users
+SET state = state_before_block,
+    state_before_block = NULL,
+    unverified_since = CASE WHEN state_before_block = 'unverified' THEN sqlc.arg(now)::timestamptz ELSE unverified_since END,
+    updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND state = 'blocked';
+
+-- name: RestoreUser :execrows
+UPDATE users SET state = 'active', deleted_at = NULL, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND state = 'deleted' AND email_verified_at IS NOT NULL;
+
+-- name: SetTutorQuotas :execrows
+UPDATE tutor_profiles
+SET file_quota_bytes = @file_quota_bytes, recording_quota_bytes = @recording_quota_bytes, updated_at = sqlc.arg(now)::timestamptz
+WHERE user_id = @user_id;
