@@ -1,7 +1,7 @@
 # ADR-0009: Owner-approved exceptions to base rules, and tutor-only scores
 
 - Status: accepted, 2026-10-20
-- Reviewed: decided by the project owner on 2026-10-20; wording pending line-by-line owner review
+- Reviewed: decided by the project owner on 2026-10-20, item 7 on 2026-10-21; wording pending line-by-line owner review
 - Deciders: project owner
 - Related: [ADR-0004](0004-bigbluebutton-primary-provider.md), [ADR-0005](0005-tutor-centric-domain.md), [ADR-0006](0006-background-worker-and-email.md), FR-1.2, FR-5.1, FR-5.3, FR-9.3, FR-11.1, [threat model](../threat-model.md)
 
@@ -11,7 +11,7 @@ The design reviews of the tutor-centric product found places where the specifica
 
 ## Decision
 
-The project owner approved, on 2026-10-20:
+The project owner approved, on 2026-10-20 (items 1 to 6) and 2026-10-21 (item 7):
 
 1. **Credentials in URLs** are allowed for exactly these, each bounded in lifetime and scope, never signing anyone in to OVC, and never logged:
    - invitation links;
@@ -33,6 +33,7 @@ The project owner approved, on 2026-10-20:
    - Students never see points, totals, overrides, scores or percentages, before or after checking.
    - They see the status of their work, the tutor's comments, feedback and corrected files, and, when the answer policy allows, the correct answers with explanations.
    - Scores and analytics are the tutor's working tools.
+7. **Agents may run local commands with the owner's development settings** until OVC has hosting. The owner keeps the root `.env` (Compose credentials) and `backend/.env` (backend settings) with development-only values, and edits and later moves them. Agents never open, print, copy or edit these or any other environment file; the only sanctioned use is `tools/dev-env.sh <command>`, which loads those two files into that one command's environment without printing them. Other environment files, such as `backend/.env.local` with real provider secrets for live checks, are never loaded by the wrapper and stay owner-only. The exception ends when hosting exists; then the wrapper, its check `tools/check-dev-env.sh`, the hook's support for it with its cases, and their documentation in `AGENTS.md`, the threat model, the development guide and the AI development inventory are removed.
 
 ## Alternatives considered
 
@@ -44,6 +45,7 @@ The project owner approved, on 2026-10-20:
 - `AGENTS.md`, the threat model and the specifications state these exceptions as approved, and reviews treat them as the base.
 - The answer-key contract test also asserts that no points or score field reaches any student-facing response, frame, notification or email.
 - Pages and pilot scenarios show no scores on student surfaces.
+- Commands run through `tools/dev-env.sh` hold the development settings in their environment; the owner keeps only development values in the two files it loads.
 
 ## Where it is applied
 
@@ -58,3 +60,4 @@ The project owner approved, on 2026-10-20:
 - [Pages](../../knowledge/design/web/pages.md), [states](../../knowledge/design/web/states.md), [pilot scenarios](../../knowledge/design/web/pilot-scenarios.md)
 - [Email content](../../knowledge/specs/notifications.md#email), [threat model](../threat-model.md) (T-19, T-30)
 - [Change workflow](../../AGENTS.md#change-workflow), [AI development verification](../../knowledge/reviews/ai-development-setup.md#minimal-inventory)
+- [Secrets](../../AGENTS.md#security) and the [local settings wrapper](../development.md#local-services) (item 7), [threat model](../threat-model.md) (T-19)

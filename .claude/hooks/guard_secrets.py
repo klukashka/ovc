@@ -107,11 +107,13 @@ def is_safe_git(segment: str) -> bool:
 SHELL_PUNCTUATION = ";&|()<>\n"
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
 WRAPPERS = {
-    "command", "builtin", "exec", "nohup", "time", "sudo", "xargs", "stdbuf", "caffeinate", "watch", "arch",
+    "command", "builtin", "exec", "nohup", "time", "sudo", "xargs", "stdbuf", "caffeinate", "watch", "arch", "dev-env.sh",
+    ".", "source",
     "{", "!", "if", "then", "else", "elif", "do", "while", "until",
 }
 WRAPPER_OPTIONS_WITH_VALUES = {
     "nice": {"-n"},
+    "exec": {"-a"},
     "timeout": {"-s", "-k", "--signal", "--kill-after"},
     "env": {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"},
     "watch": {"-n", "-d", "--interval"},
@@ -253,9 +255,98 @@ def container_printer(arguments: list[str], depth: int) -> str | None:
     return None
 
 
+SETTINGS_WRAPPER = "dev-env.sh"
+TRACE_VARIABLES = ("SHELLOPTS=", "BASHOPTS=", "BASH_ENV=", "BASH_XTRACEFD=")
+
+
+SHELL_OPTIONS_WITH_VALUES = {"-o", "+o", "-O", "+O", "--rcfile", "--init-file"}
+TRACE_OPTION_NAMES = {"xtrace", "verbose"}
+
+
+def takes_option_value(word: str) -> bool:
+    return word in SHELL_OPTIONS_WITH_VALUES or (word[:1] in {"-", "+"} and not word.startswith("--") and len(word) > 2 and word[-1] in {"o", "O"})
+
+
+def shell_options(arguments: list[str]) -> tuple[list[str], int]:
+    options: list[str] = []
+    index = 0
+    while index < len(arguments):
+        word = arguments[index]
+        if word == "--":
+            return options, index + 1
+        if takes_option_value(word):
+            options.extend(arguments[index : index + 2])
+            index += 2
+            continue
+        if word.startswith(("-", "+")) and len(word) > 1:
+            options.append(word)
+            index += 1
+            continue
+        break
+    return options, index
+
+
+def shell_traces(arguments: list[str]) -> bool:
+    options, _ = shell_options(arguments)
+    for index, word in enumerate(options):
+        if not word.startswith("-") or word.startswith("--"):
+            continue
+        if takes_option_value(word) and index + 1 < len(options) and options[index + 1].lower() in TRACE_OPTION_NAMES:
+            return True
+        if word not in SHELL_OPTIONS_WITH_VALUES and ("x" in word[1:] or "v" in word[1:]):
+            return True
+    return False
+
+
+def script_turns_on_tracing(script: str) -> bool:
+    for words in simple_commands(script):
+        command = unwrap(words)
+        if not command:
+            continue
+        program = os.path.basename(command[0])
+        if program == "set" and shell_traces(command[1:]):
+            return True
+        if program in {"shopt", "setopt"} and any(word.lower() in TRACE_OPTION_NAMES for word in command[1:]):
+            return True
+    return False
+
+
+def shell_script(arguments: list[str]) -> tuple[str, list[str]] | None:
+    options, index = shell_options(arguments)
+    if any(word.startswith("-") and not word.startswith("--") and not takes_option_value(word) and "c" in word[1:] for word in options):
+        return None
+    if index >= len(arguments):
+        return None
+    return arguments[index], arguments[index + 1 :]
+
+
+def settings_wrapper_trace(words: list[str]) -> str | None:
+    names = [os.path.basename(word) for word in words]
+    if SETTINGS_WRAPPER not in names:
+        return None
+    position = names.index(SETTINGS_WRAPPER)
+    before = words[:position]
+    if any(word.startswith(TRACE_VARIABLES) for word in before):
+        return "a shell trace setting that would print the loaded settings"
+    for index, name in enumerate(names[:position]):
+        if name in SHELLS and shell_traces(words[index + 1 : position]):
+            return "a traced shell that would print the loaded settings"
+    inner = unwrap(words[position + 1 :])
+    if inner and os.path.basename(inner[0]) in SHELLS:
+        if shell_traces(inner[1:]):
+            return "a traced shell that would print the loaded settings"
+        script = shell_command_argument(inner[1:])
+        if script is not None and script_turns_on_tracing(script):
+            return "a traced shell that would print the loaded settings"
+    return None
+
+
 def words_printer(words: list[str], depth: int) -> str | None:
     if depth > MAX_NESTING:
         return "a command nested too deeply to check"
+    traced = settings_wrapper_trace(words)
+    if traced:
+        return traced
     words = unwrap(words)
     if not words:
         return None
@@ -280,6 +371,9 @@ def words_printer(words: list[str], depth: int) -> str | None:
     if program == "eval":
         return command_printer(" ".join(arguments), depth + 1)
     if program in SHELLS:
+        script = shell_script(arguments)
+        if script is not None and os.path.basename(script[0]) == SETTINGS_WRAPPER:
+            return words_printer(script[1], depth + 1)
         inner = shell_command_argument(arguments)
         if inner is not None:
             return command_printer(inner, depth + 1)
@@ -426,7 +520,7 @@ def main() -> int:
         target = f"hook failure ({type(error).__name__})"
     if target is None:
         return 0
-    if target.startswith(("a command", "a container", "a read", "an interpreter")):
+    if target.startswith(("a command", "a container", "a read", "an interpreter", "a traced", "a shell")):
         print(
             f"Blocked: {target}. Agents never print the environment or credentials in this repository; "
             "ask the owner to run it if it is really needed.",
