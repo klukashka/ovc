@@ -1,6 +1,10 @@
 package schemas
 
-import "ovc/backend/internal/domain"
+import (
+	"github.com/danielgtaylor/huma/v2"
+
+	"ovc/backend/internal/domain"
+)
 
 type LiveStatus struct {
 	Status string `json:"status" enum:"ok"`
@@ -27,10 +31,23 @@ type ErrorBody struct {
 	Fields    []FieldError     `json:"fields,omitempty"`
 }
 
+func (ErrorBody) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	code, found := schema.Properties["code"]
+	if !found {
+		panic("ErrorBody schema has no code property")
+	}
+	code.Enum = code.Enum[:0]
+	for _, errorCode := range domain.AllErrorCodes() {
+		code.Enum = append(code.Enum, string(errorCode))
+	}
+	return schema
+}
+
 type ErrorEnvelope struct {
 	Body ErrorBody `json:"error"`
 }
 
 func NewErrorEnvelope(code domain.ErrorCode, requestID string, fields []FieldError) ErrorEnvelope {
-	return ErrorEnvelope{Body: ErrorBody{Code: code, Message: code.Message(), RequestID: requestID, Fields: fields}}
+	listed := code.Listed()
+	return ErrorEnvelope{Body: ErrorBody{Code: listed, Message: listed.Message(), RequestID: requestID, Fields: fields}}
 }

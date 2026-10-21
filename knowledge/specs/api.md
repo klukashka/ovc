@@ -34,18 +34,21 @@ REST under `/api/v1` (omitted from the paths below), JSON in and out except uplo
   | Status | Codes |
   |---|---|
   | 400 | `bad_request` |
-  | 401 | `unauthenticated`, `token_expired`, `invalid_signature` (provider callbacks) |
-  | 403 | `email_not_verified`, `account_blocked`, `forbidden` (allowed to see, not to change) |
+  | 401 | `unauthenticated`, `token_expired`, `invalid_signature` (provider callbacks), `invalid_credentials` (a wrong password, an unknown email or a deleted account, with one identical answer) |
+  | 403 | `email_not_verified`, `account_blocked` (only after the correct password, or for an existing session), `forbidden` (allowed to see, not to change) |
   | 404 | `not_found` |
   | 405 | `method_not_allowed` |
   | 409 | `conflict` (stale version), `lesson_overlap`, `lesson_not_live`, `outside_join_window`, `not_editable`, `answer_frozen`, `already_linked`, `student_exists`, `relationship_not_active`, `audience_not_active`, `role_mismatch`, `invitation_invalid`, `invitation_email_mismatch`, `return_not_allowed`, `issue_has_submissions`, `channel_read_only`, `edit_window_passed` |
   | 410 | `gone` (provider callbacks only) |
   | 413 | `payload_too_large` |
   | 415 | `unsupported_media_type` |
-  | 422 | `validation_failed`, `lesson_in_past`, `tutor_code_invalid` |
+  | 422 | `validation_failed`, `lesson_in_past`, `tutor_code_invalid`, `token_invalid` (an invalid, expired, used or superseded confirmation or reset token, or an account in a state the token does not apply to, with one identical answer for every cause) |
   | 429 | `rate_limited`, `tutor_unavailable`, with `Retry-After` |
-  | 503 | `provider_unavailable`, `service_unavailable` (readiness) |
+  | 500 | `internal` |
+  | 503 | `provider_unavailable`, `service_unavailable` (readiness, or a saturated password-hashing limiter) |
   | 507 | `quota_exceeded` |
+
+  Every code is an `ErrorCode` constant in `internal/domain`, listed by `AllErrorCodes` with its status and message, and published as the enum of `ErrorBody.code` in the OpenAPI document; the frontend derives its `ErrorCode` type from that enum and must translate every code in both languages. A conventions test requires `AllErrorCodes` to list exactly the declared constants, and an unlisted value is sent as `internal`. A client that receives a code it does not know shows a generic message with the request identifier.
 
 - **Pagination:** every list route except `/calendar`, `/home`, `/tutors` and `/groups` is keyset paginated (`?limit=&cursor=`, default 30, maximum 100). Responses include `next_cursor`, which is `null` at the end.
 - **Identifiers** are UUIDs. **Timestamps** are ISO-8601 in UTC; the client converts them for display.

@@ -17,7 +17,7 @@ function openApiDocument(): string {
 }
 
 async function generatedSchema(): Promise<string> {
-  const ast = await openapiTS(openApiDocument());
+  const ast = await openapiTS(openApiDocument(), { enumValues: true });
   return astToString(ast);
 }
 

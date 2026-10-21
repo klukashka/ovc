@@ -47,3 +47,28 @@ func TestKnownStatusesKeepTheirCodes(t *testing.T) {
 		}
 	}
 }
+
+func TestAnUnlistedCodeIsListedAsInternal(t *testing.T) {
+	unlisted := domain.ErrorCode("unlisted")
+
+	listed := unlisted.Listed()
+
+	if listed != domain.ErrorInternal || unlisted.Status() != http.StatusInternalServerError {
+		t.Fatalf("unlisted code becomes %s with status %d", listed, unlisted.Status())
+	}
+}
+
+func TestEveryErrorCodeIsUniqueWithAnErrorStatusAndMessage(t *testing.T) {
+	codes := domain.AllErrorCodes()
+
+	seen := map[domain.ErrorCode]bool{}
+	for _, code := range codes {
+		if seen[code] {
+			t.Fatalf("%s is listed twice", code)
+		}
+		seen[code] = true
+		if code.Status() < 400 || code.Status() >= 600 || code.Message() == "" {
+			t.Fatalf("%s has status %d and message %q", code, code.Status(), code.Message())
+		}
+	}
+}
