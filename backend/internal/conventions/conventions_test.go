@@ -2,12 +2,14 @@ package conventions_test
 
 import (
 	"bufio"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -24,8 +26,14 @@ func sourceFiles(t *testing.T, extension string) []string {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() && skippedDirectories[entry.Name()] {
-			return filepath.SkipDir
+		if skippedDirectories[entry.Name()] {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
+			return errors.New(path + ": symbolic links are not allowed in the backend tree")
 		}
 		if !entry.IsDir() && strings.HasSuffix(path, extension) {
 			files = append(files, path)
@@ -115,9 +123,54 @@ func constraintNodes(file *ast.File) map[ast.Node]bool {
 	return allowed
 }
 
-func TestSQLHasNoCommentsBeyondGooseMarkers(t *testing.T) {
+var (
+	gooseMarkers    = map[string]bool{"-- +goose Up": true, "-- +goose Down": true}
+	queryAnnotation = regexp.MustCompile(`^-- name: [A-Z][A-Za-z0-9]* :(one|many|exec|execrows)$`)
+)
+
+type sqlFileKind int
+
+const (
+	sqlMigration sqlFileKind = iota
+	sqlQuery
+	sqlOther
+)
+
+func sqlKind(root string, path string) sqlFileKind {
+	relative, err := filepath.Rel(root, path)
+	if err != nil {
+		return sqlOther
+	}
+	switch filepath.ToSlash(filepath.Dir(relative)) {
+	case "migrations":
+		return sqlMigration
+	case "queries":
+		return sqlQuery
+	}
+	return sqlOther
+}
+
+func sqlLineIsComment(kind sqlFileKind, line string) bool {
+	text := strings.TrimRight(line, "\r")
+	if strings.Contains(text, "/*") {
+		return true
+	}
+	if !strings.Contains(text, "--") {
+		return false
+	}
+	switch kind {
+	case sqlMigration:
+		return !gooseMarkers[text]
+	case sqlQuery:
+		return !queryAnnotation.MatchString(text)
+	case sqlOther:
+		return true
+	}
+	return true
+}
+
+func TestSQLHasNoCommentsBeyondFormatMarkers(t *testing.T) {
 	files := sourceFiles(t, ".sql")
-	markers := map[string]bool{"-- +goose Up": true, "-- +goose Down": true}
 
 	var problems []string
 	for _, path := range files {
@@ -125,14 +178,17 @@ func TestSQLHasNoCommentsBeyondGooseMarkers(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		kind := sqlKind(backendRoot, path)
 		scanner := bufio.NewScanner(handle)
 		line := 0
 		for scanner.Scan() {
 			line++
-			text := strings.TrimSpace(scanner.Text())
-			if (strings.Contains(text, "--") && !markers[text]) || strings.Contains(text, "/*") {
+			if sqlLineIsComment(kind, scanner.Text()) {
 				problems = append(problems, path+":"+strconv.Itoa(line)+": comment")
 			}
+		}
+		if err := scanner.Err(); err != nil {
+			t.Fatalf("read %s: %v", path, err)
 		}
 		if err := handle.Close(); err != nil {
 			t.Fatal(err)
@@ -141,6 +197,43 @@ func TestSQLHasNoCommentsBeyondGooseMarkers(t *testing.T) {
 
 	if len(problems) > 0 {
 		t.Fatalf("SQL comments:\n%s", strings.Join(problems, "\n"))
+	}
+}
+
+func TestSQLCommentDetection(t *testing.T) {
+	cases := []struct {
+		kind    sqlFileKind
+		line    string
+		comment bool
+	}{
+		{sqlMigration, "-- +goose Up", false},
+		{sqlMigration, "-- +goose Down", false},
+		{sqlMigration, "-- +goose StatementBegin", true},
+		{sqlMigration, "-- name: ListUsers :many", true},
+		{sqlMigration, "CREATE TABLE users (id uuid); -- explain", true},
+		{sqlQuery, "-- name: ListUsers :many", false},
+		{sqlQuery, "-- name: GetUser :one", false},
+		{sqlQuery, "-- name: TouchUser :exec", false},
+		{sqlQuery, "-- name: DeleteUsers :execrows", false},
+		{sqlQuery, "-- name: ListUsers :many explain", true},
+		{sqlQuery, "-- name: ListUsers :copyfrom", true},
+		{sqlQuery, "-- name: listUsers :many", true},
+		{sqlQuery, "-- +goose Up", true},
+		{sqlQuery, "-- explain", true},
+		{sqlQuery, "SELECT 1; /* explain */", true},
+		{sqlOther, "-- name: ListUsers :many", true},
+		{sqlOther, "SELECT 1", false},
+		{sqlQuery, "  -- name: ListUsers :many", true},
+		{sqlQuery, "-- name: ListUsers :many ", true},
+		{sqlMigration, " -- +goose Up", true},
+	}
+
+	for _, testCase := range cases {
+		found := sqlLineIsComment(testCase.kind, testCase.line)
+
+		if found != testCase.comment {
+			t.Errorf("sqlLineIsComment(%d, %q) = %v, want %v", testCase.kind, testCase.line, found, testCase.comment)
+		}
 	}
 }
 
@@ -263,6 +356,27 @@ func TestHashCommentDetection(t *testing.T) {
 
 		if found != expected {
 			t.Errorf("lineHasHashComment(%q) = %v, want %v", line, found, expected)
+		}
+	}
+}
+
+func TestSQLFileKindFollowsTheExactDirectory(t *testing.T) {
+	cases := map[string]sqlFileKind{
+		"../../queries/users.sql":            sqlQuery,
+		"../../migrations/00001_test.sql":    sqlMigration,
+		"../../queries/nested/users.sql":     sqlOther,
+		"../../internal/queries/users.sql":   sqlOther,
+		"../../queries/migrations/up.sql":    sqlOther,
+		"../../migrations/queries/users.sql": sqlOther,
+		"../../internal/migrations/up.sql":   sqlOther,
+		"../../users.sql":                    sqlOther,
+	}
+
+	for path, expected := range cases {
+		kind := sqlKind("../..", path)
+
+		if kind != expected {
+			t.Errorf("sqlKind(%q) = %d, want %d", path, kind, expected)
 		}
 	}
 }
