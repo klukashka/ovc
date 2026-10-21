@@ -28,6 +28,8 @@ type (
 	SessionPrincipal  = dbgen.GetSessionPrincipalRow
 	PasswordRehash    = dbgen.UpdateUserPasswordHashParams
 	LockedCredentials = dbgen.LockUserCredentialsRow
+	SignUp            = dbgen.CreateUserIfEmailFreeParams
+	EmailRequest      = dbgen.EmailRequest
 )
 
 type Users struct {
@@ -36,6 +38,21 @@ type Users struct {
 
 func (r Users) Create(ctx context.Context, user NewUser) error {
 	return done(r.queries.CreateUser(ctx, user), "create user")
+}
+
+func (r Users) CreateIfEmailFree(ctx context.Context, user SignUp) (bool, error) {
+	rows, err := r.queries.CreateUserIfEmailFree(ctx, user)
+	return applied(rows, err, "create user if the email is free")
+}
+
+func (r Users) ConfirmEmail(ctx context.Context, id domain.UserID, now time.Time) (bool, error) {
+	rows, err := r.queries.ConfirmUserEmail(ctx, dbgen.ConfirmUserEmailParams{Now: now, ID: id})
+	return applied(rows, err, "confirm user email")
+}
+
+func (r Users) ReplacePassword(ctx context.Context, id domain.UserID, passwordHash string, now time.Time) (bool, error) {
+	rows, err := r.queries.ReplaceUserPassword(ctx, dbgen.ReplaceUserPasswordParams{PasswordHash: passwordHash, Now: now, ID: id})
+	return applied(rows, err, "replace user password")
 }
 
 func (r Users) ByID(ctx context.Context, id domain.UserID) (User, error) {
@@ -114,12 +131,39 @@ func (r Sessions) RevokeAllOf(ctx context.Context, user domain.UserID, now time.
 	return counted(rows, err, "revoke user sessions")
 }
 
+func (r Sessions) RevokeOthersOf(ctx context.Context, user domain.UserID, kept domain.SessionID, now time.Time) (int64, error) {
+	rows, err := r.queries.RevokeOtherUserSessions(ctx, dbgen.RevokeOtherUserSessionsParams{Now: now, UserID: user, Kept: kept})
+	return counted(rows, err, "revoke other user sessions")
+}
+
 type EmailTokens struct {
 	queries *dbgen.Queries
 }
 
 func (r EmailTokens) CreateRequest(ctx context.Context, request NewEmailRequest) error {
 	return done(r.queries.CreateEmailRequest(ctx, request), "create email request")
+}
+
+func (r EmailTokens) Request(ctx context.Context, id domain.EmailRequestID) (EmailRequest, error) {
+	request, err := r.queries.GetEmailRequest(ctx, id)
+	return one(request, err, "email request")
+}
+
+func (r EmailTokens) Superseded(ctx context.Context, request EmailRequest) (bool, error) {
+	newer, err := r.queries.HasNewerEmailRequest(ctx, dbgen.HasNewerEmailRequestParams{
+		UserID: request.UserID, Purpose: request.Purpose, CreatedAt: request.CreatedAt,
+	})
+	return one(newer, err, "newer email request")
+}
+
+func (r EmailTokens) DeleteOpenRequests(ctx context.Context, user domain.UserID) (int64, error) {
+	rows, err := r.queries.DeleteOpenEmailRequests(ctx, user)
+	return counted(rows, err, "delete open email requests")
+}
+
+func (r EmailTokens) RequestUsed(ctx context.Context, request domain.EmailRequestID) (bool, error) {
+	used, err := r.queries.EmailRequestHasUsedToken(ctx, request)
+	return one(used, err, "email request has a used token")
 }
 
 func (r EmailTokens) Create(ctx context.Context, token NewEmailToken) error {

@@ -362,6 +362,9 @@ func TestSessionSettingsAreBoundedAndOnlyTheAPINeedsThem(t *testing.T) {
 		"every IPv4 address trusted": {"OVC_TRUSTED_PROXY_CIDRS": "10.0.0.0/8, 0.0.0.0/0"},
 		"every IPv6 address trusted": {"OVC_TRUSTED_PROXY_CIDRS": "::/0"},
 		"not a range":                {"OVC_TRUSTED_PROXY_CIDRS": "10.0.0.1"},
+		"negative file quota":        {"OVC_DEFAULT_FILE_QUOTA_BYTES": "-1"},
+		"recording quota too large":  {"OVC_DEFAULT_RECORDING_QUOTA_BYTES": "1125899906842625"},
+		"quota not a number":         {"OVC_DEFAULT_FILE_QUOTA_BYTES": "5GB"},
 	}
 	worker := validValues()
 	delete(worker, "OVC_JWT_SECRET")
@@ -382,5 +385,15 @@ func TestSessionSettingsAreBoundedAndOnlyTheAPINeedsThem(t *testing.T) {
 				t.Fatalf("expected a settings error, got %v", err)
 			}
 		})
+	}
+}
+
+func TestTutorQuotasDefaultToFiveAndFiftyGigabytes(t *testing.T) {
+	values := validValues()
+
+	settings, err := core.Load(lookupFrom(values), core.ProcessAPI)
+
+	if err != nil || settings.TutorQuotas != (core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}) {
+		t.Fatalf("quotas %+v, %v", settings.TutorQuotas, err)
 	}
 }

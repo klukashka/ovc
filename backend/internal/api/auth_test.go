@@ -17,12 +17,16 @@ import (
 	"time"
 
 	"ovc/backend/internal/adapters/clock"
+	"ovc/backend/internal/adapters/mail"
 	"ovc/backend/internal/api"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
+	"ovc/backend/internal/services/notifications"
+	"ovc/backend/internal/services/outbox"
 	"ovc/backend/internal/testdb"
+	"ovc/backend/internal/worker"
 )
 
 const (
@@ -86,6 +90,9 @@ type authHarness struct {
 	hasher   *core.PasswordHasher
 	counting *countingHasher
 	logs     *safeBuffer
+	database *testdb.Database
+	sink     *mail.Sink
+	worker   *worker.Worker
 }
 
 func cheapArgon2() core.Argon2Params {
@@ -120,6 +127,7 @@ func newAuthHarnessBehind(t *testing.T, trusted []netip.Prefix) *authHarness {
 	service := accounts.New(accounts.Dependencies{
 		Store: store, Clock: shared, Random: random, Hasher: counting, Keys: keys, Logger: logger,
 		Tokens: core.NewAccessTokens(keys, publicOrigin, 15*time.Minute), RefreshTTL: 30 * 24 * time.Hour,
+		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000},
 	})
 	handler, err := api.NewHandler(api.Options{
 		Logger: logger, Now: clock.System{}.Now, NewRequestID: core.NewRandomID,
@@ -131,7 +139,21 @@ func newAuthHarnessBehind(t *testing.T, trusted []netip.Prefix) *authHarness {
 	}
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	return &authHarness{server: server, store: store, clock: shared, hasher: hasher, counting: counting, logs: logs}
+	sink := mail.NewSink(database.Pool, random)
+	accountEmails, err := notifications.NewAccountEmails(store, random, publicOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	notifier, err := notifications.New(sink, publicOrigin, accountEmails.Builders())
+	if err != nil {
+		t.Fatal(err)
+	}
+	lanes := []worker.Lane{{Name: domain.LaneEmail, Concurrency: 10, Perform: notifier.Deliver}}
+	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, nil, worker.DefaultTiming())
+	return &authHarness{
+		server: server, store: store, clock: shared, hasher: hasher, counting: counting, logs: logs,
+		database: database, sink: sink, worker: background,
+	}
 }
 
 func (h *authHarness) seedUser(t *testing.T, id byte, email string, password string, params core.Argon2Params) domain.UserID {
@@ -629,6 +651,13 @@ func TestEveryOperationDeclaresAnAudience(t *testing.T) {
 	for _, operation := range operations {
 		switch operation.Audience {
 		case api.AudiencePublic, api.AudienceRefreshCookie:
+		case api.AudienceOptionalUser:
+			result := h.send(t, operation.Method, operation.Path, "{}", map[string]string{
+				"Authorization": "Bearer forged", "Content-Type": "application/json", "Origin": publicOrigin,
+			})
+			if result.status != http.StatusUnauthorized || code(t, result) != "unauthenticated" {
+				t.Fatalf("%s %s with a forged token answered %d %s", operation.Method, operation.Path, result.status, result.body)
+			}
 		case api.AudienceUser, api.AudienceUnverifiedOK:
 			result := h.send(t, operation.Method, operation.Path, "", nil)
 			if result.status != http.StatusUnauthorized || code(t, result) != "unauthenticated" || result.headers.Get("WWW-Authenticate") != "Bearer" {

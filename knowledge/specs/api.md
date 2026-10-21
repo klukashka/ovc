@@ -67,20 +67,20 @@ REST under `/api/v1` (omitted from the paths below), JSON in and out except uplo
 
 ## Accounts
 
-Behavior: [accounts](accounts.md). Every operation declares its audience in code (`public`, `user`, `unverified ok`, or the refresh cookie), and a test sends each non-public operation a request without a token and expects `401 unauthenticated`. `user` operations answer `403 email_not_verified` to an unverified account. `POST /auth/login` and `POST /auth/refresh` require an `Origin` equal to `OVC_PUBLIC_URL` (`403 forbidden` otherwise), login requires `Content-Type: application/json`, and login, refresh and `/users/me` answer with `Cache-Control: no-store`. Login and refresh set `__Host-ovc_refresh` with `Path=/`, `Secure`, `HttpOnly`, `SameSite=Strict` and no `Domain`; a refused refresh and both sign-outs clear it.
+Behavior: [accounts](accounts.md). Every operation declares its audience in code (`public`, `user`, `unverified ok`, or the refresh cookie), and a test sends each non-public operation a request without a token and expects `401 unauthenticated`. `user` operations answer `403 email_not_verified` to an unverified account. `POST /auth/login`, `POST /auth/refresh` and `POST /auth/verify-email` (which can sign a browser in) require an `Origin` equal to `OVC_PUBLIC_URL` (`403 forbidden` otherwise), every route with a body requires `Content-Type: application/json` (`415 unsupported_media_type` otherwise), and the authentication routes and `/users/me` answer with `Cache-Control: no-store`. Routes marked "public, optional bearer" authenticate a bearer token when one is sent, answering `401` or `403` like any authenticated route when it is not valid, and otherwise run anonymously. Validation refusals name the field as `body.<property>`; the account routes use the field codes `invalid`, `required`, `not_allowed`, `too_short`, `too_long` and `incorrect`. Login and refresh set `__Host-ovc_refresh` with `Path=/`, `Secure`, `HttpOnly`, `SameSite=Strict` and no `Domain`; a refused refresh and both sign-outs clear it.
 
 | Method | Path | Who | Purpose |
 |---|---|---|---|
-| POST | `/auth/register` | public | Sign up as tutor or student, with consent, language, browser timezone and an optional tutor code; always `202` with no session |
-| POST | `/auth/verify-email` | public | Confirm with `{token}` from a signed-in browser, or `{token, new_password}` from any other; returns the pending-link outcome |
-| POST | `/auth/verify-email/resend` | user, unverified ok | Send a new confirmation email |
+| POST | `/auth/register` | public | Sign up with name, email, password, language, browser timezone and consent; always `202` with no session. Until students join through their tutor (slice 3), only `role: tutor` is accepted and `student` answers `422 validation_failed` (`body.role`: `not_allowed`) |
+| POST | `/auth/verify-email` | public, optional bearer | Confirm with `{token}` from a browser signed in to the token's account, or `{token, new_password}` from any other (`422 validation_failed` with `body.new_password`: `required` when the password is missing, which does not use the token). Answers `200` with `{outcome}` (the pending-link outcome, `null` until slice 3), and from another browser also `{access_token, expires_in}` and the refresh cookie |
+| POST | `/auth/verify-email/resend` | public, optional bearer | Send a new confirmation email: `{}` with a bearer token for the signed-in account (`429` with `Retry-After` within the sending limits), or `{email}` without one, which always answers `202` |
 | POST | `/auth/login` | public | Email and password → access token and refresh cookie |
 | POST | `/auth/refresh` | refresh cookie, exact `Origin` | Rotate the refresh token → new access token; `204` with no token when there is no cookie |
 | POST | `/auth/logout` | user, unverified ok | Revoke the current session |
 | POST | `/auth/logout-all` | user, unverified ok | Revoke all sessions |
-| POST | `/auth/password/forgot` | public | Request a reset email (same response for any email) |
-| POST | `/auth/password/reset` | public | Set a new password with a reset token |
-| POST | `/auth/password/change` | user, unverified ok | Change password with the current one |
+| POST | `/auth/password/forgot` | public | Request a reset email with `{email}`; always `202`, the same for any email |
+| POST | `/auth/password/reset` | public | Set a new password with `{token, new_password}`; `204`, and the person signs in afterwards |
+| POST | `/auth/password/change` | user, unverified ok | Change the password with `{current_password, new_password}`; `204`; a wrong current password answers `422 validation_failed` (`body.current_password`: `incorrect`) |
 | GET | `/users/me` | user, unverified ok | Own profile, role, state, preferences |
 | PATCH | `/users/me` | user, unverified ok | Name, avatar, language, timezone, theme; tutor bio and subjects |
 | DELETE | `/users/me` | user, unverified ok | Delete own account (password required) |

@@ -167,7 +167,7 @@ Settings are read once from the environment into one typed struct in `internal/c
 | `OVC_TRUSTED_PROXY_CIDRS` | Comma-separated CIDR ranges of OVC's own reverse proxies, empty by default; `0.0.0.0/0` and `::/0` are refused. The client address for per-IP limits is taken from `X-Forwarded-For` only behind these |
 | `OVC_CORS_ORIGINS` | Explicit frontend origins |
 | `OVC_STORAGE_ENDPOINT`, `OVC_STORAGE_BUCKET`, `OVC_STORAGE_ACCESS_KEY`, `OVC_STORAGE_SECRET_KEY`, `OVC_STORAGE_BACKEND` | S3-compatible storage, or `memory` in tests |
-| `OVC_DEFAULT_FILE_QUOTA_BYTES`, `OVC_DEFAULT_RECORDING_QUOTA_BYTES` | Default tutor quotas |
+| `OVC_DEFAULT_FILE_QUOTA_BYTES`, `OVC_DEFAULT_RECORDING_QUOTA_BYTES` | Default tutor quotas, read by the API and written to a tutor profile at sign-up: 5000000000 and 50000000000 bytes by default (0 to 2^50) |
 | `OVC_MEETING_PROVIDER` | `fake` (the only value accepted until `bbb` lands in slice 7) |
 | `OVC_BBB_URL`, `OVC_BBB_SECRET`, `OVC_BBB_CHECKSUM_ALGORITHM` | BigBlueButton server, shared secret, checksum algorithm |
 | `OVC_BBB_EMBED_ENABLED` | Embed the conferencing client in the lesson page; false until the slice 7 probe passes |

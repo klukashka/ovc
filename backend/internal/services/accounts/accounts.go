@@ -78,14 +78,15 @@ type Profile struct {
 }
 
 type Dependencies struct {
-	Store      *repositories.Store
-	Clock      clock.Source
-	Random     core.RandomSource
-	Hasher     PasswordHasher
-	Tokens     *core.AccessTokens
-	Keys       core.Keys
-	RefreshTTL time.Duration
-	Logger     *slog.Logger
+	Store       *repositories.Store
+	Clock       clock.Source
+	Random      core.RandomSource
+	Hasher      PasswordHasher
+	Tokens      *core.AccessTokens
+	Keys        core.Keys
+	RefreshTTL  time.Duration
+	TutorQuotas core.TutorQuotas
+	Logger      *slog.Logger
 }
 
 type Service struct {
@@ -351,17 +352,30 @@ func (s *Service) rehash(ctx context.Context, user repositories.User, password s
 	return current.PasswordHash, nil
 }
 
-func (s *Service) startSession(ctx context.Context, user domain.UserID, verifiedHash string, now time.Time) (SignIn, error) {
+type pendingSession struct {
+	row    repositories.NewSession
+	random []byte
+}
+
+func (s *Service) newSession(user domain.UserID, now time.Time) (pendingSession, error) {
 	session, err := core.NewID[domain.SessionID](s.deps.Random)
 	if err != nil {
-		return SignIn{}, err
+		return pendingSession{}, err
 	}
 	random, _, err := core.RandomToken(s.deps.Random, refreshRandomBytes)
 	if err != nil {
-		return SignIn{}, err
+		return pendingSession{}, err
 	}
 	hash := sha256.Sum256(random)
-	expires := now.Add(s.deps.RefreshTTL)
+	row := repositories.NewSession{ID: session, UserID: user, RefreshHash: hash[:], ExpiresAt: now.Add(s.deps.RefreshTTL), CreatedAt: now}
+	return pendingSession{row: row, random: random}, nil
+}
+
+func (s *Service) startSession(ctx context.Context, user domain.UserID, verifiedHash string, now time.Time) (SignIn, error) {
+	session, err := s.newSession(user, now)
+	if err != nil {
+		return SignIn{}, err
+	}
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		locked, err := repos.Users.LockCredentials(ctx, user)
 		if err != nil {
@@ -373,14 +387,12 @@ func (s *Service) startSession(ctx context.Context, user domain.UserID, verified
 		if locked.State == domain.AccountBlocked {
 			return ErrAccountBlocked
 		}
-		return repos.Sessions.Create(ctx, repositories.NewSession{
-			ID: session, UserID: user, RefreshHash: hash[:], ExpiresAt: expires, CreatedAt: now,
-		})
+		return repos.Sessions.Create(ctx, session.row)
 	})
 	if err != nil {
 		return SignIn{}, err
 	}
-	return s.signIn(user, session, 1, random, expires, now)
+	return s.signIn(user, session.row.ID, 1, session.random, session.row.ExpiresAt, now)
 }
 
 func (s *Service) rotate(ctx context.Context, session repositories.Session, cookie refreshCookie, presented []byte, now time.Time) (SignIn, error) {

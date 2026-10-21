@@ -18,6 +18,7 @@ var now = time.Date(2030, time.March, 10, 9, 0, 0, 0, time.UTC)
 const (
 	greetingKind domain.OutboxKind = "test.greeting"
 	staleKind    domain.OutboxKind = "test.stale"
+	tokenKind    domain.OutboxKind = "test.token"
 )
 
 type recordingMailer struct {
@@ -46,6 +47,9 @@ func newService(t *testing.T, mailer mail.Mailer) *notifications.Service {
 	service, err := notifications.New(mailer, "https://ovc.example", map[domain.OutboxKind]notifications.Builder{
 		greetingKind: fixedBuilder{composition: notifications.Composition{Email: notifications.Email{To: "tutor@example.org", Subject: "Hello", Text: "Hi", HTML: "<p>Hi</p>"}}},
 		staleKind:    fixedBuilder{composition: notifications.Composition{Obsolete: true}},
+		tokenKind: fixedBuilder{composition: notifications.Composition{
+			Email: notifications.Email{To: "tutor@example.org", Subject: "Hello", Text: "Hi", HTML: "<p>Hi</p>"}, Identity: "token-2",
+		}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -113,5 +117,17 @@ func TestDeliverTransientFailureIsRetryable(t *testing.T) {
 
 	if err == nil || errors.Is(err, domain.ErrPermanentEffect) {
 		t.Fatalf("expected a retryable failure, got %v", err)
+	}
+}
+
+func TestATokenBearingEmailGetsAnIdentifierOfItsOwnToken(t *testing.T) {
+	mailer := &recordingMailer{}
+	service := newService(t, mailer)
+
+	_, plainErr := service.Deliver(context.Background(), row(greetingKind, "confirmation:1"), now)
+	_, tokenErr := service.Deliver(context.Background(), row(tokenKind, "confirmation:1"), now)
+
+	if plainErr != nil || tokenErr != nil || mailer.sent[0].MessageID == mailer.sent[1].MessageID {
+		t.Fatalf("errors %v %v, identifiers %q %q", plainErr, tokenErr, mailer.sent[0].MessageID, mailer.sent[1].MessageID)
 	}
 }

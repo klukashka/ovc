@@ -32,14 +32,15 @@ func NewAccounts(logger *slog.Logger, settings core.Settings, database *core.Dat
 		return nil, err
 	}
 	return accounts.New(accounts.Dependencies{
-		Store:      repositories.NewStore(database.Pool),
-		Clock:      source,
-		Random:     random,
-		Hasher:     hasher,
-		Tokens:     core.NewAccessTokens(keys, settings.PublicURL, settings.AccessTokenTTL),
-		Keys:       keys,
-		RefreshTTL: settings.RefreshTokenTTL,
-		Logger:     logger,
+		Store:       repositories.NewStore(database.Pool),
+		Clock:       source,
+		Random:      random,
+		Hasher:      hasher,
+		Tokens:      core.NewAccessTokens(keys, settings.PublicURL, settings.AccessTokenTTL),
+		Keys:        keys,
+		RefreshTTL:  settings.RefreshTokenTTL,
+		TutorQuotas: settings.TutorQuotas,
+		Logger:      logger,
 	}), nil
 }
 
@@ -69,7 +70,11 @@ func NewMailer(logger *slog.Logger, settings core.Settings, database *core.Datab
 func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, mailer mail.Mailer, random core.RandomSource) (*worker.Worker, error) {
 	store := repositories.NewStore(database.Pool)
 	queue := outbox.New(store, random, logger)
-	notifier, err := notifications.New(mailer, settings.PublicURL, map[domain.OutboxKind]notifications.Builder{})
+	accountEmails, err := notifications.NewAccountEmails(store, random, settings.PublicURL)
+	if err != nil {
+		return nil, err
+	}
+	notifier, err := notifications.New(mailer, settings.PublicURL, accountEmails.Builders())
 	if err != nil {
 		return nil, err
 	}

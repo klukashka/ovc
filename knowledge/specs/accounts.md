@@ -33,6 +33,7 @@ Behavior for FR-1, FR-2, FR-3 and FR-16. Decisions: [ADR-0005](../../docs/decisi
   - name, email, password (10 to 128 characters), language, and a consent checkbox for personal-data processing; the consent version and time are recorded;
   - the browser's IANA timezone is sent automatically and stored as the account timezone;
   - a student sign-up may carry a tutor code.
+- **Slice 2** accepts tutor sign-ups only; students join through their tutor from slice 3 ([proposal 0002](../../docs/proposals/0002-student-onboarding.md)), and `role: student` is refused with `validation_failed`. The consent version is the constant `ConsentVersion` in `internal/domain`, changed in code when the privacy policy changes. A browser timezone that is not a known IANA name is stored as `UTC`, which the person can correct in settings. Passwords are compared byte for byte, without Unicode normalisation, and their length is counted in characters.
 - **Response:** `POST /auth/register` always answers `202 Accepted` with no session, so a new and an already-used email look identical. The client shows "Check your email"; the person can sign in at once, as an unverified account, or wait for the confirmation link.
 - **Duplicate email:**
   - registering with an email that already has an account, including a `deleted` account before purge, does not reveal that fact;
@@ -44,10 +45,13 @@ Behavior for FR-1, FR-2, FR-3 and FR-16. Decisions: [ADR-0005](../../docs/decisi
   - each send invalidates earlier unused tokens of the same purpose.
 - **Sending limits:**
   - confirmation and reset emails together: at most one per 60 seconds, five per hour and ten per day per account;
-  - sign-up and password-reset requests: at most 10 per hour per IP address.
+  - sign-up, password-reset and resend requests: at most 10 per hour per IP address, counted together; the eleventh answers `429` with `Retry-After`;
+  - the per-account limits are counted per normalised email when a request is queued, for an unknown email as for a known one, so both do the same counting work: a sign-up counts as the first confirmation, and a sign-up over a limit (for example right after a reset request for the same email) still creates the account and answers `202`, only without queuing the confirmation, which the person can resend later; on the public routes (forgot, and resend with an email) a request over a per-account limit is silently dropped and answers `202` like any other, and only the signed-in resend answers `429`;
+  - resend and forgot send nothing for an unknown email, resend sends nothing to a confirmed account, and forgot sends nothing to a blocked or deleted account.
 - **Confirming an email** (`POST /auth/verify-email`):
   - from a browser signed in to that account, it activates the account and revokes every other session;
   - from any other browser, the page asks the person to set a new password. Confirming then sets that password, activates the account, revokes every session, and signs this browser in. Whoever created a squatting account therefore loses it, because the mailbox owner chooses the password.
+- **Tokens are bound to the account state:** confirming accepts only an `unverified` account and resetting only an `unverified` or `active` one; every other state, like an unknown, expired, used or superseded token, answers the same `422 token_invalid`. A token is consumed by one conditional update while the account row is locked, so the account cannot change state in between. Confirmation, reset and the password change of an active account discard every unused token of both purposes and every queued request that has not used a token, so an email queued before the change is dropped at dispatch. A password change of an unverified account keeps them: whoever signed up with someone else's email knows the password, and must not be able to cancel the mailbox owner's links. The worker mints a token in one transaction that locks the account row and checks again that the account is in a state the token applies to, that the request still exists, has not used a token and is the newest of its purpose.
 - **Completing a password reset** also confirms an unverified email, because it proves access to the mailbox.
 - **Both** then evaluate the pending tutor code and consume the reserved invitation, and return the outcome (`linked`, `request_sent`, `code_invalid`, `invitation_invalid` or nothing).
 - **A tutor code given at sign-up** is kept on the account as a pending code and evaluated when the email is confirmed, as if the student entered it then:
@@ -78,7 +82,7 @@ Behavior for FR-1, FR-2, FR-3 and FR-16. Decisions: [ADR-0005](../../docs/decisi
   - requesting a reset always returns the same response, within the sending limits above;
   - the worker mints the emailed token (32 bytes, hashed and committed before sending, valid for 1 hour, single use);
   - a successful reset revokes all sessions.
-- **Password change** requires the current password and revokes every other session.
+- **Password change** requires the current password and revokes every other session. Wrong current passwords are counted per account under the sign-in failure limit (5 in 15 minutes); the sixth attempt answers `429` with `Retry-After`, and a correct password returns its slot.
 - **Email change** is not in the MVP.
 
 ## Tutor–student relationships

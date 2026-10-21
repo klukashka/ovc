@@ -88,6 +88,22 @@ func (q *Queries) CreateEmailToken(ctx context.Context, arg CreateEmailTokenPara
 	return err
 }
 
+const deleteOpenEmailRequests = `-- name: DeleteOpenEmailRequests :execrows
+DELETE FROM email_requests AS request
+WHERE request.user_id = $1
+    AND NOT EXISTS (
+        SELECT 1 FROM email_tokens AS token WHERE token.request_id = request.id AND token.used_at IS NOT NULL
+    )
+`
+
+func (q *Queries) DeleteOpenEmailRequests(ctx context.Context, userID domain.UserID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOpenEmailRequests, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteUnusedEmailTokens = `-- name: DeleteUnusedEmailTokens :execrows
 DELETE FROM email_tokens WHERE user_id = $1 AND used_at IS NULL
 `
@@ -117,6 +133,33 @@ func (q *Queries) DeleteUnusedEmailTokensForPurpose(ctx context.Context, arg Del
 	return result.RowsAffected(), nil
 }
 
+const emailRequestHasUsedToken = `-- name: EmailRequestHasUsedToken :one
+SELECT EXISTS (SELECT 1 FROM email_tokens WHERE request_id = $1 AND used_at IS NOT NULL)
+`
+
+func (q *Queries) EmailRequestHasUsedToken(ctx context.Context, requestID domain.EmailRequestID) (bool, error) {
+	row := q.db.QueryRow(ctx, emailRequestHasUsedToken, requestID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const getEmailRequest = `-- name: GetEmailRequest :one
+SELECT id, user_id, purpose, created_at FROM email_requests WHERE id = $1
+`
+
+func (q *Queries) GetEmailRequest(ctx context.Context, id domain.EmailRequestID) (EmailRequest, error) {
+	row := q.db.QueryRow(ctx, getEmailRequest, id)
+	var i EmailRequest
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Purpose,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getUsableEmailToken = `-- name: GetUsableEmailToken :one
 SELECT id, request_id, user_id, purpose, token_hash, expires_at, used_at, created_at FROM email_tokens
 WHERE token_hash = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > $3
@@ -142,4 +185,24 @@ func (q *Queries) GetUsableEmailToken(ctx context.Context, arg GetUsableEmailTok
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const hasNewerEmailRequest = `-- name: HasNewerEmailRequest :one
+SELECT EXISTS (
+    SELECT 1 FROM email_requests AS newer
+    WHERE newer.user_id = $1 AND newer.purpose = $2 AND newer.created_at > $3
+)
+`
+
+type HasNewerEmailRequestParams struct {
+	UserID    domain.UserID
+	Purpose   domain.EmailPurpose
+	CreatedAt time.Time
+}
+
+func (q *Queries) HasNewerEmailRequest(ctx context.Context, arg HasNewerEmailRequestParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasNewerEmailRequest, arg.UserID, arg.Purpose, arg.CreatedAt)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }

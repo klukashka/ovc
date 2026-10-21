@@ -31,6 +31,25 @@ func (q *Queries) BlockUser(ctx context.Context, arg BlockUserParams) (int64, er
 	return result.RowsAffected(), nil
 }
 
+const confirmUserEmail = `-- name: ConfirmUserEmail :execrows
+UPDATE users
+SET state = 'active', email_verified_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE id = $2 AND state = 'unverified'
+`
+
+type ConfirmUserEmailParams struct {
+	Now time.Time
+	ID  domain.UserID
+}
+
+func (q *Queries) ConfirmUserEmail(ctx context.Context, arg ConfirmUserEmailParams) (int64, error) {
+	result, err := q.db.Exec(ctx, confirmUserEmail, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createTutorProfile = `-- name: CreateTutorProfile :exec
 INSERT INTO tutor_profiles (user_id, file_quota_bytes, recording_quota_bytes, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $4)
@@ -96,6 +115,49 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 		arg.CreatedAt,
 	)
 	return err
+}
+
+const createUserIfEmailFree = `-- name: CreateUserIfEmailFree :execrows
+INSERT INTO users (
+    id, role, state, email, email_verified_at, password_hash, name, language, timezone, theme,
+    consent_version, consent_at, unverified_since, created_at, updated_at
+) VALUES (
+    $1, $2, 'unverified', $3, NULL, $4, $5, $6, $7, $8,
+    $9, $10, $10, $10, $10
+)
+ON CONFLICT (email) DO NOTHING
+`
+
+type CreateUserIfEmailFreeParams struct {
+	ID             domain.UserID
+	Role           domain.Role
+	Email          string
+	PasswordHash   string
+	Name           string
+	Language       domain.Language
+	Timezone       string
+	Theme          domain.Theme
+	ConsentVersion string
+	CreatedAt      time.Time
+}
+
+func (q *Queries) CreateUserIfEmailFree(ctx context.Context, arg CreateUserIfEmailFreeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, createUserIfEmailFree,
+		arg.ID,
+		arg.Role,
+		arg.Email,
+		arg.PasswordHash,
+		arg.Name,
+		arg.Language,
+		arg.Timezone,
+		arg.Theme,
+		arg.ConsentVersion,
+		arg.CreatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getTutorProfile = `-- name: GetTutorProfile :one
@@ -208,6 +270,29 @@ type MarkUserDeletedParams struct {
 
 func (q *Queries) MarkUserDeleted(ctx context.Context, arg MarkUserDeletedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markUserDeleted, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const replaceUserPassword = `-- name: ReplaceUserPassword :execrows
+UPDATE users
+SET password_hash = $1,
+    state = CASE WHEN state = 'unverified' THEN 'active' ELSE state END,
+    email_verified_at = COALESCE(email_verified_at, $2::timestamptz),
+    updated_at = $2::timestamptz
+WHERE id = $3 AND state IN ('unverified', 'active')
+`
+
+type ReplaceUserPasswordParams struct {
+	PasswordHash string
+	Now          time.Time
+	ID           domain.UserID
+}
+
+func (q *Queries) ReplaceUserPassword(ctx context.Context, arg ReplaceUserPasswordParams) (int64, error) {
+	result, err := q.db.Exec(ctx, replaceUserPassword, arg.PasswordHash, arg.Now, arg.ID)
 	if err != nil {
 		return 0, err
 	}

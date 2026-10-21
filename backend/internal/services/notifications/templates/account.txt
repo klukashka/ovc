@@ -1,0 +1,5 @@
+{{range .Lines}}{{.}}
+
+{{end}}{{.Action}}: {{.ActionURL}}
+
+{{.Note}}

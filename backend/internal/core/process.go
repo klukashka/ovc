@@ -32,6 +32,8 @@ func LogStarted(ctx context.Context, logger *slog.Logger, process Process, setti
 			slog.Int64("access_token_ttl_seconds", int64(settings.AccessTokenTTL.Seconds())),
 			slog.Int64("refresh_token_ttl_seconds", int64(settings.RefreshTokenTTL.Seconds())),
 			slog.Int("trusted_proxy_ranges", len(settings.TrustedProxies)),
+			slog.Int64("default_file_quota_bytes", settings.TutorQuotas.FileBytes),
+			slog.Int64("default_recording_quota_bytes", settings.TutorQuotas.RecordingBytes),
 		)
 	}
 	logger.LogAttrs(ctx, slog.LevelInfo, "process.started", attributes...)

@@ -50,7 +50,7 @@ Behavior for FR-13 and the worker that delivers it. Decision: [ADR-0006](../../d
 
 ## Email
 
-- **Templates** exist per event, in Russian and English, as HTML and plain text. They are rendered at send time in the recipient's language and timezone with ICU plural rules.
+- **Templates** exist per event, in Russian and English, as HTML and plain text. They are rendered at send time in the recipient's language and timezone with ICU plural rules. The account emails (confirmation, reset, duplicate sign-up) share one HTML and one text template in `internal/services/notifications/templates`, rendered with `html/template` and `text/template`, and take their wording from the catalogue in `internal/core`; they contain no user-written text and no counts, so plural rules arrive with the first email that shows a count.
 - **Content:** subject and body include only what the recipient may see; emails to students never contain points or scores. A message digest names channels and counts, never message text. Links point to OVC pages, never to provider or storage URLs.
 - **Escaping:** user-written text (names, titles) is HTML-escaped in HTML bodies and appears in plain text only as text.
 - **Headers:**

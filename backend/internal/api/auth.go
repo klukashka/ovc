@@ -33,6 +33,7 @@ const (
 	AudienceUser          Audience = "user"
 	AudienceUnverifiedOK  Audience = "unverified ok"
 	AudienceRefreshCookie Audience = "refresh cookie"
+	AudienceOptionalUser  Audience = "public, optional bearer"
 )
 
 type OperationAudience struct {
@@ -58,8 +59,12 @@ type router struct {
 }
 
 func register[Input any, Output any](r *router, op huma.Operation, audience Audience, handler func(context.Context, *Input) (*Output, error)) {
-	if audience == AudienceUser || audience == AudienceUnverifiedOK {
+	switch audience {
+	case AudienceUser, AudienceUnverifiedOK:
 		op.Middlewares = append(op.Middlewares, r.authenticate(audience))
+	case AudienceOptionalUser:
+		op.Middlewares = append(op.Middlewares, r.authenticateWhenPresented)
+	case AudiencePublic, AudienceRefreshCookie:
 	}
 	r.operations = append(r.operations, OperationAudience{ID: op.OperationID, Method: op.Method, Path: op.Path, Audience: audience})
 	huma.Register(r.api, op, handler)
@@ -71,6 +76,19 @@ func principalFrom(ctx context.Context) accounts.Principal {
 		panic("an authenticated operation ran without a principal")
 	}
 	return principal
+}
+
+func optionalPrincipal(ctx context.Context) (accounts.Principal, bool) {
+	principal, found := ctx.Value(principalKey{}).(accounts.Principal)
+	return principal, found
+}
+
+func (r *router) authenticateWhenPresented(ctx huma.Context, next func(huma.Context)) {
+	if ctx.Header("Authorization") == "" {
+		next(ctx)
+		return
+	}
+	r.authenticate(AudienceUnverifiedOK)(ctx, next)
 }
 
 func (r *router) authenticate(audience Audience) func(huma.Context, func(huma.Context)) {
@@ -170,6 +188,7 @@ func (r *router) registerAuth() {
 	logoutAll.DefaultStatus = http.StatusNoContent
 	register(r, logoutAll, AudienceUnverifiedOK, r.logoutAll)
 	register(r, operation("users-me", http.MethodGet, "/api/v1/users/me"), AudienceUnverifiedOK, r.me)
+	r.registerAccountFlows()
 }
 
 func (r *router) recordClientAddress(ctx huma.Context, next func(huma.Context)) {
@@ -236,11 +255,7 @@ func (r *router) login(ctx context.Context, input *loginInput) (*tokenOutput, er
 	if mediaType, _, err := mime.ParseMediaType(input.ContentType); err != nil || mediaType != "application/json" {
 		return nil, NewError(ctx, domain.ErrorUnsupportedMediaType)
 	}
-	address, found := ctx.Value(clientAddressKey{}).(netip.Addr)
-	if !found {
-		panic("sign-in ran without a client address")
-	}
-	signIn, err := r.auth.Accounts.Login(ctx, input.Body.Email, input.Body.Password, address)
+	signIn, err := r.auth.Accounts.Login(ctx, input.Body.Email, input.Body.Password, clientAddress(ctx))
 	if err != nil {
 		return nil, r.loginError(ctx, err)
 	}

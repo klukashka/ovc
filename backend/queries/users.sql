@@ -36,3 +36,26 @@ WHERE id = @id AND state IN ('unverified', 'active');
 
 -- name: LockUserCredentials :one
 SELECT password_hash, state FROM users WHERE id = @id FOR NO KEY UPDATE;
+
+-- name: CreateUserIfEmailFree :execrows
+INSERT INTO users (
+    id, role, state, email, email_verified_at, password_hash, name, language, timezone, theme,
+    consent_version, consent_at, unverified_since, created_at, updated_at
+) VALUES (
+    @id, @role, 'unverified', @email, NULL, @password_hash, @name, @language, @timezone, @theme,
+    @consent_version, @created_at, @created_at, @created_at, @created_at
+)
+ON CONFLICT (email) DO NOTHING;
+
+-- name: ConfirmUserEmail :execrows
+UPDATE users
+SET state = 'active', email_verified_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND state = 'unverified';
+
+-- name: ReplaceUserPassword :execrows
+UPDATE users
+SET password_hash = @password_hash,
+    state = CASE WHEN state = 'unverified' THEN 'active' ELSE state END,
+    email_verified_at = COALESCE(email_verified_at, sqlc.arg(now)::timestamptz),
+    updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND state IN ('unverified', 'active');

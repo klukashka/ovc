@@ -84,6 +84,8 @@ const (
 	varRefreshTTL      = "OVC_REFRESH_TOKEN_TTL_SECONDS"
 	varTrustedProxies  = "OVC_TRUSTED_PROXY_CIDRS"
 	varTestDatabaseURL = "OVC_TEST_DATABASE_ADMIN_URL"
+	varFileQuota       = "OVC_DEFAULT_FILE_QUOTA_BYTES"
+	varRecordingQuota  = "OVC_DEFAULT_RECORDING_QUOTA_BYTES"
 )
 
 func VariableNames() []string {
@@ -91,7 +93,7 @@ func VariableNames() []string {
 		varHTTPAddr, varDatabaseURL, varDBPoolSize, varLogLevel, varLogFormat, varAPIDocsEnabled,
 		varTestControl, varClock, varMeetingProvider, varMailBackend, varPublicURL, varSMTPHost, varSMTPPort,
 		varSMTPTLS, varSMTPUsername, varSMTPLoginValue, varMailFrom, varJWTKeyMaterial, varAccessTTL, varRefreshTTL,
-		varTrustedProxies, varTestDatabaseURL,
+		varTrustedProxies, varTestDatabaseURL, varFileQuota, varRecordingQuota,
 	}
 }
 
@@ -116,6 +118,12 @@ type Settings struct {
 	AccessTokenTTL  time.Duration
 	RefreshTokenTTL time.Duration
 	TrustedProxies  []netip.Prefix
+	TutorQuotas     TutorQuotas
+}
+
+type TutorQuotas struct {
+	FileBytes      int64
+	RecordingBytes int64
 }
 
 type SettingsError struct {
@@ -415,7 +423,34 @@ func (s *Settings) loadSessionSettings(lookup Lookup) []error {
 		problems = append(problems, err)
 	}
 	s.TrustedProxies = proxies
+	files, err := bytesOr(lookup, varFileQuota, defaultFileQuotaBytes)
+	if err != nil {
+		problems = append(problems, err)
+	}
+	recordings, err := bytesOr(lookup, varRecordingQuota, defaultRecordingQuotaBytes)
+	if err != nil {
+		problems = append(problems, err)
+	}
+	s.TutorQuotas = TutorQuotas{FileBytes: files, RecordingBytes: recordings}
 	return problems
+}
+
+const (
+	defaultFileQuotaBytes      = 5_000_000_000
+	defaultRecordingQuotaBytes = 50_000_000_000
+	maximumQuotaBytes          = 1 << 50
+)
+
+func bytesOr(lookup Lookup, name string, fallback int64) (int64, error) {
+	value, ok := lookup(name)
+	if !ok || value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed < 0 || parsed > maximumQuotaBytes {
+		return 0, &SettingsError{Variable: name, Problem: fmt.Sprintf("must be a number of bytes from 0 to %d", int64(maximumQuotaBytes))}
+	}
+	return parsed, nil
 }
 
 func secondsOr(lookup Lookup, name string, fallback int64, lowest int64, highest int64) (time.Duration, error) {

@@ -26,3 +26,7 @@ SELECT sessions.id, sessions.user_id, sessions.revoked_at, sessions.expires_at, 
 FROM sessions
 JOIN users ON users.id = sessions.user_id
 WHERE sessions.id = @id;
+
+-- name: RevokeOtherUserSessions :execrows
+UPDATE sessions SET revoked_at = sqlc.arg(now)::timestamptz
+WHERE user_id = @user_id AND id <> sqlc.arg(kept) AND revoked_at IS NULL;

@@ -86,6 +86,25 @@ func (q *Queries) GetSessionPrincipal(ctx context.Context, id domain.SessionID) 
 	return i, err
 }
 
+const revokeOtherUserSessions = `-- name: RevokeOtherUserSessions :execrows
+UPDATE sessions SET revoked_at = $1::timestamptz
+WHERE user_id = $2 AND id <> $3 AND revoked_at IS NULL
+`
+
+type RevokeOtherUserSessionsParams struct {
+	Now    time.Time
+	UserID domain.UserID
+	Kept   domain.SessionID
+}
+
+func (q *Queries) RevokeOtherUserSessions(ctx context.Context, arg RevokeOtherUserSessionsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeOtherUserSessions, arg.Now, arg.UserID, arg.Kept)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeSession = `-- name: RevokeSession :execrows
 UPDATE sessions SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL
 `

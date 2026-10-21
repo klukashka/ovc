@@ -25,6 +25,7 @@ type Email struct {
 
 type Composition struct {
 	Email    Email
+	Identity string
 	Obsolete bool
 }
 
@@ -63,7 +64,7 @@ func (s *Service) Deliver(ctx context.Context, row repositories.ClaimedOutboxRow
 		Subject:   composition.Email.Subject,
 		Text:      composition.Email.Text,
 		HTML:      composition.Email.HTML,
-		MessageID: s.messageID(row.IdempotencyKey),
+		MessageID: s.messageID(row.IdempotencyKey, composition.Identity),
 		Date:      now,
 	})
 	if errors.Is(err, mail.ErrInvalidMessage) {
@@ -75,7 +76,7 @@ func (s *Service) Deliver(ctx context.Context, row repositories.ClaimedOutboxRow
 	return domain.DoneSent, nil
 }
 
-func (s *Service) messageID(idempotencyKey string) string {
-	sum := sha256.Sum256([]byte(idempotencyKey))
+func (s *Service) messageID(idempotencyKey string, identity string) string {
+	sum := sha256.Sum256([]byte(idempotencyKey + "\x00" + identity))
 	return hex.EncodeToString(sum[:16]) + "@" + s.host
 }
