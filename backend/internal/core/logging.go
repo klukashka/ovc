@@ -30,7 +30,35 @@ type contextKey int
 
 const (
 	requestIDKey contextKey = iota
+	requestActorKey
 )
+
+type requestActor struct {
+	mu     sync.Mutex
+	userID string
+	role   string
+}
+
+func (a *requestActor) bound() (string, string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.userID, a.role
+}
+
+func WithRequestActor(ctx context.Context) context.Context {
+	return context.WithValue(ctx, requestActorKey, &requestActor{})
+}
+
+func BindRequestActor(ctx context.Context, userID string, role string) {
+	actor, ok := ctx.Value(requestActorKey).(*requestActor)
+	if !ok {
+		panic("a request was authenticated outside the request middleware")
+	}
+	actor.mu.Lock()
+	defer actor.mu.Unlock()
+	actor.userID = userID
+	actor.role = role
+}
 
 func WithRequestID(ctx context.Context, requestID string) context.Context {
 	return context.WithValue(ctx, requestIDKey, requestID)
@@ -61,8 +89,7 @@ func NewLogging(out io.Writer, level slog.Level, format LogFormat) *Logging {
 	}
 	state := &asyncState{queue: make(chan queuedRecord, queueCapacity), done: make(chan struct{})}
 	go state.drain()
-	handler := &contextHandler{next: &asyncHandler{inner: sink, state: state}}
-	return &Logging{Logger: slog.New(handler), async: state, sink: sink}
+	return &Logging{Logger: slog.New(NewContextHandler(&asyncHandler{inner: sink, state: state})), async: state, sink: sink}
 }
 
 func (l *Logging) Close() error {
@@ -123,7 +150,13 @@ func serverErrorKind(message string) string {
 }
 
 type contextHandler struct {
-	next slog.Handler
+	next      slog.Handler
+	userBound bool
+	roleBound bool
+}
+
+func NewContextHandler(next slog.Handler) slog.Handler {
+	return &contextHandler{next: next}
 }
 
 func (h *contextHandler) Enabled(ctx context.Context, level slog.Level) bool {
@@ -134,15 +167,42 @@ func (h *contextHandler) Handle(ctx context.Context, record slog.Record) error {
 	if requestID := RequestID(ctx); requestID != "" {
 		record.AddAttrs(slog.String("request_id", requestID))
 	}
+	if actor, ok := ctx.Value(requestActorKey).(*requestActor); ok {
+		h.addActor(&record, actor)
+	}
 	return h.next.Handle(ctx, record)
 }
 
+func (h *contextHandler) addActor(record *slog.Record, actor *requestActor) {
+	userID, role := actor.bound()
+	if userID == "" {
+		return
+	}
+	userNamed, roleNamed := h.userBound, h.roleBound
+	record.Attrs(func(attr slog.Attr) bool {
+		userNamed = userNamed || attr.Key == "user_id"
+		roleNamed = roleNamed || attr.Key == "role"
+		return true
+	})
+	if !userNamed {
+		record.AddAttrs(slog.String("user_id", userID))
+	}
+	if !roleNamed {
+		record.AddAttrs(slog.String("role", role))
+	}
+}
+
 func (h *contextHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &contextHandler{next: h.next.WithAttrs(attrs)}
+	next := &contextHandler{next: h.next.WithAttrs(attrs), userBound: h.userBound, roleBound: h.roleBound}
+	for _, attr := range attrs {
+		next.userBound = next.userBound || attr.Key == "user_id"
+		next.roleBound = next.roleBound || attr.Key == "role"
+	}
+	return next
 }
 
 func (h *contextHandler) WithGroup(name string) slog.Handler {
-	return &contextHandler{next: h.next.WithGroup(name)}
+	return &contextHandler{next: h.next.WithGroup(name), userBound: h.userBound, roleBound: h.roleBound}
 }
 
 type queuedRecord struct {

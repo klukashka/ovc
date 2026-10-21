@@ -22,6 +22,10 @@ export const en: Resources = {
     hideSidebar: 'Hide sidebar',
     accountMenu: 'Account menu',
     signOut: 'Sign out',
+    signOutFailed: 'Could not sign out. Check your connection and try again.',
+    confirmationLabel: 'Email confirmation',
+    confirmationBody: 'Confirm your email: we sent a link to {email}.',
+    confirmationAction: 'Confirm email',
     notificationsWithCount:
       '{count, plural, =0 {Notifications} one {Notifications, # unread} other {Notifications, # unread}}',
   },
@@ -75,6 +79,24 @@ export const en: Resources = {
   public: {
     signIn: 'Sign in',
     signUp: 'Sign up',
+  },
+  session: {
+    loading: 'Loading',
+    unavailableTitle: 'Server unavailable',
+    unavailableBody: 'Could not reach the server. Check your connection and try again.',
+    retry: 'Try again',
+  },
+  signIn: {
+    email: 'Email',
+    password: 'Password',
+    showPassword: 'Show password',
+    submit: 'Sign in',
+    forgotPassword: 'Forgot password?',
+    signUp: 'Sign up',
+    wrongCredentials: 'The email or password is incorrect.',
+    blocked: 'This account is blocked.',
+    throttled: 'Too many attempts, try again in {minutes, plural, one {# minute} other {# minutes}}.',
+    failed: 'Could not sign in. Try again. Request code: {requestId}.',
   },
   readiness: {
     label: 'Server status',

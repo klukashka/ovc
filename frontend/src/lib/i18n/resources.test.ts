@@ -23,6 +23,11 @@ function messages(tree: MessageTree, prefix = ''): Map<string, string> {
 
 const catalogues = { ru: messages(ru), en: messages(en) };
 
+function sampleValues(message: string, count: number): Record<string, number> {
+  const names = [...message.matchAll(/\{\s*(\w+)/g)].map((match) => match[1] ?? '');
+  return Object.fromEntries([...names, 'count'].map((name) => [name, count]));
+}
+
 describe('translation resources', () => {
   test('both languages define the same keys', () => {
     const russianKeys = [...catalogues.ru.keys()].sort();
@@ -35,7 +40,7 @@ describe('translation resources', () => {
   test.each(Object.entries(catalogues))('every %s message is valid ICU and formats plurals', (language, catalogue) => {
     const formatted = [...catalogue.entries()].map(([key, message]) => {
       const format = new IntlMessageFormat(message, language);
-      return [key, [0, 1, 2, 5, 21].map((count) => String(format.format({ count })))] as const;
+      return [key, [0, 1, 2, 5, 21].map((count) => String(format.format(sampleValues(message, count))))] as const;
     });
 
     for (const [key, outputs] of formatted) {

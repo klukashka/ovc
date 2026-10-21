@@ -68,12 +68,13 @@ Every page of the web application, its address, who reaches it and where navigat
 ## Rules
 
 - **After sign-in:** a tutor goes to `/today`, a student to `/home`. A `next` parameter is honoured only when it starts with exactly one `/` (not `//` or `/\`), and when resolving it against the OVC origin with the URL parser yields the same origin; anything else is ignored.
-- **Wrong role:** a tutor address opened by a student (or the reverse) shows Not found, never a hint that the address exists.
-- **Anonymous visitors** opening a private address are redirected to `/?next=<address>`.
+- **Wrong role:** a tutor address opened by a student (or the reverse) shows Not found inside the user's own frame, never a hint that the address exists. An address both roles share opens in the signed-in user's own frame.
+- **Anonymous visitors** opening a private address are redirected to `/?next=<address>`, with the path and query encoded; after an explicit sign-out or a block the redirect goes to `/` without `next`.
+- **While the session is loading** at start-up, every address shows a loading status; when the server cannot be reached, a message with a retry button.
 - **Unverified accounts:**
   - a tutor sees a confirmation banner on every page;
   - an unverified tutor trying to invite, schedule a lesson or regenerate the tutor code gets the confirmation prompt instead;
-  - an unverified student sees only the confirmation page.
+  - an unverified student sees only the confirmation page and account settings, which keep sign-out, the language switch and deletion reachable; every other private address redirects to the confirmation page.
 - **Other refusals:**
   - `403 forbidden` shows a toast explaining the action is not allowed;
   - `account_blocked` and a WebSocket close with `4401` that a token refresh cannot fix sign the user out with a message.
@@ -81,17 +82,6 @@ Every page of the web application, its address, who reaches it and where navigat
 - **Signing out** returns to `/` and clears cached data.
 - **Notification links** open the related page: lesson, submission, review, channel or student card.
 - **Filters and tabs** that change what is shown are reflected in the address, so reload and Back keep the view.
-
-## Interim behavior before sign-in exists
-
-Roadmap slice 1 ships the frames without accounts, so until slice 2 adds sessions and route guards:
-
-- every address above opens without a session, and the wrong-role, anonymous and unverified rules are not enforced yet;
-- tutor-only addresses render the tutor frame and student-only addresses the student frame;
-- an address both roles share (Schedule, Lesson, Messages, Notifications and the shared settings sections) renders the frame of the role whose sidebar or top bar link opened it, carried in the router's link state, and the tutor frame when it is opened directly;
-- token pages are placeholders that do not read their token yet, so the token-removal rule below starts with slice 2.
-
-Slice 2 replaces the link-state role with the signed-in user's role and removes this section.
 
 ## Token pages
 

@@ -7,7 +7,7 @@ import { Page } from '../components/ui/Page.tsx';
 export function NotFoundPage(): ReactElement {
   const { t } = useTranslation();
   return (
-    <Page>
+    <Page title="page.notFound">
       <p className="text-text-muted">{t('notFound.body')}</p>
       <p>
         <Link to="/" className="text-accent-text underline">

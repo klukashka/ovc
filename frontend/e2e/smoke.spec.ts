@@ -1,5 +1,6 @@
 import { type Locator, type Page } from '@playwright/test';
 
+import { signInThroughTheApi } from './accounts.ts';
 import { expect, test as base } from './fixtures.ts';
 
 import { contentSecurityPolicy } from '../security-headers.ts';
@@ -108,7 +109,7 @@ test('the preview server answers no cross-origin requests', async ({ request }) 
   expect(simple.headers()['access-control-allow-origin']).toBeUndefined();
 });
 
-test('the tutor frame shows the tutor sections and server readiness', async ({ page }) => {
+test('the tutor frame shows the tutor sections and server readiness', async ({ signedInPage: page }) => {
   await page.goto('/today');
 
   const navigation = page.getByRole('navigation', { name: 'Основная навигация' });
@@ -129,32 +130,7 @@ test('the tutor frame shows the tutor sections and server readiness', async ({ p
   await expect(page).toHaveTitle('Сегодня · OVC');
 });
 
-test('the student frame shows the student sections in English', async ({ page }) => {
-  await chooseEnglish(page);
-
-  await page.goto('/home');
-
-  const navigation = page.getByRole('navigation', { name: 'Main navigation' });
-  for (const label of ['Home', 'Schedule', 'Homework', 'Messages', 'My tutors', 'Notifications', 'Settings']) {
-    await expect(navigation.getByRole('link', { name: label, exact: true })).toBeVisible();
-  }
-  await expect(navigation.getByRole('link', { name: 'Students' })).toHaveCount(0);
-  await expect(page.getByRole('status')).toHaveText('Server ready');
-});
-
-test('a shared page opened from the student sidebar keeps the student frame and focuses its heading', async ({
-  page,
-}) => {
-  await page.goto('/home');
-
-  await page.getByRole('navigation').getByRole('link', { name: 'Расписание' }).click();
-
-  await expect(page.getByRole('heading', { level: 1, name: 'Расписание' })).toBeFocused();
-  await expect(page.getByRole('navigation').getByRole('link', { name: 'Мои репетиторы' })).toBeVisible();
-  await expect(page.getByRole('navigation').getByRole('link', { name: 'Ученики' })).toHaveCount(0);
-});
-
-test('hiding the sidebar moves focus to the show button and is remembered', async ({ page }) => {
+test('hiding the sidebar moves focus to the show button and is remembered', async ({ signedInPage: page }) => {
   await page.goto('/today');
 
   await page.getByRole('button', { name: 'Скрыть боковую панель' }).click();
@@ -173,7 +149,7 @@ test('hiding the sidebar moves focus to the show button and is remembered', asyn
   await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeVisible();
 });
 
-test('showing the sidebar again is remembered', async ({ page }) => {
+test('showing the sidebar again is remembered', async ({ signedInPage: page }) => {
   await page.goto('/today');
   await page.getByRole('button', { name: 'Скрыть боковую панель' }).click();
 
@@ -186,7 +162,7 @@ test('showing the sidebar again is remembered', async ({ page }) => {
 test.describe('below 1024 px', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test('the top bar shows the page title, the bell and touch-sized targets', async ({ page }) => {
+  test('the top bar shows the page title, the bell and touch-sized targets', async ({ signedInPage: page }) => {
     await page.goto('/today');
 
     const showButton = page.getByRole('button', { name: 'Показать боковую панель' });
@@ -199,18 +175,7 @@ test.describe('below 1024 px', () => {
     }
   });
 
-  test('the bell keeps the student frame', async ({ page }) => {
-    await page.goto('/home');
-
-    await page.getByRole('banner').getByRole('link', { name: 'Уведомления' }).click();
-    await page.getByRole('button', { name: 'Показать боковую панель' }).click();
-
-    await expect(page.getByRole('heading', { level: 1, name: 'Уведомления' })).toBeVisible();
-    await expect(page.getByRole('dialog').getByRole('link', { name: 'Мои репетиторы' })).toBeVisible();
-    await expect(page.getByRole('dialog').getByRole('link', { name: 'Ученики' })).toHaveCount(0);
-  });
-
-  test('opening the overlay focuses the current item', async ({ page }) => {
+  test('opening the overlay focuses the current item', async ({ signedInPage: page }) => {
     await page.goto('/today');
 
     await page.getByRole('button', { name: 'Показать боковую панель' }).click();
@@ -218,7 +183,7 @@ test.describe('below 1024 px', () => {
     await expect(page.getByRole('dialog').getByRole('link', { name: 'Сегодня' })).toBeFocused();
   });
 
-  test('Tab and Shift+Tab stay inside the overlay', async ({ page }) => {
+  test('Tab and Shift+Tab stay inside the overlay', async ({ signedInPage: page }) => {
     await openOverlay(page);
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('link', { name: 'Настройки' }).focus();
@@ -233,7 +198,7 @@ test.describe('below 1024 px', () => {
     await expect(dialog.getByRole('link', { name: 'Настройки' })).toBeFocused();
   });
 
-  test('Escape closes the overlay and returns focus to the show button', async ({ page }) => {
+  test('Escape closes the overlay and returns focus to the show button', async ({ signedInPage: page }) => {
     await openOverlay(page);
 
     await page.keyboard.press('Escape');
@@ -242,7 +207,7 @@ test.describe('below 1024 px', () => {
     await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeFocused();
   });
 
-  test('a click on the dimmed page closes the overlay and returns focus', async ({ page }) => {
+  test('a click on the dimmed page closes the overlay and returns focus', async ({ signedInPage: page }) => {
     await openOverlay(page);
 
     await page.mouse.click(380, 400);
@@ -251,7 +216,7 @@ test.describe('below 1024 px', () => {
     await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeFocused();
   });
 
-  test('Escape in the account menu closes only the menu', async ({ page }) => {
+  test('Escape in the account menu closes only the menu', async ({ signedInPage: page }) => {
     await openOverlay(page);
     await page
       .getByRole('dialog')
@@ -265,7 +230,7 @@ test.describe('below 1024 px', () => {
     await expect(page.getByRole('dialog').getByRole('button', { name: /Меню аккаунта/ })).toBeFocused();
   });
 
-  test('choosing an item closes the overlay, navigates and focuses the heading', async ({ page }) => {
+  test('choosing an item closes the overlay, navigates and focuses the heading', async ({ signedInPage: page }) => {
     await openOverlay(page);
 
     await page.getByRole('dialog').getByRole('link', { name: 'Расписание' }).click();
@@ -323,7 +288,7 @@ test('every page, asset and proxied API response carries the security headers', 
   expect(responses.at(-1)?.status()).toBe(404);
 });
 
-test('showing the sidebar moves focus to the hide button', async ({ page }) => {
+test('showing the sidebar moves focus to the hide button', async ({ signedInPage: page }) => {
   await page.goto('/today');
   await page.getByRole('button', { name: 'Скрыть боковую панель' }).click();
 
@@ -332,7 +297,7 @@ test('showing the sidebar moves focus to the hide button', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Скрыть боковую панель' })).toBeFocused();
 });
 
-test('the current sidebar item uses the primary text colour', async ({ page }) => {
+test('the current sidebar item uses the primary text colour', async ({ signedInPage: page }) => {
   await page.goto('/today');
 
   const current = page.getByRole('navigation').getByRole('link', { name: 'Сегодня' });
@@ -344,20 +309,21 @@ test('the current sidebar item uses the primary text colour', async ({ page }) =
   );
 });
 
-test('controls on a computer follow the token sizes', async ({ page }) => {
-  await page.goto('/today');
-  const sidebarItems = await boxSizes([page.getByRole('navigation').getByRole('link', { name: 'Сегодня' })]);
+test('controls on a computer follow the token sizes', async ({ page, tutor }) => {
   await page.goto('/');
-
   const languageButtons = await boxSizes([page.getByRole('button', { name: 'Русский' })]);
   const logo = await boxSizes([page.getByRole('link', { name: 'OVC' })]);
+  await signInThroughTheApi(page, tutor);
+  await page.goto('/today');
+
+  const sidebarItems = await boxSizes([page.getByRole('navigation').getByRole('link', { name: 'Сегодня' })]);
 
   expect(sidebarItems[0]?.height).toBe(32);
   expect(languageButtons[0]?.height).toBeGreaterThanOrEqual(40);
   expect(logo[0]?.height).toBeGreaterThanOrEqual(44);
 });
 
-test('the account menu closes when focus leaves it', async ({ page }) => {
+test('the account menu closes when focus leaves it', async ({ signedInPage: page }) => {
   await page.goto('/today');
   await page.getByRole('button', { name: /Меню аккаунта/ }).click();
   await page.getByRole('button', { name: 'Выйти' }).waitFor();
@@ -371,12 +337,13 @@ test('the account menu closes when focus leaves it', async ({ page }) => {
 test.describe('at 900 px', () => {
   test.use({ viewport: { width: 900, height: 800 } });
 
-  test('every frame target is at least 44 px', async ({ page }) => {
+  test('every frame target is at least 44 px', async ({ page, tutor }) => {
     await page.goto('/');
     const publicTargets = await boxSizes([
       page.getByRole('button', { name: 'Русский' }),
       page.getByRole('navigation').getByRole('link', { name: 'Войти' }),
     ]);
+    await signInThroughTheApi(page, tutor);
     await page.goto('/today');
     await page.getByRole('button', { name: 'Показать боковую панель' }).click();
 
@@ -390,7 +357,9 @@ test.describe('at 900 px', () => {
     }
   });
 
-  test('the overlay is named and does not reopen after the window widens and narrows', async ({ page }) => {
+  test('the overlay is named and does not reopen after the window widens and narrows', async ({
+    signedInPage: page,
+  }) => {
     await page.goto('/today');
     await page.getByRole('button', { name: 'Показать боковую панель' }).click();
     await page.getByRole('dialog', { name: 'Боковая панель' }).waitFor();

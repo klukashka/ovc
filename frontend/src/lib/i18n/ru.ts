@@ -22,6 +22,10 @@ export const ru = {
     hideSidebar: 'Скрыть боковую панель',
     accountMenu: 'Меню аккаунта',
     signOut: 'Выйти',
+    signOutFailed: 'Не удалось выйти. Проверьте соединение и попробуйте ещё раз.',
+    confirmationLabel: 'Подтверждение email',
+    confirmationBody: 'Подтвердите email: мы отправили ссылку на {email}.',
+    confirmationAction: 'Подтвердить email',
     notificationsWithCount:
       '{count, plural, =0 {Уведомления} one {Уведомления, # непрочитанное} few {Уведомления, # непрочитанных} many {Уведомления, # непрочитанных} other {Уведомления, # непрочитанного}}',
   },
@@ -75,6 +79,25 @@ export const ru = {
   public: {
     signIn: 'Войти',
     signUp: 'Зарегистрироваться',
+  },
+  session: {
+    loading: 'Загружаем',
+    unavailableTitle: 'Сервер недоступен',
+    unavailableBody: 'Не удалось связаться с сервером. Проверьте соединение и попробуйте ещё раз.',
+    retry: 'Попробовать ещё раз',
+  },
+  signIn: {
+    email: 'Email',
+    password: 'Пароль',
+    showPassword: 'Показать пароль',
+    submit: 'Войти',
+    forgotPassword: 'Забыли пароль?',
+    signUp: 'Зарегистрироваться',
+    wrongCredentials: 'Неверный email или пароль.',
+    blocked: 'Этот аккаунт заблокирован.',
+    throttled:
+      'Слишком много попыток, попробуйте через {minutes, plural, one {# минуту} few {# минуты} many {# минут} other {# минуты}}.',
+    failed: 'Не удалось войти. Попробуйте ещё раз. Код запроса: {requestId}.',
   },
   readiness: {
     label: 'Состояние сервера',

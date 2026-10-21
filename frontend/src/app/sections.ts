@@ -67,21 +67,6 @@ export function isCurrent(section: Section, pathname: string): boolean {
   return section.matches.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
-export interface FrameRoleState {
-  readonly frameRole: Role;
-}
-
-export function roleState(role: Role): FrameRoleState {
-  return { frameRole: role };
-}
-
-export function frameRoleState(state: unknown): Role | null {
-  if (typeof state !== 'object' || state === null || !('frameRole' in state)) {
-    return null;
-  }
-  return state.frameRole === 'tutor' || state.frameRole === 'student' ? state.frameRole : null;
-}
-
 export type SectionCounts = Readonly<Partial<Record<SectionKey, number>>>;
 
 export function hasNews(counts: SectionCounts): boolean {

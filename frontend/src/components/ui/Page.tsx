@@ -1,11 +1,19 @@
+import type { ParseKeys } from 'i18next';
 import { type ReactElement, type ReactNode, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useRouteTitle } from '../../app/handles.ts';
 
-export function Page({ children }: { readonly children?: ReactNode }): ReactElement {
+export function Page({
+  title: titleKey,
+  children,
+}: {
+  readonly title?: ParseKeys;
+  readonly children?: ReactNode;
+}): ReactElement {
   const { t } = useTranslation();
-  const title = t(useRouteTitle());
+  const routeTitle = useRouteTitle();
+  const title = t(titleKey ?? routeTitle);
 
   useEffect(() => {
     document.title = `${title} · ${t('app.name')}`;

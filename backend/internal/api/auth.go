@@ -110,6 +110,7 @@ func (r *router) authenticate(audience Audience) func(huma.Context, func(huma.Co
 			r.writeError(ctx, domain.ErrorEmailNotVerified)
 			return
 		}
+		core.BindRequestActor(ctx.Context(), principal.UserID.String(), string(principal.Role))
 		next(huma.WithValue(ctx, principalKey{}, principal))
 	}
 }

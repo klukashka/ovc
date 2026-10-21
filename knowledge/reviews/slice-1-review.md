@@ -27,7 +27,7 @@ Each change had its own standard and security reviews, with fresh reviewers scop
 
 | Finding | Where it goes |
 |---|---|
-| Route guards, the signed-in role replacing the link-state frame role, token pages reading their token and removing it from the address bar, and the `next` parameter rule ([interim behavior](../design/web/navigation.md#interim-behavior-before-sign-in-exists)) | Slice 2 |
+| Route guards, the signed-in role replacing the link-state frame role, token pages reading their token and removing it from the address bar, and the `next` parameter rule (the interim behavior, replaced by the [navigation rules](../design/web/navigation.md#rules)) | Slice 2 |
 | Lint rules refusing `dangerouslySetInnerHTML`, `innerHTML`, `document.write` and Web Storage outside the preferences store, with a smoke check that stored keys are known preferences | Slice 2, before tokens exist in the browser |
 | The error codes published as an enum in the OpenAPI document, so the frontend can type-check their translations | Slice 2 |
 | Whether `POST /__test__/tick` requires `OVC_CLOCK=test` or ticks at system time when the worker runs on system time | Slice 2, with the first outbox job; recorded in the development guide and the notifications specification |

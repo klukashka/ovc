@@ -12,14 +12,16 @@ export function usePreferences(): PreferenceStore {
   return store;
 }
 
-interface MediaQuerySource {
+export interface MediaQuerySource {
   readonly subscribe: (onChange: () => void) => () => void;
   readonly snapshot: () => boolean;
 }
 
+export type MediaQueries = (query: string) => MediaQuerySource;
+
 const mediaQuerySources = new Map<string, MediaQuerySource>();
 
-function mediaQuerySource(query: string): MediaQuerySource {
+export function windowMediaQueries(query: string): MediaQuerySource {
   const existing = mediaQuerySources.get(query);
   if (existing !== undefined) {
     return existing;
@@ -38,8 +40,17 @@ function mediaQuerySource(query: string): MediaQuerySource {
   return source;
 }
 
+export function fixedMediaQueries(matching: readonly string[]): MediaQueries {
+  return (query) => ({
+    subscribe: () => (): void => undefined,
+    snapshot: () => matching.includes(query),
+  });
+}
+
+export const MediaQueriesContext = createContext<MediaQueries>(windowMediaQueries);
+
 export function useMediaQuery(query: string): boolean {
-  const source = mediaQuerySource(query);
+  const source = useContext(MediaQueriesContext)(query);
   return useSyncExternalStore(source.subscribe, source.snapshot);
 }
 

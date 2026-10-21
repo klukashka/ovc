@@ -235,3 +235,76 @@ func TestLocalDatabaseCheckRefusesRemoteHosts(t *testing.T) {
 		})
 	}
 }
+
+type actorRecord struct {
+	Message string  `json:"msg"`
+	UserID  *string `json:"user_id"`
+	Role    *string `json:"role"`
+}
+
+func actorRecords(t *testing.T, write func(logger *slog.Logger, ctx context.Context)) []actorRecord {
+	t.Helper()
+	var out safeBuffer
+	logger := slog.New(core.NewContextHandler(slog.NewJSONHandler(&out, nil)))
+	ctx := core.WithRequestActor(context.Background())
+	core.BindRequestActor(ctx, "00000000-0000-4000-8000-000000000001", "tutor")
+	write(logger, ctx)
+	var records []actorRecord
+	for line := range strings.Lines(out.String()) {
+		if strings.Count(line, `"user_id"`) > 1 || strings.Count(line, `"role"`) > 1 {
+			t.Fatalf("a record repeats an actor field: %s", line)
+		}
+		var record actorRecord
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatal(err)
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
+func field(value *string) string {
+	if value == nil {
+		return "absent"
+	}
+	return *value
+}
+
+func TestActorFieldsFillOnlyTheFieldsARecordDoesNotName(t *testing.T) {
+	write := func(logger *slog.Logger, ctx context.Context) {
+		logger.InfoContext(ctx, "plain")
+		logger.InfoContext(ctx, "about.someone", slog.String("user_id", "00000000-0000-4000-8000-000000000002"))
+		logger.With(slog.String("user_id", "00000000-0000-4000-8000-000000000003")).InfoContext(ctx, "bound.someone")
+		logger.With(slog.String("role", "student")).InfoContext(ctx, "bound.role")
+	}
+
+	records := actorRecords(t, write)
+
+	var got []string
+	for _, record := range records {
+		got = append(got, record.Message+" "+field(record.UserID)+" "+field(record.Role))
+	}
+	expected := []string{
+		"plain 00000000-0000-4000-8000-000000000001 tutor",
+		"about.someone 00000000-0000-4000-8000-000000000002 tutor",
+		"bound.someone 00000000-0000-4000-8000-000000000003 tutor",
+		"bound.role 00000000-0000-4000-8000-000000000001 student",
+	}
+	if strings.Join(got, "\n") != strings.Join(expected, "\n") {
+		t.Fatalf("actor fields:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(expected, "\n"))
+	}
+}
+
+func TestBindingAnActorOutsideARequestPanics(t *testing.T) {
+	panicked := func() (recovered bool) {
+		defer func() { recovered = recover() != nil }()
+		core.BindRequestActor(context.Background(), "00000000-0000-4000-8000-000000000001", "tutor")
+		return false
+	}
+
+	result := panicked()
+
+	if !result {
+		t.Fatal("binding an actor without a request scope did not panic")
+	}
+}

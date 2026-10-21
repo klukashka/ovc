@@ -1,5 +1,13 @@
-import { test as base } from '@playwright/test';
+import { type Page, test as base } from '@playwright/test';
 
+import {
+  type TestAccount,
+  confirmFromAnotherBrowser,
+  confirmationToken,
+  newTestAccount,
+  registerTutor,
+  signInThroughTheApi,
+} from './accounts.ts';
 import { type Deployment, readE2ESettings, startDeployment } from './deployment.ts';
 
 export interface SentMail {
@@ -59,11 +67,19 @@ function testControl(deployment: Deployment): TestControl {
   };
 }
 
-export function testNetAddress(): string {
-  return `198.51.100.${String(1 + Math.floor(Math.random() * 254))}`;
+async function confirmedTutor(deployment: Deployment): Promise<TestAccount> {
+  const control = testControl(deployment);
+  const account = newTestAccount('Тестовый репетитор');
+  await registerTutor(deployment, account, 'ru');
+  await control.tick();
+  await confirmFromAnotherBrowser(deployment, account, confirmationToken(await control.mail(account.email)));
+  return account;
 }
 
-export const test = base.extend<{ control: TestControl }, { deployment: Deployment }>({
+export const test = base.extend<
+  { control: TestControl; signedInPage: Page },
+  { deployment: Deployment; tutor: TestAccount }
+>({
   deployment: [
     async ({ browserName }, use, workerInfo): Promise<void> => {
       const deployment = await startDeployment(readE2ESettings(process.env), workerInfo.parallelIndex, browserName);
@@ -75,12 +91,23 @@ export const test = base.extend<{ control: TestControl }, { deployment: Deployme
     },
     { scope: 'worker', timeout: 150_000 },
   ],
+  tutor: [
+    async ({ deployment }, use): Promise<void> => {
+      await use(await confirmedTutor(deployment));
+    },
+    { scope: 'worker' },
+  ],
   baseURL: async ({ deployment }, use): Promise<void> => {
     await use(deployment.origin);
   },
   control: async ({ deployment }, use): Promise<void> => {
     await use(testControl(deployment));
   },
+  signedInPage: async ({ page, tutor }, use): Promise<void> => {
+    await signInThroughTheApi(page, tutor);
+    await use(page);
+  },
 });
 
 export { expect } from '@playwright/test';
+export { testNetAddress } from './accounts.ts';

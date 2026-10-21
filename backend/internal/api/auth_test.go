@@ -113,7 +113,7 @@ func newAuthHarnessBehind(t *testing.T, trusted []netip.Prefix) *authHarness {
 	database := testdb.New(t)
 	random := &countingRandom{}
 	logs := &safeBuffer{}
-	logger := slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger := slog.New(core.NewContextHandler(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	shared := clock.NewShared(database.Pool)
 	if _, err := shared.Set(context.Background(), authStart); err != nil {
 		t.Fatal(err)

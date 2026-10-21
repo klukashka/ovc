@@ -29,7 +29,11 @@ record of academic data.
   header and in error bodies ([API conventions](api.md#conventions)).
 - Every WebSocket connection gets a connection identifier bound for its lifetime; every inbound frame
   gets its own frame identifier.
-- Records carry `user_id` and `role` once authenticated, and `tutor_id` plus `relationship_id` or
+- Records carry `user_id` and `role` once authenticated: the request middleware binds the
+  authenticated account's identifier (its UUID, never an email) and role to every later record of the
+  request, the access record included, adding each field only to a record that does not name it
+  itself. Within a request, `user_id` and `role` name the acting account; a record about another
+  account names it with a field such as `target_user_id`. Records also carry `tutor_id` plus `relationship_id` or
   `group_id` where the operation is scoped to them. Worker records carry the job name and the outbox
   row identifier. Context is reset at the end of each request, connection, task or job so that
   concurrent work never shares context.

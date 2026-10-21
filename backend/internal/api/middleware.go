@@ -42,7 +42,7 @@ type outermost struct {
 func (m *outermost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := m.now()
 	requestID := m.requestID(r)
-	ctx := core.WithRequestID(r.Context(), requestID)
+	ctx := core.WithRequestActor(core.WithRequestID(r.Context(), requestID))
 	r = r.WithContext(ctx)
 	setBaseHeaders(w.Header(), requestID)
 	recorder := &responseRecorder{ResponseWriter: w, status: http.StatusOK, ctx: ctx, logger: m.logger}

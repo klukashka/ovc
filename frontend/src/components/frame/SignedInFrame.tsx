@@ -1,11 +1,13 @@
-import { type ReactElement, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
+import type { ParseKeys } from 'i18next';
+import { type ReactElement, type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Outlet } from 'react-router';
 
 import { useMediaQuery, usePreferences, wideLayoutQuery } from '../../app/context.ts';
 import { preferenceKeys } from '../../lib/preferences/store.ts';
 import { useRouteTitle } from '../../app/handles.ts';
-import { type Role, type SectionCounts, hasNews, roleState } from '../../app/sections.ts';
+import { type SectionCounts, hasNews } from '../../app/sections.ts';
+import type { Me } from '../../lib/api/session.ts';
 import { BellIcon, SidebarIcon } from '../ui/icons.tsx';
 import { Sidebar } from './Sidebar.tsx';
 
@@ -147,14 +149,14 @@ function SidebarOverlay({
 }
 
 function NarrowTopBar({
-  frameRole,
+  title,
   showButton,
   news,
   overlayOpen,
   onShow,
   notifications,
 }: {
-  readonly frameRole: Role;
+  readonly title: ParseKeys | undefined;
   readonly showButton: RefObject<HTMLButtonElement | null>;
   readonly news: boolean;
   readonly overlayOpen: boolean;
@@ -162,14 +164,13 @@ function NarrowTopBar({
   readonly notifications: number;
 }): ReactElement {
   const { t } = useTranslation();
-  const title = useRouteTitle();
+  const routeTitle = useRouteTitle();
   return (
     <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-bg px-2 py-1">
       <ShowSidebarButton buttonRef={showButton} news={news} expanded={overlayOpen} onClick={onShow} />
-      <p className="flex-1 truncate text-strong">{t(title)}</p>
+      <p className="flex-1 truncate text-strong">{t(title ?? routeTitle)}</p>
       <Link
         to="/notifications"
-        state={roleState(frameRole)}
         aria-label={t('frame.notificationsWithCount', { count: notifications })}
         className={`${iconButton} gap-1 px-2`}
       >
@@ -184,7 +185,29 @@ function NarrowTopBar({
   );
 }
 
-export function SignedInFrame({ frameRole }: { readonly frameRole: Role }): ReactElement {
+function ConfirmationBanner({ email }: { readonly email: string }): ReactElement {
+  const { t } = useTranslation();
+  return (
+    <div role="region" aria-label={t('frame.confirmationLabel')} className="border-b border-border bg-surface">
+      <p className="mx-auto flex w-full max-w-page flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-small tablet:px-8 desktop:px-14">
+        <span>{t('frame.confirmationBody', { email })}</span>
+        <Link to="/verify-email" className="inline-flex min-h-11 items-center text-accent-text underline">
+          {t('frame.confirmationAction')}
+        </Link>
+      </p>
+    </div>
+  );
+}
+
+export function SignedInFrame({
+  me,
+  title,
+  children,
+}: {
+  readonly me: Me;
+  readonly title?: ParseKeys;
+  readonly children?: ReactNode;
+}): ReactElement {
   const { t } = useTranslation();
   const preferences = usePreferences();
   const wide = useMediaQuery(wideLayoutQuery);
@@ -227,7 +250,7 @@ export function SignedInFrame({ frameRole }: { readonly frameRole: Role }): Reac
 
   const sidebar = (
     <Sidebar
-      role={frameRole}
+      me={me}
       counts={counts}
       headerAction={hideButton}
       onNavigate={() => {
@@ -257,7 +280,7 @@ export function SignedInFrame({ frameRole }: { readonly frameRole: Role }): Reac
       {wide ? null : (
         <>
           <NarrowTopBar
-            frameRole={frameRole}
+            title={title}
             showButton={showButton}
             news={news}
             overlayOpen={overlayOpen}
@@ -272,8 +295,9 @@ export function SignedInFrame({ frameRole }: { readonly frameRole: Role }): Reac
         </>
       )}
       <div className={wide && sidebarShown ? 'pl-(--container-sidebar)' : ''}>
+        {me.state === 'unverified' ? <ConfirmationBanner email={me.email} /> : null}
         <main className="mx-auto w-full max-w-page px-4 py-8 tablet:px-8 desktop:px-14 desktop:py-12">
-          <Outlet />
+          {children ?? <Outlet />}
         </main>
       </div>
     </div>

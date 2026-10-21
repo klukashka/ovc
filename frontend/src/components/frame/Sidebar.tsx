@@ -1,32 +1,23 @@
 import { type ReactElement, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useLocation, useNavigate } from 'react-router';
+import { Link, useLocation } from 'react-router';
 
-import {
-  type Role,
-  type Section,
-  type SectionCounts,
-  isCurrent,
-  roleSections,
-  roleState,
-  trailingSections,
-} from '../../app/sections.ts';
+import { type Section, type SectionCounts, isCurrent, roleSections, trailingSections } from '../../app/sections.ts';
+import { type Me, useSession } from '../../lib/api/session.ts';
 
 interface SidebarProps {
-  readonly role: Role;
+  readonly me: Me;
   readonly counts: SectionCounts;
   readonly headerAction: ReactNode;
   readonly onNavigate: () => void;
 }
 
 function SidebarItem({
-  role,
   section,
   count,
   current,
   onNavigate,
 }: {
-  readonly role: Role;
   readonly section: Section;
   readonly count: number;
   readonly current: boolean;
@@ -38,7 +29,6 @@ function SidebarItem({
     <li>
       <Link
         to={section.to}
-        state={roleState(role)}
         onClick={onNavigate}
         aria-current={current ? 'page' : undefined}
         data-sidebar-item=""
@@ -54,14 +44,22 @@ function SidebarItem({
   );
 }
 
-function AccountMenu({ role }: { readonly role: Role }): ReactElement {
+function AccountMenu({ me }: { readonly me: Me }): ReactElement {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const session = useSession();
   const [open, setOpen] = useState(false);
+  const [signOutFailed, setSignOutFailed] = useState(false);
   const menuId = useId();
   const container = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
-  const roleName = t(`role.${role}`);
+  const initial = Array.from(me.name.trim()).at(0) ?? '';
+
+  function signOut(): void {
+    setSignOutFailed(false);
+    session.signOut().catch(() => {
+      setSignOutFailed(true);
+    });
+  }
 
   useEffect(() => {
     if (!open) {
@@ -124,7 +122,7 @@ function AccountMenu({ role }: { readonly role: Role }): ReactElement {
         type="button"
         aria-expanded={open}
         aria-controls={menuId}
-        aria-label={`${t('frame.accountMenu')}: ${roleName}`}
+        aria-label={`${t('frame.accountMenu')}: ${me.name}`}
         onClick={() => {
           setOpen((value) => !value);
         }}
@@ -134,9 +132,9 @@ function AccountMenu({ role }: { readonly role: Role }): ReactElement {
           aria-hidden="true"
           className="flex size-6 items-center justify-center rounded-full bg-hover text-caption font-semibold text-text"
         >
-          {roleName.slice(0, 1)}
+          {initial}
         </span>
-        <span className="truncate text-strong">{roleName}</span>
+        <span className="truncate text-strong">{me.name}</span>
       </button>
       {open ? (
         <div
@@ -145,7 +143,6 @@ function AccountMenu({ role }: { readonly role: Role }): ReactElement {
         >
           <Link
             to="/settings/profile"
-            state={roleState(role)}
             onClick={() => {
               setOpen(false);
             }}
@@ -155,35 +152,36 @@ function AccountMenu({ role }: { readonly role: Role }): ReactElement {
           </Link>
           <button
             type="button"
-            onClick={() => {
-              setOpen(false);
-              void navigate('/');
-            }}
+            onClick={signOut}
             className="flex min-h-11 w-full items-center rounded-sm px-2.5 text-left text-small hover:bg-hover desktop:pointer-fine:min-h-8"
           >
             {t('frame.signOut')}
           </button>
+          {signOutFailed ? (
+            <p role="alert" className="px-2.5 py-1 text-small text-danger">
+              {t('frame.signOutFailed')}
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>
   );
 }
 
-export function Sidebar({ role, counts, headerAction, onNavigate }: SidebarProps): ReactElement {
+export function Sidebar({ me, counts, headerAction, onNavigate }: SidebarProps): ReactElement {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto bg-sidebar px-3 py-3">
       <div className="flex items-center gap-1">
-        <AccountMenu role={role} />
+        <AccountMenu me={me} />
         {headerAction}
       </div>
       <nav aria-label={t('frame.navigation')}>
         <ul className="flex flex-col gap-0.5">
-          {roleSections[role].map((section) => (
+          {roleSections[me.role].map((section) => (
             <SidebarItem
               key={section.key}
-              role={role}
               section={section}
               count={counts[section.key] ?? 0}
               current={isCurrent(section, pathname)}
@@ -195,7 +193,6 @@ export function Sidebar({ role, counts, headerAction, onNavigate }: SidebarProps
           {trailingSections.map((section) => (
             <SidebarItem
               key={section.key}
-              role={role}
               section={section}
               count={counts[section.key] ?? 0}
               current={isCurrent(section, pathname)}
