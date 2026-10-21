@@ -22,6 +22,10 @@ func LogStarted(ctx context.Context, logger *slog.Logger, process Process, setti
 		slog.String("clock", string(settings.Clock)),
 		slog.String("meeting_provider", string(settings.MeetingProvider)),
 		slog.String("mail_backend", string(settings.MailBackend)),
+		slog.String("public_url", settings.PublicURL),
+		slog.String("smtp_host", settings.SMTP.Host),
+		slog.Int("smtp_port", settings.SMTP.Port),
+		slog.String("smtp_tls", string(settings.SMTP.TLS)),
 	)
 }
 

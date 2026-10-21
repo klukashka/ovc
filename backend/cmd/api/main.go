@@ -10,10 +10,10 @@ import (
 
 	"ovc/backend/cmd/internal/startup"
 	"ovc/backend/internal/adapters/clock"
+	"ovc/backend/internal/adapters/mail"
 	"ovc/backend/internal/api"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/testcontrol"
-	"ovc/backend/internal/worker"
 )
 
 const (
@@ -107,9 +107,19 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		DocsEnabled:  settings.APIDocsEnabled,
 	}
 	if settings.TestControl {
-		shared := clock.NewShared(database.Pool)
-		routes := testcontrol.New(logging.Logger, shared, worker.New(logging.Logger, shared))
-		options.Mount = routes.Mount
+		random := core.CryptoRandom()
+		sink := mail.NewSink(database.Pool, random)
+		var shared *clock.Shared
+		var source clock.Source = systemClock
+		if settings.Clock == core.ClockTest {
+			shared = clock.NewShared(database.Pool)
+			source = shared
+		}
+		background, err := startup.NewWorker(logging.Logger, settings, database, source, sink, random)
+		if err != nil {
+			return err
+		}
+		options.Mount = testcontrol.New(logging.Logger, shared, background, sink).Mount
 	}
 	handler, err := api.NewHandler(options)
 	if err != nil {

@@ -104,6 +104,7 @@ function backendEnvironment(database: string, adminUrl: URL): NodeJS.ProcessEnv 
     OVC_CLOCK: 'system',
     OVC_MEETING_PROVIDER: 'fake',
     OVC_MAIL_BACKEND: 'sink',
+    OVC_PUBLIC_URL: 'https://ovc.example',
   };
 }
 

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"ovc/backend/internal/adapters/clock"
+	"ovc/backend/internal/adapters/mail"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/schemas"
@@ -22,6 +23,7 @@ import (
 const (
 	maxBodyBytes      = 4 * 1024
 	maxAdvanceSeconds = 10 * 365 * 24 * 60 * 60
+	maxRecipientBytes = 254
 )
 
 var errTrailingData = errors.New("trailing data after the JSON body")
@@ -30,15 +32,56 @@ type Routes struct {
 	logger *slog.Logger
 	clock  *clock.Shared
 	worker *worker.Worker
+	sink   *mail.Sink
 }
 
-func New(logger *slog.Logger, shared *clock.Shared, w *worker.Worker) *Routes {
-	return &Routes{logger: logger, clock: shared, worker: w}
+func New(logger *slog.Logger, shared *clock.Shared, w *worker.Worker, sink *mail.Sink) *Routes {
+	return &Routes{logger: logger, clock: shared, worker: w, sink: sink}
 }
 
 func (routes *Routes) Mount(mux *http.ServeMux) {
+	mux.Handle("POST /__test__/mail", routes.guard(routes.mail))
+	if routes.clock == nil {
+		return
+	}
 	mux.Handle("POST /__test__/clock", routes.guard(routes.setClock))
 	mux.Handle("POST /__test__/tick", routes.guard(routes.tick))
+}
+
+type mailRequest struct {
+	To string `json:"to"`
+}
+
+type mailMessage struct {
+	Subject string    `json:"subject"`
+	Text    string    `json:"text"`
+	HTML    string    `json:"html"`
+	Links   []string  `json:"links"`
+	SentAt  time.Time `json:"sent_at"`
+}
+
+type mailResponse []mailMessage
+
+func (routes *Routes) mail(w http.ResponseWriter, r *http.Request) {
+	var request mailRequest
+	if !decode(w, r, &request) {
+		return
+	}
+	ctx := r.Context()
+	if request.To == "" || len(request.To) > maxRecipientBytes {
+		writeError(ctx, w, domain.ErrorValidationFailed, []schemas.FieldError{{Path: "to", Code: "required"}})
+		return
+	}
+	stored, err := routes.sink.Messages(ctx, request.To)
+	if err != nil {
+		routes.fail(ctx, w, err)
+		return
+	}
+	response := mailResponse{}
+	for _, message := range stored {
+		response = append(response, mailMessage{Subject: message.Subject, Text: message.Text, HTML: message.HTML, Links: message.Links, SentAt: message.SentAt})
+	}
+	writeJSON(ctx, routes.logger, w, response)
 }
 
 type clockRequest struct {
@@ -136,7 +179,7 @@ func isLoopbackHost(hostHeader string) bool {
 	return loopbackHosts[host]
 }
 
-func decode[T clockRequest | struct{}](w http.ResponseWriter, r *http.Request, target *T) bool {
+func decode[T clockRequest | mailRequest | struct{}](w http.ResponseWriter, r *http.Request, target *T) bool {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	err := decoder.Decode(target)
@@ -172,7 +215,7 @@ func trailingDataError(decoder *json.Decoder) error {
 	return err
 }
 
-func writeJSON[T clockResponse | tickResponse](ctx context.Context, logger *slog.Logger, w http.ResponseWriter, body T) {
+func writeJSON[T clockResponse | tickResponse | mailResponse](ctx context.Context, logger *slog.Logger, w http.ResponseWriter, body T) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		logger.LogAttrs(ctx, slog.LevelError, "testcontrol.encode.failed", slog.String("kind", "encode"))

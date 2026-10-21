@@ -78,6 +78,15 @@ linters:
           deny:
             - pkg: github.com/jackc/pgx
               desc: pgx belongs to core, dbgen, repositories, adapters and testdb
+        smtp:
+          files:
+            - $all
+            - "!**/internal/adapters/**"
+          deny:
+            - pkg: github.com/emersion/go-smtp
+              desc: the SMTP client belongs to internal/adapters
+            - pkg: github.com/emersion/go-sasl
+              desc: SMTP authentication belongs to internal/adapters
         goose:
           files:
             - $all

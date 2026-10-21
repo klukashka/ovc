@@ -49,12 +49,21 @@ type outcome struct {
 	stderr   string
 }
 
+func withPublicURL(env []string) []string {
+	for _, variable := range env {
+		if strings.HasPrefix(variable, "OVC_PUBLIC_URL=") {
+			return env
+		}
+	}
+	return append(env, "OVC_PUBLIC_URL=https://ovc.example")
+}
+
 func runBinary(t *testing.T, name string, env []string, args ...string) outcome {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, filepath.Join(binaries, name), args...)
-	command.Env = env
+	command.Env = withPublicURL(env)
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
@@ -199,7 +208,7 @@ func TestMigrateServeAndShutDown(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	server := exec.CommandContext(ctx, filepath.Join(binaries, "api"))
-	server.Env = env
+	server.Env = withPublicURL(env)
 	var stdout bytes.Buffer
 	server.Stdout = &stdout
 	if err := server.Start(); err != nil {
@@ -257,7 +266,7 @@ func TestWorkerRunsAndShutsDown(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	worker := exec.CommandContext(ctx, filepath.Join(binaries, "worker"))
-	worker.Env = []string{"OVC_DATABASE_URL=" + database.URL.Reveal(), "OVC_LOG_LEVEL=debug"}
+	worker.Env = withPublicURL([]string{"OVC_DATABASE_URL=" + database.URL.Reveal(), "OVC_LOG_LEVEL=debug"})
 	output, err := worker.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -302,18 +311,19 @@ func drainLines(t *testing.T, ctx context.Context, lines <-chan string) {
 func startServer(t *testing.T, ctx context.Context, env []string) (*exec.Cmd, *bytes.Buffer) {
 	t.Helper()
 	server := exec.CommandContext(ctx, filepath.Join(binaries, "api"))
-	server.Env = env
+	server.Env = withPublicURL(env)
 	var stdout bytes.Buffer
 	server.Stdout = &stdout
+	server.Stderr = &stdout
 	if err := server.Start(); err != nil {
 		t.Fatal(err)
 	}
 	return server, &stdout
 }
 
-func postClock(t *testing.T, ctx context.Context, address string) int {
+func postJSON(t *testing.T, ctx context.Context, address string, path string, body string) int {
 	t.Helper()
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+address+"/__test__/clock", strings.NewReader(`{"set":"2030-01-01T00:00:00Z"}`))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+address+path, strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,27 +344,36 @@ func postClock(t *testing.T, ctx context.Context, address string) int {
 func TestTestControlRoutesExistOnlyWithTheFlag(t *testing.T) {
 	database := testdb.New(t)
 	cases := map[string]struct {
-		flag   string
-		status int
+		flag        string
+		clock       string
+		mailStatus  int
+		clockStatus int
 	}{
-		"with the flag":    {flag: "1", status: http.StatusOK},
-		"without the flag": {flag: "0", status: http.StatusNotFound},
+		"with the flag and the test clock":   {flag: "1", clock: "test", mailStatus: http.StatusOK, clockStatus: http.StatusOK},
+		"with the flag and the system clock": {flag: "1", clock: "system", mailStatus: http.StatusOK, clockStatus: http.StatusNotFound},
+		"without the flag":                   {flag: "0", clock: "system", mailStatus: http.StatusNotFound, clockStatus: http.StatusNotFound},
 	}
 	for name, testCase := range cases {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			address := freeAddress(t)
-			env := []string{"OVC_DATABASE_URL=" + database.URL.Reveal(), "OVC_HTTP_ADDR=" + address, "OVC_TEST_CONTROL=" + testCase.flag}
-			server, _ := startServer(t, ctx, env)
+			env := []string{"OVC_DATABASE_URL=" + database.URL.Reveal(), "OVC_HTTP_ADDR=" + address, "OVC_TEST_CONTROL=" + testCase.flag, "OVC_CLOCK=" + testCase.clock}
+			server, output := startServer(t, ctx, env)
+			t.Cleanup(func() {
+				if t.Failed() {
+					t.Logf("server output:\n%s", output.String())
+				}
+			})
 			waitForStatus(t, ctx, "http://"+address+"/api/v1/health/ready")
 
-			status := postClock(t, ctx, address)
+			mailStatus := postJSON(t, ctx, address, "/__test__/mail", `{"to":"tutor@example.org"}`)
+			clockStatus := postJSON(t, ctx, address, "/__test__/clock", `{"set":"2030-01-01T00:00:00Z"}`)
 			signalErr := server.Process.Signal(syscall.SIGTERM)
 			waitErr := server.Wait()
 
-			if status != testCase.status || signalErr != nil || waitErr != nil {
-				t.Fatalf("status %d (want %d), signal %v, exit %v", status, testCase.status, signalErr, waitErr)
+			if mailStatus != testCase.mailStatus || clockStatus != testCase.clockStatus || signalErr != nil || waitErr != nil {
+				t.Fatalf("mail %d (want %d), clock %d (want %d), signal %v, exit %v", mailStatus, testCase.mailStatus, clockStatus, testCase.clockStatus, signalErr, waitErr)
 			}
 		})
 	}
@@ -373,6 +392,32 @@ func waitForLine(t *testing.T, ctx context.Context, lines <-chan string, event s
 			if strings.Contains(line, `"msg":"`+event+`"`) {
 				return true
 			}
+		}
+	}
+}
+
+func TestSinkRefusedForProductionDatabaseName(t *testing.T) {
+	production := testdb.NewNamed(t, "ovc_"+core.NewRandomID()[:8]+"_prod", true)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	address := freeAddress(t)
+	env := []string{"OVC_DATABASE_URL=" + production.URL.Reveal(), "OVC_HTTP_ADDR=" + address}
+
+	worker := runBinary(t, "worker", env)
+	server, output := startServer(t, ctx, env)
+	waitForStatus(t, ctx, "http://"+address+"/api/v1/health/ready")
+	signalErr := server.Process.Signal(syscall.SIGTERM)
+	waitErr := server.Wait()
+
+	if worker.exitCode == 0 || !strings.Contains(worker.stderr, "_test or _dev") {
+		t.Fatalf("the worker with the default sink accepted %s: %d %s", production.Name, worker.exitCode, worker.stderr)
+	}
+	if signalErr != nil || waitErr != nil {
+		t.Fatalf("the api, which writes no mail, refused the database: signal %v, exit %v\n%s", signalErr, waitErr, output.String())
+	}
+	for _, secret := range secretsIn(env) {
+		if strings.Contains(worker.stdout+worker.stderr+output.String(), secret) {
+			t.Fatal("part of the database URL leaked")
 		}
 	}
 }

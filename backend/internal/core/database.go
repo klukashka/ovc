@@ -118,11 +118,11 @@ type TestControlRefusal struct {
 }
 
 func (e *TestControlRefusal) Error() string {
-	return "OVC_TEST_CONTROL=1 refused: " + e.Problem
+	return "OVC_TEST_CONTROL=1 or OVC_MAIL_BACKEND=sink refused: " + e.Problem
 }
 
 func VerifyTestControlHosts(ctx context.Context, settings Settings) error {
-	if !settings.TestControl {
+	if !settings.RequiresTestDatabase() {
 		return nil
 	}
 	config, err := pgxpool.ParseConfig(settings.DatabaseURL.Reveal())
@@ -173,7 +173,7 @@ func allHostsLocal(ctx context.Context, config *pgx.ConnConfig) (bool, error) {
 }
 
 func VerifyTestControlDatabase(ctx context.Context, settings Settings, pool *pgxpool.Pool) error {
-	if !settings.TestControl {
+	if !settings.RequiresTestDatabase() {
 		return nil
 	}
 	var name string

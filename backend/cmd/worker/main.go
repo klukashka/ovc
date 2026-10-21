@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
 	"ovc/backend/cmd/internal/startup"
 	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/core"
-	"ovc/backend/internal/worker"
 )
 
 func main() {
@@ -50,5 +50,11 @@ func work(ctx context.Context, settings core.Settings, logging *core.Logging) er
 		<-ctx.Done()
 		return nil
 	}
-	return worker.New(logging.Logger, systemClock).Run(ctx)
+	random := core.CryptoRandom()
+	mailer := startup.NewMailer(logging.Logger, settings, database, random)
+	background, err := startup.NewWorker(logging.Logger, settings, database, systemClock, mailer, random)
+	if err != nil {
+		return errors.Join(err, mailer.Close())
+	}
+	return errors.Join(background.Run(ctx), mailer.Close())
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/mail"
 	"net/netip"
 	"net/url"
 	"os"
@@ -32,7 +33,25 @@ const MeetingProviderFake MeetingProvider = "fake"
 
 type MailBackend string
 
-const MailBackendSink MailBackend = "sink"
+const (
+	MailBackendSMTP MailBackend = "smtp"
+	MailBackendSink MailBackend = "sink"
+)
+
+type SMTPTLSMode string
+
+const (
+	SMTPStartTLS SMTPTLSMode = "starttls"
+	SMTPImplicit SMTPTLSMode = "implicit"
+)
+
+type SMTPSettings struct {
+	Host     string
+	Port     int
+	TLS      SMTPTLSMode
+	Username Secret
+	Password Secret
+}
 
 type LogFormat string
 
@@ -52,19 +71,28 @@ const (
 	varClock           = "OVC_CLOCK"
 	varMeetingProvider = "OVC_MEETING_PROVIDER"
 	varMailBackend     = "OVC_MAIL_BACKEND"
+	varPublicURL       = "OVC_PUBLIC_URL"
+	varSMTPHost        = "OVC_SMTP_HOST"
+	varSMTPPort        = "OVC_SMTP_PORT"
+	varSMTPTLS         = "OVC_SMTP_TLS"
+	varSMTPUsername    = "OVC_SMTP_USERNAME"
+	varSMTPLoginValue  = "OVC_" + "SMTP_PASSWORD"
+	varMailFrom        = "OVC_MAIL_FROM"
 	varTestDatabaseURL = "OVC_TEST_DATABASE_ADMIN_URL"
 )
 
 func VariableNames() []string {
 	return []string{
 		varHTTPAddr, varDatabaseURL, varDBPoolSize, varLogLevel, varLogFormat, varAPIDocsEnabled,
-		varTestControl, varClock, varMeetingProvider, varMailBackend, varTestDatabaseURL,
+		varTestControl, varClock, varMeetingProvider, varMailBackend, varPublicURL, varSMTPHost, varSMTPPort,
+		varSMTPTLS, varSMTPUsername, varSMTPLoginValue, varMailFrom, varTestDatabaseURL,
 	}
 }
 
 type Lookup func(name string) (string, bool)
 
 type Settings struct {
+	Process         Process
 	HTTPAddr        string
 	DatabaseURL     Secret
 	DBPoolSize      int32
@@ -75,6 +103,9 @@ type Settings struct {
 	Clock           ClockMode
 	MeetingProvider MeetingProvider
 	MailBackend     MailBackend
+	PublicURL       string
+	SMTP            SMTPSettings
+	MailFrom        string
 }
 
 type SettingsError struct {
@@ -100,7 +131,7 @@ func TestDatabaseAdminURLFromEnvironment() (Secret, error) {
 
 func Load(lookup Lookup, process Process) (Settings, error) {
 	var problems []error
-	settings := Settings{}
+	settings := Settings{Process: process}
 
 	settings.HTTPAddr = stringOr(lookup, varHTTPAddr, "127.0.0.1:8000")
 	if _, _, err := net.SplitHostPort(settings.HTTPAddr); err != nil {
@@ -163,11 +194,24 @@ func Load(lookup Lookup, process Process) (Settings, error) {
 	}
 	settings.MeetingProvider = provider
 
-	mail, err := oneOf(lookup, varMailBackend, MailBackendSink, MailBackendSink)
+	mail, err := oneOf(lookup, varMailBackend, MailBackendSink, MailBackendSMTP, MailBackendSink)
 	if err != nil {
 		problems = append(problems, err)
 	}
 	settings.MailBackend = mail
+
+	publicURL, err := publicURLFrom(lookup, settings.TestControl)
+	if err != nil {
+		problems = append(problems, err)
+	}
+	settings.PublicURL = publicURL
+
+	if process == ProcessWorker {
+		smtp, from, mailProblems := mailSettings(lookup, settings.MailBackend)
+		problems = append(problems, mailProblems...)
+		settings.SMTP = smtp
+		settings.MailFrom = from
+	}
 
 	problems = append(problems, settings.testControlProblems()...)
 	if len(problems) > 0 {
@@ -228,6 +272,73 @@ func (s Settings) testControlProblems() []error {
 		problems = append(problems, &SettingsError{Variable: varHTTPAddr, Problem: "must be a loopback IP address with OVC_TEST_CONTROL=1"})
 	}
 	return problems
+}
+
+func publicURLFrom(lookup Lookup, testControl bool) (string, error) {
+	value, ok := lookup(varPublicURL)
+	if !ok || strings.TrimSpace(value) == "" {
+		return "", &SettingsError{Variable: varPublicURL, Problem: "is required"}
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || strings.HasSuffix(parsed.Host, ":") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+		return "", &SettingsError{Variable: varPublicURL, Problem: "must be an origin such as https://ovc.example, without a path, query or user info"}
+	}
+	if parsed.Scheme != "https" && (parsed.Scheme != "http" || !testControl) {
+		return "", &SettingsError{Variable: varPublicURL, Problem: "must use https; http is allowed only with OVC_TEST_CONTROL=1"}
+	}
+	return parsed.Scheme + "://" + strings.ToLower(parsed.Host), nil
+}
+
+func mailSettings(lookup Lookup, backend MailBackend) (SMTPSettings, string, []error) {
+	if backend != MailBackendSMTP {
+		return SMTPSettings{}, "", nil
+	}
+	var problems []error
+	smtp := SMTPSettings{}
+	host, ok := lookup(varSMTPHost)
+	if !ok || strings.TrimSpace(host) == "" || strings.ContainsAny(host, " /:@") {
+		problems = append(problems, &SettingsError{Variable: varSMTPHost, Problem: "is required with OVC_MAIL_BACKEND=smtp and must be a host name"})
+	}
+	smtp.Host = host
+	port, err := portOr(lookup, varSMTPPort, 587)
+	if err != nil {
+		problems = append(problems, err)
+	}
+	smtp.Port = port
+	tlsMode, err := oneOf(lookup, varSMTPTLS, SMTPStartTLS, SMTPStartTLS, SMTPImplicit)
+	if err != nil {
+		problems = append(problems, err)
+	}
+	smtp.TLS = tlsMode
+	smtp.Username = NewSecret(stringOr(lookup, varSMTPUsername, ""))
+	password, _ := lookup(varSMTPLoginValue)
+	smtp.Password = NewSecret(password)
+	if smtp.Username.IsZero() != smtp.Password.IsZero() {
+		problems = append(problems, &SettingsError{Variable: varSMTPLoginValue, Problem: "must be set together with OVC_SMTP_USERNAME"})
+	}
+	from, ok := lookup(varMailFrom)
+	address, parseErr := mail.ParseAddress(from)
+	if !ok || parseErr != nil || strings.ContainsAny(from, "\r\n") {
+		problems = append(problems, &SettingsError{Variable: varMailFrom, Problem: "is required with OVC_MAIL_BACKEND=smtp and must be one email address"})
+		return smtp, "", problems
+	}
+	return smtp, address.Address, problems
+}
+
+func portOr(lookup Lookup, name string, fallback int) (int, error) {
+	value, ok := lookup(name)
+	if !ok || value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 1 || parsed > 65535 {
+		return 0, &SettingsError{Variable: name, Problem: "must be a port from 1 to 65535"}
+	}
+	return parsed, nil
+}
+
+func (s Settings) RequiresTestDatabase() bool {
+	return s.TestControl || (s.Process == ProcessWorker && s.MailBackend == MailBackendSink)
 }
 
 func isLoopbackListenAddress(address string) bool {

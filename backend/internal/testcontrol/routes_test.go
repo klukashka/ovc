@@ -8,23 +8,53 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"ovc/backend/internal/adapters/clock"
+	"ovc/backend/internal/adapters/mail"
 	"ovc/backend/internal/api"
 	"ovc/backend/internal/core"
+	"ovc/backend/internal/domain"
+	"ovc/backend/internal/repositories"
+	"ovc/backend/internal/services/notifications"
+	"ovc/backend/internal/services/outbox"
 	"ovc/backend/internal/testcontrol"
 	"ovc/backend/internal/testdb"
 	"ovc/backend/internal/worker"
 )
+
+const greetingKind domain.OutboxKind = "test.greeting"
+
+type greeting struct{}
+
+func (greeting) Build(_ context.Context, row repositories.ClaimedOutboxRow, _ time.Time) (notifications.Composition, error) {
+	var payload struct {
+		To string `json:"to"`
+	}
+	if err := json.Unmarshal(row.Payload, &payload); err != nil {
+		return notifications.Composition{}, err
+	}
+	return notifications.Composition{Email: notifications.Email{
+		To: payload.To, Subject: "Hello", Text: "Open https://ovc.example/home", HTML: "<p>Hello</p>",
+	}}, nil
+}
 
 func newServer(t *testing.T) (*httptest.Server, *testdb.Database) {
 	t.Helper()
 	database := testdb.New(t)
 	logger := slog.New(slog.DiscardHandler)
 	shared := clock.NewShared(database.Pool)
-	routes := testcontrol.New(logger, shared, worker.New(logger, shared))
+	random := &countingRandom{}
+	sink := mail.NewSink(database.Pool, random)
+	notifier, err := notifications.New(sink, "https://ovc.example", map[domain.OutboxKind]notifications.Builder{greetingKind: greeting{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue := outbox.New(repositories.NewStore(database.Pool), random, logger)
+	lanes := []worker.Lane{{Name: domain.LaneEmail, Concurrency: 2, Perform: notifier.Deliver}}
+	routes := testcontrol.New(logger, shared, worker.New(logger, shared, queue, lanes, nil, worker.DefaultTiming()), sink)
 	handler, err := api.NewHandler(api.Options{
 		Logger:       logger,
 		Now:          clock.System{}.Now,
@@ -159,4 +189,56 @@ func TestApiAndWorkerShareOneClock(t *testing.T) {
 	if workerErr != nil || !seenByWorker.Equal(expected) {
 		t.Fatalf("the worker sees %v, %v", seenByWorker, workerErr)
 	}
+}
+
+func TestTickDeliversADueEmailToTheSinkRoute(t *testing.T) {
+	server, database := newServer(t)
+	instant := time.Date(2030, 3, 10, 9, 0, 0, 0, time.UTC)
+	if _, err := repositories.NewStore(database.Pool).Repositories().Outbox.Insert(context.Background(), repositories.NewOutboxRow{
+		ID: domain.OutboxID{1}, Lane: domain.LaneEmail, Priority: domain.PriorityHigh, Kind: greetingKind,
+		Payload: []byte(`{"to":"tutor@example.org"}`), IdempotencyKey: "greeting:1", NextAttemptAt: instant, CreatedAt: instant,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	post(t, server, "/__test__/clock", "application/json", "", `{"set":"2030-03-10T09:00:00Z"}`)
+
+	tickStatus, tickBody := post(t, server, "/__test__/tick", "application/json", "", "{}")
+	mailStatus, mailBody := post(t, server, "/__test__/mail", "application/json", "", `{"to":"tutor@example.org"}`)
+
+	var messages []struct {
+		Subject string    `json:"subject"`
+		Links   []string  `json:"links"`
+		SentAt  time.Time `json:"sent_at"`
+	}
+	if tickStatus != http.StatusOK || mailStatus != http.StatusOK || json.Unmarshal([]byte(mailBody), &messages) != nil {
+		t.Fatalf("tick %d %s, mail %d %s", tickStatus, tickBody, mailStatus, mailBody)
+	}
+	if len(messages) != 1 || messages[0].Subject != "Hello" || len(messages[0].Links) != 1 || !messages[0].SentAt.Equal(instant) {
+		t.Fatalf("sink returned %s", mailBody)
+	}
+}
+
+func TestMailRouteRequiresARecipient(t *testing.T) {
+	server, _ := newServer(t)
+
+	status, body := post(t, server, "/__test__/mail", "application/json", "", `{"to":""}`)
+
+	if status != http.StatusUnprocessableEntity || errorCode(t, body) != "validation_failed" {
+		t.Fatalf("got %d %s", status, body)
+	}
+}
+
+type countingRandom struct {
+	mutex sync.Mutex
+	next  byte
+}
+
+func (r *countingRandom) Read(buffer []byte) (int, error) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	for index := range buffer {
+		r.next++
+		buffer[index] = r.next
+	}
+	return len(buffer), nil
 }

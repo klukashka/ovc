@@ -8,9 +8,12 @@ Checked 2026-10-21 against the Go module proxy (`go list -m -versions` and `go l
 |---|---|---|---|---|---|
 | sqlc (`github.com/sqlc-dev/sqlc/cmd/sqlc`) | 1.31.1 | 2026-04-22 | MIT | Go `tool` in `tools/go.mod` | the accounts schema change |
 | cel-go (`github.com/google/cel-go`, indirect through sqlc) | 0.30.0 | 2026-07-25 | Apache-2.0 | `tools/go.mod` | the accounts schema change |
+| go-smtp (`github.com/emersion/go-smtp`) | 0.25.0 | 2026-08-13 | MIT | `backend/go.mod` | the outbox worker and mail change |
+| go-sasl (`github.com/emersion/go-sasl`, used for SMTP PLAIN authentication) | v0.0.0-20241020182733-b788ff22d5a6 | 2024-10-20 | MIT | `backend/go.mod` | the outbox worker and mail change |
 
 ## Notes
 
 - sqlc 1.31.1 chooses its PostgreSQL parser by build tag: with cgo enabled (the default wherever a C compiler is installed, which `go test -race` already requires) it compiles the bundled libpg_query C sources through `pg_query_go`; with `CGO_ENABLED=0` it uses `github.com/wasilibs/go-pgquery`, the same parser compiled to WebAssembly. The committed code was generated and checked with cgo enabled. It parsed the slice 2 schema, including `UNIQUE NULLS NOT DISTINCT` and partial indexes, and `sqlc diff` exits 0 against the committed `internal/dbgen`.
 - sqlc pulled in cel-go 0.28.0, which OSV-Scanner reports as GO-2026-6094 (GHSA-gcjh-h69q-9w9g, CVSS 6.3, fixed in 0.30.0). The tools module requires cel-go 0.30.0 instead; sqlc builds with it and generates identical code. After the upgrade, OSV-Scanner reports no issues for `tools/go.mod` and `backend/go.mod`, apart from the findings already accepted in `tools/osv-scanner.toml`.
+- go-smtp 0.25.0 is the newest release older than two weeks. Its client and its server share one package, so depguard restricts the whole package to `internal/adapters`; the server is used only by the adapter's contract tests, as an in-process SMTP peer with STARTTLS and PLAIN authentication. go-sasl has no tagged releases; go-smtp requires the pseudo-version above. OSV-Scanner reports no issues for `backend/go.mod` with both added.
 - The 1.30.0 release (2025-09-01) was also available; 1.31.1 was chosen as the newest release older than two weeks.

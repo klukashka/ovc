@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,9 +22,13 @@ func lookupFrom(values map[string]string) core.Lookup {
 	}
 }
 
+func sentinel(name string) string {
+	return "sentinel-" + name
+}
+
 func validValues() map[string]string {
 	databaseURL := url.URL{Scheme: "postgres", User: url.UserPassword("user", "sentinel-password"), Host: "127.0.0.1:5432", Path: "/ovc_dev"}
-	return map[string]string{"OVC_DATABASE_URL": databaseURL.String()}
+	return map[string]string{"OVC_DATABASE_URL": databaseURL.String(), "OVC_PUBLIC_URL": "https://ovc.example"}
 }
 
 func TestLoadAppliesDefaults(t *testing.T) {
@@ -53,7 +58,7 @@ func TestLoadRefusesInvalidValues(t *testing.T) {
 		"unknown test control flag":   {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_TEST_CONTROL": "yes"},
 		"unknown docs flag":           {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_API_DOCS_ENABLED": "1"},
 		"real meeting provider":       {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_MEETING_PROVIDER": "bbb"},
-		"real mail backend":           {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_MAIL_BACKEND": "smtp"},
+		"unknown mail backend":        {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_MAIL_BACKEND": "pigeon"},
 		"pool size out of range":      {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_DB_POOL_SIZE": "0"},
 		"listen address not h:p":      {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_HTTP_ADDR": "localhost"},
 		"unencoded slash in password": {"OVC_DATABASE_URL": "postgres://x:4471/tail@127.0.0.1:1/a_test"},
@@ -63,6 +68,7 @@ func TestLoadRefusesInvalidValues(t *testing.T) {
 	}
 	for name, values := range cases {
 		t.Run(name, func(t *testing.T) {
+			values["OVC_PUBLIC_URL"] = "https://ovc.example"
 			lookup := lookupFrom(values)
 
 			_, err := core.Load(lookup, core.ProcessAPI)
@@ -213,5 +219,123 @@ func TestEveryVariableIsDocumentedInEnvExample(t *testing.T) {
 
 	if len(missing) > 0 {
 		t.Fatalf("backend/.env.example lacks %v", missing)
+	}
+}
+
+func TestPublicURLMustBeAnHTTPSOrigin(t *testing.T) {
+	cases := map[string]struct {
+		value       string
+		testControl string
+		accepted    string
+	}{
+		"https origin":           {value: "https://ovc.example", accepted: "https://ovc.example"},
+		"trailing slash":         {value: "https://ovc.example/", accepted: "https://ovc.example"},
+		"http with test control": {value: "http://127.0.0.1:4173", testControl: "1", accepted: "http://127.0.0.1:4173"},
+		"http without the flag":  {value: "http://ovc.example"},
+		"path":                   {value: "https://ovc.example/app"},
+		"query":                  {value: "https://ovc.example?next=x"},
+		"user info":              {value: "https://user@ovc.example"},
+		"missing":                {},
+		"scheme without host":    {value: "https:ovc.example"},
+		"fragment":               {value: "https://ovc.example#top"},
+		"empty port":             {value: "https://ovc.example:"},
+		"upper case host":        {value: "https://OVC.Example:8443", accepted: "https://ovc.example:8443"},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			values := validValues()
+			delete(values, "OVC_PUBLIC_URL")
+			if testCase.value != "" {
+				values["OVC_PUBLIC_URL"] = testCase.value
+			}
+			if testCase.testControl != "" {
+				values["OVC_TEST_CONTROL"] = testCase.testControl
+			}
+
+			settings, err := core.Load(lookupFrom(values), core.ProcessAPI)
+
+			if testCase.accepted == "" && err == nil {
+				t.Fatalf("accepted %q", settings.PublicURL)
+			}
+			if testCase.accepted != "" && (err != nil || settings.PublicURL != testCase.accepted) {
+				t.Fatalf("got %q, %v; want %q", settings.PublicURL, err, testCase.accepted)
+			}
+		})
+	}
+}
+
+func TestWorkerSMTPSettingsAreCompleteAndSafe(t *testing.T) {
+	complete := map[string]string{
+		"OVC_MAIL_BACKEND": "smtp", "OVC_SMTP_HOST": "smtp.example", "OVC_SMTP_USERNAME": sentinel("smtp-user"),
+		"OVC_MAIL_FROM": "OVC <noreply@ovc.example>",
+	}
+	complete["OVC_SMTP_PASSWORD"] = sentinel("smtp-password")
+	cases := map[string]map[string]string{
+		"missing host":      {"OVC_SMTP_HOST": ""},
+		"host with a port":  {"OVC_SMTP_HOST": "smtp.example:25"},
+		"username alone":    {"OVC_SMTP_PASSWORD": ""},
+		"two senders":       {"OVC_MAIL_FROM": "a@ovc.example, b@ovc.example"},
+		"header injection":  {"OVC_MAIL_FROM": "noreply@ovc.example\r\nBcc: x@y.example"},
+		"unknown TLS mode":  {"OVC_SMTP_TLS": "none"},
+		"port out of range": {"OVC_SMTP_PORT": "70000"},
+	}
+	values := validValues()
+	for key, value := range complete {
+		values[key] = value
+	}
+	settings, err := core.Load(lookupFrom(values), core.ProcessWorker)
+	if err != nil || settings.SMTP.Port != 587 || settings.SMTP.TLS != core.SMTPStartTLS || settings.MailFrom != "noreply@ovc.example" || settings.RequiresTestDatabase() {
+		t.Fatalf("complete settings: %+v, %v", settings, err)
+	}
+	for name, change := range cases {
+		t.Run(name, func(t *testing.T) {
+			changed := validValues()
+			for key, value := range complete {
+				changed[key] = value
+			}
+			for key, value := range change {
+				changed[key] = value
+			}
+
+			_, refusal := core.Load(lookupFrom(changed), core.ProcessWorker)
+
+			var settingsError *core.SettingsError
+			if !errors.As(refusal, &settingsError) || strings.Contains(refusal.Error(), sentinel("smtp-password")) {
+				t.Fatalf("expected a settings error without the password, got %v", refusal)
+			}
+		})
+	}
+}
+
+func TestWorkerSMTPCredentialsStayOutOfFormattingAndTheStartupRecord(t *testing.T) {
+	values := validValues()
+	for key, value := range map[string]string{"OVC_MAIL_BACKEND": "smtp", "OVC_SMTP_HOST": "smtp.example", "OVC_SMTP_USERNAME": sentinel("smtp-user"), "OVC_MAIL_FROM": "noreply@ovc.example"} {
+		values[key] = value
+	}
+	values["OVC_SMTP_PASSWORD"] = sentinel("smtp-password")
+	settings, err := core.Load(lookupFrom(values), core.ProcessWorker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record bytes.Buffer
+
+	core.LogStarted(context.Background(), slog.New(slog.NewJSONHandler(&record, nil)), core.ProcessWorker, settings)
+	formatted := fmt.Sprintf("%+v %#v %v", settings, settings, settings.SMTP)
+
+	for _, output := range []string{record.String(), formatted} {
+		if strings.Contains(output, sentinel("smtp-password")) || strings.Contains(output, sentinel("smtp-user")) {
+			t.Fatalf("credentials leaked into %s", output)
+		}
+	}
+}
+
+func TestOnlyProcessesThatWriteTheSinkRequireATestDatabase(t *testing.T) {
+	values := validValues()
+
+	api, apiErr := core.Load(lookupFrom(values), core.ProcessAPI)
+	worker, workerErr := core.Load(lookupFrom(values), core.ProcessWorker)
+
+	if apiErr != nil || workerErr != nil || api.RequiresTestDatabase() || !worker.RequiresTestDatabase() {
+		t.Fatalf("api %v (%v), worker %v (%v)", api.RequiresTestDatabase(), apiErr, worker.RequiresTestDatabase(), workerErr)
 	}
 }

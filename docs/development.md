@@ -1,6 +1,6 @@
 # Development
 
-Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain, and on 2026-10-21 with Docker Compose services, security scanning, the backend scaffold, the frontend scaffold and the pinned documentation tools, and the same day with the test fixture's host check and the sqlc check; pending line-by-line owner review.
+Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain, and on 2026-10-21 with Docker Compose services, security scanning, the backend scaffold, the frontend scaffold and the pinned documentation tools, and the same day with the test fixture's host check, the sqlc check, and the mail settings and test routes of the outbox worker; pending line-by-line owner review.
 
 How to set up, check and verify changes locally. Read [AGENTS.md](../AGENTS.md) before contributing. Backend and frontend commands were registered here by [roadmap slice 1](roadmap.md#slice-1-scaffold-and-local-loop); later slices extend them.
 
@@ -112,16 +112,17 @@ Started in slice 1 (the clock and tick routes), extended by each slice. The [pil
 - **Safety:**
   - both processes refuse to start with `OVC_TEST_CONTROL=1` unless the meeting provider is `fake`, mail is the database sink, `OVC_HTTP_ADDR` is a loopback IP literal, every database host is a loopback IP literal, `localhost` resolving only to loopback, or a Unix socket (checked before connecting), and `SELECT current_database()` matches `^[a-z0-9_]+_(test|dev)$`; they also refuse `OVC_CLOCK=test` without `OVC_TEST_CONTROL=1`;
   - the control routes require `Content-Type: application/json`, bodies of at most 4 KiB and a loopback `Host` header, so a page in the developer's browser or a rebinding host name cannot drive them; `localhost` is accepted beside the loopback IP literals because the check compares the header as a string and never resolves it, a rebinding page sends its own host name, and a page served from another local origin is stopped by the JSON content-type preflight, which the routes do not answer;
-  - without the setting, none of the routes below exist, and a test proves it.
-- **Worker:** with `OVC_CLOCK=test` the worker's own loops are paused, so only harness ticks run jobs. Local development keeps `OVC_CLOCK=system`, so its worker loops run normally while the control routes and the mail viewer stay available.
+  - without the setting, none of the routes below exist, and a test proves it;
+  - the worker also refuses `OVC_MAIL_BACKEND=sink`, the default, unless the database passes the same local host and name checks, so a production database never accumulates emails that carry tokens; a deployment sets `OVC_MAIL_BACKEND=smtp` with the SMTP settings.
+- **Worker:** with `OVC_CLOCK=test` the worker's own loops are paused, so only harness ticks run jobs. Local development keeps `OVC_CLOCK=system`, so its worker loops run normally while the mail route stays available; the clock and tick routes exist only with `OVC_CLOCK=test`.
 - **Clock:** the fake clock reads its current instant from a single test-clock row, so the API and the worker of one deployment share one time. Playwright sets the browser clock to the same instant with `page.clock`.
 - **Parallelism:** each Playwright worker gets its own deployment (own database, API and worker processes, storage bucket), so suites that move the clock never interfere. Suites assigned to one worker run serially.
 - **Control routes:** `/__test__/` routes, absent from every other configuration and from OpenAPI:
 
   | Route | Effect |
   |---|---|
-  | `POST /__test__/clock` | Set or advance the shared clock |
-  | `POST /__test__/tick` | Run one worker `Tick(now)` to completion |
+  | `POST /__test__/clock` | Set or advance the shared clock; only with `OVC_CLOCK=test` |
+  | `POST /__test__/tick` | Run one worker `Tick(now)` to completion at the shared clock's instant; only with `OVC_CLOCK=test` |
   | `POST /__test__/mail` with `{to}` in the body | Read messages from the database mail sink, with their links |
   | `POST /__test__/presence` with `{user}` | Report whether the server sees the user online, so tests can wait for a socket close |
   | `POST /__test__/settings/embed` | Override `embed_allowed` for this deployment, until the next override |
