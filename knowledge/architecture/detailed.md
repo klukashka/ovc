@@ -71,7 +71,7 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `internal/testdb` | Test-only helper: one migrated PostgreSQL database per test, created from `OVC_TEST_DATABASE_ADMIN_URL` and dropped afterwards | [Development guide](../../docs/development.md#backend-checks) |
 | `internal/conventions` | Test-only package: the no-comments and no-`any` check and the package-layer architecture test, which parses the table below | [AGENTS.md](../../AGENTS.md#code) |
 | `migrations` | goose SQL migrations, embedded with `//go:embed` | [Data model](../specs/data-model.md) |
-| `cmd/api`, `cmd/worker`, `cmd/ovc-admin` | Composition roots: the API server (with the `migrate` and `openapi` subcommands), the worker process and, from slice 2, the operator command; `cmd/internal/startup` holds their shared migration helpers | — |
+| `cmd/api`, `cmd/worker`, `cmd/ovc-admin` | Composition roots: the API server (with the `migrate` and `openapi` subcommands), the worker process and, from slice 2, the operator command; `cmd/internal/startup` holds their shared start-up code: migration checks, signal handling, safe failure descriptions and the wiring of the files, accounts, mail and worker services | — |
 
 ### Frontend (`frontend/src/`)
 
@@ -168,7 +168,7 @@ Settings are read once from the environment into one typed struct in `internal/c
 | `OVC_UNSUBSCRIBE_SIGNING_SECRET` | Key for unsubscribe tokens only |
 | `OVC_FIELD_ENCRYPTION_KEY` | Key for encrypted invitation tokens |
 | `OVC_ACCESS_TOKEN_TTL_SECONDS`, `OVC_REFRESH_TOKEN_TTL_SECONDS` | Token lifetimes: 900 by default (60 to 3600) and 2592000 by default (one to 90 days) |
-| `OVC_TRUSTED_PROXY_CIDRS` | Comma-separated CIDR ranges of OVC's own reverse proxies, empty by default; `0.0.0.0/0` and `::/0` are refused. The client address for per-IP limits is taken from `X-Forwarded-For` only behind these |
+| `OVC_TRUSTED_PROXY_CIDRS` | Comma-separated CIDR ranges of OVC's own reverse proxies, empty by default; IPv4 ranges wider than /8, IPv6 ranges wider than /32 and IPv4-mapped IPv6 ranges are refused, each range checked on its own. The client address for per-IP limits is taken from `X-Forwarded-For` only behind these |
 | `OVC_CORS_ORIGINS` | Explicit frontend origins |
 | `OVC_STORAGE_ENDPOINT`, `OVC_STORAGE_REGION`, `OVC_STORAGE_BUCKET`, `OVC_STORAGE_ACCESS_KEY`, `OVC_STORAGE_SECRET_KEY`, `OVC_STORAGE_BACKEND` | S3-compatible storage, required by the API and the worker: an `https` origin (plain `http` only on a loopback host), a region and bucket name, and the two keys (secret); the backend is only `s3`, and the in-memory store exists only for contract and unit tests. Integration tests read the local server's keys from `OVC_DEV_STORAGE_ACCESS_KEY`, `OVC_DEV_STORAGE_SECRET_KEY` and `OVC_DEV_STORAGE_PORT` and use the bucket `ovc-test` |
 | `OVC_DEFAULT_FILE_QUOTA_BYTES`, `OVC_DEFAULT_RECORDING_QUOTA_BYTES` | Default tutor quotas, read by the API and written to a tutor profile at sign-up: 5000000000 and 50000000000 bytes by default (0 to 2^50) |
@@ -178,7 +178,7 @@ Settings are read once from the environment into one typed struct in `internal/c
 | `OVC_MAIL_BACKEND` | `smtp`, or the database `sink` in development and tests (the default); the worker refuses `sink` unless every database host is local and the database name ends in `_test` or `_dev` |
 | `OVC_SMTP_HOST`, `OVC_SMTP_PORT`, `OVC_SMTP_TLS`, `OVC_SMTP_USERNAME`, `OVC_SMTP_PASSWORD`, `OVC_MAIL_FROM` | SMTP for the worker with `OVC_MAIL_BACKEND=smtp`: host name, port (587 by default), `starttls` (default) or `implicit` TLS, an optional user name with its password (a secret, set together), and one sender address |
 | `OVC_API_DOCS_ENABLED` | `true` serves the OpenAPI JSON at `/api/docs/openapi.json`; `false` by default and in production |
-| `OVC_TEST_CONTROL` | Enable the test control routes, including the mail sink route; refused unless the meeting provider is `fake`, mail is the sink and the database is a test or development database |
+| `OVC_TEST_CONTROL` | Enable the test control routes, including the mail sink route; refused unless the meeting provider is `fake`, mail is the sink, the listen address and, for the API and the worker, the storage endpoint are loopback IP literals, and the database is a test or development database |
 | `OVC_CLOCK` | `system`, or `test` for the shared test clock (only with `OVC_TEST_CONTROL=1`) |
 | `OVC_BROADCASTER` | `postgres`, or `memory` for unit and contract tests |
 | `OVC_DB_POOL_SIZE` | Connections per process: 20 for the API and 10 for the worker by default, plus one dedicated listening connection per API instance |

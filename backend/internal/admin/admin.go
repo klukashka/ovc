@@ -56,11 +56,23 @@ func Report(target io.Writer, line string) {
 }
 
 func Failed(ctx context.Context, logger *slog.Logger, stderr io.Writer, operator Operator, args []string, err error) int {
-	logger.LogAttrs(ctx, slog.LevelError, "admin.command",
+	logger.LogAttrs(ctx, slog.LevelInfo, "admin.command",
 		slog.String("operator_uid", operator.UID), slog.String("operator", operator.Name), slog.String("subcommand", subcommandOf(args)),
 		slog.String("outcome", "failed"), slog.String("kind", core.ErrorKind(err)))
-	Report(stderr, "failed: "+core.ErrorKind(err))
+	Report(stderr, "failed: "+failureReason(err))
 	return ExitRefused
+}
+
+func failureReason(err error) string {
+	var refusal *core.TestControlRefusal
+	var settingsError *core.SettingsError
+	switch {
+	case errors.As(err, &refusal):
+		return refusal.Error()
+	case errors.As(err, &settingsError):
+		return settingsError.Error()
+	}
+	return core.ErrorKind(err)
 }
 
 func subcommandOf(args []string) string {

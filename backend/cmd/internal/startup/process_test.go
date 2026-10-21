@@ -127,8 +127,9 @@ func TestOpenAPICommandNeedsNoSettingsAndIgnoresFlags(t *testing.T) {
 func TestProcessesRefuseUnsafeTestControl(t *testing.T) {
 	production := testdb.NewNamed(t, "ovc_"+core.NewRandomID()[:8]+"_prod", true)
 	cases := map[string]struct {
-		env     []string
-		message string
+		env       []string
+		message   string
+		processes []string
 	}{
 		"test clock without the flag": {
 			env:     []string{"OVC_DATABASE_URL=" + production.URL.Reveal(), "OVC_CLOCK=test"},
@@ -137,6 +138,11 @@ func TestProcessesRefuseUnsafeTestControl(t *testing.T) {
 		"non-loopback listen address": {
 			env:     []string{"OVC_DATABASE_URL=" + production.URL.Reveal(), "OVC_TEST_CONTROL=1", "OVC_HTTP_ADDR=0.0.0.0:0"},
 			message: "OVC_HTTP_ADDR",
+		},
+		"remote storage": {
+			env:       []string{"OVC_DATABASE_URL=" + production.URL.Reveal(), "OVC_TEST_CONTROL=1", "OVC_HTTP_ADDR=127.0.0.1:0", "OVC_STORAGE_ENDPOINT=https://storage.ovc.example"},
+			message:   "OVC_STORAGE_ENDPOINT",
+			processes: storageProcesses,
 		},
 		"remote database host": {
 			env:     []string{"OVC_DATABASE_URL=postgres://ovc:sentinel-pw-remote@10.255.255.1:5432/ovc_test", "OVC_TEST_CONTROL=1"},
@@ -158,6 +164,10 @@ func TestProcessesRefuseUnsafeTestControl(t *testing.T) {
 			env:     []string{"OVC_DATABASE_URL=" + production.URL.Reveal(), "OVC_TEST_CONTROL=1", "OVC_HTTP_ADDR=:0"},
 			message: "OVC_HTTP_ADDR",
 		},
+		"connection string the driver cannot parse": {
+			env:     []string{"OVC_DATABASE_URL=not-a-dsn-sentinel", "OVC_TEST_CONTROL=1"},
+			message: "OVC_DATABASE_URL: is not a valid PostgreSQL connection string",
+		},
 		"unencoded password separator": {
 			env:     []string{"OVC_DATABASE_URL=postgres://ovc:4471/sentinel-tail@127.0.0.1:1/ovc_test"},
 			message: "OVC_DATABASE_URL",
@@ -168,9 +178,13 @@ func TestProcessesRefuseUnsafeTestControl(t *testing.T) {
 		},
 	}
 	for name, testCase := range cases {
-		for _, binary := range []string{"api", "worker"} {
+		processes := testCase.processes
+		if processes == nil {
+			processes = everyProcess
+		}
+		for _, binary := range processes {
 			t.Run(name+"/"+binary, func(t *testing.T) {
-				result := runBinary(t, binary, testCase.env)
+				result := runBinary(t, binary, testCase.env, argumentsFor[binary]...)
 
 				if result.exitCode == 0 || !strings.Contains(result.stderr, testCase.message) {
 					t.Fatalf("expected a refusal mentioning %q, got %d: %s", testCase.message, result.exitCode, result.stderr)
@@ -185,8 +199,14 @@ func TestProcessesRefuseUnsafeTestControl(t *testing.T) {
 	}
 }
 
+var (
+	everyProcess     = []string{"api", "worker", "ovc-admin"}
+	storageProcesses = []string{"api", "worker"}
+	argumentsFor     = map[string][]string{"ovc-admin": {"users", "list"}}
+)
+
 func secretsIn(env []string) []string {
-	secrets := []string{"sentinel-tail", "sentinel-pw-keyword"}
+	secrets := []string{"sentinel-tail", "sentinel-pw-keyword", "not-a-dsn-sentinel"}
 	for _, variable := range env {
 		value, found := strings.CutPrefix(variable, "OVC_DATABASE_URL=")
 		if !found {
@@ -261,6 +281,9 @@ func TestMigrateServeAndShutDown(t *testing.T) {
 			t.Fatalf("missing %s in %s", event, logs)
 		}
 	}
+	if strings.Contains(logs, `"smtp_host"`) {
+		t.Fatalf("the API logged SMTP settings it never loads: %s", logs)
+	}
 	if strings.Contains(logs, database.URL.Reveal()) {
 		t.Fatal("the database URL leaked into the logs")
 	}
@@ -316,14 +339,15 @@ func TestWorkerRunsAndShutsDown(t *testing.T) {
 		close(lines)
 	}()
 
+	started := nextLine(t, ctx, lines, "process.started")
 	ticked := waitForLine(t, ctx, lines, "worker.tick")
 	signalErr := worker.Process.Signal(syscall.SIGTERM)
 	stopped := waitForLine(t, ctx, lines, "process.stopped")
 	drainLines(t, ctx, lines)
 	waitErr := worker.Wait()
 
-	if !ticked || signalErr != nil || !stopped || waitErr != nil {
-		t.Fatalf("ticked %v, signal %v, stopped %v, exit %v", ticked, signalErr, stopped, waitErr)
+	if !strings.Contains(started, `"smtp_host"`) || !ticked || signalErr != nil || !stopped || waitErr != nil {
+		t.Fatalf("started %s, ticked %v, signal %v, stopped %v, exit %v", started, ticked, signalErr, stopped, waitErr)
 	}
 }
 
@@ -381,10 +405,11 @@ func TestTestControlRoutesExistOnlyWithTheFlag(t *testing.T) {
 		clock       string
 		mailStatus  int
 		clockStatus int
+		tickStatus  int
 	}{
-		"with the flag and the test clock":   {flag: "1", clock: "test", mailStatus: http.StatusOK, clockStatus: http.StatusOK},
-		"with the flag and the system clock": {flag: "1", clock: "system", mailStatus: http.StatusOK, clockStatus: http.StatusNotFound},
-		"without the flag":                   {flag: "0", clock: "system", mailStatus: http.StatusNotFound, clockStatus: http.StatusNotFound},
+		"with the flag and the test clock":   {flag: "1", clock: "test", mailStatus: http.StatusOK, clockStatus: http.StatusOK, tickStatus: http.StatusOK},
+		"with the flag and the system clock": {flag: "1", clock: "system", mailStatus: http.StatusOK, clockStatus: http.StatusNotFound, tickStatus: http.StatusNotFound},
+		"without the flag":                   {flag: "0", clock: "system", mailStatus: http.StatusNotFound, clockStatus: http.StatusNotFound, tickStatus: http.StatusNotFound},
 	}
 	for name, testCase := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -402,11 +427,13 @@ func TestTestControlRoutesExistOnlyWithTheFlag(t *testing.T) {
 
 			mailStatus := postJSON(t, ctx, address, "/__test__/mail", `{"to":"tutor@example.org"}`)
 			clockStatus := postJSON(t, ctx, address, "/__test__/clock", `{"set":"2030-01-01T00:00:00Z"}`)
+			tickStatus := postJSON(t, ctx, address, "/__test__/tick", `{}`)
 			signalErr := server.Process.Signal(syscall.SIGTERM)
 			waitErr := server.Wait()
 
-			if mailStatus != testCase.mailStatus || clockStatus != testCase.clockStatus || signalErr != nil || waitErr != nil {
-				t.Fatalf("mail %d (want %d), clock %d (want %d), signal %v, exit %v", mailStatus, testCase.mailStatus, clockStatus, testCase.clockStatus, signalErr, waitErr)
+			if mailStatus != testCase.mailStatus || clockStatus != testCase.clockStatus || tickStatus != testCase.tickStatus || signalErr != nil || waitErr != nil {
+				t.Fatalf("mail %d (want %d), clock %d (want %d), tick %d (want %d), signal %v, exit %v",
+					mailStatus, testCase.mailStatus, clockStatus, testCase.clockStatus, tickStatus, testCase.tickStatus, signalErr, waitErr)
 			}
 		})
 	}
@@ -414,16 +441,21 @@ func TestTestControlRoutesExistOnlyWithTheFlag(t *testing.T) {
 
 func waitForLine(t *testing.T, ctx context.Context, lines <-chan string, event string) bool {
 	t.Helper()
+	return nextLine(t, ctx, lines, event) != ""
+}
+
+func nextLine(t *testing.T, ctx context.Context, lines <-chan string, event string) string {
+	t.Helper()
 	for {
 		select {
 		case <-ctx.Done():
 			t.Fatalf("no %s before the deadline", event)
 		case line, open := <-lines:
 			if !open {
-				return false
+				return ""
 			}
 			if strings.Contains(line, `"msg":"`+event+`"`) {
-				return true
+				return line
 			}
 		}
 	}

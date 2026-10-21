@@ -36,7 +36,7 @@ func (s *sharedReadiness) run(ctx context.Context) error {
 	if s.inFlight == nil {
 		done := make(chan struct{})
 		s.inFlight = done
-		core.Go(context.WithoutCancel(ctx), s.logger, "readiness-check", func(checkContext context.Context) {
+		core.Go(context.Background(), s.logger, "readiness-check", func(checkContext context.Context) {
 			s.perform(checkContext, done)
 		})
 	}

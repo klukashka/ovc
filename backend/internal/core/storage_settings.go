@@ -1,6 +1,7 @@
 package core
 
 import (
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strings"
@@ -87,10 +88,23 @@ func validStorageEndpoint(value string) bool {
 	case "https":
 		return true
 	case "http":
-		host := parsed.Hostname()
-		return host == "127.0.0.1" || host == "::1" || host == "localhost"
+		return isLoopbackHost(parsed.Hostname())
 	}
 	return false
+}
+
+func onLoopbackAddress(endpoint string) bool {
+	parsed, err := url.Parse(endpoint)
+	return err == nil && isLoopbackAddress(parsed.Hostname())
+}
+
+func isLoopbackHost(host string) bool {
+	return strings.EqualFold(host, "localhost") || isLoopbackAddress(host)
+}
+
+func isLoopbackAddress(host string) bool {
+	address, err := netip.ParseAddr(host)
+	return err == nil && address.Zone() == "" && address.IsLoopback()
 }
 
 func testStorageFrom(lookup Lookup, bucket string) (StorageSettings, error) {

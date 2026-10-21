@@ -87,6 +87,9 @@ const (
 	varTestDatabaseURL = "OVC_TEST_DATABASE_ADMIN_URL"
 	varFileQuota       = "OVC_DEFAULT_FILE_QUOTA_BYTES"
 	varRecordingQuota  = "OVC_DEFAULT_RECORDING_QUOTA_BYTES"
+
+	minimumTrustedIPv4Bits = 8
+	minimumTrustedIPv6Bits = 32
 )
 
 func VariableNames() []string {
@@ -304,6 +307,9 @@ func (s Settings) testControlProblems() []error {
 	if !isLoopbackListenAddress(s.HTTPAddr) {
 		problems = append(problems, &SettingsError{Variable: varHTTPAddr, Problem: "must be a loopback IP address with OVC_TEST_CONTROL=1"})
 	}
+	if s.Storage.Endpoint != "" && !onLoopbackAddress(s.Storage.Endpoint) {
+		problems = append(problems, &SettingsError{Variable: varStorageEndpoint, Problem: "must use a loopback IP address with OVC_TEST_CONTROL=1"})
+	}
 	return problems
 }
 
@@ -359,7 +365,7 @@ func canonicalHost(raw string) (string, bool) {
 			numeric = false
 		}
 	}
-	return host, host != "" && !numeric && !strings.HasPrefix(last, "0x")
+	return host, last != "" && !numeric && !strings.HasPrefix(last, "0x")
 }
 
 func mailSettings(lookup Lookup, backend MailBackend) (SMTPSettings, string, []error) {
@@ -484,12 +490,22 @@ func trustedProxies(lookup Lookup) ([]netip.Prefix, error) {
 	var prefixes []netip.Prefix
 	for _, entry := range strings.Split(value, ",") {
 		prefix, err := netip.ParsePrefix(strings.TrimSpace(entry))
-		if err != nil || prefix.Bits() == 0 {
-			return nil, &SettingsError{Variable: varTrustedProxies, Problem: "must be a comma-separated list of CIDR ranges, none of them 0.0.0.0/0 or ::/0"}
+		if err != nil || !narrowEnoughToTrust(prefix) {
+			return nil, &SettingsError{Variable: varTrustedProxies, Problem: "must be a comma-separated list of CIDR ranges, each IPv4 range at least /8 and each IPv6 range at least /32, with no IPv4-mapped IPv6 ranges"}
 		}
 		prefixes = append(prefixes, prefix.Masked())
 	}
 	return prefixes, nil
+}
+
+func narrowEnoughToTrust(prefix netip.Prefix) bool {
+	if prefix.Addr().Is4In6() {
+		return false
+	}
+	if prefix.Addr().Is4() {
+		return prefix.Bits() >= minimumTrustedIPv4Bits
+	}
+	return prefix.Bits() >= minimumTrustedIPv6Bits
 }
 
 func (s Settings) RequiresTestDatabase() bool {

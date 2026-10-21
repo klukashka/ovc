@@ -91,9 +91,12 @@ func TestLoadRefusesInvalidValues(t *testing.T) {
 
 func TestLoadRefusesUnsafeTestControlCombinations(t *testing.T) {
 	cases := map[string]map[string]string{
-		"test clock without the flag":     {"OVC_CLOCK": "test"},
-		"flag with a non-loopback listen": {"OVC_TEST_CONTROL": "1", "OVC_HTTP_ADDR": "0.0.0.0:8000"},
-		"flag with a host name listen":    {"OVC_TEST_CONTROL": "1", "OVC_HTTP_ADDR": "localhost:8000"},
+		"test clock without the flag":      {"OVC_CLOCK": "test"},
+		"flag with a non-loopback listen":  {"OVC_TEST_CONTROL": "1", "OVC_HTTP_ADDR": "0.0.0.0:8000"},
+		"flag with a host name listen":     {"OVC_TEST_CONTROL": "1", "OVC_HTTP_ADDR": "localhost:8000"},
+		"flag with remote storage":         {"OVC_TEST_CONTROL": "1", "OVC_HTTP_ADDR": "127.0.0.1:8000", "OVC_STORAGE_ENDPOINT": "https://storage.ovc.example"},
+		"flag with storage by host name":   {"OVC_TEST_CONTROL": "1", "OVC_HTTP_ADDR": "127.0.0.1:8000", "OVC_STORAGE_ENDPOINT": "http://localhost:58333"},
+		"flag with storage on any address": {"OVC_TEST_CONTROL": "1", "OVC_HTTP_ADDR": "127.0.0.1:8000", "OVC_STORAGE_ENDPOINT": "https://0.0.0.0:58333"},
 	}
 	for name, extra := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -116,6 +119,7 @@ func TestLoadAcceptsTestControlOnLoopback(t *testing.T) {
 	values["OVC_TEST_CONTROL"] = "1"
 	values["OVC_CLOCK"] = "test"
 	values["OVC_HTTP_ADDR"] = "[::1]:8000"
+	values["OVC_STORAGE_ENDPOINT"] = "http://[::1]:58333"
 
 	settings, err := core.Load(lookupFrom(values), core.ProcessAPI)
 
@@ -237,6 +241,7 @@ func TestPublicURLMustBeAnHTTPSOrigin(t *testing.T) {
 		accepted    string
 	}{
 		"https origin":           {value: "https://ovc.example", accepted: "https://ovc.example"},
+		"trailing dot":           {value: "https://ovc.example."},
 		"trailing slash":         {value: "https://ovc.example/", accepted: "https://ovc.example"},
 		"http with test control": {value: "http://127.0.0.1:4173", testControl: "1", accepted: "http://127.0.0.1:4173"},
 		"http without the flag":  {value: "http://ovc.example"},
@@ -267,6 +272,7 @@ func TestPublicURLMustBeAnHTTPSOrigin(t *testing.T) {
 			}
 			if testCase.testControl != "" {
 				values["OVC_TEST_CONTROL"] = testCase.testControl
+				values["OVC_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
 			}
 
 			settings, err := core.Load(lookupFrom(values), core.ProcessAPI)
@@ -359,17 +365,20 @@ func TestOnlyProcessesThatWriteTheSinkRequireATestDatabase(t *testing.T) {
 
 func TestSessionSettingsAreBoundedAndOnlyTheAPINeedsThem(t *testing.T) {
 	cases := map[string]map[string]string{
-		"short signing secret":       {"OVC_JWT_SECRET": "too-short"},
-		"missing signing secret":     {"OVC_JWT_SECRET": ""},
-		"access lifetime too long":   {"OVC_ACCESS_TOKEN_TTL_SECONDS": "3601"},
-		"access lifetime too short":  {"OVC_ACCESS_TOKEN_TTL_SECONDS": "59"},
-		"refresh lifetime too long":  {"OVC_REFRESH_TOKEN_TTL_SECONDS": "7776001"},
-		"every IPv4 address trusted": {"OVC_TRUSTED_PROXY_CIDRS": "10.0.0.0/8, 0.0.0.0/0"},
-		"every IPv6 address trusted": {"OVC_TRUSTED_PROXY_CIDRS": "::/0"},
-		"not a range":                {"OVC_TRUSTED_PROXY_CIDRS": "10.0.0.1"},
-		"negative file quota":        {"OVC_DEFAULT_FILE_QUOTA_BYTES": "-1"},
-		"recording quota too large":  {"OVC_DEFAULT_RECORDING_QUOTA_BYTES": "1125899906842625"},
-		"quota not a number":         {"OVC_DEFAULT_FILE_QUOTA_BYTES": "5GB"},
+		"short signing secret":         {"OVC_JWT_SECRET": "too-short"},
+		"missing signing secret":       {"OVC_JWT_SECRET": ""},
+		"access lifetime too long":     {"OVC_ACCESS_TOKEN_TTL_SECONDS": "3601"},
+		"access lifetime too short":    {"OVC_ACCESS_TOKEN_TTL_SECONDS": "59"},
+		"refresh lifetime too long":    {"OVC_REFRESH_TOKEN_TTL_SECONDS": "7776001"},
+		"every IPv4 address trusted":   {"OVC_TRUSTED_PROXY_CIDRS": "10.0.0.0/8, 0.0.0.0/0"},
+		"every IPv6 address trusted":   {"OVC_TRUSTED_PROXY_CIDRS": "::/0"},
+		"halves of every IPv4 address": {"OVC_TRUSTED_PROXY_CIDRS": "0.0.0.0/1,128.0.0.0/1"},
+		"a short IPv6 range":           {"OVC_TRUSTED_PROXY_CIDRS": "2000::/3"},
+		"an IPv4-mapped range":         {"OVC_TRUSTED_PROXY_CIDRS": "::ffff:10.0.0.0/104"},
+		"not a range":                  {"OVC_TRUSTED_PROXY_CIDRS": "10.0.0.1"},
+		"negative file quota":          {"OVC_DEFAULT_FILE_QUOTA_BYTES": "-1"},
+		"recording quota too large":    {"OVC_DEFAULT_RECORDING_QUOTA_BYTES": "1125899906842625"},
+		"quota not a number":           {"OVC_DEFAULT_FILE_QUOTA_BYTES": "5GB"},
 	}
 	worker := validValues()
 	delete(worker, "OVC_JWT_SECRET")
@@ -390,6 +399,28 @@ func TestSessionSettingsAreBoundedAndOnlyTheAPINeedsThem(t *testing.T) {
 				t.Fatalf("expected a settings error, got %v", err)
 			}
 		})
+	}
+}
+
+func TestPlainHTTPStorageIsAcceptedOnLocalhostInAnyCase(t *testing.T) {
+	values := validValues()
+	values["OVC_STORAGE_ENDPOINT"] = "http://LocalHost:58333"
+
+	settings, err := core.Load(lookupFrom(values), core.ProcessAPI)
+
+	if err != nil || settings.Storage.Endpoint != "http://LocalHost:58333" {
+		t.Fatalf("got %q, %v", settings.Storage.Endpoint, err)
+	}
+}
+
+func TestTrustedProxyRangesAtTheWidestAllowedPrefixAreAccepted(t *testing.T) {
+	values := validValues()
+	values["OVC_TRUSTED_PROXY_CIDRS"] = "10.0.0.0/8, 2001:db8::/32"
+
+	settings, err := core.Load(lookupFrom(values), core.ProcessAPI)
+
+	if err != nil || len(settings.TrustedProxies) != 2 {
+		t.Fatalf("got %v, %v", settings.TrustedProxies, err)
 	}
 }
 

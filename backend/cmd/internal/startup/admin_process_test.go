@@ -242,7 +242,7 @@ func TestOvcAdminAuditsAFailureBeforeTheCommandRuns(t *testing.T) {
 
 	failed := runBinary(t, "ovc-admin", []string{"OVC_DATABASE_URL=" + pending}, "users", "block", "tutor@example.org")
 
-	if failed.exitCode != 1 || !strings.Contains(failed.stderr, `"msg":"admin.command"`) || !strings.Contains(failed.stderr, `"outcome":"failed"`) ||
+	if failed.exitCode != 1 || !strings.Contains(failed.stderr, `"level":"INFO","msg":"admin.command"`) || !strings.Contains(failed.stderr, `"outcome":"failed"`) ||
 		!strings.Contains(failed.stderr, `"subcommand":"users block"`) || strings.Contains(failed.stderr, "tutor@example.org") {
 		t.Fatalf("a failure before the command ran exited %d: %s", failed.exitCode, failed.stderr)
 	}
