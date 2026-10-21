@@ -42,7 +42,7 @@ async function expectSignedInToToday(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { level: 1, name: 'Сегодня' })).toBeVisible();
 }
 
-test('pilot-1 › steps 1–2 sign up, then confirm in a fresh browser with a new password', async ({
+test('pilot-1 › steps 1–3 sign up, confirm in a fresh browser with a new password, then save the bio', async ({
   page,
   browser,
   deployment,
@@ -64,6 +64,12 @@ test('pilot-1 › steps 1–2 sign up, then confirm in a fresh browser with a ne
 
   await expectSignedInToToday(confirming);
   await expect(confirming.getByRole('region', { name: 'Подтверждение email' })).toHaveCount(0);
+  await confirming.goto('/settings/profile');
+  await confirming.getByLabel('О себе').fill('Английский для взрослых, разговорная практика.');
+  await confirming.getByRole('button', { name: 'Сохранить' }).click();
+  await expect(confirming.getByRole('status')).toHaveText('Сохранено.');
+  await confirming.reload();
+  await expect(confirming.getByLabel('О себе')).toHaveValue('Английский для взрослых, разговорная практика.');
   await fresh.close();
 });
 

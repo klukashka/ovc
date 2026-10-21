@@ -30,6 +30,7 @@ export interface FakeAccountSeed {
   readonly name: string;
   readonly email: string;
   readonly password: string;
+  readonly role?: Me['role'];
 }
 
 function json(status: number, body: unknown): Response {
@@ -85,7 +86,7 @@ export class FakeAuthServer {
         email_verified: true,
         timezone: 'Europe/Moscow',
         avatar_id: null,
-        role: 'tutor',
+        role: seed.role ?? 'tutor',
         state: 'active',
         language: 'ru',
         theme: 'system',

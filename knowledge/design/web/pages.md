@@ -244,8 +244,9 @@ FR-1.4–FR-1.7, FR-5.6, FR-13.3, FR-14.2, FR-17.
 
 - **Profile:** name, avatar, bio and subjects (tutor).
 - **Account:**
-  - language, timezone, theme;
-  - change password, sign out everywhere, delete account.
+  - language, timezone (the browser's list of IANA zones), theme (system, light or dark);
+  - change password, sign out everywhere, delete account;
+  - deleting asks for the password in a dialog that names the consequence, and the sign-in page then says the account was deleted.
 - **Notifications:** email switches per group.
 - **Teaching (tutor):**
   - tutor code with Copy and Regenerate;

@@ -53,6 +53,7 @@ describe('route access for anonymous visitors', () => {
   test.each<SessionState>([
     { kind: 'signedOut', reason: 'signedOut' },
     { kind: 'signedOut', reason: 'blocked' },
+    { kind: 'signedOut', reason: 'accountDeleted' },
   ])('a private address after an ended session redirects to sign-in without next', (state) => {
     const access = routeAccess(state, 'tutor', at('/today'), origin);
 

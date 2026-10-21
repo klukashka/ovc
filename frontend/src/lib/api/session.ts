@@ -16,7 +16,7 @@ export interface Scheduler {
   schedule(milliseconds: number, task: () => void): () => void;
 }
 
-export type SignedOutReason = 'anonymous' | 'signedOut' | 'blocked';
+export type SignedOutReason = 'anonymous' | 'signedOut' | 'blocked' | 'accountDeleted';
 
 export type SessionState =
   | { readonly kind: 'unknown' }
@@ -191,6 +191,20 @@ export class Session {
     this.pendingRefresh = null;
     this.acceptToken(token);
     await this.loadMe();
+  };
+
+  readonly updateAccount = (value: unknown): void => {
+    if (!isMe(value)) {
+      throw new Error('the server answered an account of an unexpected shape');
+    }
+    if (this.current.kind !== 'signedIn' || this.current.me.id !== value.id) {
+      throw new Error('the updated account is not the signed-in account');
+    }
+    this.set({ kind: 'signedIn', me: value });
+  };
+
+  readonly endRevoked = (reason: 'signedOut' | 'accountDeleted'): void => {
+    this.end({ kind: 'signedOut', reason });
   };
 
   readonly reloadAccount = async (): Promise<void> => {
@@ -378,4 +392,12 @@ export function useSession(): Session {
 export function useSessionState(): SessionState {
   const session = useSession();
   return useSyncExternalStore(session.subscribe, session.snapshot);
+}
+
+export function useSignedInAccount(): Me {
+  const state = useSessionState();
+  if (state.kind !== 'signedIn') {
+    throw new Error('a signed-in page rendered without a signed-in account');
+  }
+  return state.me;
 }

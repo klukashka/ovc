@@ -69,6 +69,7 @@ export function SignInPage(): ReactElement {
   const { t } = useTranslation();
   const session = useSession();
   const state = useSessionState();
+  const accountDeleted = state.kind === 'signedOut' && state.reason === 'accountDeleted';
   const emailId = useId();
   const passwordId = useId();
   const showId = useId();
@@ -107,6 +108,11 @@ export function SignInPage(): ReactElement {
 
   return (
     <Page>
+      {accountDeleted ? (
+        <p role="status" className="text-text">
+          {t('signIn.accountDeleted')}
+        </p>
+      ) : null}
       <form onSubmit={onSubmit} className="flex max-w-sm flex-col gap-4">
         {refusal === null ? null : <RefusalMessage id={refusalId} refusal={refusal} />}
         <div className="flex flex-col gap-1">

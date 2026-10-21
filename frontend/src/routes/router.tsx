@@ -7,6 +7,8 @@ import { ForgotPasswordPage, PrivacyPage, ResetPasswordPage } from '../features/
 import { SignInPage } from '../features/auth/SignInPage.tsx';
 import { SignUpChoicePage, StudentSignUpPage, TutorSignUpPage } from '../features/auth/SignUpPages.tsx';
 import { VerifyEmailPage } from '../features/auth/VerifyEmailPage.tsx';
+import { AccountSettingsPage } from '../features/settings/AccountSettingsPage.tsx';
+import { ProfileSettingsPage } from '../features/settings/ProfileSettingsPage.tsx';
 import { HomePage } from '../features/home/HomePage.tsx';
 import type { RouteHandle } from '../app/handles.ts';
 import { Gate } from './Gate.tsx';
@@ -45,8 +47,8 @@ export const sharedPages: RouteObject[] = [
   page('/messages', 'page.messages'),
   page('/messages/:channelId', 'page.messages'),
   page('/notifications', 'page.notifications'),
-  page('/settings/profile', 'page.settingsProfile'),
-  page('/settings/account', 'page.settingsAccount'),
+  page('/settings/profile', 'page.settingsProfile', <ProfileSettingsPage />),
+  page('/settings/account', 'page.settingsAccount', <AccountSettingsPage />),
   page('/settings/notifications', 'page.settingsNotifications'),
 ];
 

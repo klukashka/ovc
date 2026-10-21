@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client';
 import { I18nextProvider } from 'react-i18next';
 import { RouterProvider } from 'react-router';
 
-import { applyAccountPreferences, darkSchemeQuery } from './app/accountPreferences.ts';
+import { applyAccountPreferences, darkSchemeQuery, followSystemTheme } from './app/accountPreferences.ts';
 import { PreferencesContext } from './app/context.ts';
 import { ApiClientContext, createApiClient } from './lib/api/client.ts';
 import { type Me, Session, SessionContext, browserLocks, browserScheduler } from './lib/api/session.ts';
@@ -57,6 +57,7 @@ session.subscribe(() => {
     window.matchMedia(darkSchemeQuery).matches,
   ).catch(reportError);
 });
+followSystemTheme(document.documentElement, window.matchMedia(darkSchemeQuery));
 void session.start();
 
 createRoot(rootElement).render(

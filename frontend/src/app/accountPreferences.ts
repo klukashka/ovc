@@ -12,6 +12,18 @@ export function resolvedTheme(preference: Me['theme'], prefersDark: boolean): 'l
   return preference;
 }
 
+export function followSystemTheme(root: HTMLElement, scheme: MediaQueryList): () => void {
+  function follow(): void {
+    if (root.dataset.themePreference === 'system') {
+      root.dataset.theme = resolvedTheme('system', scheme.matches);
+    }
+  }
+  scheme.addEventListener('change', follow);
+  return (): void => {
+    scheme.removeEventListener('change', follow);
+  };
+}
+
 export async function applyAccountPreferences(
   me: Me,
   preferences: PreferenceStore,
