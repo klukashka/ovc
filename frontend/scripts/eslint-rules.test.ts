@@ -4,10 +4,11 @@ import { describe, expect, test } from 'vitest';
 
 const frontendRoot = resolve(import.meta.dirname, '..');
 const fixturePath = resolve(frontendRoot, 'src/lib/preferences/store.ts');
+const componentPath = resolve(frontendRoot, 'src/routes/NotFoundPage.tsx');
 
-async function ruleIds(source: string): Promise<string[]> {
+async function ruleIds(source: string, filePath: string = fixturePath): Promise<string[]> {
   const eslint = new ESLint({ cwd: frontendRoot, flags: ['unstable_native_nodejs_ts_config'] });
-  const [result] = await eslint.lintText(source, { filePath: fixturePath });
+  const [result] = await eslint.lintText(source, { filePath });
   return (result?.messages ?? []).map((message) => message.ruleId ?? 'fatal');
 }
 
@@ -90,6 +91,152 @@ describe('frontend lint configuration', () => {
     const found = await ruleIds(source);
 
     expect(found).toContain(expectedRule);
+  });
+
+  test.each([
+    [
+      'dangerouslySetInnerHTML',
+      'export function Fixture(): React.JSX.Element {\n  return <div dangerouslySetInnerHTML={{ __html: "x" }} />;\n}\n',
+      'no-restricted-syntax',
+    ],
+    [
+      'an iframe srcDoc',
+      'export function Fixture(): React.JSX.Element {\n  return <iframe title="x" srcDoc="<p>x</p>" />;\n}\n',
+      'no-restricted-syntax',
+    ],
+    ['assigning innerHTML', "document.body.innerHTML = '<p>x</p>';\n", 'no-restricted-syntax'],
+    ['assigning outerHTML', "document.body.outerHTML = '<p>x</p>';\n", 'no-restricted-syntax'],
+    ['assigning innerHTML by computed key', "document.body['innerHTML'] = '<p>x</p>';\n", 'no-restricted-syntax'],
+    [
+      'assigning srcdoc',
+      "export function fill(frame: HTMLIFrameElement): void {\n  frame.srcdoc = '<p>x</p>';\n}\n",
+      'no-restricted-syntax',
+    ],
+    ['setting srcdoc as an attribute', "document.body.setAttribute('srcdoc', '<p>x</p>');\n", 'no-restricted-syntax'],
+    ['insertAdjacentHTML', "document.body.insertAdjacentHTML('beforeend', '<p>x</p>');\n", 'no-restricted-properties'],
+    ['document.write', "document.write('<p>x</p>');\n", 'no-restricted-properties'],
+    ['document.writeln', "document.writeln('<p>x</p>');\n", 'no-restricted-properties'],
+    ['document.cookie', 'export const cookies = document.cookie;\n', 'no-restricted-syntax'],
+    ['document.cookie by computed key', "export const cookies = document['cookie'];\n", 'no-restricted-syntax'],
+    [
+      'createContextualFragment',
+      "export const fragment = document.createRange().createContextualFragment('<p>x</p>');\n",
+      'no-restricted-properties',
+    ],
+    [
+      'DOMParser',
+      "export const parsed = new DOMParser().parseFromString('<p>x</p>', 'text/html');\n",
+      'no-restricted-globals',
+    ],
+    ['indexedDB', "export const opened = indexedDB.open('ovc');\n", 'no-restricted-globals'],
+    ['window.indexedDB', "export const opened = window.indexedDB.open('ovc');\n", 'no-restricted-properties'],
+    ['eval', "export const value: unknown = eval('1');\n", 'no-eval'],
+    ['new Function', "export const run = new Function('return 1');\n", 'no-new-func'],
+    ['localStorage', "export const stored = localStorage.getItem('ovc.theme');\n", 'no-restricted-globals'],
+    ['sessionStorage', "export const stored = sessionStorage.getItem('ovc.theme');\n", 'no-restricted-globals'],
+    [
+      'window.localStorage',
+      "export const stored = window.localStorage.getItem('ovc.theme');\n",
+      'no-restricted-syntax',
+    ],
+    [
+      'globalThis.sessionStorage',
+      "export const stored = globalThis.sessionStorage.getItem('ovc.theme');\n",
+      'no-restricted-syntax',
+    ],
+    ['self.localStorage', "export const stored = self.localStorage.getItem('ovc.theme');\n", 'no-restricted-syntax'],
+    [
+      "window['localStorage']",
+      "export const stored = window['localStorage'].getItem('ovc.theme');\n",
+      'no-restricted-syntax',
+    ],
+    [
+      'an aliased window',
+      "const w = window;\nexport const stored = w.localStorage.getItem('ovc.theme');\n",
+      'no-restricted-syntax',
+    ],
+    ['defaultView', "export const stored = document.defaultView?.localStorage.getItem('x');\n", 'no-restricted-syntax'],
+    [
+      'destructured storage',
+      'const { sessionStorage: kept } = window;\nexport const stored = kept;\n',
+      'no-restricted-syntax',
+    ],
+    ['optional chaining', "export const stored = window?.localStorage.getItem('x');\n", 'no-restricted-syntax'],
+    ['Reflect.get', "export const stored: unknown = Reflect.get(window, 'localStorage');\n", 'no-restricted-syntax'],
+    ['an aliased document cookie', 'const d = document;\nexport const cookies = d.cookie;\n', 'no-restricted-syntax'],
+    ['cookieStore', "export const cookies = window.cookieStore.get('x');\n", 'no-restricted-syntax'],
+    [
+      'Object.assign of innerHTML',
+      "Object.assign(document.body, { innerHTML: '<p>x</p>' });\n",
+      'no-restricted-syntax',
+    ],
+    [
+      'createElement with dangerouslySetInnerHTML',
+      "import { createElement } from 'react';\nexport const node = createElement('div', { dangerouslySetInnerHTML: { __html: 'x' } });\n",
+      'no-restricted-syntax',
+    ],
+    ['setHTMLUnsafe', "document.body.setHTMLUnsafe('<p>x</p>');\n", 'no-restricted-properties'],
+    ['an upper-case srcdoc attribute', "document.body.setAttribute('SRCDOC', 'x');\n", 'no-restricted-syntax'],
+    ['an event-handler attribute', "document.body.setAttribute('onclick', 'x');\n", 'no-restricted-syntax'],
+    [
+      'a computed attribute name',
+      "const name = 'id';\ndocument.body.setAttribute(name, 'x');\n",
+      'no-restricted-syntax',
+    ],
+    ['a string timer', "setTimeout('alert(1)', 1);\n", '@typescript-eslint/no-implied-eval'],
+    [
+      'a quoted destructuring key',
+      "const { 'localStorage': kept } = window;\nexport const stored = kept;\n",
+      'no-restricted-syntax',
+    ],
+    ['a template-literal key', 'export const stored = window[`localStorage`];\n', 'no-restricted-syntax'],
+    [
+      'a property descriptor',
+      "export const found = Object.getOwnPropertyDescriptor(window, 'localStorage');\n",
+      'no-restricted-syntax',
+    ],
+    [
+      'a storage event area',
+      "addEventListener('storage', (event) => event.storageArea?.clear());\n",
+      'no-restricted-syntax',
+    ],
+    ['a nested document.write', "window.document.write('<p>x</p>');\n", 'no-restricted-syntax'],
+    ['setAttributeNS with a handler', "document.body.setAttributeNS(null, 'onclick', 'x');\n", 'no-restricted-syntax'],
+    ['Reflect.set of innerHTML', "Reflect.set(document.body, 'innerHTML', '<p>x</p>');\n", 'no-restricted-syntax'],
+    ['a template-literal cookie key', 'export const cookies = document[`cookie`];\n', 'no-restricted-syntax'],
+  ])('rejects %s in application code', async (_name, source, expectedRule) => {
+    const found = await ruleIds(source, componentPath);
+
+    expect(found).toContain(expectedRule);
+  });
+
+  test('allows Web Storage only inside the preferences module', async () => {
+    const source = "export const stored = window.localStorage.getItem('ovc.theme');\n";
+
+    const inPreferences = await ruleIds(source);
+    const elsewhere = await ruleIds(source, componentPath);
+
+    expect(inPreferences).toEqual([]);
+    expect(elsewhere).toContain('no-restricted-syntax');
+  });
+
+  test('applies the same rules to the scripts in public/ except the theme script', async () => {
+    const source = "window.localStorage.getItem('ovc.theme');\nsetTimeout('alert(1)', 1);\n";
+
+    const otherScript = await ruleIds(source, resolve(frontendRoot, 'public/other.js'));
+    const themeScript = await ruleIds(
+      "window.localStorage.getItem('ovc.theme');\n",
+      resolve(frontendRoot, 'public/theme-init.js'),
+    );
+
+    expect(otherScript).toEqual(expect.arrayContaining(['no-restricted-syntax', 'no-implied-eval']));
+    expect(themeScript).toEqual([]);
+  });
+
+  test('accepts an ordinary attribute whose value looks like a handler name', async () => {
+    const found = await ruleIds("document.body.setAttribute('title', 'one');\n", componentPath);
+
+    expect(found).toEqual([]);
   });
 
   test('accepts plain typed code', async () => {

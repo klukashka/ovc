@@ -10,7 +10,7 @@ import { PreferencesContext } from './app/context.ts';
 import { ApiClientContext, createApiClient } from './lib/api/client.ts';
 import { createI18n } from './lib/i18n/i18n.ts';
 import { isLanguage } from './lib/i18n/resources.ts';
-import { availablePreferenceStore } from './lib/preferences/store.ts';
+import { browserPreferenceStoreOrMemory } from './lib/preferences/store.ts';
 import { createRouter } from './routes/router.tsx';
 
 const rootElement = document.getElementById('root');
@@ -23,7 +23,7 @@ const i18n = await createI18n(isLanguage(documentLanguage) ? documentLanguage : 
 i18n.on('languageChanged', (language: string) => {
   document.documentElement.lang = language;
 });
-const preferences = availablePreferenceStore(() => window.localStorage);
+const preferences = browserPreferenceStoreOrMemory();
 const apiClient = createApiClient(window.location.origin, window.fetch.bind(window));
 const queryClient = new QueryClient();
 

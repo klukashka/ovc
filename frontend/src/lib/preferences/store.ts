@@ -20,6 +20,10 @@ export function browserPreferenceStore(storage: Storage): PreferenceStore {
   };
 }
 
+export function browserPreferenceStoreOrMemory(): PreferenceStore {
+  return availablePreferenceStore(() => window.localStorage);
+}
+
 export function availablePreferenceStore(readStorage: () => Storage): PreferenceStore {
   try {
     return browserPreferenceStore(readStorage());

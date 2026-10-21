@@ -55,6 +55,108 @@ const forbiddenFetchReplacement = [
   },
 ];
 
+const domSinkMessage = 'Render text through React; never write HTML, run strings as code or parse markup.';
+const cookieMessage = 'OVC keeps tokens out of script-readable cookies; the refresh cookie is HttpOnly.';
+const storageMessage = 'Web Storage is used only through src/lib/preferences.';
+const indexedDbMessage = 'OVC stores nothing in IndexedDB.';
+
+const globalObjects = ['window', 'globalThis', 'self'];
+
+const forbiddenDomProperties = [
+  { property: 'insertAdjacentHTML', message: domSinkMessage },
+  { property: 'createContextualFragment', message: domSinkMessage },
+  { object: 'document', property: 'write', message: domSinkMessage },
+  { object: 'document', property: 'writeln', message: domSinkMessage },
+  { property: 'setHTMLUnsafe', message: domSinkMessage },
+  { property: 'parseHTMLUnsafe', message: domSinkMessage },
+  ...globalObjects.flatMap((object) => [
+    { object, property: 'indexedDB', message: indexedDbMessage },
+    { object, property: 'eval', message: domSinkMessage },
+    { object, property: 'Function', message: domSinkMessage },
+    { object, property: 'DOMParser', message: domSinkMessage },
+  ]),
+];
+
+const storageNames = '/^(localStorage|sessionStorage)$/';
+const htmlPropertyNames = '/^(innerHTML|outerHTML|srcdoc|srcDoc|dangerouslySetInnerHTML)$/';
+const lookupSinkNames = '/^(innerHTML|outerHTML|srcdoc|cookie|cookieStore)$/';
+
+const forbiddenStorageSyntax = [
+  { selector: `MemberExpression[property.name=${storageNames}]`, message: storageMessage },
+  { selector: `MemberExpression[property.value=${storageNames}]`, message: storageMessage },
+  {
+    selector: `MemberExpression > TemplateLiteral.property[quasis.0.value.raw=${storageNames}]`,
+    message: storageMessage,
+  },
+  { selector: `ObjectPattern > Property[key.name=${storageNames}]`, message: storageMessage },
+  { selector: `ObjectPattern > Property[key.value=${storageNames}]`, message: storageMessage },
+  {
+    selector: `CallExpression[callee.object.name=/^(Reflect|Object)$/] > Literal[value=${storageNames}]`,
+    message: storageMessage,
+  },
+  {
+    selector: `CallExpression[callee.object.name=/^(Reflect|Object)$/] > TemplateLiteral[quasis.0.value.raw=${storageNames}]`,
+    message: storageMessage,
+  },
+  { selector: "MemberExpression[property.name='storageArea']", message: storageMessage },
+];
+
+const forbiddenDomSyntax = [
+  { selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']", message: domSinkMessage },
+  { selector: 'JSXAttribute[name.name=/^src[Dd]oc$/]', message: domSinkMessage },
+  {
+    selector: 'AssignmentExpression > MemberExpression.left[property.name=/^(innerHTML|outerHTML|srcdoc)$/]',
+    message: domSinkMessage,
+  },
+  {
+    selector: 'AssignmentExpression > MemberExpression.left[property.value=/^(innerHTML|outerHTML|srcdoc)$/]',
+    message: domSinkMessage,
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='setAttribute'] > Literal.arguments:nth-child(1)[value=/^(srcdoc|on.*)$/i]",
+    message: domSinkMessage,
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='setAttributeNS'] > Literal.arguments:nth-child(2)[value=/^(srcdoc|on.*)$/i]",
+    message: domSinkMessage,
+  },
+  {
+    selector: "CallExpression[callee.property.name='setAttribute'][arguments.0.type!='Literal']",
+    message: 'Name the attribute with a literal so the lint rules can check it.',
+  },
+  { selector: `Property[key.name=${htmlPropertyNames}]`, message: domSinkMessage },
+  { selector: `Property[key.value=${htmlPropertyNames}]`, message: domSinkMessage },
+  { selector: "NewExpression[callee.name='DOMParser']", message: domSinkMessage },
+  {
+    selector:
+      'MemberExpression[property.name=/^(write|writeln)$/] > MemberExpression.object[property.name=/^(document|ownerDocument)$/]',
+    message: domSinkMessage,
+  },
+  { selector: 'MemberExpression[property.name=/^(cookie|cookieStore)$/]', message: cookieMessage },
+  { selector: 'MemberExpression[property.value=/^(cookie|cookieStore)$/]', message: cookieMessage },
+  {
+    selector: `MemberExpression > TemplateLiteral.property[quasis.0.value.raw=${lookupSinkNames}]`,
+    message: domSinkMessage,
+  },
+  {
+    selector: `CallExpression[callee.object.name='Reflect'] > Literal[value=${lookupSinkNames}]`,
+    message: domSinkMessage,
+  },
+];
+
+const forbiddenDomGlobals = [
+  { name: 'indexedDB', message: indexedDbMessage },
+  { name: 'DOMParser', message: domSinkMessage },
+];
+
+const forbiddenStorageGlobals = [
+  { name: 'localStorage', message: storageMessage },
+  { name: 'sessionStorage', message: storageMessage },
+  { name: 'cookieStore', message: cookieMessage },
+];
+
 const forbiddenTestDoubleImports = {
   paths: [
     { name: 'vitest', importNames: ['vi', 'vitest'], message: testDoubleMessage },
@@ -106,6 +208,40 @@ export default defineConfig(
       'no-restricted-properties': ['error', ...forbiddenTestDoubles],
       'no-restricted-syntax': ['error', ...forbiddenFetchReplacement, ...forbiddenDynamicImports],
       'no-restricted-imports': ['error', forbiddenTestDoubleImports],
+    },
+  },
+  {
+    files: ['src/**/*.{ts,tsx}', 'public/**/*.js'],
+    rules: {
+      'no-eval': 'error',
+      'no-implied-eval': 'off',
+      '@typescript-eslint/no-implied-eval': 'error',
+      'no-new-func': 'error',
+      'no-restricted-properties': ['error', ...forbiddenTestDoubles, ...forbiddenDomProperties],
+      'no-restricted-syntax': [
+        'error',
+        ...forbiddenFetchReplacement,
+        ...forbiddenDynamicImports,
+        ...forbiddenDomSyntax,
+        ...forbiddenStorageSyntax,
+      ],
+      'no-restricted-globals': ['error', ...forbiddenDomGlobals, ...forbiddenStorageGlobals],
+    },
+  },
+  {
+    files: ['public/**/*.js'],
+    rules: { '@typescript-eslint/no-implied-eval': 'off', 'no-implied-eval': 'error' },
+  },
+  {
+    files: ['src/lib/preferences/store.ts', 'public/theme-init.js'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...forbiddenFetchReplacement,
+        ...forbiddenDynamicImports,
+        ...forbiddenDomSyntax,
+      ],
+      'no-restricted-globals': ['error', ...forbiddenDomGlobals, { name: 'cookieStore', message: cookieMessage }],
     },
   },
 );

@@ -826,6 +826,8 @@ These amendments, made after the standard and security planning reviews, overrid
 
 - **C9** delivers `cmd/ovc-admin`, `internal/admin` and `internal/services/operators` with the account state machine as a domain rule, process tests for every subcommand, and the audit event. Since deleting an unverified account purges it at once (Q6), restore only ever returns an account to `active`; unblock into `unverified` restarts the 7-day clock (Q8). Block also discards pending email requests and tokens (amendment 4).
 
+- **F1** adds the DOM-sink, cookie, IndexedDB and Web Storage lint rules for `src/` and `public/`, with a fixture test per rule, and moves the `window.localStorage` read into `src/lib/preferences/store.ts`, which exposes only the typed preference store; a check refuses files under `src/` that ESLint does not cover. The Playwright check of stored keys lands with the first account journeys (F3).
+
 ### E. New owner questions
 
 - **Q6, deleting an unverified account**, raised by the security planning review: purge it immediately and free the email (recommended), so a squatter cannot lock the real owner out for 30 days.
