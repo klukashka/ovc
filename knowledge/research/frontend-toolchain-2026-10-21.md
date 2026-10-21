@@ -23,7 +23,7 @@ Node 26 runs the TypeScript build scripts in `frontend/scripts/` and `frontend/e
 | `i18next-icu` | 2.5.0 | Declares `intl-messageformat` `>=10.3.3 <13.0.0` as a peer |
 | `intl-messageformat` | 12.1.3 | Declared explicitly so the peer is not installed implicitly |
 | `openapi-fetch` | 0.17.0 | |
-| `@fontsource/golos-text`, `@fontsource/literata`, `@fontsource/jetbrains-mono` | 5.3.0 | Per-subset CSS files; only the Cyrillic and Latin subsets of the used weights are imported |
+| `@fontsource/golos-text`, `@fontsource/literata`, `@fontsource/jetbrains-mono` | 5.3.0 | Per-weight CSS files with a `unicode-range` per subset; the bundle holds Cyrillic, Cyrillic extended, Latin and Latin extended for all three families, plus Greek, Greek extended and Vietnamese for Literata and Greek and Vietnamese for JetBrains Mono, and browsers download only the subsets a page's text uses. The per-subset files lack `unicode-range`, which made browsers fetch Latin and Cyrillic one after the other |
 
 ## Build and check tools
 

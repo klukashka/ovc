@@ -12,17 +12,35 @@ export function usePreferences(): PreferenceStore {
   return store;
 }
 
-export function useMediaQuery(query: string): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
-      const list = window.matchMedia(query);
+interface MediaQuerySource {
+  readonly subscribe: (onChange: () => void) => () => void;
+  readonly snapshot: () => boolean;
+}
+
+const mediaQuerySources = new Map<string, MediaQuerySource>();
+
+function mediaQuerySource(query: string): MediaQuerySource {
+  const existing = mediaQuerySources.get(query);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const list = window.matchMedia(query);
+  const source: MediaQuerySource = {
+    subscribe: (onChange) => {
       list.addEventListener('change', onChange);
-      return () => {
+      return (): void => {
         list.removeEventListener('change', onChange);
       };
     },
-    () => window.matchMedia(query).matches,
-  );
+    snapshot: () => list.matches,
+  };
+  mediaQuerySources.set(query, source);
+  return source;
+}
+
+export function useMediaQuery(query: string): boolean {
+  const source = mediaQuerySource(query);
+  return useSyncExternalStore(source.subscribe, source.snapshot);
 }
 
 export const wideLayoutQuery = '(min-width: 1024px)';

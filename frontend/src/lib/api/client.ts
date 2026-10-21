@@ -45,8 +45,11 @@ function isErrorEnvelope(value: unknown): value is { error: ApiErrorBody } {
 
 export async function fetchReadiness(client: ApiClient, signal: AbortSignal): Promise<ReadyStatus> {
   const { data, error, response } = await client.GET('/api/v1/health/ready', { signal });
-  if (data !== undefined) {
+  if (data?.status === 'ready') {
     return data;
+  }
+  if (data !== undefined) {
+    throw new ApiError(response.status, undefined);
   }
   throw new ApiError(response.status, isErrorEnvelope(error) ? error.error : undefined);
 }

@@ -1,17 +1,11 @@
 @import 'tailwindcss';
 
-@import '@fontsource/golos-text/cyrillic-400.css';
-@import '@fontsource/golos-text/latin-400.css';
-@import '@fontsource/golos-text/cyrillic-500.css';
-@import '@fontsource/golos-text/latin-500.css';
-@import '@fontsource/golos-text/cyrillic-600.css';
-@import '@fontsource/golos-text/latin-600.css';
-@import '@fontsource/literata/cyrillic-400.css';
-@import '@fontsource/literata/latin-400.css';
-@import '@fontsource/literata/cyrillic-400-italic.css';
-@import '@fontsource/literata/latin-400-italic.css';
-@import '@fontsource/jetbrains-mono/cyrillic-400.css';
-@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/golos-text/400.css';
+@import '@fontsource/golos-text/500.css';
+@import '@fontsource/golos-text/600.css';
+@import '@fontsource/literata/400.css';
+@import '@fontsource/literata/400-italic.css';
+@import '@fontsource/jetbrains-mono/400.css';
 
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
@@ -26,6 +20,8 @@
   --breakpoint-tablet: 768px;
   --breakpoint-desktop: 1024px;
   --breakpoint-wide: 1280px;
+
+  --spacing: 4px;
 
   --font-sans: 'Golos Text', system-ui, sans-serif;
   --font-serif: 'Literata', Georgia, serif;
@@ -129,13 +125,13 @@
     background-color: var(--color-bg);
     color: var(--color-text);
     font-family: var(--font-sans);
-    font-size: var(--text-body);
-    line-height: var(--text-body--line-height);
     -webkit-text-size-adjust: 100%;
   }
 
   body {
     min-height: 100dvh;
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
   }
 
   :focus-visible {
@@ -148,7 +144,7 @@
   }
 
   @media (max-width: 767px) {
-    html {
+    body {
       font-size: var(--text-body-phone);
       line-height: var(--text-body-phone--line-height);
     }

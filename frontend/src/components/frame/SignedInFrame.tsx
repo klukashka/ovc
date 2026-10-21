@@ -53,11 +53,13 @@ function SidebarOverlay({
   open,
   onClose,
   returnFocus,
+  label,
   children,
 }: {
   readonly open: boolean;
   readonly onClose: () => void;
   readonly returnFocus: RefObject<HTMLButtonElement | null>;
+  readonly label: string;
   readonly children: ReactElement;
 }): ReactElement {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -100,6 +102,10 @@ function SidebarOverlay({
     }
     function syncClosed(): void {
       onClose();
+      const active = document.activeElement;
+      if (active === null || active === document.body || opened.contains(active)) {
+        returnFocus.current?.focus();
+      }
     }
     element.addEventListener('close', syncClosed);
     element.addEventListener('cancel', cancel);
@@ -111,7 +117,7 @@ function SidebarOverlay({
       element.removeEventListener('click', closeOnScrim);
       element.removeEventListener('keydown', keepFocusInside);
     };
-  }, [onClose]);
+  }, [onClose, returnFocus]);
 
   useEffect(() => {
     const element = dialog.current;
@@ -130,7 +136,11 @@ function SidebarOverlay({
   }, [open, returnFocus]);
 
   return (
-    <dialog ref={dialog} className="m-0 h-dvh max-h-none w-sidebar max-w-overlay-cap bg-transparent p-0 text-text">
+    <dialog
+      ref={dialog}
+      aria-label={label}
+      className="m-0 h-dvh max-h-none w-sidebar max-w-overlay-cap bg-transparent p-0 text-text"
+    >
       {children}
     </dialog>
   );
@@ -180,7 +190,11 @@ export function SignedInFrame({ frameRole }: { readonly frameRole: Role }): Reac
   const wide = useMediaQuery(wideLayoutQuery);
   const [sidebarShown, setSidebarShown] = useState(() => preferences.read(preferenceKeys.sidebar) !== 'hidden');
   const [overlayOpen, setOverlayOpen] = useState(false);
+  if (wide && overlayOpen) {
+    setOverlayOpen(false);
+  }
   const showButton = useRef<HTMLButtonElement>(null);
+  const hideButtonRef = useRef<HTMLButtonElement>(null);
   const counts: SectionCounts = {};
   const news = hasNews(counts);
 
@@ -198,6 +212,7 @@ export function SignedInFrame({ frameRole }: { readonly frameRole: Role }): Reac
 
   const hideButton = wide ? (
     <button
+      ref={hideButtonRef}
       type="button"
       aria-label={t('frame.hideSidebar')}
       onClick={() => {
@@ -234,6 +249,7 @@ export function SignedInFrame({ frameRole }: { readonly frameRole: Role }): Reac
             expanded={false}
             onClick={() => {
               rememberSidebar(true);
+              requestAnimationFrame(() => hideButtonRef.current?.focus());
             }}
           />
         </div>
@@ -250,7 +266,7 @@ export function SignedInFrame({ frameRole }: { readonly frameRole: Role }): Reac
             }}
             notifications={counts.notifications ?? 0}
           />
-          <SidebarOverlay open={overlayOpen} onClose={closeOverlay} returnFocus={showButton}>
+          <SidebarOverlay open={overlayOpen} onClose={closeOverlay} returnFocus={showButton} label={t('frame.sidebar')}>
             {sidebar}
           </SidebarOverlay>
         </>

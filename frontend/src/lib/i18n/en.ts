@@ -16,6 +16,7 @@ export const en: Resources = {
   },
   frame: {
     navigation: 'Main navigation',
+    sidebar: 'Sidebar',
     showSidebar: 'Show sidebar',
     showSidebarWithNews: 'Show sidebar, new items',
     hideSidebar: 'Hide sidebar',

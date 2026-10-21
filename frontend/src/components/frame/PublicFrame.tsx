@@ -9,7 +9,7 @@ export function PublicFrame(): ReactElement {
   return (
     <div className="min-h-dvh bg-bg text-text">
       <header className="mx-auto flex w-full max-w-page flex-wrap items-center gap-4 px-4 py-4 tablet:px-8 desktop:px-14">
-        <Link to="/" className="mr-auto font-serif text-heading">
+        <Link to="/" className="mr-auto inline-flex min-h-11 items-center font-serif text-heading">
           {t('app.name')}
         </Link>
         <LanguageSwitch />

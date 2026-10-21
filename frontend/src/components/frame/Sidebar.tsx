@@ -42,7 +42,7 @@ function SidebarItem({
         onClick={onNavigate}
         aria-current={current ? 'page' : undefined}
         data-sidebar-item=""
-        className={`flex min-h-11 items-center gap-2.5 rounded-sm px-2.5 text-small text-text-muted transition-colors duration-(--duration-press) ease-quiet hover:bg-hover hover:text-text desktop:pointer-fine:min-h-8 ${current ? 'bg-hover font-medium text-text' : ''}`}
+        className={`flex min-h-11 items-center gap-2.5 rounded-sm px-2.5 text-small transition-colors duration-(--duration-press) ease-quiet hover:bg-hover hover:text-text desktop:pointer-fine:min-h-8 ${current ? 'bg-hover font-medium text-text' : 'text-text-muted'}`}
       >
         <span className="text-icon">
           <Icon />
@@ -80,18 +80,39 @@ function AccountMenu({ role }: { readonly role: Role }): ReactElement {
         button.current?.focus();
       }
     }
+    let pointerInside = false;
+    function notePointerInside(): void {
+      pointerInside = true;
+    }
+    function notePointerReleased(): void {
+      pointerInside = false;
+    }
+    function closeOnFocusLeaving(event: FocusEvent): void {
+      const target = event.relatedTarget;
+      const leftForElsewhere = target instanceof Node && container.current?.contains(target) !== true;
+      const leftForNothing = !(target instanceof Node) && !pointerInside;
+      if (leftForElsewhere || leftForNothing) {
+        setOpen(false);
+      }
+    }
     function closeOnDialogCancel(): void {
       setOpen(false);
       button.current?.focus();
     }
     document.addEventListener('pointerdown', closeOnOutsidePointer);
     container.current?.addEventListener('keydown', closeOnEscape);
+    container.current?.addEventListener('focusout', closeOnFocusLeaving);
+    container.current?.addEventListener('pointerdown', notePointerInside);
+    document.addEventListener('pointerup', notePointerReleased);
     const element = container.current;
     const surroundingDialog = element?.closest('dialog') ?? null;
     surroundingDialog?.addEventListener('cancel', closeOnDialogCancel);
     return (): void => {
       document.removeEventListener('pointerdown', closeOnOutsidePointer);
       element?.removeEventListener('keydown', closeOnEscape);
+      element?.removeEventListener('focusout', closeOnFocusLeaving);
+      element?.removeEventListener('pointerdown', notePointerInside);
+      document.removeEventListener('pointerup', notePointerReleased);
       surroundingDialog?.removeEventListener('cancel', closeOnDialogCancel);
     };
   }, [open]);

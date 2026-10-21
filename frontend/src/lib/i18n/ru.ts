@@ -14,6 +14,7 @@ export const ru = {
   },
   frame: {
     navigation: 'Основная навигация',
+    sidebar: 'Боковая панель',
     showSidebar: 'Показать боковую панель',
     showSidebarWithNews: 'Показать боковую панель, есть новое',
     hideSidebar: 'Скрыть боковую панель',

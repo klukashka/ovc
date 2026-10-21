@@ -27,7 +27,7 @@ export function LanguageSwitch(): ReactElement {
             onClick={() => {
               choose(language);
             }}
-            className={`min-h-11 rounded-sm px-3 text-small desktop:pointer-fine:min-h-8 ${pressed ? 'border border-border-strong bg-field font-medium text-text' : 'border border-transparent text-text-muted hover:text-text'}`}
+            className={`min-h-11 rounded-sm px-3 text-small desktop:pointer-fine:min-h-10 ${pressed ? 'border border-border-strong bg-field font-medium text-text' : 'border border-transparent text-text-muted hover:text-text'}`}
           >
             {t(`language.${language}`)}
           </button>

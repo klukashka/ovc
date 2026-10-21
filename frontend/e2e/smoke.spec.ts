@@ -1,4 +1,4 @@
-import { type Page, expect, test as base } from '@playwright/test';
+import { type Locator, type Page, expect, test as base } from '@playwright/test';
 
 import { contentSecurityPolicy } from '../security-headers.ts';
 
@@ -286,5 +286,118 @@ test.describe('with the dark colour scheme', () => {
     expect(themeAtFirstBody).toBe('dark');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(28, 27, 24)');
+  });
+});
+
+async function boxSizes(locators: Locator[]): Promise<{ width: number; height: number }[]> {
+  const sizes: { width: number; height: number }[] = [];
+  for (const locator of locators) {
+    const box = await locator.boundingBox();
+    sizes.push({ width: box?.width ?? 0, height: box?.height ?? 0 });
+  }
+  return sizes;
+}
+
+test('every page, asset and proxied API response carries the security headers', async ({ page, request }) => {
+  await page.goto('/');
+  const script = await page.locator('script[type="module"]').getAttribute('src');
+  expect(script).toMatch(/^\/assets\/.+\.js$/);
+  const paths = [
+    '/students/1',
+    '/no/such/page',
+    '/theme-init.js',
+    '/favicon.svg',
+    String(script),
+    '/api/v1/no-such-route',
+  ];
+
+  const responses = await Promise.all(paths.map((path) => request.get(path)));
+
+  for (const [index, response] of responses.entries()) {
+    const headers = response.headers();
+    expect(headers['referrer-policy'], paths[index]).toBe('no-referrer');
+    expect(headers['x-content-type-options'], paths[index]).toBe('nosniff');
+  }
+  expect(responses.at(-1)?.status()).toBe(404);
+});
+
+test('showing the sidebar moves focus to the hide button', async ({ page }) => {
+  await page.goto('/today');
+  await page.getByRole('button', { name: 'Скрыть боковую панель' }).click();
+
+  await page.getByRole('button', { name: 'Показать боковую панель' }).click();
+
+  await expect(page.getByRole('button', { name: 'Скрыть боковую панель' })).toBeFocused();
+});
+
+test('the current sidebar item uses the primary text colour', async ({ page }) => {
+  await page.goto('/today');
+
+  const current = page.getByRole('navigation').getByRole('link', { name: 'Сегодня' });
+
+  await expect(current).toHaveCSS('color', 'rgb(38, 36, 31)');
+  await expect(page.getByRole('navigation').getByRole('link', { name: 'Расписание' })).toHaveCSS(
+    'color',
+    'rgb(107, 101, 90)',
+  );
+});
+
+test('controls on a computer follow the token sizes', async ({ page }) => {
+  await page.goto('/today');
+  const sidebarItems = await boxSizes([page.getByRole('navigation').getByRole('link', { name: 'Сегодня' })]);
+  await page.goto('/');
+
+  const languageButtons = await boxSizes([page.getByRole('button', { name: 'Русский' })]);
+  const logo = await boxSizes([page.getByRole('link', { name: 'OVC' })]);
+
+  expect(sidebarItems[0]?.height).toBe(32);
+  expect(languageButtons[0]?.height).toBeGreaterThanOrEqual(40);
+  expect(logo[0]?.height).toBeGreaterThanOrEqual(44);
+});
+
+test('the account menu closes when focus leaves it', async ({ page }) => {
+  await page.goto('/today');
+  await page.getByRole('button', { name: /Меню аккаунта/ }).click();
+  await page.getByRole('button', { name: 'Выйти' }).waitFor();
+
+  await page.getByRole('button', { name: 'Выйти' }).focus();
+  await page.keyboard.press('Tab');
+
+  await expect(page.getByRole('button', { name: 'Выйти' })).toHaveCount(0);
+});
+
+test.describe('at 900 px', () => {
+  test.use({ viewport: { width: 900, height: 800 } });
+
+  test('every frame target is at least 44 px', async ({ page }) => {
+    await page.goto('/');
+    const publicTargets = await boxSizes([
+      page.getByRole('button', { name: 'Русский' }),
+      page.getByRole('navigation').getByRole('link', { name: 'Войти' }),
+    ]);
+    await page.goto('/today');
+    await page.getByRole('button', { name: 'Показать боковую панель' }).click();
+
+    const overlayTargets = await boxSizes([
+      page.getByRole('dialog').getByRole('link', { name: 'Сегодня' }),
+      page.getByRole('dialog').getByRole('button', { name: /Меню аккаунта/ }),
+    ]);
+
+    for (const size of [...publicTargets, ...overlayTargets]) {
+      expect(size.height).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test('the overlay is named and does not reopen after the window widens and narrows', async ({ page }) => {
+    await page.goto('/today');
+    await page.getByRole('button', { name: 'Показать боковую панель' }).click();
+    await page.getByRole('dialog', { name: 'Боковая панель' }).waitFor();
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.getByRole('button', { name: 'Скрыть боковую панель' }).waitFor();
+    await page.setViewportSize({ width: 900, height: 800 });
+
+    await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeVisible();
+    await expect(page.getByRole('dialog')).toBeHidden();
   });
 });
