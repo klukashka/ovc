@@ -239,6 +239,26 @@ describe('frontend lint configuration', () => {
     expect(found).toEqual([]);
   });
 
+  test('refuses the authentication fake and contract outside tests and allows them in tests', async () => {
+    const source =
+      "import { FakeAuthServer } from '../lib/api/fakeTransport.ts';\nexport const server = new FakeAuthServer();\n";
+
+    const inProduction = await ruleIds(source, componentPath);
+    const inTest = await ruleIds(source, resolve(frontendRoot, 'src/routes/access.test.ts'));
+
+    expect(inProduction).toContain('no-restricted-imports');
+    expect(inTest).not.toContain('no-restricted-imports');
+  });
+
+  test('refuses the authentication contract outside tests', async () => {
+    const source =
+      "import { authTransportContract } from '../lib/api/transportContract.ts';\nexport const contract = authTransportContract;\n";
+
+    const messages = await ruleIds(source, componentPath);
+
+    expect(messages).toContain('no-restricted-imports');
+  });
+
   test('accepts plain typed code', async () => {
     const found = await ruleIds('export function double(value: number): number {\n  return value * 2;\n}\n');
 

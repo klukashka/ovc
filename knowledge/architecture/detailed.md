@@ -89,7 +89,7 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `features/chat` | Channel list, conversation, composer, presence, typing |
 | `features/notifications` | Sidebar notifications entry with unread count, notifications panel and list |
 | `features/settings` | Profile, account, notifications, teaching settings |
-| `lib/api` | Typed API client generated from OpenAPI, error type, token handling |
+| `lib/api` | Typed API client generated from OpenAPI, error type, token handling; the session reaches the network only through the `AuthTransport` adapter (HTTP, and an in-memory fake for unit tests checked by the same contract against the real backend) |
 | `lib/realtime` | One reconnecting WebSocket client and typed subscriptions |
 | `lib/i18n` | i18next setup, ICU formatting, error-code messages, `ru` and `en` resources |
 | `lib/preferences` | Per-browser preferences before sign-in (language, theme, sidebar), with an in-memory store for tests |

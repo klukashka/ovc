@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const browserlessSuites = ['**/session-transport.spec.ts'];
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -13,7 +15,7 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
-    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testIgnore: browserlessSuites },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] }, testIgnore: browserlessSuites },
   ],
 });

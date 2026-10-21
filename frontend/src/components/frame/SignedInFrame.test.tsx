@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 
 import { MediaQueriesContext, PreferencesContext, fixedMediaQueries, wideLayoutQuery } from '../../app/context.ts';
 import { type Me, Session, SessionContext } from '../../lib/api/session.ts';
+import { httpAuthTransport } from '../../lib/api/transport.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import type { Language } from '../../lib/i18n/resources.ts';
 import { memoryPreferenceStore } from '../../lib/preferences/store.ts';
@@ -31,7 +32,7 @@ function account(role: Me['role'], state: Me['state'] = 'active'): Me {
 function unusedSession(): Session {
   return new Session({
     origin: 'https://ovc.example',
-    fetch: globalThis.fetch,
+    transport: httpAuthTransport('https://ovc.example', globalThis.fetch),
     locks: { request: (_name, callback) => callback() },
     scheduler: { schedule: () => (): void => undefined },
   });

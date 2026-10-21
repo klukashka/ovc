@@ -2,6 +2,7 @@ import { createContext, useContext, useSyncExternalStore } from 'react';
 
 import { type ApiError, apiErrorFrom } from './client.ts';
 import { type components, meLanguageValues, meRoleValues, meStateValues, meThemeValues } from './schema.ts';
+import type { AuthTransport } from './transport.ts';
 
 export type Me = components['schemas']['Me'];
 
@@ -29,7 +30,7 @@ export type SignInResult =
 
 export interface SessionDependencies {
   readonly origin: string;
-  readonly fetch: typeof fetch;
+  readonly transport: AuthTransport;
   readonly locks: LockManagerLike;
   readonly scheduler: Scheduler;
 }
@@ -126,14 +127,14 @@ export class Session {
     const retry = request.clone();
     const sentToken = this.token;
     const epoch = this.epoch;
-    const response = await this.deps.fetch(this.withToken(request));
+    const response = await this.deps.transport.send(this.withToken(request));
     if (epoch !== this.epoch) {
       return response;
     }
     if (response.status === 401 && (await errorOf(response.clone())).code === 'token_expired') {
       const renewed = this.token !== null && this.token !== sentToken ? true : await this.refresh();
       if (renewed && epoch === this.epoch) {
-        const retried = await this.deps.fetch(this.withToken(retry));
+        const retried = await this.deps.transport.send(this.withToken(retry));
         return epoch === this.epoch ? this.watch(retried) : retried;
       }
     }
@@ -169,11 +170,7 @@ export class Session {
 
   readonly signIn = async (email: string, password: string): Promise<SignInResult> => {
     const epoch = this.epoch;
-    const response = await this.deps.fetch(`${this.deps.origin}/api/v1/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
+    const response = await this.deps.transport.login(email, password);
     if (!response.ok) {
       return { kind: 'refused', error: await errorOf(response), retryAfterSeconds: retryAfter(response) };
     }
@@ -232,10 +229,7 @@ export class Session {
   }
 
   private async refreshNow(epoch: number): Promise<boolean> {
-    const response = await this.deps.fetch(`${this.deps.origin}/api/v1/auth/refresh`, {
-      method: 'POST',
-      signal: AbortSignal.timeout(refreshTimeoutMilliseconds),
-    });
+    const response = await this.deps.transport.refresh(AbortSignal.timeout(refreshTimeoutMilliseconds));
     if (epoch !== this.epoch) {
       return false;
     }
@@ -273,10 +267,7 @@ export class Session {
       return true;
     }
     const shown = this.current.me.id;
-    const response = await this.deps.fetch(`${this.deps.origin}/api/v1/users/me`, {
-      headers: { Authorization: `Bearer ${token.access_token}` },
-      signal: AbortSignal.timeout(refreshTimeoutMilliseconds),
-    });
+    const response = await this.deps.transport.me(token.access_token, AbortSignal.timeout(refreshTimeoutMilliseconds));
     if (epoch !== this.epoch) {
       return false;
     }

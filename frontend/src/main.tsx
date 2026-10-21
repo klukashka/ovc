@@ -10,6 +10,7 @@ import { applyAccountPreferences, darkSchemeQuery } from './app/accountPreferenc
 import { PreferencesContext } from './app/context.ts';
 import { ApiClientContext, createApiClient } from './lib/api/client.ts';
 import { type Me, Session, SessionContext, browserLocks, browserScheduler } from './lib/api/session.ts';
+import { httpAuthTransport } from './lib/api/transport.ts';
 import { createI18n } from './lib/i18n/i18n.ts';
 import { isLanguage } from './lib/i18n/resources.ts';
 import { browserPreferenceStoreOrMemory } from './lib/preferences/store.ts';
@@ -26,13 +27,14 @@ i18n.on('languageChanged', (language: string) => {
   document.documentElement.lang = language;
 });
 const preferences = browserPreferenceStoreOrMemory();
+const origin = window.location.origin;
 const session = new Session({
-  origin: window.location.origin,
-  fetch: window.fetch.bind(window),
+  origin,
+  transport: httpAuthTransport(origin, window.fetch.bind(window)),
   locks: browserLocks(navigator.locks),
   scheduler: browserScheduler,
 });
-const apiClient = createApiClient(window.location.origin, session.authorizedFetch);
+const apiClient = createApiClient(origin, session.authorizedFetch);
 const queryClient = new QueryClient();
 
 let appliedAccount: Me | null = null;

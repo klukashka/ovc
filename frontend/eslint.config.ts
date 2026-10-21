@@ -169,6 +169,17 @@ const forbiddenTestDoubleImports = {
   patterns: [{ group: ['*mock*', 'msw/*', 'sinon/*', 'testdouble/*'], message: testDoubleMessage }],
 };
 
+const testOnlyModuleImports = {
+  ...forbiddenTestDoubleImports,
+  patterns: [
+    ...forbiddenTestDoubleImports.patterns,
+    {
+      group: ['**/fakeTransport*', '**/transportContract*'],
+      message: 'Fakes and contracts are for tests; production code uses the real adapter',
+    },
+  ],
+};
+
 export default defineConfig(
   { ignores: ['dist', 'node_modules', 'playwright-report', 'test-results', 'src/lib/api/schema.ts'] },
   js.configs.recommended,
@@ -209,6 +220,11 @@ export default defineConfig(
       'no-restricted-syntax': ['error', ...forbiddenFetchReplacement, ...forbiddenDynamicImports],
       'no-restricted-imports': ['error', forbiddenTestDoubleImports],
     },
+  },
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/**/*.test.{ts,tsx}', 'src/lib/api/fakeTransport.ts'],
+    rules: { 'no-restricted-imports': ['error', testOnlyModuleImports] },
   },
   {
     files: ['src/**/*.{ts,tsx}', 'public/**/*.js'],

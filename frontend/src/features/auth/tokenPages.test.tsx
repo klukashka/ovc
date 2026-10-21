@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 
 import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
+import { httpAuthTransport } from '../../lib/api/transport.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import { ResetPasswordPage } from './PasswordPages.tsx';
 import { VerifyEmailPage } from './VerifyEmailPage.tsx';
@@ -16,7 +17,7 @@ const origin = 'https://ovc.example';
 function unstartedSession(): Session {
   return new Session({
     origin,
-    fetch: globalThis.fetch,
+    transport: httpAuthTransport('https://ovc.example', globalThis.fetch),
     locks: { request: (_name, callback) => callback() },
     scheduler: { schedule: () => (): void => undefined },
   });

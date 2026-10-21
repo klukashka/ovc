@@ -13,6 +13,8 @@
     "eslint.config.ts",
     "playwright.config.ts",
     "scripts",
-    "e2e"
+    "e2e",
+    "src/lib/api/transport.ts",
+    "src/lib/api/transportContract.ts"
   ]
 }
