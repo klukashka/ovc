@@ -67,7 +67,7 @@ REST under `/api/v1` (omitted from the paths below), JSON in and out except uplo
 
 ## Accounts
 
-Behavior: [accounts](accounts.md).
+Behavior: [accounts](accounts.md). Every operation declares its audience in code (`public`, `user`, `unverified ok`, or the refresh cookie), and a test sends each non-public operation a request without a token and expects `401 unauthenticated`. `user` operations answer `403 email_not_verified` to an unverified account. `POST /auth/login` and `POST /auth/refresh` require an `Origin` equal to `OVC_PUBLIC_URL` (`403 forbidden` otherwise), login requires `Content-Type: application/json`, and login, refresh and `/users/me` answer with `Cache-Control: no-store`. Login and refresh set `__Host-ovc_refresh` with `Path=/`, `Secure`, `HttpOnly`, `SameSite=Strict` and no `Domain`; a refused refresh and both sign-outs clear it.
 
 | Method | Path | Who | Purpose |
 |---|---|---|---|

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"sync"
@@ -19,12 +20,28 @@ import (
 var safeFieldPath = regexp.MustCompile(`^[A-Za-z0-9._\[\]-]{1,128}$`)
 
 type Error struct {
-	status int
+	status  int
+	headers http.Header
 	schemas.ErrorEnvelope
 }
 
 func (e *Error) GetStatus() int {
 	return e.status
+}
+
+func (e *Error) GetHeaders() http.Header {
+	if e.headers == nil {
+		return http.Header{}
+	}
+	return e.headers
+}
+
+func (e *Error) withHeader(name string, value string) *Error {
+	if e.headers == nil {
+		e.headers = http.Header{}
+	}
+	e.headers.Add(name, value)
+	return e
 }
 
 func (e *Error) Error() string {
@@ -77,15 +94,15 @@ func fieldErrors(errs []error) []schemas.FieldError {
 	return fields
 }
 
-func writeError(ctx context.Context, w http.ResponseWriter, code domain.ErrorCode) {
+func writeError(ctx context.Context, logger *slog.Logger, w http.ResponseWriter, code domain.ErrorCode) {
+	encoded, err := json.Marshal(schemas.NewErrorEnvelope(code, core.RequestID(ctx), nil))
+	if err != nil {
+		panic("the error envelope could not be encoded")
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Del("Content-Length")
 	w.WriteHeader(code.Status())
-	encoded, err := json.Marshal(schemas.NewErrorEnvelope(code, core.RequestID(ctx), nil))
-	if err != nil {
-		return
-	}
 	if _, err := w.Write(encoded); err != nil {
-		return
+		logger.LogAttrs(ctx, slog.LevelWarn, "http.response.write_failed", slog.String("kind", core.ErrorKind(err)))
 	}
 }

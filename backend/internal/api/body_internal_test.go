@@ -160,7 +160,7 @@ func TestValidBodiesAreAccepted(t *testing.T) {
 
 func TestEveryRegisteredOperationSetsTheBodyLimits(t *testing.T) {
 	humaAPI := newAPI(http.NewServeMux())
-	registerHealth(humaAPI, nil, slog.New(slog.DiscardHandler))
+	(&router{api: humaAPI, logger: slog.New(slog.DiscardHandler)}).registerAll(nil)
 
 	var operations []*huma.Operation
 	for _, item := range humaAPI.OpenAPI().Paths {

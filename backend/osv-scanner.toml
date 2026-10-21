@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+ignoreUntil = 2027-01-21T00:00:00Z
+reason = "The advisory covers golang.org/x/crypto/openpgp, which the backend never imports (go list -deps ./... lists only argon2 and blake2b from x/crypto); govulncheck reports no reachable call. Triage: knowledge/research/backend-libraries-2026-10-21.md"

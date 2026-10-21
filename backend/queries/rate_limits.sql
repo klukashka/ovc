@@ -10,4 +10,10 @@ SET count = count - 1
 WHERE purpose = @purpose AND subject = @subject AND window_start = @window_start AND count > 0;
 
 -- name: DeleteExpiredRateLimitCounters :execrows
-DELETE FROM rate_limit_counters WHERE window_start < @before;
+DELETE FROM rate_limit_counters
+WHERE (purpose, subject, window_start) IN (
+    SELECT expired.purpose, expired.subject, expired.window_start
+    FROM rate_limit_counters AS expired
+    WHERE expired.window_start < @before
+    LIMIT sqlc.arg(batch_size)
+);

@@ -20,3 +20,9 @@ UPDATE sessions SET revoked_at = @now WHERE id = @id AND revoked_at IS NULL;
 
 -- name: RevokeUserSessions :execrows
 UPDATE sessions SET revoked_at = @now WHERE user_id = @user_id AND revoked_at IS NULL;
+
+-- name: GetSessionPrincipal :one
+SELECT sessions.id, sessions.user_id, sessions.revoked_at, sessions.expires_at, users.role, users.state
+FROM sessions
+JOIN users ON users.id = sessions.user_id
+WHERE sessions.id = @id;

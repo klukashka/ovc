@@ -35,7 +35,10 @@ type OutboxKind string
 
 type JobName string
 
-const JobOutboxCleanup JobName = "outbox.cleanup"
+const (
+	JobOutboxCleanup    JobName = "outbox.cleanup"
+	JobRateLimitCleanup JobName = "ratelimit.cleanup"
+)
 
 type OutboxLane string
 

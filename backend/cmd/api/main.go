@@ -99,22 +99,27 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		return err
 	}
 
+	random := core.CryptoRandom()
+	var shared *clock.Shared
+	var source clock.Source = systemClock
+	if settings.Clock == core.ClockTest {
+		shared = clock.NewShared(database.Pool)
+		source = shared
+	}
+	accountService, err := startup.NewAccounts(logging.Logger, settings, database, source, random)
+	if err != nil {
+		return err
+	}
 	options := api.Options{
 		Logger:       logging.Logger,
 		Now:          systemClock.Now,
 		NewRequestID: core.NewRandomID,
 		Readiness:    database.Ping,
 		DocsEnabled:  settings.APIDocsEnabled,
+		Auth:         api.Auth{Accounts: accountService, PublicOrigin: settings.PublicURL, TrustedProxies: settings.TrustedProxies},
 	}
 	if settings.TestControl {
-		random := core.CryptoRandom()
 		sink := mail.NewSink(database.Pool, random)
-		var shared *clock.Shared
-		var source clock.Source = systemClock
-		if settings.Clock == core.ClockTest {
-			shared = clock.NewShared(database.Pool)
-			source = shared
-		}
 		background, err := startup.NewWorker(logging.Logger, settings, database, source, sink, random)
 		if err != nil {
 			return err

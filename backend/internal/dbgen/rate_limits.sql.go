@@ -13,11 +13,22 @@ import (
 )
 
 const deleteExpiredRateLimitCounters = `-- name: DeleteExpiredRateLimitCounters :execrows
-DELETE FROM rate_limit_counters WHERE window_start < $1
+DELETE FROM rate_limit_counters
+WHERE (purpose, subject, window_start) IN (
+    SELECT expired.purpose, expired.subject, expired.window_start
+    FROM rate_limit_counters AS expired
+    WHERE expired.window_start < $1
+    LIMIT $2
+)
 `
 
-func (q *Queries) DeleteExpiredRateLimitCounters(ctx context.Context, before time.Time) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteExpiredRateLimitCounters, before)
+type DeleteExpiredRateLimitCountersParams struct {
+	Before    time.Time
+	BatchSize int32
+}
+
+func (q *Queries) DeleteExpiredRateLimitCounters(ctx context.Context, arg DeleteExpiredRateLimitCountersParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredRateLimitCounters, arg.Before, arg.BatchSize)
 	if err != nil {
 		return 0, err
 	}

@@ -28,7 +28,9 @@ func sentinel(name string) string {
 
 func validValues() map[string]string {
 	databaseURL := url.URL{Scheme: "postgres", User: url.UserPassword("user", "sentinel-password"), Host: "127.0.0.1:5432", Path: "/ovc_dev"}
-	return map[string]string{"OVC_DATABASE_URL": databaseURL.String(), "OVC_PUBLIC_URL": "https://ovc.example"}
+	values := map[string]string{"OVC_DATABASE_URL": databaseURL.String(), "OVC_PUBLIC_URL": "https://ovc.example"}
+	values["OVC_JWT_SECRET"] = sentinel("jwt-signing-material-0123456789")
+	return values
 }
 
 func TestLoadAppliesDefaults(t *testing.T) {
@@ -69,6 +71,7 @@ func TestLoadRefusesInvalidValues(t *testing.T) {
 	for name, values := range cases {
 		t.Run(name, func(t *testing.T) {
 			values["OVC_PUBLIC_URL"] = "https://ovc.example"
+			values["OVC_JWT_SECRET"] = sentinel("jwt-signing-material-0123456789")
 			lookup := lookupFrom(values)
 
 			_, err := core.Load(lookup, core.ProcessAPI)
@@ -240,6 +243,15 @@ func TestPublicURLMustBeAnHTTPSOrigin(t *testing.T) {
 		"fragment":               {value: "https://ovc.example#top"},
 		"empty port":             {value: "https://ovc.example:"},
 		"upper case host":        {value: "https://OVC.Example:8443", accepted: "https://ovc.example:8443"},
+		"default https port":     {value: "https://ovc.example:443", accepted: "https://ovc.example"},
+		"unicode host":           {value: "https://овц.example"},
+		"long IPv6 form":         {value: "https://[2001:DB8:0:0::1]", accepted: "https://[2001:db8::1]"},
+		"IPv4 inside IPv6":       {value: "https://[::ffff:1.2.3.4]"},
+		"hexadecimal IPv4":       {value: "https://0x7f.0.0.1"},
+		"numeric last label":     {value: "https://ovc.123"},
+		"padded port":            {value: "https://ovc.example:0443"},
+		"short IPv4 form":        {value: "http://127.1:4173", testControl: "1"},
+		"loopback IPv6":          {value: "http://[::1]:4173", testControl: "1", accepted: "http://[::1]:4173"},
 	}
 	for name, testCase := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -337,5 +349,38 @@ func TestOnlyProcessesThatWriteTheSinkRequireATestDatabase(t *testing.T) {
 
 	if apiErr != nil || workerErr != nil || api.RequiresTestDatabase() || !worker.RequiresTestDatabase() {
 		t.Fatalf("api %v (%v), worker %v (%v)", api.RequiresTestDatabase(), apiErr, worker.RequiresTestDatabase(), workerErr)
+	}
+}
+
+func TestSessionSettingsAreBoundedAndOnlyTheAPINeedsThem(t *testing.T) {
+	cases := map[string]map[string]string{
+		"short signing secret":       {"OVC_JWT_SECRET": "too-short"},
+		"missing signing secret":     {"OVC_JWT_SECRET": ""},
+		"access lifetime too long":   {"OVC_ACCESS_TOKEN_TTL_SECONDS": "3601"},
+		"access lifetime too short":  {"OVC_ACCESS_TOKEN_TTL_SECONDS": "59"},
+		"refresh lifetime too long":  {"OVC_REFRESH_TOKEN_TTL_SECONDS": "7776001"},
+		"every IPv4 address trusted": {"OVC_TRUSTED_PROXY_CIDRS": "10.0.0.0/8, 0.0.0.0/0"},
+		"every IPv6 address trusted": {"OVC_TRUSTED_PROXY_CIDRS": "::/0"},
+		"not a range":                {"OVC_TRUSTED_PROXY_CIDRS": "10.0.0.1"},
+	}
+	worker := validValues()
+	delete(worker, "OVC_JWT_SECRET")
+	if _, err := core.Load(lookupFrom(worker), core.ProcessWorker); err != nil {
+		t.Fatalf("the worker needed the signing secret: %v", err)
+	}
+	for name, change := range cases {
+		t.Run(name, func(t *testing.T) {
+			values := validValues()
+			for key, value := range change {
+				values[key] = value
+			}
+
+			_, err := core.Load(lookupFrom(values), core.ProcessAPI)
+
+			var settingsError *core.SettingsError
+			if !errors.As(err, &settingsError) {
+				t.Fatalf("expected a settings error, got %v", err)
+			}
+		})
 	}
 }

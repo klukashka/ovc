@@ -10,7 +10,7 @@ func LogStarted(ctx context.Context, logger *slog.Logger, process Process, setti
 	if summary, err := SummarizeDatabase(settings.DatabaseURL); err == nil {
 		database = slog.Any("database", summary)
 	}
-	logger.LogAttrs(ctx, slog.LevelInfo, "process.started",
+	attributes := []slog.Attr{
 		slog.String("process", string(process)),
 		slog.String("http_addr", settings.HTTPAddr),
 		database,
@@ -26,7 +26,15 @@ func LogStarted(ctx context.Context, logger *slog.Logger, process Process, setti
 		slog.String("smtp_host", settings.SMTP.Host),
 		slog.Int("smtp_port", settings.SMTP.Port),
 		slog.String("smtp_tls", string(settings.SMTP.TLS)),
-	)
+	}
+	if process == ProcessAPI {
+		attributes = append(attributes,
+			slog.Int64("access_token_ttl_seconds", int64(settings.AccessTokenTTL.Seconds())),
+			slog.Int64("refresh_token_ttl_seconds", int64(settings.RefreshTokenTTL.Seconds())),
+			slog.Int("trusted_proxy_ranges", len(settings.TrustedProxies)),
+		)
+	}
+	logger.LogAttrs(ctx, slog.LevelInfo, "process.started", attributes...)
 }
 
 func LogFailed(ctx context.Context, logger *slog.Logger, process Process, err error) {

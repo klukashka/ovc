@@ -481,3 +481,46 @@ func TestEmailTokenIsNeverConsumedForTheOtherPurpose(t *testing.T) {
 		t.Fatalf("a verification token was consumed as a reset token: %v", err)
 	}
 }
+
+func TestExpiredRateLimitCountersAreDeletedInBatches(t *testing.T) {
+	store := newStore(t)
+	limits := store.Repositories().RateLimits
+	for index := range 5 {
+		window := instant.Add(time.Duration(index-3) * time.Hour)
+		if _, err := limits.Reserve(context.Background(), repositories.RateLimitSlot{Purpose: "sign_in_email", Subject: hash(fmt.Sprint(index)), WindowStart: window}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deleted, err := limits.DeleteBefore(context.Background(), instant, 2, 10)
+	again, againErr := limits.DeleteBefore(context.Background(), instant, 2, 10)
+
+	if err != nil || againErr != nil || deleted != 3 || again != 0 {
+		t.Fatalf("deleted %d (%v), then %d (%v); want 3, then 0", deleted, err, again, againErr)
+	}
+}
+
+func TestPasswordRehashReplacesOnlyTheHashItWasComputedFrom(t *testing.T) {
+	store := newStore(t)
+	createUser(t, store, domain.UserID{1}, "tutor@example.org")
+	users := store.Repositories().Users
+	original, err := users.ByID(context.Background(), domain.UserID{1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := fixturePasswordHash() + "changed"
+	if replaced, err := users.UpdatePasswordHash(context.Background(), repositories.PasswordRehash{
+		PasswordHash: changed, Now: instant, ID: domain.UserID{1}, CurrentPasswordHash: original.PasswordHash,
+	}); err != nil || !replaced {
+		t.Fatalf("first change: %v %v", replaced, err)
+	}
+
+	stale, staleErr := users.UpdatePasswordHash(context.Background(), repositories.PasswordRehash{
+		PasswordHash: fixturePasswordHash() + "stale", Now: instant, ID: domain.UserID{1}, CurrentPasswordHash: original.PasswordHash,
+	})
+
+	current, err := users.ByID(context.Background(), domain.UserID{1})
+	if staleErr != nil || stale || err != nil || current.PasswordHash != changed {
+		t.Fatalf("stale rehash replaced %v (%v); stored %q", stale, staleErr, current.PasswordHash)
+	}
+}

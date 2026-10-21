@@ -11,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
+	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/schemas"
 )
@@ -32,22 +33,24 @@ type Options struct {
 	Mount         func(mux *http.ServeMux)
 	ReadDeadline  time.Duration
 	WriteDeadline time.Duration
+	Auth          Auth
 }
 
 func NewHandler(options Options) (http.Handler, error) {
 	mux := http.NewServeMux()
 	api := newAPI(mux)
 	readiness := &sharedReadiness{check: options.Readiness, now: options.Now, logger: options.Logger}
-	registerHealth(api, readiness.run, options.Logger)
+	routes := &router{api: api, auth: options.Auth, logger: options.Logger}
+	routes.registerAll(readiness.run)
 	if options.DocsEnabled {
 		document, err := json.Marshal(api.OpenAPI())
 		if err != nil {
 			return nil, fmt.Errorf("encode the OpenAPI document: %w", err)
 		}
-		mux.HandleFunc(docsPath, func(w http.ResponseWriter, _ *http.Request) {
+		mux.HandleFunc(docsPath, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			if _, err := w.Write(document); err != nil {
-				return
+				options.Logger.LogAttrs(r.Context(), slog.LevelWarn, "http.response.write_failed", slog.String("kind", core.ErrorKind(err)))
 			}
 		})
 	}
@@ -73,12 +76,18 @@ func durationOr(value time.Duration, fallback time.Duration) time.Duration {
 
 func OpenAPIDocument() ([]byte, error) {
 	api := newAPI(http.NewServeMux())
-	registerHealth(api, nil, slog.New(slog.DiscardHandler))
+	(&router{api: api, logger: slog.New(slog.DiscardHandler)}).registerAll(nil)
 	document, err := json.MarshalIndent(api.OpenAPI(), "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("encode the OpenAPI document: %w", err)
 	}
 	return append(document, '\n'), nil
+}
+
+func Operations() []OperationAudience {
+	routes := &router{api: newAPI(http.NewServeMux()), logger: slog.New(slog.DiscardHandler)}
+	routes.registerAll(nil)
+	return routes.operations
 }
 
 func newAPI(mux *http.ServeMux) huma.API {
@@ -111,12 +120,18 @@ type readyOutput struct {
 	Body schemas.ReadyStatus
 }
 
-func registerHealth(api huma.API, readiness ReadinessFunc, logger *slog.Logger) {
-	huma.Register(api, operation("health-live", http.MethodGet, "/api/v1/health/live"),
+func (r *router) registerAll(readiness ReadinessFunc) {
+	r.registerHealth(readiness)
+	r.registerAuth()
+}
+
+func (r *router) registerHealth(readiness ReadinessFunc) {
+	logger := r.logger
+	register(r, operation("health-live", http.MethodGet, "/api/v1/health/live"), AudiencePublic,
 		func(_ context.Context, _ *struct{}) (*liveOutput, error) {
 			return &liveOutput{Body: schemas.LiveStatus{Status: "ok"}}, nil
 		})
-	huma.Register(api, operation("health-ready", http.MethodGet, "/api/v1/health/ready"),
+	register(r, operation("health-ready", http.MethodGet, "/api/v1/health/ready"), AudiencePublic,
 		func(ctx context.Context, _ *struct{}) (*readyOutput, error) {
 			if err := readiness(ctx); err != nil {
 				if ctx.Err() != nil {

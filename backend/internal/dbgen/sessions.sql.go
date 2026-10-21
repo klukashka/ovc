@@ -56,6 +56,36 @@ func (q *Queries) GetSession(ctx context.Context, id domain.SessionID) (Session,
 	return i, err
 }
 
+const getSessionPrincipal = `-- name: GetSessionPrincipal :one
+SELECT sessions.id, sessions.user_id, sessions.revoked_at, sessions.expires_at, users.role, users.state
+FROM sessions
+JOIN users ON users.id = sessions.user_id
+WHERE sessions.id = $1
+`
+
+type GetSessionPrincipalRow struct {
+	ID        domain.SessionID
+	UserID    domain.UserID
+	RevokedAt *time.Time
+	ExpiresAt time.Time
+	Role      domain.Role
+	State     domain.AccountState
+}
+
+func (q *Queries) GetSessionPrincipal(ctx context.Context, id domain.SessionID) (GetSessionPrincipalRow, error) {
+	row := q.db.QueryRow(ctx, getSessionPrincipal, id)
+	var i GetSessionPrincipalRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RevokedAt,
+		&i.ExpiresAt,
+		&i.Role,
+		&i.State,
+	)
+	return i, err
+}
+
 const revokeSession = `-- name: RevokeSession :execrows
 UPDATE sessions SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL
 `

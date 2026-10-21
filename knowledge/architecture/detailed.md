@@ -133,8 +133,8 @@ Exact versions are pinned in the lockfiles and recorded with check dates in `kno
 | Database and queue | PostgreSQL 18 | Relational data, keyset pagination, leased `SKIP LOCKED` outbox, `LISTEN/NOTIFY` broadcaster |
 | Timezones | Standard library `time` with the embedded `time/tzdata` database | IANA rules without a dependency, independent of the host's zone files |
 | Logging | Standard library `log/slog`, JSON | Structured, leveled diagnostics without a dependency |
-| Password hashing | Argon2id (library chosen in slice 2) | Current recommended password hash |
-| Tokens | Signed JWT access tokens (library chosen in slice 2); opaque hashed refresh, email and invitation tokens | Stateless requests with revocable sessions |
+| Password hashing | Argon2id from `golang.org/x/crypto/argon2` 0.57.0, with OVC's own PHC encoding ([versions](../research/backend-libraries-2026-10-21.md)) | Current recommended password hash; the Go team's package, no third-party wrapper |
+| Tokens | HS256 JWT access tokens with `github.com/golang-jwt/jwt/v5` 5.3.1; opaque hashed refresh, email and invitation tokens | Stateless requests with revocable sessions; the signature is checked explicitly before the claims are validated |
 | Object storage | S3-compatible service in Russia; S3 client chosen in slice 2; local S3-compatible server in development | Quotas, recordings, signed URLs ([ADR-0008](../../docs/decisions/0008-hosting-and-data-residency.md)) |
 | Email | SMTP through a Russian provider with `github.com/emersion/go-smtp` 0.25.0 and `github.com/emersion/go-sasl` for PLAIN authentication ([versions](../research/backend-libraries-2026-10-21.md)); OVC composes the MIME message itself | Transactional email from the worker; OVC keeps control of `Message-ID`, header encoding and CR/LF stripping |
 | Conferencing | BigBlueButton 4.0, self-hosted | Whiteboard and recordings ([ADR-0004](../../docs/decisions/0004-bigbluebutton-primary-provider.md)) |
@@ -159,11 +159,12 @@ Settings are read once from the environment into one typed struct in `internal/c
 |---|---|
 | `OVC_HTTP_ADDR` | API listen address, `127.0.0.1:8000` by default; a loopback IP literal is required with `OVC_TEST_CONTROL=1` |
 | `OVC_DATABASE_URL` | PostgreSQL connection URL, required; reserved characters in the user name and password must be percent-encoded; the driver's `PG*` environment variables are refused at start-up; a `Secret` whose diagnostics show only hosts and database name |
-| `OVC_PUBLIC_URL` | Required origin of the web application, used in emails and provider callbacks and for message identifiers; `https`, without a path, query or user info, and `http` only with `OVC_TEST_CONTROL=1` |
-| `OVC_JWT_SECRET` | Access-token signing key |
+| `OVC_PUBLIC_URL` | Required origin of the web application, used in emails and provider callbacks, for message identifiers and as the exact `Origin` of sign-in and refresh; `https`, without a path, query or user info, with an ASCII host (punycode for internationalised names), a dotted IPv4 address or an IPv6 address, and a port without leading zeros, normalised to lower case, to the canonical IPv6 form and without a default port, so it equals the browser's `Origin`, and `http` only with `OVC_TEST_CONTROL=1` |
+| `OVC_JWT_SECRET` | Required by the API, including `api migrate`, at least 32 bytes; HKDF derives separate keys from it for access tokens, rate-limit subjects and the refresh cookie MAC |
 | `OVC_UNSUBSCRIBE_SIGNING_SECRET` | Key for unsubscribe tokens only |
 | `OVC_FIELD_ENCRYPTION_KEY` | Key for encrypted invitation tokens |
-| `OVC_ACCESS_TOKEN_TTL_SECONDS`, `OVC_REFRESH_TOKEN_TTL_SECONDS` | Token lifetimes |
+| `OVC_ACCESS_TOKEN_TTL_SECONDS`, `OVC_REFRESH_TOKEN_TTL_SECONDS` | Token lifetimes: 900 by default (60 to 3600) and 2592000 by default (one to 90 days) |
+| `OVC_TRUSTED_PROXY_CIDRS` | Comma-separated CIDR ranges of OVC's own reverse proxies, empty by default; `0.0.0.0/0` and `::/0` are refused. The client address for per-IP limits is taken from `X-Forwarded-For` only behind these |
 | `OVC_CORS_ORIGINS` | Explicit frontend origins |
 | `OVC_STORAGE_ENDPOINT`, `OVC_STORAGE_BUCKET`, `OVC_STORAGE_ACCESS_KEY`, `OVC_STORAGE_SECRET_KEY`, `OVC_STORAGE_BACKEND` | S3-compatible storage, or `memory` in tests |
 | `OVC_DEFAULT_FILE_QUOTA_BYTES`, `OVC_DEFAULT_RECORDING_QUOTA_BYTES` | Default tutor quotas |

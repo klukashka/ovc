@@ -64,12 +64,12 @@ type mailResponse []mailMessage
 
 func (routes *Routes) mail(w http.ResponseWriter, r *http.Request) {
 	var request mailRequest
-	if !decode(w, r, &request) {
+	if !decode(routes.logger, w, r, &request) {
 		return
 	}
 	ctx := r.Context()
 	if request.To == "" || len(request.To) > maxRecipientBytes {
-		writeError(ctx, w, domain.ErrorValidationFailed, []schemas.FieldError{{Path: "to", Code: "required"}})
+		writeError(ctx, routes.logger, w, domain.ErrorValidationFailed, []schemas.FieldError{{Path: "to", Code: "required"}})
 		return
 	}
 	stored, err := routes.sink.Messages(ctx, request.To)
@@ -99,7 +99,7 @@ type tickResponse struct {
 
 func (routes *Routes) setClock(w http.ResponseWriter, r *http.Request) {
 	var request clockRequest
-	if !decode(w, r, &request) {
+	if !decode(routes.logger, w, r, &request) {
 		return
 	}
 	ctx := r.Context()
@@ -112,7 +112,7 @@ func (routes *Routes) setClock(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(ctx, routes.logger, w, clockResponse{Now: stored})
 	case request.Set == nil && request.AdvanceSeconds != nil && (*request.AdvanceSeconds < 1 || *request.AdvanceSeconds > maxAdvanceSeconds):
-		writeError(ctx, w, domain.ErrorValidationFailed, []schemas.FieldError{{Path: "advance_seconds", Code: "out_of_range"}})
+		writeError(ctx, routes.logger, w, domain.ErrorValidationFailed, []schemas.FieldError{{Path: "advance_seconds", Code: "out_of_range"}})
 	case request.Set == nil && request.AdvanceSeconds != nil:
 		now, err := routes.clock.Advance(ctx, time.Duration(*request.AdvanceSeconds)*time.Second)
 		if err != nil {
@@ -121,13 +121,13 @@ func (routes *Routes) setClock(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(ctx, routes.logger, w, clockResponse{Now: now})
 	default:
-		writeError(ctx, w, domain.ErrorValidationFailed, []schemas.FieldError{{Path: "body", Code: "set_or_advance_seconds"}})
+		writeError(ctx, routes.logger, w, domain.ErrorValidationFailed, []schemas.FieldError{{Path: "body", Code: "set_or_advance_seconds"}})
 	}
 }
 
 func (routes *Routes) tick(w http.ResponseWriter, r *http.Request) {
 	var request struct{}
-	if !decode(w, r, &request) {
+	if !decode(routes.logger, w, r, &request) {
 		return
 	}
 	ctx := r.Context()
@@ -145,23 +145,23 @@ func (routes *Routes) tick(w http.ResponseWriter, r *http.Request) {
 
 func (routes *Routes) fail(ctx context.Context, w http.ResponseWriter, err error) {
 	if errors.Is(err, clock.ErrTestClockNotSet) {
-		writeError(ctx, w, domain.ErrorValidationFailed, []schemas.FieldError{{Path: "clock", Code: "not_set"}})
+		writeError(ctx, routes.logger, w, domain.ErrorValidationFailed, []schemas.FieldError{{Path: "clock", Code: "not_set"}})
 		return
 	}
 	routes.logger.LogAttrs(ctx, slog.LevelError, "testcontrol.failed", slog.String("kind", "internal"))
-	writeError(ctx, w, domain.ErrorInternal, nil)
+	writeError(ctx, routes.logger, w, domain.ErrorInternal, nil)
 }
 
 func (routes *Routes) guard(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		if !isLoopbackHost(r.Host) {
-			writeError(ctx, w, domain.ErrorNotFound, nil)
+			writeError(ctx, routes.logger, w, domain.ErrorNotFound, nil)
 			return
 		}
 		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil || mediaType != "application/json" {
-			writeError(ctx, w, domain.ErrorUnsupportedMediaType, nil)
+			writeError(ctx, routes.logger, w, domain.ErrorUnsupportedMediaType, nil)
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
@@ -179,7 +179,7 @@ func isLoopbackHost(hostHeader string) bool {
 	return loopbackHosts[host]
 }
 
-func decode[T clockRequest | mailRequest | struct{}](w http.ResponseWriter, r *http.Request, target *T) bool {
+func decode[T clockRequest | mailRequest | struct{}](logger *slog.Logger, w http.ResponseWriter, r *http.Request, target *T) bool {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	err := decoder.Decode(target)
@@ -196,10 +196,10 @@ func decode[T clockRequest | mailRequest | struct{}](w http.ResponseWriter, r *h
 	}
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {
-		writeError(r.Context(), w, domain.ErrorPayloadTooLarge, nil)
+		writeError(r.Context(), logger, w, domain.ErrorPayloadTooLarge, nil)
 		return false
 	}
-	writeError(r.Context(), w, domain.ErrorBadRequest, nil)
+	writeError(r.Context(), logger, w, domain.ErrorBadRequest, nil)
 	return false
 }
 
@@ -218,24 +218,22 @@ func trailingDataError(decoder *json.Decoder) error {
 func writeJSON[T clockResponse | tickResponse | mailResponse](ctx context.Context, logger *slog.Logger, w http.ResponseWriter, body T) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
-		logger.LogAttrs(ctx, slog.LevelError, "testcontrol.encode.failed", slog.String("kind", "encode"))
-		writeError(ctx, w, domain.ErrorInternal, nil)
-		return
+		panic("a test control response could not be encoded")
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if _, err := w.Write(encoded); err != nil {
-		return
+		logger.LogAttrs(ctx, slog.LevelWarn, "http.response.write_failed", slog.String("kind", core.ErrorKind(err)))
 	}
 }
 
-func writeError(ctx context.Context, w http.ResponseWriter, code domain.ErrorCode, fields []schemas.FieldError) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code.Status())
+func writeError(ctx context.Context, logger *slog.Logger, w http.ResponseWriter, code domain.ErrorCode, fields []schemas.FieldError) {
 	encoded, err := json.Marshal(schemas.NewErrorEnvelope(code, core.RequestID(ctx), fields))
 	if err != nil {
-		return
+		panic("the error envelope could not be encoded")
 	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code.Status())
 	if _, err := w.Write(encoded); err != nil {
-		return
+		logger.LogAttrs(ctx, slog.LevelWarn, "http.response.write_failed", slog.String("kind", core.ErrorKind(err)))
 	}
 }

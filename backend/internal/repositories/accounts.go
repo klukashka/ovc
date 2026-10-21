@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"ovc/backend/internal/dbgen"
@@ -9,21 +10,24 @@ import (
 )
 
 type (
-	User             = dbgen.User
-	NewUser          = dbgen.CreateUserParams
-	TutorProfile     = dbgen.TutorProfile
-	NewTutorProfile  = dbgen.CreateTutorProfileParams
-	Session          = dbgen.Session
-	NewSession       = dbgen.CreateSessionParams
-	SessionRotation  = dbgen.RotateSessionParams
-	EmailToken       = dbgen.EmailToken
-	NewEmailRequest  = dbgen.CreateEmailRequestParams
-	NewEmailToken    = dbgen.CreateEmailTokenParams
-	ConsumedToken    = dbgen.ConsumeEmailTokenRow
-	RateLimitSlot    = dbgen.ReserveRateLimitSlotParams
-	JobRun           = dbgen.JobRun
-	JobRunRecord     = dbgen.RecordJobRunParams
-	EmailTokenLookup = dbgen.GetUsableEmailTokenParams
+	User              = dbgen.User
+	NewUser           = dbgen.CreateUserParams
+	TutorProfile      = dbgen.TutorProfile
+	NewTutorProfile   = dbgen.CreateTutorProfileParams
+	Session           = dbgen.Session
+	NewSession        = dbgen.CreateSessionParams
+	SessionRotation   = dbgen.RotateSessionParams
+	EmailToken        = dbgen.EmailToken
+	NewEmailRequest   = dbgen.CreateEmailRequestParams
+	NewEmailToken     = dbgen.CreateEmailTokenParams
+	ConsumedToken     = dbgen.ConsumeEmailTokenRow
+	RateLimitSlot     = dbgen.ReserveRateLimitSlotParams
+	JobRun            = dbgen.JobRun
+	JobRunRecord      = dbgen.RecordJobRunParams
+	EmailTokenLookup  = dbgen.GetUsableEmailTokenParams
+	SessionPrincipal  = dbgen.GetSessionPrincipalRow
+	PasswordRehash    = dbgen.UpdateUserPasswordHashParams
+	LockedCredentials = dbgen.LockUserCredentialsRow
 )
 
 type Users struct {
@@ -37,6 +41,26 @@ func (r Users) Create(ctx context.Context, user NewUser) error {
 func (r Users) ByID(ctx context.Context, id domain.UserID) (User, error) {
 	user, err := r.queries.GetUserByID(ctx, id)
 	return one(user, err, "user by id")
+}
+
+func (r Users) UpdatePasswordHash(ctx context.Context, rehash PasswordRehash) (bool, error) {
+	rows, err := r.queries.UpdateUserPasswordHash(ctx, rehash)
+	return applied(rows, err, "update password hash")
+}
+
+func (r Users) LockCredentials(ctx context.Context, id domain.UserID) (LockedCredentials, error) {
+	locked, err := r.queries.LockUserCredentials(ctx, id)
+	return one(locked, err, "lock user credentials")
+}
+
+func (r Users) MarkDeleted(ctx context.Context, id domain.UserID, now time.Time) (bool, error) {
+	rows, err := r.queries.MarkUserDeleted(ctx, dbgen.MarkUserDeletedParams{Now: &now, ID: id})
+	return applied(rows, err, "mark user deleted")
+}
+
+func (r Users) Block(ctx context.Context, id domain.UserID, now time.Time) (bool, error) {
+	rows, err := r.queries.BlockUser(ctx, dbgen.BlockUserParams{Now: now, ID: id})
+	return applied(rows, err, "block user")
 }
 
 func (r Users) ByEmail(ctx context.Context, email string) (User, error) {
@@ -68,6 +92,11 @@ func (r Sessions) Create(ctx context.Context, session NewSession) error {
 func (r Sessions) ByID(ctx context.Context, id domain.SessionID) (Session, error) {
 	session, err := r.queries.GetSession(ctx, id)
 	return one(session, err, "session by id")
+}
+
+func (r Sessions) Principal(ctx context.Context, id domain.SessionID) (SessionPrincipal, error) {
+	principal, err := r.queries.GetSessionPrincipal(ctx, id)
+	return one(principal, err, "session principal")
 }
 
 func (r Sessions) Rotate(ctx context.Context, rotation SessionRotation) (int64, error) {
@@ -131,9 +160,19 @@ func (r RateLimits) Release(ctx context.Context, slot RateLimitSlot) (bool, erro
 	return applied(rows, err, "release rate limit slot")
 }
 
-func (r RateLimits) DeleteBefore(ctx context.Context, before time.Time) (int64, error) {
-	rows, err := r.queries.DeleteExpiredRateLimitCounters(ctx, before)
-	return counted(rows, err, "delete expired rate limit counters")
+func (r RateLimits) DeleteBefore(ctx context.Context, before time.Time, batchSize int32, maxBatches int) (int64, error) {
+	var deleted int64
+	for range maxBatches {
+		rows, err := r.queries.DeleteExpiredRateLimitCounters(ctx, dbgen.DeleteExpiredRateLimitCountersParams{Before: before, BatchSize: batchSize})
+		if err != nil {
+			return deleted, fmt.Errorf("delete expired rate limit counters: %w", err)
+		}
+		deleted += rows
+		if rows < int64(batchSize) {
+			break
+		}
+	}
+	return deleted, nil
 }
 
 type JobRuns struct {

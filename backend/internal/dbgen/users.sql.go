@@ -12,6 +12,25 @@ import (
 	"ovc/backend/internal/domain"
 )
 
+const blockUser = `-- name: BlockUser :execrows
+UPDATE users
+SET state_before_block = state, state = 'blocked', updated_at = $1
+WHERE id = $2 AND state IN ('unverified', 'active')
+`
+
+type BlockUserParams struct {
+	Now time.Time
+	ID  domain.UserID
+}
+
+func (q *Queries) BlockUser(ctx context.Context, arg BlockUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, blockUser, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createTutorProfile = `-- name: CreateTutorProfile :exec
 INSERT INTO tutor_profiles (user_id, file_quota_bytes, recording_quota_bytes, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $4)
@@ -36,27 +55,28 @@ func (q *Queries) CreateTutorProfile(ctx context.Context, arg CreateTutorProfile
 
 const createUser = `-- name: CreateUser :exec
 INSERT INTO users (
-    id, role, state, email, password_hash, name, language, timezone, theme,
+    id, role, state, email, email_verified_at, password_hash, name, language, timezone, theme,
     consent_version, consent_at, unverified_since, created_at, updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9,
-    $10, $11, $12, $12, $12
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+    $11, $12, $13, $13, $13
 )
 `
 
 type CreateUserParams struct {
-	ID             domain.UserID
-	Role           domain.Role
-	State          domain.AccountState
-	Email          string
-	PasswordHash   string
-	Name           string
-	Language       domain.Language
-	Timezone       string
-	Theme          domain.Theme
-	ConsentVersion string
-	ConsentAt      time.Time
-	CreatedAt      time.Time
+	ID              domain.UserID
+	Role            domain.Role
+	State           domain.AccountState
+	Email           string
+	EmailVerifiedAt *time.Time
+	PasswordHash    string
+	Name            string
+	Language        domain.Language
+	Timezone        string
+	Theme           domain.Theme
+	ConsentVersion  string
+	ConsentAt       time.Time
+	CreatedAt       time.Time
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
@@ -65,6 +85,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 		arg.Role,
 		arg.State,
 		arg.Email,
+		arg.EmailVerifiedAt,
 		arg.PasswordHash,
 		arg.Name,
 		arg.Language,
@@ -156,4 +177,64 @@ func (q *Queries) GetUserByID(ctx context.Context, id domain.UserID) (User, erro
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const lockUserCredentials = `-- name: LockUserCredentials :one
+SELECT password_hash, state FROM users WHERE id = $1 FOR NO KEY UPDATE
+`
+
+type LockUserCredentialsRow struct {
+	PasswordHash string
+	State        domain.AccountState
+}
+
+func (q *Queries) LockUserCredentials(ctx context.Context, id domain.UserID) (LockUserCredentialsRow, error) {
+	row := q.db.QueryRow(ctx, lockUserCredentials, id)
+	var i LockUserCredentialsRow
+	err := row.Scan(&i.PasswordHash, &i.State)
+	return i, err
+}
+
+const markUserDeleted = `-- name: MarkUserDeleted :execrows
+UPDATE users
+SET state = 'deleted', deleted_at = $1, updated_at = $1
+WHERE id = $2 AND state IN ('unverified', 'active')
+`
+
+type MarkUserDeletedParams struct {
+	Now *time.Time
+	ID  domain.UserID
+}
+
+func (q *Queries) MarkUserDeleted(ctx context.Context, arg MarkUserDeletedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markUserDeleted, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateUserPasswordHash = `-- name: UpdateUserPasswordHash :execrows
+UPDATE users SET password_hash = $1, updated_at = $2
+WHERE id = $3 AND password_hash = $4
+`
+
+type UpdateUserPasswordHashParams struct {
+	PasswordHash        string
+	Now                 time.Time
+	ID                  domain.UserID
+	CurrentPasswordHash string
+}
+
+func (q *Queries) UpdateUserPasswordHash(ctx context.Context, arg UpdateUserPasswordHashParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateUserPasswordHash,
+		arg.PasswordHash,
+		arg.Now,
+		arg.ID,
+		arg.CurrentPasswordHash,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

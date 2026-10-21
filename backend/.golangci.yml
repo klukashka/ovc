@@ -87,6 +87,15 @@ linters:
               desc: the SMTP client belongs to internal/adapters
             - pkg: github.com/emersion/go-sasl
               desc: SMTP authentication belongs to internal/adapters
+        cryptography:
+          files:
+            - $all
+            - "!**/internal/core/**"
+          deny:
+            - pkg: golang.org/x/crypto
+              desc: password hashing and other cryptography belong to internal/core
+            - pkg: github.com/golang-jwt/jwt
+              desc: access tokens belong to internal/core
         goose:
           files:
             - $all

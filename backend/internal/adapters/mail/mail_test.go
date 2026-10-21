@@ -284,7 +284,10 @@ func serveSMTP(t *testing.T, offerTLS bool, implicit bool) smtpServer {
 		if err := server.Close(); err != nil {
 			t.Error(err)
 		}
-		if err := <-served; err != nil && !errors.Is(err, smtp.ErrServerClosed) {
+		if err := listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			t.Error(err)
+		}
+		if err := <-served; err != nil && !errors.Is(err, smtp.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
 			t.Error(err)
 		}
 	})

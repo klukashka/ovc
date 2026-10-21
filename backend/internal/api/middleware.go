@@ -45,7 +45,7 @@ func (m *outermost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := core.WithRequestID(r.Context(), requestID)
 	r = r.WithContext(ctx)
 	setBaseHeaders(w.Header(), requestID)
-	recorder := &responseRecorder{ResponseWriter: w, status: http.StatusOK, ctx: ctx}
+	recorder := &responseRecorder{ResponseWriter: w, status: http.StatusOK, ctx: ctx, logger: m.logger}
 
 	defer func() {
 		recovered := recover()
@@ -66,7 +66,7 @@ func (m *outermost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			headers.Del(name)
 		}
 		setBaseHeaders(headers, requestID)
-		writeError(ctx, recorder, domain.ErrorInternal)
+		writeError(ctx, m.logger, recorder, domain.ErrorInternal)
 		m.logAccess(ctx, r, recorder, start)
 	}()
 
@@ -78,7 +78,7 @@ func (m *outermost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.logger.LogAttrs(ctx, slog.LevelWarn, "http.deadline.failed", slog.String("kind", "write"))
 	}
 	if path.Clean(r.URL.Path) != r.URL.Path {
-		writeError(ctx, recorder, domain.ErrorNotFound)
+		writeError(ctx, m.logger, recorder, domain.ErrorNotFound)
 		return
 	}
 	m.next.ServeHTTP(recorder, r)
@@ -128,6 +128,7 @@ type responseRecorder struct {
 	status      int
 	wroteHeader bool
 	intercepted bool
+	logger      *slog.Logger
 }
 
 func (r *responseRecorder) WriteHeader(status int) {
@@ -138,7 +139,7 @@ func (r *responseRecorder) WriteHeader(status int) {
 		r.intercepted = true
 		r.wroteHeader = true
 		r.status = status
-		writeError(r.ctx, r.ResponseWriter, domain.ErrorCodeForStatus(status))
+		writeError(r.ctx, r.logger, r.ResponseWriter, domain.ErrorCodeForStatus(status))
 		return
 	}
 	r.wroteHeader = true

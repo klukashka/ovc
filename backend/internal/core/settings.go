@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Process string
@@ -78,6 +79,10 @@ const (
 	varSMTPUsername    = "OVC_SMTP_USERNAME"
 	varSMTPLoginValue  = "OVC_" + "SMTP_PASSWORD"
 	varMailFrom        = "OVC_MAIL_FROM"
+	varJWTKeyMaterial  = "OVC_" + "JWT_SECRET"
+	varAccessTTL       = "OVC_ACCESS_TOKEN_TTL_SECONDS"
+	varRefreshTTL      = "OVC_REFRESH_TOKEN_TTL_SECONDS"
+	varTrustedProxies  = "OVC_TRUSTED_PROXY_CIDRS"
 	varTestDatabaseURL = "OVC_TEST_DATABASE_ADMIN_URL"
 )
 
@@ -85,7 +90,8 @@ func VariableNames() []string {
 	return []string{
 		varHTTPAddr, varDatabaseURL, varDBPoolSize, varLogLevel, varLogFormat, varAPIDocsEnabled,
 		varTestControl, varClock, varMeetingProvider, varMailBackend, varPublicURL, varSMTPHost, varSMTPPort,
-		varSMTPTLS, varSMTPUsername, varSMTPLoginValue, varMailFrom, varTestDatabaseURL,
+		varSMTPTLS, varSMTPUsername, varSMTPLoginValue, varMailFrom, varJWTKeyMaterial, varAccessTTL, varRefreshTTL,
+		varTrustedProxies, varTestDatabaseURL,
 	}
 }
 
@@ -106,6 +112,10 @@ type Settings struct {
 	PublicURL       string
 	SMTP            SMTPSettings
 	MailFrom        string
+	JWTSecret       Secret
+	AccessTokenTTL  time.Duration
+	RefreshTokenTTL time.Duration
+	TrustedProxies  []netip.Prefix
 }
 
 type SettingsError struct {
@@ -149,6 +159,10 @@ func Load(lookup Lookup, process Process) (Settings, error) {
 	problems = append(problems, driverEnvironmentProblems(lookup)...)
 
 	defaultPool := int32(20)
+	if process == ProcessAPI {
+		problems = append(problems, settings.loadSessionSettings(lookup)...)
+	}
+
 	if process == ProcessWorker {
 		defaultPool = 10
 	}
@@ -286,7 +300,47 @@ func publicURLFrom(lookup Lookup, testControl bool) (string, error) {
 	if parsed.Scheme != "https" && (parsed.Scheme != "http" || !testControl) {
 		return "", &SettingsError{Variable: varPublicURL, Problem: "must use https; http is allowed only with OVC_TEST_CONTROL=1"}
 	}
-	return parsed.Scheme + "://" + strings.ToLower(parsed.Host), nil
+	host, ok := canonicalHost(parsed.Hostname())
+	if !ok {
+		return "", &SettingsError{Variable: varPublicURL, Problem: "must use an ASCII host name, a dotted IPv4 address or an IPv6 address; write an internationalised name in its punycode form"}
+	}
+	port := parsed.Port()
+	if port != "" {
+		number, err := strconv.Atoi(port)
+		if err != nil || strconv.Itoa(number) != port || number < 1 || number > 65535 {
+			return "", &SettingsError{Variable: varPublicURL, Problem: "must use a port without leading zeros"}
+		}
+	}
+	if (parsed.Scheme == "https" && port == "443") || (parsed.Scheme == "http" && port == "80") {
+		port = ""
+	}
+	if port != "" {
+		host = net.JoinHostPort(host, port)
+	} else if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	return parsed.Scheme + "://" + host, nil
+}
+
+func canonicalHost(raw string) (string, bool) {
+	host := strings.ToLower(raw)
+	if address, err := netip.ParseAddr(host); err == nil {
+		return address.String(), address.Zone() == "" && !address.Is4In6()
+	}
+	for _, character := range host {
+		if character > 127 {
+			return "", false
+		}
+	}
+	labels := strings.Split(host, ".")
+	last := labels[len(labels)-1]
+	numeric := last != ""
+	for _, character := range last {
+		if character < '0' || character > '9' {
+			numeric = false
+		}
+	}
+	return host, host != "" && !numeric && !strings.HasPrefix(last, "0x")
 }
 
 func mailSettings(lookup Lookup, backend MailBackend) (SMTPSettings, string, []error) {
@@ -335,6 +389,61 @@ func portOr(lookup Lookup, name string, fallback int) (int, error) {
 		return 0, &SettingsError{Variable: name, Problem: "must be a port from 1 to 65535"}
 	}
 	return parsed, nil
+}
+
+const minimumJWTSecretBytes = 32
+
+func (s *Settings) loadSessionSettings(lookup Lookup) []error {
+	var problems []error
+	secret, _ := lookup(varJWTKeyMaterial)
+	s.JWTSecret = NewSecret(secret)
+	if len(secret) < minimumJWTSecretBytes {
+		problems = append(problems, &SettingsError{Variable: varJWTKeyMaterial, Problem: "is required and must be at least 32 bytes"})
+	}
+	access, err := secondsOr(lookup, varAccessTTL, 900, 60, 3600)
+	if err != nil {
+		problems = append(problems, err)
+	}
+	s.AccessTokenTTL = access
+	refresh, err := secondsOr(lookup, varRefreshTTL, 30*24*60*60, 24*60*60, 90*24*60*60)
+	if err != nil {
+		problems = append(problems, err)
+	}
+	s.RefreshTokenTTL = refresh
+	proxies, err := trustedProxies(lookup)
+	if err != nil {
+		problems = append(problems, err)
+	}
+	s.TrustedProxies = proxies
+	return problems
+}
+
+func secondsOr(lookup Lookup, name string, fallback int64, lowest int64, highest int64) (time.Duration, error) {
+	value, ok := lookup(name)
+	if !ok || value == "" {
+		return time.Duration(fallback) * time.Second, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed < lowest || parsed > highest {
+		return 0, &SettingsError{Variable: name, Problem: fmt.Sprintf("must be a number of seconds from %d to %d", lowest, highest)}
+	}
+	return time.Duration(parsed) * time.Second, nil
+}
+
+func trustedProxies(lookup Lookup) ([]netip.Prefix, error) {
+	value, ok := lookup(varTrustedProxies)
+	if !ok || strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	var prefixes []netip.Prefix
+	for _, entry := range strings.Split(value, ",") {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(entry))
+		if err != nil || prefix.Bits() == 0 {
+			return nil, &SettingsError{Variable: varTrustedProxies, Problem: "must be a comma-separated list of CIDR ranges, none of them 0.0.0.0/0 or ::/0"}
+		}
+		prefixes = append(prefixes, prefix.Masked())
+	}
+	return prefixes, nil
 }
 
 func (s Settings) RequiresTestDatabase() bool {

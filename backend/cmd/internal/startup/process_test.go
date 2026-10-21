@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -18,6 +19,8 @@ import (
 	"time"
 
 	"ovc/backend/internal/core"
+	"ovc/backend/internal/domain"
+	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/testdb"
 )
 
@@ -50,12 +53,20 @@ type outcome struct {
 }
 
 func withPublicURL(env []string) []string {
-	for _, variable := range env {
-		if strings.HasPrefix(variable, "OVC_PUBLIC_URL=") {
-			return env
+	defaults := map[string]string{"OVC_PUBLIC_URL": "https://ovc.example", "OVC_JWT_SECRET": "process-test-signing-material-0123456789"}
+	result := env
+	for name, value := range defaults {
+		set := false
+		for _, variable := range env {
+			if strings.HasPrefix(variable, name+"=") {
+				set = true
+			}
+		}
+		if !set {
+			result = append(result, name+"="+value)
 		}
 	}
-	return append(env, "OVC_PUBLIC_URL=https://ovc.example")
+	return result
 }
 
 func runBinary(t *testing.T, name string, env []string, args ...string) outcome {
@@ -420,4 +431,113 @@ func TestSinkRefusedForProductionDatabaseName(t *testing.T) {
 			t.Fatal("part of the database URL leaked")
 		}
 	}
+}
+
+type exchange struct {
+	status int
+	body   string
+}
+
+func call(t *testing.T, ctx context.Context, method string, url string, body string, headers map[string]string) exchange {
+	t.Helper()
+	request, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range headers {
+		request.Header.Set(name, value)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return exchange{status: response.StatusCode, body: string(read)}
+}
+
+func seedTutor(t *testing.T, database *testdb.Database, password string) {
+	t.Helper()
+	hasher, err := core.NewPasswordHasher(core.Argon2Params{MemoryKiB: 64, Iterations: 1, Parallelism: 1}, core.CryptoRandom(), 1, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := hasher.Hash(context.Background(), password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2030, time.March, 10, 9, 0, 0, 0, time.UTC)
+	err = repositories.NewStore(database.Pool).Repositories().Users.Create(context.Background(), repositories.NewUser{
+		ID: domain.UserID{1}, Role: domain.RoleTutor, State: domain.AccountActive, Email: "tutor@example.org", EmailVerifiedAt: &now,
+		PasswordHash: encoded, Name: "A language tutor", Language: domain.LanguageEnglish, Timezone: "Europe/Moscow",
+		Theme: domain.ThemeSystem, ConsentVersion: "2026-10", ConsentAt: now, CreatedAt: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTransportDeadlinesIgnoreTheSharedClock(t *testing.T) {
+	database := testdb.New(t)
+	seedTutor(t, database, "correct horse battery")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	address := freeAddress(t)
+	base := "http://" + address
+	env := []string{"OVC_DATABASE_URL=" + database.URL.Reveal(), "OVC_HTTP_ADDR=" + address, "OVC_TEST_CONTROL=1", "OVC_CLOCK=test"}
+	server, output := startServer(t, ctx, env)
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("server output:\n%s", output.String())
+		}
+	})
+	waitForStatus(t, ctx, base+"/api/v1/health/ready")
+	jsonHeaders := map[string]string{"Content-Type": "application/json"}
+	signIn := func() string {
+		result := call(t, ctx, http.MethodPost, base+"/api/v1/auth/login", `{"email":"tutor@example.org","password":"correct horse battery"}`,
+			map[string]string{"Content-Type": "application/json", "Origin": "https://ovc.example"})
+		var decoded struct {
+			AccessToken string `json:"access_token"`
+		}
+		if result.status != http.StatusOK || decodeJSON(result.body, &decoded) != nil {
+			t.Fatalf("sign-in answered %d %s", result.status, result.body)
+		}
+		return decoded.AccessToken
+	}
+	me := func(token string) exchange {
+		return call(t, ctx, http.MethodGet, base+"/api/v1/users/me", "", map[string]string{"Authorization": "Bearer " + token})
+	}
+
+	var statuses []int
+	for _, instant := range []string{"2000-01-01T00:00:00Z", "2100-01-01T00:00:00Z"} {
+		statuses = append(statuses, call(t, ctx, http.MethodPost, base+"/__test__/clock", `{"set":"`+instant+`"}`, jsonHeaders).status)
+		statuses = append(statuses, me(signIn()).status)
+	}
+	token := signIn()
+	before := me(token)
+	advanced := call(t, ctx, http.MethodPost, base+"/__test__/clock", `{"advance_seconds":960}`, jsonHeaders)
+	after := me(token)
+	signalErr := server.Process.Signal(syscall.SIGTERM)
+	waitErr := server.Wait()
+
+	for _, status := range statuses {
+		if status != http.StatusOK {
+			t.Fatalf("with the shared clock in 2000 and 2100: %v", statuses)
+		}
+	}
+	if before.status != http.StatusOK || advanced.status != http.StatusOK || after.status != http.StatusUnauthorized || !strings.Contains(after.body, "token_expired") {
+		t.Fatalf("expiry by the shared clock: before %d, advance %d, after %d %s", before.status, advanced.status, after.status, after.body)
+	}
+	if signalErr != nil || waitErr != nil {
+		t.Fatalf("signal %v, exit %v", signalErr, waitErr)
+	}
+}
+
+func decodeJSON[Target any](text string, target *Target) error {
+	return json.Unmarshal([]byte(text), target)
 }
