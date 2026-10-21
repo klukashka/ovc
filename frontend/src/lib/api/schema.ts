@@ -1195,6 +1195,7 @@ export interface operations {
                 headers: {
                     "Cache-Control"?: string;
                     "Content-Disposition"?: string;
+                    "Content-Length"?: string;
                     "Content-Security-Policy"?: string;
                     "Content-Type"?: string;
                     "Cross-Origin-Resource-Policy"?: string;

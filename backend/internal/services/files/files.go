@@ -52,6 +52,7 @@ var (
 	ErrUnsupported        = errors.New("the upload is not an allowed kind of file")
 	ErrBusy               = errors.New("too many uploads are in progress")
 	ErrDecodeBusy         = errors.New("the instance is decoding as many images as its memory budget allows")
+	ErrAvatarReadsBusy    = errors.New("the instance is serving as many avatars as it allows at once")
 	ErrPurgedDuringUpload = errors.New("the account was purged while its upload was stored")
 	ErrNotFound           = errors.New("the avatar does not exist")
 
@@ -73,9 +74,39 @@ type Upload struct {
 	SizeBytes int64
 }
 
+const avatarReadSlots = 32
+
 type Avatar struct {
 	MediaType string
-	Data      []byte
+	SizeBytes int64
+	Body      AvatarBody
+}
+
+type avatarBody struct {
+	io.Reader
+	object  io.ReadCloser
+	release func()
+}
+
+func (b *avatarBody) Close() error {
+	b.release()
+	return b.object.Close()
+}
+
+func (b *avatarBody) Overruns() (bool, error) {
+	extra, err := io.ReadFull(b.object, make([]byte, 1))
+	if extra > 0 {
+		return true, nil
+	}
+	if errors.Is(err, io.EOF) {
+		return false, nil
+	}
+	return false, err
+}
+
+type AvatarBody interface {
+	io.ReadCloser
+	Overruns() (bool, error)
 }
 
 type Dependencies struct {
@@ -88,13 +119,17 @@ type Dependencies struct {
 }
 
 type Service struct {
-	deps    Dependencies
-	gate    *gate
-	decodes *decodeBudget
+	deps        Dependencies
+	gate        *gate
+	decodes     *decodeBudget
+	avatarReads chan struct{}
 }
 
 func New(dependencies Dependencies) *Service {
-	return &Service{deps: dependencies, gate: newGate(), decodes: newDecodeBudget(decodeBudgetBytes)}
+	return &Service{
+		deps: dependencies, gate: newGate(), decodes: newDecodeBudget(decodeBudgetBytes),
+		avatarReads: make(chan struct{}, avatarReadSlots),
+	}
 }
 
 type imageKind struct {
@@ -399,22 +434,27 @@ func (s *Service) Avatar(ctx context.Context, id domain.AttachmentID) (Avatar, e
 	if err != nil {
 		return Avatar{}, err
 	}
+	select {
+	case s.avatarReads <- struct{}{}:
+	default:
+		return Avatar{}, ErrAvatarReadsBusy
+	}
+	release := sync.OnceFunc(func() { <-s.avatarReads })
 	body, err := s.deps.Objects.Open(ctx, servable.StorageKey)
 	if errors.Is(err, storage.ErrObjectNotFound) {
+		release()
 		s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "avatars.object_missing", attachmentAttribute(id))
 		return Avatar{}, ErrNotFound
 	}
 	if err != nil {
+		release()
 		return Avatar{}, err
 	}
-	data, readErr := io.ReadAll(io.LimitReader(body, domain.AvatarMaxStoredBytes+1))
-	if err := errors.Join(readErr, body.Close()); err != nil {
-		return Avatar{}, fmt.Errorf("read the avatar object: %w", err)
-	}
-	if int64(len(data)) != servable.SizeBytes {
-		return Avatar{}, fmt.Errorf("the avatar object has %d bytes instead of %d", len(data), servable.SizeBytes)
-	}
-	return Avatar{MediaType: servable.MediaType, Data: data}, nil
+	return Avatar{
+		MediaType: servable.MediaType,
+		SizeBytes: servable.SizeBytes,
+		Body:      &avatarBody{Reader: io.LimitReader(body, servable.SizeBytes), object: body, release: release},
+	}, nil
 }
 
 func (s *Service) discard(ctx context.Context, repos repositories.Repositories, id domain.AttachmentID, now time.Time) error {

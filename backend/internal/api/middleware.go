@@ -54,6 +54,7 @@ func (m *outermost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if recoveredErr, ok := recovered.(error); ok && errors.Is(recoveredErr, http.ErrAbortHandler) {
+			m.logAccess(ctx, r, recorder, start)
 			panic(http.ErrAbortHandler)
 		}
 		core.LogPanic(ctx, m.logger, "http", fmt.Sprintf("%T", recovered))

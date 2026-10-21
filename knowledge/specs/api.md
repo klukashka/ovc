@@ -92,7 +92,7 @@ Behavior: [accounts](accounts.md). Every operation declares its audience in code
 | GET, PATCH | `/tutor/settings` | tutor, unverified ok | Retention, quotas and usage, onboarding state |
 | GET | `/tutor/blocked-requesters` | tutor | Students blocked from sending requests |
 | DELETE | `/tutor/blocked-requesters/{studentId}` | tutor | Unblock |
-| GET | `/avatars/{id}` | public | Avatar image of an active or unverified account, or `404` for anything else, including a malformed identifier ([avatars](files.md#avatars)) |
+| GET | `/avatars/{id}` | public | Avatar image of an active or unverified account, or `404` for anything else, including a malformed identifier; `503 service_unavailable` with `Retry-After` while the instance serves its limit of avatars at once ([avatars](files.md#avatars)) |
 
 ## Students and groups
 

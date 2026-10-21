@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path"
+	"strconv"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -59,13 +60,18 @@ type avatarInput struct {
 	ID string `path:"id"`
 }
 
+const avatarReadTimeout = 30 * time.Second
+
+var errAvatarSizeMismatch = errors.New("the stored avatar object is longer than its recorded size")
+
 type avatarOutput struct {
 	ContentType        string `header:"Content-Type"`
 	ContentDisposition string `header:"Content-Disposition"`
 	CacheControl       string `header:"Cache-Control"`
 	Policy             string `header:"Content-Security-Policy"`
 	ResourcePolicy     string `header:"Cross-Origin-Resource-Policy"`
-	Body               []byte
+	ContentLength      string `header:"Content-Length"`
+	Body               func(huma.Context)
 }
 
 func (r *router) registerProfileRoutes() {
@@ -240,17 +246,84 @@ func (r *router) avatar(ctx context.Context, input *avatarInput) (*avatarOutput,
 	if !ok {
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
-	avatar, err := r.files.Avatar(ctx, id)
-	if errors.Is(err, files.ErrNotFound) {
-		return nil, NewError(ctx, domain.ErrorNotFound)
-	}
+	reading, cancel := context.WithTimeout(ctx, avatarReadTimeout)
+	avatar, err := r.files.Avatar(reading, id)
 	if err != nil {
-		return nil, r.internal(ctx, "avatars.get.failed", err)
+		cancel()
+		return nil, r.avatarRefusal(ctx, err)
 	}
 	return &avatarOutput{
 		ContentType: avatar.MediaType, ContentDisposition: "inline", CacheControl: avatarCacheControl,
-		Policy: avatarPolicy, ResourcePolicy: "same-origin", Body: avatar.Data,
+		Policy: avatarPolicy, ResourcePolicy: "same-origin", ContentLength: strconv.FormatInt(avatar.SizeBytes, 10),
+		Body: func(response huma.Context) {
+			defer cancel()
+			r.streamAvatar(ctx, response, avatar)
+		},
 	}, nil
+}
+
+func (r *router) avatarRefusal(ctx context.Context, err error) error {
+	switch {
+	case errors.Is(err, files.ErrNotFound):
+		return NewError(ctx, domain.ErrorNotFound)
+	case errors.Is(err, files.ErrAvatarReadsBusy):
+		return NewError(ctx, domain.ErrorServiceUnavailable).withHeader("Retry-After", "1")
+	}
+	return r.internal(ctx, "avatars.get.failed", err)
+}
+
+type trackedWriter struct {
+	io.Writer
+	failed error
+}
+
+func (w *trackedWriter) Write(data []byte) (int, error) {
+	written, err := w.Writer.Write(data)
+	if err != nil {
+		w.failed = err
+	}
+	return written, err
+}
+
+func (r *router) streamAvatar(ctx context.Context, response huma.Context, avatar files.Avatar) {
+	defer func() {
+		if err := avatar.Body.Close(); err != nil {
+			r.logger.LogAttrs(ctx, slog.LevelWarn, "avatars.get.close_failed", slog.String("kind", core.ErrorKind(err)))
+		}
+	}()
+	response.SetStatus(http.StatusOK)
+	writer := &trackedWriter{Writer: response.BodyWriter()}
+	if _, err := io.CopyN(writer, avatar.Body, avatar.SizeBytes-1); err != nil {
+		r.abortAvatar(ctx, writer, err)
+	}
+	last := make([]byte, 1)
+	if _, err := io.ReadFull(avatar.Body, last); err != nil {
+		r.abortAvatar(ctx, writer, err)
+	}
+	overruns, err := avatar.Body.Overruns()
+	if err != nil {
+		r.abortAvatar(ctx, writer, err)
+	}
+	if overruns {
+		r.abortAvatar(ctx, writer, errAvatarSizeMismatch)
+	}
+	if _, err := writer.Write(last); err != nil {
+		r.abortAvatar(ctx, writer, err)
+	}
+}
+
+func (r *router) abortAvatar(ctx context.Context, writer *trackedWriter, err error) {
+	switch {
+	case writer.failed != nil || ctx.Err() != nil:
+		r.logger.LogAttrs(ctx, slog.LevelDebug, "avatars.get.abandoned", slog.String("kind", core.ErrorKind(err)))
+	case errors.Is(err, context.DeadlineExceeded):
+		r.logger.LogAttrs(ctx, slog.LevelWarn, "avatars.get.timed_out")
+	case errors.Is(err, errAvatarSizeMismatch) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF):
+		r.logger.LogAttrs(ctx, slog.LevelError, "avatars.get.failed", slog.String("kind", "size_mismatch"))
+	default:
+		r.logger.LogAttrs(ctx, slog.LevelError, "avatars.get.failed", slog.String("kind", core.ErrorKind(err)))
+	}
+	panic(http.ErrAbortHandler)
 }
 
 func meBody(profile accounts.Profile) schemas.Me {

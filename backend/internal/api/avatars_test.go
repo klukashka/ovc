@@ -13,10 +13,12 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -172,6 +174,9 @@ func TestAvatarIsBoundServedAndReplaced(t *testing.T) {
 	}
 	if decoded, err := png.Decode(strings.NewReader(served.body)); served.status != http.StatusOK || err != nil || decoded.Bounds().Dx() != 4 {
 		t.Fatalf("served %d, decode %v", served.status, err)
+	}
+	if served.headers.Get("Content-Length") != strconv.Itoa(len(served.body)) {
+		t.Fatalf("Content-Length is %q for %d bytes", served.headers.Get("Content-Length"), len(served.body))
 	}
 	if replaced.status != http.StatusOK || oldServed.status != http.StatusNotFound || h.objectExists(t, firstKey) {
 		t.Fatalf("replacement %d, old avatar %d, old object kept %v", replaced.status, oldServed.status, h.objectExists(t, firstKey))
@@ -481,5 +486,92 @@ func TestAnAvatarWhoseObjectIsMissingAnswersNotFoundAndIsReported(t *testing.T) 
 	logs := h.logs.String()
 	if strings.Count(logs, `"level":"WARN","msg":"avatars.object_missing"`) != 1 || strings.Contains(logs, key) {
 		t.Fatalf("the missing object was not reported once without its key: %s", logs)
+	}
+}
+
+func noisyPNG(t *testing.T, side int) []byte {
+	t.Helper()
+	canvas := image.NewNRGBA(image.Rect(0, 0, side, side))
+	state := uint32(2463534242)
+	for index := 0; index+4 <= len(canvas.Pix); index += 4 {
+		state ^= state << 13
+		state ^= state >> 17
+		state ^= state << 5
+		binary.LittleEndian.PutUint32(canvas.Pix[index:], state)
+	}
+	for index := 3; index < len(canvas.Pix); index += 4 {
+		canvas.Pix[index] = 255
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, canvas); err != nil {
+		t.Fatal(err)
+	}
+	return encoded.Bytes()
+}
+
+func (h *authHarness) boundAvatarWithStoredObject(t *testing.T, stored func(original []byte) []byte) (string, int) {
+	t.Helper()
+	token := h.signedInTutor(t)
+	avatar := uploadedID(t, h.upload(t, token, "me.png", noisyPNG(t, 128)))
+	h.patchMe(t, token, fmt.Sprintf(`{"avatar_id":%q}`, avatar))
+	original := h.send(t, http.MethodGet, "/api/v1/avatars/"+avatar, "", nil).body
+	if len(original) < 16*1024 {
+		t.Fatalf("the avatar is only %d bytes, too small to pass the server's write buffers", len(original))
+	}
+	if err := h.objects.Put(context.Background(), h.storageKey(t, avatar), stored([]byte(original)), "image/png"); err != nil {
+		t.Fatal(err)
+	}
+	return avatar, len(original)
+}
+
+type fetchedAvatar struct {
+	declared int64
+	received int
+	err      error
+}
+
+func (h *authHarness) fetchAvatar(t *testing.T, avatar string) fetchedAvatar {
+	t.Helper()
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, h.server.URL+"/api/v1/avatars/"+avatar, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return fetchedAvatar{declared: -1, err: err}
+	}
+	body, readErr := io.ReadAll(result.Body)
+	return fetchedAvatar{declared: result.ContentLength, received: len(body), err: errors.Join(readErr, result.Body.Close())}
+}
+
+func (f fetchedAvatar) incomplete() bool {
+	return f.err != nil && (f.declared < 0 || int64(f.received) < f.declared)
+}
+
+func TestAnAvatarObjectShorterThanRecordedAbortsTheResponseAndIsReported(t *testing.T) {
+	h := newFlowHarness(t)
+	avatar, _ := h.boundAvatarWithStoredObject(t, func(original []byte) []byte { return original[:len(original)/2] })
+
+	fetched := h.fetchAvatar(t, avatar)
+
+	if !fetched.incomplete() {
+		t.Fatalf("a short object was served as complete: %+v", fetched)
+	}
+	if !strings.Contains(h.logs.String(), `"msg":"avatars.get.failed","kind":"size_mismatch"`) {
+		t.Fatalf("the short object was not reported: %s", h.logs.String())
+	}
+}
+
+func TestAnAvatarObjectLongerThanRecordedAbortsTheResponseAndIsReported(t *testing.T) {
+	h := newFlowHarness(t)
+	avatar, _ := h.boundAvatarWithStoredObject(t, func(original []byte) []byte { return append(original, 0) })
+
+	fetched := h.fetchAvatar(t, avatar)
+
+	if !fetched.incomplete() {
+		t.Fatalf("a long object was served as complete: %+v", fetched)
+	}
+	if !strings.Contains(h.logs.String(), `"msg":"avatars.get.failed","kind":"size_mismatch"`) {
+		t.Fatalf("the long object was not reported: %s", h.logs.String())
 	}
 }
