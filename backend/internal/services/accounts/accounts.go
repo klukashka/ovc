@@ -94,6 +94,7 @@ type Dependencies struct {
 	RefreshTTL  time.Duration
 	TutorQuotas core.TutorQuotas
 	Avatars     AvatarBinder
+	Uploads     UploadPurger
 	Logger      *slog.Logger
 }
 
@@ -102,6 +103,9 @@ type Service struct {
 }
 
 func New(dependencies Dependencies) *Service {
+	if dependencies.Avatars == nil || dependencies.Uploads == nil {
+		panic("the accounts service needs an avatar binder and an upload purger")
+	}
 	return &Service{deps: dependencies}
 }
 

@@ -35,7 +35,7 @@ func NewFiles(logger *slog.Logger, settings core.Settings, database *core.Databa
 	}), nil
 }
 
-func NewAccounts(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, avatars accounts.AvatarBinder) (*accounts.Service, error) {
+func NewAccounts(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, fileService *files.Service) (*accounts.Service, error) {
 	keys, err := core.DeriveKeys(settings.JWTSecret)
 	if err != nil {
 		return nil, err
@@ -53,7 +53,8 @@ func NewAccounts(logger *slog.Logger, settings core.Settings, database *core.Dat
 		Keys:        keys,
 		RefreshTTL:  settings.RefreshTokenTTL,
 		TutorQuotas: settings.TutorQuotas,
-		Avatars:     avatars,
+		Avatars:     fileService,
+		Uploads:     fileService,
 		Logger:      logger,
 	}), nil
 }
@@ -84,6 +85,7 @@ func NewMailer(logger *slog.Logger, settings core.Settings, database *core.Datab
 func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, mailer mail.Mailer, random core.RandomSource, objects storage.Store) (*worker.Worker, error) {
 	store := repositories.NewStore(database.Pool)
 	fileService := files.New(files.Dependencies{Store: store, Objects: objects, Clock: source, Random: random, Logger: logger})
+	purger := accounts.NewPurger(store, fileService, logger)
 	queue := outbox.New(store, random, logger)
 	accountEmails, err := notifications.NewAccountEmails(store, random, settings.PublicURL)
 	if err != nil {
@@ -101,6 +103,8 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 		{Name: domain.JobOutboxCleanup, Every: time.Hour, Run: queue.Cleanup},
 		{Name: domain.JobRateLimitCleanup, Every: time.Hour, Run: accounts.CleanupRateLimits(store)},
 		{Name: domain.JobUploadsExpire, Every: time.Hour, Run: fileService.ExpirePending},
+		{Name: domain.JobAccountsPurge, Every: time.Hour, Run: purger.PurgeDeleted},
+		{Name: domain.JobAccountsCleanupUnverified, Every: time.Hour, Run: purger.CleanupUnverified},
 	}
 	return worker.New(logger, source, queue, lanes, jobs, worker.DefaultTiming()), nil
 }

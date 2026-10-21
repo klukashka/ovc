@@ -65,3 +65,7 @@ type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password" maxLength:"512"`
 	NewPassword     string `json:"new_password" maxLength:"512"`
 }
+
+type DeleteAccountRequest struct {
+	Password string `json:"password" maxLength:"512"`
+}

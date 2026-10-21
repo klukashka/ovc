@@ -87,9 +87,6 @@ func (s *Service) UpdateProfile(ctx context.Context, principal Principal, change
 }
 
 func (s *Service) bindAvatar(ctx context.Context, repos repositories.Repositories, user domain.UserID, target *domain.AttachmentID, now time.Time) error {
-	if s.deps.Avatars == nil {
-		panic("profile updates need an avatar binder")
-	}
 	err := s.deps.Avatars.BindAvatar(ctx, repos, user, target, now)
 	if errors.Is(err, domain.ErrInvalidAvatar) {
 		return invalid(fieldAvatar, domain.FieldInvalid)

@@ -160,6 +160,18 @@ func (q *Queries) CreateUserIfEmailFree(ctx context.Context, arg CreateUserIfEma
 	return result.RowsAffected(), nil
 }
 
+const deleteUser = `-- name: DeleteUser :execrows
+DELETE FROM users WHERE id = $1
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id domain.UserID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUser, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getTutorProfile = `-- name: GetTutorProfile :one
 SELECT user_id, bio, subjects, recording_retention_days, file_quota_bytes, recording_quota_bytes, file_usage_bytes, recording_usage_bytes, onboarding_dismissed_at, created_at, updated_at FROM tutor_profiles WHERE user_id = $1
 `
@@ -241,6 +253,70 @@ func (q *Queries) GetUserByID(ctx context.Context, id domain.UserID) (User, erro
 	return i, err
 }
 
+const listDeletedBefore = `-- name: ListDeletedBefore :many
+SELECT id FROM users
+WHERE state = 'deleted' AND deleted_at <= $1::timestamptz
+ORDER BY deleted_at
+LIMIT $2
+`
+
+type ListDeletedBeforeParams struct {
+	Cutoff    time.Time
+	BatchSize int32
+}
+
+func (q *Queries) ListDeletedBefore(ctx context.Context, arg ListDeletedBeforeParams) ([]domain.UserID, error) {
+	rows, err := q.db.Query(ctx, listDeletedBefore, arg.Cutoff, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.UserID
+	for rows.Next() {
+		var id domain.UserID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUnverifiedSince = `-- name: ListUnverifiedSince :many
+SELECT id FROM users
+WHERE state = 'unverified' AND unverified_since <= $1::timestamptz
+ORDER BY unverified_since
+LIMIT $2
+`
+
+type ListUnverifiedSinceParams struct {
+	Cutoff    time.Time
+	BatchSize int32
+}
+
+func (q *Queries) ListUnverifiedSince(ctx context.Context, arg ListUnverifiedSinceParams) ([]domain.UserID, error) {
+	rows, err := q.db.Query(ctx, listUnverifiedSince, arg.Cutoff, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.UserID
+	for rows.Next() {
+		var id domain.UserID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockUserCredentials = `-- name: LockUserCredentials :one
 SELECT password_hash, state FROM users WHERE id = $1 FOR NO KEY UPDATE
 `
@@ -254,6 +330,23 @@ func (q *Queries) LockUserCredentials(ctx context.Context, id domain.UserID) (Lo
 	row := q.db.QueryRow(ctx, lockUserCredentials, id)
 	var i LockUserCredentialsRow
 	err := row.Scan(&i.PasswordHash, &i.State)
+	return i, err
+}
+
+const lockUserForPurge = `-- name: LockUserForPurge :one
+SELECT state, deleted_at, unverified_since FROM users WHERE id = $1 FOR UPDATE
+`
+
+type LockUserForPurgeRow struct {
+	State           domain.AccountState
+	DeletedAt       *time.Time
+	UnverifiedSince time.Time
+}
+
+func (q *Queries) LockUserForPurge(ctx context.Context, id domain.UserID) (LockUserForPurgeRow, error) {
+	row := q.db.QueryRow(ctx, lockUserForPurge, id)
+	var i LockUserForPurgeRow
+	err := row.Scan(&i.State, &i.DeletedAt, &i.UnverifiedSince)
 	return i, err
 }
 

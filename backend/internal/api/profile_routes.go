@@ -41,6 +41,11 @@ type profilePatchInput struct {
 	Body        schemas.ProfilePatch
 }
 
+type deleteAccountInput struct {
+	ContentType string `header:"Content-Type"`
+	Body        schemas.DeleteAccountRequest
+}
+
 type uploadInput struct {
 	Context string `query:"context" enum:"avatar" required:"true"`
 }
@@ -67,6 +72,11 @@ func (r *router) registerProfileRoutes() {
 	patch := operation("users-me-update", http.MethodPatch, "/api/v1/users/me")
 	patch.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden)
 	register(r, patch, AudienceUnverifiedOK, r.updateMe)
+
+	remove := operation("users-me-delete", http.MethodDelete, "/api/v1/users/me")
+	remove.DefaultStatus = http.StatusNoContent
+	remove.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests)
+	register(r, remove, AudienceUnverifiedOK, r.deleteMe)
 
 	upload := operation("uploads-create", http.MethodPost, "/api/v1/uploads")
 	upload.DefaultStatus = http.StatusCreated
@@ -136,6 +146,16 @@ func (r *router) updateMe(ctx context.Context, input *profilePatchInput) (*meOut
 	return &meOutput{CacheControl: noStore, Body: meBody(profile)}, nil
 }
 
+func (r *router) deleteMe(ctx context.Context, input *deleteAccountInput) (*signOutOutput, error) {
+	if err := requireJSON(ctx, input.ContentType); err != nil {
+		return nil, err
+	}
+	if err := r.auth.Accounts.DeleteAccount(ctx, principalFrom(ctx), input.Body.Password); err != nil {
+		return nil, r.flowError(ctx, "users.me.delete_failed", err)
+	}
+	return &signOutOutput{SetCookie: clearedCookie(), CacheControl: noStore}, nil
+}
+
 func (r *router) upload(ctx context.Context, _ *uploadInput) (*uploadOutput, error) {
 	request, found := ctx.Value(rawRequestKey{}).(*http.Request)
 	if !found {
@@ -199,6 +219,8 @@ func (r *router) uploadError(ctx context.Context, err error) error {
 		return NewError(ctx, domain.ErrorPayloadTooLarge)
 	case errors.Is(err, files.ErrUnsupported):
 		return NewError(ctx, domain.ErrorUnsupportedMediaType)
+	case errors.Is(err, files.ErrPurgedDuringUpload):
+		return NewError(ctx, domain.ErrorUnauthenticated)
 	case errors.Is(err, files.ErrDecodeBusy):
 		return NewError(ctx, domain.ErrorServiceUnavailable).withHeader("Retry-After", "5")
 	case errors.Is(err, files.ErrBusy):

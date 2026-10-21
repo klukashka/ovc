@@ -36,9 +36,11 @@ type OutboxKind string
 type JobName string
 
 const (
-	JobOutboxCleanup    JobName = "outbox.cleanup"
-	JobRateLimitCleanup JobName = "ratelimit.cleanup"
-	JobUploadsExpire    JobName = "uploads.expire"
+	JobOutboxCleanup             JobName = "outbox.cleanup"
+	JobRateLimitCleanup          JobName = "ratelimit.cleanup"
+	JobUploadsExpire             JobName = "uploads.expire"
+	JobAccountsPurge             JobName = "accounts.purge"
+	JobAccountsCleanupUnverified JobName = "accounts.cleanup_unverified"
 )
 
 const KindStorageDelete OutboxKind = "storage_delete"

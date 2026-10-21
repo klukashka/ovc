@@ -68,3 +68,38 @@ func (r TutorProfiles) UpdateText(ctx context.Context, text TutorText) (bool, er
 	rows, err := r.queries.UpdateTutorProfileText(ctx, text)
 	return applied(rows, err, "update tutor profile text")
 }
+
+type (
+	Upload     = dbgen.ListUploadsOfRow
+	PurgeState = dbgen.LockUserForPurgeRow
+)
+
+func (r Attachments) UploadsOf(ctx context.Context, uploader domain.UserID) ([]Upload, error) {
+	uploads, err := r.queries.ListUploadsOf(ctx, uploader)
+	return one(uploads, err, "uploads of user")
+}
+
+func (r Attachments) DeleteUploadsOf(ctx context.Context, uploader domain.UserID) (int64, error) {
+	rows, err := r.queries.DeleteUploadsOf(ctx, uploader)
+	return counted(rows, err, "delete uploads of user")
+}
+
+func (r Users) DeletedBefore(ctx context.Context, cutoff time.Time, batch int32) ([]domain.UserID, error) {
+	ids, err := r.queries.ListDeletedBefore(ctx, dbgen.ListDeletedBeforeParams{Cutoff: cutoff, BatchSize: batch})
+	return one(ids, err, "users deleted before")
+}
+
+func (r Users) UnverifiedSince(ctx context.Context, cutoff time.Time, batch int32) ([]domain.UserID, error) {
+	ids, err := r.queries.ListUnverifiedSince(ctx, dbgen.ListUnverifiedSinceParams{Cutoff: cutoff, BatchSize: batch})
+	return one(ids, err, "users unverified since")
+}
+
+func (r Users) LockForPurge(ctx context.Context, id domain.UserID) (PurgeState, error) {
+	state, err := r.queries.LockUserForPurge(ctx, id)
+	return one(state, err, "lock user for purge")
+}
+
+func (r Users) Delete(ctx context.Context, id domain.UserID) (bool, error) {
+	rows, err := r.queries.DeleteUser(ctx, id)
+	return applied(rows, err, "delete user")
+}

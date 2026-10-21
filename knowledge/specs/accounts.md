@@ -240,6 +240,8 @@ The tutor ends a relationship from the student card, after confirming. In one tr
   - groups are archived, series end and future lessons are cancelled;
   - every student receives one `tutor.deleted` email that lists the cancelled lessons, instead of separate ended or cancellation emails;
   - for 30 days, students keep read-only access to their own submissions, results and recordings from that tutor.
+- **An unverified account** is purged at once when its owner deletes it, so its email is free again immediately.
+- **In slice 2** deletion and purge cover the account's own data (sessions, email requests and tokens, the tutor profile, uploads and avatar references, the user row); the relationship, group, lesson and message effects above arrive with the slices that add those tables. The hourly `accounts.purge` job purges accounts deleted 30 days ago and the hourly `accounts.cleanup_unverified` job removes accounts unverified for 7 days, in batches of 100, each account in its own transaction; an account whose purge fails is logged as `account.purge_failed` and skipped for that run, so it never holds up the others.
 - **Purge** is defined per table in [the purge rules](data-model.md#purge). The purge job re-checks the account's state under a row lock, so a restore never races it.
   - Purging a student erases their submissions, answers, uploaded files and message bodies (shown as "message removed"), including the files attached to those messages.
   - Purging a tutor deletes the tutor's library, lessons, recordings, issues, chats, files, student cards, notes and the emails stored on cards.
@@ -254,7 +256,7 @@ The tutor ends a relationship from the student card, after confirming. In one tr
 - `ovc-admin users list [--role tutor|student] [--email <substring>] [--state <state>]` prints identifier, role, state, email and creation time.
 - `ovc-admin users block <email>` sets the account `blocked`, remembers its previous state, revokes its sessions and publishes the revocation signal. A `deleted` account cannot be blocked.
 - `ovc-admin users unblock <email>` returns the account to the state it was blocked from.
-- `ovc-admin users restore <email>` returns a `deleted` account before purge to `active`, or to `unverified` when its email was never confirmed.
+- `ovc-admin users restore <email>` returns a `deleted` account before purge to `active`; an unverified account is never `deleted`, because deleting it purges it at once.
 - `ovc-admin tutors set-quota <email> --files <bytes> --recordings <bytes>` changes a tutor's quotas; it refuses student accounts.
 
 Every command writes an audit diagnostic event with the operator's system user name.

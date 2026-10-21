@@ -133,7 +133,7 @@ func newAuthHarnessBehind(t *testing.T, trusted []netip.Prefix) *authHarness {
 	service := accounts.New(accounts.Dependencies{
 		Store: store, Clock: shared, Random: random, Hasher: counting, Keys: keys, Logger: logger,
 		Tokens: core.NewAccessTokens(keys, publicOrigin, 15*time.Minute), RefreshTTL: 30 * 24 * time.Hour,
-		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}, Avatars: fileService,
+		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}, Avatars: fileService, Uploads: fileService,
 	})
 	handler, err := api.NewHandler(api.Options{
 		Logger: logger, Now: clock.System{}.Now, NewRequestID: core.NewRandomID,
@@ -159,7 +159,12 @@ func newAuthHarnessBehind(t *testing.T, trusted []netip.Prefix) *authHarness {
 		{Name: domain.LaneEmail, Concurrency: 10, Perform: notifier.Deliver},
 		{Name: domain.LaneStorageDelete, Concurrency: 4, Perform: fileService.DeleteObject},
 	}
-	jobs := []worker.Job{{Name: domain.JobUploadsExpire, Every: time.Hour, Run: fileService.ExpirePending}}
+	purger := accounts.NewPurger(store, fileService, logger)
+	jobs := []worker.Job{
+		{Name: domain.JobUploadsExpire, Every: time.Hour, Run: fileService.ExpirePending},
+		{Name: domain.JobAccountsPurge, Every: time.Hour, Run: purger.PurgeDeleted},
+		{Name: domain.JobAccountsCleanupUnverified, Every: time.Hour, Run: purger.CleanupUnverified},
+	}
 	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, jobs, worker.DefaultTiming())
 	return &authHarness{
 		server: server, store: store, clock: shared, hasher: hasher, counting: counting, logs: logs,

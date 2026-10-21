@@ -392,7 +392,7 @@ Created by the normal migrations in every database, but written only by the test
 
 ## Purge
 
-What the purge job does 30 days after an account is deleted.
+What the purge job does 30 days after an account is deleted. Slice 2 implements the rows for users, sessions, email requests and tokens, tutor profiles, and attachments with their references: every upload of the account is deleted, and each still-stored object gets a `storage_delete` outbox row carrying its storage key, so the object is deleted after its row is gone. Throttle counters are pseudonymous and expire with their windows.
 
 | Table | Student purge | Tutor purge |
 |---|---|---|

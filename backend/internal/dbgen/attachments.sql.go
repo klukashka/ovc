@@ -156,6 +156,18 @@ func (q *Queries) DeleteAttachmentRow(ctx context.Context, id domain.AttachmentI
 	return result.RowsAffected(), nil
 }
 
+const deleteUploadsOf = `-- name: DeleteUploadsOf :execrows
+DELETE FROM attachments WHERE uploader_id = $1
+`
+
+func (q *Queries) DeleteUploadsOf(ctx context.Context, uploaderID domain.UserID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUploadsOf, uploaderID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getAttachment = `-- name: GetAttachment :one
 SELECT id, uploader_id, context, scope_kind, scope_id, scope_question_id, quota_tutor_id, storage_key, filename, media_type, size_bytes, sha256, state, expires_at, created_at, updated_at FROM attachments WHERE id = $1
 `
@@ -217,6 +229,35 @@ func (q *Queries) GetServableAvatar(ctx context.Context, id domain.AttachmentID)
 	var i GetServableAvatarRow
 	err := row.Scan(&i.StorageKey, &i.MediaType, &i.SizeBytes)
 	return i, err
+}
+
+const listUploadsOf = `-- name: ListUploadsOf :many
+SELECT id, storage_key FROM attachments WHERE uploader_id = $1
+`
+
+type ListUploadsOfRow struct {
+	ID         domain.AttachmentID
+	StorageKey string
+}
+
+func (q *Queries) ListUploadsOf(ctx context.Context, uploaderID domain.UserID) ([]ListUploadsOfRow, error) {
+	rows, err := q.db.Query(ctx, listUploadsOf, uploaderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUploadsOfRow
+	for rows.Next() {
+		var i ListUploadsOfRow
+		if err := rows.Scan(&i.ID, &i.StorageKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const lockAttachment = `-- name: LockAttachment :one

@@ -55,3 +55,9 @@ FOR UPDATE SKIP LOCKED;
 
 -- name: DeleteAttachmentRow :execrows
 DELETE FROM attachments WHERE id = @id AND state = 'deleted';
+
+-- name: ListUploadsOf :many
+SELECT id, storage_key FROM attachments WHERE uploader_id = @uploader_id;
+
+-- name: DeleteUploadsOf :execrows
+DELETE FROM attachments WHERE uploader_id = @uploader_id;

@@ -365,29 +365,8 @@ func (s *Service) ChangePassword(ctx context.Context, principal Principal, curre
 	if problem, fits := domain.CheckPasswordLength(next); !fits {
 		return invalid(fieldNewPassword, problem)
 	}
-	slot := s.limitSlot(currentPasswordLimit, principal.UserID.String(), now)
-	count, err := s.deps.Store.Repositories().RateLimits.Reserve(ctx, slot)
+	user, err := s.verifyCurrentPassword(ctx, principal.UserID, current, fieldCurrentPassword, now)
 	if err != nil {
-		return err
-	}
-	if count > currentPasswordLimit.limit {
-		s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "auth.password.throttled", userAttribute(principal.UserID))
-		_, retryAfter := domain.FixedWindow(now, currentPasswordLimit.window)
-		return &ThrottledError{RetryAfter: retryAfter}
-	}
-	user, err := s.deps.Store.Repositories().Users.ByID(ctx, principal.UserID)
-	if err != nil {
-		return errors.Join(err, s.release(context.WithoutCancel(ctx), slot))
-	}
-	verification, err := s.deps.Hasher.Verify(ctx, current, user.PasswordHash)
-	if err != nil {
-		return errors.Join(err, s.release(context.WithoutCancel(ctx), slot))
-	}
-	if !verification.Matches {
-		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "auth.password.change_refused", userAttribute(principal.UserID))
-		return invalid(fieldCurrentPassword, domain.FieldIncorrect)
-	}
-	if err := s.release(ctx, slot); err != nil {
 		return err
 	}
 	encoded, err := s.deps.Hasher.Hash(ctx, next)

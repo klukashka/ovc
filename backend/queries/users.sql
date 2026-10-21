@@ -68,3 +68,21 @@ WHERE id = @id AND state IN ('unverified', 'active');
 -- name: UpdateTutorProfileText :execrows
 UPDATE tutor_profiles SET bio = @bio, subjects = @subjects, updated_at = sqlc.arg(now)::timestamptz
 WHERE user_id = @user_id;
+
+-- name: ListDeletedBefore :many
+SELECT id FROM users
+WHERE state = 'deleted' AND deleted_at <= sqlc.arg(cutoff)::timestamptz
+ORDER BY deleted_at
+LIMIT sqlc.arg(batch_size);
+
+-- name: ListUnverifiedSince :many
+SELECT id FROM users
+WHERE state = 'unverified' AND unverified_since <= sqlc.arg(cutoff)::timestamptz
+ORDER BY unverified_since
+LIMIT sqlc.arg(batch_size);
+
+-- name: LockUserForPurge :one
+SELECT state, deleted_at, unverified_since FROM users WHERE id = @id FOR UPDATE;
+
+-- name: DeleteUser :execrows
+DELETE FROM users WHERE id = @id;

@@ -83,7 +83,7 @@ Behavior: [accounts](accounts.md). Every operation declares its audience in code
 | POST | `/auth/password/change` | user, unverified ok | Change the password with `{current_password, new_password}`; `204`; a wrong current password answers `422 validation_failed` (`body.current_password`: `incorrect`) |
 | GET | `/users/me` | user, unverified ok | Own profile, role, state, preferences, `avatar_id` (or `null`), and for tutors `bio` and `subjects` |
 | PATCH | `/users/me` | user, unverified ok | Any of `name`, `language`, `timezone`, `theme`, `avatar_id` (a pending avatar upload of the caller, or `null` to remove the avatar), and for tutors `bio` (up to 1000 characters) and `subjects` (up to 10, each up to 60 characters, no repeats); answers like `GET`. A student sending `bio` or `subjects` gets `not_allowed`, an unknown timezone or someone else's upload `invalid` |
-| DELETE | `/users/me` | user, unverified ok | Delete own account (password required) |
+| DELETE | `/users/me` | user, unverified ok | Delete own account with `{password}`; `204` with the refresh cookie cleared. A wrong password answers `422 validation_failed` (`body.password`: `incorrect`), counted with the other current-password checks (`429` after five in 15 minutes) |
 | GET, PUT | `/users/me/email-preferences` | user, unverified ok | Optional email switches |
 | GET | `/unsubscribe/preview?token=` | public | The email group name for the confirmation page, nothing else |
 | POST | `/unsubscribe?token=` | public (signed token) | Turn off one email group; accepts the RFC 8058 body `List-Unsubscribe=One-Click`; idempotent |

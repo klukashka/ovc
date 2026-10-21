@@ -49,10 +49,12 @@ var ErrInvalidAvatar = errors.New("the attachment cannot become this account's a
 
 type AttachmentPayload struct {
 	Attachment string `json:"attachment"`
+	Key        string `json:"key"`
 }
 
 const (
 	AvatarMaxBytes       = 5_000_000
 	AvatarMaxStoredBytes = 10_000_000
 	AvatarMaxSide        = 4096
+	AvatarKeyPrefix      = "avatars/"
 )

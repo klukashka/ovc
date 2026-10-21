@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,11 +48,12 @@ const (
 )
 
 var (
-	ErrTooLarge    = errors.New("the upload is larger than its limit")
-	ErrUnsupported = errors.New("the upload is not an allowed kind of file")
-	ErrBusy        = errors.New("too many uploads are in progress")
-	ErrDecodeBusy  = errors.New("the instance is decoding as many images as its memory budget allows")
-	ErrNotFound    = errors.New("the avatar does not exist")
+	ErrTooLarge           = errors.New("the upload is larger than its limit")
+	ErrUnsupported        = errors.New("the upload is not an allowed kind of file")
+	ErrBusy               = errors.New("too many uploads are in progress")
+	ErrDecodeBusy         = errors.New("the instance is decoding as many images as its memory budget allows")
+	ErrPurgedDuringUpload = errors.New("the account was purged while its upload was stored")
+	ErrNotFound           = errors.New("the avatar does not exist")
 
 	errMalformedPayload = errors.New("the storage deletion payload is malformed")
 )
@@ -290,7 +290,7 @@ func (s *Service) store(ctx context.Context, uploader domain.UserID, encoded []b
 	if err != nil {
 		return Upload{}, err
 	}
-	key := "avatars/" + keyText
+	key := domain.AvatarKeyPrefix + keyText
 	sum := sha256.Sum256(encoded)
 	expires := now.Add(pendingLifetime)
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
@@ -313,11 +313,34 @@ func (s *Service) store(ctx context.Context, uploader domain.UserID, encoded []b
 		return Upload{}, err
 	}
 	if err := s.deps.Objects.Put(ctx, key, encoded, mediaType); err != nil {
-		return Upload{}, errors.Join(err, s.deps.Store.WithTx(context.WithoutCancel(ctx), func(repos repositories.Repositories) error {
-			return s.discard(context.WithoutCancel(ctx), repos, id, now)
-		}))
+		return Upload{}, errors.Join(err, s.settle(context.WithoutCancel(ctx), id, key, false, now))
+	}
+	if err := s.settle(context.WithoutCancel(ctx), id, key, true, now); err != nil {
+		return Upload{}, err
 	}
 	return Upload{ID: id, Filename: storedName, MediaType: mediaType, SizeBytes: int64(len(encoded))}, nil
+}
+
+func (s *Service) settle(ctx context.Context, id domain.AttachmentID, key string, stored bool, now time.Time) error {
+	purged := false
+	err := s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+		_, err := repos.Attachments.Lock(ctx, id)
+		if err == nil && !stored {
+			return s.discard(ctx, repos, id, now)
+		}
+		if errors.Is(err, repositories.ErrNotFound) {
+			purged = true
+			return s.queueDeletionAs(ctx, repos, id, key, string(domain.KindStorageDelete)+":"+id.String()+":after-purge", now)
+		}
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if purged {
+		return ErrPurgedDuringUpload
+	}
+	return nil
 }
 
 func (s *Service) BindAvatar(ctx context.Context, repos repositories.Repositories, user domain.UserID, target *domain.AttachmentID, now time.Time) error {
@@ -391,11 +414,23 @@ func (s *Service) Avatar(ctx context.Context, id domain.AttachmentID) (Avatar, e
 }
 
 func (s *Service) discard(ctx context.Context, repos repositories.Repositories, id domain.AttachmentID, now time.Time) error {
+	attachment, err := repos.Attachments.ByID(ctx, id)
+	if err != nil {
+		return err
+	}
 	marked, err := repos.Attachments.MarkDeleted(ctx, id, now)
 	if err != nil || !marked {
 		return err
 	}
-	payload, err := json.Marshal(domain.AttachmentPayload{Attachment: hex.EncodeToString(id[:])})
+	return s.queueDeletion(ctx, repos, id, attachment.StorageKey, now)
+}
+
+func (s *Service) queueDeletion(ctx context.Context, repos repositories.Repositories, id domain.AttachmentID, key string, now time.Time) error {
+	return s.queueDeletionAs(ctx, repos, id, key, string(domain.KindStorageDelete)+":"+id.String(), now)
+}
+
+func (s *Service) queueDeletionAs(ctx context.Context, repos repositories.Repositories, id domain.AttachmentID, key string, idempotencyKey string, now time.Time) error {
+	payload, err := json.Marshal(domain.AttachmentPayload{Attachment: id.String(), Key: key})
 	if err != nil {
 		return fmt.Errorf("encode the storage deletion payload: %w", err)
 	}
@@ -405,8 +440,22 @@ func (s *Service) discard(ctx context.Context, repos repositories.Repositories, 
 	}
 	_, err = repos.Outbox.Insert(ctx, repositories.NewOutboxRow{
 		ID: row, Lane: domain.LaneStorageDelete, Priority: domain.PriorityNormal, Kind: domain.KindStorageDelete, Payload: payload,
-		IdempotencyKey: string(domain.KindStorageDelete) + ":" + hex.EncodeToString(id[:]), NextAttemptAt: now, CreatedAt: now,
+		IdempotencyKey: idempotencyKey, NextAttemptAt: now, CreatedAt: now,
 	})
+	return err
+}
+
+func (s *Service) PurgeUploadsOf(ctx context.Context, repos repositories.Repositories, user domain.UserID, now time.Time) error {
+	uploads, err := repos.Attachments.UploadsOf(ctx, user)
+	if err != nil {
+		return err
+	}
+	for _, upload := range uploads {
+		if err := s.queueDeletion(ctx, repos, upload.ID, upload.StorageKey, now); err != nil {
+			return err
+		}
+	}
+	_, err = repos.Attachments.DeleteUploadsOf(ctx, user)
 	return err
 }
 
@@ -417,28 +466,26 @@ func (s *Service) DeleteObject(ctx context.Context, row repositories.ClaimedOutb
 	if err := decoder.Decode(&payload); err != nil {
 		return "", domain.PermanentEffect(fmt.Errorf("%w: %w", errMalformedPayload, err))
 	}
-	decoded, err := hex.DecodeString(payload.Attachment)
-	var id domain.AttachmentID
-	if err != nil || len(decoded) != len(id) {
+	id, ok := domain.ParseUUID[domain.AttachmentID](payload.Attachment)
+	if !ok || !strings.HasPrefix(payload.Key, domain.AvatarKeyPrefix) {
 		return "", domain.PermanentEffect(errMalformedPayload)
 	}
-	copy(id[:], decoded)
 	repos := s.deps.Store.Repositories()
 	attachment, err := repos.Attachments.ByID(ctx, id)
-	if errors.Is(err, repositories.ErrNotFound) {
+	found := err == nil
+	if err != nil && !errors.Is(err, repositories.ErrNotFound) {
+		return "", err
+	}
+	if found && (attachment.State != domain.AttachmentDeleted || attachment.StorageKey != payload.Key) {
 		return domain.DoneObsolete, nil
 	}
-	if err != nil {
+	if err := s.deps.Objects.Delete(ctx, payload.Key); err != nil {
 		return "", err
 	}
-	if attachment.State != domain.AttachmentDeleted {
-		return domain.DoneObsolete, nil
-	}
-	if err := s.deps.Objects.Delete(ctx, attachment.StorageKey); err != nil {
-		return "", err
-	}
-	if _, err := repos.Attachments.DeleteRow(ctx, id); err != nil {
-		return "", err
+	if found {
+		if _, err := repos.Attachments.DeleteRow(ctx, id); err != nil {
+			return "", err
+		}
 	}
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "file.deleted", attachmentAttribute(id))
 	return domain.DoneSent, nil
