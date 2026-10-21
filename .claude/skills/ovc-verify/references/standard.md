@@ -7,7 +7,7 @@ Act as the one independent reviewer of a standard-tier change ([ADR-0011](../../
 - The change does what its plan and acceptance criteria say, and each criterion is met with evidence.
 - Contracts stay consistent: specifications, requirements, decision records, API schemas, frames and the code that implements them agree; documents changed with behavior.
 - Edge cases and failure paths: empty, boundary and invalid input, concurrency and retries, partial failure, idempotency, time zones.
-- Repository rules from `AGENTS.md`: no comments or tool directives in source, full type annotations, layers and adapters, fail fast, no mocks, Arrange–Act–Assert, deterministic tests, observability events and safe fields.
+- Repository rules from `AGENTS.md`: no comments or tool directives in source, precise types (no `any`, `interface{}`, `unsafe` or `reflect`), layers and adapters, fail fast, no mocks, Arrange–Act–Assert, deterministic tests, observability events and safe fields.
 - Tests cover the new behavior at the level `AGENTS.md` asks for, and acceptance criteria are checkable without asking a person.
 
 ## Security

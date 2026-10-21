@@ -172,3 +172,22 @@ func TestLayerCheckRejectsForbiddenImports(t *testing.T) {
 		t.Fatalf("services may import repositories and each other:\n%s", joined)
 	}
 }
+
+func TestProductionCodeNeverImportsTheTestDatabaseFixture(t *testing.T) {
+	imports := moduleImports(t)
+
+	var importers []string
+	for packagePath, imported := range imports {
+		for _, dependency := range imported {
+			fixture := dependency == "internal/testdb" || strings.HasPrefix(dependency, "internal/testdb/")
+			if fixture && packagePath != "internal/testdb" && !strings.HasPrefix(packagePath, "internal/testdb/") {
+				importers = append(importers, packagePath)
+			}
+		}
+	}
+
+	if len(importers) > 0 {
+		sort.Strings(importers)
+		t.Fatalf("production packages import internal/testdb: %s", strings.Join(importers, ", "))
+	}
+}

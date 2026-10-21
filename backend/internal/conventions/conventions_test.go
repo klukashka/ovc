@@ -117,7 +117,7 @@ func constraintNodes(file *ast.File) map[ast.Node]bool {
 
 func TestSQLHasNoCommentsBeyondGooseMarkers(t *testing.T) {
 	files := sourceFiles(t, ".sql")
-	markers := map[string]bool{"-- +goose Up": true, "-- +goose Down": true, "-- +goose StatementBegin": true, "-- +goose StatementEnd": true}
+	markers := map[string]bool{"-- +goose Up": true, "-- +goose Down": true}
 
 	var problems []string
 	for _, path := range files {
@@ -155,6 +155,12 @@ var skippedRepositoryPaths = map[string]bool{
 
 var generatedRepositoryFiles = map[string]bool{"pnpm-lock.yaml": true}
 
+var hashCommentExtensions = map[string]bool{".sh": true, ".bash": true, ".yml": true, ".yaml": true, ".toml": true, ".py": true}
+
+var hashCommentNames = map[string]bool{
+	".gitignore": true, ".prettierignore": true, ".markdownlintignore": true, ".editorconfig": true, ".env.example": true,
+}
+
 func hashCommentFiles(t *testing.T) []string {
 	t.Helper()
 	var files []string
@@ -172,8 +178,7 @@ func hashCommentFiles(t *testing.T) []string {
 		if entry.IsDir() || generatedRepositoryFiles[entry.Name()] {
 			return nil
 		}
-		switch filepath.Ext(path) {
-		case ".sh", ".bash", ".yml", ".yaml":
+		if hashCommentNames[entry.Name()] || hashCommentExtensions[filepath.Ext(path)] {
 			files = append(files, path)
 		}
 		return nil
@@ -182,7 +187,7 @@ func hashCommentFiles(t *testing.T) []string {
 		t.Fatal(err)
 	}
 	if len(files) == 0 {
-		t.Fatal("no shell or YAML files found")
+		t.Fatal("no shell, YAML, TOML, Python or ignore files found")
 	}
 	return files
 }
@@ -215,7 +220,7 @@ func lineHasHashComment(line string) bool {
 	return false
 }
 
-func TestShellAndYAMLHaveNoComments(t *testing.T) {
+func TestHashCommentedFilesHaveNoComments(t *testing.T) {
 	files := hashCommentFiles(t)
 
 	var problems []string
@@ -235,7 +240,7 @@ func TestShellAndYAMLHaveNoComments(t *testing.T) {
 	}
 
 	if len(problems) > 0 {
-		t.Fatalf("shell and YAML comments:\n%s", strings.Join(problems, "\n"))
+		t.Fatalf("hash comments:\n%s", strings.Join(problems, "\n"))
 	}
 }
 

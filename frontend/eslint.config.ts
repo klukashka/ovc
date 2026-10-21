@@ -25,7 +25,16 @@ const forbiddenTestDoubles = [
   { object: 'vitest', property, message: testDoubleMessage },
 ]);
 
+const forbiddenDynamicImports = [
+  { selector: 'ImportExpression[source.value=/^vitest(\\/|$)/]', message: testDoubleMessage },
+];
+
 const forbiddenFetchReplacement = [
+  {
+    selector:
+      "CallExpression[callee.object.name='Object'][callee.property.name=/^(defineProperties|assign)$/] Property[key.value='fetch']",
+    message: fetchMessage,
+  },
   { selector: "AssignmentExpression > MemberExpression.left[property.name='fetch']", message: fetchMessage },
   { selector: "AssignmentExpression > MemberExpression.left[property.value='fetch']", message: fetchMessage },
   { selector: "AssignmentExpression > Identifier.left[name='fetch']", message: fetchMessage },
@@ -40,7 +49,8 @@ const forbiddenFetchReplacement = [
     message: fetchMessage,
   },
   {
-    selector: "CallExpression[callee.object.name='Object'][callee.property.name='assign'] Property[key.name='fetch']",
+    selector:
+      "CallExpression[callee.object.name='Object'][callee.property.name=/^(defineProperties|assign)$/] Property[key.name='fetch']",
     message: fetchMessage,
   },
 ];
@@ -94,7 +104,7 @@ export default defineConfig(
     rules: {
       '@eslint-community/eslint-comments/no-use': ['error', { allow: [] }],
       'no-restricted-properties': ['error', ...forbiddenTestDoubles],
-      'no-restricted-syntax': ['error', ...forbiddenFetchReplacement],
+      'no-restricted-syntax': ['error', ...forbiddenFetchReplacement, ...forbiddenDynamicImports],
       'no-restricted-imports': ['error', forbiddenTestDoubleImports],
     },
   },

@@ -1,6 +1,7 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { closeSync, createWriteStream, mkdirSync, openSync } from 'node:fs';
+import { createConnection } from 'node:net';
 import { join, resolve } from 'node:path';
 
 export const apiAddress = '127.0.0.1:18766';
@@ -123,8 +124,11 @@ function hasExited(child: ChildProcess): boolean {
 function start(name: string, binary: string, environment: NodeJS.ProcessEnv, logName: string): ManagedProcess {
   const log = createWriteStream(join(outputRoot, logName));
   const child = spawn(binary, [], { env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
-  child.stdout.pipe(log);
-  child.stderr.pipe(log);
+  child.stdout.pipe(log, { end: false });
+  child.stderr.pipe(log, { end: false });
+  child.once('close', () => {
+    log.end();
+  });
   const exit = new Promise<string>((resolveExit) => {
     child.once('exit', (code, signal) => {
       resolveExit(exitDescription(code, signal));
@@ -150,6 +154,30 @@ function runToCompletion(binary: string, args: string[], environment: NodeJS.Pro
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+}
+
+function portAnswers(address: string): Promise<boolean> {
+  const [host = '', port = ''] = address.split(':');
+  return new Promise((resolveProbe) => {
+    const socket = createConnection({ host, port: Number(port), timeout: pollTimeoutMilliseconds });
+    socket.once('connect', () => {
+      socket.destroy();
+      resolveProbe(true);
+    });
+    socket.once('error', () => {
+      resolveProbe(false);
+    });
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolveProbe(false);
+    });
+  });
+}
+
+async function assertAddressFree(address: string): Promise<void> {
+  if (await portAnswers(address)) {
+    throw new Error(`${address} is already in use; stop the process holding it before running the end-to-end suites`);
+  }
 }
 
 async function waitForReadiness(api: ManagedProcess): Promise<void> {
@@ -200,6 +228,7 @@ function failures(results: readonly PromiseSettledResult<void>[]): unknown[] {
 
 export async function startDeployment(settings: E2ESettings): Promise<() => Promise<void>> {
   mkdirSync(outputRoot, { recursive: true });
+  await assertAddressFree(apiAddress);
   const connection = adminConnection(settings.adminUrl);
   const database = `ovc_e2e_${randomBytes(6).toString('hex')}_test`;
   const binaries = buildBinaries();

@@ -15,6 +15,9 @@ linters:
     - noctx
     - staticcheck
   settings:
+    errcheck:
+      check-blank: true
+      check-type-assertions: true
     exhaustive:
       default-signifies-exhaustive: false
     forbidigo:
@@ -24,7 +27,7 @@ linters:
           msg: read settings only through internal/core
         - pattern: ^syscall\.(Getenv|Setenv|Environ)$
           msg: read settings only through internal/core
-        - pattern: ^(\*testing\.(T|B|F)|testing\.TB)\.Setenv$
+        - pattern: ^testing\.(T|B|F|TB)\.Setenv$
           msg: tests pass settings through an injected lookup instead
         - pattern: ^time\.Now$
           msg: take time from internal/adapters/clock

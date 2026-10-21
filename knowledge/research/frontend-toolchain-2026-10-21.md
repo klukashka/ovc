@@ -33,7 +33,7 @@ Node 26 runs the TypeScript build scripts in `frontend/scripts/` and `frontend/e
 | `@vitejs/plugin-react` | 6.1.2 | |
 | `tailwindcss`, `@tailwindcss/vite` | 4.3.3 | |
 | `typescript` | 6.0.3 | 7.0.2 exists, but typescript-eslint 8.71.1 declares the peer `typescript >=4.8.4 <6.1.0` |
-| `eslint`, `@eslint/js` | 9.39.5 | 10.12.0 exists, but eslint-plugin-jsx-a11y 6.10.2 declares ESLint up to 9 as its peer; pnpm marks 9.39.5 deprecated in favour of 10 |
+| `eslint`, `@eslint/js` | 9.39.5 | 10.12.0 exists, but eslint-plugin-jsx-a11y 6.10.2 declares ESLint up to 9 as its peer; pnpm marks 9.39.5 deprecated in favour of 10; recheck by 2027-01-21, or earlier when eslint-plugin-jsx-a11y declares ESLint 10 support |
 | `typescript-eslint` | 8.71.1 | |
 | `eslint-plugin-react-hooks` | 7.1.1 | |
 | `eslint-plugin-jsx-a11y` | 6.10.2 | Ships no type declarations; `frontend/types/eslint-plugin-jsx-a11y.d.ts` declares the part the configuration uses |

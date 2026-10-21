@@ -57,6 +57,34 @@ describe('frontend lint configuration', () => {
       "import { setupServer } from 'msw/node';\nexport const server = setupServer;\n",
       'no-restricted-imports',
     ],
+    ['a dynamic import of vitest', "export const testing = await import('vitest');\n", 'no-restricted-syntax'],
+    [
+      'Object.defineProperty on fetch',
+      "Object.defineProperty(globalThis, 'fetch', { value: null });\n",
+      'no-restricted-syntax',
+    ],
+    [
+      'a dynamic import of a vitest subpath',
+      "export const testing = await import('vitest/node');\n",
+      'no-restricted-syntax',
+    ],
+    [
+      'Object.assign with a quoted fetch key',
+      "Object.assign(globalThis, { 'fetch': null });\n",
+      'no-restricted-syntax',
+    ],
+    [
+      'Object.defineProperties on fetch',
+      'Object.defineProperties(globalThis, { fetch: { value: null } });\n',
+      'no-restricted-syntax',
+    ],
+    ['sinon', "import sinon from 'sinon';\nexport const stub = sinon;\n", 'no-restricted-imports'],
+    ['testdouble', "import td from 'testdouble';\nexport const double = td;\n", 'no-restricted-imports'],
+    [
+      'a module named like a mock',
+      "import { thing } from './api-mock';\nexport const value = thing;\n",
+      'no-restricted-imports',
+    ],
     ['a spy library', "import { spy } from 'tinyspy';\nexport const watch = spy;\n", 'no-restricted-imports'],
   ])('rejects %s', async (_name, source, expectedRule) => {
     const found = await ruleIds(source);

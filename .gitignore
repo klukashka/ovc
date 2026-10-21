@@ -1,15 +1,12 @@
-# ---- Go / backend ----
 backend/bin/
 backend/tmp/
 *.test
 *.out
 coverage.html
 
-# ---- Python (agent hooks) ----
 __pycache__/
 *.py[cod]
 
-# ---- Node / frontend ----
 node_modules/
 frontend/dist/
 frontend/.vite/
@@ -19,7 +16,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# ---- Env / secrets ----
 .env
 .env.*
 !.env.example
@@ -32,20 +28,16 @@ pnpm-debug.log*
 *.jks
 .envrc
 
-# ---- Uploads / local data ----
 backend/uploads/
 backend/.data/
 *.sqlite3
 *.db
 
-# ---- Editors / OS ----
 .DS_Store
 .idea/
 .vscode/
 *.swp
 
-# ---- Docker ----
 docker-compose.override.yml
 
-# ---- Repository tools ----
 /bin/
