@@ -59,6 +59,26 @@ linters:
               desc: runtime patching is forbidden
             - pkg: github.com/jarcoal/httpmock
               desc: transport stubbing is forbidden
+            - pkg: github.com/aws/aws-sdk-go-v2/config
+              desc: the shared AWS configuration reads environment variables and files; build the client from settings
+            - pkg: github.com/aws/aws-sdk-go-v2/credentials/ec2rolecreds
+              desc: storage credentials come only from settings
+            - pkg: github.com/aws/aws-sdk-go-v2/feature/ec2/imds
+              desc: storage credentials come only from settings
+        objectstorage:
+          files:
+            - $all
+            - "!**/internal/adapters/**"
+          deny:
+            - pkg: github.com/aws
+              desc: the S3 client belongs to internal/adapters
+        images:
+          files:
+            - $all
+            - "!**/internal/services/files/**"
+          deny:
+            - pkg: golang.org/x/image
+              desc: image decoding belongs to internal/services/files
         huma:
           files:
             - $all

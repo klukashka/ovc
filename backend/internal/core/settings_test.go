@@ -30,6 +30,11 @@ func validValues() map[string]string {
 	databaseURL := url.URL{Scheme: "postgres", User: url.UserPassword("user", "sentinel-password"), Host: "127.0.0.1:5432", Path: "/ovc_dev"}
 	values := map[string]string{"OVC_DATABASE_URL": databaseURL.String(), "OVC_PUBLIC_URL": "https://ovc.example"}
 	values["OVC_JWT_SECRET"] = sentinel("jwt-signing-material-0123456789")
+	values["OVC_STORAGE_ENDPOINT"] = "https://storage.ovc.example"
+	values["OVC_STORAGE_REGION"] = "ru-central1"
+	values["OVC_STORAGE_BUCKET"] = "ovc-files"
+	values["OVC_STORAGE_ACCESS_KEY"] = sentinel("storage-access-key")
+	values["OVC_STORAGE_"+"SECRET_KEY"] = sentinel("storage-secret-key")
 	return values
 }
 
@@ -395,5 +400,49 @@ func TestTutorQuotasDefaultToFiveAndFiftyGigabytes(t *testing.T) {
 
 	if err != nil || settings.TutorQuotas != (core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}) {
 		t.Fatalf("quotas %+v, %v", settings.TutorQuotas, err)
+	}
+}
+
+func TestStorageSettingsAreRequiredAndSafe(t *testing.T) {
+	cases := map[string]map[string]string{
+		"missing endpoint":     {"OVC_STORAGE_ENDPOINT": ""},
+		"plain HTTP elsewhere": {"OVC_STORAGE_ENDPOINT": "http://storage.ovc.example"},
+		"endpoint with a path": {"OVC_STORAGE_ENDPOINT": "https://storage.ovc.example/bucket"},
+		"endpoint with a user": {"OVC_STORAGE_ENDPOINT": "https://key@storage.ovc.example"},
+		"in-memory backend":    {"OVC_STORAGE_BACKEND": "memory"},
+		"upper-case bucket":    {"OVC_STORAGE_BUCKET": "OVC"},
+		"missing region":       {"OVC_STORAGE_REGION": ""},
+		"missing access key":   {"OVC_STORAGE_ACCESS_KEY": ""},
+		"missing secret key":   {"OVC_STORAGE_" + "SECRET_KEY": ""},
+	}
+	for name, change := range cases {
+		t.Run(name, func(t *testing.T) {
+			values := validValues()
+			for key, value := range change {
+				values[key] = value
+			}
+
+			_, apiErr := core.Load(lookupFrom(values), core.ProcessAPI)
+			_, workerErr := core.Load(lookupFrom(values), core.ProcessWorker)
+
+			var settingsError *core.SettingsError
+			if !errors.As(apiErr, &settingsError) || !errors.As(workerErr, &settingsError) {
+				t.Fatalf("expected settings errors, got %v and %v", apiErr, workerErr)
+			}
+		})
+	}
+}
+
+func TestStorageOnLoopbackMayUsePlainHTTPAndKeysStayRedacted(t *testing.T) {
+	values := validValues()
+	values["OVC_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
+
+	settings, err := core.Load(lookupFrom(values), core.ProcessAPI)
+
+	if err != nil || settings.Storage.Endpoint != "http://127.0.0.1:58333" || settings.Storage.Backend != core.StorageBackendS3 {
+		t.Fatalf("storage %+v, %v", settings.Storage, err)
+	}
+	if printed := fmt.Sprintf("%v %+v %#v", settings, settings, settings); strings.Contains(printed, "storage-access-key") || strings.Contains(printed, "storage-secret-key") {
+		t.Fatal("a storage key was printed")
 	}
 }

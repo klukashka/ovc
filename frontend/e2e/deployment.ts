@@ -1,4 +1,4 @@
-import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
+import { type ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { closeSync, createWriteStream, mkdirSync, openSync } from 'node:fs';
 import { createConnection } from 'node:net';
@@ -16,14 +16,38 @@ const stopDeadlineMilliseconds = 20_000;
 const pollIntervalMilliseconds = 100;
 const pollTimeoutMilliseconds = 2_000;
 const loopbackHosts: ReadonlySet<string> = new Set(['127.0.0.1', '[::1]', 'localhost']);
+const storageBucket = 'ovc-e2e';
+const storagePortPattern = /^[1-9][0-9]{0,4}$/;
 
 interface AdminConnection {
   readonly user: string;
   readonly password: string;
 }
 
+interface StorageSettings {
+  readonly endpoint: string;
+  readonly accessKey: string;
+  readonly secretKey: string;
+}
+
 export interface E2ESettings {
   readonly adminUrl: URL;
+  readonly storage: StorageSettings;
+}
+
+function readStorageSettings(environment: NodeJS.ProcessEnv): StorageSettings {
+  const accessKey = environment.OVC_DEV_STORAGE_ACCESS_KEY ?? '';
+  const secretKey = environment.OVC_DEV_STORAGE_SECRET_KEY ?? '';
+  if (accessKey === '' || secretKey === '') {
+    throw new Error(
+      'OVC_DEV_STORAGE_ACCESS_KEY and OVC_DEV_STORAGE_SECRET_KEY must be set to run the end-to-end suites; run them through tools/dev-env.sh',
+    );
+  }
+  const port = environment.OVC_DEV_STORAGE_PORT ?? '58333';
+  if (!storagePortPattern.test(port)) {
+    throw new Error('OVC_DEV_STORAGE_PORT must be a port number');
+  }
+  return { endpoint: `http://127.0.0.1:${port}`, accessKey, secretKey };
 }
 
 export function readE2ESettings(environment: NodeJS.ProcessEnv): E2ESettings {
@@ -41,7 +65,7 @@ export function readE2ESettings(environment: NodeJS.ProcessEnv): E2ESettings {
   if (!loopbackHosts.has(adminUrl.hostname)) {
     throw new Error('OVC_TEST_DATABASE_ADMIN_URL must name a loopback host: 127.0.0.1, [::1] or localhost');
   }
-  return { adminUrl };
+  return { adminUrl, storage: readStorageSettings(environment) };
 }
 
 function adminConnection(adminUrl: URL): AdminConnection {
@@ -82,6 +106,21 @@ function runInPostgresContainer(program: 'createdb' | 'dropdb', connection: Admi
   );
 }
 
+function ensureStorageBucket(): void {
+  const result = spawnSync('docker', ['compose', 'exec', '-T', 'storage', 'weed', 'shell'], {
+    cwd: repositoryRoot,
+    input: `s3.bucket.create -name ${storageBucket}\n`,
+    encoding: 'utf8',
+  });
+  const output = `${result.stdout}${result.stderr}`;
+  if (
+    !output.includes(`created bucket ${storageBucket}`) &&
+    !output.includes(`bucket ${storageBucket} already exists`)
+  ) {
+    throw new Error(`the storage bucket ${storageBucket} could not be created`);
+  }
+}
+
 function buildBinaries(): { api: string; worker: string } {
   const binaries = join(outputRoot, 'bin');
   mkdirSync(binaries, { recursive: true });
@@ -92,7 +131,7 @@ function buildBinaries(): { api: string; worker: string } {
   return { api, worker };
 }
 
-function backendEnvironment(database: string, adminUrl: URL): NodeJS.ProcessEnv {
+function backendEnvironment(database: string, adminUrl: URL, storage: StorageSettings): NodeJS.ProcessEnv {
   return {
     OVC_HTTP_ADDR: apiAddress,
     OVC_DATABASE_URL: databaseUrl(adminUrl, database),
@@ -106,6 +145,12 @@ function backendEnvironment(database: string, adminUrl: URL): NodeJS.ProcessEnv 
     OVC_MAIL_BACKEND: 'sink',
     OVC_PUBLIC_URL: 'https://ovc.example',
     OVC_JWT_SECRET: randomBytes(32).toString('hex'),
+    OVC_STORAGE_BACKEND: 's3',
+    OVC_STORAGE_ENDPOINT: storage.endpoint,
+    OVC_STORAGE_REGION: 'us-east-1',
+    OVC_STORAGE_BUCKET: storageBucket,
+    OVC_STORAGE_ACCESS_KEY: storage.accessKey,
+    OVC_STORAGE_SECRET_KEY: storage.secretKey,
   };
 }
 
@@ -234,8 +279,9 @@ export async function startDeployment(settings: E2ESettings): Promise<() => Prom
   const connection = adminConnection(settings.adminUrl);
   const database = `ovc_e2e_${randomBytes(6).toString('hex')}_test`;
   const binaries = buildBinaries();
+  ensureStorageBucket();
   runInPostgresContainer('createdb', connection, [database]);
-  const environment = backendEnvironment(database, settings.adminUrl);
+  const environment = backendEnvironment(database, settings.adminUrl, settings.storage);
   const processes: ManagedProcess[] = [];
   const teardown = async (): Promise<void> => {
     const stopped = await Promise.allSettled(processes.map((managed) => stop(managed)));

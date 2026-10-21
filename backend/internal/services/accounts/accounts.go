@@ -75,6 +75,13 @@ type Profile struct {
 	Language      domain.Language
 	Timezone      string
 	Theme         domain.Theme
+	AvatarID      *domain.AttachmentID
+	Tutor         *TutorText
+}
+
+type TutorText struct {
+	Bio      string
+	Subjects []string
 }
 
 type Dependencies struct {
@@ -86,6 +93,7 @@ type Dependencies struct {
 	Keys        core.Keys
 	RefreshTTL  time.Duration
 	TutorQuotas core.TutorQuotas
+	Avatars     AvatarBinder
 	Logger      *slog.Logger
 }
 
@@ -265,14 +273,29 @@ func (s *Service) LogoutAll(ctx context.Context, principal Principal) error {
 }
 
 func (s *Service) Me(ctx context.Context, principal Principal) (Profile, error) {
-	user, err := s.deps.Store.Repositories().Users.ByID(ctx, principal.UserID)
+	repos := s.deps.Store.Repositories()
+	user, err := repos.Users.ByID(ctx, principal.UserID)
 	if err != nil {
 		return Profile{}, err
 	}
-	return Profile{
+	profile := Profile{
 		ID: user.ID, Role: user.Role, State: user.State, Email: user.Email, EmailVerified: user.EmailVerifiedAt != nil,
 		Name: user.Name, Language: user.Language, Timezone: user.Timezone, Theme: user.Theme,
-	}, nil
+	}
+	avatar, err := repos.Attachments.AvatarOf(ctx, user.ID)
+	if err == nil {
+		profile.AvatarID = &avatar
+	} else if !errors.Is(err, repositories.ErrNotFound) {
+		return Profile{}, err
+	}
+	if user.Role == domain.RoleTutor {
+		tutor, err := repos.TutorProfiles.ByUser(ctx, user.ID)
+		if err != nil {
+			return Profile{}, err
+		}
+		profile.Tutor = &TutorText{Bio: tutor.Bio, Subjects: tutor.Subjects}
+	}
+	return profile, nil
 }
 
 func (s *Service) signInSlots(email string, address netip.Addr, now time.Time) (repositories.RateLimitSlot, repositories.RateLimitSlot) {

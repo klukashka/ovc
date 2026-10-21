@@ -19,6 +19,7 @@ import (
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/schemas"
 	"ovc/backend/internal/services/accounts"
+	"ovc/backend/internal/services/files"
 )
 
 const (
@@ -54,6 +55,8 @@ type Auth struct {
 type router struct {
 	api        huma.API
 	auth       Auth
+	files      *files.Service
+	now        func() time.Time
 	logger     *slog.Logger
 	operations []OperationAudience
 }
@@ -61,9 +64,9 @@ type router struct {
 func register[Input any, Output any](r *router, op huma.Operation, audience Audience, handler func(context.Context, *Input) (*Output, error)) {
 	switch audience {
 	case AudienceUser, AudienceUnverifiedOK:
-		op.Middlewares = append(op.Middlewares, r.authenticate(audience))
+		op.Middlewares = append(huma.Middlewares{r.authenticate(audience)}, op.Middlewares...)
 	case AudienceOptionalUser:
-		op.Middlewares = append(op.Middlewares, r.authenticateWhenPresented)
+		op.Middlewares = append(huma.Middlewares{r.authenticateWhenPresented}, op.Middlewares...)
 	case AudiencePublic, AudienceRefreshCookie:
 	}
 	r.operations = append(r.operations, OperationAudience{ID: op.OperationID, Method: op.Method, Path: op.Path, Audience: audience})
@@ -189,6 +192,7 @@ func (r *router) registerAuth() {
 	register(r, logoutAll, AudienceUnverifiedOK, r.logoutAll)
 	register(r, operation("users-me", http.MethodGet, "/api/v1/users/me"), AudienceUnverifiedOK, r.me)
 	r.registerAccountFlows()
+	r.registerProfileRoutes()
 }
 
 func (r *router) recordClientAddress(ctx huma.Context, next func(huma.Context)) {
@@ -297,10 +301,7 @@ func (r *router) me(ctx context.Context, _ *struct{}) (*meOutput, error) {
 	if err != nil {
 		return nil, r.internal(ctx, "users.me.failed", err)
 	}
-	return &meOutput{CacheControl: noStore, Body: schemas.Me{
-		ID: profile.ID.String(), Role: profile.Role, State: profile.State, Email: profile.Email, EmailVerified: profile.EmailVerified,
-		Name: profile.Name, Language: profile.Language, Timezone: profile.Timezone, Theme: profile.Theme,
-	}}, nil
+	return &meOutput{CacheControl: noStore, Body: meBody(profile)}, nil
 }
 
 func (r *router) loginError(ctx context.Context, err error) error {

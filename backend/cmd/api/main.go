@@ -11,6 +11,7 @@ import (
 	"ovc/backend/cmd/internal/startup"
 	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/adapters/mail"
+	"ovc/backend/internal/adapters/storage"
 	"ovc/backend/internal/api"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/testcontrol"
@@ -106,7 +107,12 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		shared = clock.NewShared(database.Pool)
 		source = shared
 	}
-	accountService, err := startup.NewAccounts(logging.Logger, settings, database, source, random)
+	objects := storage.NewS3(settings.Storage)
+	fileService, err := startup.NewFiles(logging.Logger, settings, database, source, random, objects)
+	if err != nil {
+		return err
+	}
+	accountService, err := startup.NewAccounts(logging.Logger, settings, database, source, random, fileService)
 	if err != nil {
 		return err
 	}
@@ -114,13 +120,17 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		Logger:       logging.Logger,
 		Now:          systemClock.Now,
 		NewRequestID: core.NewRandomID,
-		Readiness:    database.Ping,
-		DocsEnabled:  settings.APIDocsEnabled,
-		Auth:         api.Auth{Accounts: accountService, PublicOrigin: settings.PublicURL, TrustedProxies: settings.TrustedProxies},
+		Readiness: api.AllReady(
+			api.ReadinessCheck{Name: "database", Check: database.Ping},
+			api.ReadinessCheck{Name: "storage", Check: objects.Ping},
+		),
+		Files:       fileService,
+		DocsEnabled: settings.APIDocsEnabled,
+		Auth:        api.Auth{Accounts: accountService, PublicOrigin: settings.PublicURL, TrustedProxies: settings.TrustedProxies},
 	}
 	if settings.TestControl {
 		sink := mail.NewSink(database.Pool, random)
-		background, err := startup.NewWorker(logging.Logger, settings, database, source, sink, random)
+		background, err := startup.NewWorker(logging.Logger, settings, database, source, sink, random, objects)
 		if err != nil {
 			return err
 		}

@@ -12,6 +12,73 @@ import (
 	"ovc/backend/internal/domain"
 )
 
+const bindAttachment = `-- name: BindAttachment :execrows
+UPDATE attachments SET state = 'bound', expires_at = NULL, updated_at = $1::timestamptz
+WHERE id = $2 AND state = 'pending'
+`
+
+type BindAttachmentParams struct {
+	Now time.Time
+	ID  domain.AttachmentID
+}
+
+func (q *Queries) BindAttachment(ctx context.Context, arg BindAttachmentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, bindAttachment, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const claimExpiredUploads = `-- name: ClaimExpiredUploads :many
+SELECT id FROM attachments
+WHERE state = 'pending' AND expires_at <= $1::timestamptz
+ORDER BY expires_at
+LIMIT $2
+FOR UPDATE SKIP LOCKED
+`
+
+type ClaimExpiredUploadsParams struct {
+	Now       time.Time
+	BatchSize int32
+}
+
+func (q *Queries) ClaimExpiredUploads(ctx context.Context, arg ClaimExpiredUploadsParams) ([]domain.AttachmentID, error) {
+	rows, err := q.db.Query(ctx, claimExpiredUploads, arg.Now, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.AttachmentID
+	for rows.Next() {
+		var id domain.AttachmentID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const countPendingUploads = `-- name: CountPendingUploads :one
+SELECT count(id) FROM attachments WHERE uploader_id = $1 AND context = $2 AND state = 'pending'
+`
+
+type CountPendingUploadsParams struct {
+	UploaderID domain.UserID
+	Context    domain.AttachmentContext
+}
+
+func (q *Queries) CountPendingUploads(ctx context.Context, arg CountPendingUploadsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPendingUploads, arg.UploaderID, arg.Context)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAttachment = `-- name: CreateAttachment :exec
 INSERT INTO attachments (
     id, uploader_id, context, quota_tutor_id, storage_key, filename, media_type,
@@ -77,6 +144,18 @@ func (q *Queries) CreateAttachmentReference(ctx context.Context, arg CreateAttac
 	return err
 }
 
+const deleteAttachmentRow = `-- name: DeleteAttachmentRow :execrows
+DELETE FROM attachments WHERE id = $1 AND state = 'deleted'
+`
+
+func (q *Queries) DeleteAttachmentRow(ctx context.Context, id domain.AttachmentID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteAttachmentRow, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getAttachment = `-- name: GetAttachment :one
 SELECT id, uploader_id, context, scope_kind, scope_id, scope_question_id, quota_tutor_id, storage_key, filename, media_type, size_bytes, sha256, state, expires_at, created_at, updated_at FROM attachments WHERE id = $1
 `
@@ -103,4 +182,111 @@ func (q *Queries) GetAttachment(ctx context.Context, id domain.AttachmentID) (At
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getAvatarOf = `-- name: GetAvatarOf :one
+SELECT attachments.id
+FROM attachment_references
+JOIN attachments ON attachments.id = attachment_references.attachment_id
+WHERE attachment_references.ref_kind = 'avatar' AND attachment_references.ref_id = $1
+`
+
+func (q *Queries) GetAvatarOf(ctx context.Context, refID domain.EntityID) (domain.AttachmentID, error) {
+	row := q.db.QueryRow(ctx, getAvatarOf, refID)
+	var id domain.AttachmentID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getServableAvatar = `-- name: GetServableAvatar :one
+SELECT attachments.storage_key, attachments.media_type, attachments.size_bytes
+FROM attachments
+JOIN attachment_references ON attachment_references.attachment_id = attachments.id AND attachment_references.ref_kind = 'avatar'
+JOIN users ON users.id = attachment_references.ref_id
+WHERE attachments.id = $1 AND attachments.state = 'bound' AND users.state IN ('unverified', 'active')
+`
+
+type GetServableAvatarRow struct {
+	StorageKey string
+	MediaType  string
+	SizeBytes  int64
+}
+
+func (q *Queries) GetServableAvatar(ctx context.Context, id domain.AttachmentID) (GetServableAvatarRow, error) {
+	row := q.db.QueryRow(ctx, getServableAvatar, id)
+	var i GetServableAvatarRow
+	err := row.Scan(&i.StorageKey, &i.MediaType, &i.SizeBytes)
+	return i, err
+}
+
+const lockAttachment = `-- name: LockAttachment :one
+SELECT id, uploader_id, context, scope_kind, scope_id, scope_question_id, quota_tutor_id, storage_key, filename, media_type, size_bytes, sha256, state, expires_at, created_at, updated_at FROM attachments WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) LockAttachment(ctx context.Context, id domain.AttachmentID) (Attachment, error) {
+	row := q.db.QueryRow(ctx, lockAttachment, id)
+	var i Attachment
+	err := row.Scan(
+		&i.ID,
+		&i.UploaderID,
+		&i.Context,
+		&i.ScopeKind,
+		&i.ScopeID,
+		&i.ScopeQuestionID,
+		&i.QuotaTutorID,
+		&i.StorageKey,
+		&i.Filename,
+		&i.MediaType,
+		&i.SizeBytes,
+		&i.Sha256,
+		&i.State,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const markAttachmentDeleted = `-- name: MarkAttachmentDeleted :execrows
+UPDATE attachments SET state = 'deleted', expires_at = NULL, updated_at = $1::timestamptz
+WHERE id = $2 AND state <> 'deleted'
+`
+
+type MarkAttachmentDeletedParams struct {
+	Now time.Time
+	ID  domain.AttachmentID
+}
+
+func (q *Queries) MarkAttachmentDeleted(ctx context.Context, arg MarkAttachmentDeletedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markAttachmentDeleted, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const removeAvatarReference = `-- name: RemoveAvatarReference :many
+DELETE FROM attachment_references
+WHERE ref_kind = 'avatar' AND ref_id = $1
+RETURNING attachment_id
+`
+
+func (q *Queries) RemoveAvatarReference(ctx context.Context, refID domain.EntityID) ([]domain.AttachmentID, error) {
+	rows, err := q.db.Query(ctx, removeAvatarReference, refID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.AttachmentID
+	for rows.Next() {
+		var attachment_id domain.AttachmentID
+		if err := rows.Scan(&attachment_id); err != nil {
+			return nil, err
+		}
+		items = append(items, attachment_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

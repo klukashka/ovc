@@ -18,14 +18,17 @@ import (
 
 	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/adapters/mail"
+	"ovc/backend/internal/adapters/storage"
 	"ovc/backend/internal/api"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
+	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/outbox"
 	"ovc/backend/internal/testdb"
+	"ovc/backend/internal/teststorage"
 	"ovc/backend/internal/worker"
 )
 
@@ -93,6 +96,7 @@ type authHarness struct {
 	database *testdb.Database
 	sink     *mail.Sink
 	worker   *worker.Worker
+	objects  *storage.S3
 }
 
 func cheapArgon2() core.Argon2Params {
@@ -124,15 +128,18 @@ func newAuthHarnessBehind(t *testing.T, trusted []netip.Prefix) *authHarness {
 	}
 	store := repositories.NewStore(database.Pool)
 	counting := &countingHasher{inner: hasher}
+	objects := teststorage.New(t).Store
+	fileService := files.New(files.Dependencies{Store: store, Objects: objects, Clock: shared, Random: random, Keys: keys, Logger: logger})
 	service := accounts.New(accounts.Dependencies{
 		Store: store, Clock: shared, Random: random, Hasher: counting, Keys: keys, Logger: logger,
 		Tokens: core.NewAccessTokens(keys, publicOrigin, 15*time.Minute), RefreshTTL: 30 * 24 * time.Hour,
-		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000},
+		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}, Avatars: fileService,
 	})
 	handler, err := api.NewHandler(api.Options{
 		Logger: logger, Now: clock.System{}.Now, NewRequestID: core.NewRandomID,
 		Readiness: func(context.Context) error { return nil },
 		Auth:      api.Auth{Accounts: service, PublicOrigin: publicOrigin, TrustedProxies: trusted},
+		Files:     fileService,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -148,15 +155,24 @@ func newAuthHarnessBehind(t *testing.T, trusted []netip.Prefix) *authHarness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lanes := []worker.Lane{{Name: domain.LaneEmail, Concurrency: 10, Perform: notifier.Deliver}}
-	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, nil, worker.DefaultTiming())
+	lanes := []worker.Lane{
+		{Name: domain.LaneEmail, Concurrency: 10, Perform: notifier.Deliver},
+		{Name: domain.LaneStorageDelete, Concurrency: 4, Perform: fileService.DeleteObject},
+	}
+	jobs := []worker.Job{{Name: domain.JobUploadsExpire, Every: time.Hour, Run: fileService.ExpirePending}}
+	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, jobs, worker.DefaultTiming())
 	return &authHarness{
 		server: server, store: store, clock: shared, hasher: hasher, counting: counting, logs: logs,
-		database: database, sink: sink, worker: background,
+		database: database, sink: sink, worker: background, objects: objects,
 	}
 }
 
 func (h *authHarness) seedUser(t *testing.T, id byte, email string, password string, params core.Argon2Params) domain.UserID {
+	t.Helper()
+	return h.seedUserAs(t, domain.RoleTutor, id, email, password, params)
+}
+
+func (h *authHarness) seedUserAs(t *testing.T, role domain.Role, id byte, email string, password string, params core.Argon2Params) domain.UserID {
 	t.Helper()
 	hasher := h.hasher
 	if params != cheapArgon2() {
@@ -172,12 +188,20 @@ func (h *authHarness) seedUser(t *testing.T, id byte, email string, password str
 	}
 	user := domain.UserID{id}
 	err = h.store.Repositories().Users.Create(context.Background(), repositories.NewUser{
-		ID: user, Role: domain.RoleTutor, State: domain.AccountActive, Email: email, EmailVerifiedAt: &authStart,
+		ID: user, Role: role, State: domain.AccountActive, Email: email, EmailVerifiedAt: &authStart,
 		PasswordHash: encoded, Name: "A language tutor", Language: domain.LanguageEnglish, Timezone: "Europe/Moscow",
 		Theme: domain.ThemeSystem, ConsentVersion: "2026-10", ConsentAt: authStart, CreatedAt: authStart,
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if role == domain.RoleTutor {
+		err = h.store.Repositories().TutorProfiles.Create(context.Background(), repositories.NewTutorProfile{
+			UserID: user, FileQuotaBytes: 5_000_000_000, RecordingQuotaBytes: 50_000_000_000, CreatedAt: authStart,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	return user
 }

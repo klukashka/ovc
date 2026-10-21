@@ -38,7 +38,10 @@ type JobName string
 const (
 	JobOutboxCleanup    JobName = "outbox.cleanup"
 	JobRateLimitCleanup JobName = "ratelimit.cleanup"
+	JobUploadsExpire    JobName = "uploads.expire"
 )
+
+const KindStorageDelete OutboxKind = "storage_delete"
 
 type OutboxLane string
 

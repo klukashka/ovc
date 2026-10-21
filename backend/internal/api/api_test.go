@@ -130,7 +130,7 @@ func TestHealthRoutesAgainstTheDatabase(t *testing.T) {
 	if live.StatusCode != http.StatusOK || strings.TrimSpace(liveBody) != `{"status":"ok"}` {
 		t.Fatalf("live: %d %s", live.StatusCode, liveBody)
 	}
-	if ready.StatusCode != http.StatusOK || strings.TrimSpace(readyBody) != `{"status":"ready","checks":{"database":"ok"}}` {
+	if ready.StatusCode != http.StatusOK || strings.TrimSpace(readyBody) != `{"status":"ready","checks":{"database":"ok","storage":"ok"}}` {
 		t.Fatalf("ready: %d %s", ready.StatusCode, readyBody)
 	}
 }

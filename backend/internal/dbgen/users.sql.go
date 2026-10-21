@@ -299,6 +299,31 @@ func (q *Queries) ReplaceUserPassword(ctx context.Context, arg ReplaceUserPasswo
 	return result.RowsAffected(), nil
 }
 
+const updateTutorProfileText = `-- name: UpdateTutorProfileText :execrows
+UPDATE tutor_profiles SET bio = $1, subjects = $2, updated_at = $3::timestamptz
+WHERE user_id = $4
+`
+
+type UpdateTutorProfileTextParams struct {
+	Bio      string
+	Subjects []string
+	Now      time.Time
+	UserID   domain.UserID
+}
+
+func (q *Queries) UpdateTutorProfileText(ctx context.Context, arg UpdateTutorProfileTextParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateTutorProfileText,
+		arg.Bio,
+		arg.Subjects,
+		arg.Now,
+		arg.UserID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateUserPasswordHash = `-- name: UpdateUserPasswordHash :execrows
 UPDATE users SET password_hash = $1, updated_at = $2
 WHERE id = $3 AND password_hash = $4
@@ -317,6 +342,36 @@ func (q *Queries) UpdateUserPasswordHash(ctx context.Context, arg UpdateUserPass
 		arg.Now,
 		arg.ID,
 		arg.CurrentPasswordHash,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateUserProfile = `-- name: UpdateUserProfile :execrows
+UPDATE users
+SET name = $1, language = $2, timezone = $3, theme = $4, updated_at = $5::timestamptz
+WHERE id = $6 AND state IN ('unverified', 'active')
+`
+
+type UpdateUserProfileParams struct {
+	Name     string
+	Language domain.Language
+	Timezone string
+	Theme    domain.Theme
+	Now      time.Time
+	ID       domain.UserID
+}
+
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateUserProfile,
+		arg.Name,
+		arg.Language,
+		arg.Timezone,
+		arg.Theme,
+		arg.Now,
+		arg.ID,
 	)
 	if err != nil {
 		return 0, err

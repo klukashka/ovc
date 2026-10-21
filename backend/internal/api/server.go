@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/schemas"
+	"ovc/backend/internal/services/files"
 )
 
 const (
@@ -23,6 +25,40 @@ const (
 )
 
 type ReadinessFunc func(ctx context.Context) error
+
+const readinessCheckTimeout = time.Second
+
+type ReadinessCheck struct {
+	Name  string
+	Check ReadinessFunc
+}
+
+type ReadinessFailure struct {
+	Check string
+	Err   error
+}
+
+func (e *ReadinessFailure) Error() string {
+	return e.Check + " is not ready: " + e.Err.Error()
+}
+
+func (e *ReadinessFailure) Unwrap() error {
+	return e.Err
+}
+
+func AllReady(checks ...ReadinessCheck) ReadinessFunc {
+	return func(ctx context.Context) error {
+		for _, check := range checks {
+			checkContext, cancel := context.WithTimeout(ctx, readinessCheckTimeout)
+			err := check.Check(checkContext)
+			cancel()
+			if err != nil {
+				return &ReadinessFailure{Check: check.Name, Err: err}
+			}
+		}
+		return nil
+	}
+}
 
 type Options struct {
 	Logger        *slog.Logger
@@ -34,13 +70,14 @@ type Options struct {
 	ReadDeadline  time.Duration
 	WriteDeadline time.Duration
 	Auth          Auth
+	Files         *files.Service
 }
 
 func NewHandler(options Options) (http.Handler, error) {
 	mux := http.NewServeMux()
 	api := newAPI(mux)
 	readiness := &sharedReadiness{check: options.Readiness, now: options.Now, logger: options.Logger}
-	routes := &router{api: api, auth: options.Auth, logger: options.Logger}
+	routes := &router{api: api, auth: options.Auth, files: options.Files, now: options.Now, logger: options.Logger}
 	routes.registerAll(readiness.run)
 	if options.DocsEnabled {
 		document, err := json.Marshal(api.OpenAPI())
@@ -125,6 +162,14 @@ func (r *router) registerAll(readiness ReadinessFunc) {
 	r.registerAuth()
 }
 
+func failedCheck(err error) string {
+	var failure *ReadinessFailure
+	if errors.As(err, &failure) {
+		return failure.Check
+	}
+	return "unknown"
+}
+
 func (r *router) registerHealth(readiness ReadinessFunc) {
 	logger := r.logger
 	register(r, operation("health-live", http.MethodGet, "/api/v1/health/live"), AudiencePublic,
@@ -137,10 +182,10 @@ func (r *router) registerHealth(readiness ReadinessFunc) {
 				if ctx.Err() != nil {
 					logger.LogAttrs(ctx, slog.LevelDebug, "health.ready.abandoned", slog.String("kind", "canceled"))
 				} else {
-					logger.LogAttrs(ctx, slog.LevelWarn, "health.ready.failed", slog.String("kind", "database"))
+					logger.LogAttrs(ctx, slog.LevelWarn, "health.ready.failed", slog.String("kind", failedCheck(err)))
 				}
 				return nil, NewError(ctx, domain.ErrorServiceUnavailable)
 			}
-			return &readyOutput{Body: schemas.ReadyStatus{Status: "ready", Checks: schemas.ReadyChecks{Database: "ok"}}}, nil
+			return &readyOutput{Body: schemas.ReadyStatus{Status: "ready", Checks: schemas.ReadyChecks{Database: "ok", Storage: "ok"}}}, nil
 		})
 }

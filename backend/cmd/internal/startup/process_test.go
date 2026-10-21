@@ -18,10 +18,12 @@ import (
 	"testing"
 	"time"
 
+	"ovc/backend/internal/adapters/storage"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/testdb"
+	"ovc/backend/internal/teststorage"
 )
 
 var binaries string
@@ -39,6 +41,13 @@ func TestMain(m *testing.M) {
 			panic(err)
 		}
 	}
+	settings, err := core.TestStorageFromEnvironment(teststorage.Bucket)
+	if err != nil {
+		panic(err)
+	}
+	if err := storage.NewS3(settings).EnsureBucket(context.Background()); err != nil {
+		panic(core.ErrorKind(err))
+	}
 	code := m.Run()
 	if err := os.RemoveAll(binaries); err != nil {
 		code = 1
@@ -52,8 +61,21 @@ type outcome struct {
 	stderr   string
 }
 
+func storageDefaults() map[string]string {
+	settings, err := core.TestStorageFromEnvironment(teststorage.Bucket)
+	if err != nil {
+		panic(err)
+	}
+	return map[string]string{
+		"OVC_STORAGE_ENDPOINT": settings.Endpoint, "OVC_STORAGE_REGION": settings.Region, "OVC_STORAGE_BUCKET": settings.Bucket,
+		"OVC_STORAGE_ACCESS_KEY": settings.AccessKey.Reveal(), "OVC_STORAGE_" + "SECRET_KEY": settings.SecretKey.Reveal(),
+	}
+}
+
 func withPublicURL(env []string) []string {
-	defaults := map[string]string{"OVC_PUBLIC_URL": "https://ovc.example", "OVC_JWT_SECRET": "process-test-signing-material-0123456789"}
+	defaults := storageDefaults()
+	defaults["OVC_PUBLIC_URL"] = "https://ovc.example"
+	defaults["OVC_JWT_SECRET"] = "process-test-signing-material-0123456789"
 	result := env
 	for name, value := range defaults {
 		set := false
@@ -476,6 +498,12 @@ func seedTutor(t *testing.T, database *testdb.Database, password string) {
 		ID: domain.UserID{1}, Role: domain.RoleTutor, State: domain.AccountActive, Email: "tutor@example.org", EmailVerifiedAt: &now,
 		PasswordHash: encoded, Name: "A language tutor", Language: domain.LanguageEnglish, Timezone: "Europe/Moscow",
 		Theme: domain.ThemeSystem, ConsentVersion: "2026-10", ConsentAt: now, CreatedAt: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = repositories.NewStore(database.Pool).Repositories().TutorProfiles.Create(context.Background(), repositories.NewTutorProfile{
+		UserID: domain.UserID{1}, FileQuotaBytes: 1, RecordingQuotaBytes: 1, CreatedAt: now,
 	})
 	if err != nil {
 		t.Fatal(err)

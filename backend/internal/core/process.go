@@ -26,6 +26,9 @@ func LogStarted(ctx context.Context, logger *slog.Logger, process Process, setti
 		slog.String("smtp_host", settings.SMTP.Host),
 		slog.Int("smtp_port", settings.SMTP.Port),
 		slog.String("smtp_tls", string(settings.SMTP.TLS)),
+		slog.String("storage_backend", string(settings.Storage.Backend)),
+		slog.String("storage_endpoint", settings.Storage.Endpoint),
+		slog.String("storage_bucket", settings.Storage.Bucket),
 	}
 	if process == ProcessAPI {
 		attributes = append(attributes,

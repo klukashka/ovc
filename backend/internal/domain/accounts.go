@@ -70,3 +70,46 @@ func formatUUID(id [16]byte) string {
 	}
 	return string(text)
 }
+
+func (id AttachmentID) String() string {
+	return formatUUID(id)
+}
+
+func ParseUUID[ID ~[16]byte](text string) (ID, bool) {
+	var id ID
+	if len(text) != 36 {
+		return id, false
+	}
+	position := 0
+	for index := 0; index < len(text); index++ {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			if text[index] != '-' {
+				return id, false
+			}
+			continue
+		}
+		value, ok := hexValue(text[index])
+		if !ok {
+			return id, false
+		}
+		if position%2 == 0 {
+			id[position/2] = value << 4
+		} else {
+			id[position/2] |= value
+		}
+		position++
+	}
+	return id, true
+}
+
+func hexValue(character byte) (byte, bool) {
+	switch {
+	case character >= '0' && character <= '9':
+		return character - '0', true
+	case character >= 'a' && character <= 'f':
+		return character - 'a' + 10, true
+	case character >= 'A' && character <= 'F':
+		return character - 'A' + 10, true
+	}
+	return 0, false
+}

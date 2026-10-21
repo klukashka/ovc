@@ -173,21 +173,23 @@ func TestLayerCheckRejectsForbiddenImports(t *testing.T) {
 	}
 }
 
-func TestProductionCodeNeverImportsTheTestDatabaseFixture(t *testing.T) {
+func TestProductionCodeNeverImportsTheTestFixtures(t *testing.T) {
 	imports := moduleImports(t)
 
 	var importers []string
 	for packagePath, imported := range imports {
 		for _, dependency := range imported {
-			fixture := dependency == "internal/testdb" || strings.HasPrefix(dependency, "internal/testdb/")
-			if fixture && packagePath != "internal/testdb" && !strings.HasPrefix(packagePath, "internal/testdb/") {
-				importers = append(importers, packagePath)
+			for _, fixture := range []string{"internal/testdb", "internal/teststorage"} {
+				fromFixture := dependency == fixture || strings.HasPrefix(dependency, fixture+"/")
+				if fromFixture && packagePath != fixture && !strings.HasPrefix(packagePath, fixture+"/") {
+					importers = append(importers, packagePath+" imports "+fixture)
+				}
 			}
 		}
 	}
 
 	if len(importers) > 0 {
 		sort.Strings(importers)
-		t.Fatalf("production packages import internal/testdb: %s", strings.Join(importers, ", "))
+		t.Fatalf("production packages import test fixtures: %s", strings.Join(importers, ", "))
 	}
 }

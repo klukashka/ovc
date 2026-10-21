@@ -22,6 +22,9 @@ type Me struct {
 	Language      domain.Language     `json:"language" enum:"ru,en"`
 	Timezone      string              `json:"timezone"`
 	Theme         domain.Theme        `json:"theme" enum:"light,dark,system"`
+	AvatarID      *string             `json:"avatar_id" format:"uuid" nullable:"true"`
+	Bio           *string             `json:"bio,omitempty"`
+	Subjects      *[]string           `json:"subjects,omitempty"`
 }
 
 type RegisterRequest struct {

@@ -59,3 +59,12 @@ SET password_hash = @password_hash,
     email_verified_at = COALESCE(email_verified_at, sqlc.arg(now)::timestamptz),
     updated_at = sqlc.arg(now)::timestamptz
 WHERE id = @id AND state IN ('unverified', 'active');
+
+-- name: UpdateUserProfile :execrows
+UPDATE users
+SET name = @name, language = @language, timezone = @timezone, theme = @theme, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND state IN ('unverified', 'active');
+
+-- name: UpdateTutorProfileText :execrows
+UPDATE tutor_profiles SET bio = @bio, subjects = @subjects, updated_at = sqlc.arg(now)::timestamptz
+WHERE user_id = @user_id;

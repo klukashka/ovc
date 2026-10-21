@@ -45,7 +45,7 @@ REST under `/api/v1` (omitted from the paths below), JSON in and out except uplo
   | 422 | `validation_failed`, `lesson_in_past`, `tutor_code_invalid`, `token_invalid` (an invalid, expired, used or superseded confirmation or reset token, or an account in a state the token does not apply to, with one identical answer for every cause) |
   | 429 | `rate_limited`, `tutor_unavailable`, with `Retry-After` |
   | 500 | `internal` |
-  | 503 | `provider_unavailable`, `service_unavailable` (readiness, or a saturated password-hashing limiter) |
+  | 503 | `provider_unavailable`, `service_unavailable` (readiness, a saturated password-hashing limiter, or a full avatar decoding budget) |
   | 507 | `quota_exceeded` |
 
   Every code is an `ErrorCode` constant in `internal/domain`, listed by `AllErrorCodes` with its status and message, and published as the enum of `ErrorBody.code` in the OpenAPI document; the frontend derives its `ErrorCode` type from that enum and must translate every code in both languages. A conventions test requires `AllErrorCodes` to list exactly the declared constants, and an unlisted value is sent as `internal`. A client that receives a code it does not know shows a generic message with the request identifier.
@@ -81,8 +81,8 @@ Behavior: [accounts](accounts.md). Every operation declares its audience in code
 | POST | `/auth/password/forgot` | public | Request a reset email with `{email}`; always `202`, the same for any email |
 | POST | `/auth/password/reset` | public | Set a new password with `{token, new_password}`; `204`, and the person signs in afterwards |
 | POST | `/auth/password/change` | user, unverified ok | Change the password with `{current_password, new_password}`; `204`; a wrong current password answers `422 validation_failed` (`body.current_password`: `incorrect`) |
-| GET | `/users/me` | user, unverified ok | Own profile, role, state, preferences |
-| PATCH | `/users/me` | user, unverified ok | Name, avatar, language, timezone, theme; tutor bio and subjects |
+| GET | `/users/me` | user, unverified ok | Own profile, role, state, preferences, `avatar_id` (or `null`), and for tutors `bio` and `subjects` |
+| PATCH | `/users/me` | user, unverified ok | Any of `name`, `language`, `timezone`, `theme`, `avatar_id` (a pending avatar upload of the caller, or `null` to remove the avatar), and for tutors `bio` (up to 1000 characters) and `subjects` (up to 10, each up to 60 characters, no repeats); answers like `GET`. A student sending `bio` or `subjects` gets `not_allowed`, an unknown timezone or someone else's upload `invalid` |
 | DELETE | `/users/me` | user, unverified ok | Delete own account (password required) |
 | GET, PUT | `/users/me/email-preferences` | user, unverified ok | Optional email switches |
 | GET | `/unsubscribe/preview?token=` | public | The email group name for the confirmation page, nothing else |
@@ -92,7 +92,7 @@ Behavior: [accounts](accounts.md). Every operation declares its audience in code
 | GET, PATCH | `/tutor/settings` | tutor, unverified ok | Retention, quotas and usage, onboarding state |
 | GET | `/tutor/blocked-requesters` | tutor | Students blocked from sending requests |
 | DELETE | `/tutor/blocked-requesters/{studentId}` | tutor | Unblock |
-| GET | `/avatars/{id}` | public | Avatar image |
+| GET | `/avatars/{id}` | public | Avatar image of an active or unverified account, or `404` for anything else, including a malformed identifier ([avatars](files.md#avatars)) |
 
 ## Students and groups
 
@@ -200,7 +200,7 @@ Behavior: [files](files.md).
 
 | Method | Path | Who | Purpose |
 |---|---|---|---|
-| POST | `/uploads?context=&scope=` | user allowed to write to the scope (`channel:<id>` or `submission:<id>:<question id>`), unverified ok | Upload → `{id, filename, media_type, size_bytes}` |
+| POST | `/uploads?context=&scope=` | user allowed to write to the scope (`channel:<id>` or `submission:<id>:<question id>`), unverified ok | Upload a `multipart/form-data` body with one `file` part → `201` with `{id, filename, media_type, size_bytes}`. Slice 2 accepts only `context=avatar` ([avatars](files.md#avatars)): `400 bad_request` for a malformed body, `413 payload_too_large`, `415 unsupported_media_type`, `429 rate_limited`, `503 service_unavailable` with `Retry-After` when the decoding budget is full, and `422 validation_failed` (`body.file`: `required`) for a missing or extra part |
 | GET | `/attachments/{id}` | anyone who can see a referencing item | `{url, expires_at}` with a 5-minute signed URL |
 
 ## Health
@@ -208,6 +208,6 @@ Behavior: [files](files.md).
 | Method | Path | Who | Purpose |
 |---|---|---|---|
 | GET | `/health/live` | public | Process is running: `{"status":"ok"}`; no I/O |
-| GET | `/health/ready` | public | Database reachable within 1 s (storage joins in slice 2): `{"status":"ready","checks":{"database":"ok"}}`, otherwise 503 `service_unavailable` without driver detail. Concurrent requests share one ping, and its result is reused for 1 s, so the route holds at most one database connection |
+| GET | `/health/ready` | public | Database and storage bucket each reachable within 1 s: `{"status":"ready","checks":{"database":"ok","storage":"ok"}}`, otherwise 503 `service_unavailable` without driver detail, and the `health.ready.failed` record names the failed check. Concurrent requests share one check, and its result is reused for 1 s, so the route holds at most one database connection |
 
 The end-to-end test control surface is not part of this API. It exists only in test deployments ([development](../../docs/development.md#end-to-end-test-harness)).

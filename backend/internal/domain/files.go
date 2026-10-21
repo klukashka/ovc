@@ -1,5 +1,7 @@
 package domain
 
+import "errors"
+
 type AttachmentID [16]byte
 
 type EntityID [16]byte
@@ -41,4 +43,16 @@ const (
 	ReferenceIssueSnapshot ReferenceKind = "issue_snapshot"
 	ReferenceLesson        ReferenceKind = "lesson"
 	ReferenceAvatar        ReferenceKind = "avatar"
+)
+
+var ErrInvalidAvatar = errors.New("the attachment cannot become this account's avatar")
+
+type AttachmentPayload struct {
+	Attachment string `json:"attachment"`
+}
+
+const (
+	AvatarMaxBytes       = 5_000_000
+	AvatarMaxStoredBytes = 10_000_000
+	AvatarMaxSide        = 4096
 )

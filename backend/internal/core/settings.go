@@ -89,12 +89,12 @@ const (
 )
 
 func VariableNames() []string {
-	return []string{
+	return append([]string{
 		varHTTPAddr, varDatabaseURL, varDBPoolSize, varLogLevel, varLogFormat, varAPIDocsEnabled,
 		varTestControl, varClock, varMeetingProvider, varMailBackend, varPublicURL, varSMTPHost, varSMTPPort,
 		varSMTPTLS, varSMTPUsername, varSMTPLoginValue, varMailFrom, varJWTKeyMaterial, varAccessTTL, varRefreshTTL,
 		varTrustedProxies, varTestDatabaseURL, varFileQuota, varRecordingQuota,
-	}
+	}, storageVariableNames()...)
 }
 
 type Lookup func(name string) (string, bool)
@@ -119,6 +119,7 @@ type Settings struct {
 	RefreshTokenTTL time.Duration
 	TrustedProxies  []netip.Prefix
 	TutorQuotas     TutorQuotas
+	Storage         StorageSettings
 }
 
 type TutorQuotas struct {
@@ -147,6 +148,10 @@ func TestDatabaseAdminURLFromEnvironment() (Secret, error) {
 	return NewSecret(value), nil
 }
 
+func TestStorageFromEnvironment(bucket string) (StorageSettings, error) {
+	return testStorageFrom(os.LookupEnv, bucket)
+}
+
 func Load(lookup Lookup, process Process) (Settings, error) {
 	var problems []error
 	settings := Settings{Process: process}
@@ -173,6 +178,9 @@ func Load(lookup Lookup, process Process) (Settings, error) {
 
 	if process == ProcessWorker {
 		defaultPool = 10
+	}
+	if process == ProcessAPI || process == ProcessWorker {
+		problems = append(problems, settings.loadStorageSettings(lookup)...)
 	}
 	poolSize, err := int32Or(lookup, varDBPoolSize, defaultPool)
 	if err != nil {

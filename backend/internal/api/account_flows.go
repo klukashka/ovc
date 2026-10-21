@@ -209,6 +209,9 @@ func (r *router) flowError(ctx context.Context, event string, err error) error {
 			fields = append(fields, schemas.FieldError{Path: field.Path, Code: string(field.Code)})
 		}
 		return &Error{status: http.StatusUnprocessableEntity, ErrorEnvelope: schemas.NewErrorEnvelope(domain.ErrorValidationFailed, core.RequestID(ctx), fields)}
+	case errors.Is(err, domain.ErrInvalidAvatar):
+		return &Error{status: http.StatusUnprocessableEntity, ErrorEnvelope: schemas.NewErrorEnvelope(domain.ErrorValidationFailed, core.RequestID(ctx),
+			[]schemas.FieldError{{Path: "body.avatar_id", Code: string(domain.FieldInvalid)}})}
 	case errors.Is(err, accounts.ErrTokenInvalid):
 		return NewError(ctx, domain.ErrorTokenInvalid)
 	case errors.Is(err, accounts.ErrUnauthenticated):

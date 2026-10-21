@@ -12,6 +12,7 @@ type LiveStatus struct {
 
 type ReadyChecks struct {
 	Database string `json:"database" enum:"ok"`
+	Storage  string `json:"storage" enum:"ok"`
 }
 
 type ReadyStatus struct {

@@ -7,22 +7,35 @@ import (
 
 	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/adapters/mail"
+	"ovc/backend/internal/adapters/storage"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
+	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/outbox"
 	"ovc/backend/internal/worker"
 )
 
 const (
-	hashWait             = 5 * time.Second
-	emailLaneConcurrency = 10
-	smtpTimeout          = 30 * time.Second
+	hashWait              = 5 * time.Second
+	emailLaneConcurrency  = 10
+	deleteLaneConcurrency = 4
+	smtpTimeout           = 30 * time.Second
 )
 
-func NewAccounts(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource) (*accounts.Service, error) {
+func NewFiles(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, objects storage.Store) (*files.Service, error) {
+	keys, err := core.DeriveKeys(settings.JWTSecret)
+	if err != nil {
+		return nil, err
+	}
+	return files.New(files.Dependencies{
+		Store: repositories.NewStore(database.Pool), Objects: objects, Clock: source, Random: random, Keys: keys, Logger: logger,
+	}), nil
+}
+
+func NewAccounts(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, avatars accounts.AvatarBinder) (*accounts.Service, error) {
 	keys, err := core.DeriveKeys(settings.JWTSecret)
 	if err != nil {
 		return nil, err
@@ -40,6 +53,7 @@ func NewAccounts(logger *slog.Logger, settings core.Settings, database *core.Dat
 		Keys:        keys,
 		RefreshTTL:  settings.RefreshTokenTTL,
 		TutorQuotas: settings.TutorQuotas,
+		Avatars:     avatars,
 		Logger:      logger,
 	}), nil
 }
@@ -67,8 +81,9 @@ func NewMailer(logger *slog.Logger, settings core.Settings, database *core.Datab
 	return Mailer{Mailer: mail.NewSink(database.Pool, random), Close: func() error { return nil }}
 }
 
-func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, mailer mail.Mailer, random core.RandomSource) (*worker.Worker, error) {
+func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, mailer mail.Mailer, random core.RandomSource, objects storage.Store) (*worker.Worker, error) {
 	store := repositories.NewStore(database.Pool)
+	fileService := files.New(files.Dependencies{Store: store, Objects: objects, Clock: source, Random: random, Logger: logger})
 	queue := outbox.New(store, random, logger)
 	accountEmails, err := notifications.NewAccountEmails(store, random, settings.PublicURL)
 	if err != nil {
@@ -78,10 +93,14 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 	if err != nil {
 		return nil, err
 	}
-	lanes := []worker.Lane{{Name: domain.LaneEmail, Concurrency: emailLaneConcurrency, Perform: notifier.Deliver}}
+	lanes := []worker.Lane{
+		{Name: domain.LaneEmail, Concurrency: emailLaneConcurrency, Perform: notifier.Deliver},
+		{Name: domain.LaneStorageDelete, Concurrency: deleteLaneConcurrency, Perform: fileService.DeleteObject},
+	}
 	jobs := []worker.Job{
 		{Name: domain.JobOutboxCleanup, Every: time.Hour, Run: queue.Cleanup},
 		{Name: domain.JobRateLimitCleanup, Every: time.Hour, Run: accounts.CleanupRateLimits(store)},
+		{Name: domain.JobUploadsExpire, Every: time.Hour, Run: fileService.ExpirePending},
 	}
 	return worker.New(logger, source, queue, lanes, jobs, worker.DefaultTiming()), nil
 }

@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +31,26 @@ func TestOutboxRetryDelayDoublesWithJitterBetween30SecondsAndOneHour(t *testing.
 
 		if got != testCase.want {
 			t.Errorf("OutboxRetryDelay(%d, %v) = %v, want %v", testCase.attempts, testCase.fraction, got, testCase.want)
+		}
+	}
+}
+
+func TestParseUUIDAcceptsOnlyTheCanonicalForm(t *testing.T) {
+	cases := map[string]bool{
+		"0f8fad5b-d9cb-469f-a165-70867728950e":  true,
+		"0F8FAD5B-D9CB-469F-A165-70867728950E":  true,
+		"0f8fad5bd9cb469fa16570867728950e":      false,
+		"0f8fad5b-d9cb-469f-a165-70867728950":   false,
+		"0f8fad5b-d9cb-469f-a165-70867728950e0": false,
+		"0f8fad5b+d9cb-469f-a165-70867728950e":  false,
+		"0f8fad5b-d9cb-469f-a165-70867728950g":  false,
+	}
+
+	for text, want := range cases {
+		id, got := domain.ParseUUID[domain.AttachmentID](text)
+
+		if got != want || (got && !strings.EqualFold(id.String(), text)) {
+			t.Errorf("ParseUUID(%q) = %v %s", text, got, id)
 		}
 	}
 }

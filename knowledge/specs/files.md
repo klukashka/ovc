@@ -50,6 +50,19 @@ Behavior for FR-14 and every upload in OVC. Storage is S3-compatible object stor
    - the quota still holds.
 8. **Unbound pending attachments** are deleted after 24 hours.
 
+## Avatars
+
+Slice 2 implements only the `avatar` context, and it departs from the general flow above in these ways:
+
+- **Buffered, not streamed to storage:** the part is read into memory up to 5 MB plus one byte (more answers `payload_too_large`), because an avatar fits one S3 request; the request body is limited to 5 MB plus 64 KiB and has a 60-second read deadline.
+- **Type:** JPEG, PNG or WebP by magic bytes, with an agreeing extension (`.jpg`/`.jpeg`, `.png`, `.webp`); `image.DecodeConfig` must report the same format and at most 4096 × 4096 pixels before anything is decoded.
+- **Metadata removal:** the image is decoded and encoded again, which drops EXIF, XMP and text chunks: JPEG stays JPEG (quality 90), PNG and WebP become PNG. The stored file is named `avatar.jpg` or `avatar.png`, so no client file name is kept, and an encoded result above 10 MB is refused as `payload_too_large` the moment the encoder passes that size. 16-bit and CMYK images are refused as `unsupported_media_type`. Decoding memory has a budget of 256 MiB per instance: each decode reserves width × height × 8 bytes for PNG and WebP (the decoded image and the encoder's working copy) or × 16 bytes for JPEG (progressive coefficients for three components plus the image), and WebP reserves the larger of 8 bytes per pixel and 5 bytes per pixel plus 132 MiB, because a lossless image may declare up to 2600 Huffman table groups (about 131 MiB) whatever its size, so the largest JPEG fills the budget alone and only one WebP decodes at a time; a user decodes at most one image at a time, and an upload that does not fit answers `503 service_unavailable` with `Retry-After: 5`. Outside that budget, each of the at most 32 concurrent uploads holds its body (up to 5 MB) and, while encoding, its result (up to 10 MB).
+- **Order:** the attachment row is created first, in a transaction that locks the user row and checks the pending limit again, and only then is the object stored; a failed store marks the row deleted and queues its deletion, so no object exists without a row.
+- **Limits per user:** at most 3 pending avatar uploads, 20 avatar uploads per hour (`429 rate_limited` with `Retry-After`), and the general 4 concurrent uploads per user and 32 per instance.
+- **Binding:** `PATCH /users/me` with `avatar_id` binds the caller's own pending avatar upload that has not passed its 24-hour expiry; the previous avatar loses its reference, becomes `deleted` and gets a `storage_delete` outbox row in the same transaction; `null` removes the avatar the same way. The reference is the only record of the avatar.
+- **Serving:** `GET /api/v1/avatars/{id}` reads the object through the API (the CSP stays `'self'`) and answers only for an attachment with a live avatar reference whose owner is active or unverified, with `Content-Type` from detection, `X-Content-Type-Options: nosniff`, `Content-Disposition: inline` without a file name, `Cache-Control: private, max-age=86400`, `Content-Security-Policy: default-src 'none'; sandbox` and `Cross-Origin-Resource-Policy: same-origin`; everything else is `404`.
+- **Deletion:** the worker's `storage_delete` lane deletes the object and then the attachment row; the hourly `uploads.expire` job marks pending uploads older than 24 hours as `deleted` and queues their deletion, in batches of 200.
+
 ## References
 
 - An attachment is shared through **references**: rows that say "this item uses this attachment", for a message, an answer, a review item, a material, a template, an issue snapshot, a lesson or an avatar.

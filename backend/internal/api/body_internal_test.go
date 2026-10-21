@@ -175,7 +175,11 @@ func TestEveryRegisteredOperationSetsTheBodyLimits(t *testing.T) {
 		t.Fatal("no operations registered")
 	}
 	for _, registered := range operations {
-		if registered.MaxBodyBytes != maxJSONBodyBytes || registered.BodyReadTimeout != bodyReadTimeout {
+		wantBytes, wantTimeout := int64(maxJSONBodyBytes), bodyReadTimeout
+		if registered.OperationID == "uploads-create" {
+			wantBytes, wantTimeout = uploadBodyBytes, uploadReadDeadline
+		}
+		if registered.MaxBodyBytes != wantBytes || registered.BodyReadTimeout != wantTimeout {
 			t.Fatalf("%s has limits %d and %s", registered.OperationID, registered.MaxBodyBytes, registered.BodyReadTimeout)
 		}
 	}
