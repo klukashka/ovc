@@ -76,6 +76,9 @@ func (s *Service) verifyCurrentPassword(ctx context.Context, id domain.UserID, p
 		return repositories.User{}, err
 	}
 	if count > currentPasswordLimit.limit {
+		if err := s.release(context.WithoutCancel(ctx), slot); err != nil {
+			return repositories.User{}, err
+		}
 		s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "auth.password.throttled", userAttribute(id))
 		_, retryAfter := domain.FixedWindow(now, currentPasswordLimit.window)
 		return repositories.User{}, &ThrottledError{RetryAfter: retryAfter}

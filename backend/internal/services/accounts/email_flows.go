@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/mail"
 	"net/netip"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -25,9 +26,10 @@ import (
 )
 
 const (
-	maxEmailBytes = 254
-	maxNameRunes  = 100
-	fallbackZone  = "UTC"
+	maxZoneNameLength = 64
+	maxEmailBytes     = 254
+	maxNameRunes      = 100
+	fallbackZone      = "UTC"
 
 	purposeRequestAddress  domain.RateLimitPurpose = "email_request_address"
 	purposeSendMinute      domain.RateLimitPurpose = "email_send_minute"
@@ -592,8 +594,18 @@ func registrationProblems(registration Registration, name string, email string) 
 	return problems
 }
 
+var canonicalZoneName = regexp.MustCompile(`^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){0,3}$`)
+
+func notAZone(name string) bool {
+	switch name {
+	case "Local", "Factory", "posixrules", "localtime":
+		return true
+	}
+	return strings.HasPrefix(name, "posix/") || strings.HasPrefix(name, "right/")
+}
+
 func resolveZone(name string) string {
-	if name == "" || name == "Local" {
+	if len(name) > maxZoneNameLength || !canonicalZoneName.MatchString(name) || notAZone(name) {
 		return fallbackZone
 	}
 	location, err := time.LoadLocation(name)

@@ -206,6 +206,9 @@ func (s *Service) Refresh(ctx context.Context, value string) (SignIn, error) {
 		return SignIn{}, ErrUnauthenticated
 	}
 	user, err := repos.Users.ByID(ctx, session.UserID)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return SignIn{}, ErrUnauthenticated
+	}
 	if err != nil {
 		return SignIn{}, err
 	}
@@ -316,13 +319,19 @@ func (s *Service) reserve(ctx context.Context, now time.Time, emailSlot reposito
 		return err
 	}
 	if addressCount > signInAddressLimit {
+		if err := s.release(context.WithoutCancel(ctx), addressSlot); err != nil {
+			return err
+		}
 		return s.throttled(ctx, "address", now)
 	}
 	emailCount, err := limits.Reserve(ctx, emailSlot)
 	if err != nil {
-		return err
+		return errors.Join(err, s.release(context.WithoutCancel(ctx), addressSlot))
 	}
 	if emailCount > signInEmailLimit {
+		if err := s.release(context.WithoutCancel(ctx), emailSlot, addressSlot); err != nil {
+			return err
+		}
 		return s.throttled(ctx, "email", now)
 	}
 	return nil
@@ -366,6 +375,9 @@ func (s *Service) rehash(ctx context.Context, user repositories.User, password s
 		return encoded, nil
 	}
 	current, err := s.deps.Store.Repositories().Users.ByID(ctx, user.ID)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return "", errCredentialsChanged
+	}
 	if err != nil {
 		return "", err
 	}
@@ -405,6 +417,9 @@ func (s *Service) startSession(ctx context.Context, user domain.UserID, verified
 	}
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		locked, err := repos.Users.LockCredentials(ctx, user)
+		if errors.Is(err, repositories.ErrNotFound) {
+			return errCredentialsChanged
+		}
 		if err != nil {
 			return err
 		}

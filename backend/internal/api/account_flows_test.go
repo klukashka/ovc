@@ -638,6 +638,9 @@ func TestWrongCurrentPasswordIsRefusedAndThrottledAfterFiveAttempts(t *testing.T
 	if throttled.status != http.StatusTooManyRequests || throttled.headers.Get("Retry-After") == "" {
 		t.Fatalf("the sixth attempt answered %d %s", throttled.status, throttled.body)
 	}
+	if counted := h.countRows(t, "SELECT coalesce(max(count), 0) FROM rate_limit_counters WHERE purpose = $1", "current_password"); counted != 5 {
+		t.Fatalf("the refused attempt was counted: %d", counted)
+	}
 }
 
 func TestAccountEmailsFollowTheLanguageAndCarryNoUserText(t *testing.T) {
@@ -767,5 +770,30 @@ func TestAnUnverifiedPasswordChangeKeepsAQueuedConfirmation(t *testing.T) {
 
 	if taken.status != http.StatusOK {
 		t.Fatalf("the mailbox owner's confirmation answered %d %s", taken.status, taken.body)
+	}
+}
+
+func TestRegisterStoresUTCForAZoneNameThatIsNotCanonical(t *testing.T) {
+	names := map[string]string{
+		"dot segments":   "Europe/./Moscow",
+		"over 64 bytes":  "Europe/" + strings.Repeat("./", 40) + "Moscow",
+		"parent segment": "Europe/../Europe/Moscow",
+		"posix tree":     "posix/Europe/Moscow",
+		"leap tree":      "right/Europe/Moscow",
+		"factory zone":   "Factory",
+	}
+	for label, zone := range names {
+		t.Run(label, func(t *testing.T) {
+			h := newFlowHarness(t)
+			form := tutorSignUp(newcomerEmail)
+			form.Timezone = zone
+
+			result := h.register(t, form)
+
+			user, err := h.store.Repositories().Users.ByEmail(context.Background(), newcomerEmail)
+			if result.status != http.StatusAccepted || err != nil || user.Timezone != "UTC" {
+				t.Fatalf("answered %d %s; stored %+v, %v", result.status, result.body, user.Timezone, err)
+			}
+		})
 	}
 }

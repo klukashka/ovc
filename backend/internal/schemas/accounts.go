@@ -33,7 +33,7 @@ type RegisterRequest struct {
 	Email    string          `json:"email" maxLength:"254"`
 	Password string          `json:"password" maxLength:"512"`
 	Language domain.Language `json:"language" enum:"ru,en"`
-	Timezone string          `json:"timezone" maxLength:"64"`
+	Timezone string          `json:"timezone"`
 	Consent  bool            `json:"consent"`
 }
 

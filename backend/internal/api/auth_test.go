@@ -993,3 +993,46 @@ func TestBusyHashingDoesNotSpendSignInAttempts(t *testing.T) {
 		t.Fatalf("after busy hashing the sign-in answered %d %s", result.status, result.body)
 	}
 }
+
+func TestAttemptsRefusedByALimitDoNotSpendTheAddressBudget(t *testing.T) {
+	h := newAuthHarness(t)
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	for range 5 {
+		if result := h.login(t, "guessed@example.org", "wrong horse battery"); result.status != http.StatusUnauthorized {
+			t.Fatalf("a failure answered %d", result.status)
+		}
+	}
+	for range 15 {
+		if result := h.login(t, "guessed@example.org", "wrong horse battery"); result.status != http.StatusTooManyRequests {
+			t.Fatalf("an attempt over the email limit answered %d", result.status)
+		}
+	}
+
+	result := h.login(t, tutorEmail, "correct horse battery")
+
+	if result.status != http.StatusOK {
+		t.Fatalf("a correct sign-in from the same address answered %d after only 5 failures", result.status)
+	}
+}
+
+func TestAnAttemptRefusedByTheAddressLimitIsNotCounted(t *testing.T) {
+	h := newAuthHarness(t)
+	for attempt := range 20 {
+		if result := h.login(t, fmt.Sprintf("person%d@example.org", attempt), "wrong horse battery"); result.status != http.StatusUnauthorized {
+			t.Fatalf("attempt %d answered %d", attempt, result.status)
+		}
+	}
+
+	refused := h.login(t, "another@example.org", "wrong horse battery")
+
+	if refused.status != http.StatusTooManyRequests {
+		t.Fatalf("the 21st attempt answered %d", refused.status)
+	}
+	var counted int64
+	if err := h.database.Pool.QueryRow(context.Background(), "SELECT max(count) FROM rate_limit_counters WHERE purpose = 'sign_in_address'").Scan(&counted); err != nil {
+		t.Fatal(err)
+	}
+	if counted != 20 {
+		t.Fatalf("the address counter holds %d, want the 20 failures only", counted)
+	}
+}
