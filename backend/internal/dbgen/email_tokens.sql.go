@@ -190,7 +190,8 @@ func (q *Queries) GetUsableEmailToken(ctx context.Context, arg GetUsableEmailTok
 const hasNewerEmailRequest = `-- name: HasNewerEmailRequest :one
 SELECT EXISTS (
     SELECT 1 FROM email_requests AS newer
-    WHERE newer.user_id = $1 AND newer.purpose = $2 AND newer.created_at > $3
+    WHERE newer.user_id = $1 AND newer.purpose = $2
+      AND (newer.created_at > $3 OR (newer.created_at = $3 AND newer.id > $4))
 )
 `
 
@@ -198,10 +199,16 @@ type HasNewerEmailRequestParams struct {
 	UserID    domain.UserID
 	Purpose   domain.EmailPurpose
 	CreatedAt time.Time
+	ID        domain.EmailRequestID
 }
 
 func (q *Queries) HasNewerEmailRequest(ctx context.Context, arg HasNewerEmailRequestParams) (bool, error) {
-	row := q.db.QueryRow(ctx, hasNewerEmailRequest, arg.UserID, arg.Purpose, arg.CreatedAt)
+	row := q.db.QueryRow(ctx, hasNewerEmailRequest,
+		arg.UserID,
+		arg.Purpose,
+		arg.CreatedAt,
+		arg.ID,
+	)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err

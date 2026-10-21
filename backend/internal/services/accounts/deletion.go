@@ -127,44 +127,39 @@ func (p *Purger) purge(ctx context.Context, repos repositories.Repositories, use
 }
 
 func (p *Purger) PurgeDeleted(ctx context.Context, now time.Time) (int64, error) {
-	return p.purgeDue(ctx, now, func(ctx context.Context, repos repositories.Repositories) ([]domain.UserID, error) {
-		return repos.Users.DeletedBefore(ctx, now.Add(-deletedRetention), purgeBatch)
+	return p.purgeDue(ctx, now, func(ctx context.Context, repos repositories.Repositories, skip int32) ([]domain.UserID, error) {
+		return repos.Users.DeletedBefore(ctx, now.Add(-deletedRetention), skip, purgeBatch)
 	})
 }
 
 func (p *Purger) CleanupUnverified(ctx context.Context, now time.Time) (int64, error) {
-	return p.purgeDue(ctx, now, func(ctx context.Context, repos repositories.Repositories) ([]domain.UserID, error) {
-		return repos.Users.UnverifiedSince(ctx, now.Add(-unverifiedLifetime), purgeBatch)
+	return p.purgeDue(ctx, now, func(ctx context.Context, repos repositories.Repositories, skip int32) ([]domain.UserID, error) {
+		return repos.Users.UnverifiedSince(ctx, now.Add(-unverifiedLifetime), skip, purgeBatch)
 	})
 }
 
-func (p *Purger) purgeDue(ctx context.Context, now time.Time, due func(context.Context, repositories.Repositories) ([]domain.UserID, error)) (int64, error) {
+func (p *Purger) purgeDue(ctx context.Context, now time.Time, due func(context.Context, repositories.Repositories, int32) ([]domain.UserID, error)) (int64, error) {
 	var purged int64
 	var failures []error
-	failed := map[domain.UserID]bool{}
+	var skipped int32
 	for range purgeRounds {
-		ids, err := due(ctx, p.store.Repositories())
+		ids, err := due(ctx, p.store.Repositories(), skipped)
 		if err != nil {
 			return purged, errors.Join(append(failures, err)...)
 		}
-		progressed := false
 		for _, id := range ids {
-			if failed[id] {
-				continue
-			}
 			done, err := p.purgeIfDue(ctx, id, now)
 			if err != nil {
-				failed[id] = true
+				skipped++
 				failures = append(failures, err)
 				p.logger.LogAttrs(ctx, slog.LevelError, "account.purge_failed", userAttribute(id), slog.String("kind", core.ErrorKind(err)))
 				continue
 			}
-			progressed = true
 			if done {
 				purged++
 			}
 		}
-		if len(ids) < purgeBatch || !progressed {
+		if len(ids) < purgeBatch {
 			break
 		}
 	}

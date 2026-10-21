@@ -3,6 +3,7 @@ package worker_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"strings"
@@ -36,6 +37,7 @@ type harness struct {
 	worker   *worker.Worker
 	performs atomic.Int32
 	jobRuns  atomic.Int32
+	jobErr   error
 }
 
 func newHarness(t *testing.T, result func() error) *harness {
@@ -56,7 +58,7 @@ func newHarnessWith(t *testing.T, source clock.Source, timing worker.Timing, res
 	}
 	jobs := []worker.Job{{Name: testJob, Every: time.Hour, Run: func(context.Context, time.Time) (int64, error) {
 		h.jobRuns.Add(1)
-		return 0, nil
+		return 0, h.jobErr
 	}}}
 	lanes := []worker.Lane{{Name: domain.LaneEmail, Concurrency: 2, Perform: perform}}
 	h.worker = worker.New(logger, source, queue, lanes, jobs, timing)
@@ -236,5 +238,45 @@ func TestPassPastItsClaimBudgetClaimsNothing(t *testing.T) {
 
 	if row := h.row(t); row.Status != domain.OutboxPending || h.performs.Load() != 0 {
 		t.Fatalf("status %s, performed %d", row.Status, h.performs.Load())
+	}
+}
+
+type jobRun struct {
+	Level   string `json:"level"`
+	Message string `json:"msg"`
+	Result  string `json:"result"`
+	Kind    string `json:"kind"`
+}
+
+func jobRunRecord(t *testing.T, logs string) jobRun {
+	t.Helper()
+	for line := range strings.Lines(logs) {
+		var record jobRun
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("not a JSON record: %s", line)
+		}
+		if record.Message == "job.run" {
+			return record
+		}
+	}
+	t.Fatal("no job.run record")
+	return jobRun{}
+}
+
+func TestAFailingJobDoesNotStopDispatch(t *testing.T) {
+	h := newHarness(t, func() error { return nil })
+	h.jobErr = errors.New("one account could not be purged")
+	h.insert(t)
+
+	err := h.worker.Tick(context.Background(), start)
+
+	if err != nil {
+		t.Fatalf("a failing job stopped the pass: %v", err)
+	}
+	if h.performs.Load() != 1 || h.row(t).Status != domain.OutboxDone {
+		t.Fatalf("the email lane did not run after the failing job: performs %d, state %s", h.performs.Load(), h.row(t).Status)
+	}
+	if record := jobRunRecord(t, h.logs.String()); record.Level != "ERROR" || record.Result != "failed" || record.Kind != core.ErrorKind(h.jobErr) {
+		t.Fatalf("the failed job was not reported at ERROR with its kind: %+v", record)
 	}
 }

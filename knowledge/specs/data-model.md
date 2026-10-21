@@ -414,6 +414,7 @@ What the purge job does 30 days after an account is deleted. Slice 2 implements 
 
 ## Indexes and integrity notes
 
+- `attachments.quota_tutor_id` refers to the tutor's profile with `ON DELETE RESTRICT`, so a tutor purge first removes or re-charges every attachment charged to that tutor's quota; otherwise the purge fails on every run, reported as `account.purge_failed`. Slice 2 has no charged contexts (avatars count against no quota); the slice that adds the first one adds this step and its test.
 - Every foreign key used in authorization filters is indexed:
   - `relationship.tutor_id`, `relationship.student_id`;
   - `group_member.relationship_id`;

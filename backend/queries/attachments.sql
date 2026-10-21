@@ -15,7 +15,8 @@ INSERT INTO attachment_references (attachment_id, ref_kind, ref_id, question_id,
 VALUES (@attachment_id, @ref_kind, @ref_id, @question_id, @created_at);
 
 -- name: CountPendingUploads :one
-SELECT count(id) FROM attachments WHERE uploader_id = @uploader_id AND context = @context AND state = 'pending';
+SELECT count(id) FROM attachments
+WHERE uploader_id = @uploader_id AND context = @context AND state = 'pending' AND expires_at > sqlc.arg(now)::timestamptz;
 
 -- name: LockAttachment :one
 SELECT * FROM attachments WHERE id = @id FOR UPDATE;

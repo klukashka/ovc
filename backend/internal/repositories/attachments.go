@@ -14,8 +14,8 @@ type (
 	TutorText      = dbgen.UpdateTutorProfileTextParams
 )
 
-func (r Attachments) CountPending(ctx context.Context, uploader domain.UserID, context domain.AttachmentContext) (int64, error) {
-	count, err := r.queries.CountPendingUploads(ctx, dbgen.CountPendingUploadsParams{UploaderID: uploader, Context: context})
+func (r Attachments) CountPending(ctx context.Context, uploader domain.UserID, context domain.AttachmentContext, now time.Time) (int64, error) {
+	count, err := r.queries.CountPendingUploads(ctx, dbgen.CountPendingUploadsParams{UploaderID: uploader, Context: context, Now: now})
 	return one(count, err, "count pending uploads")
 }
 
@@ -84,13 +84,13 @@ func (r Attachments) DeleteUploadsOf(ctx context.Context, uploader domain.UserID
 	return counted(rows, err, "delete uploads of user")
 }
 
-func (r Users) DeletedBefore(ctx context.Context, cutoff time.Time, batch int32) ([]domain.UserID, error) {
-	ids, err := r.queries.ListDeletedBefore(ctx, dbgen.ListDeletedBeforeParams{Cutoff: cutoff, BatchSize: batch})
+func (r Users) DeletedBefore(ctx context.Context, cutoff time.Time, skip int32, batch int32) ([]domain.UserID, error) {
+	ids, err := r.queries.ListDeletedBefore(ctx, dbgen.ListDeletedBeforeParams{Cutoff: cutoff, Skip: skip, BatchSize: batch})
 	return one(ids, err, "users deleted before")
 }
 
-func (r Users) UnverifiedSince(ctx context.Context, cutoff time.Time, batch int32) ([]domain.UserID, error) {
-	ids, err := r.queries.ListUnverifiedSince(ctx, dbgen.ListUnverifiedSinceParams{Cutoff: cutoff, BatchSize: batch})
+func (r Users) UnverifiedSince(ctx context.Context, cutoff time.Time, skip int32, batch int32) ([]domain.UserID, error) {
+	ids, err := r.queries.ListUnverifiedSince(ctx, dbgen.ListUnverifiedSinceParams{Cutoff: cutoff, Skip: skip, BatchSize: batch})
 	return one(ids, err, "users unverified since")
 }
 

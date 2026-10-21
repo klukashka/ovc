@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"ovc/backend/internal/domain"
+	"ovc/backend/internal/repositories"
 )
 
 func (h *authHarness) deleteMe(t *testing.T, token string, password string) response {
@@ -179,5 +180,65 @@ func TestDeletionIsThrottledAfterFiveWrongPasswords(t *testing.T) {
 	}
 	if user, err := h.store.Repositories().Users.ByEmail(context.Background(), tutorEmail); err != nil || user.State != domain.AccountActive {
 		t.Fatalf("the throttled deletion changed the account: %+v %v", user, err)
+	}
+}
+
+func (h *authHarness) seedUnverifiedTutor(t *testing.T, user domain.UserID, email string, passwordHash string, created time.Time) {
+	t.Helper()
+	err := h.store.Repositories().Users.Create(context.Background(), repositories.NewUser{
+		ID: user, Role: domain.RoleTutor, State: domain.AccountUnverified, Email: email,
+		PasswordHash: passwordHash, Name: "A language tutor", Language: domain.LanguageEnglish, Timezone: "Europe/Moscow",
+		Theme: domain.ThemeSystem, ConsentVersion: "2026-10", ConsentAt: created, CreatedAt: created,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = h.store.Repositories().TutorProfiles.Create(context.Background(), repositories.NewTutorProfile{
+		UserID: user, FileQuotaBytes: 5_000_000_000, RecordingQuotaBytes: 50_000_000_000, CreatedAt: created,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (h *authHarness) chargeAnUploadTo(t *testing.T, uploader domain.UserID, tutor domain.UserID, index int) {
+	t.Helper()
+	_, err := h.database.Pool.Exec(context.Background(),
+		`INSERT INTO attachments (id, uploader_id, context, quota_tutor_id, storage_key, filename, media_type, size_bytes, sha256, state, created_at, updated_at)
+		 VALUES (gen_random_uuid(), $1::uuid, 'chat', $2::uuid, $3, 'notes.png', 'image/png', 1, $4, 'bound', $5, $5)`,
+		uploader.String(), tutor.String(), fmt.Sprintf("chat/charged-%d", index), make([]byte, 32), authStart)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAPurgeThatCannotRemoveSomeAccountsStillRemovesTheOnesBehindThem(t *testing.T) {
+	h := newFlowHarness(t)
+	uploader := h.seedUser(t, 250, "uploader@example.org", "correct horse battery", cheapArgon2())
+	passwordHash, err := h.hasher.Hash(context.Background(), "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stuck []domain.UserID
+	for index := range 100 {
+		user := domain.UserID{1, byte(index)}
+		h.seedUnverifiedTutor(t, user, fmt.Sprintf("stuck-%d@example.org", index), passwordHash, authStart)
+		h.chargeAnUploadTo(t, uploader, user, index)
+		stuck = append(stuck, user)
+	}
+	behind := domain.UserID{2}
+	h.seedUnverifiedTutor(t, behind, "behind@example.org", passwordHash, authStart.Add(time.Hour))
+
+	h.at(t, authStart.Add(7*24*time.Hour+2*time.Hour))
+	h.tick(t)
+
+	if owned := h.rowsOwnedBy(t, behind); len(owned) != 0 {
+		t.Fatalf("the account behind the stuck ones was not removed: %v", owned)
+	}
+	if owned := h.rowsOwnedBy(t, stuck[0]); owned["users"] != 1 {
+		t.Fatalf("a stuck account vanished: %v", owned)
+	}
+	if strings.Count(h.logs.String(), `"msg":"account.purge_failed"`) != len(stuck) {
+		t.Fatalf("each stuck account should be reported once")
 	}
 }

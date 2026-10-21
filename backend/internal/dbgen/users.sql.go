@@ -256,17 +256,19 @@ func (q *Queries) GetUserByID(ctx context.Context, id domain.UserID) (User, erro
 const listDeletedBefore = `-- name: ListDeletedBefore :many
 SELECT id FROM users
 WHERE state = 'deleted' AND deleted_at <= $1::timestamptz
-ORDER BY deleted_at
-LIMIT $2
+ORDER BY deleted_at, id
+OFFSET $2
+LIMIT $3
 `
 
 type ListDeletedBeforeParams struct {
 	Cutoff    time.Time
+	Skip      int32
 	BatchSize int32
 }
 
 func (q *Queries) ListDeletedBefore(ctx context.Context, arg ListDeletedBeforeParams) ([]domain.UserID, error) {
-	rows, err := q.db.Query(ctx, listDeletedBefore, arg.Cutoff, arg.BatchSize)
+	rows, err := q.db.Query(ctx, listDeletedBefore, arg.Cutoff, arg.Skip, arg.BatchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -288,17 +290,19 @@ func (q *Queries) ListDeletedBefore(ctx context.Context, arg ListDeletedBeforePa
 const listUnverifiedSince = `-- name: ListUnverifiedSince :many
 SELECT id FROM users
 WHERE state = 'unverified' AND unverified_since <= $1::timestamptz
-ORDER BY unverified_since
-LIMIT $2
+ORDER BY unverified_since, id
+OFFSET $2
+LIMIT $3
 `
 
 type ListUnverifiedSinceParams struct {
 	Cutoff    time.Time
+	Skip      int32
 	BatchSize int32
 }
 
 func (q *Queries) ListUnverifiedSince(ctx context.Context, arg ListUnverifiedSinceParams) ([]domain.UserID, error) {
-	rows, err := q.db.Query(ctx, listUnverifiedSince, arg.Cutoff, arg.BatchSize)
+	rows, err := q.db.Query(ctx, listUnverifiedSince, arg.Cutoff, arg.Skip, arg.BatchSize)
 	if err != nil {
 		return nil, err
 	}

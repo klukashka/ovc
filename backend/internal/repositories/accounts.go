@@ -151,7 +151,7 @@ func (r EmailTokens) Request(ctx context.Context, id domain.EmailRequestID) (Ema
 
 func (r EmailTokens) Superseded(ctx context.Context, request EmailRequest) (bool, error) {
 	newer, err := r.queries.HasNewerEmailRequest(ctx, dbgen.HasNewerEmailRequestParams{
-		UserID: request.UserID, Purpose: request.Purpose, CreatedAt: request.CreatedAt,
+		UserID: request.UserID, Purpose: request.Purpose, CreatedAt: request.CreatedAt, ID: request.ID,
 	})
 	return one(newer, err, "newer email request")
 }

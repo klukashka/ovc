@@ -28,7 +28,8 @@ SELECT * FROM email_requests WHERE id = @id;
 -- name: HasNewerEmailRequest :one
 SELECT EXISTS (
     SELECT 1 FROM email_requests AS newer
-    WHERE newer.user_id = @user_id AND newer.purpose = @purpose AND newer.created_at > @created_at
+    WHERE newer.user_id = @user_id AND newer.purpose = @purpose
+      AND (newer.created_at > @created_at OR (newer.created_at = @created_at AND newer.id > @id))
 );
 
 -- name: DeleteOpenEmailRequests :execrows

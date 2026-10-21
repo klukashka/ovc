@@ -524,3 +524,35 @@ func TestPasswordRehashReplacesOnlyTheHashItWasComputedFrom(t *testing.T) {
 		t.Fatalf("stale rehash replaced %v (%v); stored %q", stale, staleErr, current.PasswordHash)
 	}
 }
+
+func TestOfTwoEmailRequestsAtTheSameInstantExactlyOneIsCurrent(t *testing.T) {
+	store := newStore(t)
+	user := domain.UserID{1}
+	createUser(t, store, user, "tutor@example.org")
+	requests := []repositories.NewEmailRequest{
+		{ID: domain.EmailRequestID{1}, UserID: user, Purpose: domain.EmailPurposeVerify, CreatedAt: instant},
+		{ID: domain.EmailRequestID{2}, UserID: user, Purpose: domain.EmailPurposeVerify, CreatedAt: instant},
+	}
+	for _, request := range requests {
+		if err := store.Repositories().EmailTokens.CreateRequest(context.Background(), request); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var superseded []bool
+	for _, request := range requests {
+		stored, err := store.Repositories().EmailTokens.Request(context.Background(), request.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		newer, err := store.Repositories().EmailTokens.Superseded(context.Background(), stored)
+		if err != nil {
+			t.Fatal(err)
+		}
+		superseded = append(superseded, newer)
+	}
+
+	if superseded[0] == superseded[1] {
+		t.Fatalf("both requests superseded: %v", superseded)
+	}
+}

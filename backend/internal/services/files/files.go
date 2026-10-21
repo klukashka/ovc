@@ -155,7 +155,7 @@ func (s *Service) UploadAvatar(ctx context.Context, uploader domain.UserID, file
 
 func (s *Service) admit(ctx context.Context, uploader domain.UserID, now time.Time) error {
 	repos := s.deps.Store.Repositories()
-	pending, err := repos.Attachments.CountPending(ctx, uploader, domain.ContextAvatar)
+	pending, err := repos.Attachments.CountPending(ctx, uploader, domain.ContextAvatar, now)
 	if err != nil {
 		return err
 	}
@@ -297,7 +297,7 @@ func (s *Service) store(ctx context.Context, uploader domain.UserID, encoded []b
 		if _, err := repos.Users.LockCredentials(ctx, uploader); err != nil {
 			return err
 		}
-		pending, err := repos.Attachments.CountPending(ctx, uploader, domain.ContextAvatar)
+		pending, err := repos.Attachments.CountPending(ctx, uploader, domain.ContextAvatar, now)
 		if err != nil {
 			return err
 		}
@@ -400,6 +400,10 @@ func (s *Service) Avatar(ctx context.Context, id domain.AttachmentID) (Avatar, e
 		return Avatar{}, err
 	}
 	body, err := s.deps.Objects.Open(ctx, servable.StorageKey)
+	if errors.Is(err, storage.ErrObjectNotFound) {
+		s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "avatars.object_missing", attachmentAttribute(id))
+		return Avatar{}, ErrNotFound
+	}
 	if err != nil {
 		return Avatar{}, err
 	}
@@ -451,7 +455,8 @@ func (s *Service) PurgeUploadsOf(ctx context.Context, repos repositories.Reposit
 		return err
 	}
 	for _, upload := range uploads {
-		if err := s.queueDeletion(ctx, repos, upload.ID, upload.StorageKey, now); err != nil {
+		idempotencyKey := string(domain.KindStorageDelete) + ":" + upload.ID.String() + ":purge"
+		if err := s.queueDeletionAs(ctx, repos, upload.ID, upload.StorageKey, idempotencyKey, now); err != nil {
 			return err
 		}
 	}

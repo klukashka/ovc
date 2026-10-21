@@ -864,3 +864,10 @@ These amendments, made after the standard and security planning reviews, overrid
 - Conflict 7: students join only through their tutor ([proposal 0002](../../docs/proposals/0002-student-onboarding.md)); FR-1.2 keeps its current wording until slice 3 rewrites it.
 - Conflict 15: the development mail sink is read only through the test control route; the architecture document drops the development-only viewer page.
 - Refresh cookie MAC: the refresh cookie carries a MAC over the session identifier and generation, so a forged stale-generation cookie cannot revoke a session (see the implementation notes).
+
+### G. Owner decisions after the slice review (2026-10-22)
+
+- D16 amended: the end-to-end deployments share one storage bucket, as built, and the run empties it at the end, so uploaded objects do not accumulate.
+- A failing worker job is a handled outcome: it is recorded and reported at ERROR, and the pass continues with the other jobs and the lanes; only the worker's own infrastructure failures end the pass.
+- Secret setting names are written plainly, gosec's hard-coded credential rule is excluded only for the two settings files in the lint configuration, and AGENTS.md gains a rule forbidding splitting or renaming literals to get past a linter (both land with the tooling fixes after the slice review).
+- Test doubles that inject behaviour into real implementations (the counting password hasher, the storage wrapper that pauses before a write) become fakes, injected through constructors and checked by the same contract tests as the production implementations.

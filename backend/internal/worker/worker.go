@@ -107,19 +107,18 @@ func (w *Worker) runJob(ctx context.Context, job Job, now time.Time) error {
 	if err := w.outbox.RecordJob(ctx, job.Name, result, now); err != nil {
 		return err
 	}
-	level := slog.LevelInfo
-	if runErr != nil {
-		level = slog.LevelError
-	}
-	w.logger.LogAttrs(ctx, level, "job.run",
+	attributes := []slog.Attr{
 		slog.String("job", string(job.Name)),
 		slog.String("result", string(result)),
 		slog.Int64("batch_size", processed),
 		slog.Int64("duration_ms", w.timing.Wall().Sub(started).Milliseconds()),
-	)
-	if runErr != nil {
-		return fmt.Errorf("job %s: %w", job.Name, runErr)
 	}
+	level := slog.LevelInfo
+	if runErr != nil {
+		level = slog.LevelError
+		attributes = append(attributes, slog.String("kind", core.ErrorKind(runErr)))
+	}
+	w.logger.LogAttrs(ctx, level, "job.run", attributes...)
 	return nil
 }
 

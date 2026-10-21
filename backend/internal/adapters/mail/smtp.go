@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -104,8 +105,12 @@ func (s *SMTP) Send(ctx context.Context, message Message) error {
 	stop := context.AfterFunc(ctx, func() { abort(connection.conn) })
 	err = connection.client.SendMail(s.config.From, []string{message.To}, bytes.NewReader(payload))
 	interrupted := !stop()
-	if err != nil || interrupted {
+	if err != nil {
 		return errors.Join(fmt.Errorf("send through SMTP: %w", errors.Join(err, ctx.Err())), closeClient(connection.client))
+	}
+	if interrupted {
+		s.discard(ctx, connection)
+		return nil
 	}
 	select {
 	case s.idle <- connection:
@@ -143,7 +148,7 @@ func (s *SMTP) connection(ctx context.Context) (*pooled, error) {
 }
 
 func (s *SMTP) discard(ctx context.Context, connection *pooled) {
-	if err := closeClient(connection.client); err != nil && !errors.Is(err, net.ErrClosed) {
+	if err := closeClient(connection.client); err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, os.ErrDeadlineExceeded) {
 		s.config.Logger.LogAttrs(ctx, slog.LevelWarn, "smtp.connection.discard_failed", slog.String("kind", core.ErrorKind(err)))
 	}
 }

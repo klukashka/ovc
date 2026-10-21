@@ -446,3 +446,40 @@ func TestAnExpiredUploadCannotBeBoundBeforeTheWorkerRemovesIt(t *testing.T) {
 		t.Fatalf("binding an expired upload answered %d %s", bound.status, bound.body)
 	}
 }
+
+func TestExpiredPendingUploadsDoNotCountBeforeTheExpiryJobRuns(t *testing.T) {
+	h := newFlowHarness(t)
+	token := h.signedInTutor(t)
+	for range 3 {
+		uploadedID(t, h.upload(t, token, "me.png", pngBytes(t, 2, 2)))
+	}
+	h.at(t, authStart.Add(24*time.Hour+time.Minute))
+	fresh := accessToken(t, h.login(t, tutorEmail, "correct horse battery"))
+
+	upload := h.upload(t, fresh, "me.png", pngBytes(t, 2, 2))
+
+	if upload.status != http.StatusCreated {
+		t.Fatalf("expired pending uploads still blocked a new one: %d %s", upload.status, upload.body)
+	}
+}
+
+func TestAnAvatarWhoseObjectIsMissingAnswersNotFoundAndIsReported(t *testing.T) {
+	h := newFlowHarness(t)
+	token := h.signedInTutor(t)
+	avatar := uploadedID(t, h.upload(t, token, "me.png", pngBytes(t, 2, 2)))
+	h.patchMe(t, token, fmt.Sprintf(`{"avatar_id":%q}`, avatar))
+	key := h.storageKey(t, avatar)
+	if err := h.objects.Delete(context.Background(), key); err != nil {
+		t.Fatal(err)
+	}
+
+	served := h.send(t, http.MethodGet, "/api/v1/avatars/"+avatar, "", nil)
+
+	if served.status != http.StatusNotFound {
+		t.Fatalf("a missing avatar object answered %d", served.status)
+	}
+	logs := h.logs.String()
+	if strings.Count(logs, `"level":"WARN","msg":"avatars.object_missing"`) != 1 || strings.Contains(logs, key) {
+		t.Fatalf("the missing object was not reported once without its key: %s", logs)
+	}
+}

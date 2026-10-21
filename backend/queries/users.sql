@@ -72,13 +72,15 @@ WHERE user_id = @user_id;
 -- name: ListDeletedBefore :many
 SELECT id FROM users
 WHERE state = 'deleted' AND deleted_at <= sqlc.arg(cutoff)::timestamptz
-ORDER BY deleted_at
+ORDER BY deleted_at, id
+OFFSET sqlc.arg(skip)
 LIMIT sqlc.arg(batch_size);
 
 -- name: ListUnverifiedSince :many
 SELECT id FROM users
 WHERE state = 'unverified' AND unverified_since <= sqlc.arg(cutoff)::timestamptz
-ORDER BY unverified_since
+ORDER BY unverified_since, id
+OFFSET sqlc.arg(skip)
 LIMIT sqlc.arg(batch_size);
 
 -- name: LockUserForPurge :one

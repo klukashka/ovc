@@ -64,16 +64,18 @@ func (q *Queries) ClaimExpiredUploads(ctx context.Context, arg ClaimExpiredUploa
 }
 
 const countPendingUploads = `-- name: CountPendingUploads :one
-SELECT count(id) FROM attachments WHERE uploader_id = $1 AND context = $2 AND state = 'pending'
+SELECT count(id) FROM attachments
+WHERE uploader_id = $1 AND context = $2 AND state = 'pending' AND expires_at > $3::timestamptz
 `
 
 type CountPendingUploadsParams struct {
 	UploaderID domain.UserID
 	Context    domain.AttachmentContext
+	Now        time.Time
 }
 
 func (q *Queries) CountPendingUploads(ctx context.Context, arg CountPendingUploadsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countPendingUploads, arg.UploaderID, arg.Context)
+	row := q.db.QueryRow(ctx, countPendingUploads, arg.UploaderID, arg.Context, arg.Now)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
