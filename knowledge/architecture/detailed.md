@@ -128,7 +128,7 @@ Exact versions are pinned in the lockfiles and recorded with check dates in `kno
 | Backend language | Go, latest stable when slice 1 starts, pinned in `go.mod` | Compile-time checks, goroutines for WebSockets, single-binary deployment ([ADR-0012](../../docs/decisions/0012-go-backend.md)) |
 | HTTP and API contract | huma 2.39.1 on `net/http` | Typed handlers, input validation and OpenAPI 3.1 generated from code; defaults reviewed in [research](../research/toolchain-2026-10-21.md) |
 | WebSockets | `coder/websocket` (added in slice 4) | Context-aware, maintained, standard `net/http` integration |
-| Database access and migrations | `pgx` 5.10.0 and `goose` 3.28.0 with embedded SQL files; `sqlc` from slice 2 | Visible SQL compiled to typed functions; reviewed plain-SQL migrations with a session lock |
+| Database access and migrations | `pgx` 5.10.0 and `goose` 3.28.0 with embedded SQL files; `sqlc` 1.31.1 as a Go tool ([versions](../research/backend-libraries-2026-10-21.md)) | Visible SQL compiled to typed functions; reviewed plain-SQL migrations with a session lock |
 | Database and queue | PostgreSQL 18 | Relational data, keyset pagination, leased `SKIP LOCKED` outbox, `LISTEN/NOTIFY` broadcaster |
 | Timezones | Standard library `time` with the embedded `time/tzdata` database | IANA rules without a dependency, independent of the host's zone files |
 | Logging | Standard library `log/slog`, JSON | Structured, leveled diagnostics without a dependency |

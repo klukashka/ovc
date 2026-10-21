@@ -54,7 +54,7 @@ Use [the knowledge index](../README.md) for exact contracts. This checklist name
 Checks activate with the capability they verify, following the [roadmap](../../docs/roadmap.md):
 
 - **Now (documentation only):** Markdown lint, offline link and anchor check, and Mermaid parsing over all Markdown are active and required.
-- **Backend scaffold (slice 1):** `go mod tidy -diff`, `gofmt`, `go vet`, golangci-lint, `govulncheck` (`sqlc diff` joins in slice 2), and `go test -race` including the package-layer architecture test and the integration test database container activate. Security scanning tools are selected and registered here.
+- **Backend scaffold (slice 1):** `go mod tidy -diff`, `gofmt`, `go vet`, golangci-lint, `govulncheck`, `sqlc diff` (active since the accounts schema of slice 2), and `go test -race` including the package-layer architecture test and the integration test database container activate. Security scanning tools are selected and registered here.
 - **Frontend scaffold (slice 1):** pnpm frozen install, TypeScript check, ESLint, Prettier check and production build activate. The first runnable shell activates Playwright boot, diagnostics and accessibility smoke and loading-performance measurement.
 - **Each later slice:** adds its integration tests, its Playwright journeys, its observability assertions and its performance workloads from the table above, registered as commands in the development guide in the same change.
 

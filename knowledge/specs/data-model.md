@@ -61,21 +61,21 @@ erDiagram
 | `email_verified_at` | |
 | `password_hash` | Argon2id |
 | `name` | 1–100 characters |
-| `avatar_attachment_id` | |
 | `language` | `ru`, `en` |
 | `timezone` | IANA, from the browser at sign-up |
 | `theme` | `light`, `dark`, `system` |
 | `consent_version`, `consent_at` | |
-| `pending_tutor_code` | |
-| `reserved_invitation_id` | |
-| `deleted_at` | partial index where `state = 'deleted'` |
-| `email_undeliverable_at` | |
-| `online_until` | persisted presence |
-| `last_seen_at` | |
-| `digest_pending_since` | partial index where not null |
-| `last_digest_at` | |
+| `unverified_since` | when the 7-day cleanup clock started: sign-up, or a restore or unblock into `unverified`; partial index where `state = 'unverified'`, for cleanup |
+| `deleted_at` | set exactly when `state = 'deleted'`; partial index where `state = 'deleted'` |
+| `pending_tutor_code` | slice 3, unless [proposal 0002](../../docs/proposals/0002-student-onboarding.md) removes it |
+| `reserved_invitation_id` | slice 3, unless proposal 0002 removes it |
+| `email_undeliverable_at` | added with the email provider choice |
+| `online_until` | persisted presence; slice 4 |
+| `last_seen_at` | slice 4 |
+| `digest_pending_since` | partial index where not null; slice 6 |
+| `last_digest_at` | slice 6 |
 
-Partial index on `created_at` where `state = 'unverified'`, for cleanup.
+Slice 2 creates the table with every column above that names no later slice. `state_before_block` is set exactly when `state = 'blocked'`, an `active` account always has `email_verified_at`, and `password_hash` must be an Argon2id string. A user's avatar is the attachment referenced with `ref_kind = avatar` and `ref_id` the user's identifier; the user row holds no attachment column, so no foreign key runs in both directions.
 
 ### Tutor profile
 
@@ -86,7 +86,7 @@ One per tutor user.
 | `user_id` | primary key |
 | `bio` | up to 1,000 characters |
 | `subjects` | up to 10 strings |
-| `code` | unique; shared openly by design |
+| `code` | unique; shared openly by design; slice 3 |
 | `recording_retention_days` | 7, 30, 90, 180 or 365; default 90 |
 | `file_quota_bytes`, `recording_quota_bytes` | |
 | `file_usage_bytes`, `recording_usage_bytes` | |
@@ -94,16 +94,16 @@ One per tutor user.
 
 ### Session
 
-`id` (also the `sid` claim), `user_id`, `refresh_token_hash` (unique), `previous_token_hash`, `expires_at`, `revoked_at`, `last_used_at`, `user_agent_summary`.
+`id` (also the `sid` claim), `user_id`, `generation`, `refresh_hash`, `expires_at`, `revoked_at`, `last_used_at`. The refresh cookie carries the session identifier, the generation and a random part; `refresh_hash` is the SHA-256 hash of the current random part. Rotation is one conditional update on the identifier, generation, hash, `revoked_at` and `expires_at`, so concurrent refreshes cannot both rotate, and a presented generation older than the current one identifies reuse only when the server can authenticate that older cookie as one it issued. The table keeps no hash of earlier generations, so the cookie, `<sid>.<generation>.<random>.<mac>`, also carries an untruncated HMAC-SHA-256 over the identifier and generation, keyed with a key derived by HKDF-SHA-256 from `OVC_JWT_SECRET` with the info string `refresh-generation`, never the signing key itself, and compared in constant time. A cookie whose MAC fails, whose generation is newer than the stored one, or whose generation is current but whose random part does not match is refused without revoking anything; only a valid MAC with an older generation revokes. Rotating `OVC_JWT_SECRET` therefore invalidates every refresh cookie, which are then refused without revocation. `expires_at` is fixed at sign-in and never extended. No user-agent summary is collected.
 
 ### Email token and email request
 
 - **Email request:** `id`, `user_id`, `purpose` (`verify_email`, `reset_password`). It is recorded when a confirmation or reset is requested, and its identifier is the outbox idempotency key.
-- **Email token:** `id`, `request_id`, `user_id`, `purpose`, `token_hash` (unique), `expires_at`, `used_at`. It is minted by the worker at dispatch. A new token of the same purpose invalidates earlier unused ones.
+- **Email token:** `id`, `request_id`, `user_id`, `purpose`, `token_hash` (unique), `expires_at`, `used_at`. It is minted by the worker at dispatch. A new token of the same purpose deletes earlier unused ones, and blocking, deletion, confirmation, reset and password change delete every unused token of both purposes. A token's request, user and purpose must match its email request (a composite foreign key). Consumption is one conditional update on the hash, purpose, `used_at` and `expires_at`.
 
 ### Rate limit counter
 
-`purpose`, `subject` (email, IP, account or tutor), `window_start`, `count`; primary key on the three key columns, plus an index on `window_start` for cleanup.
+`purpose`, `subject`, `window_start`, `count`; primary key on the three key columns, plus an index on `window_start` for cleanup. `subject` is the 32-byte HMAC-SHA-256 of the email, IP address (IPv6 by /64), account or tutor, keyed with a key derived by HKDF-SHA-256 from `OVC_JWT_SECRET` with the info string `throttle`, never the signing key itself, so no raw address is stored. A slot is reserved with one `INSERT … ON CONFLICT … DO UPDATE … RETURNING count` before any hashing work.
 
 ## Relationships and groups
 
@@ -332,7 +332,7 @@ Constraints and indexes:
 | `id` | |
 | `uploader_id` | |
 | `context` | `avatar`, `prompt_image`, `library`, `chat`, `answer`, `corrected` |
-| `scope_kind`, `scope_id`, `scope_question_id` | the upload scope |
+| `scope_kind`, `scope_id`, `scope_question_id` | the upload scope: `channel` or `submission`; both kind and identifier or neither; a question only within a submission |
 | `quota_tutor_id` | |
 | `storage_key` | random, never returned |
 | `filename` | |
@@ -345,7 +345,7 @@ Constraints and indexes:
 
 - **Attachment reference:**
   - columns: `attachment_id`, `ref_kind` (`message`, `answer`, `review_item`, `material`, `template`, `issue_snapshot`, `lesson`, `avatar`), `ref_id`, `question_id` (for answers and review items);
-  - primary key on all four, and an index on `(ref_kind, ref_id)`.
+  - a unique constraint on all four with `NULLS NOT DISTINCT`, because `question_id` is null for most kinds, an index on `(ref_kind, ref_id)`, and a unique partial index on `ref_id` where `ref_kind = 'avatar'`, so a user has at most one avatar; replacing an avatar deletes the old reference before inserting the new one in the same transaction.
 - **Quota charge:** `tutor_id`, `attachment_id`, `size_bytes`; primary key on the pair. It is created with the first reference that charges the tutor and deleted with the last one.
 
 ## Notifications and worker
@@ -366,6 +366,7 @@ Constraints and indexes:
 | `lane` | `email`, `provider_call`, `recording_copy`, `storage_delete` |
 | `kind` | |
 | `payload` | identifiers only |
+| `priority` | 0 high, 1 normal |
 | `idempotency_key` | unique |
 | `status` | `pending`, `in_progress`, `done`, `dead` |
 | `attempts` | incremented at claim |
@@ -374,16 +375,17 @@ Constraints and indexes:
 | `last_error_code` | |
 | `done_reason` | `sent`, `obsolete` |
 | `done_at` | partial index where `status in ('done', 'dead')`, for cleanup |
+| `created_at` | |
 
-Partial indexes on `(lane, priority, next_attempt_at)` where pending, and on `(lease_expires_at)` where in progress. The `priority` column is `high` or `normal`.
+Partial indexes on `(lane, priority, next_attempt_at)` where pending, and on `(lease_expires_at)` where in progress. `priority` is a small integer, 0 for high and 1 for normal, so claim order is explicit. A lease token and its expiry are set exactly while a row is `in_progress`, `done_at` exactly for `done` and `dead`, and `done_reason` exactly for `done`. Claims take due pending rows with `FOR UPDATE SKIP LOCKED` in priority order; completing, retrying and failing a row are conditional on its current lease token. Reclaiming an expired lease returns a row to `pending`, or makes it `dead` with `lease_expired` once it has used every attempt (8, the domain constant `OutboxMaxAttempts`). Cleanup deletes `done` and `dead` rows against their own retention cutoffs, in bounded batches.
 
 ### Job run
 
-`job`, `last_run_at`, `last_result`; primary key `job`.
+`job`, `last_run_at`, `last_result` (`ok` or `failed`); primary key `job`.
 
 ### Test-only tables
 
-Created only in test and development databases, never by production migrations:
+Created by the normal migrations in every database, but written only by the test adapters (the shared test clock and the database mail sink), which run only against test and development databases:
 
 - **Test clock:** a single row with the shared instant.
 - **Mail sink:** recipient, subject, bodies, links and sent time.

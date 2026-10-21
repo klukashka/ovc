@@ -596,7 +596,7 @@ Records never contain an email, name, password, token or cookie.
 **`docs/threat-model.md`** (marked pending owner review):
 
 - T-1: Argon2 parameters, the hash concurrency limiter, the dummy hash.
-- T-2: rotation and reuse detection, and the Web Locks multi-tab rule.
+- T-2: rotation and reuse detection, the generation MAC (a forged stale-generation cookie cannot revoke a session), and the Web Locks multi-tab rule.
 - T-3: identical register and forgot responses including timing, and the public resend (if D9 A).
 - T-4: tokens minted by the worker and superseded.
 - T-13 and T-35: avatar uploads and serving.
@@ -678,6 +678,7 @@ Named tests that pass, among others:
 - `TestConfirmFromAnotherBrowserRequiresPasswordAndRevokesSessions`
 - `TestLoginThrottlesTheSixthFailureWithin15Minutes`
 - `TestRefreshReuseRevokesTheSession`
+- `TestForgedStaleGenerationIsRefusedWithoutRevoking`
 - `TestRefreshRejectsForeignOrigin`
 - `TestRefreshWithoutCookieAnswers204`
 - `TestAccessTokenExpiresByTheSharedClock`
@@ -757,7 +758,7 @@ Playwright: `pilot-1 › steps 1–3`, `pilot-4 › step 8 anonymous redirect`, 
 
 ## Slice 2 plan, revision 2: amendments after the planning reviews
 
-These amendments, made after the standard and security planning reviews, override the matching parts of revision 1 (sections 1 to 12 above). Revision 1 text they supersede includes: C5 containing `Register` and the critical path in section 10 (amendment 17); D12's public immutable caching and the 5 MiB limit (amendment 13); `users.avatar_attachment_id` and conflict 12 (amendment 14); D13's right-most entry (amendment 9); D21's plain hashes (amendment 2); student sign-up, D15, pilot scenario 2 step 2, the unverified student confined (sections 6 and 8) and amendment 21 for students, and the FR-1.2 wording item in section 9 (amendment 34 and conflict 7).
+These amendments, made after the standard and security planning reviews, override the matching parts of revision 1 (sections 1 to 12 above). Revision 1 text they supersede includes: C5 containing `Register` and the critical path in section 10 (amendment 17); D12's public immutable caching and the 5 MiB limit (amendment 13); `users.avatar_attachment_id` and conflict 12 (amendment 14); D13's right-most entry (amendment 9); D21's plain hashes (amendment 2); the sessions schema in section 4 and the `Refresh` description in section 5 (amendment 3 and the refresh cookie MAC note); student sign-up, D15, pilot scenario 2 step 2, the unverified student confined (sections 6 and 8) and amendment 21 for students, and the FR-1.2 wording item in section 9 (amendment 34 and conflict 7).
 
 ### A. Sessions, tokens and throttling
 
@@ -808,6 +809,11 @@ These amendments, made after the standard and security planning reviews, overrid
 
 - **34.** Following [proposal 0002](../../docs/proposals/0002-student-onboarding.md), slice 2 ships sign-up for tutors only: `/signup` offers "I teach" and, for "I study", the message to ask the tutor for a link or code; `/signup/student`, the student branch of `POST /auth/register`, D15 and pilot scenario 2 step 2 (a student signing up with a code) move to slice 3, and so do the end-to-end checks that need a student account (an unverified student confined to the confirmation state). Pilot scenario 3 step 1 keeps its tutor sign-up and confirmation part in slice 2. End-to-end tests create accounts only through the public API; no `/__test__/` route creates accounts. FR-1.2 keeps its current wording until slice 3 rewrites it (conflict 7 is resolved by the proposal), and the register route refuses `role: student` with `validation_failed`, and keeps refusing it from slice 3 on, when students sign up only through an invitation or a tutor code; that refusal reveals nothing about existing accounts. The change that implements the register route marks this tutor-only behaviour in `knowledge/specs/api.md` and `knowledge/specs/accounts.md`.
 
+### Implementation notes
+
+- **C3** builds the schema, sqlc, the generated package and the repositories with the queries the plan names, and tests the intricate ones (claim and lease, conditional updates, throttle reservation). The batched purge statements and their test move to C8, which implements purge. `outbox.kind` and `job_runs.job` get named types now; C4 defines their values. Reclaiming an expired lease makes a row `dead` once its attempts are used, and outbox cleanup takes separate cutoffs for `done` and `dead` rows, as the notifications specification requires.
+- **Refresh cookie MAC** (owner decision, 2026-10-21): the cookie value becomes `<sid>.<generation>.<random>.<mac>`, superseding the format of amendment 3. The MAC is HMAC-SHA-256 over the session identifier and generation, keyed by HKDF-SHA-256 from `OVC_JWT_SECRET` with info `refresh-generation`. Only a cookie with a valid MAC and an older generation counts as reuse and revokes the session; C5 implements it, updates `knowledge/specs/accounts.md` and T-2, and adds `TestForgedStaleGenerationIsRefusedWithoutRevoking`. C5 also specifies: the MAC is verified before the session is looked up; a refresh whose conditional update matches no row is re-checked against the current row and classified by the same rules, so losing a race counts as reuse (the Web Locks rule keeps tabs from racing), and T-2 lists this with the lost-response false positive; and the canonical cookie encoding (the MAC input bytes, base64url without padding, a 32-byte MAC, strict parsing of every segment), with a refusal test for malformed cookies.
+
 ### E. New owner questions
 
 - **Q6, deleting an unverified account**, raised by the security planning review: purge it immediately and free the email (recommended), so a squatter cannot lock the real owner out for 30 days.
@@ -831,3 +837,4 @@ These amendments, made after the standard and security planning reviews, overrid
 - Q4: sign-up pages redirect a signed-in user to their home page.
 - Conflict 7: students join only through their tutor ([proposal 0002](../../docs/proposals/0002-student-onboarding.md)); FR-1.2 keeps its current wording until slice 3 rewrites it.
 - Conflict 15: the development mail sink is read only through the test control route; the architecture document drops the development-only viewer page.
+- Refresh cookie MAC: the refresh cookie carries a MAC over the session identifier and generation, so a forged stale-generation cookie cannot revoke a session (see the implementation notes).

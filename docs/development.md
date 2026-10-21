@@ -1,6 +1,6 @@
 # Development
 
-Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain, and on 2026-10-21 with Docker Compose services, security scanning, the backend scaffold, the frontend scaffold and the pinned documentation tools, and the same day with the test fixture's host check; pending line-by-line owner review.
+Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain, and on 2026-10-21 with Docker Compose services, security scanning, the backend scaffold, the frontend scaffold and the pinned documentation tools, and the same day with the test fixture's host check and the sqlc check; pending line-by-line owner review.
 
 How to set up, check and verify changes locally. Read [AGENTS.md](../AGENTS.md) before contributing. Backend and frontend commands were registered here by [roadmap slice 1](roadmap.md#slice-1-scaffold-and-local-loop); later slices extend them.
 
@@ -9,7 +9,7 @@ How to set up, check and verify changes locally. Read [AGENTS.md](../AGENTS.md) 
 Use Linux or macOS with Git, Bash, Docker with Compose v2 (Docker Desktop, Colima or OrbStack all work), Node and pnpm (see below), a system `python3` (3.9 or newer, for the agent hooks in `.claude/hooks/`), a C compiler (for `go test -race`, which needs cgo) and the pinned toolchain:
 
 - Go: the version in [`tools/go.mod`](../tools/go.mod) (`go` and `toolchain` lines, matched by `backend/go.mod`), installed from [the official downloads](https://go.dev/dl/) or a package manager; the `toolchain` line lets newer Go installations fetch the pinned release.
-- Repository tools (Gitleaks and OSV-Scanner now; govulncheck and golangci-lint, built from the pinned versions into the ignored `bin/` directory because they must type-check the backend module; sqlc from slice 2): pinned as Go `tool` dependencies in `tools/go.mod`, with checksums in `tools/go.sum`, and run from the repository root as `go -C tools tool <tool>`. No separate installation is needed.
+- Repository tools (Gitleaks and OSV-Scanner now; govulncheck and golangci-lint, built from the pinned versions into the ignored `bin/` directory because they must type-check the backend module; sqlc, which generates `backend/internal/dbgen` from `backend/queries/` and `backend/migrations/`): pinned as Go `tool` dependencies in `tools/go.mod`, with checksums in `tools/go.sum`, and run from the repository root as `go -C tools tool <tool>`. No separate installation is needed.
 - Node and pnpm: Node from `frontend/.node-version` and pnpm from the `packageManager` field of `frontend/package.json` ([versions](../knowledge/research/frontend-toolchain-2026-10-21.md)). Playwright's browsers are installed once with `pnpm --dir frontend exec playwright install chromium firefox webkit`.
 - lychee for link checks: installed with its [official instructions](https://lychee.cli.rs/installation/).
 
@@ -54,9 +54,12 @@ go vet ./...
 ../bin/golangci-lint run ./...
 ../bin/govulncheck ./...
 go test -race -count=1 ./...
+go -C ../tools tool sqlc -f ../backend/sqlc.yaml diff
 ```
 
-Every command must exit 0. The tests include the package-layer architecture test (it parses the [package layers table](../knowledge/architecture/detailed.md#package-layers)), the no-comments and no-`any` conventions test, integration tests that each create and drop their own `ovc_<random>_test` database, and process tests that build the `api` and `worker` binaries and run them with an explicit environment. A missing or unreachable test database fails the run; nothing is skipped. `sqlc diff` joins this list in slice 2. The lint configuration excludes gosec's G204 (subprocess with variable arguments) and G304 (file path from a variable) for `_test.go` files only, because the process tests run the binaries they have just built and the convention tests read the repository's own files; production code keeps both rules.
+After changing a query or a migration, regenerate the query package from `backend/` with `go -C ../tools tool sqlc -f ../backend/sqlc.yaml generate` and commit the result; `sqlc diff` fails while `internal/dbgen` is out of date.
+
+Every command must exit 0. The tests include the package-layer architecture test (it parses the [package layers table](../knowledge/architecture/detailed.md#package-layers)), the no-comments and no-`any` conventions test, integration tests that each create and drop their own `ovc_<random>_test` database, and process tests that build the `api` and `worker` binaries and run them with an explicit environment. A missing or unreachable test database fails the run; nothing is skipped. The lint configuration excludes gosec's G204 (subprocess with variable arguments) and G304 (file path from a variable) for `_test.go` files only, because the process tests run the binaries they have just built and the convention tests read the repository's own files; production code keeps both rules.
 
 ## Frontend checks
 

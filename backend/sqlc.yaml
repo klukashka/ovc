@@ -1,0 +1,185 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations
+    queries: queries
+    gen:
+      go:
+        package: dbgen
+        out: internal/dbgen
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        overrides:
+          - db_type: timestamptz
+            go_type: time.Time
+          - db_type: timestamptz
+            nullable: true
+            go_type:
+              type: time.Time
+              pointer: true
+          - db_type: citext
+            go_type: string
+          - column: users.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: users.role
+            go_type:
+              import: ovc/backend/internal/domain
+              type: Role
+          - column: users.state
+            go_type:
+              import: ovc/backend/internal/domain
+              type: AccountState
+          - column: users.state_before_block
+            go_type:
+              import: ovc/backend/internal/domain
+              type: AccountState
+              pointer: true
+          - column: users.language
+            go_type:
+              import: ovc/backend/internal/domain
+              type: Language
+          - column: users.theme
+            go_type:
+              import: ovc/backend/internal/domain
+              type: Theme
+          - column: tutor_profiles.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: sessions.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: SessionID
+          - column: sessions.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: email_requests.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: EmailRequestID
+          - column: email_requests.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: email_requests.purpose
+            go_type:
+              import: ovc/backend/internal/domain
+              type: EmailPurpose
+          - column: email_tokens.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: EmailTokenID
+          - column: email_tokens.request_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: EmailRequestID
+          - column: email_tokens.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: email_tokens.purpose
+            go_type:
+              import: ovc/backend/internal/domain
+              type: EmailPurpose
+          - column: rate_limit_counters.purpose
+            go_type:
+              import: ovc/backend/internal/domain
+              type: RateLimitPurpose
+          - column: attachments.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: AttachmentID
+          - column: attachments.uploader_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: attachments.context
+            go_type:
+              import: ovc/backend/internal/domain
+              type: AttachmentContext
+          - column: attachments.scope_kind
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ScopeKind
+              pointer: true
+          - column: attachments.scope_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: EntityID
+              pointer: true
+          - column: attachments.scope_question_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: EntityID
+              pointer: true
+          - column: attachments.quota_tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+              pointer: true
+          - column: attachments.state
+            go_type:
+              import: ovc/backend/internal/domain
+              type: AttachmentState
+          - column: attachment_references.attachment_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: AttachmentID
+          - column: attachment_references.ref_kind
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ReferenceKind
+          - column: attachment_references.ref_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: EntityID
+          - column: attachment_references.question_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: EntityID
+              pointer: true
+          - column: outbox.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: OutboxID
+          - column: outbox.lane
+            go_type:
+              import: ovc/backend/internal/domain
+              type: OutboxLane
+          - column: outbox.kind
+            go_type:
+              import: ovc/backend/internal/domain
+              type: OutboxKind
+          - column: outbox.priority
+            go_type:
+              import: ovc/backend/internal/domain
+              type: OutboxPriority
+          - column: outbox.status
+            go_type:
+              import: ovc/backend/internal/domain
+              type: OutboxStatus
+          - column: outbox.lease_token
+            go_type:
+              import: ovc/backend/internal/domain
+              type: LeaseToken
+              pointer: true
+          - column: outbox.done_reason
+            go_type:
+              import: ovc/backend/internal/domain
+              type: OutboxDoneReason
+              pointer: true
+          - column: job_runs.job
+            go_type:
+              import: ovc/backend/internal/domain
+              type: JobName
+          - column: job_runs.last_result
+            go_type:
+              import: ovc/backend/internal/domain
+              type: JobResult
+          - column: mail_sink.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: EntityID
