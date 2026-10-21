@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10, slice reviews and the Go backend added the same day, slice 1 adjusted on 2026-10-21 (sqlc and `ovc-admin` moved to slice 2); pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10, slice reviews and the Go backend added the same day, slice 1 adjusted on 2026-10-21 (sqlc and `ovc-admin` moved to slice 2); slice 1 closed and follow-up items placed in slices 2, 8 and 10 on 2026-10-21 after its slice review; pending line-by-line owner review.
 
 Build order, slice by slice. Each slice is runnable and reviewable on its own and ends with its checks registered in the [development guide](development.md). A slice is done when:
 
@@ -28,9 +28,13 @@ Closed at the commit "Introduce tiered verification", without a slice review: sl
 - **Infrastructure:** Docker Compose for PostgreSQL and a local S3-compatible server. Security scanning tools are selected and registered.
 - **Done when** the health routes answer, the frontend renders its frames in both languages against them, and every slice-1 check passes.
 
+Closed at the commit "Record the slice 1 review and close the slice", after the [slice 1 review](../knowledge/reviews/slice-1-review.md) and its three follow-up changes.
+
 ## Slice 2: accounts, sessions and email
 
 FR-1, FR-16, FR-17. Registration with consent, email confirmation, sign-in throttling, sessions with refresh rotation, password reset and change, sign out everywhere, profile and preferences, avatars through storage, account deletion and purge, and `ovc-admin`. The outbox, the worker dispatcher, the mail adapter (SMTP and in-memory sink) and the first email templates are built here.
+
+Also carried over from the [slice 1 review](../knowledge/reviews/slice-1-review.md#carried-over): route guards with the wrong-role, anonymous and unverified rules replacing the [interim behavior](../knowledge/design/web/navigation.md#interim-behavior-before-sign-in-exists); token pages that read and remove their token; the `next` parameter rule; lint rules against unsafe DOM sinks and Web Storage outside the preferences store, landing before the access token reaches the browser; transport deadlines kept on the system clock when session expiry starts using the shared test clock; error codes published as an enum; the test-control tick and worker clock contract; Playwright traces once credentials exist; the `system` theme following scheme changes; a check for Tailwind classes that produce no CSS; and the test database fixture's error text and admin URL check.
 
 ## Slice 3: tutors, students and groups
 
@@ -59,6 +63,8 @@ FR-5.
 
 FR-6, FR-7. Folders, materials, templates, all eight block types, normalisation version 1, restricted Markdown rendering, and the builder with preview.
 
+Before the builder pages land, the frontend splits its bundle by route and vendor and loads only the active language, to stay within [NFR-2.4](requirements/non-functional.md).
+
 ## Slice 9: issuing, completing and checking
 
 FR-8, FR-9, FR-10. Issues with snapshots, deadlines and answer policies, the student assignment page with autosave, submission and automatic scoring, the review queue and review screen with corrected files, returning and resubmitting, the answer-key contract test, and homework emails.
@@ -70,6 +76,7 @@ FR-11, FR-15.
 - **Product:** results for students; analytics per issue and progress per student; Today with the first-run checklist; Home with the tutor filter.
 - **Phone layouts:** dedicated phone layouts for every page and the phone navigation frame, replacing the interim one-column fallback ([ADR-0010](decisions/0010-quiet-visual-language.md)).
 - **Hardening:** the accessibility pass, performance baselines and budgets for the non-functional requirements, and all four pilot scenarios passing in full.
+- **Production serving** (before OVC is first deployed, at the latest here): the reverse proxy reproduces the page headers from `frontend/security-headers.ts`, caches hashed assets for a long time, compresses responses, answers the Go server's own protocol errors, redacts token segments in its access logs and never forwards `/__test__/`; Home stops polling the database-pinging readiness route; icons grow to 20 px on phones; the log queue keeps warnings and errors ahead of access records under a flood ([slice 1 review](../knowledge/reviews/slice-1-review.md#carried-over)).
 
 ## After the MVP
 

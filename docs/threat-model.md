@@ -1,6 +1,6 @@
 # Threat model
 
-Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after the security design review; T-38 and T-39 added and T-19 amended 2026-10-21 with the local infrastructure, and T-18, T-19, T-20, T-36 and T-38 amended and T-40 added the same day with the backend scaffold, and T-16, T-24, T-37, T-38 and T-39 amended the same day with the frontend scaffold, and T-19 and T-39 amended, T-41 and boundary 9 added and boundary 8 reworded the same day after the slice 1 review; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after the security design review; T-38 and T-39 added and T-19 amended 2026-10-21 with the local infrastructure, and T-18, T-19, T-20, T-36 and T-38 amended and T-40 added the same day with the backend scaffold, and T-16, T-24, T-37, T-38 and T-39 amended the same day with the frontend scaffold, and T-19 and T-39 amended, T-41 and boundary 9 added and boundary 8 reworded the same day after the slice 1 review, and T-19, T-20 and T-36 amended the same day with the backend fixes from that review; pending line-by-line owner review.
 
 The assets OVC protects, the actors who might threaten them, the trust boundaries, and the control that answers each threat, with a link to the specification that defines it. Every change that touches a trust boundary maps itself to the identifiers here and updates this file in the same change ([AGENTS.md](../AGENTS.md#security)).
 

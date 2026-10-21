@@ -34,5 +34,5 @@ Load the entry sections, follow their links, and read the governing decision bef
 - `specs/` owns behavior.
 - `design/` owns detailed surface design: pages, navigation, states, tokens, pilot scenarios and the clickable prototype.
 - `architecture/` owns maps, layers, stack and terminology.
-- `reviews/` holds review records, with `reviews/ai-development-setup.md` as the active-policy exception; [`reviews/slice-1-deferred-findings.md`](reviews/slice-1-deferred-findings.md) lists the minor findings the slice 1 review re-checks.
-- `research/` holds dated external evidence such as checked provider facts and versions; `analysis/` holds dated analyses such as measurement studies, created when the first one is written.
+- `reviews/` holds review records, with `reviews/ai-development-setup.md` as the active-policy exception; [`reviews/slice-1-review.md`](reviews/slice-1-review.md) records the slice 1 review and where each remaining finding goes.
+- `research/` holds dated external evidence such as checked provider facts and versions; `analysis/` holds dated analyses such as measurement studies, starting with [the slice 1 performance baselines](analysis/slice-1-baselines-2026-10-21.md).
