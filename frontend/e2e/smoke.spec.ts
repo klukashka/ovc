@@ -1,4 +1,6 @@
-import { type Locator, type Page, expect, test as base } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
+
+import { expect, test as base } from './fixtures.ts';
 
 import { contentSecurityPolicy } from '../security-headers.ts';
 

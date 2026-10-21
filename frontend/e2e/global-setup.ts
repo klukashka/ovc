@@ -1,5 +1,6 @@
-import { readE2ESettings, startDeployment } from './deployment.ts';
+import { prepareRun, readE2ESettings } from './deployment.ts';
 
-export default async function globalSetup(): Promise<() => Promise<void>> {
-  return startDeployment(readE2ESettings(process.env));
+export default function globalSetup(): void {
+  readE2ESettings(process.env);
+  prepareRun();
 }

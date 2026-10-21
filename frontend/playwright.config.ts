@@ -1,7 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
 
-import { apiAddress, previewOrigin } from './e2e/deployment.ts';
-
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -10,15 +8,8 @@ export default defineConfig({
   reporter: [['list']],
   globalSetup: './e2e/global-setup.ts',
   use: {
-    baseURL: previewOrigin,
     trace: 'retain-on-failure',
-  },
-  webServer: {
-    command: 'pnpm build && pnpm preview',
-    url: previewOrigin,
-    reuseExistingServer: false,
-    timeout: 120_000,
-    env: { OVC_FRONTEND_API_TARGET: `http://${apiAddress}` },
+    ignoreHTTPSErrors: true,
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },

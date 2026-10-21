@@ -830,6 +830,8 @@ These amendments, made after the standard and security planning reviews, overrid
 
 - **F2** adds `pnpm check:classes`, run after `pnpm build` (amendment 24): the TypeScript compiler resolves constants named in `className`, including constants imported from other modules; fragments joined at run time and the arguments of function calls are skipped rather than guessed.
 
+- **F0** gives every Playwright worker its own database, API, worker and `vite preview` (D16) with `OVC_TEST_CONTROL=1`, `OVC_CLOCK=test` and the trusted proxy `127.0.0.1/32`, and a `control` fixture for the mail sink, ticks and the clock. The cookie probe (D17) found that WebKit drops the `Secure` refresh cookie over plain loopback HTTP, so the preview is served over HTTPS with a per-run self-signed certificate (amendment 26). Deployments share the bucket `ovc-e2e` instead of one bucket per worker, for the reason given under C7. Traces stay `retain-on-failure` (D18). The full check run, end-to-end suites included, took about 55 seconds.
+
 ### E. New owner questions
 
 - **Q6, deleting an unverified account**, raised by the security planning review: purge it immediately and free the email (recommended), so a squatter cannot lock the real owner out for 30 days.

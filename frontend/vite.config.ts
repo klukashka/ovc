@@ -1,5 +1,6 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'node:fs';
 import { loadEnv } from 'vite';
 import { defineConfig } from 'vitest/config';
 
@@ -9,6 +10,25 @@ const defaultApiTarget = 'http://127.0.0.1:8000';
 
 function apiProxy(target: string): Record<string, { target: string; changeOrigin: boolean }> {
   return { '/api': { target, changeOrigin: false } };
+}
+
+function setting(value: string | undefined): string | undefined {
+  return value === '' ? undefined : value;
+}
+
+function previewTls(
+  certificateSetting: string | undefined,
+  privateKeySetting: string | undefined,
+): { https?: { cert: Buffer; key: Buffer } } {
+  const certificate = setting(certificateSetting);
+  const privateKey = setting(privateKeySetting);
+  if (certificate === undefined && privateKey === undefined) {
+    return {};
+  }
+  if (certificate === undefined || privateKey === undefined) {
+    throw new Error('Set both OVC_FRONTEND_PREVIEW_CERTIFICATE and OVC_FRONTEND_PREVIEW_PRIVATE_KEY, or neither');
+  }
+  return { https: { cert: readFileSync(certificate), key: readFileSync(privateKey) } };
 }
 
 export default defineConfig(({ mode }) => {
@@ -33,6 +53,7 @@ export default defineConfig(({ mode }) => {
       cors: false,
       headers: pageHeaders,
       proxy: apiProxy(apiTarget),
+      ...previewTls(environment.OVC_FRONTEND_PREVIEW_CERTIFICATE, environment.OVC_FRONTEND_PREVIEW_PRIVATE_KEY),
     },
     test: {
       projects: [
