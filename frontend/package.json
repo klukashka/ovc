@@ -17,6 +17,7 @@
     "test": "vitest run",
     "api:generate": "node scripts/generate-api.ts",
     "api:check": "node scripts/generate-api.ts --check",
+    "check:classes": "node scripts/check-tailwind-classes.ts",
     "e2e": "playwright test"
   },
   "dependencies": {

@@ -828,6 +828,8 @@ These amendments, made after the standard and security planning reviews, overrid
 
 - **F1** adds the DOM-sink, cookie, IndexedDB and Web Storage lint rules for `src/` and `public/`, with a fixture test per rule, and moves the `window.localStorage` read into `src/lib/preferences/store.ts`, which exposes only the typed preference store; a check refuses files under `src/` that ESLint does not cover. The Playwright check of stored keys lands with the first account journeys (F3).
 
+- **F2** adds `pnpm check:classes`, run after `pnpm build` (amendment 24): the TypeScript compiler resolves constants named in `className`, including constants imported from other modules; fragments joined at run time and the arguments of function calls are skipped rather than guessed.
+
 ### E. New owner questions
 
 - **Q6, deleting an unverified account**, raised by the security planning review: purge it immediately and free the email (recommended), so a squatter cannot lock the real owner out for 30 days.
