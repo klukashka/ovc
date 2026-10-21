@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10, slice reviews and the Go backend added the same day, slice 1 adjusted on 2026-10-21 (sqlc and `ovc-admin` moved to slice 2); slice 1 closed and follow-up items placed in slices 2, 8 and 10 on 2026-10-21 after its slice review; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10, slice reviews and the Go backend added the same day, slice 1 adjusted on 2026-10-21 (sqlc and `ovc-admin` moved to slice 2); slice 1 closed and follow-up items placed in slices 2, 8 and 10 on 2026-10-21 after its slice review; parts of FR-1 and FR-16 moved from slice 2 to slices 3 and 4 the same day with the slice 2 plan; pending line-by-line owner review.
 
 Build order, slice by slice. Each slice is runnable and reviewable on its own and ends with its checks registered in the [development guide](development.md). A slice is done when:
 
@@ -32,17 +32,17 @@ Closed at the commit "Record the slice 1 review and close the slice", after the 
 
 ## Slice 2: accounts, sessions and email
 
-FR-1, FR-16, FR-17. Registration with consent, email confirmation, sign-in throttling, sessions with refresh rotation, password reset and change, sign out everywhere, profile and preferences, avatars through storage, account deletion and purge, and `ovc-admin`. The outbox, the worker dispatcher, the mail adapter (SMTP and in-memory sink) and the first email templates are built here.
+FR-1, FR-16, FR-17. Registration with consent, email confirmation, sign-in throttling, sessions with refresh rotation, password reset and change, sign out everywhere, profile and preferences, avatars through storage, account deletion and purge, and `ovc-admin`. The outbox, the worker dispatcher, the mail adapter (SMTP and the database sink) and the first email templates are built here. Sign-up is for tutors only in this slice: students join through their tutor from slice 3 on ([proposal 0002](proposals/0002-student-onboarding.md)). Parts of FR-1 and FR-16 that need relationships or live connections move to later slices, as listed in slices 3 to 10.
 
 Also carried over from the [slice 1 review](../knowledge/reviews/slice-1-review.md#carried-over): route guards with the wrong-role, anonymous and unverified rules replacing the [interim behavior](../knowledge/design/web/navigation.md#interim-behavior-before-sign-in-exists); token pages that read and remove their token; the `next` parameter rule; lint rules against unsafe DOM sinks and Web Storage outside the preferences store, landing before the access token reaches the browser; transport deadlines kept on the system clock when session expiry starts using the shared test clock; error codes published as an enum; the test-control tick and worker clock contract; Playwright traces once credentials exist; the `system` theme following scheme changes; a check for Tailwind classes that produce no CSS; and the test database fixture's error text and admin URL check.
 
 ## Slice 3: tutors, students and groups
 
-FR-2, FR-3. Student cards, invitations, tutor code and join requests, relationship end and reactivation, groups, and the student's tutors page. Relationship-scoped authorization guards and their denial tests.
+FR-2, FR-3, and from slice 2 FR-1.2 and student sign-up through an invitation or a tutor code ([proposal 0002](proposals/0002-student-onboarding.md)), FR-1.3, the confirm-before-inviting gate of FR-1.1, and the effects of account deletion in FR-1.7 on relationships, groups, student cards, invitations and join requests, with the `tutor.deleted` email. Each later slice applies the deletion effects and purge rules of FR-1.7 to the entities it introduces: lesson cancellation, series end and the cancelled lessons listed in `tutor.deleted` in slice 5, the "Deleted user" sender of messages in slice 6, and read-only access to recordings and results for 30 days in slices 7, 9 and 10. Student cards, invitations, tutor code and join requests, relationship end and reactivation, groups, and the student's tutors page. Relationship-scoped authorization guards and their denial tests.
 
 ## Slice 4: realtime and in-app notifications
 
-FR-13.1, FR-13.3. The WebSocket gateway with first-frame authentication, the connection registry and broadcaster, `notification.new` and `entity.changed` frames, the notifications panel, email preferences and one-click unsubscribe.
+FR-13.1, FR-13.3, and from slice 2 the closing of live connections on sign-out, deletion and blocking in FR-1.4, FR-1.7 and FR-16.1 ([accounts](../knowledge/specs/accounts.md#roles-and-accounts)). The WebSocket gateway with first-frame authentication, the connection registry and broadcaster, `notification.new` and `entity.changed` frames, the notifications panel, email preferences and one-click unsubscribe.
 
 ## Slice 5: schedule and reminders
 

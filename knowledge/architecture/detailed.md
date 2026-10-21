@@ -171,7 +171,7 @@ Settings are read once from the environment into one typed struct in `internal/c
 | `OVC_BBB_EMBED_ENABLED` | Embed the conferencing client in the lesson page; false until the slice 7 probe passes |
 | `OVC_SMTP_HOST`, `OVC_SMTP_PORT`, `OVC_SMTP_USERNAME`, `OVC_SMTP_PASSWORD`, `OVC_MAIL_FROM`, `OVC_MAIL_BACKEND` | Email, or the database `sink` in development and tests |
 | `OVC_API_DOCS_ENABLED` | `true` serves the OpenAPI JSON at `/api/docs/openapi.json`; `false` by default and in production |
-| `OVC_TEST_CONTROL` | Enable the test control routes and the mail sink viewer; refused unless the meeting provider is `fake`, mail is the sink and the database is a test or development database |
+| `OVC_TEST_CONTROL` | Enable the test control routes, including the mail sink route; refused unless the meeting provider is `fake`, mail is the sink and the database is a test or development database |
 | `OVC_CLOCK` | `system`, or `test` for the shared test clock (only with `OVC_TEST_CONTROL=1`) |
 | `OVC_BROADCASTER` | `postgres`, or `memory` for unit and contract tests |
 | `OVC_DB_POOL_SIZE` | Connections per process: 20 for the API and 10 for the worker by default, plus one dedicated listening connection per API instance |
@@ -184,7 +184,7 @@ Settings are read once from the environment into one typed struct in `internal/c
 - **Local development:**
   - Docker Compose runs PostgreSQL and a local S3-compatible server;
   - `go run ./cmd/api migrate` applies migrations, then the API and the worker run with `go run ./cmd/api` and `go run ./cmd/worker`, restarted by hand, and the frontend under the Vite dev server;
-  - the meeting provider is `fake` and mail goes to the database sink, viewable through a development-only page.
+  - the meeting provider is `fake` and mail goes to the database sink, readable only through the test control route `POST /__test__/mail`.
 - **Production:**
   - hosts in Russia ([ADR-0008](../../docs/decisions/0008-hosting-and-data-residency.md));
   - the API and the worker as small containers built from static Go binaries, behind a TLS reverse proxy that also serves the built frontend;
