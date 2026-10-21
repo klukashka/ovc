@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"mime"
 	"net"
@@ -61,11 +62,12 @@ func (routes *Routes) setClock(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	switch {
 	case request.Set != nil && request.AdvanceSeconds == nil:
-		if err := routes.clock.Set(ctx, *request.Set); err != nil {
+		stored, err := routes.clock.Set(ctx, *request.Set)
+		if err != nil {
 			routes.fail(ctx, w, err)
 			return
 		}
-		writeJSON(w, clockResponse{Now: request.Set.UTC()})
+		writeJSON(ctx, routes.logger, w, clockResponse{Now: stored})
 	case request.Set == nil && request.AdvanceSeconds != nil && (*request.AdvanceSeconds < 1 || *request.AdvanceSeconds > maxAdvanceSeconds):
 		writeError(ctx, w, domain.ErrorValidationFailed, []schemas.FieldError{{Path: "advance_seconds", Code: "out_of_range"}})
 	case request.Set == nil && request.AdvanceSeconds != nil:
@@ -74,7 +76,7 @@ func (routes *Routes) setClock(w http.ResponseWriter, r *http.Request) {
 			routes.fail(ctx, w, err)
 			return
 		}
-		writeJSON(w, clockResponse{Now: now})
+		writeJSON(ctx, routes.logger, w, clockResponse{Now: now})
 	default:
 		writeError(ctx, w, domain.ErrorValidationFailed, []schemas.FieldError{{Path: "body", Code: "set_or_advance_seconds"}})
 	}
@@ -95,7 +97,7 @@ func (routes *Routes) tick(w http.ResponseWriter, r *http.Request) {
 		routes.fail(ctx, w, err)
 		return
 	}
-	writeJSON(w, tickResponse{Ticked: now})
+	writeJSON(r.Context(), routes.logger, w, tickResponse{Ticked: now})
 }
 
 func (routes *Routes) fail(ctx context.Context, w http.ResponseWriter, err error) {
@@ -138,8 +140,13 @@ func decode[T clockRequest | struct{}](w http.ResponseWriter, r *http.Request, t
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	err := decoder.Decode(target)
-	if err == nil && decoder.More() {
-		err = errTrailingData
+	if err == nil {
+		err = trailingDataError(decoder)
+	}
+	if errors.Is(err, errTrailingData) {
+		if _, drainErr := io.Copy(io.Discard, r.Body); drainErr != nil {
+			err = drainErr
+		}
 	}
 	if err == nil {
 		return true
@@ -153,12 +160,26 @@ func decode[T clockRequest | struct{}](w http.ResponseWriter, r *http.Request, t
 	return false
 }
 
-func writeJSON[T clockResponse | tickResponse](w http.ResponseWriter, body T) {
-	w.Header().Set("Content-Type", "application/json")
+func trailingDataError(decoder *json.Decoder) error {
+	_, err := decoder.Token()
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	var syntaxError *json.SyntaxError
+	if err == nil || errors.As(err, &syntaxError) {
+		return errTrailingData
+	}
+	return err
+}
+
+func writeJSON[T clockResponse | tickResponse](ctx context.Context, logger *slog.Logger, w http.ResponseWriter, body T) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
+		logger.LogAttrs(ctx, slog.LevelError, "testcontrol.encode.failed", slog.String("kind", "encode"))
+		writeError(ctx, w, domain.ErrorInternal, nil)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	if _, err := w.Write(encoded); err != nil {
 		return
 	}

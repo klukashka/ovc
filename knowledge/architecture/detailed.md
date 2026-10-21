@@ -157,7 +157,7 @@ Settings are read once from the environment into one typed struct in `internal/c
 | Variable | Meaning |
 |---|---|
 | `OVC_HTTP_ADDR` | API listen address, `127.0.0.1:8000` by default; a loopback IP literal is required with `OVC_TEST_CONTROL=1` |
-| `OVC_DATABASE_URL` | PostgreSQL connection URL, required; a `Secret` whose diagnostics show only hosts and database name |
+| `OVC_DATABASE_URL` | PostgreSQL connection URL, required; reserved characters in the user name and password must be percent-encoded; the driver's `PG*` environment variables are refused at start-up; a `Secret` whose diagnostics show only hosts and database name |
 | `OVC_PUBLIC_URL` | Base URL used in emails and provider callbacks |
 | `OVC_JWT_SECRET` | Access-token signing key |
 | `OVC_UNSUBSCRIBE_SIGNING_SECRET` | Key for unsubscribe tokens only |
@@ -228,6 +228,6 @@ Settings are read once from the environment into one typed struct in `internal/c
 | Thumbnails for image previews | Originals constrained by the client in the MVP | After MVP |
 | Malware scanning of uploads | Content-type allowlist and size limits are mandatory regardless | After MVP |
 | Offline queue for assignment answers beyond retrying | Autosave with versions | Slice 9 |
-| The read deadline for upload routes (a per-MiB rate with a ceiling) | Per-request read and write deadlines of 30 s, structured errors for every refusal ([API conventions](../specs/api.md#conventions)) | Slice 6 |
+| The read deadline for upload routes (a per-MiB rate with a ceiling) | per-request read deadline of 30 s and write deadline of 35 s, structured errors for every refusal ([API conventions](../specs/api.md#conventions)) | Slice 6 |
 | How the student's Home knows that checked feedback is new (a per-submission seen marker in the data model, or dropping the marker) | Home shows recently checked work without points | Slice 10 |
 | Phone navigation frame (a bottom bar or the interim top bar with an overlay sidebar) and phone layouts | Computer-first design; every page works from 360 px in one column meanwhile ([ADR-0010](../../docs/decisions/0010-quiet-visual-language.md)) | Slice 10 |

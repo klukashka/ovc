@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -111,6 +112,10 @@ func Load(lookup Lookup, process Process) (Settings, error) {
 		problems = append(problems, &SettingsError{Variable: varDatabaseURL, Problem: "is required"})
 	}
 	settings.DatabaseURL = NewSecret(databaseURL)
+	if ok {
+		problems = append(problems, databaseURLProblems(databaseURL)...)
+	}
+	problems = append(problems, driverEnvironmentProblems(lookup)...)
 
 	defaultPool := int32(20)
 	if process == ProcessWorker {
@@ -169,6 +174,40 @@ func Load(lookup Lookup, process Process) (Settings, error) {
 		return Settings{}, errors.Join(problems...)
 	}
 	return settings, nil
+}
+
+var driverEnvironmentVariables = []string{
+	"PGHOST", "PGHOSTADDR", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGPASSFILE", "PGSERVICE",
+	"PGSERVICEFILE", "PGSSLMODE", "PGSSLCERT", "PGSSLKEY", "PGSSLROOTCERT", "PGSSLPASSWORD", "PGSSLSNI",
+	"PGSSLNEGOTIATION", "PGAPPNAME", "PGCONNECT_TIMEOUT", "PGTARGETSESSIONATTRS", "PGOPTIONS", "PGTZ",
+	"PGMINPROTOCOLVERSION", "PGMAXPROTOCOLVERSION", "PGCHANNELBINDING", "PGREQUIREAUTH",
+}
+
+func driverEnvironmentProblems(lookup Lookup) []error {
+	var problems []error
+	for _, name := range driverEnvironmentVariables {
+		if _, set := lookup(name); set {
+			problems = append(problems, &SettingsError{Variable: name, Problem: "is read by the database driver outside OVC settings; unset it and put the value in OVC_DATABASE_URL"})
+		}
+	}
+	return problems
+}
+
+func databaseURLProblems(value string) []error {
+	if !strings.HasPrefix(value, "postgres://") && !strings.HasPrefix(value, "postgresql://") {
+		return nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return []error{&SettingsError{Variable: varDatabaseURL, Problem: "is not a valid PostgreSQL connection URL"}}
+	}
+	authority := strings.SplitN(strings.SplitN(value, "://", 2)[1], "/", 2)[0]
+	unencodedUserInfo := parsed.User == nil && strings.Contains(value, "@")
+	misplacedSeparators := strings.ContainsAny(strings.TrimPrefix(parsed.Path, "/"), "/@") || strings.Count(authority, "@") > 1
+	if unencodedUserInfo || misplacedSeparators {
+		return []error{&SettingsError{Variable: varDatabaseURL, Problem: "must percent-encode reserved characters such as / @ : in the user name and password"}}
+	}
+	return nil
 }
 
 func (s Settings) testControlProblems() []error {

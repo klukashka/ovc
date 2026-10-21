@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"ovc/backend/cmd/internal/startup"
 	"ovc/backend/internal/adapters/clock"
@@ -24,8 +22,8 @@ func run() int {
 		return 1
 	}
 	logging := core.NewLogging(os.Stdout, settings.LogLevel, settings.LogFormat)
-	defer logging.Close()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer startup.CloseLogging(logging)
+	ctx, stop := startup.SignalContext()
 	defer stop()
 	core.LogStarted(ctx, logging.Logger, core.ProcessWorker, settings)
 	if err := work(ctx, settings, logging); err != nil {
@@ -44,7 +42,7 @@ func work(ctx context.Context, settings core.Settings, logging *core.Logging) er
 	if err != nil {
 		return err
 	}
-	defer database.Close()
+	defer startup.CloseDatabase(database, logging.Logger)
 	if err := startup.CheckMigrations(ctx, database.SQL, logging.Logger); err != nil {
 		return err
 	}

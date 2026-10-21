@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -15,19 +16,27 @@ import (
 )
 
 const (
-	requestIDHeader = "X-Request-ID"
-	requestDeadline = 30 * time.Second
-	unmatchedRoute  = "unmatched"
-	healthPrefix    = "GET /api/v1/health/"
+	requestIDHeader      = "X-Request-ID"
+	requestReadDeadline  = 30 * time.Second
+	requestWriteDeadline = 35 * time.Second
+	unmatchedRoute       = "unmatched"
+	healthPrefix         = "GET /api/v1/health/"
 )
 
 var validRequestID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 
+var knownMethods = map[string]bool{
+	http.MethodGet: true, http.MethodHead: true, http.MethodPost: true, http.MethodPut: true, http.MethodPatch: true,
+	http.MethodDelete: true, http.MethodOptions: true, http.MethodConnect: true, http.MethodTrace: true,
+}
+
 type outermost struct {
-	next         http.Handler
-	logger       *slog.Logger
-	now          func() time.Time
-	newRequestID func() string
+	next          http.Handler
+	logger        *slog.Logger
+	now           func() time.Time
+	newRequestID  func() string
+	readDeadline  time.Duration
+	writeDeadline time.Duration
 }
 
 func (m *outermost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -62,11 +71,15 @@ func (m *outermost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	controller := http.NewResponseController(recorder)
-	if err := controller.SetReadDeadline(start.Add(requestDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+	if err := controller.SetReadDeadline(start.Add(m.readDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
 		m.logger.LogAttrs(ctx, slog.LevelWarn, "http.deadline.failed", slog.String("kind", "read"))
 	}
-	if err := controller.SetWriteDeadline(start.Add(requestDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+	if err := controller.SetWriteDeadline(start.Add(m.writeDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
 		m.logger.LogAttrs(ctx, slog.LevelWarn, "http.deadline.failed", slog.String("kind", "write"))
+	}
+	if path.Clean(r.URL.Path) != r.URL.Path {
+		writeError(ctx, recorder, domain.ErrorNotFound)
+		return
 	}
 	m.next.ServeHTTP(recorder, r)
 }
@@ -95,11 +108,18 @@ func (m *outermost) logAccess(ctx context.Context, r *http.Request, recorder *re
 		level = slog.LevelDebug
 	}
 	m.logger.LogAttrs(ctx, level, "http.request.completed",
-		slog.String("method", r.Method),
+		slog.String("method", loggedMethod(r.Method)),
 		slog.String("route", route),
 		slog.Int("status", recorder.status),
 		slog.Int64("duration_ms", m.now().Sub(start).Milliseconds()),
 	)
+}
+
+func loggedMethod(method string) string {
+	if knownMethods[method] {
+		return method
+	}
+	return "other"
 }
 
 type responseRecorder struct {

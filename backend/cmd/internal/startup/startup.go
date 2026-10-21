@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
@@ -16,6 +19,26 @@ import (
 )
 
 var ErrMigrationsPending = errors.New("database migrations are pending; run the migrate command first")
+
+const versionTableExists = "SELECT to_regclass('goose_db_version') IS NOT NULL"
+
+func SignalContext() (context.Context, context.CancelFunc) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	context.AfterFunc(ctx, stop)
+	return ctx, stop
+}
+
+func CloseDatabase(database *core.Database, logger *slog.Logger) {
+	if err := database.Close(); err != nil {
+		logger.LogAttrs(context.Background(), slog.LevelError, "db.close.failed", slog.String("kind", core.ErrorKind(err)))
+	}
+}
+
+func CloseLogging(logging *core.Logging) {
+	if err := logging.Close(); err != nil {
+		fmt.Fprintln(os.Stderr, "logging:", err)
+	}
+}
 
 func newProvider(db *sql.DB, withLock bool) (*goose.Provider, error) {
 	options := []goose.ProviderOption{}
@@ -38,6 +61,14 @@ func newProvider(db *sql.DB, withLock bool) (*goose.Provider, error) {
 }
 
 func CheckMigrations(ctx context.Context, db *sql.DB, logger *slog.Logger) error {
+	var exists bool
+	if err := db.QueryRowContext(ctx, versionTableExists).Scan(&exists); err != nil {
+		return fmt.Errorf("look for the migration version table: %w", err)
+	}
+	if !exists {
+		logger.LogAttrs(ctx, slog.LevelError, "migrations.pending")
+		return ErrMigrationsPending
+	}
 	provider, err := newProvider(db, false)
 	if err != nil {
 		return err

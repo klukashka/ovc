@@ -63,19 +63,21 @@ uploads are logged only after truncation and only at `DEBUG`.
 - Process entry points configure logging once from `OVC_LOG_LEVEL` and `OVC_LOG_FORMAT` (`json` for
   deployments, `console` for development). Libraries and packages use bound loggers and never
   configure handlers.
-- Output is bounded: a record over a size limit is truncated with a marker, never dropped silently.
+- Output is bounded: a long string value is cut with a marker, and a whole record over the size limit is replaced by a `logging.record_truncated` notice with the event name and the original size, so every line stays valid. Records are never dropped silently: a full queue counts the dropped records and reports the count on the next record and at close as `logging.records_dropped`. Values are resolved when the record is logged, not when it is written. Closing the logger waits at most 5 s for the sink and reports a timeout on standard error.
 - A failing log sink never fails a request or blocks a request goroutine.
 - `http.Server.ErrorLog` and every library logger are bridged into `log/slog`, so nothing writes
   unstructured output.
 - Every goroutine the backend starts (WebSocket readers and writers, the `NOTIFY` listener, worker
   jobs) runs through one helper that recovers a panic, logs it as above and ends or restarts only that
-  goroutine, so one failure never crashes the process.
+  goroutine, so one failure never crashes the process. The log writer's own drain loop is the one
+  exception: it recovers inline and counts a record whose formatting panicked as dropped, because it
+  cannot log through itself.
 
 ## Component coverage
 
 | Component | Required events from its first implementation |
 |---|---|
-| Application and worker processes | startup with configuration summary (no secrets), shutdown, recovered panic |
+| Application and worker processes | startup with configuration summary (no secrets), shutdown, recovered panic, failure to close the database handle (`db.close.failed` with a kind) |
 | Accounts | sign-up, email confirmed, login succeeded and failed (no email in the record), throttled, refresh rotated, refresh reuse detected, logout and logout-all, password reset and change, account deleted, restored and purged |
 | Operator command | every command with operator system user, target user identifier and outcome |
 | Relationships and groups | invitation created, accepted and refused with reason code; join request created and decided; relationship ended; group created, membership changed, archived |

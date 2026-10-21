@@ -22,6 +22,7 @@ import (
 const (
 	statementCurrentDatabase = "SELECT current_database()"
 	pingTimeout              = time.Second
+	defaultConnectTimeout    = 5 * time.Second
 )
 
 var testDatabaseName = regexp.MustCompile(`^[a-z0-9_]+_(test|dev)$`)
@@ -33,12 +34,13 @@ type Database struct {
 	SQL  *sql.DB
 }
 
-func (d *Database) Close() {
-	if err := d.SQL.Close(); err != nil {
-		d.Pool.Close()
-		return
-	}
+func (d *Database) Close() error {
+	err := d.SQL.Close()
 	d.Pool.Close()
+	if err != nil {
+		return fmt.Errorf("close the database handle: %w", err)
+	}
+	return nil
 }
 
 func (d *Database) Ping(ctx context.Context) error {
@@ -87,6 +89,9 @@ func OpenPool(ctx context.Context, settings Settings, logger *slog.Logger, now N
 		return nil, &SettingsError{Variable: varDatabaseURL, Problem: "is not a valid PostgreSQL connection string"}
 	}
 	config.MaxConns = settings.DBPoolSize
+	if config.ConnConfig.ConnectTimeout == 0 {
+		config.ConnConfig.ConnectTimeout = defaultConnectTimeout
+	}
 	config.ConnConfig.Tracer = &queryTracer{logger: logger, now: now}
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
@@ -123,6 +128,9 @@ func VerifyTestControlHosts(ctx context.Context, settings Settings) error {
 	config, err := pgxpool.ParseConfig(settings.DatabaseURL.Reveal())
 	if err != nil {
 		return &SettingsError{Variable: varDatabaseURL, Problem: "is not a valid PostgreSQL connection string"}
+	}
+	if !testDatabaseName.MatchString(config.ConnConfig.Database) {
+		return &TestControlRefusal{Problem: "the database name must end in _test or _dev"}
 	}
 	for _, host := range databaseHosts(config.ConnConfig) {
 		local, err := isLocalDatabaseHost(ctx, host)
@@ -207,6 +215,12 @@ func (t *queryTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.T
 }
 
 func ErrorKind(err error) string {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	}
 	var networkError net.Error
 	if errors.As(err, &networkError) {
 		return "network"

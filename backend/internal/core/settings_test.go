@@ -48,14 +48,18 @@ func TestLoadAppliesDefaults(t *testing.T) {
 
 func TestLoadRefusesInvalidValues(t *testing.T) {
 	cases := map[string]map[string]string{
-		"missing database URL":      {},
-		"unknown log level":         {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_LOG_LEVEL": "loud"},
-		"unknown test control flag": {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_TEST_CONTROL": "yes"},
-		"unknown docs flag":         {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_API_DOCS_ENABLED": "1"},
-		"real meeting provider":     {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_MEETING_PROVIDER": "bbb"},
-		"real mail backend":         {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_MAIL_BACKEND": "smtp"},
-		"pool size out of range":    {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_DB_POOL_SIZE": "0"},
-		"listen address not h:p":    {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_HTTP_ADDR": "localhost"},
+		"missing database URL":        {},
+		"unknown log level":           {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_LOG_LEVEL": "loud"},
+		"unknown test control flag":   {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_TEST_CONTROL": "yes"},
+		"unknown docs flag":           {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_API_DOCS_ENABLED": "1"},
+		"real meeting provider":       {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_MEETING_PROVIDER": "bbb"},
+		"real mail backend":           {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_MAIL_BACKEND": "smtp"},
+		"pool size out of range":      {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_DB_POOL_SIZE": "0"},
+		"listen address not h:p":      {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "OVC_HTTP_ADDR": "localhost"},
+		"unencoded slash in password": {"OVC_DATABASE_URL": "postgres://x:4471/tail@127.0.0.1:1/a_test"},
+		"unencoded at in password":    {"OVC_DATABASE_URL": "postgres://x:p@q@127.0.0.1/a"},
+		"driver host variable":        {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "PGHOST": "10.0.0.1"},
+		"driver password variable":    {"OVC_DATABASE_URL": "postgres://x@127.0.0.1/a", "PGPASSWORD": "anything"},
 	}
 	for name, values := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -138,6 +142,52 @@ func TestSecretIsRedactedEverywhere(t *testing.T) {
 	}
 	if settings.DatabaseURL.Reveal() == "" {
 		t.Fatal("the secret value must stay available to Reveal")
+	}
+}
+
+type settingsHolder struct {
+	settings core.Settings
+}
+
+func writeFormatted[T any](t *testing.T, out *strings.Builder, format string, value T) {
+	t.Helper()
+	if _, err := fmt.Fprintf(out, format, value); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSecretInsideAnUnexportedFieldStaysRedacted(t *testing.T) {
+	settings, err := core.Load(lookupFrom(validValues()), core.ProcessAPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder := settingsHolder{settings: settings}
+	var text bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&text, nil))
+
+	var formatted strings.Builder
+	for _, verb := range []string{"v", "s", "q", "x", "X", "t", "c", "d", "U", "e", "E", "f", "g", "G", "b", "o", "p"} {
+		for _, flag := range []string{"", "+", "#", "-", " ", "0"} {
+			writeFormatted(t, &formatted, "%"+flag+verb+" ", holder)
+			writeFormatted(t, &formatted, "%"+flag+verb+" ", settings)
+		}
+	}
+	logger.Info("holder", slog.Any("holder", holder))
+
+	for name, output := range map[string]string{"fmt": formatted.String(), "slog text": text.String()} {
+		if strings.Contains(output, "sentinel-password") {
+			t.Fatalf("%s output exposes the secret: %s", name, output)
+		}
+	}
+}
+
+func TestDatabaseURLRefusalNeverShowsTheValue(t *testing.T) {
+	lookup := lookupFrom(map[string]string{"OVC_DATABASE_URL": "postgres://x:4471/sentinel-tail@127.0.0.1:1/a_test"})
+
+	_, err := core.Load(lookup, core.ProcessAPI)
+
+	if err == nil || strings.Contains(err.Error(), "sentinel-tail") {
+		t.Fatalf("expected a refusal without the value, got %v", err)
 	}
 }
 

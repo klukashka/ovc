@@ -1,7 +1,11 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -17,7 +21,10 @@ const (
 	maxValueBytes   = 4 * 1024
 	truncatedMarker = "...[truncated]"
 	queueCapacity   = 4096
+	closeTimeout    = 5 * time.Second
 )
+
+var ErrLoggingCloseTimedOut = errors.New("the log sink did not drain before the close timeout")
 
 type contextKey int
 
@@ -44,7 +51,7 @@ type Logging struct {
 }
 
 func NewLogging(out io.Writer, level slog.Level, format LogFormat) *Logging {
-	writer := &boundedWriter{out: out, limit: maxRecordBytes}
+	writer := &boundedWriter{out: out, limit: maxRecordBytes, format: format}
 	options := &slog.HandlerOptions{Level: level, ReplaceAttr: truncateLongValues}
 	var sink slog.Handler
 	if format == LogFormatConsole {
@@ -58,16 +65,20 @@ func NewLogging(out io.Writer, level slog.Level, format LogFormat) *Logging {
 	return &Logging{Logger: slog.New(handler), async: state, sink: sink}
 }
 
-func (l *Logging) Close() {
-	dropped := l.async.close()
+func (l *Logging) Close() error {
+	dropped, drained := l.async.close(closeTimeout)
+	if !drained {
+		return ErrLoggingCloseTimedOut
+	}
 	if dropped == 0 {
-		return
+		return nil
 	}
 	record := slog.NewRecord(time.Time{}, slog.LevelWarn, "logging.records_dropped", 0)
 	record.AddAttrs(slog.Int64("dropped_records", dropped))
 	if err := l.sink.Handle(context.Background(), record); err != nil {
-		return
+		return fmt.Errorf("report dropped log records: %w", err)
 	}
+	return nil
 }
 
 func (l *Logging) ServerErrorLog(event string) *log.Logger {
@@ -150,10 +161,19 @@ type asyncState struct {
 func (s *asyncState) drain() {
 	defer close(s.done)
 	for item := range s.queue {
-		if err := item.handler.Handle(context.Background(), item.record); err != nil {
+		if !handleRecovering(item) {
 			s.dropped.Add(1)
 		}
 	}
+}
+
+func handleRecovering(item queuedRecord) (written bool) {
+	defer func() {
+		if recover() != nil {
+			written = false
+		}
+	}()
+	return item.handler.Handle(context.Background(), item.record) == nil
 }
 
 func (s *asyncState) enqueue(item queuedRecord) bool {
@@ -170,15 +190,21 @@ func (s *asyncState) enqueue(item queuedRecord) bool {
 	}
 }
 
-func (s *asyncState) close() int64 {
+func (s *asyncState) close(timeout time.Duration) (int64, bool) {
 	s.mu.Lock()
 	if !s.closed {
 		s.closed = true
 		close(s.queue)
 	}
 	s.mu.Unlock()
-	<-s.done
-	return s.dropped.Swap(0)
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-s.done:
+		return s.dropped.Swap(0), true
+	case <-timer.C:
+		return s.dropped.Load(), false
+	}
 }
 
 type asyncHandler struct {
@@ -191,7 +217,7 @@ func (h *asyncHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h *asyncHandler) Handle(_ context.Context, record slog.Record) error {
-	item := queuedRecord{handler: h.inner, record: record.Clone()}
+	item := queuedRecord{handler: h.inner, record: resolvedRecord(record)}
 	previouslyDropped := h.state.dropped.Swap(0)
 	if previouslyDropped > 0 {
 		item.record.AddAttrs(slog.Int64("dropped_records", previouslyDropped))
@@ -200,6 +226,28 @@ func (h *asyncHandler) Handle(_ context.Context, record slog.Record) error {
 		h.state.dropped.Add(previouslyDropped + 1)
 	}
 	return nil
+}
+
+func resolvedRecord(record slog.Record) slog.Record {
+	resolved := slog.NewRecord(record.Time, record.Level, record.Message, record.PC)
+	record.Attrs(func(attr slog.Attr) bool {
+		resolved.AddAttrs(resolvedAttr(attr))
+		return true
+	})
+	return resolved
+}
+
+func resolvedAttr(attr slog.Attr) slog.Attr {
+	value := attr.Value.Resolve()
+	if value.Kind() != slog.KindGroup {
+		return slog.Attr{Key: attr.Key, Value: value}
+	}
+	members := value.Group()
+	resolved := make([]slog.Attr, len(members))
+	for index, member := range members {
+		resolved[index] = resolvedAttr(member)
+	}
+	return slog.Attr{Key: attr.Key, Value: slog.GroupValue(resolved...)}
 }
 
 func (h *asyncHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
@@ -211,9 +259,17 @@ func (h *asyncHandler) WithGroup(name string) slog.Handler {
 }
 
 type boundedWriter struct {
-	mu    sync.Mutex
-	out   io.Writer
-	limit int
+	mu     sync.Mutex
+	out    io.Writer
+	limit  int
+	format LogFormat
+}
+
+type truncatedRecord struct {
+	Level string `json:"level"`
+	Msg   string `json:"msg"`
+	Event string `json:"event,omitempty"`
+	Bytes int    `json:"original_bytes"`
 }
 
 func (w *boundedWriter) Write(p []byte) (int, error) {
@@ -222,13 +278,73 @@ func (w *boundedWriter) Write(p []byte) (int, error) {
 	if len(p) <= w.limit {
 		return w.out.Write(p)
 	}
-	keep := w.limit - len(truncatedMarker) - 1
-	bounded := make([]byte, 0, w.limit)
-	bounded = append(bounded, p[:keep]...)
-	bounded = append(bounded, truncatedMarker...)
-	bounded = append(bounded, '\n')
-	if _, err := w.out.Write(bounded); err != nil {
+	replacement, err := w.replacement(p)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := w.out.Write(replacement); err != nil {
 		return 0, err
 	}
 	return len(p), nil
+}
+
+func (w *boundedWriter) replacement(record []byte) ([]byte, error) {
+	event := oversizedEvent(record, w.format)
+	if w.format == LogFormatConsole {
+		line := fmt.Sprintf("level=WARN msg=logging.record_truncated event=%q original_bytes=%d\n", event, len(record))
+		return []byte(line), nil
+	}
+	encoded, err := json.Marshal(truncatedRecord{Level: "WARN", Msg: "logging.record_truncated", Event: event, Bytes: len(record)})
+	if err != nil {
+		return nil, fmt.Errorf("encode the truncated-record notice: %w", err)
+	}
+	return append(encoded, '\n'), nil
+}
+
+func oversizedEvent(record []byte, format LogFormat) string {
+	if format == LogFormatConsole {
+		start := bytes.Index(record, []byte(" msg="))
+		if start < 0 {
+			return ""
+		}
+		rest := record[start+len(" msg="):]
+		if end := bytes.IndexByte(rest, ' '); end >= 0 {
+			rest = rest[:end]
+		}
+		return truncateEvent(string(rest))
+	}
+	decoder := json.NewDecoder(bytes.NewReader(record))
+	if _, err := decoder.Token(); err != nil {
+		return ""
+	}
+	for decoder.More() {
+		key, err := decoder.Token()
+		if err != nil {
+			return ""
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return ""
+		}
+		if key == "msg" {
+			var message string
+			if err := json.Unmarshal(value, &message); err != nil {
+				return ""
+			}
+			return truncateEvent(message)
+		}
+	}
+	return ""
+}
+
+func truncateEvent(event string) string {
+	const maxEventBytes = 128
+	if len(event) <= maxEventBytes {
+		return event
+	}
+	cut := maxEventBytes
+	for cut > 0 && !utf8.RuneStart(event[cut]) {
+		cut--
+	}
+	return event[:cut]
 }

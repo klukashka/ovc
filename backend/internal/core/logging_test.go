@@ -48,7 +48,7 @@ func TestLongValuesAreTruncatedAndRecordsStayValidJSON(t *testing.T) {
 	logging := core.NewLogging(&out, slog.LevelInfo, core.LogFormatJSON)
 
 	logging.Logger.Info("big.record", slog.String("payload", strings.Repeat("я", 20*1024)))
-	logging.Close()
+	closeLogging(t, logging)
 
 	var record struct {
 		Msg     string `json:"msg"`
@@ -62,7 +62,7 @@ func TestLongValuesAreTruncatedAndRecordsStayValidJSON(t *testing.T) {
 	}
 }
 
-func TestOversizedRecordsAreBoundedWithMarker(t *testing.T) {
+func TestOversizedRecordsAreReplacedByAValidNotice(t *testing.T) {
 	var out safeBuffer
 	logging := core.NewLogging(&out, slog.LevelInfo, core.LogFormatJSON)
 	attrs := make([]slog.Attr, 0, 10)
@@ -71,11 +71,18 @@ func TestOversizedRecordsAreBoundedWithMarker(t *testing.T) {
 	}
 
 	logging.Logger.LogAttrs(context.Background(), slog.LevelInfo, "wide.record", attrs...)
-	logging.Close()
+	closeLogging(t, logging)
 
-	line := strings.TrimSuffix(out.String(), "\n")
-	if len(line) > 16*1024 || !strings.HasSuffix(line, "...[truncated]") {
-		t.Fatalf("expected a bounded record with a marker, got %d bytes", len(line))
+	var notice struct {
+		Msg           string `json:"msg"`
+		Event         string `json:"event"`
+		OriginalBytes int    `json:"original_bytes"`
+	}
+	if err := json.Unmarshal([]byte(out.String()), &notice); err != nil {
+		t.Fatalf("the notice is not valid JSON: %v", err)
+	}
+	if notice.Msg != "logging.record_truncated" || notice.Event != "wide.record" || notice.OriginalBytes <= 16*1024 {
+		t.Fatalf("unexpected notice %+v", notice)
 	}
 }
 
@@ -87,10 +94,21 @@ func TestDroppedRecordsAreCountedAndReported(t *testing.T) {
 		logging.Logger.Info("burst")
 	}
 	close(writer.gate)
-	logging.Close()
+	closeLogging(t, logging)
 
-	if !strings.Contains(writer.out.String(), "logging.records_dropped") && !strings.Contains(writer.out.String(), "dropped_records") {
-		t.Fatal("expected the dropped records to be reported")
+	written := strings.Count(writer.out.String(), `"msg":"burst"`)
+	reported := 0
+	for _, line := range strings.Split(strings.TrimSpace(writer.out.String()), "\n") {
+		var record struct {
+			Dropped int `json:"dropped_records"`
+		}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("invalid record %q: %v", line, err)
+		}
+		reported += record.Dropped
+	}
+	if written+reported != 6000 || reported == 0 {
+		t.Fatalf("expected written plus reported dropped records to equal 6000, got %d + %d", written, reported)
 	}
 }
 
@@ -108,7 +126,7 @@ func TestQueryTracerNeverLogsSQLOrArguments(t *testing.T) {
 	var echoed string
 	queryErr := pool.QueryRow(context.Background(), "SELECT $1::text", "sentinel-argument-7f3a").Scan(&echoed)
 	_, failErr := pool.Exec(context.Background(), "SELECT * FROM missing_table_sentinel WHERE note = $1", "sentinel-argument-7f3a")
-	logging.Close()
+	closeLogging(t, logging)
 
 	if queryErr != nil || echoed != "sentinel-argument-7f3a" || failErr == nil {
 		t.Fatalf("unexpected query results: %v, %q, %v", queryErr, echoed, failErr)
@@ -139,7 +157,9 @@ func TestTestControlRefusesNonTestDatabaseNames(t *testing.T) {
 	if testErr != nil {
 		t.Fatalf("expected acceptance for %s, got %v", testDatabase.Name, testErr)
 	}
-	accepted.Close()
+	if err := accepted.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestTestControlChecksEveryDatabaseHostBeforeConnecting(t *testing.T) {
@@ -151,6 +171,11 @@ func TestTestControlChecksEveryDatabaseHostBeforeConnecting(t *testing.T) {
 		"mixed host list":          {url: "postgres://ovc@127.0.0.1:5432,10.0.0.1:5432/ovc_dev"},
 		"host name":                {url: "postgres://ovc@db.example.com/ovc_dev"},
 		"keyword form remote host": {url: "host=10.0.0.1 user=ovc dbname=ovc_dev"},
+		"query host override":      {url: "postgres://ovc@127.0.0.1:5432/ovc_dev?host=10.0.0.1"},
+		"keyword form host list":   {url: "host=127.0.0.1,db.example.com user=ovc dbname=ovc_dev"},
+		"non-test database name":   {url: "postgres://ovc@127.0.0.1:5432/ovc_prod"},
+		"IPv4-mapped loopback":     {url: "postgres://ovc@[::ffff:127.0.0.1]:5432/ovc_dev", allowed: true},
+		"Unix socket in the query": {url: "postgres://ovc@/ovc_dev?host=/tmp", allowed: true},
 		"loopback address":         {url: "postgres://ovc@127.0.0.1:5432/ovc_dev", allowed: true},
 		"IPv6 loopback":            {url: "postgres://ovc@[::1]:5432/ovc_dev", allowed: true},
 		"localhost":                {url: "postgres://ovc@localhost:5432/ovc_dev", allowed: true},
@@ -170,5 +195,12 @@ func TestTestControlChecksEveryDatabaseHostBeforeConnecting(t *testing.T) {
 				t.Fatalf("expected a refusal, got %v", err)
 			}
 		})
+	}
+}
+
+func closeLogging(t *testing.T, logging *core.Logging) {
+	t.Helper()
+	if err := logging.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

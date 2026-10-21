@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -96,8 +97,28 @@ func TestProcessesRefuseUnsafeTestControl(t *testing.T) {
 			message: "OVC_HTTP_ADDR",
 		},
 		"remote database host": {
-			env:     []string{"OVC_DATABASE_URL=postgres://ovc:pw@10.255.255.1:5432/ovc_test", "OVC_TEST_CONTROL=1"},
+			env:     []string{"OVC_DATABASE_URL=postgres://ovc:sentinel-pw-remote@10.255.255.1:5432/ovc_test", "OVC_TEST_CONTROL=1"},
 			message: "database host",
+		},
+		"database host overridden in the query": {
+			env:     []string{"OVC_DATABASE_URL=postgres://ovc:sentinel-pw-query@127.0.0.1:5432/ovc_test?host=10.255.255.1", "OVC_TEST_CONTROL=1"},
+			message: "database host",
+		},
+		"keyword form host list": {
+			env:     []string{"OVC_DATABASE_URL=host=127.0.0.1,db.example.com user=ovc password=sentinel-pw-keyword dbname=ovc_test", "OVC_TEST_CONTROL=1"},
+			message: "database host",
+		},
+		"driver environment variable": {
+			env:     []string{"OVC_DATABASE_URL=" + production.URL.Reveal(), "PGHOST=10.255.255.1"},
+			message: "PGHOST",
+		},
+		"listen address without a host": {
+			env:     []string{"OVC_DATABASE_URL=" + production.URL.Reveal(), "OVC_TEST_CONTROL=1", "OVC_HTTP_ADDR=:0"},
+			message: "OVC_HTTP_ADDR",
+		},
+		"unencoded password separator": {
+			env:     []string{"OVC_DATABASE_URL=postgres://ovc:4471/sentinel-tail@127.0.0.1:1/ovc_test"},
+			message: "OVC_DATABASE_URL",
 		},
 		"non-test database name": {
 			env:     []string{"OVC_DATABASE_URL=" + production.URL.Reveal(), "OVC_TEST_CONTROL=1"},
@@ -112,12 +133,32 @@ func TestProcessesRefuseUnsafeTestControl(t *testing.T) {
 				if result.exitCode == 0 || !strings.Contains(result.stderr, testCase.message) {
 					t.Fatalf("expected a refusal mentioning %q, got %d: %s", testCase.message, result.exitCode, result.stderr)
 				}
-				if strings.Contains(result.stdout+result.stderr, "pw@") {
-					t.Fatal("the database URL leaked")
+				for _, secret := range secretsIn(testCase.env) {
+					if strings.Contains(result.stdout+result.stderr, secret) {
+						t.Fatal("part of the database URL leaked")
+					}
 				}
 			})
 		}
 	}
+}
+
+func secretsIn(env []string) []string {
+	secrets := []string{"sentinel-tail", "sentinel-pw-keyword"}
+	for _, variable := range env {
+		value, found := strings.CutPrefix(variable, "OVC_DATABASE_URL=")
+		if !found {
+			continue
+		}
+		parsed, err := url.Parse(value)
+		if err != nil || parsed.User == nil {
+			continue
+		}
+		if password, set := parsed.User.Password(); set && password != "" {
+			secrets = append(secrets, password)
+		}
+	}
+	return secrets
 }
 
 func TestProcessesRefusePendingMigrations(t *testing.T) {
@@ -236,10 +277,86 @@ func TestWorkerRunsAndShutsDown(t *testing.T) {
 	ticked := waitForLine(t, ctx, lines, "worker.tick")
 	signalErr := worker.Process.Signal(syscall.SIGTERM)
 	stopped := waitForLine(t, ctx, lines, "process.stopped")
+	drainLines(t, ctx, lines)
 	waitErr := worker.Wait()
 
 	if !ticked || signalErr != nil || !stopped || waitErr != nil {
 		t.Fatalf("ticked %v, signal %v, stopped %v, exit %v", ticked, signalErr, stopped, waitErr)
+	}
+}
+
+func drainLines(t *testing.T, ctx context.Context, lines <-chan string) {
+	t.Helper()
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatal("the process output did not end before the deadline")
+		case _, open := <-lines:
+			if !open {
+				return
+			}
+		}
+	}
+}
+
+func startServer(t *testing.T, ctx context.Context, env []string) (*exec.Cmd, *bytes.Buffer) {
+	t.Helper()
+	server := exec.CommandContext(ctx, filepath.Join(binaries, "api"))
+	server.Env = env
+	var stdout bytes.Buffer
+	server.Stdout = &stdout
+	if err := server.Start(); err != nil {
+		t.Fatal(err)
+	}
+	return server, &stdout
+}
+
+func postClock(t *testing.T, ctx context.Context, address string) int {
+	t.Helper()
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+address+"/__test__/clock", strings.NewReader(`{"set":"2030-01-01T00:00:00Z"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(io.Discard, response.Body); err != nil {
+		t.Fatal(err)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return response.StatusCode
+}
+
+func TestTestControlRoutesExistOnlyWithTheFlag(t *testing.T) {
+	database := testdb.New(t)
+	cases := map[string]struct {
+		flag   string
+		status int
+	}{
+		"with the flag":    {flag: "1", status: http.StatusOK},
+		"without the flag": {flag: "0", status: http.StatusNotFound},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			address := freeAddress(t)
+			env := []string{"OVC_DATABASE_URL=" + database.URL.Reveal(), "OVC_HTTP_ADDR=" + address, "OVC_TEST_CONTROL=" + testCase.flag}
+			server, _ := startServer(t, ctx, env)
+			waitForStatus(t, ctx, "http://"+address+"/api/v1/health/ready")
+
+			status := postClock(t, ctx, address)
+			signalErr := server.Process.Signal(syscall.SIGTERM)
+			waitErr := server.Wait()
+
+			if status != testCase.status || signalErr != nil || waitErr != nil {
+				t.Fatalf("status %d (want %d), signal %v, exit %v", status, testCase.status, signalErr, waitErr)
+			}
+		})
 	}
 }
 

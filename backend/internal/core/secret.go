@@ -9,19 +9,22 @@ import (
 const redacted = "[redacted]"
 
 type Secret struct {
-	value string
+	reveal func() string
 }
 
 func NewSecret(value string) Secret {
-	return Secret{value: value}
+	return Secret{reveal: func() string { return value }}
 }
 
 func (s Secret) Reveal() string {
-	return s.value
+	if s.reveal == nil {
+		return ""
+	}
+	return s.reveal()
 }
 
 func (s Secret) IsZero() bool {
-	return s.value == ""
+	return s.Reveal() == ""
 }
 
 func (Secret) String() string {

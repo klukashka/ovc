@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/validation"
 
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
@@ -45,7 +46,11 @@ var installErrorModel = sync.OnceFunc(func() {
 
 func errorForStatus(ctx context.Context, status int, errs []error) *Error {
 	code := domain.ErrorCodeForStatus(status)
-	envelope := schemas.NewErrorEnvelope(code, core.RequestID(ctx), fieldErrors(errs))
+	var fields []schemas.FieldError
+	if code == domain.ErrorValidationFailed {
+		fields = fieldErrors(errs)
+	}
+	envelope := schemas.NewErrorEnvelope(code, core.RequestID(ctx), fields)
 	return &Error{status: code.Status(), ErrorEnvelope: envelope}
 }
 
@@ -60,11 +65,14 @@ func fieldErrors(errs []error) []schemas.FieldError {
 		if detail == nil || detail.Location == "" {
 			continue
 		}
-		path := detail.Location
+		path, code := detail.Location, "invalid"
+		if detail.Message == validation.MsgUnexpectedProperty {
+			path, code = "body", "unexpected_property"
+		}
 		if !safeFieldPath.MatchString(path) {
 			path = "body"
 		}
-		fields = append(fields, schemas.FieldError{Path: path, Code: "invalid"})
+		fields = append(fields, schemas.FieldError{Path: path, Code: code})
 	}
 	return fields
 }

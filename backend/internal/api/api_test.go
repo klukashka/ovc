@@ -45,8 +45,11 @@ type harness struct {
 	logs    *safeBuffer
 }
 
-func (h *harness) flushLogs() string {
-	h.logging.Close()
+func (h *harness) flushLogs(t *testing.T) string {
+	t.Helper()
+	if err := h.logging.Close(); err != nil {
+		t.Fatal(err)
+	}
 	return h.logs.String()
 }
 
@@ -176,7 +179,7 @@ func TestUnmatchedRoutesAndMethodsAreStructured(t *testing.T) {
 	if missing.Header.Get("Content-Type") != "application/json" {
 		t.Fatalf("content type: %s", missing.Header.Get("Content-Type"))
 	}
-	logs := h.flushLogs()
+	logs := h.flushLogs(t)
 	if !strings.Contains(logs, `"route":"unmatched"`) || strings.Contains(logs, "sentinel") || strings.Contains(logs, "/nope") {
 		t.Fatalf("access records must use the placeholder and no raw path: %s", logs)
 	}
@@ -229,7 +232,9 @@ func TestSecurityHeadersOnEveryResponse(t *testing.T) {
 
 func TestPanicsAreRecoveredWithoutTheirValue(t *testing.T) {
 	mount := func(mux *http.ServeMux) {
-		mux.HandleFunc("GET /boom", func(http.ResponseWriter, *http.Request) {
+		mux.HandleFunc("GET /boom", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Handler-Header", "set-before-panic")
+			w.Header().Set("Set-Cookie", "handler=1")
 			panic(errors.New("sentinel-panic-value"))
 		})
 	}
@@ -241,7 +246,10 @@ func TestPanicsAreRecoveredWithoutTheirValue(t *testing.T) {
 	if response.StatusCode != http.StatusInternalServerError || decoded.Error.Code != "internal" || decoded.Error.RequestID == "" {
 		t.Fatalf("unexpected: %d %s", response.StatusCode, body)
 	}
-	logs := h.flushLogs()
+	if response.Header.Get("X-Handler-Header") != "" || response.Header.Get("Set-Cookie") != "" || response.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("the panic response kept handler headers or lost base headers: %v", response.Header)
+	}
+	logs := h.flushLogs(t)
 	if !strings.Contains(logs, "panic.recovered") || !strings.Contains(logs, `"panic_type":"*errors.errorString"`) {
 		t.Fatalf("expected a panic record: %s", logs)
 	}
@@ -288,7 +296,7 @@ func TestAccessRecordsUseRouteTemplates(t *testing.T) {
 
 	get(t, h, http.MethodGet, "/api/v1/health/live", nil)
 
-	logs := h.flushLogs()
+	logs := h.flushLogs(t)
 	if !strings.Contains(logs, `"route":"GET /api/v1/health/live"`) || !strings.Contains(logs, `"level":"DEBUG","msg":"http.request.completed"`) {
 		t.Fatalf("expected a DEBUG access record with the route template: %s", logs)
 	}

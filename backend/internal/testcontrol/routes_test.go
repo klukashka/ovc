@@ -90,17 +90,20 @@ func TestControlRoutesRefuseUnsafeRequests(t *testing.T) {
 		status      int
 		code        string
 	}{
-		"form content type": {contentType: "application/x-www-form-urlencoded", body: "set=1", status: http.StatusUnsupportedMediaType, code: "unsupported_media_type"},
-		"no content type":   {body: "{}", status: http.StatusUnsupportedMediaType, code: "unsupported_media_type"},
-		"foreign host":      {contentType: "application/json", host: "attacker.example", body: "{}", status: http.StatusNotFound, code: "not_found"},
-		"rebinding host":    {contentType: "application/json", host: "localhost.attacker.example", body: "{}", status: http.StatusNotFound, code: "not_found"},
-		"other loopback ip": {contentType: "application/json", host: "127.0.0.2:8000", body: "{}", status: http.StatusNotFound, code: "not_found"},
-		"trailing data":     {contentType: "application/json", body: `{"advance_seconds":1} {}`, status: http.StatusBadRequest, code: "bad_request"},
-		"negative advance":  {contentType: "application/json", body: `{"advance_seconds":-5}`, status: http.StatusUnprocessableEntity, code: "validation_failed"},
-		"huge advance":      {contentType: "application/json", body: `{"advance_seconds":9223372036854775807}`, status: http.StatusUnprocessableEntity, code: "validation_failed"},
-		"oversized body":    {contentType: "application/json", body: `{"set":"` + strings.Repeat("9", 5000) + `"}`, status: http.StatusRequestEntityTooLarge, code: "payload_too_large"},
-		"unknown field":     {contentType: "application/json", body: `{"sentinel":1}`, status: http.StatusBadRequest, code: "bad_request"},
-		"neither field":     {contentType: "application/json", body: `{}`, status: http.StatusUnprocessableEntity, code: "validation_failed"},
+		"form content type":         {contentType: "application/x-www-form-urlencoded", body: "set=1", status: http.StatusUnsupportedMediaType, code: "unsupported_media_type"},
+		"no content type":           {body: "{}", status: http.StatusUnsupportedMediaType, code: "unsupported_media_type"},
+		"foreign host":              {contentType: "application/json", host: "attacker.example", body: "{}", status: http.StatusNotFound, code: "not_found"},
+		"rebinding host":            {contentType: "application/json", host: "localhost.attacker.example", body: "{}", status: http.StatusNotFound, code: "not_found"},
+		"other loopback ip":         {contentType: "application/json", host: "127.0.0.2:8000", body: "{}", status: http.StatusNotFound, code: "not_found"},
+		"trailing data":             {contentType: "application/json", body: `{"advance_seconds":1} {}`, status: http.StatusBadRequest, code: "bad_request"},
+		"trailing brace":            {contentType: "application/json", body: `{"advance_seconds":1}}`, status: http.StatusBadRequest, code: "bad_request"},
+		"trailing bracket":          {contentType: "application/json", body: `{"advance_seconds":1}]`, status: http.StatusBadRequest, code: "bad_request"},
+		"oversized trailing object": {contentType: "application/json", body: `{"advance_seconds":1} {"a":"` + strings.Repeat("9", 6000) + `"}`, status: http.StatusRequestEntityTooLarge, code: "payload_too_large"},
+		"negative advance":          {contentType: "application/json", body: `{"advance_seconds":-5}`, status: http.StatusUnprocessableEntity, code: "validation_failed"},
+		"huge advance":              {contentType: "application/json", body: `{"advance_seconds":9223372036854775807}`, status: http.StatusUnprocessableEntity, code: "validation_failed"},
+		"oversized body":            {contentType: "application/json", body: `{"set":"` + strings.Repeat("9", 5000) + `"}`, status: http.StatusRequestEntityTooLarge, code: "payload_too_large"},
+		"unknown field":             {contentType: "application/json", body: `{"sentinel":1}`, status: http.StatusBadRequest, code: "bad_request"},
+		"neither field":             {contentType: "application/json", body: `{}`, status: http.StatusUnprocessableEntity, code: "validation_failed"},
 	}
 	for name, testCase := range cases {
 		t.Run(name, func(t *testing.T) {

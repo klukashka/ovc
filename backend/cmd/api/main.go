@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"ovc/backend/cmd/internal/startup"
@@ -22,7 +20,7 @@ const (
 	readHeaderTimeout = 10 * time.Second
 	idleTimeout       = 120 * time.Second
 	maxHeaderBytes    = 16 * 1024
-	shutdownTimeout   = 20 * time.Second
+	shutdownTimeout   = 40 * time.Second
 )
 
 func main() {
@@ -67,8 +65,8 @@ func withProcess(body processFunc) int {
 		return 1
 	}
 	logging := core.NewLogging(os.Stdout, settings.LogLevel, settings.LogFormat)
-	defer logging.Close()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer startup.CloseLogging(logging)
+	ctx, stop := startup.SignalContext()
 	defer stop()
 	core.LogStarted(ctx, logging.Logger, core.ProcessAPI, settings)
 	if err := body(ctx, settings, logging); err != nil {
@@ -86,7 +84,7 @@ func migrate(ctx context.Context, settings core.Settings, logging *core.Logging)
 	if err != nil {
 		return err
 	}
-	defer database.Close()
+	defer startup.CloseDatabase(database, logging.Logger)
 	return startup.Migrate(ctx, database.SQL, logging.Logger)
 }
 
@@ -96,7 +94,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	if err != nil {
 		return err
 	}
-	defer database.Close()
+	defer startup.CloseDatabase(database, logging.Logger)
 	if err := startup.CheckMigrations(ctx, database.SQL, logging.Logger); err != nil {
 		return err
 	}

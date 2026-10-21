@@ -24,18 +24,21 @@ const (
 type ReadinessFunc func(ctx context.Context) error
 
 type Options struct {
-	Logger       *slog.Logger
-	Now          func() time.Time
-	NewRequestID func() string
-	Readiness    ReadinessFunc
-	DocsEnabled  bool
-	Mount        func(mux *http.ServeMux)
+	Logger        *slog.Logger
+	Now           func() time.Time
+	NewRequestID  func() string
+	Readiness     ReadinessFunc
+	DocsEnabled   bool
+	Mount         func(mux *http.ServeMux)
+	ReadDeadline  time.Duration
+	WriteDeadline time.Duration
 }
 
 func NewHandler(options Options) (http.Handler, error) {
 	mux := http.NewServeMux()
 	api := newAPI(mux)
-	registerHealth(api, options.Readiness, options.Logger)
+	readiness := &sharedReadiness{check: options.Readiness, now: options.Now, logger: options.Logger}
+	registerHealth(api, readiness.run, options.Logger)
 	if options.DocsEnabled {
 		document, err := json.Marshal(api.OpenAPI())
 		if err != nil {
@@ -51,7 +54,21 @@ func NewHandler(options Options) (http.Handler, error) {
 	if options.Mount != nil {
 		options.Mount(mux)
 	}
-	return &outermost{next: mux, logger: options.Logger, now: options.Now, newRequestID: options.NewRequestID}, nil
+	return &outermost{
+		next:          mux,
+		logger:        options.Logger,
+		now:           options.Now,
+		newRequestID:  options.NewRequestID,
+		readDeadline:  durationOr(options.ReadDeadline, requestReadDeadline),
+		writeDeadline: durationOr(options.WriteDeadline, requestWriteDeadline),
+	}, nil
+}
+
+func durationOr(value time.Duration, fallback time.Duration) time.Duration {
+	if value > 0 {
+		return value
+	}
+	return fallback
 }
 
 func OpenAPIDocument() ([]byte, error) {
@@ -102,7 +119,11 @@ func registerHealth(api huma.API, readiness ReadinessFunc, logger *slog.Logger) 
 	huma.Register(api, operation("health-ready", http.MethodGet, "/api/v1/health/ready"),
 		func(ctx context.Context, _ *struct{}) (*readyOutput, error) {
 			if err := readiness(ctx); err != nil {
-				logger.LogAttrs(ctx, slog.LevelWarn, "health.ready.failed", slog.String("kind", "database"))
+				if ctx.Err() != nil {
+					logger.LogAttrs(ctx, slog.LevelDebug, "health.ready.abandoned", slog.String("kind", "canceled"))
+				} else {
+					logger.LogAttrs(ctx, slog.LevelWarn, "health.ready.failed", slog.String("kind", "database"))
+				}
 				return nil, NewError(ctx, domain.ErrorServiceUnavailable)
 			}
 			return &readyOutput{Body: schemas.ReadyStatus{Status: "ready", Checks: schemas.ReadyChecks{Database: "ok"}}}, nil
