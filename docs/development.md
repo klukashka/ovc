@@ -1,6 +1,6 @@
 # Development
 
-Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain, and on 2026-10-21 with Docker Compose services, security scanning, the backend scaffold, the frontend scaffold and the pinned documentation tools; pending line-by-line owner review.
+Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain, and on 2026-10-21 with Docker Compose services, security scanning, the backend scaffold, the frontend scaffold and the pinned documentation tools, and the same day with the test fixture's host check; pending line-by-line owner review.
 
 How to set up, check and verify changes locally. Read [AGENTS.md](../AGENTS.md) before contributing. Backend and frontend commands were registered here by [roadmap slice 1](roadmap.md#slice-1-scaffold-and-local-loop); later slices extend them.
 
@@ -45,7 +45,7 @@ Build the pinned linters once per tools upgrade, from the repository root:
 go -C tools build -o ../bin/ github.com/golangci/golangci-lint/v2/cmd/golangci-lint golang.org/x/vuln/cmd/govulncheck
 ```
 
-Then, from `backend/`, with Docker Compose running and `OVC_TEST_DATABASE_ADMIN_URL` set to a PostgreSQL URL that may create databases (for example the `ovc` user on `ovc_dev`):
+Then, from `backend/`, with Docker Compose running and `OVC_TEST_DATABASE_ADMIN_URL` set to a PostgreSQL URL that may create databases (for example the `ovc` user on `ovc_dev`); the test fixture refuses a URL whose hosts are not loopback addresses or Unix sockets:
 
 ```bash
 go mod tidy -diff

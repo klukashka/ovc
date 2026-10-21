@@ -204,3 +204,34 @@ func closeLogging(t *testing.T, logging *core.Logging) {
 		t.Fatal(err)
 	}
 }
+
+func TestLocalDatabaseCheckRefusesRemoteHosts(t *testing.T) {
+	cases := map[string]struct {
+		url   string
+		local bool
+	}{
+		"loopback address":       {url: "postgres://ovc@127.0.0.1:5432/ovc_dev", local: true},
+		"IPv6 loopback":          {url: "postgres://ovc@[::1]:5432/ovc_dev", local: true},
+		"localhost":              {url: "postgres://ovc@localhost:5432/ovc_dev", local: true},
+		"Unix socket":            {url: "host=/tmp user=ovc dbname=ovc_dev", local: true},
+		"remote address":         {url: "postgres://ovc@10.255.255.1:5432/ovc_dev"},
+		"host name":              {url: "postgres://ovc@db.example.com/ovc_dev"},
+		"mixed host list":        {url: "postgres://ovc@127.0.0.1:5432,10.0.0.1:5432/ovc_dev"},
+		"query host override":    {url: "postgres://ovc@127.0.0.1:5432/ovc_dev?host=10.0.0.1"},
+		"keyword form host list": {url: "host=127.0.0.1,db.example.com user=ovc dbname=ovc_dev"},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			url := core.NewSecret(testCase.url)
+
+			err := core.VerifyLocalDatabase(context.Background(), url)
+
+			if testCase.local && err != nil {
+				t.Fatalf("expected acceptance, got %v", err)
+			}
+			if !testCase.local && !errors.Is(err, core.ErrDatabaseNotLocal) {
+				t.Fatalf("expected a refusal, got %v", err)
+			}
+		})
+	}
+}

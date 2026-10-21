@@ -132,16 +132,44 @@ func VerifyTestControlHosts(ctx context.Context, settings Settings) error {
 	if !testDatabaseName.MatchString(config.ConnConfig.Database) {
 		return &TestControlRefusal{Problem: "the database name must end in _test or _dev"}
 	}
-	for _, host := range databaseHosts(config.ConnConfig) {
-		local, err := isLocalDatabaseHost(ctx, host)
-		if err != nil {
-			return err
-		}
-		if !local {
-			return &TestControlRefusal{Problem: "the database host must be loopback or a Unix socket"}
-		}
+	local, err := allHostsLocal(ctx, config.ConnConfig)
+	if err != nil {
+		return err
+	}
+	if !local {
+		return &TestControlRefusal{Problem: "the database host must be loopback or a Unix socket"}
 	}
 	return nil
+}
+
+var ErrDatabaseNotLocal = errors.New("the database host must be loopback or a Unix socket")
+
+func VerifyLocalDatabase(ctx context.Context, url Secret) error {
+	config, err := pgxpool.ParseConfig(url.Reveal())
+	if err != nil {
+		return &SettingsError{Variable: varTestDatabaseURL, Problem: "is not a valid PostgreSQL connection string"}
+	}
+	local, err := allHostsLocal(ctx, config.ConnConfig)
+	if err != nil {
+		return err
+	}
+	if !local {
+		return ErrDatabaseNotLocal
+	}
+	return nil
+}
+
+func allHostsLocal(ctx context.Context, config *pgx.ConnConfig) (bool, error) {
+	for _, host := range databaseHosts(config) {
+		local, err := isLocalDatabaseHost(ctx, host)
+		if err != nil {
+			return false, err
+		}
+		if !local {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func VerifyTestControlDatabase(ctx context.Context, settings Settings, pool *pgxpool.Pool) error {

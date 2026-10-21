@@ -36,16 +36,17 @@ func NewNamed(tb testing.TB, name string, migrate bool) *Database {
 		tb.Fatalf("test database: %v", err)
 	}
 	ctx := context.Background()
+	verifyLocal(tb, ctx, admin)
 	adminConnection, err := pgx.Connect(ctx, admin.Reveal())
 	if err != nil {
-		tb.Fatalf("connect to the test database server: %v", err)
+		tb.Fatalf("connect to the test database server: %s", core.ErrorKind(err))
 	}
 	defer closeConnection(tb, adminConnection)
 	identifier := pgx.Identifier{name}.Sanitize()
 	if _, err := adminConnection.Exec(ctx, "CREATE DATABASE "+identifier); err != nil {
-		tb.Fatalf("create test database: %v", err)
+		tb.Fatalf("create test database %s: %s", name, core.ErrorKind(err))
 	}
-	tb.Cleanup(func() { drop(tb, admin, identifier) })
+	tb.Cleanup(func() { drop(tb, admin, name, identifier) })
 
 	databaseURL, err := withDatabaseName(admin, name)
 	if err != nil {
@@ -53,24 +54,38 @@ func NewNamed(tb testing.TB, name string, migrate bool) *Database {
 	}
 	pool, err := pgxpool.New(ctx, databaseURL.Reveal())
 	if err != nil {
-		tb.Fatalf("open test database pool: %v", err)
+		tb.Fatalf("open the pool for test database %s: %s", name, core.ErrorKind(err))
 	}
 	tb.Cleanup(pool.Close)
+	verifyReachedDatabase(tb, ctx, pool, name)
 	if migrate {
 		applyMigrations(tb, pool)
 	}
 	return &Database{Name: name, URL: databaseURL, Pool: pool}
 }
 
+func verifyReachedDatabase(tb testing.TB, ctx context.Context, pool *pgxpool.Pool, name string) {
+	tb.Helper()
+	var reached string
+	if err := pool.QueryRow(ctx, statementCurrentDatabase).Scan(&reached); err != nil {
+		tb.Fatalf("read the name of test database %s: %s", name, core.ErrorKind(err))
+	}
+	if reached != name {
+		tb.Fatalf("test database %s: the pool reached another database", name)
+	}
+}
+
 func OpenPool(tb testing.TB, databaseURL core.Secret) *pgxpool.Pool {
 	tb.Helper()
 	pool, err := pgxpool.New(context.Background(), databaseURL.Reveal())
 	if err != nil {
-		tb.Fatalf("open pool: %v", err)
+		tb.Fatalf("open pool: %s", core.ErrorKind(err))
 	}
 	tb.Cleanup(pool.Close)
 	return pool
 }
+
+const statementCurrentDatabase = "SELECT current_database()"
 
 func withDatabaseName(admin core.Secret, name string) (core.Secret, error) {
 	parsed, err := url.Parse(admin.Reveal())
@@ -86,7 +101,7 @@ func applyMigrations(tb testing.TB, pool *pgxpool.Pool) {
 	database := stdlib.OpenDBFromPool(pool)
 	defer func() {
 		if err := database.Close(); err != nil {
-			tb.Errorf("close migration connection: %v", err)
+			tb.Errorf("close migration connection: %s", core.ErrorKind(err))
 		}
 	}()
 	files, err := fs.Sub(migrations.Files, ".")
@@ -98,25 +113,38 @@ func applyMigrations(tb testing.TB, pool *pgxpool.Pool) {
 		tb.Fatalf("create migration provider: %v", err)
 	}
 	if _, err := provider.Up(context.Background()); err != nil {
-		tb.Fatalf("apply migrations: %v", err)
+		tb.Fatalf("apply migrations: %s", core.ErrorKind(err))
 	}
 }
 
-func drop(tb testing.TB, admin core.Secret, identifier string) {
+func drop(tb testing.TB, admin core.Secret, name string, identifier string) {
 	ctx := context.Background()
 	connection, err := pgx.Connect(ctx, admin.Reveal())
 	if err != nil {
-		tb.Errorf("connect to drop test database: %v", err)
+		tb.Errorf("connect to drop test database %s: %s", name, core.ErrorKind(err))
 		return
 	}
 	defer closeConnection(tb, connection)
 	if _, err := connection.Exec(ctx, "DROP DATABASE IF EXISTS "+identifier+" WITH (FORCE)"); err != nil {
-		tb.Errorf("drop test database: %v", err)
+		tb.Errorf("drop test database %s: %s", name, core.ErrorKind(err))
+	}
+}
+
+func verifyLocal(tb testing.TB, ctx context.Context, admin core.Secret) {
+	tb.Helper()
+	err := core.VerifyLocalDatabase(ctx, admin)
+	var settingsError *core.SettingsError
+	switch {
+	case err == nil:
+	case errors.Is(err, core.ErrDatabaseNotLocal), errors.As(err, &settingsError):
+		tb.Fatalf("test database: %v", err)
+	default:
+		tb.Fatalf("check the test database host: %s", core.ErrorKind(err))
 	}
 }
 
 func closeConnection(tb testing.TB, connection *pgx.Conn) {
 	if err := connection.Close(context.Background()); err != nil {
-		tb.Errorf("close admin connection: %v", err)
+		tb.Errorf("close admin connection: %s", core.ErrorKind(err))
 	}
 }
