@@ -189,6 +189,17 @@ export class Session {
     return { kind: 'signedIn' };
   };
 
+  readonly adopt = async (token: unknown): Promise<void> => {
+    this.epoch += 1;
+    this.pendingRefresh = null;
+    this.acceptToken(token);
+    await this.loadMe();
+  };
+
+  readonly reloadAccount = async (): Promise<void> => {
+    await this.loadMe();
+  };
+
   readonly signOut = async (): Promise<void> => {
     const response = await this.authorizedFetch(`${this.deps.origin}/api/v1/auth/logout`, { method: 'POST' });
     if (!response.ok && response.status !== 401) {
@@ -233,6 +244,12 @@ export class Session {
       if (epoch !== this.epoch) {
         return false;
       }
+      if (!isAccessToken(token)) {
+        throw new Error('the server answered an access token of an unexpected shape');
+      }
+      if (!(await this.belongsToShownAccount(token, epoch)) || epoch !== this.epoch) {
+        return false;
+      }
       this.acceptToken(token);
       return true;
     }
@@ -241,11 +258,47 @@ export class Session {
       return false;
     }
     const error = await errorOf(response);
+    if (epoch !== this.epoch) {
+      return false;
+    }
     if (error.code === 'account_blocked') {
       this.end({ kind: 'signedOut', reason: 'blocked' });
       return false;
     }
     throw error;
+  }
+
+  private async belongsToShownAccount(token: AccessToken, epoch: number): Promise<boolean> {
+    if (this.current.kind !== 'signedIn') {
+      return true;
+    }
+    const shown = this.current.me.id;
+    const response = await this.deps.fetch(`${this.deps.origin}/api/v1/users/me`, {
+      headers: { Authorization: `Bearer ${token.access_token}` },
+      signal: AbortSignal.timeout(refreshTimeoutMilliseconds),
+    });
+    if (epoch !== this.epoch) {
+      return false;
+    }
+    if (!response.ok) {
+      const error = await errorOf(response);
+      if (epoch !== this.epoch) {
+        return false;
+      }
+      throw error;
+    }
+    const me: unknown = await response.json();
+    if (epoch !== this.epoch) {
+      return false;
+    }
+    if (!isMe(me)) {
+      throw new Error('the server answered an account of an unexpected shape');
+    }
+    if (me.id !== shown) {
+      this.end({ kind: 'signedOut', reason: 'anonymous' });
+      return false;
+    }
+    return true;
   }
 
   private acceptToken(value: unknown): void {

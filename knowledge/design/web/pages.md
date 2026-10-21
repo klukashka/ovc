@@ -19,9 +19,10 @@ FR-1.1, FR-1.2.
 
 - `/signup` offers two large choices, each a bordered panel: "I teach" and "I study".
 - **Form:**
-  - name, email, password with a strength hint (minimum 10 characters), language (preselected from the browser), and a consent checkbox linking the privacy policy;
+  - name, email, password with a strength hint (minimum 10 characters), language (preselected from the interface language, which follows the browser until the person chooses one), and a consent checkbox linking the privacy policy;
   - the student form also has an optional tutor code field.
 - **Submitting** shows "Check your email" with the address and a resend button, disabled for 60 seconds.
+- **Until slice 3** "I study" leads to a page that tells the student to ask their tutor for an invitation link; there is no student form yet.
 - **After confirmation**, a student with a code sees "Request sent. Waiting for the tutor."; one without a code sees "Enter your tutor's code".
 
 ### Accept invitation
@@ -41,7 +42,7 @@ FR-2.1, FR-2.2, FR-1.3.
 
 ### Confirmation, password reset, unsubscribe
 
-FR-1.1, FR-1.5, FR-13.3. Single-purpose pages with one result message and one next step. The confirmation page, opened in a browser not signed in to that account, first asks for a new password (with the strength hint) and then confirms; it then shows the pending-link outcome ("You are now studying with your tutor", "Request sent. Waiting for the tutor.", or that a code or invitation is no longer valid). Unsubscribe names the email group and asks the user to confirm with a button (nothing changes when the page merely loads), then offers a link to all email settings. Token pages remove the token from the address bar after reading it.
+FR-1.1, FR-1.5, FR-13.3. Single-purpose pages with one result message and one next step. The confirmation page refuses an unknown, expired, used, superseded or malformed link at once, before any password is asked for; the reset page learns that the link is invalid only when the new password is sent. The confirmation page, opened in a browser not signed in to that account, first asks for a new password (with the strength hint) and then confirms; it then shows the pending-link outcome ("You are now studying with your tutor", "Request sent. Waiting for the tutor.", or that a code or invitation is no longer valid). Unsubscribe names the email group and asks the user to confirm with a button (nothing changes when the page merely loads), then offers a link to all email settings. Token pages remove the token from the address bar after reading it.
 
 ## Tutor pages
 

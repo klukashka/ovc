@@ -25,11 +25,12 @@ Every page of the web application, its address, who reaches it and where navigat
 |---|---|---|
 | `/` | Sign in | Signed-in users are redirected to their home page |
 | `/signup` | Choose: "I teach" or "I study" | |
-| `/signup/tutor`, `/signup/student` | Sign-up form | Consent checkbox, language preselected from the browser |
-| `/verify-email?token=` | Email confirmation result | Then continues to the home page |
+| `/signup/tutor`, `/signup/student` | Sign-up form | Consent checkbox, language preselected from the interface language, which follows the browser until the person chooses one; until slice 3 `/signup/student` only explains that students join through their tutor ([proposal 0002](../../../docs/proposals/0002-student-onboarding.md)) |
+| `/verify-email?token=` | Email confirmation result | Then continues to the home page; without a token, a signed-in unverified account sees "Check your email" with a resend button |
 | `/forgot-password`, `/reset-password?token=` | Password reset | |
 | `/invite/{token}` | Accept invitation | Shows the tutor; create an account or sign in |
 | `/unsubscribe?token=` | Unsubscribe confirmation | Works without signing in |
+| `/privacy` | Privacy policy | Linked from the consent checkbox; a placeholder until the owner supplies the text |
 
 ## Tutor addresses
 

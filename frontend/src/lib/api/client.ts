@@ -17,16 +17,56 @@ export function isErrorCode(value: string): value is ErrorCode {
   return knownErrorCodes.has(value);
 }
 
+export const fieldCodes = ['invalid', 'required', 'not_allowed', 'too_short', 'too_long', 'incorrect'] as const;
+
+export type FieldCode = (typeof fieldCodes)[number];
+
+export interface FieldProblem {
+  readonly field: string;
+  readonly code: FieldCode;
+}
+
+interface ReceivedFieldError {
+  readonly path: string;
+  readonly code: string;
+}
+
 interface ReceivedErrorBody {
   readonly code: string;
   readonly message: string;
   readonly request_id: string;
+  readonly fields?: readonly ReceivedFieldError[] | null;
+}
+
+const bodyFieldPrefix = 'body.';
+
+function isFieldCode(value: string): value is FieldCode {
+  return fieldCodes.some((code) => code === value);
+}
+
+function fieldProblems(received: readonly ReceivedFieldError[] | null | undefined): readonly FieldProblem[] {
+  return (received ?? []).map((problem) => ({
+    field: problem.path.startsWith(bodyFieldPrefix) ? problem.path.slice(bodyFieldPrefix.length) : problem.path,
+    code: isFieldCode(problem.code) ? problem.code : 'invalid',
+  }));
+}
+
+function isReceivedFieldError(value: unknown): value is ReceivedFieldError {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'path' in value &&
+    typeof value.path === 'string' &&
+    'code' in value &&
+    typeof value.code === 'string'
+  );
 }
 
 export class ApiError extends Error {
   readonly status: number;
   readonly code: ErrorCode | undefined;
   readonly requestId: string | undefined;
+  readonly fields: readonly FieldProblem[];
 
   constructor(status: number, body: ReceivedErrorBody | undefined) {
     super(body === undefined ? `API request failed with status ${String(status)}` : `API error ${body.code}`);
@@ -34,6 +74,11 @@ export class ApiError extends Error {
     this.status = status;
     this.code = body !== undefined && isErrorCode(body.code) ? body.code : undefined;
     this.requestId = body?.request_id;
+    this.fields = fieldProblems(body?.fields);
+  }
+
+  fieldCode(field: string): FieldCode | undefined {
+    return this.fields.find((problem) => problem.field === field)?.code;
   }
 }
 
@@ -68,7 +113,10 @@ function isErrorEnvelope(value: unknown): value is { error: ReceivedErrorBody } 
     'message' in body &&
     typeof body.message === 'string' &&
     'request_id' in body &&
-    typeof body.request_id === 'string'
+    typeof body.request_id === 'string' &&
+    (!('fields' in body) ||
+      body.fields === null ||
+      (Array.isArray(body.fields) && body.fields.every(isReceivedFieldError)))
   );
 }
 

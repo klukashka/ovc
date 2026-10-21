@@ -67,9 +67,9 @@ function testControl(deployment: Deployment): TestControl {
   };
 }
 
-async function confirmedTutor(deployment: Deployment): Promise<TestAccount> {
+export async function seedVerifiedUser(deployment: Deployment, name: string): Promise<TestAccount> {
   const control = testControl(deployment);
-  const account = newTestAccount('Тестовый репетитор');
+  const account = newTestAccount(name);
   await registerTutor(deployment, account, 'ru');
   await control.tick();
   await confirmFromAnotherBrowser(deployment, account, confirmationToken(await control.mail(account.email)));
@@ -93,7 +93,7 @@ export const test = base.extend<
   ],
   tutor: [
     async ({ deployment }, use): Promise<void> => {
-      await use(await confirmedTutor(deployment));
+      await use(await seedVerifiedUser(deployment, 'Тестовый репетитор'));
     },
     { scope: 'worker' },
   ],

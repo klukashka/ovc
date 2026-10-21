@@ -3,7 +3,10 @@ import { type RouteObject, createBrowserRouter } from 'react-router';
 
 import { RouteFocus } from '../components/frame/RouteFocus.tsx';
 import { PlaceholderPage } from '../components/ui/Page.tsx';
+import { ForgotPasswordPage, PrivacyPage, ResetPasswordPage } from '../features/auth/PasswordPages.tsx';
 import { SignInPage } from '../features/auth/SignInPage.tsx';
+import { SignUpChoicePage, StudentSignUpPage, TutorSignUpPage } from '../features/auth/SignUpPages.tsx';
+import { VerifyEmailPage } from '../features/auth/VerifyEmailPage.tsx';
 import { HomePage } from '../features/home/HomePage.tsx';
 import type { RouteHandle } from '../app/handles.ts';
 import { Gate } from './Gate.tsx';
@@ -52,17 +55,18 @@ const frames: RouteObject[] = [
     element: <Gate audience="guest" />,
     children: [
       page('/', 'page.signIn', <SignInPage />),
-      page('/signup', 'page.signUp'),
-      page('/signup/tutor', 'page.signUpTutor'),
-      page('/signup/student', 'page.signUpStudent'),
+      page('/signup', 'page.signUp', <SignUpChoicePage />),
+      page('/signup/tutor', 'page.signUpTutor', <TutorSignUpPage />),
+      page('/signup/student', 'page.signUpStudent', <StudentSignUpPage />),
     ],
   },
   {
     element: <Gate audience="public" />,
     children: [
-      page('/verify-email', 'page.verifyEmail'),
-      page('/forgot-password', 'page.forgotPassword'),
-      page('/reset-password', 'page.resetPassword'),
+      page('/verify-email', 'page.verifyEmail', <VerifyEmailPage />),
+      page('/forgot-password', 'page.forgotPassword', <ForgotPasswordPage />),
+      page('/reset-password', 'page.resetPassword', <ResetPasswordPage />),
+      page('/privacy', 'page.privacy', <PrivacyPage />),
       page('/invite/:token', 'page.invitation'),
       page('/unsubscribe', 'page.unsubscribe'),
     ],

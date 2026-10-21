@@ -23,6 +23,28 @@ describe('API errors', () => {
     expect([error.status, error.code, error.requestId]).toEqual([409, undefined, 'request-1']);
   });
 
+  test('validation problems keep their field without the body prefix and unknown codes become invalid', () => {
+    const received = {
+      error: {
+        code: 'validation_failed',
+        message: 'Server message',
+        request_id: 'request-2',
+        fields: [
+          { path: 'body.new_password', code: 'too_short' },
+          { path: 'body.email', code: 'code_from_a_newer_server' },
+        ],
+      },
+    };
+
+    const error = apiErrorFrom(422, received);
+
+    expect([error.fieldCode('new_password'), error.fieldCode('email'), error.fieldCode('name')]).toEqual([
+      'too_short',
+      'invalid',
+      undefined,
+    ]);
+  });
+
   test('a body that is not an error envelope keeps only the status', () => {
     const received = { error: { code: 'rate_limited' } };
 
