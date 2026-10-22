@@ -12,3 +12,18 @@ reason = "Low-severity katex 0.16.47 inside the diagram renderer; the fix is in 
 id = "GHSA-vfgh-jcmw-g37q"
 ignoreUntil = 2026-11-15T00:00:00Z
 reason = "Low-severity markdown-it 14.3.2 finding inside the documentation linter, fixed in 14.3.3, which is younger than the two-week minimum release age; same exposure as GHSA-gfr2-rv44-r23c."
+
+[[IgnoredVulns]]
+id = "GHSA-cg2g-xh64-v4q7"
+ignoreUntil = 2026-10-27T00:00:00Z
+reason = "Critical severity (CVSS 9.2): dompurify 3.4.16 in this lockfile, a dependency of mermaid 12.1.0 and @zenuml/core 3.50.1 that the diagram renderer never loads, because mermaid-cli loads only the self-contained browser bundles, which carry their own copies (DOMPurify 3.4.12 in mermaid, 3.3.1 in the ZenUML plugin) that this scan cannot see. The fix 3.4.17 was published 2026-10-12 and is younger than the two-week minimum release age. Accepted on exposure: the renderer reads only this repository's Markdown, passes strings to DOMPurify with mermaid's default configuration (no diagram sets dompurifyConfig) and discards its output. Upgrade the lockfile copy once 3.4.17 is old enough; the bundled copies change only with a mermaid or ZenUML release."
+
+[[IgnoredVulns]]
+id = "GHSA-c6gr-qvv4-5v3f"
+ignoreUntil = 2026-10-27T00:00:00Z
+reason = "Low severity: dompurify 3.4.16 in this lockfile, not loaded by the diagram renderer, fixed in 3.4.17, which is younger than the two-week minimum release age; same exposure as GHSA-cg2g-xh64-v4q7."
+
+[[IgnoredVulns]]
+id = "GHSA-mrv2-3pqr-j5jr"
+ignoreUntil = 2026-10-27T00:00:00Z
+reason = "High severity (CVSS 7.6): dompurify 3.4.16 in this lockfile, not loaded by the diagram renderer, fixed in 3.4.17, which is younger than the two-week minimum release age; same exposure as GHSA-cg2g-xh64-v4q7."
