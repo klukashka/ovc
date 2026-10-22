@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { Page } from '../../components/ui/Page.tsx';
-import type { ApiError } from '../../lib/api/client.ts';
+import { type ApiError, asApiError } from '../../lib/api/client.ts';
 import { type SignInResult, useSession, useSessionState } from '../../lib/api/session.ts';
 
 type Refusal =
@@ -94,8 +94,8 @@ export function SignInPage(): ReactElement {
       if (result.kind === 'refused') {
         setRefusal(refusalOf(result));
       }
-    } catch {
-      setRefusal({ kind: 'failed', error: null });
+    } catch (thrown: unknown) {
+      setRefusal({ kind: 'failed', error: asApiError(thrown) });
     } finally {
       setBusy(false);
     }

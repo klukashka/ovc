@@ -14,7 +14,7 @@ import {
   stringField,
 } from '../../components/ui/Form.tsx';
 import { Page } from '../../components/ui/Page.tsx';
-import { type ApiError, apiErrorFrom, useApiClient } from '../../lib/api/client.ts';
+import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type SessionState, useSession, useSessionState } from '../../lib/api/session.ts';
 import { CheckEmail } from './CheckEmail.tsx';
 import { useAddressToken } from './useAddressToken.ts';
@@ -112,8 +112,8 @@ export function VerifyEmailPage(): ReactElement {
   }
 
   function attempt(value: string, newPassword: string | null): void {
-    confirm(value, newPassword).catch(() => {
-      setConfirmation({ kind: 'failed', error: apiErrorFrom(0, undefined) });
+    confirm(value, newPassword).catch((thrown: unknown) => {
+      setConfirmation({ kind: 'failed', error: asApiError(thrown) });
     });
   }
 

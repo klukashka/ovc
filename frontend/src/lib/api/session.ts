@@ -132,13 +132,16 @@ export class Session {
       return response;
     }
     if (response.status === 401 && (await errorOf(response.clone())).code === 'token_expired') {
+      if (epoch !== this.epoch) {
+        return response;
+      }
       const renewed = this.token !== null && this.token !== sentToken ? true : await this.refresh();
       if (renewed && epoch === this.epoch) {
         const retried = await this.deps.transport.send(this.withToken(retry));
-        return epoch === this.epoch ? this.watch(retried) : retried;
+        return epoch === this.epoch ? this.watch(retried, epoch) : retried;
       }
     }
-    return this.watch(response);
+    return epoch === this.epoch ? this.watch(response, epoch) : response;
   };
 
   readonly start = async (): Promise<void> => {
@@ -178,8 +181,7 @@ export class Session {
     if (epoch !== this.epoch) {
       throw new Error('the session changed while signing in');
     }
-    this.acceptToken(token);
-    await this.loadMe();
+    await this.installAccount(token, epoch);
     if (this.current.kind !== 'signedIn') {
       throw new Error('the session ended while the account was loading');
     }
@@ -189,8 +191,7 @@ export class Session {
   readonly adopt = async (token: unknown): Promise<void> => {
     this.epoch += 1;
     this.pendingRefresh = null;
-    this.acceptToken(token);
-    await this.loadMe();
+    await this.installAccount(token, this.epoch);
   };
 
   readonly updateAccount = (value: unknown): void => {
@@ -219,6 +220,21 @@ export class Session {
     this.end({ kind: 'signedOut', reason: 'signedOut' });
   };
 
+  private async installAccount(token: unknown, epoch: number): Promise<void> {
+    try {
+      this.acceptToken(token);
+      await this.loadMe();
+      if (epoch === this.epoch && this.current.kind !== 'signedIn') {
+        this.end(this.current);
+      }
+    } catch (error) {
+      if (epoch === this.epoch) {
+        this.end({ kind: 'unavailable' });
+      }
+      throw error;
+    }
+  }
+
   private withToken(request: Request): Request {
     if (this.token === null || !this.isOwnApi(request.url)) {
       return request;
@@ -233,8 +249,12 @@ export class Session {
     return url.origin === this.deps.origin && url.pathname.startsWith(apiPrefix);
   }
 
-  private async watch(response: Response): Promise<Response> {
-    if (response.status === 403 && (await errorOf(response.clone())).code === 'account_blocked') {
+  private async watch(response: Response, epoch: number): Promise<Response> {
+    if (
+      response.status === 403 &&
+      (await errorOf(response.clone())).code === 'account_blocked' &&
+      epoch === this.epoch
+    ) {
       this.end({ kind: 'signedOut', reason: 'blocked' });
     } else if (response.status === 401 && this.current.kind === 'signedIn') {
       this.end({ kind: 'signedOut', reason: 'anonymous' });
@@ -327,7 +347,11 @@ export class Session {
   }
 
   private async loadMe(): Promise<void> {
+    const epoch = this.epoch;
     const response = await this.authorizedFetch(`${this.deps.origin}/api/v1/users/me`);
+    if (epoch !== this.epoch) {
+      return;
+    }
     if (response.status === 401 || response.status === 403) {
       if (this.current.kind !== 'signedOut') {
         this.end({ kind: 'signedOut', reason: 'anonymous' });
@@ -338,6 +362,9 @@ export class Session {
       throw await errorOf(response);
     }
     const me: unknown = await response.json();
+    if (epoch !== this.epoch) {
+      return;
+    }
     if (!isMe(me)) {
       throw new Error('the server answered an account of an unexpected shape');
     }

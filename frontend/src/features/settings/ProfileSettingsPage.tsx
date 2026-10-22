@@ -14,7 +14,7 @@ import {
   stringField,
 } from '../../components/ui/Form.tsx';
 import { Page } from '../../components/ui/Page.tsx';
-import { type ApiError, apiErrorFrom, useApiClient } from '../../lib/api/client.ts';
+import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type Me, useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { SettingsNav } from './SettingsNav.tsx';
 
@@ -89,8 +89,8 @@ function useProfileUpdate(work: PendingWork): {
   return {
     saving,
     save: (patch): void => {
-      work.track(send(patch)).catch(() => {
-        setSaving({ kind: 'refused', error: apiErrorFrom(0, undefined), retryAfter: null });
+      work.track(send(patch)).catch((thrown: unknown) => {
+        setSaving({ kind: 'refused', error: asApiError(thrown), retryAfter: null });
       });
     },
     refuse: (error, retryAfter): void => {
@@ -138,8 +138,8 @@ function AvatarSection({ me, work }: { readonly me: Me; readonly work: PendingWo
       refuse(apiErrorFrom(413, { error: { code: 'payload_too_large', message: '', request_id: '' } }), null);
       return;
     }
-    work.track(upload(file)).catch(() => {
-      refuse(apiErrorFrom(0, undefined), null);
+    work.track(upload(file)).catch((thrown: unknown) => {
+      refuse(asApiError(thrown), null);
     });
   }
 

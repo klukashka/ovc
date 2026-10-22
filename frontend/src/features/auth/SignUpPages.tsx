@@ -13,7 +13,7 @@ import {
   stringField,
 } from '../../components/ui/Form.tsx';
 import { Page } from '../../components/ui/Page.tsx';
-import { type ApiError, apiErrorFrom, useApiClient } from '../../lib/api/client.ts';
+import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type Language, isLanguage, languages } from '../../lib/i18n/resources.ts';
 import { CheckEmail } from './CheckEmail.tsx';
 
@@ -155,8 +155,8 @@ export function TutorSignUpPage(): ReactElement {
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement, SubmitEvent>): void {
     event.preventDefault();
-    submit(event.currentTarget).catch(() => {
-      setState({ kind: 'editing', error: apiErrorFrom(0, undefined), retryAfter: null });
+    submit(event.currentTarget).catch((thrown: unknown) => {
+      setState({ kind: 'editing', error: asApiError(thrown), retryAfter: null });
     });
   }
 

@@ -86,6 +86,10 @@ export function apiErrorFrom(status: number, received: unknown): ApiError {
   return new ApiError(status, isErrorEnvelope(received) ? received.error : undefined);
 }
 
+export function asApiError(thrown: unknown): ApiError {
+  return thrown instanceof ApiError ? thrown : apiErrorFrom(0, undefined);
+}
+
 export function createApiClient(origin: string, fetchImplementation: typeof fetch): ApiClient {
   return createClient<paths>({ baseUrl: origin, fetch: fetchImplementation });
 }

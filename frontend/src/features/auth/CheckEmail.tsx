@@ -11,7 +11,7 @@ import {
   retryAfterSeconds,
   retryMinutes,
 } from '../../components/ui/Form.tsx';
-import { type ApiError, apiErrorFrom, useApiClient } from '../../lib/api/client.ts';
+import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 
 const resendCooldownSeconds = 60;
 
@@ -95,8 +95,8 @@ export function CheckEmail({
           type="button"
           disabled={remaining > 0 || state.kind === 'sending'}
           onClick={() => {
-            resend().catch(() => {
-              setState({ kind: 'failed', error: apiErrorFrom(0, undefined), retryAfter: null });
+            resend().catch((thrown: unknown) => {
+              setState({ kind: 'failed', error: asApiError(thrown), retryAfter: null });
             });
           }}
           className={primaryButtonClass}

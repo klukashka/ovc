@@ -1,7 +1,7 @@
 import type { Page, Response } from '@playwright/test';
 
 import { newTestAccount, registerTutor, signInThroughTheApi } from './accounts.ts';
-import { expect, test } from './fixtures.ts';
+import { expect, seedVerifiedUser, test } from './fixtures.ts';
 
 test.use({ locale: 'ru-RU' });
 
@@ -41,6 +41,21 @@ async function browserStorage(page: Page): Promise<{ local: string[]; session: n
     cookie: globalThis.document.cookie,
   }));
 }
+
+test('a blocked account is signed out and told it is blocked when it signs in again', async ({ page, deployment }) => {
+  const blocked = await seedVerifiedUser(deployment, 'Заблокированный репетитор');
+  await page.goto('/');
+  await signInThroughTheForm(page, blocked.email, blocked.password);
+  await expect(page).toHaveURL('/today');
+  deployment.administer(['users', 'block', blocked.email]);
+
+  await page.reload();
+  await expect(page).toHaveURL('/?next=%2Ftoday');
+  await signInThroughTheForm(page, blocked.email, blocked.password);
+
+  await expect(page.getByText('Этот аккаунт заблокирован.')).toBeVisible();
+  await expect(page).toHaveURL('/?next=%2Ftoday');
+});
 
 test('pilot-4 › step 8 anonymous redirect', async ({ page, request }) => {
   await page.goto('/schedule?week=3');

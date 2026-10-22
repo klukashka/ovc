@@ -6,6 +6,7 @@ const accessTokenSeconds = 900;
 interface FakeAccount {
   readonly me: Me;
   readonly password: string;
+  blocked: boolean;
 }
 
 interface FakeSession {
@@ -56,6 +57,10 @@ export class FakeAuthServer {
   private refreshReceived: () => void = () => undefined;
   private grantedRefreshes = 0;
   private failingAccountChecks = 0;
+  private failingAccountReads = 0;
+  private failingRefreshes = 0;
+  private accountReadGate: Promise<void> | null = null;
+  private accountReadReceived: () => void = () => undefined;
   private refreshCount = 0;
   private reuse = false;
   private readonly sent: string[] = [];
@@ -79,6 +84,7 @@ export class FakeAuthServer {
   addAccount(seed: FakeAccountSeed): void {
     this.accounts.set(seed.email, {
       password: seed.password,
+      blocked: false,
       me: {
         id: seed.id,
         name: seed.name,
@@ -98,7 +104,7 @@ export class FakeAuthServer {
     this.nowSeconds += seconds;
   }
 
-  pauseRefreshes(): PausedRefreshes {
+  pauseRefreshes(): PausedAnswers {
     let resume = (): void => undefined;
     let received = (): void => undefined;
     this.refreshGate = new Promise((resolve) => {
@@ -114,8 +120,45 @@ export class FakeAuthServer {
     return { resume, answered };
   }
 
+  pauseAccountReads(): PausedAnswers {
+    let resume = (): void => undefined;
+    let received = (): void => undefined;
+    this.accountReadGate = new Promise((resolve) => {
+      resume = (): void => {
+        this.accountReadGate = null;
+        resolve();
+      };
+    });
+    const answered = new Promise<void>((resolve) => {
+      received = resolve;
+    });
+    this.accountReadReceived = received;
+    return { resume, answered };
+  }
+
   failNextAccountCheck(): void {
     this.failingAccountChecks += 1;
+  }
+
+  failNextAccountRead(): void {
+    this.failingAccountReads += 1;
+  }
+
+  failNextRefresh(): void {
+    this.failingRefreshes += 1;
+  }
+
+  block(email: string): void {
+    const account = this.accounts.get(email);
+    if (account === undefined) {
+      throw new Error('no fake account has this email');
+    }
+    account.blocked = true;
+    for (const session of this.sessions.values()) {
+      if (session.accountId === account.me.id) {
+        session.revoked = true;
+      }
+    }
   }
 
   issuedBy(token: string): string | undefined {
@@ -139,6 +182,9 @@ export class FakeAuthServer {
     if (account?.password !== password) {
       return refusal(401, 'invalid_credentials');
     }
+    if (account.blocked) {
+      return refusal(403, 'account_blocked');
+    }
     const session: FakeSession = {
       id: this.sessions.size + 1,
       accountId: account.me.id,
@@ -153,10 +199,16 @@ export class FakeAuthServer {
   private async refresh(): Promise<Response> {
     const presented = this.storedRefresh;
     await nextTurn();
-    const answer = this.rotate(presented);
+    const answer = this.failingRefreshes > 0 ? this.failRefresh() : this.rotate(presented);
     this.refreshReceived();
     await this.refreshGate;
     return answer;
+  }
+
+  private failRefresh(): Response {
+    this.failingRefreshes -= 1;
+    this.refreshCount += 1;
+    return refusal(503, 'service_unavailable');
   }
 
   private rotate(presented: RefreshCookie | null): Response {
@@ -194,7 +246,7 @@ export class FakeAuthServer {
     this.sent.push(token);
     const path = new URL(request.url).pathname;
     if (path === '/api/v1/users/me') {
-      return this.answerMe(token);
+      return this.readAccount(token);
     }
     if (path !== '/api/v1/auth/logout') {
       return refusal(404, 'not_found');
@@ -209,6 +261,18 @@ export class FakeAuthServer {
     }
     this.storedRefresh = null;
     return new Response(null, { status: 204 });
+  }
+
+  private async readAccount(token: string): Promise<Response> {
+    const answer = this.failingAccountReads > 0 ? this.failAccountRead() : this.answerMe(token);
+    this.accountReadReceived();
+    await this.accountReadGate;
+    return answer;
+  }
+
+  private failAccountRead(): Response {
+    this.failingAccountReads -= 1;
+    return refusal(503, 'service_unavailable');
   }
 
   private answerMe(token: string): Response {
@@ -246,7 +310,7 @@ export class FakeAuthServer {
   }
 }
 
-export interface PausedRefreshes {
+export interface PausedAnswers {
   readonly resume: () => void;
   readonly answered: Promise<void>;
 }
@@ -275,17 +339,26 @@ export function unsharedLocks(): LockManagerLike {
 
 export interface ManualScheduler extends Scheduler {
   readonly runAll: () => void;
+  readonly nextSchedule: () => Promise<number>;
 }
 
 export function manualScheduler(): ManualScheduler {
   const tasks = new Set<() => void>();
+  const waiting: ((milliseconds: number) => void)[] = [];
   return {
-    schedule: (_milliseconds, task) => {
+    schedule: (milliseconds, task) => {
       tasks.add(task);
+      for (const notify of waiting.splice(0)) {
+        notify(milliseconds);
+      }
       return (): void => {
         tasks.delete(task);
       };
     },
+    nextSchedule: () =>
+      new Promise<number>((resolve) => {
+        waiting.push(resolve);
+      }),
     runAll: (): void => {
       const due = [...tasks];
       tasks.clear();

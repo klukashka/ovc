@@ -17,6 +17,10 @@ function fakeSubject(): ContractSubject {
       server.advance(16 * 60);
       await Promise.resolve();
     },
+    blockAccount: async (): Promise<void> => {
+      server.block('a@example.org');
+      await Promise.resolve();
+    },
   };
 }
 

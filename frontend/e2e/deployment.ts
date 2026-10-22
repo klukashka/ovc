@@ -41,6 +41,7 @@ export interface E2ESettings {
 export interface Deployment {
   readonly origin: string;
   readonly apiUrl: string;
+  readonly administer: (args: readonly string[]) => void;
   readonly stop: () => Promise<void>;
 }
 
@@ -167,6 +168,10 @@ export function prepareRun(): void {
     cwd: backendRoot,
     stdio: 'inherit',
   });
+  execFileSync('go', ['build', '-o', join(binariesRoot, 'ovc-admin'), './cmd/ovc-admin'], {
+    cwd: backendRoot,
+    stdio: 'inherit',
+  });
   execFileSync('pnpm', ['build'], { cwd: frontendRoot, stdio: 'inherit' });
 }
 
@@ -197,6 +202,21 @@ function backendEnvironment(
     OVC_STORAGE_ACCESS_KEY: settings.storage.accessKey,
     OVC_STORAGE_SECRET_KEY: settings.storage.secretKey,
   };
+}
+
+const adminVariables = [
+  'OVC_DATABASE_URL',
+  'OVC_LOG_LEVEL',
+  'OVC_LOG_FORMAT',
+  'OVC_HTTP_ADDR',
+  'OVC_TEST_CONTROL',
+  'OVC_CLOCK',
+  'OVC_MEETING_PROVIDER',
+  'OVC_MAIL_BACKEND',
+] as const;
+
+function adminEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(adminVariables.map((name) => [name, environment[name]]));
 }
 
 interface ManagedProcess {
@@ -413,5 +433,13 @@ export async function startDeployment(settings: E2ESettings, slot: number, label
       ? error
       : new AggregateError([error, ...cleanup], 'the end-to-end deployment failed to start');
   }
-  return { origin, apiUrl, stop: teardown };
+  const administer = (args: readonly string[]): void => {
+    runToCompletion(
+      join(binariesRoot, 'ovc-admin'),
+      [...args],
+      adminEnvironment(environment),
+      `admin-${label}-${String(slot)}-${randomBytes(4).toString('hex')}.log`,
+    );
+  };
+  return { origin, apiUrl, administer, stop: teardown };
 }

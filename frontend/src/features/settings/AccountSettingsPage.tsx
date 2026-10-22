@@ -13,7 +13,7 @@ import {
   stringField,
 } from '../../components/ui/Form.tsx';
 import { Page } from '../../components/ui/Page.tsx';
-import { type ApiError, apiErrorFrom, useApiClient } from '../../lib/api/client.ts';
+import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type Me, useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { isLanguage, languages } from '../../lib/i18n/resources.ts';
 import { SettingsNav } from './SettingsNav.tsx';
@@ -45,8 +45,8 @@ function refusedFrom(response: Response, error: unknown): Outcome {
   return { kind: 'refused', error: apiErrorFrom(response.status, error), retryAfter: retryAfterSeconds(response) };
 }
 
-function failed(): Outcome {
-  return { kind: 'refused', error: apiErrorFrom(0, undefined), retryAfter: null };
+function failed(thrown: unknown): Outcome {
+  return { kind: 'refused', error: asApiError(thrown), retryAfter: null };
 }
 
 function settled(outcome: Outcome): Outcome {
@@ -145,8 +145,8 @@ function PreferencesSection({ me }: { readonly me: Me }): ReactElement {
       }}
       onSubmit={(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
         event.preventDefault();
-        save(new FormData(event.currentTarget)).catch(() => {
-          setOutcome(failed());
+        save(new FormData(event.currentTarget)).catch((thrown: unknown) => {
+          setOutcome(failed(thrown));
         });
       }}
       className="flex max-w-sm flex-col gap-4"
@@ -230,8 +230,8 @@ function PasswordSection(): ReactElement {
       }}
       onSubmit={(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
         event.preventDefault();
-        change(new FormData(event.currentTarget)).catch(() => {
-          setOutcome(failed());
+        change(new FormData(event.currentTarget)).catch((thrown: unknown) => {
+          setOutcome(failed(thrown));
         });
       }}
       className="flex max-w-sm flex-col gap-4"
@@ -289,8 +289,8 @@ function SignOutEverywhereSection(): ReactElement {
           type="button"
           disabled={outcome.kind === 'sending'}
           onClick={() => {
-            signOutEverywhere().catch(() => {
-              setOutcome(failed());
+            signOutEverywhere().catch((thrown: unknown) => {
+              setOutcome(failed(thrown));
             });
           }}
           className={primaryButtonClass}
@@ -388,8 +388,8 @@ function DeleteAccountSection(): ReactElement {
           }}
           onSubmit={(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
             event.preventDefault();
-            remove(new FormData(event.currentTarget)).catch(() => {
-              setOutcome(failed());
+            remove(new FormData(event.currentTarget)).catch((thrown: unknown) => {
+              setOutcome(failed(thrown));
             });
           }}
           className="flex flex-col gap-4"

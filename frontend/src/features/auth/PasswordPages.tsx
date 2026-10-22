@@ -14,7 +14,7 @@ import {
   stringField,
 } from '../../components/ui/Form.tsx';
 import { Page } from '../../components/ui/Page.tsx';
-import { type ApiError, apiErrorFrom, useApiClient } from '../../lib/api/client.ts';
+import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSession } from '../../lib/api/session.ts';
 import { useAddressToken } from './useAddressToken.ts';
 
@@ -61,8 +61,8 @@ export function ForgotPasswordPage(): ReactElement {
       <form
         onSubmit={(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
           event.preventDefault();
-          submit(stringField(new FormData(event.currentTarget), 'email')).catch(() => {
-            setRequest({ kind: 'editing', error: apiErrorFrom(0, undefined), retryAfter: null });
+          submit(stringField(new FormData(event.currentTarget), 'email')).catch((thrown: unknown) => {
+            setRequest({ kind: 'editing', error: asApiError(thrown), retryAfter: null });
           });
         }}
         className="flex max-w-sm flex-col gap-4"
@@ -158,8 +158,8 @@ export function ResetPasswordPage(): ReactElement {
       <form
         onSubmit={(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
           event.preventDefault();
-          submit(token, stringField(new FormData(event.currentTarget), 'new_password')).catch(() => {
-            setReset({ kind: 'editing', error: apiErrorFrom(0, undefined) });
+          submit(token, stringField(new FormData(event.currentTarget), 'new_password')).catch((thrown: unknown) => {
+            setReset({ kind: 'editing', error: asApiError(thrown) });
           });
         }}
         className="flex max-w-sm flex-col gap-4"

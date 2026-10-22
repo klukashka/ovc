@@ -43,6 +43,10 @@ test.describe('the HTTP authentication transport against the real backend', () =
         email: account.email,
         password: account.password,
         expireAccessTokens: (): Promise<void> => control.advance(16 * 60),
+        blockAccount: (): Promise<void> => {
+          deployment.administer(['users', 'block', account.email]);
+          return Promise.resolve();
+        },
       };
 
       const run = scenario(subject);

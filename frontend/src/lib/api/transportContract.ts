@@ -6,6 +6,7 @@ export interface ContractSubject {
   readonly email: string;
   readonly password: string;
   readonly expireAccessTokens: () => Promise<void>;
+  readonly blockAccount: () => Promise<void>;
 }
 
 export type ContractScenario = (subject: ContractSubject) => Promise<void>;
@@ -135,6 +136,39 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
     check(expired.status === 401, `expected 401, got ${String(expired.status)}`);
     check((await errorCode(expired)) === 'token_expired', 'expected token_expired');
     check((await subject.transport.me(renewed, timeout())).status === 200, 'expected the renewed token to work');
+  },
+
+  'a second sign-in in the same browser replaces the refresh cookie': async (subject) => {
+    const earlier = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const later = await accessToken(await subject.transport.login(subject.email, subject.password));
+
+    const refreshed = await accessToken(await subject.transport.refresh(timeout()));
+    const signedOut = await subject.transport.send(logoutRequest(subject, refreshed));
+
+    check(signedOut.status === 204, `expected 204, got ${String(signedOut.status)}`);
+    check(
+      (await subject.transport.me(later, timeout())).status === 401,
+      'expected the later session to be the one refreshed',
+    );
+    check((await subject.transport.me(earlier, timeout())).status === 200, 'expected the earlier session to stay');
+  },
+
+  'a blocked account loses its session and is refused as account_blocked after the correct password': async (
+    subject,
+  ) => {
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+
+    await subject.blockAccount();
+
+    const reused = await subject.transport.me(token, timeout());
+    check(reused.status === 401, `expected the session to be revoked, got ${String(reused.status)}`);
+    const refreshed = await subject.transport.refresh(timeout());
+    check(refreshed.status === 401, `expected the revoked session to be refused, got ${String(refreshed.status)}`);
+    const wrong = await subject.transport.login(subject.email, `${subject.password} wrong`);
+    check((await errorCode(wrong)) === 'invalid_credentials', 'expected a wrong password to stay invalid_credentials');
+    const right = await subject.transport.login(subject.email, subject.password);
+    check(right.status === 403, `expected 403, got ${String(right.status)}`);
+    check((await errorCode(right)) === 'account_blocked', 'expected account_blocked');
   },
 
   'sign-out ends the session for its token and its refresh cookie': async (subject) => {
