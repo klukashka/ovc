@@ -49,6 +49,17 @@ func (s *Store) WithTx(ctx context.Context, work func(Repositories) error) error
 	return nil
 }
 
+func (s *Store) WithReadTx(ctx context.Context, work func(Repositories) error) error {
+	options := pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}
+	err := pgx.BeginTxFunc(ctx, s.pool, options, func(tx pgx.Tx) error {
+		return work(newRepositories(dbgen.New(tx)))
+	})
+	if err != nil {
+		return fmt.Errorf("read-only transaction: %w", err)
+	}
+	return nil
+}
+
 func newRepositories(queries *dbgen.Queries) Repositories {
 	return Repositories{
 		Users:         Users{queries: queries},

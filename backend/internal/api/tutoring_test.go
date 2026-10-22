@@ -2,7 +2,9 @@ package api_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 	"slices"
@@ -356,7 +358,36 @@ func TestTutorCallingStudentRoutesGetsNotFound(t *testing.T) {
 type denialCase func(t *testing.T, h *authHarness) (outOfScope response, random response)
 
 var denialCases = map[string]denialCase{
-	"GET /api/v1/avatars/{id}": anotherAccountsPendingUploadIsNoAvatar,
+	"GET /api/v1/avatars/{id}":              anotherAccountsPendingUploadIsNoAvatar,
+	"GET /api/v1/students/{id}":             anotherTutorsCard(http.MethodGet, "", ""),
+	"PATCH /api/v1/students/{id}":           anotherTutorsCard(http.MethodPatch, "", `{"display_name":"Renamed","email":"renamed@example.org"}`),
+	"DELETE /api/v1/students/{id}":          anotherTutorsCard(http.MethodDelete, "", ""),
+	"POST /api/v1/students/{id}/invitation": anotherTutorsCard(http.MethodPost, "/invitation", ""),
+	"GET /api/v1/invitations/{token}":       aBlockedTutorsLinkIsUnknown,
+}
+
+func anotherTutorsCard(method string, suffix string, body string) denialCase {
+	return func(t *testing.T, h *authHarness) (response, response) {
+		t.Helper()
+		_, owner := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+		_, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "another-tutor@example.org")
+		card := h.newCard(t, owner, cardName, cardEmail)
+		outOfScope := h.cardCall(t, intruder, method, card.ID, suffix, body)
+		random := h.cardCall(t, intruder, method, randomCardID, suffix, body)
+		return outOfScope, random
+	}
+}
+
+func aBlockedTutorsLinkIsUnknown(t *testing.T, h *authHarness) (response, response) {
+	t.Helper()
+	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	link := linkToken(t, h.newCard(t, token, cardName, cardEmail).Invitation)
+	if _, err := h.store.Repositories().Users.Block(context.Background(), tutor, authStart); err != nil {
+		t.Fatal(err)
+	}
+	outOfScope := h.invitationPage(t, link)
+	random := h.invitationPage(t, base64.RawURLEncoding.EncodeToString(make([]byte, 32)))
+	return outOfScope, random
 }
 
 func anotherAccountsPendingUploadIsNoAvatar(t *testing.T, h *authHarness) (response, response) {
@@ -399,9 +430,14 @@ func TestEveryScopedRouteHasADenialCase(t *testing.T) {
 	}
 }
 
+type publishedProperty struct {
+	Type json.RawMessage `json:"type"`
+}
+
 type publishedSchema struct {
-	Ref      string   `json:"$ref"`
-	Required []string `json:"required"`
+	Ref        string                       `json:"$ref"`
+	Required   []string                     `json:"required"`
+	Properties map[string]publishedProperty `json:"properties"`
 }
 
 type publishedOperation struct {
@@ -428,17 +464,46 @@ func (d publishedDocument) operation(t *testing.T, operation api.OperationAudien
 	return published
 }
 
-func (d publishedDocument) requiredBodyFields(t *testing.T, operation api.OperationAudience) []string {
+func (d publishedDocument) bodySchema(t *testing.T, operation api.OperationAudience) (publishedSchema, bool) {
 	t.Helper()
 	published := d.operation(t, operation)
 	if published.RequestBody == nil {
-		return nil
+		return publishedSchema{}, false
 	}
 	schema := published.RequestBody.Content["application/json"].Schema
 	if name, referenced := strings.CutPrefix(schema.Ref, "#/components/schemas/"); referenced {
 		schema = d.Components.Schemas[name]
 	}
-	return schema.Required
+	return schema, true
+}
+
+func (s publishedSchema) firstStringProperty() (string, bool) {
+	names := make([]string, 0, len(s.Properties))
+	for name, property := range s.Properties {
+		if string(property.Type) == `"string"` {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	if len(names) == 0 {
+		return "", false
+	}
+	return names[0], true
+}
+
+func operationProbes(schema publishedSchema) map[string]bodyProbe {
+	probes := map[string]bodyProbe{
+		"malformed JSON":         {body: `{"`, contentType: "application/json"},
+		"an unexpected property": {body: `{"unexpected_property":true}`, contentType: "application/json"},
+		"a wrong content type":   {body: `{}`, contentType: "text/plain"},
+	}
+	if len(schema.Required) > 0 {
+		probes["an empty object missing "+strings.Join(schema.Required, ", ")] = bodyProbe{body: "{}", contentType: "application/json"}
+	}
+	if name, found := schema.firstStringProperty(); found {
+		probes["a number for "+name] = bodyProbe{body: fmt.Sprintf(`{%q:1}`, name), contentType: "application/json"}
+	}
+	return probes
 }
 
 func loadPublishedDocument(t *testing.T) publishedDocument {
@@ -469,11 +534,11 @@ func bodyProbesFor(missing []string) map[string]bodyProbe {
 	}
 }
 
-func (h *authHarness) assertWrongRoleProbes(t *testing.T, method string, path string, missing []string, tokens map[string]string) {
+func (h *authHarness) assertWrongRoleProbes(t *testing.T, method string, path string, probes map[string]bodyProbe, tokens map[string]string) {
 	t.Helper()
 	unknown := h.unknownRouteRefusal(t)
 	for who, token := range tokens {
-		for probe, request := range bodyProbesFor(missing) {
+		for probe, request := range probes {
 			headers := jsonCall(token)
 			headers["Content-Type"] = request.contentType
 
@@ -532,7 +597,7 @@ func TestWrongRoleGetsNotFoundBeforeTheBodyIsRead(t *testing.T) {
 	h := newAuthHarnessServing(t, nil, api.NewHandlerWithBodyProbe)
 	tokens := h.wrongRoleTokens(t)
 
-	h.assertWrongRoleProbes(t, http.MethodPost, api.BodyProbePath, []string{"name", "count"}, tokens[domain.RoleTutor])
+	h.assertWrongRoleProbes(t, http.MethodPost, api.BodyProbePath, bodyProbesFor([]string{"name", "count"}), tokens[domain.RoleTutor])
 }
 
 func roleSpecificOperationsWithABody(document publishedDocument) map[string]bool {
@@ -555,6 +620,9 @@ func roleSpecificOperationsWithABody(document publishedDocument) map[string]bool
 func TestWrongRoleGetsNotFoundBeforeBodyValidation(t *testing.T) {
 	h := newAuthHarness(t)
 	tokens := h.wrongRoleTokens(t)
+	_, confirmedTutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 5, "confirmed-tutor@example.org")
+	_, confirmedStudent := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 6, "confirmed-student@example.org")
+	rightRole := map[domain.Role]string{domain.RoleTutor: confirmedTutor, domain.RoleStudent: confirmedStudent}
 	document := loadPublishedDocument(t)
 	exercised := map[string]bool{}
 
@@ -564,13 +632,34 @@ func TestWrongRoleGetsNotFoundBeforeBodyValidation(t *testing.T) {
 			continue
 		}
 		path, _ := requestFor(operation)
-		h.assertWrongRoleProbes(t, operation.Method, path, document.requiredBodyFields(t, operation), tokens[role])
+		schema, takesBody := document.bodySchema(t, operation)
+		probes := operationProbes(schema)
+		h.assertWrongRoleProbes(t, operation.Method, path, probes, tokens[role])
+		if takesBody {
+			h.assertProbesAreRefusedBeforeScope(t, operation, path, probes, rightRole[role])
+		}
 		exercised[strings.ToUpper(operation.Method)+" "+operation.Path] = true
 	}
 
 	for key := range roleSpecificOperationsWithABody(document) {
 		if !exercised[key] {
 			t.Errorf("%s takes a body and was not probed by the wrong role", key)
+		}
+	}
+}
+
+var bodyRefusals = map[int]bool{http.StatusBadRequest: true, http.StatusUnsupportedMediaType: true, http.StatusUnprocessableEntity: true}
+
+func (h *authHarness) assertProbesAreRefusedBeforeScope(t *testing.T, operation api.OperationAudience, path string, probes map[string]bodyProbe, token string) {
+	t.Helper()
+	for probe, request := range probes {
+		headers := jsonCall(token)
+		headers["Content-Type"] = request.contentType
+
+		result := h.send(t, operation.Method, path, request.body, headers)
+
+		if !bodyRefusals[result.status] {
+			t.Errorf("%s %s called by the right role with %s answered %d %s instead of a body refusal", operation.Method, path, probe, result.status, result.body)
 		}
 	}
 }

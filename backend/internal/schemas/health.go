@@ -25,11 +25,16 @@ type FieldError struct {
 	Code string `json:"code"`
 }
 
+type ErrorDetails struct {
+	StudentID *string `json:"student_id,omitempty" format:"uuid"`
+}
+
 type ErrorBody struct {
 	Code      domain.ErrorCode `json:"code"`
 	Message   string           `json:"message"`
 	RequestID string           `json:"request_id"`
 	Fields    []FieldError     `json:"fields,omitempty"`
+	Details   *ErrorDetails    `json:"details,omitempty"`
 }
 
 func (ErrorBody) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {

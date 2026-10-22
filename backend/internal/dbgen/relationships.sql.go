@@ -62,6 +62,22 @@ func (q *Queries) CreateRelationship(ctx context.Context, arg CreateRelationship
 	return err
 }
 
+const getTutorCardIDByEmail = `-- name: GetTutorCardIDByEmail :one
+SELECT id FROM relationships WHERE tutor_id = $1 AND email = $2 AND state <> 'discarded'
+`
+
+type GetTutorCardIDByEmailParams struct {
+	TutorID domain.UserID
+	Email   *string
+}
+
+func (q *Queries) GetTutorCardIDByEmail(ctx context.Context, arg GetTutorCardIDByEmailParams) (domain.RelationshipID, error) {
+	row := q.db.QueryRow(ctx, getTutorCardIDByEmail, arg.TutorID, arg.Email)
+	var id domain.RelationshipID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getTutorRelationship = `-- name: GetTutorRelationship :one
 SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE id = $1 AND tutor_id = $2 AND state <> 'discarded'
 `
@@ -93,6 +109,152 @@ func (q *Queries) GetTutorRelationship(ctx context.Context, arg GetTutorRelation
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getTutorRelationshipByCreateKey = `-- name: GetTutorRelationshipByCreateKey :one
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE tutor_id = $1 AND create_key = $2
+`
+
+type GetTutorRelationshipByCreateKeyParams struct {
+	TutorID   domain.UserID
+	CreateKey *string
+}
+
+func (q *Queries) GetTutorRelationshipByCreateKey(ctx context.Context, arg GetTutorRelationshipByCreateKeyParams) (Relationship, error) {
+	row := q.db.QueryRow(ctx, getTutorRelationshipByCreateKey, arg.TutorID, arg.CreateKey)
+	var i Relationship
+	err := row.Scan(
+		&i.ID,
+		&i.TutorID,
+		&i.StudentID,
+		&i.State,
+		&i.DiscardReason,
+		&i.EndedBy,
+		&i.DisplayName,
+		&i.Email,
+		&i.Colour,
+		&i.Notes,
+		&i.CreateKey,
+		&i.LinkedAt,
+		&i.EndedAt,
+		&i.DiscardedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listAvatarsOf = `-- name: ListAvatarsOf :many
+SELECT ref_id, attachment_id FROM attachment_references
+WHERE ref_kind = 'avatar' AND ref_id = ANY ($1::uuid[])
+`
+
+type ListAvatarsOfRow struct {
+	RefID        domain.EntityID
+	AttachmentID domain.AttachmentID
+}
+
+func (q *Queries) ListAvatarsOf(ctx context.Context, ownerIds []pgtype.UUID) ([]ListAvatarsOfRow, error) {
+	rows, err := q.db.Query(ctx, listAvatarsOf, ownerIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAvatarsOfRow
+	for rows.Next() {
+		var i ListAvatarsOfRow
+		if err := rows.Scan(&i.RefID, &i.AttachmentID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCardAccounts = `-- name: ListCardAccounts :many
+SELECT id, name, email, email_verified_at FROM users WHERE id = ANY ($1::uuid[])
+`
+
+type ListCardAccountsRow struct {
+	ID              domain.UserID
+	Name            string
+	Email           string
+	EmailVerifiedAt *time.Time
+}
+
+func (q *Queries) ListCardAccounts(ctx context.Context, ids []pgtype.UUID) ([]ListCardAccountsRow, error) {
+	rows, err := q.db.Query(ctx, listCardAccounts, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCardAccountsRow
+	for rows.Next() {
+		var i ListCardAccountsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Email,
+			&i.EmailVerifiedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCardGroups = `-- name: ListCardGroups :many
+SELECT group_members.relationship_id, groups.id, groups.name, groups.colour
+FROM group_members
+JOIN groups ON groups.id = group_members.group_id AND groups.tutor_id = group_members.tutor_id
+WHERE group_members.tutor_id = $1
+    AND group_members.relationship_id = ANY ($2::uuid[])
+    AND groups.archived_at IS NULL
+ORDER BY group_members.relationship_id, groups.name, groups.id
+`
+
+type ListCardGroupsParams struct {
+	TutorID         domain.UserID
+	RelationshipIds []pgtype.UUID
+}
+
+type ListCardGroupsRow struct {
+	RelationshipID domain.RelationshipID
+	ID             domain.GroupID
+	Name           string
+	Colour         domain.Colour
+}
+
+func (q *Queries) ListCardGroups(ctx context.Context, arg ListCardGroupsParams) ([]ListCardGroupsRow, error) {
+	rows, err := q.db.Query(ctx, listCardGroups, arg.TutorID, arg.RelationshipIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCardGroupsRow
+	for rows.Next() {
+		var i ListCardGroupsRow
+		if err := rows.Scan(
+			&i.RelationshipID,
+			&i.ID,
+			&i.Name,
+			&i.Colour,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTutorRelationships = `-- name: ListTutorRelationships :many
@@ -175,6 +337,39 @@ func (q *Queries) ListTutorRelationships(ctx context.Context, arg ListTutorRelat
 	return items, nil
 }
 
+const lockTutorRelationship = `-- name: LockTutorRelationship :one
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE id = $1 AND tutor_id = $2 FOR UPDATE
+`
+
+type LockTutorRelationshipParams struct {
+	ID      domain.RelationshipID
+	TutorID domain.UserID
+}
+
+func (q *Queries) LockTutorRelationship(ctx context.Context, arg LockTutorRelationshipParams) (Relationship, error) {
+	row := q.db.QueryRow(ctx, lockTutorRelationship, arg.ID, arg.TutorID)
+	var i Relationship
+	err := row.Scan(
+		&i.ID,
+		&i.TutorID,
+		&i.StudentID,
+		&i.State,
+		&i.DiscardReason,
+		&i.EndedBy,
+		&i.DisplayName,
+		&i.Email,
+		&i.Colour,
+		&i.Notes,
+		&i.CreateKey,
+		&i.LinkedAt,
+		&i.EndedAt,
+		&i.DiscardedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const removeRelationship = `-- name: RemoveRelationship :one
 UPDATE relationships
 SET state = 'discarded', discard_reason = 'removed', discarded_at = $1::timestamptz, notes = '', email = NULL,
@@ -215,4 +410,54 @@ func (q *Queries) RemoveRelationship(ctx context.Context, arg RemoveRelationship
 		&i.Notes,
 	)
 	return i, err
+}
+
+const updateCardText = `-- name: UpdateCardText :execrows
+UPDATE relationships
+SET display_name = $1, email = $2, notes = $3, updated_at = $4::timestamptz
+WHERE id = $5 AND tutor_id = $6 AND state <> 'discarded'
+`
+
+type UpdateCardTextParams struct {
+	DisplayName string
+	Email       *string
+	Notes       string
+	Now         time.Time
+	ID          domain.RelationshipID
+	TutorID     domain.UserID
+}
+
+func (q *Queries) UpdateCardText(ctx context.Context, arg UpdateCardTextParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateCardText,
+		arg.DisplayName,
+		arg.Email,
+		arg.Notes,
+		arg.Now,
+		arg.ID,
+		arg.TutorID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const withdrawCard = `-- name: WithdrawCard :execrows
+UPDATE relationships
+SET state = 'discarded', discard_reason = 'withdrawn', discarded_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE id = $2 AND tutor_id = $3 AND state = 'invited'
+`
+
+type WithdrawCardParams struct {
+	Now     time.Time
+	ID      domain.RelationshipID
+	TutorID domain.UserID
+}
+
+func (q *Queries) WithdrawCard(ctx context.Context, arg WithdrawCardParams) (int64, error) {
+	result, err := q.db.Exec(ctx, withdrawCard, arg.Now, arg.ID, arg.TutorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

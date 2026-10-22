@@ -12,6 +12,31 @@ import (
 	"ovc/backend/internal/domain"
 )
 
+const clearExpiredInvitationCiphertext = `-- name: ClearExpiredInvitationCiphertext :execrows
+UPDATE invitations
+SET token_encrypted = NULL
+WHERE id IN (
+    SELECT expired.id FROM invitations AS expired
+    WHERE expired.token_encrypted IS NOT NULL AND expired.expires_at <= $1::timestamptz
+    ORDER BY expired.expires_at
+    LIMIT $2::int
+    FOR UPDATE SKIP LOCKED
+)
+`
+
+type ClearExpiredInvitationCiphertextParams struct {
+	Now       time.Time
+	BatchSize int32
+}
+
+func (q *Queries) ClearExpiredInvitationCiphertext(ctx context.Context, arg ClearExpiredInvitationCiphertextParams) (int64, error) {
+	result, err := q.db.Exec(ctx, clearExpiredInvitationCiphertext, arg.Now, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const consumeInvitation = `-- name: ConsumeInvitation :one
 UPDATE invitations
 SET used_at = $1::timestamptz, used_by = $2, token_encrypted = NULL
@@ -94,6 +119,68 @@ func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationPara
 		arg.CreatedAt,
 	)
 	return err
+}
+
+const getCardInvitation = `-- name: GetCardInvitation :one
+SELECT id, token_encrypted, expires_at, used_at, revoked_at, revoke_reason FROM invitations
+WHERE relationship_id = $1
+ORDER BY (used_at IS NULL AND revoked_at IS NULL) DESC, created_at DESC, id DESC
+LIMIT 1
+`
+
+type GetCardInvitationRow struct {
+	ID             domain.InvitationID
+	TokenEncrypted []byte
+	ExpiresAt      time.Time
+	UsedAt         *time.Time
+	RevokedAt      *time.Time
+	RevokeReason   *domain.RevokeReason
+}
+
+func (q *Queries) GetCardInvitation(ctx context.Context, relationshipID domain.RelationshipID) (GetCardInvitationRow, error) {
+	row := q.db.QueryRow(ctx, getCardInvitation, relationshipID)
+	var i GetCardInvitationRow
+	err := row.Scan(
+		&i.ID,
+		&i.TokenEncrypted,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.RevokedAt,
+		&i.RevokeReason,
+	)
+	return i, err
+}
+
+const getInvitationTutor = `-- name: GetInvitationTutor :one
+SELECT tutors.id, tutors.name, tutor_profiles.subjects
+FROM invitations
+JOIN relationships ON relationships.id = invitations.relationship_id
+JOIN users AS tutors ON tutors.id = relationships.tutor_id
+JOIN tutor_profiles ON tutor_profiles.user_id = relationships.tutor_id
+WHERE invitations.token_hash = $1
+    AND invitations.used_at IS NULL
+    AND invitations.revoked_at IS NULL
+    AND invitations.expires_at > $2::timestamptz
+    AND relationships.state IN ('invited', 'ended')
+    AND tutors.state = 'active'
+`
+
+type GetInvitationTutorParams struct {
+	TokenHash []byte
+	Now       time.Time
+}
+
+type GetInvitationTutorRow struct {
+	ID       domain.UserID
+	Name     string
+	Subjects []string
+}
+
+func (q *Queries) GetInvitationTutor(ctx context.Context, arg GetInvitationTutorParams) (GetInvitationTutorRow, error) {
+	row := q.db.QueryRow(ctx, getInvitationTutor, arg.TokenHash, arg.Now)
+	var i GetInvitationTutorRow
+	err := row.Scan(&i.ID, &i.Name, &i.Subjects)
+	return i, err
 }
 
 const revokeOpenInvitation = `-- name: RevokeOpenInvitation :execrows

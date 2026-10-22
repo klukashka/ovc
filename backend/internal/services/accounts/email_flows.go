@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/mail"
 	"net/netip"
 	"regexp"
 	"slices"
@@ -27,7 +26,6 @@ import (
 
 const (
 	maxZoneNameLength = 64
-	maxEmailBytes     = 254
 	maxNameRunes      = 100
 	fallbackZone      = "UTC"
 
@@ -104,7 +102,7 @@ func (s *Service) Register(ctx context.Context, registration Registration, addre
 	if err != nil {
 		return err
 	}
-	email := normalizeEmail(registration.Email)
+	email := domain.NormalizeEmail(registration.Email)
 	name := strings.TrimSpace(registration.Name)
 	if problems := registrationProblems(registration, name, email); len(problems) > 0 {
 		return &ValidationError{Fields: problems}
@@ -179,8 +177,8 @@ func (s *Service) ResendConfirmationTo(ctx context.Context, email string, addres
 	if err != nil {
 		return err
 	}
-	normalized := normalizeEmail(email)
-	if !validEmail(normalized) {
+	normalized := domain.NormalizeEmail(email)
+	if !domain.ValidEmail(normalized) {
 		return invalid(fieldEmail, domain.FieldInvalid)
 	}
 	if err := s.reserveRequestAddress(ctx, address, now); err != nil {
@@ -238,8 +236,8 @@ func (s *Service) ForgotPassword(ctx context.Context, email string, address neti
 	if err != nil {
 		return err
 	}
-	normalized := normalizeEmail(email)
-	if !validEmail(normalized) {
+	normalized := domain.NormalizeEmail(email)
+	if !domain.ValidEmail(normalized) {
 		return invalid(fieldEmail, domain.FieldInvalid)
 	}
 	if err := s.reserveRequestAddress(ctx, address, now); err != nil {
@@ -562,18 +560,6 @@ func (s *Service) limitSlot(limit rateLimit, subject string, now time.Time) repo
 	return repositories.RateLimitSlot{Purpose: limit.purpose, Subject: s.deps.Keys.ThrottleSubject(string(limit.purpose), subject), WindowStart: window}
 }
 
-func normalizeEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
-}
-
-func validEmail(email string) bool {
-	if email == "" || len(email) > maxEmailBytes || strings.ContainsFunc(email, unicode.IsControl) {
-		return false
-	}
-	parsed, err := mail.ParseAddress(email)
-	return err == nil && parsed.Address == email && parsed.Name == ""
-}
-
 func registrationProblems(registration Registration, name string, email string) []FieldProblem {
 	var problems []FieldProblem
 	if registration.Role != domain.RoleTutor {
@@ -582,7 +568,7 @@ func registrationProblems(registration Registration, name string, email string) 
 	if name == "" || utf8.RuneCountInString(name) > maxNameRunes || strings.ContainsFunc(name, unicode.IsControl) {
 		problems = append(problems, FieldProblem{Path: fieldName, Code: domain.FieldInvalid})
 	}
-	if !validEmail(email) {
+	if !domain.ValidEmail(email) {
 		problems = append(problems, FieldProblem{Path: fieldEmail, Code: domain.FieldInvalid})
 	}
 	if problem, fits := domain.CheckPasswordLength(registration.Password); !fits {

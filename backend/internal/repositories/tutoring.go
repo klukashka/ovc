@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -19,6 +20,11 @@ type (
 	NewInvitation      = dbgen.CreateInvitationParams
 	ConsumedInvitation = dbgen.ConsumeInvitationRow
 	NewJoinRequest     = dbgen.CreateJoinRequestParams
+	CardText           = dbgen.UpdateCardTextParams
+	CardAccount        = dbgen.ListCardAccountsRow
+	CardGroup          = dbgen.ListCardGroupsRow
+	CardInvitation     = dbgen.GetCardInvitationRow
+	InvitationTutor    = dbgen.GetInvitationTutorRow
 )
 
 var ErrDiscardedStateListed = errors.New("discarded cards are never listed")
@@ -77,6 +83,61 @@ func escapeLikePattern(text string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(text)
 }
 
+func (r Relationships) ByCreateKey(ctx context.Context, tutor domain.UserID, key string) (Relationship, error) {
+	relationship, err := r.queries.GetTutorRelationshipByCreateKey(ctx, dbgen.GetTutorRelationshipByCreateKeyParams{TutorID: tutor, CreateKey: &key})
+	return one(relationship, err, "relationship by create key")
+}
+
+func (r Relationships) CardWithEmail(ctx context.Context, tutor domain.UserID, email string) (domain.RelationshipID, error) {
+	id, err := r.queries.GetTutorCardIDByEmail(ctx, dbgen.GetTutorCardIDByEmailParams{TutorID: tutor, Email: &email})
+	return one(id, err, "card with email")
+}
+
+func (r Relationships) LockForTutor(ctx context.Context, tutor domain.UserID, id domain.RelationshipID) (Relationship, error) {
+	relationship, err := r.queries.LockTutorRelationship(ctx, dbgen.LockTutorRelationshipParams{ID: id, TutorID: tutor})
+	return one(relationship, err, "lock relationship of a tutor")
+}
+
+func (r Relationships) UpdateText(ctx context.Context, text CardText) (bool, error) {
+	rows, err := r.queries.UpdateCardText(ctx, text)
+	return applied(rows, err, "update card text")
+}
+
+func (r Relationships) Withdraw(ctx context.Context, tutor domain.UserID, id domain.RelationshipID, now time.Time) (bool, error) {
+	rows, err := r.queries.WithdrawCard(ctx, dbgen.WithdrawCardParams{Now: now, ID: id, TutorID: tutor})
+	return applied(rows, err, "withdraw card")
+}
+
+func (r Relationships) Accounts(ctx context.Context, students []domain.UserID) ([]CardAccount, error) {
+	accounts, err := r.queries.ListCardAccounts(ctx, uuids(students))
+	return one(accounts, err, "accounts of cards")
+}
+
+func (r Relationships) AvatarsOf(ctx context.Context, owners []domain.UserID) (map[domain.UserID]domain.AttachmentID, error) {
+	rows, err := r.queries.ListAvatarsOf(ctx, uuids(owners))
+	if err != nil {
+		return nil, fmt.Errorf("avatars of accounts: %w", err)
+	}
+	avatars := make(map[domain.UserID]domain.AttachmentID, len(rows))
+	for _, row := range rows {
+		avatars[domain.UserID(row.RefID)] = row.AttachmentID
+	}
+	return avatars, nil
+}
+
+func (r Relationships) Groups(ctx context.Context, tutor domain.UserID, cards []domain.RelationshipID) ([]CardGroup, error) {
+	groups, err := r.queries.ListCardGroups(ctx, dbgen.ListCardGroupsParams{TutorID: tutor, RelationshipIds: uuids(cards)})
+	return one(groups, err, "groups of cards")
+}
+
+func uuids[ID ~[16]byte](ids []ID) []pgtype.UUID {
+	converted := make([]pgtype.UUID, 0, len(ids))
+	for _, id := range ids {
+		converted = append(converted, pgtype.UUID{Bytes: id, Valid: true})
+	}
+	return converted
+}
+
 func (r Relationships) Remove(ctx context.Context, tutor domain.UserID, id domain.RelationshipID, now time.Time) (RemovedCard, error) {
 	removed, err := r.queries.RemoveRelationship(ctx, dbgen.RemoveRelationshipParams{Now: now, ID: id, TutorID: tutor})
 	return one(removed, err, "remove provisional relationship")
@@ -109,6 +170,21 @@ func (r Invitations) RevokeOpen(
 		Now: now, Reason: string(reason), RelationshipID: relationship, TutorID: tutor,
 	})
 	return applied(rows, err, "revoke open invitation")
+}
+
+func (r Invitations) LatestOf(ctx context.Context, relationship domain.RelationshipID) (CardInvitation, error) {
+	invitation, err := r.queries.GetCardInvitation(ctx, relationship)
+	return one(invitation, err, "latest invitation of a card")
+}
+
+func (r Invitations) UsableTutor(ctx context.Context, tokenHash []byte, now time.Time) (InvitationTutor, error) {
+	tutor, err := r.queries.GetInvitationTutor(ctx, dbgen.GetInvitationTutorParams{TokenHash: tokenHash, Now: now})
+	return one(tutor, err, "tutor of a usable invitation")
+}
+
+func (r Invitations) ClearExpiredCiphertext(ctx context.Context, now time.Time, batchSize int32) (int64, error) {
+	rows, err := r.queries.ClearExpiredInvitationCiphertext(ctx, dbgen.ClearExpiredInvitationCiphertextParams{Now: now, BatchSize: batchSize})
+	return counted(rows, err, "clear expired invitation ciphertext")
 }
 
 type JoinRequests struct {

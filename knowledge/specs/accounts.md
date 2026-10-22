@@ -147,7 +147,7 @@ Students join through their tutor ([ADR-0014](../../docs/decisions/0014-students
   - it is stored as a SHA-256 hash for lookup and as AES-256-GCM ciphertext under `OVC_FIELD_ENCRYPTION_KEY` (a 12-byte random nonce; as additional data the label `ovc.invitation-token.v1` followed by the invitation identifier, as the [data model](data-model.md) specifies), so the card can show the link again and the worker can email it;
   - the ciphertext is cleared when the invitation is used or revoked, and the hourly `invitations.expire` job clears it once the invitation expires;
   - the key is not rotated in the MVP: a new key makes open links unreadable, and the tutor regenerates them.
-- **Regenerating** an `invited` or `ended` card revokes its open invitation and issues a new one.
+- **Regenerating** an `invited` or `ended` card revokes its open invitation and issues a new one; a tutor regenerates at most 50 links per UTC day (`429 rate_limited`).
 - **Sending by email** (`POST /students/{id}/invitation/send`) emails the card's open link to the card's email, and refuses a card without an email. An open link that has expired is revoked and a fresh one is sent. Each send counts on the invitation, and the count is part of the email's idempotency key.
 - **Sending limits:**
   - a tutor in their first 7 days after sign-up may send 10 invitation emails per day, and 50 per day after that; only this budget answers `429`;

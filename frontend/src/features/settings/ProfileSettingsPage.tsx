@@ -15,6 +15,7 @@ import {
 } from '../../components/ui/Form.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
+import { type components } from '../../lib/api/schema.ts';
 import { type Me, useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { SettingsNav } from './SettingsNav.tsx';
 
@@ -24,7 +25,7 @@ type Saving =
   | { readonly kind: 'saved' }
   | { readonly kind: 'refused'; readonly error: ApiError; readonly retryAfter: number | null };
 
-type ProfilePatch = Parameters<ReturnType<typeof useApiClient>['PATCH']>[1]['body'];
+type ProfilePatch = components['schemas']['ProfilePatch'];
 
 interface PendingWork {
   readonly busy: boolean;

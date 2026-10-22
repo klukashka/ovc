@@ -43,6 +43,7 @@ const (
 	JobUploadsExpire             JobName = "uploads.expire"
 	JobAccountsPurge             JobName = "accounts.purge"
 	JobAccountsCleanupUnverified JobName = "accounts.cleanup_unverified"
+	JobInvitationsExpire         JobName = "invitations.expire"
 )
 
 const KindStorageDelete OutboxKind = "storage_delete"

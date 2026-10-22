@@ -2,6 +2,7 @@ package domain
 
 import (
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -60,6 +61,31 @@ const (
 )
 
 const InvitationMismatchLimit int16 = 5
+
+const (
+	InvitationTokenBytes = 32
+	InvitationLifetime   = 14 * 24 * time.Hour
+)
+
+type InvitationStatus string
+
+const (
+	InvitationOpen                   InvitationStatus = "open"
+	InvitationExpired                InvitationStatus = "expired"
+	InvitationRevokedAfterMismatches InvitationStatus = "revoked_after_mismatches"
+)
+
+func (id RelationshipID) String() string {
+	return formatUUID(id)
+}
+
+func (id GroupID) String() string {
+	return formatUUID(id)
+}
+
+func (id InvitationID) String() string {
+	return formatUUID(id)
+}
 
 type JoinRequestState string
 
@@ -246,4 +272,47 @@ func CombineOutcomes(outcomes ...LinkOutcome) (LinkOutcome, bool) {
 		}
 	}
 	return "", false
+}
+
+type CardFilter string
+
+const (
+	CardFilterAll     CardFilter = ""
+	CardFilterActive  CardFilter = "active"
+	CardFilterInvited CardFilter = "invited"
+	CardFilterEnded   CardFilter = "ended"
+)
+
+func (f CardFilter) States() ([]RelationshipState, bool) {
+	switch f {
+	case CardFilterAll:
+		return []RelationshipState{RelationshipInvited, RelationshipProvisional, RelationshipReclaimPending, RelationshipActive, RelationshipEnded}, true
+	case CardFilterActive:
+		return []RelationshipState{RelationshipProvisional, RelationshipReclaimPending, RelationshipActive}, true
+	case CardFilterInvited:
+		return []RelationshipState{RelationshipInvited}, true
+	case CardFilterEnded:
+		return []RelationshipState{RelationshipEnded}, true
+	}
+	return nil, false
+}
+
+func CardShowsAccount(state RelationshipState) bool {
+	switch state {
+	case RelationshipProvisional, RelationshipActive, RelationshipEnded:
+		return true
+	case RelationshipInvited, RelationshipReclaimPending, RelationshipDiscarded:
+		return false
+	}
+	return false
+}
+
+func CardTakesInvitations(state RelationshipState) bool {
+	switch state {
+	case RelationshipInvited, RelationshipEnded:
+		return true
+	case RelationshipProvisional, RelationshipReclaimPending, RelationshipActive, RelationshipDiscarded:
+		return false
+	}
+	return false
 }

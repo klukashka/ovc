@@ -24,3 +24,33 @@ SET revoked_at = sqlc.arg(now)::timestamptz, revoke_reason = sqlc.arg(reason)::t
 WHERE relationship_id = @relationship_id
     AND relationship_id IN (SELECT id FROM relationships WHERE tutor_id = @tutor_id)
     AND used_at IS NULL AND revoked_at IS NULL;
+
+-- name: GetCardInvitation :one
+SELECT id, token_encrypted, expires_at, used_at, revoked_at, revoke_reason FROM invitations
+WHERE relationship_id = @relationship_id
+ORDER BY (used_at IS NULL AND revoked_at IS NULL) DESC, created_at DESC, id DESC
+LIMIT 1;
+
+-- name: GetInvitationTutor :one
+SELECT tutors.id, tutors.name, tutor_profiles.subjects
+FROM invitations
+JOIN relationships ON relationships.id = invitations.relationship_id
+JOIN users AS tutors ON tutors.id = relationships.tutor_id
+JOIN tutor_profiles ON tutor_profiles.user_id = relationships.tutor_id
+WHERE invitations.token_hash = @token_hash
+    AND invitations.used_at IS NULL
+    AND invitations.revoked_at IS NULL
+    AND invitations.expires_at > sqlc.arg(now)::timestamptz
+    AND relationships.state IN ('invited', 'ended')
+    AND tutors.state = 'active';
+
+-- name: ClearExpiredInvitationCiphertext :execrows
+UPDATE invitations
+SET token_encrypted = NULL
+WHERE id IN (
+    SELECT expired.id FROM invitations AS expired
+    WHERE expired.token_encrypted IS NOT NULL AND expired.expires_at <= sqlc.arg(now)::timestamptz
+    ORDER BY expired.expires_at
+    LIMIT sqlc.arg(batch_size)::int
+    FOR UPDATE SKIP LOCKED
+);

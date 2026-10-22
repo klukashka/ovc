@@ -1,7 +1,10 @@
 package domain
 
 import (
+	"net/mail"
+	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -19,7 +22,20 @@ const (
 	PasswordMinRunes = 10
 	PasswordMaxRunes = 128
 	EmailTokenBytes  = 32
+	EmailMaxBytes    = 254
 )
+
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func ValidEmail(email string) bool {
+	if email == "" || len(email) > EmailMaxBytes || strings.ContainsFunc(email, unicode.IsControl) {
+		return false
+	}
+	parsed, err := mail.ParseAddress(email)
+	return err == nil && parsed.Address == email && parsed.Name == ""
+}
 
 type FieldCode string
 

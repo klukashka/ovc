@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -121,7 +122,14 @@ func newAuthHarnessServing(t *testing.T, trusted []netip.Prefix, newHandler func
 		Tokens: core.NewAccessTokens(keys, publicOrigin, 15*time.Minute), RefreshTTL: 30 * 24 * time.Hour,
 		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}, Avatars: fileService, Uploads: fileService,
 	})
-	tutoringService := tutoring.New(tutoring.Dependencies{Store: store, Clock: shared, Random: random, Keys: keys, Logger: logger})
+	fieldKey := sha256.Sum256([]byte("test-field-key"))
+	cipher, err := core.NewFieldCipher(core.NewSecret(base64.StdEncoding.EncodeToString(fieldKey[:])), random)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tutoringService := tutoring.New(tutoring.Dependencies{
+		Store: store, Clock: shared, Random: random, Keys: keys, Cipher: cipher, PublicURL: publicOrigin, Logger: logger,
+	})
 	handler, err := newHandler(api.Options{
 		Logger: logger, Now: clock.System{}.Now, NewRequestID: core.NewRandomID,
 		Readiness: func(context.Context) error { return nil },
@@ -154,6 +162,7 @@ func newAuthHarnessServing(t *testing.T, trusted []netip.Prefix, newHandler func
 		{Name: domain.JobAccountsCleanupUnverified, Every: time.Hour, Run: purger.CleanupUnverified},
 		{Name: domain.JobSessionsCleanup, Every: time.Hour, Run: accounts.CleanupSessions(store)},
 		{Name: domain.JobEmailRequestsCleanup, Every: time.Hour, Run: accounts.CleanupEmailRequests(store)},
+		{Name: domain.JobInvitationsExpire, Every: time.Hour, Run: tutoringService.ExpireInvitations},
 	}
 	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, jobs, worker.DefaultTiming())
 	return &authHarness{

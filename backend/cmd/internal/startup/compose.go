@@ -41,8 +41,13 @@ func NewTutoring(logger *slog.Logger, settings core.Settings, database *core.Dat
 	if err != nil {
 		return nil, err
 	}
+	cipher, err := core.NewFieldCipher(settings.FieldKey, core.CryptoRandom())
+	if err != nil {
+		return nil, err
+	}
 	return tutoring.New(tutoring.Dependencies{
-		Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Logger: logger,
+		Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Cipher: cipher,
+		PublicURL: settings.PublicURL, Logger: logger,
 	}), nil
 }
 
@@ -97,6 +102,7 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 	store := repositories.NewStore(database.Pool)
 	fileService := files.New(files.Dependencies{Store: store, Objects: objects, Clock: source, Random: random, Logger: logger})
 	purger := accounts.NewPurger(store, fileService, logger)
+	tutoringService := tutoring.New(tutoring.Dependencies{Store: store, Clock: source, Random: random, Logger: logger})
 	queue := outbox.New(store, random, logger)
 	accountEmails, err := notifications.NewAccountEmails(store, random, settings.PublicURL)
 	if err != nil {
@@ -118,6 +124,7 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 		{Name: domain.JobUploadsExpire, Every: time.Hour, Run: fileService.ExpirePending},
 		{Name: domain.JobAccountsPurge, Every: time.Hour, Run: purger.PurgeDeleted},
 		{Name: domain.JobAccountsCleanupUnverified, Every: time.Hour, Run: purger.CleanupUnverified},
+		{Name: domain.JobInvitationsExpire, Every: time.Hour, Run: tutoringService.ExpireInvitations},
 	}
 	return worker.New(logger, source, queue, lanes, jobs, worker.DefaultTiming()), nil
 }
