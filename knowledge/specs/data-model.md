@@ -9,7 +9,7 @@ PostgreSQL through `pgx`, with queries compiled to typed functions by `sqlc` and
 - **Enums** are stored as strings and defined once in `internal/domain`. The enums of states, roles and contexts appear here. Notification event names are those of the [event table](notifications.md#events), and error codes are those of the [API conventions](api.md#conventions).
 - **Tokens:**
   - session, email confirmation and reset tokens are stored only as SHA-256 hashes;
-  - invitation tokens are stored as a SHA-256 hash for lookup and as AES-256-GCM ciphertext under `OVC_FIELD_ENCRYPTION_KEY` (a 12-byte random nonce, the invitation identifier as additional data) for re-display and email rendering; the ciphertext is set to null once the invitation is used, revoked or expired;
+  - invitation tokens are stored as a SHA-256 hash for lookup and as AES-256-GCM ciphertext under `OVC_FIELD_ENCRYPTION_KEY` (a 12-byte random nonce, as additional data the ASCII label `ovc.invitation-token.v1` followed by the invitation identifier's 16 bytes, so a value sealed for any other purpose never opens as an invitation token; the stored value is the nonce followed by the ciphertext and its 16-byte tag, and any value that fails to open is refused) for re-display and email rendering; the ciphertext is set to null once the invitation is used, revoked or expired;
   - unsubscribe tokens are stateless and not stored.
 - Free text written by users is stored as entered; normalised forms are separate columns.
 - **Deletion:**

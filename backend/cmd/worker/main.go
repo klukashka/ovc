@@ -13,10 +13,20 @@ import (
 )
 
 func main() {
-	os.Exit(run())
+	os.Exit(run(os.Args[1:]))
 }
 
-func run() int {
+func run(args []string) int {
+	switch {
+	case len(args) == 0:
+		return withProcess()
+	case len(args) == 1 && args[0] == "check-settings":
+		return startup.CheckSettings(core.ProcessWorker, os.Stdout, os.Stderr)
+	}
+	return startup.Usage(os.Stderr, "usage: worker [check-settings]")
+}
+
+func withProcess() int {
 	settings, err := core.LoadFromEnvironment(core.ProcessWorker)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "configuration:", err)

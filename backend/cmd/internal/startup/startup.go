@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -26,6 +27,24 @@ func SignalContext() (context.Context, context.CancelFunc) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	context.AfterFunc(ctx, stop)
 	return ctx, stop
+}
+
+func CheckSettings(process core.Process, stdout io.Writer, stderr io.Writer) int {
+	output, line, code := stdout, "ok", 0
+	if _, err := core.LoadFromEnvironment(process); err != nil {
+		output, line, code = stderr, "configuration: "+err.Error(), 1
+	}
+	if _, err := fmt.Fprintln(output, line); err != nil {
+		return 1
+	}
+	return code
+}
+
+func Usage(stderr io.Writer, line string) int {
+	if _, err := fmt.Fprintln(stderr, line); err != nil {
+		return 1
+	}
+	return 2
 }
 
 func CloseDatabase(database *core.Database, logger *slog.Logger) {

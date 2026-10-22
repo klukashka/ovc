@@ -36,13 +36,16 @@ func run(args []string) int {
 	switch command {
 	case "openapi":
 		return writeOpenAPI()
+	case "check-settings":
+		if len(args) == 1 {
+			return startup.CheckSettings(core.ProcessAPI, os.Stdout, os.Stderr)
+		}
 	case "migrate":
 		return withProcess(migrate)
 	case "":
 		return withProcess(serve)
 	}
-	fmt.Fprintln(os.Stderr, "usage: api [migrate|openapi]")
-	return 2
+	return startup.Usage(os.Stderr, "usage: api [migrate|openapi|check-settings]")
 }
 
 func writeOpenAPI() int {

@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -26,9 +28,17 @@ import (
 	"ovc/backend/internal/teststorage"
 )
 
-var binaries string
+var (
+	binaries          string
+	fieldKeyForTheRun string
+)
 
 func TestMain(m *testing.M) {
+	keyBytes := make([]byte, 32)
+	if _, err := rand.Read(keyBytes); err != nil {
+		panic(err)
+	}
+	fieldKeyForTheRun = base64.StdEncoding.EncodeToString(keyBytes)
 	directory, err := os.MkdirTemp("", "ovc-binaries-")
 	if err != nil {
 		panic(err)
@@ -76,11 +86,17 @@ func withPublicURL(env []string) []string {
 	defaults := storageDefaults()
 	defaults["OVC_PUBLIC_URL"] = "https://ovc.example"
 	defaults["OVC_JWT_SECRET"] = "process-test-signing-material-0123456789"
-	result := env
+	defaults["OVC_FIELD_ENCRYPTION_KEY"] = fieldKeyForTheRun
+	var result []string
+	for _, variable := range env {
+		if strings.Contains(variable, "=") {
+			result = append(result, variable)
+		}
+	}
 	for name, value := range defaults {
 		set := false
 		for _, variable := range env {
-			if strings.HasPrefix(variable, name+"=") {
+			if variable == unsetVariable(name) || strings.HasPrefix(variable, name+"=") {
 				set = true
 			}
 		}
@@ -89,6 +105,10 @@ func withPublicURL(env []string) []string {
 		}
 	}
 	return result
+}
+
+func unsetVariable(name string) string {
+	return name
 }
 
 func runBinary(t *testing.T, name string, env []string, args ...string) outcome {

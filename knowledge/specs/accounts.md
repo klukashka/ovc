@@ -144,7 +144,7 @@ Students join through their tutor ([ADR-0014](../../docs/decisions/0014-students
 - **Creating:** a confirmed tutor creates a student card with a display name and an optional email. The card starts as `invited` and gets its invitation link at once.
 - **One open invitation per card**, the same link whether the tutor copies it or OVC emails it:
   - the token is 32 random bytes in base64url, valid for 14 days and single use;
-  - it is stored as a SHA-256 hash for lookup and as AES-256-GCM ciphertext under `OVC_FIELD_ENCRYPTION_KEY` (a 12-byte random nonce, the invitation identifier as additional data), so the card can show the link again and the worker can email it;
+  - it is stored as a SHA-256 hash for lookup and as AES-256-GCM ciphertext under `OVC_FIELD_ENCRYPTION_KEY` (a 12-byte random nonce; as additional data the label `ovc.invitation-token.v1` followed by the invitation identifier, as the [data model](data-model.md) specifies), so the card can show the link again and the worker can email it;
   - the ciphertext is cleared when the invitation is used or revoked, and the hourly `invitations.expire` job clears it once the invitation expires;
   - the key is not rotated in the MVP: a new key makes open links unreadable, and the tutor regenerates them.
 - **Regenerating** an `invited` or `ended` card revokes its open invitation and issues a new one.
