@@ -23,7 +23,9 @@ End-to-end journeys that define what "the product works" means. Each scenario be
 
 Browser locale and timezone match each actor's settings, and the browser timezone becomes the account timezone at sign-up. Dates in English use the `en-GB` format. Every suite starts with the clock on a fixed date in November, so no daylight-saving change interferes.
 
-## Scenario 1: first lesson with a recording
+Recordings (FR-5.4 to FR-5.6) and analytics (FR-11.2 to FR-11.4) are outside the MVP by the owner's decision of 2026-10-22: scenario 1 steps 12, 14 and 15, scenario 2 step 15, the Recordings suite, the FR-11.3 part of the Progress and onboarding suite, and the FR-5.4 to FR-5.6 and FR-11.2 to FR-11.4 parts of the coverage rows wait until those features are built; the MVP suites end the lesson without recording (step 13 still ends it) and skip the analytics step.
+
+## Scenario 1: first lesson (with a recording after the MVP)
 
 | # | Actor | Page | Operation | Expected |
 |---|---|---|---|---|
@@ -39,7 +41,7 @@ Browser locale and timezone match each actor's settings, and the browser timezon
 | 10 | Maria | Lesson | `POST /lessons/{id}/join` | The fake room opens in a new tab as moderator, showing her name; the lesson becomes live |
 | 11 | Anna | Home | `POST /lessons/{id}/join` | The Join button appears without reload; the fake room opens as viewer, showing her name |
 | 12 | Maria | — | `harness: POST /fake-provider/lessons/{lesson}/recording` start, then stop | The fake room shows its recording state as on, then off, to both |
-| 13 | Maria | Lesson | "End lesson", `POST /lessons/{id}/end` | The lesson shows "Ended" for both |
+| 13 | Maria | Lesson | "End lesson", `POST /lessons/{id}/end` | The lesson shows "Ended" for both; in the MVP the lesson page shows no Recordings block for Maria or Anna |
 | 14 | Worker | — | `harness: POST /fake-provider/lessons/{lesson}/ready`, `harness: POST /tick` | The recording appears on the lesson page for Maria and Anna, available until 90 days later |
 | 15 | Anna | Lesson | `GET /recordings/{id}/playback` | The player loads the returned signed URL; the same API request without a session gets 401 |
 

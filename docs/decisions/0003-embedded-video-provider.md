@@ -34,4 +34,4 @@ The backend creates one meeting per lesson with a random room name, authorizes j
 
 ## Where it is applied
 
-[Video specification](../../knowledge/specs/realtime-and-video.md#video), [provider interface](../../knowledge/specs/realtime-and-video.md#provider-interface), [threat T-10](../threat-model.md#threats-and-controls), [roadmap slice 7](../roadmap.md#slice-7-video-lessons-and-recordings).
+[Video specification](../../knowledge/specs/realtime-and-video.md#video), [provider interface](../../knowledge/specs/realtime-and-video.md#provider-interface), [threat T-10](../threat-model.md#threats-and-controls), [roadmap slice 7](../roadmap.md#slice-7-video-lessons).

@@ -116,6 +116,8 @@ sequenceDiagram
 
 ## Video
 
+In the MVP, rooms are created with `record=false` and without the recording-ready callback URL, the recording-ready callback route is not registered, and the provider interface's recording methods, the `recording` kind of `entity.changed` and every recording job wait for recordings, which come [after the MVP](../../docs/roadmap.md#after-the-mvp) by the owner's decision of 2026-10-22; the recording parts of this section describe that later design. MVP rooms also send `autoStartRecording=false` and `allowStartStopRecording=false`. The checks that prove it: the adapter test against the in-process BigBlueButton API (see contract tests below) asserts the create parameters in every run; an integration test proves the recording-ready callback route answers `404`; the slice 7 probe confirms that a moderator sees no start-recording control and that `getRecordings` with `state=any` is empty after a meeting; and scenario 1 of the pilot asserts that the lesson page shows no Recordings block. The conferencing host is deployed with `disableRecordingDefault=true` and with meeting event retention turned off, so it keeps neither recordings nor raw meeting events; the slice 7 probe confirms both settings and their names.
+
 ### Approach
 
 BigBlueButton carries the media; OVC never relays it. OVC:
@@ -152,7 +154,7 @@ type MeetingProvider interface {
 - **Meeting identifiers** are random, server-generated values, never derived from client input.
 - **Checksums** are computed only by the backend with SHA-256 or stronger. The server's `supportedChecksumAlgorithms` excludes SHA-1, and the shared secret never leaves the backend.
 - **`meta_*` values** never contain a secret or personal data, because meeting users may see them.
-- **Contract tests:** the fake runs in every test run. The BigBlueButton adapter runs the same contract tests only against the remote test server, with an opt-in command; a run that was not performed is reported as `unverified`.
+- **Contract tests:** the fake runs in every test run. The BigBlueButton adapter runs the same contract tests only against the remote test server, with an opt-in command; a run that was not performed is reported as `unverified`. In every test run, the BigBlueButton adapter is also tested against an in-process `httptest.Server` that answers as the BigBlueButton API and captures each request: in the MVP it asserts that `create` carries `record=false`, `autoStartRecording=false` and `allowStartStopRecording=false`, carries `meetingEndedURL` and no `meta_bbb-recording-ready-url`, and is signed with an accepted checksum; the opt-in remote run also asserts that `getMeetingInfo` reports recording off.
 
 ### Join flow
 
@@ -201,10 +203,10 @@ sequenceDiagram
 
   The slice 7 probe checks whether `redirect=false` with a session token can replace the link.
 - **Meeting creation** sets:
-  - `record=true`, tutor-controlled recording;
+  - `record=true`, tutor-controlled recording (after the MVP; MVP rooms use `record=false`);
   - `meetingExpireIfNoUserJoinedInMinutes=10`, and `endWhenNoModerator` with a 15-minute delay;
   - `logoutURL` back to the lesson page;
-  - the recording-ready callback URL and `meetingEndedURL`, each with the per-meeting routing key in its path;
+  - the recording-ready callback URL (after the MVP) and `meetingEndedURL`, each with the per-meeting routing key in its path;
   - the presentation, when the lesson has attached PDF materials, from the first of them in attachment order, as a signed storage URL valid for 5 minutes (the provider fetches it at creation).
 
   The routing key is not a secret, because `meta_*` values may be visible to participants.
@@ -246,6 +248,8 @@ sequenceDiagram
 - **Retries:** the provider's retry behavior on non-2xx answers is an open probe item. Reconciliation makes OVC independent of it.
 
 ### Recordings
+
+After the MVP ([roadmap](../../docs/roadmap.md#after-the-mvp)); the MVP's rooms record nothing.
 
 ```mermaid
 stateDiagram-v2
@@ -292,7 +296,7 @@ stateDiagram-v2
     - **deleted meanwhile:** writes a `storage_delete` row for the copied object;
     - **failure:** aborts the multipart upload;
   - when the outbox row goes `dead`, the dispatcher sets the recording `failed` and notifies the tutor with `recording.failed`.
-- **The copy path is conditional on the slice 7 probe** finding a rendered single-file format. If there is none, the fallback is a protected-recordings load balancer in front of BigBlueButton. Playback then returns its one-time URL, and the states above apply without `copying`. This is an open question that blocks the slice 7 implementation plan ([open questions](../architecture/detailed.md#open-implementation-questions)).
+- **The copy path is conditional on the recordings probe, run when recordings are planned after the MVP,** finding a rendered single-file format. If there is none, the fallback is a protected-recordings load balancer in front of BigBlueButton. Playback then returns its one-time URL, and the states above apply without `copying`. This is an open question that blocks the recordings plan after the MVP ([open questions](../architecture/detailed.md#open-implementation-questions)).
 - **Provider copies are always deleted through `provider_call` outbox rows:**
   - after a successful copy;
   - when a tutor deletes a recording in any state;

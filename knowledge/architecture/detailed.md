@@ -227,7 +227,7 @@ Settings are read once from the environment into one typed struct in `internal/c
 
 | Question | Constraint already settled | Resolved in |
 |---|---|---|
-| Rendered recording format available on BigBlueButton 4.0, or a protected-recordings load balancer instead; blocks the slice 7 plan | Never serve stock public playback links | Slice 7 probe |
+| Rendered recording format available on BigBlueButton 4.0, or a protected-recordings load balancer instead; blocks the recordings plan after the MVP | Never serve stock public playback links | Recordings probe after the MVP |
 | Provider retry behavior for non-2xx callback answers; joining with `redirect=false` and a session token; behavior of two joins with the same `userID`; external assets (STUN) the client loads | Reconciliation does not depend on callbacks; join links are never stored | Slice 7 probe |
 | How bounces and complaints arrive from the chosen SMTP provider (webhook or polling) | Undeliverable addresses stop optional emails | Slice 2, with the provider choice |
 | Embedded client works on all supported browsers | "Open in new tab" always available | Slice 7 probe |

@@ -2,6 +2,8 @@
 
 Every page of the web application, its address, who reaches it and where navigation leads. Page contents are in [pages](pages.md); state words and colours are in [states](states.md).
 
+The issue page's Analytics tab and the lesson page's recordings come [after the MVP](../../../docs/roadmap.md#after-the-mvp) by the owner's decision of 2026-10-22.
+
 ## Frames
 
 - **Public frame:** logo, language switch (Русский / English), and sign-in or sign-up links. Used for every page reachable without a session. For a signed-in person on a public page the language switch also saves the account's language, and says so when that save fails, so the next start-up and the emails keep the choice.

@@ -2,6 +2,8 @@
 
 REST under `/api/v1` (omitted from the paths below), JSON in and out except uploads. Authentication is `Authorization: Bearer <access token>` unless marked otherwise. The WebSocket surface is in [realtime and video](realtime-and-video.md#chat). The frontend is a thin client over this API and holds no rules of its own. Behavior is defined in the domain specifications linked from each section; this file fixes paths, callers, codes and conventions.
 
+In the MVP the recordings routes and the recording-ready callback, `GET /students/{id}/progress` and `GET /issues/{id}/analytics` are not registered, and `/tutor/settings` returns and accepts no recording retention or recording quota and usage; they come [after the MVP](../../docs/roadmap.md#after-the-mvp) by the owner's decision of 2026-10-22.
+
 **Who:**
 
 | Value | Meaning |

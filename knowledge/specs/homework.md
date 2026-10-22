@@ -172,6 +172,8 @@ stateDiagram-v2
 
 ## Analytics
 
+After the MVP ([roadmap](../../docs/roadmap.md#after-the-mvp)).
+
 Visible only to the issuing tutor and computed on read from final scores, with a fixed number of queries that does not grow with the number of submissions or questions ([NFR-2.6](../../docs/requirements/non-functional.md#nfr-2-performance)).
 
 - **Per issue:**

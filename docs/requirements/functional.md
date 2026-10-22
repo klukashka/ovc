@@ -1,6 +1,6 @@
 # Functional requirements
 
-Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after design review and for the student Home content (FR-15.3); pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after design review and for the student Home content (FR-15.3); FR-5.4 to FR-5.6, FR-11.2 to FR-11.4 and the recording storage email of FR-13.2 moved after the MVP on 2026-10-22 by the owner's decision; pending line-by-line owner review.
 
 What OVC must do, numbered so that specifications, tests, pages and plans can cite them. Each section links the specification that defines the exact behavior. Roles are **tutor**, **student** and **operator** (command line only). The [product overview](../product.md) explains the intent; this file is normative.
 
@@ -25,7 +25,7 @@ Specified in [accounts](../../knowledge/specs/accounts.md#registration-and-email
 - **FR-2.4** One student account can have relationships with several tutors. Each tutor sees only their own relationship: their lessons, assignments, chat and notes with that student.
 - **FR-2.5** The student card shows the student's contact details, groups, lesson history, assignments and scores, and private notes that only the tutor sees.
 - **FR-2.6** A student sees the profile (name, avatar, bio, subjects) of each of their tutors, and every lesson, assignment, chat and notification is labelled with its tutor's name and colour.
-- **FR-2.7** A tutor ends a relationship. Future lessons with that student are cancelled, the student leaves the tutor's groups, the chat becomes read-only, recordings stay viewable until they expire, and submitted work and results stay visible to both. A new invitation or an accepted join request restores the relationship.
+- **FR-2.7** A tutor ends a relationship. Future lessons with that student are cancelled, the student leaves the tutor's groups, the chat becomes read-only, recordings (after the MVP) stay viewable until they expire, and submitted work and results stay visible to both. A new invitation or an accepted join request restores the relationship.
 
 Specified in [tutor–student relationships](../../knowledge/specs/accounts.md#tutorstudent-relationships), [invitations](../../knowledge/specs/accounts.md#invitations), [tutor code and join requests](../../knowledge/specs/accounts.md#tutor-code-and-join-requests), [ending a relationship](../../knowledge/specs/accounts.md#ending-a-relationship).
 
@@ -46,7 +46,7 @@ Specified in [groups](../../knowledge/specs/accounts.md#groups).
 - **FR-4.4** The tutor is warned when a new or moved lesson overlaps another of their lessons.
 - **FR-4.5** Every user sees a calendar of their lessons (week and month on wide screens, an agenda list on narrow screens) in their own timezone. When the other party's timezone differs, the lesson page also shows the lesson in that timezone: the student's for the tutor of a one-to-one lesson, the tutor's for students.
 - **FR-4.6** A lesson is scheduled, live, ended or cancelled. It becomes live when the tutor first joins and ends when the tutor ends it or 30 minutes after its scheduled end. If the video room closes earlier, for example because the tutor's connection dropped, the tutor can rejoin and the lesson continues.
-- **FR-4.7** The lesson page shows time, participants, description, attached materials, linked assignments, the join button and recordings.
+- **FR-4.7** The lesson page shows time, participants, description, attached materials, linked assignments, the join button and, after the MVP, recordings.
 
 Specified in [schedule](../../knowledge/specs/schedule.md).
 
@@ -55,9 +55,9 @@ Specified in [schedule](../../knowledge/specs/schedule.md).
 - **FR-5.1** The tutor joins the lesson's video room from 10 minutes before its start until it ends, as moderator. Students join as viewers once the tutor has joined, while they still study with the tutor and, for a group lesson, are still in the group. Anyone else is refused.
 - **FR-5.2** The room provides video, audio, screen sharing, a shared whiteboard, presentation upload and in-room chat.
 - **FR-5.3** The room opens embedded in the lesson page once embedding is confirmed to work on the supported browsers, and in a new tab until then; opening it in a new tab is always possible.
-- **FR-5.4** The tutor starts and stops recording during the lesson, and participants see that recording is on.
-- **FR-5.5** After processing, the recording appears on the lesson page for the tutor and the students in the lesson's roster: its audience when the lesson started, plus group members who joined later. No recording is reachable without signing in.
-- **FR-5.6** A tutor sets how long recordings are kept (default 90 days, chosen from 7, 30, 90, 180 or 365 days). The period applies to recordings made after the change. The tutor can delete a recording earlier.
+- **FR-5.4** (after the MVP, by the owner's decision of 2026-10-22) The tutor starts and stops recording during the lesson, and participants see that recording is on.
+- **FR-5.5** (after the MVP, by the owner's decision of 2026-10-22) After processing, the recording appears on the lesson page for the tutor and the students in the lesson's roster: its audience when the lesson started, plus group members who joined later. No recording is reachable without signing in.
+- **FR-5.6** (after the MVP, by the owner's decision of 2026-10-22) A tutor sets how long recordings are kept (default 90 days, chosen from 7, 30, 90, 180 or 365 days). The period applies to recordings made after the change. The tutor can delete a recording earlier.
 
 Specified in [video](../../knowledge/specs/realtime-and-video.md#video), [recordings](../../knowledge/specs/realtime-and-video.md#recordings).
 
@@ -109,9 +109,9 @@ Specified in [scoring and review](../../knowledge/specs/homework.md#scoring-and-
 ## FR-11 Results and analytics
 
 - **FR-11.1** A student sees the status of their work, the tutor's comments, overall feedback and corrected files, and, once answers are revealed, the correct answers with explanations next to their own answers. They never see points or scores.
-- **FR-11.2** For each issue the tutor sees how many students submitted, were checked and are late, the average score, the share of correct answers per question and the distribution of answers for choice questions.
-- **FR-11.3** For each student the tutor sees their scores across assignments over time.
-- **FR-11.4** Analytics use final scores after any tutor overrides.
+- **FR-11.2** (after the MVP, by the owner's decision of 2026-10-22) For each issue the tutor sees how many students submitted, were checked and are late, the average score, the share of correct answers per question and the distribution of answers for choice questions.
+- **FR-11.3** (after the MVP, by the owner's decision of 2026-10-22) For each student the tutor sees their scores across assignments over time.
+- **FR-11.4** (after the MVP, by the owner's decision of 2026-10-22) Analytics use final scores after any tutor overrides.
 
 Specified in [analytics](../../knowledge/specs/homework.md#analytics).
 
@@ -137,8 +137,8 @@ Specified in [chat](../../knowledge/specs/realtime-and-video.md#chat).
   - unread messages, as a digest;
   - invitations, email confirmation and password reset, and a notice when someone tries to sign up with their email;
   - a relationship ended or a tutor's account deleted (to students);
-  - recording storage full (to the tutor).
-- **FR-13.3** Users turn off each optional email group in settings or with one click from the email. Invitation, confirmation, password-reset, duplicate sign-up notice, relationship-ended, tutor-deleted and storage-full emails cannot be turned off.
+  - recording storage full (to the tutor) (after the MVP, by the owner's decision of 2026-10-22).
+- **FR-13.3** Users turn off each optional email group in settings or with one click from the email. Invitation, confirmation, password-reset, duplicate sign-up notice, relationship-ended, tutor-deleted and (after the MVP) storage-full emails cannot be turned off.
 - **FR-13.4** Emails use the recipient's language and timezone and reflect the lesson as it is when the email is sent.
 
 Specified in [notifications](../../knowledge/specs/notifications.md).

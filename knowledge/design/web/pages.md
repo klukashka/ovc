@@ -2,6 +2,8 @@
 
 Every page of the web application. Addresses and frames are in [navigation](navigation.md); state words and colours are in [states](states.md); values are in [tokens](tokens.md). Each page lists the requirements it covers. Every page shows the shared loading, empty, error and offline behavior described at the end.
 
+Recordings (FR-5.4 to FR-5.6) and analytics (FR-11.2 to FR-11.4) come [after the MVP](../../../docs/roadmap.md#after-the-mvp) by the owner's decision of 2026-10-22. Until then the lesson page has no Recordings block or empty state, the student card has no Progress tab, the issue page has no Analytics tab, and Settings shows neither recording retention nor recording storage; the parts below that describe them are the later design.
+
 ## Public pages
 
 ### Sign in

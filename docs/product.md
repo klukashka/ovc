@@ -1,6 +1,6 @@
 # Product
 
-Status: draft written 2026-10-20, visual language revised the same day after the owner chose a direction on the prototype; pending line-by-line owner review.
+Status: draft written 2026-10-20, visual language revised the same day after the owner chose a direction on the prototype; recordings and analytics marked as after the MVP on 2026-10-22 by the owner's decision; pending line-by-line owner review.
 
 This page explains what OVC is, who it serves and how it feels to use. It is not normative: the binding statements are the [functional requirements](requirements/functional.md), and where this page and a requirement differ, the requirement wins.
 
@@ -18,17 +18,17 @@ The platform operator has no web interface in the first release; blocking and li
 2. Adds students: either sends a personal invitation link, or shares a tutor code that students enter after signing up, and accepts their requests.
 3. Organises students into groups when they teach several people together.
 4. Schedules lessons for a student or a group, one-off or weekly, and joins them from the calendar or the Today page.
-5. Teaches in a video room with a whiteboard, presentation upload and screen sharing, and records the lesson when useful. Participants find the recording on the lesson page afterwards.
+5. Teaches in a video room with a whiteboard, presentation upload and screen sharing, and, after the MVP, records the lesson when useful. Participants find the recording on the lesson page afterwards.
 6. Builds exercises once in a library: tests that check themselves, written questions, and file tasks. Issues them to a student or a group, optionally with a deadline.
 7. Reviews submissions on a two-pane screen: automatic scores are already there; the tutor scores written answers, returns corrected files, leaves feedback, or sends work back for revision.
-8. Sees how a group did on each question, and how each student progresses over time.
+8. After the MVP, sees how a group did on each question, and how each student progresses over time.
 9. Talks to each student in a private chat, and to each group in a group chat, with files and pictures.
 
 ## What a student does
 
 1. Opens an invitation link (or signs up and enters a tutor code) and lands on their home page.
 2. Sees the next lesson with a Join button, homework to do with deadlines, recently checked work with the opening of the feedback and any corrected file, the lessons of the next seven days, and a list of their tutors to message or to add a new one by code, from all tutors.
-3. Joins lessons from a phone or a computer, and rewatches recordings.
+3. Joins lessons from a phone or a computer, and, after the MVP, rewatches recordings.
 4. Completes homework on any device; answers save automatically; submits with one button.
 5. Reads feedback, downloads corrected files, and, when the tutor allows it, sees the correct answers and explanations. Scores are the tutor's working tool and are never shown to students.
 6. Chats with each tutor and with their groups, and receives email reminders before lessons.
@@ -49,9 +49,9 @@ The platform operator has no web interface in the first release; blocking and li
 | Schedule: week and month calendar | Schedule: all lessons from all tutors |
 | Students: list, student card, join requests | My tutors: list, enter a tutor code |
 | Groups: list and group page | — |
-| Homework: library, builder, issued work, review, analytics | Homework: to do, submitted, checked; take an assignment; results |
+| Homework: library, builder, issued work, review, and analytics after the MVP | Homework: to do, submitted, checked; take an assignment; results |
 | Messages | Messages |
-| Lesson page with video room and recordings | Lesson page with video room and recordings |
+| Lesson page with video room, and recordings after the MVP | Lesson page with video room, and recordings after the MVP |
 | Settings | Settings |
 
 Element-by-element descriptions are in [the page design](../knowledge/design/web/pages.md).

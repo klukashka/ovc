@@ -2,6 +2,8 @@
 
 One vocabulary for every status in OVC. Each state has exactly one colour token from [tokens](tokens.md#colours) and one word per language, used identically in rows, panels, badges, emails and notifications; the lesson table also fixes icons, and the component library maps every other state to one icon. Status is never shown by colour alone: the word is always present. A "badge" in these documents is the state word in its colour, optionally after a small dot; a "count badge" is a number in `text-muted` beside a sidebar item; neither is a filled pill ([tokens](tokens.md#principles)). Phrases avoid interpolating names into positions that need a grammatical case in Russian.
 
+Recording states apply once recordings land [after the MVP](../../../docs/roadmap.md#after-the-mvp) (owner's decision of 2026-10-22).
+
 ## Lessons
 
 | State | When | Token | Icon | English | Русский |

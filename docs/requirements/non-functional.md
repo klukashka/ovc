@@ -1,6 +1,6 @@
 # Non-functional requirements
 
-Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after design review and for computer-first layouts (NFR-5.2); pending line-by-line owner review. Numeric targets are proposals until the owner accepts them and a measured baseline exists for the component they constrain.
+Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after design review and for computer-first layouts (NFR-5.2); recordings and analytics marked as after the MVP on 2026-10-22 by the owner's decision, so requirements on recording copies and analytics apply once those land; pending line-by-line owner review. Numeric targets are proposals until the owner accepts them and a measured baseline exists for the component they constrain.
 
 ## NFR-1 Security and privacy
 
@@ -19,12 +19,12 @@ Proposed reference deployment for every target below: one API instance and one w
 - **NFR-2.3** Upload, download and recording copy memory does not grow with file size.
 - **NFR-2.4** Proposed: the initial student bundle stays under 250 KB compressed and the tutor bundle under 400 KB, excluding fonts. The builder, review and analytics load on demand.
 - **NFR-2.5** Proposed: on a mid-range phone over a fast 4G profile, the student Home page shows the next lesson within 2.5 seconds (largest contentful paint).
-- **NFR-2.6** Proposed: analytics for an issue with 50 submissions and 100 questions return within 1 second at the 95th percentile on the reference deployment.
+- **NFR-2.6** (after the MVP, by the owner's decision of 2026-10-22) Proposed: analytics for an issue with 50 submissions and 100 questions return within 1 second at the 95th percentile on the reference deployment.
 
 ## NFR-3 Scale
 
 - **NFR-3.1** MVP scale: 500 tutors, 5,000 students, 100 concurrent lessons, groups of up to 30 students, 2,000 concurrently connected users, on one API instance and one worker. Concurrent video capacity is bounded by the BigBlueButton host and is planned separately.
-- **NFR-3.2** Default quotas: 5 GB of files and 50 GB of recordings per tutor.
+- **NFR-3.2** Default quotas: 5 GB of files per tutor, and 50 GB of recordings once recordings land after the MVP.
 
 ## NFR-4 Reliability
 

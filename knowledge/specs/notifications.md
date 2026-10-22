@@ -24,9 +24,9 @@ Behavior for FR-13 and the worker that delivers it. Decision: [ADR-0006](../../d
 | `issue.withdrawn` | each student of the issue | yes | no | — |
 | `submission.submitted` | tutor, for work with manual questions | yes | yes | `submissions` |
 | `submission.checked`, `submission.returned`, `submission.review_updated` (only when comments, corrected files or feedback changed) | student | yes | yes | `results` |
-| `recording.available` | tutor and roster | yes | no | — |
-| `recording.held_quota` | tutor | yes | yes | required |
-| `recording.failed` | tutor | yes | no | — |
+| `recording.available` (after the MVP; the recording jobs below also wait for recordings) | tutor and roster | yes | no | — |
+| `recording.held_quota` (after the MVP) | tutor | yes | yes | required |
+| `recording.failed` (after the MVP) | tutor | yes | no | — |
 | `messages.digest` | a member with unread messages | — | yes | `message_digest` |
 
 - A lesson is "moved" when its start or duration changes; other edits notify no one.

@@ -1,6 +1,6 @@
 # Development
 
-Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain, and on 2026-10-21 with Docker Compose services, security scanning, the backend scaffold, the frontend scaffold and the pinned documentation tools, and the same day with the test fixture's host check, the sqlc check, the mail settings and test routes of the outbox worker, the local settings wrapper, and the backend OSV triage; pending line-by-line owner review. Amended 2026-10-21 with storage-backed tests run through the local settings wrapper (pending owner review). Amended 2026-10-22 with the local storage bucket, the gosec G101 exclusion, worker-indexed end-to-end logs and the end-to-end bucket cleanup (pending owner review). Amended the same day with the layer-based slice review and the single after-fix re-review (pending owner review).
+Status: draft written 2026-10-20, amended the same day with local services and the Go backend toolchain, and on 2026-10-21 with Docker Compose services, security scanning, the backend scaffold, the frontend scaffold and the pinned documentation tools, and the same day with the test fixture's host check, the sqlc check, the mail settings and test routes of the outbox worker, the local settings wrapper, and the backend OSV triage; pending line-by-line owner review. Amended 2026-10-21 with storage-backed tests run through the local settings wrapper (pending owner review). Amended 2026-10-22 with the local storage bucket, the gosec G101 exclusion, worker-indexed end-to-end logs and the end-to-end bucket cleanup (pending owner review). Amended the same day with the layer-based slice review and the single after-fix re-review, and with the recording test routes moved after the MVP (pending owner review).
 
 How to set up, check and verify changes locally. Read [AGENTS.md](../AGENTS.md) before contributing. Backend and frontend commands were registered here by [roadmap slice 1](roadmap.md#slice-1-scaffold-and-local-loop); later slices extend them.
 
@@ -133,10 +133,10 @@ Started in slice 1 (the clock and tick routes), extended by each slice. The [pil
   | `POST /__test__/mail` with `{to}` in the body | Read messages from the database mail sink, with their links |
   | `POST /__test__/presence` with `{user}` | Report whether the server sees the user online, so tests can wait for a socket close |
   | `POST /__test__/settings/embed` | Override `embed_allowed` for this deployment, until the next override |
-  | `POST /__test__/fake-provider/lessons/{lesson}/recording` | Start or stop recording in the lesson's latest fake meeting |
-  | `POST /__test__/fake-provider/lessons/{lesson}/ready` | Make the fake provider send a correctly signed recording-ready callback for the lesson's latest fake meeting |
+  | `POST /__test__/fake-provider/lessons/{lesson}/recording` | After the MVP: start or stop recording in the lesson's latest fake meeting; not registered until recordings land |
+  | `POST /__test__/fake-provider/lessons/{lesson}/ready` | After the MVP: make the fake provider send a correctly signed recording-ready callback for the lesson's latest fake meeting; not registered until recordings land |
 
-- **Fake room:** the fake meeting provider's join link opens `/__test__/fake-room`, which shows the meeting, participant name, role and recording state, refreshing every second. Under `OVC_TEST_CONTROL=1` it is served with framing allowed from the OVC origin, so both the embedded and the new-tab paths can be asserted.
+- **Fake room:** the fake meeting provider's join link opens `/__test__/fake-room`, which shows the meeting, participant name, role and, after the MVP, recording state, refreshing every second. In the MVP the fake meeting provider has no way to start a recording at all (pending owner review). Under `OVC_TEST_CONTROL=1` it is served with framing allowed from the OVC origin, so both the embedded and the new-tab paths can be asserted.
 - **Isolation:** each suite seeds its own tutors and students through the real API with unique emails.
 
 ## Local review

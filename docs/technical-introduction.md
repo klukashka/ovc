@@ -1,6 +1,6 @@
 # Technical introduction
 
-Status: rewritten 2026-10-20 for the tutor-centric product, backend language changed to Go the same day; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product, backend language changed to Go the same day; recordings marked as after the MVP on 2026-10-22 by the owner's decision; pending line-by-line owner review. Recordings and recording copies described below come after the MVP.
 
 OVC (Online Virtual Classroom) is a workspace for private tutors teaching adult students: video lessons with a whiteboard and recordings, chats, a schedule, and homework built from self-checking tests and tasks the tutor checks. This page explains the parts of the system, what they exchange, and why the boundaries sit where they do. What the product does for its users is in the [product overview](product.md); the detailed maps are in [knowledge/architecture/detailed.md](../knowledge/architecture/detailed.md); the behavior contracts are in [knowledge/specs/](../knowledge/README.md).
 
@@ -39,7 +39,7 @@ graph LR
 
 1. Maria, a language tutor, signs up and confirms her email. She invites Anna with a link and shares her tutor code with Boris, whose request she accepts.
 2. She schedules a weekly lesson with Anna. The API stores the series in Maria's timezone and creates the lessons; the worker will email reminders the day before and an hour before.
-3. At lesson time Maria joins. The API creates the BigBlueButton room and gives her a moderator link; Anna's page updates live and she joins as a viewer. Maria records part of the lesson. When BigBlueButton finishes processing, it calls the API; the worker copies the recording into OVC storage, and Anna finds it on the lesson page.
+3. At lesson time Maria joins. The API creates the BigBlueButton room and gives her a moderator link; Anna's page updates live and she joins as a viewer. After the MVP, Maria can also record part of the lesson. When BigBlueButton finishes processing, it calls the API; the worker copies the recording into OVC storage, and Anna finds it on the lesson page.
 4. Maria builds a test in her library and issues it to her group. Each student gets their own copy. Answers save as they type; on submission the API scores the automatic questions, and Maria's review queue shows the file answers to check. She attaches a corrected file and marks the work checked; the student is notified and, as Maria allowed, sees the correct answers.
 5. Throughout the week they talk in the private chat and the group chat. Messages are saved before they are delivered, and someone who was away gets one digest email.
 

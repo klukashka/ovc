@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10, slice reviews and the Go backend added the same day, slice 1 adjusted on 2026-10-21 (sqlc and `ovc-admin` moved to slice 2); slice 1 closed and follow-up items placed in slices 2, 8 and 10 on 2026-10-21 after its slice review; parts of FR-1 and FR-16 moved from slice 2 to slices 3 and 4 the same day with the slice 2 plan; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10, slice reviews and the Go backend added the same day, slice 1 adjusted on 2026-10-21 (sqlc and `ovc-admin` moved to slice 2); slice 1 closed and follow-up items placed in slices 2, 8 and 10 on 2026-10-21 after its slice review; parts of FR-1 and FR-16 moved from slice 2 to slices 3 and 4 the same day with the slice 2 plan; recordings and analytics moved after the MVP on 2026-10-22 by the owner's decision; pending line-by-line owner review.
 
 Build order, slice by slice. Each slice is runnable and reviewable on its own and ends with its checks registered in the [development guide](development.md). A slice is done when:
 
@@ -38,7 +38,7 @@ Also carried over from the [slice 1 review](../knowledge/reviews/slice-1-review.
 
 ## Slice 3: tutors, students and groups
 
-FR-2, FR-3, and from slice 2 FR-1.2 and student sign-up through an invitation or a tutor code ([proposal 0002](proposals/0002-student-onboarding.md)), FR-1.3, the confirm-before-inviting gate of FR-1.1, and the effects of account deletion in FR-1.7 on relationships, groups, student cards, invitations and join requests, with the `tutor.deleted` email. Each later slice applies the deletion effects and purge rules of FR-1.7 to the entities it introduces: lesson cancellation, series end and the cancelled lessons listed in `tutor.deleted` in slice 5, the "Deleted user" sender of messages in slice 6, and read-only access to recordings and results for 30 days in slices 7, 9 and 10. Student cards, invitations, tutor code and join requests, relationship end and reactivation, groups, and the student's tutors page. Relationship-scoped authorization guards and their denial tests.
+FR-2, FR-3, and from slice 2 FR-1.2 and student sign-up through an invitation or a tutor code ([proposal 0002](proposals/0002-student-onboarding.md)), FR-1.3, the confirm-before-inviting gate of FR-1.1, and the effects of account deletion in FR-1.7 on relationships, groups, student cards, invitations and join requests, with the `tutor.deleted` email. Each later slice applies the deletion effects and purge rules of FR-1.7 to the entities it introduces: lesson cancellation, series end and the cancelled lessons listed in `tutor.deleted` in slice 5, the "Deleted user" sender of messages in slice 6, and read-only access to results for 30 days in slices 9 and 10 (and to recordings once they land after the MVP). Student cards, invitations, tutor code and join requests, relationship end and reactivation, groups, and the student's tutors page. Relationship-scoped authorization guards and their denial tests.
 
 ## Slice 4: realtime and in-app notifications
 
@@ -52,12 +52,12 @@ FR-4, FR-13.2 (lesson emails). One-off lessons and weekly series in the tutor's 
 
 FR-12, FR-14, the message digest. Direct and group channels, messages with attachments and previews, edit and delete, read markers and unread counts, presence and typing, upload contexts, quotas and usage, authorized downloads.
 
-## Slice 7: video lessons and recordings
+## Slice 7: video lessons
 
-FR-5.
+FR-5.1 to FR-5.3; recordings (FR-5.4 to FR-5.6) come after the MVP.
 
-- **Probe first:** run the BigBlueButton probe on a remote test server (rendered recording format, embedding on every supported browser) and record the results in the [research file](../knowledge/research/bigbluebutton-2026-10-20.md).
-- **Then build:** the BigBlueButton and fake adapters with shared contract tests, meetings and join links, callbacks and reconciliation, recording copy, playback, retention and deletion, and the embedded room with the new-tab fallback.
+- **Probe first:** run the BigBlueButton probe on a remote test server (embedding on every supported browser) and record the results in the [research file](../knowledge/research/bigbluebutton-2026-10-20.md).
+- **Then build:** the BigBlueButton and fake adapters with shared contract tests, meetings and join links, the callbacks and reconciliation that lesson status needs, and the embedded room with the new-tab fallback.
 
 ## Slice 8: library and builder
 
@@ -71,13 +71,13 @@ FR-8, FR-9, FR-10. Issues with snapshots, deadlines and answer policies, the stu
 
 ## Slice 10: results, home pages and hardening
 
-FR-11, FR-15.
+FR-11.1, FR-15; analytics (FR-11.2 to FR-11.4) come after the MVP.
 
-- **Product:** results for students; analytics per issue and progress per student; Today with the first-run checklist; Home with the tutor filter.
+- **Product:** results for students; Today with the first-run checklist; Home with the tutor filter.
 - **Phone layouts:** dedicated phone layouts for every page and the phone navigation frame, replacing the interim one-column fallback ([ADR-0010](decisions/0010-quiet-visual-language.md)).
-- **Hardening:** the accessibility pass, performance baselines and budgets for the non-functional requirements, and all four pilot scenarios passing in full.
+- **Hardening:** the accessibility pass, performance baselines and budgets for the non-functional requirements, and all four pilot scenarios passing in their MVP form.
 - **Production serving** (before OVC is first deployed, at the latest here): the reverse proxy reproduces the page headers from `frontend/security-headers.ts`, caches hashed assets for a long time, compresses responses, answers the Go server's own protocol errors, redacts token segments in its access logs and never forwards `/__test__/`; Home stops polling the database-pinging readiness route; icons grow to 20 px on phones; the log queue keeps warnings and errors ahead of access records under a flood ([slice 1 review](../knowledge/reviews/slice-1-review.md#carried-over)).
 
 ## After the MVP
 
-The [payment ledger](proposals/0001-payment-ledger.md), attendance from provider events, timed tests and multiple attempts, accounts with both roles, an administration web interface, push notifications, calendar export, thumbnails, malware scanning, and several API instances with a cross-instance broadcaster. Each starts as a [proposal](proposals/README.md) when it is designed but not scheduled.
+Lesson recordings (FR-5.4 to FR-5.6, with their storage email in FR-13.2) and homework analytics (FR-11.2 to FR-11.4), moved out of the MVP by the owner on 2026-10-22 to reach it sooner, come first; the recording settings, quota columns, `recording_copy` outbox lane and `ovc-admin tutors set-quota --recordings` built in slice 2 stay in place, unused, until then. Then the [payment ledger](proposals/0001-payment-ledger.md), attendance from provider events, timed tests and multiple attempts, accounts with both roles, an administration web interface, push notifications, calendar export, thumbnails, malware scanning, and several API instances with a cross-instance broadcaster. Each starts as a [proposal](proposals/README.md) when it is designed but not scheduled.
