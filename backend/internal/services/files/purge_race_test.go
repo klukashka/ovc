@@ -100,6 +100,18 @@ func avatarPNG(t *testing.T) []byte {
 	return encoded.Bytes()
 }
 
+func settleUpload(t *testing.T, pause *pausedWrite, returned <-chan struct{}) {
+	t.Helper()
+	pause.Resume()
+	deadline := time.NewTimer(pauseDeadline)
+	defer deadline.Stop()
+	select {
+	case <-returned:
+	case <-deadline.C:
+		t.Error("the upload goroutine did not return before the test database was dropped")
+	}
+}
+
 func TestAnUploadPurgedBeforeItsObjectLandsQueuesTheObjectsDeletion(t *testing.T) {
 	database := testdb.New(t)
 	store := repositories.NewStore(database.Pool)
@@ -117,7 +129,10 @@ func TestAnUploadPurgedBeforeItsObjectLandsQueuesTheObjectsDeletion(t *testing.T
 	service := files.New(files.Dependencies{Store: store, Objects: objects, Clock: shared, Random: core.CryptoRandom(), Keys: keys, Logger: slog.New(slog.DiscardHandler)})
 	data := avatarPNG(t)
 	uploaded := make(chan error, 1)
+	returned := make(chan struct{})
+	t.Cleanup(func() { settleUpload(t, pause, returned) })
 	go func() {
+		defer close(returned)
 		_, uploadErr := service.UploadAvatar(context.Background(), user, "me.png", func() ([]byte, error) { return io.ReadAll(bytes.NewReader(data)) })
 		uploaded <- uploadErr
 	}()
