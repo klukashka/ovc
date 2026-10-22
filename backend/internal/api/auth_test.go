@@ -12,7 +12,6 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,6 +27,7 @@ import (
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/outbox"
 	"ovc/backend/internal/testdb"
+	"ovc/backend/internal/testhasher"
 	"ovc/backend/internal/teststorage"
 	"ovc/backend/internal/worker"
 )
@@ -58,49 +58,29 @@ func (r *countingRandom) Read(buffer []byte) (int, error) {
 	return len(buffer), nil
 }
 
-type countingHasher struct {
-	inner         *core.PasswordHasher
-	verifications atomic.Int32
-	failure       error
-	afterVerify   func()
-}
+type passwordAge int
 
-func (h *countingHasher) Hash(ctx context.Context, password string) (string, error) {
-	return h.inner.Hash(ctx, password)
-}
+const (
+	currentHash passwordAge = iota
+	staleHash
+)
 
-func (h *countingHasher) Verify(ctx context.Context, password string, encoded string) (core.Verification, error) {
-	h.verifications.Add(1)
-	if h.failure != nil {
-		return core.Verification{}, h.failure
-	}
-	verification, err := h.inner.Verify(ctx, password, encoded)
-	if h.afterVerify != nil {
-		h.afterVerify()
-	}
-	return verification, err
-}
-
-func (h *countingHasher) VerifyNothing(ctx context.Context, password string) error {
-	h.verifications.Add(1)
-	return h.inner.VerifyNothing(ctx, password)
-}
+const (
+	currentHashGeneration = 2
+	staleHashGeneration   = 1
+	pauseDeadline         = 10 * time.Second
+)
 
 type authHarness struct {
 	server   *httptest.Server
 	store    *repositories.Store
 	clock    *clock.Shared
-	hasher   *core.PasswordHasher
-	counting *countingHasher
+	hasher   *testhasher.Fake
 	logs     *safeBuffer
 	database *testdb.Database
 	sink     *mail.Sink
 	worker   *worker.Worker
 	objects  *storage.S3
-}
-
-func cheapArgon2() core.Argon2Params {
-	return core.Argon2Params{MemoryKiB: 64, Iterations: 1, Parallelism: 1}
 }
 
 func newAuthHarness(t *testing.T) *authHarness {
@@ -118,20 +98,16 @@ func newAuthHarnessBehind(t *testing.T, trusted []netip.Prefix) *authHarness {
 	if _, err := shared.Set(context.Background(), authStart); err != nil {
 		t.Fatal(err)
 	}
-	hasher, err := core.NewPasswordHasher(cheapArgon2(), random, 4, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	hasher := testhasher.New(currentHashGeneration)
 	keys, err := core.DeriveKeys(core.NewSecret("test-signing-material-0123456789abcdef"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	store := repositories.NewStore(database.Pool)
-	counting := &countingHasher{inner: hasher}
 	objects := teststorage.New(t).Store
 	fileService := files.New(files.Dependencies{Store: store, Objects: objects, Clock: shared, Random: random, Keys: keys, Logger: logger})
 	service := accounts.New(accounts.Dependencies{
-		Store: store, Clock: shared, Random: random, Hasher: counting, Keys: keys, Logger: logger,
+		Store: store, Clock: shared, Random: random, Hasher: hasher, Keys: keys, Logger: logger,
 		Tokens: core.NewAccessTokens(keys, publicOrigin, 15*time.Minute), RefreshTTL: 30 * 24 * time.Hour,
 		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}, Avatars: fileService, Uploads: fileService,
 	})
@@ -167,25 +143,21 @@ func newAuthHarnessBehind(t *testing.T, trusted []netip.Prefix) *authHarness {
 	}
 	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, jobs, worker.DefaultTiming())
 	return &authHarness{
-		server: server, store: store, clock: shared, hasher: hasher, counting: counting, logs: logs,
+		server: server, store: store, clock: shared, hasher: hasher, logs: logs,
 		database: database, sink: sink, worker: background, objects: objects,
 	}
 }
 
-func (h *authHarness) seedUser(t *testing.T, id byte, email string, password string, params core.Argon2Params) domain.UserID {
+func (h *authHarness) seedUser(t *testing.T, id byte, email string, password string, age passwordAge) domain.UserID {
 	t.Helper()
-	return h.seedUserAs(t, domain.RoleTutor, id, email, password, params)
+	return h.seedUserAs(t, domain.RoleTutor, id, email, password, age)
 }
 
-func (h *authHarness) seedUserAs(t *testing.T, role domain.Role, id byte, email string, password string, params core.Argon2Params) domain.UserID {
+func (h *authHarness) seedUserAs(t *testing.T, role domain.Role, id byte, email string, password string, age passwordAge) domain.UserID {
 	t.Helper()
 	hasher := h.hasher
-	if params != cheapArgon2() {
-		other, err := core.NewPasswordHasher(params, &countingRandom{counter: 1 << 20}, 1, time.Second)
-		if err != nil {
-			t.Fatal(err)
-		}
-		hasher = other
+	if age == staleHash {
+		hasher = testhasher.New(staleHashGeneration)
 	}
 	encoded, err := hasher.Hash(context.Background(), password)
 	if err != nil {
@@ -219,22 +191,25 @@ type response struct {
 
 func (h *authHarness) send(t *testing.T, method string, path string, body string, headers map[string]string) response {
 	t.Helper()
-	request, err := http.NewRequestWithContext(context.Background(), method, h.server.URL+path, strings.NewReader(body))
+	result, err := h.trySend(method, path, body, headers)
 	if err != nil {
 		t.Fatal(err)
+	}
+	return result
+}
+
+func (h *authHarness) trySend(method string, path string, body string, headers map[string]string) (response, error) {
+	request, err := http.NewRequestWithContext(context.Background(), method, h.server.URL+path, strings.NewReader(body))
+	if err != nil {
+		return response{}, err
 	}
 	for name, value := range headers {
 		request.Header.Set(name, value)
 	}
 	result, err := http.DefaultClient.Do(request)
 	if err != nil {
-		t.Fatal(err)
+		return response{}, err
 	}
-	defer func() {
-		if err := result.Body.Close(); err != nil {
-			t.Error(err)
-		}
-	}()
 	var text strings.Builder
 	buffer := make([]byte, 4096)
 	for {
@@ -244,7 +219,65 @@ func (h *authHarness) send(t *testing.T, method string, path string, body string
 			break
 		}
 	}
-	return response{status: result.StatusCode, body: text.String(), headers: result.Header}
+	return response{status: result.StatusCode, body: text.String(), headers: result.Header}, result.Body.Close()
+}
+
+func (h *authHarness) loginWhileVerifying(t *testing.T, email string, password string, during func()) response {
+	t.Helper()
+	pause := h.hasher.PauseAfterNextVerification()
+	t.Cleanup(pause.Resume)
+	type outcome struct {
+		result response
+		err    error
+	}
+	answered := make(chan outcome, 1)
+	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, password)
+	go func() {
+		result, err := h.trySend(http.MethodPost, "/api/v1/auth/login", body, map[string]string{"Origin": publicOrigin, "Content-Type": "application/json"})
+		answered <- outcome{result: result, err: err}
+	}()
+	deadline := time.NewTimer(pauseDeadline)
+	defer deadline.Stop()
+	select {
+	case <-pause.Reached():
+	case <-deadline.C:
+		t.Fatal("the sign-in never reached its password verification")
+	}
+	during()
+	pause.Resume()
+	select {
+	case got := <-answered:
+		if got.err != nil {
+			t.Fatal(got.err)
+		}
+		return got.result
+	case <-deadline.C:
+		t.Fatal("the sign-in did not answer after its verification resumed")
+	}
+	return response{}
+}
+
+func (h *authHarness) replacePassword(t *testing.T, user domain.UserID, password string) {
+	t.Helper()
+	replacement, err := h.hasher.Hash(context.Background(), password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := h.store.Repositories().Users.ByID(context.Background(), user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.Repositories().Users.UpdatePasswordHash(context.Background(), repositories.PasswordRehash{
+		PasswordHash: replacement, Now: authStart, ID: user, CurrentPasswordHash: current.PasswordHash,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (h *authHarness) storedHashIsCurrent(t *testing.T, stored string, password string) bool {
+	t.Helper()
+	verification, err := testhasher.New(currentHashGeneration).Verify(context.Background(), password, stored)
+	return err == nil && verification.Matches && !verification.Stale
 }
 
 func (h *authHarness) quietLogin(email string, password string) (int, error) {
@@ -347,7 +380,7 @@ func code(t *testing.T, result response) string {
 
 func TestLoginSetsExactlyTheHostOnlyRefreshCookie(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 
 	result := h.login(t, "Tutor@Example.org ", "correct horse battery")
 
@@ -370,8 +403,8 @@ func TestLoginSetsExactlyTheHostOnlyRefreshCookie(t *testing.T) {
 
 func TestLoginAnswersIdenticallyForAnUnknownEmailAWrongPasswordAndADeletedAccount(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
-	deleted := h.seedUser(t, 2, "deleted@example.org", "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
+	deleted := h.seedUser(t, 2, "deleted@example.org", "correct horse battery", currentHash)
 	if marked, err := h.store.Repositories().Users.MarkDeleted(context.Background(), deleted, authStart); err != nil || !marked {
 		t.Fatalf("mark deleted: %v %v", marked, err)
 	}
@@ -380,7 +413,7 @@ func TestLoginAnswersIdenticallyForAnUnknownEmailAWrongPasswordAndADeletedAccoun
 	wrong := h.login(t, tutorEmail, "wrong horse battery")
 	gone := h.login(t, "deleted@example.org", "correct horse battery")
 
-	if verified := h.counting.verifications.Load(); verified != 3 {
+	if verified := h.hasher.Verifications(); verified != 3 {
 		t.Fatalf("%d verifications; every path must hash once", verified)
 	}
 	for _, result := range []response{unknown, wrong, gone} {
@@ -395,7 +428,7 @@ func TestLoginAnswersIdenticallyForAnUnknownEmailAWrongPasswordAndADeletedAccoun
 
 func TestLoginThrottlesTheSixthFailureWithin15Minutes(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	h.advance(t, 5*time.Minute+30*time.Second)
 	for range 5 {
 		if result := h.login(t, tutorEmail, "wrong horse battery"); result.status != http.StatusUnauthorized {
@@ -418,7 +451,7 @@ func TestLoginThrottlesTheSixthFailureWithin15Minutes(t *testing.T) {
 
 func TestParallelWrongPasswordsVerifyAtMostFivePasswords(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	statuses := make([]int, 20)
 
 	var wait sync.WaitGroup
@@ -439,7 +472,7 @@ func TestParallelWrongPasswordsVerifyAtMostFivePasswords(t *testing.T) {
 			throttled++
 		}
 	}
-	if verified := h.counting.verifications.Load(); verified > 5 || throttled != 15 {
+	if verified := h.hasher.Verifications(); verified > 5 || throttled != 15 {
 		t.Fatalf("%d password verifications and %d throttled of 20 attempts: %v", verified, throttled, statuses)
 	}
 }
@@ -457,14 +490,14 @@ func TestTheTwentyFirstFailureFromOneAddressIsThrottled(t *testing.T) {
 	if result.status != http.StatusTooManyRequests || !strings.Contains(h.logs.String(), `"scope":"address"`) {
 		t.Fatalf("the 21st failure answered %d", result.status)
 	}
-	if verified := h.counting.verifications.Load(); verified != 20 {
+	if verified := h.hasher.Verifications(); verified != 20 {
 		t.Fatalf("%d verifications; the throttled attempt must not hash", verified)
 	}
 }
 
 func TestBlockedAccountIsRevealedOnlyAfterTheCorrectPassword(t *testing.T) {
 	h := newAuthHarness(t)
-	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	if blocked, err := h.store.Repositories().Users.Block(context.Background(), user, authStart); err != nil || !blocked {
 		t.Fatalf("block: %v %v", blocked, err)
 	}
@@ -482,19 +515,19 @@ func TestBlockedAccountIsRevealedOnlyAfterTheCorrectPassword(t *testing.T) {
 
 func TestLoginRehashesAPasswordWithStaleParameters(t *testing.T) {
 	h := newAuthHarness(t)
-	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", core.Argon2Params{MemoryKiB: 32, Iterations: 1, Parallelism: 1})
+	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", staleHash)
 
 	result := h.login(t, tutorEmail, "correct horse battery")
 
 	stored, err := h.store.Repositories().Users.ByID(context.Background(), user)
-	if result.status != http.StatusOK || err != nil || !strings.HasPrefix(stored.PasswordHash, "$argon2id$v=19$m=64,t=1,p=1$") {
+	if result.status != http.StatusOK || err != nil || !h.storedHashIsCurrent(t, stored.PasswordHash, "correct horse battery") {
 		t.Fatalf("login %d, stored %q, %v", result.status, stored.PasswordHash, err)
 	}
 }
 
 func TestParallelSignInsWithAStaleHashAllSucceed(t *testing.T) {
 	h := newAuthHarness(t)
-	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", core.Argon2Params{MemoryKiB: 32, Iterations: 1, Parallelism: 1})
+	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", staleHash)
 	statuses := make([]int, 4)
 
 	var wait sync.WaitGroup
@@ -515,14 +548,14 @@ func TestParallelSignInsWithAStaleHashAllSucceed(t *testing.T) {
 			t.Fatalf("parallel sign-ins with a stale hash answered %v", statuses)
 		}
 	}
-	if err != nil || !strings.HasPrefix(stored.PasswordHash, "$argon2id$v=19$m=64,t=1,p=1$") {
+	if err != nil || !h.storedHashIsCurrent(t, stored.PasswordHash, "correct horse battery") {
 		t.Fatalf("stored %q, %v", stored.PasswordHash, err)
 	}
 }
 
 func TestRefreshReuseRevokesTheSession(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	first := h.login(t, tutorEmail, "correct horse battery")
 	t0 := refreshValue(t, first)
 	t1 := refreshValue(t, h.refresh(t, t0))
@@ -546,7 +579,7 @@ func TestRefreshReuseRevokesTheSession(t *testing.T) {
 
 func TestForgedStaleGenerationIsRefusedWithoutRevoking(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	current := refreshValue(t, h.refresh(t, refreshValue(t, h.login(t, tutorEmail, "correct horse battery"))))
 	parts := strings.Split(current, ".")
 	forgeries := []string{
@@ -574,7 +607,7 @@ func TestForgedStaleGenerationIsRefusedWithoutRevoking(t *testing.T) {
 
 func TestRefreshRejectsForeignOrigin(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	cookie := refreshValue(t, h.login(t, tutorEmail, "correct horse battery"))
 
 	results := []response{
@@ -594,7 +627,7 @@ func TestRefreshRejectsForeignOrigin(t *testing.T) {
 
 func TestLoginRejectsForeignOriginAndMissingContentType(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	body := `{"email":"tutor@example.org","password":"correct horse battery"}`
 
 	foreign := h.send(t, http.MethodPost, "/api/v1/auth/login", body, map[string]string{"Origin": "https://attacker.example", "Content-Type": "application/json"})
@@ -618,7 +651,7 @@ func TestRefreshWithoutCookieAnswers204(t *testing.T) {
 
 func TestAccessTokenExpiresByTheSharedClock(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	token := accessToken(t, h.login(t, tutorEmail, "correct horse battery"))
 
 	h.advance(t, 14*time.Minute)
@@ -633,7 +666,7 @@ func TestAccessTokenExpiresByTheSharedClock(t *testing.T) {
 
 func TestLogoutRevokesTheSessionAndLogoutAllEverySession(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	first := accessToken(t, h.login(t, tutorEmail, "correct horse battery"))
 	second := accessToken(t, h.login(t, tutorEmail, "correct horse battery"))
 	third := accessToken(t, h.login(t, tutorEmail, "correct horse battery"))
@@ -700,7 +733,7 @@ func TestEveryOperationDeclaresAnAudience(t *testing.T) {
 
 func TestRefreshExpiresThirtyDaysAfterSignInWhateverTheRotations(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	cookie := refreshValue(t, h.login(t, tutorEmail, "correct horse battery"))
 	h.advance(t, 29*24*time.Hour)
 	rotated := h.refresh(t, cookie)
@@ -718,7 +751,7 @@ func TestRefreshExpiresThirtyDaysAfterSignInWhateverTheRotations(t *testing.T) {
 
 func TestBlockedAccountLosesRefreshAndAccess(t *testing.T) {
 	h := newAuthHarness(t)
-	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	signedIn := h.login(t, tutorEmail, "correct horse battery")
 	if _, err := h.store.Repositories().Users.Block(context.Background(), user, authStart); err != nil {
 		t.Fatal(err)
@@ -737,7 +770,7 @@ func TestBlockedAccountLosesRefreshAndAccess(t *testing.T) {
 
 func TestConcurrentRefreshesWithOneCookieRotateOnceAndRevokeAsReuse(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	cookie := refreshValue(t, h.login(t, tutorEmail, "correct horse battery"))
 	statuses := make([]int, 2)
 	cookies := make([]string, 2)
@@ -770,7 +803,7 @@ func TestConcurrentRefreshesWithOneCookieRotateOnceAndRevokeAsReuse(t *testing.T
 
 func TestAccountFlowsLogNoSecretsOrEmails(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	signedIn := h.login(t, tutorEmail, "correct horse battery")
 	token := accessToken(t, signedIn)
 	cookie := refreshValue(t, signedIn)
@@ -856,7 +889,7 @@ func TestEveryPublishedOperationDescribesTheErrorEnvelope(t *testing.T) {
 
 func TestAThrottledAddressDoesNotLockTheVictimOutElsewhere(t *testing.T) {
 	h := newAuthHarnessBehind(t, []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")})
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	from := func(address string, email string, password string) response {
 		body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, password)
 		return h.send(t, http.MethodPost, "/api/v1/auth/login", body, map[string]string{
@@ -885,26 +918,11 @@ func TestAThrottledAddressDoesNotLockTheVictimOutElsewhere(t *testing.T) {
 
 func TestAPasswordChangedDuringVerificationStartsNoSession(t *testing.T) {
 	h := newAuthHarness(t)
-	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
-	h.counting.afterVerify = func() {
-		replacement, err := h.hasher.Hash(context.Background(), "a brand new password")
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		current, err := h.store.Repositories().Users.ByID(context.Background(), user)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		if _, err := h.store.Repositories().Users.UpdatePasswordHash(context.Background(), repositories.PasswordRehash{
-			PasswordHash: replacement, Now: authStart, ID: user, CurrentPasswordHash: current.PasswordHash,
-		}); err != nil {
-			t.Error(err)
-		}
-	}
+	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 
-	result := h.login(t, tutorEmail, "correct horse battery")
+	result := h.loginWhileVerifying(t, tutorEmail, "correct horse battery", func() {
+		h.replacePassword(t, user, "a brand new password")
+	})
 
 	if result.status != http.StatusUnauthorized || code(t, result) != "invalid_credentials" || result.headers.Get("Set-Cookie") != "" {
 		t.Fatalf("a sign-in raced by a password change answered %d %s", result.status, result.body)
@@ -916,36 +934,16 @@ func TestAPasswordChangedDuringVerificationStartsNoSession(t *testing.T) {
 
 func TestAStaleHashRehashLostToAPasswordChangeStartsNoSession(t *testing.T) {
 	h := newAuthHarness(t)
-	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", core.Argon2Params{MemoryKiB: 32, Iterations: 1, Parallelism: 1})
-	changed := false
-	h.counting.afterVerify = func() {
-		if changed {
-			return
-		}
-		changed = true
-		replacement, err := h.hasher.Hash(context.Background(), "a brand new password")
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		current, err := h.store.Repositories().Users.ByID(context.Background(), user)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		if _, err := h.store.Repositories().Users.UpdatePasswordHash(context.Background(), repositories.PasswordRehash{
-			PasswordHash: replacement, Now: authStart, ID: user, CurrentPasswordHash: current.PasswordHash,
-		}); err != nil {
-			t.Error(err)
-		}
-	}
+	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", staleHash)
 
-	result := h.login(t, tutorEmail, "correct horse battery")
+	result := h.loginWhileVerifying(t, tutorEmail, "correct horse battery", func() {
+		h.replacePassword(t, user, "a brand new password")
+	})
 
 	if result.status != http.StatusUnauthorized || code(t, result) != "invalid_credentials" || result.headers.Get("Set-Cookie") != "" {
 		t.Fatalf("a stale sign-in raced by a password change answered %d %s", result.status, result.body)
 	}
-	if verified := h.counting.verifications.Load(); verified != 2 {
+	if verified := h.hasher.Verifications(); verified != 2 {
 		t.Fatalf("%d password verifications, want the second against the replaced hash", verified)
 	}
 	if !strings.Contains(h.logs.String(), `"reason":"changed"`) {
@@ -955,14 +953,13 @@ func TestAStaleHashRehashLostToAPasswordChangeStartsNoSession(t *testing.T) {
 
 func TestABlockDuringVerificationStartsNoSession(t *testing.T) {
 	h := newAuthHarness(t)
-	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
-	h.counting.afterVerify = func() {
-		if _, err := h.store.Repositories().Users.Block(context.Background(), user, authStart); err != nil {
-			t.Error(err)
-		}
-	}
+	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 
-	result := h.login(t, tutorEmail, "correct horse battery")
+	result := h.loginWhileVerifying(t, tutorEmail, "correct horse battery", func() {
+		if _, err := h.store.Repositories().Users.Block(context.Background(), user, authStart); err != nil {
+			t.Fatal(err)
+		}
+	})
 
 	if result.status != http.StatusForbidden || code(t, result) != "account_blocked" || result.headers.Get("Set-Cookie") != "" {
 		t.Fatalf("a sign-in raced by a block answered %d %s", result.status, result.body)
@@ -974,14 +971,14 @@ func TestABlockDuringVerificationStartsNoSession(t *testing.T) {
 
 func TestBusyHashingDoesNotSpendSignInAttempts(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
-	h.counting.failure = core.ErrHashingBusy
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
+	h.hasher.FailVerifications(core.ErrHashingBusy)
 	var statuses []int
 	for range 6 {
 		statuses = append(statuses, h.login(t, tutorEmail, "correct horse battery").status)
 	}
 
-	h.counting.failure = nil
+	h.hasher.FailVerifications(nil)
 	result := h.login(t, tutorEmail, "correct horse battery")
 
 	for _, status := range statuses {
@@ -996,7 +993,7 @@ func TestBusyHashingDoesNotSpendSignInAttempts(t *testing.T) {
 
 func TestAttemptsRefusedByALimitDoNotSpendTheAddressBudget(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	for range 5 {
 		if result := h.login(t, "guessed@example.org", "wrong horse battery"); result.status != http.StatusUnauthorized {
 			t.Fatalf("a failure answered %d", result.status)

@@ -143,7 +143,7 @@ func (h *authHarness) objectExists(t *testing.T, key string) bool {
 
 func (h *authHarness) signedInTutor(t *testing.T) string {
 	t.Helper()
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	return accessToken(t, h.login(t, tutorEmail, "correct horse battery"))
 }
 
@@ -235,7 +235,7 @@ func TestWebPAvatarIsStoredAsPNG(t *testing.T) {
 func TestUnboundAttachmentIsNotServedAsAvatar(t *testing.T) {
 	h := newFlowHarness(t)
 	token := h.signedInTutor(t)
-	h.seedUser(t, 2, "other@example.org", "correct horse battery", cheapArgon2())
+	h.seedUser(t, 2, "other@example.org", "correct horse battery", currentHash)
 	other := accessToken(t, h.login(t, "other@example.org", "correct horse battery"))
 	pending := uploadedID(t, h.upload(t, token, "me.png", pngBytes(t, 2, 2)))
 	othersPending := uploadedID(t, h.upload(t, other, "other.png", pngBytes(t, 2, 2)))
@@ -311,7 +311,7 @@ func TestPendingUploadsAreLimitedAndExpireAfter24Hours(t *testing.T) {
 func TestProfileUpdateValidatesFieldsAndKeepsTutorTextForTutors(t *testing.T) {
 	h := newFlowHarness(t)
 	tutor := h.signedInTutor(t)
-	h.seedUserAs(t, domain.RoleStudent, 2, "student@example.org", "correct horse battery", cheapArgon2())
+	h.seedUserAs(t, domain.RoleStudent, 2, "student@example.org", "correct horse battery", currentHash)
 	student := accessToken(t, h.login(t, "student@example.org", "correct horse battery"))
 
 	saved := h.patchMe(t, tutor, `{"name":" Anna ","language":"ru","timezone":"Asia/Yekaterinburg","theme":"dark","bio":"Grammar and speaking","subjects":["English"," IELTS "]}`)

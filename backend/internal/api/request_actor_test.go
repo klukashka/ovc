@@ -36,7 +36,7 @@ func accessRecordsFor(t *testing.T, logs string, route string) []accessRecord {
 
 func TestAuthenticatedRequestRecordsCarryTheUserAndRole(t *testing.T) {
 	h := newAuthHarness(t)
-	tutor := h.seedUserAs(t, domain.RoleTutor, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	tutor := h.seedUserAs(t, domain.RoleTutor, 1, tutorEmail, "correct horse battery", currentHash)
 	token := accessToken(t, h.login(t, tutorEmail, "correct horse battery"))
 
 	h.me(t, token)
@@ -54,7 +54,7 @@ func TestAuthenticatedRequestRecordsCarryTheUserAndRole(t *testing.T) {
 
 func TestRefusedTokensLeaveNoActorOnTheRecord(t *testing.T) {
 	h := newAuthHarness(t)
-	h.seedUserAs(t, domain.RoleTutor, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUserAs(t, domain.RoleTutor, 1, tutorEmail, "correct horse battery", currentHash)
 	token := accessToken(t, h.login(t, tutorEmail, "correct horse battery"))
 	h.advance(t, 16*time.Minute)
 

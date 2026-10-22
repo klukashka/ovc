@@ -195,7 +195,7 @@ func comparableHeaders(headers http.Header) map[string]string {
 
 func TestRegisterAnswersIdenticallyForNewAndExistingEmail(t *testing.T) {
 	h := newFlowHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 
 	fresh := h.register(t, tutorSignUp(newcomerEmail))
 	taken := h.register(t, tutorSignUp(tutorEmail))
@@ -217,8 +217,8 @@ func TestRegisterAnswersIdenticallyForNewAndExistingEmail(t *testing.T) {
 
 func TestDuplicateSignUpSendsOneNoticePerDayAndNoneForADeletedAccount(t *testing.T) {
 	h := newFlowHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
-	deleted := h.seedUser(t, 2, "gone@example.org", "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
+	deleted := h.seedUser(t, 2, "gone@example.org", "correct horse battery", currentHash)
 	if _, err := h.store.Repositories().Users.MarkDeleted(context.Background(), deleted, authStart); err != nil {
 		t.Fatal(err)
 	}
@@ -507,7 +507,7 @@ func TestPublicResendAndForgotAnswerIdenticallyForUnknownEmails(t *testing.T) {
 
 func TestSignedInResendIsRateLimitedAndSendsNothingToAnActiveAccount(t *testing.T) {
 	h := newFlowHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	h.register(t, tutorSignUp(newcomerEmail))
 	unverified := accessToken(t, h.login(t, newcomerEmail, newcomerPassword))
 	active := accessToken(t, h.login(t, tutorEmail, "correct horse battery"))
@@ -561,7 +561,7 @@ func TestPasswordResetRevokesSessionsAndConfirmsTheEmail(t *testing.T) {
 
 func TestResetTokenExpiresAfterOneHour(t *testing.T) {
 	h := newFlowHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	h.forgot(t, tutorEmail)
 	h.tick(t)
 	expiring := latestToken(t, h.mailTo(t, tutorEmail), resetSubject)
@@ -576,7 +576,7 @@ func TestResetTokenExpiresAfterOneHour(t *testing.T) {
 
 func TestResetIsRefusedForADeletedAccount(t *testing.T) {
 	h := newFlowHarness(t)
-	deleted := h.seedUser(t, 2, "gone@example.org", "correct horse battery", cheapArgon2())
+	deleted := h.seedUser(t, 2, "gone@example.org", "correct horse battery", currentHash)
 	h.forgot(t, "gone@example.org")
 	h.tick(t)
 	orphaned := latestToken(t, h.mailTo(t, "gone@example.org"), resetSubject)
@@ -593,7 +593,7 @@ func TestResetIsRefusedForADeletedAccount(t *testing.T) {
 
 func TestChangePasswordRevokesOtherSessionsAndKeepsThisOne(t *testing.T) {
 	h := newFlowHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	here := h.login(t, tutorEmail, "correct horse battery")
 	elsewhere := h.login(t, tutorEmail, "correct horse battery")
 
@@ -617,7 +617,7 @@ func TestChangePasswordRevokesOtherSessionsAndKeepsThisOne(t *testing.T) {
 
 func TestWrongCurrentPasswordIsRefusedAndThrottledAfterFiveAttempts(t *testing.T) {
 	h := newFlowHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	token := accessToken(t, h.login(t, tutorEmail, "correct horse battery"))
 	attempt := func(current string) response {
 		body := fmt.Sprintf(`{"current_password":%q,"new_password":"a brand new password"}`, current)
@@ -680,8 +680,8 @@ func (h *authHarness) obsoleteRows(t *testing.T, kind domain.OutboxKind) int64 {
 
 func TestQueuedAccountEmailsAreDroppedWhenTheirSubjectChangedBeforeDispatch(t *testing.T) {
 	h := newFlowHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
-	h.seedUser(t, 2, "owner@example.org", "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
+	h.seedUser(t, 2, "owner@example.org", "correct horse battery", currentHash)
 	h.register(t, tutorSignUp(newcomerEmail))
 	h.register(t, tutorSignUp(tutorEmail))
 	h.forgot(t, "owner@example.org")
@@ -732,7 +732,7 @@ func TestAnUnverifiedPasswordChangeKeepsTheMailboxOwnersLinks(t *testing.T) {
 
 func TestSignUpRightAfterAResetRequestAnswersAlikeForANewAndATakenEmail(t *testing.T) {
 	h := newFlowHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	h.forgot(t, newcomerEmail)
 	h.forgot(t, tutorEmail)
 	sendsBefore := h.countRows(t, "SELECT coalesce(sum(count), 0) FROM rate_limit_counters WHERE purpose LIKE $1", "email_send%")

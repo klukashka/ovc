@@ -9,6 +9,12 @@ import (
 	"image/png"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,16 +30,43 @@ import (
 
 var raceStart = time.Date(2030, time.March, 10, 9, 0, 0, 0, time.UTC)
 
-type interruptedStore struct {
-	storage.Store
-	beforePut func()
-	lastKey   string
+const pauseDeadline = 10 * time.Second
+
+type pausedWrite struct {
+	reached chan struct{}
+	resume  chan struct{}
+	once    sync.Once
+	key     string
 }
 
-func (s *interruptedStore) Put(ctx context.Context, key string, data []byte, contentType string) error {
-	s.beforePut()
-	s.lastKey = key
-	return s.Store.Put(ctx, key, data, contentType)
+func (p *pausedWrite) Resume() {
+	p.once.Do(func() { close(p.resume) })
+}
+
+func storageHoldingTheFirstWrite(t *testing.T, local *teststorage.Storage) (storage.Store, *pausedWrite) {
+	t.Helper()
+	target, err := url.Parse(local.Settings.Endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forward := httputil.NewSingleHostReverseProxy(target)
+	paused := &pausedWrite{reached: make(chan struct{}), resume: make(chan struct{})}
+	var first sync.Once
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			first.Do(func() {
+				paused.key = strings.TrimPrefix(r.URL.Path, "/"+local.Settings.Bucket+"/")
+				close(paused.reached)
+				<-paused.resume
+			})
+		}
+		forward.ServeHTTP(w, r)
+	}))
+	t.Cleanup(proxy.Close)
+	t.Cleanup(paused.Resume)
+	settings := local.Settings
+	settings.Endpoint = proxy.URL
+	return storage.NewS3(settings), paused
 }
 
 func seedUploader(t *testing.T, store *repositories.Store) domain.UserID {
@@ -75,27 +108,43 @@ func TestAnUploadPurgedBeforeItsObjectLandsQueuesTheObjectsDeletion(t *testing.T
 		t.Fatal(err)
 	}
 	user := seedUploader(t, store)
-	objects := &interruptedStore{Store: teststorage.New(t).Store}
+	local := teststorage.New(t)
+	objects, pause := storageHoldingTheFirstWrite(t, local)
 	keys, err := core.DeriveKeys(core.NewSecret("test-signing-material-0123456789abcdef"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	service := files.New(files.Dependencies{Store: store, Objects: objects, Clock: shared, Random: core.CryptoRandom(), Keys: keys, Logger: slog.New(slog.DiscardHandler)})
-	objects.beforePut = func() {
-		err := store.WithTx(context.Background(), func(repos repositories.Repositories) error {
-			if err := service.PurgeUploadsOf(context.Background(), repos, user, raceStart); err != nil {
-				return err
-			}
-			_, err := repos.Users.Delete(context.Background(), user)
-			return err
-		})
-		if err != nil {
-			t.Error(err)
-		}
-	}
 	data := avatarPNG(t)
+	uploaded := make(chan error, 1)
+	go func() {
+		_, uploadErr := service.UploadAvatar(context.Background(), user, "me.png", func() ([]byte, error) { return io.ReadAll(bytes.NewReader(data)) })
+		uploaded <- uploadErr
+	}()
+	deadline := time.NewTimer(pauseDeadline)
+	defer deadline.Stop()
+	select {
+	case <-pause.reached:
+	case <-deadline.C:
+		t.Fatal("the upload never reached its object write")
+	}
 
-	_, err = service.UploadAvatar(context.Background(), user, "me.png", func() ([]byte, error) { return io.ReadAll(bytes.NewReader(data)) })
+	err = store.WithTx(context.Background(), func(repos repositories.Repositories) error {
+		if err := service.PurgeUploadsOf(context.Background(), repos, user, raceStart); err != nil {
+			return err
+		}
+		_, err := repos.Users.Delete(context.Background(), user)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pause.Resume()
+	select {
+	case err = <-uploaded:
+	case <-deadline.C:
+		t.Fatal("the upload did not finish after its write resumed")
+	}
 
 	if !errors.Is(err, files.ErrPurgedDuringUpload) {
 		t.Fatalf("expected the purge to be reported, got %v", err)
@@ -106,8 +155,15 @@ func TestAnUploadPurgedBeforeItsObjectLandsQueuesTheObjectsDeletion(t *testing.T
 	if err != nil {
 		t.Fatalf("no after-purge deletion was queued: %v", err)
 	}
+	landed, landedErr := local.Store.Open(context.Background(), pause.key)
+	if landedErr != nil {
+		t.Fatalf("the paused write never reached storage: %v", landedErr)
+	}
+	if err := landed.Close(); err != nil {
+		t.Fatal(err)
+	}
 	reason, deleteErr := service.DeleteObject(context.Background(), row, raceStart)
-	_, openErr := objects.Open(context.Background(), objects.lastKey)
+	_, openErr := local.Store.Open(context.Background(), pause.key)
 	if deleteErr != nil || reason != domain.DoneSent || !errors.Is(openErr, storage.ErrObjectNotFound) {
 		t.Fatalf("deletion %s %v; the object is still readable: %v", reason, deleteErr, openErr)
 	}

@@ -68,6 +68,7 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `internal/admin` | The `ovc-admin` command line: parsing, output, exit codes and the audit event | [Administration command](../specs/accounts.md#administration-command) |
 | `internal/testcontrol` | The end-to-end test control routes, present only with `OVC_TEST_CONTROL=1` | [Test harness](../../docs/development.md#end-to-end-test-harness) |
 | `internal/teststorage` | Test-only helper: the local S3-compatible bucket `ovc-test`, created when missing, with the keys from `OVC_DEV_STORAGE_*` | [Development guide](../../docs/development.md#backend-checks) |
+| `internal/testhasher` | Test-only fake of the password hasher with verification counting, failure injection and a pause after a verification, and the hasher contract that both it and the Argon2 hasher keep | [Testing rules](../../AGENTS.md#testing) |
 | `internal/testdb` | Test-only helper: one migrated PostgreSQL database per test, created from `OVC_TEST_DATABASE_ADMIN_URL` and dropped afterwards | [Development guide](../../docs/development.md#backend-checks) |
 | `internal/conventions` | Test-only package: the no-comments and no-`any` check and the package-layer architecture test, which parses the table below | [AGENTS.md](../../AGENTS.md#code) |
 | `migrations` | goose SQL migrations, embedded with `//go:embed` | [Data model](../specs/data-model.md) |
@@ -121,6 +122,7 @@ Infrastructure adapters that keep their own state in PostgreSQL, namely the `NOT
 | `internal/testcontrol` | `internal/domain`, `internal/core`, `internal/schemas`, `internal/services`, `internal/adapters`, `internal/worker` |
 | `internal/testdb` | `internal/core`, `migrations` (test helper; never imported by production code) |
 | `internal/teststorage` | `internal/core`, `internal/adapters` (test helper for the local S3-compatible server; never imported by production code) |
+| `internal/testhasher` | `internal/core` (test helper; never imported by production code) |
 | `cmd/*` | every package |
 
 ## Stack per component

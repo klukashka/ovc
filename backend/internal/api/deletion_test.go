@@ -41,7 +41,7 @@ func (h *authHarness) rowsOwnedBy(t *testing.T, user domain.UserID) map[string]i
 
 func TestDeleteAccountRequiresThePasswordAndSignsOutEverywhere(t *testing.T) {
 	h := newFlowHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	here := h.login(t, tutorEmail, "correct horse battery")
 	elsewhere := h.login(t, tutorEmail, "correct horse battery")
 
@@ -88,7 +88,7 @@ func TestPurgeRemovesAccountRowsAndAvatarAfter30Days(t *testing.T) {
 	h := newFlowHarness(t)
 	token := h.signedInTutor(t)
 	user := h.userID(t, tutorEmail)
-	neighbour := h.seedUser(t, 2, "neighbour@example.org", "correct horse battery", cheapArgon2())
+	neighbour := h.seedUser(t, 2, "neighbour@example.org", "correct horse battery", currentHash)
 	neighbourToken := accessToken(t, h.login(t, "neighbour@example.org", "correct horse battery"))
 	neighbourAvatar := uploadedID(t, h.upload(t, neighbourToken, "n.png", pngBytes(t, 2, 2)))
 	h.patchMe(t, neighbourToken, fmt.Sprintf(`{"avatar_id":%q}`, neighbourAvatar))
@@ -156,7 +156,7 @@ func TestUnverifiedAccountIsRemovedAfter7Days(t *testing.T) {
 
 func TestAConfirmedAccountIsNotRemovedAsUnverified(t *testing.T) {
 	h := newFlowHarness(t)
-	h.seedUser(t, 1, tutorEmail, "correct horse battery", cheapArgon2())
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 
 	h.at(t, authStart.Add(8*24*time.Hour))
 	h.tick(t)
@@ -214,7 +214,7 @@ func (h *authHarness) chargeAnUploadTo(t *testing.T, uploader domain.UserID, tut
 
 func TestAPurgeThatCannotRemoveSomeAccountsStillRemovesTheOnesBehindThem(t *testing.T) {
 	h := newFlowHarness(t)
-	uploader := h.seedUser(t, 250, "uploader@example.org", "correct horse battery", cheapArgon2())
+	uploader := h.seedUser(t, 250, "uploader@example.org", "correct horse battery", currentHash)
 	passwordHash, err := h.hasher.Hash(context.Background(), "correct horse battery")
 	if err != nil {
 		t.Fatal(err)
