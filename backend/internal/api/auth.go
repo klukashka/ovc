@@ -20,6 +20,7 @@ import (
 	"ovc/backend/internal/schemas"
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/tutoring"
 )
 
 const (
@@ -30,12 +31,35 @@ const (
 type Audience string
 
 const (
-	AudiencePublic        Audience = "public"
-	AudienceUser          Audience = "user"
-	AudienceUnverifiedOK  Audience = "unverified ok"
-	AudienceRefreshCookie Audience = "refresh cookie"
-	AudienceOptionalUser  Audience = "public, optional bearer"
+	AudiencePublic              Audience = "public"
+	AudienceUser                Audience = "user"
+	AudienceUnverifiedOK        Audience = "unverified ok"
+	AudienceTutor               Audience = "tutor"
+	AudienceTutorUnverifiedOK   Audience = "tutor, unverified ok"
+	AudienceStudent             Audience = "student"
+	AudienceStudentUnverifiedOK Audience = "student, unverified ok"
+	AudienceRefreshCookie       Audience = "refresh cookie"
+	AudienceOptionalUser        Audience = "public, optional bearer"
 )
+
+type audienceRule struct {
+	role             domain.Role
+	allowsUnverified bool
+}
+
+var authenticatedAudiences = map[Audience]audienceRule{
+	AudienceUser:                {},
+	AudienceUnverifiedOK:        {allowsUnverified: true},
+	AudienceTutor:               {role: domain.RoleTutor},
+	AudienceTutorUnverifiedOK:   {role: domain.RoleTutor, allowsUnverified: true},
+	AudienceStudent:             {role: domain.RoleStudent},
+	AudienceStudentUnverifiedOK: {role: domain.RoleStudent, allowsUnverified: true},
+}
+
+func (a Audience) Role() (domain.Role, bool) {
+	rule, authenticated := authenticatedAudiences[a]
+	return rule.role, authenticated && rule.role != ""
+}
 
 type OperationAudience struct {
 	ID       string
@@ -56,21 +80,41 @@ type router struct {
 	api        huma.API
 	auth       Auth
 	files      *files.Service
+	tutoring   *tutoring.Service
 	now        func() time.Time
 	logger     *slog.Logger
 	operations []OperationAudience
 }
 
 func register[Input any, Output any](r *router, op huma.Operation, audience Audience, handler func(context.Context, *Input) (*Output, error)) {
-	switch audience {
-	case AudienceUser, AudienceUnverifiedOK:
-		op.Middlewares = append(huma.Middlewares{r.authenticate(audience)}, op.Middlewares...)
-	case AudienceOptionalUser:
+	if rule, authenticated := authenticatedAudiences[audience]; authenticated {
+		op.Middlewares = append(huma.Middlewares{r.authenticate, r.admit(rule)}, op.Middlewares...)
+	}
+	if audience == AudienceOptionalUser {
 		op.Middlewares = append(huma.Middlewares{r.authenticateWhenPresented}, op.Middlewares...)
-	case AudiencePublic, AudienceRefreshCookie:
 	}
 	r.operations = append(r.operations, OperationAudience{ID: op.OperationID, Method: op.Method, Path: op.Path, Audience: audience})
 	huma.Register(r.api, op, handler)
+}
+
+func (rule audienceRule) refusal(principal accounts.Principal) (domain.ErrorCode, bool) {
+	if rule.role != "" && principal.Role != rule.role {
+		return domain.ErrorNotFound, true
+	}
+	if !rule.allowsUnverified && principal.State != domain.AccountActive {
+		return domain.ErrorEmailNotVerified, true
+	}
+	return "", false
+}
+
+func (r *router) admit(rule audienceRule) func(huma.Context, func(huma.Context)) {
+	return func(ctx huma.Context, next func(huma.Context)) {
+		if code, refused := rule.refusal(principalFrom(ctx.Context())); refused {
+			r.writeError(ctx, code)
+			return
+		}
+		next(ctx)
+	}
 }
 
 func principalFrom(ctx context.Context) accounts.Principal {
@@ -91,28 +135,22 @@ func (r *router) authenticateWhenPresented(ctx huma.Context, next func(huma.Cont
 		next(ctx)
 		return
 	}
-	r.authenticate(AudienceUnverifiedOK)(ctx, next)
+	r.authenticate(ctx, next)
 }
 
-func (r *router) authenticate(audience Audience) func(huma.Context, func(huma.Context)) {
-	return func(ctx huma.Context, next func(huma.Context)) {
-		token, found := strings.CutPrefix(ctx.Header("Authorization"), "Bearer ")
-		if !found || token == "" {
-			r.writeError(ctx, domain.ErrorUnauthenticated)
-			return
-		}
-		principal, err := r.auth.Accounts.Authenticate(ctx.Context(), token)
-		if err != nil {
-			r.writeError(ctx, r.authenticationCode(ctx.Context(), err))
-			return
-		}
-		if audience == AudienceUser && principal.State != domain.AccountActive {
-			r.writeError(ctx, domain.ErrorEmailNotVerified)
-			return
-		}
-		core.BindRequestActor(ctx.Context(), principal.UserID.String(), string(principal.Role))
-		next(huma.WithValue(ctx, principalKey{}, principal))
+func (r *router) authenticate(ctx huma.Context, next func(huma.Context)) {
+	token, found := strings.CutPrefix(ctx.Header("Authorization"), "Bearer ")
+	if !found || token == "" {
+		r.writeError(ctx, domain.ErrorUnauthenticated)
+		return
 	}
+	principal, err := r.auth.Accounts.Authenticate(ctx.Context(), token)
+	if err != nil {
+		r.writeError(ctx, r.authenticationCode(ctx.Context(), err))
+		return
+	}
+	core.BindRequestActor(ctx.Context(), principal.UserID.String(), string(principal.Role))
+	next(huma.WithValue(ctx, principalKey{}, principal))
 }
 
 func (r *router) authenticationCode(ctx context.Context, err error) domain.ErrorCode {

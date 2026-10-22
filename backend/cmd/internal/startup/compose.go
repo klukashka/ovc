@@ -15,6 +15,7 @@ import (
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/outbox"
+	"ovc/backend/internal/services/tutoring"
 	"ovc/backend/internal/worker"
 )
 
@@ -32,6 +33,16 @@ func NewFiles(logger *slog.Logger, settings core.Settings, database *core.Databa
 	}
 	return files.New(files.Dependencies{
 		Store: repositories.NewStore(database.Pool), Objects: objects, Clock: source, Random: random, Keys: keys, Logger: logger,
+	}), nil
+}
+
+func NewTutoring(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource) (*tutoring.Service, error) {
+	keys, err := core.DeriveKeys(settings.JWTSecret)
+	if err != nil {
+		return nil, err
+	}
+	return tutoring.New(tutoring.Dependencies{
+		Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Logger: logger,
 	}), nil
 }
 

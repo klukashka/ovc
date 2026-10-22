@@ -124,6 +124,37 @@ func (r TutorProfiles) ByUser(ctx context.Context, id domain.UserID) (TutorProfi
 	return one(profile, err, "tutor profile")
 }
 
+type TutorCode = dbgen.GetTutorCodeRow
+
+func (r TutorProfiles) Code(ctx context.Context, tutor domain.UserID) (TutorCode, error) {
+	code, err := r.queries.GetTutorCode(ctx, tutor)
+	return one(code, err, "tutor code")
+}
+
+func (r TutorProfiles) Lock(ctx context.Context, tutor domain.UserID) error {
+	_, err := r.queries.LockTutorProfile(ctx, tutor)
+	_, err = one(struct{}{}, err, "lock tutor profile")
+	return err
+}
+
+func (r TutorProfiles) ReplaceCode(ctx context.Context, tutor domain.UserID, random core.RandomSource, now time.Time) (domain.TutorCode, error) {
+	for range tutorCodeAttempts {
+		code, err := core.NewTutorCode(random)
+		if err != nil {
+			return "", fmt.Errorf("replace tutor code: %w", err)
+		}
+		rows, err := r.queries.ReplaceTutorCodeIfFree(ctx, dbgen.ReplaceTutorCodeIfFreeParams{Code: code, Now: now, UserID: tutor})
+		replaced, err := applied(rows, err, "replace tutor code")
+		if err != nil {
+			return "", err
+		}
+		if replaced {
+			return code, nil
+		}
+	}
+	return "", fmt.Errorf("replace tutor code: %w", ErrTutorCodesExhausted)
+}
+
 type Sessions struct {
 	queries *dbgen.Queries
 }

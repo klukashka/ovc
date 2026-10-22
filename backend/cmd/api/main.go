@@ -119,6 +119,10 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	if err != nil {
 		return err
 	}
+	tutoringService, err := startup.NewTutoring(logging.Logger, settings, database, source, random)
+	if err != nil {
+		return err
+	}
 	options := api.Options{
 		Logger:       logging.Logger,
 		Now:          systemClock.Now,
@@ -128,6 +132,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 			api.ReadinessCheck{Name: "storage", Check: objects.Ping},
 		),
 		Files:       fileService,
+		Tutoring:    tutoringService,
 		DocsEnabled: settings.APIDocsEnabled,
 		Auth:        api.Auth{Accounts: accountService, PublicOrigin: settings.PublicURL, TrustedProxies: settings.TrustedProxies},
 	}

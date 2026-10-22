@@ -212,7 +212,7 @@ Students join through their tutor ([ADR-0014](../../docs/decisions/0014-students
   - each tutor has one code of 8 characters from `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (no 0, 1, I, L or O), shown as `XXXX-XXXX` and matched case-insensitively with spaces and hyphens ignored;
   - minted at tutor sign-up, retried on a collision;
   - shared openly by design, shown in Teaching settings and in the join-request panel on Today;
-  - can be regenerated at most 10 times per tutor per day (`429 rate_limited`), and the old code stops working immediately;
+  - can be regenerated at most 10 times per tutor per UTC calendar day (`429 rate_limited`; a refused attempt is not counted), and the old code stops working immediately;
   - inactive while the tutor is unverified (`GET /tutor/code` reports `active: false`), and invalid while the tutor's account is not `active`.
 - **Entering a code** (`POST /join-requests`, also open to a student whose email is not confirmed; at sign-up through `POST /auth/register`):
   - a tutor account entering a code is refused with `role_mismatch`;

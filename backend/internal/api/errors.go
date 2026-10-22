@@ -100,6 +100,7 @@ func writeError(ctx context.Context, logger *slog.Logger, w http.ResponseWriter,
 		panic("the error envelope could not be encoded")
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", noStore)
 	w.Header().Del("Content-Length")
 	w.WriteHeader(code.Status())
 	if _, err := w.Write(encoded); err != nil {

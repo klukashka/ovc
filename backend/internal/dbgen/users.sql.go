@@ -178,6 +178,24 @@ func (q *Queries) DeleteUser(ctx context.Context, id domain.UserID) (int64, erro
 	return result.RowsAffected(), nil
 }
 
+const getTutorCode = `-- name: GetTutorCode :one
+SELECT tutor_profiles.code, users.state FROM tutor_profiles
+JOIN users ON users.id = tutor_profiles.user_id
+WHERE tutor_profiles.user_id = $1
+`
+
+type GetTutorCodeRow struct {
+	Code  domain.TutorCode
+	State domain.AccountState
+}
+
+func (q *Queries) GetTutorCode(ctx context.Context, userID domain.UserID) (GetTutorCodeRow, error) {
+	row := q.db.QueryRow(ctx, getTutorCode, userID)
+	var i GetTutorCodeRow
+	err := row.Scan(&i.Code, &i.State)
+	return i, err
+}
+
 const getTutorProfile = `-- name: GetTutorProfile :one
 SELECT user_id, bio, subjects, recording_retention_days, file_quota_bytes, recording_quota_bytes, file_usage_bytes, recording_usage_bytes, onboarding_dismissed_at, created_at, updated_at, code FROM tutor_profiles WHERE user_id = $1
 `
@@ -385,6 +403,17 @@ func (q *Queries) ListUsersForOperator(ctx context.Context, arg ListUsersForOper
 	return items, nil
 }
 
+const lockTutorProfile = `-- name: LockTutorProfile :one
+SELECT code FROM tutor_profiles WHERE user_id = $1 FOR NO KEY UPDATE
+`
+
+func (q *Queries) LockTutorProfile(ctx context.Context, userID domain.UserID) (domain.TutorCode, error) {
+	row := q.db.QueryRow(ctx, lockTutorProfile, userID)
+	var code domain.TutorCode
+	err := row.Scan(&code)
+	return code, err
+}
+
 const lockUserCredentials = `-- name: LockUserCredentials :one
 SELECT password_hash, state FROM users WHERE id = $1 FOR NO KEY UPDATE
 `
@@ -454,6 +483,26 @@ type MarkUserDeletedParams struct {
 
 func (q *Queries) MarkUserDeleted(ctx context.Context, arg MarkUserDeletedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markUserDeleted, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const replaceTutorCodeIfFree = `-- name: ReplaceTutorCodeIfFree :execrows
+UPDATE tutor_profiles SET code = $1, updated_at = $2::timestamptz
+WHERE tutor_profiles.user_id = $3
+    AND NOT EXISTS (SELECT 1 FROM tutor_profiles AS taken WHERE taken.code = $1)
+`
+
+type ReplaceTutorCodeIfFreeParams struct {
+	Code   domain.TutorCode
+	Now    time.Time
+	UserID domain.UserID
+}
+
+func (q *Queries) ReplaceTutorCodeIfFree(ctx context.Context, arg ReplaceTutorCodeIfFreeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, replaceTutorCodeIfFree, arg.Code, arg.Now, arg.UserID)
 	if err != nil {
 		return 0, err
 	}

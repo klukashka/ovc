@@ -21,6 +21,19 @@ ON CONFLICT (code) DO NOTHING;
 -- name: GetTutorProfile :one
 SELECT * FROM tutor_profiles WHERE user_id = @user_id;
 
+-- name: GetTutorCode :one
+SELECT tutor_profiles.code, users.state FROM tutor_profiles
+JOIN users ON users.id = tutor_profiles.user_id
+WHERE tutor_profiles.user_id = @user_id;
+
+-- name: LockTutorProfile :one
+SELECT code FROM tutor_profiles WHERE user_id = @user_id FOR NO KEY UPDATE;
+
+-- name: ReplaceTutorCodeIfFree :execrows
+UPDATE tutor_profiles SET code = @code, updated_at = sqlc.arg(now)::timestamptz
+WHERE tutor_profiles.user_id = @user_id
+    AND NOT EXISTS (SELECT 1 FROM tutor_profiles AS taken WHERE taken.code = @code);
+
 -- name: UpdateUserPasswordHash :execrows
 UPDATE users SET password_hash = @password_hash, updated_at = @now
 WHERE id = @id AND password_hash = @current_password_hash;

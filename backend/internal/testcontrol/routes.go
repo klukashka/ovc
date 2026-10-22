@@ -232,6 +232,7 @@ func writeError(ctx context.Context, logger *slog.Logger, w http.ResponseWriter,
 		panic("the error envelope could not be encoded")
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(code.Status())
 	if _, err := w.Write(encoded); err != nil {
 		logger.LogAttrs(ctx, slog.LevelWarn, "http.response.write_failed", slog.String("kind", core.ErrorKind(err)))

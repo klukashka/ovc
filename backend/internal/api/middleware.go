@@ -145,6 +145,9 @@ func (r *responseRecorder) WriteHeader(status int) {
 	}
 	r.wroteHeader = true
 	r.status = status
+	if status >= http.StatusBadRequest {
+		r.Header().Set("Cache-Control", noStore)
+	}
 	r.ResponseWriter.WriteHeader(status)
 }
 

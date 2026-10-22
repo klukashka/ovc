@@ -26,6 +26,7 @@ import (
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/outbox"
+	"ovc/backend/internal/services/tutoring"
 	"ovc/backend/internal/testdb"
 	"ovc/backend/internal/testhasher"
 	"ovc/backend/internal/teststorage"
@@ -94,6 +95,11 @@ func newAuthHarness(t *testing.T) *authHarness {
 
 func newAuthHarnessBehind(t *testing.T, trusted []netip.Prefix) *authHarness {
 	t.Helper()
+	return newAuthHarnessServing(t, trusted, api.NewHandler)
+}
+
+func newAuthHarnessServing(t *testing.T, trusted []netip.Prefix, newHandler func(api.Options) (http.Handler, error)) *authHarness {
+	t.Helper()
 	database := testdb.New(t)
 	random := &countingRandom{}
 	logs := &safeBuffer{}
@@ -115,11 +121,13 @@ func newAuthHarnessBehind(t *testing.T, trusted []netip.Prefix) *authHarness {
 		Tokens: core.NewAccessTokens(keys, publicOrigin, 15*time.Minute), RefreshTTL: 30 * 24 * time.Hour,
 		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}, Avatars: fileService, Uploads: fileService,
 	})
-	handler, err := api.NewHandler(api.Options{
+	tutoringService := tutoring.New(tutoring.Dependencies{Store: store, Clock: shared, Random: random, Keys: keys, Logger: logger})
+	handler, err := newHandler(api.Options{
 		Logger: logger, Now: clock.System{}.Now, NewRequestID: core.NewRandomID,
 		Readiness: func(context.Context) error { return nil },
 		Auth:      api.Auth{Accounts: service, PublicOrigin: publicOrigin, TrustedProxies: trusted},
 		Files:     fileService,
+		Tutoring:  tutoringService,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -726,7 +734,7 @@ func TestEveryOperationDeclaresAnAudience(t *testing.T) {
 			if result.status != http.StatusUnauthorized || code(t, result) != "unauthenticated" {
 				t.Fatalf("%s %s with a forged token answered %d %s", operation.Method, operation.Path, result.status, result.body)
 			}
-		case api.AudienceUser, api.AudienceUnverifiedOK:
+		case api.AudienceUser, api.AudienceUnverifiedOK, api.AudienceTutor, api.AudienceTutorUnverifiedOK, api.AudienceStudent, api.AudienceStudentUnverifiedOK:
 			result := h.send(t, operation.Method, operation.Path, "", nil)
 			if result.status != http.StatusUnauthorized || code(t, result) != "unauthenticated" || result.headers.Get("WWW-Authenticate") != "Bearer" {
 				t.Fatalf("%s %s without a token answered %d %s", operation.Method, operation.Path, result.status, result.body)

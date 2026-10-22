@@ -16,6 +16,7 @@ import (
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/schemas"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/tutoring"
 )
 
 const (
@@ -71,14 +72,20 @@ type Options struct {
 	WriteDeadline time.Duration
 	Auth          Auth
 	Files         *files.Service
+	Tutoring      *tutoring.Service
 }
 
 func NewHandler(options Options) (http.Handler, error) {
+	return newHandler(options, func(*router) {})
+}
+
+func newHandler(options Options, registerExtra func(*router)) (http.Handler, error) {
 	mux := http.NewServeMux()
 	api := newAPI(mux)
 	readiness := &sharedReadiness{check: options.Readiness, now: options.Now, logger: options.Logger}
-	routes := &router{api: api, auth: options.Auth, files: options.Files, now: options.Now, logger: options.Logger}
+	routes := &router{api: api, auth: options.Auth, files: options.Files, tutoring: options.Tutoring, now: options.Now, logger: options.Logger}
 	routes.registerAll(readiness.run)
+	registerExtra(routes)
 	if options.DocsEnabled {
 		document, err := json.Marshal(api.OpenAPI())
 		if err != nil {
@@ -160,6 +167,7 @@ type readyOutput struct {
 func (r *router) registerAll(readiness ReadinessFunc) {
 	r.registerHealth(readiness)
 	r.registerAuth()
+	r.registerTutoring()
 }
 
 func failedCheck(err error) string {
