@@ -4,12 +4,14 @@ import { useTranslation } from 'react-i18next';
 import {
   FormAlert,
   FormNotice,
+  SelectChevron,
   SubmitButton,
   TextField,
   errorMessage,
   fieldMessage,
-  primaryButtonClass,
+  quietButtonClass,
   retryAfterSeconds,
+  selectClass,
   stringField,
 } from '../../components/ui/Form.tsx';
 import { Page } from '../../components/ui/Page.tsx';
@@ -27,10 +29,8 @@ type Outcome =
 const themes = ['system', 'light', 'dark'] as const;
 type Theme = (typeof themes)[number];
 
-const selectClass =
-  'min-h-11 rounded-sm border border-border-strong bg-field px-3 text-text aria-invalid:border-danger';
 const dangerButtonClass =
-  'inline-flex min-h-11 items-center justify-center rounded-sm border border-danger px-4 text-strong text-danger hover:bg-hover disabled:opacity-60';
+  'inline-flex min-h-11 items-center justify-center rounded-md border border-danger px-4 text-strong text-danger hover:bg-surface disabled:opacity-60';
 
 function isTheme(value: string): value is Theme {
   return themes.some((theme) => theme === value);
@@ -87,16 +87,19 @@ function SelectField({
       <label htmlFor={selectId} className="text-label">
         {label}
       </label>
-      <select
-        id={selectId}
-        name={name}
-        defaultValue={defaultValue}
-        aria-invalid={error === undefined ? undefined : true}
-        aria-describedby={error === undefined ? undefined : errorId}
-        className={selectClass}
-      >
-        {children}
-      </select>
+      <div className="relative">
+        <select
+          id={selectId}
+          name={name}
+          defaultValue={defaultValue}
+          aria-invalid={error === undefined ? undefined : true}
+          aria-describedby={error === undefined ? undefined : errorId}
+          className={selectClass}
+        >
+          {children}
+        </select>
+        <SelectChevron />
+      </div>
       {error === undefined ? null : (
         <p id={errorId} className="text-small text-danger">
           {error}
@@ -258,7 +261,9 @@ function PasswordSection(): ReactElement {
         hint={t('signUp.passwordHint')}
         error={fieldMessage(t, error, 'new_password')}
       />
-      <SubmitButton busy={outcome.kind === 'sending'}>{t('settings.changePassword')}</SubmitButton>
+      <SubmitButton busy={outcome.kind === 'sending'} quiet>
+        {t('settings.changePassword')}
+      </SubmitButton>
     </form>
   );
 }
@@ -293,7 +298,7 @@ function SignOutEverywhereSection(): ReactElement {
               setOutcome(failed(thrown));
             });
           }}
-          className={primaryButtonClass}
+          className={quietButtonClass}
         >
           {t('settings.signOutEverywhere')}
         </button>
@@ -378,8 +383,9 @@ function DeleteAccountSection(): ReactElement {
             return;
           }
           setOpen(false);
+          opener.current?.focus();
         }}
-        className="m-auto w-full max-w-sm rounded-lg border border-border bg-surface p-6 text-text shadow-raised backdrop:bg-scrim"
+        className="m-auto w-full max-w-sm rounded-lg border border-border bg-surface p-6 text-text shadow-raised backdrop:bg-scrim dark:border-border-strong dark:shadow-none"
       >
         <form
           key={opening}

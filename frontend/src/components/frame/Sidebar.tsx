@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useLocation } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 
 import { type Section, type SectionCounts, isCurrent, roleSections, trailingSections } from '../../app/sections.ts';
 import { type Me, useSession } from '../../lib/api/session.ts';
@@ -47,6 +47,7 @@ function SidebarItem({
 function AccountMenu({ me }: { readonly me: Me }): ReactElement {
   const { t } = useTranslation();
   const session = useSession();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [signOutFailed, setSignOutFailed] = useState(false);
   const menuId = useId();
@@ -56,9 +57,14 @@ function AccountMenu({ me }: { readonly me: Me }): ReactElement {
 
   function signOut(): void {
     setSignOutFailed(false);
-    session.signOut().catch(() => {
-      setSignOutFailed(true);
-    });
+    session.signOut().then(
+      () => {
+        void navigate('/', { replace: true });
+      },
+      () => {
+        setSignOutFailed(true);
+      },
+    );
   }
 
   useEffect(() => {
@@ -122,7 +128,7 @@ function AccountMenu({ me }: { readonly me: Me }): ReactElement {
         type="button"
         aria-expanded={open}
         aria-controls={menuId}
-        aria-label={`${t('frame.accountMenu')}: ${me.name}`}
+        aria-label={`${me.name}, ${t('frame.accountMenu')}`}
         onClick={() => {
           setOpen((value) => !value);
         }}

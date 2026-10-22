@@ -13,7 +13,7 @@ type Refusal =
   | { readonly kind: 'failed'; readonly error: ApiError | null };
 
 const fieldClass =
-  'min-h-11 w-full rounded-sm border border-border-strong bg-field px-3 text-body-phone text-text tablet:text-body';
+  'min-h-11 w-full rounded-md border border-border-strong bg-field px-3 text-body-phone text-text tablet:text-body';
 const linkClass = 'inline-flex min-h-11 items-center text-accent-text underline';
 
 function refusalOf(result: Extract<SignInResult, { kind: 'refused' }>): Refusal {
@@ -158,7 +158,7 @@ export function SignInPage(): ReactElement {
         <button
           type="submit"
           disabled={busy}
-          className="inline-flex min-h-11 items-center justify-center rounded-sm bg-accent px-4 text-strong text-on-accent hover:bg-accent-hover disabled:opacity-60"
+          className="inline-flex min-h-11 items-center justify-center rounded-md bg-accent px-4 text-strong text-on-accent hover:bg-accent-hover disabled:opacity-60"
         >
           {t('signIn.submit')}
         </button>

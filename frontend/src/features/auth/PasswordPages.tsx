@@ -45,7 +45,7 @@ export function ForgotPasswordPage(): ReactElement {
   if (request.kind === 'done') {
     return (
       <Page>
-        <FormNotice>{t('forgotPassword.sent', { email: request.email })}</FormNotice>
+        <FormNotice takeFocus>{t('forgotPassword.sent', { email: request.email })}</FormNotice>
         <p>
           <Link to="/" className={linkClass}>
             {t('forgotPassword.backToSignIn')}

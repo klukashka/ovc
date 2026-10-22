@@ -9,7 +9,7 @@ import {
   errorMessage,
   fieldClass,
   fieldMessage,
-  primaryButtonClass,
+  quietButtonClass,
   retryAfterSeconds,
   stringField,
 } from '../../components/ui/Form.tsx';
@@ -158,7 +158,7 @@ function AvatarSection({ me, work }: { readonly me: Me; readonly work: PendingWo
         />
       )}
       {saving.kind === 'refused' ? <FormAlert>{errorMessage(t, saving.error, saving.retryAfter)}</FormAlert> : null}
-      {saving.kind === 'saved' ? <FormNotice>{t('settings.avatarSaved')}</FormNotice> : null}
+      {saving.kind === 'saved' ? <FormNotice takeFocus>{t('settings.avatarSaved')}</FormNotice> : null}
       <div className="flex flex-wrap items-center gap-3">
         <input
           id={inputId}
@@ -170,7 +170,7 @@ function AvatarSection({ me, work }: { readonly me: Me; readonly work: PendingWo
         />
         <label
           htmlFor={inputId}
-          className={`${primaryButtonClass} cursor-pointer peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus peer-disabled:cursor-default peer-disabled:opacity-60`}
+          className={`${quietButtonClass} cursor-pointer peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus peer-disabled:cursor-default peer-disabled:opacity-60`}
         >
           {t('settings.chooseAvatar')}
         </label>
@@ -204,13 +204,19 @@ function DetailsSection({ me, work }: { readonly me: Me; readonly work: PendingW
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement, SubmitEvent>): void {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const data = new FormData(form);
     const name = stringField(data, 'name');
-    save(
-      me.role === 'tutor'
-        ? { name, bio: stringField(data, 'bio'), subjects: subjectsOf(stringField(data, 'subjects')) }
-        : { name },
-    );
+    if (me.role !== 'tutor') {
+      save({ name });
+      return;
+    }
+    const subjects = subjectsOf(stringField(data, 'subjects'));
+    const subjectsInput = form.elements.namedItem('subjects');
+    if (subjectsInput instanceof HTMLInputElement) {
+      subjectsInput.value = subjects.join(', ');
+    }
+    save({ name, bio: stringField(data, 'bio'), subjects });
   }
 
   return (

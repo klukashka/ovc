@@ -96,7 +96,7 @@ describe('the signed-in frame of a student', () => {
       .getAllByRole('link')
       .map((link) => link.textContent);
     expect(labels).toEqual(['Home', 'Schedule', 'Homework', 'Messages', 'My tutors', 'Notifications', 'Settings']);
-    expect(screen.getByRole('button', { name: 'Account menu: A student of languages' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'A student of languages, Account menu' })).toBeDefined();
   });
 
   test('a shared page opened from the sidebar keeps the student frame and focuses its heading', async () => {

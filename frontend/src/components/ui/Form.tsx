@@ -2,12 +2,25 @@ import { type ReactElement, type ReactNode, useEffect, useId, useRef } from 'rea
 import type { TFunction } from 'i18next';
 
 import type { ApiError } from '../../lib/api/client.ts';
+import { ChevronDownIcon } from './icons.tsx';
 
 export const fieldClass =
-  'min-h-11 w-full rounded-sm border border-border-strong bg-field px-3 text-body-phone text-text aria-invalid:border-danger tablet:text-body';
+  'min-h-11 w-full rounded-md border border-border-strong bg-field px-3 text-body-phone text-text aria-invalid:border-danger tablet:text-body';
 export const linkClass = 'inline-flex min-h-11 items-center text-accent-text underline';
 export const primaryButtonClass =
-  'inline-flex min-h-11 items-center justify-center rounded-sm bg-accent px-4 text-strong text-on-accent hover:bg-accent-hover disabled:opacity-60';
+  'inline-flex min-h-11 items-center justify-center rounded-md bg-accent px-4 text-strong text-on-accent hover:bg-accent-hover disabled:opacity-60';
+export const quietButtonClass =
+  'inline-flex min-h-11 items-center justify-center rounded-md border border-border-strong px-4 text-strong text-text hover:bg-surface disabled:opacity-60';
+export const selectClass =
+  'h-11 w-full appearance-none rounded-md border border-border-strong bg-field pr-9 pl-3 text-text aria-invalid:border-danger';
+
+export function SelectChevron(): ReactElement {
+  return (
+    <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-icon">
+      <ChevronDownIcon />
+    </span>
+  );
+}
 
 const passwordFields: ReadonlySet<string> = new Set(['password', 'new_password', 'current_password']);
 
@@ -100,9 +113,30 @@ export function FormAlert({ children }: { readonly children: ReactNode }): React
   );
 }
 
-export function FormNotice({ children }: { readonly children: ReactNode }): ReactElement {
+export function FormNotice({
+  takeFocus = false,
+  children,
+}: {
+  readonly takeFocus?: boolean;
+  readonly children: ReactNode;
+}): ReactElement {
+  const element = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    const notice = element.current;
+    if (!takeFocus || notice === null) {
+      return;
+    }
+    const focused = document.activeElement;
+    const focusLost = focused === null || !focused.isConnected || focused.contains(notice);
+    const focusNearby = focused !== null && notice.closest('section, article')?.contains(focused) === true;
+    if (focusLost || focusNearby) {
+      notice.focus();
+    }
+  }, [takeFocus]);
+
   return (
-    <p role="status" className="text-text">
+    <p ref={element} role="status" tabIndex={takeFocus ? -1 : undefined} className="text-text outline-none">
       {children}
     </p>
   );
@@ -110,13 +144,15 @@ export function FormNotice({ children }: { readonly children: ReactNode }): Reac
 
 export function SubmitButton({
   busy,
+  quiet = false,
   children,
 }: {
   readonly busy: boolean;
+  readonly quiet?: boolean;
   readonly children: ReactNode;
 }): ReactElement {
   return (
-    <button type="submit" disabled={busy} aria-busy={busy} className={primaryButtonClass}>
+    <button type="submit" disabled={busy} aria-busy={busy} className={quiet ? quietButtonClass : primaryButtonClass}>
       {children}
     </button>
   );

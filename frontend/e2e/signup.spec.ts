@@ -85,7 +85,7 @@ test('pilot-3 › step 1 seeded tutors are confirmed and sign in to Today', asyn
 
   await expectSignedInToToday(page);
   await expect(page.getByRole('region', { name: 'Подтверждение email' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Меню аккаунта: Ольга' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ольга, Меню аккаунта' })).toBeVisible();
 });
 
 test('the confirmation link opened in a signed-in browser asks for no password and ends other sessions', async ({
@@ -223,7 +223,7 @@ test('confirming another account in a signed-in browser warns, signs out first a
   await page.goto('/today');
   const otherTab = await page.context().newPage();
   await otherTab.goto('/today');
-  await expect(otherTab.getByRole('button', { name: 'Меню аккаунта: Первый репетитор' })).toBeVisible();
+  await expect(otherTab.getByRole('button', { name: 'Первый репетитор, Меню аккаунта' })).toBeVisible();
   await page.goto(link);
   await expect(page.getByRole('status')).toContainText(first.email);
 
@@ -232,7 +232,7 @@ test('confirming another account in a signed-in browser warns, signs out first a
   await expectSignedInToToday(page);
   await page.clock.runFor('12:00');
 
-  await expect(page.getByRole('button', { name: 'Меню аккаунта: Второй репетитор' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Второй репетитор, Меню аккаунта' })).toBeVisible();
   await expect(otherTab.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
 });
 

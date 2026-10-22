@@ -21,6 +21,8 @@ export const ru = {
     showSidebarWithNews: 'Показать боковую панель, есть новое',
     hideSidebar: 'Скрыть боковую панель',
     accountMenu: 'Меню аккаунта',
+    skipToContent: 'Перейти к содержимому',
+    languageNotSaved: 'Не удалось сохранить язык в аккаунте. Попробуйте ещё раз.',
     signOut: 'Выйти',
     signOutFailed: 'Не удалось выйти. Проверьте соединение и попробуйте ещё раз.',
     confirmationLabel: 'Подтверждение email',

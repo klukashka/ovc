@@ -19,9 +19,9 @@ export function SessionPending(): ReactElement {
   }, [t]);
   return (
     <StatusLayout>
-      <p role="status" className="text-text-muted">
-        {t('session.loading')}
-      </p>
+      <div role="status">
+        <h1 className="text-body text-text-muted">{t('session.loading')}</h1>
+      </div>
     </StatusLayout>
   );
 }
@@ -46,7 +46,7 @@ export function SessionUnavailable(): ReactElement {
           onClick={() => {
             void session.start();
           }}
-          className="inline-flex min-h-11 items-center rounded-sm bg-accent px-4 text-strong text-on-accent hover:bg-accent-hover"
+          className="inline-flex min-h-11 items-center rounded-md bg-accent px-4 text-strong text-on-accent hover:bg-accent-hover"
         >
           {t('session.retry')}
         </button>

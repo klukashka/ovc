@@ -10,6 +10,7 @@ import { type SectionCounts, hasNews } from '../../app/sections.ts';
 import type { Me } from '../../lib/api/session.ts';
 import { BellIcon, SidebarIcon } from '../ui/icons.tsx';
 import { Sidebar } from './Sidebar.tsx';
+import { SkipLink, mainContentId } from './SkipLink.tsx';
 
 const iconButton =
   'relative inline-flex target items-center justify-center rounded-sm text-icon transition-colors duration-(--duration-press) ease-quiet hover:bg-hover hover:text-text';
@@ -261,6 +262,7 @@ export function SignedInFrame({
 
   return (
     <div className="min-h-dvh bg-bg text-text">
+      <SkipLink />
       {wide && sidebarShown ? (
         <aside className="fixed inset-y-0 left-0 w-sidebar border-r border-border">{sidebar}</aside>
       ) : null}
@@ -296,7 +298,11 @@ export function SignedInFrame({
       )}
       <div className={wide && sidebarShown ? 'pl-(--container-sidebar)' : ''}>
         {me.state === 'unverified' ? <ConfirmationBanner email={me.email} /> : null}
-        <main className="mx-auto w-full max-w-page px-4 py-8 tablet:px-8 desktop:px-14 desktop:py-12">
+        <main
+          id={mainContentId}
+          tabIndex={-1}
+          className="mx-auto w-full max-w-page px-4 py-8 outline-none tablet:px-8 desktop:px-14 desktop:py-12"
+        >
           {children ?? <Outlet />}
         </main>
       </div>

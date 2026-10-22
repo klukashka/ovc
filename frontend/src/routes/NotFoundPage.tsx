@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
+import { linkClass } from '../components/ui/Form.tsx';
 import { Page } from '../components/ui/Page.tsx';
 
 export function NotFoundPage(): ReactElement {
@@ -10,7 +11,7 @@ export function NotFoundPage(): ReactElement {
     <Page title="page.notFound">
       <p className="text-text-muted">{t('notFound.body')}</p>
       <p>
-        <Link to="/" className="text-accent-text underline">
+        <Link to="/" className={linkClass}>
           {t('notFound.back')}
         </Link>
       </p>

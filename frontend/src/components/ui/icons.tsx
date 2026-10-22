@@ -23,6 +23,14 @@ function Outline({ size = 16, children }: IconProps & { readonly children: React
   );
 }
 
+export function ChevronDownIcon(props: IconProps): ReactElement {
+  return (
+    <Outline {...props}>
+      <path d="M4 6l4 4 4-4" />
+    </Outline>
+  );
+}
+
 export function SunIcon(props: IconProps): ReactElement {
   return (
     <Outline {...props}>

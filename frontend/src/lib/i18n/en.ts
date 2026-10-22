@@ -21,6 +21,8 @@ export const en: Resources = {
     showSidebarWithNews: 'Show sidebar, new items',
     hideSidebar: 'Hide sidebar',
     accountMenu: 'Account menu',
+    skipToContent: 'Skip to content',
+    languageNotSaved: 'The language was not saved to your account. Try again.',
     signOut: 'Sign out',
     signOutFailed: 'Could not sign out. Check your connection and try again.',
     confirmationLabel: 'Email confirmation',

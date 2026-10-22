@@ -5,13 +5,18 @@ import { usePreferences } from '../../app/context.ts';
 import { type Language, languages } from '../../lib/i18n/resources.ts';
 import { preferenceKeys } from '../../lib/preferences/store.ts';
 
-export function LanguageSwitch(): ReactElement {
+export function LanguageSwitch({
+  onChosen,
+}: {
+  readonly onChosen?: ((language: Language) => void) | undefined;
+}): ReactElement {
   const { t, i18n } = useTranslation();
   const preferences = usePreferences();
 
   function choose(language: Language): void {
     preferences.write(preferenceKeys.language, language);
     void i18n.changeLanguage(language);
+    onChosen?.(language);
   }
 
   return (

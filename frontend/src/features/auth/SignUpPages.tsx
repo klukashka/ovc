@@ -4,12 +4,14 @@ import { Link } from 'react-router';
 
 import {
   FormAlert,
+  SelectChevron,
   SubmitButton,
   TextField,
   errorMessage,
   fieldMessage,
   linkClass,
   retryAfterSeconds,
+  selectClass,
   stringField,
 } from '../../components/ui/Form.tsx';
 import { Page } from '../../components/ui/Page.tsx';
@@ -66,26 +68,36 @@ type SignUpState =
   | { readonly kind: 'sending' }
   | { readonly kind: 'sent'; readonly email: string };
 
-function LanguageChoice({ initial }: { readonly initial: Language }): ReactElement {
+function LanguageChoice({ interfaceLanguage }: { readonly interfaceLanguage: Language }): ReactElement {
   const { t } = useTranslation();
   const selectId = useId();
+  const [chosen, setChosen] = useState<Language | null>(null);
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={selectId} className="text-label">
         {t('signUp.language')}
       </label>
-      <select
-        id={selectId}
-        name="language"
-        defaultValue={initial}
-        className="min-h-11 rounded-sm border border-border-strong bg-field px-3 text-text"
-      >
-        {languages.map((language) => (
-          <option key={language} value={language} lang={language}>
-            {t(`language.${language}`)}
-          </option>
-        ))}
-      </select>
+      <div className="relative">
+        <select
+          id={selectId}
+          name="language"
+          value={chosen ?? interfaceLanguage}
+          onChange={(event) => {
+            const value = event.currentTarget.value;
+            if (isLanguage(value)) {
+              setChosen(value);
+            }
+          }}
+          className={selectClass}
+        >
+          {languages.map((language) => (
+            <option key={language} value={language} lang={language}>
+              {t(`language.${language}`)}
+            </option>
+          ))}
+        </select>
+        <SelectChevron />
+      </div>
     </div>
   );
 }
@@ -162,7 +174,7 @@ export function TutorSignUpPage(): ReactElement {
 
   if (state.kind === 'sent') {
     return (
-      <Page title="page.checkEmail">
+      <Page title="page.checkEmail" focusTitle>
         <CheckEmail email={state.email} audience={{ kind: 'email', email: state.email }} />
       </Page>
     );
@@ -207,7 +219,7 @@ export function TutorSignUpPage(): ReactElement {
           hint={t('signUp.passwordHint')}
           error={fieldError('password')}
         />
-        <LanguageChoice initial={isLanguage(i18n.language) ? i18n.language : 'ru'} />
+        <LanguageChoice interfaceLanguage={isLanguage(i18n.language) ? i18n.language : 'ru'} />
         <ConsentField error={fieldError('consent')} />
         <SubmitButton busy={state.kind === 'sending'}>{t('signUp.submit')}</SubmitButton>
         <p>
