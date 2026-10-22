@@ -26,6 +26,7 @@ export function Readiness(): ReactElement {
     queryFn: ({ signal }) => fetchReadiness(client, signal),
     retry: false,
     refetchInterval: 30_000,
+    gcTime: 0,
   });
   const state: ReadinessState = query.isSuccess ? 'ready' : query.isError ? 'unavailable' : 'checking';
 

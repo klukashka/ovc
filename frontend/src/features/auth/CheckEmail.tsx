@@ -29,16 +29,20 @@ function useCooldown(initialSeconds: number): readonly [number, (seconds: number
   const remaining = Math.max(0, Math.ceil((until - now) / 1000));
 
   useEffect(() => {
-    if (remaining === 0) {
+    if (until <= Date.now()) {
       return undefined;
     }
     const timer = window.setInterval(() => {
-      setNow(Date.now());
+      const current = Date.now();
+      setNow(current);
+      if (current >= until) {
+        window.clearInterval(timer);
+      }
     }, 1000);
     return (): void => {
       window.clearInterval(timer);
     };
-  }, [remaining]);
+  }, [until]);
 
   function restart(seconds: number): void {
     const started = Date.now();

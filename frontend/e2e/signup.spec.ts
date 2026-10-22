@@ -128,6 +128,22 @@ test('the resend button waits 60 seconds after sign-up', async ({ page }) => {
   await expect(page.getByRole('status')).toHaveText('Письмо отправлено ещё раз.');
 });
 
+test('a resend starts the 60-second countdown again and it counts down each second', async ({ page }) => {
+  await page.clock.install();
+  await signUpThroughTheForm(page, newTestAccount('Repeating tutor'));
+  await expect(page.getByText(/^Можно отправить через \d+ с\.$/)).toBeVisible();
+  await page.clock.runFor('01:01');
+  await page.getByRole('button', { name: 'Отправить ещё раз' }).click();
+  await expect(page.getByRole('status')).toHaveText('Письмо отправлено ещё раз.');
+  const restarted = page.getByText('Можно отправить через 60 с.');
+  await expect(restarted).toBeVisible();
+
+  await page.clock.runFor(1000);
+
+  await expect(page.getByText('Можно отправить через 59 с.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Отправить ещё раз' })).toBeDisabled();
+});
+
 test('a signed-in unverified tutor resends from the confirmation page and is told when to try again', async ({
   page,
   deployment,
