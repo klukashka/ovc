@@ -109,24 +109,44 @@ func (q *Queries) CompleteOutbox(ctx context.Context, arg CompleteOutboxParams) 
 	return result.RowsAffected(), nil
 }
 
-const deleteFinishedOutbox = `-- name: DeleteFinishedOutbox :execrows
+const deleteDeadOutbox = `-- name: DeleteDeadOutbox :execrows
 DELETE FROM outbox
 WHERE id IN (
     SELECT finished.id FROM outbox AS finished
-    WHERE (finished.status = 'done' AND finished.done_at < $1::timestamptz)
-        OR (finished.status = 'dead' AND finished.done_at < $2::timestamptz)
-    LIMIT $3
+    WHERE finished.status = 'dead' AND finished.done_at < $1::timestamptz
+    LIMIT $2
 )
 `
 
-type DeleteFinishedOutboxParams struct {
-	DoneBefore time.Time
-	DeadBefore time.Time
-	BatchSize  int32
+type DeleteDeadOutboxParams struct {
+	Before    time.Time
+	BatchSize int32
 }
 
-func (q *Queries) DeleteFinishedOutbox(ctx context.Context, arg DeleteFinishedOutboxParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteFinishedOutbox, arg.DoneBefore, arg.DeadBefore, arg.BatchSize)
+func (q *Queries) DeleteDeadOutbox(ctx context.Context, arg DeleteDeadOutboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDeadOutbox, arg.Before, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteDoneOutbox = `-- name: DeleteDoneOutbox :execrows
+DELETE FROM outbox
+WHERE id IN (
+    SELECT finished.id FROM outbox AS finished
+    WHERE finished.status = 'done' AND finished.done_at < $1::timestamptz
+    LIMIT $2
+)
+`
+
+type DeleteDoneOutboxParams struct {
+	Before    time.Time
+	BatchSize int32
+}
+
+func (q *Queries) DeleteDoneOutbox(ctx context.Context, arg DeleteDoneOutboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDoneOutbox, arg.Before, arg.BatchSize)
 	if err != nil {
 		return 0, err
 	}

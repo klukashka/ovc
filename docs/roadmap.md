@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10, slice reviews and the Go backend added the same day, slice 1 adjusted on 2026-10-21 (sqlc and `ovc-admin` moved to slice 2); slice 1 closed and follow-up items placed in slices 2, 8 and 10 on 2026-10-21 after its slice review; parts of FR-1 and FR-16 moved from slice 2 to slices 3 and 4 the same day with the slice 2 plan; recordings and analytics moved after the MVP on 2026-10-22 by the owner's decision, and the pilot deployment items added to slices 7 and 10 the same day (ADR-0013); pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10, slice reviews and the Go backend added the same day, slice 1 adjusted on 2026-10-21 (sqlc and `ovc-admin` moved to slice 2); slice 1 closed and follow-up items placed in slices 2, 8 and 10 on 2026-10-21 after its slice review; parts of FR-1 and FR-16 moved from slice 2 to slices 3 and 4 the same day with the slice 2 plan; recordings and analytics moved after the MVP on 2026-10-22 by the owner's decision, and the pilot deployment items added to slices 7 and 10 the same day (ADR-0013), and the worker's per-lane refill loops placed in slice 4 the same day; pending line-by-line owner review.
 
 Build order, slice by slice. Each slice is runnable and reviewable on its own and ends with its checks registered in the [development guide](development.md). A slice is done when:
 
@@ -42,7 +42,7 @@ FR-2, FR-3, and from slice 2 FR-1.2 and student sign-up through an invitation or
 
 ## Slice 4: realtime and in-app notifications
 
-FR-13.1, FR-13.3, and from slice 2 the closing of live connections on sign-out, deletion and blocking in FR-1.4, FR-1.7 and FR-16.1 ([accounts](../knowledge/specs/accounts.md#roles-and-accounts)). The WebSocket gateway with first-frame authentication, the connection registry and broadcaster, `notification.new` and `entity.changed` frames, the notifications panel, email preferences and one-click unsubscribe.
+FR-13.1, FR-13.3, and from slice 2 the closing of live connections on sign-out, deletion and blocking in FR-1.4, FR-1.7 and FR-16.1 ([accounts](../knowledge/specs/accounts.md#roles-and-accounts)). The WebSocket gateway with first-frame authentication, the connection registry and broadcaster, `notification.new` and `entity.changed` frames, the notifications panel, email preferences and one-click unsubscribe. The worker's lanes run side by side with per-lane loops that refill slots as they free up, before lesson reminders depend on prompt delivery (NFR-4.5).
 
 ## Slice 5: schedule and reminders
 

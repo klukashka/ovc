@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"ovc/backend/internal/dbgen"
@@ -9,14 +10,13 @@ import (
 )
 
 type (
-	Attachment          = dbgen.Attachment
-	NewAttachment       = dbgen.CreateAttachmentParams
-	NewAttachmentRef    = dbgen.CreateAttachmentReferenceParams
-	NewOutboxRow        = dbgen.InsertOutboxParams
-	ClaimedOutboxRow    = dbgen.ClaimOutboxRow
-	ReclaimedOutboxRow  = dbgen.ReclaimExpiredOutboxRow
-	OutboxRow           = dbgen.Outbox
-	FinishedOutboxPurge = dbgen.DeleteFinishedOutboxParams
+	Attachment         = dbgen.Attachment
+	NewAttachment      = dbgen.CreateAttachmentParams
+	NewAttachmentRef   = dbgen.CreateAttachmentReferenceParams
+	NewOutboxRow       = dbgen.InsertOutboxParams
+	ClaimedOutboxRow   = dbgen.ClaimOutboxRow
+	ReclaimedOutboxRow = dbgen.ReclaimExpiredOutboxRow
+	OutboxRow          = dbgen.Outbox
 )
 
 type OutboxCompletion struct {
@@ -116,7 +116,20 @@ func (r Outbox) ByID(ctx context.Context, id domain.OutboxID) (OutboxRow, error)
 	return one(row, err, "outbox row by id")
 }
 
+type FinishedOutboxPurge struct {
+	DoneBefore time.Time
+	DeadBefore time.Time
+	BatchSize  int32
+}
+
 func (r Outbox) DeleteFinished(ctx context.Context, purge FinishedOutboxPurge) (int64, error) {
-	rows, err := r.queries.DeleteFinishedOutbox(ctx, purge)
-	return counted(rows, err, "delete finished outbox rows")
+	done, err := r.queries.DeleteDoneOutbox(ctx, dbgen.DeleteDoneOutboxParams{Before: purge.DoneBefore, BatchSize: purge.BatchSize})
+	if err != nil {
+		return 0, fmt.Errorf("delete done outbox rows: %w", err)
+	}
+	dead, err := r.queries.DeleteDeadOutbox(ctx, dbgen.DeleteDeadOutboxParams{Before: purge.DeadBefore, BatchSize: purge.BatchSize})
+	if err != nil {
+		return done, fmt.Errorf("delete dead outbox rows: %w", err)
+	}
+	return done + dead, nil
 }

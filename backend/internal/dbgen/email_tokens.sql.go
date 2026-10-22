@@ -88,6 +88,28 @@ func (q *Queries) CreateEmailToken(ctx context.Context, arg CreateEmailTokenPara
 	return err
 }
 
+const deleteOldEmailRequests = `-- name: DeleteOldEmailRequests :execrows
+DELETE FROM email_requests
+WHERE id IN (
+    SELECT old.id FROM email_requests AS old
+    WHERE old.created_at < $1::timestamptz
+    LIMIT $2
+)
+`
+
+type DeleteOldEmailRequestsParams struct {
+	Before    time.Time
+	BatchSize int32
+}
+
+func (q *Queries) DeleteOldEmailRequests(ctx context.Context, arg DeleteOldEmailRequestsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldEmailRequests, arg.Before, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteOpenEmailRequests = `-- name: DeleteOpenEmailRequests :execrows
 DELETE FROM email_requests AS request
 WHERE request.user_id = $1

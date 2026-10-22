@@ -131,6 +131,19 @@ func (r Sessions) RevokeAllOf(ctx context.Context, user domain.UserID, now time.
 	return counted(rows, err, "revoke user sessions")
 }
 
+func (r Sessions) DeleteFinishedBefore(ctx context.Context, before time.Time, batchSize int32, maxBatches int) (int64, error) {
+	expired, err := deleteInBatches(maxBatches, batchSize, "delete expired sessions", func() (int64, error) {
+		return r.queries.DeleteExpiredSessions(ctx, dbgen.DeleteExpiredSessionsParams{Before: before, BatchSize: batchSize})
+	})
+	if err != nil {
+		return expired, err
+	}
+	revoked, err := deleteInBatches(maxBatches, batchSize, "delete revoked sessions", func() (int64, error) {
+		return r.queries.DeleteRevokedSessions(ctx, dbgen.DeleteRevokedSessionsParams{Before: before, BatchSize: batchSize})
+	})
+	return expired + revoked, err
+}
+
 func (r Sessions) RevokeOthersOf(ctx context.Context, user domain.UserID, kept domain.SessionID, now time.Time) (int64, error) {
 	rows, err := r.queries.RevokeOtherUserSessions(ctx, dbgen.RevokeOtherUserSessionsParams{Now: now, UserID: user, Kept: kept})
 	return counted(rows, err, "revoke other user sessions")
@@ -154,6 +167,12 @@ func (r EmailTokens) Superseded(ctx context.Context, request EmailRequest) (bool
 		UserID: request.UserID, Purpose: request.Purpose, CreatedAt: request.CreatedAt, ID: request.ID,
 	})
 	return one(newer, err, "newer email request")
+}
+
+func (r EmailTokens) DeleteRequestsBefore(ctx context.Context, before time.Time, batchSize int32, maxBatches int) (int64, error) {
+	return deleteInBatches(maxBatches, batchSize, "delete old email requests", func() (int64, error) {
+		return r.queries.DeleteOldEmailRequests(ctx, dbgen.DeleteOldEmailRequestsParams{Before: before, BatchSize: batchSize})
+	})
 }
 
 func (r EmailTokens) DeleteOpenRequests(ctx context.Context, user domain.UserID) (int64, error) {
@@ -205,11 +224,17 @@ func (r RateLimits) Release(ctx context.Context, slot RateLimitSlot) (bool, erro
 }
 
 func (r RateLimits) DeleteBefore(ctx context.Context, before time.Time, batchSize int32, maxBatches int) (int64, error) {
+	return deleteInBatches(maxBatches, batchSize, "delete expired rate limit counters", func() (int64, error) {
+		return r.queries.DeleteExpiredRateLimitCounters(ctx, dbgen.DeleteExpiredRateLimitCountersParams{Before: before, BatchSize: batchSize})
+	})
+}
+
+func deleteInBatches(maxBatches int, batchSize int32, action string, batch func() (int64, error)) (int64, error) {
 	var deleted int64
 	for range maxBatches {
-		rows, err := r.queries.DeleteExpiredRateLimitCounters(ctx, dbgen.DeleteExpiredRateLimitCountersParams{Before: before, BatchSize: batchSize})
+		rows, err := batch()
 		if err != nil {
-			return deleted, fmt.Errorf("delete expired rate limit counters: %w", err)
+			return deleted, fmt.Errorf("%s: %w", action, err)
 		}
 		deleted += rows
 		if rows < int64(batchSize) {

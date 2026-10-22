@@ -38,6 +38,8 @@ type JobName string
 const (
 	JobOutboxCleanup             JobName = "outbox.cleanup"
 	JobRateLimitCleanup          JobName = "ratelimit.cleanup"
+	JobSessionsCleanup           JobName = "sessions.cleanup"
+	JobEmailRequestsCleanup      JobName = "email_requests.cleanup"
 	JobUploadsExpire             JobName = "uploads.expire"
 	JobAccountsPurge             JobName = "accounts.purge"
 	JobAccountsCleanupUnverified JobName = "accounts.cleanup_unverified"

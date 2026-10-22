@@ -140,6 +140,8 @@ func newAuthHarnessBehind(t *testing.T, trusted []netip.Prefix) *authHarness {
 		{Name: domain.JobUploadsExpire, Every: time.Hour, Run: fileService.ExpirePending},
 		{Name: domain.JobAccountsPurge, Every: time.Hour, Run: purger.PurgeDeleted},
 		{Name: domain.JobAccountsCleanupUnverified, Every: time.Hour, Run: purger.CleanupUnverified},
+		{Name: domain.JobSessionsCleanup, Every: time.Hour, Run: accounts.CleanupSessions(store)},
+		{Name: domain.JobEmailRequestsCleanup, Every: time.Hour, Run: accounts.CleanupEmailRequests(store)},
 	}
 	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, jobs, worker.DefaultTiming())
 	return &authHarness{

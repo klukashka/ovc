@@ -242,3 +242,45 @@ func TestAPurgeThatCannotRemoveSomeAccountsStillRemovesTheOnesBehindThem(t *test
 		t.Fatalf("each stuck account should be reported once")
 	}
 }
+
+func TestFinishedSessionsAndOldEmailRequestsAreCleanedUp(t *testing.T) {
+	h := newFlowHarness(t)
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
+	keptCookie := refreshValue(t, h.login(t, tutorEmail, "correct horse battery"))
+	signedOutLogin := h.login(t, tutorEmail, "correct horse battery")
+	signedOut := accessToken(t, signedOutLogin)
+	signedOutCookie := refreshValue(t, signedOutLogin)
+	h.send(t, http.MethodPost, "/api/v1/auth/logout", "", map[string]string{"Authorization": "Bearer " + signedOut, "Origin": publicOrigin})
+	h.forgot(t, tutorEmail)
+	h.tick(t)
+	sessions := "SELECT count(*) FROM sessions JOIN users ON users.id = sessions.user_id WHERE users.email = $1"
+	requests := "SELECT count(*) FROM email_requests JOIN users ON users.id = email_requests.user_id WHERE users.email = $1"
+
+	h.at(t, authStart.Add(23*time.Hour))
+	h.tick(t)
+	sessionsWithinADay := h.countRows(t, sessions, tutorEmail)
+	revokedRefresh := h.refresh(t, signedOutCookie)
+	h.at(t, authStart.Add(25*time.Hour))
+	h.tick(t)
+	sessionsAfterADay := h.countRows(t, sessions, tutorEmail)
+	deletedRefresh := h.refresh(t, signedOutCookie)
+	keptRefresh := h.refresh(t, keptCookie)
+	requestsAfterADay := h.countRows(t, requests, tutorEmail)
+	h.at(t, authStart.Add(7*24*time.Hour+time.Hour))
+	h.tick(t)
+	requestsAfterAWeek := h.countRows(t, requests, tutorEmail)
+	tokensAfterAWeek := h.countRows(t, "SELECT count(*) FROM email_tokens JOIN users ON users.id = email_tokens.user_id WHERE users.email = $1", tutorEmail)
+	h.at(t, authStart.Add(31*24*time.Hour+time.Hour))
+	h.tick(t)
+	sessionsAfterExpiry := h.countRows(t, sessions, tutorEmail)
+
+	if keptRefresh.status != http.StatusOK || sessionsWithinADay != 2 || sessionsAfterADay != 1 || sessionsAfterExpiry != 0 {
+		t.Fatalf("sessions: %d within a day, %d after a day, %d after expiry", sessionsWithinADay, sessionsAfterADay, sessionsAfterExpiry)
+	}
+	if revokedRefresh.status != http.StatusUnauthorized || deletedRefresh.status != revokedRefresh.status || code(t, deletedRefresh) != code(t, revokedRefresh) {
+		t.Fatalf("a deleted session's cookie answered %d %s, a revoked one %d %s", deletedRefresh.status, deletedRefresh.body, revokedRefresh.status, revokedRefresh.body)
+	}
+	if requestsAfterADay != 1 || requestsAfterAWeek != 0 || tokensAfterAWeek != 0 {
+		t.Fatalf("email requests: %d after a day, %d after a week, tokens %d", requestsAfterADay, requestsAfterAWeek, tokensAfterAWeek)
+	}
+}

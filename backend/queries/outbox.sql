@@ -52,11 +52,18 @@ SET status = CASE WHEN attempts >= sqlc.arg(max_attempts)::integer THEN 'dead' E
 WHERE status = 'in_progress' AND lease_expires_at <= sqlc.arg(now)::timestamptz
 RETURNING id, kind, status;
 
--- name: DeleteFinishedOutbox :execrows
+-- name: DeleteDoneOutbox :execrows
 DELETE FROM outbox
 WHERE id IN (
     SELECT finished.id FROM outbox AS finished
-    WHERE (finished.status = 'done' AND finished.done_at < sqlc.arg(done_before)::timestamptz)
-        OR (finished.status = 'dead' AND finished.done_at < sqlc.arg(dead_before)::timestamptz)
+    WHERE finished.status = 'done' AND finished.done_at < sqlc.arg(before)::timestamptz
+    LIMIT sqlc.arg(batch_size)
+);
+
+-- name: DeleteDeadOutbox :execrows
+DELETE FROM outbox
+WHERE id IN (
+    SELECT finished.id FROM outbox AS finished
+    WHERE finished.status = 'dead' AND finished.done_at < sqlc.arg(before)::timestamptz
     LIMIT sqlc.arg(batch_size)
 );

@@ -41,3 +41,11 @@ WHERE request.user_id = @user_id
 
 -- name: EmailRequestHasUsedToken :one
 SELECT EXISTS (SELECT 1 FROM email_tokens WHERE request_id = @request_id AND used_at IS NOT NULL);
+
+-- name: DeleteOldEmailRequests :execrows
+DELETE FROM email_requests
+WHERE id IN (
+    SELECT old.id FROM email_requests AS old
+    WHERE old.created_at < sqlc.arg(before)::timestamptz
+    LIMIT sqlc.arg(batch_size)
+);

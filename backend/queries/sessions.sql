@@ -30,3 +30,19 @@ WHERE sessions.id = @id;
 -- name: RevokeOtherUserSessions :execrows
 UPDATE sessions SET revoked_at = sqlc.arg(now)::timestamptz
 WHERE user_id = @user_id AND id <> sqlc.arg(kept) AND revoked_at IS NULL;
+
+-- name: DeleteExpiredSessions :execrows
+DELETE FROM sessions
+WHERE id IN (
+    SELECT finished.id FROM sessions AS finished
+    WHERE finished.expires_at < sqlc.arg(before)::timestamptz
+    LIMIT sqlc.arg(batch_size)
+);
+
+-- name: DeleteRevokedSessions :execrows
+DELETE FROM sessions
+WHERE id IN (
+    SELECT finished.id FROM sessions AS finished
+    WHERE finished.revoked_at < sqlc.arg(before)::timestamptz
+    LIMIT sqlc.arg(batch_size)
+);

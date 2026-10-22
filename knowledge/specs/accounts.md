@@ -69,7 +69,8 @@ Behavior for FR-1, FR-2, FR-3 and FR-16. Decisions: [ADR-0005](../../docs/decisi
   - reuse of a rotated refresh token revokes the session;
   - its value is `<session>.<generation>.<random>.<mac>`: the session identifier (16 bytes), the decimal generation (from 1, no sign or leading zero), 32 random bytes and an untruncated HMAC-SHA-256 over the session identifier and generation with a key derived by HKDF from `OVC_JWT_SECRET` (info `refresh-generation`), each binary part in unpadded base64url and parsed strictly;
   - the MAC is verified before the session is looked up, so a forged cookie costs no query and changes nothing; a cookie with a valid MAC and an older generation than the stored one is reuse and revokes the session; a newer generation, or the current generation with another random part, is refused without revoking; a refresh whose rotation loses a race is re-checked against the stored row by the same rules, so the losing request counts as reuse, which the browser's per-tab lock keeps from happening;
-  - the session expires 30 days after sign-in; rotation never extends it.
+  - the session expires 30 days after sign-in; rotation never extends it;
+  - a session row is deleted by the hourly `sessions.cleanup` job once it has been expired or revoked for more than a day, after which its cookie is refused as unknown, as a revoked one is; email requests and their tokens are deleted 7 days after the request, and a token never outlives its request.
 - **Refresh route checks:**
   - it accepts a request only when its `Origin` header equals the configured OVC origin exactly; a same-site subdomain such as the conferencing host does not qualify;
   - a request without a refresh cookie gets `204` with no token, which the client treats as "signed out" rather than as an error;

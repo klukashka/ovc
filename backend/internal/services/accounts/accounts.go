@@ -458,6 +458,9 @@ func (s *Service) rotate(ctx context.Context, session repositories.Session, cook
 
 func (s *Service) lostRotation(ctx context.Context, session repositories.Session, generation int64, now time.Time) error {
 	current, err := s.deps.Store.Repositories().Sessions.ByID(ctx, session.ID)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return ErrUnauthenticated
+	}
 	if err != nil {
 		return err
 	}
@@ -496,10 +499,27 @@ const (
 	rateLimitRetention  = 25 * time.Hour
 	rateLimitBatchSize  = 1000
 	rateLimitMaxBatches = 20
+
+	finishedSessionRetention = 24 * time.Hour
+	emailRequestRetention    = 7 * 24 * time.Hour
+	housekeepingBatchSize    = 1000
+	housekeepingMaxBatches   = 20
 )
 
 func CleanupRateLimits(store *repositories.Store) func(context.Context, time.Time) (int64, error) {
 	return func(ctx context.Context, now time.Time) (int64, error) {
 		return store.Repositories().RateLimits.DeleteBefore(ctx, now.Add(-rateLimitRetention), rateLimitBatchSize, rateLimitMaxBatches)
+	}
+}
+
+func CleanupSessions(store *repositories.Store) func(context.Context, time.Time) (int64, error) {
+	return func(ctx context.Context, now time.Time) (int64, error) {
+		return store.Repositories().Sessions.DeleteFinishedBefore(ctx, now.Add(-finishedSessionRetention), housekeepingBatchSize, housekeepingMaxBatches)
+	}
+}
+
+func CleanupEmailRequests(store *repositories.Store) func(context.Context, time.Time) (int64, error) {
+	return func(ctx context.Context, now time.Time) (int64, error) {
+		return store.Repositories().EmailTokens.DeleteRequestsBefore(ctx, now.Add(-emailRequestRetention), housekeepingBatchSize, housekeepingMaxBatches)
 	}
 }

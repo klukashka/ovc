@@ -36,6 +36,50 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 	return err
 }
 
+const deleteExpiredSessions = `-- name: DeleteExpiredSessions :execrows
+DELETE FROM sessions
+WHERE id IN (
+    SELECT finished.id FROM sessions AS finished
+    WHERE finished.expires_at < $1::timestamptz
+    LIMIT $2
+)
+`
+
+type DeleteExpiredSessionsParams struct {
+	Before    time.Time
+	BatchSize int32
+}
+
+func (q *Queries) DeleteExpiredSessions(ctx context.Context, arg DeleteExpiredSessionsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredSessions, arg.Before, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteRevokedSessions = `-- name: DeleteRevokedSessions :execrows
+DELETE FROM sessions
+WHERE id IN (
+    SELECT finished.id FROM sessions AS finished
+    WHERE finished.revoked_at < $1::timestamptz
+    LIMIT $2
+)
+`
+
+type DeleteRevokedSessionsParams struct {
+	Before    time.Time
+	BatchSize int32
+}
+
+func (q *Queries) DeleteRevokedSessions(ctx context.Context, arg DeleteRevokedSessionsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRevokedSessions, arg.Before, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getSession = `-- name: GetSession :one
 SELECT id, user_id, generation, refresh_hash, expires_at, revoked_at, last_used_at, created_at FROM sessions WHERE id = $1
 `
