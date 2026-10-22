@@ -231,7 +231,8 @@ Settings are read once from the environment into one typed struct in `internal/c
 | Provider retry behavior for non-2xx callback answers; joining with `redirect=false` and a session token; behavior of two joins with the same `userID`; external assets (STUN) the client loads | Reconciliation does not depend on callbacks; join links are never stored | Slice 7 probe |
 | How bounces and complaints arrive from the chosen SMTP provider (webhook or polling) | Undeliverable addresses stop optional emails | Slice 2, with the provider choice |
 | Embedded client works on all supported browsers | "Open in new tab" always available | Slice 7 probe |
-| Which Russian providers for hosting, storage and SMTP | All in Russia | Before first deployment |
+| Which Russian providers for hosting, storage and SMTP; compared in [hosting research](../research/hosting-2026-10-22.md) | All in Russia | Before first deployment |
+| How downloads get `X-Content-Type-Options: nosniff` when the S3-compatible provider cannot add response headers (for example a proxy in front of signed downloads) | Never serve an upload without `nosniff` ([T-35](../../docs/threat-model.md#threats-and-controls)) | Before first deployment, with the provider probe |
 | Thumbnails for image previews | Originals constrained by the client in the MVP | After MVP |
 | Malware scanning of uploads | Content-type allowlist and size limits are mandatory regardless | After MVP |
 | Offline queue for assignment answers beyond retrying | Autosave with versions | Slice 9 |
