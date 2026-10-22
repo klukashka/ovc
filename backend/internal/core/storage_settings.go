@@ -13,10 +13,10 @@ const (
 	varStorageRegion    = "OVC_STORAGE_REGION"
 	varStorageBucket    = "OVC_STORAGE_BUCKET"
 	varStorageAccessKey = "OVC_STORAGE_ACCESS_KEY"
-	varStorageKeyValue  = "OVC_STORAGE_" + "SECRET_KEY"
+	varStorageSecretKey = "OVC_STORAGE_SECRET_KEY"
 
 	varDevStorageAccessKey = "OVC_DEV_STORAGE_ACCESS_KEY"
-	varDevStorageKeyValue  = "OVC_DEV_STORAGE_" + "SECRET_KEY"
+	varDevStorageSecretKey = "OVC_DEV_STORAGE_SECRET_KEY"
 	varDevStoragePort      = "OVC_DEV_STORAGE_PORT"
 
 	defaultDevStoragePort = "58333"
@@ -43,7 +43,7 @@ type StorageSettings struct {
 }
 
 func storageVariableNames() []string {
-	return []string{varStorageBackend, varStorageEndpoint, varStorageRegion, varStorageBucket, varStorageAccessKey, varStorageKeyValue}
+	return []string{varStorageBackend, varStorageEndpoint, varStorageRegion, varStorageBucket, varStorageAccessKey, varStorageSecretKey}
 }
 
 func (s *Settings) loadStorageSettings(lookup Lookup) []error {
@@ -68,9 +68,9 @@ func (s *Settings) loadStorageSettings(lookup Lookup) []error {
 	if strings.TrimSpace(accessKey) == "" {
 		problems = append(problems, &SettingsError{Variable: varStorageAccessKey, Problem: "is required"})
 	}
-	secretKey, _ := lookup(varStorageKeyValue)
+	secretKey, _ := lookup(varStorageSecretKey)
 	if strings.TrimSpace(secretKey) == "" {
-		problems = append(problems, &SettingsError{Variable: varStorageKeyValue, Problem: "is required"})
+		problems = append(problems, &SettingsError{Variable: varStorageSecretKey, Problem: "is required"})
 	}
 	s.Storage = StorageSettings{
 		Backend: backend, Endpoint: strings.TrimRight(endpoint, "/"), Region: region, Bucket: bucket,
@@ -109,11 +109,11 @@ func isLoopbackAddress(host string) bool {
 
 func testStorageFrom(lookup Lookup, bucket string) (StorageSettings, error) {
 	accessKey, _ := lookup(varDevStorageAccessKey)
-	secretKey, _ := lookup(varDevStorageKeyValue)
+	secretKey, _ := lookup(varDevStorageSecretKey)
 	if strings.TrimSpace(accessKey) == "" || strings.TrimSpace(secretKey) == "" {
 		return StorageSettings{}, &SettingsError{
 			Variable: varDevStorageAccessKey,
-			Problem:  "and " + varDevStorageKeyValue + " are required to run the storage tests; run them through tools/dev-env.sh",
+			Problem:  "and " + varDevStorageSecretKey + " are required to run the storage tests; run them through tools/dev-env.sh",
 		}
 	}
 	port, found := lookup(varDevStoragePort)

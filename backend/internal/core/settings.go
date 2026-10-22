@@ -78,9 +78,9 @@ const (
 	varSMTPPort        = "OVC_SMTP_PORT"
 	varSMTPTLS         = "OVC_SMTP_TLS"
 	varSMTPUsername    = "OVC_SMTP_USERNAME"
-	varSMTPLoginValue  = "OVC_" + "SMTP_PASSWORD"
+	varSMTPPassword    = "OVC_SMTP_PASSWORD"
 	varMailFrom        = "OVC_MAIL_FROM"
-	varJWTKeyMaterial  = "OVC_" + "JWT_SECRET"
+	varJWTSecret       = "OVC_JWT_SECRET"
 	varAccessTTL       = "OVC_ACCESS_TOKEN_TTL_SECONDS"
 	varRefreshTTL      = "OVC_REFRESH_TOKEN_TTL_SECONDS"
 	varTrustedProxies  = "OVC_TRUSTED_PROXY_CIDRS"
@@ -96,7 +96,7 @@ func VariableNames() []string {
 	return append([]string{
 		varHTTPAddr, varDatabaseURL, varDBPoolSize, varLogLevel, varLogFormat, varAPIDocsEnabled,
 		varTestControl, varClock, varMeetingProvider, varMailBackend, varPublicURL, varSMTPHost, varSMTPPort,
-		varSMTPTLS, varSMTPUsername, varSMTPLoginValue, varMailFrom, varJWTKeyMaterial, varAccessTTL, varRefreshTTL,
+		varSMTPTLS, varSMTPUsername, varSMTPPassword, varMailFrom, varJWTSecret, varAccessTTL, varRefreshTTL,
 		varTrustedProxies, varTestDatabaseURL, varFileQuota, varRecordingQuota,
 	}, storageVariableNames()...)
 }
@@ -390,10 +390,10 @@ func mailSettings(lookup Lookup, backend MailBackend) (SMTPSettings, string, []e
 	}
 	smtp.TLS = tlsMode
 	smtp.Username = NewSecret(stringOr(lookup, varSMTPUsername, ""))
-	password, _ := lookup(varSMTPLoginValue)
+	password, _ := lookup(varSMTPPassword)
 	smtp.Password = NewSecret(password)
 	if smtp.Username.IsZero() != smtp.Password.IsZero() {
-		problems = append(problems, &SettingsError{Variable: varSMTPLoginValue, Problem: "must be set together with OVC_SMTP_USERNAME"})
+		problems = append(problems, &SettingsError{Variable: varSMTPPassword, Problem: "must be set together with OVC_SMTP_USERNAME"})
 	}
 	from, ok := lookup(varMailFrom)
 	address, parseErr := mail.ParseAddress(from)
@@ -420,10 +420,10 @@ const minimumJWTSecretBytes = 32
 
 func (s *Settings) loadSessionSettings(lookup Lookup) []error {
 	var problems []error
-	secret, _ := lookup(varJWTKeyMaterial)
+	secret, _ := lookup(varJWTSecret)
 	s.JWTSecret = NewSecret(secret)
 	if len(secret) < minimumJWTSecretBytes {
-		problems = append(problems, &SettingsError{Variable: varJWTKeyMaterial, Problem: "is required and must be at least 32 bytes"})
+		problems = append(problems, &SettingsError{Variable: varJWTSecret, Problem: "is required and must be at least 32 bytes"})
 	}
 	access, err := secondsOr(lookup, varAccessTTL, 900, 60, 3600)
 	if err != nil {

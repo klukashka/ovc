@@ -37,6 +37,24 @@ check "$([[ -e "$work/pwned" ]] && echo yes || echo no)" "no" "values are never 
 check "$("$wrapper" true 2>&1)" "" "a successful run prints nothing"
 check "$(bash -x "$wrapper" true 2>&1 | grep -c "$secret" || true)" "0" "bash -x does not trace the loaded values"
 check "$(env SHELLOPTS=xtrace "$wrapper" true 2>&1 | grep -c "$secret" || true)" "0" "SHELLOPTS=xtrace does not trace the loaded values"
+printf 'set -x\n' >"$work/trace-startup"
+traced="$(env "BASH_ENV=$work/trace-startup" "$wrapper" bash -c ': "$OVC_DEV_POSTGRES_PASSWORD"' 2>&1 | grep -c "$secret" || true)"
+check "$traced" "0" "BASH_ENV does not reach the command's shell to trace the loaded values"
+traced="$(env "ENV=$work/trace-startup" "$wrapper" sh -i -c ': "$OVC_DEV_POSTGRES_PASSWORD"' </dev/null 2>&1 | grep -c "$secret" || true)"
+check "$traced" "0" "ENV does not reach an interactive sh to trace the loaded values"
+printf 'trap '"'"'printf "%%s\\n" "${OVC_DEV_POSTGRES_PASSWORD:-}" >&2'"'"' DEBUG\nset -o functrace\n' >"$work/trap-startup"
+trapped="$(env "BASH_ENV=$work/trap-startup" "$wrapper" true 2>&1 | grep -c "$secret" || true)"
+check "$trapped" "0" "a DEBUG trap set before the wrapper starts does not print the loaded values"
+mkdir -p "$work/zdotdir"
+printf 'setopt xtrace\n' >"$work/zdotdir/.zshenv"
+if command -v zsh >/dev/null 2>&1; then
+  traced="$(env "ZDOTDIR=$work/zdotdir" "$wrapper" zsh -c ': "$OVC_DEV_POSTGRES_PASSWORD"' 2>&1 | grep -c "$secret" || true)"
+  check "$traced" "0" "ZDOTDIR does not reach the command's zsh to trace the loaded values"
+else
+  echo "skipped: zsh is not installed"
+fi
+check "$(BASH_XTRACEFD=1 "$wrapper" bash -c 'printf "%s" "${BASH_XTRACEFD:-unset}"')" "unset" "BASH_XTRACEFD does not reach the command"
+check "$(BASH_XTRACEFD=2 "$wrapper" bash -c 'printf "out"; printf "err" >&2' 2>&1)" "outerr" "the command keeps its standard output and error when BASH_XTRACEFD was set"
 
 kept="$(OVC_PUBLIC_URL=https://kept.example "$wrapper" bash -c 'printf "%s" "$OVC_PUBLIC_URL"')"
 check "$kept" "https://kept.example" "an existing variable is kept"
@@ -46,6 +64,17 @@ printed="$("$wrapper" /usr/bin/env 2>/dev/null)"
 status=$?
 set -e
 check "$status|$printed" "2|" "env is refused even by its full path and prints nothing"
+
+for printer in printenv set export declare typeset compgen; do
+  set +e
+  printed="$("$wrapper" "$printer" 2>/dev/null)"
+  status=$?
+  set -e
+  check "$status|$printed" "2|" "$printer is refused and prints nothing"
+done
+
+rm -f "$work/backend/.env"
+check "$("$wrapper" bash -c 'printf "%s|%s" "${OVC_SHARED_ROOT:-}" "${OVC_PUBLIC_URL:-unset}"')" "root|unset" "a missing file is skipped"
 
 write_files
 printf 'not a setting\n' >>"$work/.env"
@@ -89,6 +118,14 @@ overridden="$(
   export -f echo
   "$wrapper" 2>&1 || true
 )"
-check "$overridden" "usage: tools/dev-env.sh <command> [arguments...]" "an exported function cannot replace the wrapper's builtins"
+check "$overridden" "usage: tools/dev-env.sh <command> [arguments...]" "an exported echo function does not replace the wrapper's echo"
+
+write_files
+leaked="$(
+  continue() { printf '%s\n' "${OVC_DEV_POSTGRES_PASSWORD:-}" >&2; }
+  export -f continue
+  "$wrapper" true 2>&1 | grep -c "$secret" || true
+)"
+check "$leaked" "0" "an exported continue function does not run while the files load"
 
 echo "all checks passed"

@@ -120,7 +120,15 @@ WRAPPER_OPTIONS_WITH_VALUES = {
     "xargs": {"-I", "-n", "-L", "-P", "-s", "-E", "-J", "-R"},
     "uv": {"--with", "--python", "-p", "--project", "--directory", "--env-file", "--package"},
     "sudo": {"-u", "-g", "-C", "-h", "-p"},
+    "pnpm": {"--dir", "-C", "--filter", "-F"},
+    "pnpm-dlx": {"--package"},
+    "npx": {"-p", "--package", "-c", "--call"},
+    "pnpx": {"-p", "--package", "-c", "--call"},
 }
+PACKAGE_RUNNERS = {"npx", "pnpx"}
+PNPM_RUNNERS = {"exec", "dlx"}
+RUNNER_PROGRAMS = {"pnpm", "npm", "npx", "pnpx"}
+RUNNER_SCRIPT_OPTIONS = {"-c", "--call", "--shell-mode"}
 CONTAINER_TOOLS = {"docker", "docker-compose", "podman", "nerdctl"}
 CONFIG_SUBCOMMANDS = {"config", "convert"}
 READ_ONLY_CONFIG_FLAGS = {"--services", "--images", "--volumes", "--profiles", "--networks", "-q", "--quiet"}
@@ -191,6 +199,15 @@ def unwrap(words: list[str]) -> list[str]:
         if program == "uv" and len(words) > 1 and words[1] == "run":
             words = skip_options(program, words[2:])
             continue
+        if program in PACKAGE_RUNNERS:
+            words = skip_options(program, words[1:])
+            continue
+        if program == "pnpm":
+            rest = skip_options(program, words[1:])
+            if rest and rest[0] in PNPM_RUNNERS:
+                words = skip_options(f"pnpm-{rest[0]}", rest[1:])
+                continue
+            return words
         if program == "command" and len(words) > 1 and words[1] in {"-v", "-V"}:
             return words
         if program == "nice" or program in WRAPPERS:
@@ -256,7 +273,7 @@ def container_printer(arguments: list[str], depth: int) -> str | None:
 
 
 SETTINGS_WRAPPER = "dev-env.sh"
-TRACE_VARIABLES = ("SHELLOPTS=", "BASHOPTS=", "BASH_ENV=", "BASH_XTRACEFD=")
+TRACE_VARIABLES = ("SHELLOPTS=", "BASHOPTS=", "BASH_ENV=", "BASH_XTRACEFD=", "ENV=", "ZDOTDIR=", "HOME=")
 
 
 SHELL_OPTIONS_WITH_VALUES = {"-o", "+o", "-O", "+O", "--rcfile", "--init-file"}
@@ -325,8 +342,7 @@ def settings_wrapper_trace(words: list[str]) -> str | None:
     if SETTINGS_WRAPPER not in names:
         return None
     position = names.index(SETTINGS_WRAPPER)
-    before = words[:position]
-    if any(word.startswith(TRACE_VARIABLES) for word in before):
+    if any(word.startswith(TRACE_VARIABLES) for word in words):
         return "a shell trace setting that would print the loaded settings"
     for index, name in enumerate(names[:position]):
         if name in SHELLS and shell_traces(words[index + 1 : position]):
@@ -341,12 +357,35 @@ def settings_wrapper_trace(words: list[str]) -> str | None:
     return None
 
 
+def runner_printer(arguments: list[str], depth: int) -> str | None:
+    for index, word in enumerate(arguments):
+        name, separator, value = word.partition("=")
+        if name not in RUNNER_SCRIPT_OPTIONS:
+            continue
+        script = value if separator else (arguments[index + 1] if index + 1 < len(arguments) else None)
+        if script is not None:
+            found = command_printer(script, depth + 1)
+            if found:
+                return found
+    for offset in range(len(arguments)):
+        found = words_printer(arguments[offset:], depth + 1)
+        if found:
+            return found
+    return None
+
+
 def words_printer(words: list[str], depth: int) -> str | None:
     if depth > MAX_NESTING:
         return "a command nested too deeply to check"
     traced = settings_wrapper_trace(words)
     if traced:
         return traced
+    for index, word in enumerate(words):
+        if os.path.basename(word) in RUNNER_PROGRAMS:
+            found = runner_printer(words[index + 1 :], depth)
+            if found:
+                return found
+            break
     words = unwrap(words)
     if not words:
         return None

@@ -4,7 +4,9 @@ if [ -z "${BASH_VERSION:-}" ]; then
   echo "dev-env: run it with bash" >&2
   exit 2
 fi
-unset -f exec export basename dirname pwd cd read echo printf
+unset -f exec export basename dirname pwd cd read echo printf trap continue return exit local break
+trap - DEBUG RETURN ERR EXIT
+set +o functrace +o errtrace
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -66,4 +68,6 @@ refuse_printers "$1"
 for relative in "${environment_files[@]}"; do
   load_file "$relative"
 done
+unset BASH_ENV ENV ZDOTDIR
+export -n BASH_XTRACEFD
 exec "$@"

@@ -61,8 +61,8 @@ linters:
               desc: transport stubbing is forbidden
             - pkg: github.com/aws/aws-sdk-go-v2/config
               desc: the shared AWS configuration reads environment variables and files; build the client from settings
-            - pkg: github.com/aws/aws-sdk-go-v2/credentials/ec2rolecreds
-              desc: storage credentials come only from settings
+            - pkg: github.com/aws/aws-sdk-go-v2/credentials/
+              desc: storage credentials come only from settings; the static provider in the credentials package itself stays allowed
             - pkg: github.com/aws/aws-sdk-go-v2/feature/ec2/imds
               desc: storage credentials come only from settings
         objectstorage:
@@ -138,6 +138,11 @@ linters:
         linters:
           - gosec
         text: G204|G304
+      - path: ^internal/core/(settings|storage_settings)\.go$
+        linters:
+          - gosec
+        text: G101
+        source: '= "OVC_[A-Z0-9_]+"$'
 
 formatters:
   enable:

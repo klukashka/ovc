@@ -82,7 +82,11 @@ export const test = base.extend<
 >({
   deployment: [
     async ({ browserName }, use, workerInfo): Promise<void> => {
-      const deployment = await startDeployment(readE2ESettings(process.env), workerInfo.parallelIndex, browserName);
+      const deployment = await startDeployment(
+        readE2ESettings(process.env),
+        workerInfo.parallelIndex,
+        `${browserName}-worker${String(workerInfo.workerIndex)}`,
+      );
       try {
         await use(deployment);
       } finally {

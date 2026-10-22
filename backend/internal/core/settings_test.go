@@ -444,7 +444,7 @@ func TestStorageSettingsAreRequiredAndSafe(t *testing.T) {
 		"upper-case bucket":    {"OVC_STORAGE_BUCKET": "OVC"},
 		"missing region":       {"OVC_STORAGE_REGION": ""},
 		"missing access key":   {"OVC_STORAGE_ACCESS_KEY": ""},
-		"missing secret key":   {"OVC_STORAGE_" + "SECRET_KEY": ""},
+		"missing secret key":   {"OVC_STORAGE_SECRET_KEY": ""},
 	}
 	for name, change := range cases {
 		t.Run(name, func(t *testing.T) {

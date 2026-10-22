@@ -32,7 +32,7 @@ import (
 )
 
 func fixtureLogin() string {
-	return "fixture-" + "smtp-login"
+	return "fixture-smtp-login"
 }
 
 var sentAt = time.Date(2026, time.October, 21, 9, 30, 0, 0, time.UTC)

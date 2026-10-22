@@ -131,6 +131,21 @@ function ensureStorageBucket(): void {
   }
 }
 
+function deleteStorageBucket(): void {
+  const result = spawnSync('docker', ['compose', 'exec', '-T', 'storage', 'weed', 'shell'], {
+    cwd: repositoryRoot,
+    input: `s3.bucket.delete -name ${storageBucket}\n`,
+    encoding: 'utf8',
+  });
+  const output = `${result.stdout}${result.stderr}`;
+  if (output.includes('bucket not found')) {
+    return;
+  }
+  if (result.error !== undefined || result.status !== 0 || output.includes('error')) {
+    throw new Error(`the storage bucket ${storageBucket} could not be deleted`);
+  }
+}
+
 function createPreviewCertificate(): void {
   mkdirSync(tlsRoot, { recursive: true, mode: 0o700 });
   chmodSync(tlsRoot, 0o700);
@@ -157,6 +172,10 @@ function createPreviewCertificate(): void {
   );
   chmodSync(tlsRoot, 0o700);
   chmodSync(previewPrivateKey, 0o600);
+}
+
+export function finishRun(): void {
+  deleteStorageBucket();
 }
 
 export function prepareRun(): void {
