@@ -1,6 +1,6 @@
 # ADR-0004: BigBlueButton as the primary conferencing provider
 
-- Status: accepted, 2026-10-20, amended 2026-10-22
+- Status: accepted, 2026-10-20, amended 2026-10-22; host size amended for the pilot by [ADR-0013](0013-pilot-deployment.md)
 - Reviewed: pending line-by-line owner review; amended 2026-10-22 by the owner's decision to move recordings after the MVP: until then OVC creates rooms with `record=false` and registers no recording-ready callback, so no recording exists on the conferencing host (pending owner review)
 - Deciders: project owner
 - Supersedes: [ADR-0003](0003-embedded-video-provider.md) in its choice of primary provider; the decision to embed a provider behind an adapter stands
@@ -28,7 +28,7 @@ Lessons need a shared whiteboard, presentation upload and recordings that partic
 
 ## Consequences
 
-- One dedicated server (8 cores, 16 GB RAM, 500 GB disk with recordings) is operated alongside OVC; it cannot run on developer machines, so all local development and automated tests use the fake provider.
+- One dedicated server (8 cores, 16 GB RAM, 500 GB disk with recordings) is operated alongside OVC, except in the two-tutor pilot, which runs a 4-vCPU host ([ADR-0013](0013-pilot-deployment.md), pending owner review); it cannot run on developer machines, so all local development and automated tests use the fake provider.
 - OVC owns recording storage, its quota and its retention, which makes deletion and access control reliable.
 
 ## Where it is applied

@@ -196,7 +196,8 @@ Settings are read once from the environment into one typed struct in `internal/c
   - hosts in Russia ([ADR-0008](../../docs/decisions/0008-hosting-and-data-residency.md));
   - the API and the worker as small containers built from static Go binaries, behind a TLS reverse proxy that also serves the built frontend;
   - managed PostgreSQL with backups, S3-compatible storage, a Russian SMTP provider;
-  - BigBlueButton 4.0 on a dedicated Ubuntu 24.04 host on a subdomain of the OVC domain.
+  - BigBlueButton 4.0 on a dedicated Ubuntu 24.04 host on a subdomain of the OVC domain;
+  - the first deployment, a pilot of two tutors with one-to-one lessons, deviates on purpose ([ADR-0013](../../docs/decisions/0013-pilot-deployment.md)): PostgreSQL runs on the application VM, reached by the API and the worker over its Unix socket or loopback only, with WAL-G backups to object storage, BigBlueButton runs on a 4-vCPU host, and email goes through Yandex Postbox; the shape above applies once the pilot grows.
 - **Scaling:** one API instance and one worker in the MVP; the `NOTIFY` broadcaster and the leased outbox already allow more of each, provided every pass stops claiming before its leases could expire, which the worker enforces with a claim budget below the lease.
 
 ## Glossary
@@ -229,7 +230,7 @@ Settings are read once from the environment into one typed struct in `internal/c
 |---|---|---|
 | Rendered recording format available on BigBlueButton 4.0, or a protected-recordings load balancer instead; blocks the recordings plan after the MVP | Never serve stock public playback links | Recordings probe after the MVP |
 | Provider retry behavior for non-2xx callback answers; joining with `redirect=false` and a session token; behavior of two joins with the same `userID`; external assets (STUN) the client loads | Reconciliation does not depend on callbacks; join links are never stored | Slice 7 probe |
-| How bounces and complaints arrive from the chosen SMTP provider (webhook or polling) | Undeliverable addresses stop optional emails | Slice 2, with the provider choice |
+| How bounces and complaints arrive from the chosen SMTP provider (webhook or polling); for the pilot, Yandex Postbox events read from Yandex Data Streams ([ADR-0013](../../docs/decisions/0013-pilot-deployment.md)) | Undeliverable addresses stop optional emails | Slice 10, before the first deployment |
 | Embedded client works on all supported browsers | "Open in new tab" always available | Slice 7 probe |
 | Which Russian providers for hosting, storage and SMTP; compared in [hosting research](../research/hosting-2026-10-22.md) | All in Russia | Before first deployment |
 | How downloads get `X-Content-Type-Options: nosniff` when the S3-compatible provider cannot add response headers (for example a proxy in front of signed downloads) | Never serve an upload without `nosniff` ([T-35](../../docs/threat-model.md#threats-and-controls)) | Before first deployment, with the provider probe |

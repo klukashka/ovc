@@ -28,7 +28,7 @@ Proposed reference deployment for every target below: one API instance and one w
 
 ## NFR-4 Reliability
 
-- **NFR-4.1** No acknowledged message, answer, submission, review or grade is lost: each is committed before success is reported.
+- **NFR-4.1** (the two-tutor pilot accepts losing up to about a minute of committed writes if its single VM's disk is lost, [ADR-0013](../decisions/0013-pilot-deployment.md), pending owner review) No acknowledged message, answer, submission, review or grade is lost: each is committed before success is reported.
 - **NFR-4.2** No email or recording copy is lost across process restarts; delivery is at least once with idempotency keys ([ADR-0006](../decisions/0006-background-worker-and-email.md)).
 - **NFR-4.3** A dropped WebSocket reconnects automatically and the client recovers missed data through REST.
 - **NFR-4.4** The API and worker refuse to start on invalid configuration and shut down gracefully, finishing in-flight work.

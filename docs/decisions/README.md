@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Status: amended 2026-10-20 with ADR-0004 to ADR-0012; pending line-by-line owner review.
+Status: amended 2026-10-20 with ADR-0004 to ADR-0012, and 2026-10-22 with ADR-0013; pending line-by-line owner review.
 
 One record per significant decision, in the MADR shape: context, decision, alternatives considered, consequences, where it is applied. Records are numbered in writing order and never renumbered; a record that changes an earlier one says so in its header (`Supersedes` / `Superseded by`), and the earlier record is kept with its status updated ([ADR-0001](0001-record-architecture-decisions.md)).
 
@@ -18,6 +18,7 @@ One record per significant decision, in the MADR shape: context, decision, alter
 | [ADR-0010](0010-quiet-visual-language.md) | Quiet text-first visual language (Golos Text, Literata, olive accent, hairline rules), a sidebar for both roles, computers first | accepted |
 | [ADR-0011](0011-tiered-verification.md) | Tiered verification: checks for trivial changes, one standard reviewer (plus a security reviewer when the security trigger is met) for routine changes, one fresh reviewer per changed layer when a slice completes, and at most one re-review after fixes (amended 2026-10-22, pending owner review) | accepted |
 | [ADR-0012](0012-go-backend.md) | Go backend: huma on net/http, pgx with sqlc, goose migrations, slog, golangci-lint; frontend unchanged | accepted |
+| [ADR-0013](0013-pilot-deployment.md) | Pilot deployment for two tutors with one-to-one lessons: one Yandex Cloud VM with PostgreSQL and WAL-G backups, a 4-vCPU VK Cloud BigBlueButton host, Yandex Postbox email | accepted |
 
 ## Writing a new record
 

@@ -73,6 +73,7 @@ Evidence for [ADR-0004](../../docs/decisions/0004-bigbluebutton-primary-provider
 Each item is unverified and is answered by the slice 7 probe on a remote test server, with the result recorded in this file.
 
 - With `record=false`, `autoStartRecording=false` and `allowStartStopRecording=false` (OVC's MVP settings, decided 2026-10-22): a moderator sees no start-recording control, the server refuses to start one, and `getRecordings` with `state=any` is empty after the meeting.
+- Capacity of the pilot host ([ADR-0013](../../docs/decisions/0013-pilot-deployment.md)): CPU, memory and audio quality on 4 vCPU / 8 GB with two simultaneous one-to-one lessons with webcams, and the VM's bandwidth against the official 250 Mbit/s.
 - The exact names and effect of the host settings that disable recording by default (`disableRecordingDefault`) and turn off meeting event retention, so the host keeps no raw meeting events.
 - The provider's retry behavior when a callback receives a non-2xx answer.
 - Whether `join` with `redirect=false` and the returned session token can replace handing the browser a reusable join URL.

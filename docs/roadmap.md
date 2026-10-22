@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10, slice reviews and the Go backend added the same day, slice 1 adjusted on 2026-10-21 (sqlc and `ovc-admin` moved to slice 2); slice 1 closed and follow-up items placed in slices 2, 8 and 10 on 2026-10-21 after its slice review; parts of FR-1 and FR-16 moved from slice 2 to slices 3 and 4 the same day with the slice 2 plan; recordings and analytics moved after the MVP on 2026-10-22 by the owner's decision; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10, slice reviews and the Go backend added the same day, slice 1 adjusted on 2026-10-21 (sqlc and `ovc-admin` moved to slice 2); slice 1 closed and follow-up items placed in slices 2, 8 and 10 on 2026-10-21 after its slice review; parts of FR-1 and FR-16 moved from slice 2 to slices 3 and 4 the same day with the slice 2 plan; recordings and analytics moved after the MVP on 2026-10-22 by the owner's decision, and the pilot deployment items added to slices 7 and 10 the same day (ADR-0013); pending line-by-line owner review.
 
 Build order, slice by slice. Each slice is runnable and reviewable on its own and ends with its checks registered in the [development guide](development.md). A slice is done when:
 
@@ -56,7 +56,7 @@ FR-12, FR-14, the message digest. Direct and group channels, messages with attac
 
 FR-5.1 to FR-5.3; recordings (FR-5.4 to FR-5.6) come after the MVP.
 
-- **Probe first:** run the BigBlueButton probe on a remote test server (embedding on every supported browser) and record the results in the [research file](../knowledge/research/bigbluebutton-2026-10-20.md).
+- **Probe first:** run the BigBlueButton probe on a remote test server (embedding on every supported browser, and the pilot host's capacity on 4 vCPU / 8 GB with two simultaneous one-to-one lessons with webcams, [ADR-0013](decisions/0013-pilot-deployment.md)) and record the results in the [research file](../knowledge/research/bigbluebutton-2026-10-20.md).
 - **Then build:** the BigBlueButton and fake adapters with shared contract tests, meetings and join links, the callbacks and reconciliation that lesson status needs, and the embedded room with the new-tab fallback.
 
 ## Slice 8: library and builder
@@ -76,6 +76,7 @@ FR-11.1, FR-15; analytics (FR-11.2 to FR-11.4) come after the MVP.
 - **Product:** results for students; Today with the first-run checklist; Home with the tutor filter.
 - **Phone layouts:** dedicated phone layouts for every page and the phone navigation frame, replacing the interim one-column fallback ([ADR-0010](decisions/0010-quiet-visual-language.md)).
 - **Hardening:** the accessibility pass, performance baselines and budgets for the non-functional requirements, and all four pilot scenarios passing in their MVP form.
+- **Pilot deployment** ([ADR-0013](decisions/0013-pilot-deployment.md)): WAL-G backups of the application VM's PostgreSQL with a 30-day window, the encryption key kept off the VM and a restore tested on a fresh VM from it, the non-superuser database role and bounded PostgreSQL logs, the bounce intake from Yandex Postbox's Data Streams events, the host firewall and loopback-only PostgreSQL, and confirmation that Postbox keeps message logs for at most 30 days, before the first deployment.
 - **Production serving** (before OVC is first deployed, at the latest here): the reverse proxy reproduces the page headers from `frontend/security-headers.ts`, caches hashed assets for a long time, compresses responses, answers the Go server's own protocol errors, redacts token segments in its access logs and never forwards `/__test__/`; Home stops polling the database-pinging readiness route; icons grow to 20 px on phones; the log queue keeps warnings and errors ahead of access records under a flood ([slice 1 review](../knowledge/reviews/slice-1-review.md#carried-over)).
 
 ## After the MVP
