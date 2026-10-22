@@ -16,7 +16,7 @@ One record per significant decision, in the MADR shape: context, decision, alter
 | [ADR-0008](0008-hosting-and-data-residency.md) | All user data hosted in Russia; S3-compatible storage in the MVP; no foreign data processors | accepted |
 | [ADR-0009](0009-owner-approved-exceptions-and-visibility.md) | Owner-approved exceptions (credentials in URLs, adapter state in PostgreSQL, closing slow sockets), product refinements, and tutor-only scores | accepted |
 | [ADR-0010](0010-quiet-visual-language.md) | Quiet text-first visual language (Golos Text, Literata, olive accent, hairline rules), a sidebar for both roles, computers first | accepted |
-| [ADR-0011](0011-tiered-verification.md) | Tiered verification: checks for trivial changes, one standard reviewer (plus a security reviewer when the security trigger is met) for routine changes, the full component-by-profile review when a slice completes | accepted |
+| [ADR-0011](0011-tiered-verification.md) | Tiered verification: checks for trivial changes, one standard reviewer (plus a security reviewer when the security trigger is met) for routine changes, one fresh reviewer per changed layer when a slice completes, and at most one re-review after fixes (amended 2026-10-22, pending owner review) | accepted |
 | [ADR-0012](0012-go-backend.md) | Go backend: huma on net/http, pgx with sqlc, goose migrations, slog, golangci-lint; frontend unchanged | accepted |
 
 ## Writing a new record

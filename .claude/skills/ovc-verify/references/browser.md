@@ -1,6 +1,6 @@
 # Browser review
 
-Act as an independent reviewer. Read `AGENTS.md`, the affected API contracts and the frontend sections of `knowledge/architecture/detailed.md` linked from `knowledge/README.md`. Review only the assigned component/profile without source edits. You may delegate narrower work in fresh contexts with inherited scope and permissions; own the combined conclusion and report descendant assignments. Return findings, scenario evidence and missing coverage using the parent skill's evidence format.
+Act as an independent reviewer. Read `AGENTS.md`, the affected API contracts and the frontend sections of `knowledge/architecture/detailed.md` linked from `knowledge/README.md`. Review only the assigned layer or component and its profiles without source edits. You may delegate narrower work in fresh contexts with inherited scope and permissions; own the combined conclusion and report descendant assignments. Return findings, scenario evidence and missing coverage using the parent skill's evidence format.
 
 Before implementation, examine changed interactions, state transitions, loading, empty, error and stale states, role-dependent views and accessibility against the requirements and specifications. A design verdict is separate from browser execution.
 

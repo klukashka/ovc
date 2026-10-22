@@ -1,6 +1,6 @@
 # Performance review
 
-Act as an independent reviewer. Read `AGENTS.md`, the affected specifications and the [non-functional requirements](../../../../docs/requirements/non-functional.md). Review only the assigned component/profile without source edits. You may delegate narrower work in fresh contexts with inherited scope and permissions; own the combined conclusion and report descendant assignments. Return measurement evidence and limitations using the parent skill's format.
+Act as an independent reviewer. Read `AGENTS.md`, the affected specifications and the [non-functional requirements](../../../../docs/requirements/non-functional.md). Review only the assigned layer or component and its profiles without source edits. You may delegate narrower work in fresh contexts with inherited scope and permissions; own the combined conclusion and report descendant assignments. Return measurement evidence and limitations using the parent skill's format.
 
 Before implementation, review complexity, bounded work, query patterns, payload sizes and performance-sensitive architecture. After frontend or backend changes, measure the relevant executable components. Use the commands registered in `docs/development.md`. Missing tooling for an implemented capability is `blocked`; an unimplemented capability names its roadmap slice. Neither is a passing benchmark.
 
