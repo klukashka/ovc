@@ -19,6 +19,11 @@ sql:
               pointer: true
           - db_type: citext
             go_type: string
+          - db_type: citext
+            nullable: true
+            go_type:
+              type: string
+              pointer: true
           - column: users.id
             go_type:
               import: ovc/backend/internal/domain
@@ -45,6 +50,117 @@ sql:
               import: ovc/backend/internal/domain
               type: Theme
           - column: tutor_profiles.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: tutor_profiles.code
+            go_type:
+              import: ovc/backend/internal/domain
+              type: TutorCode
+          - column: relationships.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: RelationshipID
+          - column: relationships.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: relationships.student_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+              pointer: true
+          - column: relationships.state
+            go_type:
+              import: ovc/backend/internal/domain
+              type: RelationshipState
+          - column: relationships.discard_reason
+            go_type:
+              import: ovc/backend/internal/domain
+              type: DiscardReason
+              pointer: true
+          - column: relationships.ended_by
+            go_type:
+              import: ovc/backend/internal/domain
+              type: EndedBy
+              pointer: true
+          - column: relationships.colour
+            go_type:
+              import: ovc/backend/internal/domain
+              type: Colour
+              pointer: true
+          - column: invitations.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: InvitationID
+          - column: invitations.relationship_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: RelationshipID
+          - column: invitations.bound_student_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+              pointer: true
+          - column: invitations.used_by
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+              pointer: true
+          - column: invitations.revoke_reason
+            go_type:
+              import: ovc/backend/internal/domain
+              type: RevokeReason
+              pointer: true
+          - column: join_requests.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: JoinRequestID
+          - column: join_requests.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: join_requests.student_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: join_requests.state
+            go_type:
+              import: ovc/backend/internal/domain
+              type: JoinRequestState
+          - column: join_requests.suppressed
+            go_type:
+              import: ovc/backend/internal/domain
+              type: Suppression
+          - column: blocked_requesters.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: blocked_requesters.student_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: groups.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: GroupID
+          - column: groups.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: groups.colour
+            go_type:
+              import: ovc/backend/internal/domain
+              type: Colour
+          - column: group_members.group_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: GroupID
+          - column: group_members.relationship_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: RelationshipID
+          - column: group_members.tutor_id
             go_type:
               import: ovc/backend/internal/domain
               type: UserID

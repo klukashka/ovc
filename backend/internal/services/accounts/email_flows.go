@@ -132,7 +132,7 @@ func (s *Service) Register(ctx context.Context, registration Registration, addre
 		created = true
 		err = repos.TutorProfiles.Create(ctx, repositories.NewTutorProfile{
 			UserID: user, FileQuotaBytes: s.deps.TutorQuotas.FileBytes, RecordingQuotaBytes: s.deps.TutorQuotas.RecordingBytes, CreatedAt: now,
-		})
+		}, s.deps.Random)
 		if err != nil {
 			return err
 		}

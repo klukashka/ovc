@@ -29,6 +29,16 @@ func New(tb testing.TB) *Database {
 	return NewNamed(tb, "ovc_"+core.NewRandomID()[:12]+"_test", true)
 }
 
+func NewMigratedTo(tb testing.TB, version int64) *Database {
+	tb.Helper()
+	database := NewNamed(tb, "ovc_"+core.NewRandomID()[:12]+"_test", false)
+	runMigrations(tb, database.Pool, func(ctx context.Context, provider *goose.Provider) error {
+		_, err := provider.UpTo(ctx, version)
+		return err
+	})
+	return database
+}
+
 func NewNamed(tb testing.TB, name string, migrate bool) *Database {
 	tb.Helper()
 	admin, err := core.TestDatabaseAdminURLFromEnvironment()
@@ -98,6 +108,14 @@ func withDatabaseName(admin core.Secret, name string) (core.Secret, error) {
 
 func applyMigrations(tb testing.TB, pool *pgxpool.Pool) {
 	tb.Helper()
+	runMigrations(tb, pool, func(ctx context.Context, provider *goose.Provider) error {
+		_, err := provider.Up(ctx)
+		return err
+	})
+}
+
+func runMigrations(tb testing.TB, pool *pgxpool.Pool, apply func(context.Context, *goose.Provider) error) {
+	tb.Helper()
 	database := stdlib.OpenDBFromPool(pool)
 	defer func() {
 		if err := database.Close(); err != nil {
@@ -112,7 +130,7 @@ func applyMigrations(tb testing.TB, pool *pgxpool.Pool) {
 	if err != nil {
 		tb.Fatalf("create migration provider: %v", err)
 	}
-	if _, err := provider.Up(context.Background()); err != nil {
+	if err := apply(context.Background(), provider); err != nil {
 		tb.Fatalf("apply migrations: %s", core.ErrorKind(err))
 	}
 }

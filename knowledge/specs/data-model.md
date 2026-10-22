@@ -130,6 +130,7 @@ No column follows the student's account name: after a student's purge the tutor'
 Constraints and indexes:
 
 - `invited` requires `student_id` to be null; `provisional`, `reclaim_pending`, `active` and `ended` require it to be set; `discarded` allows either;
+- `colour` and `linked_at` are null while `invited` and set in `provisional`, `reclaim_pending`, `active` and `ended`, since the colour is chosen at linking time; a `discarded` row keeps whatever it had;
 - unique `(tutor_id, student_id)` where `student_id` is not null and the state is not `discarded`;
 - unique `(tutor_id, email)` where `email` is not null and the state is not `discarded`;
 - unique `(student_id)` where the state is `provisional`, so an account holds at most one provisional link;
@@ -152,12 +153,13 @@ Constraints and indexes:
 | `send_count` | emails sent for this invitation; part of the email's idempotency key |
 
 - One open invitation per card: unique `(relationship_id)` where `used_at` and `revoked_at` are null; also indexes on `relationship_id`, `bound_student_id` and `used_by`.
-- Consumption is one conditional update on `used_at is null and revoked_at is null and expires_at > now`, which also sets the ciphertext to null. The mismatch counter is one conditional update that increments `mismatch_count` and, at 5, revokes the invitation and clears its ciphertext.
+- Consumption is one conditional update on `used_at is null and revoked_at is null and expires_at > now` and, for a bound invitation, `bound_student_id` equal to the consuming account, which also sets the ciphertext to null; a wrong account never spends a bound link. The mismatch counter is one conditional update on the presented token's hash, under the same open and unexpired conditions, that increments `mismatch_count` and, at 5, revokes the invitation and clears its ciphertext. Revoking a card's open invitation is scoped to the card's tutor.
 - Partial index on `expires_at` where `token_encrypted` is not null, for `invitations.expire`.
+- Checks: an invitation is never both used and revoked; `used_by` is set only on a used one (and falls to null when that account is purged); `mismatch_count` is 5 exactly when the invitation was revoked for `mismatch_limit`.
 
 ### Join request and blocked requester
 
-- **Join request:** `id`, `tutor_id` (the tutor profile, `ON DELETE CASCADE`), `student_id` (the user, `ON DELETE CASCADE`), `state` (`held`, `pending`, `accepted`, `declined`, `expired`), `suppressed` (`none`, `blocked`, `limit`), `owner_choice_pending` (boolean, only while `held`: the request waits for the owner's choice after a reclaim), `expires_at`, `decided_at`, `created_at`. `suppressed` is other than `none` only while `pending`. Indexes:
+- **Join request:** `id`, `tutor_id` (the tutor profile, `ON DELETE CASCADE`), `student_id` (the user, `ON DELETE CASCADE`), `state` (`held`, `pending`, `accepted`, `declined`, `expired`), `suppressed` (`none`, `blocked`, `limit`), `owner_choice_pending` (boolean, only while `held`: the request waits for the owner's choice after a reclaim), `expires_at`, `decided_at`, `created_at`. `suppressed` is other than `none` only while `pending`, and `decided_at` is set exactly when the request is `accepted`, `declined` or `expired` (for an expiry, the time it expired). Indexes:
   - unique `(tutor_id, student_id)` where the state is `held` or `pending`;
   - partial `(expires_at)` where the state is `held` or `pending`, for `join_requests.expire`;
   - partial `(tutor_id, created_at, id)` where `state = 'pending' and suppressed = 'none'`, for the tutor's list and the limit of 50;
@@ -167,8 +169,8 @@ Constraints and indexes:
 
 ### Group and group member
 
-- **Group:** `id`, `tutor_id` (the tutor profile, `ON DELETE CASCADE`), `name` (1–60 characters), `colour`, `archived_at`, `create_key`; an index on `tutor_id` and unique `(tutor_id, create_key)` where `create_key` is not null. At most 200 per tutor, archived ones included.
-- **Group member:** `group_id` and `relationship_id` (both cascading), `added_at`; primary key on the pair, and an index on `relationship_id`.
+- **Group:** `id`, `tutor_id` (the tutor profile, `ON DELETE CASCADE`), `name` (1–60 characters), `colour`, `archived_at`, `create_key`; an index on `tutor_id`, unique `(id, tutor_id)` for the membership key, and unique `(tutor_id, create_key)` where `create_key` is not null. At most 200 per tutor, archived ones included.
+- **Group member:** `group_id`, `relationship_id`, `tutor_id` and `added_at`; `(group_id, tutor_id)` references the group's `(id, tutor_id)` and `(relationship_id, tutor_id)` the relationship's `(id, tutor_id)`, both cascading, so a group can only hold its own tutor's relationships; primary key on `(group_id, relationship_id)`, and an index on `relationship_id`. The relationship table carries a unique `(id, tutor_id)` for this key.
 
 ## Schedule
 

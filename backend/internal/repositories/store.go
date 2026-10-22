@@ -22,6 +22,9 @@ type Repositories struct {
 	Attachments   Attachments
 	Outbox        Outbox
 	JobRuns       JobRuns
+	Relationships Relationships
+	Invitations   Invitations
+	JoinRequests  JoinRequests
 }
 
 type Store struct {
@@ -56,6 +59,9 @@ func newRepositories(queries *dbgen.Queries) Repositories {
 		Attachments:   Attachments{queries: queries},
 		Outbox:        Outbox{queries: queries},
 		JobRuns:       JobRuns{queries: queries},
+		Relationships: Relationships{queries: queries},
+		Invitations:   Invitations{queries: queries},
+		JoinRequests:  JoinRequests{queries: queries},
 	}
 }
 

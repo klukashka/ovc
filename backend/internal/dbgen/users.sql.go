@@ -50,26 +50,32 @@ func (q *Queries) ConfirmUserEmail(ctx context.Context, arg ConfirmUserEmailPara
 	return result.RowsAffected(), nil
 }
 
-const createTutorProfile = `-- name: CreateTutorProfile :exec
-INSERT INTO tutor_profiles (user_id, file_quota_bytes, recording_quota_bytes, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $4)
+const createTutorProfileIfCodeFree = `-- name: CreateTutorProfileIfCodeFree :execrows
+INSERT INTO tutor_profiles (user_id, code, file_quota_bytes, recording_quota_bytes, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $5)
+ON CONFLICT (code) DO NOTHING
 `
 
-type CreateTutorProfileParams struct {
+type CreateTutorProfileIfCodeFreeParams struct {
 	UserID              domain.UserID
+	Code                domain.TutorCode
 	FileQuotaBytes      int64
 	RecordingQuotaBytes int64
 	CreatedAt           time.Time
 }
 
-func (q *Queries) CreateTutorProfile(ctx context.Context, arg CreateTutorProfileParams) error {
-	_, err := q.db.Exec(ctx, createTutorProfile,
+func (q *Queries) CreateTutorProfileIfCodeFree(ctx context.Context, arg CreateTutorProfileIfCodeFreeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, createTutorProfileIfCodeFree,
 		arg.UserID,
+		arg.Code,
 		arg.FileQuotaBytes,
 		arg.RecordingQuotaBytes,
 		arg.CreatedAt,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const createUser = `-- name: CreateUser :exec
@@ -173,7 +179,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id domain.UserID) (int64, erro
 }
 
 const getTutorProfile = `-- name: GetTutorProfile :one
-SELECT user_id, bio, subjects, recording_retention_days, file_quota_bytes, recording_quota_bytes, file_usage_bytes, recording_usage_bytes, onboarding_dismissed_at, created_at, updated_at FROM tutor_profiles WHERE user_id = $1
+SELECT user_id, bio, subjects, recording_retention_days, file_quota_bytes, recording_quota_bytes, file_usage_bytes, recording_usage_bytes, onboarding_dismissed_at, created_at, updated_at, code FROM tutor_profiles WHERE user_id = $1
 `
 
 func (q *Queries) GetTutorProfile(ctx context.Context, userID domain.UserID) (TutorProfile, error) {
@@ -191,12 +197,13 @@ func (q *Queries) GetTutorProfile(ctx context.Context, userID domain.UserID) (Tu
 		&i.OnboardingDismissedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Code,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, role, state, state_before_block, email, email_verified_at, password_hash, name, language, timezone, theme, consent_version, consent_at, unverified_since, deleted_at, created_at, updated_at FROM users WHERE email = $1
+SELECT id, role, state, state_before_block, email, email_verified_at, password_hash, name, language, timezone, theme, consent_version, consent_at, unverified_since, deleted_at, created_at, updated_at, reclaim_until FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -220,12 +227,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ReclaimUntil,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, role, state, state_before_block, email, email_verified_at, password_hash, name, language, timezone, theme, consent_version, consent_at, unverified_since, deleted_at, created_at, updated_at FROM users WHERE id = $1
+SELECT id, role, state, state_before_block, email, email_verified_at, password_hash, name, language, timezone, theme, consent_version, consent_at, unverified_since, deleted_at, created_at, updated_at, reclaim_until FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id domain.UserID) (User, error) {
@@ -249,6 +257,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id domain.UserID) (User, erro
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ReclaimUntil,
 	)
 	return i, err
 }

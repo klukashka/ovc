@@ -2,9 +2,11 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"ovc/backend/internal/core"
 	"ovc/backend/internal/dbgen"
 	"ovc/backend/internal/domain"
 )
@@ -13,7 +15,6 @@ type (
 	User              = dbgen.User
 	NewUser           = dbgen.CreateUserParams
 	TutorProfile      = dbgen.TutorProfile
-	NewTutorProfile   = dbgen.CreateTutorProfileParams
 	Session           = dbgen.Session
 	NewSession        = dbgen.CreateSessionParams
 	SessionRotation   = dbgen.RotateSessionParams
@@ -89,8 +90,33 @@ type TutorProfiles struct {
 	queries *dbgen.Queries
 }
 
-func (r TutorProfiles) Create(ctx context.Context, profile NewTutorProfile) error {
-	return done(r.queries.CreateTutorProfile(ctx, profile), "create tutor profile")
+type NewTutorProfile struct {
+	UserID              domain.UserID
+	FileQuotaBytes      int64
+	RecordingQuotaBytes int64
+	CreatedAt           time.Time
+}
+
+const tutorCodeAttempts = 5
+
+var ErrTutorCodesExhausted = errors.New("every minted tutor code was already taken")
+
+func (r TutorProfiles) Create(ctx context.Context, profile NewTutorProfile, random core.RandomSource) error {
+	for range tutorCodeAttempts {
+		code, err := core.NewTutorCode(random)
+		if err != nil {
+			return fmt.Errorf("create tutor profile: %w", err)
+		}
+		rows, err := r.queries.CreateTutorProfileIfCodeFree(ctx, dbgen.CreateTutorProfileIfCodeFreeParams{
+			UserID: profile.UserID, Code: code, FileQuotaBytes: profile.FileQuotaBytes, RecordingQuotaBytes: profile.RecordingQuotaBytes,
+			CreatedAt: profile.CreatedAt,
+		})
+		inserted, err := applied(rows, err, "create tutor profile")
+		if err != nil || inserted {
+			return err
+		}
+	}
+	return fmt.Errorf("create tutor profile: %w", ErrTutorCodesExhausted)
 }
 
 func (r TutorProfiles) ByUser(ctx context.Context, id domain.UserID) (TutorProfile, error) {

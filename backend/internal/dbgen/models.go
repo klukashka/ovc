@@ -37,6 +37,12 @@ type AttachmentReference struct {
 	CreatedAt    time.Time
 }
 
+type BlockedRequester struct {
+	TutorID   domain.UserID
+	StudentID domain.UserID
+	CreatedAt time.Time
+}
+
 type EmailRequest struct {
 	ID        domain.EmailRequestID
 	UserID    domain.UserID
@@ -55,10 +61,56 @@ type EmailToken struct {
 	CreatedAt time.Time
 }
 
+type Group struct {
+	ID         domain.GroupID
+	TutorID    domain.UserID
+	Name       string
+	Colour     domain.Colour
+	ArchivedAt *time.Time
+	CreateKey  *string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+type GroupMember struct {
+	GroupID        domain.GroupID
+	RelationshipID domain.RelationshipID
+	TutorID        domain.UserID
+	AddedAt        time.Time
+}
+
+type Invitation struct {
+	ID             domain.InvitationID
+	RelationshipID domain.RelationshipID
+	TokenHash      []byte
+	TokenEncrypted []byte
+	BoundStudentID *domain.UserID
+	ExpiresAt      time.Time
+	UsedAt         *time.Time
+	UsedBy         *domain.UserID
+	RevokedAt      *time.Time
+	RevokeReason   *domain.RevokeReason
+	MismatchCount  int16
+	SendCount      int16
+	CreatedAt      time.Time
+}
+
 type JobRun struct {
 	Job        domain.JobName
 	LastRunAt  time.Time
 	LastResult domain.JobResult
+}
+
+type JoinRequest struct {
+	ID                 domain.JoinRequestID
+	TutorID            domain.UserID
+	StudentID          domain.UserID
+	State              domain.JoinRequestState
+	Suppressed         domain.Suppression
+	OwnerChoicePending bool
+	ExpiresAt          time.Time
+	DecidedAt          *time.Time
+	CreatedAt          time.Time
 }
 
 type MailSink struct {
@@ -97,6 +149,25 @@ type RateLimitCounter struct {
 	Count       int32
 }
 
+type Relationship struct {
+	ID            domain.RelationshipID
+	TutorID       domain.UserID
+	StudentID     *domain.UserID
+	State         domain.RelationshipState
+	DiscardReason *domain.DiscardReason
+	EndedBy       *domain.EndedBy
+	DisplayName   string
+	Email         *string
+	Colour        *domain.Colour
+	Notes         string
+	CreateKey     *string
+	LinkedAt      *time.Time
+	EndedAt       *time.Time
+	DiscardedAt   *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
 type Session struct {
 	ID          domain.SessionID
 	UserID      domain.UserID
@@ -125,6 +196,7 @@ type TutorProfile struct {
 	OnboardingDismissedAt  *time.Time
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
+	Code                   domain.TutorCode
 }
 
 type User struct {
@@ -145,4 +217,5 @@ type User struct {
 	DeletedAt        *time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	ReclaimUntil     *time.Time
 }

@@ -58,6 +58,10 @@ func (r *countingRandom) Read(buffer []byte) (int, error) {
 	return len(buffer), nil
 }
 
+func tutorCodeSource(user domain.UserID) *countingRandom {
+	return &countingRandom{counter: binary.BigEndian.Uint64(user[:8])}
+}
+
 type passwordAge int
 
 const (
@@ -177,7 +181,7 @@ func (h *authHarness) seedUserAs(t *testing.T, role domain.Role, id byte, email 
 	if role == domain.RoleTutor {
 		err = h.store.Repositories().TutorProfiles.Create(context.Background(), repositories.NewTutorProfile{
 			UserID: user, FileQuotaBytes: 5_000_000_000, RecordingQuotaBytes: 50_000_000_000, CreatedAt: authStart,
-		})
+		}, tutorCodeSource(user))
 		if err != nil {
 			t.Fatal(err)
 		}

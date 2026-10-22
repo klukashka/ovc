@@ -195,7 +195,7 @@ func (h *authHarness) seedUnverifiedTutor(t *testing.T, user domain.UserID, emai
 	}
 	err = h.store.Repositories().TutorProfiles.Create(context.Background(), repositories.NewTutorProfile{
 		UserID: user, FileQuotaBytes: 5_000_000_000, RecordingQuotaBytes: 50_000_000_000, CreatedAt: created,
-	})
+	}, tutorCodeSource(user))
 	if err != nil {
 		t.Fatal(err)
 	}

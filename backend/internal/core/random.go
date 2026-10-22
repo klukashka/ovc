@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+
+	"ovc/backend/internal/domain"
 )
 
 type RandomSource io.Reader
@@ -32,4 +34,20 @@ func RandomFraction(random RandomSource) (float64, error) {
 		value = value<<8 | uint64(part)
 	}
 	return float64(value>>11) / float64(uint64(1)<<53), nil
+}
+
+func NewTutorCode(random RandomSource) (domain.TutorCode, error) {
+	alphabet := domain.TutorCodeAlphabet
+	unbiasedBelow := 256 - 256%len(alphabet)
+	code := make([]byte, 0, domain.TutorCodeLength)
+	var drawn [1]byte
+	for len(code) < domain.TutorCodeLength {
+		if _, err := io.ReadFull(random, drawn[:]); err != nil {
+			return "", fmt.Errorf("read random tutor code: %w", err)
+		}
+		if int(drawn[0]) < unbiasedBelow {
+			code = append(code, alphabet[int(drawn[0])%len(alphabet)])
+		}
+	}
+	return domain.TutorCode(code), nil
 }

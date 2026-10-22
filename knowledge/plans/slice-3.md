@@ -1,6 +1,6 @@
 # Slice 3 implementation plan: tutors, students and groups
 
-Revision 5, written on 2026-10-22 against `main` at `c2d5c15` ("Record the slice 2 review and close the slice"), which is also the base of the slice 3 review. It lands as `knowledge/plans/slice-3.md` in the first change. Revisions 2 to 5 record the owner's decisions of 2026-10-22, the reclaim choice, student-initiated ending, and the corrections from the planning reviews; the changelog at the end lists what changed. Identifiers D1 to D31 (decisions), K1 to K40 (conflicts and silences) and S0 to F4 (changes) are defined in this file.
+Revision 6, written on 2026-10-22 against `main` at `c2d5c15` ("Record the slice 2 review and close the slice"), which is also the base of the slice 3 review. It lands as `knowledge/plans/slice-3.md` in the first change. Revisions 2 to 5 record the owner's decisions of 2026-10-22, the reclaim choice, student-initiated ending, and the corrections from the planning reviews; revision 6 records where work moved between changes while the schema change was implemented; the changelog at the end lists what changed. Identifiers D1 to D31 (decisions), K1 to K40 (conflicts and silences) and S0 to F4 (changes) are defined in this file.
 
 ## Open owner questions
 
@@ -145,7 +145,7 @@ None. The four questions revision 2 opened were answered by the owner on 2026-10
 - **`join_requests`**: `id`; `tutor_id` → `tutor_profiles ON DELETE CASCADE`; `student_id` → `users ON DELETE CASCADE`; `state` in (`held`, `pending`, `accepted`, `declined`, `expired`); `suppressed` in (`none`, `blocked`, `limit`); `owner_choice_pending boolean`; `expires_at`, `decided_at`, `created_at`. Checks: `owner_choice_pending` only while `held`; `suppressed <> 'none'` only while `pending`. Indexes: unique `(tutor_id, student_id)` where `state IN ('held', 'pending')`; partial `(expires_at)` where `state IN ('held', 'pending')`; partial `(tutor_id, created_at, id)` where `state = 'pending' AND suppressed = 'none'` (the tutor list and the limit count); partial `(tutor_id, created_at, id)` where `state = 'pending' AND suppressed = 'limit'` (un-suppression); `(tutor_id)`; `(student_id, created_at DESC, id DESC)`.
 - **`blocked_requesters`**: `tutor_id`, `student_id` (both cascade), `created_at`; primary key on the pair; `(tutor_id, created_at DESC, student_id)`; `(student_id)`.
 - **`groups`**: `id`; `tutor_id` → `tutor_profiles ON DELETE CASCADE`; `name` 1–60; `colour`; `archived_at`; `create_key`; `created_at`, `updated_at`; `(tutor_id)`; unique `(tutor_id, create_key)`.
-- **`group_members`**: `group_id` → `groups ON DELETE CASCADE`, `relationship_id` → `relationships ON DELETE CASCADE`, `added_at`; primary key on the pair; `(relationship_id)`.
+- **`group_members`**: `group_id`, `relationship_id`, `tutor_id`, `added_at`; `(group_id, tutor_id)` → `groups (id, tutor_id) ON DELETE CASCADE` and `(relationship_id, tutor_id)` → `relationships (id, tutor_id) ON DELETE CASCADE`, backed by unique `(id, tutor_id)` on both parent tables, so a group can never hold another tutor's relationship; primary key on `(group_id, relationship_id)`; `(relationship_id)`.
 - **Purge.** Student purge: clears `student_id` and `email` on every relationship row of the student, discarded ones included, and discards the non-discarded ones (`student_purged`), keeping `ended_at` and `ended_by`; a provisional or reclaim-pending link of a purged unverified account is discarded with the removal effects (D6); deletes their memberships, join requests, blocked-requester rows and bound invitations; `used_by` falls to null. Tutor purge: runs in batches of 500 rows per transaction (each locking the user row and re-checking `deleted`), deleting group members, groups, invitations, join requests, blocked requesters and relationships, then the final transaction deletes the profile and the user; every cascading foreign key is indexed.
 - **sqlc queries** in `queries/relationships.sql`, `invitations.sql`, `join_requests.sql`, `groups.sql` and `users.sql`; every list is keyset ordered; every scoped read takes `tutor_id` or `student_id` as a parameter; groups per card and the first five members per group are each one batched query (`= ANY($ids)` with a window function), never one query per row.
 
@@ -304,12 +304,12 @@ One branch and one commit each; "∥" marks changes that can run in parallel onc
 | S0 | `docs/slice-3-plan` | This plan as `knowledge/plans/slice-3.md`; roadmap placements of the deferred items | — |
 | S1 | `docs/student-onboarding-contract` | Everything in 4.9 at contract level | S0 |
 | S2 | `fix/purge-race-test-settles-upload` | The carried-over test fix | — ∥ all |
-| S3 | `feat/tutoring-schema` | Migration 00004 with the code backfill, queries, `dbgen`, repositories, domain types and rules | S1 |
+| S3 | `feat/tutoring-schema` | Migration 00004 with the code backfill and the composite group-membership keys, queries, `dbgen`, repositories, domain types and rules; code minting at tutor sign-up | S1 |
 | S4 | `feat/field-encryption-key` | `FieldCipher` and the new setting, wired into tests and the end-to-end harness | S1 ∥ S3 |
-| S5 | `feat/tutor-code-and-role-audiences` | Role audiences and the gate; code at sign-up, `GET /tutor/code`, regenerate; the denial guard test | S3 |
+| S5 | `feat/tutor-code-and-role-audiences` | Role audiences and the gate; `GET /tutor/code`, regenerate; the denial guard test | S3 |
 | S6 | `feat/student-cards-and-invitation-links` | Cards, link invitations, `GET /invitations/{token}`, card limits, `create_key`, `invitations.expire` | S4, S5 |
 | S7 | `feat/invitation-emails` | `invitation/send`, the email, budgets and the silent cap | S6 |
-| S8a | `feat/invitation-sign-up-and-provisional-links` | New-account acceptance, provisional links, email binding and the mismatch limit, the confirmation effects and outcome for the account's own browser; and every control a provisional link needs from the moment it exists: `remove`, the 7-day cleanup and the immediate purge of linked unconfirmed accounts, the student side of `OnAccountPurged` | S7 |
+| S8a | `feat/invitation-sign-up-and-provisional-links` | New-account acceptance, provisional links, email binding and the mismatch limit, the confirmation effects and outcome for the account's own browser, with the API outcome enum (`choice_required` replacing `invitation_invalid` in `internal/schemas/accounts.go` and the generated client) and the error code `relationship_not_provisional`; and every control a provisional link needs from the moment it exists: `remove`, the 7-day cleanup and the immediate purge of linked unconfirmed accounts, the student side of `OnAccountPurged` | S7 |
 | S8b | `feat/signed-in-acceptance-and-my-tutors` | Signed-in acceptance with the session re-check, merge, reactivation by invitation, `GET /tutors` | S8a |
 | S8c | `feat/reclaim-choice` | The `reclaim_pending` state and its transitions, `owner_choice_pending`, `users.reclaim_until`, `GET`/`POST /users/me/reclaim`, `reclaim_pending` on `GET /users/me`, `reclaim.expire` | S8b |
 | S9 | `feat/join-requests` | Code entry, held and suppressed requests, student sign-up with a code, both lists, decisions, block, unblock, `join_requests.expire` | S8c |
@@ -441,3 +441,16 @@ Revision 5 (2026-10-22):
 - Tutor deletion revokes every open invitation of the tutor; student purge clears the card email and keeps `ended_at` and `ended_by`; withdrawal refusals and the API refusal order made explicit.
 - Invitation acceptance (signed in or through a merge) can accept a visible pending request, so it joins the un-suppression and lock-order lists and `TestSlotFreeingPathsFollowTheLockOrder`. Tutor deletion's discard and revoke steps run after its locks, so no invited card or open invitation of the deleted tutor remains.
 - The session re-check also names the unverified tutor writes; password change and deletion stay guarded by the password-hash comparison. The ended email to the tutor uses the card name, escaped, never the current account name. Named the withdrawal, unverified-recipient dispatch, ended-card link and purge tests.
+
+Revision 6 (2026-10-22):
+
+- Moved code minting at tutor sign-up from S5 to S3: the migration makes `tutor_profiles.code` `NOT NULL`, so slice 2 sign-up could not create a profile without a code. The owner approved the move on 2026-10-22. S5 keeps `GET /tutor/code` and regeneration.
+- Moved the error code `relationship_not_provisional` and the API outcome enum, `choice_required` replacing `invitation_invalid` in `internal/schemas/accounts.go` and the generated frontend client, to S8a, where removal and confirmation outcomes are first produced. S3 changes only the domain enum and the precedence rule, so the API document stays unchanged until then.
+- Placed the remaining pieces with the changes that first use them:
+  - the outbox kinds: `invitation.created` in S7, `relationship.ended` in S11, `tutor.deleted` in S12;
+  - the job names: `invitations.expire` in S6, `reclaim.expire` in S8c, `join_requests.expire` in S9;
+  - the `users.reclaim_until` queries in S8c;
+  - the blocked-requester repository in S9 and the groups repository in S10.
+
+  S3 creates every table, constraint and index these use, together with their typed models.
+- Made cross-tutor group membership impossible in the schema: `group_members` carries `tutor_id` with composite foreign keys to `groups (id, tutor_id)` and `relationships (id, tutor_id)`, both cascading and indexed.

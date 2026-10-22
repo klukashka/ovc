@@ -54,7 +54,7 @@ func (f *adminFixture) seed(t *testing.T, id byte, role domain.Role, state domai
 	if role == domain.RoleTutor {
 		err = f.store.Repositories().TutorProfiles.Create(context.Background(), repositories.NewTutorProfile{
 			UserID: user, FileQuotaBytes: 1, RecordingQuotaBytes: 1, CreatedAt: adminStart,
-		})
+		}, tutorCodeSource(user))
 		if err != nil {
 			t.Fatal(err)
 		}

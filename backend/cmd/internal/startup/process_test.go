@@ -536,7 +536,7 @@ func seedTutor(t *testing.T, database *testdb.Database, password string) {
 	}
 	err = repositories.NewStore(database.Pool).Repositories().TutorProfiles.Create(context.Background(), repositories.NewTutorProfile{
 		UserID: domain.UserID{1}, FileQuotaBytes: 1, RecordingQuotaBytes: 1, CreatedAt: now,
-	})
+	}, tutorCodeSource(domain.UserID{1}))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -60,10 +60,10 @@ func (p EmailPurpose) Event() OutboxKind {
 type LinkOutcome string
 
 const (
-	LinkOutcomeLinked            LinkOutcome = "linked"
-	LinkOutcomeRequestSent       LinkOutcome = "request_sent"
-	LinkOutcomeCodeInvalid       LinkOutcome = "code_invalid"
-	LinkOutcomeInvitationInvalid LinkOutcome = "invitation_invalid"
+	LinkOutcomeChoiceRequired LinkOutcome = "choice_required"
+	LinkOutcomeLinked         LinkOutcome = "linked"
+	LinkOutcomeRequestSent    LinkOutcome = "request_sent"
+	LinkOutcomeCodeInvalid    LinkOutcome = "code_invalid"
 )
 
 type EmailRequestPayload struct {
