@@ -22,29 +22,29 @@ FR-1.1, FR-1.2.
 - `/signup` offers two large choices, each a bordered panel: "I teach" and "I study".
 - **Form:**
   - name, email, password with a strength hint (minimum 10 characters), language (preselected from the interface language, which follows the browser until the person chooses one), and a consent checkbox linking the privacy policy;
-  - the student form also has an optional tutor code field.
+  - the student form (`/signup/student`) also has a required tutor code field, with the hint "Got a link from your tutor? Open it instead"; an invalid code shows "This code is no longer valid — ask your tutor for a new one" and creates nothing.
 - **Submitting** shows "Check your email" with the address and a resend button, disabled for 60 seconds.
-- **Until slice 3** "I study" leads to a page that tells the student to ask their tutor for an invitation link; there is no student form yet.
-- **After confirmation**, a student with a code sees "Request sent. Waiting for the tutor."; one without a code sees "Enter your tutor's code".
+- **After confirmation** in the same browser, a student who signed up with a code sees "Request sent. Waiting for the tutor."
 
 ### Accept invitation
 
-FR-2.1, FR-2.2, FR-1.3.
+FR-2.1, FR-2.2, FR-1.2, FR-1.3.
 
 - **Shows:** tutor avatar, name and subjects, and "{tutor} invites you to study on OVC".
-- **Signed out, the invited email has no account (or there is none):**
-  - "Create account" with name, email (fixed when the invitation has one), password, language and the consent checkbox;
-  - an emailed invitation lands on Home with the email confirmed;
-  - a copied link or an email-less invitation shows "Check your email to finish joining your tutor".
-- **Signed out, the invited email already has an account:** only "Sign in to accept".
-- **Signed in as a student:** one "Accept" button. A different email than the invitation's shows "This invitation is for another email address".
-- **Signed in as a tutor:** an explanation and a sign-out link.
+- **Signed out:** "Create account" and "Sign in to accept", both in place, whatever the invitation's email:
+  - "Create account" asks for name, email, password, language and the consent checkbox; the page never shows or pre-fills the invited email;
+  - after creating the account the page signs in with the chosen password and lands on Home, linked to the tutor with the confirmation banner; when that sign-in fails it shows "Check your email, or sign in to accept", never a wrong-password error;
+  - "Sign in to accept" signs in on the same page and then offers "Accept".
+- **Signed in as a student:** one "Accept" button; accepting lands on My tutors.
+- **Signed in as a tutor:** an explanation that tutor accounts cannot study, with a sign-out link (`role_mismatch`).
+- **Signed in as an unconfirmed student who already joined a tutor:** "Confirm your email first" with a resend button (`email_not_verified`).
+- **Another email:** "This invitation is for another email address" (`invitation_email_mismatch`), for a sign-up and a signed-in acceptance alike.
 - **Invalid, expired, used or revoked:** one message, "This invitation is no longer valid — ask your tutor for a new link".
-- **The page** never shows the invitee's email, and removes the token from the address bar after loading.
+- **The page** never shows the invitee's email, removes the token from the address bar after loading, and keeps it in memory only, never in `next`.
 
 ### Confirmation, password reset, unsubscribe
 
-FR-1.1, FR-1.5, FR-13.3. Single-purpose pages with one result message and one next step. The confirmation page refuses an unknown, expired, used, superseded or malformed link at once, before any password is asked for; the reset page learns that the link is invalid only when the new password is sent. The confirmation page, opened in a browser not signed in to that account, first asks for a new password (with the strength hint) and then confirms; it then shows the pending-link outcome ("You are now studying with your tutor", "Request sent. Waiting for the tutor.", or that a code or invitation is no longer valid). Unsubscribe names the email group and asks the user to confirm with a button (nothing changes when the page merely loads), then offers a link to all email settings. Token pages remove the token from the address bar after reading it.
+FR-1.1, FR-1.5, FR-13.3. Single-purpose pages with one result message and one next step. The confirmation page refuses an unknown, expired, used, superseded or malformed link at once, before any password is asked for; the reset page learns that the link is invalid only when the new password is sent. The confirmation page, opened in a browser not signed in to that account, first asks for a new password (with the strength hint) and then confirms; it then shows the outcome: "You are now studying with your tutor" (`linked`), "Request sent. Waiting for the tutor." (`request_sent`), "This code is no longer valid — enter a new one" (`code_invalid`), or, for `choice_required`, continues to the [reclaim page](#keep-or-drop-earlier-links). The reset page continues to sign-in, after which an account with a pending choice lands on the reclaim page. Unsubscribe names the email group and asks the user to confirm with a button (nothing changes when the page merely loads), then offers a link to all email settings. Token pages remove the token from the address bar after reading it.
 
 ## Tutor pages
 
@@ -63,7 +63,7 @@ FR-15.1, FR-15.2, FR-2.3, FR-5.1.
 - **Needs checking:**
   - count and the five oldest items (student, assignment, submitted time, late badge);
   - "Open review queue".
-- **Join requests:** student name and email, with Accept, Decline, and "Decline and block" in a menu.
+- **Join requests:** student name and email, with Accept, Decline, and "Decline and block" in a menu, oldest first; the panel also shows the tutor code with Copy. In slice 3 this panel is the only part of Today; the rest arrives with slice 10.
 - **Unread messages:** channels with unread counts.
 - **Upcoming deadlines:** issues due in the next 3 days with progress "{submitted}/{total}".
 - **Computer layout:** the greeting spans the page; the main column holds the checklist, today's lessons and needs checking; a 300 px side column holds join requests, upcoming deadlines and unread messages.
@@ -129,26 +129,32 @@ FR-4.6, FR-4.7, FR-5.1–FR-5.6.
 
 FR-2.1, FR-2.3, FR-2.5.
 
-- **Tabs:** Active, Invited, Ended, with search.
-- **Rows:** avatar, display name, groups, next lesson, open assignments and last activity.
+- **Tabs:** Active (including students whose email is not confirmed and links waiting for the student), Invited, Ended, with search; the tab and the search are in the address.
+- **Rows:** avatar, display name, email, state and groups; next lesson, open assignments and last activity arrive with the slices that add them.
 - **"Add student" dialog:**
   - display name and optional email, then "Create invitation";
-  - the result shows the link with Copy and, if an email was given, "Send by email".
+  - the result shows the link with Copy and, if an email was given, "Send by email"; sending shows "Sent" as a toast and never a delivery status.
 - **Pending join requests** appear at the top with Accept, Decline and, in a menu, "Decline and block".
 - **Empty:** a heading with "Invite your first student" and "Share your tutor code {code}".
+- **An unconfirmed tutor** gets the confirmation prompt instead of "Add student".
 
 ### Student card
 
 FR-2.5, FR-2.7, FR-11.3.
 
-- **Header:** avatar, name, email, groups, relationship state, and the buttons Message, Schedule a lesson, Issue assignment, and End working together (in an overflow menu).
+- **Header:** avatar, display name, email, groups, relationship state, and the buttons Message, Schedule a lesson, Issue assignment (each from the slice that adds it), and End working together (in an overflow menu).
 - **Tabs:**
   - Overview: next lessons, open assignments, private notes editor (marked "Only you see this");
   - Lessons: history with status and recordings;
   - Homework: every issue with state and score;
   - Progress: a chronological list of checked work with score percentages and a simple bar per item.
-- **Invited card:** the invitation link with Copy, Send and Regenerate, its expiry, and "Withdraw invitation".
+
+  In slice 3 the card shows the header, groups and notes; the tabs arrive with the slices that add lessons and work.
+- **Invited card:** the invitation link with Copy, Send and Regenerate, its expiry, "Link revoked after repeated wrong emails" when the mismatch limit revoked it, and "Withdraw invitation".
+- **Provisional card:** the badge "Email not confirmed", the account's name and email, and "End", which removes the student after a dialog explaining that the link is discarded and a new card with a fresh link replaces it.
+- **Reclaim-pending card:** the badge "Waiting for the student", no account details, and the same "End".
 - **Ended card:** "Invite again" creates a new link with Copy and Send; history stays visible.
+- **End dialog** for an active student names the consequences: the student leaves the tutor's groups, future lessons are cancelled, the chat becomes read-only, and the student gets an email.
 
 ### Groups and group page
 
@@ -251,7 +257,7 @@ FR-1.4–FR-1.7, FR-5.6, FR-13.3, FR-14.2, FR-17.
   - deleting asks for the password in a dialog that names the consequence, and the sign-in page then says the account was deleted.
 - **Notifications:** email switches per group.
 - **Teaching (tutor):**
-  - tutor code with Copy and Regenerate;
+  - tutor code with Copy and Regenerate (an unconfirmed tutor gets the confirmation prompt instead of Regenerate);
   - recording retention;
   - storage usage bars for files and recordings, against their quotas;
   - blocked students with Unblock.
@@ -282,6 +288,8 @@ FR-15.3, FR-5.1, FR-2.6.
 - **Next seven days** (side column): the student's lessons starting within seven days, cancelled ones left out, one row each with weekday, time and tutor label, and a link to the schedule.
 - **My tutors** (side column): each active tutor with label, subject and a Message link, and "Enter a tutor code"; the tutor filter does not hide this list.
 - **No tutor yet:** "Enter your tutor's code" with an input; with a pending request, "Request sent. Waiting for the tutor." instead.
+- **An unconfirmed student** sees the confirmation banner "Confirm your email to keep studying with your tutor" with a resend button, and reaches Home, My tutors and Settings only.
+- **In slice 3** Home shows the tutor parts (no tutor yet, request sent, My tutors) from `GET /tutors` and `GET /join-requests/sent`; the rest arrives with `GET /home` in slice 10.
 - **Computer layout:** greeting and a one-line summary of the day, the tutor filter, then a main column (next lesson panel, to do, recently checked) and a 300 px side column (next seven days, my tutors).
 - **Phone:** columns stack with the next lesson first, and the Join button stays within thumb reach.
 
@@ -307,13 +315,24 @@ FR-9, FR-11.1.
 
 ### My tutors
 
-FR-2.6, FR-1.2, FR-2.7, FR-1.7.
+FR-2.6, FR-1.2, FR-2.7, FR-2.8, FR-1.7.
 
-- **Rows:** each tutor's avatar, name, colour, subjects and bio, plus "Message".
+- **Rows:** each tutor's avatar, name, colour, subjects and bio, plus "Message" (from slice 6) and, in an overflow menu, "Stop studying".
+- **Stop studying** opens a dialog naming the consequences (the student leaves the tutor's groups, future lessons are cancelled, the chat becomes read-only, the tutor gets an email); for a tutor joined before the email was confirmed it says that the link is removed instead.
 - **Add a tutor:** a field that takes a code.
-- **Pending requests:** "Request sent. Waiting for the tutor." (no name interpolation, so no grammatical case problems in Russian).
+- **Pending requests:** "Request sent. Waiting for the tutor." (no name interpolation, so no grammatical case problems in Russian); a declined request shows "Your request was not accepted".
 - **Ended relationships:** listed under "Past tutors" with read-only chat, lessons, recordings until they expire, and results. They are left out of the Home filter by default.
 - **A tutor who deleted their account:** shown as "Account closed — results available until {date}", with read-only access until then.
+
+### Keep or drop earlier links
+
+FR-1.2. Address `/reclaim`, reached after a confirmation or reset that answers `choice_required`, and after any sign-in while a choice is pending.
+
+- **Explains** that someone used this email before it was confirmed, and that nothing they started continues without the owner's choice.
+- **The account:** its current name and avatar with a link to edit them, before anything is kept.
+- **Items:** each tutor link and each request with the tutor's avatar, name and subjects, and Keep or Drop; dropped items are removed and their tutors are not told.
+- **Deadline:** "Choose by {date}; anything not kept by then is dropped".
+- **Saving** sends every choice at once; a refusal reloads the list.
 
 ### Messages and settings (student)
 

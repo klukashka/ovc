@@ -1,6 +1,6 @@
 # Product
 
-Status: draft written 2026-10-20, visual language revised the same day after the owner chose a direction on the prototype; recordings and analytics marked as after the MVP on 2026-10-22 by the owner's decision; pending line-by-line owner review.
+Status: draft written 2026-10-20, visual language revised the same day after the owner chose a direction on the prototype; recordings and analytics marked as after the MVP on 2026-10-22 by the owner's decision, and the tutor-code wording amended the same day by ADR-0014, pending owner review; pending line-by-line owner review.
 
 This page explains what OVC is, who it serves and how it feels to use. It is not normative: the binding statements are the [functional requirements](requirements/functional.md), and where this page and a requirement differ, the requirement wins.
 
@@ -15,7 +15,7 @@ The platform operator has no web interface in the first release; blocking and li
 ## What a tutor does
 
 1. Signs up, confirms their email, sets their timezone and profile, and follows a short first-run checklist.
-2. Adds students: either sends a personal invitation link, or shares a tutor code that students enter after signing up, and accepts their requests.
+2. Adds students: either sends a personal invitation link, or shares a tutor code that students enter at sign-up or later, and accepts their requests (amended 2026-10-22 by [ADR-0014](decisions/0014-students-join-through-their-tutor.md), pending owner review).
 3. Organises students into groups when they teach several people together.
 4. Schedules lessons for a student or a group, one-off or weekly, and joins them from the calendar or the Today page.
 5. Teaches in a video room with a whiteboard, presentation upload and screen sharing, and, after the MVP, records the lesson when useful. Participants find the recording on the lesson page afterwards.

@@ -8,10 +8,11 @@ Covers chat, live updates and in-app notifications over one WebSocket (FR-12, FR
 
 | Kind | Members | Created | Read-only when |
 |---|---|---|---|
-| `direct` | the tutor and the student of one relationship | when the relationship first becomes active | the relationship is ended; writable again on reactivation |
+| `direct` | the tutor and the student of one relationship | when the relationship first becomes active, or provisional (from slice 6, [ADR-0014](../../docs/decisions/0014-students-join-through-their-tutor.md)) | the relationship is ended; writable again on reactivation |
 | `group` | the tutor and the current members of one group | with the group | the group is archived |
 
 - There are no student-to-student direct channels.
+- A `provisional` relationship reaches only its `direct` channel, never a group channel; the student's membership ends when the link is removed or a reclaim drops it, and the messages written during the provisional period are erased when a reclaim drops it ([ADR-0014](../../docs/decisions/0014-students-join-through-their-tutor.md)).
 - A member removed from a group loses access to its channel, including its history.
 - A student whose relationship ended keeps read access to the direct channel.
 - Posting to a read-only channel is refused with `channel_read_only`.

@@ -78,18 +78,19 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 
 | Area | Owns |
 |---|---|
-| `features/auth` | Sign in, sign up, confirmation, password reset, invitation acceptance, session refresh, route guards |
-| `features/home` | Tutor Today, student Home, first-run checklist |
+| `features/auth` | Sign in, sign up (including the student code form), confirmation and reset with their outcomes, invitation acceptance, the reclaim choice page, session refresh, route guards |
+| `features/home` | Tutor Today (with the join-request panel and the tutor code), student Home (with its tutor parts), first-run checklist |
 | `features/schedule` | Calendar views, lesson dialog, series scope choice, overlap confirmation |
 | `features/lessons` | Lesson page, join flow, embedded room lifecycle, recordings player |
-| `features/students` | Students list, student card, join requests, invitations, tutor code |
+| `features/students` | Students list, student card, join requests, invitations, provisional and reclaim-pending card actions |
+| `features/tutors` | The student's My tutors: active and past tutors with colours, code entry, sent requests, Stop studying |
 | `features/groups` | Groups list and page |
 | `features/library` | Library browser, materials, folders |
 | `features/builder` | Assignment builder and preview |
 | `features/homework` | Issue dialog, issued work, analytics, review queue and review screen, student assignment page and results |
 | `features/chat` | Channel list, conversation, composer, presence, typing |
 | `features/notifications` | Sidebar notifications entry with unread count, notifications panel and list |
-| `features/settings` | Profile, account, notifications, teaching settings |
+| `features/settings` | Profile, account, notifications, teaching settings (tutor code, blocked students) |
 | `lib/api` | Typed API client generated from OpenAPI, error type, token handling; the session reaches the network only through the `AuthTransport` adapter (HTTP, and an in-memory fake for unit tests checked by the same contract against the real backend) |
 | `lib/realtime` | One reconnecting WebSocket client and typed subscriptions |
 | `lib/i18n` | i18next setup, ICU formatting, error-code messages, `ru` and `en` resources |
@@ -168,7 +169,7 @@ Settings are read once from the environment into one typed struct in `internal/c
 | `OVC_PUBLIC_URL` | Required origin of the web application, used in emails and provider callbacks, for message identifiers and as the exact `Origin` of sign-in and refresh; `https`, without a path, query or user info, with an ASCII host (punycode for internationalised names), a dotted IPv4 address or an IPv6 address, and a port without leading zeros, normalised to lower case, to the canonical IPv6 form and without a default port, so it equals the browser's `Origin`, and `http` only with `OVC_TEST_CONTROL=1` |
 | `OVC_JWT_SECRET` | Required by the API, including `api migrate`, at least 32 bytes; HKDF derives separate keys from it for access tokens, rate-limit subjects and the refresh cookie MAC |
 | `OVC_UNSUBSCRIBE_SIGNING_SECRET` | Key for unsubscribe tokens only |
-| `OVC_FIELD_ENCRYPTION_KEY` | Key for encrypted invitation tokens |
+| `OVC_FIELD_ENCRYPTION_KEY` | Required by the API and the worker: 32 random bytes in base64, a `Secret`; the AES-256-GCM key for the invitation tokens a card shows again and the worker emails ([invitations](../specs/accounts.md#invitations)); not rotated in the MVP, because a new key makes open links unreadable |
 | `OVC_ACCESS_TOKEN_TTL_SECONDS`, `OVC_REFRESH_TOKEN_TTL_SECONDS` | Token lifetimes: 900 by default (60 to 3600) and 2592000 by default (one to 90 days) |
 | `OVC_TRUSTED_PROXY_CIDRS` | Comma-separated CIDR ranges of OVC's own reverse proxies, empty by default; IPv4 ranges wider than /8, IPv6 ranges wider than /32 and IPv4-mapped IPv6 ranges are refused, each range checked on its own. The client address for per-IP limits is taken from `X-Forwarded-For` only behind these |
 | `OVC_CORS_ORIGINS` | Explicit frontend origins |
@@ -208,10 +209,11 @@ Settings are read once from the environment into one typed struct in `internal/c
 |---|---|
 | Tutor | An account that teaches; owns students' cards, groups, lessons, library and issues |
 | Student | An account that studies with one or more tutors |
-| Relationship | One tutor's link to one student: invited, active or ended; the student card is its tutor-facing view |
-| Invitation | A single-use link that links a student to a relationship |
+| Relationship | One tutor's link to one student: invited, provisional (email not yet confirmed), reclaim-pending (waiting for the mailbox owner's choice), active, ended or discarded; the student card is its tutor-facing view |
+| Invitation | The single-use link of a student card that links a student to a relationship; one open per card |
 | Tutor code | A short shareable code; a student enters it to create a join request |
-| Join request | A student's request to study with a tutor, accepted or declined by the tutor |
+| Join request | A student's request to study with a tutor, accepted or declined by the tutor; held, invisible to the tutor, while the student's email is not confirmed |
+| Reclaim | A confirmation with a new password from another browser, or a reset of an unconfirmed account, after which the mailbox owner keeps or drops each earlier link and request |
 | Group | A tutor's named set of students with its own chat, lessons and issues |
 | Lesson | One scheduled session for a student or a group |
 | Series | A weekly pattern that generates lessons |

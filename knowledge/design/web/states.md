@@ -49,10 +49,16 @@ While the window is open and the lesson is not yet live, students see "The room 
 | State | Token | English | Русский |
 |---|---|---|---|
 | relationship `invited` | `info` | Invitation sent | Приглашение отправлено |
+| relationship `provisional` | `warning` | Email not confirmed | Email не подтверждён |
+| relationship `reclaim_pending` | `info` | Waiting for the student | Ждём ответа ученика |
 | relationship `active` | — (no badge) | — | — |
 | relationship `ended` | `text-muted` | Ended | Занятия завершены |
 | join request `pending` | `accent-text` | Wants to join | Хочет заниматься |
 | invitation expired | `warning` | Invitation expired | Приглашение истекло |
+| invitation revoked after five wrong emails | `danger` | Link revoked after repeated wrong emails | Ссылка отозвана после нескольких попыток с другим email |
+| sent request `pending` (student view) | `info` | Request sent | Запрос отправлен |
+| sent request `not_accepted` (student view) | `text-muted` | Not accepted | Не принят |
+| sent request `expired` (student view) | `text-muted` | Expired | Истёк |
 | group archived | `text-muted` | Archived | В архиве |
 
 ## Recordings
@@ -100,7 +106,7 @@ The bundled timezone table gives each city in the form the string needs: "Moscow
   - confirm completed actions in one short sentence ("Lesson cancelled" / "Урок отменён");
   - errors persist until dismissed and offer a retry when the action is retryable.
 - **Inline validation** appears below the field after the first blur or submit, in `danger`, with an icon.
-- **Destructive actions** (ending a relationship, cancelling a series, deleting a recording, deleting the account) need a confirmation dialog that names the consequence. Deleting the account additionally asks for the password.
+- **Destructive actions** (ending a relationship from either side, removing a provisional student, cancelling a series, deleting a recording, deleting the account) need a confirmation dialog that names the consequence. Deleting the account additionally asks for the password.
 
 ## Localisation
 

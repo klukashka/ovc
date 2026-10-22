@@ -9,7 +9,7 @@ PostgreSQL through `pgx`, with queries compiled to typed functions by `sqlc` and
 - **Enums** are stored as strings and defined once in `internal/domain`. The enums of states, roles and contexts appear here. Notification event names are those of the [event table](notifications.md#events), and error codes are those of the [API conventions](api.md#conventions).
 - **Tokens:**
   - session, email confirmation and reset tokens are stored only as SHA-256 hashes;
-  - invitation tokens are stored as a hash for lookup and encrypted with `OVC_FIELD_ENCRYPTION_KEY` for re-display and email rendering;
+  - invitation tokens are stored as a SHA-256 hash for lookup and as AES-256-GCM ciphertext under `OVC_FIELD_ENCRYPTION_KEY` (a 12-byte random nonce, the invitation identifier as additional data) for re-display and email rendering; the ciphertext is set to null once the invitation is used, revoked or expired;
   - unsubscribe tokens are stateless and not stored.
 - Free text written by users is stored as entered; normalised forms are separate columns.
 - **Deletion:**
@@ -27,6 +27,8 @@ erDiagram
   USER ||--o{ RELATIONSHIP : "studies in"
   RELATIONSHIP ||--o{ INVITATION : "invited by"
   TUTOR_PROFILE ||--o{ JOIN_REQUEST : receives
+  USER ||--o{ JOIN_REQUEST : sends
+  TUTOR_PROFILE ||--o{ BLOCKED_REQUESTER : blocks
   TUTOR_PROFILE ||--o{ GROUP : owns
   GROUP ||--o{ GROUP_MEMBER : has
   RELATIONSHIP ||--o{ GROUP_MEMBER : "is in"
@@ -67,8 +69,7 @@ erDiagram
 | `consent_version`, `consent_at` | |
 | `unverified_since` | when the 7-day cleanup clock started: sign-up, or a restore or unblock into `unverified`; partial index where `state = 'unverified'`, for cleanup |
 | `deleted_at` | set exactly when `state = 'deleted'`; partial index where `state = 'deleted'` |
-| `pending_tutor_code` | slice 3, unless [proposal 0002](../../docs/proposals/0002-student-onboarding.md) removes it |
-| `reserved_invitation_id` | slice 3, unless proposal 0002 removes it |
+| `reclaim_until` | slice 3; the deadline of a [reclaim](accounts.md#provisional-links-and-reclaim), set once by the reclaim to 7 days after it and cleared by the owner's choice, by a signed-in acceptance that keeps the last waiting link, by the account's deletion, or by `reclaim.expire`; written only by the account's own transactions and only a hint for the job, since whether a choice is due is derived from the waiting rows; partial index where not null |
 | `email_undeliverable_at` | added with the email provider choice |
 | `online_until` | persisted presence; slice 4 |
 | `last_seen_at` | slice 4 |
@@ -86,7 +87,7 @@ One per tutor user.
 | `user_id` | primary key |
 | `bio` | up to 1,000 characters |
 | `subjects` | up to 10 strings |
-| `code` | unique; shared openly by design; slice 3 |
+| `code` | slice 3; unique, not null, 8 characters from `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (checked by a constraint); minted at sign-up and retried on a unique violation; the slice 3 migration gives every existing tutor one, failing loudly on a collision; shared openly by design |
 | `recording_retention_days` | 7, 30, 90, 180 or 365; default 90 |
 | `file_quota_bytes`, `recording_quota_bytes` | |
 | `file_usage_bytes`, `recording_usage_bytes` | |
@@ -112,38 +113,62 @@ One per tutor user.
 | Column | Notes |
 |---|---|
 | `id` | |
-| `tutor_id` | |
-| `student_id` | null until linked, then fixed; set to null when the student is purged |
-| `student_name_snapshot` | the account name at purge, kept for the tutor's history |
-| `state` | `invited`, `active`, `ended`, `discarded` |
-| `display_name` | the tutor's private name for the student |
-| `email` | optional |
-| `colour` | palette key |
-| `notes` | tutor-only, up to 10,000 characters |
-| `linked_at`, `ended_at` | |
+| `tutor_id` | references the tutor profile, `ON DELETE CASCADE` |
+| `student_id` | null while `invited`, then fixed; set to null when the student is purged; references the user with `ON DELETE RESTRICT`, so the purge clears it first |
+| `state` | `invited`, `provisional`, `reclaim_pending`, `active`, `ended`, `discarded` |
+| `discard_reason` | `withdrawn`, `merged`, `removed`, `tutor_deleted`, `student_purged`; set exactly when `discarded` |
+| `ended_by` | `tutor`, `student`, `deletion`; set, with `ended_at`, when `ended`, and kept when a student's purge discards an ended row; null in every other state |
+| `display_name` | the tutor's private name for the student, 1–100 characters; for a card created by accepting a join request, a copy of the student's account name at accept time, which the tutor can edit |
+| `email` | optional, citext, 3–254 characters |
+| `colour` | one of the eight palette keys |
+| `notes` | tutor-only, up to 10,000 characters, empty by default |
+| `create_key` | the `Idempotency-Key` of the creating request, nullable |
+| `linked_at`, `ended_at`, `discarded_at` | |
+
+No column follows the student's account name: after a student's purge the tutor's history shows the card's display name, which is the tutor's own data, even where it began as a copy of the account name when a join request was accepted.
 
 Constraints and indexes:
 
+- `invited` requires `student_id` to be null; `provisional`, `reclaim_pending`, `active` and `ended` require it to be set; `discarded` allows either;
 - unique `(tutor_id, student_id)` where `student_id` is not null and the state is not `discarded`;
-- unique `(tutor_id, lower(email))` where `email` is not null and the state is not `discarded`;
-- indexes on `tutor_id` and `student_id`.
+- unique `(tutor_id, email)` where `email` is not null and the state is not `discarded`;
+- unique `(student_id)` where the state is `provisional`, so an account holds at most one provisional link;
+- `(tutor_id, state, created_at DESC, id DESC)` for the student list, and `(student_id)`;
+- unique `(tutor_id, create_key)` where `create_key` is not null.
 
 ### Invitation
 
-`id`, `relationship_id`, `delivery` (`link`, `email`), `token_hash` (unique), `token_encrypted`, `email`, `bound_student_id` (for linked cards), `reserved_by_user_id`, `expires_at`, `used_at`, `revoked_at`.
+| Column | Notes |
+|---|---|
+| `id` | |
+| `relationship_id` | references the relationship, `ON DELETE CASCADE` |
+| `token_hash` | 32 bytes, unique |
+| `token_encrypted` | nullable; null whenever `used_at` or `revoked_at` is set, and cleared by `invitations.expire` once expired |
+| `bound_student_id` | for the link of an `ended` card: the only account that may accept it; references the user, `ON DELETE CASCADE` |
+| `expires_at`, `used_at` | |
+| `used_by` | references the user, `ON DELETE SET NULL` |
+| `revoked_at`, `revoke_reason` | `regenerated`, `withdrawn`, `email_changed`, `mismatch_limit`, `linked`, `removed`, `tutor_deleted`, `expired_on_send` |
+| `mismatch_count` | 0–5; the fifth `invitation_email_mismatch` revokes the invitation |
+| `send_count` | emails sent for this invitation; part of the email's idempotency key |
 
-- Consumption is a conditional update on `used_at is null and revoked_at is null`, and on the reservation being absent or held by the caller.
-- Partial index on `expires_at` where unused and unrevoked.
+- One open invitation per card: unique `(relationship_id)` where `used_at` and `revoked_at` are null; also indexes on `relationship_id`, `bound_student_id` and `used_by`.
+- Consumption is one conditional update on `used_at is null and revoked_at is null and expires_at > now`, which also sets the ciphertext to null. The mismatch counter is one conditional update that increments `mismatch_count` and, at 5, revokes the invitation and clears its ciphertext.
+- Partial index on `expires_at` where `token_encrypted` is not null, for `invitations.expire`.
 
 ### Join request and blocked requester
 
-- **Join request:** `id`, `tutor_id`, `student_id`, `state` (`pending`, `accepted`, `declined`, `expired`), `expires_at`, `decided_at`. At most one `pending` per `(tutor_id, student_id)`. Partial index on `expires_at` where pending.
-- **Blocked requester:** `tutor_id`, `student_id`, `created_at`; primary key on the pair.
+- **Join request:** `id`, `tutor_id` (the tutor profile, `ON DELETE CASCADE`), `student_id` (the user, `ON DELETE CASCADE`), `state` (`held`, `pending`, `accepted`, `declined`, `expired`), `suppressed` (`none`, `blocked`, `limit`), `owner_choice_pending` (boolean, only while `held`: the request waits for the owner's choice after a reclaim), `expires_at`, `decided_at`, `created_at`. `suppressed` is other than `none` only while `pending`. Indexes:
+  - unique `(tutor_id, student_id)` where the state is `held` or `pending`;
+  - partial `(expires_at)` where the state is `held` or `pending`, for `join_requests.expire`;
+  - partial `(tutor_id, created_at, id)` where `state = 'pending' and suppressed = 'none'`, for the tutor's list and the limit of 50;
+  - partial `(tutor_id, created_at, id)` where `state = 'pending' and suppressed = 'limit'`, for un-suppression;
+  - `(tutor_id)` and `(student_id, created_at DESC, id DESC)`.
+- **Blocked requester:** `tutor_id`, `student_id` (both cascading), `created_at`; primary key on the pair, an index on `(tutor_id, created_at DESC, student_id)` for the list and one on `student_id`.
 
 ### Group and group member
 
-- **Group:** `id`, `tutor_id`, `name`, `colour`, `archived_at`.
-- **Group member:** `group_id`, `relationship_id`, `added_at`; primary key on the pair, and an index on `relationship_id`.
+- **Group:** `id`, `tutor_id` (the tutor profile, `ON DELETE CASCADE`), `name` (1–60 characters), `colour`, `archived_at`, `create_key`; an index on `tutor_id` and unique `(tutor_id, create_key)` where `create_key` is not null. At most 200 per tutor, archived ones included.
+- **Group member:** `group_id` and `relationship_id` (both cascading), `added_at`; primary key on the pair, and an index on `relationship_id`.
 
 ## Schedule
 
@@ -392,15 +417,15 @@ Created by the normal migrations in every database, but written only by the test
 
 ## Purge
 
-What the purge job does 30 days after an account is deleted. Slice 2 implements the rows for users, sessions, email requests and tokens, tutor profiles, and attachments with their references: every upload of the account is deleted, and each still-stored object gets a `storage_delete` outbox row carrying its storage key, so the object is deleted after its row is gone. Throttle counters are pseudonymous and expire with their windows.
+What the purge job does 30 days after an account is deleted. Slice 2 implements the rows for users, sessions, email requests and tokens, tutor profiles, and attachments with their references: every upload of the account is deleted, and each still-stored object gets a `storage_delete` outbox row carrying its storage key, so the object is deleted after its row is gone. Throttle counters are pseudonymous and expire with their windows. Slice 3 adds the relationship, invitation, join-request, blocked-requester and group rows; a tutor purge deletes group members, groups, invitations, join requests, blocked requesters and relationships in batches of 500 rows per transaction, each locking the user row and re-checking that the account is still `deleted`, and then deletes the profile and the user in a final transaction.
 
 | Table | Student purge | Tutor purge |
 |---|---|---|
 | User | Row deleted | Row deleted |
 | Session, email request, email token | Deleted | Deleted |
 | Tutor profile | — | Deleted |
-| Relationship | `student_id` set to null, name snapshot kept for the tutor's history; state `discarded` | Deleted |
-| Invitation, join request, blocked requester | Rows of the student deleted | Rows of the tutor deleted |
+| Relationship | On every row of the student, discarded ones included, `student_id` and the card `email` set to null; non-discarded rows become `discarded` (`student_purged`), keeping `ended_at` and `ended_by`, for the tutor's history under the card's display name; a provisional or reclaim-pending link gets the removal effects first, so its tutor gets a new card | Deleted |
+| Invitation, join request, blocked requester | Invitations bound to the student, and the student's join requests and blocked-requester rows, deleted; `used_by` set to null | Rows of the tutor deleted |
 | Group, group member | Memberships deleted | Groups and memberships deleted |
 | Lesson series, lesson, roster | Roster rows of the student deleted | Deleted |
 | Meeting, recording | Kept until each recording's expiry | Media and rows deleted |
@@ -417,10 +442,13 @@ What the purge job does 30 days after an account is deleted. Slice 2 implements 
 - `attachments.quota_tutor_id` refers to the tutor's profile with `ON DELETE RESTRICT`, so a tutor purge first removes or re-charges every attachment charged to that tutor's quota; otherwise the purge fails on every run, reported as `account.purge_failed`. Slice 2 has no charged contexts (avatars count against no quota); the slice that adds the first one adds this step and its test.
 - Every foreign key used in authorization filters is indexed:
   - `relationship.tutor_id`, `relationship.student_id`;
-  - `group_member.relationship_id`;
+  - `invitation.relationship_id`, `invitation.bound_student_id`, `invitation.used_by`;
+  - `join_request.tutor_id`, `join_request.student_id`, `blocked_requester.student_id`;
+  - `group.tutor_id`, `group_member.relationship_id`;
   - `issue.tutor_id`, `issue.relationship_id`, `issue.group_id`;
   - `submission.student_id`;
   - `lesson_roster.student_id`;
   - `channel_member.user_id`.
-- Message pagination, notification lists and the review queue use keyset ordering on indexed columns, never `OFFSET`.
+- Every foreign key that cascades, restricts or sets null on delete is indexed, so a purge never scans a table for referencing rows.
+- Message pagination, notification lists, the student list, join-request lists and the review queue use keyset ordering on indexed columns, never `OFFSET`.
 - Every periodic job reads through the partial index on its due column named above and processes a bounded batch per run.

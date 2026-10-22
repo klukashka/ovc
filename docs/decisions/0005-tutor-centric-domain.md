@@ -1,9 +1,10 @@
 # ADR-0005: A tutor-centric domain with relationships and groups
 
-- Status: accepted, 2026-10-20
-- Reviewed: pending line-by-line owner review
+- Status: accepted, 2026-10-20; relationship states and the student's access rule superseded in part by [ADR-0014](0014-students-join-through-their-tutor.md) on 2026-10-22
+- Reviewed: pending line-by-line owner review; the superseded-in-part note of 2026-10-22 pending owner review
 - Deciders: project owner
-- Related: FR-1, FR-2, FR-3, [accounts specification](../../knowledge/specs/accounts.md), [data model](../../knowledge/specs/data-model.md)
+- Related: FR-1, FR-2, FR-3, [accounts specification](../../knowledge/specs/accounts.md), [data model](../../knowledge/specs/data-model.md), [ADR-0014](0014-students-join-through-their-tutor.md)
+- Superseded parts: the relationship states and their causes in the second bullet of the decision, and, in the fourth bullet, the rule that a student reaches a tutor's resources only through an active relationship (a provisional relationship also reaches its one-to-one lessons, private chat and the student's own work). [ADR-0014](0014-students-join-through-their-tutor.md) adds the `provisional` state for a link accepted before the student's email is confirmed and the `reclaim_pending` state for a link awaiting the mailbox owner's choice, the silent removal of such links with a new card for the tutor, and ending by the student as well as by the tutor. The text below is kept as written for the record.
 
 ## Context
 

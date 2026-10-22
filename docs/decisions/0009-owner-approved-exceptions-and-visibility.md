@@ -1,9 +1,10 @@
 # ADR-0009: Owner-approved exceptions to base rules, and tutor-only scores
 
-- Status: accepted, 2026-10-20
-- Reviewed: decided by the project owner on 2026-10-20, item 7 on 2026-10-21; wording pending line-by-line owner review
+- Status: accepted, 2026-10-20; superseded in part by [ADR-0014](0014-students-join-through-their-tutor.md) on 2026-10-22 (the first bullet of item 4)
+- Reviewed: decided by the project owner on 2026-10-20, item 7 on 2026-10-21; wording pending line-by-line owner review; the superseded-in-part note of 2026-10-22 pending owner review
 - Deciders: project owner
-- Related: [ADR-0004](0004-bigbluebutton-primary-provider.md), [ADR-0005](0005-tutor-centric-domain.md), [ADR-0006](0006-background-worker-and-email.md), FR-1.2, FR-5.1, FR-5.3, FR-9.3, FR-11.1, [threat model](../threat-model.md)
+- Related: [ADR-0004](0004-bigbluebutton-primary-provider.md), [ADR-0005](0005-tutor-centric-domain.md), [ADR-0006](0006-background-worker-and-email.md), [ADR-0014](0014-students-join-through-their-tutor.md), FR-1.2, FR-5.1, FR-5.3, FR-9.3, FR-11.1, [threat model](../threat-model.md)
+- Superseded parts: the first bullet of item 4, under which only an invitation sent by email confirmed the invitee's email; since [ADR-0014](0014-students-join-through-their-tutor.md) no invitation confirms an email, and a link accepted before confirmation is provisional. The text below is kept as written for the record.
 
 ## Context
 

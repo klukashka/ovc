@@ -1,17 +1,17 @@
 # Notifications specification
 
-Behavior for FR-13 and the worker that delivers it. Decision: [ADR-0006](../../docs/decisions/0006-background-worker-and-email.md).
+Behavior for FR-13 and the worker that delivers it. Decisions: [ADR-0006](../../docs/decisions/0006-background-worker-and-email.md), and [ADR-0014](../../docs/decisions/0014-students-join-through-their-tutor.md) for the relationship emails.
 
 ## Events
 
 | Event | Recipients | In-app | Email | Email preference group |
 |---|---|---|---|---|
-| `invitation.created` | invitee email (no account needed) | — | yes | required |
+| `invitation.created` | the card's email (no account needed) | — | yes | required |
 | `email.confirmation` | the account | — | yes | required |
 | `password.reset` | the account | — | yes | required |
 | `signup.duplicate_attempt` | the existing account | — | yes | required |
-| `relationship.ended` | student | yes | yes | required |
-| `tutor.deleted` | each student of the tutor | — | yes | required |
+| `relationship.ended` | the other party of the ending: the student when the tutor ends it, the tutor when the student ends it; nobody when a deletion ends it | yes | yes | required |
+| `tutor.deleted` | each student whose relationship with the tutor was `active` at deletion and whose email is confirmed | — | yes | required |
 | `group.archived` | group members | yes | yes | `lesson_changes` |
 | `join_request.created` | tutor | yes | no | — |
 | `join_request.declined` | student | yes | no | — |
@@ -36,6 +36,8 @@ Behavior for FR-13 and the worker that delivers it. Decision: [ADR-0006](../../d
   - when a group is archived, in the `group.archived` email, likewise;
   - when a tutor deletes their account, in the `tutor.deleted` email, and no other email goes out for that deletion.
 - Each event names its tutor, so the student's interface and emails carry the tutor label and colour.
+- **Slice 3** sends the `invitation.created`, `relationship.ended` and `tutor.deleted` emails; `relationship.ended` and `tutor.deleted` carry no lesson list until slice 5, the in-app rows of the relationship events arrive with the notification table in slice 4, and `group.archived` waits for slice 5.
+- **Unconfirmed recipients:** no notification email reaches an address whose account is `unverified`: at dispatch every email other than the account emails (confirmation, reset, duplicate sign-up notice) and invitation emails is dropped for such a recipient, including `relationship.ended` and `tutor.deleted`, and removing a provisional link sends nothing.
 
 ## Channels
 
@@ -53,12 +55,13 @@ Behavior for FR-13 and the worker that delivers it. Decision: [ADR-0006](../../d
 - **Templates** exist per event, in Russian and English, as HTML and plain text. They are rendered at send time in the recipient's language and timezone with ICU plural rules. The account emails (confirmation, reset, duplicate sign-up) share one HTML and one text template in `internal/services/notifications/templates`, rendered with `html/template` and `text/template`, and take their wording from the catalogue in `internal/core`; they contain no user-written text and no counts, so plural rules arrive with the first email that shows a count.
 - **Content:** subject and body include only what the recipient may see; emails to students never contain points or scores. A message digest names channels and counts, never message text. Links point to OVC pages, never to provider or storage URLs.
 - **Escaping:** user-written text (names, titles) is HTML-escaped in HTML bodies and appears in plain text only as text.
+- **Relationship emails:** the invitation email is written in the language of the account that holds the card's email, otherwise in the tutor's; the tutor's name appears only in its body, as escaped plain text, never as a link or in the subject, and the only link is the OVC invitation link. The `relationship.ended` email to a tutor names the student by the tutor's own card display name, escaped, never by the current account name; for a card created from a join request that is the tutor-owned copy taken at accept time. The three slice 3 emails share one new HTML and text template pair.
 - **Headers:**
   - user-written text that reaches a header (names, titles) has CR and LF removed and is encoded with RFC 2047;
   - the `Message-ID` is derived from the outbox idempotency key, so a retried send keeps its identifier;
   - for token-bearing emails it also includes the token identifier, so a re-minted token is a distinct message.
 - **Emails with tokens:**
-  - invitation emails use the email-delivery invitation token, which is stored encrypted for this purpose ([invitations](accounts.md#invitations));
+  - invitation emails carry the card's one open invitation link, whose token the worker decrypts from the stored ciphertext at dispatch ([invitations](accounts.md#invitations)); a row whose ciphertext the current key cannot open becomes `dead` with `permanent`;
   - confirmation and reset emails have their token minted by the worker in a committed transaction just before sending, invalidating earlier tokens of the same purpose, so a retried send mints and commits a new token first;
   - no outbox payload ever contains a token.
 - **Optional emails** carry one-click unsubscribe headers:
@@ -74,6 +77,7 @@ Behavior for FR-13 and the worker that delivers it. Decision: [ADR-0006](../../d
 Each **email** is decided again when the worker sends it, not only when it is queued (in-app rows are not re-checked). The worker loads the recipients, preferences and subjects of a claimed batch in a few batched queries. It drops a row, marking it `done` with reason `obsolete`, when:
 
 - the recipient is `blocked` or `deleted`, or the address is undeliverable for an optional email;
+- the recipient is `unverified` and the email is neither an account email (confirmation, reset, duplicate sign-up notice) nor an invitation email;
 - the recipient's preference group is off; a missing preference row means on;
 - the recipient is no longer in the audience the event was about (for lesson, issue and group events);
 - the subject is obsolete:
@@ -87,7 +91,10 @@ Each **email** is decided again when the worker sends it, not only when it is qu
   | `issue.created` | The issue is withdrawn |
   | `recording.held_quota` | The recording is no longer `held_quota` |
   | Message digest | The member read the messages it would list |
-  | Invitation | The token is used, revoked or expired |
+  | Invitation | The invitation is used, revoked or expired, its send count has moved on, or the tutor is no longer `active` |
+  | `relationship.ended` | The relationship was reactivated |
+  | `tutor.deleted` | The tutor is no longer `deleted` |
+  | Any event | The subject row no longer exists (it was purged) |
 
 `lesson.cancelled` and `lesson.series_changed` are always sent while the recipient remains eligible.
 
@@ -150,7 +157,8 @@ Each **email** is decided again when the worker sends it, not only when it is qu
   | `submission.checked`, `submission.returned`, `submission.review_updated` | `(event, submission, review revision)` |
   | `signup.duplicate_attempt` | `(event, account, UTC date)` |
   | Confirmation and reset | `(event, email token request)`, a row recorded when the request is accepted |
-  | Invitations | `(event, invitation)`; every send creates a new email-delivery invitation, so a resend is a new key |
+  | Invitations | `(invitation.created, invitation, send count)`; each send of the same open link increments the count, so a resend is a new key |
+  | `tutor.deleted` | `(event, tutor, deleted_at, recipient)` |
   | Digests | `(digest, member, window start)` |
   | Recording copies | `(recording, attempt generation)` |
   | Everything else | `(event, subject, recipient)` |
@@ -171,7 +179,7 @@ Each **email** is decided again when the worker sends it, not only when it is qu
     - **Every minute:** reminders, digests, the lesson status job.
     - **Every 30 minutes:** recording reconciliation.
     - **Hourly:**
-      - recording, upload, invitation and join-request expiry;
+      - recording and upload expiry; `invitations.expire` (500 per run; clears the ciphertext of expired invitations), `join_requests.expire` (200 per run) and `reclaim.expire` (100 accounts per run; drops reclaim items left unchosen for 7 days);
       - the 7-day transition of `held_quota` recordings to `failed`;
       - recording provider-copy cleanup;
       - cleanup of unverified accounts, rate-limit windows, notifications and the outbox (`done` rows after 7 days, `dead` rows after 30 days, each status deleted by its own statement so both use the partial index);

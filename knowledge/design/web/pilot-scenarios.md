@@ -33,7 +33,7 @@ Recordings (FR-5.4 to FR-5.6) and analytics (FR-11.2 to FR-11.4) are outside the
 | 2 | Maria | Confirm email | Opens the emailed link in a fresh browser, sets a new password: `POST /auth/verify-email` with `{token, new_password}` | Signed in; Today shows the first-run checklist |
 | 3 | Maria | Settings | `PATCH /users/me` | Bio saved; checklist step done |
 | 4 | Maria | Students | `POST /students` with Anna's email, then `POST /students/{id}/invitation/send` | Card for Anna; invitation email in the sink |
-| 5 | Anna | Accept invitation | `GET /invitations/{token}`, `POST /invitations/{token}/accept` from the emailed link | Anna sets a password; her email is confirmed by the emailed link; Home shows Maria as her tutor |
+| 5 | Anna | Accept invitation, Home, Confirm email | `GET /invitations/{token}`, `POST /invitations/{token}/accept` from the emailed link, then the confirmation link in the same browser: `POST /auth/verify-email` with `{token}` | Anna creates her account on the invitation page and is signed in; Home shows Maria as her tutor with the confirmation banner, and Maria's card shows "Email not confirmed"; after confirming, the banner is gone, the outcome is `linked` and the relationship is active |
 | 6 | Maria | Schedule | `POST /lessons` (series, Tuesdays and Thursdays at 18:00, 8 lessons) | Eight lessons in the calendar; Anna's Schedule shows them at 16:00; her lesson page shows `time.other_zone` with 18:00 and Moscow |
 | 7 | Clock, Worker | — | `harness: POST /clock` to 60 minutes before the first lesson, `harness: POST /tick` | The 1-hour reminder emails for Maria and Anna are in the sink, in Russian, with Anna's in Berlin time |
 | 8 | Clock | — | `harness: POST /clock` to 5 minutes before the first lesson | — |
@@ -62,7 +62,7 @@ Each question has an explanation.
 | # | Actor | Page | Operation | Expected |
 |---|---|---|---|---|
 | 1 | Maria | Settings | `GET /tutor/code` | The tutor code is shown |
-| 2 | Boris | Sign up | `POST /auth/register` (student, with the code), then the emailed link with a new password: `POST /auth/verify-email` | After confirming, Boris sees "Request sent. Waiting for the tutor." |
+| 2 | Boris | Sign up, Confirm email | `POST /auth/register` (student, with the code) on `/signup/student`, signs in, then opens the confirmation link in the same browser: `POST /auth/verify-email` with `{token}` | Before confirming, Maria's Today shows no request; after confirming, the outcome is `request_sent` and Boris sees "Request sent. Waiting for the tutor." |
 | 3 | Maria | Today | `POST /join-requests/{id}/accept` | The request disappears; Boris appears in Students |
 | 4 | Maria | Groups | "New group", `POST /groups` | Group "B1 evening" with Anna and Boris; its chat exists |
 | 5 | Maria | Library, Builder | `POST /library/folders`, `POST /uploads?context=library`, `POST /library/materials`, `POST /library/templates`, `PUT /library/templates/{id}` | The template above is in the library; the preview shows its five blocks in order without answer keys |
@@ -109,7 +109,7 @@ Seed:
 
 Seed:
 
-- Maria creates a card for Boris; he accepts the copied link invitation and confirms his email.
+- Maria creates a card for Boris; he signs up on the invitation page of the copied link, which links him provisionally, and confirms his email in the same browser, which makes the relationship active.
 - Maria adds him to group "B1 evening" with Anna.
 - Maria schedules a weekly one-to-one series for Boris and a group lesson next week.
 - Maria issues an assignment to the group, which Boris has not started.
@@ -132,7 +132,7 @@ Smaller Playwright or integration suites cover what the pilots do not walk throu
 | Suite | Kind | Covers |
 |---|---|---|
 | Account edge cases | Playwright + integration | FR-1.3 role mismatch, FR-1.4 sign out everywhere, FR-1.5 reset and change, FR-1.7 deletion and purge, FR-1.8 throttling, refresh reuse, squatting and cleanup of unverified accounts |
-| Requests and invitations | integration | FR-2.3 decline, block and expiry, regeneration, email-bound and student-bound refusal, reservations and races, FR-2.5 notes |
+| Requests and invitations | integration + Playwright | FR-2.3 decline, block and expiry, regeneration, email-bound and student-bound refusal, provisional links, reclaim and races, FR-2.5 notes, FR-2.8 a student stops studying |
 | Groups | Playwright | FR-3.3 member removal with work still submittable, FR-3.4 archive and unarchive |
 | Schedule edits | integration + Playwright | FR-4.2 daylight-saving gap and overlap, FR-4.3 "this and following" splits (including the first occurrence and concurrent extension), FR-4.4 overlap confirmation beyond the horizon, automatic end and "did not take place", joins after a relationship ends |
 | Video embed | Playwright | FR-5.3 with `harness: POST /settings/embed` on: embedded room, the 15-second hint, switching to a new tab, focus mode, disposal on leave |
@@ -154,6 +154,7 @@ Smaller Playwright or integration suites cover what the pilots do not walk throu
 | FR-2.1, FR-2.2, FR-2.4, FR-2.6, FR-2.7 | 1, 3, 4 | Requests and invitations |
 | FR-2.3 | 2 | Requests and invitations |
 | FR-2.5 | 3 | Requests and invitations |
+| FR-2.8 | — | Requests and invitations |
 | FR-3.1, FR-3.2 | 2, 3 | Groups |
 | FR-3.3, FR-3.4 | — | Groups |
 | FR-4.1, FR-4.5 to FR-4.7 | 1, 3 | Schedule edits |

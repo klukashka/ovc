@@ -14,7 +14,7 @@ Behavior for FR-4. Decisions: [ADR-0007](../../docs/decisions/0007-recurring-les
   - the timezone it is shown in as the tutor-side time: the series timezone for occurrences, the tutor's timezone at creation for one-off lessons;
   - a status, a schedule revision incremented by every change to time or duration, a roster, and an optional series with its occurrence date.
 - **The current audience** applies while a lesson is `scheduled`, whether or not its start has passed:
-  - for a one-to-one lesson, the relationship's student while the relationship is active;
+  - for a one-to-one lesson, the relationship's student while the relationship is active, or, from slice 5, `provisional` ([ADR-0014](../../docs/decisions/0014-students-join-through-their-tutor.md));
   - for a group lesson, the group's current members.
 - **The roster** is frozen when a lesson leaves `scheduled`:
   - becoming `live`, cancelled, or ended by the status job, it records the current audience at that moment;
@@ -25,7 +25,7 @@ Behavior for FR-4. Decisions: [ADR-0007](../../docs/decisions/0007-recurring-les
   - the roster also decides who may watch recordings ([recordings](realtime-and-video.md#recordings)).
 
   Adding a member to a group therefore never reveals the group's past or cancelled lessons, and cancelled lessons stay visible to the students who were expecting them.
-- **Scheduling limits:** a lesson cannot be scheduled or moved to start in the past (`lesson_in_past`), or for an invited or ended relationship or an archived group (`audience_not_active`). Occurrences of a new series whose start would be in the past are skipped and not counted.
+- **Scheduling limits:** a lesson cannot be scheduled or moved to start in the past (`lesson_in_past`), or for an invited or ended relationship or an archived group (`audience_not_active`); from slice 5 a one-to-one lesson may also be scheduled for a `provisional` relationship, never a group lesson ([ADR-0014](../../docs/decisions/0014-students-join-through-their-tutor.md)). Occurrences of a new series whose start would be in the past are skipped and not counted.
 - **A series** has:
   - a tutor and one audience;
   - one or more weekdays and a local start time;
@@ -58,7 +58,7 @@ The single rule every join, page and specification refers to:
 
 - **The tutor** may join their lesson while it is in the join window and not cancelled. The first join makes it `live`; a later join reuses or restarts the meeting ([join flow](realtime-and-video.md#join-flow)).
 - **A student** may join only while the lesson is `live` and all of these hold:
-  - their relationship with the tutor is `active`;
+  - their relationship with the tutor is `active`, or, for a one-to-one lesson only, `provisional` (from slice 5, [ADR-0014](../../docs/decisions/0014-students-join-through-their-tutor.md));
   - for a one-to-one lesson, they are its student; for a group lesson, they are a current member of the group (a member not yet in the roster is added to it).
 
 Ending a relationship or removing a member therefore stops further joins immediately. A student already connected, or holding an earlier join link, can stay until the meeting ends. The lesson page then offers the tutor "Restart the room", which ends the open meeting and starts a new one, so every earlier join link stops working ([join flow](realtime-and-video.md#join-flow), [threat T-21](../../docs/threat-model.md#threats-and-controls)).

@@ -1,6 +1,6 @@
 # Proposals
 
-Status: draft written 2026-10-20, proposal 0002 added 2026-10-21; pending line-by-line owner review.
+Status: draft written 2026-10-20, proposal 0002 added 2026-10-21 and accepted 2026-10-22 (its row pending owner review); pending line-by-line owner review.
 
 A proposal describes a change to OVC that is designed but not decided or not scheduled: a new provider, several backend instances, recordings, a mobile client. It is where a change is worked out before it becomes a decision record and a specification change.
 
@@ -23,4 +23,4 @@ Copy [template.md](template.md) to `NNNN-short-title.md` with the next free numb
 | Proposal | Status | Trigger |
 |---|---|---|
 | [0001 Lesson and payment ledger](0001-payment-ledger.md) | deferred | tutors using the MVP ask to track what students owe, or the slice is scheduled |
-| [0002 Students join through their tutor](0002-student-onboarding.md) | draft | roadmap slice 3, with invitations and the tutor code |
+| [0002 Students join through their tutor](0002-student-onboarding.md) | accepted ([ADR-0014](../decisions/0014-students-join-through-their-tutor.md)) | roadmap slice 3, with invitations and the tutor code |
