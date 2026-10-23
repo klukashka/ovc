@@ -80,3 +80,33 @@ WHERE group_members.tutor_id = @tutor_id
     AND group_members.relationship_id = ANY (sqlc.arg(relationship_ids)::uuid[])
     AND groups.archived_at IS NULL
 ORDER BY group_members.relationship_id, groups.name, groups.id;
+
+-- name: LinkInvitedRelationship :execrows
+UPDATE relationships
+SET state = @state, student_id = @student_id, colour = @colour, linked_at = sqlc.arg(now)::timestamptz,
+    updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND state = 'invited';
+
+-- name: ListStudentColours :many
+SELECT colour FROM relationships WHERE student_id = @student_id AND state <> 'discarded' AND colour IS NOT NULL;
+
+-- name: LockStudentRelationships :many
+SELECT * FROM relationships WHERE student_id = @student_id AND state <> 'discarded' ORDER BY id FOR UPDATE;
+
+-- name: ActivateProvisionalRelationship :execrows
+UPDATE relationships SET state = 'active', updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND state = 'provisional';
+
+-- name: DeleteStudentMemberships :execrows
+DELETE FROM group_members
+WHERE relationship_id IN (SELECT relationships.id FROM relationships WHERE relationships.student_id = @student_id);
+
+-- name: DiscardRelationshipsOfPurgedStudent :execrows
+UPDATE relationships
+SET state = 'discarded', discard_reason = 'student_purged', discarded_at = sqlc.arg(now)::timestamptz,
+    updated_at = sqlc.arg(now)::timestamptz
+WHERE student_id = @student_id AND state <> 'discarded';
+
+-- name: ClearPurgedStudentFromRelationships :execrows
+UPDATE relationships SET student_id = NULL, email = NULL, updated_at = sqlc.arg(now)::timestamptz
+WHERE student_id = @student_id;

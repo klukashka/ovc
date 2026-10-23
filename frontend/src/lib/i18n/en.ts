@@ -247,6 +247,7 @@ export const en: Resources = {
     role_mismatch: 'This is not available for your role.',
     invitation_invalid: 'The invitation is no longer valid. Ask your tutor for a new one.',
     invitation_email_mismatch: 'This invitation is for a different email address.',
+    relationship_not_provisional: 'Only a student whose email is not confirmed yet can be removed.',
     return_not_allowed: 'This work cannot be returned for revision.',
     issue_has_submissions: 'The assignment already has submissions.',
     channel_read_only: 'This conversation is read-only.',

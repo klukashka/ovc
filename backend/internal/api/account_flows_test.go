@@ -548,7 +548,7 @@ func TestPasswordResetRevokesSessionsAndConfirmsTheEmail(t *testing.T) {
 	if short.status != http.StatusUnprocessableEntity || !slices.Equal(fields(t, short), []string{"body.new_password:too_short"}) {
 		t.Fatalf("a short password answered %d %s", short.status, short.body)
 	}
-	if done.status != http.StatusNoContent || again.status != http.StatusUnprocessableEntity || code(t, again) != "token_invalid" {
+	if done.status != http.StatusOK || strings.TrimSpace(done.body) != `{"outcome":null}` || again.status != http.StatusUnprocessableEntity || code(t, again) != "token_invalid" {
 		t.Fatalf("reset %d %s, reuse %d %s", done.status, done.body, again.status, again.body)
 	}
 	if staleConfirmation.status != http.StatusUnprocessableEntity || oldSession.status != http.StatusUnauthorized || newSignIn.status != http.StatusOK {

@@ -117,11 +117,6 @@ func newAuthHarnessServing(t *testing.T, trusted []netip.Prefix, newHandler func
 	store := repositories.NewStore(database.Pool)
 	objects := teststorage.New(t).Store
 	fileService := files.New(files.Dependencies{Store: store, Objects: objects, Clock: shared, Random: random, Keys: keys, Logger: logger})
-	service := accounts.New(accounts.Dependencies{
-		Store: store, Clock: shared, Random: random, Hasher: hasher, Keys: keys, Logger: logger,
-		Tokens: core.NewAccessTokens(keys, publicOrigin, 15*time.Minute), RefreshTTL: 30 * 24 * time.Hour,
-		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}, Avatars: fileService, Uploads: fileService,
-	})
 	fieldKey := sha256.Sum256([]byte("test-field-key"))
 	cipher, err := core.NewFieldCipher(core.NewSecret(base64.StdEncoding.EncodeToString(fieldKey[:])), random)
 	if err != nil {
@@ -129,6 +124,12 @@ func newAuthHarnessServing(t *testing.T, trusted []netip.Prefix, newHandler func
 	}
 	tutoringService := tutoring.New(tutoring.Dependencies{
 		Store: store, Clock: shared, Random: random, Keys: keys, Cipher: cipher, PublicURL: publicOrigin, Logger: logger,
+	})
+	service := accounts.New(accounts.Dependencies{
+		Store: store, Clock: shared, Random: random, Hasher: hasher, Keys: keys, Logger: logger,
+		Tokens: core.NewAccessTokens(keys, publicOrigin, 15*time.Minute), RefreshTTL: 30 * 24 * time.Hour,
+		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}, Avatars: fileService, Uploads: fileService,
+		Tutoring: tutoringService,
 	})
 	handler, err := newHandler(api.Options{
 		Logger: logger, Now: clock.System{}.Now, NewRequestID: core.NewRandomID,
@@ -163,7 +164,7 @@ func newAuthHarnessServing(t *testing.T, trusted []netip.Prefix, newHandler func
 		{Name: domain.LaneEmail, Concurrency: 10, Perform: notifier.Deliver},
 		{Name: domain.LaneStorageDelete, Concurrency: 4, Perform: fileService.DeleteObject},
 	}
-	purger := accounts.NewPurger(store, fileService, logger)
+	purger := accounts.NewPurger(store, fileService, tutoringService, logger)
 	jobs := []worker.Job{
 		{Name: domain.JobUploadsExpire, Every: time.Hour, Run: fileService.ExpirePending},
 		{Name: domain.JobAccountsPurge, Every: time.Hour, Run: purger.PurgeDeleted},

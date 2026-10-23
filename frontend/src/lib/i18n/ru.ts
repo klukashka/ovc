@@ -250,6 +250,7 @@ export const ru = {
     role_mismatch: 'Это недоступно для вашей роли.',
     invitation_invalid: 'Приглашение больше не действует. Попросите репетитора о новом.',
     invitation_email_mismatch: 'Это приглашение для другого адреса.',
+    relationship_not_provisional: 'Удалить можно только ученика, который ещё не подтвердил email.',
     return_not_allowed: 'Эту работу нельзя вернуть на доработку.',
     issue_has_submissions: 'По заданию уже есть сданные работы.',
     channel_read_only: 'Этот чат доступен только для чтения.',

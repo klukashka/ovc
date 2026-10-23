@@ -587,13 +587,17 @@ func (s *Service) cardViews(ctx context.Context, repos repositories.Repositories
 			LinkedAt: row.LinkedAt, EndedAt: row.EndedAt, EndedBy: row.EndedBy, CreatedAt: row.CreatedAt,
 		}
 		if row.StudentID != nil && domain.CardShowsAccount(row.State) {
-			if account, found := accounts[*row.StudentID]; found {
+			if account, found := accounts[*row.StudentID]; found && !reclaimedWhileProvisional(row, account) {
 				card.Account = &account
 			}
 		}
 		cards = append(cards, card)
 	}
 	return cards, nil
+}
+
+func reclaimedWhileProvisional(row repositories.Relationship, account CardAccount) bool {
+	return row.State == domain.RelationshipProvisional && account.EmailConfirmed
 }
 
 func (s *Service) accounts(ctx context.Context, repos repositories.Repositories, students []domain.UserID) (map[domain.UserID]CardAccount, error) {

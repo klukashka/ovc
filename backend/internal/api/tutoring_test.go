@@ -365,6 +365,40 @@ var denialCases = map[string]denialCase{
 	"POST /api/v1/students/{id}/invitation":      anotherTutorsCard(http.MethodPost, "/invitation", ""),
 	"POST /api/v1/students/{id}/invitation/send": anotherTutorsCard(http.MethodPost, "/invitation/send", ""),
 	"GET /api/v1/invitations/{token}":            aBlockedTutorsLinkIsUnknown,
+	"POST /api/v1/students/{id}/remove":          anotherTutorsProvisionalStudent,
+	"POST /api/v1/invitations/{token}/accept":    aBlockedTutorsLinkCannotBeAccepted,
+}
+
+var denialStatuses = map[string]int{
+	"POST /api/v1/invitations/{token}/accept": http.StatusConflict,
+}
+
+func anotherTutorsProvisionalStudent(t *testing.T, h *authHarness) (response, response) {
+	t.Helper()
+	owner, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	_, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "another-tutor@example.org")
+	student, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 3, studentEmail)
+	card := h.seedCard(t, owner, 1, domain.RelationshipProvisional, &student)
+	outOfScope := h.cardCall(t, intruder, http.MethodPost, card, "/remove", "")
+	random := h.cardCall(t, intruder, http.MethodPost, randomCardID, "/remove", "")
+	if h.storedRelationship(t, card).State != string(domain.RelationshipProvisional) {
+		t.Fatal("another tutor removed the student")
+	}
+	return outOfScope, random
+}
+
+func aBlockedTutorsLinkCannotBeAccepted(t *testing.T, h *authHarness) (response, response) {
+	t.Helper()
+	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	link := linkToken(t, h.newCard(t, token, cardName, "").Invitation)
+	if _, err := h.store.Repositories().Users.Block(context.Background(), tutor, authStart); err != nil {
+		t.Fatal(err)
+	}
+	headers := map[string]string{"Content-Type": "application/json"}
+	outOfScope := h.send(t, http.MethodPost, invitationPath+link+"/accept", studentSignUp{Email: newcomerEmail}.body(), headers)
+	random := h.send(t, http.MethodPost, invitationPath+base64.RawURLEncoding.EncodeToString(make([]byte, 32))+"/accept",
+		studentSignUp{Email: otherEmail}.body(), headers)
+	return outOfScope, random
 }
 
 func anotherTutorsCard(method string, suffix string, body string) denialCase {
@@ -408,6 +442,11 @@ func TestEveryScopedRouteHasADenialCase(t *testing.T) {
 		}
 	}
 
+	for key := range denialStatuses {
+		if _, found := denialCases[key]; !found {
+			t.Errorf("the denial status of %s names no denial case", key)
+		}
+	}
 	for key := range denialCases {
 		if !scoped[key] {
 			t.Errorf("the denial case %s names no operation with a path identifier", key)
@@ -422,9 +461,14 @@ func TestEveryScopedRouteHasADenialCase(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			h := newAuthHarness(t)
 
+			expected, overridden := denialStatuses[key]
+			if !overridden {
+				expected = http.StatusNotFound
+			}
+
 			outOfScope, random := denial(t, h)
 
-			if outOfScope.status != http.StatusNotFound || refusal(t, outOfScope) != refusal(t, random) {
+			if outOfScope.status != expected || refusal(t, outOfScope) != refusal(t, random) {
 				t.Fatalf("out of scope %d %s, random %d %s", outOfScope.status, outOfScope.body, random.status, random.body)
 			}
 		})

@@ -51,7 +51,10 @@ func NewTutoring(logger *slog.Logger, settings core.Settings, database *core.Dat
 	}), nil
 }
 
-func NewAccounts(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, fileService *files.Service) (*accounts.Service, error) {
+func NewAccounts(
+	logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource,
+	fileService *files.Service, tutoringService *tutoring.Service,
+) (*accounts.Service, error) {
 	keys, err := core.DeriveKeys(settings.JWTSecret)
 	if err != nil {
 		return nil, err
@@ -71,6 +74,7 @@ func NewAccounts(logger *slog.Logger, settings core.Settings, database *core.Dat
 		TutorQuotas: settings.TutorQuotas,
 		Avatars:     fileService,
 		Uploads:     fileService,
+		Tutoring:    tutoringService,
 		Logger:      logger,
 	}), nil
 }
@@ -100,15 +104,15 @@ func NewMailer(logger *slog.Logger, settings core.Settings, database *core.Datab
 
 func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, mailer mail.Mailer, random core.RandomSource, objects storage.Store) (*worker.Worker, error) {
 	store := repositories.NewStore(database.Pool)
-	fileService := files.New(files.Dependencies{Store: store, Objects: objects, Clock: source, Random: random, Logger: logger})
-	purger := accounts.NewPurger(store, fileService, logger)
-	tutoringService := tutoring.New(tutoring.Dependencies{Store: store, Clock: source, Random: random, Logger: logger})
-	queue := outbox.New(store, random, logger)
-	accountEmails, err := notifications.NewAccountEmails(store, random, settings.PublicURL)
+	cipher, err := core.NewFieldCipher(settings.FieldKey, core.CryptoRandom())
 	if err != nil {
 		return nil, err
 	}
-	cipher, err := core.NewFieldCipher(settings.FieldKey, core.CryptoRandom())
+	fileService := files.New(files.Dependencies{Store: store, Objects: objects, Clock: source, Random: random, Logger: logger})
+	tutoringService := tutoring.New(tutoring.Dependencies{Store: store, Clock: source, Random: random, Cipher: cipher, Logger: logger})
+	purger := accounts.NewPurger(store, fileService, tutoringService, logger)
+	queue := outbox.New(store, random, logger)
+	accountEmails, err := notifications.NewAccountEmails(store, random, settings.PublicURL)
 	if err != nil {
 		return nil, err
 	}

@@ -95,6 +95,7 @@ type Dependencies struct {
 	TutorQuotas core.TutorQuotas
 	Avatars     AvatarBinder
 	Uploads     UploadPurger
+	Tutoring    TutoringEffects
 	Logger      *slog.Logger
 }
 
@@ -103,8 +104,8 @@ type Service struct {
 }
 
 func New(dependencies Dependencies) *Service {
-	if dependencies.Avatars == nil || dependencies.Uploads == nil {
-		panic("the accounts service needs an avatar binder and an upload purger")
+	if dependencies.Avatars == nil || dependencies.Uploads == nil || dependencies.Tutoring == nil {
+		panic("the accounts service needs an avatar binder, an upload purger and the tutoring effects")
 	}
 	return &Service{deps: dependencies}
 }

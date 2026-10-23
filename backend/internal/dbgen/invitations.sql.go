@@ -239,6 +239,48 @@ func (q *Queries) GetInvitationTutor(ctx context.Context, arg GetInvitationTutor
 	return i, err
 }
 
+const getUsableInvitation = `-- name: GetUsableInvitation :one
+SELECT invitations.id, invitations.relationship_id, invitations.bound_student_id, relationships.tutor_id, relationships.state,
+    relationships.email
+FROM invitations
+JOIN relationships ON relationships.id = invitations.relationship_id
+JOIN users AS tutors ON tutors.id = relationships.tutor_id
+WHERE invitations.token_hash = $1
+    AND invitations.used_at IS NULL
+    AND invitations.revoked_at IS NULL
+    AND invitations.expires_at > $2::timestamptz
+    AND relationships.state IN ('invited', 'ended')
+    AND tutors.state = 'active'
+`
+
+type GetUsableInvitationParams struct {
+	TokenHash []byte
+	Now       time.Time
+}
+
+type GetUsableInvitationRow struct {
+	ID             domain.InvitationID
+	RelationshipID domain.RelationshipID
+	BoundStudentID *domain.UserID
+	TutorID        domain.UserID
+	State          domain.RelationshipState
+	Email          *string
+}
+
+func (q *Queries) GetUsableInvitation(ctx context.Context, arg GetUsableInvitationParams) (GetUsableInvitationRow, error) {
+	row := q.db.QueryRow(ctx, getUsableInvitation, arg.TokenHash, arg.Now)
+	var i GetUsableInvitationRow
+	err := row.Scan(
+		&i.ID,
+		&i.RelationshipID,
+		&i.BoundStudentID,
+		&i.TutorID,
+		&i.State,
+		&i.Email,
+	)
+	return i, err
+}
+
 const revokeOpenInvitation = `-- name: RevokeOpenInvitation :execrows
 UPDATE invitations
 SET revoked_at = $1::timestamptz, revoke_reason = $2::text, token_encrypted = NULL

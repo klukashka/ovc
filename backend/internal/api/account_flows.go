@@ -55,6 +55,11 @@ type acceptedOutput struct {
 	CacheControl string `header:"Cache-Control"`
 }
 
+type resetOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         schemas.PasswordReset
+}
+
 var (
 	bodyErrors   = []int{http.StatusBadRequest, http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType, http.StatusUnprocessableEntity}
 	serverErrors = []int{http.StatusInternalServerError, http.StatusServiceUnavailable}
@@ -90,7 +95,6 @@ func (r *router) registerAccountFlows() {
 	register(r, forgot, AudiencePublic, r.forgot)
 
 	reset := operation("auth-password-reset", http.MethodPost, "/api/v1/auth/password/reset")
-	reset.DefaultStatus = http.StatusNoContent
 	reset.Errors = errorsOf()
 	register(r, reset, AudiencePublic, r.reset)
 
@@ -126,7 +130,7 @@ func (r *router) verifyEmail(ctx context.Context, input *verifyEmailInput) (*ver
 	if err != nil {
 		return nil, r.flowError(ctx, "auth.verify_email.failed", err)
 	}
-	output := &verifyEmailOutput{CacheControl: noStore}
+	output := &verifyEmailOutput{CacheControl: noStore, Body: schemas.EmailConfirmed{Outcome: confirmation.Outcome}}
 	if confirmation.SignIn != nil {
 		output.SetCookie = refreshCookie(confirmation.SignIn.RefreshCookie, confirmation.SignIn.RefreshLifetime)
 		output.Body.AccessToken = confirmation.SignIn.AccessToken
@@ -163,14 +167,15 @@ func (r *router) forgot(ctx context.Context, input *forgotInput) (*acceptedOutpu
 	return &acceptedOutput{CacheControl: noStore}, nil
 }
 
-func (r *router) reset(ctx context.Context, input *resetInput) (*acceptedOutput, error) {
+func (r *router) reset(ctx context.Context, input *resetInput) (*resetOutput, error) {
 	if err := requireJSON(ctx, input.ContentType); err != nil {
 		return nil, err
 	}
-	if err := r.auth.Accounts.ResetPassword(ctx, input.Body.Token, input.Body.NewPassword); err != nil {
+	outcome, err := r.auth.Accounts.ResetPassword(ctx, input.Body.Token, input.Body.NewPassword)
+	if err != nil {
 		return nil, r.flowError(ctx, "auth.password.reset_failed", err)
 	}
-	return &acceptedOutput{CacheControl: noStore}, nil
+	return &resetOutput{CacheControl: noStore, Body: schemas.PasswordReset{Outcome: outcome}}, nil
 }
 
 func (r *router) change(ctx context.Context, input *changeInput) (*acceptedOutput, error) {
@@ -214,6 +219,10 @@ func (r *router) flowError(ctx context.Context, event string, err error) error {
 			[]schemas.FieldError{{Path: "body.avatar_id", Code: string(domain.FieldInvalid)}})}
 	case errors.Is(err, accounts.ErrTokenInvalid):
 		return NewError(ctx, domain.ErrorTokenInvalid)
+	case errors.Is(err, accounts.ErrInvitationInvalid):
+		return NewError(ctx, domain.ErrorInvitationInvalid)
+	case errors.Is(err, accounts.ErrInvitationEmailMismatch):
+		return NewError(ctx, domain.ErrorInvitationEmailMismatch)
 	case errors.Is(err, accounts.ErrUnauthenticated):
 		return NewError(ctx, domain.ErrorUnauthenticated)
 	case errors.As(err, &throttled):

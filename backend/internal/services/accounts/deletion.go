@@ -33,6 +33,7 @@ func (s *Service) DeleteAccount(ctx context.Context, principal Principal, passwo
 		return err
 	}
 	immediate := false
+	announce := Announce(Silent)
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		locked, err := repos.Users.LockCredentials(ctx, principal.UserID)
 		if err != nil {
@@ -44,7 +45,8 @@ func (s *Service) DeleteAccount(ctx context.Context, principal Principal, passwo
 		switch locked.State {
 		case domain.AccountUnverified:
 			immediate = true
-			return s.purge(ctx, repos, principal.UserID, now)
+			announce, err = s.purger().purge(ctx, repos, principal.UserID, now)
+			return err
 		case domain.AccountActive:
 			if _, err := repos.Users.MarkDeleted(ctx, principal.UserID, now); err != nil {
 				return err
@@ -66,6 +68,7 @@ func (s *Service) DeleteAccount(ctx context.Context, principal Principal, passwo
 		purge = "immediate"
 	}
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "account.deleted", userAttribute(principal.UserID), slog.String("purge", purge))
+	announce(ctx)
 	return nil
 }
 
@@ -102,31 +105,40 @@ func (s *Service) verifyCurrentPassword(ctx context.Context, id domain.UserID, p
 }
 
 type Purger struct {
-	store   *repositories.Store
-	uploads UploadPurger
-	logger  *slog.Logger
+	store    *repositories.Store
+	uploads  UploadPurger
+	tutoring TutoringEffects
+	logger   *slog.Logger
 }
 
-func NewPurger(store *repositories.Store, uploads UploadPurger, logger *slog.Logger) *Purger {
-	if uploads == nil {
-		panic("purging accounts needs an upload purger")
+func NewPurger(store *repositories.Store, uploads UploadPurger, tutoring TutoringEffects, logger *slog.Logger) *Purger {
+	if uploads == nil || tutoring == nil {
+		panic("purging accounts needs an upload purger and the tutoring effects")
 	}
-	return &Purger{store: store, uploads: uploads, logger: logger}
+	return &Purger{store: store, uploads: uploads, tutoring: tutoring, logger: logger}
 }
 
-func (s *Service) purge(ctx context.Context, repos repositories.Repositories, user domain.UserID, now time.Time) error {
-	return NewPurger(s.deps.Store, s.deps.Uploads, s.deps.Logger).purge(ctx, repos, user, now)
+func (s *Service) purger() *Purger {
+	return NewPurger(s.deps.Store, s.deps.Uploads, s.deps.Tutoring, s.deps.Logger)
 }
 
-func (p *Purger) purge(ctx context.Context, repos repositories.Repositories, user domain.UserID, now time.Time) error {
+func (p *Purger) purge(ctx context.Context, repos repositories.Repositories, user domain.UserID, now time.Time) (Announce, error) {
+	account, err := repos.Users.ByID(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	announce, err := p.tutoring.OnAccountPurged(ctx, repos, user, account.Role, now)
+	if err != nil {
+		return nil, err
+	}
 	if err := p.uploads.PurgeUploadsOf(ctx, repos, user, now); err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := repos.Users.Delete(ctx, user); err != nil {
-		return err
+		return nil, err
 	}
 	p.logger.LogAttrs(ctx, slog.LevelInfo, "account.purged", userAttribute(user))
-	return nil
+	return announce, nil
 }
 
 func (p *Purger) PurgeDeleted(ctx context.Context, now time.Time) (int64, error) {
@@ -171,6 +183,7 @@ func (p *Purger) purgeDue(ctx context.Context, now time.Time, due func(context.C
 
 func (p *Purger) purgeIfDue(ctx context.Context, id domain.UserID, now time.Time) (bool, error) {
 	purged := false
+	announce := Announce(Silent)
 	err := p.store.WithTx(ctx, func(repos repositories.Repositories) error {
 		state, err := repos.Users.LockForPurge(ctx, id)
 		if errors.Is(err, repositories.ErrNotFound) {
@@ -185,7 +198,12 @@ func (p *Purger) purgeIfDue(ctx context.Context, id domain.UserID, now time.Time
 			return nil
 		}
 		purged = true
-		return p.purge(ctx, repos, id, now)
+		announce, err = p.purge(ctx, repos, id, now)
+		return err
 	})
-	return purged, err
+	if err != nil {
+		return false, err
+	}
+	announce(ctx)
+	return purged, nil
 }

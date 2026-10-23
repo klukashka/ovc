@@ -26,7 +26,16 @@ type (
 	CardInvitation     = dbgen.GetCardInvitationRow
 	InvitationTutor    = dbgen.GetInvitationTutorRow
 	InvitationEmail    = dbgen.GetInvitationForEmailRow
+	UsableInvitation   = dbgen.GetUsableInvitationRow
 )
+
+type Link struct {
+	ID      domain.RelationshipID
+	State   domain.RelationshipState
+	Student domain.UserID
+	Colour  domain.Colour
+	Now     time.Time
+}
 
 var ErrDiscardedStateListed = errors.New("discarded cards are never listed")
 
@@ -144,6 +153,50 @@ func (r Relationships) Remove(ctx context.Context, tutor domain.UserID, id domai
 	return one(removed, err, "remove provisional relationship")
 }
 
+func (r Relationships) LinkInvited(ctx context.Context, link Link) (bool, error) {
+	rows, err := r.queries.LinkInvitedRelationship(ctx, dbgen.LinkInvitedRelationshipParams{
+		State: link.State, StudentID: &link.Student, Colour: &link.Colour, Now: link.Now, ID: link.ID,
+	})
+	return applied(rows, err, "link invited relationship")
+}
+
+func (r Relationships) ColoursOfStudent(ctx context.Context, student domain.UserID) ([]domain.Colour, error) {
+	rows, err := r.queries.ListStudentColours(ctx, &student)
+	if err != nil {
+		return nil, fmt.Errorf("colours of a student: %w", err)
+	}
+	colours := make([]domain.Colour, 0, len(rows))
+	for _, colour := range rows {
+		if colour != nil {
+			colours = append(colours, *colour)
+		}
+	}
+	return colours, nil
+}
+
+func (r Relationships) LockOfStudent(ctx context.Context, student domain.UserID) ([]Relationship, error) {
+	relationships, err := r.queries.LockStudentRelationships(ctx, &student)
+	return one(relationships, err, "lock relationships of a student")
+}
+
+func (r Relationships) Activate(ctx context.Context, id domain.RelationshipID, now time.Time) (bool, error) {
+	rows, err := r.queries.ActivateProvisionalRelationship(ctx, dbgen.ActivateProvisionalRelationshipParams{Now: now, ID: id})
+	return applied(rows, err, "activate provisional relationship")
+}
+
+func (r Relationships) ForgetPurgedStudent(ctx context.Context, student domain.UserID, now time.Time) error {
+	if _, err := r.queries.DeleteStudentMemberships(ctx, &student); err != nil {
+		return fmt.Errorf("delete memberships of a purged student: %w", err)
+	}
+	if _, err := r.queries.DiscardRelationshipsOfPurgedStudent(ctx, dbgen.DiscardRelationshipsOfPurgedStudentParams{Now: now, StudentID: &student}); err != nil {
+		return fmt.Errorf("discard relationships of a purged student: %w", err)
+	}
+	if _, err := r.queries.ClearPurgedStudentFromRelationships(ctx, dbgen.ClearPurgedStudentFromRelationshipsParams{Now: now, StudentID: &student}); err != nil {
+		return fmt.Errorf("clear a purged student from relationships: %w", err)
+	}
+	return nil
+}
+
 type Invitations struct {
 	queries *dbgen.Queries
 }
@@ -181,6 +234,11 @@ func (r Invitations) LatestOf(ctx context.Context, relationship domain.Relations
 func (r Invitations) UsableTutor(ctx context.Context, tokenHash []byte, now time.Time) (InvitationTutor, error) {
 	tutor, err := r.queries.GetInvitationTutor(ctx, dbgen.GetInvitationTutorParams{TokenHash: tokenHash, Now: now})
 	return one(tutor, err, "tutor of a usable invitation")
+}
+
+func (r Invitations) Usable(ctx context.Context, tokenHash []byte, now time.Time) (UsableInvitation, error) {
+	invitation, err := r.queries.GetUsableInvitation(ctx, dbgen.GetUsableInvitationParams{TokenHash: tokenHash, Now: now})
+	return one(invitation, err, "usable invitation")
 }
 
 func (r Invitations) CountSend(ctx context.Context, id domain.InvitationID, now time.Time) (int16, error) {

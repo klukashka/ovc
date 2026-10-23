@@ -1,6 +1,6 @@
 # Slice 3 implementation plan: tutors, students and groups
 
-Revision 7, written on 2026-10-22 against `main` at `c2d5c15` ("Record the slice 2 review and close the slice"), which is also the base of the slice 3 review. It lands as `knowledge/plans/slice-3.md` in the first change. Revisions 2 to 5 record the owner's decisions of 2026-10-22, the reclaim choice, student-initiated ending, and the corrections from the planning reviews; revision 6 records where work moved between changes while the schema change was implemented; revision 7 records the owner's decisions on the refusal order (D32 to D34); the changelog at the end lists what changed. Identifiers D1 to D34 (decisions), K1 to K40 (conflicts and silences) and S0 to F4 (changes) are defined in this file.
+Revision 8, written on 2026-10-23. Revision 7 was written on 2026-10-22 against `main` at `c2d5c15` ("Record the slice 2 review and close the slice"), which is also the base of the slice 3 review. It lands as `knowledge/plans/slice-3.md` in the first change. Revisions 2 to 5 record the owner's decisions of 2026-10-22, the reclaim choice, student-initiated ending, and the corrections from the planning reviews; revision 6 records where work moved between changes while the schema change was implemented; revision 7 records the owner's decisions on the refusal order (D32 to D34); revision 8 records the owner-approved departures of S8a; the changelog at the end lists what changed. Identifiers D1 to D34 (decisions), K1 to K40 (conflicts and silences) and S0 to F4 (changes) are defined in this file.
 
 ## Open owner questions
 
@@ -468,3 +468,12 @@ Revision 7 (2026-10-22):
   - `TestUnconfirmedEmailIsRefusedBeforeTheBodyIsRead` proves D33: an unverified tutor gets the same `403` for every body probe;
   - `TestTutorCallingStudentRoutesGetsNotFound` refuses a slice 3 student route registered with any other audience, until S8b requires a non-empty list;
   - a concurrency test covers the regeneration limit.
+
+Revision 8 (2026-10-23), the owner's approval of the departures made while S8a was implemented:
+
+- The hook interface as built: `PrecheckInvitation(ctx, token, now)` takes no email; a separate `BindNewAccount(ctx, check, email, now)` checks the card email or the bound account and counts a mismatch, so validation can run between the token check and the binding as 4.5 orders them; `LinkAtSignUp`, `OnEmailConfirmed` and `OnAccountPurged` also return an `Announce` function that the accounts service calls after the transaction commits, so their events are never logged for a rolled-back change. The remaining methods of 4.3 are added by the changes that use them, never as placeholders.
+- Until S8b, `POST /invitations/{token}/accept` with a bearer and no sign-up fields answers `403 forbidden` before any token lookup, counter or hash; sign-up fields with a bearer answer `422 not_allowed` as planned.
+- The session re-check under the user row lock runs in S8a only on the same-browser confirmation. `PATCH /users/me`, the avatar upload and its settling gain it in S8c together with `TestRequestAuthenticatedBeforeReclaimCannotActAfterIt`.
+- Until S12 ends active relationships at a student's deletion, purging an active student discards the relationship straight to `student_purged`, without `ended_at` or `ended_by`.
+- The sign-up fields of the accept route are optional in the schema, because the bearer path sends `{}`, and are validated in the service: a missing field, the timezone included as on `/auth/register`, is `required`.
+- `TestEveryScopedRouteHasADenialCase` takes a per-route expected status: the accept route answers `409 invitation_invalid`, identically for a blocked tutor's link and a random token, instead of `404`.

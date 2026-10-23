@@ -67,3 +67,16 @@ SELECT invitations.id, invitations.token_encrypted, invitations.expires_at, invi
 FROM invitations
 JOIN relationships ON relationships.id = invitations.relationship_id
 WHERE invitations.id = @id;
+
+-- name: GetUsableInvitation :one
+SELECT invitations.id, invitations.relationship_id, invitations.bound_student_id, relationships.tutor_id, relationships.state,
+    relationships.email
+FROM invitations
+JOIN relationships ON relationships.id = invitations.relationship_id
+JOIN users AS tutors ON tutors.id = relationships.tutor_id
+WHERE invitations.token_hash = @token_hash
+    AND invitations.used_at IS NULL
+    AND invitations.revoked_at IS NULL
+    AND invitations.expires_at > sqlc.arg(now)::timestamptz
+    AND relationships.state IN ('invited', 'ended')
+    AND tutors.state = 'active';

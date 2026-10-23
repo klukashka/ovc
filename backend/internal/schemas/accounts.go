@@ -43,7 +43,7 @@ type VerifyEmailRequest struct {
 }
 
 type EmailConfirmed struct {
-	Outcome     *domain.LinkOutcome `json:"outcome" enum:"linked,request_sent,code_invalid,invitation_invalid" nullable:"true"`
+	Outcome     *domain.LinkOutcome `json:"outcome" enum:"choice_required,linked,request_sent,code_invalid" nullable:"true"`
 	AccessToken string              `json:"access_token,omitempty"`
 	ExpiresIn   int64               `json:"expires_in,omitempty"`
 }
@@ -59,6 +59,10 @@ type ForgotPasswordRequest struct {
 type ResetPasswordRequest struct {
 	Token       string `json:"token" maxLength:"64"`
 	NewPassword string `json:"new_password" maxLength:"512"`
+}
+
+type PasswordReset struct {
+	Outcome *domain.LinkOutcome `json:"outcome" enum:"choice_required" nullable:"true"`
 }
 
 type ChangePasswordRequest struct {

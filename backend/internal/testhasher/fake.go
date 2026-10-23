@@ -40,6 +40,7 @@ func (p *Pause) Resume() {
 type Fake struct {
 	generation    int
 	salts         atomic.Uint64
+	hashes        atomic.Int32
 	verifications atomic.Int32
 	mu            sync.Mutex
 	failure       error
@@ -51,6 +52,7 @@ func New(generation int) *Fake {
 }
 
 func (f *Fake) Hash(_ context.Context, password string) (string, error) {
+	f.hashes.Add(1)
 	salt := make([]byte, 8)
 	binary.BigEndian.PutUint64(salt, f.salts.Add(1))
 	return f.encode(f.generation, salt, password), nil
@@ -76,6 +78,10 @@ func (f *Fake) Verify(ctx context.Context, password string, encoded string) (cor
 func (f *Fake) VerifyNothing(ctx context.Context, password string) error {
 	_, err := f.Verify(ctx, password, f.encode(f.generation, []byte("placeholder"), "placeholder password"))
 	return err
+}
+
+func (f *Fake) Hashes() int {
+	return int(f.hashes.Load())
 }
 
 func (f *Fake) Verifications() int {

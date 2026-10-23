@@ -94,7 +94,17 @@ type Registration struct {
 }
 
 type Confirmation struct {
-	SignIn *SignIn
+	SignIn  *SignIn
+	Outcome *domain.LinkOutcome
+}
+
+type InvitationSignUp struct {
+	Name     *string
+	Email    *string
+	Password *string
+	Language *domain.Language
+	Timezone *string
+	Consent  *bool
 }
 
 func (s *Service) Register(ctx context.Context, registration Registration, address netip.Addr) error {
@@ -260,7 +270,7 @@ func (s *Service) ConfirmEmail(ctx context.Context, caller *Principal, token str
 		return Confirmation{}, err
 	}
 	if caller != nil && caller.UserID == stored.UserID {
-		return Confirmation{}, s.confirmSignedIn(ctx, stored, caller.SessionID, now)
+		return s.confirmSignedIn(ctx, stored, *caller, now)
 	}
 	if newPassword == nil {
 		return Confirmation{}, invalid(fieldNewPassword, domain.FieldRequired)
@@ -276,8 +286,10 @@ func (s *Service) ConfirmEmail(ctx context.Context, caller *Principal, token str
 	if err != nil {
 		return Confirmation{}, err
 	}
+	var outcome domain.LinkOutcome
+	announce := Announce(Silent)
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := consumeFor(ctx, repos, stored, now, domain.AccountUnverified); err != nil {
+		if _, err := consumeFor(ctx, repos, stored, now, domain.AccountUnverified); err != nil {
 			return err
 		}
 		if err := replacePassword(ctx, repos, stored.UserID, encoded, now); err != nil {
@@ -286,7 +298,11 @@ func (s *Service) ConfirmEmail(ctx context.Context, caller *Principal, token str
 		if _, err := repos.Sessions.RevokeAllOf(ctx, stored.UserID, now); err != nil {
 			return err
 		}
-		return repos.Sessions.Create(ctx, session.row)
+		if err := repos.Sessions.Create(ctx, session.row); err != nil {
+			return err
+		}
+		outcome, announce, err = s.deps.Tutoring.OnEmailConfirmed(ctx, repos, stored.UserID, true, now)
+		return err
 	})
 	if err != nil {
 		return Confirmation{}, err
@@ -296,12 +312,25 @@ func (s *Service) ConfirmEmail(ctx context.Context, caller *Principal, token str
 		return Confirmation{}, err
 	}
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "auth.email.confirmed", userAttribute(stored.UserID), slog.String("path", "new_password"))
-	return Confirmation{SignIn: &signIn}, nil
+	announce(ctx)
+	return Confirmation{SignIn: &signIn, Outcome: reported(outcome)}, nil
 }
 
-func (s *Service) confirmSignedIn(ctx context.Context, stored repositories.EmailToken, kept domain.SessionID, now time.Time) error {
+func reported(outcome domain.LinkOutcome) *domain.LinkOutcome {
+	if outcome == "" {
+		return nil
+	}
+	return &outcome
+}
+
+func (s *Service) confirmSignedIn(ctx context.Context, stored repositories.EmailToken, caller Principal, now time.Time) (Confirmation, error) {
+	var outcome domain.LinkOutcome
+	announce := Announce(Silent)
 	err := s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := consumeFor(ctx, repos, stored, now, domain.AccountUnverified); err != nil {
+		if err := lockActingAccount(ctx, repos, caller, now, domain.AccountUnverified, domain.AccountActive); err != nil {
+			return err
+		}
+		if _, err := consumeFor(ctx, repos, stored, now, domain.AccountUnverified); err != nil {
 			return err
 		}
 		confirmed, err := repos.Users.ConfirmEmail(ctx, stored.UserID, now)
@@ -314,47 +343,82 @@ func (s *Service) confirmSignedIn(ctx context.Context, stored repositories.Email
 		if err := closeEmailRequests(ctx, repos, stored.UserID); err != nil {
 			return err
 		}
-		_, err = repos.Sessions.RevokeOthersOf(ctx, stored.UserID, kept, now)
+		if _, err := repos.Sessions.RevokeOthersOf(ctx, stored.UserID, caller.SessionID, now); err != nil {
+			return err
+		}
+		outcome, announce, err = s.deps.Tutoring.OnEmailConfirmed(ctx, repos, stored.UserID, false, now)
 		return err
 	})
 	if err != nil {
-		return err
+		return Confirmation{}, err
 	}
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "auth.email.confirmed", userAttribute(stored.UserID), slog.String("path", "signed_in"))
+	announce(ctx)
+	return Confirmation{Outcome: reported(outcome)}, nil
+}
+
+func lockActingAccount(ctx context.Context, repos repositories.Repositories, principal Principal, now time.Time, authorised ...domain.AccountState) error {
+	locked, err := repos.Users.LockCredentials(ctx, principal.UserID)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return ErrUnauthenticated
+	}
+	if err != nil {
+		return err
+	}
+	session, err := repos.Sessions.ByID(ctx, principal.SessionID)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return ErrUnauthenticated
+	}
+	if err != nil {
+		return err
+	}
+	if session.UserID != principal.UserID || session.RevokedAt != nil || !now.Before(session.ExpiresAt) || !slices.Contains(authorised, locked.State) {
+		return ErrUnauthenticated
+	}
 	return nil
 }
 
-func (s *Service) ResetPassword(ctx context.Context, token string, newPassword string) error {
+func (s *Service) ResetPassword(ctx context.Context, token string, newPassword string) (*domain.LinkOutcome, error) {
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	stored, err := s.usableToken(ctx, token, domain.EmailPurposeReset, now)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if problem, fits := domain.CheckPasswordLength(newPassword); !fits {
-		return invalid(fieldNewPassword, problem)
+		return nil, invalid(fieldNewPassword, problem)
 	}
 	encoded, err := s.deps.Hasher.Hash(ctx, newPassword)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var outcome domain.LinkOutcome
+	announce := Announce(Silent)
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := consumeFor(ctx, repos, stored, now, domain.AccountUnverified, domain.AccountActive); err != nil {
+		before, err := consumeFor(ctx, repos, stored, now, domain.AccountUnverified, domain.AccountActive)
+		if err != nil {
 			return err
 		}
 		if err := replacePassword(ctx, repos, stored.UserID, encoded, now); err != nil {
 			return err
 		}
-		_, err := repos.Sessions.RevokeAllOf(ctx, stored.UserID, now)
+		if _, err := repos.Sessions.RevokeAllOf(ctx, stored.UserID, now); err != nil {
+			return err
+		}
+		if before != domain.AccountUnverified {
+			return nil
+		}
+		outcome, announce, err = s.deps.Tutoring.OnEmailConfirmed(ctx, repos, stored.UserID, true, now)
 		return err
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "auth.password.reset", userAttribute(stored.UserID))
-	return nil
+	announce(ctx)
+	return reported(outcome), nil
 }
 
 func (s *Service) ChangePassword(ctx context.Context, principal Principal, current string, next string) error {
@@ -421,23 +485,21 @@ func (s *Service) usableToken(ctx context.Context, token string, purpose domain.
 	return stored, err
 }
 
-func consumeFor(ctx context.Context, repos repositories.Repositories, stored repositories.EmailToken, now time.Time, states ...domain.AccountState) error {
+func consumeFor(
+	ctx context.Context, repos repositories.Repositories, stored repositories.EmailToken, now time.Time, states ...domain.AccountState,
+) (domain.AccountState, error) {
 	locked, err := repos.Users.LockCredentials(ctx, stored.UserID)
 	if err != nil {
-		return err
+		return "", err
 	}
-	allowed := false
-	for _, state := range states {
-		allowed = allowed || locked.State == state
-	}
-	if !allowed {
-		return ErrTokenInvalid
+	if !slices.Contains(states, locked.State) {
+		return "", ErrTokenInvalid
 	}
 	_, err = repos.EmailTokens.Consume(ctx, repositories.EmailTokenLookup{TokenHash: stored.TokenHash, Purpose: stored.Purpose, Now: now})
 	if errors.Is(err, repositories.ErrNotFound) {
-		return ErrTokenInvalid
+		return "", ErrTokenInvalid
 	}
-	return err
+	return locked.State, err
 }
 
 func replacePassword(ctx context.Context, repos repositories.Repositories, user domain.UserID, encoded string, now time.Time) error {
@@ -565,16 +627,21 @@ func registrationProblems(registration Registration, name string, email string) 
 	if registration.Role != domain.RoleTutor {
 		problems = append(problems, FieldProblem{Path: fieldRole, Code: domain.FieldNotAllowed})
 	}
+	return append(problems, signUpProblems(name, email, registration.Password, registration.Consent)...)
+}
+
+func signUpProblems(name string, email string, password string, consent bool) []FieldProblem {
+	var problems []FieldProblem
 	if name == "" || utf8.RuneCountInString(name) > maxNameRunes || strings.ContainsFunc(name, unicode.IsControl) {
 		problems = append(problems, FieldProblem{Path: fieldName, Code: domain.FieldInvalid})
 	}
 	if !domain.ValidEmail(email) {
 		problems = append(problems, FieldProblem{Path: fieldEmail, Code: domain.FieldInvalid})
 	}
-	if problem, fits := domain.CheckPasswordLength(registration.Password); !fits {
+	if problem, fits := domain.CheckPasswordLength(password); !fits {
 		problems = append(problems, FieldProblem{Path: fieldPassword, Code: problem})
 	}
-	if !registration.Consent {
+	if !consent {
 		problems = append(problems, FieldProblem{Path: fieldConsent, Code: domain.FieldRequired})
 	}
 	return problems

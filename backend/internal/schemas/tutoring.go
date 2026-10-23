@@ -132,3 +132,18 @@ type PublicTutor struct {
 type InvitationPage struct {
 	Tutor PublicTutor `json:"tutor"`
 }
+
+type InvitationAcceptRequest struct {
+	Name     *string          `json:"name,omitempty" maxLength:"400"`
+	Email    *string          `json:"email,omitempty" maxLength:"254"`
+	Password *string          `json:"password,omitempty" maxLength:"512"`
+	Language *domain.Language `json:"language,omitempty" enum:"ru,en"`
+	Timezone *string          `json:"timezone,omitempty"`
+	Consent  *bool            `json:"consent,omitempty"`
+}
+
+type InvitationAccepted struct{}
+
+type RemovedStudent struct {
+	NewCard StudentCard `json:"new_card"`
+}

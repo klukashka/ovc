@@ -11,6 +11,7 @@ import (
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/schemas"
+	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/tutoring"
 )
 
@@ -73,6 +74,22 @@ type invitationPageOutput struct {
 	Body         schemas.InvitationPage
 }
 
+type acceptInvitationInput struct {
+	Token       string `path:"token"`
+	ContentType string `header:"Content-Type"`
+	Body        schemas.InvitationAcceptRequest
+}
+
+type acceptInvitationOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         schemas.InvitationAccepted
+}
+
+type removedOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         schemas.RemovedStudent
+}
+
 func (r *router) registerTutoring() {
 	code := operation("tutor-code", http.MethodGet, "/api/v1/tutor/code")
 	code.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
@@ -87,6 +104,12 @@ func (r *router) registerTutoring() {
 	page := operation("invitations-get", http.MethodGet, "/api/v1/invitations/{token}")
 	page.Errors = []int{http.StatusNotFound, http.StatusInternalServerError, http.StatusServiceUnavailable}
 	register(r, page, AudiencePublic, r.invitationPage)
+
+	accept := operation("invitations-accept", http.MethodPost, "/api/v1/invitations/{token}/accept")
+	accept.DefaultStatus = http.StatusAccepted
+	accept.Middlewares = append(accept.Middlewares, r.recordClientAddress)
+	accept.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict, http.StatusTooManyRequests)
+	register(r, accept, AudienceOptionalUser, r.acceptInvitation)
 }
 
 func (r *router) registerStudentCards() {
@@ -120,6 +143,10 @@ func (r *router) registerStudentCards() {
 	send.DefaultStatus = http.StatusAccepted
 	send.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests)
 	register(r, send, AudienceTutor, r.sendInvitation)
+
+	remove := operation("students-remove", http.MethodPost, studentsPath+"/{id}/remove")
+	remove.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict)
+	register(r, remove, AudienceTutor, r.removeStudent)
 }
 
 func (r *router) tutorCode(ctx context.Context, _ *struct{}) (*tutorCodeOutput, error) {
@@ -262,6 +289,55 @@ func (r *router) invitationPage(ctx context.Context, input *invitationPageInput)
 	return &invitationPageOutput{CacheControl: noStore, Body: body}, nil
 }
 
+func (r *router) removeStudent(ctx context.Context, input *cardInput) (*removedOutput, error) {
+	id, valid := domain.ParseUUID[domain.RelationshipID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	card, err := r.tutoring.RemoveStudent(ctx, principalFrom(ctx).UserID, id)
+	if err != nil {
+		return nil, r.tutoringError(ctx, "students.remove.failed", err)
+	}
+	return &removedOutput{CacheControl: noStore, Body: schemas.RemovedStudent{NewCard: cardBody(card)}}, nil
+}
+
+func (r *router) acceptInvitation(ctx context.Context, input *acceptInvitationInput) (*acceptInvitationOutput, error) {
+	if err := requireJSON(ctx, input.ContentType); err != nil {
+		return nil, err
+	}
+	if _, signedIn := optionalPrincipal(ctx); signedIn {
+		return nil, signedInAcceptanceRefusal(ctx, input.Body)
+	}
+	body := input.Body
+	signUp := accounts.InvitationSignUp{
+		Name: body.Name, Email: body.Email, Password: body.Password, Language: body.Language, Timezone: body.Timezone, Consent: body.Consent,
+	}
+	if err := r.auth.Accounts.RegisterThroughInvitation(ctx, input.Token, signUp, clientAddress(ctx)); err != nil {
+		return nil, r.flowError(ctx, "invitations.accept.failed", err)
+	}
+	return &acceptInvitationOutput{CacheControl: noStore}, nil
+}
+
+func signedInAcceptanceRefusal(ctx context.Context, body schemas.InvitationAcceptRequest) error {
+	sent := []struct {
+		path    string
+		present bool
+	}{
+		{"body.name", body.Name != nil}, {"body.email", body.Email != nil}, {"body.password", body.Password != nil},
+		{"body.language", body.Language != nil}, {"body.timezone", body.Timezone != nil}, {"body.consent", body.Consent != nil},
+	}
+	var fields []schemas.FieldError
+	for _, field := range sent {
+		if field.present {
+			fields = append(fields, schemas.FieldError{Path: field.path, Code: string(domain.FieldNotAllowed)})
+		}
+	}
+	if len(fields) > 0 {
+		return &Error{status: http.StatusUnprocessableEntity, ErrorEnvelope: schemas.NewErrorEnvelope(domain.ErrorValidationFailed, core.RequestID(ctx), fields)}
+	}
+	return NewError(ctx, domain.ErrorForbidden)
+}
+
 func (r *router) tutoringError(ctx context.Context, event string, err error) error {
 	var invalid *tutoring.ValidationError
 	var exists *tutoring.StudentExistsError
@@ -278,6 +354,8 @@ func (r *router) tutoringError(ctx context.Context, event string, err error) err
 		return NewError(ctx, domain.ErrorNotEditable)
 	case errors.Is(err, tutoring.ErrRelationshipNotActive):
 		return NewError(ctx, domain.ErrorRelationshipNotActive)
+	case errors.Is(err, tutoring.ErrRelationshipNotProvisional):
+		return NewError(ctx, domain.ErrorRelationshipNotProvisional)
 	case errors.As(err, &invalid):
 		fields := make([]schemas.FieldError, 0, len(invalid.Fields))
 		for _, field := range invalid.Fields {
