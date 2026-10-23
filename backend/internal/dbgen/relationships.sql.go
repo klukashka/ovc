@@ -126,6 +126,23 @@ func (q *Queries) CreateRelationship(ctx context.Context, arg CreateRelationship
 	return err
 }
 
+const deleteRelationshipMemberships = `-- name: DeleteRelationshipMemberships :execrows
+DELETE FROM group_members WHERE relationship_id = $1 AND tutor_id = $2
+`
+
+type DeleteRelationshipMembershipsParams struct {
+	RelationshipID domain.RelationshipID
+	TutorID        domain.UserID
+}
+
+func (q *Queries) DeleteRelationshipMemberships(ctx context.Context, arg DeleteRelationshipMembershipsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRelationshipMemberships, arg.RelationshipID, arg.TutorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteStudentMemberships = `-- name: DeleteStudentMemberships :execrows
 DELETE FROM group_members
 WHERE relationship_id IN (SELECT relationships.id FROM relationships WHERE relationships.student_id = $1)
@@ -184,6 +201,77 @@ func (q *Queries) DiscardRelationshipsOfPurgedStudent(ctx context.Context, arg D
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const endRelationship = `-- name: EndRelationship :one
+UPDATE relationships
+SET state = 'ended', ended_by = $1::text, ended_at = $2::timestamptz, updated_at = $2::timestamptz
+WHERE id = $3 AND tutor_id = $4 AND state = 'active'
+RETURNING id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at
+`
+
+type EndRelationshipParams struct {
+	EndedBy string
+	Now     time.Time
+	ID      domain.RelationshipID
+	TutorID domain.UserID
+}
+
+func (q *Queries) EndRelationship(ctx context.Context, arg EndRelationshipParams) (Relationship, error) {
+	row := q.db.QueryRow(ctx, endRelationship,
+		arg.EndedBy,
+		arg.Now,
+		arg.ID,
+		arg.TutorID,
+	)
+	var i Relationship
+	err := row.Scan(
+		&i.ID,
+		&i.TutorID,
+		&i.StudentID,
+		&i.State,
+		&i.DiscardReason,
+		&i.EndedBy,
+		&i.DisplayName,
+		&i.Email,
+		&i.Colour,
+		&i.Notes,
+		&i.CreateKey,
+		&i.LinkedAt,
+		&i.EndedAt,
+		&i.DiscardedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getRelationship = `-- name: GetRelationship :one
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE id = $1
+`
+
+func (q *Queries) GetRelationship(ctx context.Context, id domain.RelationshipID) (Relationship, error) {
+	row := q.db.QueryRow(ctx, getRelationship, id)
+	var i Relationship
+	err := row.Scan(
+		&i.ID,
+		&i.TutorID,
+		&i.StudentID,
+		&i.State,
+		&i.DiscardReason,
+		&i.EndedBy,
+		&i.DisplayName,
+		&i.Email,
+		&i.Colour,
+		&i.Notes,
+		&i.CreateKey,
+		&i.LinkedAt,
+		&i.EndedAt,
+		&i.DiscardedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getTutorCardIDByEmail = `-- name: GetTutorCardIDByEmail :one
@@ -792,6 +880,39 @@ func (q *Queries) LockStudentReclaimPendingRelationships(ctx context.Context, st
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockStudentRelationship = `-- name: LockStudentRelationship :one
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE id = $1 AND student_id = $2 AND state <> 'discarded' FOR UPDATE
+`
+
+type LockStudentRelationshipParams struct {
+	ID        domain.RelationshipID
+	StudentID *domain.UserID
+}
+
+func (q *Queries) LockStudentRelationship(ctx context.Context, arg LockStudentRelationshipParams) (Relationship, error) {
+	row := q.db.QueryRow(ctx, lockStudentRelationship, arg.ID, arg.StudentID)
+	var i Relationship
+	err := row.Scan(
+		&i.ID,
+		&i.TutorID,
+		&i.StudentID,
+		&i.State,
+		&i.DiscardReason,
+		&i.EndedBy,
+		&i.DisplayName,
+		&i.Email,
+		&i.Colour,
+		&i.Notes,
+		&i.CreateKey,
+		&i.LinkedAt,
+		&i.EndedAt,
+		&i.DiscardedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const lockStudentRelationships = `-- name: LockStudentRelationships :many

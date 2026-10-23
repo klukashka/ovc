@@ -229,6 +229,26 @@ func (r Relationships) ForgetPurgedStudent(ctx context.Context, student domain.U
 	return nil
 }
 
+func (r Relationships) End(ctx context.Context, link Relationship, by domain.EndedBy, now time.Time) (Relationship, error) {
+	ended, err := r.queries.EndRelationship(ctx, dbgen.EndRelationshipParams{EndedBy: string(by), Now: now, ID: link.ID, TutorID: link.TutorID})
+	return one(ended, err, "end relationship")
+}
+
+func (r Relationships) DeleteMemberships(ctx context.Context, link Relationship) (int64, error) {
+	rows, err := r.queries.DeleteRelationshipMemberships(ctx, dbgen.DeleteRelationshipMembershipsParams{RelationshipID: link.ID, TutorID: link.TutorID})
+	return counted(rows, err, "delete memberships of a relationship")
+}
+
+func (r Relationships) LockOfStudentByID(ctx context.Context, student domain.UserID, id domain.RelationshipID) (Relationship, error) {
+	relationship, err := r.queries.LockStudentRelationship(ctx, dbgen.LockStudentRelationshipParams{ID: id, StudentID: &student})
+	return one(relationship, err, "lock a relationship of a student")
+}
+
+func (r Relationships) ByID(ctx context.Context, id domain.RelationshipID) (Relationship, error) {
+	relationship, err := r.queries.GetRelationship(ctx, id)
+	return one(relationship, err, "relationship")
+}
+
 type Invitations struct {
 	queries *dbgen.Queries
 }

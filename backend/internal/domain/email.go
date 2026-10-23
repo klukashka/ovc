@@ -13,6 +13,7 @@ const (
 	EventPasswordReset     OutboxKind = "password.reset"
 	EventSignUpDuplicate   OutboxKind = "signup.duplicate_attempt"
 	EventInvitationCreated OutboxKind = "invitation.created"
+	EventRelationshipEnded OutboxKind = "relationship.ended"
 )
 
 func EmailReachesRecipient(kind OutboxKind, recipient AccountState) bool {
@@ -113,4 +114,9 @@ type AccountPayload struct {
 type InvitationEmailPayload struct {
 	Invitation string `json:"invitation"`
 	Send       int16  `json:"send"`
+}
+
+type RelationshipEndedPayload struct {
+	Relationship  string `json:"relationship"`
+	EndedAtMicros int64  `json:"ended_at_micros"`
 }

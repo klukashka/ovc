@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
@@ -93,6 +94,15 @@ type myTutorsOutput struct {
 	Body         schemas.MyTutors
 }
 
+type stopStudyingInput struct {
+	RelationshipID string `path:"relationshipId"`
+}
+
+type stopStudyingOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         func(huma.Context)
+}
+
 type removedOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         schemas.RemovedStudent
@@ -123,6 +133,17 @@ func (r *router) registerTutoring() {
 	tutors := operation("tutors-list", http.MethodGet, "/api/v1/tutors")
 	tutors.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
 	register(r, tutors, AudienceStudentUnverifiedOK, r.myTutors)
+
+	stop := operation("tutors-end", http.MethodPost, "/api/v1/tutors/{relationshipId}/end")
+	stop.Responses = map[string]*huma.Response{"200": {
+		Description: "The relationship is ended",
+		Content:     map[string]*huma.MediaType{"application/json": {Schema: &huma.Schema{Ref: "#/components/schemas/MyTutor"}}},
+	}, "204": {
+		Description: "The provisional link was removed",
+		Headers:     map[string]*huma.Param{"Cache-Control": {Schema: &huma.Schema{Type: huma.TypeString}}},
+	}}
+	stop.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
+	register(r, stop, AudienceStudentUnverifiedOK, r.stopStudying)
 
 	r.registerJoinRequests()
 	r.registerGroups()
@@ -181,6 +202,10 @@ func (r *router) registerStudentCards() {
 	remove := operation("students-remove", http.MethodPost, studentsPath+"/{id}/remove")
 	remove.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict)
 	register(r, remove, AudienceTutor, r.removeStudent)
+
+	end := operation("students-end", http.MethodPost, studentsPath+"/{id}/end")
+	end.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict)
+	register(r, end, AudienceTutor, r.endRelationship)
 }
 
 func (r *router) tutorCode(ctx context.Context, _ *struct{}) (*tutorCodeOutput, error) {
@@ -333,6 +358,44 @@ func (r *router) removeStudent(ctx context.Context, input *cardInput) (*removedO
 		return nil, r.tutoringError(ctx, "students.remove.failed", err)
 	}
 	return &removedOutput{CacheControl: noStore, Body: schemas.RemovedStudent{NewCard: cardBody(card)}}, nil
+}
+
+func (r *router) endRelationship(ctx context.Context, input *cardInput) (*cardOutput, error) {
+	id, valid := domain.ParseUUID[domain.RelationshipID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	card, err := r.tutoring.EndByTutor(ctx, principalFrom(ctx).UserID, id)
+	if err != nil {
+		return nil, r.tutoringError(ctx, "students.end.failed", err)
+	}
+	return &cardOutput{CacheControl: noStore, Body: cardBody(card)}, nil
+}
+
+func (r *router) stopStudying(ctx context.Context, input *stopStudyingInput) (*stopStudyingOutput, error) {
+	id, valid := domain.ParseUUID[domain.RelationshipID](input.RelationshipID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	ending, err := r.tutoring.StopStudying(ctx, principalFrom(ctx), id)
+	switch {
+	case errors.Is(err, accounts.ErrUnauthenticated):
+		return nil, r.flowError(ctx, "tutors.end.failed", err)
+	case err != nil:
+		return nil, r.tutoringError(ctx, "tutors.end.failed", err)
+	case ending.Removed:
+		return &stopStudyingOutput{CacheControl: noStore, Body: func(response huma.Context) { response.SetStatus(http.StatusNoContent) }}, nil
+	}
+	tutor := myTutorBody(ending.Tutor)
+	return &stopStudyingOutput{CacheControl: noStore, Body: func(response huma.Context) { r.writeTutor(response, tutor) }}, nil
+}
+
+func (r *router) writeTutor(response huma.Context, body schemas.MyTutor) {
+	response.SetHeader("Content-Type", "application/json")
+	response.SetStatus(http.StatusOK)
+	if err := huma.DefaultJSONFormat.Marshal(response.BodyWriter(), body); err != nil {
+		r.logger.LogAttrs(response.Context(), slog.LevelWarn, "http.response.write_failed", slog.String("kind", core.ErrorKind(err)))
+	}
 }
 
 func (r *router) acceptInvitation(ctx context.Context, input *acceptInvitationInput) (*acceptInvitationOutput, error) {

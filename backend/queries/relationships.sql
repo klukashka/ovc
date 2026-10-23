@@ -188,3 +188,18 @@ WHERE tutor_id = @tutor_id AND state <> 'discarded'
     AND (student_id = @student_id OR (state = 'invited' AND email = @email))
 ORDER BY id
 FOR UPDATE;
+
+-- name: EndRelationship :one
+UPDATE relationships
+SET state = 'ended', ended_by = sqlc.arg(ended_by)::text, ended_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND tutor_id = @tutor_id AND state = 'active'
+RETURNING *;
+
+-- name: DeleteRelationshipMemberships :execrows
+DELETE FROM group_members WHERE relationship_id = @relationship_id AND tutor_id = @tutor_id;
+
+-- name: LockStudentRelationship :one
+SELECT * FROM relationships WHERE id = @id AND student_id = @student_id AND state <> 'discarded' FOR UPDATE;
+
+-- name: GetRelationship :one
+SELECT * FROM relationships WHERE id = @id;

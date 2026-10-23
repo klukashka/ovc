@@ -98,3 +98,55 @@ func RelationshipEmailText(language domain.Language, event domain.OutboxKind) (R
 	text, found := relationshipEmailTexts[language][event]
 	return text, found
 }
+
+var relationshipEndedEmailTexts = map[domain.Language]map[domain.EndedBy]RelationshipText{
+	domain.LanguageEnglish: {
+		domain.EndedByTutor: {
+			Subject: "Your lessons with a tutor on OVC have ended",
+			Intro:   "This tutor has ended your work together on OVC:",
+			Lines: []string{
+				"The tutor stays on My tutors among your past tutors.",
+				"To study together again, ask the tutor for a new invitation or send a join request with the tutor's code.",
+			},
+			Action: "Open My tutors",
+			Note:   "You received this email because a tutor ended your work together on OVC.",
+		},
+		domain.EndedByStudent: {
+			Subject: "A student stopped studying with you on OVC",
+			Intro:   "This student has stopped studying with you on OVC:",
+			Lines: []string{
+				"The student has left your groups, and the student's card is now among your ended students.",
+				"You can invite the student again from the card.",
+			},
+			Action: "Open the student card",
+			Note:   "The name above is the name you gave the student's card.",
+		},
+	},
+	domain.LanguageRussian: {
+		domain.EndedByTutor: {
+			Subject: "Занятия с преподавателем в OVC завершены",
+			Intro:   "Совместная работа в OVC завершена по решению преподавателя:",
+			Lines: []string{
+				"Преподаватель остаётся в разделе «Мои преподаватели» среди прошлых.",
+				"Чтобы снова заниматься вместе, попросите у преподавателя новое приглашение или отправьте заявку по его коду.",
+			},
+			Action: "Открыть «Мои преподаватели»",
+			Note:   "Вы получили это письмо, потому что совместная работа с преподавателем в OVC завершена.",
+		},
+		domain.EndedByStudent: {
+			Subject: "Ученик прекратил занятия в OVC",
+			Intro:   "Занятия в OVC завершены по решению ученика:",
+			Lines: []string{
+				"Ученик исключён из ваших групп, а его карточка перенесена в завершённые.",
+				"Пригласить ученика снова можно из карточки.",
+			},
+			Action: "Открыть карточку ученика",
+			Note:   "Выше указано имя, которое вы дали карточке ученика.",
+		},
+	},
+}
+
+func RelationshipEndedEmailText(language domain.Language, by domain.EndedBy) (RelationshipText, bool) {
+	text, found := relationshipEndedEmailTexts[language][by]
+	return text, found
+}

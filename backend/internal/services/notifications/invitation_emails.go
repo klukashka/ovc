@@ -58,6 +58,7 @@ func NewRelationshipEmails(store *repositories.Store, cipher core.FieldCipher, p
 func (r *RelationshipEmails) Builders() map[domain.OutboxKind]Builder {
 	return map[domain.OutboxKind]Builder{
 		domain.EventInvitationCreated: invitationEmail{emails: r},
+		domain.EventRelationshipEnded: relationshipEndedEmail{emails: r},
 	}
 }
 
@@ -108,7 +109,11 @@ func (b invitationEmail) Build(ctx context.Context, row repositories.ClaimedOutb
 	if err != nil {
 		return Composition{}, err
 	}
-	email, err := b.emails.render(recipient.language, row.Kind, *invitation.Email, tutor.Name, link)
+	text, found := core.RelationshipEmailText(recipient.language, row.Kind)
+	if !found {
+		return Composition{}, domain.PermanentEffect(fmt.Errorf("%w: no %s text in %s", errUnknownKind, row.Kind, recipient.language))
+	}
+	email, err := b.emails.render(recipient.language, text, *invitation.Email, tutor.Name, link)
 	if err != nil {
 		return Composition{}, err
 	}
@@ -144,11 +149,7 @@ func (b invitationEmail) link(invitation repositories.InvitationEmail) (string, 
 	return b.emails.publicURL + invitationPathPrefix + token, nil
 }
 
-func (r *RelationshipEmails) render(language domain.Language, event domain.OutboxKind, to string, name string, actionURL string) (Email, error) {
-	text, found := core.RelationshipEmailText(language, event)
-	if !found {
-		return Email{}, domain.PermanentEffect(fmt.Errorf("%w: no %s text in %s", errUnknownKind, event, language))
-	}
+func (r *RelationshipEmails) render(language domain.Language, text core.RelationshipText, to string, name string, actionURL string) (Email, error) {
 	view := relationshipView{
 		Language: language, Subject: text.Subject, Intro: text.Intro, Name: strings.Join(strings.Fields(name), " "),
 		Lines: text.Lines, Action: text.Action, ActionURL: actionURL, Note: text.Note,

@@ -183,6 +183,21 @@ var squatterWrites = map[string]squatterWrite{
 		}
 		return send, unchanged
 	}},
+	"an ending": {role: domain.RoleStudent, act: func(t *testing.T, h *authHarness, user domain.UserID, token string) (squatterRequest, unchangedCheck) {
+		t.Helper()
+		tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 9, secondTutorEmail)
+		card := h.seedCard(t, tutor, 1, domain.RelationshipProvisional, &user)
+		send := func() <-chan pendingAnswer {
+			return h.sendInBackground(http.MethodPost, tutorsPath+card+"/end", "", authorised(token))
+		}
+		unchanged := func(t *testing.T) {
+			t.Helper()
+			if state := h.storedRelationship(t, card).State; state != string(domain.RelationshipReclaimPending) || h.cardCount(t, tutor) != 1 {
+				t.Fatalf("the squatter's ending changed the link to %s", state)
+			}
+		}
+		return send, unchanged
+	}},
 	"a confirmation resend": {role: domain.RoleStudent, act: func(t *testing.T, h *authHarness, user domain.UserID, token string) (squatterRequest, unchangedCheck) {
 		t.Helper()
 		before := h.countRows(t, "SELECT count(id) FROM email_requests WHERE user_id = $1::uuid", user.String())

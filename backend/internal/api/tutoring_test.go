@@ -362,6 +362,8 @@ var denialCases = map[string]denialCase{
 	"POST /api/v1/students/{id}/invitation/send":          anotherTutorsCard(http.MethodPost, "/invitation/send", ""),
 	"GET /api/v1/invitations/{token}":                     aBlockedTutorsLinkIsUnknown,
 	"POST /api/v1/students/{id}/remove":                   anotherTutorsProvisionalStudent,
+	"POST /api/v1/students/{id}/end":                      anotherTutorsActiveStudent,
+	"POST /api/v1/tutors/{relationshipId}/end":            anotherStudentsRelationship,
 	"POST /api/v1/invitations/{token}/accept":             aBlockedTutorsLinkCannotBeAccepted,
 	"POST /api/v1/join-requests/{id}/accept":              anotherTutorsJoinRequest("/accept", ""),
 	"POST /api/v1/join-requests/{id}/decline":             anotherTutorsJoinRequest("/decline", `{"block":true}`),
