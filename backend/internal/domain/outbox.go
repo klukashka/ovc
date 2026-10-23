@@ -45,6 +45,7 @@ const (
 	JobAccountsCleanupUnverified JobName = "accounts.cleanup_unverified"
 	JobInvitationsExpire         JobName = "invitations.expire"
 	JobReclaimExpire             JobName = "reclaim.expire"
+	JobJoinRequestsExpire        JobName = "join_requests.expire"
 )
 
 const KindStorageDelete OutboxKind = "storage_delete"

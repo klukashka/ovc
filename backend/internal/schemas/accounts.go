@@ -29,13 +29,14 @@ type Me struct {
 }
 
 type RegisterRequest struct {
-	Role     domain.Role     `json:"role" enum:"tutor,student"`
-	Name     string          `json:"name" maxLength:"400"`
-	Email    string          `json:"email" maxLength:"254"`
-	Password string          `json:"password" maxLength:"512"`
-	Language domain.Language `json:"language" enum:"ru,en"`
-	Timezone string          `json:"timezone"`
-	Consent  bool            `json:"consent"`
+	Role      domain.Role     `json:"role" enum:"tutor,student"`
+	Name      string          `json:"name" maxLength:"400"`
+	Email     string          `json:"email" maxLength:"254"`
+	Password  string          `json:"password" maxLength:"512"`
+	Language  domain.Language `json:"language" enum:"ru,en"`
+	Timezone  string          `json:"timezone"`
+	Consent   bool            `json:"consent"`
+	TutorCode *string         `json:"tutor_code,omitempty" maxLength:"64"`
 }
 
 type VerifyEmailRequest struct {

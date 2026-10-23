@@ -21,10 +21,11 @@ const (
 )
 
 type signedInLink struct {
-	kept        repositories.Relationship
-	effect      acceptanceEffect
-	reactivated bool
-	keptReclaim bool
+	kept         repositories.Relationship
+	effect       acceptanceEffect
+	reactivated  bool
+	keptReclaim  bool
+	unsuppressed []unsuppressedRequest
 }
 
 func (s *Service) AcceptSignedIn(ctx context.Context, principal accounts.Principal, token string) (MyTutor, error) {
@@ -75,6 +76,10 @@ func (s *Service) AcceptSignedIn(ctx context.Context, principal accounts.Princip
 			return err
 		}
 		if _, err := repos.JoinRequests.AcceptWaiting(ctx, check.Tutor, principal.UserID, now); err != nil {
+			return err
+		}
+		link.unsuppressed, err = s.unsuppress(ctx, repos, check.Tutor, now)
+		if err != nil {
 			return err
 		}
 		if link.keptReclaim {
@@ -252,4 +257,5 @@ func (s *Service) announceSignedIn(ctx context.Context, student domain.UserID, l
 	if link.keptReclaim {
 		s.logReclaimDecided(ctx, student, reclaimDecision{kept: 1}, decidedByOwner)
 	}
+	s.logUnsuppressed(ctx, link.unsuppressed)
 }

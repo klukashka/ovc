@@ -354,15 +354,18 @@ func TestTutorCallingStudentRoutesGetsNotFound(t *testing.T) {
 type denialCase func(t *testing.T, h *authHarness) (outOfScope response, random response)
 
 var denialCases = map[string]denialCase{
-	"GET /api/v1/avatars/{id}":                   anotherAccountsPendingUploadIsNoAvatar,
-	"GET /api/v1/students/{id}":                  anotherTutorsCard(http.MethodGet, "", ""),
-	"PATCH /api/v1/students/{id}":                anotherTutorsCard(http.MethodPatch, "", `{"display_name":"Renamed","email":"renamed@example.org"}`),
-	"DELETE /api/v1/students/{id}":               anotherTutorsCard(http.MethodDelete, "", ""),
-	"POST /api/v1/students/{id}/invitation":      anotherTutorsCard(http.MethodPost, "/invitation", ""),
-	"POST /api/v1/students/{id}/invitation/send": anotherTutorsCard(http.MethodPost, "/invitation/send", ""),
-	"GET /api/v1/invitations/{token}":            aBlockedTutorsLinkIsUnknown,
-	"POST /api/v1/students/{id}/remove":          anotherTutorsProvisionalStudent,
-	"POST /api/v1/invitations/{token}/accept":    aBlockedTutorsLinkCannotBeAccepted,
+	"GET /api/v1/avatars/{id}":                            anotherAccountsPendingUploadIsNoAvatar,
+	"GET /api/v1/students/{id}":                           anotherTutorsCard(http.MethodGet, "", ""),
+	"PATCH /api/v1/students/{id}":                         anotherTutorsCard(http.MethodPatch, "", `{"display_name":"Renamed","email":"renamed@example.org"}`),
+	"DELETE /api/v1/students/{id}":                        anotherTutorsCard(http.MethodDelete, "", ""),
+	"POST /api/v1/students/{id}/invitation":               anotherTutorsCard(http.MethodPost, "/invitation", ""),
+	"POST /api/v1/students/{id}/invitation/send":          anotherTutorsCard(http.MethodPost, "/invitation/send", ""),
+	"GET /api/v1/invitations/{token}":                     aBlockedTutorsLinkIsUnknown,
+	"POST /api/v1/students/{id}/remove":                   anotherTutorsProvisionalStudent,
+	"POST /api/v1/invitations/{token}/accept":             aBlockedTutorsLinkCannotBeAccepted,
+	"POST /api/v1/join-requests/{id}/accept":              anotherTutorsJoinRequest("/accept", ""),
+	"POST /api/v1/join-requests/{id}/decline":             anotherTutorsJoinRequest("/decline", `{"block":true}`),
+	"DELETE /api/v1/tutor/blocked-requesters/{studentId}": anotherTutorsBlockedStudent,
 }
 
 var denialStatuses = map[string]int{
@@ -519,9 +522,19 @@ func (d publishedDocument) bodySchema(t *testing.T, operation api.OperationAudie
 }
 
 func (s publishedSchema) firstStringProperty() (string, bool) {
+	return s.firstPropertyOf(func(kind string) bool { return kind == `"string"` })
+}
+
+var typesRefusingAString = map[string]bool{`"boolean"`: true, `"integer"`: true, `"number"`: true, `"array"`: true, `"object"`: true}
+
+func (s publishedSchema) firstPropertyRefusingAString() (string, bool) {
+	return s.firstPropertyOf(func(kind string) bool { return typesRefusingAString[kind] })
+}
+
+func (s publishedSchema) firstPropertyOf(matches func(kind string) bool) (string, bool) {
 	names := make([]string, 0, len(s.Properties))
 	for name, property := range s.Properties {
-		if string(property.Type) == `"string"` {
+		if matches(string(property.Type)) {
 			names = append(names, name)
 		}
 	}
@@ -543,6 +556,9 @@ func operationProbes(schema publishedSchema) map[string]bodyProbe {
 	}
 	if name, found := schema.firstStringProperty(); found {
 		probes["a number for "+name] = bodyProbe{body: fmt.Sprintf(`{%q:1}`, name), contentType: "application/json"}
+	}
+	if name, found := schema.firstPropertyRefusingAString(); found {
+		probes["a string for "+name] = bodyProbe{body: fmt.Sprintf(`{%q:"text"}`, name), contentType: "application/json"}
 	}
 	return probes
 }

@@ -15,7 +15,7 @@ import (
 
 var (
 	ErrRelationshipNotProvisional = errors.New("only a provisional or reclaim-pending card can be removed")
-	ErrRoleMismatch               = errors.New("only a student account can accept an invitation")
+	ErrRoleMismatch               = errors.New("only a student account can join a tutor")
 	ErrEmailNotVerified           = errors.New("an unconfirmed account already holds a provisional link")
 )
 
@@ -164,11 +164,21 @@ func (s *Service) OnEmailConfirmed(
 	if reclaim {
 		return s.reclaim(ctx, repos, user, now)
 	}
+	heldFor, err := repos.JoinRequests.HeldTutorsOf(ctx, user)
+	if err != nil {
+		return "", nil, err
+	}
+	if len(heldFor) > 0 {
+		if err := repos.TutorProfiles.LockAll(ctx, heldFor); err != nil {
+			return "", nil, err
+		}
+	}
 	links, err := repos.Relationships.LockOfStudent(ctx, user)
 	if err != nil {
 		return "", nil, err
 	}
 	var confirmed []repositories.Relationship
+	var outcomes []domain.LinkOutcome
 	for _, link := range links {
 		transition, allowed := domain.NextRelationshipState(link.State, domain.CauseConfirmedInOwnBrowser)
 		if !allowed || transition.To != domain.RelationshipActive {
@@ -182,14 +192,23 @@ func (s *Service) OnEmailConfirmed(
 			return "", nil, fmt.Errorf("activate the locked relationship %s: %w", link.ID, repositories.ErrNotFound)
 		}
 		confirmed = append(confirmed, link)
+		outcomes = append(outcomes, domain.LinkOutcomeLinked)
 	}
-	if len(confirmed) == 0 {
+	released, kept, err := s.releaseAtConfirmation(ctx, repos, user, now)
+	if err != nil {
+		return "", nil, err
+	}
+	outcome, set := domain.CombineOutcomes(append(outcomes, released...)...)
+	if !set {
 		return "", accounts.Silent, nil
 	}
-	return domain.LinkOutcomeLinked, func(ctx context.Context) {
+	return outcome, func(ctx context.Context) {
 		for _, link := range confirmed {
 			attributes := append(cardAttributes(link.TutorID, link.ID), slog.String("user_id", user.String()))
 			s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "relationship.confirmed", attributes...)
+		}
+		for _, request := range kept {
+			s.logReleased(ctx, user, request)
 		}
 	}, nil
 }

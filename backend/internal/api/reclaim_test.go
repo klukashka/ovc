@@ -890,13 +890,13 @@ func TestReclaimExpiresHeldRequestsUnlessKept(t *testing.T) {
 	fullTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 3, "full-tutor@example.org")
 	closedTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 4, "closed-tutor@example.org")
 	droppedTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 5, "dropped-tutor@example.org")
-	student, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 6, newcomerEmail)
+	student, squatter := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 6, newcomerEmail)
 	requests := map[string]domain.JoinRequestID{
-		"visible": h.seedJoinRequest(t, visibleTutor, student, 1, domain.JoinRequestHeld),
-		"blocked": h.seedJoinRequest(t, blockingTutor, student, 2, domain.JoinRequestHeld),
-		"limit":   h.seedJoinRequest(t, fullTutor, student, 3, domain.JoinRequestHeld),
-		"closed":  h.seedJoinRequest(t, closedTutor, student, 4, domain.JoinRequestHeld),
-		"dropped": h.seedJoinRequest(t, droppedTutor, student, 5, domain.JoinRequestHeld),
+		"visible": h.enteredRequest(t, squatter, h.storedCode(t, visibleTutor).Display()),
+		"blocked": h.enteredRequest(t, squatter, h.storedCode(t, blockingTutor).Display()),
+		"limit":   h.enteredRequest(t, squatter, string(h.storedCode(t, fullTutor))),
+		"closed":  h.enteredRequest(t, squatter, strings.ToLower(h.storedCode(t, closedTutor).Display())),
+		"dropped": h.enteredRequest(t, squatter, h.storedCode(t, droppedTutor).Display()),
 	}
 	h.blockRequester(t, blockingTutor, student)
 	h.fillPendingRequests(t, fullTutor)
@@ -940,18 +940,23 @@ func (h *authHarness) blockRequester(t *testing.T, tutor domain.UserID, student 
 
 func (h *authHarness) fillPendingRequests(t *testing.T, tutor domain.UserID) {
 	t.Helper()
+	h.fillPendingRequestsWith(t, tutor, "filler-", domain.VisiblePendingRequestCap)
+}
+
+func (h *authHarness) fillPendingRequestsWith(t *testing.T, tutor domain.UserID, prefix string, count int) {
+	t.Helper()
 	_, err := h.database.Pool.Exec(context.Background(), `
 INSERT INTO users (id, role, state, email, email_verified_at, password_hash, name, language, timezone, theme, consent_version, consent_at,
     unverified_since, created_at, updated_at)
-SELECT gen_random_uuid(), 'student', 'active', 'filler-' || n || '@example.org', $1, '$argon2id$unused', 'A filler', 'en', 'UTC', 'system', '2026-10', $1, $1, $1, $1
-FROM generate_series(1, $2::int) AS n`, authStart, domain.VisiblePendingRequestCap)
+SELECT gen_random_uuid(), 'student', 'active', $3 || n || '@example.org', $1, '$argon2id$unused', 'A filler', 'en', 'UTC', 'system', '2026-10', $1, $1, $1, $1
+FROM generate_series(1, $2::int) AS n`, authStart, count, prefix)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = h.database.Pool.Exec(context.Background(), `
 INSERT INTO join_requests (id, tutor_id, student_id, state, suppressed, owner_choice_pending, expires_at, created_at)
-SELECT gen_random_uuid(), $1, users.id, 'pending', 'none', false, $2, $3 FROM users WHERE users.email LIKE 'filler-%'`,
-		tutor, authStart.Add(14*24*time.Hour), authStart)
+SELECT gen_random_uuid(), $1, users.id, 'pending', 'none', false, $2, $3 FROM users WHERE users.email LIKE $4`,
+		tutor, authStart.Add(14*24*time.Hour), authStart, prefix+"%")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1018,11 +1023,11 @@ func TestKeepingAnExpiredHeldRequestAnswersCodeInvalid(t *testing.T) {
 	otherTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 2, newcomerEmail)
 	request := h.seedJoinRequest(t, otherTutor, student, 1, domain.JoinRequestHeld)
+	h.reset(t, h.resetToken(t, newcomerEmail))
+	owner := h.ownerSignIn(t, newcomerEmail)
 	if _, err := h.database.Pool.Exec(context.Background(), "UPDATE join_requests SET expires_at = $1 WHERE id = $2", authStart, request); err != nil {
 		t.Fatal(err)
 	}
-	h.reset(t, h.resetToken(t, newcomerEmail))
-	owner := h.ownerSignIn(t, newcomerEmail)
 
 	kept := h.decideReclaim(t, owner, reclaimChoice{KeepRequests: []string{requestText(request)}})
 

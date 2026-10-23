@@ -25,6 +25,7 @@ type Repositories struct {
 	Relationships Relationships
 	Invitations   Invitations
 	JoinRequests  JoinRequests
+	Blocked       BlockedRequesters
 }
 
 type Store struct {
@@ -73,6 +74,7 @@ func newRepositories(queries *dbgen.Queries) Repositories {
 		Relationships: Relationships{queries: queries},
 		Invitations:   Invitations{queries: queries},
 		JoinRequests:  JoinRequests{queries: queries},
+		Blocked:       BlockedRequesters{queries: queries},
 	}
 }
 

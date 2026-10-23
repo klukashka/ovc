@@ -110,7 +110,7 @@ func (r *router) signUp(ctx context.Context, input *registerInput) (*acceptedOut
 	}
 	err := r.auth.Accounts.Register(ctx, accounts.Registration{
 		Role: input.Body.Role, Name: input.Body.Name, Email: input.Body.Email, Password: input.Body.Password,
-		Language: input.Body.Language, Timezone: input.Body.Timezone, Consent: input.Body.Consent,
+		Language: input.Body.Language, Timezone: input.Body.Timezone, Consent: input.Body.Consent, TutorCode: input.Body.TutorCode,
 	}, clientAddress(ctx))
 	if err != nil {
 		return nil, r.flowError(ctx, "auth.register.failed", err)
@@ -223,6 +223,8 @@ func (r *router) flowError(ctx context.Context, event string, err error) error {
 		return NewError(ctx, domain.ErrorInvitationInvalid)
 	case errors.Is(err, accounts.ErrInvitationEmailMismatch):
 		return NewError(ctx, domain.ErrorInvitationEmailMismatch)
+	case errors.Is(err, accounts.ErrTutorCodeInvalid):
+		return NewError(ctx, domain.ErrorTutorCodeInvalid)
 	case errors.Is(err, accounts.ErrUnauthenticated):
 		return NewError(ctx, domain.ErrorUnauthenticated)
 	case errors.As(err, &throttled):

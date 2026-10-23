@@ -161,28 +161,43 @@ func (s *Service) ListCards(ctx context.Context, tutor domain.UserID, query Card
 }
 
 func formatCursor(cursor repositories.RelationshipCursor) string {
-	text := strconv.FormatInt(cursor.CreatedAt.UnixMicro(), 10) + cursorSeparator + cursor.ID.String()
-	return base64.RawURLEncoding.EncodeToString([]byte(text))
+	return encodeCursor(cursor.CreatedAt, cursor.ID)
 }
 
 func parseCursor(text string) (repositories.RelationshipCursor, bool) {
+	instant, id, valid := decodeCursor[domain.RelationshipID](text)
+	return repositories.RelationshipCursor{CreatedAt: instant, ID: id}, valid
+}
+
+type cursorID interface {
+	~[16]byte
+	String() string
+}
+
+func encodeCursor[ID cursorID](createdAt time.Time, id ID) string {
+	text := strconv.FormatInt(createdAt.UnixMicro(), 10) + cursorSeparator + id.String()
+	return base64.RawURLEncoding.EncodeToString([]byte(text))
+}
+
+func decodeCursor[ID cursorID](text string) (time.Time, ID, bool) {
+	var none ID
 	decoded, err := base64.RawURLEncoding.Strict().DecodeString(text)
 	if err != nil {
-		return repositories.RelationshipCursor{}, false
+		return time.Time{}, none, false
 	}
-	micros, id, found := strings.Cut(string(decoded), cursorSeparator)
+	micros, idText, found := strings.Cut(string(decoded), cursorSeparator)
 	if !found {
-		return repositories.RelationshipCursor{}, false
+		return time.Time{}, none, false
 	}
 	instant, err := strconv.ParseInt(micros, 10, 64)
 	if err != nil {
-		return repositories.RelationshipCursor{}, false
+		return time.Time{}, none, false
 	}
-	relationship, valid := domain.ParseUUID[domain.RelationshipID](id)
+	id, valid := domain.ParseUUID[ID](idText)
 	if !valid {
-		return repositories.RelationshipCursor{}, false
+		return time.Time{}, none, false
 	}
-	return repositories.RelationshipCursor{CreatedAt: time.UnixMicro(instant).UTC(), ID: relationship}, true
+	return time.UnixMicro(instant).UTC(), id, true
 }
 
 func (s *Service) Card(ctx context.Context, tutor domain.UserID, id domain.RelationshipID) (Card, error) {

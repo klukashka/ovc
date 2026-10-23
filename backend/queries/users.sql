@@ -154,3 +154,8 @@ LIMIT sqlc.arg(batch_size);
 
 -- name: LockUserReclaim :one
 SELECT state, reclaim_until FROM users WHERE id = @id FOR NO KEY UPDATE;
+
+-- name: GetTutorByCode :one
+SELECT tutor_profiles.user_id, users.state FROM tutor_profiles
+JOIN users ON users.id = tutor_profiles.user_id
+WHERE tutor_profiles.code = @code;

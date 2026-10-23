@@ -69,11 +69,12 @@ type releasedRequest struct {
 }
 
 type reclaimDecision struct {
-	kept     int
-	dropped  int
-	outcomes []domain.LinkOutcome
-	removed  []repositories.Relationship
-	released []releasedRequest
+	kept         int
+	dropped      int
+	outcomes     []domain.LinkOutcome
+	removed      []repositories.Relationship
+	released     []releasedRequest
+	unsuppressed []unsuppressedRequest
 }
 
 type waitingItems struct {
@@ -223,7 +224,7 @@ func (s *Service) DecideReclaim(ctx context.Context, principal accounts.Principa
 	return &outcome, nil
 }
 
-func (s *Service) lockWaitingLinks(ctx context.Context, repos repositories.Repositories, student domain.UserID) (waitingItems, error) {
+func (s *Service) lockWaitingLinks(ctx context.Context, repos repositories.Repositories, student domain.UserID, also ...domain.UserID) (waitingItems, error) {
 	links, err := repos.Relationships.ReclaimPendingOf(ctx, student)
 	if err != nil {
 		return waitingItems{}, err
@@ -232,13 +233,14 @@ func (s *Service) lockWaitingLinks(ctx context.Context, repos repositories.Repos
 	if err != nil {
 		return waitingItems{}, err
 	}
-	tutors := make([]domain.UserID, 0, len(links)+len(requests))
+	tutors := make([]domain.UserID, 0, len(links)+len(requests)+len(also))
 	for _, link := range links {
 		tutors = append(tutors, link.TutorID)
 	}
 	for _, request := range requests {
 		tutors = append(tutors, request.TutorID)
 	}
+	tutors = append(tutors, also...)
 	if len(tutors) == 0 {
 		return waitingItems{}, nil
 	}
@@ -380,6 +382,11 @@ func (s *Service) apply(
 			return reclaimDecision{}, err
 		}
 	}
+	freed, err := s.unsuppressEach(ctx, repos, keptTutors, now)
+	if err != nil {
+		return reclaimDecision{}, err
+	}
+	decision.unsuppressed = freed
 	return decision, nil
 }
 
@@ -449,40 +456,26 @@ func (s *Service) keepRequest(ctx context.Context, repos repositories.Repositori
 		return nil
 	}
 	decision.kept++
-	tutor, err := repos.Users.ByID(ctx, request.TutorID)
+	outcome, released, err := s.releaseHeld(ctx, repos, request, now)
 	if err != nil {
 		return err
 	}
-	if tutor.State != domain.AccountActive || !request.ExpiresAt.After(now) {
-		decision.outcomes = append(decision.outcomes, domain.LinkOutcomeCodeInvalid)
-		_, err := repos.JoinRequests.ExpireHeld(ctx, request.ID, now)
-		return err
+	decision.outcomes = append(decision.outcomes, outcome)
+	if released != nil {
+		decision.released = append(decision.released, *released)
 	}
-	suppressed, err := releaseVisibility(ctx, repos, request)
-	if err != nil {
-		return err
-	}
-	released, err := repos.JoinRequests.ReleaseHeld(ctx, request.ID, suppressed)
-	if err != nil {
-		return err
-	}
-	if !released {
-		return fmt.Errorf("release the locked join request %s: %w", request.ID, repositories.ErrNotFound)
-	}
-	decision.outcomes = append(decision.outcomes, domain.LinkOutcomeRequestSent)
-	decision.released = append(decision.released, releasedRequest{request: request, suppressed: suppressed})
 	return nil
 }
 
-func releaseVisibility(ctx context.Context, repos repositories.Repositories, request repositories.JoinRequest) (domain.Suppression, error) {
-	blocked, err := repos.JoinRequests.Blocked(ctx, request.TutorID, request.StudentID)
+func releaseVisibility(ctx context.Context, repos repositories.Repositories, request repositories.JoinRequest, now time.Time) (domain.Suppression, error) {
+	blocked, err := repos.Blocked.Contains(ctx, request.TutorID, request.StudentID)
 	if err != nil {
 		return "", err
 	}
 	if blocked {
 		return domain.SuppressionBlocked, nil
 	}
-	visible, err := repos.JoinRequests.VisiblePendingCount(ctx, request.TutorID)
+	visible, err := repos.JoinRequests.VisiblePendingCount(ctx, request.TutorID, now)
 	if err != nil {
 		return "", err
 	}
@@ -507,13 +500,9 @@ func (s *Service) announceDecision(ctx context.Context, student domain.UserID, d
 		s.logRemoved(ctx, link, removedByReclaim)
 	}
 	for _, released := range decision.released {
-		visibility := "visible"
-		if released.suppressed != domain.SuppressionNone {
-			visibility = "suppressed"
-		}
-		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "join_request.released",
-			slog.String("tutor_id", released.request.TutorID.String()), slog.String("user_id", student.String()), slog.String("visibility", visibility))
+		s.logReleased(ctx, student, released)
 	}
+	s.logUnsuppressed(ctx, decision.unsuppressed)
 }
 
 func (s *Service) logReclaimDecided(ctx context.Context, student domain.UserID, decision reclaimDecision, cause decisionCause) {
@@ -588,11 +577,26 @@ func (s *Service) OnAccountDeleted(
 	if role == domain.RoleTutor {
 		return s.discardForTutorDeletion(ctx, repos, user, now)
 	}
-	waiting, err := s.lockWaitingLinks(ctx, repos, user)
+	open, err := repos.JoinRequests.OpenTutorsOf(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	waiting, err := s.lockWaitingLinks(ctx, repos, user, open...)
 	if err != nil {
 		return nil, err
 	}
 	decision, err := s.apply(ctx, repos, user, reclaimPlan{dropLinks: waiting.links, dropRequests: waiting.requests}, domain.CauseStudentDeleted, now)
+	if err != nil {
+		return nil, err
+	}
+	expiredFor, err := repos.JoinRequests.ExpireOpenOf(ctx, user, now)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := repos.JoinRequests.CloseUnblockedOf(ctx, user, now); err != nil {
+		return nil, err
+	}
+	freed, err := s.unsuppressEach(ctx, repos, expiredFor, now)
 	if err != nil {
 		return nil, err
 	}
@@ -603,6 +607,7 @@ func (s *Service) OnAccountDeleted(
 		for _, link := range decision.removed {
 			s.logRemoved(ctx, link, removedByStudent)
 		}
+		s.logUnsuppressed(ctx, freed)
 	}, nil
 }
 

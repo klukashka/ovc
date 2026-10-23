@@ -172,3 +172,13 @@ WHERE id = @id AND tutor_id = @tutor_id AND state = sqlc.arg(from_state)::text;
 
 -- name: LockStudentReclaimPendingRelationships :many
 SELECT * FROM relationships WHERE student_id = @student_id AND state = 'reclaim_pending' ORDER BY id FOR UPDATE;
+
+-- name: GetTutorRelationshipOfStudent :one
+SELECT * FROM relationships WHERE tutor_id = @tutor_id AND student_id = @student_id AND state <> 'discarded';
+
+-- name: LockRelationshipsForJoinRequest :many
+SELECT * FROM relationships
+WHERE tutor_id = @tutor_id AND state <> 'discarded'
+    AND (student_id = @student_id OR (state = 'invited' AND email = @email))
+ORDER BY id
+FOR UPDATE;

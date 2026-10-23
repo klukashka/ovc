@@ -24,9 +24,9 @@ const (
 )
 
 var (
-	newTutorInvitationEmailLimit = dailyLimit{purpose: purposeInvitationEmail, limit: 10}
-	invitationEmailLimit         = dailyLimit{purpose: purposeInvitationEmail, limit: 50}
-	invitationRecipientLimit     = dailyLimit{purpose: purposeInvitationRecipient, limit: 3}
+	newTutorInvitationEmailLimit = daily(purposeInvitationEmail, 10)
+	invitationEmailLimit         = daily(purposeInvitationEmail, 50)
+	invitationRecipientLimit     = daily(purposeInvitationRecipient, 3)
 )
 
 type sendOutcome string

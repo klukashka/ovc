@@ -42,6 +42,7 @@ const (
 	fieldConsent         = "body.consent"
 	fieldNewPassword     = "body.new_password"
 	fieldCurrentPassword = "body.current_password"
+	fieldTutorCode       = "body.tutor_code"
 )
 
 var (
@@ -84,13 +85,14 @@ func invalid(path string, code domain.FieldCode) error {
 }
 
 type Registration struct {
-	Role     domain.Role
-	Name     string
-	Email    string
-	Password string
-	Language domain.Language
-	Timezone string
-	Consent  bool
+	Role      domain.Role
+	Name      string
+	Email     string
+	Password  string
+	Language  domain.Language
+	Timezone  string
+	Consent   bool
+	TutorCode *string
 }
 
 type Confirmation struct {
@@ -114,12 +116,45 @@ func (s *Service) Register(ctx context.Context, registration Registration, addre
 	}
 	email := domain.NormalizeEmail(registration.Email)
 	name := strings.TrimSpace(registration.Name)
+	if registration.Role == domain.RoleStudent {
+		return s.registerStudent(ctx, registration, name, email, address, now)
+	}
 	if problems := registrationProblems(registration, name, email); len(problems) > 0 {
 		return &ValidationError{Fields: problems}
 	}
 	if err := s.reserveRequestAddress(ctx, address, now); err != nil {
 		return err
 	}
+	return s.createAccount(ctx, registration, name, email, now, func(ctx context.Context, repos repositories.Repositories, user domain.UserID) (Announce, error) {
+		err := repos.TutorProfiles.Create(ctx, repositories.NewTutorProfile{
+			UserID: user, FileQuotaBytes: s.deps.TutorQuotas.FileBytes, RecordingQuotaBytes: s.deps.TutorQuotas.RecordingBytes, CreatedAt: now,
+		}, s.deps.Random)
+		return Silent, err
+	})
+}
+
+func (s *Service) registerStudent(ctx context.Context, registration Registration, name string, email string, address netip.Addr, now time.Time) error {
+	if err := s.reserveRequestAddress(ctx, address, now); err != nil {
+		return err
+	}
+	if registration.TutorCode == nil {
+		return invalid(fieldTutorCode, domain.FieldRequired)
+	}
+	check, err := s.deps.Tutoring.PrecheckCode(ctx, *registration.TutorCode)
+	if err != nil {
+		return err
+	}
+	if problems := signUpProblems(name, email, registration.Password, registration.Consent); len(problems) > 0 {
+		return &ValidationError{Fields: problems}
+	}
+	return s.createAccount(ctx, registration, name, email, now, func(ctx context.Context, repos repositories.Repositories, user domain.UserID) (Announce, error) {
+		return s.deps.Tutoring.HoldRequestAtSignUp(ctx, repos, user, check, now)
+	})
+}
+
+type accountEffects func(ctx context.Context, repos repositories.Repositories, user domain.UserID) (Announce, error)
+
+func (s *Service) createAccount(ctx context.Context, registration Registration, name string, email string, now time.Time, effects accountEffects) error {
 	encoded, err := s.deps.Hasher.Hash(ctx, registration.Password)
 	if err != nil {
 		return err
@@ -129,18 +164,17 @@ func (s *Service) Register(ctx context.Context, registration Registration, addre
 		return err
 	}
 	created := false
+	announce := Announce(Silent)
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		inserted, err := repos.Users.CreateIfEmailFree(ctx, repositories.SignUp{
-			ID: user, Role: domain.RoleTutor, Email: email, PasswordHash: encoded, Name: name, Language: registration.Language,
+			ID: user, Role: registration.Role, Email: email, PasswordHash: encoded, Name: name, Language: registration.Language,
 			Timezone: resolveZone(registration.Timezone), Theme: domain.ThemeSystem, ConsentVersion: string(domain.CurrentConsentVersion), CreatedAt: now,
 		})
 		if err != nil || !inserted {
 			return err
 		}
 		created = true
-		err = repos.TutorProfiles.Create(ctx, repositories.NewTutorProfile{
-			UserID: user, FileQuotaBytes: s.deps.TutorQuotas.FileBytes, RecordingQuotaBytes: s.deps.TutorQuotas.RecordingBytes, CreatedAt: now,
-		}, s.deps.Random)
+		announce, err = effects(ctx, repos, user)
 		if err != nil {
 			return err
 		}
@@ -157,6 +191,7 @@ func (s *Service) Register(ctx context.Context, registration Registration, addre
 	}
 	if created {
 		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "auth.signup.accepted", userAttribute(user))
+		announce(ctx)
 		return nil
 	}
 	return s.signUpDuplicate(ctx, email, now)
@@ -629,6 +664,9 @@ func registrationProblems(registration Registration, name string, email string) 
 	var problems []FieldProblem
 	if registration.Role != domain.RoleTutor {
 		problems = append(problems, FieldProblem{Path: fieldRole, Code: domain.FieldNotAllowed})
+	}
+	if registration.TutorCode != nil {
+		problems = append(problems, FieldProblem{Path: fieldTutorCode, Code: domain.FieldNotAllowed})
 	}
 	return append(problems, signUpProblems(name, email, registration.Password, registration.Consent)...)
 }

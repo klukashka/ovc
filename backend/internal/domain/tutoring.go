@@ -65,6 +65,7 @@ const InvitationMismatchLimit int16 = 5
 const (
 	ReclaimWindow            = 7 * 24 * time.Hour
 	VisiblePendingRequestCap = 50
+	JoinRequestLifetime      = 14 * 24 * time.Hour
 )
 
 const (
@@ -105,6 +106,33 @@ const (
 	JoinRequestDeclined JoinRequestState = "declined"
 	JoinRequestExpired  JoinRequestState = "expired"
 )
+
+type SentRequestState string
+
+const (
+	SentRequestPending     SentRequestState = "pending"
+	SentRequestAccepted    SentRequestState = "accepted"
+	SentRequestNotAccepted SentRequestState = "not_accepted"
+	SentRequestExpired     SentRequestState = "expired"
+)
+
+func (s JoinRequestState) Sent() SentRequestState {
+	switch s {
+	case JoinRequestHeld, JoinRequestPending:
+		return SentRequestPending
+	case JoinRequestAccepted:
+		return SentRequestAccepted
+	case JoinRequestDeclined:
+		return SentRequestNotAccepted
+	case JoinRequestExpired:
+		return SentRequestExpired
+	}
+	panic("a join request has an unknown state: " + string(s))
+}
+
+func (s JoinRequestState) Open() bool {
+	return s == JoinRequestHeld || s == JoinRequestPending
+}
 
 type Suppression string
 

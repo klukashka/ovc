@@ -31,19 +31,24 @@ func newFlowHarness(t *testing.T) *authHarness {
 }
 
 type signUp struct {
-	Role     string
-	Name     string
-	Email    string
-	Password string
-	Language string
-	Timezone string
-	Consent  bool
+	Role      string
+	Name      string
+	Email     string
+	Password  string
+	Language  string
+	Timezone  string
+	Consent   bool
+	TutorCode string
 }
 
 func (form signUp) body() string {
-	return fmt.Sprintf(`{"role":%s,"name":%s,"email":%s,"password":%s,"language":%s,"timezone":%s,"consent":%t}`,
+	code := ""
+	if form.TutorCode != "" {
+		code = `,"tutor_code":` + jsonText(form.TutorCode)
+	}
+	return fmt.Sprintf(`{"role":%s,"name":%s,"email":%s,"password":%s,"language":%s,"timezone":%s,"consent":%t%s}`,
 		jsonText(form.Role), jsonText(form.Name), jsonText(form.Email), jsonText(form.Password), jsonText(form.Language),
-		jsonText(form.Timezone), form.Consent)
+		jsonText(form.Timezone), form.Consent, code)
 }
 
 func jsonText(value string) string {
@@ -244,7 +249,8 @@ func TestRegisterRefusesInvalidInput(t *testing.T) {
 		change func(*signUp)
 		field  string
 	}{
-		"student":         {change: func(form *signUp) { form.Role = "student" }, field: "body.role:not_allowed"},
+		"student":         {change: func(form *signUp) { form.Role = "student" }, field: "body.tutor_code:required"},
+		"tutor with code": {change: func(form *signUp) { form.TutorCode = "2222-2222" }, field: "body.tutor_code:not_allowed"},
 		"short password":  {change: func(form *signUp) { form.Password = "ninechars" }, field: "body.password:too_short"},
 		"long password":   {change: func(form *signUp) { form.Password = strings.Repeat("п", 129) }, field: "body.password:too_long"},
 		"no consent":      {change: func(form *signUp) { form.Consent = false }, field: "body.consent:required"},

@@ -21,16 +21,21 @@ const (
 	purposeInvitationRegeneration domain.RateLimitPurpose = "invitation_regeneration_day"
 )
 
-type dailyLimit struct {
+type rateLimit struct {
 	purpose domain.RateLimitPurpose
+	window  time.Duration
 	limit   int32
 }
 
+func daily(purpose domain.RateLimitPurpose, limit int32) rateLimit {
+	return rateLimit{purpose: purpose, window: dailyWindow, limit: limit}
+}
+
 var (
-	codeRegenerationLimit = dailyLimit{purpose: purposeCodeRegeneration, limit: 10}
-	cardCreationLimit     = dailyLimit{purpose: purposeCardCreation, limit: 50}
-	cardEmailChangeLimit  = dailyLimit{purpose: purposeCardEmailChange, limit: 50}
-	regenerationLimit     = dailyLimit{purpose: purposeInvitationRegeneration, limit: 50}
+	codeRegenerationLimit = daily(purposeCodeRegeneration, 10)
+	cardCreationLimit     = daily(purposeCardCreation, 50)
+	cardEmailChangeLimit  = daily(purposeCardEmailChange, 50)
+	regenerationLimit     = daily(purposeInvitationRegeneration, 50)
 )
 
 type ThrottledError struct {
@@ -38,7 +43,7 @@ type ThrottledError struct {
 }
 
 func (e *ThrottledError) Error() string {
-	return "a daily limit of the tutor is reached"
+	return "a rate limit is reached"
 }
 
 type TutorCode struct {
@@ -57,11 +62,12 @@ type Dependencies struct {
 }
 
 type Service struct {
-	deps Dependencies
+	deps   Dependencies
+	expiry *expiryResume
 }
 
 func New(dependencies Dependencies) *Service {
-	return &Service{deps: dependencies}
+	return &Service{deps: dependencies, expiry: &expiryResume{}}
 }
 
 func (s *Service) Code(ctx context.Context, tutor domain.UserID) (TutorCode, error) {
@@ -96,12 +102,12 @@ func (s *Service) RegenerateCode(ctx context.Context, tutor domain.UserID) (Tuto
 	return TutorCode{Code: regenerated, Active: true}, nil
 }
 
-func (s *Service) reserve(ctx context.Context, repos repositories.Repositories, limit dailyLimit, tutor domain.UserID, now time.Time) error {
+func (s *Service) reserve(ctx context.Context, repos repositories.Repositories, limit rateLimit, tutor domain.UserID, now time.Time) error {
 	return s.reserveFor(ctx, repos, limit, tutor.String(), now)
 }
 
-func (s *Service) reserveFor(ctx context.Context, repos repositories.Repositories, limit dailyLimit, subject string, now time.Time) error {
-	window, retryAfter := domain.FixedWindow(now, dailyWindow)
+func (s *Service) reserveFor(ctx context.Context, repos repositories.Repositories, limit rateLimit, subject string, now time.Time) error {
+	window, retryAfter := domain.FixedWindow(now, limit.window)
 	count, err := repos.RateLimits.Reserve(ctx, repositories.RateLimitSlot{
 		Purpose: limit.purpose, Subject: s.deps.Keys.ThrottleSubject(string(limit.purpose), subject), WindowStart: window,
 	})

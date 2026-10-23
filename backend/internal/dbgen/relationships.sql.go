@@ -268,6 +268,39 @@ func (q *Queries) GetTutorRelationshipByCreateKey(ctx context.Context, arg GetTu
 	return i, err
 }
 
+const getTutorRelationshipOfStudent = `-- name: GetTutorRelationshipOfStudent :one
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE tutor_id = $1 AND student_id = $2 AND state <> 'discarded'
+`
+
+type GetTutorRelationshipOfStudentParams struct {
+	TutorID   domain.UserID
+	StudentID *domain.UserID
+}
+
+func (q *Queries) GetTutorRelationshipOfStudent(ctx context.Context, arg GetTutorRelationshipOfStudentParams) (Relationship, error) {
+	row := q.db.QueryRow(ctx, getTutorRelationshipOfStudent, arg.TutorID, arg.StudentID)
+	var i Relationship
+	err := row.Scan(
+		&i.ID,
+		&i.TutorID,
+		&i.StudentID,
+		&i.State,
+		&i.DiscardReason,
+		&i.EndedBy,
+		&i.DisplayName,
+		&i.Email,
+		&i.Colour,
+		&i.Notes,
+		&i.CreateKey,
+		&i.LinkedAt,
+		&i.EndedAt,
+		&i.DiscardedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const linkInvitedRelationship = `-- name: LinkInvitedRelationship :execrows
 UPDATE relationships
 SET state = $1, student_id = $2, colour = $3, linked_at = $4::timestamptz,
@@ -584,6 +617,57 @@ func (q *Queries) ListTutorRelationships(ctx context.Context, arg ListTutorRelat
 		arg.AfterID,
 		arg.RowLimit,
 	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Relationship
+	for rows.Next() {
+		var i Relationship
+		if err := rows.Scan(
+			&i.ID,
+			&i.TutorID,
+			&i.StudentID,
+			&i.State,
+			&i.DiscardReason,
+			&i.EndedBy,
+			&i.DisplayName,
+			&i.Email,
+			&i.Colour,
+			&i.Notes,
+			&i.CreateKey,
+			&i.LinkedAt,
+			&i.EndedAt,
+			&i.DiscardedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockRelationshipsForJoinRequest = `-- name: LockRelationshipsForJoinRequest :many
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships
+WHERE tutor_id = $1 AND state <> 'discarded'
+    AND (student_id = $2 OR (state = 'invited' AND email = $3))
+ORDER BY id
+FOR UPDATE
+`
+
+type LockRelationshipsForJoinRequestParams struct {
+	TutorID   domain.UserID
+	StudentID *domain.UserID
+	Email     *string
+}
+
+func (q *Queries) LockRelationshipsForJoinRequest(ctx context.Context, arg LockRelationshipsForJoinRequestParams) ([]Relationship, error) {
+	rows, err := q.db.Query(ctx, lockRelationshipsForJoinRequest, arg.TutorID, arg.StudentID, arg.Email)
 	if err != nil {
 		return nil, err
 	}

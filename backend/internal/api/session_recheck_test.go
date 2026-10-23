@@ -168,6 +168,21 @@ var squatterWrites = map[string]squatterWrite{
 		}
 		return send, unchanged
 	}},
+	"a code entry": {role: domain.RoleStudent, act: func(t *testing.T, h *authHarness, user domain.UserID, token string) (squatterRequest, unchangedCheck) {
+		t.Helper()
+		tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 9, secondTutorEmail)
+		code := h.storedCode(t, tutor).Display()
+		send := func() <-chan pendingAnswer {
+			return h.sendInBackground(http.MethodPost, joinRequestsPath, codeBody(code), authorised(token))
+		}
+		unchanged := func(t *testing.T) {
+			t.Helper()
+			if h.countRows(t, "SELECT count(id) FROM join_requests WHERE student_id = $1::uuid", user.String()) != 0 {
+				t.Fatal("the squatter's code entry created a join request")
+			}
+		}
+		return send, unchanged
+	}},
 	"a confirmation resend": {role: domain.RoleStudent, act: func(t *testing.T, h *authHarness, user domain.UserID, token string) (squatterRequest, unchangedCheck) {
 		t.Helper()
 		before := h.countRows(t, "SELECT count(id) FROM email_requests WHERE user_id = $1::uuid", user.String())

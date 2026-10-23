@@ -385,17 +385,181 @@ func (r JoinRequests) ExpireHeld(ctx context.Context, id domain.JoinRequestID, n
 	return applied(rows, err, "expire held join request")
 }
 
-func (r JoinRequests) VisiblePendingCount(ctx context.Context, tutor domain.UserID) (int64, error) {
-	count, err := r.queries.CountVisiblePendingJoinRequests(ctx, tutor)
+func (r JoinRequests) VisiblePendingCount(ctx context.Context, tutor domain.UserID, now time.Time) (int64, error) {
+	count, err := r.queries.CountVisiblePendingJoinRequests(ctx, dbgen.CountVisiblePendingJoinRequestsParams{TutorID: tutor, Now: now})
 	return one(count, err, "count visible pending join requests")
-}
-
-func (r JoinRequests) Blocked(ctx context.Context, tutor domain.UserID, student domain.UserID) (bool, error) {
-	blocked, err := r.queries.StudentBlockedByTutor(ctx, dbgen.StudentBlockedByTutorParams{TutorID: tutor, StudentID: student})
-	return one(blocked, err, "blocked requester")
 }
 
 func (r Relationships) LockReclaimPendingOf(ctx context.Context, student domain.UserID) ([]Relationship, error) {
 	relationships, err := r.queries.LockStudentReclaimPendingRelationships(ctx, &student)
 	return one(relationships, err, "lock reclaim pending relationships of a student")
+}
+
+type (
+	TutorJoinRequest    = dbgen.ListTutorJoinRequestsRow
+	DueJoinRequest      = dbgen.ListDueJoinRequestsRow
+	UnsuppressedRequest = dbgen.UnsuppressJoinRequestsRow
+	BlockedRequester    = dbgen.ListBlockedRequestersRow
+	CodeOwner           = dbgen.GetTutorByCodeRow
+)
+
+type JoinRequestCursor struct {
+	CreatedAt time.Time
+	ID        domain.JoinRequestID
+}
+
+type BlockedCursor struct {
+	CreatedAt time.Time
+	ID        domain.UserID
+}
+
+func (r TutorProfiles) ByCode(ctx context.Context, code domain.TutorCode) (CodeOwner, error) {
+	owner, err := r.queries.GetTutorByCode(ctx, code)
+	return one(owner, err, "tutor by code")
+}
+
+func (r Relationships) OfTutorAndStudent(ctx context.Context, tutor domain.UserID, student domain.UserID) (Relationship, error) {
+	relationship, err := r.queries.GetTutorRelationshipOfStudent(ctx, dbgen.GetTutorRelationshipOfStudentParams{TutorID: tutor, StudentID: &student})
+	return one(relationship, err, "relationship of a tutor and a student")
+}
+
+func (r Relationships) LockForJoinRequest(ctx context.Context, tutor domain.UserID, student domain.UserID, email string) ([]Relationship, error) {
+	relationships, err := r.queries.LockRelationshipsForJoinRequest(ctx, dbgen.LockRelationshipsForJoinRequestParams{
+		TutorID: tutor, StudentID: &student, Email: &email,
+	})
+	return one(relationships, err, "lock relationships for a join request")
+}
+
+func (r JoinRequests) LockOpen(ctx context.Context, tutor domain.UserID, student domain.UserID) (JoinRequest, error) {
+	request, err := r.queries.LockOpenJoinRequest(ctx, dbgen.LockOpenJoinRequestParams{TutorID: tutor, StudentID: student})
+	return one(request, err, "lock open join request")
+}
+
+func (r JoinRequests) HeldTutorsOf(ctx context.Context, student domain.UserID) ([]domain.UserID, error) {
+	tutors, err := r.queries.ListHeldJoinRequestTutors(ctx, student)
+	return one(tutors, err, "tutors of held join requests")
+}
+
+func (r JoinRequests) LockHeldOf(ctx context.Context, student domain.UserID) ([]JoinRequest, error) {
+	requests, err := r.queries.LockHeldJoinRequests(ctx, student)
+	return one(requests, err, "lock held join requests")
+}
+
+func (r JoinRequests) OpenTutorsOf(ctx context.Context, student domain.UserID) ([]domain.UserID, error) {
+	tutors, err := r.queries.ListOpenJoinRequestTutors(ctx, student)
+	return one(tutors, err, "tutors of open join requests")
+}
+
+func (r JoinRequests) CloseUnblockedOf(ctx context.Context, student domain.UserID, now time.Time) (int64, error) {
+	rows, err := r.queries.CloseUnblockedJoinRequestsOfStudent(ctx, dbgen.CloseUnblockedJoinRequestsOfStudentParams{Now: now, StudentID: student})
+	return counted(rows, err, "close join requests an unblock closed")
+}
+
+func (r JoinRequests) ExpireOpenOf(ctx context.Context, student domain.UserID, now time.Time) ([]domain.UserID, error) {
+	tutors, err := r.queries.ExpireOpenJoinRequestsOfStudent(ctx, dbgen.ExpireOpenJoinRequestsOfStudentParams{Now: now, StudentID: student})
+	return one(tutors, err, "expire open join requests of a student")
+}
+
+func (r JoinRequests) ForTutor(ctx context.Context, tutor domain.UserID, id domain.JoinRequestID, now time.Time) (JoinRequest, error) {
+	request, err := r.queries.GetTutorJoinRequest(ctx, dbgen.GetTutorJoinRequestParams{ID: id, TutorID: tutor, Now: now})
+	return one(request, err, "join request in a tutor's scope")
+}
+
+func (r JoinRequests) OfTutor(ctx context.Context, tutor domain.UserID, id domain.JoinRequestID) (JoinRequest, error) {
+	request, err := r.queries.GetJoinRequestOfTutor(ctx, dbgen.GetJoinRequestOfTutorParams{ID: id, TutorID: tutor})
+	return one(request, err, "join request of a tutor")
+}
+
+func (r JoinRequests) LockForTutor(ctx context.Context, tutor domain.UserID, id domain.JoinRequestID) (JoinRequest, error) {
+	request, err := r.queries.LockTutorJoinRequest(ctx, dbgen.LockTutorJoinRequestParams{ID: id, TutorID: tutor})
+	return one(request, err, "lock join request of a tutor")
+}
+
+func (r JoinRequests) VisibleOf(ctx context.Context, tutor domain.UserID, after *JoinRequestCursor, limit int32, now time.Time) ([]TutorJoinRequest, error) {
+	params := dbgen.ListTutorJoinRequestsParams{TutorID: tutor, RowLimit: limit, Now: now}
+	if after != nil {
+		params.AfterCreatedAt = &after.CreatedAt
+		params.AfterID = pgtype.UUID{Bytes: after.ID, Valid: true}
+	}
+	requests, err := r.queries.ListTutorJoinRequests(ctx, params)
+	return one(requests, err, "visible join requests of a tutor")
+}
+
+func (r JoinRequests) SentBy(ctx context.Context, student domain.UserID, after *JoinRequestCursor, limit int32) ([]JoinRequest, error) {
+	params := dbgen.ListStudentJoinRequestsParams{StudentID: student, RowLimit: limit}
+	if after != nil {
+		params.AfterCreatedAt = &after.CreatedAt
+		params.AfterID = pgtype.UUID{Bytes: after.ID, Valid: true}
+	}
+	requests, err := r.queries.ListStudentJoinRequests(ctx, params)
+	return one(requests, err, "join requests of a student")
+}
+
+func (r JoinRequests) Unsuppress(ctx context.Context, tutor domain.UserID, slots int64, now time.Time) ([]UnsuppressedRequest, error) {
+	requests, err := r.queries.UnsuppressJoinRequests(ctx, dbgen.UnsuppressJoinRequestsParams{TutorID: tutor, Now: now, Slots: slots})
+	return one(requests, err, "unsuppress join requests")
+}
+
+type DueCursor struct {
+	ExpiresAt time.Time
+	ID        domain.JoinRequestID
+}
+
+func (r JoinRequests) Due(ctx context.Context, now time.Time, after *DueCursor, batchSize int32) ([]DueJoinRequest, error) {
+	params := dbgen.ListDueJoinRequestsParams{Now: now, BatchSize: batchSize}
+	if after != nil {
+		params.AfterExpiresAt = &after.ExpiresAt
+		params.AfterID = pgtype.UUID{Bytes: after.ID, Valid: true}
+	}
+	requests, err := r.queries.ListDueJoinRequests(ctx, params)
+	return one(requests, err, "join requests due to expire")
+}
+
+func (r JoinRequests) ExpireDue(ctx context.Context, id domain.JoinRequestID, now time.Time) (bool, error) {
+	rows, err := r.queries.ExpireDueJoinRequest(ctx, dbgen.ExpireDueJoinRequestParams{Now: now, ID: id})
+	return applied(rows, err, "expire a due join request")
+}
+
+func (r JoinRequests) CloseBlocked(ctx context.Context, tutor domain.UserID, student domain.UserID) (int64, error) {
+	rows, err := r.queries.CloseBlockedJoinRequests(ctx, dbgen.CloseBlockedJoinRequestsParams{TutorID: tutor, StudentID: student})
+	return counted(rows, err, "close join requests suppressed by a block")
+}
+
+type BlockedRequesters struct {
+	queries *dbgen.Queries
+}
+
+func (r BlockedRequesters) Block(ctx context.Context, tutor domain.UserID, student domain.UserID, now time.Time) (bool, error) {
+	rows, err := r.queries.BlockRequester(ctx, dbgen.BlockRequesterParams{TutorID: tutor, StudentID: student, CreatedAt: now})
+	return applied(rows, err, "block requester")
+}
+
+func (r BlockedRequesters) Unblock(ctx context.Context, tutor domain.UserID, student domain.UserID) (bool, error) {
+	rows, err := r.queries.UnblockRequester(ctx, dbgen.UnblockRequesterParams{TutorID: tutor, StudentID: student})
+	return applied(rows, err, "unblock requester")
+}
+
+func (r BlockedRequesters) Contains(ctx context.Context, tutor domain.UserID, student domain.UserID) (bool, error) {
+	blocked, err := r.queries.StudentBlockedByTutor(ctx, dbgen.StudentBlockedByTutorParams{TutorID: tutor, StudentID: student})
+	return one(blocked, err, "blocked requester")
+}
+
+func (r BlockedRequesters) Of(ctx context.Context, tutor domain.UserID, after *BlockedCursor, limit int32) ([]BlockedRequester, error) {
+	params := dbgen.ListBlockedRequestersParams{TutorID: tutor, RowLimit: limit}
+	if after != nil {
+		params.AfterCreatedAt = &after.CreatedAt
+		params.AfterID = pgtype.UUID{Bytes: after.ID, Valid: true}
+	}
+	blocked, err := r.queries.ListBlockedRequesters(ctx, params)
+	return one(blocked, err, "blocked requesters of a tutor")
+}
+
+func (r JoinRequests) LockClosedByUnblock(ctx context.Context, tutor domain.UserID, student domain.UserID, now time.Time) (JoinRequest, error) {
+	request, err := r.queries.LockJoinRequestClosedByUnblock(ctx, dbgen.LockJoinRequestClosedByUnblockParams{TutorID: tutor, StudentID: student, Now: now})
+	return one(request, err, "lock join request closed by an unblock")
+}
+
+func (r JoinRequests) Reopen(ctx context.Context, id domain.JoinRequestID, suppressed domain.Suppression, now time.Time) (bool, error) {
+	rows, err := r.queries.ReopenJoinRequest(ctx, dbgen.ReopenJoinRequestParams{Suppressed: string(suppressed), ID: id, Now: now})
+	return applied(rows, err, "reopen join request")
 }

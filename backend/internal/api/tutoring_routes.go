@@ -123,6 +123,8 @@ func (r *router) registerTutoring() {
 	tutors := operation("tutors-list", http.MethodGet, "/api/v1/tutors")
 	tutors.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
 	register(r, tutors, AudienceStudentUnverifiedOK, r.myTutors)
+
+	r.registerJoinRequests()
 }
 
 const signedInAcceptanceSchema = "SignedInAcceptance"

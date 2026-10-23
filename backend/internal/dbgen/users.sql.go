@@ -197,6 +197,24 @@ func (q *Queries) DeleteUser(ctx context.Context, id domain.UserID) (int64, erro
 	return result.RowsAffected(), nil
 }
 
+const getTutorByCode = `-- name: GetTutorByCode :one
+SELECT tutor_profiles.user_id, users.state FROM tutor_profiles
+JOIN users ON users.id = tutor_profiles.user_id
+WHERE tutor_profiles.code = $1
+`
+
+type GetTutorByCodeRow struct {
+	UserID domain.UserID
+	State  domain.AccountState
+}
+
+func (q *Queries) GetTutorByCode(ctx context.Context, code domain.TutorCode) (GetTutorByCodeRow, error) {
+	row := q.db.QueryRow(ctx, getTutorByCode, code)
+	var i GetTutorByCodeRow
+	err := row.Scan(&i.UserID, &i.State)
+	return i, err
+}
+
 const getTutorCode = `-- name: GetTutorCode :one
 SELECT tutor_profiles.code, users.state FROM tutor_profiles
 JOIN users ON users.id = tutor_profiles.user_id

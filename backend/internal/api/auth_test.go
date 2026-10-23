@@ -181,6 +181,7 @@ func newAuthHarnessStoring(
 		{Name: domain.JobEmailRequestsCleanup, Every: time.Hour, Run: accounts.CleanupEmailRequests(store)},
 		{Name: domain.JobInvitationsExpire, Every: time.Hour, Run: tutoringService.ExpireInvitations},
 		{Name: domain.JobReclaimExpire, Every: time.Hour, Run: tutoringService.ExpireReclaims},
+		{Name: domain.JobJoinRequestsExpire, Every: time.Hour, Run: tutoringService.ExpireJoinRequests},
 	}
 	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, jobs, worker.DefaultTiming())
 	return &authHarness{
