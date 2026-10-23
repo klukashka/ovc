@@ -313,3 +313,89 @@ func (r JoinRequests) AcceptWaiting(ctx context.Context, tutor domain.UserID, st
 	rows, err := r.queries.AcceptWaitingJoinRequests(ctx, dbgen.AcceptWaitingJoinRequestsParams{Now: now, TutorID: tutor, StudentID: student})
 	return counted(rows, err, "accept waiting join requests")
 }
+
+type (
+	ReclaimPendingLink = dbgen.ListReclaimPendingLinksRow
+	OwnerChoiceRequest = dbgen.ListOwnerChoiceJoinRequestsRow
+	JoinRequest        = dbgen.JoinRequest
+)
+
+func (r Relationships) Reclaim(ctx context.Context, id domain.RelationshipID, now time.Time) (bool, error) {
+	rows, err := r.queries.ReclaimProvisionalRelationship(ctx, dbgen.ReclaimProvisionalRelationshipParams{Now: now, ID: id})
+	return applied(rows, err, "move provisional relationship to reclaim pending")
+}
+
+func (r Relationships) ReclaimPendingOf(ctx context.Context, student domain.UserID) ([]ReclaimPendingLink, error) {
+	links, err := r.queries.ListReclaimPendingLinks(ctx, &student)
+	return one(links, err, "reclaim pending links of a student")
+}
+
+func (r Relationships) AwaitsReclaimChoice(ctx context.Context, student domain.UserID) (bool, error) {
+	awaits, err := r.queries.StudentAwaitsReclaimChoice(ctx, &student)
+	if err != nil {
+		return false, fmt.Errorf("reclaim choice of a student: %w", err)
+	}
+	return awaits != nil && *awaits, nil
+}
+
+func (r Relationships) LockReclaimPendingOfTutor(ctx context.Context, tutor domain.UserID) ([]Relationship, error) {
+	relationships, err := r.queries.LockTutorReclaimPendingRelationships(ctx, tutor)
+	return one(relationships, err, "lock reclaim pending relationships of a tutor")
+}
+
+func (r Relationships) DiscardForTutorDeletion(ctx context.Context, link Relationship, now time.Time) (bool, error) {
+	rows, err := r.queries.DiscardRelationshipForTutorDeletion(ctx, dbgen.DiscardRelationshipForTutorDeletionParams{
+		Now: now, ID: link.ID, TutorID: link.TutorID, FromState: string(link.State),
+	})
+	return applied(rows, err, "discard relationship for tutor deletion")
+}
+
+func (r JoinRequests) MarkHeldForOwnerChoice(ctx context.Context, student domain.UserID) (int64, error) {
+	rows, err := r.queries.MarkHeldJoinRequestsForOwnerChoice(ctx, student)
+	return counted(rows, err, "mark held join requests for the owner's choice")
+}
+
+func (r JoinRequests) OwnerChoiceOf(ctx context.Context, student domain.UserID) ([]OwnerChoiceRequest, error) {
+	requests, err := r.queries.ListOwnerChoiceJoinRequests(ctx, student)
+	return one(requests, err, "join requests waiting for the owner's choice")
+}
+
+func (r JoinRequests) OwnerChoiceRowsOf(ctx context.Context, student domain.UserID) ([]JoinRequest, error) {
+	requests, err := r.queries.ListOwnerChoiceJoinRequestRows(ctx, student)
+	return one(requests, err, "join request rows waiting for the owner's choice")
+}
+
+func (r JoinRequests) LockOwnerChoiceOf(ctx context.Context, student domain.UserID) ([]JoinRequest, error) {
+	requests, err := r.queries.LockOwnerChoiceJoinRequests(ctx, student)
+	return one(requests, err, "lock join requests waiting for the owner's choice")
+}
+
+func (r JoinRequests) LockOwnerChoiceOfTutor(ctx context.Context, tutor domain.UserID) ([]JoinRequest, error) {
+	requests, err := r.queries.LockTutorOwnerChoiceJoinRequests(ctx, tutor)
+	return one(requests, err, "lock a tutor's join requests waiting for the owner's choice")
+}
+
+func (r JoinRequests) ReleaseHeld(ctx context.Context, id domain.JoinRequestID, suppressed domain.Suppression) (bool, error) {
+	rows, err := r.queries.ReleaseHeldJoinRequest(ctx, dbgen.ReleaseHeldJoinRequestParams{Suppressed: string(suppressed), ID: id})
+	return applied(rows, err, "release held join request")
+}
+
+func (r JoinRequests) ExpireHeld(ctx context.Context, id domain.JoinRequestID, now time.Time) (bool, error) {
+	rows, err := r.queries.ExpireHeldJoinRequest(ctx, dbgen.ExpireHeldJoinRequestParams{Now: now, ID: id})
+	return applied(rows, err, "expire held join request")
+}
+
+func (r JoinRequests) VisiblePendingCount(ctx context.Context, tutor domain.UserID) (int64, error) {
+	count, err := r.queries.CountVisiblePendingJoinRequests(ctx, tutor)
+	return one(count, err, "count visible pending join requests")
+}
+
+func (r JoinRequests) Blocked(ctx context.Context, tutor domain.UserID, student domain.UserID) (bool, error) {
+	blocked, err := r.queries.StudentBlockedByTutor(ctx, dbgen.StudentBlockedByTutorParams{TutorID: tutor, StudentID: student})
+	return one(blocked, err, "blocked requester")
+}
+
+func (r Relationships) LockReclaimPendingOf(ctx context.Context, student domain.UserID) ([]Relationship, error) {
+	relationships, err := r.queries.LockStudentReclaimPendingRelationships(ctx, &student)
+	return one(relationships, err, "lock reclaim pending relationships of a student")
+}

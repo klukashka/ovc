@@ -13,18 +13,19 @@ type AccessToken struct {
 }
 
 type Me struct {
-	ID            string              `json:"id" format:"uuid"`
-	Role          domain.Role         `json:"role" enum:"tutor,student"`
-	State         domain.AccountState `json:"state" enum:"unverified,active"`
-	Email         string              `json:"email"`
-	EmailVerified bool                `json:"email_verified"`
-	Name          string              `json:"name"`
-	Language      domain.Language     `json:"language" enum:"ru,en"`
-	Timezone      string              `json:"timezone"`
-	Theme         domain.Theme        `json:"theme" enum:"light,dark,system"`
-	AvatarID      *string             `json:"avatar_id" format:"uuid" nullable:"true"`
-	Bio           *string             `json:"bio,omitempty"`
-	Subjects      *[]string           `json:"subjects,omitempty"`
+	ID             string              `json:"id" format:"uuid"`
+	Role           domain.Role         `json:"role" enum:"tutor,student"`
+	State          domain.AccountState `json:"state" enum:"unverified,active"`
+	Email          string              `json:"email"`
+	EmailVerified  bool                `json:"email_verified"`
+	Name           string              `json:"name"`
+	Language       domain.Language     `json:"language" enum:"ru,en"`
+	Timezone       string              `json:"timezone"`
+	Theme          domain.Theme        `json:"theme" enum:"light,dark,system"`
+	AvatarID       *string             `json:"avatar_id" format:"uuid" nullable:"true"`
+	ReclaimPending bool                `json:"reclaim_pending"`
+	Bio            *string             `json:"bio,omitempty"`
+	Subjects       *[]string           `json:"subjects,omitempty"`
 }
 
 type RegisterRequest struct {

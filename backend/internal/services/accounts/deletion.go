@@ -53,7 +53,10 @@ func (s *Service) DeleteAccount(ctx context.Context, principal Principal, passwo
 			if err := closeEmailRequests(ctx, repos, principal.UserID); err != nil {
 				return err
 			}
-			_, err := repos.Sessions.RevokeAllOf(ctx, principal.UserID, now)
+			if _, err := repos.Sessions.RevokeAllOf(ctx, principal.UserID, now); err != nil {
+				return err
+			}
+			announce, err = s.deps.Tutoring.OnAccountDeleted(ctx, repos, principal.UserID, principal.Role, now)
 			return err
 		case domain.AccountBlocked, domain.AccountDeleted:
 		}

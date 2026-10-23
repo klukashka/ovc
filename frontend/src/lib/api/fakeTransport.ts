@@ -92,6 +92,7 @@ export class FakeAuthServer {
         email_verified: true,
         timezone: 'Europe/Moscow',
         avatar_id: null,
+        reclaim_pending: false,
         role: seed.role ?? 'tutor',
         state: 'active',
         language: 'ru',

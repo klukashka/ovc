@@ -31,11 +31,11 @@ type MyTutor struct {
 }
 
 func (s *Service) MyTutors(ctx context.Context, principal accounts.Principal) ([]MyTutor, error) {
-	return s.tutorsOf(ctx, s.deps.Store.Repositories(), principal.UserID, principal.State == domain.AccountActive, nil)
+	return s.tutorsOf(ctx, s.deps.Store.Repositories(), principal.UserID, nil)
 }
 
 func (s *Service) myTutor(ctx context.Context, repos repositories.Repositories, student domain.UserID, id domain.RelationshipID) (MyTutor, error) {
-	tutors, err := s.tutorsOf(ctx, repos, student, false, &id)
+	tutors, err := s.tutorsOf(ctx, repos, student, &id)
 	if err != nil {
 		return MyTutor{}, err
 	}
@@ -46,7 +46,7 @@ func (s *Service) myTutor(ctx context.Context, repos repositories.Repositories, 
 }
 
 func (s *Service) tutorsOf(
-	ctx context.Context, repos repositories.Repositories, student domain.UserID, confirmed bool, only *domain.RelationshipID,
+	ctx context.Context, repos repositories.Repositories, student domain.UserID, only *domain.RelationshipID,
 ) ([]MyTutor, error) {
 	rows, err := repos.Relationships.TutorsOfStudent(ctx, student, only)
 	if err != nil {
@@ -62,9 +62,6 @@ func (s *Service) tutorsOf(
 	}
 	tutors := make([]MyTutor, 0, len(rows))
 	for _, row := range rows {
-		if confirmed && row.State == domain.RelationshipProvisional {
-			continue
-		}
 		if row.Colour == nil {
 			return nil, fmt.Errorf("relationship %s: %w", row.ID, errRelationshipWithoutColour)
 		}

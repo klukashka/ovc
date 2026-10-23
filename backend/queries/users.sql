@@ -29,6 +29,9 @@ WHERE tutor_profiles.user_id = @user_id;
 -- name: LockTutorProfile :one
 SELECT code FROM tutor_profiles WHERE user_id = @user_id FOR NO KEY UPDATE;
 
+-- name: LockTutorProfiles :many
+SELECT user_id FROM tutor_profiles WHERE user_id = ANY (sqlc.arg(user_ids)::uuid[]) ORDER BY user_id FOR NO KEY UPDATE;
+
 -- name: ReplaceTutorCodeIfFree :execrows
 UPDATE tutor_profiles SET code = @code, updated_at = sqlc.arg(now)::timestamptz
 WHERE tutor_profiles.user_id = @user_id
@@ -130,3 +133,24 @@ WHERE id = @id AND state = 'deleted' AND email_verified_at IS NOT NULL;
 UPDATE tutor_profiles
 SET file_quota_bytes = @file_quota_bytes, recording_quota_bytes = @recording_quota_bytes, updated_at = sqlc.arg(now)::timestamptz
 WHERE user_id = @user_id;
+
+-- name: SetUserReclaimDeadline :execrows
+UPDATE users SET reclaim_until = sqlc.arg(reclaim_until)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id;
+
+-- name: ClearUserReclaimDeadline :execrows
+UPDATE users SET reclaim_until = NULL, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND reclaim_until IS NOT NULL;
+
+-- name: ListReclaimsDue :many
+SELECT id, reclaim_until::timestamptz AS reclaim_until FROM users
+WHERE reclaim_until <= sqlc.arg(now)::timestamptz
+    AND (
+        sqlc.narg(after_until)::timestamptz IS NULL
+        OR (reclaim_until, id) > (sqlc.narg(after_until)::timestamptz, sqlc.narg(after_id)::uuid)
+    )
+ORDER BY reclaim_until, id
+LIMIT sqlc.arg(batch_size);
+
+-- name: LockUserReclaim :one
+SELECT state, reclaim_until FROM users WHERE id = @id FOR NO KEY UPDATE;

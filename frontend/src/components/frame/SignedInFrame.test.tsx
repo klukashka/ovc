@@ -22,6 +22,7 @@ function account(role: Me['role'], state: Me['state'] = 'active'): Me {
     email_verified: state === 'active',
     timezone: 'Europe/Moscow',
     avatar_id: null,
+    reclaim_pending: false,
     role,
     state,
     language: 'ru',

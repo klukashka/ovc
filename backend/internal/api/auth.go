@@ -232,6 +232,7 @@ func (r *router) registerAuth() {
 	register(r, operation("users-me", http.MethodGet, "/api/v1/users/me"), AudienceUnverifiedOK, r.me)
 	r.registerAccountFlows()
 	r.registerProfileRoutes()
+	r.registerReclaimRoutes()
 }
 
 func (r *router) recordClientAddress(ctx huma.Context, next func(huma.Context)) {
@@ -330,7 +331,7 @@ func (r *router) logout(ctx context.Context, _ *struct{}) (*signOutOutput, error
 
 func (r *router) logoutAll(ctx context.Context, _ *struct{}) (*signOutOutput, error) {
 	if err := r.auth.Accounts.LogoutAll(ctx, principalFrom(ctx)); err != nil {
-		return nil, r.internal(ctx, "auth.logout_all.failed", err)
+		return nil, r.flowError(ctx, "auth.logout_all.failed", err)
 	}
 	return &signOutOutput{SetCookie: clearedCookie(), CacheControl: noStore}, nil
 }

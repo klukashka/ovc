@@ -32,5 +32,7 @@ type TutoringEffects interface {
 	BindNewAccount(ctx context.Context, check InvitationCheck, email string, now time.Time) error
 	LinkAtSignUp(ctx context.Context, repos repositories.Repositories, user domain.UserID, check InvitationCheck, now time.Time) (Announce, error)
 	OnEmailConfirmed(ctx context.Context, repos repositories.Repositories, user domain.UserID, reclaim bool, now time.Time) (domain.LinkOutcome, Announce, error)
+	OnAccountDeleted(ctx context.Context, repos repositories.Repositories, user domain.UserID, role domain.Role, now time.Time) (Announce, error)
 	OnAccountPurged(ctx context.Context, repos repositories.Repositories, user domain.UserID, role domain.Role, now time.Time) (Announce, error)
+	ReclaimPending(ctx context.Context, repos repositories.Repositories, user domain.UserID) (bool, error)
 }

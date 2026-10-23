@@ -226,11 +226,14 @@ func (s *Service) ResendConfirmationFor(ctx context.Context, principal Principal
 	if principal.State != domain.AccountUnverified {
 		return nil
 	}
-	user, err := s.deps.Store.Repositories().Users.ByID(ctx, principal.UserID)
-	if err != nil {
-		return err
-	}
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+		if err := LockActingAccount(ctx, repos, principal, now, domain.AccountUnverified); err != nil {
+			return err
+		}
+		user, err := repos.Users.ByID(ctx, principal.UserID)
+		if err != nil {
+			return err
+		}
 		return s.queueEmailRequest(ctx, repos, user.Email, &user.ID, domain.EmailPurposeVerify, now)
 	})
 	var limited *sendLimitError

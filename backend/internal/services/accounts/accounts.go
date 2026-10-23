@@ -66,17 +66,18 @@ type PasswordHasher interface {
 }
 
 type Profile struct {
-	ID            domain.UserID
-	Role          domain.Role
-	State         domain.AccountState
-	Email         string
-	EmailVerified bool
-	Name          string
-	Language      domain.Language
-	Timezone      string
-	Theme         domain.Theme
-	AvatarID      *domain.AttachmentID
-	Tutor         *TutorText
+	ID             domain.UserID
+	Role           domain.Role
+	State          domain.AccountState
+	Email          string
+	EmailVerified  bool
+	Name           string
+	Language       domain.Language
+	Timezone       string
+	Theme          domain.Theme
+	AvatarID       *domain.AttachmentID
+	ReclaimPending bool
+	Tutor          *TutorText
 }
 
 type TutorText struct {
@@ -272,7 +273,14 @@ func (s *Service) LogoutAll(ctx context.Context, principal Principal) error {
 	if err != nil {
 		return err
 	}
-	revoked, err := s.deps.Store.Repositories().Sessions.RevokeAllOf(ctx, principal.UserID, now)
+	var revoked int64
+	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+		if err := LockActingAccount(ctx, repos, principal, now, principal.State); err != nil {
+			return err
+		}
+		revoked, err = repos.Sessions.RevokeAllOf(ctx, principal.UserID, now)
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -294,6 +302,10 @@ func (s *Service) Me(ctx context.Context, principal Principal) (Profile, error) 
 	if err == nil {
 		profile.AvatarID = &avatar
 	} else if !errors.Is(err, repositories.ErrNotFound) {
+		return Profile{}, err
+	}
+	profile.ReclaimPending, err = s.deps.Tutoring.ReclaimPending(ctx, repos, user.ID)
+	if err != nil {
 		return Profile{}, err
 	}
 	if user.Role == domain.RoleTutor {

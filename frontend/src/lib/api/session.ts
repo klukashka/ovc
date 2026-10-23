@@ -73,6 +73,8 @@ function isMe(value: unknown): value is Me {
     typeof value.timezone === 'string' &&
     'avatar_id' in value &&
     (value.avatar_id === null || typeof value.avatar_id === 'string') &&
+    'reclaim_pending' in value &&
+    typeof value.reclaim_pending === 'boolean' &&
     'role' in value &&
     oneOf(meRoleValues, value.role) &&
     'state' in value &&

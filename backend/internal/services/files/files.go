@@ -25,6 +25,7 @@ import (
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
+	"ovc/backend/internal/services/accounts"
 )
 
 const (
@@ -143,7 +144,8 @@ var avatarKinds = []imageKind{
 	{format: "webp", extensions: []string{".webp"}},
 }
 
-func (s *Service) UploadAvatar(ctx context.Context, uploader domain.UserID, filename string, read func() ([]byte, error)) (Upload, error) {
+func (s *Service) UploadAvatar(ctx context.Context, principal accounts.Principal, filename string, read func() ([]byte, error)) (Upload, error) {
+	uploader := principal.UserID
 	release, err := s.gate.enter(uploader)
 	if err != nil {
 		s.rejected(ctx, uploader, "busy")
@@ -175,7 +177,7 @@ func (s *Service) UploadAvatar(ctx context.Context, uploader domain.UserID, file
 		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.aborted", userAttribute(uploader), slog.String("kind", core.ErrorKind(err)))
 		return Upload{}, err
 	}
-	upload, err := s.store(ctx, uploader, encoded, mediaType, storedName, now)
+	upload, err := s.store(ctx, principal, encoded, mediaType, storedName, now)
 	if errors.Is(err, ErrBusy) {
 		s.rejected(ctx, uploader, "pending")
 		return Upload{}, err
@@ -316,7 +318,8 @@ func rejectionReason(err error) (string, bool) {
 	return "", false
 }
 
-func (s *Service) store(ctx context.Context, uploader domain.UserID, encoded []byte, mediaType string, storedName string, now time.Time) (Upload, error) {
+func (s *Service) store(ctx context.Context, principal accounts.Principal, encoded []byte, mediaType string, storedName string, now time.Time) (Upload, error) {
+	uploader := principal.UserID
 	id, err := core.NewID[domain.AttachmentID](s.deps.Random)
 	if err != nil {
 		return Upload{}, err
@@ -329,7 +332,7 @@ func (s *Service) store(ctx context.Context, uploader domain.UserID, encoded []b
 	sum := sha256.Sum256(encoded)
 	expires := now.Add(pendingLifetime)
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if _, err := repos.Users.LockCredentials(ctx, uploader); err != nil {
+		if err := accounts.LockActingAccount(ctx, repos, principal, now, principal.State); err != nil {
 			return err
 		}
 		pending, err := repos.Attachments.CountPending(ctx, uploader, domain.ContextAvatar, now)
@@ -348,19 +351,24 @@ func (s *Service) store(ctx context.Context, uploader domain.UserID, encoded []b
 		return Upload{}, err
 	}
 	if err := s.deps.Objects.Put(ctx, key, encoded, mediaType); err != nil {
-		return Upload{}, errors.Join(err, s.settle(context.WithoutCancel(ctx), id, key, false, now))
+		return Upload{}, errors.Join(err, s.settle(context.WithoutCancel(ctx), principal, id, key, false, now))
 	}
-	if err := s.settle(context.WithoutCancel(ctx), id, key, true, now); err != nil {
+	if err := s.settle(context.WithoutCancel(ctx), principal, id, key, true, now); err != nil {
 		return Upload{}, err
 	}
 	return Upload{ID: id, Filename: storedName, MediaType: mediaType, SizeBytes: int64(len(encoded))}, nil
 }
 
-func (s *Service) settle(ctx context.Context, id domain.AttachmentID, key string, stored bool, now time.Time) error {
+func (s *Service) settle(ctx context.Context, principal accounts.Principal, id domain.AttachmentID, key string, stored bool, now time.Time) error {
 	purged := false
+	var refused error
 	err := s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+		refused = accounts.LockActingAccount(ctx, repos, principal, now, principal.State)
+		if refused != nil && !errors.Is(refused, accounts.ErrUnauthenticated) {
+			return refused
+		}
 		_, err := repos.Attachments.Lock(ctx, id)
-		if err == nil && !stored {
+		if err == nil && (!stored || refused != nil) {
 			return s.discard(ctx, repos, id, now)
 		}
 		if errors.Is(err, repositories.ErrNotFound) {
@@ -369,11 +377,14 @@ func (s *Service) settle(ctx context.Context, id domain.AttachmentID, key string
 		}
 		return err
 	})
-	if err != nil {
+	switch {
+	case err != nil:
 		return err
-	}
-	if purged {
+	case purged:
 		return ErrPurgedDuringUpload
+	case refused != nil && stored:
+		s.rejected(ctx, principal.UserID, "session_revoked")
+		return refused
 	}
 	return nil
 }

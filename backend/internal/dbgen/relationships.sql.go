@@ -139,6 +139,33 @@ func (q *Queries) DeleteStudentMemberships(ctx context.Context, studentID *domai
 	return result.RowsAffected(), nil
 }
 
+const discardRelationshipForTutorDeletion = `-- name: DiscardRelationshipForTutorDeletion :execrows
+UPDATE relationships
+SET state = 'discarded', discard_reason = 'tutor_deleted', discarded_at = $1::timestamptz,
+    updated_at = $1::timestamptz
+WHERE id = $2 AND tutor_id = $3 AND state = $4::text
+`
+
+type DiscardRelationshipForTutorDeletionParams struct {
+	Now       time.Time
+	ID        domain.RelationshipID
+	TutorID   domain.UserID
+	FromState string
+}
+
+func (q *Queries) DiscardRelationshipForTutorDeletion(ctx context.Context, arg DiscardRelationshipForTutorDeletionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, discardRelationshipForTutorDeletion,
+		arg.Now,
+		arg.ID,
+		arg.TutorID,
+		arg.FromState,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const discardRelationshipsOfPurgedStudent = `-- name: DiscardRelationshipsOfPurgedStudent :execrows
 UPDATE relationships
 SET state = 'discarded', discard_reason = 'student_purged', discarded_at = $1::timestamptz,
@@ -383,6 +410,47 @@ func (q *Queries) ListCardGroups(ctx context.Context, arg ListCardGroupsParams) 
 	return items, nil
 }
 
+const listReclaimPendingLinks = `-- name: ListReclaimPendingLinks :many
+SELECT relationships.id, relationships.tutor_id, tutors.name, tutor_profiles.subjects
+FROM relationships
+JOIN users AS tutors ON tutors.id = relationships.tutor_id
+JOIN tutor_profiles ON tutor_profiles.user_id = relationships.tutor_id
+WHERE relationships.student_id = $1 AND relationships.state = 'reclaim_pending'
+ORDER BY relationships.linked_at, relationships.id
+`
+
+type ListReclaimPendingLinksRow struct {
+	ID       domain.RelationshipID
+	TutorID  domain.UserID
+	Name     string
+	Subjects []string
+}
+
+func (q *Queries) ListReclaimPendingLinks(ctx context.Context, studentID *domain.UserID) ([]ListReclaimPendingLinksRow, error) {
+	rows, err := q.db.Query(ctx, listReclaimPendingLinks, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListReclaimPendingLinksRow
+	for rows.Next() {
+		var i ListReclaimPendingLinksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TutorID,
+			&i.Name,
+			&i.Subjects,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStudentColours = `-- name: ListStudentColours :many
 SELECT colour FROM relationships WHERE student_id = $1 AND state <> 'discarded' AND colour IS NOT NULL
 `
@@ -601,12 +669,94 @@ func (q *Queries) LockRelationshipsForLink(ctx context.Context, arg LockRelation
 	return items, nil
 }
 
+const lockStudentReclaimPendingRelationships = `-- name: LockStudentReclaimPendingRelationships :many
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE student_id = $1 AND state = 'reclaim_pending' ORDER BY id FOR UPDATE
+`
+
+func (q *Queries) LockStudentReclaimPendingRelationships(ctx context.Context, studentID *domain.UserID) ([]Relationship, error) {
+	rows, err := q.db.Query(ctx, lockStudentReclaimPendingRelationships, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Relationship
+	for rows.Next() {
+		var i Relationship
+		if err := rows.Scan(
+			&i.ID,
+			&i.TutorID,
+			&i.StudentID,
+			&i.State,
+			&i.DiscardReason,
+			&i.EndedBy,
+			&i.DisplayName,
+			&i.Email,
+			&i.Colour,
+			&i.Notes,
+			&i.CreateKey,
+			&i.LinkedAt,
+			&i.EndedAt,
+			&i.DiscardedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockStudentRelationships = `-- name: LockStudentRelationships :many
 SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE student_id = $1 AND state <> 'discarded' ORDER BY id FOR UPDATE
 `
 
 func (q *Queries) LockStudentRelationships(ctx context.Context, studentID *domain.UserID) ([]Relationship, error) {
 	rows, err := q.db.Query(ctx, lockStudentRelationships, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Relationship
+	for rows.Next() {
+		var i Relationship
+		if err := rows.Scan(
+			&i.ID,
+			&i.TutorID,
+			&i.StudentID,
+			&i.State,
+			&i.DiscardReason,
+			&i.EndedBy,
+			&i.DisplayName,
+			&i.Email,
+			&i.Colour,
+			&i.Notes,
+			&i.CreateKey,
+			&i.LinkedAt,
+			&i.EndedAt,
+			&i.DiscardedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockTutorReclaimPendingRelationships = `-- name: LockTutorReclaimPendingRelationships :many
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE tutor_id = $1 AND state = 'reclaim_pending' ORDER BY id FOR UPDATE
+`
+
+func (q *Queries) LockTutorReclaimPendingRelationships(ctx context.Context, tutorID domain.UserID) ([]Relationship, error) {
+	rows, err := q.db.Query(ctx, lockTutorReclaimPendingRelationships, tutorID)
 	if err != nil {
 		return nil, err
 	}
@@ -695,6 +845,24 @@ func (q *Queries) MergeInvitedCard(ctx context.Context, arg MergeInvitedCardPara
 	return result.RowsAffected(), nil
 }
 
+const reclaimProvisionalRelationship = `-- name: ReclaimProvisionalRelationship :execrows
+UPDATE relationships SET state = 'reclaim_pending', updated_at = $1::timestamptz
+WHERE id = $2 AND state = 'provisional'
+`
+
+type ReclaimProvisionalRelationshipParams struct {
+	Now time.Time
+	ID  domain.RelationshipID
+}
+
+func (q *Queries) ReclaimProvisionalRelationship(ctx context.Context, arg ReclaimProvisionalRelationshipParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reclaimProvisionalRelationship, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const removeRelationship = `-- name: RemoveRelationship :one
 UPDATE relationships
 SET state = 'discarded', discard_reason = 'removed', discarded_at = $1::timestamptz, notes = '', email = NULL,
@@ -735,6 +903,21 @@ func (q *Queries) RemoveRelationship(ctx context.Context, arg RemoveRelationship
 		&i.Notes,
 	)
 	return i, err
+}
+
+const studentAwaitsReclaimChoice = `-- name: StudentAwaitsReclaimChoice :one
+SELECT EXISTS (SELECT 1 FROM relationships WHERE relationships.student_id = $1 AND relationships.state = 'reclaim_pending')
+    OR EXISTS (
+        SELECT 1 FROM join_requests
+        WHERE join_requests.student_id = $1 AND join_requests.state = 'held' AND join_requests.owner_choice_pending
+    )
+`
+
+func (q *Queries) StudentAwaitsReclaimChoice(ctx context.Context, studentID *domain.UserID) (*bool, error) {
+	row := q.db.QueryRow(ctx, studentAwaitsReclaimChoice, studentID)
+	var column_1 *bool
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const studentHoldsProvisionalRelationship = `-- name: StudentHoldsProvisionalRelationship :one

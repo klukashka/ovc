@@ -321,36 +321,6 @@ func TestSecondCardOfTheSameStudentIsMerged(t *testing.T) {
 	})
 }
 
-func TestInterimConfirmedAccountAcceptingTheSameTutorKeepsTheLink(t *testing.T) {
-	h := newFlowHarness(t)
-	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
-	first, student := h.linkedStudent(t, tutor, newcomerEmail)
-	h.tick(t)
-	token := latestToken(t, h.mailTo(t, newcomerEmail), confirmSubject)
-	reclaimed := h.verify(t, fmt.Sprintf(`{"token":%q,"new_password":"mailbox owner password"}`, token), "")
-	owner := accessToken(t, reclaimed)
-	_, before := h.myTutors(t, owner)
-	second := h.newCard(t, tutor, "A second card", "")
-
-	kept := h.acceptSignedIn(t, owner, linkToken(t, second.Invitation))
-	_, after := h.myTutors(t, owner)
-
-	if len(before) != 0 {
-		t.Fatalf("before the keep My tutors lists %+v", before)
-	}
-	keep := acceptedTutor(t, kept)
-	if keep.RelationshipID != first.ID || keep.State != "active" || len(after) != 1 || !sameTutor(t, after[0], keep) {
-		t.Fatalf("the keep answered %+v and My tutors lists %+v", keep, after)
-	}
-	shown := decodeCard(t, h.cardCall(t, tutor, http.MethodGet, first.ID, "", ""))
-	if shown.State != "active" || shown.Account == nil || !shown.Account.EmailConfirmed {
-		t.Fatalf("the kept card is %+v", shown)
-	}
-	if h.storedRelationship(t, second.ID).State != "discarded" || h.linksOf(t, student) != 1 {
-		t.Fatal("the second card was not merged")
-	}
-}
-
 func TestEndedCardInvitationAcceptsOnlyTheBoundAccount(t *testing.T) {
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)

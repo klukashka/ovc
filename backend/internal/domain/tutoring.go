@@ -63,6 +63,11 @@ const (
 const InvitationMismatchLimit int16 = 5
 
 const (
+	ReclaimWindow            = 7 * 24 * time.Hour
+	VisiblePendingRequestCap = 50
+)
+
+const (
 	InvitationTokenBytes = 32
 	InvitationLifetime   = 14 * 24 * time.Hour
 )
@@ -84,6 +89,10 @@ func (id GroupID) String() string {
 }
 
 func (id InvitationID) String() string {
+	return formatUUID(id)
+}
+
+func (id JoinRequestID) String() string {
 	return formatUUID(id)
 }
 

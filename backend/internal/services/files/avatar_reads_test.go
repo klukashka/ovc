@@ -39,7 +39,7 @@ func servedAvatar(t *testing.T) (*files.Service, domain.AttachmentID) {
 		t.Fatal(err)
 	}
 	err = store.WithTx(context.Background(), func(repos repositories.Repositories) error {
-		return service.BindAvatar(context.Background(), repos, user, &upload.ID, raceStart)
+		return service.BindAvatar(context.Background(), repos, user.UserID, &upload.ID, raceStart)
 	})
 	if err != nil {
 		t.Fatal(err)

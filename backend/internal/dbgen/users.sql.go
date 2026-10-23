@@ -9,6 +9,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"ovc/backend/internal/domain"
 )
 
@@ -25,6 +26,24 @@ type BlockUserParams struct {
 
 func (q *Queries) BlockUser(ctx context.Context, arg BlockUserParams) (int64, error) {
 	result, err := q.db.Exec(ctx, blockUser, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const clearUserReclaimDeadline = `-- name: ClearUserReclaimDeadline :execrows
+UPDATE users SET reclaim_until = NULL, updated_at = $1::timestamptz
+WHERE id = $2 AND reclaim_until IS NOT NULL
+`
+
+type ClearUserReclaimDeadlineParams struct {
+	Now time.Time
+	ID  domain.UserID
+}
+
+func (q *Queries) ClearUserReclaimDeadline(ctx context.Context, arg ClearUserReclaimDeadlineParams) (int64, error) {
+	result, err := q.db.Exec(ctx, clearUserReclaimDeadline, arg.Now, arg.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -314,6 +333,54 @@ func (q *Queries) ListDeletedBefore(ctx context.Context, arg ListDeletedBeforePa
 	return items, nil
 }
 
+const listReclaimsDue = `-- name: ListReclaimsDue :many
+SELECT id, reclaim_until::timestamptz AS reclaim_until FROM users
+WHERE reclaim_until <= $1::timestamptz
+    AND (
+        $2::timestamptz IS NULL
+        OR (reclaim_until, id) > ($2::timestamptz, $3::uuid)
+    )
+ORDER BY reclaim_until, id
+LIMIT $4
+`
+
+type ListReclaimsDueParams struct {
+	Now        time.Time
+	AfterUntil *time.Time
+	AfterID    pgtype.UUID
+	BatchSize  int32
+}
+
+type ListReclaimsDueRow struct {
+	ID           domain.UserID
+	ReclaimUntil time.Time
+}
+
+func (q *Queries) ListReclaimsDue(ctx context.Context, arg ListReclaimsDueParams) ([]ListReclaimsDueRow, error) {
+	rows, err := q.db.Query(ctx, listReclaimsDue,
+		arg.Now,
+		arg.AfterUntil,
+		arg.AfterID,
+		arg.BatchSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListReclaimsDueRow
+	for rows.Next() {
+		var i ListReclaimsDueRow
+		if err := rows.Scan(&i.ID, &i.ReclaimUntil); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUnverifiedSince = `-- name: ListUnverifiedSince :many
 SELECT id FROM users
 WHERE state = 'unverified' AND unverified_since <= $1::timestamptz
@@ -414,6 +481,30 @@ func (q *Queries) LockTutorProfile(ctx context.Context, userID domain.UserID) (d
 	return code, err
 }
 
+const lockTutorProfiles = `-- name: LockTutorProfiles :many
+SELECT user_id FROM tutor_profiles WHERE user_id = ANY ($1::uuid[]) ORDER BY user_id FOR NO KEY UPDATE
+`
+
+func (q *Queries) LockTutorProfiles(ctx context.Context, userIds []pgtype.UUID) ([]domain.UserID, error) {
+	rows, err := q.db.Query(ctx, lockTutorProfiles, userIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.UserID
+	for rows.Next() {
+		var user_id domain.UserID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockUserCredentials = `-- name: LockUserCredentials :one
 SELECT password_hash, state FROM users WHERE id = $1 FOR NO KEY UPDATE
 `
@@ -467,6 +558,22 @@ func (q *Queries) LockUserForPurge(ctx context.Context, id domain.UserID) (LockU
 	row := q.db.QueryRow(ctx, lockUserForPurge, id)
 	var i LockUserForPurgeRow
 	err := row.Scan(&i.State, &i.DeletedAt, &i.UnverifiedSince)
+	return i, err
+}
+
+const lockUserReclaim = `-- name: LockUserReclaim :one
+SELECT state, reclaim_until FROM users WHERE id = $1 FOR NO KEY UPDATE
+`
+
+type LockUserReclaimRow struct {
+	State        domain.AccountState
+	ReclaimUntil *time.Time
+}
+
+func (q *Queries) LockUserReclaim(ctx context.Context, id domain.UserID) (LockUserReclaimRow, error) {
+	row := q.db.QueryRow(ctx, lockUserReclaim, id)
+	var i LockUserReclaimRow
+	err := row.Scan(&i.State, &i.ReclaimUntil)
 	return i, err
 }
 
@@ -570,6 +677,25 @@ func (q *Queries) SetTutorQuotas(ctx context.Context, arg SetTutorQuotasParams) 
 		arg.Now,
 		arg.UserID,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setUserReclaimDeadline = `-- name: SetUserReclaimDeadline :execrows
+UPDATE users SET reclaim_until = $1::timestamptz, updated_at = $2::timestamptz
+WHERE id = $3
+`
+
+type SetUserReclaimDeadlineParams struct {
+	ReclaimUntil time.Time
+	Now          time.Time
+	ID           domain.UserID
+}
+
+func (q *Queries) SetUserReclaimDeadline(ctx context.Context, arg SetUserReclaimDeadlineParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setUserReclaimDeadline, arg.ReclaimUntil, arg.Now, arg.ID)
 	if err != nil {
 		return 0, err
 	}

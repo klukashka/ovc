@@ -141,3 +141,34 @@ WHERE relationships.student_id = @student_id
     AND relationships.state IN ('active', 'provisional', 'ended')
     AND (sqlc.narg(relationship_id)::uuid IS NULL OR relationships.id = sqlc.narg(relationship_id)::uuid)
 ORDER BY relationships.state = 'ended', relationships.linked_at, relationships.id;
+
+-- name: ReclaimProvisionalRelationship :execrows
+UPDATE relationships SET state = 'reclaim_pending', updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND state = 'provisional';
+
+-- name: ListReclaimPendingLinks :many
+SELECT relationships.id, relationships.tutor_id, tutors.name, tutor_profiles.subjects
+FROM relationships
+JOIN users AS tutors ON tutors.id = relationships.tutor_id
+JOIN tutor_profiles ON tutor_profiles.user_id = relationships.tutor_id
+WHERE relationships.student_id = @student_id AND relationships.state = 'reclaim_pending'
+ORDER BY relationships.linked_at, relationships.id;
+
+-- name: StudentAwaitsReclaimChoice :one
+SELECT EXISTS (SELECT 1 FROM relationships WHERE relationships.student_id = @student_id AND relationships.state = 'reclaim_pending')
+    OR EXISTS (
+        SELECT 1 FROM join_requests
+        WHERE join_requests.student_id = @student_id AND join_requests.state = 'held' AND join_requests.owner_choice_pending
+    );
+
+-- name: LockTutorReclaimPendingRelationships :many
+SELECT * FROM relationships WHERE tutor_id = @tutor_id AND state = 'reclaim_pending' ORDER BY id FOR UPDATE;
+
+-- name: DiscardRelationshipForTutorDeletion :execrows
+UPDATE relationships
+SET state = 'discarded', discard_reason = 'tutor_deleted', discarded_at = sqlc.arg(now)::timestamptz,
+    updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND tutor_id = @tutor_id AND state = sqlc.arg(from_state)::text;
+
+-- name: LockStudentReclaimPendingRelationships :many
+SELECT * FROM relationships WHERE student_id = @student_id AND state = 'reclaim_pending' ORDER BY id FOR UPDATE;

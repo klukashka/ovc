@@ -101,6 +101,13 @@ func newAuthHarnessBehind(t *testing.T, trusted []netip.Prefix) *authHarness {
 
 func newAuthHarnessServing(t *testing.T, trusted []netip.Prefix, newHandler func(api.Options) (http.Handler, error)) *authHarness {
 	t.Helper()
+	return newAuthHarnessStoring(t, trusted, newHandler, func(local *teststorage.Storage) storage.Store { return local.Store })
+}
+
+func newAuthHarnessStoring(
+	t *testing.T, trusted []netip.Prefix, newHandler func(api.Options) (http.Handler, error), objectsFor func(*teststorage.Storage) storage.Store,
+) *authHarness {
+	t.Helper()
 	database := testdb.New(t)
 	random := &countingRandom{}
 	logs := &safeBuffer{}
@@ -115,8 +122,9 @@ func newAuthHarnessServing(t *testing.T, trusted []netip.Prefix, newHandler func
 		t.Fatal(err)
 	}
 	store := repositories.NewStore(database.Pool)
-	objects := teststorage.New(t).Store
-	fileService := files.New(files.Dependencies{Store: store, Objects: objects, Clock: shared, Random: random, Keys: keys, Logger: logger})
+	local := teststorage.New(t)
+	objects := local.Store
+	fileService := files.New(files.Dependencies{Store: store, Objects: objectsFor(local), Clock: shared, Random: random, Keys: keys, Logger: logger})
 	fieldKey := sha256.Sum256([]byte("test-field-key"))
 	cipher, err := core.NewFieldCipher(core.NewSecret(base64.StdEncoding.EncodeToString(fieldKey[:])), random)
 	if err != nil {
@@ -172,6 +180,7 @@ func newAuthHarnessServing(t *testing.T, trusted []netip.Prefix, newHandler func
 		{Name: domain.JobSessionsCleanup, Every: time.Hour, Run: accounts.CleanupSessions(store)},
 		{Name: domain.JobEmailRequestsCleanup, Every: time.Hour, Run: accounts.CleanupEmailRequests(store)},
 		{Name: domain.JobInvitationsExpire, Every: time.Hour, Run: tutoringService.ExpireInvitations},
+		{Name: domain.JobReclaimExpire, Every: time.Hour, Run: tutoringService.ExpireReclaims},
 	}
 	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, jobs, worker.DefaultTiming())
 	return &authHarness{

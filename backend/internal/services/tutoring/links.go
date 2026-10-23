@@ -24,8 +24,11 @@ var errConsumedAnotherCard = errors.New("the consumed invitation belongs to anot
 type removalCause string
 
 const (
-	removedByTutor   removalCause = "tutor"
-	removedByCleanup removalCause = "cleanup"
+	removedByTutor         removalCause = "tutor"
+	removedByStudent       removalCause = "student"
+	removedByCleanup       removalCause = "cleanup"
+	removedByReclaim       removalCause = "reclaim"
+	removedByTutorDeletion removalCause = "tutor_deleted"
 )
 
 func (s *Service) PrecheckInvitation(ctx context.Context, token string, now time.Time) (accounts.InvitationCheck, error) {
@@ -159,7 +162,7 @@ func (s *Service) OnEmailConfirmed(
 	ctx context.Context, repos repositories.Repositories, user domain.UserID, reclaim bool, now time.Time,
 ) (domain.LinkOutcome, accounts.Announce, error) {
 	if reclaim {
-		return "", accounts.Silent, nil
+		return s.reclaim(ctx, repos, user, now)
 	}
 	links, err := repos.Relationships.LockOfStudent(ctx, user)
 	if err != nil {

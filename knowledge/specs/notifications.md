@@ -179,7 +179,7 @@ Each **email** is decided again when the worker sends it, not only when it is qu
     - **Every minute:** reminders, digests, the lesson status job.
     - **Every 30 minutes:** recording reconciliation.
     - **Hourly:**
-      - recording and upload expiry; `invitations.expire` (500 per run; clears the ciphertext of expired invitations), `join_requests.expire` (200 per run) and `reclaim.expire` (100 accounts per run; drops reclaim items left unchosen for 7 days);
+      - recording and upload expiry; `invitations.expire` (500 per run; clears the ciphertext of expired invitations), `join_requests.expire` (200 per run) and `reclaim.expire` (batches of 100 accounts, at most 1,000 per run; drops reclaim items left unchosen for 7 days);
       - the 7-day transition of `held_quota` recordings to `failed`;
       - recording provider-copy cleanup;
       - cleanup of unverified accounts, rate-limit windows, notifications and the outbox (`done` rows after 7 days, `dead` rows after 30 days, each status deleted by its own statement so both use the partial index);

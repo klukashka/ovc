@@ -701,46 +701,6 @@ func TestUnconfirmedLinkedStudentIsRemovedAfter7DaysSilently(t *testing.T) {
 	}
 }
 
-func TestReclaimLeavesTheLinkProvisionalUntilTheChoiceExists(t *testing.T) {
-	reclaims := map[string]func(t *testing.T, h *authHarness) response{
-		"confirmation from another browser": func(t *testing.T, h *authHarness) response {
-			t.Helper()
-			token := latestToken(t, h.mailTo(t, newcomerEmail), confirmSubject)
-			return h.verify(t, fmt.Sprintf(`{"token":%q,"new_password":"mailbox owner password"}`, token), "")
-		},
-		"a reset of the unverified account": func(t *testing.T, h *authHarness) response {
-			t.Helper()
-			h.at(t, authStart.Add(61*time.Second))
-			h.forgot(t, newcomerEmail)
-			h.tick(t)
-			token := latestToken(t, h.mailTo(t, newcomerEmail), resetSubject)
-			return h.postJSON(t, "/api/v1/auth/password/reset", fmt.Sprintf(`{"token":%q,"new_password":"mailbox owner password"}`, token), nil)
-		},
-	}
-	for name, reclaim := range reclaims {
-		t.Run(name, func(t *testing.T) {
-			h := newFlowHarness(t)
-			_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
-			card, _ := h.linkedStudent(t, tutor, newcomerEmail)
-			h.tick(t)
-
-			reclaimed := reclaim(t, h)
-			shown := decodeCard(t, h.cardCall(t, tutor, http.MethodGet, card.ID, "", ""))
-			removed := h.removeStudent(t, tutor, card.ID)
-
-			if reclaimed.status != http.StatusOK || !strings.HasPrefix(strings.TrimSpace(reclaimed.body), `{"outcome":null`) {
-				t.Fatalf("the reclaim answered %d %s", reclaimed.status, reclaimed.body)
-			}
-			if shown.State != "provisional" || shown.Account != nil {
-				t.Fatalf("after the reclaim the card is %+v", shown)
-			}
-			if removed.status != http.StatusOK {
-				t.Fatalf("the tutor could not remove the reclaimed link: %d %s", removed.status, removed.body)
-			}
-		})
-	}
-}
-
 func TestSameBrowserConfirmationRechecksTheSessionUnderTheLock(t *testing.T) {
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
@@ -768,8 +728,8 @@ func TestSameBrowserConfirmationRechecksTheSessionUnderTheLock(t *testing.T) {
 	if confirmDone.status != http.StatusUnauthorized || code(t, confirmDone) != "unauthenticated" {
 		t.Fatalf("the confirmation authenticated before the reset answered %d %s", confirmDone.status, confirmDone.body)
 	}
-	if stored := h.storedRelationship(t, card.ID); stored.State != "provisional" {
-		t.Fatalf("the squatter's confirmation activated the link: %s", stored.State)
+	if stored := h.storedRelationship(t, card.ID); stored.State != "reclaim_pending" {
+		t.Fatalf("the squatter's confirmation decided the link: %s", stored.State)
 	}
 }
 

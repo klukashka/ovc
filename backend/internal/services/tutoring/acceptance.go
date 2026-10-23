@@ -24,6 +24,7 @@ type signedInLink struct {
 	kept        repositories.Relationship
 	effect      acceptanceEffect
 	reactivated bool
+	keptReclaim bool
 }
 
 func (s *Service) AcceptSignedIn(ctx context.Context, principal accounts.Principal, token string) (MyTutor, error) {
@@ -75,6 +76,11 @@ func (s *Service) AcceptSignedIn(ctx context.Context, principal accounts.Princip
 		}
 		if _, err := repos.JoinRequests.AcceptWaiting(ctx, check.Tutor, principal.UserID, now); err != nil {
 			return err
+		}
+		if link.keptReclaim {
+			if err := clearSettledDeadline(ctx, repos, principal.UserID, now); err != nil {
+				return err
+			}
 		}
 		tutor, err = s.myTutor(ctx, repos, principal.UserID, link.kept.ID)
 		return err
@@ -151,7 +157,7 @@ func (s *Service) linkSignedIn(
 	var link signedInLink
 	var linked bool
 	if existing != nil {
-		link, linked, err = s.mergeInto(ctx, repos, *existing, card, confirmed, cause, now)
+		link, linked, err = s.mergeInto(ctx, repos, *existing, card, cause, now)
 	} else {
 		link, linked, err = s.linkCard(ctx, repos, card, student, cause, now)
 	}
@@ -214,7 +220,7 @@ func (s *Service) linkCard(
 
 func (s *Service) mergeInto(
 	ctx context.Context, repos repositories.Repositories, existing repositories.Relationship, card repositories.Relationship,
-	confirmed bool, cause domain.RelationshipCause, now time.Time,
+	cause domain.RelationshipCause, now time.Time,
 ) (signedInLink, bool, error) {
 	if _, allowed := domain.NextRelationshipState(card.State, domain.CauseMerged); !allowed {
 		return signedInLink{}, false, nil
@@ -227,19 +233,13 @@ func (s *Service) mergeInto(
 	if existing.State == domain.RelationshipActive {
 		return link, true, nil
 	}
-	transition, allowed := domain.NextRelationshipState(stateAwaitingTheOwner(existing.State, confirmed), cause)
+	transition, allowed := domain.NextRelationshipState(existing.State, cause)
 	if !allowed || transition.To != domain.RelationshipActive {
 		return signedInLink{}, false, nil
 	}
 	activated, err := repos.Relationships.ActivateLinked(ctx, existing, now)
+	link.keptReclaim = existing.State == domain.RelationshipReclaimPending
 	return link, activated, err
-}
-
-func stateAwaitingTheOwner(state domain.RelationshipState, confirmed bool) domain.RelationshipState {
-	if state == domain.RelationshipProvisional && confirmed {
-		return domain.RelationshipReclaimPending
-	}
-	return state
 }
 
 func (s *Service) announceSignedIn(ctx context.Context, student domain.UserID, link signedInLink) {
@@ -248,5 +248,8 @@ func (s *Service) announceSignedIn(ctx context.Context, student domain.UserID, l
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "invitation.accepted", accepted...)
 	if link.reactivated {
 		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "relationship.reactivated", attributes...)
+	}
+	if link.keptReclaim {
+		s.logReclaimDecided(ctx, student, reclaimDecision{kept: 1}, decidedByOwner)
 	}
 }

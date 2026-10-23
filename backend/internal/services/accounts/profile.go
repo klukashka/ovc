@@ -55,12 +55,8 @@ func (s *Service) UpdateProfile(ctx context.Context, principal Principal, change
 		return Profile{}, &ValidationError{Fields: problems}
 	}
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		locked, err := repos.Users.LockCredentials(ctx, principal.UserID)
-		if err != nil {
+		if err := LockActingAccount(ctx, repos, principal, now, principal.State); err != nil {
 			return err
-		}
-		if locked.State != domain.AccountUnverified && locked.State != domain.AccountActive {
-			return ErrUnauthenticated
 		}
 		user, err := repos.Users.ByID(ctx, principal.UserID)
 		if err != nil {

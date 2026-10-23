@@ -32,6 +32,17 @@ func (q *Queries) AcceptWaitingJoinRequests(ctx context.Context, arg AcceptWaiti
 	return result.RowsAffected(), nil
 }
 
+const countVisiblePendingJoinRequests = `-- name: CountVisiblePendingJoinRequests :one
+SELECT count(id) FROM join_requests WHERE tutor_id = $1 AND state = 'pending' AND suppressed = 'none'
+`
+
+func (q *Queries) CountVisiblePendingJoinRequests(ctx context.Context, tutorID domain.UserID) (int64, error) {
+	row := q.db.QueryRow(ctx, countVisiblePendingJoinRequests, tutorID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createJoinRequest = `-- name: CreateJoinRequest :exec
 INSERT INTO join_requests (id, tutor_id, student_id, state, suppressed, owner_choice_pending, expires_at, created_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -86,4 +97,222 @@ func (q *Queries) DecideJoinRequest(ctx context.Context, arg DecideJoinRequestPa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const expireHeldJoinRequest = `-- name: ExpireHeldJoinRequest :execrows
+UPDATE join_requests SET state = 'expired', owner_choice_pending = false, decided_at = $1::timestamptz
+WHERE id = $2 AND state = 'held'
+`
+
+type ExpireHeldJoinRequestParams struct {
+	Now time.Time
+	ID  domain.JoinRequestID
+}
+
+func (q *Queries) ExpireHeldJoinRequest(ctx context.Context, arg ExpireHeldJoinRequestParams) (int64, error) {
+	result, err := q.db.Exec(ctx, expireHeldJoinRequest, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const listOwnerChoiceJoinRequestRows = `-- name: ListOwnerChoiceJoinRequestRows :many
+SELECT id, tutor_id, student_id, state, suppressed, owner_choice_pending, expires_at, decided_at, created_at FROM join_requests
+WHERE student_id = $1 AND state = 'held' AND owner_choice_pending
+ORDER BY id
+`
+
+func (q *Queries) ListOwnerChoiceJoinRequestRows(ctx context.Context, studentID domain.UserID) ([]JoinRequest, error) {
+	rows, err := q.db.Query(ctx, listOwnerChoiceJoinRequestRows, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []JoinRequest
+	for rows.Next() {
+		var i JoinRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.TutorID,
+			&i.StudentID,
+			&i.State,
+			&i.Suppressed,
+			&i.OwnerChoicePending,
+			&i.ExpiresAt,
+			&i.DecidedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOwnerChoiceJoinRequests = `-- name: ListOwnerChoiceJoinRequests :many
+SELECT join_requests.id, join_requests.tutor_id, join_requests.expires_at, tutors.name, tutor_profiles.subjects
+FROM join_requests
+JOIN users AS tutors ON tutors.id = join_requests.tutor_id
+JOIN tutor_profiles ON tutor_profiles.user_id = join_requests.tutor_id
+WHERE join_requests.student_id = $1 AND join_requests.state = 'held' AND join_requests.owner_choice_pending
+ORDER BY join_requests.created_at, join_requests.id
+`
+
+type ListOwnerChoiceJoinRequestsRow struct {
+	ID        domain.JoinRequestID
+	TutorID   domain.UserID
+	ExpiresAt time.Time
+	Name      string
+	Subjects  []string
+}
+
+func (q *Queries) ListOwnerChoiceJoinRequests(ctx context.Context, studentID domain.UserID) ([]ListOwnerChoiceJoinRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listOwnerChoiceJoinRequests, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOwnerChoiceJoinRequestsRow
+	for rows.Next() {
+		var i ListOwnerChoiceJoinRequestsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TutorID,
+			&i.ExpiresAt,
+			&i.Name,
+			&i.Subjects,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockOwnerChoiceJoinRequests = `-- name: LockOwnerChoiceJoinRequests :many
+SELECT id, tutor_id, student_id, state, suppressed, owner_choice_pending, expires_at, decided_at, created_at FROM join_requests
+WHERE student_id = $1 AND state = 'held' AND owner_choice_pending
+ORDER BY id
+FOR UPDATE
+`
+
+func (q *Queries) LockOwnerChoiceJoinRequests(ctx context.Context, studentID domain.UserID) ([]JoinRequest, error) {
+	rows, err := q.db.Query(ctx, lockOwnerChoiceJoinRequests, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []JoinRequest
+	for rows.Next() {
+		var i JoinRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.TutorID,
+			&i.StudentID,
+			&i.State,
+			&i.Suppressed,
+			&i.OwnerChoicePending,
+			&i.ExpiresAt,
+			&i.DecidedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockTutorOwnerChoiceJoinRequests = `-- name: LockTutorOwnerChoiceJoinRequests :many
+SELECT id, tutor_id, student_id, state, suppressed, owner_choice_pending, expires_at, decided_at, created_at FROM join_requests
+WHERE tutor_id = $1 AND state = 'held' AND owner_choice_pending
+ORDER BY id
+FOR UPDATE
+`
+
+func (q *Queries) LockTutorOwnerChoiceJoinRequests(ctx context.Context, tutorID domain.UserID) ([]JoinRequest, error) {
+	rows, err := q.db.Query(ctx, lockTutorOwnerChoiceJoinRequests, tutorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []JoinRequest
+	for rows.Next() {
+		var i JoinRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.TutorID,
+			&i.StudentID,
+			&i.State,
+			&i.Suppressed,
+			&i.OwnerChoicePending,
+			&i.ExpiresAt,
+			&i.DecidedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markHeldJoinRequestsForOwnerChoice = `-- name: MarkHeldJoinRequestsForOwnerChoice :execrows
+UPDATE join_requests SET owner_choice_pending = true
+WHERE student_id = $1 AND state = 'held' AND NOT owner_choice_pending
+`
+
+func (q *Queries) MarkHeldJoinRequestsForOwnerChoice(ctx context.Context, studentID domain.UserID) (int64, error) {
+	result, err := q.db.Exec(ctx, markHeldJoinRequestsForOwnerChoice, studentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const releaseHeldJoinRequest = `-- name: ReleaseHeldJoinRequest :execrows
+UPDATE join_requests SET state = 'pending', suppressed = $1::text, owner_choice_pending = false
+WHERE id = $2 AND state = 'held'
+`
+
+type ReleaseHeldJoinRequestParams struct {
+	Suppressed string
+	ID         domain.JoinRequestID
+}
+
+func (q *Queries) ReleaseHeldJoinRequest(ctx context.Context, arg ReleaseHeldJoinRequestParams) (int64, error) {
+	result, err := q.db.Exec(ctx, releaseHeldJoinRequest, arg.Suppressed, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const studentBlockedByTutor = `-- name: StudentBlockedByTutor :one
+SELECT EXISTS (SELECT 1 FROM blocked_requesters WHERE tutor_id = $1 AND student_id = $2)
+`
+
+type StudentBlockedByTutorParams struct {
+	TutorID   domain.UserID
+	StudentID domain.UserID
+}
+
+func (q *Queries) StudentBlockedByTutor(ctx context.Context, arg StudentBlockedByTutorParams) (bool, error) {
+	row := q.db.QueryRow(ctx, studentBlockedByTutor, arg.TutorID, arg.StudentID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }

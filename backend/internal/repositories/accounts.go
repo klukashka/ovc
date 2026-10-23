@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/dbgen"
 	"ovc/backend/internal/domain"
@@ -312,4 +314,38 @@ func (r JobRuns) Record(ctx context.Context, run JobRunRecord) error {
 func (r JobRuns) ByJob(ctx context.Context, job domain.JobName) (JobRun, error) {
 	run, err := r.queries.GetJobRun(ctx, job)
 	return one(run, err, "job run")
+}
+
+type LockedReclaim = dbgen.LockUserReclaimRow
+
+func (r Users) SetReclaimDeadline(ctx context.Context, id domain.UserID, until time.Time, now time.Time) (bool, error) {
+	rows, err := r.queries.SetUserReclaimDeadline(ctx, dbgen.SetUserReclaimDeadlineParams{ReclaimUntil: until, Now: now, ID: id})
+	return applied(rows, err, "set reclaim deadline")
+}
+
+func (r Users) ClearReclaimDeadline(ctx context.Context, id domain.UserID, now time.Time) (bool, error) {
+	rows, err := r.queries.ClearUserReclaimDeadline(ctx, dbgen.ClearUserReclaimDeadlineParams{Now: now, ID: id})
+	return applied(rows, err, "clear reclaim deadline")
+}
+
+type ReclaimDue = dbgen.ListReclaimsDueRow
+
+func (r Users) ReclaimsDue(ctx context.Context, now time.Time, after *ReclaimDue, batchSize int32) ([]ReclaimDue, error) {
+	params := dbgen.ListReclaimsDueParams{Now: now, BatchSize: batchSize}
+	if after != nil {
+		params.AfterUntil = &after.ReclaimUntil
+		params.AfterID = pgtype.UUID{Bytes: after.ID, Valid: true}
+	}
+	due, err := r.queries.ListReclaimsDue(ctx, params)
+	return one(due, err, "list reclaims due")
+}
+
+func (r Users) LockReclaim(ctx context.Context, id domain.UserID) (LockedReclaim, error) {
+	locked, err := r.queries.LockUserReclaim(ctx, id)
+	return one(locked, err, "lock user reclaim deadline")
+}
+
+func (r TutorProfiles) LockAll(ctx context.Context, tutors []domain.UserID) error {
+	_, err := r.queries.LockTutorProfiles(ctx, uuids(tutors))
+	return done(err, "lock tutor profiles")
 }

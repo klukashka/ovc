@@ -199,7 +199,7 @@ func (r *router) upload(ctx context.Context, _ *uploadInput) (*uploadOutput, err
 		}
 		return data, nil
 	}
-	upload, err := r.files.UploadAvatar(ctx, principalFrom(ctx).UserID, path.Base(part.FileName()), read)
+	upload, err := r.files.UploadAvatar(ctx, principalFrom(ctx), path.Base(part.FileName()), read)
 	if errors.Is(err, errExtraUploadPart) {
 		return nil, uploadFieldError(ctx)
 	}
@@ -225,7 +225,7 @@ func (r *router) uploadError(ctx context.Context, err error) error {
 		return NewError(ctx, domain.ErrorPayloadTooLarge)
 	case errors.Is(err, files.ErrUnsupported):
 		return NewError(ctx, domain.ErrorUnsupportedMediaType)
-	case errors.Is(err, files.ErrPurgedDuringUpload):
+	case errors.Is(err, files.ErrPurgedDuringUpload), errors.Is(err, accounts.ErrUnauthenticated):
 		return NewError(ctx, domain.ErrorUnauthenticated)
 	case errors.Is(err, files.ErrDecodeBusy):
 		return NewError(ctx, domain.ErrorServiceUnavailable).withHeader("Retry-After", "5")
@@ -330,6 +330,7 @@ func meBody(profile accounts.Profile) schemas.Me {
 	body := schemas.Me{
 		ID: profile.ID.String(), Role: profile.Role, State: profile.State, Email: profile.Email, EmailVerified: profile.EmailVerified,
 		Name: profile.Name, Language: profile.Language, Timezone: profile.Timezone, Theme: profile.Theme,
+		ReclaimPending: profile.ReclaimPending,
 	}
 	if profile.AvatarID != nil {
 		id := profile.AvatarID.String()

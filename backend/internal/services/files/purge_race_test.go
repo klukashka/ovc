@@ -23,6 +23,7 @@ import (
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
+	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/testdb"
 	"ovc/backend/internal/teststorage"
@@ -69,7 +70,7 @@ func storageHoldingTheFirstWrite(t *testing.T, local *teststorage.Storage) (stor
 	return storage.NewS3(settings), paused
 }
 
-func seedUploader(t *testing.T, store *repositories.Store) domain.UserID {
+func seedUploader(t *testing.T, store *repositories.Store) accounts.Principal {
 	t.Helper()
 	user := domain.UserID{7}
 	hasher, err := core.NewPasswordHasher(core.Argon2Params{MemoryKiB: 64, Iterations: 1, Parallelism: 1}, core.CryptoRandom(), 1, time.Second)
@@ -88,7 +89,14 @@ func seedUploader(t *testing.T, store *repositories.Store) domain.UserID {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return user
+	session := domain.SessionID{7}
+	err = store.Repositories().Sessions.Create(context.Background(), repositories.NewSession{
+		ID: session, UserID: user, RefreshHash: make([]byte, 32), ExpiresAt: raceStart.Add(30 * 24 * time.Hour), CreatedAt: raceStart,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return accounts.Principal{UserID: user, SessionID: session, Role: domain.RoleTutor, State: domain.AccountUnverified}
 }
 
 func avatarPNG(t *testing.T) []byte {
@@ -145,10 +153,10 @@ func TestAnUploadPurgedBeforeItsObjectLandsQueuesTheObjectsDeletion(t *testing.T
 	}
 
 	err = store.WithTx(context.Background(), func(repos repositories.Repositories) error {
-		if err := service.PurgeUploadsOf(context.Background(), repos, user, raceStart); err != nil {
+		if err := service.PurgeUploadsOf(context.Background(), repos, user.UserID, raceStart); err != nil {
 			return err
 		}
-		_, err := repos.Users.Delete(context.Background(), user)
+		_, err := repos.Users.Delete(context.Background(), user.UserID)
 		return err
 	})
 	if err != nil {
@@ -212,7 +220,7 @@ func TestAPurgeAfterADeadDeletionStillDeletesTheObject(t *testing.T) {
 	}
 
 	err = store.WithTx(context.Background(), func(repos repositories.Repositories) error {
-		return service.PurgeUploadsOf(context.Background(), repos, user, raceStart.Add(26*time.Hour))
+		return service.PurgeUploadsOf(context.Background(), repos, user.UserID, raceStart.Add(26*time.Hour))
 	})
 
 	if err != nil {
