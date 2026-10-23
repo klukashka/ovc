@@ -13,6 +13,34 @@ import (
 	"ovc/backend/internal/domain"
 )
 
+const activateLinkedRelationship = `-- name: ActivateLinkedRelationship :execrows
+UPDATE relationships
+SET state = 'active', ended_at = NULL, ended_by = NULL, updated_at = $1::timestamptz
+WHERE id = $2 AND tutor_id = $3 AND student_id = $4 AND state = $5::text
+`
+
+type ActivateLinkedRelationshipParams struct {
+	Now       time.Time
+	ID        domain.RelationshipID
+	TutorID   domain.UserID
+	StudentID *domain.UserID
+	FromState string
+}
+
+func (q *Queries) ActivateLinkedRelationship(ctx context.Context, arg ActivateLinkedRelationshipParams) (int64, error) {
+	result, err := q.db.Exec(ctx, activateLinkedRelationship,
+		arg.Now,
+		arg.ID,
+		arg.TutorID,
+		arg.StudentID,
+		arg.FromState,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const activateProvisionalRelationship = `-- name: ActivateProvisionalRelationship :execrows
 UPDATE relationships SET state = 'active', updated_at = $1::timestamptz
 WHERE id = $2 AND state = 'provisional'
@@ -379,6 +407,70 @@ func (q *Queries) ListStudentColours(ctx context.Context, studentID *domain.User
 	return items, nil
 }
 
+const listStudentTutors = `-- name: ListStudentTutors :many
+SELECT relationships.id, relationships.tutor_id, relationships.state, relationships.colour, relationships.ended_at,
+    relationships.ended_by, tutors.name, tutors.state AS tutor_state, tutors.deleted_at, tutor_profiles.subjects,
+    tutor_profiles.bio
+FROM relationships
+JOIN users AS tutors ON tutors.id = relationships.tutor_id
+JOIN tutor_profiles ON tutor_profiles.user_id = relationships.tutor_id
+WHERE relationships.student_id = $1
+    AND relationships.state IN ('active', 'provisional', 'ended')
+    AND ($2::uuid IS NULL OR relationships.id = $2::uuid)
+ORDER BY relationships.state = 'ended', relationships.linked_at, relationships.id
+`
+
+type ListStudentTutorsParams struct {
+	StudentID      *domain.UserID
+	RelationshipID pgtype.UUID
+}
+
+type ListStudentTutorsRow struct {
+	ID         domain.RelationshipID
+	TutorID    domain.UserID
+	State      domain.RelationshipState
+	Colour     *domain.Colour
+	EndedAt    *time.Time
+	EndedBy    *domain.EndedBy
+	Name       string
+	TutorState domain.AccountState
+	DeletedAt  *time.Time
+	Subjects   []string
+	Bio        string
+}
+
+func (q *Queries) ListStudentTutors(ctx context.Context, arg ListStudentTutorsParams) ([]ListStudentTutorsRow, error) {
+	rows, err := q.db.Query(ctx, listStudentTutors, arg.StudentID, arg.RelationshipID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStudentTutorsRow
+	for rows.Next() {
+		var i ListStudentTutorsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TutorID,
+			&i.State,
+			&i.Colour,
+			&i.EndedAt,
+			&i.EndedBy,
+			&i.Name,
+			&i.TutorState,
+			&i.DeletedAt,
+			&i.Subjects,
+			&i.Bio,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTutorRelationships = `-- name: ListTutorRelationships :many
 SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships
 WHERE relationships.tutor_id = $1
@@ -424,6 +516,56 @@ func (q *Queries) ListTutorRelationships(ctx context.Context, arg ListTutorRelat
 		arg.AfterID,
 		arg.RowLimit,
 	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Relationship
+	for rows.Next() {
+		var i Relationship
+		if err := rows.Scan(
+			&i.ID,
+			&i.TutorID,
+			&i.StudentID,
+			&i.State,
+			&i.DiscardReason,
+			&i.EndedBy,
+			&i.DisplayName,
+			&i.Email,
+			&i.Colour,
+			&i.Notes,
+			&i.CreateKey,
+			&i.LinkedAt,
+			&i.EndedAt,
+			&i.DiscardedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockRelationshipsForLink = `-- name: LockRelationshipsForLink :many
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships
+WHERE tutor_id = $1 AND (id = $2 OR (student_id = $3 AND state <> 'discarded'))
+ORDER BY id
+FOR UPDATE
+`
+
+type LockRelationshipsForLinkParams struct {
+	TutorID   domain.UserID
+	CardID    domain.RelationshipID
+	StudentID *domain.UserID
+}
+
+func (q *Queries) LockRelationshipsForLink(ctx context.Context, arg LockRelationshipsForLinkParams) ([]Relationship, error) {
+	rows, err := q.db.Query(ctx, lockRelationshipsForLink, arg.TutorID, arg.CardID, arg.StudentID)
 	if err != nil {
 		return nil, err
 	}
@@ -533,6 +675,26 @@ func (q *Queries) LockTutorRelationship(ctx context.Context, arg LockTutorRelati
 	return i, err
 }
 
+const mergeInvitedCard = `-- name: MergeInvitedCard :execrows
+UPDATE relationships
+SET state = 'discarded', discard_reason = 'merged', discarded_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE id = $2 AND tutor_id = $3 AND state = 'invited'
+`
+
+type MergeInvitedCardParams struct {
+	Now     time.Time
+	ID      domain.RelationshipID
+	TutorID domain.UserID
+}
+
+func (q *Queries) MergeInvitedCard(ctx context.Context, arg MergeInvitedCardParams) (int64, error) {
+	result, err := q.db.Exec(ctx, mergeInvitedCard, arg.Now, arg.ID, arg.TutorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const removeRelationship = `-- name: RemoveRelationship :one
 UPDATE relationships
 SET state = 'discarded', discard_reason = 'removed', discarded_at = $1::timestamptz, notes = '', email = NULL,
@@ -573,6 +735,17 @@ func (q *Queries) RemoveRelationship(ctx context.Context, arg RemoveRelationship
 		&i.Notes,
 	)
 	return i, err
+}
+
+const studentHoldsProvisionalRelationship = `-- name: StudentHoldsProvisionalRelationship :one
+SELECT EXISTS (SELECT 1 FROM relationships WHERE student_id = $1 AND state = 'provisional')
+`
+
+func (q *Queries) StudentHoldsProvisionalRelationship(ctx context.Context, studentID *domain.UserID) (bool, error) {
+	row := q.db.QueryRow(ctx, studentHoldsProvisionalRelationship, studentID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const updateCardText = `-- name: UpdateCardText :execrows

@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	deletedRetention   = 30 * 24 * time.Hour
 	unverifiedLifetime = 7 * 24 * time.Hour
 	purgeBatch         = 100
 	purgeRounds        = 20
@@ -143,7 +142,7 @@ func (p *Purger) purge(ctx context.Context, repos repositories.Repositories, use
 
 func (p *Purger) PurgeDeleted(ctx context.Context, now time.Time) (int64, error) {
 	return p.purgeDue(ctx, now, func(ctx context.Context, repos repositories.Repositories, skip int32) ([]domain.UserID, error) {
-		return repos.Users.DeletedBefore(ctx, now.Add(-deletedRetention), skip, purgeBatch)
+		return repos.Users.DeletedBefore(ctx, now.Add(-domain.DeletedAccountRetention), skip, purgeBatch)
 	})
 }
 
@@ -192,7 +191,7 @@ func (p *Purger) purgeIfDue(ctx context.Context, id domain.UserID, now time.Time
 		if err != nil {
 			return err
 		}
-		deletedLongAgo := state.State == domain.AccountDeleted && state.DeletedAt != nil && !state.DeletedAt.After(now.Add(-deletedRetention))
+		deletedLongAgo := state.State == domain.AccountDeleted && state.DeletedAt != nil && !state.DeletedAt.After(now.Add(-domain.DeletedAccountRetention))
 		unverifiedTooLong := state.State == domain.AccountUnverified && !state.UnverifiedSince.After(now.Add(-unverifiedLifetime))
 		if !deletedLongAgo && !unverifiedTooLong {
 			return nil

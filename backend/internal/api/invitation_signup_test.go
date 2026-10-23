@@ -824,34 +824,6 @@ func TestTutoringFlowsLogNoEmailsNamesNotesOrTokens(t *testing.T) {
 	}
 }
 
-func TestAcceptWithBearerAndNoSignUpFieldsIsForbiddenUntilSignedInAcceptanceExists(t *testing.T) {
-	h := newFlowHarness(t)
-	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
-	card := h.newCard(t, tutor, cardName, studentEmail)
-	link := linkToken(t, card.Invitation)
-	_, student := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
-	_, tutorBearer := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 3, "another-tutor@example.org")
-	randomToken := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
-	before := h.hasher.Hashes()
-
-	refused := h.postJSON(t, invitationPath+link+"/accept", "{}", map[string]string{"Authorization": "Bearer " + student})
-	unknown := h.postJSON(t, invitationPath+randomToken+"/accept", "{}", map[string]string{"Authorization": "Bearer " + student})
-	byTutor := h.postJSON(t, invitationPath+link+"/accept", "{}", map[string]string{"Authorization": "Bearer " + tutorBearer})
-
-	if refused.status != http.StatusForbidden || code(t, refused) != "forbidden" || refused.headers.Get("Cache-Control") != "no-store" {
-		t.Fatalf("a bearer with an empty body answered %d %s", refused.status, refused.body)
-	}
-	if refusal(t, unknown) != refusal(t, refused) || refusal(t, byTutor) != refusal(t, refused) {
-		t.Fatalf("an unknown token answered %d %s and a tutor %d %s", unknown.status, unknown.body, byTutor.status, byTutor.body)
-	}
-	if h.mismatchCount(t, link) != 0 || h.hasher.Hashes() != before || h.invitationPage(t, link).status != http.StatusOK {
-		t.Fatal("the refusal counted, hashed or used the link")
-	}
-	if unchanged := decodeCard(t, h.cardCall(t, tutor, http.MethodGet, card.ID, "", "")); unchanged.State != "invited" {
-		t.Fatalf("the card changed: %+v", unchanged)
-	}
-}
-
 func TestInvitationSignUpReportsMissingFieldsAsRequired(t *testing.T) {
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)

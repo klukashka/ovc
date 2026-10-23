@@ -142,7 +142,30 @@ type InvitationAcceptRequest struct {
 	Consent  *bool            `json:"consent,omitempty"`
 }
 
-type InvitationAccepted struct{}
+type MyTutorProfile struct {
+	Name     string   `json:"name"`
+	AvatarID *string  `json:"avatar_id" format:"uuid" nullable:"true"`
+	Subjects []string `json:"subjects" nullable:"false"`
+	Bio      string   `json:"bio"`
+}
+
+type MyTutor struct {
+	RelationshipID     string                   `json:"relationship_id" format:"uuid"`
+	State              domain.RelationshipState `json:"state" enum:"active,provisional,ended"`
+	Colour             domain.Colour            `json:"colour" enum:"clay,slate,moss,plum,ochre,teal,rust,ink"`
+	Tutor              MyTutorProfile           `json:"tutor"`
+	EndedAt            *time.Time               `json:"ended_at" nullable:"true"`
+	EndedBy            *domain.EndedBy          `json:"ended_by" enum:"tutor,student,deletion" nullable:"true"`
+	AccountClosedUntil *time.Time               `json:"account_closed_until" nullable:"true"`
+}
+
+type MyTutors struct {
+	Tutors []MyTutor `json:"tutors" nullable:"false"`
+}
+
+type InvitationAccepted struct {
+	Tutor *MyTutor `json:"tutor,omitempty"`
+}
 
 type RemovedStudent struct {
 	NewCard StudentCard `json:"new_card"`

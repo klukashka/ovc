@@ -12,6 +12,26 @@ import (
 	"ovc/backend/internal/domain"
 )
 
+const acceptWaitingJoinRequests = `-- name: AcceptWaitingJoinRequests :execrows
+UPDATE join_requests
+SET state = 'accepted', suppressed = 'none', owner_choice_pending = false, decided_at = $1::timestamptz
+WHERE tutor_id = $2 AND student_id = $3 AND state IN ('held', 'pending')
+`
+
+type AcceptWaitingJoinRequestsParams struct {
+	Now       time.Time
+	TutorID   domain.UserID
+	StudentID domain.UserID
+}
+
+func (q *Queries) AcceptWaitingJoinRequests(ctx context.Context, arg AcceptWaitingJoinRequestsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, acceptWaitingJoinRequests, arg.Now, arg.TutorID, arg.StudentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createJoinRequest = `-- name: CreateJoinRequest :exec
 INSERT INTO join_requests (id, tutor_id, student_id, state, suppressed, owner_choice_pending, expires_at, created_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)

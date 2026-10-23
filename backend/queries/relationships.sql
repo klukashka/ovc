@@ -110,3 +110,34 @@ WHERE student_id = @student_id AND state <> 'discarded';
 -- name: ClearPurgedStudentFromRelationships :execrows
 UPDATE relationships SET student_id = NULL, email = NULL, updated_at = sqlc.arg(now)::timestamptz
 WHERE student_id = @student_id;
+
+-- name: StudentHoldsProvisionalRelationship :one
+SELECT EXISTS (SELECT 1 FROM relationships WHERE student_id = @student_id AND state = 'provisional');
+
+-- name: LockRelationshipsForLink :many
+SELECT * FROM relationships
+WHERE tutor_id = @tutor_id AND (id = @card_id OR (student_id = @student_id AND state <> 'discarded'))
+ORDER BY id
+FOR UPDATE;
+
+-- name: MergeInvitedCard :execrows
+UPDATE relationships
+SET state = 'discarded', discard_reason = 'merged', discarded_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND tutor_id = @tutor_id AND state = 'invited';
+
+-- name: ActivateLinkedRelationship :execrows
+UPDATE relationships
+SET state = 'active', ended_at = NULL, ended_by = NULL, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND tutor_id = @tutor_id AND student_id = @student_id AND state = sqlc.arg(from_state)::text;
+
+-- name: ListStudentTutors :many
+SELECT relationships.id, relationships.tutor_id, relationships.state, relationships.colour, relationships.ended_at,
+    relationships.ended_by, tutors.name, tutors.state AS tutor_state, tutors.deleted_at, tutor_profiles.subjects,
+    tutor_profiles.bio
+FROM relationships
+JOIN users AS tutors ON tutors.id = relationships.tutor_id
+JOIN tutor_profiles ON tutor_profiles.user_id = relationships.tutor_id
+WHERE relationships.student_id = @student_id
+    AND relationships.state IN ('active', 'provisional', 'ended')
+    AND (sqlc.narg(relationship_id)::uuid IS NULL OR relationships.id = sqlc.narg(relationship_id)::uuid)
+ORDER BY relationships.state = 'ended', relationships.linked_at, relationships.id;

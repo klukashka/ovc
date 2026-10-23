@@ -351,6 +351,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tutors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["tutors-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/uploads": {
         parameters: {
             query?: never;
@@ -458,7 +474,9 @@ export interface components {
             password?: string;
             timezone?: string;
         };
-        InvitationAccepted: Record<string, never>;
+        InvitationAccepted: {
+            tutor?: components["schemas"]["MyTutor"];
+        };
         InvitationPage: {
             tutor: components["schemas"]["PublicTutor"];
         };
@@ -496,6 +514,31 @@ export interface components {
             /** @enum {string} */
             theme: "light" | "dark" | "system";
             timezone: string;
+        };
+        MyTutor: {
+            /** Format: date-time */
+            account_closed_until: string | null;
+            /** @enum {string} */
+            colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink";
+            /** Format: date-time */
+            ended_at: string | null;
+            /** @enum {string|null} */
+            ended_by: "tutor" | "student" | "deletion" | null;
+            /** Format: uuid */
+            relationship_id: string;
+            /** @enum {string} */
+            state: "active" | "provisional" | "ended";
+            tutor: components["schemas"]["MyTutorProfile"];
+        };
+        MyTutorProfile: {
+            /** Format: uuid */
+            avatar_id: string | null;
+            bio: string;
+            name: string;
+            subjects: string[];
+        };
+        MyTutors: {
+            tutors: components["schemas"]["MyTutor"][];
         };
         NewStudentCard: {
             display_name: string;
@@ -557,6 +600,9 @@ export interface components {
         ResetPasswordRequest: {
             new_password: string;
             token: string;
+        };
+        SignedInAcceptance: {
+            tutor: components["schemas"]["MyTutor"];
         };
         StudentCard: {
             account: components["schemas"]["CardAccount"] | null;
@@ -1641,6 +1687,16 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Accepted by the signed-in account */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignedInAcceptance"];
+                };
+            };
             /** @description Accepted */
             202: {
                 headers: {
@@ -2889,6 +2945,108 @@ export interface operations {
             };
         };
     };
+    "tutors-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyTutors"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "uploads-create": {
         parameters: {
             query: {
@@ -3258,6 +3416,9 @@ export const meLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["
 export const meRoleValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Me"]["role"]> = ["tutor", "student"];
 export const meStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Me"]["state"]> = ["unverified", "active"];
 export const meThemeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Me"]["theme"]> = ["light", "dark", "system"];
+export const myTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MyTutor"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
+export const myTutorEnded_byValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MyTutor"]["ended_by"]> = ["tutor", "student", "deletion"];
+export const myTutorStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MyTutor"]["state"]> = ["active", "provisional", "ended"];
 export const passwordResetOutcomeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["PasswordReset"]["outcome"]> = ["choice_required"];
 export const profilePatchLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["language"]> = ["ru", "en"];
 export const profilePatchThemeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["theme"]> = ["light", "dark", "system"];

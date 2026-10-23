@@ -327,7 +327,7 @@ func (s *Service) confirmSignedIn(ctx context.Context, stored repositories.Email
 	var outcome domain.LinkOutcome
 	announce := Announce(Silent)
 	err := s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := lockActingAccount(ctx, repos, caller, now, domain.AccountUnverified, domain.AccountActive); err != nil {
+		if err := LockActingAccount(ctx, repos, caller, now, domain.AccountUnverified, domain.AccountActive); err != nil {
 			return err
 		}
 		if _, err := consumeFor(ctx, repos, stored, now, domain.AccountUnverified); err != nil {
@@ -357,7 +357,7 @@ func (s *Service) confirmSignedIn(ctx context.Context, stored repositories.Email
 	return Confirmation{Outcome: reported(outcome)}, nil
 }
 
-func lockActingAccount(ctx context.Context, repos repositories.Repositories, principal Principal, now time.Time, authorised ...domain.AccountState) error {
+func LockActingAccount(ctx context.Context, repos repositories.Repositories, principal Principal, now time.Time, authorised ...domain.AccountState) error {
 	locked, err := repos.Users.LockCredentials(ctx, principal.UserID)
 	if errors.Is(err, repositories.ErrNotFound) {
 		return ErrUnauthenticated

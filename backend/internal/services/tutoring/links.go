@@ -13,7 +13,11 @@ import (
 	"ovc/backend/internal/services/accounts"
 )
 
-var ErrRelationshipNotProvisional = errors.New("only a provisional or reclaim-pending card can be removed")
+var (
+	ErrRelationshipNotProvisional = errors.New("only a provisional or reclaim-pending card can be removed")
+	ErrRoleMismatch               = errors.New("only a student account can accept an invitation")
+	ErrEmailNotVerified           = errors.New("an unconfirmed account already holds a provisional link")
+)
 
 var errConsumedAnotherCard = errors.New("the consumed invitation belongs to another card")
 
@@ -27,11 +31,11 @@ const (
 func (s *Service) PrecheckInvitation(ctx context.Context, token string, now time.Time) (accounts.InvitationCheck, error) {
 	hash, valid := core.InvitationTokenHash(token)
 	if !valid {
-		return accounts.InvitationCheck{}, s.refused(ctx, "invalid", nil)
+		return accounts.InvitationCheck{}, s.refused(ctx, refusalInvalid, nil)
 	}
 	usable, err := s.deps.Store.Repositories().Invitations.Usable(ctx, hash, now)
 	if errors.Is(err, repositories.ErrNotFound) {
-		return accounts.InvitationCheck{}, s.refused(ctx, "invalid", nil)
+		return accounts.InvitationCheck{}, s.refused(ctx, refusalInvalid, nil)
 	}
 	if err != nil {
 		return accounts.InvitationCheck{}, err
@@ -47,9 +51,13 @@ func (s *Service) BindNewAccount(ctx context.Context, check accounts.InvitationC
 	if bound {
 		return nil
 	}
+	return s.countMismatch(ctx, check, now)
+}
+
+func (s *Service) countMismatch(ctx context.Context, check accounts.InvitationCheck, now time.Time, caller ...slog.Attr) error {
 	count, err := s.deps.Store.Repositories().Invitations.CountMismatch(ctx, check.TokenHash, now)
 	if errors.Is(err, repositories.ErrNotFound) {
-		return s.refused(ctx, "invalid", &check)
+		return s.refused(ctx, refusalInvalid, &check, caller...)
 	}
 	if err != nil {
 		return err
@@ -57,19 +65,40 @@ func (s *Service) BindNewAccount(ctx context.Context, check accounts.InvitationC
 	if count >= domain.InvitationMismatchLimit {
 		s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "invitation.revoked_after_mismatches", cardAttributes(check.Tutor, check.Relationship)...)
 	}
-	return s.refused(ctx, "email_mismatch", &check)
+	return s.refused(ctx, refusalEmailMismatch, &check, caller...)
 }
 
-func (s *Service) refused(ctx context.Context, reason string, check *accounts.InvitationCheck) error {
-	attributes := []slog.Attr{slog.String("reason", reason)}
+type refusalReason string
+
+const (
+	refusalInvalid       refusalReason = "invalid"
+	refusalEmailMismatch refusalReason = "email_mismatch"
+	refusalRoleMismatch  refusalReason = "role_mismatch"
+	refusalNotVerified   refusalReason = "not_verified"
+)
+
+func (reason refusalReason) err() error {
+	switch reason {
+	case refusalInvalid:
+		return accounts.ErrInvitationInvalid
+	case refusalEmailMismatch:
+		return accounts.ErrInvitationEmailMismatch
+	case refusalRoleMismatch:
+		return ErrRoleMismatch
+	case refusalNotVerified:
+		return ErrEmailNotVerified
+	}
+	panic("an invitation refusal has an unknown reason: " + string(reason))
+}
+
+func (s *Service) refused(ctx context.Context, reason refusalReason, check *accounts.InvitationCheck, caller ...slog.Attr) error {
+	attributes := []slog.Attr{slog.String("reason", string(reason))}
 	if check != nil {
 		attributes = append(attributes, cardAttributes(check.Tutor, check.Relationship)...)
 	}
+	attributes = append(attributes, caller...)
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "invitation.refused", attributes...)
-	if reason == "email_mismatch" {
-		return accounts.ErrInvitationEmailMismatch
-	}
-	return accounts.ErrInvitationInvalid
+	return reason.err()
 }
 
 func (s *Service) LinkAtSignUp(
@@ -77,25 +106,25 @@ func (s *Service) LinkAtSignUp(
 ) (accounts.Announce, error) {
 	card, err := repos.Relationships.LockForTutor(ctx, check.Tutor, check.Relationship)
 	if errors.Is(err, repositories.ErrNotFound) {
-		return nil, s.refused(ctx, "invalid", &check)
+		return nil, s.refused(ctx, refusalInvalid, &check)
 	}
 	if err != nil {
 		return nil, err
 	}
 	transition, allowed := domain.NextRelationshipState(card.State, domain.CauseAcceptedUnconfirmed)
 	if !allowed {
-		return nil, s.refused(ctx, "invalid", &check)
+		return nil, s.refused(ctx, refusalInvalid, &check)
 	}
 	tutor, err := repos.Users.ByID(ctx, check.Tutor)
 	if err != nil {
 		return nil, err
 	}
 	if tutor.State != domain.AccountActive {
-		return nil, s.refused(ctx, "invalid", &check)
+		return nil, s.refused(ctx, refusalInvalid, &check)
 	}
 	consumed, err := repos.Invitations.Consume(ctx, check.TokenHash, user, now)
 	if errors.Is(err, repositories.ErrNotFound) {
-		return nil, s.refused(ctx, "invalid", &check)
+		return nil, s.refused(ctx, refusalInvalid, &check)
 	}
 	if err != nil {
 		return nil, err
@@ -117,7 +146,7 @@ func (s *Service) LinkAtSignUp(
 		return nil, err
 	}
 	if !linked {
-		return nil, s.refused(ctx, "invalid", &check)
+		return nil, s.refused(ctx, refusalInvalid, &check)
 	}
 	return func(ctx context.Context) {
 		attributes := append(cardAttributes(card.TutorID, card.ID), slog.String("user_id", user.String()),

@@ -27,6 +27,7 @@ type (
 	InvitationTutor    = dbgen.GetInvitationTutorRow
 	InvitationEmail    = dbgen.GetInvitationForEmailRow
 	UsableInvitation   = dbgen.GetUsableInvitationRow
+	StudentTutor       = dbgen.ListStudentTutorsRow
 )
 
 type Link struct {
@@ -184,6 +185,37 @@ func (r Relationships) Activate(ctx context.Context, id domain.RelationshipID, n
 	return applied(rows, err, "activate provisional relationship")
 }
 
+func (r Relationships) HoldsProvisional(ctx context.Context, student domain.UserID) (bool, error) {
+	held, err := r.queries.StudentHoldsProvisionalRelationship(ctx, &student)
+	return one(held, err, "provisional relationship of a student")
+}
+
+func (r Relationships) LockForLink(ctx context.Context, tutor domain.UserID, card domain.RelationshipID, student domain.UserID) ([]Relationship, error) {
+	relationships, err := r.queries.LockRelationshipsForLink(ctx, dbgen.LockRelationshipsForLinkParams{TutorID: tutor, CardID: card, StudentID: &student})
+	return one(relationships, err, "lock relationships for a link")
+}
+
+func (r Relationships) MergeCard(ctx context.Context, tutor domain.UserID, id domain.RelationshipID, now time.Time) (bool, error) {
+	rows, err := r.queries.MergeInvitedCard(ctx, dbgen.MergeInvitedCardParams{Now: now, ID: id, TutorID: tutor})
+	return applied(rows, err, "merge invited card")
+}
+
+func (r Relationships) ActivateLinked(ctx context.Context, link Relationship, now time.Time) (bool, error) {
+	rows, err := r.queries.ActivateLinkedRelationship(ctx, dbgen.ActivateLinkedRelationshipParams{
+		Now: now, ID: link.ID, TutorID: link.TutorID, StudentID: link.StudentID, FromState: string(link.State),
+	})
+	return applied(rows, err, "activate linked relationship")
+}
+
+func (r Relationships) TutorsOfStudent(ctx context.Context, student domain.UserID, only *domain.RelationshipID) ([]StudentTutor, error) {
+	params := dbgen.ListStudentTutorsParams{StudentID: &student}
+	if only != nil {
+		params.RelationshipID = pgtype.UUID{Bytes: *only, Valid: true}
+	}
+	tutors, err := r.queries.ListStudentTutors(ctx, params)
+	return one(tutors, err, "tutors of a student")
+}
+
 func (r Relationships) ForgetPurgedStudent(ctx context.Context, student domain.UserID, now time.Time) error {
 	if _, err := r.queries.DeleteStudentMemberships(ctx, &student); err != nil {
 		return fmt.Errorf("delete memberships of a purged student: %w", err)
@@ -275,4 +307,9 @@ func (r JoinRequests) Decline(ctx context.Context, tutor domain.UserID, id domai
 func (r JoinRequests) decide(ctx context.Context, tutor domain.UserID, id domain.JoinRequestID, decision domain.JoinRequestState, now time.Time) (bool, error) {
 	rows, err := r.queries.DecideJoinRequest(ctx, dbgen.DecideJoinRequestParams{Decision: string(decision), Now: now, ID: id, TutorID: tutor})
 	return applied(rows, err, "decide join request")
+}
+
+func (r JoinRequests) AcceptWaiting(ctx context.Context, tutor domain.UserID, student domain.UserID, now time.Time) (int64, error) {
+	rows, err := r.queries.AcceptWaitingJoinRequests(ctx, dbgen.AcceptWaitingJoinRequestsParams{Now: now, TutorID: tutor, StudentID: student})
+	return counted(rows, err, "accept waiting join requests")
 }

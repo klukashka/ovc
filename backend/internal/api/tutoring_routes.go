@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/schemas"
@@ -81,8 +83,14 @@ type acceptInvitationInput struct {
 }
 
 type acceptInvitationOutput struct {
+	Status       int
 	CacheControl string `header:"Cache-Control"`
 	Body         schemas.InvitationAccepted
+}
+
+type myTutorsOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         schemas.MyTutors
 }
 
 type removedOutput struct {
@@ -108,8 +116,31 @@ func (r *router) registerTutoring() {
 	accept := operation("invitations-accept", http.MethodPost, "/api/v1/invitations/{token}/accept")
 	accept.DefaultStatus = http.StatusAccepted
 	accept.Middlewares = append(accept.Middlewares, r.recordClientAddress)
+	accept.Responses = map[string]*huma.Response{"200": r.signedInAcceptanceResponse()}
 	accept.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict, http.StatusTooManyRequests)
 	register(r, accept, AudienceOptionalUser, r.acceptInvitation)
+
+	tutors := operation("tutors-list", http.MethodGet, "/api/v1/tutors")
+	tutors.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
+	register(r, tutors, AudienceStudentUnverifiedOK, r.myTutors)
+}
+
+const signedInAcceptanceSchema = "SignedInAcceptance"
+
+func (r *router) signedInAcceptanceResponse() *huma.Response {
+	r.api.OpenAPI().Components.Schemas.Map()[signedInAcceptanceSchema] = &huma.Schema{
+		Type:                 huma.TypeObject,
+		Properties:           map[string]*huma.Schema{"tutor": {Ref: "#/components/schemas/MyTutor"}},
+		Required:             []string{"tutor"},
+		AdditionalProperties: false,
+	}
+	return &huma.Response{
+		Description: "Accepted by the signed-in account",
+		Headers:     map[string]*huma.Param{"Cache-Control": {Schema: &huma.Schema{Type: huma.TypeString}}},
+		Content: map[string]*huma.MediaType{"application/json": {
+			Schema: &huma.Schema{Ref: "#/components/schemas/" + signedInAcceptanceSchema},
+		}},
+	}
 }
 
 func (r *router) registerStudentCards() {
@@ -305,8 +336,8 @@ func (r *router) acceptInvitation(ctx context.Context, input *acceptInvitationIn
 	if err := requireJSON(ctx, input.ContentType); err != nil {
 		return nil, err
 	}
-	if _, signedIn := optionalPrincipal(ctx); signedIn {
-		return nil, signedInAcceptanceRefusal(ctx, input.Body)
+	if principal, signedIn := optionalPrincipal(ctx); signedIn {
+		return r.acceptSignedIn(ctx, principal, input.Token, input.Body)
 	}
 	body := input.Body
 	signUp := accounts.InvitationSignUp{
@@ -315,10 +346,31 @@ func (r *router) acceptInvitation(ctx context.Context, input *acceptInvitationIn
 	if err := r.auth.Accounts.RegisterThroughInvitation(ctx, input.Token, signUp, clientAddress(ctx)); err != nil {
 		return nil, r.flowError(ctx, "invitations.accept.failed", err)
 	}
-	return &acceptInvitationOutput{CacheControl: noStore}, nil
+	return &acceptInvitationOutput{Status: http.StatusAccepted, CacheControl: noStore}, nil
 }
 
-func signedInAcceptanceRefusal(ctx context.Context, body schemas.InvitationAcceptRequest) error {
+func (r *router) acceptSignedIn(
+	ctx context.Context, principal accounts.Principal, token string, body schemas.InvitationAcceptRequest,
+) (*acceptInvitationOutput, error) {
+	if err := signUpFieldsWithBearer(ctx, body); err != nil {
+		return nil, err
+	}
+	tutor, err := r.tutoring.AcceptSignedIn(ctx, principal, token)
+	switch {
+	case err == nil:
+		accepted := myTutorBody(tutor)
+		return &acceptInvitationOutput{Status: http.StatusOK, CacheControl: noStore, Body: schemas.InvitationAccepted{Tutor: &accepted}}, nil
+	case errors.Is(err, tutoring.ErrRoleMismatch):
+		return nil, NewError(ctx, domain.ErrorRoleMismatch)
+	case errors.Is(err, tutoring.ErrEmailNotVerified):
+		return nil, NewError(ctx, domain.ErrorEmailNotVerified)
+	case errors.Is(err, accounts.ErrInvitationInvalid), errors.Is(err, accounts.ErrInvitationEmailMismatch), errors.Is(err, accounts.ErrUnauthenticated):
+		return nil, r.flowError(ctx, "invitations.accept.failed", err)
+	}
+	return nil, r.tutoringError(ctx, "invitations.accept.failed", err)
+}
+
+func signUpFieldsWithBearer(ctx context.Context, body schemas.InvitationAcceptRequest) error {
 	sent := []struct {
 		path    string
 		present bool
@@ -335,7 +387,29 @@ func signedInAcceptanceRefusal(ctx context.Context, body schemas.InvitationAccep
 	if len(fields) > 0 {
 		return &Error{status: http.StatusUnprocessableEntity, ErrorEnvelope: schemas.NewErrorEnvelope(domain.ErrorValidationFailed, core.RequestID(ctx), fields)}
 	}
-	return NewError(ctx, domain.ErrorForbidden)
+	return nil
+}
+
+func (r *router) myTutors(ctx context.Context, _ *struct{}) (*myTutorsOutput, error) {
+	tutors, err := r.tutoring.MyTutors(ctx, principalFrom(ctx))
+	if err != nil {
+		return nil, r.tutoringError(ctx, "tutors.list.failed", err)
+	}
+	body := schemas.MyTutors{Tutors: make([]schemas.MyTutor, 0, len(tutors))}
+	for _, tutor := range tutors {
+		body.Tutors = append(body.Tutors, myTutorBody(tutor))
+	}
+	return &myTutorsOutput{CacheControl: noStore, Body: body}, nil
+}
+
+func myTutorBody(tutor tutoring.MyTutor) schemas.MyTutor {
+	return schemas.MyTutor{
+		RelationshipID: tutor.RelationshipID.String(), State: tutor.State, Colour: tutor.Colour,
+		Tutor: schemas.MyTutorProfile{
+			Name: tutor.Tutor.Name, AvatarID: optionalID(tutor.Tutor.AvatarID), Subjects: append([]string{}, tutor.Tutor.Subjects...), Bio: tutor.Tutor.Bio,
+		},
+		EndedAt: utc(tutor.EndedAt), EndedBy: tutor.EndedBy, AccountClosedUntil: utc(tutor.AccountClosedUntil),
+	}
 }
 
 func (r *router) tutoringError(ctx context.Context, event string, err error) error {

@@ -345,11 +345,7 @@ func TestTutorCallingStudentRoutesGetsNotFound(t *testing.T) {
 		}
 	}
 	if len(operations) == 0 {
-		for _, route := range studentRoutesOfSliceThree {
-			if _, found := registered[route]; found {
-				t.Fatalf("%s is registered but no student operation was found", route)
-			}
-		}
+		t.Fatal("no student operations are registered")
 	}
 
 	assertRoleRefusals(t, h, operations, map[string]string{"an active tutor": active, "an unverified tutor": unverified})

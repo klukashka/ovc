@@ -1,5 +1,9 @@
 package domain
 
+import "time"
+
+const DeletedAccountRetention = 30 * 24 * time.Hour
+
 type OperatorAction string
 
 const (
