@@ -27,3 +27,8 @@ reason = "Low severity: dompurify 3.4.16 in this lockfile, not loaded by the dia
 id = "GHSA-mrv2-3pqr-j5jr"
 ignoreUntil = 2026-10-27T00:00:00Z
 reason = "High severity (CVSS 7.6): dompurify 3.4.16 in this lockfile, not loaded by the diagram renderer, fixed in 3.4.17, which is younger than the two-week minimum release age; same exposure as GHSA-cg2g-xh64-v4q7."
+
+[[IgnoredVulns]]
+id = "GHSA-mrhx-c7xc-m3w5"
+ignoreUntil = 2026-10-27T00:00:00Z
+reason = "High severity (CVSS 4.0 8.2): zod 3.25.76 inside the diagram renderer, a dependency of chromium-bidi 17.0.2 under puppeteer 25.12.0. zod is loaded only by chromium-bidi's WebDriver BiDi mapper, which puppeteer starts only in WebDriver BiDi mode and with its no-op command parser; the renderer drives Chromium over CDP, so zod never validates anything. puppeteer 25.13.0 moves to chromium-bidi 157.0.8090-0 on zod ^4.6.5, which resolves to the fixed zod 4.6.6 once that passes the two-week minimum release age on 2026-10-25. Upgrade puppeteer then. Triage: knowledge/research/toolchain-2026-10-21.md"

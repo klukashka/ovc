@@ -54,3 +54,11 @@ Node 26 runs the TypeScript build scripts in `frontend/scripts/` and `frontend/e
 - `pnpm install` with an empty `allowBuilds` ran no dependency install scripts: the native parts of Rolldown, Lightning CSS and Tailwind's Oxide engine ship as prebuilt optional packages.
 - The first resolution pinned only direct dependencies by age; 36 transitive versions (for example `rolldown` 1.2.14 of 2026-10-14) were younger than two weeks. With `minimumReleaseAge: 20160` the lockfile was re-resolved from scratch and those packages fell back to older releases (for example `rolldown` 1.2.12).
 - `pnpm audit --audit-level high` and OSV-Scanner over `frontend/pnpm-lock.yaml` reported no known vulnerabilities on 2026-10-21.
+
+### Accepted findings
+
+Accepted findings, listed in `frontend/osv-scanner.toml` and in `auditConfig.ignoreGhsas` of `frontend/pnpm-workspace.yaml` (OSV-Scanner and `pnpm audit` over `frontend/pnpm-lock.yaml`, rechecked 2026-10-24):
+
+| Advisory | Package | Reason |
+|---|---|---|
+| GHSA-mrhx-c7xc-m3w5 (high, CVSS 4.0 8.2) | `zod` 4.6.5, through `eslint-plugin-react-hooks` 7.1.1 and `zod-validation-error` | A development dependency of the linter, which validates only this repository's own lint configuration; nothing in the application build imports `zod`. The fix 4.6.6 was published 2026-10-11 and is younger than the minimum release age. Accepted until 2026-10-27, then upgraded. The `pnpm audit` ignore has no expiry of its own: the OSV entry's date forces the upgrade, and the upgrade change must also remove the `auditConfig.ignoreGhsas` entry by hand, since both checks pass with a stale ignore once zod is 4.6.6. Every `ignoreGhsas` id is paired with a dated entry for the same advisory in `frontend/osv-scanner.toml` |

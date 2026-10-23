@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "GHSA-mrhx-c7xc-m3w5"
+ignoreUntil = 2026-10-27T00:00:00Z
+reason = "High severity (CVSS 4.0 8.2): zod 4.6.5 reached only through eslint-plugin-react-hooks 7.1.1 and its zod-validation-error dependency, a development dependency of the linter that validates the lint configuration written in this repository; nothing in the application build or the browser bundle imports zod, so no untrusted input reaches it. The fix 4.6.6 was published 2026-10-11 and is younger than the two-week minimum release age until 2026-10-25. Upgrade once it is old enough. Triage: knowledge/research/frontend-toolchain-2026-10-21.md"
