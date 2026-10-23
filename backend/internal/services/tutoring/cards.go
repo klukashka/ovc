@@ -144,6 +144,11 @@ func (s *Service) ListCards(ctx context.Context, tutor domain.UserID, query Card
 	}
 	page := CardPage{}
 	err := s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
+		if query.Group != nil {
+			if _, err := repos.Groups.ForTutor(ctx, tutor, *query.Group); err != nil {
+				return groupScope(err)
+			}
+		}
 		rows, err := repos.Relationships.ListForTutor(ctx, listing)
 		if err != nil {
 			return err

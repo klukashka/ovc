@@ -69,6 +69,10 @@ const (
 )
 
 const (
+	GroupLimitPerTutor   = 200
+	GroupMemberLimit     = 30
+	GroupNameMaxRunes    = 60
+	GroupPreviewMembers  = 5
 	InvitationTokenBytes = 32
 	InvitationLifetime   = 14 * 24 * time.Hour
 )

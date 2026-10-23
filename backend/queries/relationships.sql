@@ -173,6 +173,12 @@ WHERE id = @id AND tutor_id = @tutor_id AND state = sqlc.arg(from_state)::text;
 -- name: LockStudentReclaimPendingRelationships :many
 SELECT * FROM relationships WHERE student_id = @student_id AND state = 'reclaim_pending' ORDER BY id FOR UPDATE;
 
+-- name: LockTutorRelationshipsForGroup :many
+SELECT id, state FROM relationships
+WHERE tutor_id = @tutor_id AND id = ANY (sqlc.arg(ids)::uuid[]) AND state <> 'discarded'
+ORDER BY id
+FOR SHARE;
+
 -- name: GetTutorRelationshipOfStudent :one
 SELECT * FROM relationships WHERE tutor_id = @tutor_id AND student_id = @student_id AND state <> 'discarded';
 

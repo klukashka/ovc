@@ -125,6 +125,7 @@ func (r *router) registerTutoring() {
 	register(r, tutors, AudienceStudentUnverifiedOK, r.myTutors)
 
 	r.registerJoinRequests()
+	r.registerGroups()
 }
 
 const signedInAcceptanceSchema = "SignedInAcceptance"
@@ -419,7 +420,7 @@ func (r *router) tutoringError(ctx context.Context, event string, err error) err
 	var exists *tutoring.StudentExistsError
 	var throttled *tutoring.ThrottledError
 	switch {
-	case errors.Is(err, tutoring.ErrCardNotFound), errors.Is(err, tutoring.ErrInvitationNotFound):
+	case errors.Is(err, tutoring.ErrCardNotFound), errors.Is(err, tutoring.ErrInvitationNotFound), errors.Is(err, tutoring.ErrGroupNotFound):
 		return NewError(ctx, domain.ErrorNotFound)
 	case errors.As(err, &exists):
 		existing := exists.Existing.String()

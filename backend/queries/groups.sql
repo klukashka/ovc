@@ -1,0 +1,69 @@
+-- name: CreateGroup :exec
+INSERT INTO groups (id, tutor_id, name, colour, create_key, created_at, updated_at)
+VALUES (@id, @tutor_id, @name, @colour, @create_key, @created_at, @created_at);
+
+-- name: GetTutorGroup :one
+SELECT * FROM groups WHERE id = @id AND tutor_id = @tutor_id;
+
+-- name: LockTutorGroup :one
+SELECT * FROM groups WHERE id = @id AND tutor_id = @tutor_id FOR UPDATE;
+
+-- name: GetTutorGroupByCreateKey :one
+SELECT * FROM groups WHERE tutor_id = @tutor_id AND create_key = @create_key;
+
+-- name: CountTutorGroups :one
+SELECT count(id) FROM groups WHERE tutor_id = @tutor_id;
+
+-- name: ListTutorGroups :many
+SELECT * FROM groups WHERE tutor_id = @tutor_id ORDER BY archived_at IS NOT NULL, created_at, id;
+
+-- name: UpdateGroupDetails :execrows
+UPDATE groups SET name = @name, colour = @colour, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND tutor_id = @tutor_id;
+
+-- name: ArchiveGroup :execrows
+UPDATE groups SET archived_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND tutor_id = @tutor_id AND archived_at IS NULL;
+
+-- name: UnarchiveGroup :execrows
+UPDATE groups SET archived_at = NULL, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND tutor_id = @tutor_id AND archived_at IS NOT NULL;
+
+-- name: AddGroupMembers :execrows
+INSERT INTO group_members (group_id, relationship_id, tutor_id, added_at)
+SELECT sqlc.arg(group_id)::uuid, member.id, sqlc.arg(tutor_id)::uuid, sqlc.arg(now)::timestamptz
+FROM unnest(sqlc.arg(relationship_ids)::uuid[]) AS member (id)
+ON CONFLICT (group_id, relationship_id) DO NOTHING;
+
+-- name: RemoveGroupMembers :execrows
+DELETE FROM group_members
+WHERE group_id = @group_id AND tutor_id = @tutor_id AND relationship_id = ANY (sqlc.arg(relationship_ids)::uuid[]);
+
+-- name: ListGroupMemberIDs :many
+SELECT relationship_id FROM group_members WHERE group_id = @group_id AND tutor_id = @tutor_id;
+
+-- name: ListGroupMembers :many
+SELECT group_members.relationship_id, relationships.display_name, relationships.student_id, users.name, group_members.added_at
+FROM group_members
+JOIN relationships ON relationships.id = group_members.relationship_id AND relationships.tutor_id = group_members.tutor_id
+JOIN users ON users.id = relationships.student_id
+WHERE group_members.group_id = @group_id AND group_members.tutor_id = @tutor_id
+ORDER BY group_members.added_at, group_members.relationship_id;
+
+-- name: ListFirstGroupMembers :many
+SELECT ranked.group_id, ranked.relationship_id, ranked.display_name, ranked.student_id, ranked.name, ranked.added_at,
+    ranked.member_count
+FROM (
+    SELECT group_members.group_id, group_members.relationship_id, relationships.display_name, relationships.student_id,
+        users.name, group_members.added_at,
+        row_number() OVER (
+            PARTITION BY group_members.group_id ORDER BY group_members.added_at, group_members.relationship_id
+        ) AS position,
+        count(group_members.relationship_id) OVER (PARTITION BY group_members.group_id) AS member_count
+    FROM group_members
+    JOIN relationships ON relationships.id = group_members.relationship_id AND relationships.tutor_id = group_members.tutor_id
+    JOIN users ON users.id = relationships.student_id
+    WHERE group_members.tutor_id = @tutor_id AND group_members.group_id = ANY (sqlc.arg(group_ids)::uuid[])
+) AS ranked
+WHERE ranked.position <= sqlc.arg(first_members)::bigint
+ORDER BY ranked.group_id, ranked.position;

@@ -26,7 +26,8 @@ type FieldError struct {
 }
 
 type ErrorDetails struct {
-	StudentID *string `json:"student_id,omitempty" format:"uuid"`
+	StudentID       *string  `json:"student_id,omitempty" format:"uuid"`
+	RelationshipIDs []string `json:"relationship_ids,omitempty" format:"uuid"`
 }
 
 type ErrorBody struct {

@@ -275,12 +275,13 @@ Ending an `ended` relationship again returns it unchanged. A student's "Stop stu
   - members who are students with `active` relationships to that tutor (at most 30); a `provisional` or `reclaim_pending` student can never be a member.
 - **Limits:** a tutor has at most 200 groups, archived ones included; the 201st is refused with `422 validation_failed`, counted under the tutor's profile lock, so the group list stays unpaginated and bounded.
 - **Members:** a member outside the tutor's relationships answers `not_found`, and one whose relationship is not `active` is refused with `409 relationship_not_active`, naming the relationships.
+- **Locks:** creating a group locks the tutor's profile first, which serialises concurrent creations for the limit, then the named relationships in identifier order with a shared lock that holds them in their state until the group and its members are written; changing a group's members locks the named relationships the same way and then the group's row. A change that ends or removes one of those relationships therefore waits for the group change, or the group change sees the new state and refuses it.
 - **Adding a member** gives them:
   - the group chat, including its history;
   - future group lessons;
   - the right to join a group lesson that is already live, which also adds them to that lesson's roster.
 
-  It does not give them work issued to the group earlier ([issuing](homework.md#issuing)). Adding a member to an archived group is refused with `audience_not_active`.
+  It does not give them work issued to the group earlier ([issuing](homework.md#issuing)). Adding a member to an archived group is refused with `audience_not_active`; renaming, recolouring and removing members stay possible while it is archived.
 - **Removing a member:**
   - removes them from future group lessons and the group chat, and they can no longer join a live group lesson;
   - they keep their issued work, which they may still submit while their relationship with the tutor is active.

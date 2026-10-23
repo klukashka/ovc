@@ -366,6 +366,10 @@ var denialCases = map[string]denialCase{
 	"POST /api/v1/join-requests/{id}/accept":              anotherTutorsJoinRequest("/accept", ""),
 	"POST /api/v1/join-requests/{id}/decline":             anotherTutorsJoinRequest("/decline", `{"block":true}`),
 	"DELETE /api/v1/tutor/blocked-requesters/{studentId}": anotherTutorsBlockedStudent,
+	"GET /api/v1/groups/{id}":                             anotherTutorsGroup(http.MethodGet, "", ""),
+	"PATCH /api/v1/groups/{id}":                           anotherTutorsGroup(http.MethodPatch, "", `{"name":"Taken over","colour":"ink"}`),
+	"POST /api/v1/groups/{id}/archive":                    anotherTutorsGroup(http.MethodPost, "/archive", ""),
+	"POST /api/v1/groups/{id}/unarchive":                  anotherTutorsGroup(http.MethodPost, "/unarchive", ""),
 }
 
 var denialStatuses = map[string]int{
