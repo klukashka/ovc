@@ -294,6 +294,7 @@ func TestTutorCannotReachAnotherTutorsStudentCard(t *testing.T) {
 		{http.MethodPatch, "", `{"email":"changed@example.org"}`},
 		{http.MethodDelete, "", ""},
 		{http.MethodPost, "/invitation", ""},
+		{http.MethodPost, "/invitation/send", ""},
 	}
 
 	for _, route := range routes {
@@ -325,6 +326,9 @@ func TestTutorCannotReachAnotherTutorsStudentCard(t *testing.T) {
 	unchanged := decodeCard(t, h.cardCall(t, ownerToken, http.MethodGet, invited.ID, "", ""))
 	if unchanged.DisplayName != cardName || *unchanged.Email != cardEmail || *unchanged.Invitation.URL != *invited.Invitation.URL {
 		t.Fatalf("another tutor changed the card: %+v", unchanged)
+	}
+	if queued := h.countRows(t, "SELECT count(id) FROM outbox WHERE kind = $1", string(domain.EventInvitationCreated)); queued != 0 {
+		t.Fatalf("another tutor queued %d invitation emails", queued)
 	}
 }
 

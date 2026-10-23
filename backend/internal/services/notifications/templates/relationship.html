@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="{{.Language}}">
+<head>
+<meta charset="utf-8">
+<title>{{.Subject}}</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2933;">
+<p>{{.Intro}}</p>
+<p style="font-weight: bold;">{{.Name}}</p>
+{{range .Lines}}<p>{{.}}</p>
+{{end}}{{if .ActionURL}}<p><a href="{{.ActionURL}}" style="color: #c2410c; font-weight: bold;">{{.Action}}</a></p>
+{{end}}<p style="color: #52606d; font-size: 14px;">{{.Note}}</p>
+</body>
+</html>

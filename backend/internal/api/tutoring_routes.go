@@ -115,6 +115,11 @@ func (r *router) registerStudentCards() {
 	invitation := operation("students-invitation-regenerate", http.MethodPost, studentsPath+"/{id}/invitation")
 	invitation.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests)
 	register(r, invitation, AudienceTutor, r.regenerateInvitation)
+
+	send := operation("students-invitation-send", http.MethodPost, studentsPath+"/{id}/invitation/send")
+	send.DefaultStatus = http.StatusAccepted
+	send.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests)
+	register(r, send, AudienceTutor, r.sendInvitation)
 }
 
 func (r *router) tutorCode(ctx context.Context, _ *struct{}) (*tutorCodeOutput, error) {
@@ -235,6 +240,17 @@ func (r *router) regenerateInvitation(ctx context.Context, input *cardInput) (*r
 		body.Invitation.URL = *issued.URL
 	}
 	return &regeneratedOutput{CacheControl: noStore, Body: body}, nil
+}
+
+func (r *router) sendInvitation(ctx context.Context, input *cardInput) (*acceptedOutput, error) {
+	id, valid := domain.ParseUUID[domain.RelationshipID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	if err := r.tutoring.SendInvitation(ctx, principalFrom(ctx).UserID, id); err != nil {
+		return nil, r.tutoringError(ctx, "students.invitation.send.failed", err)
+	}
+	return &acceptedOutput{CacheControl: noStore}, nil
 }
 
 func (r *router) invitationPage(ctx context.Context, input *invitationPageInput) (*invitationPageOutput, error) {

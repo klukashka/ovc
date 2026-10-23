@@ -93,6 +93,25 @@ func (q *Queries) CountInvitationMismatch(ctx context.Context, arg CountInvitati
 	return mismatch_count, err
 }
 
+const countInvitationSend = `-- name: CountInvitationSend :one
+UPDATE invitations
+SET send_count = send_count + 1
+WHERE id = $1 AND used_at IS NULL AND revoked_at IS NULL AND expires_at > $2::timestamptz
+RETURNING send_count
+`
+
+type CountInvitationSendParams struct {
+	ID  domain.InvitationID
+	Now time.Time
+}
+
+func (q *Queries) CountInvitationSend(ctx context.Context, arg CountInvitationSendParams) (int16, error) {
+	row := q.db.QueryRow(ctx, countInvitationSend, arg.ID, arg.Now)
+	var send_count int16
+	err := row.Scan(&send_count)
+	return send_count, err
+}
+
 const createInvitation = `-- name: CreateInvitation :exec
 INSERT INTO invitations (id, relationship_id, token_hash, token_encrypted, bound_student_id, expires_at, created_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -147,6 +166,43 @@ func (q *Queries) GetCardInvitation(ctx context.Context, relationshipID domain.R
 		&i.UsedAt,
 		&i.RevokedAt,
 		&i.RevokeReason,
+	)
+	return i, err
+}
+
+const getInvitationForEmail = `-- name: GetInvitationForEmail :one
+SELECT invitations.id, invitations.token_encrypted, invitations.expires_at, invitations.used_at, invitations.revoked_at,
+    invitations.send_count, relationships.tutor_id, relationships.state, relationships.email
+FROM invitations
+JOIN relationships ON relationships.id = invitations.relationship_id
+WHERE invitations.id = $1
+`
+
+type GetInvitationForEmailRow struct {
+	ID             domain.InvitationID
+	TokenEncrypted []byte
+	ExpiresAt      time.Time
+	UsedAt         *time.Time
+	RevokedAt      *time.Time
+	SendCount      int16
+	TutorID        domain.UserID
+	State          domain.RelationshipState
+	Email          *string
+}
+
+func (q *Queries) GetInvitationForEmail(ctx context.Context, id domain.InvitationID) (GetInvitationForEmailRow, error) {
+	row := q.db.QueryRow(ctx, getInvitationForEmail, id)
+	var i GetInvitationForEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.TokenEncrypted,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.RevokedAt,
+		&i.SendCount,
+		&i.TutorID,
+		&i.State,
+		&i.Email,
 	)
 	return i, err
 }

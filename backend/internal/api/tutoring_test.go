@@ -358,12 +358,13 @@ func TestTutorCallingStudentRoutesGetsNotFound(t *testing.T) {
 type denialCase func(t *testing.T, h *authHarness) (outOfScope response, random response)
 
 var denialCases = map[string]denialCase{
-	"GET /api/v1/avatars/{id}":              anotherAccountsPendingUploadIsNoAvatar,
-	"GET /api/v1/students/{id}":             anotherTutorsCard(http.MethodGet, "", ""),
-	"PATCH /api/v1/students/{id}":           anotherTutorsCard(http.MethodPatch, "", `{"display_name":"Renamed","email":"renamed@example.org"}`),
-	"DELETE /api/v1/students/{id}":          anotherTutorsCard(http.MethodDelete, "", ""),
-	"POST /api/v1/students/{id}/invitation": anotherTutorsCard(http.MethodPost, "/invitation", ""),
-	"GET /api/v1/invitations/{token}":       aBlockedTutorsLinkIsUnknown,
+	"GET /api/v1/avatars/{id}":                   anotherAccountsPendingUploadIsNoAvatar,
+	"GET /api/v1/students/{id}":                  anotherTutorsCard(http.MethodGet, "", ""),
+	"PATCH /api/v1/students/{id}":                anotherTutorsCard(http.MethodPatch, "", `{"display_name":"Renamed","email":"renamed@example.org"}`),
+	"DELETE /api/v1/students/{id}":               anotherTutorsCard(http.MethodDelete, "", ""),
+	"POST /api/v1/students/{id}/invitation":      anotherTutorsCard(http.MethodPost, "/invitation", ""),
+	"POST /api/v1/students/{id}/invitation/send": anotherTutorsCard(http.MethodPost, "/invitation/send", ""),
+	"GET /api/v1/invitations/{token}":            aBlockedTutorsLinkIsUnknown,
 }
 
 func anotherTutorsCard(method string, suffix string, body string) denialCase {

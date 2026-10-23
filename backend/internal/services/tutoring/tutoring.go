@@ -97,9 +97,13 @@ func (s *Service) RegenerateCode(ctx context.Context, tutor domain.UserID) (Tuto
 }
 
 func (s *Service) reserve(ctx context.Context, repos repositories.Repositories, limit dailyLimit, tutor domain.UserID, now time.Time) error {
+	return s.reserveFor(ctx, repos, limit, tutor.String(), now)
+}
+
+func (s *Service) reserveFor(ctx context.Context, repos repositories.Repositories, limit dailyLimit, subject string, now time.Time) error {
 	window, retryAfter := domain.FixedWindow(now, dailyWindow)
 	count, err := repos.RateLimits.Reserve(ctx, repositories.RateLimitSlot{
-		Purpose: limit.purpose, Subject: s.deps.Keys.ThrottleSubject(string(limit.purpose), tutor.String()), WindowStart: window,
+		Purpose: limit.purpose, Subject: s.deps.Keys.ThrottleSubject(string(limit.purpose), subject), WindowStart: window,
 	})
 	if err != nil {
 		return err

@@ -38,7 +38,7 @@ func (greeting) Build(_ context.Context, row repositories.ClaimedOutboxRow, _ ti
 	}
 	return notifications.Composition{Email: notifications.Email{
 		To: payload.To, Subject: "Hello", Text: "Open https://ovc.example/home", HTML: "<p>Hello</p>",
-	}}, nil
+	}, Recipient: notifications.NoAccountRecipient()}, nil
 }
 
 func newServer(t *testing.T) (*httptest.Server, *testdb.Database) {

@@ -25,6 +25,7 @@ type (
 	CardGroup          = dbgen.ListCardGroupsRow
 	CardInvitation     = dbgen.GetCardInvitationRow
 	InvitationTutor    = dbgen.GetInvitationTutorRow
+	InvitationEmail    = dbgen.GetInvitationForEmailRow
 )
 
 var ErrDiscardedStateListed = errors.New("discarded cards are never listed")
@@ -180,6 +181,16 @@ func (r Invitations) LatestOf(ctx context.Context, relationship domain.Relations
 func (r Invitations) UsableTutor(ctx context.Context, tokenHash []byte, now time.Time) (InvitationTutor, error) {
 	tutor, err := r.queries.GetInvitationTutor(ctx, dbgen.GetInvitationTutorParams{TokenHash: tokenHash, Now: now})
 	return one(tutor, err, "tutor of a usable invitation")
+}
+
+func (r Invitations) CountSend(ctx context.Context, id domain.InvitationID, now time.Time) (int16, error) {
+	count, err := r.queries.CountInvitationSend(ctx, dbgen.CountInvitationSendParams{ID: id, Now: now})
+	return one(count, err, "count invitation send")
+}
+
+func (r Invitations) ForEmail(ctx context.Context, id domain.InvitationID) (InvitationEmail, error) {
+	invitation, err := r.queries.GetInvitationForEmail(ctx, id)
+	return one(invitation, err, "invitation for its email")
 }
 
 func (r Invitations) ClearExpiredCiphertext(ctx context.Context, now time.Time, batchSize int32) (int64, error) {

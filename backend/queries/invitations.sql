@@ -54,3 +54,16 @@ WHERE id IN (
     LIMIT sqlc.arg(batch_size)::int
     FOR UPDATE SKIP LOCKED
 );
+
+-- name: CountInvitationSend :one
+UPDATE invitations
+SET send_count = send_count + 1
+WHERE id = @id AND used_at IS NULL AND revoked_at IS NULL AND expires_at > sqlc.arg(now)::timestamptz
+RETURNING send_count;
+
+-- name: GetInvitationForEmail :one
+SELECT invitations.id, invitations.token_encrypted, invitations.expires_at, invitations.used_at, invitations.revoked_at,
+    invitations.send_count, relationships.tutor_id, relationships.state, relationships.email
+FROM invitations
+JOIN relationships ON relationships.id = invitations.relationship_id
+WHERE invitations.id = @id;

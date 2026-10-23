@@ -14,7 +14,11 @@ import (
 	"ovc/backend/internal/repositories"
 )
 
-var errUnknownKind = errors.New("no email is defined for this kind")
+var (
+	errUnknownKind         = errors.New("no email is defined for this kind")
+	errRecipientUnreported = errors.New("the email builder reported no recipient")
+	errDuplicateKind       = errors.New("two email builders share one kind")
+)
 
 type Email struct {
 	To      string
@@ -23,10 +27,29 @@ type Email struct {
 	HTML    string
 }
 
+type Recipient struct {
+	reported bool
+	account  bool
+	state    domain.AccountState
+}
+
+func AccountRecipient(state domain.AccountState) Recipient {
+	return Recipient{reported: true, account: true, state: state}
+}
+
+func NoAccountRecipient() Recipient {
+	return Recipient{reported: true}
+}
+
+func (r Recipient) reaches(kind domain.OutboxKind) bool {
+	return !r.account || domain.EmailReachesRecipient(kind, r.state)
+}
+
 type Composition struct {
-	Email    Email
-	Identity string
-	Obsolete bool
+	Email     Email
+	Identity  string
+	Obsolete  bool
+	Recipient Recipient
 }
 
 type Builder interface {
@@ -37,6 +60,19 @@ type Service struct {
 	mailer   mail.Mailer
 	host     string
 	builders map[domain.OutboxKind]Builder
+}
+
+func Combine(sets ...map[domain.OutboxKind]Builder) (map[domain.OutboxKind]Builder, error) {
+	combined := map[domain.OutboxKind]Builder{}
+	for _, set := range sets {
+		for kind, builder := range set {
+			if _, taken := combined[kind]; taken {
+				return nil, fmt.Errorf("%w: %s", errDuplicateKind, kind)
+			}
+			combined[kind] = builder
+		}
+	}
+	return combined, nil
 }
 
 func New(mailer mail.Mailer, publicURL string, builders map[domain.OutboxKind]Builder) (*Service, error) {
@@ -57,6 +93,12 @@ func (s *Service) Deliver(ctx context.Context, row repositories.ClaimedOutboxRow
 		return "", err
 	}
 	if composition.Obsolete {
+		return domain.DoneObsolete, nil
+	}
+	if !composition.Recipient.reported {
+		return "", domain.PermanentEffect(fmt.Errorf("%w: %s", errRecipientUnreported, row.Kind))
+	}
+	if !composition.Recipient.reaches(row.Kind) {
 		return domain.DoneObsolete, nil
 	}
 	err = s.mailer.Send(ctx, mail.Message{

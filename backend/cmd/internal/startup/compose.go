@@ -108,7 +108,19 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 	if err != nil {
 		return nil, err
 	}
-	notifier, err := notifications.New(mailer, settings.PublicURL, accountEmails.Builders())
+	cipher, err := core.NewFieldCipher(settings.FieldKey, core.CryptoRandom())
+	if err != nil {
+		return nil, err
+	}
+	relationshipEmails, err := notifications.NewRelationshipEmails(store, cipher, settings.PublicURL)
+	if err != nil {
+		return nil, err
+	}
+	builders, err := notifications.Combine(accountEmails.Builders(), relationshipEmails.Builders())
+	if err != nil {
+		return nil, err
+	}
+	notifier, err := notifications.New(mailer, settings.PublicURL, builders)
 	if err != nil {
 		return nil, err
 	}

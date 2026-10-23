@@ -3,6 +3,7 @@ package notifications_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ const (
 	greetingKind domain.OutboxKind = "test.greeting"
 	staleKind    domain.OutboxKind = "test.stale"
 	tokenKind    domain.OutboxKind = "test.token"
+	silentKind   domain.OutboxKind = "test.silent"
 )
 
 type recordingMailer struct {
@@ -45,10 +47,14 @@ func (b fixedBuilder) Build(context.Context, repositories.ClaimedOutboxRow, time
 func newService(t *testing.T, mailer mail.Mailer) *notifications.Service {
 	t.Helper()
 	service, err := notifications.New(mailer, "https://ovc.example", map[domain.OutboxKind]notifications.Builder{
-		greetingKind: fixedBuilder{composition: notifications.Composition{Email: notifications.Email{To: "tutor@example.org", Subject: "Hello", Text: "Hi", HTML: "<p>Hi</p>"}}},
-		staleKind:    fixedBuilder{composition: notifications.Composition{Obsolete: true}},
+		greetingKind: fixedBuilder{composition: notifications.Composition{
+			Email: notifications.Email{To: "tutor@example.org", Subject: "Hello", Text: "Hi", HTML: "<p>Hi</p>"}, Recipient: notifications.NoAccountRecipient(),
+		}},
+		silentKind: fixedBuilder{composition: notifications.Composition{Email: notifications.Email{To: "tutor@example.org", Subject: "Hello", Text: "Hi", HTML: "<p>Hi</p>"}}},
+		staleKind:  fixedBuilder{composition: notifications.Composition{Obsolete: true}},
 		tokenKind: fixedBuilder{composition: notifications.Composition{
 			Email: notifications.Email{To: "tutor@example.org", Subject: "Hello", Text: "Hi", HTML: "<p>Hi</p>"}, Identity: "token-2",
+			Recipient: notifications.NoAccountRecipient(),
 		}},
 	})
 	if err != nil {
@@ -94,8 +100,9 @@ func TestDeliverFailuresThatCanNeverSucceedArePermanent(t *testing.T) {
 		mailer *recordingMailer
 		kind   domain.OutboxKind
 	}{
-		"unknown kind":      {mailer: &recordingMailer{}, kind: "test.unknown"},
-		"malformed message": {mailer: &recordingMailer{err: mail.ErrInvalidMessage}, kind: greetingKind},
+		"unknown kind":         {mailer: &recordingMailer{}, kind: "test.unknown"},
+		"malformed message":    {mailer: &recordingMailer{err: mail.ErrInvalidMessage}, kind: greetingKind},
+		"unreported recipient": {mailer: &recordingMailer{}, kind: silentKind},
 	}
 	for name, testCase := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -129,5 +136,74 @@ func TestATokenBearingEmailGetsAnIdentifierOfItsOwnToken(t *testing.T) {
 
 	if plainErr != nil || tokenErr != nil || mailer.sent[0].MessageID == mailer.sent[1].MessageID {
 		t.Fatalf("errors %v %v, identifiers %q %q", plainErr, tokenErr, mailer.sent[0].MessageID, mailer.sent[1].MessageID)
+	}
+}
+
+func recipientService(t *testing.T, mailer mail.Mailer, kinds []domain.OutboxKind, state domain.AccountState) *notifications.Service {
+	t.Helper()
+	builders := map[domain.OutboxKind]notifications.Builder{}
+	for _, kind := range kinds {
+		builders[kind] = fixedBuilder{composition: notifications.Composition{
+			Email: notifications.Email{To: "student@example.org", Subject: "Hello", Text: "Hi", HTML: "<p>Hi</p>"}, Recipient: notifications.AccountRecipient(state),
+		}}
+	}
+	service, err := notifications.New(mailer, "https://ovc.example", builders)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
+
+func TestUnverifiedRecipientsGetOnlyAccountAndInvitationEmails(t *testing.T) {
+	allowed := []domain.OutboxKind{domain.EventEmailConfirmation, domain.EventPasswordReset, domain.EventSignUpDuplicate, domain.EventInvitationCreated}
+	other := []domain.OutboxKind{"relationship.ended", "tutor.deleted", greetingKind}
+	kinds := append(append([]domain.OutboxKind{}, allowed...), other...)
+	want := map[domain.AccountState]func(domain.OutboxKind) domain.OutboxDoneReason{
+		domain.AccountUnverified: func(kind domain.OutboxKind) domain.OutboxDoneReason {
+			if slices.Contains(allowed, kind) {
+				return domain.DoneSent
+			}
+			return domain.DoneObsolete
+		},
+		domain.AccountActive:  func(domain.OutboxKind) domain.OutboxDoneReason { return domain.DoneSent },
+		domain.AccountBlocked: func(domain.OutboxKind) domain.OutboxDoneReason { return domain.DoneObsolete },
+		domain.AccountDeleted: func(domain.OutboxKind) domain.OutboxDoneReason { return domain.DoneObsolete },
+	}
+
+	for state, expected := range want {
+		mailer := &recordingMailer{}
+		service := recipientService(t, mailer, kinds, state)
+		for _, kind := range kinds {
+			reason, err := service.Deliver(context.Background(), row(kind, string(kind)+":1"), now)
+
+			if err != nil || reason != expected(kind) {
+				t.Errorf("%s for a %s recipient: %s, %v", kind, state, reason, err)
+			}
+		}
+		sent := 0
+		for _, kind := range kinds {
+			if expected(kind) == domain.DoneSent {
+				sent++
+			}
+		}
+		if len(mailer.sent) != sent {
+			t.Errorf("a %s recipient was sent %d emails instead of %d", state, len(mailer.sent), sent)
+		}
+	}
+}
+
+func TestCombineRefusesTwoBuildersForOneKind(t *testing.T) {
+	first := map[domain.OutboxKind]notifications.Builder{greetingKind: fixedBuilder{}, tokenKind: fixedBuilder{}}
+	second := map[domain.OutboxKind]notifications.Builder{staleKind: fixedBuilder{}}
+	clashing := map[domain.OutboxKind]notifications.Builder{tokenKind: fixedBuilder{}}
+
+	combined, combinedErr := notifications.Combine(first, second)
+	_, clashErr := notifications.Combine(first, second, clashing)
+
+	if combinedErr != nil || len(combined) != 3 {
+		t.Fatalf("combining distinct kinds gave %d builders and %v", len(combined), combinedErr)
+	}
+	if clashErr == nil || !strings.Contains(clashErr.Error(), string(tokenKind)) {
+		t.Fatalf("combining a repeated kind answered %v", clashErr)
 	}
 }

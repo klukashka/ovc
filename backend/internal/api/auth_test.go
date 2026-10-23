@@ -147,7 +147,15 @@ func newAuthHarnessServing(t *testing.T, trusted []netip.Prefix, newHandler func
 	if err != nil {
 		t.Fatal(err)
 	}
-	notifier, err := notifications.New(sink, publicOrigin, accountEmails.Builders())
+	relationshipEmails, err := notifications.NewRelationshipEmails(store, cipher, publicOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	builders, err := notifications.Combine(accountEmails.Builders(), relationshipEmails.Builders())
+	if err != nil {
+		t.Fatal(err)
+	}
+	notifier, err := notifications.New(sink, publicOrigin, builders)
 	if err != nil {
 		t.Fatal(err)
 	}

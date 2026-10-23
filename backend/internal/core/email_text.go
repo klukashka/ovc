@@ -62,3 +62,39 @@ func AccountEmailText(language domain.Language, event domain.OutboxKind) (EmailT
 	text, found := accountEmailTexts[language][event]
 	return text, found
 }
+
+type RelationshipText struct {
+	Subject string
+	Intro   string
+	Lines   []string
+	Action  string
+	Note    string
+}
+
+var relationshipEmailTexts = map[domain.Language]map[domain.OutboxKind]RelationshipText{
+	domain.LanguageEnglish: {
+		domain.EventInvitationCreated: {
+			Subject: "You are invited to study on OVC",
+			Intro:   "You have been invited to study on OVC. The invitation is from the tutor:",
+			Lines:   []string{"Open the invitation to see the tutor's profile, then create your account or sign in to accept it."},
+			Action:  "Open the invitation",
+			Note: "The link works only once and stops working when it expires or the tutor replaces it. " +
+				"If you do not expect lessons with this person, ignore this email.",
+		},
+	},
+	domain.LanguageRussian: {
+		domain.EventInvitationCreated: {
+			Subject: "Приглашение на занятия в OVC",
+			Intro:   "Вас пригласили на занятия в OVC. Приглашение от преподавателя:",
+			Lines:   []string{"Откройте приглашение, чтобы посмотреть профиль преподавателя, а затем создайте аккаунт или войдите, чтобы принять его."},
+			Action:  "Открыть приглашение",
+			Note: "Ссылка действует только один раз и перестаёт работать, когда истекает её срок или преподаватель заменяет её. " +
+				"Если вы не ждёте занятий с этим человеком, просто проигнорируйте письмо.",
+		},
+	},
+}
+
+func RelationshipEmailText(language domain.Language, event domain.OutboxKind) (RelationshipText, bool) {
+	text, found := relationshipEmailTexts[language][event]
+	return text, found
+}

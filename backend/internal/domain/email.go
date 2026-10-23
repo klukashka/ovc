@@ -12,7 +12,27 @@ const (
 	EventEmailConfirmation OutboxKind = "email.confirmation"
 	EventPasswordReset     OutboxKind = "password.reset"
 	EventSignUpDuplicate   OutboxKind = "signup.duplicate_attempt"
+	EventInvitationCreated OutboxKind = "invitation.created"
 )
+
+func EmailReachesRecipient(kind OutboxKind, recipient AccountState) bool {
+	switch recipient {
+	case AccountActive:
+		return true
+	case AccountUnverified:
+		return unverifiedRecipientKinds[kind]
+	case AccountBlocked, AccountDeleted:
+		return false
+	}
+	return false
+}
+
+var unverifiedRecipientKinds = map[OutboxKind]bool{
+	EventEmailConfirmation: true,
+	EventPasswordReset:     true,
+	EventSignUpDuplicate:   true,
+	EventInvitationCreated: true,
+}
 
 type ConsentVersion string
 
@@ -88,4 +108,9 @@ type EmailRequestPayload struct {
 
 type AccountPayload struct {
 	User string `json:"user"`
+}
+
+type InvitationEmailPayload struct {
+	Invitation string `json:"invitation"`
+	Send       int16  `json:"send"`
 }

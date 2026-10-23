@@ -108,7 +108,7 @@ func (b tokenEmail) Build(ctx context.Context, row repositories.ClaimedOutboxRow
 	if err != nil {
 		return Composition{}, err
 	}
-	return Composition{Email: email, Identity: hex.EncodeToString(tokenID[:])}, nil
+	return Composition{Email: email, Identity: hex.EncodeToString(tokenID[:]), Recipient: AccountRecipient(user.State)}, nil
 }
 
 func (b tokenEmail) eligible(state domain.AccountState) bool {
@@ -194,7 +194,7 @@ func (b duplicateEmail) Build(ctx context.Context, row repositories.ClaimedOutbo
 	if err != nil {
 		return Composition{}, err
 	}
-	return Composition{Email: email}, nil
+	return Composition{Email: email, Recipient: AccountRecipient(user.State)}, nil
 }
 
 func (a *AccountEmails) render(user repositories.User, event domain.OutboxKind, actionURL string) (Email, error) {
@@ -213,7 +213,7 @@ func (a *AccountEmails) render(user repositories.User, event domain.OutboxKind, 
 	return Email{To: user.Email, Subject: text.Subject, Text: plain.String(), HTML: html.String()}, nil
 }
 
-func decodePayload[Payload domain.EmailRequestPayload | domain.AccountPayload](encoded []byte, target *Payload) error {
+func decodePayload[Payload domain.EmailRequestPayload | domain.AccountPayload | domain.InvitationEmailPayload](encoded []byte, target *Payload) error {
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
