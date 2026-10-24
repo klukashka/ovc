@@ -6,6 +6,7 @@ import { Link, useNavigate } from 'react-router';
 import { type ActionState, done, refusedBy, useAction } from '../../components/ui/action.ts';
 import { Avatar } from '../../components/ui/Avatar.tsx';
 import {
+  ActionButton,
   FormAlert,
   FormNotice,
   SubmitButton,
@@ -44,7 +45,7 @@ type Mode = 'choosing' | 'signUp' | 'signIn';
 
 const shownSignUpFields = ['name', 'email', 'password', 'consent'];
 const textButtonClass =
-  'inline-flex min-h-11 items-center text-small text-accent-text underline disabled:opacity-60 disabled:no-underline';
+  'inline-flex min-h-11 items-center text-small text-accent-text underline aria-disabled:opacity-60 aria-disabled:no-underline';
 
 function useFocusWhenLost(target: RefObject<HTMLElement | null>): void {
   useEffect(() => {
@@ -80,10 +81,8 @@ function SignOutInPlace({ label }: { readonly label: string }): ReactElement {
   const [state, setState] = useState<'idle' | 'busy' | 'failed'>('idle');
   return (
     <>
-      <button
-        type="button"
-        disabled={state === 'busy'}
-        aria-busy={state === 'busy'}
+      <ActionButton
+        busy={state === 'busy'}
         onClick={() => {
           setState('busy');
           session.signOut().catch(() => {
@@ -93,7 +92,7 @@ function SignOutInPlace({ label }: { readonly label: string }): ReactElement {
         className={textButtonClass}
       >
         {label}
-      </button>
+      </ActionButton>
       {state === 'failed' ? <FormAlert>{t('frame.signOutFailed')}</FormAlert> : null}
     </>
   );
@@ -428,15 +427,9 @@ function AcceptPanel({
       {refusalMessage()}
       <div className="flex flex-wrap items-center gap-4">
         {refusal === 'email_not_verified' || refusal === 'invitation_email_mismatch' ? null : (
-          <button
-            type="button"
-            disabled={action.busy}
-            aria-busy={action.busy}
-            onClick={accept}
-            className={primaryButtonClass}
-          >
+          <ActionButton busy={action.busy} onClick={accept} className={primaryButtonClass}>
             {t('invitationPage.accept')}
-          </button>
+          </ActionButton>
         )}
         <SignOutInPlace label={t('invitationPage.useAnotherAccount')} />
       </div>

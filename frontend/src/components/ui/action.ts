@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { type ApiError, apiErrorFrom, asApiError } from '../../lib/api/client.ts';
 import { retryAfterSeconds } from './Form.tsx';
@@ -24,7 +24,9 @@ export const done: ActionState = { kind: 'done' };
 
 export function useAction(onSettled?: (state: ActionState) => void): Action {
   const [state, setState] = useState<ActionState>({ kind: 'idle' });
+  const running = useRef(false);
   function settle(settled: ActionState): void {
+    running.current = false;
     setState(settled);
     onSettled?.(settled);
   }
@@ -32,12 +34,19 @@ export function useAction(onSettled?: (state: ActionState) => void): Action {
     state,
     busy: state.kind === 'busy',
     run: (work): void => {
+      if (running.current) {
+        return;
+      }
+      running.current = true;
       setState({ kind: 'busy' });
       work().then(settle, (thrown: unknown) => {
         settle({ kind: 'refused', error: asApiError(thrown), retryAfter: null });
       });
     },
     reset: (): void => {
+      if (running.current) {
+        return;
+      }
       setState({ kind: 'idle' });
     },
   };

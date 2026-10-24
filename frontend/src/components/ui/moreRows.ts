@@ -8,18 +8,25 @@ export interface MoreRows<Element extends HTMLElement> {
 export function useFocusOnFirstNewRow<Element extends HTMLElement>(
   rowCount: number,
   selector: string,
+  fetching: boolean,
 ): MoreRows<Element> {
   const listRef = useRef<Element>(null);
   const firstNewRow = useRef<number | null>(null);
 
   useEffect(() => {
     const index = firstNewRow.current;
-    if (index === null || rowCount <= index) {
+    if (index === null) {
+      return;
+    }
+    if (rowCount <= index) {
+      if (!fetching) {
+        firstNewRow.current = null;
+      }
       return;
     }
     firstNewRow.current = null;
     listRef.current?.querySelectorAll<HTMLElement>(selector)[index]?.focus();
-  }, [rowCount, selector]);
+  }, [rowCount, selector, fetching]);
 
   return {
     listRef,

@@ -210,13 +210,29 @@ test('a forgotten password is reset through the emailed link and the new passwor
   await expectSignedInToToday(page);
 });
 
-test('a student is told to join through their tutor', async ({ page }) => {
+test('a student sign-up with a code that is not valid creates nothing and says so under the code', async ({
+  page,
+  control,
+}) => {
+  const student = newTestAccount('Ученик без кода', 'student');
   await page.goto('/signup');
-
   await page.getByRole('link', { name: /Я учусь/ }).click();
-
   await expect(page).toHaveURL('/signup/student');
-  await expect(page.getByText('Ученики присоединяются через своего репетитора.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Получили ссылку от репетитора? Откройте её вместо этого.')).toBeVisible();
+  await page.getByLabel('Код репетитора').fill('2222-2222');
+  await page.getByLabel('Имя').fill(student.name);
+  await page.getByLabel('Email').fill(student.email);
+  await page.getByLabel('Пароль', { exact: true }).fill(student.password);
+  await page.getByLabel(/Я соглашаюсь на обработку персональных данных/).check();
+
+  await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
+
+  await expect(page.getByRole('alert')).toHaveText('Проверьте выделенные поля.');
+  await expect(page.getByRole('alert')).toBeFocused();
+  await expect(page.getByText('Этот код больше не действует — попросите у репетитора новый.')).toBeVisible();
+  await expect(page.getByLabel('Код репетитора')).toHaveAttribute('aria-invalid', 'true');
+  await control.tick();
+  expect(await control.mail(student.email)).toEqual([]);
 });
 
 test('a signed-in tutor opening sign-up is sent to Today', async ({ signedInPage: page }) => {

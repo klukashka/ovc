@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { type ActionState, done, refusedBy, useAction } from '../../components/ui/action.ts';
 import { Avatar } from '../../components/ui/Avatar.tsx';
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
-import { FormAlert, FormNotice, quietButtonClass } from '../../components/ui/Form.tsx';
+import { ActionButton, FormAlert, FormNotice, quietButtonClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
@@ -123,15 +123,9 @@ function TutorCodeSection(): ReactElement {
             {t('teaching.copy')}
           </button>
           {code.active ? (
-            <button
-              type="button"
-              disabled={action.busy}
-              aria-busy={action.busy}
-              onClick={regenerate}
-              className={quietButtonClass}
-            >
+            <ActionButton busy={action.busy} onClick={regenerate} className={quietButtonClass}>
               {t('teaching.regenerate')}
-            </button>
+            </ActionButton>
           ) : null}
         </div>
         {code.active ? (
@@ -176,15 +170,15 @@ function BlockedRow({
           {t('teaching.blockedAt', { date: formatDate(student.blocked_at, me.language, me.timezone) })}
         </span>
       </span>
-      <button
-        type="button"
-        disabled={busy}
-        aria-label={t('teaching.unblockNamed', { name: student.name })}
+      <ActionButton
+        busy={false}
+        unavailable={busy}
+        label={t('teaching.unblockNamed', { name: student.name })}
         onClick={onUnblock}
         className={quietButtonClass}
       >
         {t('teaching.unblock')}
-      </button>
+      </ActionButton>
     </li>
   );
 }
@@ -203,7 +197,11 @@ function BlockedStudentsSection(): ReactElement {
     retry: false,
   });
   const students = query.data?.pages.flatMap((page) => page.items) ?? [];
-  const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(students.length, ':scope > li button');
+  const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
+    students.length,
+    ':scope > li button',
+    query.isFetchingNextPage,
+  );
 
   function unblock(studentId: string): void {
     action.run(async (): Promise<ActionState> => {

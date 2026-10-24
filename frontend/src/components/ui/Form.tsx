@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useEffect, useId, useRef } from 'react';
+import { type ReactElement, type ReactNode, type Ref, useEffect, useId, useRef } from 'react';
 import type { TFunction } from 'i18next';
 
 import type { ApiError } from '../../lib/api/client.ts';
@@ -8,9 +8,9 @@ export const fieldClass =
   'min-h-11 w-full rounded-md border border-border-strong bg-field px-3 text-body-phone text-text aria-invalid:border-danger tablet:text-body';
 export const linkClass = 'inline-flex min-h-11 items-center text-accent-text underline';
 export const primaryButtonClass =
-  'inline-flex min-h-11 items-center justify-center rounded-md bg-accent px-4 text-strong text-on-accent hover:bg-accent-hover disabled:opacity-60';
+  'inline-flex min-h-11 items-center justify-center rounded-md bg-accent px-4 text-strong text-on-accent hover:bg-accent-hover aria-disabled:opacity-60';
 export const quietButtonClass =
-  'inline-flex min-h-11 items-center justify-center rounded-md border border-border-strong px-4 text-strong text-text hover:bg-surface disabled:opacity-60';
+  'inline-flex min-h-11 items-center justify-center rounded-md border border-border-strong px-4 text-strong text-text hover:bg-surface aria-disabled:opacity-60';
 export const selectClass =
   'h-11 w-full appearance-none rounded-md border border-border-strong bg-field pr-9 pl-3 text-text aria-invalid:border-danger';
 
@@ -145,6 +145,50 @@ export function FormNotice({
   );
 }
 
+export function ActionButton({
+  busy,
+  unavailable = false,
+  type = 'button',
+  label,
+  firstInRow = false,
+  onClick,
+  className,
+  ref,
+  children,
+}: {
+  readonly busy: boolean;
+  readonly unavailable?: boolean;
+  readonly type?: 'button' | 'submit';
+  readonly label?: string;
+  readonly firstInRow?: boolean;
+  readonly onClick?: () => void;
+  readonly className: string;
+  readonly ref?: Ref<HTMLButtonElement>;
+  readonly children: ReactNode;
+}): ReactElement {
+  const refused = busy || unavailable;
+  return (
+    <button
+      ref={ref}
+      type={type}
+      aria-disabled={refused}
+      aria-busy={busy}
+      aria-label={label}
+      data-first-in-row={firstInRow ? '' : undefined}
+      onClick={(event) => {
+        if (refused) {
+          event.preventDefault();
+          return;
+        }
+        onClick?.();
+      }}
+      className={className}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function SubmitButton({
   busy,
   quiet = false,
@@ -155,9 +199,9 @@ export function SubmitButton({
   readonly children: ReactNode;
 }): ReactElement {
   return (
-    <button type="submit" disabled={busy} aria-busy={busy} className={quiet ? quietButtonClass : primaryButtonClass}>
+    <ActionButton type="submit" busy={busy} className={quiet ? quietButtonClass : primaryButtonClass}>
       {children}
-    </button>
+    </ActionButton>
   );
 }
 

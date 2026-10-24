@@ -182,29 +182,86 @@ export async function visibleJoinRequests(deployment: Deployment, tutor: TestAcc
   return items.length;
 }
 
-async function signUpStudentWithCode(
+export async function registerStudentWithCode(
   deployment: Deployment,
-  control: TestControl,
   student: TestAccount,
   code: string,
+  language: 'ru' | 'en' = 'ru',
 ): Promise<void> {
   const registered = await callApi(deployment, null, 'POST', '/auth/register', {
     role: 'student',
     name: student.name,
     email: student.email,
     password: student.password,
-    language: 'ru',
+    language,
     timezone: 'Europe/Moscow',
     consent: true,
     tutor_code: code,
   });
   expectStatus(registered, 202, 'student sign-up');
+}
+
+async function signUpStudentWithCode(
+  deployment: Deployment,
+  control: TestControl,
+  student: TestAccount,
+  code: string,
+): Promise<void> {
+  await registerStudentWithCode(deployment, student, code);
   await control.tick();
+  await confirmByMail(deployment, control, student);
+}
+
+async function confirmByMail(deployment: Deployment, control: TestControl, student: TestAccount): Promise<void> {
   const token = confirmationToken(await control.mail(student.email));
   const confirmed = await callApi(deployment, await accessToken(deployment, student), 'POST', '/auth/verify-email', {
     token,
   });
   expectStatus(confirmed, 200, 'confirmation in the student’s own browser');
+}
+
+export type RequestDecision = 'accept' | 'decline' | 'block';
+
+async function decideRequestOf(
+  deployment: Deployment,
+  tutorToken: string,
+  studentEmail: string,
+  decision: RequestDecision,
+): Promise<string> {
+  const requests = await callApi(deployment, tutorToken, 'GET', '/join-requests?limit=100');
+  expectStatus(requests, 200, 'listing join requests');
+  const items: unknown = field(requests.body, 'items');
+  const listed: readonly unknown[] = Array.isArray(items) ? items : [];
+  const request = listed.find((item) => text(field(item, 'student'), 'email') === studentEmail);
+  if (request === undefined) {
+    throw new Error('the student’s join request is not visible to the tutor');
+  }
+  const id = text(request, 'id');
+  const decided =
+    decision === 'accept'
+      ? await callApi(deployment, tutorToken, 'POST', `/join-requests/${id}/accept`)
+      : await callApi(deployment, tutorToken, 'POST', `/join-requests/${id}/decline`, { block: decision === 'block' });
+  expectStatus(decided, 200, `deciding a join request (${decision})`);
+  return id;
+}
+
+export async function decideJoinRequest(
+  deployment: Deployment,
+  tutor: TestAccount,
+  studentEmail: string,
+  decision: RequestDecision,
+): Promise<string> {
+  return decideRequestOf(deployment, await accessToken(deployment, tutor), studentEmail, decision);
+}
+
+async function declineWithBlock(deployment: Deployment, tutorToken: string, student: TestAccount): Promise<void> {
+  await decideRequestOf(deployment, tutorToken, student.email, 'block');
+}
+
+async function tutorCodeWith(deployment: Deployment, tutorToken: string): Promise<string> {
+  const answer = await callApi(deployment, tutorToken, 'GET', '/tutor/code');
+  expectStatus(answer, 200, 'reading the tutor code');
+  return text(answer.body, 'code');
 }
 
 export async function seedBlockedStudent(
@@ -213,22 +270,79 @@ export async function seedBlockedStudent(
   tutor: TestAccount,
   name: string,
 ): Promise<TestAccount> {
-  const student = newTestAccount(name, 'student');
-  await signUpStudentWithCode(deployment, control, student, await tutorCode(deployment, tutor));
   const tutorToken = await accessToken(deployment, tutor);
-  const requests = await callApi(deployment, tutorToken, 'GET', '/join-requests');
-  expectStatus(requests, 200, 'listing join requests');
-  const items: unknown = field(requests.body, 'items');
-  const listed: readonly unknown[] = Array.isArray(items) ? items : [];
-  const request = listed.find((item) => text(field(item, 'student'), 'email') === student.email);
-  if (request === undefined) {
-    throw new Error('the student’s join request is not visible to the tutor');
-  }
-  const declined = await callApi(deployment, tutorToken, 'POST', `/join-requests/${text(request, 'id')}/decline`, {
-    block: true,
-  });
-  expectStatus(declined, 200, 'declining with a block');
+  const student = newTestAccount(name, 'student');
+  await signUpStudentWithCode(deployment, control, student, await tutorCodeWith(deployment, tutorToken));
+  await declineWithBlock(deployment, tutorToken, student);
   return student;
+}
+
+async function seedRequesters(
+  deployment: Deployment,
+  control: TestControl,
+  code: string,
+  count: number,
+  prefix: string,
+): Promise<readonly TestAccount[]> {
+  const students = Array.from({ length: count }, (_, index) =>
+    newTestAccount(`${prefix} ${String(index + 1).padStart(2, '0')}`, 'student'),
+  );
+  await Promise.all(students.map((student) => registerStudentWithCode(deployment, student, code)));
+  await control.tick();
+  await Promise.all(students.map((student) => confirmByMail(deployment, control, student)));
+  return students;
+}
+
+export async function seedBlockedStudents(
+  deployment: Deployment,
+  control: TestControl,
+  tutor: TestAccount,
+  count: number,
+): Promise<void> {
+  const tutorToken = await accessToken(deployment, tutor);
+  const students = await seedRequesters(
+    deployment,
+    control,
+    await tutorCodeWith(deployment, tutorToken),
+    count,
+    'Blocked',
+  );
+  for (const student of students) {
+    await declineWithBlock(deployment, tutorToken, student);
+  }
+}
+
+export async function seedJoinRequests(
+  deployment: Deployment,
+  control: TestControl,
+  tutor: TestAccount,
+  count: number,
+): Promise<readonly TestAccount[]> {
+  return seedRequesters(deployment, control, await tutorCode(deployment, tutor), count, 'Requester');
+}
+
+const codeEntriesPerHour = 10;
+
+export async function seedDeclinedRequests(
+  deployment: Deployment,
+  control: TestControl,
+  student: TestAccount,
+  tutor: TestAccount,
+  count: number,
+): Promise<void> {
+  const code = await tutorCode(deployment, tutor);
+  for (let entered = 0; entered < count; entered += codeEntriesPerHour) {
+    if (entered > 0) {
+      await control.advance(3601);
+    }
+    const studentToken = await accessToken(deployment, student);
+    const tutorToken = await accessToken(deployment, tutor);
+    for (let index = entered; index < Math.min(count, entered + codeEntriesPerHour); index += 1) {
+      const sent = await callApi(deployment, studentToken, 'POST', '/join-requests', { code });
+      expectStatus(sent, 200, 'entering the tutor code');
+      await decideRequestOf(deployment, tutorToken, student.email, 'decline');
+    }
+  }
 }
 
 export async function seedActiveStudent(
@@ -252,11 +366,7 @@ export async function confirmInTheOwnBrowser(
   student: TestAccount,
 ): Promise<void> {
   await control.tick();
-  const confirmation = confirmationToken(await control.mail(student.email));
-  const confirmed = await callApi(deployment, await accessToken(deployment, student), 'POST', '/auth/verify-email', {
-    token: confirmation,
-  });
-  expectStatus(confirmed, 200, 'confirmation in the student’s own browser');
+  await confirmByMail(deployment, control, student);
 }
 
 export async function seedInvitedCards(deployment: Deployment, tutor: TestAccount, count: number): Promise<void> {
@@ -267,4 +377,32 @@ export async function seedInvitedCards(deployment: Deployment, tutor: TestAccoun
     });
     expectStatus(created, 201, 'creating a card');
   }
+}
+
+export async function endRelationship(deployment: Deployment, tutor: TestAccount, cardId: string): Promise<void> {
+  const ended = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'POST',
+    `/students/${encodeURIComponent(cardId)}/end`,
+  );
+  expectStatus(ended, 200, 'ending the relationship');
+}
+
+export async function acceptSignedIn(deployment: Deployment, student: TestAccount, link: string): Promise<void> {
+  const accepted = await callApi(
+    deployment,
+    await accessToken(deployment, student),
+    'POST',
+    `/invitations/${encodeURIComponent(invitationToken(link))}/accept`,
+    {},
+  );
+  expectStatus(accepted, 200, 'signed-in acceptance');
+}
+
+export async function deleteAccount(deployment: Deployment, account: TestAccount): Promise<void> {
+  const deleted = await callApi(deployment, await accessToken(deployment, account), 'DELETE', '/users/me', {
+    password: account.password,
+  });
+  expectStatus(deleted, 204, 'deleting the account');
 }

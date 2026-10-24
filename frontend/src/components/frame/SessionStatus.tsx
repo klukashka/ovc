@@ -1,8 +1,6 @@
 import { type ReactElement, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useSession } from '../../lib/api/session.ts';
-
 function StatusLayout({ children }: { readonly children: ReactElement }): ReactElement {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-bg px-4 text-text">
@@ -26,9 +24,8 @@ export function SessionPending(): ReactElement {
   );
 }
 
-export function SessionUnavailable(): ReactElement {
+export function SessionUnavailable({ onRetry }: { readonly onRetry: () => void }): ReactElement {
   const { t } = useTranslation();
-  const session = useSession();
 
   useEffect(() => {
     document.title = `${t('session.unavailableTitle')} · ${t('app.name')}`;
@@ -43,9 +40,7 @@ export function SessionUnavailable(): ReactElement {
         </p>
         <button
           type="button"
-          onClick={() => {
-            void session.start();
-          }}
+          onClick={onRetry}
           className="inline-flex min-h-11 items-center rounded-md bg-accent px-4 text-strong text-on-accent hover:bg-accent-hover"
         >
           {t('session.retry')}

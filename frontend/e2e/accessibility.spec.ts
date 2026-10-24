@@ -107,7 +107,7 @@ test('removing the photo moves focus to its notice', async ({ page, deployment }
   await page.getByRole('button', { name: 'Удалить фото' }).click();
 
   await expect(page.getByText('Фото не загружено.')).toBeVisible();
-  await expect(page.getByRole('status')).toBeFocused();
+  await expect(page.getByRole('status').filter({ hasText: 'Фото обновлено.' })).toBeFocused();
 });
 
 test('a tutor sees the subjects normalised after saving them', async ({ page, deployment }) => {
@@ -150,4 +150,59 @@ test('Escape on the deletion dialog returns focus to the button that opened it',
 
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(opener).toBeFocused();
+});
+
+test('the deletion dialog opens on its password field', async ({ page, deployment }) => {
+  const account = await seedVerifiedUser(deployment, 'Фокус в диалоге удаления');
+  await signedInAt(page, account, '/settings/account');
+
+  await page.getByRole('button', { name: 'Удалить аккаунт' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Удалить аккаунт?' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('Текущий пароль')).toBeFocused();
+});
+
+test('a busy save keeps focus on its button', async ({ page, deployment }) => {
+  const account = await seedVerifiedUser(deployment, 'Фокус на кнопке сохранения');
+  await signedInAt(page, account, '/settings/account');
+  const preferences = page.getByRole('form', { name: 'Язык, часовой пояс и тема' });
+  const save = preferences.getByRole('button', { name: 'Сохранить' });
+  const password = page.getByRole('form', { name: 'Сменить пароль' });
+  const change = password.getByRole('button', { name: 'Сменить пароль' });
+
+  await save.focus();
+  await page.keyboard.press('Enter');
+  await expect(preferences.getByRole('status')).toHaveText('Сохранено.');
+  await expect(save).toBeFocused();
+  await password.getByLabel('Текущий пароль').fill(account.password);
+  await password.getByLabel('Новый пароль').fill(`${account.password} changed`);
+  await change.focus();
+  await page.keyboard.press('Enter');
+
+  await expect(password.getByRole('status')).toHaveText('Пароль изменён.');
+  await expect(change).toBeFocused();
+  await expect(password.getByLabel('Текущий пароль')).toHaveValue('');
+});
+
+test('the resend button keeps focus while it waits', async ({ page }) => {
+  const account = newTestAccount('Фокус на повторной отправке');
+  await page.clock.install();
+  await page.goto('/signup/tutor');
+  await page.getByLabel('Имя').fill(account.name);
+  await page.getByLabel('Email').fill(account.email);
+  await page.getByLabel('Пароль', { exact: true }).fill(account.password);
+  await page.getByLabel(/Я соглашаюсь на обработку персональных данных/).check();
+  await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
+  const resend = page.getByRole('button', { name: 'Отправить ещё раз' });
+  await expect(resend).toBeDisabled();
+  await page.clock.runFor('01:01');
+  await expect(resend).toBeEnabled();
+
+  await resend.focus();
+  await page.keyboard.press('Enter');
+
+  await expect(page.getByRole('status')).toHaveText('Письмо отправлено ещё раз.');
+  await expect(resend).toBeDisabled();
+  await expect(resend).toBeFocused();
 });

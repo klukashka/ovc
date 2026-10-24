@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next';
 
 import { useApiClient } from '../../lib/api/client.ts';
 import { done, refusedBy, useAction } from '../ui/action.ts';
-import { FormNotice } from '../ui/Form.tsx';
+import { ActionButton, FormNotice } from '../ui/Form.tsx';
 import { Refusal } from '../ui/Refusal.tsx';
 
 const resendButtonClass =
-  'inline-flex min-h-11 items-center text-accent-text underline disabled:opacity-60 disabled:no-underline';
+  'inline-flex min-h-11 items-center text-accent-text underline aria-disabled:opacity-60 aria-disabled:no-underline';
 
 export function StudentConfirmation({ email }: { readonly email: string }): ReactElement {
   const { t } = useTranslation();
@@ -24,15 +24,9 @@ export function StudentConfirmation({ email }: { readonly email: string }): Reac
   return (
     <>
       <p>{t('frame.studentConfirmationBody', { email })}</p>
-      <button
-        type="button"
-        disabled={action.busy}
-        aria-busy={action.busy}
-        onClick={resend}
-        className={resendButtonClass}
-      >
+      <ActionButton busy={action.busy} onClick={resend} className={resendButtonClass}>
         {t('frame.resendConfirmation')}
-      </button>
+      </ActionButton>
       {action.state.kind === 'done' ? <FormNotice takeFocus>{t('checkEmail.sent')}</FormNotice> : null}
       <Refusal state={action.state} />
     </>

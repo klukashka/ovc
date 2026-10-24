@@ -1,9 +1,10 @@
 import { signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
-import { accessToken, callApi, seedBlockedStudent, tutorCode } from './tutoring.ts';
+import { accessToken, callApi, seedBlockedStudent, seedBlockedStudents, tutorCode } from './tutoring.ts';
 
 const codePattern = /^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/;
 const dailyRegenerations = 10;
+const pageSize = 30;
 
 test.use({ locale: 'ru-RU' });
 
@@ -67,4 +68,24 @@ test('teaching settings › blocked students and unblock', async ({ page, deploy
   await expect(section.getByRole('status')).toHaveText('Ученик разблокирован.');
   await expect(section.getByRole('status')).toBeFocused();
   await expect(section.getByText('Вы никого не заблокировали.')).toBeVisible();
+});
+
+test('teaching settings › show more moves focus to the first new blocked student', async ({
+  page,
+  deployment,
+  control,
+}) => {
+  const maria = await seedVerifiedUser(deployment, 'Мария');
+  await seedBlockedStudents(deployment, control, maria, pageSize + 1);
+  await signInThroughTheApi(page, maria);
+  await page.goto('/settings/teaching');
+  const section = page.getByRole('region', { name: 'Заблокированные ученики' });
+  const unblockButtons = section.getByRole('button', { name: /^Разблокировать: / });
+  await expect(unblockButtons).toHaveCount(pageSize);
+
+  await section.getByRole('button', { name: 'Показать ещё' }).click();
+
+  await expect(unblockButtons).toHaveCount(pageSize + 1);
+  await expect(unblockButtons.nth(pageSize)).toBeFocused();
+  await expect(section.getByRole('button', { name: 'Показать ещё' })).toHaveCount(0);
 });

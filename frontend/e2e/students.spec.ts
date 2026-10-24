@@ -286,6 +286,7 @@ test.describe('in English with the dark theme', () => {
     );
 
     await page.getByRole('link', { name: 'Active', exact: true }).click();
+    await expect(page.getByRole('list', { name: 'Active' }).getByRole('link', { name: /Vera Active/ })).toBeVisible();
     await page.getByLabel('Name or email').fill('vera');
     await page.getByRole('button', { name: 'Search', exact: true }).click();
 

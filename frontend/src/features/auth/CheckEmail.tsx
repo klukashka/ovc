@@ -3,14 +3,15 @@ import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 
 import {
+  ActionButton,
   FormAlert,
-  FormNotice,
   errorMessage,
   linkClass,
   primaryButtonClass,
   retryAfterSeconds,
   retryMinutes,
 } from '../../components/ui/Form.tsx';
+import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 
 const resendCooldownSeconds = 60;
@@ -92,12 +93,12 @@ export function CheckEmail({
           </Link>
         </p>
       ) : null}
-      {state.kind === 'sent' ? <FormNotice>{t('checkEmail.sent')}</FormNotice> : null}
+      <LiveNotice message={state.kind === 'sent' ? t('checkEmail.sent') : null} />
       {state.kind === 'failed' ? <FormAlert>{errorMessage(t, state.error, state.retryAfter)}</FormAlert> : null}
       <p>
-        <button
-          type="button"
-          disabled={remaining > 0 || state.kind === 'sending'}
+        <ActionButton
+          busy={state.kind === 'sending'}
+          unavailable={remaining > 0}
           onClick={() => {
             resend().catch((thrown: unknown) => {
               setState({ kind: 'failed', error: asApiError(thrown), retryAfter: null });
@@ -106,7 +107,7 @@ export function CheckEmail({
           className={primaryButtonClass}
         >
           {t('checkEmail.resend')}
-        </button>
+        </ActionButton>
       </p>
       {remaining > 0 ? (
         <p className="text-small text-text-muted">

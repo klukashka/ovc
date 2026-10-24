@@ -93,7 +93,7 @@ test('the tutor frame shows the tutor sections and server readiness', async ({ s
     await expect(navigation.getByRole('link', { name: label })).toBeVisible();
   }
   await expect(navigation.getByRole('link', { name: 'Сегодня' })).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByRole('status')).toHaveText('Сервер готов');
+  await expect(page.getByRole('region', { name: 'Состояние сервера' }).getByRole('status')).toHaveText('Сервер готов');
   await expect(page).toHaveTitle('Сегодня · OVC');
 });
 

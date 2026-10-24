@@ -2,6 +2,7 @@ import { type ReactElement, type SyntheticEvent, useEffect, useId, useRef, useSt
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
+import { ActionButton } from '../../components/ui/Form.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { type ApiError, asApiError } from '../../lib/api/client.ts';
 import { type SignInResult, useSession, useSessionState } from '../../lib/api/session.ts';
@@ -161,13 +162,13 @@ export function SignInPage(): ReactElement {
             {t('signIn.showPassword')}
           </label>
         </div>
-        <button
+        <ActionButton
           type="submit"
-          disabled={busy}
-          className="inline-flex min-h-11 items-center justify-center rounded-md bg-accent px-4 text-strong text-on-accent hover:bg-accent-hover disabled:opacity-60"
+          busy={busy}
+          className="inline-flex min-h-11 items-center justify-center rounded-md bg-accent px-4 text-strong text-on-accent hover:bg-accent-hover aria-disabled:opacity-60"
         >
           {t('signIn.submit')}
-        </button>
+        </ActionButton>
         <p className="flex flex-wrap gap-x-4">
           <Link to="/forgot-password" className={linkClass}>
             {t('signIn.forgotPassword')}

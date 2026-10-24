@@ -16,6 +16,7 @@ import { TeachingSettingsPage } from '../features/settings/TeachingSettingsPage.
 import { StudentCardPage } from '../features/students/StudentCardPage.tsx';
 import { StudentsPage } from '../features/students/StudentsPage.tsx';
 import { HomePage } from '../features/home/HomePage.tsx';
+import { TodayPage } from '../features/home/TodayPage.tsx';
 import { MyTutorsPage } from '../features/tutors/MyTutorsPage.tsx';
 import type { RouteHandle } from '../app/handles.ts';
 import { Gate } from './Gate.tsx';
@@ -27,7 +28,7 @@ function page(path: string, title: RouteHandle['title'], element: ReactElement =
 }
 
 export const tutorPages: RouteObject[] = [
-  page('/today', 'page.today', <HomePage />),
+  page('/today', 'page.today', <TodayPage />),
   page('/students', 'page.students', <StudentsPage />),
   page('/students/:studentId', 'page.student', <StudentCardPage />),
   page('/groups', 'page.groups'),

@@ -8,6 +8,7 @@ import { Avatar } from '../../components/ui/Avatar.tsx';
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
+  ActionButton,
   FormNotice,
   SubmitButton,
   TextField,
@@ -39,9 +40,9 @@ import { StateBadge } from './StateBadge.tsx';
 type StudentCardPatch = components['schemas']['StudentCardPatch'];
 
 const dangerButtonClass =
-  'inline-flex min-h-11 items-center justify-center rounded-md border border-danger px-4 text-strong text-danger hover:bg-surface disabled:opacity-60';
+  'inline-flex min-h-11 items-center justify-center rounded-md border border-danger px-4 text-strong text-danger hover:bg-surface aria-disabled:opacity-60';
 const textButtonClass =
-  'inline-flex min-h-11 items-center px-3 text-small text-accent-text underline disabled:opacity-60';
+  'inline-flex min-h-11 items-center px-3 text-small text-accent-text underline aria-disabled:opacity-60';
 
 export interface CardHandlers {
   readonly onChanged: (card: StudentCard) => void;
@@ -271,26 +272,20 @@ function WithdrawInvitation({
           <p id={consequenceId}>{t('studentCard.withdrawConsequence')}</p>
           <Refusal state={action.state} />
           <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              disabled={action.busy}
-              aria-busy={action.busy}
-              onClick={withdraw}
-              className={dangerButtonClass}
-            >
+            <ActionButton busy={action.busy} onClick={withdraw} className={dangerButtonClass}>
               {t('studentCard.withdrawSubmit')}
-            </button>
-            <button
+            </ActionButton>
+            <ActionButton
               ref={cancel}
-              type="button"
-              disabled={action.busy}
+              busy={false}
+              unavailable={action.busy}
               onClick={() => {
                 setOpen(false);
               }}
               className={textButtonClass}
             >
               {t('studentCard.cancel')}
-            </button>
+            </ActionButton>
           </div>
         </div>
       </ModalDialog>
@@ -362,26 +357,20 @@ function RemoveStudent({
           </p>
           <Refusal state={action.state} />
           <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              disabled={action.busy}
-              aria-busy={action.busy}
-              onClick={remove}
-              className={dangerButtonClass}
-            >
+            <ActionButton busy={action.busy} onClick={remove} className={dangerButtonClass}>
               {t('studentCard.removeSubmit')}
-            </button>
-            <button
+            </ActionButton>
+            <ActionButton
               ref={cancel}
-              type="button"
-              disabled={action.busy}
+              busy={false}
+              unavailable={action.busy}
               onClick={() => {
                 setOpen(false);
               }}
               className={textButtonClass}
             >
               {t('studentCard.cancel')}
-            </button>
+            </ActionButton>
           </div>
         </div>
       </ModalDialog>

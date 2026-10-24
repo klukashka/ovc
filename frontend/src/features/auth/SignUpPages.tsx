@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { type ReactElement, type SyntheticEvent, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
@@ -36,20 +37,6 @@ export function SignUpChoicePage(): ReactElement {
           <span className="text-small text-text-muted">{t('signUp.studyHint')}</span>
         </Link>
       </nav>
-      <p>
-        <Link to="/" className={linkClass}>
-          {t('signUp.haveAccount')}
-        </Link>
-      </p>
-    </Page>
-  );
-}
-
-export function StudentSignUpPage(): ReactElement {
-  const { t } = useTranslation();
-  return (
-    <Page>
-      <p>{t('signUp.studentBody')}</p>
       <p>
         <Link to="/" className={linkClass}>
           {t('signUp.haveAccount')}
@@ -135,9 +122,28 @@ export function ConsentField({ error }: { readonly error: string | undefined }):
   );
 }
 
-const shownFields = ['name', 'email', 'password', 'consent'];
+type SignUpRole = 'tutor' | 'student';
 
-export function TutorSignUpPage(): ReactElement {
+const shownFields = ['name', 'email', 'password', 'consent', 'tutor_code'];
+
+function formError(t: TFunction, error: ApiError | null, retryAfter: number | null): string | null {
+  if (error === null) {
+    return null;
+  }
+  if (error.code === 'tutor_code_invalid' || shownFields.some((field) => error.fieldCode(field) !== undefined)) {
+    return t('errors.validation_failed');
+  }
+  if (error.code === 'validation_failed') {
+    return t('form.failed', { requestId: error.requestId ?? '—' });
+  }
+  return errorMessage(t, error, retryAfter);
+}
+
+function codeError(t: TFunction, error: ApiError | null): string | undefined {
+  return error?.code === 'tutor_code_invalid' ? t('signUp.codeInvalid') : fieldMessage(t, error, 'tutor_code');
+}
+
+function SignUpPage({ accountRole }: { readonly accountRole: SignUpRole }): ReactElement {
   const { t, i18n } = useTranslation();
   const client = useApiClient();
   const [state, setState] = useState<SignUpState>({ kind: 'editing', error: null, retryAfter: null });
@@ -149,13 +155,14 @@ export function TutorSignUpPage(): ReactElement {
     setState({ kind: 'sending' });
     const { error, response } = await client.POST('/api/v1/auth/register', {
       body: {
-        role: 'tutor',
+        role: accountRole,
         name: stringField(data, 'name'),
         email,
         password: stringField(data, 'password'),
         language: isLanguage(language) ? language : 'ru',
         timezone: browserTimezone(),
         consent: data.get('consent') === 'on',
+        ...(accountRole === 'student' ? { tutor_code: stringField(data, 'tutor_code').trim() } : {}),
       },
     });
     if (response.ok) {
@@ -167,6 +174,9 @@ export function TutorSignUpPage(): ReactElement {
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement, SubmitEvent>): void {
     event.preventDefault();
+    if (state.kind === 'sending') {
+      return;
+    }
     submit(event.currentTarget).catch((thrown: unknown) => {
       setState({ kind: 'editing', error: asApiError(thrown), retryAfter: null });
     });
@@ -182,19 +192,21 @@ export function TutorSignUpPage(): ReactElement {
 
   const error = state.kind === 'editing' ? state.error : null;
   const fieldError = (field: string): string | undefined => fieldMessage(t, error, field);
-  const shownProblem = error !== null && shownFields.some((field) => error.fieldCode(field) !== undefined);
-  const formError =
-    error === null
-      ? null
-      : shownProblem
-        ? t('errors.validation_failed')
-        : error.code === 'validation_failed'
-          ? t('form.failed', { requestId: error.requestId ?? '—' })
-          : errorMessage(t, error, state.kind === 'editing' ? state.retryAfter : null);
+  const alert = formError(t, error, state.kind === 'editing' ? state.retryAfter : null);
   return (
     <Page>
       <form onSubmit={onSubmit} className="flex max-w-sm flex-col gap-4">
-        {formError === null ? null : <FormAlert>{formError}</FormAlert>}
+        {alert === null ? null : <FormAlert>{alert}</FormAlert>}
+        {accountRole === 'student' ? (
+          <TextField
+            label={t('signUp.tutorCode')}
+            name="tutor_code"
+            autoComplete="off"
+            maxLength={64}
+            hint={t('signUp.tutorCodeHint')}
+            error={codeError(t, error)}
+          />
+        ) : null}
         <TextField
           label={t('signUp.name')}
           name="name"
@@ -230,4 +242,12 @@ export function TutorSignUpPage(): ReactElement {
       </form>
     </Page>
   );
+}
+
+export function TutorSignUpPage(): ReactElement {
+  return <SignUpPage accountRole="tutor" />;
+}
+
+export function StudentSignUpPage(): ReactElement {
+  return <SignUpPage accountRole="student" />;
 }

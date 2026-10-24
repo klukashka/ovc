@@ -25,6 +25,7 @@ import {
   withdrawnNotice,
 } from './api.ts';
 import { GroupDots } from './GroupDots.tsx';
+import { JoinRequests } from './JoinRequests.tsx';
 import { StateBadge } from './StateBadge.tsx';
 
 const tabClass = 'inline-flex min-h-11 items-center border-b-2 px-1 text-small';
@@ -193,7 +194,11 @@ function StudentList({
     retry: false,
   });
   const cards = query.data?.pages.flatMap((page) => page.items) ?? [];
-  const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(cards.length, ':scope > li > a');
+  const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
+    cards.length,
+    ':scope > li > a',
+    query.isFetchingNextPage,
+  );
   if (query.isPending) {
     return <DelayedLoading />;
   }
@@ -282,6 +287,7 @@ export function StudentsPage(): ReactElement {
   return (
     <Page wide>
       <LiveNotice message={withdrawnView === null ? null : t('students.withdrawn')} />
+      <JoinRequests hideWhenEmpty />
       <Tabs current={state} search={search} />
       <SearchForm state={state} search={search} />
       <StudentList state={state} search={search} addButton={addButton} />

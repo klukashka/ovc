@@ -38,15 +38,19 @@ function focusIsLost(): boolean {
   return focused === null || focused === document.body || !focused.isConnected || focused.matches('main');
 }
 
+export function focusHeadingIfLost(): void {
+  if (focusIsLost()) {
+    document.querySelector<HTMLElement>('main h1')?.focus();
+  }
+}
+
 function useFocusHeadingAfterRetry(retried: { readonly current: boolean }): void {
   useEffect(
     () => (): void => {
       if (!retried.current) {
         return;
       }
-      if (focusIsLost()) {
-        document.querySelector<HTMLElement>('main h1')?.focus();
-      }
+      focusHeadingIfLost();
     },
     [retried],
   );

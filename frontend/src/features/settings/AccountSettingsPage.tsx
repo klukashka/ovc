@@ -2,8 +2,8 @@ import { type ReactElement, type ReactNode, type SyntheticEvent, useEffect, useI
 import { useTranslation } from 'react-i18next';
 
 import {
+  ActionButton,
   FormAlert,
-  FormNotice,
   SelectChevron,
   SubmitButton,
   TextField,
@@ -14,6 +14,7 @@ import {
   selectClass,
   stringField,
 } from '../../components/ui/Form.tsx';
+import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type Me, useSession, useSignedInAccount } from '../../lib/api/session.ts';
@@ -30,7 +31,7 @@ const themes = ['system', 'light', 'dark'] as const;
 type Theme = (typeof themes)[number];
 
 const dangerButtonClass =
-  'inline-flex min-h-11 items-center justify-center rounded-md border border-danger px-4 text-strong text-danger hover:bg-surface disabled:opacity-60';
+  'inline-flex min-h-11 items-center justify-center rounded-md border border-danger px-4 text-strong text-danger hover:bg-surface aria-disabled:opacity-60';
 
 function isTheme(value: string): value is Theme {
   return themes.some((theme) => theme === value);
@@ -158,7 +159,7 @@ function PreferencesSection({ me }: { readonly me: Me }): ReactElement {
         {t('settings.preferences')}
       </h2>
       <RefusalMessage outcome={outcome} />
-      {outcome.kind === 'done' ? <FormNotice>{t('settings.saved')}</FormNotice> : null}
+      <LiveNotice message={outcome.kind === 'done' ? t('settings.saved') : null} />
       <SelectField
         label={t('settings.language')}
         name="language"
@@ -205,10 +206,10 @@ function PasswordSection(): ReactElement {
   const client = useApiClient();
   const headingId = useId();
   const [outcome, setOutcome] = useState<Outcome>({ kind: 'idle' });
-  const [form, setForm] = useState(0);
   const error = outcome.kind === 'refused' ? outcome.error : null;
 
-  async function change(data: FormData): Promise<void> {
+  async function change(form: HTMLFormElement): Promise<void> {
+    const data = new FormData(form);
     setOutcome({ kind: 'sending' });
     const { error: refusal, response } = await client.POST('/api/v1/auth/password/change', {
       body: {
@@ -220,20 +221,19 @@ function PasswordSection(): ReactElement {
       setOutcome(refusedFrom(response, refusal));
       return;
     }
-    setForm((value) => value + 1);
+    form.reset();
     setOutcome({ kind: 'done' });
   }
 
   return (
     <form
-      key={form}
       aria-labelledby={headingId}
       onChange={() => {
         setOutcome(settled);
       }}
       onSubmit={(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
         event.preventDefault();
-        change(new FormData(event.currentTarget)).catch((thrown: unknown) => {
+        change(event.currentTarget).catch((thrown: unknown) => {
           setOutcome(failed(thrown));
         });
       }}
@@ -243,7 +243,7 @@ function PasswordSection(): ReactElement {
         {t('settings.changePassword')}
       </h2>
       <RefusalMessage outcome={outcome} />
-      {outcome.kind === 'done' ? <FormNotice>{t('settings.passwordChanged')}</FormNotice> : null}
+      <LiveNotice message={outcome.kind === 'done' ? t('settings.passwordChanged') : null} />
       <TextField
         label={t('settings.currentPassword')}
         name="current_password"
@@ -290,9 +290,8 @@ function SignOutEverywhereSection(): ReactElement {
       <p className="text-text-muted">{t('settings.signOutEverywhereBody')}</p>
       <RefusalMessage outcome={outcome} />
       <p>
-        <button
-          type="button"
-          disabled={outcome.kind === 'sending'}
+        <ActionButton
+          busy={outcome.kind === 'sending'}
           onClick={() => {
             signOutEverywhere().catch((thrown: unknown) => {
               setOutcome(failed(thrown));
@@ -301,7 +300,7 @@ function SignOutEverywhereSection(): ReactElement {
           className={quietButtonClass}
         >
           {t('settings.signOutEverywhere')}
-        </button>
+        </ActionButton>
       </p>
     </section>
   );
@@ -413,19 +412,19 @@ function DeleteAccountSection(): ReactElement {
             error={fieldMessage(t, error, 'password')}
           />
           <div className="flex flex-wrap gap-3">
-            <button type="submit" disabled={sending} className={dangerButtonClass}>
+            <ActionButton type="submit" busy={sending} className={dangerButtonClass}>
               {t('settings.deleteAccountSubmit')}
-            </button>
-            <button
-              type="button"
-              disabled={sending}
+            </ActionButton>
+            <ActionButton
+              busy={false}
+              unavailable={sending}
               onClick={() => {
                 setOpen(false);
               }}
-              className="inline-flex min-h-11 items-center px-3 text-small text-accent-text underline disabled:opacity-60"
+              className="inline-flex min-h-11 items-center px-3 text-small text-accent-text underline aria-disabled:opacity-60"
             >
               {t('settings.cancel')}
-            </button>
+            </ActionButton>
           </div>
         </form>
       </dialog>

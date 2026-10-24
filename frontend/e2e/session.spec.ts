@@ -159,6 +159,12 @@ test.describe('below 1024 px', () => {
   });
 });
 
+async function expectTodayLoaded(page: Page): Promise<void> {
+  const requests = page.getByRole('region', { name: 'Заявки на занятия' });
+  await expect(requests.getByText('Новых заявок нет.')).toBeVisible();
+  await expect(requests.getByText(/^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/)).toBeVisible();
+}
+
 async function expectSignedIn(page: Page): Promise<void> {
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Сегодня' })).toBeVisible();
 }
@@ -187,6 +193,7 @@ test('an expired access token is refreshed once and the request is retried', asy
 }) => {
   await page.goto('/today');
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Сегодня' })).toBeVisible();
+  await expectTodayLoaded(page);
   const responses = authResponses(page);
   await control.advance(16 * 60);
 

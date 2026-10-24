@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import type { ReactElement } from 'react';
+import { type ReactElement, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ApiError } from '../../lib/api/client.ts';
@@ -24,6 +24,26 @@ export function refusalText(
   return errorMessage(t, error, retryAfter);
 }
 
+function ConfirmationAlert({
+  refusal,
+  reason,
+}: {
+  readonly refusal: ActionState;
+  readonly reason: ConfirmationReason;
+}): ReactElement {
+  const element = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    element.current?.focus();
+  }, [refusal]);
+
+  return (
+    <div ref={element} role="alert" tabIndex={-1} className="outline-none">
+      <ConfirmationPrompt reason={reason} />
+    </div>
+  );
+}
+
 export function Refusal({
   state,
   dailyLimit,
@@ -38,7 +58,7 @@ export function Refusal({
     return null;
   }
   if (state.error.code === 'email_not_verified' && confirmation !== undefined) {
-    return <ConfirmationPrompt reason={confirmation} />;
+    return <ConfirmationAlert refusal={state} reason={confirmation} />;
   }
   return <FormAlert>{refusalText(t, state.error, state.retryAfter, dailyLimit)}</FormAlert>;
 }

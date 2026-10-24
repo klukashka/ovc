@@ -13,6 +13,7 @@ import {
   primaryButtonClass,
   stringField,
 } from '../../components/ui/Form.tsx';
+import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { components } from '../../lib/api/schema.ts';
@@ -204,9 +205,13 @@ export function VerifyEmailPage(): ReactElement {
             className="flex max-w-sm flex-col gap-4"
           >
             {passwordError === undefined ? null : <FormAlert>{t('errors.validation_failed')}</FormAlert>}
-            {sessionState.kind === 'signedIn' ? (
-              <FormNotice>{t('verifyEmail.switchAccount', { email: sessionState.me.email })}</FormNotice>
-            ) : null}
+            <LiveNotice
+              message={
+                sessionState.kind === 'signedIn'
+                  ? t('verifyEmail.switchAccount', { email: sessionState.me.email })
+                  : null
+              }
+            />
             <p>{t('verifyEmail.choosePassword')}</p>
             <TextField
               label={t('verifyEmail.newPassword')}

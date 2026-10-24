@@ -2,7 +2,7 @@ import { type ReactElement, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { type ActionState, done, refusedBy, showsStaleData, useAction } from '../../components/ui/action.ts';
-import { FormAlert, FormNotice, quietButtonClass } from '../../components/ui/Form.tsx';
+import { ActionButton, FormAlert, FormNotice, quietButtonClass } from '../../components/ui/Form.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
 import { StatusWord } from '../../components/ui/StatusWord.tsx';
 import { useApiClient } from '../../lib/api/client.ts';
@@ -139,27 +139,20 @@ export function InvitationLink({
           </button>
         )}
         {canSend ? (
-          <button
-            type="button"
-            disabled={action.busy}
-            aria-busy={action.busy}
-            onClick={send}
-            className={quietButtonClass}
-          >
+          <ActionButton busy={action.busy} onClick={send} className={quietButtonClass}>
             {t('invitation.send')}
-          </button>
+          </ActionButton>
         ) : null}
         {onRegenerated === undefined ? null : (
-          <button
-            type="button"
-            disabled={action.busy}
+          <ActionButton
+            busy={action.busy}
             onClick={() => {
               regenerate(onRegenerated);
             }}
             className={quietButtonClass}
           >
             {t('invitation.regenerate')}
-          </button>
+          </ActionButton>
         )}
       </div>
     </section>

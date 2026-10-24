@@ -22,7 +22,7 @@ FR-1.1, FR-1.2.
 - `/signup` offers two large choices, each a bordered panel: "I teach" and "I study".
 - **Form:**
   - name, email, password with a strength hint (minimum 10 characters), language (preselected from the interface language, which follows the browser until the person chooses one), and a consent checkbox linking the privacy policy;
-  - the student form (`/signup/student`) also has a required tutor code field, with the hint "Got a link from your tutor? Open it instead"; an invalid code shows "This code is no longer valid — ask your tutor for a new one" and creates nothing.
+  - the student form (`/signup/student`) also has a required tutor code field, first in the form, with the hint "Got a link from your tutor? Open it instead"; an invalid code (`tutor_code_invalid`) shows "This code is no longer valid — ask your tutor for a new one" under the field, with the form's alert "Check the highlighted fields", and creates nothing; a valid code shows "Check your email" for a new and a taken email alike.
 - **Submitting** shows "Check your email" with the address and a resend button, disabled for 60 seconds.
 - **After confirmation** in the same browser, a student who signed up with a code sees "Request sent. Waiting for the tutor."
 
@@ -65,6 +65,10 @@ FR-15.1, FR-15.2, FR-2.3, FR-5.1.
   - count and the five oldest items (student, assignment, submitted time, late badge);
   - "Open review queue".
 - **Join requests:** student name and email, with Accept, Decline, and "Decline and block" in a menu, oldest first; the panel also shows the tutor code with Copy. In slice 3 this panel is the only part of Today; the rest arrives with slice 10.
+  - each row shows the avatar, the account name and email, the state word "Wants to join" and the sending date; the buttons name the student for screen readers ("Accept {name}", "Decline {name}", "More actions for {name}"); "Show more" loads the next page and moves focus to the first new row's Accept;
+  - a decision shows a notice in the panel, which takes focus: "Request accepted. The student is now in Students.", "Request declined." or "Request declined. Requests from this student no longer reach you."; no dialog asks first, because a block is undone in Teaching settings;
+  - a request that is no longer open when decided (`not_found`, `not_editable`) shows the alert "This request is no longer open. The list is up to date.", which takes focus each time, and the list reloads; a decision refused with `email_not_verified` shows the confirmation prompt "Confirm your email to answer join requests." inside an alert that takes focus;
+  - with no visible request the panel says "No new requests."; an unconfirmed tutor sees no request list, and the code with "The code starts working once you confirm your email".
 - **Unread messages:** channels with unread counts.
 - **Upcoming deadlines:** issues due in the next 3 days with progress "{submitted}/{total}".
 - **Computer layout:** the greeting spans the page; the main column holds the checklist, today's lessons and needs checking; a 300 px side column holds join requests, upcoming deadlines and unread messages.
@@ -135,7 +139,7 @@ FR-2.1, FR-2.3, FR-2.5.
 - **"Add student" dialog:**
   - display name and optional email, then "Create invitation";
   - the result shows the link with Copy and, if an email was given, "Send by email"; sending shows "Sent" as a toast and never a delivery status.
-- **Pending join requests** appear at the top with Accept, Decline and, in a menu, "Decline and block".
+- **Pending join requests** appear at the top with Accept, Decline and, in a menu, "Decline and block", in the same section and with the same notices as on Today; the section is shown only while requests wait, and stays after the last decision until the page is left, so its notice keeps focus.
 - **Empty:** a heading with "Invite your first student" and "Share your tutor code {code}".
 - **An unconfirmed tutor** gets the confirmation prompt instead of "Add student".
 
@@ -289,7 +293,7 @@ FR-15.3, FR-5.1, FR-2.6.
 - **Recently checked:** the last five checked submissions, with the tutor label, the opening of the overall feedback, whether a corrected file came back, and, once the open question in [the architecture](../../architecture/detailed.md#open-implementation-questions) is settled, whether feedback is new. No points.
 - **Next seven days** (side column): the student's lessons starting within seven days, cancelled ones left out, one row each with weekday, time and tutor label, and a link to the schedule.
 - **My tutors** (side column): each active tutor with label, subject and a Message link, and "Enter a tutor code"; the tutor filter does not hide this list.
-- **No tutor yet:** "Enter your tutor's code" with an input; with a pending request, "Request sent. Waiting for the tutor." instead.
+- **No tutor yet:** "No tutor yet." and "Enter your tutor's code" with an input; with a pending request, "Request sent. Waiting for the tutor." instead. A code sent from Home replaces the input with that sentence as a notice that takes focus; refusals are those of My tutors. With current tutors, the list ends with the link "Enter a tutor code" to My tutors.
 - **An unconfirmed student** sees the confirmation banner "Confirm your email to keep studying with your tutor. We sent a link to {email}." with the button "Send the link again", and reaches Home, My tutors and Settings only; the sidebar shows only those sections, and below 1024 px the top bar has no notifications bell.
 - **In slice 3** Home shows the tutor parts (no tutor yet, request sent, My tutors) from `GET /tutors` and `GET /join-requests/sent`; the rest arrives with `GET /home` in slice 10.
 - **Computer layout:** greeting and a one-line summary of the day, the tutor filter, then a main column (next lesson panel, to do, recently checked) and a 300 px side column (next seven days, my tutors).
@@ -321,10 +325,11 @@ FR-2.6, FR-1.2, FR-2.7, FR-2.8, FR-1.7.
 
 - **Rows:** each tutor's avatar, name, colour, subjects and bio, plus "Message" (from slice 6) and, in an overflow menu, "Stop studying".
 - **Stop studying** opens a dialog naming the consequences (the student leaves the tutor's groups, future lessons are cancelled, the chat becomes read-only, the tutor gets an email); for a tutor joined before the email was confirmed it says that the link is removed instead.
-- **Add a tutor:** a field that takes a code.
+- **Add a tutor:** a field that takes a code, with "Send request". A sent code shows the notice "Request sent. Waiting for the tutor.", which takes focus, and empties the field; the answer is the same for a new, repeated, held or suppressed request (T-33). Refusals show an alert that takes focus: "This code is no longer valid — ask your tutor for a new one" (`tutor_code_invalid`), "You already study with this tutor." (`already_linked`), "The tutor is not accepting requests right now." (`tutor_unavailable`), and the throttling message with the minutes to wait (`rate_limited`).
 - **Pending requests:** "Request sent. Waiting for the tutor." (no name interpolation, so no grammatical case problems in Russian); a declined request shows "Your request was not accepted".
-- **Ended relationships:** listed under "Past tutors" with read-only chat, lessons, recordings until they expire, and results. They are left out of the Home filter by default.
-- **A tutor who deleted their account:** shown as "Account closed — results available until {date}", with read-only access until then.
+  - In slice 3 they are listed under "Sent requests", newest first, from `GET /join-requests/sent`: each row shows the state word from [states](states.md) ("Request sent", "Not accepted", "Expired"), the sentence for a pending or declined request and "Sent {date}"; accepted requests are left out, because their tutor is listed; the rows carry no tutor name, because the student-facing request has none; "Show more" loads the next page and moves focus to its first row. The API offers no withdrawal, so a request is never withdrawn from the page.
+- **Ended relationships:** listed under "Past tutors" with read-only chat, lessons, recordings until they expire, and results. They are left out of the Home filter by default. In slice 3 each row shows the avatar, name, colour, subjects and "Ended {date}".
+- **A tutor who deleted their account:** shown as "Account closed — results available until {date}", with read-only access until then; the date is `account_closed_until`.
 
 ### Keep or drop earlier links
 
@@ -344,7 +349,7 @@ Same as the tutor's, without tutor-only sections; direct channels are named by t
 
 - **Loading:**
   - skeletons in the shape of the content appear after 300 ms; nothing appears before;
-  - buttons that start an action show a spinner and stay disabled until it completes.
+  - buttons that start an action show a spinner and stay unavailable until it completes: they carry `aria-disabled="true"` and `aria-busy="true"` and ignore activation, but never the `disabled` attribute, which moves focus to the page body in Chromium, Firefox and WebKit; so a busy button keeps focus, and a button waiting for a cooldown (the confirmation resend) is unavailable the same way.
 - **Empty states:** a heading, one sentence and one primary action (an optional line illustration as in [tokens](tokens.md#illustration-and-iconography)):
 
   | Page | Message | Action |

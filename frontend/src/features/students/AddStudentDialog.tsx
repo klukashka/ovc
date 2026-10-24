@@ -6,6 +6,7 @@ import { Link } from 'react-router';
 import { type Action, type ActionState, done, refusedBy, useAction } from '../../components/ui/action.ts';
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
+  ActionButton,
   SubmitButton,
   TextField,
   fieldMessage,
@@ -18,7 +19,8 @@ import { useApiClient } from '../../lib/api/client.ts';
 import { type StudentCard, studentsKey } from './api.ts';
 import { InvitationLink } from './InvitationLink.tsx';
 
-const textButtonClass = 'inline-flex min-h-11 items-center px-3 text-small text-accent-text underline';
+const textButtonClass =
+  'inline-flex min-h-11 items-center px-3 text-small text-accent-text underline aria-disabled:opacity-60';
 
 function ExistingStudent({ state }: { readonly state: ActionState }): ReactElement | null {
   const { t } = useTranslation();
@@ -98,9 +100,9 @@ function NewCardForm({
       />
       <div className="flex flex-wrap gap-3">
         <SubmitButton busy={action.busy}>{t('addStudent.submit')}</SubmitButton>
-        <button type="button" disabled={action.busy} onClick={onCancel} className={textButtonClass}>
+        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={textButtonClass}>
           {t('addStudent.cancel')}
-        </button>
+        </ActionButton>
       </div>
     </form>
   );

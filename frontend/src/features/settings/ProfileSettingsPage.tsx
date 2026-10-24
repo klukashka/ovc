@@ -2,6 +2,7 @@ import { type ChangeEvent, type ReactElement, type SyntheticEvent, useId, useSta
 import { useTranslation } from 'react-i18next';
 
 import {
+  ActionButton,
   FormAlert,
   FormNotice,
   SubmitButton,
@@ -13,6 +14,7 @@ import {
   retryAfterSeconds,
   stringField,
 } from '../../components/ui/Form.tsx';
+import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type components } from '../../lib/api/schema.ts';
@@ -166,27 +168,31 @@ function AvatarSection({ me, work }: { readonly me: Me; readonly work: PendingWo
           type="file"
           accept={acceptedAvatarFiles}
           onChange={onChange}
-          disabled={work.busy}
+          onClick={(event) => {
+            if (work.busy) {
+              event.preventDefault();
+            }
+          }}
+          aria-disabled={work.busy}
           className="peer sr-only"
         />
         <label
           htmlFor={inputId}
-          className={`${quietButtonClass} cursor-pointer peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus peer-disabled:cursor-default peer-disabled:opacity-60`}
+          className={`${quietButtonClass} cursor-pointer peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus peer-aria-disabled:cursor-default peer-aria-disabled:opacity-60`}
         >
           {t('settings.chooseAvatar')}
         </label>
         {address === null ? null : (
-          <button
-            type="button"
-            disabled={work.busy}
+          <ActionButton
+            busy={work.busy}
             onClick={() => {
               settle();
               save({ avatar_id: null });
             }}
-            className="inline-flex min-h-11 items-center px-2 text-small text-accent-text underline disabled:opacity-60"
+            className="inline-flex min-h-11 items-center px-2 text-small text-accent-text underline aria-disabled:opacity-60"
           >
             {t('settings.removeAvatar')}
-          </button>
+          </ActionButton>
         )}
       </div>
       <p className="text-small text-text-muted">{t('settings.avatarHint')}</p>
@@ -237,7 +243,7 @@ function DetailsSection({ me, work }: { readonly me: Me; readonly work: PendingW
             : errorMessage(t, error, saving.kind === 'refused' ? saving.retryAfter : null)}
         </FormAlert>
       )}
-      {saving.kind === 'saved' ? <FormNotice>{t('settings.saved')}</FormNotice> : null}
+      <LiveNotice message={saving.kind === 'saved' ? t('settings.saved') : null} />
       <TextField
         label={t('signUp.name')}
         name="name"

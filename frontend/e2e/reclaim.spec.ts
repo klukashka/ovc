@@ -6,6 +6,7 @@ import {
   createCard,
   enterTutorCode,
   myTutorNames,
+  registerStudentWithCode,
   removeStudent,
   signUpOnInvitation,
   tutorCode,
@@ -159,4 +160,29 @@ test('reclaim › a reset of an unconfirmed account asks for the choice after si
   await expect(page.getByRole('list', { name: 'Репетиторы' }).getByRole('listitem')).toHaveText([/Pavel/]);
   await page.goto('/reclaim');
   await expect(page.getByRole('group', { name: 'Мария' })).toBeVisible();
+});
+
+test('reclaim › keeping a request whose tutor is no longer active says that the code is not valid', async ({
+  page,
+  deployment,
+  control,
+  diagnostics,
+}) => {
+  diagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/verify-email', status: 422 });
+  const maria = await seedVerifiedUser(deployment, 'Мария');
+  const owner = newTestAccount('Самозванец', 'student');
+  await registerStudentWithCode(deployment, owner, await tutorCode(deployment, maria));
+  await control.tick();
+  await page.goto(emailedLinkTo(await control.mail(owner.email), '/verify-email'));
+  await page.getByLabel('Новый пароль').fill(`${owner.password} reclaimed`);
+  await page.getByRole('button', { name: 'Подтвердить и войти' }).click();
+  await expect(page).toHaveURL('/reclaim');
+  const requests = page.getByRole('region', { name: 'Запросы, отправленные до подтверждения' });
+  await requests.getByRole('group', { name: 'Мария' }).getByLabel('Оставить').check();
+  deployment.administer(['users', 'block', maria.email]);
+
+  await page.getByRole('button', { name: 'Сохранить выбор' }).click();
+
+  await expect(page.getByRole('status')).toHaveText('Этот код больше не действует — введите новый.');
+  await expect(page.getByRole('status')).toBeFocused();
 });

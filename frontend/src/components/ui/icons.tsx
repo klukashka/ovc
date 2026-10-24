@@ -31,6 +31,16 @@ export function ChevronDownIcon(props: IconProps): ReactElement {
   );
 }
 
+export function MoreIcon(props: IconProps): ReactElement {
+  return (
+    <Outline {...props}>
+      <circle cx="3.5" cy="8" r="0.6" />
+      <circle cx="8" cy="8" r="0.6" />
+      <circle cx="12.5" cy="8" r="0.6" />
+    </Outline>
+  );
+}
+
 export function SunIcon(props: IconProps): ReactElement {
   return (
     <Outline {...props}>
