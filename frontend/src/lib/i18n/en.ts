@@ -357,6 +357,8 @@ export const en: Resources = {
     allGroups: 'All groups',
     archivedGroup: '{name} (archived)',
     groupNotFound: 'This group is not available.',
+    searchInvalid: 'This search cannot be used. A search holds at most 254 characters.',
+    withoutSearch: 'Show the list without the search',
     add: 'Add student',
     lists: 'Student lists',
     tabs: {
@@ -518,6 +520,7 @@ export const en: Resources = {
     unblockNamed: 'Unblock {name}',
     unblockDeleted: 'Unblock the deleted account blocked on {date}',
     unblocked: 'The student was unblocked.',
+    unblockChanged: 'This student is no longer blocked. The list is up to date.',
     showMore: 'Show more',
   },
   errors: {

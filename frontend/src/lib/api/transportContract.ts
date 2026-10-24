@@ -7,6 +7,7 @@ export interface ContractSubject {
   readonly password: string;
   readonly otherTutorEmail: string;
   readonly otherTutorPassword: string;
+  readonly student: () => Promise<{ readonly email: string; readonly password: string }>;
   readonly expireAccessTokens: () => Promise<void>;
   readonly blockAccount: () => Promise<void>;
 }
@@ -74,6 +75,10 @@ function cardRequest(subject: ContractSubject, token: string, path: string, body
   });
 }
 
+function joinRequestsRequest(subject: ContractSubject, token: string): Request {
+  return new Request(`${subject.origin}/api/v1/join-requests`, { headers: { Authorization: `Bearer ${token}` } });
+}
+
 function cardFields(value: unknown): { id: unknown; name: unknown; state: unknown; url: unknown } {
   const card = typeof value === 'object' && value !== null ? value : {};
   const invitation = 'invitation' in card && typeof card.invitation === 'object' ? card.invitation : null;
@@ -82,6 +87,34 @@ function cardFields(value: unknown): { id: unknown; name: unknown; state: unknow
     name: 'display_name' in card ? card.display_name : undefined,
     state: 'state' in card ? card.state : undefined,
     url: invitation !== null && 'url' in invitation ? invitation.url : undefined,
+  };
+}
+
+const headersThatVary: ReadonlySet<string> = new Set(['date', 'content-length', 'x-request-id']);
+
+interface RefusalShape {
+  readonly status: number;
+  readonly code: string | undefined;
+  readonly same: (other: RefusalShape) => boolean;
+  readonly describe: () => string;
+}
+
+async function refusalShape(response: Response): Promise<RefusalShape> {
+  const body: unknown = await response.json();
+  const error = typeof body === 'object' && body !== null && 'error' in body ? body.error : null;
+  const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
+  const message = typeof error === 'object' && error !== null && 'message' in error ? error.message : undefined;
+  const headers = [...response.headers.entries()]
+    .filter(([name]) => !headersThatVary.has(name))
+    .map(([name, value]) => `${name}: ${value}`)
+    .sort()
+    .join('; ');
+  const summary = `${String(response.status)} ${String(code)} ${String(message)} [${headers}]`;
+  return {
+    status: response.status,
+    code: typeof code === 'string' ? code : undefined,
+    same: (other) => other.describe() === summary,
+    describe: () => summary,
   };
 }
 
@@ -144,6 +177,68 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
     check(typeof created.id === 'string', 'expected a card identifier');
     check(read.status === 404, `expected 404, got ${String(read.status)}`);
     check((await errorCode(read)) === 'not_found', 'expected not_found');
+  },
+
+  'a student is refused on the card routes as on an unknown route with not_found': async (subject) => {
+    const tutor = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const card = cardFields(
+      await (await subject.transport.send(cardRequest(subject, tutor, '', { display_name: 'A tutor’s card' }))).json(),
+    );
+    const { email, password } = await subject.student();
+    const student = await accessToken(await subject.transport.login(email, password));
+
+    const created = await refusalShape(
+      await subject.transport.send(cardRequest(subject, student, '', { display_name: 'Someone' })),
+    );
+    const read = await refusalShape(await subject.transport.send(cardRequest(subject, student, `/${String(card.id)}`)));
+    const unknown = await refusalShape(
+      await subject.transport.send(
+        new Request(`${subject.origin}/api/v1/no-such-route`, { headers: { Authorization: `Bearer ${student}` } }),
+      ),
+    );
+
+    check(typeof card.id === 'string', 'expected a card identifier');
+    check(unknown.status === 404 && unknown.code === 'not_found', 'expected not_found on an unknown route');
+    check(created.same(unknown), `expected creation to be refused as an unknown route: ${created.describe()}`);
+    check(read.same(unknown), `expected reading to be refused as an unknown route: ${read.describe()}`);
+  },
+
+  'a tutor without join requests reads an empty page (a refused read uses the refusal envelope the 404 scenarios check)':
+    async (subject) => {
+      const token = await accessToken(
+        await subject.transport.login(subject.otherTutorEmail, subject.otherTutorPassword),
+      );
+
+      const read = await subject.transport.send(joinRequestsRequest(subject, token));
+
+      check(read.status === 200, `expected 200, got ${String(read.status)}`);
+      const body: unknown = await read.json();
+      check(
+        typeof body === 'object' &&
+          body !== null &&
+          Object.keys(body).sort().join(',') === 'items,next_cursor' &&
+          'items' in body &&
+          Array.isArray(body.items) &&
+          body.items.length === 0 &&
+          'next_cursor' in body &&
+          body.next_cursor === null,
+        `expected exactly {items: [], next_cursor: null}, got ${JSON.stringify(body)}`,
+      );
+    },
+
+  'a student reading the join requests is refused as on an unknown route with not_found': async (subject) => {
+    const { email, password } = await subject.student();
+    const student = await accessToken(await subject.transport.login(email, password));
+
+    const read = await refusalShape(await subject.transport.send(joinRequestsRequest(subject, student)));
+    const unknown = await refusalShape(
+      await subject.transport.send(
+        new Request(`${subject.origin}/api/v1/no-such-route`, { headers: { Authorization: `Bearer ${student}` } }),
+      ),
+    );
+
+    check(unknown.status === 404 && unknown.code === 'not_found', 'expected not_found on an unknown route');
+    check(read.same(unknown), `expected the read to be refused as an unknown route: ${read.describe()}`);
   },
 
   'the link of a new card shows its tutor without a session': async (subject) => {

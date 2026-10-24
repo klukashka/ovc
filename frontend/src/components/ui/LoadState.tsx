@@ -33,7 +33,7 @@ export function DelayedLoading(): ReactElement {
   );
 }
 
-function focusIsLost(): boolean {
+export function focusIsLost(): boolean {
   const focused = document.activeElement;
   return focused === null || focused === document.body || !focused.isConnected || focused.matches('main');
 }

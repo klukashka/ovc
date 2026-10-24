@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
-import { expect, seedVerifiedUser, test } from './fixtures.ts';
+import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 
 test.use({ locale: 'ru-RU' });
 

@@ -363,6 +363,8 @@ export const ru = {
     allGroups: 'Все группы',
     archivedGroup: '{name} (в архиве)',
     groupNotFound: 'Эта группа недоступна.',
+    searchInvalid: 'По такому запросу искать нельзя. Запрос — не больше 254 символов.',
+    withoutSearch: 'Показать список без поиска',
     add: 'Добавить ученика',
     lists: 'Списки учеников',
     tabs: {
@@ -526,6 +528,7 @@ export const ru = {
     unblockNamed: 'Разблокировать: {name}',
     unblockDeleted: 'Разблокировать удалённый аккаунт, заблокированный {date}',
     unblocked: 'Ученик разблокирован.',
+    unblockChanged: 'Этот ученик уже не заблокирован. Список обновлён.',
     showMore: 'Показать ещё',
   },
   errors: {

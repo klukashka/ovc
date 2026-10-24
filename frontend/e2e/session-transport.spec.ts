@@ -3,6 +3,7 @@ import { httpAuthTransport } from '../src/lib/api/transport.ts';
 import { testNetAddress } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { expect, seedVerifiedUser, test } from './fixtures.ts';
+import { seedActiveStudent } from './tutoring.ts';
 
 const refreshCookie = '__Host-ovc_refresh';
 
@@ -45,6 +46,10 @@ test.describe('the HTTP authentication transport against the real backend', () =
         password: account.password,
         otherTutorEmail: otherTutor.email,
         otherTutorPassword: otherTutor.password,
+        student: async (): Promise<{ readonly email: string; readonly password: string }> => {
+          const { student } = await seedActiveStudent(deployment, control, otherTutor, 'Contract student');
+          return { email: student.email, password: student.password };
+        },
         expireAccessTokens: (): Promise<void> => control.advance(16 * 60),
         blockAccount: (): Promise<void> => {
           deployment.administer(['users', 'block', account.email]);

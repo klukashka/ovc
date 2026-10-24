@@ -1,10 +1,29 @@
 import { signInThroughTheApi } from './accounts.ts';
+import type { TestAccount } from './accounts.ts';
+import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { busyControls, recordBusyControls } from './observers.ts';
 import { accessToken, callApi, deleteAccount, seedBlockedStudent, seedBlockedStudents, tutorCode } from './tutoring.ts';
 
 const codePattern = /^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/;
 const dailyRegenerations = 10;
 const pageSize = 30;
+
+async function unblockThroughTheApi(deployment: Deployment, tutor: TestAccount, name: string): Promise<string> {
+  const token = await accessToken(deployment, tutor);
+  const listed = await callApi(deployment, token, 'GET', '/tutor/blocked-requesters');
+  const items: unknown =
+    typeof listed.body === 'object' && listed.body !== null && 'items' in listed.body ? listed.body.items : [];
+  const found: unknown = (Array.isArray(items) ? items : []).find(
+    (item: unknown) => typeof item === 'object' && item !== null && 'name' in item && item.name === name,
+  );
+  const id =
+    typeof found === 'object' && found !== null && 'student_id' in found && typeof found.student_id === 'string'
+      ? found.student_id
+      : '';
+  expect((await callApi(deployment, token, 'DELETE', `/tutor/blocked-requesters/${id}`)).status).toBe(204);
+  return id;
+}
 
 test.use({ locale: 'ru-RU' });
 
@@ -55,6 +74,7 @@ test('teaching settings › the daily regeneration limit is explained', async ({
 
 test('teaching settings › blocked students and unblock', async ({ page, deployment, control }) => {
   const maria = await seedVerifiedUser(deployment, 'Мария');
+  await recordBusyControls(page);
   await signInThroughTheApi(page, maria);
   await page.goto('/settings/teaching');
   const section = page.getByRole('region', { name: 'Заблокированные ученики' });
@@ -68,6 +88,38 @@ test('teaching settings › blocked students and unblock', async ({ page, deploy
   await expect(section.getByRole('status')).toHaveText('Ученик разблокирован.');
   await expect(section.getByRole('status')).toBeFocused();
   await expect(section.getByText('Вы никого не заблокировали.')).toBeVisible();
+  expect(await busyControls(page)).toEqual([[`Разблокировать: ${blocked.name}`]]);
+});
+
+test('teaching settings › each unblock of a student unblocked meanwhile is refused with an alert that takes focus', async ({
+  page,
+  deployment,
+  control,
+  diagnostics,
+}) => {
+  const maria = await seedVerifiedUser(deployment, 'Мария');
+  const first = await seedBlockedStudent(deployment, control, maria, 'Первый разблокированный ученик');
+  const second = await seedBlockedStudent(deployment, control, maria, 'Второй разблокированный ученик');
+  await signInThroughTheApi(page, maria);
+  await page.goto('/settings/teaching');
+  const section = page.getByRole('region', { name: 'Заблокированные ученики' });
+  const alert = section.getByRole('alert');
+  await expect(section.getByRole('button', { name: /^Разблокировать: / })).toHaveCount(2);
+  const firstId = await unblockThroughTheApi(deployment, maria, first.name);
+  diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/tutor/blocked-requesters/${firstId}`, status: 404 });
+
+  await section.getByRole('button', { name: `Разблокировать: ${first.name}` }).click();
+  await expect(alert).toHaveText('Этот ученик уже не заблокирован. Список обновлён.');
+  await expect(alert).toBeFocused();
+  await expect(section.getByRole('button', { name: /^Разблокировать: / })).toHaveCount(1);
+  const secondId = await unblockThroughTheApi(deployment, maria, second.name);
+  diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/tutor/blocked-requesters/${secondId}`, status: 404 });
+  await section.getByRole('button', { name: `Разблокировать: ${second.name}` }).click();
+
+  await expect(alert).toHaveText('Этот ученик уже не заблокирован. Список обновлён.');
+  await expect(alert).toBeFocused();
+  await expect(section.getByText('Вы никого не заблокировали.')).toBeVisible();
+  await expect(section.getByRole('status')).toHaveCount(0);
 });
 
 test('teaching settings › a blocked student who deleted their account is listed without the account', async ({

@@ -1,8 +1,9 @@
-import { type ReactElement, type ReactNode, type Ref, useEffect, useId, useRef } from 'react';
+import { type ReactElement, type ReactNode, type Ref, useEffect, useId, useRef, useState } from 'react';
 import type { TFunction } from 'i18next';
 
 import type { ApiError } from '../../lib/api/client.ts';
 import { ChevronDownIcon } from './icons.tsx';
+import { useStoredValue, valueAccess } from './serverValue.ts';
 
 export const fieldClass =
   'min-h-11 w-full rounded-md border border-border-strong bg-field px-3 text-body-phone text-text aria-invalid:border-danger tablet:text-body';
@@ -51,6 +52,7 @@ export function TextField({
   maxLength,
   defaultValue,
   readOnly,
+  reloads = 0,
 }: {
   readonly label: string;
   readonly name: string;
@@ -63,10 +65,13 @@ export function TextField({
   readonly maxLength?: number;
   readonly defaultValue?: string;
   readonly readOnly?: boolean;
+  readonly reloads?: number;
 }): ReactElement {
   const inputId = useId();
   const hintId = useId();
   const errorId = useId();
+  const input = useStoredValue<HTMLInputElement>(defaultValue, reloads, valueAccess);
+  const [initialValue] = useState(defaultValue);
   const described = [hint === undefined ? null : hintId, error === undefined ? null : errorId]
     .filter((id) => id !== null)
     .join(' ');
@@ -76,6 +81,7 @@ export function TextField({
         {label}
       </label>
       <input
+        ref={input}
         id={inputId}
         name={name}
         type={type}
@@ -83,7 +89,7 @@ export function TextField({
         required={required}
         minLength={minLength}
         maxLength={maxLength}
-        defaultValue={defaultValue}
+        defaultValue={initialValue}
         readOnly={readOnly}
         aria-invalid={error === undefined ? undefined : true}
         aria-describedby={described === '' ? undefined : described}

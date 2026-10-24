@@ -2,7 +2,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-quer
 import { type ReactElement, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { type ActionState, done, refusedBy, useAction } from '../../components/ui/action.ts';
+import { type ActionState, done, refusedBy, showsStaleData, useAction } from '../../components/ui/action.ts';
 import { Avatar } from '../../components/ui/Avatar.tsx';
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
 import { ActionButton, FormAlert, FormNotice, quietButtonClass } from '../../components/ui/Form.tsx';
@@ -154,10 +154,12 @@ function BlockedRow({
   student,
   onUnblock,
   busy,
+  unavailable,
 }: {
   readonly student: BlockedRequester;
   readonly onUnblock: () => void;
   readonly busy: boolean;
+  readonly unavailable: boolean;
 }): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
@@ -175,8 +177,8 @@ function BlockedRow({
         <span className="tabular text-small text-text-muted">{t('teaching.blockedAt', { date: blockedDate })}</span>
       </span>
       <ActionButton
-        busy={false}
-        unavailable={busy}
+        busy={busy}
+        unavailable={unavailable}
         label={unblockLabel}
         onClick={onUnblock}
         className={quietButtonClass}
@@ -193,6 +195,8 @@ function BlockedStudentsSection(): ReactElement {
   const queryClient = useQueryClient();
   const headingId = useId();
   const action = useAction();
+  const [unblocking, setUnblocking] = useState<string | null>(null);
+  const [refusals, setRefusals] = useState(0);
   const query = useInfiniteQuery({
     queryKey: blockedKey,
     queryFn: ({ pageParam, signal }) => fetchBlockedPage(client, pageParam, signal),
@@ -208,15 +212,22 @@ function BlockedStudentsSection(): ReactElement {
   );
 
   function unblock(studentId: string): void {
+    if (action.busy) {
+      return;
+    }
+    setUnblocking(studentId);
     action.run(async (): Promise<ActionState> => {
       const { error, response } = await client.DELETE('/api/v1/tutor/blocked-requesters/{studentId}', {
         params: { path: { studentId } },
       });
-      if (!response.ok && response.status !== 404) {
-        return refusedBy(response, error);
+      const settled = response.ok ? done : refusedBy(response, error);
+      if (settled.kind === 'refused') {
+        setRefusals((count) => count + 1);
       }
-      await queryClient.invalidateQueries({ queryKey: blockedKey });
-      return done;
+      if (settled.kind === 'done' || showsStaleData(settled)) {
+        await queryClient.invalidateQueries({ queryKey: blockedKey });
+      }
+      return settled;
     });
   }
 
@@ -239,7 +250,11 @@ function BlockedStudentsSection(): ReactElement {
     }
     return (
       <>
-        <Refusal state={action.state} />
+        {showsStaleData(action.state) ? (
+          <FormAlert key={refusals}>{t('teaching.unblockChanged')}</FormAlert>
+        ) : (
+          <Refusal state={action.state} />
+        )}
         {action.state.kind === 'done' ? <FormNotice takeFocus>{t('teaching.unblocked')}</FormNotice> : null}
         {students.length === 0 ? (
           <p className="text-text-muted">{t('teaching.blockedEmpty')}</p>
@@ -249,7 +264,8 @@ function BlockedStudentsSection(): ReactElement {
               <BlockedRow
                 key={student.student_id}
                 student={student}
-                busy={action.busy}
+                busy={action.busy && unblocking === student.student_id}
+                unavailable={action.busy}
                 onUnblock={() => {
                   unblock(student.student_id);
                 }}

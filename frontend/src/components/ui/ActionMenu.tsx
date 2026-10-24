@@ -10,11 +10,13 @@ export interface MenuItem {
 
 export function ActionMenu({
   label,
+  busy = false,
   unavailable,
   items,
   children,
 }: {
   readonly label: string;
+  readonly busy?: boolean;
   readonly unavailable: boolean;
   readonly items: readonly MenuItem[];
   readonly children: ReactNode;
@@ -67,6 +69,7 @@ export function ActionMenu({
         aria-controls={menuId}
         aria-label={label}
         aria-disabled={unavailable}
+        aria-busy={busy}
         onClick={() => {
           if (!unavailable) {
             setOpen((value) => !value);

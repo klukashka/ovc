@@ -30,6 +30,7 @@ interface RefreshCookie {
 type StudentCard = components['schemas']['StudentCard'];
 
 const cardPathPrefix = '/api/v1/students/';
+const joinRequestsPath = '/api/v1/join-requests';
 const invitationPathPrefix = '/api/v1/invitations/';
 const fakeTokenPrefix = 'fake-';
 
@@ -94,6 +95,9 @@ export class FakeAuthServer {
   private failingRefreshes = 0;
   private accountReadGate: Promise<void> | null = null;
   private accountReadReceived: () => void = () => undefined;
+  private joinRequestReadGate: Promise<void> | null = null;
+  private joinRequestReadReceived: () => void = () => undefined;
+  private failingJoinRequestReads = 0;
   private refreshCount = 0;
   private reuse = false;
   private readonly sent: string[] = [];
@@ -170,6 +174,26 @@ export class FakeAuthServer {
     });
     this.accountReadReceived = received;
     return { resume, answered };
+  }
+
+  pauseJoinRequestReads(): PausedAnswers {
+    let resume = (): void => undefined;
+    let received = (): void => undefined;
+    this.joinRequestReadGate = new Promise((resolve) => {
+      resume = (): void => {
+        this.joinRequestReadGate = null;
+        resolve();
+      };
+    });
+    const answered = new Promise<void>((resolve) => {
+      received = resolve;
+    });
+    this.joinRequestReadReceived = received;
+    return { resume, answered };
+  }
+
+  failJoinRequestReads(count: number): void {
+    this.failingJoinRequestReads += count;
   }
 
   failNextAccountCheck(): void {
@@ -294,6 +318,9 @@ export class FakeAuthServer {
     if (request.method === 'GET' && path.startsWith(invitationPathPrefix)) {
       return this.answerInvitation(decodeURIComponent(path.slice(invitationPathPrefix.length)));
     }
+    if (request.method === 'GET' && path === joinRequestsPath) {
+      return this.readJoinRequests(token);
+    }
     if (path !== '/api/v1/auth/logout') {
       return refusal(404, 'not_found');
     }
@@ -354,6 +381,25 @@ export class FakeAuthServer {
       return refusal(404, 'not_found');
     }
     return json(200, { tutor: { name: tutor.me.name, avatar_id: tutor.me.avatar_id, subjects: [] } });
+  }
+
+  private async readJoinRequests(token: string): Promise<Response> {
+    const refused = this.refusedToken(token);
+    this.joinRequestReadReceived();
+    await this.joinRequestReadGate;
+    if (refused !== null) {
+      return refused;
+    }
+    const callerId = this.sessionOf(token)?.accountId ?? '';
+    const caller = [...this.accounts.values()].find((account) => account.me.id === callerId);
+    if (caller?.me.role !== 'tutor') {
+      return refusal(404, 'not_found');
+    }
+    if (this.failingJoinRequestReads > 0) {
+      this.failingJoinRequestReads -= 1;
+      return refusal(500, 'internal');
+    }
+    return json(200, { items: [], next_cursor: null });
   }
 
   private async readAccount(token: string): Promise<Response> {

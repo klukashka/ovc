@@ -3,9 +3,12 @@ import type { Locator, Page } from '@playwright/test';
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { type TestControl, diagnosedTest as test, expect, expectRowsNamed, seedVerifiedUser } from './fixtures.ts';
+import { busyControls, recordBusyControls } from './observers.ts';
 import {
+  accessToken,
   addToGroup,
   archiveGroup,
+  callApi,
   cardState,
   createGroup,
   endRelationship,
@@ -18,14 +21,6 @@ import {
 
 const unknownGroupId = '00000000-0000-4000-8000-00000000abcd';
 
-function itemAt(values: readonly string[], index: number): string {
-  const value = values[index];
-  if (value === undefined) {
-    throw new Error(`no seeded value at ${String(index)}`);
-  }
-  return value;
-}
-
 async function seedForeignGroup(
   deployment: Deployment,
   control: TestControl,
@@ -34,6 +29,32 @@ async function seedForeignGroup(
   const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
   const groupId = await createGroup(deployment, pavel, 'Secret algebra', [anna.cardId]);
   return { olga: await seedVerifiedUser(deployment, 'Olga', 'en'), groupId };
+}
+
+async function cardBeyondTheFirstPage(
+  deployment: Deployment,
+  tutor: TestAccount,
+  cardIds: readonly string[],
+): Promise<string> {
+  const firstPage = await callApi(deployment, await accessToken(deployment, tutor), 'GET', '/students?state=active');
+  const items: unknown =
+    typeof firstPage.body === 'object' && firstPage.body !== null && 'items' in firstPage.body
+      ? firstPage.body.items
+      : [];
+  const listed = new Set(
+    (Array.isArray(items) ? items : []).map((item: unknown) =>
+      typeof item === 'object' && item !== null && 'id' in item ? String(item.id) : '',
+    ),
+  );
+  const beyond = cardIds.find((id) => !listed.has(id));
+  if (beyond === undefined) {
+    throw new Error('every card is on the first page');
+  }
+  return beyond;
+}
+
+function studentName(cardIds: readonly string[], cardId: string): string {
+  return `Student ${String(cardIds.indexOf(cardId) + 1).padStart(2, '0')}`;
 }
 
 function members(page: Page, name: string): Locator {
@@ -88,6 +109,7 @@ test.describe('in English', () => {
     const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
     const boris = await seedActiveStudent(deployment, control, pavel, 'Boris');
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId, boris.cardId]);
+    await recordBusyControls(page);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/groups/${groupId}`);
     const groupMembers = members(page, 'Students');
@@ -98,6 +120,7 @@ test.describe('in English', () => {
     const removed = page.getByRole('status').filter({ hasText: 'The student was removed from the group.' });
     await expect(removed).toBeFocused();
     await expect(groupMembers).toHaveText([/Anna/]);
+    expect(await busyControls(page)).toEqual([['Remove from the group: Boris']]);
     expect(await cardState(deployment, pavel, boris.cardId)).toEqual({ state: 'active', groups: [] });
 
     await page.getByRole('button', { name: 'Archive group' }).click();
@@ -148,6 +171,35 @@ test.describe('in English', () => {
     expect(await cardState(deployment, pavel, anna.cardId)).toEqual({ state: 'active', groups: ['Morning algebra'] });
   });
 
+  test('groups › a background refetch of a group changed meanwhile keeps the unsaved name and colour', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    const details = page.getByRole('form', { name: 'Name and colour' });
+    await details.getByLabel('Name', { exact: true }).fill('Typed name');
+    await details.getByRole('radio', { name: 'Plum' }).check();
+    const renamed = await callApi(deployment, await accessToken(deployment, pavel), 'PATCH', `/groups/${groupId}`, {
+      name: 'Morning algebra',
+      colour: 'teal',
+    });
+    expect(renamed.status).toBe(200);
+
+    await page.evaluate(() => {
+      document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+    });
+
+    await expect(page.getByRole('heading', { level: 1, name: 'Morning algebra' })).toBeVisible();
+    await expect(details.getByLabel('Name', { exact: true })).toHaveValue('Typed name');
+    await expect(details.getByRole('radio', { name: 'Plum' })).toBeChecked();
+    await expect(details.getByRole('radio', { name: 'Teal' })).not.toBeChecked();
+  });
+
   test('groups › adding to a group archived meanwhile closes the dialog and shows the current group', async ({
     page,
     deployment,
@@ -164,6 +216,11 @@ test.describe('in English', () => {
     await page.getByRole('button', { name: 'Add students' }).click();
     const dialog = page.getByRole('dialog', { name: 'Add students' });
     await dialog.getByRole('checkbox', { name: 'Boris' }).check();
+    const renamed = await callApi(deployment, await accessToken(deployment, pavel), 'PATCH', `/groups/${groupId}`, {
+      name: 'Morning algebra',
+      colour: 'teal',
+    });
+    expect(renamed.status).toBe(200);
     await archiveGroup(deployment, pavel, groupId);
 
     await dialog.getByRole('button', { name: 'Add', exact: true }).click();
@@ -176,6 +233,9 @@ test.describe('in English', () => {
     ).toBeFocused();
     await expect(page.getByRole('main').getByText('Archived', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add students' })).toHaveCount(0);
+    const details = page.getByRole('form', { name: 'Name and colour' });
+    await expect(details.getByLabel('Name', { exact: true })).toHaveValue('Morning algebra');
+    await expect(details.getByRole('radio', { name: 'Teal' })).toBeChecked();
     expect(await groupMemberNames(deployment, pavel, groupId)).toEqual(['Anna']);
   });
 
@@ -196,6 +256,30 @@ test.describe('in English', () => {
 
     await expect(choices).toHaveCount(31);
     await expect(choices.nth(30)).toBeFocused();
+  });
+
+  test('groups › show more that adds no visible student moves focus to the last student shown', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const cardIds = await seedActiveStudentsThroughCode(deployment, control, pavel, 31);
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [
+      await cardBeyondTheFirstPage(deployment, pavel, cardIds),
+    ]);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await page.getByRole('button', { name: 'Add students' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add students' });
+    const choices = dialog.getByRole('checkbox');
+    await expect(choices).toHaveCount(30);
+
+    await dialog.getByRole('button', { name: 'Show more' }).press('Enter');
+
+    await expect(dialog.getByRole('button', { name: 'Show more' })).toHaveCount(0);
+    await expect(choices).toHaveCount(30);
+    await expect(choices.nth(29)).toBeFocused();
   });
 });
 
@@ -270,14 +354,16 @@ test.describe('in English, refusals', () => {
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
     const cardIds = await seedActiveStudentsThroughCode(deployment, control, pavel, 31);
-    const groupId = await createGroup(deployment, pavel, 'Evening algebra', cardIds.slice(0, 29));
+    const beyond = await cardBeyondTheFirstPage(deployment, pavel, cardIds);
+    const [chosen = '', meanwhile = '', ...others] = cardIds.filter((id) => id !== beyond);
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [beyond, ...others]);
     diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/groups/${groupId}`, status: 422 });
     await signInThroughTheApi(page, pavel);
     await page.goto(`/groups/${groupId}`);
     await page.getByRole('button', { name: 'Add students' }).click();
     const dialog = page.getByRole('dialog', { name: 'Add students' });
-    await dialog.getByRole('checkbox', { name: 'Student 31' }).check();
-    await addToGroup(deployment, pavel, groupId, [itemAt(cardIds, 29)]);
+    await dialog.getByRole('checkbox', { name: studentName(cardIds, chosen), exact: true }).check();
+    await addToGroup(deployment, pavel, groupId, [meanwhile]);
 
     await dialog.getByRole('button', { name: 'Add', exact: true }).click();
 

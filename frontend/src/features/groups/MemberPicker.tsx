@@ -1,5 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { type ReactElement, type SyntheticEvent, useId, useState } from 'react';
+import { type ReactElement, type RefObject, type SyntheticEvent, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { fieldClass, quietButtonClass, stringField } from '../../components/ui/Form.tsx';
@@ -81,12 +81,14 @@ function StudentChoices({
   excluded,
   chosen,
   slots,
+  searchField,
   onToggle,
 }: {
   readonly search: string;
   readonly excluded: ReadonlySet<string>;
   readonly chosen: Chosen;
   readonly slots: number;
+  readonly searchField: RefObject<HTMLInputElement | null>;
   readonly onToggle: (id: string, name: string) => void;
 }): ReactElement {
   const { t } = useTranslation();
@@ -106,6 +108,7 @@ function StudentChoices({
     students.length,
     ':scope > li input',
     query.isFetchingNextPage,
+    searchField,
   );
   if (query.isPending) {
     return <DelayedLoading />;
@@ -168,6 +171,7 @@ export function MemberPicker({
   const { t } = useTranslation();
   const headingId = useId();
   const inputId = useId();
+  const searchField = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState('');
 
   function submit(event: SyntheticEvent<HTMLFormElement, SubmitEvent>): void {
@@ -185,7 +189,7 @@ export function MemberPicker({
           <label htmlFor={inputId} className="text-small text-text-muted">
             {t('groups.searchStudents')}
           </label>
-          <input id={inputId} name="q" type="search" maxLength={254} className={fieldClass} />
+          <input ref={searchField} id={inputId} name="q" type="search" maxLength={254} className={fieldClass} />
         </div>
         <button type="submit" className={quietButtonClass}>
           {t('groups.search')}
@@ -194,7 +198,14 @@ export function MemberPicker({
       <p aria-live="polite" className="text-small text-text-muted">
         {t('groups.chosen', { count: chosen.size, limit: slots })}
       </p>
-      <StudentChoices search={search} excluded={excluded} chosen={chosen} slots={slots} onToggle={onToggle} />
+      <StudentChoices
+        search={search}
+        excluded={excluded}
+        chosen={chosen}
+        slots={slots}
+        searchField={searchField}
+        onToggle={onToggle}
+      />
     </section>
   );
 }

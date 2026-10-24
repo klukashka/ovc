@@ -73,6 +73,7 @@ export function InvitationLink({
     }
   });
   const [notice, setNotice] = useState<Notice>(initialNotice);
+  const [started, setStarted] = useState<'send' | 'regenerate' | null>(null);
   const url = invitation.status === 'open' ? invitation.url : null;
 
   function copy(text: string): void {
@@ -89,7 +90,11 @@ export function InvitationLink({
   }
 
   function send(): void {
+    if (action.busy) {
+      return;
+    }
     setNotice('none');
+    setStarted('send');
     action.run(async (): Promise<ActionState> => {
       const { error, response } = await client.POST('/api/v1/students/{id}/invitation/send', {
         params: { path: { id: cardId } },
@@ -104,7 +109,11 @@ export function InvitationLink({
   }
 
   function regenerate(handle: (invitation: CardInvitation) => void): void {
+    if (action.busy) {
+      return;
+    }
     setNotice('none');
+    setStarted('regenerate');
     action.run(async (): Promise<ActionState> => {
       const { data, error, response } = await client.POST('/api/v1/students/{id}/invitation', {
         params: { path: { id: cardId } },
@@ -144,13 +153,19 @@ export function InvitationLink({
           </button>
         )}
         {canSend ? (
-          <ActionButton busy={action.busy} onClick={send} className={quietButtonClass}>
+          <ActionButton
+            busy={action.busy && started === 'send'}
+            unavailable={action.busy}
+            onClick={send}
+            className={quietButtonClass}
+          >
             {t('invitation.send')}
           </ActionButton>
         ) : null}
         {onRegenerated === undefined ? null : (
           <ActionButton
-            busy={action.busy}
+            busy={action.busy && started === 'regenerate'}
+            unavailable={action.busy}
             onClick={() => {
               regenerate(onRegenerated);
             }}

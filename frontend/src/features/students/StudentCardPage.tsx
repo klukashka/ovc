@@ -24,6 +24,7 @@ import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
+import { useStoredValue, valueAccess } from '../../components/ui/serverValue.ts';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { components } from '../../lib/api/schema.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
@@ -47,6 +48,7 @@ type StudentCardPatch = components['schemas']['StudentCardPatch'];
 export interface CardHandlers {
   readonly onChanged: (card: StudentCard) => void;
   readonly onStale: () => void;
+  readonly onSent: () => void;
   readonly onWithdrawn: () => void;
   readonly onRemoved: (newCard: StudentCard) => void;
   readonly onEnded: (card: StudentCard) => void;
@@ -102,9 +104,11 @@ function usePatch(
 
 function DetailsForm({
   card,
+  reloads,
   handlers,
 }: {
   readonly card: StudentCard;
+  readonly reloads: number;
   readonly handlers: CardHandlers;
 }): ReactElement {
   const { t } = useTranslation();
@@ -144,6 +148,7 @@ function DetailsForm({
         autoComplete="off"
         maxLength={100}
         defaultValue={card.display_name}
+        reloads={reloads}
         hint={t('addStudent.displayNameHint')}
         error={fieldMessage(t, error, 'display_name')}
       />
@@ -156,6 +161,7 @@ function DetailsForm({
           required={false}
           maxLength={254}
           defaultValue={card.email ?? ''}
+          reloads={reloads}
           hint={t('studentCard.emailChangeHint')}
           error={fieldMessage(t, error, 'email')}
         />
@@ -169,11 +175,21 @@ function DetailsForm({
   );
 }
 
-function NotesForm({ card, handlers }: { readonly card: StudentCard; readonly handlers: CardHandlers }): ReactElement {
+function NotesForm({
+  card,
+  reloads,
+  handlers,
+}: {
+  readonly card: StudentCard;
+  readonly reloads: number;
+  readonly handlers: CardHandlers;
+}): ReactElement {
   const { t } = useTranslation();
   const headingId = useId();
   const notesId = useId();
   const hintId = useId();
+  const notes = useStoredValue<HTMLTextAreaElement>(card.notes, reloads, valueAccess);
+  const [initialNotes] = useState(card.notes);
   const { action, save } = usePatch(card.id, handlers);
 
   return (
@@ -195,11 +211,12 @@ function NotesForm({ card, handlers }: { readonly card: StudentCard; readonly ha
         {t('studentCard.notes')}
       </label>
       <textarea
+        ref={notes}
         id={notesId}
         name="notes"
         rows={6}
         maxLength={10000}
-        defaultValue={card.notes}
+        defaultValue={initialNotes}
         aria-describedby={hintId}
         className={`${fieldClass} py-2`}
       />
@@ -487,9 +504,11 @@ function AccountDetails({ account }: { readonly account: NonNullable<StudentCard
 
 export function StudentCardView({
   card,
+  reloads = 0,
   handlers,
 }: {
   readonly card: StudentCard;
+  readonly reloads?: number;
   readonly handlers: CardHandlers;
 }): ReactElement {
   const { t } = useTranslation();
@@ -522,7 +541,7 @@ export function StudentCardView({
           onRegenerated={(invitation) => {
             handlers.onChanged({ ...card, invitation });
           }}
-          onSent={handlers.onStale}
+          onSent={handlers.onSent}
           onStale={handlers.onStale}
         />
       ) : null}
@@ -536,8 +555,8 @@ export function StudentCardView({
           }}
         />
       ) : null}
-      <DetailsForm card={card} handlers={handlers} />
-      <NotesForm card={card} handlers={handlers} />
+      <DetailsForm card={card} reloads={reloads} handlers={handlers} />
+      <NotesForm card={card} reloads={reloads} handlers={handlers} />
       {card.state === 'invited' ? <WithdrawInvitation cardId={card.id} handlers={handlers} /> : null}
       {card.state === 'provisional' || card.state === 'reclaim_pending' ? (
         <RemoveStudent cardId={card.id} state={card.state} handlers={handlers} />
@@ -570,6 +589,13 @@ export function StudentCardPage(): ReactElement {
     setEndedCard(null);
   }
   const key = studentCardKey(studentId);
+  const [reloads, setReloads] = useState(0);
+
+  function reloadAfterStaleEdit(): void {
+    void queryClient.invalidateQueries({ queryKey: key }).then(() => {
+      setReloads((count) => count + 1);
+    });
+  }
 
   useEffect(() => {
     if (hasNotice(location.state, removedNotice)) {
@@ -608,12 +634,14 @@ export function StudentCardPage(): ReactElement {
     return (
       <StudentCardView
         card={query.data}
+        reloads={reloads}
         handlers={{
           onChanged: (card) => {
             queryClient.setQueryData(key, card);
             void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
           },
-          onStale: () => {
+          onStale: reloadAfterStaleEdit,
+          onSent: () => {
             void queryClient.invalidateQueries({ queryKey: key });
           },
           onWithdrawn: () => {
@@ -630,7 +658,7 @@ export function StudentCardPage(): ReactElement {
           onChangedElsewhere: () => {
             setEndedCard(null);
             setChangedCard((previous) => ({ id: studentId, count: (previous?.count ?? 0) + 1 }));
-            void queryClient.invalidateQueries({ queryKey: key });
+            reloadAfterStaleEdit();
           },
           onRemoved: (newCard) => {
             void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });

@@ -18,7 +18,8 @@ import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
-import { asApiError, useApiClient } from '../../lib/api/client.ts';
+import { useAddressValue } from '../../components/ui/serverValue.ts';
+import { type ApiError, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { fetchGroups, groupsKey } from '../groups/api.ts';
 import { fetchTutorCode, tutorCodeKey } from '../settings/tutorCode.ts';
@@ -34,7 +35,7 @@ import {
   withdrawnNotice,
 } from './api.ts';
 import { GroupDots } from './GroupDots.tsx';
-import { JoinRequests } from './JoinRequests.tsx';
+import { JoinRequests, useJoinRequestsSettled } from './JoinRequests.tsx';
 import { StateBadge } from './StateBadge.tsx';
 
 const tabClass = 'inline-flex min-h-11 items-center border-b-2 px-1 text-small';
@@ -85,6 +86,7 @@ function GroupFilter({ group }: { readonly group: string }): ReactElement | null
   const client = useApiClient();
   const me = useSignedInAccount();
   const selectId = useId();
+  const select = useAddressValue<HTMLSelectElement>(group);
   const groups = useQuery({
     queryKey: groupsKey,
     queryFn: ({ signal }) => fetchGroups(client, signal),
@@ -100,7 +102,7 @@ function GroupFilter({ group }: { readonly group: string }): ReactElement | null
         {t('students.group')}
       </label>
       <div className="relative">
-        <select id={selectId} name="group" defaultValue={group} className={selectClass}>
+        <select ref={select} id={selectId} name="group" defaultValue={group} className={selectClass}>
           <option value="">{t('students.allGroups')}</option>
           {groups.data.map((option) => (
             <option key={option.id} value={option.id}>
@@ -118,6 +120,7 @@ function SearchForm({ view }: { readonly view: ListView }): ReactElement {
   const { t } = useTranslation();
   const [, setSearchParams] = useSearchParams();
   const inputId = useId();
+  const searchField = useAddressValue<HTMLInputElement>(view.search);
   const filtered = view.search !== '' || view.group !== '';
 
   function submit(event: SyntheticEvent<HTMLFormElement, SubmitEvent>): void {
@@ -134,25 +137,33 @@ function SearchForm({ view }: { readonly view: ListView }): ReactElement {
   }
 
   return (
-    <form
-      key={`${view.search} ${view.group}`}
-      role="search"
-      aria-label={t('students.search')}
-      onSubmit={submit}
-      className="flex flex-wrap items-end gap-3"
-    >
+    <form role="search" aria-label={t('students.search')} onSubmit={submit} className="flex flex-wrap items-end gap-3">
       <div className="flex min-w-60 flex-1 flex-col gap-1">
         <label htmlFor={inputId} className="text-label">
           {t('students.searchLabel')}
         </label>
-        <input id={inputId} name="q" type="search" maxLength={254} defaultValue={view.search} className={fieldClass} />
+        <input
+          ref={searchField}
+          id={inputId}
+          name="q"
+          type="search"
+          maxLength={254}
+          defaultValue={view.search}
+          className={fieldClass}
+        />
       </div>
       <GroupFilter group={view.group} />
       <button type="submit" className={quietButtonClass}>
         {t('students.searchSubmit')}
       </button>
       {filtered ? (
-        <Link to={listAddress({ ...view, search: '', group: '' })} className={linkClass}>
+        <Link
+          to={listAddress({ ...view, search: '', group: '' })}
+          onClick={() => {
+            searchField.current?.focus();
+          }}
+          className={linkClass}
+        >
           {t('students.clearSearch')}
         </Link>
       ) : null}
@@ -204,13 +215,14 @@ function EmptyList({
     enabled: firstStudent,
     retry: false,
   });
-  if (filtered) {
-    return <p className="text-text-muted">{t('students.noMatches')}</p>;
-  }
-
   if (!firstStudent) {
     return (
-      <p className="text-text-muted">{t(state === 'invited' ? 'students.emptyInvited' : 'students.emptyEnded')}</p>
+      <div className="flex flex-col items-start gap-4">
+        {addButton}
+        <p className="text-text-muted">
+          {t(filtered ? 'students.noMatches' : state === 'invited' ? 'students.emptyInvited' : 'students.emptyEnded')}
+        </p>
+      </div>
     );
   }
   return (
@@ -233,6 +245,16 @@ function EmptyList({
       {addButton}
     </section>
   );
+}
+
+function unusableFilter(error: ApiError, view: ListView): 'group' | 'search' | null {
+  if (view.group !== '' && (error.code === 'not_found' || error.fieldCode('query.group') !== undefined)) {
+    return 'group';
+  }
+  if (view.search !== '' && error.fieldCode('query.q') !== undefined) {
+    return 'search';
+  }
+  return null;
 }
 
 function StudentList({
@@ -268,12 +290,16 @@ function StudentList({
     if (error.code === 'email_not_verified') {
       return <ConfirmationPrompt reason="invite" />;
     }
-    if (error.code === 'not_found' && group !== '') {
+    const unusable = unusableFilter(error, view);
+    if (unusable !== null) {
       return (
         <div className="flex flex-col items-start gap-1">
-          <p>{t('students.groupNotFound')}</p>
-          <Link to={listAddress({ ...view, group: '' })} className={linkClass}>
-            {t('students.allGroups')}
+          <p>{t(unusable === 'group' ? 'students.groupNotFound' : 'students.searchInvalid')}</p>
+          <Link
+            to={listAddress(unusable === 'group' ? { ...view, group: '' } : { ...view, search: '' })}
+            className={linkClass}
+          >
+            {t(unusable === 'group' ? 'students.allGroups' : 'students.withoutSearch')}
           </Link>
         </div>
       );
@@ -340,6 +366,7 @@ export function StudentsPage(): ReactElement {
   }
   const [dialogOpen, setDialogOpen] = useState(false);
   const opener = useRef<HTMLButtonElement>(null);
+  const requestsSettled = useJoinRequestsSettled();
 
   useEffect(() => {
     if (hasNotice(location.state, withdrawnNotice)) {
@@ -365,9 +392,12 @@ export function StudentsPage(): ReactElement {
     <Page wide>
       <LiveNotice message={withdrawnView === null ? null : t('students.withdrawn')} />
       <JoinRequests hideWhenEmpty />
-      <Tabs view={view} />
-      <SearchForm view={view} />
-      <StudentList view={view} addButton={addButton} />
+      {requestsSettled ? null : <DelayedLoading />}
+      <div hidden={!requestsSettled} className="flex flex-col gap-6">
+        <Tabs view={view} />
+        <SearchForm view={view} />
+        <StudentList view={view} addButton={addButton} />
+      </div>
       <AddStudentDialog
         open={dialogOpen}
         returnFocus={opener}

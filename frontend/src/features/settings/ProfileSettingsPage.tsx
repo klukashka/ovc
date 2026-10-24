@@ -16,6 +16,7 @@ import {
 } from '../../components/ui/Form.tsx';
 import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { Page } from '../../components/ui/Page.tsx';
+import { useStoredValue, valueAccess } from '../../components/ui/serverValue.ts';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type components } from '../../lib/api/schema.ts';
 import { type Me, useSession, useSignedInAccount } from '../../lib/api/session.ts';
@@ -208,6 +209,8 @@ function DetailsSection({ me, work }: { readonly me: Me; readonly work: PendingW
   const { saving, save, settle } = useProfileUpdate(work);
   const error = saving.kind === 'refused' ? saving.error : null;
   const bioError = fieldMessage(t, error, 'bio');
+  const bio = useStoredValue<HTMLTextAreaElement>(me.bio ?? '', 0, valueAccess);
+  const [initialBio] = useState(me.bio ?? '');
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement, SubmitEvent>): void {
     event.preventDefault();
@@ -259,11 +262,12 @@ function DetailsSection({ me, work }: { readonly me: Me; readonly work: PendingW
               {t('settings.bio')}
             </label>
             <textarea
+              ref={bio}
               id={bioId}
               name="bio"
               maxLength={1000}
               rows={5}
-              defaultValue={me.bio ?? ''}
+              defaultValue={initialBio}
               aria-invalid={bioError === undefined ? undefined : true}
               aria-describedby={bioError === undefined ? undefined : bioErrorId}
               className={`${fieldClass} py-2`}

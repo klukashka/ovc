@@ -2,7 +2,7 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { expect, seedVerifiedUser, test } from './fixtures.ts';
+import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { accessToken, callApi, createCard, invitationToken, seedActiveStudent, tutorCode } from './tutoring.ts';
 
 test.use({ locale: 'ru-RU' });
@@ -139,7 +139,9 @@ test.describe('account edge cases', () => {
   test('changing the password keeps this browser signed in and only the new password signs in', async ({
     page,
     deployment,
+    diagnostics,
   }) => {
+    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/login', status: 401 });
     const account = await seedVerifiedUser(deployment, 'Tutor changing a password');
     const newPassword = `${account.password} changed`;
     await signedInAt(page, account, '/settings/account');
@@ -155,7 +157,8 @@ test.describe('account edge cases', () => {
     expect(await apiSignIn(page, account, newPassword)).toBe(200);
   });
 
-  test('a wrong current password is shown under the field', async ({ page, deployment }) => {
+  test('a wrong current password is shown under the field', async ({ page, deployment, diagnostics }) => {
+    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/password/change', status: 422 });
     const account = await seedVerifiedUser(deployment, 'Tutor mistyping a password');
     await signedInAt(page, account, '/settings/account');
 
@@ -167,7 +170,12 @@ test.describe('account edge cases', () => {
     await expect(passwordForm(page).getByLabel('Текущий пароль')).toHaveAttribute('aria-invalid', 'true');
   });
 
-  test('deleting the account with a wrong password is refused under the field', async ({ page, deployment }) => {
+  test('deleting the account with a wrong password is refused under the field', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    diagnostics.expectFailure({ method: 'DELETE', path: '/api/v1/users/me', status: 422 });
     const account = await seedVerifiedUser(deployment, 'Tutor hesitating');
     await signedInAt(page, account, '/settings/account');
     await openDeletionDialog(page);
@@ -190,7 +198,11 @@ test.describe('account edge cases', () => {
     await expect(deletionDialog(page).getByLabel('Текущий пароль')).toHaveValue('');
   });
 
-  test('the sixth wrong deletion password says when to try again', async ({ page, deployment }) => {
+  test('the sixth wrong deletion password says when to try again', async ({ page, deployment, diagnostics }) => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      diagnostics.expectFailure({ method: 'DELETE', path: '/api/v1/users/me', status: 422 });
+    }
+    diagnostics.expectFailure({ method: 'DELETE', path: '/api/v1/users/me', status: 429 });
     const account = await seedVerifiedUser(deployment, 'Tutor guessing');
     await signedInAt(page, account, '/settings/account');
     await openDeletionDialog(page);
@@ -231,7 +243,12 @@ test.describe('account edge cases', () => {
     await annaContext.close();
   });
 
-  test('deleting the account signs out and the account no longer signs in', async ({ page, deployment }) => {
+  test('deleting the account signs out and the account no longer signs in', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/login', status: 401 });
     const account = await seedVerifiedUser(deployment, 'Tutor leaving for good');
     await signedInAt(page, account, '/settings/account');
     await openDeletionDialog(page);
@@ -326,7 +343,8 @@ test.describe('account edge cases', () => {
     await expect(photo).toHaveCount(0);
   });
 
-  test('a file that is not an image is refused as an avatar', async ({ page, deployment }) => {
+  test('a file that is not an image is refused as an avatar', async ({ page, deployment, diagnostics }) => {
+    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/uploads?context=avatar', status: 415 });
     const account = await seedVerifiedUser(deployment, 'Tutor with a text file');
     await signedInAt(page, account, '/settings/profile');
 

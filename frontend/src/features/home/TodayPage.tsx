@@ -1,28 +1,33 @@
-import { useQuery } from '@tanstack/react-query';
+import { type UseQueryResult, useQuery } from '@tanstack/react-query';
 import { type ReactElement, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FormAlert, FormNotice, quietButtonClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
+import { useSettledOnce } from '../../components/ui/settledOnce.ts';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type CopyResult, copyText } from '../../lib/clipboard.ts';
-import { fetchTutorCode, tutorCodeKey } from '../settings/tutorCode.ts';
-import { JoinRequests } from '../students/JoinRequests.tsx';
+import { type TutorCode as TutorCodeValue, fetchTutorCode, tutorCodeKey } from '../settings/tutorCode.ts';
+import { JoinRequests, useJoinRequestsSettled } from '../students/JoinRequests.tsx';
 import { Readiness } from './Readiness.tsx';
 
 type CopyNotice = { readonly result: CopyResult; readonly count: number } | null;
 
-function TutorCode(): ReactElement {
-  const { t } = useTranslation();
+function useTutorCode(): UseQueryResult<TutorCodeValue> {
   const client = useApiClient();
-  const headingId = useId();
-  const [notice, setNotice] = useState<CopyNotice>(null);
-  const query = useQuery({
+  return useQuery({
     queryKey: tutorCodeKey,
     queryFn: ({ signal }) => fetchTutorCode(client, signal),
     retry: false,
   });
+}
+
+function TutorCode(): ReactElement {
+  const { t } = useTranslation();
+  const headingId = useId();
+  const [notice, setNotice] = useState<CopyNotice>(null);
+  const query = useTutorCode();
 
   function copy(code: string): void {
     function show(result: CopyResult): void {
@@ -85,12 +90,20 @@ function TutorCode(): ReactElement {
 }
 
 export function TodayPage(): ReactElement {
+  const requestsSettled = useJoinRequestsSettled();
+  const code = useTutorCode();
+  const settled = useSettledOnce(requestsSettled && !code.isPending);
   return (
     <Page>
       <JoinRequests hideWhenEmpty={false}>
-        <TutorCode />
+        {requestsSettled && !settled ? <DelayedLoading /> : null}
+        <div hidden={!settled} className="contents">
+          <TutorCode />
+        </div>
       </JoinRequests>
-      <Readiness />
+      <div hidden={!settled} className="contents">
+        <Readiness />
+      </div>
     </Page>
   );
 }

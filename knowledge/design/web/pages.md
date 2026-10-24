@@ -68,7 +68,8 @@ FR-15.1, FR-15.2, FR-2.3, FR-5.1.
   - each row shows the avatar, the account name and email, the state word "Wants to join" and the sending date; the buttons name the student for screen readers ("Accept {name}", "Decline {name}", "More actions for {name}"); "Show more" loads the next page and moves focus to the first new row's Accept;
   - a decision shows a notice in the panel, which takes focus: "Request accepted. The student is now in Students.", "Request declined." or "Request declined. Requests from this student no longer reach you."; no dialog asks first, because a block is undone in Teaching settings;
   - a request that is no longer open when decided (`not_found`, `not_editable`) shows the alert "This request is no longer open. The list is up to date.", which takes focus each time, and the list reloads; a decision refused with `email_not_verified` shows the confirmation prompt "Confirm your email to answer join requests." inside an alert that takes focus;
-  - with no visible request the panel says "No new requests."; an unconfirmed tutor sees no request list, and the code with "The code starts working once you confirm your email".
+  - with no visible request the panel says "No new requests."; an unconfirmed tutor sees no request list, and the code with "The code starts working once you confirm your email";
+  - until the request list and the tutor code have first loaded, the tutor code and the server status below the list are not shown (a loading state stands in their place once the list has loaded), so nothing moves when the requests arrive; once shown they stay shown, also while a failed list or code is retried.
 - **Unread messages:** channels with unread counts.
 - **Upcoming deadlines:** issues due in the next 3 days with progress "{submitted}/{total}".
 - **Computer layout:** the greeting spans the page; the main column holds the checklist, today's lessons and needs checking; a 300 px side column holds join requests, upcoming deadlines and unread messages.
@@ -135,13 +136,14 @@ FR-4.6, FR-4.7, FR-5.1–FR-5.6.
 FR-2.1, FR-2.3, FR-2.5.
 
 - **Tabs:** Active (including students whose email is not confirmed and links waiting for the student), Invited, Ended, with search; the tab and the search are in the address.
-- **Group filter:** beside the search, a "Group" choice of every group of the tutor ("All groups" first, archived groups marked "(archived)"), applied with the search and kept in the address as `group=`; it is shown once the tutor has a group. A group the tutor cannot reach shows "This group is not available." with a link to all groups.
+- **Search:** searching, with the Search button or Enter in the field, keeps focus where it was, and the field and the group choice show what the address holds after every change of the address (including Back); "Clear search" appears while a search or a group is applied, empties both and moves focus to the search field.
+- **Group filter:** beside the search, a "Group" choice of every group of the tutor ("All groups" first, archived groups marked "(archived)"), applied with the search and kept in the address as `group=`; it is shown once the tutor has a group. A group the tutor cannot reach, or a `group=` value that is not a group identifier, shows "This group is not available." with a link to all groups; a search the API refuses (longer than 254 characters) shows "This search cannot be used. A search holds at most 254 characters." with the link "Show the list without the search"; neither offers Retry.
 - **Rows:** avatar, display name, email, state and groups; next lesson, open assignments and last activity arrive with the slices that add them.
 - **"Add student" dialog:**
   - display name and optional email, then "Create invitation";
   - the result shows the link with Copy and, if an email was given, "Send by email"; sending shows "Sent" as a toast and never a delivery status.
-- **Pending join requests** appear at the top with Accept, Decline and, in a menu, "Decline and block", in the same section and with the same notices as on Today; the section is shown only while requests wait, and stays after the last decision until the page is left, so its notice keeps focus.
-- **Empty:** a heading with "Invite your first student" and "Share your tutor code {code}".
+- **Pending join requests** appear at the top with Accept, Decline and, in a menu, "Decline and block", in the same section and with the same notices as on Today; the section is shown only while requests wait, and stays after the last decision until the page is left, so its notice keeps focus. Until the join requests have first loaded, the tabs, the search and the list are not shown (a loading state stands in their place), so they do not move when requests arrive; once shown they stay shown, also while a failed request list is retried.
+- **Empty:** a heading with "Invite your first student" and "Share your tutor code {code}"; the empty Invited and Ended tabs and a search or group without matches say so in one line ("No open invitations.", "No ended relationships.", "Nobody matches the search.") and keep "Add student".
 - **An unconfirmed tutor** gets the confirmation prompt instead of "Add student".
 
 ### Student card
@@ -275,7 +277,8 @@ FR-1.4–FR-1.7, FR-5.6, FR-13.3, FR-14.2, FR-17.
   - tutor code with Copy and Regenerate (an unconfirmed tutor gets the confirmation prompt instead of Regenerate);
   - recording retention;
   - storage usage bars for files and recordings, against their quotas;
-  - blocked students with Unblock, each row with the avatar, the account name and the blocked date; a student whose account is deleted is shown as "Deleted account" with that label's initial in the avatar circle, never the student's picture, and its Unblock button is named "Unblock the deleted account blocked on {date}" for screen readers, so several such rows stay distinguishable.
+  - blocked students with Unblock, each row with the avatar, the account name and the blocked date; a student whose account is deleted is shown as "Deleted account" with that label's initial in the avatar circle, never the student's picture, and its Unblock button is named "Unblock the deleted account blocked on {date}" for screen readers, so several such rows stay distinguishable;
+  - unblocking shows the notice "The student was unblocked.", which takes focus; an Unblock answered `not_found` (the student was unblocked meanwhile) is not reported as done: the alert "This student is no longer blocked. The list is up to date." takes focus each time, and the list reloads.
 
 ## Pages for both roles
 
@@ -360,7 +363,8 @@ Same as the tutor's, without tutor-only sections; direct channels are named by t
 
 - **Loading:**
   - skeletons in the shape of the content appear after 300 ms; nothing appears before;
-  - buttons that start an action show a spinner and stay unavailable until it completes: they carry `aria-disabled="true"` and `aria-busy="true"` and ignore activation, but never the `disabled` attribute, which moves focus to the page body in Chromium, Firefox and WebKit; so a busy button keeps focus, and a button waiting for a cooldown (the confirmation resend) is unavailable the same way.
+  - buttons that start an action show a spinner and stay unavailable until it completes: they carry `aria-disabled="true"` and `aria-busy="true"` and ignore activation, but never the `disabled` attribute, which moves focus to the page body in Chromium, Firefox and WebKit; so a busy button keeps focus, and a button waiting for a cooldown (the confirmation resend) is unavailable the same way;
+  - where several controls share one action (the Accept, Decline and menu buttons of every join-request row, the Remove buttons of the group members, the Unblock buttons of the blocked students, Send and "Create a new link" of an invitation link), only the control that started it carries `aria-busy="true"`; the others carry only `aria-disabled="true"` until it completes; a decision chosen from a row's menu marks that row's menu button busy.
 - **Empty states:** a heading, one sentence and one primary action (an optional line illustration as in [tokens](tokens.md#illustration-and-iconography)):
 
   | Page | Message | Action |
@@ -377,7 +381,8 @@ Same as the tutor's, without tutor-only sections; direct channels are named by t
   - a forbidden or missing resource shows Not found;
   - failed actions show an error toast with Retry, reachable by keyboard;
   - uploads show the refusal inline: "File is larger than {limit}", "This file type is not allowed here", "Storage is full";
-  - a stale edit (a template, a review draft) shows "This changed elsewhere" with "Reload" and keeps the user's unsaved text visible.
+  - a stale edit (a template, a review draft) shows "This changed elsewhere" with "Reload" and keeps the user's unsaved text visible;
+  - the edit forms of a student card (name, email, notes) and a group (name, colour) stay mounted, so focus stays where the page section puts it; when a field's stored value changes, the field shows it at once only while the user has not changed the field since it last showed a stored value, so a background refetch never overwrites typing; after a reload because the card or group changed meanwhile (a refusal that shows the changed-meanwhile notice, or an edit refused as stale), every field whose stored value changed since it last showed one shows the current value, and the other fields keep the unsaved typing.
 - **Offline:** a banner "No connection — reconnecting…".
   - Assignment answers are kept and saved when the connection returns.
   - Other actions are disabled while offline, with the reason in a tooltip.
@@ -395,6 +400,7 @@ Same as the tutor's, without tutor-only sections; direct channels are named by t
   - every action is reachable by keyboard in visual order, with a visible focus ring;
   - dialogs trap focus and restore it to the opener on close, unless the page section names another target (a notice) or the action changes the route, as for every route change; a dialog opens with focus on the element its page section names, a destructive confirmation without fields on its safe choice (Cancel), one that asks for a password on that field, and otherwise on its first field;
   - a page's loading, error and refetching states render inside the page, so they never take focus away; after Retry, once the error is gone, focus moves once to the page heading when focus was lost;
+  - "Show more" moves focus to the first new row; when the loaded page adds no visible row (its rows are all left out, as accepted requests are under Sent requests and students who are not active or already members are in the member choice) and "Show more" disappears with focus on it, focus moves to the last row shown, or, when no row is shown, to the page heading (in the member choice, to its search field);
   - a notice that reports a refusal takes focus when it appears, and again each time it reports a new refusal; a notice that reports a result takes focus when it replaces or follows the control that triggered it and focus was lost or was on that control; otherwise a live region announces it;
   - live regions announce new messages, saving status and toasts;
   - icons that act as buttons have accessible names;

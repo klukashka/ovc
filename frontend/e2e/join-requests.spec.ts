@@ -3,6 +3,7 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 import { emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { busyControls, offsetsBelowHeading, recordBusyControls, recordFirstOffsets } from './observers.ts';
 import {
   acceptSignedIn,
   createCard,
@@ -13,6 +14,7 @@ import {
   seedActiveStudent,
   seedDeclinedRequests,
   seedJoinRequests,
+  seedStudentThroughCode,
   tutorCode,
   visibleJoinRequests,
 } from './tutoring.ts';
@@ -180,6 +182,7 @@ test.describe('Anna in Russian', () => {
     const olgaContext = await tutorContext(browser, deployment);
     const olgaPage = await olgaContext.newPage();
     await diagnostics.watch(olgaPage);
+    await recordBusyControls(olgaPage);
     await signInThroughTheApi(olgaPage, olga);
     await olgaPage.goto('/students');
     const request = joinRequests(olgaPage).getByRole('listitem').filter({ hasText: anna.email });
@@ -189,6 +192,7 @@ test.describe('Anna in Russian', () => {
     await expect(declined).toHaveText('Заявка отклонена. Заявки этого ученика к вам больше не приходят.');
     await expect(declined).toBeFocused();
     await expect(joinRequests(olgaPage).getByRole('listitem')).toHaveCount(0);
+    expect(await busyControls(olgaPage)).toEqual([['Другие действия: Анна']]);
 
     await page.reload();
     await expect(requests).toHaveCount(1);
@@ -220,6 +224,7 @@ test.describe('in Russian', () => {
   }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
     const requesters = await seedJoinRequests(deployment, control, maria, pageSize + 1);
+    await recordBusyControls(page);
     await signInThroughTheApi(page, maria);
     await page.goto('/today');
     const accepts = joinRequests(page).getByRole('button', { name: /^Принять: / });
@@ -254,6 +259,38 @@ test.describe('in Russian', () => {
     await expect(changed).toHaveText('Эта заявка уже не действует. Список обновлён.');
     await expect(changed).toBeFocused();
     await expect(rows.filter({ hasText: secondEmail })).toHaveCount(0);
+    expect(await busyControls(page)).toEqual([
+      ['Показать ещё'],
+      ['Отклонить: Requester 01'],
+      ['Отклонить: Requester 02'],
+    ]);
+  });
+
+  test('join requests › arriving requests move neither the Students controls nor the Today code and status', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const studentsControls = ['main nav', 'main form[role="search"]'];
+    const todayParts = ['main h3', 'main [data-readiness]'];
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    await seedJoinRequests(deployment, control, maria, 1);
+    await recordFirstOffsets(page, [...studentsControls, ...todayParts]);
+    await signInThroughTheApi(page, maria);
+
+    await page.goto('/students');
+    await expect(joinRequests(page).getByRole('listitem')).toHaveCount(1);
+    await expect(page.getByRole('heading', { level: 2, name: 'Пригласите первого ученика' })).toBeVisible();
+    const onStudents = await offsetsBelowHeading(page, studentsControls);
+    await page.goto('/today');
+    await expect(joinRequests(page).getByRole('listitem')).toHaveCount(1);
+    await expect(page.locator('main [data-readiness="ready"]')).toBeVisible();
+    const onToday = await offsetsBelowHeading(page, todayParts);
+
+    expect(Object.keys(onStudents.first).sort()).toEqual([...studentsControls].sort());
+    expect(onStudents.now).toEqual(onStudents.first);
+    expect(Object.keys(onToday.first).sort()).toEqual([...todayParts].sort());
+    expect(onToday.now).toEqual(onToday.first);
   });
 
   test('my tutors › show more moves focus to the first new sent request', async ({ page, deployment, control }) => {
@@ -273,6 +310,29 @@ test.describe('in Russian', () => {
 
     await expect(requests).toHaveCount(pageSize + 1);
     await expect(requests.nth(pageSize)).toBeFocused();
+  });
+
+  test('my tutors › show more that adds no visible request moves focus to the last request shown', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const olga = await seedVerifiedUser(deployment, 'Ольга');
+    const { student: anna } = await seedStudentThroughCode(deployment, control, maria, 'Анна', 'ru');
+    await control.advance(60);
+    await seedDeclinedRequests(deployment, control, anna, olga, pageSize);
+    await signInThroughTheApi(page, anna);
+    await page.goto('/tutors');
+    const region = page.getByRole('region', { name: 'Отправленные запросы' });
+    const requests = sentRequests(page, 'Отправленные запросы');
+    await expect(requests).toHaveCount(pageSize);
+
+    await region.getByRole('button', { name: 'Показать ещё' }).press('Enter');
+
+    await expect(region.getByRole('button', { name: 'Показать ещё' })).toHaveCount(0);
+    await expect(requests).toHaveCount(pageSize);
+    await expect(requests.nth(pageSize - 1)).toBeFocused();
   });
 
   test('home › a code sent from Home replaces the field with a notice that takes focus', async ({

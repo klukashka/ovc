@@ -1,4 +1,9 @@
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  type InfiniteData,
+  type UseInfiniteQueryResult,
+  useInfiniteQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { type ReactElement, type ReactNode, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -16,6 +21,7 @@ import { MoreIcon } from '../../components/ui/icons.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Refusal } from '../../components/ui/Refusal.tsx';
+import { useSettledOnce } from '../../components/ui/settledOnce.ts';
 import { StatusWord } from '../../components/ui/StatusWord.tsx';
 import { type ApiClient, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { components } from '../../lib/api/schema.ts';
@@ -60,13 +66,34 @@ async function sendDecision(client: ApiClient, id: string, decision: Decision): 
   return response.ok ? done : refusedBy(response, error);
 }
 
+function useReceivedJoinRequests(): UseInfiniteQueryResult<InfiniteData<TutorJoinRequestPage>> {
+  const client = useApiClient();
+  const me = useSignedInAccount();
+  return useInfiniteQuery({
+    queryKey: joinRequestsKey,
+    queryFn: ({ pageParam, signal }) => fetchJoinRequestsPage(client, pageParam, signal),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor,
+    enabled: me.state === 'active',
+    retry: false,
+  });
+}
+
+export function useJoinRequestsSettled(): boolean {
+  const me = useSignedInAccount();
+  const query = useReceivedJoinRequests();
+  return useSettledOnce(me.state !== 'active' || !query.isPending);
+}
+
 function RequestRow({
   request,
-  busy,
+  started,
+  unavailable,
   onDecide,
 }: {
   readonly request: TutorJoinRequest;
-  readonly busy: boolean;
+  readonly started: Decision | null;
+  readonly unavailable: boolean;
   readonly onDecide: (decision: Decision) => void;
 }): ReactElement {
   const { t } = useTranslation();
@@ -87,8 +114,8 @@ function RequestRow({
       </span>
       <span className="flex items-center gap-2">
         <ActionButton
-          busy={false}
-          unavailable={busy}
+          busy={started === 'accept'}
+          unavailable={unavailable}
           label={t('joinRequests.acceptNamed', { name })}
           firstInRow
           onClick={() => {
@@ -99,8 +126,8 @@ function RequestRow({
           {t('joinRequests.accept')}
         </ActionButton>
         <ActionButton
-          busy={false}
-          unavailable={busy}
+          busy={started === 'decline'}
+          unavailable={unavailable}
           label={t('joinRequests.declineNamed', { name })}
           onClick={() => {
             onDecide('decline');
@@ -111,12 +138,13 @@ function RequestRow({
         </ActionButton>
         <ActionMenu
           label={t('joinRequests.more', { name })}
-          unavailable={busy}
+          busy={started === 'block'}
+          unavailable={unavailable}
           items={[
             {
               label: t('joinRequests.declineAndBlock'),
               onChoose: (): void => {
-                if (!busy) {
+                if (!unavailable) {
                   onDecide('block');
                 }
               },
@@ -143,16 +171,10 @@ export function JoinRequests({
   const me = useSignedInAccount();
   const headingId = useId();
   const [decided, setDecided] = useState<{ readonly decision: Decision; readonly count: number } | null>(null);
+  const [deciding, setDeciding] = useState<{ readonly id: string; readonly decision: Decision } | null>(null);
   const [refusals, setRefusals] = useState(0);
   const action = useAction();
-  const query = useInfiniteQuery({
-    queryKey: joinRequestsKey,
-    queryFn: ({ pageParam, signal }) => fetchJoinRequestsPage(client, pageParam, signal),
-    initialPageParam: null as string | null,
-    getNextPageParam: (page) => page.next_cursor,
-    enabled: me.state === 'active',
-    retry: false,
-  });
+  const query = useReceivedJoinRequests();
   const requests = query.data?.pages.flatMap((page) => page.items) ?? [];
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     requests.length,
@@ -161,7 +183,11 @@ export function JoinRequests({
   );
 
   function decide(id: string, decision: Decision): void {
+    if (action.busy) {
+      return;
+    }
     setDecided(null);
+    setDeciding({ id, decision });
     action.run(async (): Promise<ActionState> => {
       const settled = await sendDecision(client, id, decision);
       if (settled.kind === 'done') {
@@ -224,7 +250,8 @@ export function JoinRequests({
               <RequestRow
                 key={request.id}
                 request={request}
-                busy={action.busy}
+                started={action.busy && deciding?.id === request.id ? deciding.decision : null}
+                unavailable={action.busy}
                 onDecide={(decision) => {
                   decide(request.id, decision);
                 }}

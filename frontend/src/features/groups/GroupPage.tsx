@@ -66,7 +66,15 @@ function isGroup(value: Group | ActionState): value is Group {
   return 'id' in value;
 }
 
-function DetailsForm({ group, handlers }: { readonly group: Group; readonly handlers: GroupHandlers }): ReactElement {
+function DetailsForm({
+  group,
+  reloads,
+  handlers,
+}: {
+  readonly group: Group;
+  readonly reloads: number;
+  readonly handlers: GroupHandlers;
+}): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const headingId = useId();
@@ -112,9 +120,10 @@ function DetailsForm({ group, handlers }: { readonly group: Group; readonly hand
         autoComplete="off"
         maxLength={60}
         defaultValue={group.name}
+        reloads={reloads}
         error={fieldMessage(t, error, 'name')}
       />
-      <ColourField defaultColour={group.colour} />
+      <ColourField defaultColour={group.colour} reloads={reloads} />
       <p>
         <SubmitButton busy={action.busy} quiet>
           {t('groups.save')}
@@ -232,11 +241,16 @@ function Members({ group, handlers }: { readonly group: Group; readonly handlers
   const opener = useRef<HTMLButtonElement>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [notice, setNotice] = useState<MembershipNotice>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
   const action = useAction();
   const archived = group.archived_at !== null;
 
   function remove(id: string): void {
+    if (action.busy) {
+      return;
+    }
     setNotice(null);
+    setRemoving(id);
     action.run(async (): Promise<ActionState> => {
       const answer = await patchGroup(client, group.id, { remove: [id] });
       if (!isGroup(answer)) {
@@ -280,7 +294,7 @@ function Members({ group, handlers }: { readonly group: Group; readonly handlers
                 <span className="truncate text-small text-text-muted">{member.name}</span>
               </span>
               <ActionButton
-                busy={false}
+                busy={action.busy && removing === member.relationship_id}
                 unavailable={action.busy}
                 label={t('groups.removeNamed', { name: member.display_name })}
                 onClick={() => {
@@ -380,9 +394,11 @@ function ArchiveSection({
 
 export function GroupView({
   group,
+  reloads = 0,
   handlers,
 }: {
   readonly group: Group;
+  readonly reloads?: number;
   readonly handlers: GroupHandlers;
 }): ReactElement {
   const { t } = useTranslation();
@@ -399,7 +415,7 @@ export function GroupView({
         {group.archived_at === null ? null : <StatusWord tone="muted">{t('groups.archived')}</StatusWord>}
       </p>
       <Members group={group} handlers={handlers} />
-      <DetailsForm group={group} handlers={handlers} />
+      <DetailsForm group={group} reloads={reloads} handlers={handlers} />
       <ArchiveSection group={group} handlers={handlers} />
     </>
   );
@@ -411,6 +427,7 @@ export function GroupPage(): ReactElement {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const key = groupKey(groupId);
+  const [reloads, setReloads] = useState(0);
   const [changed, setChanged] = useState<{ readonly id: string; readonly count: number } | null>(null);
   if (changed !== null && changed.id !== groupId) {
     setChanged(null);
@@ -442,6 +459,7 @@ export function GroupPage(): ReactElement {
     return (
       <GroupView
         group={query.data}
+        reloads={reloads}
         handlers={{
           onChanged: (group) => {
             queryClient.setQueryData(key, group);
@@ -450,7 +468,9 @@ export function GroupPage(): ReactElement {
           },
           onChangedElsewhere: () => {
             setChanged((previous) => ({ id: groupId, count: (previous?.count ?? 0) + 1 }));
-            void queryClient.invalidateQueries({ queryKey: groupsKey });
+            void queryClient.invalidateQueries({ queryKey: groupsKey }).then(() => {
+              setReloads((count) => count + 1);
+            });
           },
         }}
       />

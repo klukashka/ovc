@@ -57,6 +57,7 @@ async function show(card: StudentCard): Promise<void> {
   const handlers = {
     onChanged: (): void => undefined,
     onStale: (): void => undefined,
+    onSent: (): void => undefined,
     onWithdrawn: (): void => undefined,
     onRemoved: (): void => undefined,
     onEnded: (): void => undefined,
