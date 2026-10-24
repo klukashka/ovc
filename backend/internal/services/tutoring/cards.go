@@ -233,7 +233,7 @@ func (s *Service) CreateCard(ctx context.Context, tutor domain.UserID, request N
 	var card Card
 	created := false
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
 			return err
 		}
 		if request.CreateKey != nil {
@@ -342,7 +342,7 @@ func (s *Service) UpdateCard(ctx context.Context, tutor domain.UserID, id domain
 	var card Card
 	var changed []string
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
 			return err
 		}
 		row, err := lockCard(ctx, repos, tutor, id)
@@ -507,6 +507,9 @@ func (s *Service) RegenerateInvitation(ctx context.Context, tutor domain.UserID,
 	}
 	var issued *CardInvitation
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+			return err
+		}
 		row, err := lockCard(ctx, repos, tutor, id)
 		if err != nil {
 			return err

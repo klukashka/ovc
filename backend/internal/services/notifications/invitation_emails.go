@@ -59,6 +59,7 @@ func (r *RelationshipEmails) Builders() map[domain.OutboxKind]Builder {
 	return map[domain.OutboxKind]Builder{
 		domain.EventInvitationCreated: invitationEmail{emails: r},
 		domain.EventRelationshipEnded: relationshipEndedEmail{emails: r},
+		domain.EventTutorDeleted:      tutorDeletedEmail{emails: r},
 	}
 }
 

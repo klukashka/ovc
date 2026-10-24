@@ -161,15 +161,6 @@ SELECT EXISTS (SELECT 1 FROM relationships WHERE relationships.student_id = @stu
         WHERE join_requests.student_id = @student_id AND join_requests.state = 'held' AND join_requests.owner_choice_pending
     );
 
--- name: LockTutorReclaimPendingRelationships :many
-SELECT * FROM relationships WHERE tutor_id = @tutor_id AND state = 'reclaim_pending' ORDER BY id FOR UPDATE;
-
--- name: DiscardRelationshipForTutorDeletion :execrows
-UPDATE relationships
-SET state = 'discarded', discard_reason = 'tutor_deleted', discarded_at = sqlc.arg(now)::timestamptz,
-    updated_at = sqlc.arg(now)::timestamptz
-WHERE id = @id AND tutor_id = @tutor_id AND state = sqlc.arg(from_state)::text;
-
 -- name: LockStudentReclaimPendingRelationships :many
 SELECT * FROM relationships WHERE student_id = @student_id AND state = 'reclaim_pending' ORDER BY id FOR UPDATE;
 
@@ -203,3 +194,46 @@ SELECT * FROM relationships WHERE id = @id AND student_id = @student_id AND stat
 
 -- name: GetRelationship :one
 SELECT * FROM relationships WHERE id = @id;
+
+-- name: LockTutorRelationships :many
+SELECT id FROM relationships WHERE tutor_id = @tutor_id AND state <> 'discarded' ORDER BY id FOR UPDATE;
+
+-- name: DiscardRelationshipsForTutorDeletion :many
+UPDATE relationships
+SET state = 'discarded', discard_reason = 'tutor_deleted', discarded_at = sqlc.arg(now)::timestamptz,
+    updated_at = sqlc.arg(now)::timestamptz
+FROM (
+    SELECT locked.id, locked.state FROM relationships AS locked
+    WHERE locked.tutor_id = @tutor_id AND locked.state IN ('invited', 'provisional', 'reclaim_pending')
+    ORDER BY locked.id
+    FOR UPDATE
+) AS discarded
+WHERE relationships.id = discarded.id
+RETURNING relationships.id, relationships.tutor_id, relationships.student_id, discarded.state AS previous_state;
+
+-- name: EndRelationshipsForTutorDeletion :many
+UPDATE relationships
+SET state = 'ended', ended_by = 'deletion', ended_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+WHERE tutor_id = @tutor_id AND state = 'active'
+RETURNING *;
+
+-- name: DeleteTutorMemberships :many
+DELETE FROM group_members
+WHERE group_members.tutor_id = sqlc.arg(tutor_id)::uuid
+    AND group_members.group_id IN (SELECT groups.id FROM groups WHERE groups.tutor_id = sqlc.arg(tutor_id)::uuid)
+RETURNING group_members.relationship_id;
+
+-- name: ListLinkedTutorsOfStudent :many
+SELECT DISTINCT tutor_id FROM relationships
+WHERE student_id = @student_id AND state IN ('provisional', 'reclaim_pending')
+ORDER BY tutor_id;
+
+-- name: DeleteTutorRelationshipsBatch :execrows
+DELETE FROM relationships
+WHERE id IN (
+    SELECT doomed.id FROM relationships AS doomed
+    WHERE doomed.tutor_id = @tutor_id
+    ORDER BY doomed.id
+    LIMIT sqlc.arg(batch_size)::int
+    FOR UPDATE
+);

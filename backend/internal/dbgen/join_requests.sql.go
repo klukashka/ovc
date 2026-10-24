@@ -147,6 +147,30 @@ func (q *Queries) DecideJoinRequest(ctx context.Context, arg DecideJoinRequestPa
 	return result.RowsAffected(), nil
 }
 
+const deleteTutorJoinRequestsBatch = `-- name: DeleteTutorJoinRequestsBatch :execrows
+DELETE FROM join_requests
+WHERE id IN (
+    SELECT doomed.id FROM join_requests AS doomed
+    WHERE doomed.tutor_id = $1
+    ORDER BY doomed.id
+    LIMIT $2::int
+    FOR UPDATE
+)
+`
+
+type DeleteTutorJoinRequestsBatchParams struct {
+	TutorID   domain.UserID
+	BatchSize int32
+}
+
+func (q *Queries) DeleteTutorJoinRequestsBatch(ctx context.Context, arg DeleteTutorJoinRequestsBatchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTutorJoinRequestsBatch, arg.TutorID, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const expireDueJoinRequest = `-- name: ExpireDueJoinRequest :execrows
 UPDATE join_requests
 SET state = 'expired', suppressed = 'none', owner_choice_pending = false, decided_at = expires_at
@@ -178,6 +202,27 @@ type ExpireHeldJoinRequestParams struct {
 
 func (q *Queries) ExpireHeldJoinRequest(ctx context.Context, arg ExpireHeldJoinRequestParams) (int64, error) {
 	result, err := q.db.Exec(ctx, expireHeldJoinRequest, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const expireJoinRequestsOfTutor = `-- name: ExpireJoinRequestsOfTutor :execrows
+UPDATE join_requests
+SET state = 'expired', suppressed = 'none', owner_choice_pending = false,
+    decided_at = LEAST(join_requests.expires_at, $1::timestamptz)
+WHERE tutor_id = $2
+    AND (state IN ('held', 'pending') OR (state = 'expired' AND decided_at > $1::timestamptz))
+`
+
+type ExpireJoinRequestsOfTutorParams struct {
+	Now     time.Time
+	TutorID domain.UserID
+}
+
+func (q *Queries) ExpireJoinRequestsOfTutor(ctx context.Context, arg ExpireJoinRequestsOfTutorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, expireJoinRequestsOfTutor, arg.Now, arg.TutorID)
 	if err != nil {
 		return 0, err
 	}
@@ -737,43 +782,6 @@ func (q *Queries) LockTutorJoinRequest(ctx context.Context, arg LockTutorJoinReq
 		&i.CreatedAt,
 	)
 	return i, err
-}
-
-const lockTutorOwnerChoiceJoinRequests = `-- name: LockTutorOwnerChoiceJoinRequests :many
-SELECT id, tutor_id, student_id, state, suppressed, owner_choice_pending, expires_at, decided_at, created_at FROM join_requests
-WHERE tutor_id = $1 AND state = 'held' AND owner_choice_pending
-ORDER BY id
-FOR UPDATE
-`
-
-func (q *Queries) LockTutorOwnerChoiceJoinRequests(ctx context.Context, tutorID domain.UserID) ([]JoinRequest, error) {
-	rows, err := q.db.Query(ctx, lockTutorOwnerChoiceJoinRequests, tutorID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []JoinRequest
-	for rows.Next() {
-		var i JoinRequest
-		if err := rows.Scan(
-			&i.ID,
-			&i.TutorID,
-			&i.StudentID,
-			&i.State,
-			&i.Suppressed,
-			&i.OwnerChoicePending,
-			&i.ExpiresAt,
-			&i.DecidedAt,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const markHeldJoinRequestsForOwnerChoice = `-- name: MarkHeldJoinRequestsForOwnerChoice :execrows

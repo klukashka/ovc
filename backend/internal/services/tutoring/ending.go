@@ -134,8 +134,10 @@ func (s *Service) endLink(
 	if err != nil {
 		return ending{}, err
 	}
-	if err := s.queueEndedEmail(ctx, repos, ended, now); err != nil {
-		return ending{}, err
+	if transition.EndedBy.EmailsTheOtherParty() {
+		if err := s.queueEndedEmail(ctx, repos, ended, now); err != nil {
+			return ending{}, err
+		}
 	}
 	return ending{link: ended, by: transition.EndedBy, memberships: memberships}, nil
 }

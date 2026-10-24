@@ -490,6 +490,8 @@ func (r *router) tutoringError(ctx context.Context, event string, err error) err
 		refusal := NewError(ctx, domain.ErrorStudentExists)
 		refusal.Body.Details = &schemas.ErrorDetails{StudentID: &existing}
 		return refusal
+	case errors.Is(err, accounts.ErrUnauthenticated):
+		return NewError(ctx, domain.ErrorUnauthenticated)
 	case errors.Is(err, tutoring.ErrNotEditable):
 		return NewError(ctx, domain.ErrorNotEditable)
 	case errors.Is(err, tutoring.ErrRelationshipNotActive):

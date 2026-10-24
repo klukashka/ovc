@@ -80,3 +80,20 @@ WHERE invitations.token_hash = @token_hash
     AND invitations.expires_at > sqlc.arg(now)::timestamptz
     AND relationships.state IN ('invited', 'ended')
     AND tutors.state = 'active';
+
+-- name: RevokeTutorInvitations :execrows
+UPDATE invitations
+SET revoked_at = sqlc.arg(now)::timestamptz, revoke_reason = 'tutor_deleted', token_encrypted = NULL
+WHERE relationship_id IN (SELECT relationships.id FROM relationships WHERE relationships.tutor_id = @tutor_id)
+    AND used_at IS NULL AND revoked_at IS NULL;
+
+-- name: DeleteTutorInvitationsBatch :execrows
+DELETE FROM invitations
+WHERE id IN (
+    SELECT doomed.id FROM relationships
+    JOIN invitations AS doomed ON doomed.relationship_id = relationships.id
+    WHERE relationships.tutor_id = @tutor_id
+    ORDER BY doomed.id
+    LIMIT sqlc.arg(batch_size)::int
+    FOR UPDATE OF doomed
+);

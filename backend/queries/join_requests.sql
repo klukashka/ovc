@@ -51,12 +51,6 @@ WHERE id = @id AND state = 'held';
 SELECT count(id) FROM join_requests
 WHERE tutor_id = @tutor_id AND state = 'pending' AND suppressed = 'none' AND expires_at > sqlc.arg(now)::timestamptz;
 
--- name: LockTutorOwnerChoiceJoinRequests :many
-SELECT * FROM join_requests
-WHERE tutor_id = @tutor_id AND state = 'held' AND owner_choice_pending
-ORDER BY id
-FOR UPDATE;
-
 -- name: LockOpenJoinRequest :one
 SELECT * FROM join_requests
 WHERE tutor_id = @tutor_id AND student_id = @student_id AND state IN ('held', 'pending')
@@ -170,3 +164,20 @@ FOR UPDATE;
 -- name: ReopenJoinRequest :execrows
 UPDATE join_requests SET state = 'pending', suppressed = sqlc.arg(suppressed)::text, decided_at = NULL
 WHERE id = @id AND state = 'expired' AND decided_at > sqlc.arg(now)::timestamptz;
+
+-- name: ExpireJoinRequestsOfTutor :execrows
+UPDATE join_requests
+SET state = 'expired', suppressed = 'none', owner_choice_pending = false,
+    decided_at = LEAST(join_requests.expires_at, sqlc.arg(now)::timestamptz)
+WHERE tutor_id = @tutor_id
+    AND (state IN ('held', 'pending') OR (state = 'expired' AND decided_at > sqlc.arg(now)::timestamptz));
+
+-- name: DeleteTutorJoinRequestsBatch :execrows
+DELETE FROM join_requests
+WHERE id IN (
+    SELECT doomed.id FROM join_requests AS doomed
+    WHERE doomed.tutor_id = @tutor_id
+    ORDER BY doomed.id
+    LIMIT sqlc.arg(batch_size)::int
+    FOR UPDATE
+);

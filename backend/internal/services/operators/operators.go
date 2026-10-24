@@ -96,6 +96,11 @@ func (s *Service) Block(ctx context.Context, email string) (domain.UserID, error
 		if !blocked {
 			return ErrImpossibleState
 		}
+		if target.Role == domain.RoleTutor {
+			if err := repos.TutorProfiles.Lock(ctx, target.ID); err != nil {
+				return err
+			}
+		}
 		if _, err := repos.Sessions.RevokeAllOf(ctx, target.ID, now); err != nil {
 			return err
 		}
@@ -128,7 +133,7 @@ func (s *Service) Unblock(ctx context.Context, email string) (domain.UserID, err
 
 func (s *Service) Restore(ctx context.Context, email string) (domain.UserID, error) {
 	return s.change(ctx, email, domain.ActionRestore, func(repos repositories.Repositories, target repositories.OperatorTarget, now time.Time) error {
-		restored, err := repos.Users.Restore(ctx, target.ID, now)
+		restored, err := repos.Users.Restore(ctx, target.ID, now, now.Add(-domain.DeletedAccountRetention))
 		if err != nil {
 			return err
 		}

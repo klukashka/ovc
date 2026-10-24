@@ -47,6 +47,16 @@ const (
 	EndedByDeletion EndedBy = "deletion"
 )
 
+func (by EndedBy) EmailsTheOtherParty() bool {
+	switch by {
+	case EndedByTutor, EndedByStudent:
+		return true
+	case EndedByDeletion:
+		return false
+	}
+	return false
+}
+
 type RevokeReason string
 
 const (

@@ -67,3 +67,29 @@ FROM (
 ) AS ranked
 WHERE ranked.position <= sqlc.arg(first_members)::bigint
 ORDER BY ranked.group_id, ranked.position;
+
+-- name: ArchiveTutorGroups :many
+UPDATE groups SET archived_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+WHERE tutor_id = @tutor_id AND archived_at IS NULL
+RETURNING id;
+
+-- name: DeleteTutorGroupMembersBatch :execrows
+DELETE FROM group_members
+WHERE (group_id, relationship_id) IN (
+    SELECT doomed.group_id, doomed.relationship_id FROM groups
+    JOIN group_members AS doomed ON doomed.group_id = groups.id
+    WHERE groups.tutor_id = @tutor_id
+    ORDER BY doomed.group_id, doomed.relationship_id
+    LIMIT sqlc.arg(batch_size)::int
+    FOR UPDATE OF doomed
+);
+
+-- name: DeleteTutorGroupsBatch :execrows
+DELETE FROM groups
+WHERE id IN (
+    SELECT doomed.id FROM groups AS doomed
+    WHERE doomed.tutor_id = @tutor_id
+    ORDER BY doomed.id
+    LIMIT sqlc.arg(batch_size)::int
+    FOR UPDATE
+);

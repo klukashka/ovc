@@ -67,6 +67,9 @@ func (s *Service) SendInvitation(ctx context.Context, tutor domain.UserID, id do
 }
 
 func (s *Service) sendInvitation(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.RelationshipID, now time.Time) (sendOutcome, error) {
+	if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+		return "", err
+	}
 	card, err := lockCard(ctx, repos, tutor, id)
 	if err != nil {
 		return "", err

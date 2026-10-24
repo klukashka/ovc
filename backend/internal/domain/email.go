@@ -14,6 +14,7 @@ const (
 	EventSignUpDuplicate   OutboxKind = "signup.duplicate_attempt"
 	EventInvitationCreated OutboxKind = "invitation.created"
 	EventRelationshipEnded OutboxKind = "relationship.ended"
+	EventTutorDeleted      OutboxKind = "tutor.deleted"
 )
 
 func EmailReachesRecipient(kind OutboxKind, recipient AccountState) bool {
@@ -119,4 +120,10 @@ type InvitationEmailPayload struct {
 type RelationshipEndedPayload struct {
 	Relationship  string `json:"relationship"`
 	EndedAtMicros int64  `json:"ended_at_micros"`
+}
+
+type TutorDeletedPayload struct {
+	Tutor           string `json:"tutor"`
+	DeletedAtMicros int64  `json:"deleted_at_micros"`
+	Recipient       string `json:"recipient"`
 }

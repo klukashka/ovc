@@ -317,6 +317,30 @@ func (q *Queries) GetUserByID(ctx context.Context, id domain.UserID) (User, erro
 	return i, err
 }
 
+const listConfirmedUsers = `-- name: ListConfirmedUsers :many
+SELECT id FROM users WHERE id = ANY ($1::uuid[]) AND email_verified_at IS NOT NULL ORDER BY id
+`
+
+func (q *Queries) ListConfirmedUsers(ctx context.Context, ids []pgtype.UUID) ([]domain.UserID, error) {
+	rows, err := q.db.Query(ctx, listConfirmedUsers, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.UserID
+	for rows.Next() {
+		var id domain.UserID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDeletedBefore = `-- name: ListDeletedBefore :many
 SELECT id FROM users
 WHERE state = 'deleted' AND deleted_at <= $1::timestamptz
@@ -563,11 +587,12 @@ func (q *Queries) LockUserForOperator(ctx context.Context, email string) (LockUs
 }
 
 const lockUserForPurge = `-- name: LockUserForPurge :one
-SELECT state, deleted_at, unverified_since FROM users WHERE id = $1 FOR UPDATE
+SELECT state, role, deleted_at, unverified_since FROM users WHERE id = $1 FOR UPDATE
 `
 
 type LockUserForPurgeRow struct {
 	State           domain.AccountState
+	Role            domain.Role
 	DeletedAt       *time.Time
 	UnverifiedSince time.Time
 }
@@ -575,7 +600,12 @@ type LockUserForPurgeRow struct {
 func (q *Queries) LockUserForPurge(ctx context.Context, id domain.UserID) (LockUserForPurgeRow, error) {
 	row := q.db.QueryRow(ctx, lockUserForPurge, id)
 	var i LockUserForPurgeRow
-	err := row.Scan(&i.State, &i.DeletedAt, &i.UnverifiedSince)
+	err := row.Scan(
+		&i.State,
+		&i.Role,
+		&i.DeletedAt,
+		&i.UnverifiedSince,
+	)
 	return i, err
 }
 
@@ -659,16 +689,17 @@ func (q *Queries) ReplaceUserPassword(ctx context.Context, arg ReplaceUserPasswo
 
 const restoreUser = `-- name: RestoreUser :execrows
 UPDATE users SET state = 'active', deleted_at = NULL, updated_at = $1::timestamptz
-WHERE id = $2 AND state = 'deleted' AND email_verified_at IS NOT NULL
+WHERE id = $2 AND state = 'deleted' AND email_verified_at IS NOT NULL AND deleted_at > $3::timestamptz
 `
 
 type RestoreUserParams struct {
-	Now time.Time
-	ID  domain.UserID
+	Now         time.Time
+	ID          domain.UserID
+	PurgeCutoff time.Time
 }
 
 func (q *Queries) RestoreUser(ctx context.Context, arg RestoreUserParams) (int64, error) {
-	result, err := q.db.Exec(ctx, restoreUser, arg.Now, arg.ID)
+	result, err := q.db.Exec(ctx, restoreUser, arg.Now, arg.ID, arg.PurgeCutoff)
 	if err != nil {
 		return 0, err
 	}

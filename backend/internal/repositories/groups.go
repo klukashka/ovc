@@ -110,3 +110,18 @@ func (r Relationships) LockForGroup(ctx context.Context, tutor domain.UserID, id
 	candidates, err := r.queries.LockTutorRelationshipsForGroup(ctx, dbgen.LockTutorRelationshipsForGroupParams{TutorID: tutor, Ids: uuids(ids)})
 	return one(candidates, err, "lock relationships for a group")
 }
+
+func (r Groups) ArchiveAllOfTutor(ctx context.Context, tutor domain.UserID, now time.Time) ([]domain.GroupID, error) {
+	archived, err := r.queries.ArchiveTutorGroups(ctx, dbgen.ArchiveTutorGroupsParams{Now: now, TutorID: tutor})
+	return one(archived, err, "archive the groups of a tutor")
+}
+
+func (r Groups) DeleteMembersBatchOfTutor(ctx context.Context, tutor domain.UserID, batchSize int32) (int64, error) {
+	rows, err := r.queries.DeleteTutorGroupMembersBatch(ctx, dbgen.DeleteTutorGroupMembersBatchParams{TutorID: tutor, BatchSize: batchSize})
+	return counted(rows, err, "delete a batch of a tutor's group members")
+}
+
+func (r Groups) DeleteBatchOfTutor(ctx context.Context, tutor domain.UserID, batchSize int32) (int64, error) {
+	rows, err := r.queries.DeleteTutorGroupsBatch(ctx, dbgen.DeleteTutorGroupsBatchParams{TutorID: tutor, BatchSize: batchSize})
+	return counted(rows, err, "delete a batch of a tutor's groups")
+}

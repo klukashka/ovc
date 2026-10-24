@@ -33,6 +33,30 @@ func (q *Queries) BlockRequester(ctx context.Context, arg BlockRequesterParams) 
 	return result.RowsAffected(), nil
 }
 
+const deleteTutorBlockedRequestersBatch = `-- name: DeleteTutorBlockedRequestersBatch :execrows
+DELETE FROM blocked_requesters
+WHERE (tutor_id, student_id) IN (
+    SELECT doomed.tutor_id, doomed.student_id FROM blocked_requesters AS doomed
+    WHERE doomed.tutor_id = $1
+    ORDER BY doomed.student_id
+    LIMIT $2::int
+    FOR UPDATE
+)
+`
+
+type DeleteTutorBlockedRequestersBatchParams struct {
+	TutorID   domain.UserID
+	BatchSize int32
+}
+
+func (q *Queries) DeleteTutorBlockedRequestersBatch(ctx context.Context, arg DeleteTutorBlockedRequestersBatchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTutorBlockedRequestersBatch, arg.TutorID, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listBlockedRequesters = `-- name: ListBlockedRequesters :many
 SELECT blocked_requesters.student_id, blocked_requesters.created_at, students.name
 FROM blocked_requesters

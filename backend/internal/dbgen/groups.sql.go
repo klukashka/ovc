@@ -59,6 +59,37 @@ func (q *Queries) ArchiveGroup(ctx context.Context, arg ArchiveGroupParams) (int
 	return result.RowsAffected(), nil
 }
 
+const archiveTutorGroups = `-- name: ArchiveTutorGroups :many
+UPDATE groups SET archived_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE tutor_id = $2 AND archived_at IS NULL
+RETURNING id
+`
+
+type ArchiveTutorGroupsParams struct {
+	Now     time.Time
+	TutorID domain.UserID
+}
+
+func (q *Queries) ArchiveTutorGroups(ctx context.Context, arg ArchiveTutorGroupsParams) ([]domain.GroupID, error) {
+	rows, err := q.db.Query(ctx, archiveTutorGroups, arg.Now, arg.TutorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.GroupID
+	for rows.Next() {
+		var id domain.GroupID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countTutorGroups = `-- name: CountTutorGroups :one
 SELECT count(id) FROM groups WHERE tutor_id = $1
 `
@@ -94,6 +125,55 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) error 
 		arg.CreatedAt,
 	)
 	return err
+}
+
+const deleteTutorGroupMembersBatch = `-- name: DeleteTutorGroupMembersBatch :execrows
+DELETE FROM group_members
+WHERE (group_id, relationship_id) IN (
+    SELECT doomed.group_id, doomed.relationship_id FROM groups
+    JOIN group_members AS doomed ON doomed.group_id = groups.id
+    WHERE groups.tutor_id = $1
+    ORDER BY doomed.group_id, doomed.relationship_id
+    LIMIT $2::int
+    FOR UPDATE OF doomed
+)
+`
+
+type DeleteTutorGroupMembersBatchParams struct {
+	TutorID   domain.UserID
+	BatchSize int32
+}
+
+func (q *Queries) DeleteTutorGroupMembersBatch(ctx context.Context, arg DeleteTutorGroupMembersBatchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTutorGroupMembersBatch, arg.TutorID, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteTutorGroupsBatch = `-- name: DeleteTutorGroupsBatch :execrows
+DELETE FROM groups
+WHERE id IN (
+    SELECT doomed.id FROM groups AS doomed
+    WHERE doomed.tutor_id = $1
+    ORDER BY doomed.id
+    LIMIT $2::int
+    FOR UPDATE
+)
+`
+
+type DeleteTutorGroupsBatchParams struct {
+	TutorID   domain.UserID
+	BatchSize int32
+}
+
+func (q *Queries) DeleteTutorGroupsBatch(ctx context.Context, arg DeleteTutorGroupsBatchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTutorGroupsBatch, arg.TutorID, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getTutorGroup = `-- name: GetTutorGroup :one

@@ -140,6 +140,31 @@ func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationPara
 	return err
 }
 
+const deleteTutorInvitationsBatch = `-- name: DeleteTutorInvitationsBatch :execrows
+DELETE FROM invitations
+WHERE id IN (
+    SELECT doomed.id FROM relationships
+    JOIN invitations AS doomed ON doomed.relationship_id = relationships.id
+    WHERE relationships.tutor_id = $1
+    ORDER BY doomed.id
+    LIMIT $2::int
+    FOR UPDATE OF doomed
+)
+`
+
+type DeleteTutorInvitationsBatchParams struct {
+	TutorID   domain.UserID
+	BatchSize int32
+}
+
+func (q *Queries) DeleteTutorInvitationsBatch(ctx context.Context, arg DeleteTutorInvitationsBatchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTutorInvitationsBatch, arg.TutorID, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getCardInvitation = `-- name: GetCardInvitation :one
 SELECT id, token_encrypted, expires_at, used_at, revoked_at, revoke_reason FROM invitations
 WHERE relationship_id = $1
@@ -303,6 +328,26 @@ func (q *Queries) RevokeOpenInvitation(ctx context.Context, arg RevokeOpenInvita
 		arg.RelationshipID,
 		arg.TutorID,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const revokeTutorInvitations = `-- name: RevokeTutorInvitations :execrows
+UPDATE invitations
+SET revoked_at = $1::timestamptz, revoke_reason = 'tutor_deleted', token_encrypted = NULL
+WHERE relationship_id IN (SELECT relationships.id FROM relationships WHERE relationships.tutor_id = $2)
+    AND used_at IS NULL AND revoked_at IS NULL
+`
+
+type RevokeTutorInvitationsParams struct {
+	Now     time.Time
+	TutorID domain.UserID
+}
+
+func (q *Queries) RevokeTutorInvitations(ctx context.Context, arg RevokeTutorInvitationsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeTutorInvitations, arg.Now, arg.TutorID)
 	if err != nil {
 		return 0, err
 	}

@@ -193,7 +193,7 @@ func (s *Service) CreateGroup(ctx context.Context, tutor domain.UserID, request 
 	var group Group
 	created := false
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
 			return err
 		}
 		if request.CreateKey != nil {
@@ -329,6 +329,9 @@ func (s *Service) UpdateGroup(ctx context.Context, tutor domain.UserID, id domai
 	var fields []string
 	var membership membershipChange
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+			return err
+		}
 		row, err := s.lockGroupForChange(ctx, repos, tutor, id, change)
 		if err != nil {
 			return err
@@ -485,6 +488,9 @@ func (s *Service) setArchived(ctx context.Context, tutor domain.UserID, id domai
 	var group Group
 	changed := false
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+			return err
+		}
 		if _, err := repos.Groups.LockForTutor(ctx, tutor, id); err != nil {
 			return groupScope(err)
 		}

@@ -81,6 +81,16 @@ var relationshipEmailTexts = map[domain.Language]map[domain.OutboxKind]Relations
 			Note: "The link works only once and stops working when it expires or the tutor replaces it. " +
 				"If you do not expect lessons with this person, ignore this email.",
 		},
+		domain.EventTutorDeleted: {
+			Subject: "A tutor closed their OVC account",
+			Intro:   "This tutor has closed their account on OVC:",
+			Lines: []string{
+				"Your work together on OVC has ended. For 30 days the tutor stays on My tutors among your past tutors.",
+				"Your other tutors and your own account are not affected.",
+			},
+			Action: "Open My tutors",
+			Note:   "You received this email because a tutor you studied with on OVC closed their account.",
+		},
 	},
 	domain.LanguageRussian: {
 		domain.EventInvitationCreated: {
@@ -90,6 +100,16 @@ var relationshipEmailTexts = map[domain.Language]map[domain.OutboxKind]Relations
 			Action:  "Открыть приглашение",
 			Note: "Ссылка действует только один раз и перестаёт работать, когда истекает её срок или преподаватель заменяет её. " +
 				"Если вы не ждёте занятий с этим человеком, просто проигнорируйте письмо.",
+		},
+		domain.EventTutorDeleted: {
+			Subject: "Преподаватель удалил аккаунт в OVC",
+			Intro:   "Этот преподаватель удалил свой аккаунт в OVC:",
+			Lines: []string{
+				"Совместная работа в OVC завершена. Ещё 30 дней преподаватель остаётся в разделе «Мои преподаватели» среди прошлых.",
+				"Ваши занятия с другими преподавателями и ваш аккаунт не затронуты.",
+			},
+			Action: "Открыть «Мои преподаватели»",
+			Note:   "Вы получили это письмо, потому что преподаватель, с которым вы занимались в OVC, удалил свой аккаунт.",
 		},
 	},
 }

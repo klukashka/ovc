@@ -107,6 +107,20 @@ func (s *Service) refused(ctx context.Context, reason refusalReason, check *acco
 func (s *Service) LinkAtSignUp(
 	ctx context.Context, repos repositories.Repositories, user domain.UserID, check accounts.InvitationCheck, now time.Time,
 ) (accounts.Announce, error) {
+	err := repos.TutorProfiles.Lock(ctx, check.Tutor)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return nil, s.refused(ctx, refusalInvalid, &check)
+	}
+	if err != nil {
+		return nil, err
+	}
+	active, err := s.tutorActive(ctx, repos, check.Tutor)
+	if err != nil {
+		return nil, err
+	}
+	if !active {
+		return nil, s.refused(ctx, refusalInvalid, &check)
+	}
 	card, err := repos.Relationships.LockForTutor(ctx, check.Tutor, check.Relationship)
 	if errors.Is(err, repositories.ErrNotFound) {
 		return nil, s.refused(ctx, refusalInvalid, &check)
@@ -116,13 +130,6 @@ func (s *Service) LinkAtSignUp(
 	}
 	transition, allowed := domain.NextRelationshipState(card.State, domain.CauseAcceptedUnconfirmed)
 	if !allowed {
-		return nil, s.refused(ctx, refusalInvalid, &check)
-	}
-	tutor, err := repos.Users.ByID(ctx, check.Tutor)
-	if err != nil {
-		return nil, err
-	}
-	if tutor.State != domain.AccountActive {
 		return nil, s.refused(ctx, refusalInvalid, &check)
 	}
 	consumed, err := repos.Invitations.Consume(ctx, check.TokenHash, user, now)
@@ -209,37 +216,6 @@ func (s *Service) OnEmailConfirmed(
 		}
 		for _, request := range kept {
 			s.logReleased(ctx, user, request)
-		}
-	}, nil
-}
-
-func (s *Service) OnAccountPurged(
-	ctx context.Context, repos repositories.Repositories, user domain.UserID, role domain.Role, now time.Time,
-) (accounts.Announce, error) {
-	if role != domain.RoleStudent {
-		return accounts.Silent, nil
-	}
-	links, err := repos.Relationships.LockOfStudent(ctx, user)
-	if err != nil {
-		return nil, err
-	}
-	var removed []repositories.Relationship
-	for _, link := range links {
-		transition, allowed := domain.NextRelationshipState(link.State, domain.CauseStudentPurged)
-		if !allowed || !transition.NewCard {
-			continue
-		}
-		if _, err := s.removeLink(ctx, repos, link, now); err != nil {
-			return nil, err
-		}
-		removed = append(removed, link)
-	}
-	if err := repos.Relationships.ForgetPurgedStudent(ctx, user, now); err != nil {
-		return nil, err
-	}
-	return func(ctx context.Context) {
-		for _, link := range removed {
-			s.logRemoved(ctx, link, removedByCleanup)
 		}
 	}, nil
 }

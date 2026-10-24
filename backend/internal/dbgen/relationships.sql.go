@@ -156,31 +156,106 @@ func (q *Queries) DeleteStudentMemberships(ctx context.Context, studentID *domai
 	return result.RowsAffected(), nil
 }
 
-const discardRelationshipForTutorDeletion = `-- name: DiscardRelationshipForTutorDeletion :execrows
-UPDATE relationships
-SET state = 'discarded', discard_reason = 'tutor_deleted', discarded_at = $1::timestamptz,
-    updated_at = $1::timestamptz
-WHERE id = $2 AND tutor_id = $3 AND state = $4::text
+const deleteTutorMemberships = `-- name: DeleteTutorMemberships :many
+DELETE FROM group_members
+WHERE group_members.tutor_id = $1::uuid
+    AND group_members.group_id IN (SELECT groups.id FROM groups WHERE groups.tutor_id = $1::uuid)
+RETURNING group_members.relationship_id
 `
 
-type DiscardRelationshipForTutorDeletionParams struct {
-	Now       time.Time
-	ID        domain.RelationshipID
-	TutorID   domain.UserID
-	FromState string
+func (q *Queries) DeleteTutorMemberships(ctx context.Context, tutorID pgtype.UUID) ([]domain.RelationshipID, error) {
+	rows, err := q.db.Query(ctx, deleteTutorMemberships, tutorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.RelationshipID
+	for rows.Next() {
+		var relationship_id domain.RelationshipID
+		if err := rows.Scan(&relationship_id); err != nil {
+			return nil, err
+		}
+		items = append(items, relationship_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
-func (q *Queries) DiscardRelationshipForTutorDeletion(ctx context.Context, arg DiscardRelationshipForTutorDeletionParams) (int64, error) {
-	result, err := q.db.Exec(ctx, discardRelationshipForTutorDeletion,
-		arg.Now,
-		arg.ID,
-		arg.TutorID,
-		arg.FromState,
-	)
+const deleteTutorRelationshipsBatch = `-- name: DeleteTutorRelationshipsBatch :execrows
+DELETE FROM relationships
+WHERE id IN (
+    SELECT doomed.id FROM relationships AS doomed
+    WHERE doomed.tutor_id = $1
+    ORDER BY doomed.id
+    LIMIT $2::int
+    FOR UPDATE
+)
+`
+
+type DeleteTutorRelationshipsBatchParams struct {
+	TutorID   domain.UserID
+	BatchSize int32
+}
+
+func (q *Queries) DeleteTutorRelationshipsBatch(ctx context.Context, arg DeleteTutorRelationshipsBatchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTutorRelationshipsBatch, arg.TutorID, arg.BatchSize)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const discardRelationshipsForTutorDeletion = `-- name: DiscardRelationshipsForTutorDeletion :many
+UPDATE relationships
+SET state = 'discarded', discard_reason = 'tutor_deleted', discarded_at = $1::timestamptz,
+    updated_at = $1::timestamptz
+FROM (
+    SELECT locked.id, locked.state FROM relationships AS locked
+    WHERE locked.tutor_id = $2 AND locked.state IN ('invited', 'provisional', 'reclaim_pending')
+    ORDER BY locked.id
+    FOR UPDATE
+) AS discarded
+WHERE relationships.id = discarded.id
+RETURNING relationships.id, relationships.tutor_id, relationships.student_id, discarded.state AS previous_state
+`
+
+type DiscardRelationshipsForTutorDeletionParams struct {
+	Now     time.Time
+	TutorID domain.UserID
+}
+
+type DiscardRelationshipsForTutorDeletionRow struct {
+	ID            domain.RelationshipID
+	TutorID       domain.UserID
+	StudentID     *domain.UserID
+	PreviousState domain.RelationshipState
+}
+
+func (q *Queries) DiscardRelationshipsForTutorDeletion(ctx context.Context, arg DiscardRelationshipsForTutorDeletionParams) ([]DiscardRelationshipsForTutorDeletionRow, error) {
+	rows, err := q.db.Query(ctx, discardRelationshipsForTutorDeletion, arg.Now, arg.TutorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DiscardRelationshipsForTutorDeletionRow
+	for rows.Next() {
+		var i DiscardRelationshipsForTutorDeletionRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TutorID,
+			&i.StudentID,
+			&i.PreviousState,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const discardRelationshipsOfPurgedStudent = `-- name: DiscardRelationshipsOfPurgedStudent :execrows
@@ -244,6 +319,55 @@ func (q *Queries) EndRelationship(ctx context.Context, arg EndRelationshipParams
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const endRelationshipsForTutorDeletion = `-- name: EndRelationshipsForTutorDeletion :many
+UPDATE relationships
+SET state = 'ended', ended_by = 'deletion', ended_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE tutor_id = $2 AND state = 'active'
+RETURNING id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at
+`
+
+type EndRelationshipsForTutorDeletionParams struct {
+	Now     time.Time
+	TutorID domain.UserID
+}
+
+func (q *Queries) EndRelationshipsForTutorDeletion(ctx context.Context, arg EndRelationshipsForTutorDeletionParams) ([]Relationship, error) {
+	rows, err := q.db.Query(ctx, endRelationshipsForTutorDeletion, arg.Now, arg.TutorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Relationship
+	for rows.Next() {
+		var i Relationship
+		if err := rows.Scan(
+			&i.ID,
+			&i.TutorID,
+			&i.StudentID,
+			&i.State,
+			&i.DiscardReason,
+			&i.EndedBy,
+			&i.DisplayName,
+			&i.Email,
+			&i.Colour,
+			&i.Notes,
+			&i.CreateKey,
+			&i.LinkedAt,
+			&i.EndedAt,
+			&i.DiscardedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getRelationship = `-- name: GetRelationship :one
@@ -524,6 +648,32 @@ func (q *Queries) ListCardGroups(ctx context.Context, arg ListCardGroupsParams) 
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLinkedTutorsOfStudent = `-- name: ListLinkedTutorsOfStudent :many
+SELECT DISTINCT tutor_id FROM relationships
+WHERE student_id = $1 AND state IN ('provisional', 'reclaim_pending')
+ORDER BY tutor_id
+`
+
+func (q *Queries) ListLinkedTutorsOfStudent(ctx context.Context, studentID *domain.UserID) ([]domain.UserID, error) {
+	rows, err := q.db.Query(ctx, listLinkedTutorsOfStudent, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.UserID
+	for rows.Next() {
+		var tutor_id domain.UserID
+		if err := rows.Scan(&tutor_id); err != nil {
+			return nil, err
+		}
+		items = append(items, tutor_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -956,47 +1106,6 @@ func (q *Queries) LockStudentRelationships(ctx context.Context, studentID *domai
 	return items, nil
 }
 
-const lockTutorReclaimPendingRelationships = `-- name: LockTutorReclaimPendingRelationships :many
-SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE tutor_id = $1 AND state = 'reclaim_pending' ORDER BY id FOR UPDATE
-`
-
-func (q *Queries) LockTutorReclaimPendingRelationships(ctx context.Context, tutorID domain.UserID) ([]Relationship, error) {
-	rows, err := q.db.Query(ctx, lockTutorReclaimPendingRelationships, tutorID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Relationship
-	for rows.Next() {
-		var i Relationship
-		if err := rows.Scan(
-			&i.ID,
-			&i.TutorID,
-			&i.StudentID,
-			&i.State,
-			&i.DiscardReason,
-			&i.EndedBy,
-			&i.DisplayName,
-			&i.Email,
-			&i.Colour,
-			&i.Notes,
-			&i.CreateKey,
-			&i.LinkedAt,
-			&i.EndedAt,
-			&i.DiscardedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const lockTutorRelationship = `-- name: LockTutorRelationship :one
 SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE id = $1 AND tutor_id = $2 FOR UPDATE
 `
@@ -1028,6 +1137,30 @@ func (q *Queries) LockTutorRelationship(ctx context.Context, arg LockTutorRelati
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const lockTutorRelationships = `-- name: LockTutorRelationships :many
+SELECT id FROM relationships WHERE tutor_id = $1 AND state <> 'discarded' ORDER BY id FOR UPDATE
+`
+
+func (q *Queries) LockTutorRelationships(ctx context.Context, tutorID domain.UserID) ([]domain.RelationshipID, error) {
+	rows, err := q.db.Query(ctx, lockTutorRelationships, tutorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.RelationshipID
+	for rows.Next() {
+		var id domain.RelationshipID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const lockTutorRelationshipsForGroup = `-- name: LockTutorRelationshipsForGroup :many

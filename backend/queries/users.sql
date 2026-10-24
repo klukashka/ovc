@@ -101,7 +101,7 @@ OFFSET sqlc.arg(skip)
 LIMIT sqlc.arg(batch_size);
 
 -- name: LockUserForPurge :one
-SELECT state, deleted_at, unverified_since FROM users WHERE id = @id FOR UPDATE;
+SELECT state, role, deleted_at, unverified_since FROM users WHERE id = @id FOR UPDATE;
 
 -- name: DeleteUser :execrows
 DELETE FROM users WHERE id = @id;
@@ -127,7 +127,7 @@ WHERE id = @id AND state = 'blocked';
 
 -- name: RestoreUser :execrows
 UPDATE users SET state = 'active', deleted_at = NULL, updated_at = sqlc.arg(now)::timestamptz
-WHERE id = @id AND state = 'deleted' AND email_verified_at IS NOT NULL;
+WHERE id = @id AND state = 'deleted' AND email_verified_at IS NOT NULL AND deleted_at > sqlc.arg(purge_cutoff)::timestamptz;
 
 -- name: SetTutorQuotas :execrows
 UPDATE tutor_profiles
@@ -159,3 +159,6 @@ SELECT state, reclaim_until FROM users WHERE id = @id FOR NO KEY UPDATE;
 SELECT tutor_profiles.user_id, users.state FROM tutor_profiles
 JOIN users ON users.id = tutor_profiles.user_id
 WHERE tutor_profiles.code = @code;
+
+-- name: ListConfirmedUsers :many
+SELECT id FROM users WHERE id = ANY (sqlc.arg(ids)::uuid[]) AND email_verified_at IS NOT NULL ORDER BY id;

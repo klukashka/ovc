@@ -26,3 +26,13 @@ LIMIT sqlc.arg(row_limit);
 
 -- name: StudentBlockedByTutor :one
 SELECT EXISTS (SELECT 1 FROM blocked_requesters WHERE tutor_id = @tutor_id AND student_id = @student_id);
+
+-- name: DeleteTutorBlockedRequestersBatch :execrows
+DELETE FROM blocked_requesters
+WHERE (tutor_id, student_id) IN (
+    SELECT doomed.tutor_id, doomed.student_id FROM blocked_requesters AS doomed
+    WHERE doomed.tutor_id = @tutor_id
+    ORDER BY doomed.student_id
+    LIMIT sqlc.arg(batch_size)::int
+    FOR UPDATE
+);

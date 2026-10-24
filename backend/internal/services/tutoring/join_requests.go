@@ -136,6 +136,16 @@ func (s *Service) activeCodeOwner(ctx context.Context, repos repositories.Reposi
 func (s *Service) HoldRequestAtSignUp(
 	ctx context.Context, repos repositories.Repositories, user domain.UserID, check accounts.CodeCheck, now time.Time,
 ) (accounts.Announce, error) {
+	err := s.lockActiveTutor(ctx, repos, check.Tutor)
+	if errors.Is(err, accounts.ErrTutorCodeInvalid) {
+		return func(ctx context.Context) {
+			s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "join_request.not_held", slog.String("tutor_id", check.Tutor.String()),
+				slog.String("user_id", user.String()), slog.String("reason", "tutor_inactive"))
+		}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	request, err := s.createRequest(ctx, repos, check.Tutor, user, domain.JoinRequestHeld, domain.SuppressionNone, now)
 	if err != nil {
 		return nil, err

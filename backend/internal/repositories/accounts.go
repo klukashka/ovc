@@ -349,3 +349,8 @@ func (r TutorProfiles) LockAll(ctx context.Context, tutors []domain.UserID) erro
 	_, err := r.queries.LockTutorProfiles(ctx, uuids(tutors))
 	return done(err, "lock tutor profiles")
 }
+
+func (r Users) ConfirmedAmong(ctx context.Context, ids []domain.UserID) ([]domain.UserID, error) {
+	confirmed, err := r.queries.ListConfirmedUsers(ctx, uuids(ids))
+	return one(confirmed, err, "confirmed accounts")
+}

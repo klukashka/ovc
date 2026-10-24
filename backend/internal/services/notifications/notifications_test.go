@@ -156,7 +156,7 @@ func recipientService(t *testing.T, mailer mail.Mailer, kinds []domain.OutboxKin
 
 func TestUnverifiedRecipientsGetOnlyAccountAndInvitationEmails(t *testing.T) {
 	allowed := []domain.OutboxKind{domain.EventEmailConfirmation, domain.EventPasswordReset, domain.EventSignUpDuplicate, domain.EventInvitationCreated}
-	other := []domain.OutboxKind{domain.EventRelationshipEnded, "tutor.deleted", greetingKind}
+	other := []domain.OutboxKind{domain.EventRelationshipEnded, domain.EventTutorDeleted, greetingKind}
 	kinds := append(append([]domain.OutboxKind{}, allowed...), other...)
 	want := map[domain.AccountState]func(domain.OutboxKind) domain.OutboxDoneReason{
 		domain.AccountUnverified: func(kind domain.OutboxKind) domain.OutboxDoneReason {

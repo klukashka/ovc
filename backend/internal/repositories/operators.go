@@ -29,8 +29,8 @@ func (r Users) Unblock(ctx context.Context, id domain.UserID, now time.Time) (bo
 	return applied(rows, err, "unblock user")
 }
 
-func (r Users) Restore(ctx context.Context, id domain.UserID, now time.Time) (bool, error) {
-	rows, err := r.queries.RestoreUser(ctx, dbgen.RestoreUserParams{Now: now, ID: id})
+func (r Users) Restore(ctx context.Context, id domain.UserID, now time.Time, purgeCutoff time.Time) (bool, error) {
+	rows, err := r.queries.RestoreUser(ctx, dbgen.RestoreUserParams{Now: now, ID: id, PurgeCutoff: purgeCutoff})
 	return applied(rows, err, "restore user")
 }
 

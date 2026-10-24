@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	unverifiedLifetime = 7 * 24 * time.Hour
-	purgeBatch         = 100
-	purgeRounds        = 20
+	unverifiedLifetime      = 7 * 24 * time.Hour
+	purgeBatch              = 100
+	purgeRounds             = 20
+	tutorPurgeBatchesPerRun = 100
 )
 
 type UploadPurger interface {
@@ -44,7 +45,7 @@ func (s *Service) DeleteAccount(ctx context.Context, principal Principal, passwo
 		switch locked.State {
 		case domain.AccountUnverified:
 			immediate = true
-			announce, err = s.purger().purge(ctx, repos, principal.UserID, now)
+			announce, err = s.purger().purge(ctx, repos, principal.UserID, now, 0)
 			return err
 		case domain.AccountActive:
 			if _, err := repos.Users.MarkDeleted(ctx, principal.UserID, now); err != nil {
@@ -124,7 +125,7 @@ func (s *Service) purger() *Purger {
 	return NewPurger(s.deps.Store, s.deps.Uploads, s.deps.Tutoring, s.deps.Logger)
 }
 
-func (p *Purger) purge(ctx context.Context, repos repositories.Repositories, user domain.UserID, now time.Time) (Announce, error) {
+func (p *Purger) purge(ctx context.Context, repos repositories.Repositories, user domain.UserID, now time.Time, batches int) (Announce, error) {
 	account, err := repos.Users.ByID(ctx, user)
 	if err != nil {
 		return nil, err
@@ -139,7 +140,7 @@ func (p *Purger) purge(ctx context.Context, repos repositories.Repositories, use
 	if _, err := repos.Users.Delete(ctx, user); err != nil {
 		return nil, err
 	}
-	p.logger.LogAttrs(ctx, slog.LevelInfo, "account.purged", userAttribute(user))
+	p.logger.LogAttrs(ctx, slog.LevelInfo, "account.purged", userAttribute(user), slog.Int("batches", batches))
 	return announce, nil
 }
 
@@ -155,17 +156,26 @@ func (p *Purger) CleanupUnverified(ctx context.Context, now time.Time) (int64, e
 	})
 }
 
+type purgeRun struct {
+	batchesLeft int
+}
+
+func (r *purgeRun) exhausted() bool {
+	return r.batchesLeft <= 0
+}
+
 func (p *Purger) purgeDue(ctx context.Context, now time.Time, due func(context.Context, repositories.Repositories, int32) ([]domain.UserID, error)) (int64, error) {
 	var purged int64
 	var failures []error
 	var skipped int32
+	run := &purgeRun{batchesLeft: tutorPurgeBatchesPerRun}
 	for range purgeRounds {
 		ids, err := due(ctx, p.store.Repositories(), skipped)
 		if err != nil {
 			return purged, errors.Join(append(failures, err)...)
 		}
 		for _, id := range ids {
-			done, err := p.purgeIfDue(ctx, id, now)
+			done, err := p.purgeIfDue(ctx, id, now, run)
 			if err != nil {
 				skipped++
 				failures = append(failures, err)
@@ -175,6 +185,9 @@ func (p *Purger) purgeDue(ctx context.Context, now time.Time, due func(context.C
 			if done {
 				purged++
 			}
+			if run.exhausted() {
+				return purged, errors.Join(failures...)
+			}
 		}
 		if len(ids) < purgeBatch {
 			break
@@ -183,29 +196,50 @@ func (p *Purger) purgeDue(ctx context.Context, now time.Time, due func(context.C
 	return purged, errors.Join(failures...)
 }
 
-func (p *Purger) purgeIfDue(ctx context.Context, id domain.UserID, now time.Time) (bool, error) {
-	purged := false
-	announce := Announce(Silent)
-	err := p.store.WithTx(ctx, func(repos repositories.Repositories) error {
-		state, err := repos.Users.LockForPurge(ctx, id)
-		if errors.Is(err, repositories.ErrNotFound) {
-			return nil
-		}
-		if err != nil {
+func (p *Purger) purgeIfDue(ctx context.Context, id domain.UserID, now time.Time, run *purgeRun) (bool, error) {
+	batches := 0
+	for !run.exhausted() {
+		finished, purged := false, false
+		announce := Announce(Silent)
+		err := p.store.WithTx(ctx, func(repos repositories.Repositories) error {
+			state, err := repos.Users.LockForPurge(ctx, id)
+			if errors.Is(err, repositories.ErrNotFound) {
+				finished = true
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if !purgeIsDue(state, now) {
+				finished = true
+				return nil
+			}
+			if state.Role == domain.RoleTutor {
+				deleted, err := p.tutoring.PurgeTutorBatch(ctx, repos, id)
+				if err != nil || deleted > 0 {
+					return err
+				}
+			}
+			finished, purged = true, true
+			announce, err = p.purge(ctx, repos, id, now, batches)
 			return err
+		})
+		if err != nil {
+			return false, err
 		}
-		deletedLongAgo := state.State == domain.AccountDeleted && state.DeletedAt != nil && !state.DeletedAt.After(now.Add(-domain.DeletedAccountRetention))
-		unverifiedTooLong := state.State == domain.AccountUnverified && !state.UnverifiedSince.After(now.Add(-unverifiedLifetime))
-		if !deletedLongAgo && !unverifiedTooLong {
-			return nil
+		if finished {
+			announce(ctx)
+			return purged, nil
 		}
-		purged = true
-		announce, err = p.purge(ctx, repos, id, now)
-		return err
-	})
-	if err != nil {
-		return false, err
+		batches++
+		run.batchesLeft--
 	}
-	announce(ctx)
-	return purged, nil
+	p.logger.LogAttrs(ctx, slog.LevelInfo, "account.purge_paused", userAttribute(id), slog.Int("batches", batches))
+	return false, nil
+}
+
+func purgeIsDue(state repositories.PurgeState, now time.Time) bool {
+	deletedLongAgo := state.State == domain.AccountDeleted && state.DeletedAt != nil && !state.DeletedAt.After(now.Add(-domain.DeletedAccountRetention))
+	unverifiedTooLong := state.State == domain.AccountUnverified && !state.UnverifiedSince.After(now.Add(-unverifiedLifetime))
+	return deletedLongAgo || unverifiedTooLong
 }

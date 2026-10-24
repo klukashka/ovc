@@ -358,16 +358,61 @@ func (r Relationships) AwaitsReclaimChoice(ctx context.Context, student domain.U
 	return awaits != nil && *awaits, nil
 }
 
-func (r Relationships) LockReclaimPendingOfTutor(ctx context.Context, tutor domain.UserID) ([]Relationship, error) {
-	relationships, err := r.queries.LockTutorReclaimPendingRelationships(ctx, tutor)
-	return one(relationships, err, "lock reclaim pending relationships of a tutor")
+type DiscardedForTutorDeletion = dbgen.DiscardRelationshipsForTutorDeletionRow
+
+func (r Relationships) LockOfTutor(ctx context.Context, tutor domain.UserID) error {
+	_, err := r.queries.LockTutorRelationships(ctx, tutor)
+	return done(err, "lock relationships of a tutor")
 }
 
-func (r Relationships) DiscardForTutorDeletion(ctx context.Context, link Relationship, now time.Time) (bool, error) {
-	rows, err := r.queries.DiscardRelationshipForTutorDeletion(ctx, dbgen.DiscardRelationshipForTutorDeletionParams{
-		Now: now, ID: link.ID, TutorID: link.TutorID, FromState: string(link.State),
-	})
-	return applied(rows, err, "discard relationship for tutor deletion")
+func (r Relationships) DiscardForTutorDeletion(ctx context.Context, tutor domain.UserID, now time.Time) ([]DiscardedForTutorDeletion, error) {
+	discarded, err := r.queries.DiscardRelationshipsForTutorDeletion(ctx, dbgen.DiscardRelationshipsForTutorDeletionParams{Now: now, TutorID: tutor})
+	return one(discarded, err, "discard relationships for tutor deletion")
+}
+
+func (r Relationships) EndForTutorDeletion(ctx context.Context, tutor domain.UserID, now time.Time) ([]Relationship, error) {
+	ended, err := r.queries.EndRelationshipsForTutorDeletion(ctx, dbgen.EndRelationshipsForTutorDeletionParams{Now: now, TutorID: tutor})
+	return one(ended, err, "end relationships for tutor deletion")
+}
+
+func (r Relationships) DeleteMembershipsOfTutor(ctx context.Context, tutor domain.UserID) ([]domain.RelationshipID, error) {
+	removed, err := r.queries.DeleteTutorMemberships(ctx, pgtype.UUID{Bytes: tutor, Valid: true})
+	return one(removed, err, "delete memberships of a tutor")
+}
+
+func (r Relationships) LinkedTutorsOfStudent(ctx context.Context, student domain.UserID) ([]domain.UserID, error) {
+	tutors, err := r.queries.ListLinkedTutorsOfStudent(ctx, &student)
+	return one(tutors, err, "tutors of a student's waiting links")
+}
+
+func (r Relationships) DeleteBatchOfTutor(ctx context.Context, tutor domain.UserID, batchSize int32) (int64, error) {
+	rows, err := r.queries.DeleteTutorRelationshipsBatch(ctx, dbgen.DeleteTutorRelationshipsBatchParams{TutorID: tutor, BatchSize: batchSize})
+	return counted(rows, err, "delete a batch of a tutor's relationships")
+}
+
+func (r Invitations) RevokeAllOfTutor(ctx context.Context, tutor domain.UserID, now time.Time) (int64, error) {
+	rows, err := r.queries.RevokeTutorInvitations(ctx, dbgen.RevokeTutorInvitationsParams{Now: now, TutorID: tutor})
+	return counted(rows, err, "revoke the open invitations of a tutor")
+}
+
+func (r Invitations) DeleteBatchOfTutor(ctx context.Context, tutor domain.UserID, batchSize int32) (int64, error) {
+	rows, err := r.queries.DeleteTutorInvitationsBatch(ctx, dbgen.DeleteTutorInvitationsBatchParams{TutorID: tutor, BatchSize: batchSize})
+	return counted(rows, err, "delete a batch of a tutor's invitations")
+}
+
+func (r JoinRequests) ExpireAllOfTutor(ctx context.Context, tutor domain.UserID, now time.Time) (int64, error) {
+	rows, err := r.queries.ExpireJoinRequestsOfTutor(ctx, dbgen.ExpireJoinRequestsOfTutorParams{Now: now, TutorID: tutor})
+	return counted(rows, err, "expire the open join requests of a tutor")
+}
+
+func (r JoinRequests) DeleteBatchOfTutor(ctx context.Context, tutor domain.UserID, batchSize int32) (int64, error) {
+	rows, err := r.queries.DeleteTutorJoinRequestsBatch(ctx, dbgen.DeleteTutorJoinRequestsBatchParams{TutorID: tutor, BatchSize: batchSize})
+	return counted(rows, err, "delete a batch of a tutor's join requests")
+}
+
+func (r BlockedRequesters) DeleteBatchOfTutor(ctx context.Context, tutor domain.UserID, batchSize int32) (int64, error) {
+	rows, err := r.queries.DeleteTutorBlockedRequestersBatch(ctx, dbgen.DeleteTutorBlockedRequestersBatchParams{TutorID: tutor, BatchSize: batchSize})
+	return counted(rows, err, "delete a batch of a tutor's blocked requesters")
 }
 
 func (r JoinRequests) MarkHeldForOwnerChoice(ctx context.Context, student domain.UserID) (int64, error) {
@@ -388,11 +433,6 @@ func (r JoinRequests) OwnerChoiceRowsOf(ctx context.Context, student domain.User
 func (r JoinRequests) LockOwnerChoiceOf(ctx context.Context, student domain.UserID) ([]JoinRequest, error) {
 	requests, err := r.queries.LockOwnerChoiceJoinRequests(ctx, student)
 	return one(requests, err, "lock join requests waiting for the owner's choice")
-}
-
-func (r JoinRequests) LockOwnerChoiceOfTutor(ctx context.Context, tutor domain.UserID) ([]JoinRequest, error) {
-	requests, err := r.queries.LockTutorOwnerChoiceJoinRequests(ctx, tutor)
-	return one(requests, err, "lock a tutor's join requests waiting for the owner's choice")
 }
 
 func (r JoinRequests) ReleaseHeld(ctx context.Context, id domain.JoinRequestID, suppressed domain.Suppression) (bool, error) {
