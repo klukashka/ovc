@@ -544,8 +544,9 @@ func TestEndingRacingAGroupChangeLeavesNoMembership(t *testing.T) {
 func anotherTutorsActiveStudent(t *testing.T, h *authHarness) (response, response) {
 	t.Helper()
 	owner, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
-	_, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
+	intruderID, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
 	card := h.linkedCard(t, owner, 10, domain.RelationshipActive)
+	h.shareStudentWith(t, intruderID, domain.UserID{10})
 	outOfScope := h.endAsTutor(t, intruder, card)
 	random := h.endAsTutor(t, intruder, randomCardID)
 	if h.storedRelationship(t, card).State != string(domain.RelationshipActive) {

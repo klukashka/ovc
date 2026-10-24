@@ -245,6 +245,9 @@ func (s *Service) RemoveStudent(ctx context.Context, tutor domain.UserID, id dom
 		if err != nil {
 			return err
 		}
+		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+			return err
+		}
 		locked, err := lockCard(ctx, repos, tutor, id)
 		if err != nil {
 			return err

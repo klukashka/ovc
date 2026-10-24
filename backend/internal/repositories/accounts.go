@@ -134,9 +134,13 @@ func (r TutorProfiles) Code(ctx context.Context, tutor domain.UserID) (TutorCode
 }
 
 func (r TutorProfiles) Lock(ctx context.Context, tutor domain.UserID) error {
-	_, err := r.queries.LockTutorProfile(ctx, tutor)
-	_, err = one(struct{}{}, err, "lock tutor profile")
+	_, err := r.LockCode(ctx, tutor)
 	return err
+}
+
+func (r TutorProfiles) LockCode(ctx context.Context, tutor domain.UserID) (domain.TutorCode, error) {
+	code, err := r.queries.LockTutorProfile(ctx, tutor)
+	return one(code, err, "lock tutor profile")
 }
 
 func (r TutorProfiles) ReplaceCode(ctx context.Context, tutor domain.UserID, random core.RandomSource, now time.Time) (domain.TutorCode, error) {

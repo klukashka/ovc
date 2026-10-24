@@ -105,9 +105,7 @@ func (FieldCipher) GoString() string {
 }
 
 func (FieldCipher) Format(state fmt.State, _ rune) {
-	if _, err := io.WriteString(state, redacted); err != nil {
-		return
-	}
+	writeRedacted(state)
 }
 
 func (FieldCipher) LogValue() slog.Value {

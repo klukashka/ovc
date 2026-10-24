@@ -361,7 +361,7 @@ var denialCases = map[string]denialCase{
 	"POST /api/v1/students/{id}/invitation":               anotherTutorsCard(http.MethodPost, "/invitation", ""),
 	"POST /api/v1/students/{id}/invitation/send":          anotherTutorsCard(http.MethodPost, "/invitation/send", ""),
 	"GET /api/v1/invitations/{token}":                     aBlockedTutorsLinkIsUnknown,
-	"POST /api/v1/students/{id}/remove":                   anotherTutorsProvisionalStudent,
+	"POST /api/v1/students/{id}/remove":                   anotherTutorsRemovableStudent,
 	"POST /api/v1/students/{id}/end":                      anotherTutorsActiveStudent,
 	"POST /api/v1/tutors/{relationshipId}/end":            anotherStudentsRelationship,
 	"POST /api/v1/invitations/{token}/accept":             aBlockedTutorsLinkCannotBeAccepted,
@@ -378,15 +378,30 @@ var denialStatuses = map[string]int{
 	"POST /api/v1/invitations/{token}/accept": http.StatusConflict,
 }
 
-func anotherTutorsProvisionalStudent(t *testing.T, h *authHarness) (response, response) {
+const sharedStudentCard byte = 0x7f
+
+func (h *authHarness) shareStudentWith(t *testing.T, intruder domain.UserID, student domain.UserID) {
+	t.Helper()
+	h.seedCard(t, intruder, sharedStudentCard, domain.RelationshipActive, &student)
+}
+
+func anotherTutorsRemovableStudent(t *testing.T, h *authHarness) (response, response) {
 	t.Helper()
 	owner, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
-	_, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "another-tutor@example.org")
-	student, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 3, studentEmail)
-	card := h.seedCard(t, owner, 1, domain.RelationshipProvisional, &student)
+	intruderID, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "another-tutor@example.org")
+	student, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 3, studentEmail)
+	card := h.seedCard(t, owner, 1, domain.RelationshipReclaimPending, &student)
+	h.shareStudentWith(t, intruderID, student)
+	squatter, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 4, "squatter@example.org")
+	provisional := h.seedCard(t, owner, 2, domain.RelationshipProvisional, &squatter)
 	outOfScope := h.cardCall(t, intruder, http.MethodPost, card, "/remove", "")
+	provisionalOutOfScope := h.cardCall(t, intruder, http.MethodPost, provisional, "/remove", "")
 	random := h.cardCall(t, intruder, http.MethodPost, randomCardID, "/remove", "")
-	if h.storedRelationship(t, card).State != string(domain.RelationshipProvisional) {
+	if provisionalOutOfScope.status != random.status || refusal(t, provisionalOutOfScope) != refusal(t, random) {
+		t.Fatalf("removing another tutor's provisional student answered %d %s", provisionalOutOfScope.status, provisionalOutOfScope.body)
+	}
+	if h.storedRelationship(t, card).State != string(domain.RelationshipReclaimPending) ||
+		h.storedRelationship(t, provisional).State != string(domain.RelationshipProvisional) {
 		t.Fatal("another tutor removed the student")
 	}
 	return outOfScope, random
@@ -409,11 +424,20 @@ func aBlockedTutorsLinkCannotBeAccepted(t *testing.T, h *authHarness) (response,
 func anotherTutorsCard(method string, suffix string, body string) denialCase {
 	return func(t *testing.T, h *authHarness) (response, response) {
 		t.Helper()
-		_, owner := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
-		_, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "another-tutor@example.org")
-		card := h.newCard(t, owner, cardName, cardEmail)
-		outOfScope := h.cardCall(t, intruder, method, card.ID, suffix, body)
+		owner, ownerToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+		intruderID, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "another-tutor@example.org")
+		invited := h.newCard(t, ownerToken, cardName, cardEmail)
+		shared := h.linkedCard(t, owner, 10, domain.RelationshipActive)
+		h.shareStudentWith(t, intruderID, domain.UserID{10})
+		outOfScope := h.cardCall(t, intruder, method, invited.ID, suffix, body)
+		sharedOutOfScope := h.cardCall(t, intruder, method, shared, suffix, body)
 		random := h.cardCall(t, intruder, method, randomCardID, suffix, body)
+		if refusal(t, sharedOutOfScope) != refusal(t, random) {
+			t.Fatalf("the card of a shared student answered %d %s, a random id %d %s", sharedOutOfScope.status, sharedOutOfScope.body, random.status, random.body)
+		}
+		if h.storedRelationship(t, invited.ID).State != string(domain.RelationshipInvited) || h.storedRelationship(t, shared).State != string(domain.RelationshipActive) {
+			t.Fatal("another tutor changed a card")
+		}
 		return outOfScope, random
 	}
 }

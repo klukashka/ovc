@@ -96,10 +96,8 @@ func (s *Service) Block(ctx context.Context, email string) (domain.UserID, error
 		if !blocked {
 			return ErrImpossibleState
 		}
-		if target.Role == domain.RoleTutor {
-			if err := repos.TutorProfiles.Lock(ctx, target.ID); err != nil {
-				return err
-			}
+		if err := lockTutorProfile(ctx, repos, target); err != nil {
+			return err
 		}
 		if _, err := repos.Sessions.RevokeAllOf(ctx, target.ID, now); err != nil {
 			return err
@@ -127,7 +125,7 @@ func (s *Service) Unblock(ctx context.Context, email string) (domain.UserID, err
 		if !unblocked {
 			return ErrImpossibleState
 		}
-		return nil
+		return lockTutorProfile(ctx, repos, target)
 	})
 }
 
@@ -140,8 +138,15 @@ func (s *Service) Restore(ctx context.Context, email string) (domain.UserID, err
 		if !restored {
 			return ErrImpossibleState
 		}
-		return nil
+		return lockTutorProfile(ctx, repos, target)
 	})
+}
+
+func lockTutorProfile(ctx context.Context, repos repositories.Repositories, target repositories.OperatorTarget) error {
+	if target.Role != domain.RoleTutor {
+		return nil
+	}
+	return repos.TutorProfiles.Lock(ctx, target.ID)
 }
 
 func (s *Service) SetQuota(ctx context.Context, email string, files int64, recordings int64) (domain.UserID, error) {

@@ -25,6 +25,7 @@ const (
 	tutorOpenInvitations  = tutorInvitations + " AND invitations.used_at IS NULL AND invitations.revoked_at IS NULL"
 	tutorJoinRequests     = "SELECT count(id) FROM join_requests WHERE tutor_id = $1::uuid"
 	tutorBlockedStudents  = "SELECT count(student_id) FROM blocked_requesters WHERE tutor_id = $1::uuid"
+	tutorDecidedRequests  = "SELECT count(id) FROM join_requests WHERE tutor_id = $1::uuid AND state IN ('accepted', 'declined')"
 	tutorGroups           = "SELECT count(id) FROM groups WHERE tutor_id = $1::uuid"
 	tutorGroupMembers     = "SELECT count(group_id) FROM group_members WHERE tutor_id = $1::uuid"
 	tutorProfiles         = "SELECT count(user_id) FROM tutor_profiles WHERE user_id = $1::uuid"
@@ -564,9 +565,31 @@ func TestUnblockIntoUnverifiedRestartsTheClockOfALinkedStudent(t *testing.T) {
 }
 
 type preparedLink struct {
-	send      func() <-chan pendingAnswer
-	linked    func(t *testing.T, h *authHarness) bool
-	reference *response
+	send         func() <-chan pendingAnswer
+	linked       func(t *testing.T, h *authHarness) bool
+	reference    *response
+	verifyEmails int64
+}
+
+const verifyEmailsQueued = "SELECT count(id) FROM outbox WHERE kind = $1"
+
+func (h *authHarness) verifyEmails(t *testing.T) int64 {
+	t.Helper()
+	return h.countRows(t, verifyEmailsQueued, string(domain.EmailPurposeVerify.Event()))
+}
+
+func (h *authHarness) assertAnsweredLikeATakenEmail(t *testing.T, answer response, prepared preparedLink, hashed int) {
+	t.Helper()
+	if !sameAnswer(answer, *prepared.reference) {
+		t.Fatalf("the refused sign-up answered %d %s %v, a taken email %d %s %v", answer.status, answer.body, answer.headers,
+			prepared.reference.status, prepared.reference.body, prepared.reference.headers)
+	}
+	if hashed != 1 {
+		t.Fatalf("the refused sign-up hashed %d passwords instead of one", hashed)
+	}
+	if queued := h.verifyEmails(t); queued != prepared.verifyEmails {
+		t.Fatalf("%d confirmation emails are queued instead of %d", queued, prepared.verifyEmails)
+	}
 }
 
 type racingLink struct {
@@ -581,6 +604,12 @@ func racingLinks() map[string]racingLink {
 			prepare: func(t *testing.T, h *authHarness, _ domain.UserID, tutorToken string) preparedLink {
 				t.Helper()
 				link := linkToken(t, h.newCard(t, tutorToken, cardName, "").Invitation)
+				h.seedUserAs(t, domain.RoleStudent, 5, "taken@example.org", accountPassword, currentHash)
+				hashesBefore := h.hasher.Hashes()
+				reference := h.send(t, http.MethodPost, invitationPath+link+"/accept", studentSignUp{Email: "taken@example.org"}.body(), signUpHeaders())
+				if hashed := h.hasher.Hashes() - hashesBefore; hashed != 1 {
+					t.Fatalf("the taken-email sign-up hashed %d passwords", hashed)
+				}
 				return preparedLink{
 					send: func() <-chan pendingAnswer {
 						return h.sendInBackground(http.MethodPost, invitationPath+link+"/accept", studentSignUp{Email: newcomerEmail}.body(), signUpHeaders())
@@ -589,9 +618,10 @@ func racingLinks() map[string]racingLink {
 						t.Helper()
 						return h.userExists(t, newcomerEmail)
 					},
+					reference: &reference,
 				}
 			},
-			status: http.StatusConflict, code: "invitation_invalid",
+			status: http.StatusAccepted,
 		},
 		"signed-in acceptance": {
 			prepare: func(t *testing.T, h *authHarness, _ domain.UserID, tutorToken string) preparedLink {
@@ -613,7 +643,11 @@ func racingLinks() map[string]racingLink {
 				t.Helper()
 				code := h.storedCode(t, tutor).Display()
 				h.seedUserAs(t, domain.RoleStudent, 5, "taken@example.org", accountPassword, currentHash)
+				hashesBefore := h.hasher.Hashes()
 				reference := h.register(t, studentCodeSignUp("taken@example.org", code))
+				if hashed := h.hasher.Hashes() - hashesBefore; hashed != 1 {
+					t.Fatalf("the taken-email sign-up hashed %d passwords", hashed)
+				}
 				body := studentCodeSignUp(entrantEmail, code).body()
 				return preparedLink{
 					send: func() <-chan pendingAnswer {
@@ -623,7 +657,8 @@ func racingLinks() map[string]racingLink {
 						t.Helper()
 						return h.countRows(t, requestsOfEmail, entrantEmail) > 0
 					},
-					reference: &reference,
+					reference:    &reference,
+					verifyEmails: 1,
 				}
 			},
 			status: http.StatusAccepted,
@@ -697,18 +732,20 @@ func TestTutorStateChangeRacingALinkHasOneOutcome(t *testing.T) {
 				release := h.holdTutorProfile(t, tutor)
 				changed := change.start(t, h, tutorToken)
 				h.waitForLockWaiters(t, 1)
+				hashesBefore := h.hasher.Hashes()
 				answer := prepared.send()
 				h.waitForLockWaiters(t, 2)
 
 				release()
 				awaitChange(t, changed)
 				refused := awaitAnswer(t, answer)
+				hashed := h.hasher.Hashes() - hashesBefore
 
 				if refused.status != link.status || (link.code != "" && code(t, refused) != link.code) {
 					t.Fatalf("the link answered %d %s", refused.status, refused.body)
 				}
-				if prepared.reference != nil && (refused.status != prepared.reference.status || refused.body != prepared.reference.body) {
-					t.Fatalf("the refused sign-up answered %d %s, a taken email %d %s", refused.status, refused.body, prepared.reference.status, prepared.reference.body)
+				if prepared.reference != nil {
+					h.assertAnsweredLikeATakenEmail(t, refused, prepared, hashed)
 				}
 				if prepared.linked(t, h) {
 					t.Fatal("the link reached a tutor who was no longer active")
@@ -797,11 +834,14 @@ type tutorWrite struct {
 }
 
 type tutorWriteCards struct {
-	invited  string
-	ended    string
-	active   string
-	open     string
-	archived string
+	invited     string
+	ended       string
+	active      string
+	open        string
+	archived    string
+	request     string
+	provisional string
+	blocked     domain.UserID
 }
 
 func tutorWrites() map[string]tutorWrite {
@@ -822,16 +862,49 @@ func tutorWrites() map[string]tutorWrite {
 			body: func(tutorWriteCards) string { return "" }},
 		"unarchiving a group": {method: http.MethodPost, path: func(cards tutorWriteCards) string { return groupsRoute + "/" + cards.archived + "/unarchive" },
 			body: func(tutorWriteCards) string { return "" }},
+		"regenerating the code": {method: http.MethodPost, path: func(tutorWriteCards) string { return "/api/v1/tutor/code/regenerate" },
+			body: func(tutorWriteCards) string { return "" }},
+		"accepting a join request": {method: http.MethodPost, path: func(cards tutorWriteCards) string { return joinRequestsPath + "/" + cards.request + "/accept" },
+			body: func(tutorWriteCards) string { return "" }},
+		"declining a join request": {method: http.MethodPost, path: func(cards tutorWriteCards) string { return joinRequestsPath + "/" + cards.request + "/decline" },
+			body: func(tutorWriteCards) string { return `{"block":false}` }},
+		"declining and blocking": {method: http.MethodPost, path: func(cards tutorWriteCards) string { return joinRequestsPath + "/" + cards.request + "/decline" },
+			body: func(tutorWriteCards) string { return `{"block":true}` }},
+		"withdrawing a card": {method: http.MethodDelete, path: func(cards tutorWriteCards) string { return studentsPath + "/" + cards.invited },
+			body: func(tutorWriteCards) string { return "" }},
+		"removing a provisional student": {method: http.MethodPost, path: func(cards tutorWriteCards) string { return studentsPath + "/" + cards.provisional + "/remove" },
+			body: func(tutorWriteCards) string { return "" }},
+		"ending a relationship": {method: http.MethodPost, path: func(cards tutorWriteCards) string { return studentsPath + "/" + cards.active + "/end" },
+			body: func(tutorWriteCards) string { return "" }},
+		"unblocking a student": {method: http.MethodDelete, path: func(cards tutorWriteCards) string { return blockedPath + "/" + cards.blocked.String() },
+			body: func(tutorWriteCards) string { return "" }},
 	}
 }
 
-func (h *authHarness) tutorWriteTrace(t *testing.T, tutor domain.UserID) [4]int64 {
+const (
+	tutorEndedByTutor       = "SELECT count(id) FROM relationships WHERE tutor_id = $1::uuid AND ended_by = 'tutor'"
+	tutorRemovedOrWithdrawn = "SELECT count(id) FROM relationships WHERE tutor_id = $1::uuid AND discard_reason IN ('removed', 'withdrawn')"
+)
+
+type tutorWriteTrace struct {
+	counts [8]int64
+	code   domain.TutorCode
+}
+
+func (h *authHarness) tutorWriteTrace(t *testing.T, tutor domain.UserID) tutorWriteTrace {
 	t.Helper()
-	return [4]int64{
-		h.countRows(t, tutorRelationships, tutor.String()),
-		h.countRows(t, tutorInvitations, tutor.String()),
-		h.countRows(t, tutorGroups, tutor.String()),
-		h.countRows(t, tutorDeletedQueued, string(domain.EventInvitationCreated)),
+	return tutorWriteTrace{
+		counts: [8]int64{
+			h.countRows(t, tutorRelationships, tutor.String()),
+			h.countRows(t, tutorInvitations, tutor.String()),
+			h.countRows(t, tutorGroups, tutor.String()),
+			h.countRows(t, tutorDeletedQueued, string(domain.EventInvitationCreated)),
+			h.countRows(t, tutorDecidedRequests, tutor.String()),
+			h.countRows(t, tutorBlockedStudents, tutor.String()),
+			h.countRows(t, tutorEndedByTutor, tutor.String()),
+			h.countRows(t, tutorRemovedOrWithdrawn, tutor.String()),
+		},
+		code: h.storedCode(t, tutor),
 	}
 }
 
@@ -849,6 +922,13 @@ func TestTutorWriteAuthenticatedBeforeTheTutorStoppedBeingActiveIsRefused(t *tes
 				cards := tutorWriteCards{invited: h.newCard(t, tutorToken, "An invited student", cardEmail).ID, ended: ended.ID, active: active.ID}
 				cards.open = h.newGroup(t, tutorToken, "An open group", []string{active.ID}).ID
 				cards.archived = h.newGroup(t, tutorToken, "An archived group", nil).ID
+				_, requesterToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 4, entrantEmail)
+				cards.request = requestText(h.enteredRequest(t, requesterToken, h.storedCode(t, tutor).Display()))
+				provisional, _ := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
+				cards.provisional = provisional.ID
+				blocked, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 6, "blocked@example.org")
+				h.blockRequester(t, tutor, blocked)
+				cards.blocked = blocked
 				if archived := h.groupCall(t, tutorToken, http.MethodPost, cards.archived, "/archive", ""); archived.status != http.StatusOK {
 					t.Fatalf("archiving answered %d %s", archived.status, archived.body)
 				}
@@ -871,12 +951,210 @@ func TestTutorWriteAuthenticatedBeforeTheTutorStoppedBeingActiveIsRefused(t *tes
 					t.Fatalf("the write answered %d %s", refused.status, refused.body)
 				}
 				if after := h.tutorWriteTrace(t, tutor); after != before {
-					t.Fatalf("the refused write changed cards, links, groups or emails: %v then %v", before, after)
+					t.Fatalf("the refused write changed cards, links, groups, emails, requests, blocks, endings, removals or the code: %+v then %+v", before, after)
 				}
 				if h.countRows(t, unarchivedGroupsQuery, tutor.String()) != unarchivedAfter || h.countRows(t, "SELECT count(id) FROM groups WHERE name = $1", "Renamed group") != 0 {
 					t.Fatal("the refused write archived, unarchived or renamed a group")
 				}
 			})
 		}
+	}
+}
+
+type operatorTutorChange struct {
+	prepare func(t *testing.T, h *authHarness, tutor domain.UserID)
+	apply   func(service *operators.Service, ctx context.Context, email string) (domain.UserID, error)
+	want    domain.AccountState
+}
+
+func operatorTutorChanges() map[string]operatorTutorChange {
+	return map[string]operatorTutorChange{
+		"block": {
+			prepare: func(*testing.T, *authHarness, domain.UserID) {},
+			apply:   (*operators.Service).Block,
+			want:    domain.AccountBlocked,
+		},
+		"unblock": {
+			prepare: func(t *testing.T, h *authHarness, _ domain.UserID) {
+				t.Helper()
+				if _, err := h.operators().Block(context.Background(), tutorEmail); err != nil {
+					t.Fatal(err)
+				}
+			},
+			apply: (*operators.Service).Unblock,
+			want:  domain.AccountActive,
+		},
+		"restore": {
+			prepare: func(t *testing.T, h *authHarness, tutor domain.UserID) {
+				t.Helper()
+				if _, err := h.store.Repositories().Users.MarkDeleted(context.Background(), tutor, authStart); err != nil {
+					t.Fatal(err)
+				}
+			},
+			apply: (*operators.Service).Restore,
+			want:  domain.AccountActive,
+		},
+	}
+}
+
+func TestOperatorStateChangesOfATutorTakeTheProfileLock(t *testing.T) {
+	for name, change := range operatorTutorChanges() {
+		t.Run(name, func(t *testing.T) {
+			h := newFlowHarness(t)
+			tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+			change.prepare(t, h, tutor)
+			release := h.holdTutorProfile(t, tutor)
+			changed := make(chan error, 1)
+			go func() {
+				_, err := change.apply(h.operators(), context.Background(), tutorEmail)
+				changed <- err
+			}()
+			h.waitForLockWaiters(t, 1)
+
+			release()
+			awaitChange(t, changed)
+
+			if user, err := h.store.Repositories().Users.ByID(context.Background(), tutor); err != nil || user.State != change.want {
+				t.Fatalf("the tutor is %+v %v after the change", user, err)
+			}
+		})
+	}
+}
+
+func (h *authHarness) assertNothingOpenOfDeletedTutor(t *testing.T, tutor domain.UserID, student domain.UserID) {
+	t.Helper()
+	if invited := h.cardsOf(t, tutor, domain.RelationshipInvited); len(invited) != 0 {
+		t.Fatalf("an invited card of the deleted tutor remains: %+v", invited)
+	}
+	if h.countRows(t, tutorOpenInvitations, tutor.String()) != 0 || h.linksOf(t, student) != 0 {
+		t.Fatal("an open invitation or a link of the deleted tutor remains")
+	}
+}
+
+func (h *authHarness) assertDiscarded(t *testing.T, tutor domain.UserID, card string, reason string, discarded int) {
+	t.Helper()
+	if stored := h.storedRelationship(t, card); stored.State != "discarded" || stored.DiscardReason == nil || *stored.DiscardReason != reason {
+		t.Fatalf("the link is %+v instead of discarded as %s", stored, reason)
+	}
+	if cards := h.cardsOf(t, tutor, domain.RelationshipDiscarded); len(cards) != discarded {
+		t.Fatalf("the tutor has %d discarded cards instead of %d: %+v", len(cards), discarded, cards)
+	}
+}
+
+func TestTutorRemovalRacingTheTutorsDeletionHasOneOutcome(t *testing.T) {
+	for _, removalFirst := range []bool{true, false} {
+		t.Run(fmt.Sprintf("removal first %t", removalFirst), func(t *testing.T) {
+			h := newFlowHarness(t)
+			tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+			card, student := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
+			remove := func() <-chan pendingAnswer {
+				return h.sendInBackground(http.MethodPost, studentsPath+"/"+card.ID+"/remove", "", jsonCall(tutorToken))
+			}
+			release := h.holdTutorProfile(t, tutor)
+			var removal, deletion <-chan pendingAnswer
+			if removalFirst {
+				removal = remove()
+				h.waitForLockWaiters(t, 1)
+				deletion = h.deleteInBackground(tutorToken, accountPassword)
+			} else {
+				deletion = h.deleteInBackground(tutorToken, accountPassword)
+				h.waitForLockWaiters(t, 1)
+				removal = remove()
+			}
+			h.waitForLockWaiters(t, 2)
+
+			release()
+			removed, deleted := awaitAnswer(t, removal), awaitAnswer(t, deletion)
+
+			if deleted.status != http.StatusNoContent {
+				t.Fatalf("the deletion answered %d %s", deleted.status, deleted.body)
+			}
+			if removalFirst {
+				if removed.status != http.StatusOK {
+					t.Fatalf("the removal that took the lock first answered %d %s", removed.status, removed.body)
+				}
+				h.assertDiscarded(t, tutor, card.ID, "removed", 2)
+			} else {
+				if removed.status != http.StatusUnauthorized || code(t, removed) != "unauthenticated" {
+					t.Fatalf("the removal after the deletion answered %d %s", removed.status, removed.body)
+				}
+				h.assertDiscarded(t, tutor, card.ID, "tutor_deleted", 1)
+			}
+			h.assertNothingOpenOfDeletedTutor(t, tutor, student)
+		})
+	}
+}
+
+func TestStopStudyingRacingTheTutorsDeletionHasOneOutcome(t *testing.T) {
+	stop := func(h *authHarness, studentToken string, card string) <-chan pendingAnswer {
+		return h.sendInBackground(http.MethodPost, tutorsPath+card+"/end", "", jsonCall(studentToken))
+	}
+	t.Run("committed while the deletion waits", func(t *testing.T) {
+		h := newFlowHarness(t)
+		tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+		card, student := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
+		studentToken := accessToken(t, h.login(t, newcomerEmail, newcomerPassword))
+		release := h.holdTutorProfile(t, tutor)
+		deletion := h.deleteInBackground(tutorToken, accountPassword)
+		h.waitForLockWaiters(t, 1)
+		stopped := awaitAnswer(t, stop(h, studentToken, card.ID))
+
+		release()
+		deleted := awaitAnswer(t, deletion)
+
+		if stopped.status != http.StatusNoContent || deleted.status != http.StatusNoContent {
+			t.Fatalf("Stop studying answered %d %s and the deletion %d %s", stopped.status, stopped.body, deleted.status, deleted.body)
+		}
+		h.assertDiscarded(t, tutor, card.ID, "removed", 2)
+		h.assertNothingOpenOfDeletedTutor(t, tutor, student)
+	})
+	t.Run("sent before the deletion and locked after it", func(t *testing.T) {
+		h := newFlowHarness(t)
+		tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+		card, student := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
+		studentToken := accessToken(t, h.login(t, newcomerEmail, newcomerPassword))
+		release := h.holdUserRow(t, student)
+		pending := stop(h, studentToken, card.ID)
+		h.waitForLockWaiters(t, 1)
+		deleted := awaitAnswer(t, h.deleteInBackground(tutorToken, accountPassword))
+
+		release()
+		refused := awaitAnswer(t, pending)
+
+		if deleted.status != http.StatusNoContent || refused.status != http.StatusNotFound || code(t, refused) != "not_found" {
+			t.Fatalf("the deletion answered %d %s and Stop studying %d %s", deleted.status, deleted.body, refused.status, refused.body)
+		}
+		h.assertDiscarded(t, tutor, card.ID, "tutor_deleted", 1)
+		h.assertNothingOpenOfDeletedTutor(t, tutor, student)
+	})
+}
+
+func TestTutorDeletionRecordsWhenEachOpenRequestEnded(t *testing.T) {
+	h := newFlowHarness(t)
+	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	closedStudent, closedToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
+	overdueStudent, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 3, requestingEmail)
+	closed := h.closedByUnblock(t, tutor, tutorToken, closedStudent, closedToken)
+	overdue := h.seedJoinRequest(t, tutor, overdueStudent, 1, domain.JoinRequestPending)
+	if _, err := h.database.Pool.Exec(context.Background(), "UPDATE join_requests SET expires_at = $1 WHERE id = $2", authStart, overdue); err != nil {
+		t.Fatal(err)
+	}
+	h.advance(t, time.Hour)
+	deletedAt := h.now(t)
+	signedInAfterTheAdvance := h.relogin(t, tutorEmail)
+	if closedUntil := h.requestDecidedAt(t, closed); closedUntil == nil || !closedUntil.After(deletedAt) {
+		t.Fatalf("the request the unblock closed is decided at %v, not after the deletion", closedUntil)
+	}
+
+	deleted := awaitAnswer(t, h.deleteInBackground(signedInAfterTheAdvance, accountPassword))
+
+	if deleted.status != http.StatusNoContent {
+		t.Fatalf("the deletion answered %d %s", deleted.status, deleted.body)
+	}
+	if got, decidedAt := h.storedRequest(t, closed), h.requestDecidedAt(t, closed); got.State != "expired" || !sameInstant(decidedAt, deletedAt) {
+		t.Fatalf("the request the unblock closed is %+v, decided at %v instead of the deletion time %v", got, decidedAt, deletedAt)
+	}
+	if got, decidedAt := h.storedRequest(t, overdue), h.requestDecidedAt(t, overdue); got.State != "expired" || !sameInstant(decidedAt, authStart) {
+		t.Fatalf("the overdue request is %+v, decided at %v instead of its expiry %v", got, decidedAt, authStart)
 	}
 }

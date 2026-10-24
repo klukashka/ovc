@@ -12,6 +12,8 @@ import (
 	"ovc/backend/internal/repositories"
 )
 
+var errLinkLostDuringSignUp = errors.New("the invitation stopped being usable while the sign-up waited for it")
+
 func (s *Service) RegisterThroughInvitation(ctx context.Context, token string, registration InvitationSignUp, address netip.Addr) error {
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
@@ -52,6 +54,10 @@ func (s *Service) RegisterThroughInvitation(ctx context.Context, token string, r
 		}
 		created = true
 		announce, err = s.deps.Tutoring.LinkAtSignUp(ctx, repos, user, check, now)
+		if errors.Is(err, ErrInvitationInvalid) {
+			created = false
+			return errLinkLostDuringSignUp
+		}
 		if err != nil {
 			return err
 		}
@@ -63,7 +69,7 @@ func (s *Service) RegisterThroughInvitation(ctx context.Context, token string, r
 		}
 		return err
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errLinkLostDuringSignUp) {
 		return err
 	}
 	if created {

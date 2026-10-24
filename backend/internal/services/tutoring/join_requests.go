@@ -108,39 +108,55 @@ type codeEntry struct {
 }
 
 func (s *Service) PrecheckCode(ctx context.Context, text string) (accounts.CodeCheck, error) {
-	tutor, err := s.activeCodeOwner(ctx, s.deps.Store.Repositories(), text)
-	if err != nil {
-		return accounts.CodeCheck{}, err
-	}
-	return accounts.CodeCheck{Tutor: tutor}, nil
+	return s.activeCodeOwner(ctx, s.deps.Store.Repositories(), text)
 }
 
-func (s *Service) activeCodeOwner(ctx context.Context, repos repositories.Repositories, text string) (domain.UserID, error) {
+func (s *Service) activeCodeOwner(ctx context.Context, repos repositories.Repositories, text string) (accounts.CodeCheck, error) {
 	code, valid := domain.NormaliseTutorCode(text)
 	if !valid {
-		return domain.UserID{}, accounts.ErrTutorCodeInvalid
+		return accounts.CodeCheck{}, accounts.ErrTutorCodeInvalid
 	}
 	owner, err := repos.TutorProfiles.ByCode(ctx, code)
 	if errors.Is(err, repositories.ErrNotFound) {
-		return domain.UserID{}, accounts.ErrTutorCodeInvalid
+		return accounts.CodeCheck{}, accounts.ErrTutorCodeInvalid
 	}
 	if err != nil {
-		return domain.UserID{}, err
+		return accounts.CodeCheck{}, err
 	}
 	if owner.State != domain.AccountActive {
-		return domain.UserID{}, accounts.ErrTutorCodeInvalid
+		return accounts.CodeCheck{}, accounts.ErrTutorCodeInvalid
 	}
-	return owner.UserID, nil
+	return accounts.CodeCheck{Tutor: owner.UserID, Code: code}, nil
+}
+
+type codeRefusal string
+
+const (
+	codeRefusedTutorInactive   codeRefusal = "tutor_inactive"
+	codeRefusedCodeRegenerated codeRefusal = "code_regenerated"
+)
+
+type codeRefusedError struct {
+	reason codeRefusal
+}
+
+func (e *codeRefusedError) Error() string {
+	return "the tutor code stopped being valid under the profile lock: " + string(e.reason)
+}
+
+func (e *codeRefusedError) Unwrap() error {
+	return accounts.ErrTutorCodeInvalid
 }
 
 func (s *Service) HoldRequestAtSignUp(
 	ctx context.Context, repos repositories.Repositories, user domain.UserID, check accounts.CodeCheck, now time.Time,
 ) (accounts.Announce, error) {
-	err := s.lockActiveTutor(ctx, repos, check.Tutor)
-	if errors.Is(err, accounts.ErrTutorCodeInvalid) {
+	err := s.lockActiveTutor(ctx, repos, check)
+	var refused *codeRefusedError
+	if errors.As(err, &refused) {
 		return func(ctx context.Context) {
 			s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "join_request.not_held", slog.String("tutor_id", check.Tutor.String()),
-				slog.String("user_id", user.String()), slog.String("reason", "tutor_inactive"))
+				slog.String("user_id", user.String()), slog.String("reason", string(refused.reason)))
 		}, nil
 	}
 	if err != nil {
@@ -170,7 +186,7 @@ func (s *Service) EnterCode(ctx context.Context, principal accounts.Principal, t
 		}
 		return SentJoinRequest{}, err
 	}
-	tutor, err := s.activeCodeOwner(ctx, s.deps.Store.Repositories(), text)
+	check, err := s.activeCodeOwner(ctx, s.deps.Store.Repositories(), text)
 	if err != nil {
 		return SentJoinRequest{}, err
 	}
@@ -179,33 +195,36 @@ func (s *Service) EnterCode(ctx context.Context, principal accounts.Principal, t
 		if err := accounts.LockActingAccount(ctx, repos, principal, now, principal.State); err != nil {
 			return err
 		}
-		if err := s.lockActiveTutor(ctx, repos, tutor); err != nil {
+		if err := s.lockActiveTutor(ctx, repos, check); err != nil {
 			return err
 		}
-		entry, err = s.enter(ctx, repos, principal, tutor, now)
+		entry, err = s.enter(ctx, repos, principal, check.Tutor, now)
 		return err
 	})
 	if err != nil {
 		return SentJoinRequest{}, err
 	}
-	s.announceEntry(ctx, principal.UserID, tutor, entry)
+	s.announceEntry(ctx, principal.UserID, check.Tutor, entry)
 	return entry.request, nil
 }
 
-func (s *Service) lockActiveTutor(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) error {
-	err := repos.TutorProfiles.Lock(ctx, tutor)
+func (s *Service) lockActiveTutor(ctx context.Context, repos repositories.Repositories, check accounts.CodeCheck) error {
+	current, err := repos.TutorProfiles.LockCode(ctx, check.Tutor)
 	if errors.Is(err, repositories.ErrNotFound) {
-		return accounts.ErrTutorCodeInvalid
+		return &codeRefusedError{reason: codeRefusedTutorInactive}
 	}
 	if err != nil {
 		return err
 	}
-	owner, err := repos.Users.ByID(ctx, tutor)
+	owner, err := repos.Users.ByID(ctx, check.Tutor)
 	if err != nil {
 		return err
 	}
 	if owner.State != domain.AccountActive {
-		return accounts.ErrTutorCodeInvalid
+		return &codeRefusedError{reason: codeRefusedTutorInactive}
+	}
+	if current != check.Code {
+		return &codeRefusedError{reason: codeRefusedCodeRegenerated}
 	}
 	return nil
 }
@@ -298,19 +317,19 @@ func (s *Service) expireOverdue(ctx context.Context, repos repositories.Reposito
 }
 
 func (s *Service) entryVisibility(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, student domain.UserID, now time.Time) (domain.Suppression, error) {
-	blocked, err := repos.Blocked.Contains(ctx, tutor, student)
-	if err != nil {
-		return "", err
-	}
-	if blocked {
-		return domain.SuppressionBlocked, nil
-	}
 	visible, err := repos.JoinRequests.VisiblePendingCount(ctx, tutor, now)
 	if err != nil {
 		return "", err
 	}
 	if visible >= domain.VisiblePendingRequestCap {
 		return "", ErrTutorUnavailable
+	}
+	blocked, err := repos.Blocked.Contains(ctx, tutor, student)
+	if err != nil {
+		return "", err
+	}
+	if blocked {
+		return domain.SuppressionBlocked, nil
 	}
 	return domain.SuppressionNone, nil
 }
@@ -595,7 +614,7 @@ func (s *Service) lockRequestForDecision(
 	if student.State == domain.AccountBlocked {
 		return repositories.JoinRequest{}, ErrJoinRequestNotFound
 	}
-	if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
+	if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
 		return repositories.JoinRequest{}, err
 	}
 	return seen, nil
@@ -777,7 +796,7 @@ func (s *Service) Unblock(ctx context.Context, tutor domain.UserID, student doma
 		} else if err != nil {
 			return err
 		}
-		if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
 			return err
 		}
 		removed, err := repos.Blocked.Unblock(ctx, tutor, student)

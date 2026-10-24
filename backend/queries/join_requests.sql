@@ -44,7 +44,7 @@ UPDATE join_requests SET state = 'pending', suppressed = sqlc.arg(suppressed)::t
 WHERE id = @id AND state = 'held';
 
 -- name: ExpireHeldJoinRequest :execrows
-UPDATE join_requests SET state = 'expired', owner_choice_pending = false, decided_at = sqlc.arg(now)::timestamptz
+UPDATE join_requests SET state = 'expired', owner_choice_pending = false, decided_at = LEAST(expires_at, sqlc.arg(now)::timestamptz)
 WHERE id = @id AND state = 'held';
 
 -- name: CountVisiblePendingJoinRequests :one

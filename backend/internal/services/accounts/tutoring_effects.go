@@ -17,6 +17,7 @@ var (
 
 type CodeCheck struct {
 	Tutor domain.UserID
+	Code  domain.TutorCode
 }
 
 type InvitationCheck struct {

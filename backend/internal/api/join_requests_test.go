@@ -171,28 +171,7 @@ func (h *authHarness) visibleCount(t *testing.T, tutor domain.UserID) int64 {
 
 func (h *authHarness) holdTutorProfile(t *testing.T, tutor domain.UserID) func() {
 	t.Helper()
-	holder, err := h.database.Pool.Begin(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	released := false
-	t.Cleanup(func() {
-		if released {
-			return
-		}
-		if err := holder.Rollback(context.Background()); err != nil {
-			t.Error(err)
-		}
-	})
-	if _, err := holder.Exec(context.Background(), "SELECT 1 FROM tutor_profiles WHERE user_id = $1 FOR NO KEY UPDATE", tutor); err != nil {
-		t.Fatal(err)
-	}
-	return func() {
-		released = true
-		if err := holder.Commit(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-	}
+	return h.holdRow(t, "SELECT "+lockedRowPosition+" FROM tutor_profiles WHERE user_id = $1::uuid FOR NO KEY UPDATE", tutor.String())
 }
 
 func (h *authHarness) oldestFiller(t *testing.T, tutor domain.UserID, prefix string) string {
@@ -1109,9 +1088,10 @@ func anotherTutorsJoinRequest(suffix string, body string) denialCase {
 	return func(t *testing.T, h *authHarness) (response, response) {
 		t.Helper()
 		owner, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
-		_, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
-		_, student := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 3, studentEmail)
+		intruderID, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
+		studentID, student := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 3, studentEmail)
 		request := h.enteredRequest(t, student, h.storedCode(t, owner).Display())
+		h.shareStudentWith(t, intruderID, studentID)
 		outOfScope := h.send(t, http.MethodPost, joinRequestsPath+"/"+requestText(request)+suffix, body, jsonCall(intruder))
 		random := h.send(t, http.MethodPost, joinRequestsPath+"/"+randomCardID+suffix, body, jsonCall(intruder))
 		if got := h.storedRequest(t, request); got.State != "pending" || got.Suppressed != "none" {
@@ -1124,9 +1104,10 @@ func anotherTutorsJoinRequest(suffix string, body string) denialCase {
 func anotherTutorsBlockedStudent(t *testing.T, h *authHarness) (response, response) {
 	t.Helper()
 	owner, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
-	_, intruderToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
+	intruder, intruderToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
 	student, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 3, studentEmail)
 	h.blockRequester(t, owner, student)
+	h.shareStudentWith(t, intruder, student)
 	outOfScope := h.unblock(t, intruderToken, student)
 	random := h.send(t, http.MethodDelete, blockedPath+"/"+randomCardID, "", jsonCall(intruderToken))
 	if h.countRows(t, "SELECT count(student_id) FROM blocked_requesters WHERE tutor_id = $1::uuid", owner.String()) != 1 {
@@ -1758,9 +1739,9 @@ func TestStudentDeletionClosingAnUnblockClosedRowLeavesThatTutorAlone(t *testing
 	student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
 	tutorCode := h.storedCode(t, tutor).Display()
 	h.declineRequest(t, tutorToken, requestText(h.enteredRequest(t, token, tutorCode)), true)
+	closed := h.enteredRequest(t, token, tutorCode)
 	h.fillPendingRequests(t, tutor)
 	waiting := h.suppressedForLimit(t, tutor, 3, newcomerEmail)
-	closed := h.enteredRequest(t, token, tutorCode)
 	h.unblock(t, tutorToken, student)
 	release := h.holdTutorProfile(t, tutor)
 
@@ -1820,5 +1801,164 @@ func TestConcurrentStudentDeletionsSharingTutorsFinishWithoutADeadlock(t *testin
 	}
 	if futureDecisions != 0 {
 		t.Fatal("the deletions left a closed request with its future decision time")
+	}
+}
+
+func (h *authHarness) requestDecidedAt(t *testing.T, id domain.JoinRequestID) *time.Time {
+	t.Helper()
+	var decidedAt *time.Time
+	if err := h.database.Pool.QueryRow(context.Background(), "SELECT decided_at FROM join_requests WHERE id = $1", id).Scan(&decidedAt); err != nil {
+		t.Fatal(err)
+	}
+	return decidedAt
+}
+
+type racingCodeUse struct {
+	prepare func(t *testing.T, h *authHarness, oldCode string) (send func() <-chan pendingAnswer, reference response)
+	check   func(t *testing.T, h *authHarness, answer response, reference response, hashed int)
+}
+
+func racingCodeUses() map[string]racingCodeUse {
+	return map[string]racingCodeUse{
+		"code entry": {
+			prepare: func(t *testing.T, h *authHarness, oldCode string) (func() <-chan pendingAnswer, response) {
+				t.Helper()
+				_, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
+				unknown := h.enterCode(t, token, unknownCode)
+				return func() <-chan pendingAnswer { return h.tryEnterCode(token, oldCode) }, unknown
+			},
+			check: func(t *testing.T, h *authHarness, answer response, reference response, hashed int) {
+				t.Helper()
+				if answer.status != http.StatusUnprocessableEntity || refusal(t, answer) != refusal(t, reference) || hashed != 0 {
+					t.Fatalf("the entry of the old code answered %d %s, an unknown code %s", answer.status, answer.body, reference.body)
+				}
+				if h.countRows(t, requestsOfStudent, domain.UserID{2}.String()) != 0 {
+					t.Fatal("the old code created a request after the regeneration")
+				}
+			},
+		},
+		"sign-up with a code": {
+			prepare: func(t *testing.T, h *authHarness, oldCode string) (func() <-chan pendingAnswer, response) {
+				t.Helper()
+				h.seedUserAs(t, domain.RoleStudent, 5, "taken@example.org", accountPassword, currentHash)
+				hashesBefore := h.hasher.Hashes()
+				taken := h.register(t, studentCodeSignUp("taken@example.org", oldCode))
+				if hashed := h.hasher.Hashes() - hashesBefore; hashed != 1 {
+					t.Fatalf("the taken-email sign-up hashed %d passwords", hashed)
+				}
+				body := studentCodeSignUp(entrantEmail, oldCode).body()
+				return func() <-chan pendingAnswer {
+					return h.sendInBackground(http.MethodPost, "/api/v1/auth/register", body, signUpHeaders())
+				}, taken
+			},
+			check: func(t *testing.T, h *authHarness, answer response, reference response, hashed int) {
+				t.Helper()
+				if answer.status != http.StatusAccepted || !sameAnswer(answer, reference) || hashed != 1 {
+					t.Fatalf("the sign-up with the old code answered %d %s %v after %d hashes, a taken email %d %s %v",
+						answer.status, answer.body, answer.headers, hashed, reference.status, reference.body, reference.headers)
+				}
+				if !h.userExists(t, entrantEmail) || h.countRows(t, requestsOfEmail, entrantEmail) != 0 {
+					t.Fatal("the sign-up with the old code did not create the account alone")
+				}
+				if queued := h.verifyEmails(t); queued != 1 {
+					t.Fatalf("the sign-up with the old code queued %d confirmation emails instead of one", queued)
+				}
+				if !strings.Contains(h.logs.String(), `"reason":"code_regenerated"`) {
+					t.Fatal("the sign-up did not record why it holds no request")
+				}
+			},
+		},
+	}
+}
+
+func TestRegenerationCommittedWhileACodeWaitsMakesTheOldCodeInvalid(t *testing.T) {
+	for name, use := range racingCodeUses() {
+		t.Run(name, func(t *testing.T) {
+			h := newFlowHarness(t)
+			tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+			oldCode := h.storedCode(t, tutor).Display()
+			send, reference := use.prepare(t, h, oldCode)
+			release := h.holdTutorProfile(t, tutor)
+			regeneration := h.sendInBackground(http.MethodPost, "/api/v1/tutor/code/regenerate", "", jsonCall(tutorToken))
+			h.waitForLockWaiters(t, 1)
+			hashesBefore := h.hasher.Hashes()
+			answer := send()
+			h.waitForLockWaiters(t, 2)
+
+			release()
+			regenerated := awaitAnswer(t, regeneration)
+			used := awaitAnswer(t, answer)
+			hashed := h.hasher.Hashes() - hashesBefore
+
+			if regenerated.status != http.StatusOK || decodeCode(t, regenerated).Code == oldCode {
+				t.Fatalf("the regeneration answered %d %s", regenerated.status, regenerated.body)
+			}
+			use.check(t, h, used, reference, hashed)
+		})
+	}
+}
+
+func TestBlockedStudentGetsTutorUnavailableLikeAnyOtherWhileTheLimitIsFull(t *testing.T) {
+	h := newFlowHarness(t)
+	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	blocked, blockedToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
+	_, otherToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 3, requestingEmail)
+	h.blockRequester(t, tutor, blocked)
+	h.fillPendingRequests(t, tutor)
+	tutorCode := h.storedCode(t, tutor).Display()
+
+	refusedBlocked := h.enterCode(t, blockedToken, tutorCode)
+	refusedOther := h.enterCode(t, otherToken, tutorCode)
+
+	if refusedBlocked.status != http.StatusTooManyRequests || code(t, refusedBlocked) != "tutor_unavailable" || refusedBlocked.headers.Get("Retry-After") != "3600" {
+		t.Fatalf("the blocked student's entry answered %d %s", refusedBlocked.status, refusedBlocked.body)
+	}
+	if refusal(t, refusedBlocked) != refusal(t, refusedOther) {
+		t.Fatalf("the blocked student got %s and another student %s", refusal(t, refusedBlocked), refusal(t, refusedOther))
+	}
+	if h.countRows(t, requestsOfStudent, blocked.String()) != 0 {
+		t.Fatal("the refused entry of the blocked student created a request")
+	}
+}
+
+func TestOverdueHeldRequestsExpireAtTheirOwnExpiry(t *testing.T) {
+	paths := map[string]func(t *testing.T, h *authHarness, owner string, request domain.JoinRequestID) response{
+		"kept at the owner's choice": func(t *testing.T, h *authHarness, owner string, request domain.JoinRequestID) response {
+			t.Helper()
+			return h.decideReclaim(t, owner, reclaimChoice{KeepRequests: []string{requestText(request)}})
+		},
+		"dropped at the owner's choice": func(t *testing.T, h *authHarness, owner string, request domain.JoinRequestID) response {
+			t.Helper()
+			return h.decideReclaim(t, owner, reclaimChoice{DropRequests: []string{requestText(request)}})
+		},
+		"dropped by the account's deletion": func(t *testing.T, h *authHarness, owner string, _ domain.JoinRequestID) response {
+			t.Helper()
+			return h.send(t, http.MethodDelete, "/api/v1/users/me", fmt.Sprintf(`{"password":%q}`, ownerPassword), jsonCall(owner))
+		},
+	}
+	for name, path := range paths {
+		t.Run(name, func(t *testing.T) {
+			h := newFlowHarness(t)
+			tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+			student, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 2, newcomerEmail)
+			request := h.seedJoinRequest(t, tutor, student, 1, domain.JoinRequestHeld)
+			h.reset(t, h.resetToken(t, newcomerEmail))
+			owner := h.ownerSignIn(t, newcomerEmail)
+			if _, err := h.database.Pool.Exec(context.Background(), "UPDATE join_requests SET expires_at = $1 WHERE id = $2", authStart, request); err != nil {
+				t.Fatal(err)
+			}
+
+			answered := path(t, h, owner, request)
+
+			if answered.status != http.StatusOK && answered.status != http.StatusNoContent {
+				t.Fatalf("the path answered %d %s", answered.status, answered.body)
+			}
+			if got := h.storedRequest(t, request); got.State != "expired" || got.OwnerChoice {
+				t.Fatalf("the request is %+v", got)
+			}
+			if decidedAt := h.requestDecidedAt(t, request); !sameInstant(decidedAt, authStart) {
+				t.Fatalf("the overdue request expired at %v instead of its expiry %v (now %v)", decidedAt, authStart, h.now(t))
+			}
+		})
 	}
 }

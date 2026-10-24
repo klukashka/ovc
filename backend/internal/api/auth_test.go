@@ -78,15 +78,16 @@ const (
 )
 
 type authHarness struct {
-	server   *httptest.Server
-	store    *repositories.Store
-	clock    *clock.Shared
-	hasher   *testhasher.Fake
-	logs     *safeBuffer
-	database *testdb.Database
-	sink     *mail.Sink
-	worker   *worker.Worker
-	objects  *storage.S3
+	server    *httptest.Server
+	store     *repositories.Store
+	clock     *clock.Shared
+	hasher    *testhasher.Fake
+	logs      *safeBuffer
+	database  *testdb.Database
+	sink      *mail.Sink
+	worker    *worker.Worker
+	objects   *storage.S3
+	contested *contestedRow
 }
 
 func newAuthHarness(t *testing.T) *authHarness {

@@ -150,7 +150,30 @@ func awaitAnswer(t *testing.T, answer <-chan pendingAnswer) response {
 	return response{}
 }
 
-func (h *authHarness) holdUserRow(t *testing.T, user domain.UserID) func() {
+type contestedRow struct {
+	holder   int32
+	relation uint32
+	page     int32
+	tuple    int16
+}
+
+const lockedRowPosition = "tableoid::oid, (ctid::text::point)[0]::int4, (ctid::text::point)[1]::int2"
+
+const contestedRowWaiters = `
+WITH RECURSIVE waiting(pid) AS (
+    SELECT direct.pid FROM pg_locks AS direct
+    WHERE NOT direct.granted AND (
+        (direct.locktype = 'transactionid' AND direct.transactionid IN (
+            SELECT held.transactionid FROM pg_locks AS held WHERE held.pid = $1 AND held.locktype = 'transactionid' AND held.granted))
+        OR (direct.locktype = 'tuple' AND direct.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+            AND direct.relation = $2 AND direct.page = $3 AND direct.tuple = $4))
+    UNION
+    SELECT queued.pid FROM pg_locks AS queued JOIN waiting ON waiting.pid = ANY (pg_blocking_pids(queued.pid))
+    WHERE NOT queued.granted
+)
+SELECT count(pid) FROM waiting`
+
+func (h *authHarness) holdRow(t *testing.T, lockQuery string, key string) func() {
 	t.Helper()
 	holder, err := h.database.Pool.Begin(context.Background())
 	if err != nil {
@@ -165,9 +188,14 @@ func (h *authHarness) holdUserRow(t *testing.T, user domain.UserID) func() {
 			t.Error(err)
 		}
 	})
-	if _, err := holder.Exec(context.Background(), "SELECT 1 FROM users WHERE id = $1 FOR UPDATE", user); err != nil {
+	var row contestedRow
+	if err := holder.QueryRow(context.Background(), lockQuery, key).Scan(&row.relation, &row.page, &row.tuple); err != nil {
 		t.Fatal(err)
 	}
+	if err := holder.QueryRow(context.Background(), "SELECT pg_backend_pid()").Scan(&row.holder); err != nil {
+		t.Fatal(err)
+	}
+	h.contested = &row
 	return func() {
 		released = true
 		if err := holder.Commit(context.Background()); err != nil {
@@ -176,16 +204,24 @@ func (h *authHarness) holdUserRow(t *testing.T, user domain.UserID) func() {
 	}
 }
 
+func (h *authHarness) holdUserRow(t *testing.T, user domain.UserID) func() {
+	t.Helper()
+	return h.holdRow(t, "SELECT "+lockedRowPosition+" FROM users WHERE id = $1::uuid FOR UPDATE", user.String())
+}
+
 func (h *authHarness) waitForLockWaiters(t *testing.T, expected int64) {
 	t.Helper()
+	if h.contested == nil {
+		t.Fatal("no row is held, so no waiter can be counted")
+	}
+	row := *h.contested
 	deadline := time.NewTimer(pauseDeadline)
 	defer deadline.Stop()
 	poll := time.NewTicker(5 * time.Millisecond)
 	defer poll.Stop()
 	for {
 		var waiting int64
-		err := h.database.Pool.QueryRow(context.Background(),
-			"SELECT count(pid) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'").Scan(&waiting)
+		err := h.database.Pool.QueryRow(context.Background(), contestedRowWaiters, row.holder, row.relation, row.page, row.tuple).Scan(&waiting)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -194,7 +230,7 @@ func (h *authHarness) waitForLockWaiters(t *testing.T, expected int64) {
 		}
 		select {
 		case <-deadline.C:
-			t.Fatalf("%d requests wait on a lock instead of %d", waiting, expected)
+			t.Fatalf("%d requests wait on the held row, directly or behind another waiter, instead of %d", waiting, expected)
 		case <-poll.C:
 		}
 	}
@@ -422,7 +458,7 @@ func TestConcurrentAcceptancesLinkOnce(t *testing.T) {
 		statuses[key]++
 	}
 
-	if statuses["202"] != 1 || statuses["409 invitation_invalid"] != attempts-1 || len(statuses) != 2 {
+	if statuses["202"] == 0 || statuses["202"]+statuses["409 invitation_invalid"] != attempts {
 		t.Fatalf("statuses %v", statuses)
 	}
 	if students := h.countRows(t, "SELECT count(id) FROM users WHERE role = $1", "student"); students != 1 {

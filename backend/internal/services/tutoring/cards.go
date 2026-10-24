@@ -464,6 +464,9 @@ func (s *Service) WithdrawCard(ctx context.Context, tutor domain.UserID, id doma
 	}
 	withdrawn := false
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+			return err
+		}
 		row, err := lockCard(ctx, repos, tutor, id)
 		if err != nil {
 			return err

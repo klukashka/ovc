@@ -36,9 +36,12 @@ func (Secret) GoString() string {
 }
 
 func (Secret) Format(state fmt.State, _ rune) {
-	_, err := io.WriteString(state, redacted)
-	if err != nil {
-		return
+	writeRedacted(state)
+}
+
+func writeRedacted(state fmt.State) {
+	if _, err := io.WriteString(state, redacted); err != nil {
+		panic("the formatter state refused the redaction marker: " + ErrorKind(err))
 	}
 }
 

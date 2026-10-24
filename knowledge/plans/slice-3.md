@@ -353,6 +353,8 @@ Critical path: S0 → S1 → S3 → S5 → S6 → S7 → S8a → S8b → S8c →
 
 Every Playwright test runs in Chromium, Firefox and WebKit, except API-only contract checks, which run in Chromium only as in slice 2.
 
+Renamed and replaced tests (recorded after the slice review): `TestUnblockExpiresBlockedRequests` of S9 became `TestUnblockLeavesBlockedRequestsToExpireLikeAnyOther`, because an unblock closes the blocked requests with their own `expires_at` instead of expiring them at once; the interim tests of S8b and S8c (`TestInterimConfirmedAccountAcceptingTheSameTutorKeepsTheLink`, `TestInterimProvisionalLinkOfAConfirmedAccountShowsNoAccount` and `TestInterimMigrationMovesProvisionalLinksOfConfirmedAccounts`) were replaced by `TestSignedInAcceptanceOfTheSameTutorCountsAsAKeep` once S8c removed the interim state.
+
 ## 6. Risks, performance and the check budget
 
 **Risks.**

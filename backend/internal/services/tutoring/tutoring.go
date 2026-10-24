@@ -85,7 +85,7 @@ func (s *Service) RegenerateCode(ctx context.Context, tutor domain.UserID) (Tuto
 	}
 	var regenerated domain.TutorCode
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
 			return err
 		}
 		if err := s.reserve(ctx, repos, codeRegenerationLimit, tutor, now); err != nil {

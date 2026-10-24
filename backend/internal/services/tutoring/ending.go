@@ -36,6 +36,9 @@ func (s *Service) EndByTutor(ctx context.Context, tutor domain.UserID, id domain
 	var card Card
 	var ended *ending
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+			return err
+		}
 		row, err := lockCard(ctx, repos, tutor, id)
 		if err != nil {
 			return err

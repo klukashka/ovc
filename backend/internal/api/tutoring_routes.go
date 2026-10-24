@@ -225,6 +225,8 @@ func (r *router) regenerateTutorCode(ctx context.Context, _ *struct{}) (*tutorCo
 	case errors.As(err, &throttled):
 		seconds := int64(math.Ceil(throttled.RetryAfter.Seconds()))
 		return nil, NewError(ctx, domain.ErrorRateLimited).withHeader("Retry-After", strconv.FormatInt(max(seconds, 1), 10))
+	case errors.Is(err, accounts.ErrUnauthenticated):
+		return nil, NewError(ctx, domain.ErrorUnauthenticated)
 	}
 	return nil, r.internal(ctx, "tutor.code.regenerate.failed", err)
 }

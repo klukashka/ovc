@@ -191,7 +191,7 @@ func (q *Queries) ExpireDueJoinRequest(ctx context.Context, arg ExpireDueJoinReq
 }
 
 const expireHeldJoinRequest = `-- name: ExpireHeldJoinRequest :execrows
-UPDATE join_requests SET state = 'expired', owner_choice_pending = false, decided_at = $1::timestamptz
+UPDATE join_requests SET state = 'expired', owner_choice_pending = false, decided_at = LEAST(expires_at, $1::timestamptz)
 WHERE id = $2 AND state = 'held'
 `
 

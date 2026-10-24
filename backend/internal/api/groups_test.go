@@ -585,8 +585,9 @@ func anotherTutorsGroup(method string, suffix string, body string) denialCase {
 	return func(t *testing.T, h *authHarness) (response, response) {
 		t.Helper()
 		owner, ownerToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
-		_, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
+		intruderID, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
 		group := h.newGroup(t, ownerToken, groupName, h.activeCards(t, owner, 10, 1))
+		h.shareStudentWith(t, intruderID, domain.UserID{10})
 		outOfScope := h.groupCall(t, intruder, method, group.ID, suffix, body)
 		random := h.groupCall(t, intruder, method, randomCardID, suffix, body)
 		if after := decodeGroup(t, h.groupCall(t, ownerToken, http.MethodGet, group.ID, "", "")); after.Name != groupName || after.ArchivedAt != nil {
@@ -598,28 +599,7 @@ func anotherTutorsGroup(method string, suffix string, body string) denialCase {
 
 func (h *authHarness) holdGroup(t *testing.T, group string) func() {
 	t.Helper()
-	holder, err := h.database.Pool.Begin(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	released := false
-	t.Cleanup(func() {
-		if released {
-			return
-		}
-		if err := holder.Rollback(context.Background()); err != nil {
-			t.Error(err)
-		}
-	})
-	if _, err := holder.Exec(context.Background(), "SELECT 1 FROM groups WHERE id = $1::uuid FOR UPDATE", group); err != nil {
-		t.Fatal(err)
-	}
-	return func() {
-		released = true
-		if err := holder.Commit(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-	}
+	return h.holdRow(t, "SELECT "+lockedRowPosition+" FROM groups WHERE id = $1::uuid FOR UPDATE", group)
 }
 
 func TestConcurrentAdditionsStopAtTheMemberLimit(t *testing.T) {
