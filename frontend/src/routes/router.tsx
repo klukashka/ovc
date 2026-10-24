@@ -9,6 +9,9 @@ import { SignUpChoicePage, StudentSignUpPage, TutorSignUpPage } from '../feature
 import { VerifyEmailPage } from '../features/auth/VerifyEmailPage.tsx';
 import { AccountSettingsPage } from '../features/settings/AccountSettingsPage.tsx';
 import { ProfileSettingsPage } from '../features/settings/ProfileSettingsPage.tsx';
+import { TeachingSettingsPage } from '../features/settings/TeachingSettingsPage.tsx';
+import { StudentCardPage } from '../features/students/StudentCardPage.tsx';
+import { StudentsPage } from '../features/students/StudentsPage.tsx';
 import { HomePage } from '../features/home/HomePage.tsx';
 import type { RouteHandle } from '../app/handles.ts';
 import { Gate } from './Gate.tsx';
@@ -21,8 +24,8 @@ function page(path: string, title: RouteHandle['title'], element: ReactElement =
 
 export const tutorPages: RouteObject[] = [
   page('/today', 'page.today', <HomePage />),
-  page('/students', 'page.students'),
-  page('/students/:studentId', 'page.student'),
+  page('/students', 'page.students', <StudentsPage />),
+  page('/students/:studentId', 'page.student', <StudentCardPage />),
   page('/groups', 'page.groups'),
   page('/groups/:groupId', 'page.group'),
   page('/homework/library', 'page.library'),
@@ -31,7 +34,7 @@ export const tutorPages: RouteObject[] = [
   page('/homework/issued/:issueId', 'page.issue'),
   page('/homework/review', 'page.review'),
   page('/homework/review/:submissionId', 'page.reviewSubmission'),
-  page('/settings/teaching', 'page.settingsTeaching'),
+  page('/settings/teaching', 'page.settingsTeaching', <TeachingSettingsPage />),
 ];
 
 export const studentPages: RouteObject[] = [

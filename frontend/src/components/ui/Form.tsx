@@ -113,6 +113,8 @@ export function FormAlert({ children }: { readonly children: ReactNode }): React
   );
 }
 
+const triggerControls = 'button, input[type="file"]';
+
 export function FormNotice({
   takeFocus = false,
   children,
@@ -129,8 +131,9 @@ export function FormNotice({
     }
     const focused = document.activeElement;
     const focusLost = focused === null || !focused.isConnected || focused.contains(notice);
-    const focusNearby = focused !== null && notice.closest('section, article')?.contains(focused) === true;
-    if (focusLost || focusNearby) {
+    const focusOnTrigger =
+      focused?.matches(triggerControls) === true && notice.closest('form, section')?.contains(focused) === true;
+    if (focusLost || focusOnTrigger) {
       notice.focus();
     }
   }, [takeFocus]);

@@ -5,16 +5,24 @@ import { Link } from 'react-router';
 import { linkClass } from '../components/ui/Form.tsx';
 import { Page } from '../components/ui/Page.tsx';
 
-export function NotFoundPage(): ReactElement {
+export function NotFoundContent(): ReactElement {
   const { t } = useTranslation();
   return (
-    <Page title="page.notFound">
+    <>
       <p className="text-text-muted">{t('notFound.body')}</p>
       <p>
         <Link to="/" className={linkClass}>
           {t('notFound.back')}
         </Link>
       </p>
+    </>
+  );
+}
+
+export function NotFoundPage(): ReactElement {
+  return (
+    <Page title="page.notFound">
+      <NotFoundContent />
     </Page>
   );
 }

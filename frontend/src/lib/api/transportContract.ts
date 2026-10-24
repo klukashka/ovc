@@ -5,6 +5,8 @@ export interface ContractSubject {
   readonly origin: string;
   readonly email: string;
   readonly password: string;
+  readonly otherTutorEmail: string;
+  readonly otherTutorPassword: string;
   readonly expireAccessTokens: () => Promise<void>;
   readonly blockAccount: () => Promise<void>;
 }
@@ -64,6 +66,25 @@ function meRequest(subject: ContractSubject, token: string): Request {
   return new Request(`${subject.origin}/api/v1/users/me`, { headers: { Authorization: `Bearer ${token}` } });
 }
 
+function cardRequest(subject: ContractSubject, token: string, path: string, body?: unknown): Request {
+  return new Request(`${subject.origin}/api/v1/students${path}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+}
+
+function cardFields(value: unknown): { id: unknown; name: unknown; state: unknown; url: unknown } {
+  const card = typeof value === 'object' && value !== null ? value : {};
+  const invitation = 'invitation' in card && typeof card.invitation === 'object' ? card.invitation : null;
+  return {
+    id: 'id' in card ? card.id : undefined,
+    name: 'display_name' in card ? card.display_name : undefined,
+    state: 'state' in card ? card.state : undefined,
+    url: invitation !== null && 'url' in invitation ? invitation.url : undefined,
+  };
+}
+
 export const authTransportContract: Readonly<Record<string, ContractScenario>> = {
   'a request sent with an expired token is refused as token_expired': async (subject) => {
     const token = await accessToken(await subject.transport.login(subject.email, subject.password));
@@ -90,6 +111,39 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
       afterwards.status === 204 || afterwards.status === 401,
       `expected no token from the revoked session, got ${String(afterwards.status)}`,
     );
+  },
+
+  'a tutor reads back the card it created and an unknown card is not found': async (subject) => {
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+
+    const created = await subject.transport.send(cardRequest(subject, token, '', { display_name: 'Contract student' }));
+    const createdCard = cardFields(await created.json());
+    const read = await subject.transport.send(cardRequest(subject, token, `/${String(createdCard.id)}`));
+    const missing = await subject.transport.send(cardRequest(subject, token, '/00000000-0000-4000-8000-00000000ffff'));
+
+    check(created.status === 201, `expected 201, got ${String(created.status)}`);
+    check(typeof createdCard.id === 'string', 'expected a card identifier');
+    check(createdCard.name === 'Contract student' && createdCard.state === 'invited', 'expected an invited card');
+    check(typeof createdCard.url === 'string', 'expected an open invitation link');
+    check(read.status === 200, `expected 200, got ${String(read.status)}`);
+    const readCard = cardFields(await read.json());
+    check(readCard.id === createdCard.id && readCard.url === createdCard.url, 'expected the same card and link');
+    check(missing.status === 404, `expected 404, got ${String(missing.status)}`);
+    check((await errorCode(missing)) === 'not_found', 'expected not_found');
+  },
+
+  'another tutor cannot read a tutor’s card and gets not_found': async (subject) => {
+    const owner = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const created = cardFields(
+      await (await subject.transport.send(cardRequest(subject, owner, '', { display_name: 'Private student' }))).json(),
+    );
+    const other = await accessToken(await subject.transport.login(subject.otherTutorEmail, subject.otherTutorPassword));
+
+    const read = await subject.transport.send(cardRequest(subject, other, `/${String(created.id)}`));
+
+    check(typeof created.id === 'string', 'expected a card identifier');
+    check(read.status === 404, `expected 404, got ${String(read.status)}`);
+    check((await errorCode(read)) === 'not_found', 'expected not_found');
   },
 
   'a refresh without a session answers 204 with no token': async (subject) => {

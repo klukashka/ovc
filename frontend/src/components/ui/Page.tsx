@@ -6,16 +6,20 @@ import { useRouteTitle } from '../../app/handles.ts';
 
 export function Page({
   title: titleKey,
+  headingText,
+  wide = false,
   focusTitle = false,
   children,
 }: {
   readonly title?: ParseKeys;
+  readonly headingText?: string;
+  readonly wide?: boolean;
   readonly focusTitle?: boolean;
   readonly children?: ReactNode;
 }): ReactElement {
   const { t } = useTranslation();
   const routeTitle = useRouteTitle();
-  const title = t(titleKey ?? routeTitle);
+  const title = headingText ?? t(titleKey ?? routeTitle);
   const heading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -29,7 +33,7 @@ export function Page({
   }, [focusTitle]);
 
   return (
-    <article className="flex max-w-reading flex-col gap-6">
+    <article className={wide ? 'flex flex-col gap-6' : 'flex max-w-reading flex-col gap-6'}>
       <h1 ref={heading} tabIndex={-1} className="font-serif text-title outline-none desktop:text-display">
         {title}
       </h1>

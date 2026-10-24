@@ -95,6 +95,8 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `lib/realtime` | One reconnecting WebSocket client and typed subscriptions |
 | `lib/i18n` | i18next setup, ICU formatting, error-code messages, `ru` and `en` resources |
 | `lib/preferences` | Per-browser preferences before sign-in (language, theme, sidebar), with an in-memory store for tests |
+| `lib/format` | Dates and times in the viewer's language and timezone (`en-GB` and Russian forms, 24-hour time) |
+| `lib/clipboard` | Copying text, such as invitation links and the tutor code, through the Clipboard API only, reporting a refusal instead of falling back to another channel |
 | `app` | Shared React contexts and hooks (preferences, media queries), the role sections and route handles the frames and pages read |
 | `components/frame` | Public and signed-in frames, sidebar and its overlay, language switch, focus on route change |
 | `components/ui` | Shared primitives built on the [tokens](../design/web/tokens.md) |

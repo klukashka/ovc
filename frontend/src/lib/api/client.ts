@@ -36,6 +36,7 @@ interface ReceivedErrorBody {
   readonly message: string;
   readonly request_id: string;
   readonly fields?: readonly ReceivedFieldError[] | null;
+  readonly details?: unknown;
 }
 
 const bodyFieldPrefix = 'body.';
@@ -49,6 +50,15 @@ function fieldProblems(received: readonly ReceivedFieldError[] | null | undefine
     field: problem.path.startsWith(bodyFieldPrefix) ? problem.path.slice(bodyFieldPrefix.length) : problem.path,
     code: isFieldCode(problem.code) ? problem.code : 'invalid',
   }));
+}
+
+function existingStudentOf(details: unknown): string | undefined {
+  return typeof details === 'object' &&
+    details !== null &&
+    'student_id' in details &&
+    typeof details.student_id === 'string'
+    ? details.student_id
+    : undefined;
 }
 
 function isReceivedFieldError(value: unknown): value is ReceivedFieldError {
@@ -67,6 +77,7 @@ export class ApiError extends Error {
   readonly code: ErrorCode | undefined;
   readonly requestId: string | undefined;
   readonly fields: readonly FieldProblem[];
+  readonly existingStudentId: string | undefined;
 
   constructor(status: number, body: ReceivedErrorBody | undefined) {
     super(body === undefined ? `API request failed with status ${String(status)}` : `API error ${body.code}`);
@@ -75,6 +86,7 @@ export class ApiError extends Error {
     this.code = body !== undefined && isErrorCode(body.code) ? body.code : undefined;
     this.requestId = body?.request_id;
     this.fields = fieldProblems(body?.fields);
+    this.existingStudentId = existingStudentOf(body?.details);
   }
 
   fieldCode(field: string): FieldCode | undefined {

@@ -20,9 +20,9 @@ export function testNetAddress(): string {
   return `198.51.100.${String(1 + Math.floor(Math.random() * 254))}`;
 }
 
-export function newTestAccount(name: string): TestAccount {
+export function newTestAccount(name: string, role: 'tutor' | 'student' = 'tutor'): TestAccount {
   const suffix = randomBytes(6).toString('hex');
-  return { name, email: `tutor-${suffix}@example.org`, password: `probe horse battery ${suffix}` };
+  return { name, email: `${role}-${suffix}@example.org`, password: `probe horse battery ${suffix}` };
 }
 
 async function postFromAnotherBrowser(deployment: Deployment, path: string, body: unknown): Promise<Response> {

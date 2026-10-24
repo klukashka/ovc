@@ -1,3 +1,4 @@
+import type { components } from './schema.ts';
 import type { LockManagerLike, Me, Scheduler } from './session.ts';
 import type { AuthTransport } from './transport.ts';
 
@@ -24,6 +25,32 @@ interface FakeAccessToken {
 interface RefreshCookie {
   readonly sessionId: number;
   readonly generation: number;
+}
+
+type StudentCard = components['schemas']['StudentCard'];
+
+const cardPathPrefix = '/api/v1/students/';
+
+interface FakeCard {
+  readonly tutorId: string;
+  readonly card: StudentCard;
+}
+
+function fakeCard(id: string, displayName: string): StudentCard {
+  return {
+    id,
+    state: 'invited',
+    display_name: displayName,
+    email: null,
+    account: null,
+    groups: [],
+    notes: '',
+    invitation: { url: `https://ovc.example/invite/fake-${id}`, expires_at: '2026-11-07T15:00:00Z', status: 'open' },
+    linked_at: null,
+    ended_at: null,
+    ended_by: null,
+    created_at: '2026-10-24T15:00:00Z',
+  };
 }
 
 export interface FakeAccountSeed {
@@ -64,6 +91,7 @@ export class FakeAuthServer {
   private refreshCount = 0;
   private reuse = false;
   private readonly sent: string[] = [];
+  private readonly cards = new Map<string, FakeCard>();
 
   get refreshes(): number {
     return this.refreshCount;
@@ -249,6 +277,9 @@ export class FakeAuthServer {
     if (path === '/api/v1/users/me') {
       return this.readAccount(token);
     }
+    if (path === '/api/v1/students' || path.startsWith(cardPathPrefix)) {
+      return this.answerCards(request, token, path);
+    }
     if (path !== '/api/v1/auth/logout') {
       return refusal(404, 'not_found');
     }
@@ -262,6 +293,38 @@ export class FakeAuthServer {
     }
     this.storedRefresh = null;
     return new Response(null, { status: 204 });
+  }
+
+  private async answerCards(request: Request, token: string, path: string): Promise<Response> {
+    const refused = this.refusedToken(token);
+    if (refused !== null) {
+      return refused;
+    }
+    const tutorId = this.sessionOf(token)?.accountId ?? '';
+    const caller = [...this.accounts.values()].find((account) => account.me.id === tutorId);
+    if (caller?.me.role !== 'tutor') {
+      return refusal(404, 'not_found');
+    }
+    if (request.method === 'POST' && path === '/api/v1/students') {
+      const body: unknown = await request.json();
+      if (
+        typeof body !== 'object' ||
+        body === null ||
+        !('display_name' in body) ||
+        typeof body.display_name !== 'string'
+      ) {
+        return refusal(422, 'validation_failed');
+      }
+      const id = `00000000-0000-4000-8000-${String(this.cards.size + 1).padStart(12, '0')}`;
+      const card = fakeCard(id, body.display_name);
+      this.cards.set(id, { tutorId, card });
+      return json(201, card);
+    }
+    const found = this.cards.get(path.slice(cardPathPrefix.length));
+    if (request.method !== 'GET' || found?.tutorId !== tutorId) {
+      return refusal(404, 'not_found');
+    }
+    return json(200, found.card);
   }
 
   private async readAccount(token: string): Promise<Response> {

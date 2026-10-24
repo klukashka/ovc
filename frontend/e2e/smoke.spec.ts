@@ -1,32 +1,11 @@
 import { type Locator, type Page } from '@playwright/test';
 
 import { signInThroughTheApi } from './accounts.ts';
-import { expect, test as base } from './fixtures.ts';
+import { diagnosedTest as test, expect } from './fixtures.ts';
 
 import { contentSecurityPolicy } from '../security-headers.ts';
 
 const firstBodyThemeKey = 'ovcFirstBodyTheme';
-
-function collectConsoleErrors(page: Page): string[] {
-  const errors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => {
-    errors.push(error.message);
-  });
-  return errors;
-}
-
-async function reportPolicyViolations(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    document.addEventListener('securitypolicyviolation', (event) => {
-      console.error(`csp-violation ${event.violatedDirective} ${event.blockedURI}`);
-    });
-  });
-}
 
 async function recordThemeAtFirstBody(page: Page, key: string): Promise<void> {
   await page.addInitScript((storageKey) => {
@@ -39,18 +18,6 @@ async function recordThemeAtFirstBody(page: Page, key: string): Promise<void> {
     observer.observe(document, { childList: true, subtree: true });
   }, key);
 }
-
-const test = base.extend<{ consoleErrors: string[] }>({
-  consoleErrors: [
-    async ({ page }, use): Promise<void> => {
-      await reportPolicyViolations(page);
-      const errors = collectConsoleErrors(page);
-      await use(errors);
-      expect(errors).toEqual([]);
-    },
-    { auto: true },
-  ],
-});
 
 test.use({ locale: 'ru-RU' });
 

@@ -37,11 +37,14 @@ test.describe('the HTTP authentication transport against the real backend', () =
   for (const [name, scenario] of Object.entries(authTransportContract)) {
     test(`keeps the contract: ${name}`, async ({ deployment, control }) => {
       const account = await seedVerifiedUser(deployment, 'Contract tutor');
+      const otherTutor = await seedVerifiedUser(deployment, 'Another contract tutor');
       const subject = {
         transport: httpAuthTransport(deployment.apiUrl, cookieJarFetch(deployment)),
         origin: deployment.apiUrl,
         email: account.email,
         password: account.password,
+        otherTutorEmail: otherTutor.email,
+        otherTutorPassword: otherTutor.password,
         expireAccessTokens: (): Promise<void> => control.advance(16 * 60),
         blockAccount: (): Promise<void> => {
           deployment.administer(['users', 'block', account.email]);
