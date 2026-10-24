@@ -201,6 +201,7 @@ test('a forgotten password is reset through the emailed link and the new passwor
   await page.getByLabel('Новый пароль').fill(newPassword);
   await page.getByRole('button', { name: 'Сохранить пароль' }).click();
   await expect(page.getByRole('status')).toHaveText('Пароль изменён. Войдите с новым паролем.');
+  await expect(page.getByRole('status')).toBeFocused();
   await page.getByRole('main').getByRole('link', { name: 'Войти', exact: true }).click();
   await page.getByLabel('Email').fill(account.email);
   await page.getByLabel('Пароль', { exact: true }).fill(newPassword);

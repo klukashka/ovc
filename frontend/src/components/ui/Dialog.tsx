@@ -23,6 +23,7 @@ export function ModalDialog({
   readonly children: ReactNode;
 }): ReactElement {
   const dialog = useRef<HTMLDialogElement>(null);
+  const focusReturnedOnClose = useRef(false);
 
   useEffect(() => {
     const element = dialog.current;
@@ -30,10 +31,12 @@ export function ModalDialog({
       return;
     }
     if (open && !element.open) {
+      focusReturnedOnClose.current = false;
       element.showModal();
       initialFocus?.current?.focus();
     }
     if (!open && element.open) {
+      focusReturnedOnClose.current = true;
       element.close();
       returnFocus.current?.focus();
     }
@@ -50,11 +53,18 @@ export function ModalDialog({
         }
       }}
       onClose={() => {
+        if (dialog.current?.open === true) {
+          return;
+        }
         if (busy) {
           dialog.current?.showModal();
           return;
         }
         onClose();
+        if (focusReturnedOnClose.current) {
+          focusReturnedOnClose.current = false;
+          return;
+        }
         returnFocus.current?.focus();
       }}
       className={dialogClass}

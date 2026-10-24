@@ -377,7 +377,9 @@ Same as the tutor's, without tutor-only sections; direct channels are named by t
   - dedicated phone layouts are designed in slice 10 of the [roadmap](../../../docs/roadmap.md); until then the rules marked **Phone** above are the minimum.
 - **Keyboard and screen readers:**
   - every action is reachable by keyboard in visual order, with a visible focus ring;
-  - dialogs trap focus and restore it on close;
+  - dialogs trap focus and restore it to the opener on close, unless the page section names another target (a notice) or the action changes the route, as for every route change; a dialog opens with focus on the element its page section names, a destructive confirmation without fields on its safe choice (Cancel), one that asks for a password on that field, and otherwise on its first field;
+  - a page's loading, error and refetching states render inside the page, so they never take focus away; after Retry, once the error is gone, focus moves once to the page heading when focus was lost;
+  - a notice that reports a refusal takes focus when it appears, and again each time it reports a new refusal; a notice that reports a result takes focus when it replaces or follows the control that triggered it and focus was lost or was on that control; otherwise a live region announces it;
   - live regions announce new messages, saving status and toasts;
   - icons that act as buttons have accessible names;
   - charts have a table alternative;

@@ -69,6 +69,7 @@ test.describe('in Russian', () => {
 
     await page.getByRole('button', { name: 'Добавить ученика' }).click();
     const form = page.getByRole('dialog', { name: 'Новый ученик' });
+    await expect(form.getByLabel('Имя')).toBeFocused();
     await form.getByLabel('Имя').fill('Анна');
     await form.getByLabel('Email (необязательно)').fill(anna.email);
     await form.getByRole('button', { name: 'Создать приглашение' }).click();

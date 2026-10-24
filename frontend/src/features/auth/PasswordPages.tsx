@@ -138,7 +138,7 @@ export function ResetPasswordPage(): ReactElement {
     return (
       <Page>
         {reset.kind === 'done' ? (
-          <FormNotice>{t('resetPassword.done')}</FormNotice>
+          <FormNotice takeFocus>{t('resetPassword.done')}</FormNotice>
         ) : (
           <FormAlert>{t('errors.token_invalid')}</FormAlert>
         )}
