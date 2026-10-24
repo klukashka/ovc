@@ -58,7 +58,7 @@ func (q *Queries) DeleteTutorBlockedRequestersBatch(ctx context.Context, arg Del
 }
 
 const listBlockedRequesters = `-- name: ListBlockedRequesters :many
-SELECT blocked_requesters.student_id, blocked_requesters.created_at, students.name
+SELECT blocked_requesters.student_id, blocked_requesters.created_at, students.name, students.state
 FROM blocked_requesters
 JOIN users AS students ON students.id = blocked_requesters.student_id
 WHERE blocked_requesters.tutor_id = $1
@@ -87,6 +87,7 @@ type ListBlockedRequestersRow struct {
 	StudentID domain.UserID
 	CreatedAt time.Time
 	Name      string
+	State     domain.AccountState
 }
 
 func (q *Queries) ListBlockedRequesters(ctx context.Context, arg ListBlockedRequestersParams) ([]ListBlockedRequestersRow, error) {
@@ -103,7 +104,12 @@ func (q *Queries) ListBlockedRequesters(ctx context.Context, arg ListBlockedRequ
 	var items []ListBlockedRequestersRow
 	for rows.Next() {
 		var i ListBlockedRequestersRow
-		if err := rows.Scan(&i.StudentID, &i.CreatedAt, &i.Name); err != nil {
+		if err := rows.Scan(
+			&i.StudentID,
+			&i.CreatedAt,
+			&i.Name,
+			&i.State,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

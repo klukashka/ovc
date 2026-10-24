@@ -55,7 +55,7 @@ type JoinRequestDecision struct {
 
 type BlockedRequester struct {
 	StudentID string    `json:"student_id" format:"uuid"`
-	Name      string    `json:"name"`
+	Name      *string   `json:"name" nullable:"true"`
 	AvatarID  *string   `json:"avatar_id" format:"uuid" nullable:"true"`
 	BlockedAt time.Time `json:"blocked_at"`
 }

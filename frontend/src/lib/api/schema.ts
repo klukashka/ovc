@@ -621,7 +621,7 @@ export interface components {
             avatar_id: string | null;
             /** Format: date-time */
             blocked_at: string;
-            name: string;
+            name: string | null;
             /** Format: uuid */
             student_id: string;
         };

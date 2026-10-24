@@ -66,7 +66,7 @@ SET state = 'discarded', discard_reason = 'withdrawn', discarded_at = sqlc.arg(n
 WHERE id = @id AND tutor_id = @tutor_id AND state = 'invited';
 
 -- name: ListCardAccounts :many
-SELECT id, name, email, email_verified_at FROM users WHERE id = ANY (sqlc.arg(ids)::uuid[]);
+SELECT id, name, email, email_verified_at FROM users WHERE id = ANY (sqlc.arg(ids)::uuid[]) AND state <> 'deleted';
 
 -- name: ListAvatarsOf :many
 SELECT ref_id, attachment_id FROM attachment_references

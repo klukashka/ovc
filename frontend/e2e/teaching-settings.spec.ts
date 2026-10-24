@@ -1,6 +1,6 @@
 import { signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
-import { accessToken, callApi, seedBlockedStudent, seedBlockedStudents, tutorCode } from './tutoring.ts';
+import { accessToken, callApi, deleteAccount, seedBlockedStudent, seedBlockedStudents, tutorCode } from './tutoring.ts';
 
 const codePattern = /^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/;
 const dailyRegenerations = 10;
@@ -68,6 +68,26 @@ test('teaching settings › blocked students and unblock', async ({ page, deploy
   await expect(section.getByRole('status')).toHaveText('Ученик разблокирован.');
   await expect(section.getByRole('status')).toBeFocused();
   await expect(section.getByText('Вы никого не заблокировали.')).toBeVisible();
+});
+
+test('teaching settings › a blocked student who deleted their account is listed without the account', async ({
+  page,
+  deployment,
+  control,
+}) => {
+  const maria = await seedVerifiedUser(deployment, 'Мария');
+  const blocked = await seedBlockedStudent(deployment, control, maria, 'Удаливший аккаунт ученик');
+  await deleteAccount(deployment, blocked);
+  await signInThroughTheApi(page, maria);
+
+  await page.goto('/settings/teaching');
+
+  const section = page.getByRole('region', { name: 'Заблокированные ученики' });
+  await expect(section.getByText('Удалённый аккаунт')).toBeVisible();
+  await expect(section.getByText(blocked.name)).toHaveCount(0);
+  await expect(
+    section.getByRole('button', { name: /^Разблокировать удалённый аккаунт, заблокированный \d{1,2} \S+ \d{4}/ }),
+  ).toBeVisible();
 });
 
 test('teaching settings › show more moves focus to the first new blocked student', async ({

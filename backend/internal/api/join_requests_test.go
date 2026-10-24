@@ -51,7 +51,7 @@ type tutorRequest struct {
 
 type blockedStudent struct {
 	StudentID string    `json:"student_id"`
-	Name      string    `json:"name"`
+	Name      *string   `json:"name"`
 	AvatarID  *string   `json:"avatar_id"`
 	BlockedAt time.Time `json:"blocked_at"`
 }
@@ -466,7 +466,7 @@ func TestUnblockLeavesBlockedRequestsToExpireLikeAnyOther(t *testing.T) {
 	h.tick(t)
 	_, sentAfterTick := h.sentRequests(t, accessToken(t, h.login(t, studentEmail, accountPassword)))
 
-	if len(blockedBefore) != 1 || blockedBefore[0].StudentID != student.String() || blockedBefore[0].Name != requestingName {
+	if len(blockedBefore) != 1 || blockedBefore[0].StudentID != student.String() || blockedBefore[0].Name == nil || *blockedBefore[0].Name != requestingName {
 		t.Fatalf("the blocked students are %+v", blockedBefore)
 	}
 	if unblocked.status != http.StatusNoContent || repeated.status != http.StatusNotFound {

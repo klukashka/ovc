@@ -562,7 +562,7 @@ func (q *Queries) ListAvatarsOf(ctx context.Context, ownerIds []pgtype.UUID) ([]
 }
 
 const listCardAccounts = `-- name: ListCardAccounts :many
-SELECT id, name, email, email_verified_at FROM users WHERE id = ANY ($1::uuid[])
+SELECT id, name, email, email_verified_at FROM users WHERE id = ANY ($1::uuid[]) AND state <> 'deleted'
 `
 
 type ListCardAccountsRow struct {

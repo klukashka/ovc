@@ -160,7 +160,7 @@ FR-2.5, FR-2.7, FR-11.3.
 - **Provisional card:** the badge "Email not confirmed", the account's name and email, and "End working together", which removes the student after a dialog explaining that the link is discarded and a new card with a fresh link replaces it (Cancel focused first; the dialog's button is "End"); the new card then opens with the notice "The link was removed. This new card has a fresh invitation link."
 - **Reclaim-pending card:** the badge "Waiting for the student", the line "The owner of this email is deciding whether to keep studying with you", no account details, and the same "End working together", whose dialog says that the owner has not chosen yet and is not told.
 - **A dialog action refused because the card changed meanwhile** (for example a removal answering `relationship_not_provisional` after the owner kept the link, or a withdrawal of a card that was linked) closes the dialog and shows the notice "This card changed in the meantime. Its current state is shown below.", which takes focus, above the reloaded card.
-- **Ended card:** "Invite again" creates a new link with Copy and Send; history stays visible. In slice 3 it sits under "Work together again" with the hint that the student comes back to the card and its history but not to the groups; once the link exists, the card shows it as an invited card does (Copy, Send, "Create a new link", its expiry) and the notice "A new invitation link was created." takes focus. An ended card that already holds an open link shows that link instead of "Invite again".
+- **Ended card:** "Invite again" creates a new link with Copy and Send; history stays visible. In slice 3 it sits under "Work together again" with the hint that the student comes back to the card and its history but not to the groups; once the link exists, the card shows it as an invited card does (Copy, Send, "Create a new link", its expiry) and the notice "A new invitation link was created." takes focus. An ended card that already holds an open link shows that link instead of "Invite again". When the student's account is deleted, the card shows no account details until the purge: the avatar falls back to the display name's initial and the email line shows only the card's own email.
 - **End dialog** for an active student names the consequences: the student leaves the tutor's groups, future lessons are cancelled, the chat becomes read-only, and the student gets an email. It opens on Cancel; its button is "End". After ending, the card shows its ended state and the notice "You no longer work with this student." takes focus. In slice 3 "End working together" is a button below the notes on provisional, reclaim-pending and active cards, not yet in an overflow menu, because the header has no other actions until lessons and chat arrive.
 
 ### Groups and group page
@@ -275,7 +275,7 @@ FR-1.4–FR-1.7, FR-5.6, FR-13.3, FR-14.2, FR-17.
   - tutor code with Copy and Regenerate (an unconfirmed tutor gets the confirmation prompt instead of Regenerate);
   - recording retention;
   - storage usage bars for files and recordings, against their quotas;
-  - blocked students with Unblock.
+  - blocked students with Unblock, each row with the avatar, the account name and the blocked date; a student whose account is deleted is shown as "Deleted account" with that label's initial in the avatar circle, never the student's picture, and its Unblock button is named "Unblock the deleted account blocked on {date}" for screen readers, so several such rows stay distinguishable.
 
 ## Pages for both roles
 

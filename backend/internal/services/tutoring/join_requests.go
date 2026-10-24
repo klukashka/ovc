@@ -71,7 +71,7 @@ type JoinRequestDecision struct {
 
 type BlockedStudent struct {
 	StudentID domain.UserID
-	Name      string
+	Name      *string
 	AvatarID  *domain.AttachmentID
 	BlockedAt time.Time
 }
@@ -907,22 +907,32 @@ func (s *Service) BlockedStudents(ctx context.Context, tutor domain.UserID, quer
 		}
 		students := make([]domain.UserID, 0, len(rows))
 		for _, row := range rows {
-			students = append(students, row.StudentID)
+			if row.State != domain.AccountDeleted {
+				students = append(students, row.StudentID)
+			}
 		}
 		avatars, err := repos.Relationships.AvatarsOf(ctx, students)
 		if err != nil {
 			return err
 		}
 		for _, row := range rows {
-			item := BlockedStudent{StudentID: row.StudentID, Name: row.Name, BlockedAt: row.CreatedAt}
-			if avatar, has := avatars[row.StudentID]; has {
-				item.AvatarID = &avatar
-			}
-			page.Items = append(page.Items, item)
+			page.Items = append(page.Items, blockedStudent(row, avatars))
 		}
 		return nil
 	})
 	return page, err
+}
+
+func blockedStudent(row repositories.BlockedRequester, avatars map[domain.UserID]domain.AttachmentID) BlockedStudent {
+	item := BlockedStudent{StudentID: row.StudentID, BlockedAt: row.CreatedAt}
+	if row.State == domain.AccountDeleted {
+		return item
+	}
+	item.Name = &row.Name
+	if avatar, has := avatars[row.StudentID]; has {
+		item.AvatarID = &avatar
+	}
+	return item
 }
 
 func parseRequestCursor(text string) (*repositories.JoinRequestCursor, error) {

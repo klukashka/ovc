@@ -161,19 +161,23 @@ function BlockedRow({
 }): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
+  const name = student.name ?? t('teaching.deletedAccount');
+  const blockedDate = formatDate(student.blocked_at, me.language, me.timezone);
+  const unblockLabel =
+    student.name === null
+      ? t('teaching.unblockDeleted', { date: blockedDate })
+      : t('teaching.unblockNamed', { name: student.name });
   return (
     <li className="flex flex-wrap items-center gap-3 border-t border-border py-3">
-      <Avatar name={student.name} avatarId={student.avatar_id} />
+      <Avatar name={name} avatarId={student.avatar_id} />
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-strong">{student.name}</span>
-        <span className="tabular text-small text-text-muted">
-          {t('teaching.blockedAt', { date: formatDate(student.blocked_at, me.language, me.timezone) })}
-        </span>
+        <span className={student.name === null ? 'truncate text-text-muted' : 'truncate text-strong'}>{name}</span>
+        <span className="tabular text-small text-text-muted">{t('teaching.blockedAt', { date: blockedDate })}</span>
       </span>
       <ActionButton
         busy={false}
         unavailable={busy}
-        label={t('teaching.unblockNamed', { name: student.name })}
+        label={unblockLabel}
         onClick={onUnblock}
         className={quietButtonClass}
       >

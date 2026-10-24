@@ -7,7 +7,7 @@ ON CONFLICT (tutor_id, student_id) DO NOTHING;
 DELETE FROM blocked_requesters WHERE tutor_id = @tutor_id AND student_id = @student_id;
 
 -- name: ListBlockedRequesters :many
-SELECT blocked_requesters.student_id, blocked_requesters.created_at, students.name
+SELECT blocked_requesters.student_id, blocked_requesters.created_at, students.name, students.state
 FROM blocked_requesters
 JOIN users AS students ON students.id = blocked_requesters.student_id
 WHERE blocked_requesters.tutor_id = @tutor_id
