@@ -61,6 +61,18 @@ function existingStudentOf(details: unknown): string | undefined {
     : undefined;
 }
 
+function relationshipsOf(details: unknown): readonly string[] {
+  if (
+    typeof details !== 'object' ||
+    details === null ||
+    !('relationship_ids' in details) ||
+    !Array.isArray(details.relationship_ids)
+  ) {
+    return [];
+  }
+  return details.relationship_ids.filter((id: unknown): id is string => typeof id === 'string');
+}
+
 function isReceivedFieldError(value: unknown): value is ReceivedFieldError {
   return (
     typeof value === 'object' &&
@@ -78,6 +90,7 @@ export class ApiError extends Error {
   readonly requestId: string | undefined;
   readonly fields: readonly FieldProblem[];
   readonly existingStudentId: string | undefined;
+  readonly relationshipIds: readonly string[];
 
   constructor(status: number, body: ReceivedErrorBody | undefined) {
     super(body === undefined ? `API request failed with status ${String(status)}` : `API error ${body.code}`);
@@ -87,6 +100,7 @@ export class ApiError extends Error {
     this.requestId = body?.request_id;
     this.fields = fieldProblems(body?.fields);
     this.existingStudentId = existingStudentOf(body?.details);
+    this.relationshipIds = relationshipsOf(body?.details);
   }
 
   fieldCode(field: string): FieldCode | undefined {

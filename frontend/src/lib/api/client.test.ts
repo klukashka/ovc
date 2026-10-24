@@ -52,4 +52,37 @@ describe('API errors', () => {
 
     expect([error.status, error.code, error.requestId]).toEqual([502, undefined, undefined]);
   });
+
+  test('a refusal naming relationships keeps their identifiers and drops entries that are not strings', () => {
+    const received = {
+      error: {
+        code: 'relationship_not_active',
+        message: 'Server message',
+        request_id: 'request-3',
+        details: { relationship_ids: ['relationship-1', 7, 'relationship-2'] },
+      },
+    };
+
+    const error = apiErrorFrom(409, received);
+
+    expect([error.code, error.relationshipIds]).toEqual([
+      'relationship_not_active',
+      ['relationship-1', 'relationship-2'],
+    ]);
+  });
+
+  test('a refusal without relationship details names no relationships', () => {
+    const received = {
+      error: {
+        code: 'student_exists',
+        message: 'Server message',
+        request_id: 'request-4',
+        details: { student_id: 's' },
+      },
+    };
+
+    const error = apiErrorFrom(409, received);
+
+    expect([error.relationshipIds, error.existingStudentId]).toEqual([[], 's']);
+  });
 });

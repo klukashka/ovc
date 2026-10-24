@@ -1,12 +1,21 @@
-import { type ReactElement, useId } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { type ReactElement, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { FocusedNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
-import { type MyTutor, currentTutors, pastTutors } from './api.ts';
+import { type MyTutor, currentTutors, myTutorsKey, pastTutors } from './api.ts';
 import { CodeEntry } from './CodeEntry.tsx';
 import { SentRequests } from './SentRequests.tsx';
+import { type StopOutcome, StopStudyingDialog } from './StopStudying.tsx';
 import { TutorList, TutorsLoadFailed, useMyTutors } from './TutorList.tsx';
+
+const stopNotice = {
+  ended: 'tutors.stopped',
+  removed: 'tutors.linkRemoved',
+  changed: 'tutors.changed',
+} as const;
 
 function PastTutors({ tutors }: { readonly tutors: readonly MyTutor[] }): ReactElement | null {
   const { t } = useTranslation();
@@ -28,6 +37,15 @@ export function MyTutorsPage(): ReactElement {
   const { t } = useTranslation();
   const addHeading = useId();
   const query = useMyTutors();
+  const queryClient = useQueryClient();
+  const [chosen, setChosen] = useState<MyTutor | null>(null);
+  const [checking, setChecking] = useState(false);
+  const stopping =
+    chosen === null
+      ? null
+      : (currentTutors(query.data ?? []).find((tutor) => tutor.relationship_id === chosen.relationship_id) ?? chosen);
+  const [outcome, setOutcome] = useState<{ readonly kind: StopOutcome; readonly count: number } | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
 
   function current(): ReactElement {
     if (query.isPending) {
@@ -40,12 +58,31 @@ export function MyTutorsPage(): ReactElement {
     return tutors.length === 0 ? (
       <p className="text-text-muted">{t('tutors.empty')}</p>
     ) : (
-      <TutorList tutors={tutors} label={t('tutors.list')} withBio />
+      <TutorList
+        tutors={tutors}
+        label={t('tutors.list')}
+        withBio
+        onStopStudying={(tutor) => {
+          opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          setOutcome(null);
+          setChosen(tutor);
+          setChecking(true);
+          void queryClient.refetchQueries({ queryKey: myTutorsKey }).then(() => {
+            setChecking(false);
+            const fresh = currentTutors(queryClient.getQueryData<readonly MyTutor[]>(myTutorsKey) ?? []);
+            if (!fresh.some((candidate) => candidate.relationship_id === tutor.relationship_id)) {
+              setChosen(null);
+              setOutcome((previous) => ({ kind: 'changed', count: (previous?.count ?? 0) + 1 }));
+            }
+          });
+        }}
+      />
     );
   }
 
   return (
     <Page>
+      {outcome === null ? null : <FocusedNotice key={outcome.count} message={t(stopNotice[outcome.kind])} />}
       {current()}
       <section aria-labelledby={addHeading} className="flex flex-col gap-3">
         <h2 id={addHeading} className="text-heading">
@@ -55,6 +92,18 @@ export function MyTutorsPage(): ReactElement {
       </section>
       <SentRequests />
       <PastTutors tutors={query.isSuccess ? pastTutors(query.data) : []} />
+      <StopStudyingDialog
+        tutor={stopping}
+        checking={checking}
+        returnFocus={opener}
+        onClose={() => {
+          setChosen(null);
+        }}
+        onSettled={(kind) => {
+          setChosen(null);
+          setOutcome((previous) => ({ kind, count: (previous?.count ?? 0) + 1 }));
+        }}
+      />
     </Page>
   );
 }

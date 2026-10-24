@@ -20,8 +20,8 @@ export function hasNotice(state: unknown, notice: string): boolean {
   return typeof state === 'object' && state !== null && 'notice' in state && state.notice === notice;
 }
 
-export function studentListKey(state: StudentListState, search: string): readonly unknown[] {
-  return [...studentsKey, 'list', state, search];
+export function studentListKey(state: StudentListState, search: string, group: string): readonly unknown[] {
+  return [...studentsKey, 'list', state, search, group];
 }
 
 export function studentCardKey(id: string): readonly unknown[] {
@@ -34,7 +34,12 @@ export function isStudentListState(value: string | null): value is StudentListSt
 
 export async function fetchStudentsPage(
   client: ApiClient,
-  filter: { readonly state: StudentListState; readonly search: string; readonly cursor: string | null },
+  filter: {
+    readonly state: StudentListState;
+    readonly search: string;
+    readonly group: string;
+    readonly cursor: string | null;
+  },
   signal: AbortSignal,
 ): Promise<StudentCardPage> {
   const { data, error, response } = await client.GET('/api/v1/students', {
@@ -42,6 +47,7 @@ export async function fetchStudentsPage(
       query: {
         state: filter.state,
         ...(filter.search === '' ? {} : { q: filter.search }),
+        ...(filter.group === '' ? {} : { group: filter.group }),
         ...(filter.cursor === null ? {} : { cursor: filter.cursor }),
       },
     },

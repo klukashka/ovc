@@ -41,7 +41,7 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 | `/today` | Today (home) |
 | `/schedule?view=week\|month&date=` | Schedule |
 | `/lessons/{id}` | Lesson |
-| `/students?state=` | Students |
+| `/students?state=&group=&q=` | Students |
 | `/students/{id}` | Student card |
 | `/groups`, `/groups/{id}` | Groups, group page |
 | `/homework/library?folder=&q=` | Library |

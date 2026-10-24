@@ -135,6 +135,7 @@ FR-4.6, FR-4.7, FR-5.1–FR-5.6.
 FR-2.1, FR-2.3, FR-2.5.
 
 - **Tabs:** Active (including students whose email is not confirmed and links waiting for the student), Invited, Ended, with search; the tab and the search are in the address.
+- **Group filter:** beside the search, a "Group" choice of every group of the tutor ("All groups" first, archived groups marked "(archived)"), applied with the search and kept in the address as `group=`; it is shown once the tutor has a group. A group the tutor cannot reach shows "This group is not available." with a link to all groups.
 - **Rows:** avatar, display name, email, state and groups; next lesson, open assignments and last activity arrive with the slices that add them.
 - **"Add student" dialog:**
   - display name and optional email, then "Create invitation";
@@ -159,8 +160,8 @@ FR-2.5, FR-2.7, FR-11.3.
 - **Provisional card:** the badge "Email not confirmed", the account's name and email, and "End working together", which removes the student after a dialog explaining that the link is discarded and a new card with a fresh link replaces it (Cancel focused first; the dialog's button is "End"); the new card then opens with the notice "The link was removed. This new card has a fresh invitation link."
 - **Reclaim-pending card:** the badge "Waiting for the student", the line "The owner of this email is deciding whether to keep studying with you", no account details, and the same "End working together", whose dialog says that the owner has not chosen yet and is not told.
 - **A dialog action refused because the card changed meanwhile** (for example a removal answering `relationship_not_provisional` after the owner kept the link, or a withdrawal of a card that was linked) closes the dialog and shows the notice "This card changed in the meantime. Its current state is shown below.", which takes focus, above the reloaded card.
-- **Ended card:** "Invite again" creates a new link with Copy and Send; history stays visible.
-- **End dialog** for an active student names the consequences: the student leaves the tutor's groups, future lessons are cancelled, the chat becomes read-only, and the student gets an email.
+- **Ended card:** "Invite again" creates a new link with Copy and Send; history stays visible. In slice 3 it sits under "Work together again" with the hint that the student comes back to the card and its history but not to the groups; once the link exists, the card shows it as an invited card does (Copy, Send, "Create a new link", its expiry) and the notice "A new invitation link was created." takes focus. An ended card that already holds an open link shows that link instead of "Invite again".
+- **End dialog** for an active student names the consequences: the student leaves the tutor's groups, future lessons are cancelled, the chat becomes read-only, and the student gets an email. It opens on Cancel; its button is "End". After ending, the card shows its ended state and the notice "You no longer work with this student." takes focus. In slice 3 "End working together" is a button below the notes on provisional, reclaim-pending and active cards, not yet in an overflow menu, because the header has no other actions until lessons and chat arrive.
 
 ### Groups and group page
 
@@ -173,6 +174,13 @@ FR-3.
   - lessons, issued assignments and a link to the group chat;
   - Archive and Unarchive.
 - **Adding a member** shows which existing assignments they will not receive.
+- **In slice 3** (no lessons, assignments or chat yet):
+  - the list shows each group's colour dot, name, up to five member avatars with "+{n}" for the rest, the member count and "Archived" for an archived group; non-archived groups come first; the empty state's action is "New group";
+  - the "New group" dialog opens on its name field and offers the eight palette colours (the first one no other unarchived group uses is preselected) and a member choice: a search over the tutor's active students (students whose email is not confirmed and links waiting for the student are left out), checkboxes with name and email, "Show more" for the next page, which moves focus to the first new checkbox, and "Chosen: {count} of 30", beyond which no further student can be chosen; creating opens the new group's page, whose heading takes focus as on every route change;
+  - the group page shows the colour, "Archived" when archived, the members with their card name, account name and a "Remove" button each, "Add students", "Name and colour" with Save, and "Archive group" or "Unarchive group" with a sentence on what it does; archiving has no dialog in slice 3, because groups have no lessons, series or chat yet, so archiving removes nothing that unarchiving does not restore; slice 5, where archiving cancels lessons and ends series that unarchiving does not restore, revisits whether it needs a confirmation;
+  - "Add students" opens a dialog with the same member choice, limited to the free places, which opens on its search field; adding closes it and the notice "The students were added to the group." takes focus; an archived group offers no "Add students" and says that it takes no new students;
+  - removing a member, archiving and unarchiving each show a notice that takes focus ("The student was removed from the group.", "The group is archived.", "The group is active again.");
+  - a refusal because chosen students stopped being active (`relationship_not_active`) keeps the dialog open, takes them off the choice and says so; a member outside the tutor's scope (`not_found`) empties the choice and asks to choose again; the 30-member and 200-group limits each have their own message; an addition refused because the group was archived meanwhile (`audience_not_active`) closes the dialog and shows "This group changed in the meantime. Its current state is shown below.", which takes focus above the reloaded group.
 
 ### Library
 
@@ -260,7 +268,8 @@ FR-1.4–FR-1.7, FR-5.6, FR-13.3, FR-14.2, FR-17.
 - **Account:**
   - language, timezone (the browser's list of IANA zones), theme (system, light or dark);
   - change password, sign out everywhere, delete account;
-  - deleting asks for the password in a dialog that names the consequence, and the sign-in page then says the account was deleted.
+  - deleting asks for the password in a dialog that names the consequence, and the sign-in page then says the account was deleted;
+  - the consequence names the role's effects on tutoring: for a tutor, that working together ends with every student and the students get an email, the invitation links and the tutor code stop working, join requests expire and the groups are archived; for a student, that studying ends with every tutor, the student leaves their groups and the requests to tutors expire.
 - **Notifications:** email switches per group.
 - **Teaching (tutor):**
   - tutor code with Copy and Regenerate (an unconfirmed tutor gets the confirmation prompt instead of Regenerate);
@@ -325,6 +334,8 @@ FR-2.6, FR-1.2, FR-2.7, FR-2.8, FR-1.7.
 
 - **Rows:** each tutor's avatar, name, colour, subjects and bio, plus "Message" (from slice 6) and, in an overflow menu, "Stop studying".
 - **Stop studying** opens a dialog naming the consequences (the student leaves the tutor's groups, future lessons are cancelled, the chat becomes read-only, the tutor gets an email); for a tutor joined before the email was confirmed it says that the link is removed instead.
+  - The dialog opens on Cancel, which returns focus to the row's overflow menu button; its button is "Stop studying".
+  - Afterwards the notice "You no longer study with this tutor. The tutor is listed under Past tutors." (or, for a link made before the confirmation, "The link to the tutor was removed.") takes focus above the list; a refusal because the link changed meanwhile closes the dialog, reloads the list and shows "Your tutors changed in the meantime. The list below is up to date.", which takes focus.
 - **Add a tutor:** a field that takes a code, with "Send request". A sent code shows the notice "Request sent. Waiting for the tutor.", which takes focus, and empties the field; the answer is the same for a new, repeated, held or suppressed request (T-33). Refusals show an alert that takes focus: "This code is no longer valid — ask your tutor for a new one" (`tutor_code_invalid`), "You already study with this tutor." (`already_linked`), "The tutor is not accepting requests right now." (`tutor_unavailable`), and the throttling message with the minutes to wait (`rate_limited`).
 - **Pending requests:** "Request sent. Waiting for the tutor." (no name interpolation, so no grammatical case problems in Russian); a declined request shows "Your request was not accepted".
   - In slice 3 they are listed under "Sent requests", newest first, from `GET /join-requests/sent`: each row shows the state word from [states](states.md) ("Request sent", "Not accepted", "Expired"), the sentence for a pending or declined request and "Sent {date}"; accepted requests are left out, because their tutor is listed; the rows carry no tutor name, because the student-facing request has none; "Show more" loads the next page and moves focus to its first row. The API offers no withdrawal, so a request is never withdrawn from the page.

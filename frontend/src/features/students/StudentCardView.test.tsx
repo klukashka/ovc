@@ -59,6 +59,7 @@ async function show(card: StudentCard): Promise<void> {
     onStale: (): void => undefined,
     onWithdrawn: (): void => undefined,
     onRemoved: (): void => undefined,
+    onEnded: (): void => undefined,
     onChangedElsewhere: (): void => undefined,
   };
   const router = createMemoryRouter([{ path: '*', element: <StudentCardView card={card} handlers={handlers} /> }], {
@@ -140,7 +141,7 @@ describe('the student card', () => {
     expect(screen.queryByText(/\/invite\//)).toBeNull();
   });
 
-  test('an active card shows the account and groups with no state word, link or withdrawal', async () => {
+  test('an active card shows the account and groups with no state word, link or withdrawal, and can be ended', async () => {
     await show(activeCard);
 
     const names = buttonNames();
@@ -149,7 +150,7 @@ describe('the student card', () => {
     expect(screen.getByText('B1 вечер')).toBeDefined();
     expect(screen.queryByRole('heading', { name: 'Ссылка-приглашение' })).toBeNull();
     expect(screen.queryByLabelText('Email (необязательно)')).toBeNull();
-    expect(names).toEqual(['Сохранить', 'Сохранить']);
+    expect(names).toEqual(['Сохранить', 'Сохранить', 'Завершить занятия']);
     for (const word of ['Приглашение отправлено', 'Email не подтверждён', 'Ждём ответа ученика', 'Занятия завершены']) {
       expect(screen.queryByText(word)).toBeNull();
     }
@@ -177,13 +178,29 @@ describe('the student card', () => {
     expect(names).toEqual(['Сохранить', 'Сохранить', 'Завершить занятия']);
   });
 
-  test('an ended card shows its state word and no invitation or removal actions', async () => {
-    await show({ ...activeCard, state: 'ended' });
+  test('an ended card without a link shows its state word and offers to invite again, not to end', async () => {
+    await show({ ...activeCard, state: 'ended', groups: [] });
 
     const names = buttonNames();
 
     expect(screen.getByText('Занятия завершены')).toBeDefined();
-    expect(names).toEqual(['Сохранить', 'Сохранить']);
+    expect(screen.queryByRole('heading', { name: 'Ссылка-приглашение' })).toBeNull();
+    expect(names).toEqual(['Пригласить снова', 'Сохранить', 'Сохранить']);
+  });
+
+  test('an ended card with an open link offers the link instead of inviting again', async () => {
+    await show({ ...activeCard, state: 'ended', groups: [], invitation: invitedCard.invitation });
+
+    const names = buttonNames();
+
+    expect(screen.getByText(link)).toBeDefined();
+    expect(names).toEqual([
+      'Скопировать ссылку',
+      'Отправить по email',
+      'Создать новую ссылку',
+      'Сохранить',
+      'Сохранить',
+    ]);
   });
 });
 

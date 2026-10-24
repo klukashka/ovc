@@ -206,6 +206,31 @@ test.describe('account edge cases', () => {
     );
   });
 
+  test('the deletion dialog names the consequences for a tutor and for a student', async ({
+    page,
+    browser,
+    deployment,
+    control,
+  }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const { student: anna } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    const annaContext = await freshContext(browser, deployment);
+    const annaPage = await annaContext.newPage();
+    await signedInAt(page, maria, '/settings/account');
+    await signedInAt(annaPage, anna, '/settings/account');
+
+    await openDeletionDialog(page);
+    await openDeletionDialog(annaPage);
+
+    await expect(deletionDialog(page)).toContainText(
+      'Занятия со всеми учениками завершатся, и ученики получат письмо; ссылки-приглашения и код репетитора перестанут работать, заявки к вам истекут, а группы уйдут в архив.',
+    );
+    await expect(deletionDialog(annaPage)).toContainText(
+      'Занятия со всеми репетиторами завершатся, вы выйдете из их групп, а ваши запросы репетиторам истекут.',
+    );
+    await annaContext.close();
+  });
+
   test('deleting the account signs out and the account no longer signs in', async ({ page, deployment }) => {
     const account = await seedVerifiedUser(deployment, 'Tutor leaving for good');
     await signedInAt(page, account, '/settings/account');

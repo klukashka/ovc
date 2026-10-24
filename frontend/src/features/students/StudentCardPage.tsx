@@ -14,8 +14,11 @@ import {
   TextField,
   fieldClass,
   fieldMessage,
+  dangerButtonClass,
   linkClass,
+  quietButtonClass,
   stringField,
+  textButtonClass,
 } from '../../components/ui/Form.tsx';
 import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
@@ -24,7 +27,9 @@ import { Refusal } from '../../components/ui/Refusal.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { components } from '../../lib/api/schema.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
+import { groupsKey } from '../groups/api.ts';
 import {
+  type CardInvitation,
   type StudentCard,
   fetchStudentCard,
   hasNotice,
@@ -39,16 +44,12 @@ import { StateBadge } from './StateBadge.tsx';
 
 type StudentCardPatch = components['schemas']['StudentCardPatch'];
 
-const dangerButtonClass =
-  'inline-flex min-h-11 items-center justify-center rounded-md border border-danger px-4 text-strong text-danger hover:bg-surface aria-disabled:opacity-60';
-const textButtonClass =
-  'inline-flex min-h-11 items-center px-3 text-small text-accent-text underline aria-disabled:opacity-60';
-
 export interface CardHandlers {
   readonly onChanged: (card: StudentCard) => void;
   readonly onStale: () => void;
   readonly onWithdrawn: () => void;
   readonly onRemoved: (newCard: StudentCard) => void;
+  readonly onEnded: (card: StudentCard) => void;
   readonly onChangedElsewhere: () => void;
 }
 
@@ -293,36 +294,22 @@ function WithdrawInvitation({
   );
 }
 
-function RemoveStudent({
-  cardId,
-  state,
+function EndWorkingTogether({
+  consequence,
   handlers,
+  end,
 }: {
-  readonly cardId: string;
-  readonly state: 'provisional' | 'reclaim_pending';
+  readonly consequence: string;
   readonly handlers: CardHandlers;
+  readonly end: () => Promise<ActionState>;
 }): ReactElement {
   const { t } = useTranslation();
-  const client = useApiClient();
   const [open, setOpen] = useState(false);
   const action = useDialogAction(setOpen, handlers.onChangedElsewhere);
   const opener = useRef<HTMLButtonElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const headingId = useId();
   const consequenceId = useId();
-
-  function remove(): void {
-    action.run(async (): Promise<ActionState> => {
-      const { data, error, response } = await client.POST('/api/v1/students/{id}/remove', {
-        params: { path: { id: cardId } },
-      });
-      if (data === undefined) {
-        return refusedBy(response, error);
-      }
-      handlers.onRemoved(data.new_card);
-      return done;
-    });
-  }
 
   return (
     <section className="flex flex-col items-start gap-3">
@@ -352,12 +339,16 @@ function RemoveStudent({
           <h2 id={headingId} className="text-heading">
             {t('studentCard.removeTitle')}
           </h2>
-          <p id={consequenceId}>
-            {t(state === 'provisional' ? 'studentCard.removeConsequence' : 'studentCard.removeReclaimConsequence')}
-          </p>
+          <p id={consequenceId}>{consequence}</p>
           <Refusal state={action.state} />
           <div className="flex flex-wrap gap-3">
-            <ActionButton busy={action.busy} onClick={remove} className={dangerButtonClass}>
+            <ActionButton
+              busy={action.busy}
+              onClick={() => {
+                action.run(end);
+              }}
+              className={dangerButtonClass}
+            >
               {t('studentCard.removeSubmit')}
             </ActionButton>
             <ActionButton
@@ -374,6 +365,111 @@ function RemoveStudent({
           </div>
         </div>
       </ModalDialog>
+    </section>
+  );
+}
+
+function RemoveStudent({
+  cardId,
+  state,
+  handlers,
+}: {
+  readonly cardId: string;
+  readonly state: 'provisional' | 'reclaim_pending';
+  readonly handlers: CardHandlers;
+}): ReactElement {
+  const { t } = useTranslation();
+  const client = useApiClient();
+  return (
+    <EndWorkingTogether
+      consequence={t(
+        state === 'provisional' ? 'studentCard.removeConsequence' : 'studentCard.removeReclaimConsequence',
+      )}
+      handlers={handlers}
+      end={async (): Promise<ActionState> => {
+        const { data, error, response } = await client.POST('/api/v1/students/{id}/remove', {
+          params: { path: { id: cardId } },
+        });
+        if (data === undefined) {
+          return refusedBy(response, error);
+        }
+        handlers.onRemoved(data.new_card);
+        return done;
+      }}
+    />
+  );
+}
+
+function EndRelationship({
+  cardId,
+  handlers,
+}: {
+  readonly cardId: string;
+  readonly handlers: CardHandlers;
+}): ReactElement {
+  const { t } = useTranslation();
+  const client = useApiClient();
+  return (
+    <EndWorkingTogether
+      consequence={t('studentCard.endConsequence')}
+      handlers={handlers}
+      end={async (): Promise<ActionState> => {
+        const { data, error, response } = await client.POST('/api/v1/students/{id}/end', {
+          params: { path: { id: cardId } },
+        });
+        if (data === undefined) {
+          return refusedBy(response, error);
+        }
+        handlers.onEnded(data);
+        return done;
+      }}
+    />
+  );
+}
+
+function InviteAgain({
+  cardId,
+  handlers,
+  onInvited,
+}: {
+  readonly cardId: string;
+  readonly handlers: CardHandlers;
+  readonly onInvited: (invitation: CardInvitation) => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const client = useApiClient();
+  const headingId = useId();
+  const action = useAction((state) => {
+    if (showsStaleData(state)) {
+      handlers.onChangedElsewhere();
+    }
+  });
+
+  function invite(): void {
+    action.run(async (): Promise<ActionState> => {
+      const { data, error, response } = await client.POST('/api/v1/students/{id}/invitation', {
+        params: { path: { id: cardId } },
+      });
+      if (data === undefined) {
+        return refusedBy(response, error);
+      }
+      onInvited(data.invitation);
+      return done;
+    });
+  }
+
+  return (
+    <section aria-labelledby={headingId} className="flex flex-col items-start gap-3">
+      <h2 id={headingId} className="text-heading">
+        {t('studentCard.inviteAgainTitle')}
+      </h2>
+      <p className="text-small text-text-muted">{t('studentCard.inviteAgainHint')}</p>
+      {showsStaleData(action.state) ? null : (
+        <Refusal state={action.state} dailyLimit="invitations" confirmation="invite" />
+      )}
+      <ActionButton busy={action.busy} onClick={invite} className={quietButtonClass}>
+        {t('studentCard.inviteAgain')}
+      </ActionButton>
     </section>
   );
 }
@@ -397,7 +493,9 @@ export function StudentCardView({
   readonly handlers: CardHandlers;
 }): ReactElement {
   const { t } = useTranslation();
+  const [invitedAgain, setInvitedAgain] = useState<string | null>(null);
   const email = card.email ?? card.account?.email ?? null;
+  const linkState = card.state === 'invited' || card.state === 'ended';
   return (
     <>
       <p>
@@ -415,16 +513,27 @@ export function StudentCardView({
       </div>
       {card.account === null ? null : <AccountDetails account={card.account} />}
       {card.state === 'reclaim_pending' ? <p className="text-text-muted">{t('studentCard.waitingForOwner')}</p> : null}
-      {card.state === 'invited' && card.invitation !== null ? (
+      {linkState && card.invitation !== null ? (
         <InvitationLink
           cardId={card.id}
           invitation={card.invitation}
           canSend={card.email !== null}
+          initialNotice={invitedAgain === card.id ? 'created' : 'none'}
           onRegenerated={(invitation) => {
             handlers.onChanged({ ...card, invitation });
           }}
           onSent={handlers.onStale}
           onStale={handlers.onStale}
+        />
+      ) : null}
+      {card.state === 'ended' && card.invitation === null ? (
+        <InviteAgain
+          cardId={card.id}
+          handlers={handlers}
+          onInvited={(invitation) => {
+            setInvitedAgain(card.id);
+            handlers.onChanged({ ...card, invitation });
+          }}
         />
       ) : null}
       <DetailsForm card={card} handlers={handlers} />
@@ -433,6 +542,7 @@ export function StudentCardView({
       {card.state === 'provisional' || card.state === 'reclaim_pending' ? (
         <RemoveStudent cardId={card.id} state={card.state} handlers={handlers} />
       ) : null}
+      {card.state === 'active' ? <EndRelationship cardId={card.id} handlers={handlers} /> : null}
     </>
   );
 }
@@ -454,6 +564,10 @@ export function StudentCardPage(): ReactElement {
   const [changedCard, setChangedCard] = useState<{ readonly id: string; readonly count: number } | null>(null);
   if (changedCard !== null && changedCard.id !== studentId) {
     setChangedCard(null);
+  }
+  const [endedCard, setEndedCard] = useState<string | null>(null);
+  if (endedCard !== null && endedCard !== studentId) {
+    setEndedCard(null);
   }
   const key = studentCardKey(studentId);
 
@@ -506,7 +620,15 @@ export function StudentCardPage(): ReactElement {
             void navigate('/students?state=invited', { state: { notice: withdrawnNotice } });
             void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
           },
+          onEnded: (card) => {
+            setChangedCard(null);
+            setEndedCard(studentId);
+            queryClient.setQueryData(key, card);
+            void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
+            void queryClient.invalidateQueries({ queryKey: groupsKey, refetchType: 'none' });
+          },
           onChangedElsewhere: () => {
+            setEndedCard(null);
             setChangedCard((previous) => ({ id: studentId, count: (previous?.count ?? 0) + 1 }));
             void queryClient.invalidateQueries({ queryKey: key });
           },
@@ -532,6 +654,7 @@ export function StudentCardPage(): ReactElement {
       {changedCard === null || notFound ? null : (
         <FocusedNotice key={changedCard.count} message={t('studentCard.changedElsewhere')} />
       )}
+      {endedCard === null || notFound ? null : <FocusedNotice message={t('studentCard.ended')} />}
       {body()}
     </Page>
   );

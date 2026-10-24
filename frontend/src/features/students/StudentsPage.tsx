@@ -5,13 +5,22 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 
 import { Avatar } from '../../components/ui/Avatar.tsx';
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
-import { fieldClass, linkClass, primaryButtonClass, quietButtonClass, stringField } from '../../components/ui/Form.tsx';
+import {
+  SelectChevron,
+  fieldClass,
+  linkClass,
+  primaryButtonClass,
+  quietButtonClass,
+  selectClass,
+  stringField,
+} from '../../components/ui/Form.tsx';
 import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
+import { fetchGroups, groupsKey } from '../groups/api.ts';
 import { fetchTutorCode, tutorCodeKey } from '../settings/tutorCode.ts';
 import { AddStudentDialog } from './AddStudentDialog.tsx';
 import {
@@ -32,15 +41,25 @@ const tabClass = 'inline-flex min-h-11 items-center border-b-2 px-1 text-small';
 const currentTabClass = `${tabClass} border-accent font-medium text-text`;
 const otherTabClass = `${tabClass} border-transparent text-text-muted hover:text-text`;
 
-function listAddress(state: StudentListState, search: string): string {
-  const query = new URLSearchParams({ state });
-  if (search !== '') {
-    query.set('q', search);
-  }
-  return `/students?${query.toString()}`;
+interface ListView {
+  readonly state: StudentListState;
+  readonly search: string;
+  readonly group: string;
 }
 
-function Tabs({ current, search }: { readonly current: StudentListState; readonly search: string }): ReactElement {
+function listQuery(view: ListView): Record<string, string> {
+  return {
+    state: view.state,
+    ...(view.group === '' ? {} : { group: view.group }),
+    ...(view.search === '' ? {} : { q: view.search }),
+  };
+}
+
+function listAddress(view: ListView): string {
+  return `/students?${new URLSearchParams(listQuery(view)).toString()}`;
+}
+
+function Tabs({ view }: { readonly view: ListView }): ReactElement {
   const { t } = useTranslation();
   return (
     <nav aria-label={t('students.lists')} className="border-b border-border">
@@ -48,9 +67,9 @@ function Tabs({ current, search }: { readonly current: StudentListState; readonl
         {studentListStates.map((state) => (
           <li key={state}>
             <Link
-              to={listAddress(state, search)}
-              aria-current={state === current ? 'page' : undefined}
-              className={state === current ? currentTabClass : otherTabClass}
+              to={listAddress({ ...view, state })}
+              aria-current={state === view.state ? 'page' : undefined}
+              className={state === view.state ? currentTabClass : otherTabClass}
             >
               {t(`students.tabs.${state}`)}
             </Link>
@@ -61,20 +80,62 @@ function Tabs({ current, search }: { readonly current: StudentListState; readonl
   );
 }
 
-function SearchForm({ state, search }: { readonly state: StudentListState; readonly search: string }): ReactElement {
+function GroupFilter({ group }: { readonly group: string }): ReactElement | null {
+  const { t } = useTranslation();
+  const client = useApiClient();
+  const me = useSignedInAccount();
+  const selectId = useId();
+  const groups = useQuery({
+    queryKey: groupsKey,
+    queryFn: ({ signal }) => fetchGroups(client, signal),
+    enabled: me.state === 'active',
+    retry: false,
+  });
+  if (!groups.isSuccess || (groups.data.length === 0 && group === '')) {
+    return null;
+  }
+  return (
+    <div className="flex min-w-48 flex-col gap-1">
+      <label htmlFor={selectId} className="text-label">
+        {t('students.group')}
+      </label>
+      <div className="relative">
+        <select id={selectId} name="group" defaultValue={group} className={selectClass}>
+          <option value="">{t('students.allGroups')}</option>
+          {groups.data.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.archived_at === null ? option.name : t('students.archivedGroup', { name: option.name })}
+            </option>
+          ))}
+        </select>
+        <SelectChevron />
+      </div>
+    </div>
+  );
+}
+
+function SearchForm({ view }: { readonly view: ListView }): ReactElement {
   const { t } = useTranslation();
   const [, setSearchParams] = useSearchParams();
   const inputId = useId();
+  const filtered = view.search !== '' || view.group !== '';
 
   function submit(event: SyntheticEvent<HTMLFormElement, SubmitEvent>): void {
     event.preventDefault();
-    const value = stringField(new FormData(event.currentTarget), 'q').trim();
-    setSearchParams(value === '' ? { state } : { state, q: value });
+    const data = new FormData(event.currentTarget);
+    const group = data.get('group');
+    setSearchParams(
+      listQuery({
+        state: view.state,
+        search: stringField(data, 'q').trim(),
+        group: typeof group === 'string' ? group : view.group,
+      }),
+    );
   }
 
   return (
     <form
-      key={search}
+      key={`${view.search} ${view.group}`}
       role="search"
       aria-label={t('students.search')}
       onSubmit={submit}
@@ -84,16 +145,17 @@ function SearchForm({ state, search }: { readonly state: StudentListState; reado
         <label htmlFor={inputId} className="text-label">
           {t('students.searchLabel')}
         </label>
-        <input id={inputId} name="q" type="search" maxLength={254} defaultValue={search} className={fieldClass} />
+        <input id={inputId} name="q" type="search" maxLength={254} defaultValue={view.search} className={fieldClass} />
       </div>
+      <GroupFilter group={view.group} />
       <button type="submit" className={quietButtonClass}>
         {t('students.searchSubmit')}
       </button>
-      {search === '' ? null : (
-        <Link to={listAddress(state, '')} className={linkClass}>
+      {filtered ? (
+        <Link to={listAddress({ ...view, search: '', group: '' })} className={linkClass}>
           {t('students.clearSearch')}
         </Link>
-      )}
+      ) : null}
     </form>
   );
 }
@@ -125,24 +187,24 @@ function StudentRow({ card }: { readonly card: StudentCardSummary }): ReactEleme
 }
 
 function EmptyList({
-  state,
-  search,
+  view,
   addButton,
 }: {
-  readonly state: StudentListState;
-  readonly search: string;
+  readonly view: ListView;
   readonly addButton: ReactElement | null;
 }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
-  const firstStudent = state === 'active' && search === '';
+  const { state } = view;
+  const filtered = view.search !== '' || view.group !== '';
+  const firstStudent = state === 'active' && !filtered;
   const code = useQuery({
     queryKey: tutorCodeKey,
     queryFn: ({ signal }) => fetchTutorCode(client, signal),
     enabled: firstStudent,
     retry: false,
   });
-  if (search !== '') {
+  if (filtered) {
     return <p className="text-text-muted">{t('students.noMatches')}</p>;
   }
 
@@ -174,19 +236,18 @@ function EmptyList({
 }
 
 function StudentList({
-  state,
-  search,
+  view,
   addButton,
 }: {
-  readonly state: StudentListState;
-  readonly search: string;
+  readonly view: ListView;
   readonly addButton: ReactElement | null;
 }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
+  const { state, search, group } = view;
   const query = useInfiniteQuery({
-    queryKey: studentListKey(state, search),
-    queryFn: ({ pageParam, signal }) => fetchStudentsPage(client, { state, search, cursor: pageParam }, signal),
+    queryKey: studentListKey(state, search, group),
+    queryFn: ({ pageParam, signal }) => fetchStudentsPage(client, { state, search, group, cursor: pageParam }, signal),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.next_cursor,
     placeholderData: keepPreviousData,
@@ -207,6 +268,16 @@ function StudentList({
     if (error.code === 'email_not_verified') {
       return <ConfirmationPrompt reason="invite" />;
     }
+    if (error.code === 'not_found' && group !== '') {
+      return (
+        <div className="flex flex-col items-start gap-1">
+          <p>{t('students.groupNotFound')}</p>
+          <Link to={listAddress({ ...view, group: '' })} className={linkClass}>
+            {t('students.allGroups')}
+          </Link>
+        </div>
+      );
+    }
     return (
       <LoadFailed
         error={error}
@@ -217,7 +288,7 @@ function StudentList({
     );
   }
   if (cards.length === 0) {
-    return <EmptyList state={state} search={search} addButton={addButton} />;
+    return <EmptyList view={view} addButton={addButton} />;
   }
   return (
     <div aria-busy={query.isPlaceholderData} className="flex flex-col items-start gap-4">
@@ -255,10 +326,16 @@ export function StudentsPage(): ReactElement {
   const [searchParams] = useSearchParams();
   const requestedState = searchParams.get('state');
   const state: StudentListState = isStudentListState(requestedState) ? requestedState : 'active';
-  const search = (searchParams.get('q') ?? '').trim();
-  const view = listAddress(state, search);
-  const [withdrawnView, setWithdrawnView] = useState(() => (hasNotice(location.state, withdrawnNotice) ? view : null));
-  if (withdrawnView !== null && withdrawnView !== view) {
+  const view: ListView = {
+    state,
+    search: (searchParams.get('q') ?? '').trim(),
+    group: searchParams.get('group') ?? '',
+  };
+  const address = listAddress(view);
+  const [withdrawnView, setWithdrawnView] = useState(() =>
+    hasNotice(location.state, withdrawnNotice) ? address : null,
+  );
+  if (withdrawnView !== null && withdrawnView !== address) {
     setWithdrawnView(null);
   }
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -288,9 +365,9 @@ export function StudentsPage(): ReactElement {
     <Page wide>
       <LiveNotice message={withdrawnView === null ? null : t('students.withdrawn')} />
       <JoinRequests hideWhenEmpty />
-      <Tabs current={state} search={search} />
-      <SearchForm state={state} search={search} />
-      <StudentList state={state} search={search} addButton={addButton} />
+      <Tabs view={view} />
+      <SearchForm view={view} />
+      <StudentList view={view} addButton={addButton} />
       <AddStudentDialog
         open={dialogOpen}
         returnFocus={opener}

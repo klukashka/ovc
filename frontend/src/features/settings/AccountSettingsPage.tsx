@@ -306,7 +306,7 @@ function SignOutEverywhereSection(): ReactElement {
   );
 }
 
-function DeleteAccountSection(): ReactElement {
+function DeleteAccountSection({ role }: { readonly role: Me['role'] }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const session = useSession();
@@ -402,7 +402,7 @@ function DeleteAccountSection(): ReactElement {
           <h3 id={headingId} className="text-heading">
             {t('settings.deleteAccountConfirm')}
           </h3>
-          <p id={consequenceId}>{t('settings.deleteAccountConsequence')}</p>
+          <p id={consequenceId}>{t(`settings.deleteAccountConsequence.${role}`)}</p>
           <RefusalMessage outcome={outcome} />
           <TextField
             label={t('settings.currentPassword')}
@@ -440,7 +440,7 @@ export function AccountSettingsPage(): ReactElement {
       <PreferencesSection key={me.id} me={me} />
       <PasswordSection />
       <SignOutEverywhereSection />
-      <DeleteAccountSection />
+      <DeleteAccountSection role={me.role} />
     </Page>
   );
 }

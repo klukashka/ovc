@@ -1,4 +1,4 @@
-import { type Page, type Request, expect, test as base } from '@playwright/test';
+import { type Locator, type Page, type Request, expect, test as base } from '@playwright/test';
 
 import {
   type TestAccount,
@@ -222,6 +222,13 @@ export const diagnosedTest = test.extend<{ diagnostics: Diagnostics }>({
     { auto: true },
   ],
 });
+
+export async function expectRowsNamed(rows: Locator, names: readonly string[]): Promise<void> {
+  await expect(rows).toHaveCount(names.length);
+  for (const name of names) {
+    await expect(rows.filter({ hasText: name })).toHaveCount(1);
+  }
+}
 
 export { expect } from '@playwright/test';
 export { testNetAddress } from './accounts.ts';

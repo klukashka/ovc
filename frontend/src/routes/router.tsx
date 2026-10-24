@@ -10,6 +10,8 @@ import { ReclaimPage } from '../features/auth/ReclaimPage.tsx';
 import { SignInPage } from '../features/auth/SignInPage.tsx';
 import { SignUpChoicePage, StudentSignUpPage, TutorSignUpPage } from '../features/auth/SignUpPages.tsx';
 import { VerifyEmailPage } from '../features/auth/VerifyEmailPage.tsx';
+import { GroupPage } from '../features/groups/GroupPage.tsx';
+import { GroupsPage } from '../features/groups/GroupsPage.tsx';
 import { AccountSettingsPage } from '../features/settings/AccountSettingsPage.tsx';
 import { ProfileSettingsPage } from '../features/settings/ProfileSettingsPage.tsx';
 import { TeachingSettingsPage } from '../features/settings/TeachingSettingsPage.tsx';
@@ -31,8 +33,8 @@ export const tutorPages: RouteObject[] = [
   page('/today', 'page.today', <TodayPage />),
   page('/students', 'page.students', <StudentsPage />),
   page('/students/:studentId', 'page.student', <StudentCardPage />),
-  page('/groups', 'page.groups'),
-  page('/groups/:groupId', 'page.group'),
+  page('/groups', 'page.groups', <GroupsPage />),
+  page('/groups/:groupId', 'page.group', <GroupPage />),
   page('/homework/library', 'page.library'),
   page('/homework/templates/:templateId', 'page.builder'),
   page('/homework/issued', 'page.issued'),

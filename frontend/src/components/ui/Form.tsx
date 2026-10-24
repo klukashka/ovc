@@ -11,6 +11,10 @@ export const primaryButtonClass =
   'inline-flex min-h-11 items-center justify-center rounded-md bg-accent px-4 text-strong text-on-accent hover:bg-accent-hover aria-disabled:opacity-60';
 export const quietButtonClass =
   'inline-flex min-h-11 items-center justify-center rounded-md border border-border-strong px-4 text-strong text-text hover:bg-surface aria-disabled:opacity-60';
+export const dangerButtonClass =
+  'inline-flex min-h-11 items-center justify-center rounded-md border border-danger px-4 text-strong text-danger hover:bg-surface aria-disabled:opacity-60';
+export const textButtonClass =
+  'inline-flex min-h-11 items-center px-3 text-small text-accent-text underline aria-disabled:opacity-60';
 export const selectClass =
   'h-11 w-full appearance-none rounded-md border border-border-strong bg-field pr-9 pl-3 text-text aria-invalid:border-danger';
 
@@ -149,6 +153,7 @@ export function ActionButton({
   busy,
   unavailable = false,
   type = 'button',
+  form,
   label,
   firstInRow = false,
   onClick,
@@ -159,6 +164,7 @@ export function ActionButton({
   readonly busy: boolean;
   readonly unavailable?: boolean;
   readonly type?: 'button' | 'submit';
+  readonly form?: string;
   readonly label?: string;
   readonly firstInRow?: boolean;
   readonly onClick?: () => void;
@@ -171,6 +177,7 @@ export function ActionButton({
     <button
       ref={ref}
       type={type}
+      form={form}
       aria-disabled={refused}
       aria-busy={busy}
       aria-label={label}

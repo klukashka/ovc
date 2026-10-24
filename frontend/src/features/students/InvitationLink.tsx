@@ -11,7 +11,9 @@ import { type CopyResult, copyText } from '../../lib/clipboard.ts';
 import { formatDateTime } from '../../lib/format/dates.ts';
 import type { CardInvitation } from './api.ts';
 
-type Notice = 'none' | 'copied' | 'copyFailed' | 'sent' | 'regenerated';
+type Notice = 'none' | 'copied' | 'copyFailed' | 'sent' | 'regenerated' | 'created';
+
+export type InitialNotice = Extract<Notice, 'none' | 'created'>;
 
 function InvitationState({ invitation }: { readonly invitation: CardInvitation }): ReactElement | null {
   const { t } = useTranslation();
@@ -40,6 +42,7 @@ function NoticeMessage({ notice }: { readonly notice: Notice }): ReactElement | 
     case 'copied':
     case 'sent':
     case 'regenerated':
+    case 'created':
       return <FormNotice takeFocus>{t(`invitation.${notice}`)}</FormNotice>;
   }
 }
@@ -48,6 +51,7 @@ export function InvitationLink({
   cardId,
   invitation,
   canSend,
+  initialNotice = 'none',
   onRegenerated,
   onSent,
   onStale,
@@ -55,6 +59,7 @@ export function InvitationLink({
   readonly cardId: string;
   readonly invitation: CardInvitation;
   readonly canSend: boolean;
+  readonly initialNotice?: InitialNotice;
   readonly onRegenerated?: (invitation: CardInvitation) => void;
   readonly onSent: () => void;
   readonly onStale?: () => void;
@@ -67,7 +72,7 @@ export function InvitationLink({
       onStale?.();
     }
   });
-  const [notice, setNotice] = useState<Notice>('none');
+  const [notice, setNotice] = useState<Notice>(initialNotice);
   const url = invitation.status === 'open' ? invitation.url : null;
 
   function copy(text: string): void {

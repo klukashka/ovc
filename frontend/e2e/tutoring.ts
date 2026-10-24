@@ -406,3 +406,167 @@ export async function deleteAccount(deployment: Deployment, account: TestAccount
   });
   expectStatus(deleted, 204, 'deleting the account');
 }
+
+async function acceptRequestOf(deployment: Deployment, tutorToken: string, studentEmail: string): Promise<string> {
+  const requests = await callApi(deployment, tutorToken, 'GET', '/join-requests?limit=100');
+  expectStatus(requests, 200, 'listing join requests');
+  const items: unknown = field(requests.body, 'items');
+  const listed: readonly unknown[] = Array.isArray(items) ? items : [];
+  const request = listed.find((item) => text(field(item, 'student'), 'email') === studentEmail);
+  if (request === undefined) {
+    throw new Error('the student’s join request is not visible to the tutor');
+  }
+  const accepted = await callApi(deployment, tutorToken, 'POST', `/join-requests/${text(request, 'id')}/accept`);
+  expectStatus(accepted, 200, 'accepting a join request');
+  return text(accepted.body, 'id');
+}
+
+export async function seedStudentThroughCode(
+  deployment: Deployment,
+  control: TestControl,
+  tutor: TestAccount,
+  name: string,
+  language: 'ru' | 'en' = 'en',
+): Promise<{ readonly student: TestAccount; readonly cardId: string }> {
+  const tutorToken = await accessToken(deployment, tutor);
+  const student = newTestAccount(name, 'student');
+  await registerStudentWithCode(deployment, student, await tutorCodeWith(deployment, tutorToken), language);
+  await control.tick();
+  await confirmByMail(deployment, control, student);
+  return { student, cardId: await acceptRequestOf(deployment, tutorToken, student.email) };
+}
+
+export async function createGroup(
+  deployment: Deployment,
+  tutor: TestAccount,
+  name: string,
+  memberIds: readonly string[],
+): Promise<string> {
+  const created = await callApi(deployment, await accessToken(deployment, tutor), 'POST', '/groups', {
+    name,
+    colour: 'moss',
+    member_ids: memberIds,
+  });
+  expectStatus(created, 201, 'creating a group');
+  return text(created.body, 'id');
+}
+
+export async function groupMemberNames(deployment: Deployment, tutor: TestAccount, groupId: string): Promise<string[]> {
+  const answer = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'GET',
+    `/groups/${encodeURIComponent(groupId)}`,
+  );
+  expectStatus(answer, 200, 'reading the group');
+  const members: unknown = field(answer.body, 'members');
+  if (!Array.isArray(members)) {
+    throw new Error('the members are not a list');
+  }
+  return members.map((member: unknown) => text(member, 'display_name'));
+}
+
+export interface CardState {
+  readonly state: string;
+  readonly groups: readonly string[];
+}
+
+export async function cardState(deployment: Deployment, tutor: TestAccount, cardId: string): Promise<CardState> {
+  const answer = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'GET',
+    `/students/${encodeURIComponent(cardId)}`,
+  );
+  expectStatus(answer, 200, 'reading the card');
+  const groups: unknown = field(answer.body, 'groups');
+  if (!Array.isArray(groups)) {
+    throw new Error('the card groups are not a list');
+  }
+  return { state: text(answer.body, 'state'), groups: groups.map((group: unknown) => text(group, 'name')) };
+}
+
+export async function cardStatesNamed(
+  deployment: Deployment,
+  tutor: TestAccount,
+  displayName: string,
+): Promise<string[]> {
+  const answer = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'GET',
+    `/students?q=${encodeURIComponent(displayName)}&limit=100`,
+  );
+  expectStatus(answer, 200, 'searching the cards');
+  const items: unknown = field(answer.body, 'items');
+  if (!Array.isArray(items)) {
+    throw new Error('the cards are not a list');
+  }
+  return items.map((item: unknown) => text(item, 'state'));
+}
+
+export async function seedActiveStudentsThroughCode(
+  deployment: Deployment,
+  control: TestControl,
+  tutor: TestAccount,
+  count: number,
+): Promise<readonly string[]> {
+  const tutorToken = await accessToken(deployment, tutor);
+  const students = await seedRequesters(
+    deployment,
+    control,
+    await tutorCodeWith(deployment, tutorToken),
+    count,
+    'Student',
+  );
+  const cardIds: string[] = [];
+  for (const student of students) {
+    cardIds.push(await acceptRequestOf(deployment, tutorToken, student.email));
+  }
+  return cardIds;
+}
+
+export async function seedEmptyGroups(deployment: Deployment, tutor: TestAccount, count: number): Promise<void> {
+  const tutorToken = await accessToken(deployment, tutor);
+  const batch = 20;
+  for (let first = 0; first < count; first += batch) {
+    const created = await Promise.all(
+      Array.from({ length: Math.min(batch, count - first) }, (_, index) =>
+        callApi(deployment, tutorToken, 'POST', '/groups', {
+          name: `Group ${String(first + index + 1).padStart(3, '0')}`,
+          colour: 'slate',
+          member_ids: [],
+        }),
+      ),
+    );
+    for (const answer of created) {
+      expectStatus(answer, 201, 'creating a group');
+    }
+  }
+}
+
+export async function addToGroup(
+  deployment: Deployment,
+  tutor: TestAccount,
+  groupId: string,
+  cardIds: readonly string[],
+): Promise<void> {
+  const changed = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'PATCH',
+    `/groups/${encodeURIComponent(groupId)}`,
+    { add: cardIds },
+  );
+  expectStatus(changed, 200, 'adding to the group');
+}
+
+export async function archiveGroup(deployment: Deployment, tutor: TestAccount, groupId: string): Promise<void> {
+  const archived = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'POST',
+    `/groups/${encodeURIComponent(groupId)}/archive`,
+  );
+  expectStatus(archived, 200, 'archiving the group');
+}

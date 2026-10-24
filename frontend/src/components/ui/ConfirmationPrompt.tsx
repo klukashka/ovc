@@ -4,7 +4,7 @@ import { Link } from 'react-router';
 
 import { linkClass } from './Form.tsx';
 
-export type ConfirmationReason = 'invite' | 'regenerateCode' | 'blockedStudents' | 'joinRequests';
+export type ConfirmationReason = 'invite' | 'regenerateCode' | 'blockedStudents' | 'joinRequests' | 'groups';
 
 export function ConfirmationPrompt({ reason }: { readonly reason: ConfirmationReason }): ReactElement {
   const { t } = useTranslation();

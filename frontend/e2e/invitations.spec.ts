@@ -5,6 +5,9 @@ import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import {
   createCard,
+  decideJoinRequest,
+  endRelationship,
+  enterTutorCode,
   invitationIsUsable,
   invitationToken,
   myTutorNames,
@@ -13,6 +16,7 @@ import {
   sendInvitation,
   setCardNotes,
   signUpOnInvitation,
+  tutorCode,
 } from './tutoring.ts';
 
 const knownPreferenceKeys = ['ovc.language', 'ovc.sidebar', 'ovc.theme'];
@@ -180,7 +184,6 @@ test.describe('Anna in Russian on a phone', () => {
     for (const word of ['Email не подтверждён', 'Ждём ответа ученика', 'Приглашение отправлено', 'Занятия завершены']) {
       await expect(mariaPage.getByRole('main').getByText(word)).toHaveCount(0);
     }
-    await expect(mariaPage.getByRole('button', { name: 'Завершить занятия' })).toHaveCount(0);
     await mariaPage.goto('/students?state=active');
     await expect(mariaPage.getByRole('list', { name: 'Активные' }).getByRole('link', { name: /Анна/ })).toBeVisible();
     expect(addresses.at(-1)).not.toContain(token);
@@ -385,9 +388,74 @@ test.describe('in English', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const notice = page.getByRole('status').filter({ hasText: 'This card changed in the meantime.' });
     await expect(notice).toBeFocused();
-    await expect(page.getByRole('button', { name: 'End working together' })).toHaveCount(0);
     await expect(page.getByRole('main').getByText('Email not confirmed')).toHaveCount(0);
+    await expect(page.getByRole('main').getByText('Boris Account')).toBeVisible();
     await expect(page).toHaveURL(`/students/${card.id}`);
+  });
+
+  test('students › two stale refusals in a row each move focus to the changed-card notice', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const boris = newTestAccount('Boris Account', 'student');
+    const card = await createCard(deployment, pavel, 'Boris', boris.email);
+    diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/students/${card.id}`, status: 409 });
+    diagnostics.expectFailure({ method: 'POST', path: `/api/v1/students/${card.id}/remove`, status: 409 });
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${card.id}`);
+    const notice = page.getByRole('status').filter({ hasText: 'This card changed in the meantime.' });
+    await page.getByRole('button', { name: 'Withdraw invitation' }).click();
+    await signUpOnInvitation(deployment, card.link, boris, 'en');
+    await page
+      .getByRole('dialog', { name: 'Withdraw the invitation?' })
+      .getByRole('button', { name: 'Withdraw' })
+      .click();
+    await expect(notice).toBeFocused();
+    await expect(page.getByRole('main').getByText('Email not confirmed')).toBeVisible();
+    await page.getByRole('button', { name: 'End working together' }).click();
+    await expect(
+      page.getByRole('dialog', { name: 'End working together?' }).getByRole('button', { name: 'Cancel' }),
+    ).toBeFocused();
+    await confirmInTheOwnBrowser(deployment, control, boris);
+
+    await page
+      .getByRole('dialog', { name: 'End working together?' })
+      .getByRole('button', { name: 'End', exact: true })
+      .click();
+
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(notice).toBeFocused();
+    await expect(notice).toHaveCount(1);
+    await expect(page.getByRole('main').getByText('Email not confirmed')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'End working together' })).toBeVisible();
+    await expect(page).toHaveURL(`/students/${card.id}`);
+  });
+
+  test('students › invite again on a card reactivated meanwhile moves focus to the changed-card notice', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, control, pavel, 'Anna');
+    await endRelationship(deployment, pavel, cardId);
+    diagnostics.expectFailure({ method: 'POST', path: `/api/v1/students/${cardId}/invitation`, status: 409 });
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${cardId}`);
+    await expect(page.getByRole('button', { name: 'Invite again' })).toBeVisible();
+    await enterTutorCode(deployment, anna, await tutorCode(deployment, pavel));
+    await decideJoinRequest(deployment, pavel, anna.email, 'accept');
+
+    await page.getByRole('button', { name: 'Invite again' }).click();
+
+    await expect(page.getByRole('status').filter({ hasText: 'This card changed in the meantime.' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Invite again' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'End working together' })).toBeVisible();
+    await expect(page.getByRole('main').getByText(/\/invite\//)).toHaveCount(0);
   });
 
   test('students › a provisional student is removed and a new card with a fresh link replaces it', async ({
