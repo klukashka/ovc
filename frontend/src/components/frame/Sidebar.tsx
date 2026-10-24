@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router';
 
 import { type Section, type SectionCounts, isCurrent, roleSections, trailingSections } from '../../app/sections.ts';
 import { type Me, useSession } from '../../lib/api/session.ts';
+import { reachable } from '../../routes/access.ts';
 
 interface SidebarProps {
   readonly me: Me;
@@ -185,26 +186,30 @@ export function Sidebar({ me, counts, headerAction, onNavigate }: SidebarProps):
       </div>
       <nav aria-label={t('frame.navigation')}>
         <ul className="flex flex-col gap-0.5">
-          {roleSections[me.role].map((section) => (
-            <SidebarItem
-              key={section.key}
-              section={section}
-              count={counts[section.key] ?? 0}
-              current={isCurrent(section, pathname)}
-              onNavigate={onNavigate}
-            />
-          ))}
+          {roleSections[me.role]
+            .filter((section) => reachable(me, section.to))
+            .map((section) => (
+              <SidebarItem
+                key={section.key}
+                section={section}
+                count={counts[section.key] ?? 0}
+                current={isCurrent(section, pathname)}
+                onNavigate={onNavigate}
+              />
+            ))}
         </ul>
         <ul className="mt-4 flex flex-col gap-0.5 border-t border-border pt-4">
-          {trailingSections.map((section) => (
-            <SidebarItem
-              key={section.key}
-              section={section}
-              count={counts[section.key] ?? 0}
-              current={isCurrent(section, pathname)}
-              onNavigate={onNavigate}
-            />
-          ))}
+          {trailingSections
+            .filter((section) => reachable(me, section.to))
+            .map((section) => (
+              <SidebarItem
+                key={section.key}
+                section={section}
+                count={counts[section.key] ?? 0}
+                current={isCurrent(section, pathname)}
+                onNavigate={onNavigate}
+              />
+            ))}
         </ul>
       </nav>
     </div>

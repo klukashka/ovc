@@ -6,6 +6,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { Avatar } from '../../components/ui/Avatar.tsx';
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
 import { fieldClass, linkClass, primaryButtonClass, quietButtonClass, stringField } from '../../components/ui/Form.tsx';
+import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
@@ -17,6 +18,7 @@ import {
   type StudentCardSummary,
   type StudentListState,
   fetchStudentsPage,
+  hasNotice,
   isStudentListState,
   studentListKey,
   studentListStates,
@@ -240,29 +242,6 @@ function StudentList({
   );
 }
 
-function LiveNotice({ message }: { readonly message: string | null }): ReactElement {
-  const [announced, setAnnounced] = useState<string | null>(null);
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      setAnnounced(message);
-    });
-    return (): void => {
-      window.cancelAnimationFrame(frame);
-    };
-  }, [message]);
-
-  return (
-    <p role="status" className={message !== null && announced !== null ? 'text-text' : 'sr-only'}>
-      {message === null ? null : announced}
-    </p>
-  );
-}
-
-function hasWithdrawnNotice(state: unknown): boolean {
-  return typeof state === 'object' && state !== null && 'notice' in state && state.notice === withdrawnNotice;
-}
-
 export function StudentsPage(): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
@@ -273,7 +252,7 @@ export function StudentsPage(): ReactElement {
   const state: StudentListState = isStudentListState(requestedState) ? requestedState : 'active';
   const search = (searchParams.get('q') ?? '').trim();
   const view = listAddress(state, search);
-  const [withdrawnView, setWithdrawnView] = useState(() => (hasWithdrawnNotice(location.state) ? view : null));
+  const [withdrawnView, setWithdrawnView] = useState(() => (hasNotice(location.state, withdrawnNotice) ? view : null));
   if (withdrawnView !== null && withdrawnView !== view) {
     setWithdrawnView(null);
   }
@@ -281,7 +260,7 @@ export function StudentsPage(): ReactElement {
   const opener = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (hasWithdrawnNotice(location.state)) {
+    if (hasNotice(location.state, withdrawnNotice)) {
       void navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
     }
   }, [location, navigate]);

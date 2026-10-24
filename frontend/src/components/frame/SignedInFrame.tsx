@@ -8,8 +8,10 @@ import { preferenceKeys } from '../../lib/preferences/store.ts';
 import { useRouteTitle } from '../../app/handles.ts';
 import { type SectionCounts, hasNews } from '../../app/sections.ts';
 import type { Me } from '../../lib/api/session.ts';
+import { reachable } from '../../routes/access.ts';
 import { BellIcon, SidebarIcon } from '../ui/icons.tsx';
 import { Sidebar } from './Sidebar.tsx';
+import { StudentConfirmation } from './StudentConfirmation.tsx';
 import { SkipLink, mainContentId } from './SkipLink.tsx';
 
 const iconButton =
@@ -162,7 +164,7 @@ function NarrowTopBar({
   readonly news: boolean;
   readonly overlayOpen: boolean;
   readonly onShow: () => void;
-  readonly notifications: number;
+  readonly notifications: number | null;
 }): ReactElement {
   const { t } = useTranslation();
   const routeTitle = useRouteTitle();
@@ -170,33 +172,41 @@ function NarrowTopBar({
     <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-bg px-2 py-1">
       <ShowSidebarButton buttonRef={showButton} news={news} expanded={overlayOpen} onClick={onShow} />
       <p className="flex-1 truncate text-strong">{t(title ?? routeTitle)}</p>
-      <Link
-        to="/notifications"
-        aria-label={t('frame.notificationsWithCount', { count: notifications })}
-        className={`${iconButton} gap-1 px-2`}
-      >
-        <BellIcon />
-        {notifications > 0 ? (
-          <span aria-hidden="true" className="tabular text-caption text-text">
-            {notifications}
-          </span>
-        ) : null}
-      </Link>
+      {notifications === null ? null : (
+        <Link
+          to="/notifications"
+          aria-label={t('frame.notificationsWithCount', { count: notifications })}
+          className={`${iconButton} gap-1 px-2`}
+        >
+          <BellIcon />
+          {notifications > 0 ? (
+            <span aria-hidden="true" className="tabular text-caption text-text">
+              {notifications}
+            </span>
+          ) : null}
+        </Link>
+      )}
     </header>
   );
 }
 
-function ConfirmationBanner({ email }: { readonly email: string }): ReactElement {
+function ConfirmationBanner({ me }: { readonly me: Me }): ReactElement {
   const { t } = useTranslation();
   return (
-    <div role="region" aria-label={t('frame.confirmationLabel')} className="border-b border-border bg-surface">
-      <p className="mx-auto flex w-full max-w-page flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-small tablet:px-8 desktop:px-14">
-        <span>{t('frame.confirmationBody', { email })}</span>
-        <Link to="/verify-email" className="inline-flex min-h-11 items-center text-accent-text underline">
-          {t('frame.confirmationAction')}
-        </Link>
-      </p>
-    </div>
+    <section aria-label={t('frame.confirmationLabel')} className="border-b border-border bg-surface">
+      <div className="mx-auto flex w-full max-w-page flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-small tablet:px-8 desktop:px-14">
+        {me.role === 'student' ? (
+          <StudentConfirmation email={me.email} />
+        ) : (
+          <>
+            <p>{t('frame.confirmationBody', { email: me.email })}</p>
+            <Link to="/verify-email" className="inline-flex min-h-11 items-center text-accent-text underline">
+              {t('frame.confirmationAction')}
+            </Link>
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -289,7 +299,7 @@ export function SignedInFrame({
             onShow={() => {
               setOverlayOpen(true);
             }}
-            notifications={counts.notifications ?? 0}
+            notifications={reachable(me, '/notifications') ? (counts.notifications ?? 0) : null}
           />
           <SidebarOverlay open={overlayOpen} onClose={closeOverlay} returnFocus={showButton} label={t('frame.sidebar')}>
             {sidebar}
@@ -297,7 +307,7 @@ export function SignedInFrame({
         </>
       )}
       <div className={wide && sidebarShown ? 'pl-(--container-sidebar)' : ''}>
-        {me.state === 'unverified' ? <ConfirmationBanner email={me.email} /> : null}
+        {me.state === 'unverified' ? <ConfirmationBanner me={me} /> : null}
         <main
           id={mainContentId}
           tabIndex={-1}

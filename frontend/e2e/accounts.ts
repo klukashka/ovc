@@ -90,3 +90,14 @@ export async function signInThroughTheApi(page: Page, account: TestAccount): Pro
     throw new Error(`sign-in answered ${String(status)}`);
   }
 }
+
+export function emailedLinkTo(messages: readonly SentMailLinks[], path: string): string {
+  const link = messages
+    .flatMap((message) => message.links)
+    .filter((candidate) => new URL(candidate).pathname === path || new URL(candidate).pathname.startsWith(`${path}/`))
+    .at(-1);
+  if (link === undefined) {
+    throw new Error(`no emailed link to ${path}`);
+  }
+  return link;
+}

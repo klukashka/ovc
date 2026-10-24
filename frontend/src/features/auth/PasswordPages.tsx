@@ -92,7 +92,7 @@ export function ForgotPasswordPage(): ReactElement {
 type Reset =
   | { readonly kind: 'editing'; readonly error: ApiError | null }
   | { readonly kind: 'sending' }
-  | { readonly kind: 'done' }
+  | { readonly kind: 'done'; readonly choiceRequired: boolean }
   | { readonly kind: 'invalid' };
 
 export function ResetPasswordPage(): ReactElement {
@@ -104,14 +104,14 @@ export function ResetPasswordPage(): ReactElement {
 
   async function submit(value: string, newPassword: string): Promise<void> {
     setReset({ kind: 'sending' });
-    const { error, response } = await client.POST('/api/v1/auth/password/reset', {
+    const { data, error, response } = await client.POST('/api/v1/auth/password/reset', {
       body: { token: value, new_password: newPassword },
     });
-    if (response.ok) {
+    if (data !== undefined) {
       if (session.snapshot().kind === 'signedIn') {
         await session.reloadAccount();
       }
-      setReset({ kind: 'done' });
+      setReset({ kind: 'done', choiceRequired: data.outcome === 'choice_required' });
       return;
     }
     const refusal = apiErrorFrom(response.status, error);
@@ -142,6 +142,7 @@ export function ResetPasswordPage(): ReactElement {
         ) : (
           <FormAlert>{t('errors.token_invalid')}</FormAlert>
         )}
+        {reset.kind === 'done' && reset.choiceRequired ? <p>{t('resetPassword.choiceAfterSignIn')}</p> : null}
         <p>
           <Link to={reset.kind === 'done' ? '/' : '/forgot-password'} className={linkClass}>
             {reset.kind === 'done' ? t('resetPassword.signIn') : t('resetPassword.requestAgain')}

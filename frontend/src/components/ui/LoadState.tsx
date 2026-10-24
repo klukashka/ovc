@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ApiError } from '../../lib/api/client.ts';
@@ -33,6 +33,25 @@ export function DelayedLoading(): ReactElement {
   );
 }
 
+function focusIsLost(): boolean {
+  const focused = document.activeElement;
+  return focused === null || focused === document.body || !focused.isConnected || focused.matches('main');
+}
+
+function useFocusHeadingAfterRetry(retried: { readonly current: boolean }): void {
+  useEffect(
+    () => (): void => {
+      if (!retried.current) {
+        return;
+      }
+      if (focusIsLost()) {
+        document.querySelector<HTMLElement>('main h1')?.focus();
+      }
+    },
+    [retried],
+  );
+}
+
 export function LoadFailed({
   error,
   onRetry,
@@ -41,12 +60,21 @@ export function LoadFailed({
   readonly onRetry: () => void;
 }): ReactElement {
   const { t } = useTranslation();
+  const retried = useRef(false);
+  useFocusHeadingAfterRetry(retried);
   return (
     <div className="flex flex-col items-start gap-3">
       <p role="alert" className="text-strong">
         {t('load.failed')}
       </p>
-      <button type="button" onClick={onRetry} className={quietButtonClass}>
+      <button
+        type="button"
+        onClick={() => {
+          retried.current = true;
+          onRetry();
+        }}
+        className={quietButtonClass}
+      >
         {t('load.retry')}
       </button>
       <p className="text-caption text-text-muted">{t('load.requestId', { requestId: error.requestId ?? '—' })}</p>

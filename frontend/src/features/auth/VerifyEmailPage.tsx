@@ -15,15 +15,19 @@ import {
 } from '../../components/ui/Form.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
+import type { components } from '../../lib/api/schema.ts';
 import { type SessionState, useSession, useSessionState } from '../../lib/api/session.ts';
+import { reclaimAddress } from '../../routes/access.ts';
 import { CheckEmail } from './CheckEmail.tsx';
 import { useAddressToken } from './useAddressToken.ts';
+
+type EmailConfirmed = components['schemas']['EmailConfirmed'];
 
 type Confirmation =
   | { readonly kind: 'waiting' }
   | { readonly kind: 'confirming' }
   | { readonly kind: 'needsPassword'; readonly error: ApiError | null }
-  | { readonly kind: 'confirmed' }
+  | { readonly kind: 'confirmed'; readonly outcome: EmailConfirmed['outcome'] }
   | { readonly kind: 'invalid' }
   | { readonly kind: 'signOutFailed' }
   | { readonly kind: 'failed'; readonly error: ApiError };
@@ -108,7 +112,7 @@ export function VerifyEmailPage(): ReactElement {
     } else {
       await session.adopt(data);
     }
-    setConfirmation({ kind: 'confirmed' });
+    setConfirmation({ kind: 'confirmed', outcome: data.outcome });
   }
 
   function attempt(value: string, newPassword: string | null): void {
@@ -141,7 +145,22 @@ export function VerifyEmailPage(): ReactElement {
         </Page>
       );
     case 'confirmed':
-      return <Navigate to="/" replace />;
+      if (confirmation.outcome === null) {
+        return <Navigate to="/" replace />;
+      }
+      if (confirmation.outcome === 'choice_required') {
+        return <Navigate to={reclaimAddress} replace />;
+      }
+      return (
+        <Page>
+          <FormNotice takeFocus>{t(`outcome.${confirmation.outcome}`)}</FormNotice>
+          <p>
+            <Link to="/" className={linkClass}>
+              {t('verifyEmail.continue')}
+            </Link>
+          </p>
+        </Page>
+      );
     case 'invalid':
       return (
         <Page>

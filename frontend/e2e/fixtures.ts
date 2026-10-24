@@ -123,8 +123,16 @@ export interface ExpectedFailure {
   readonly status: number;
 }
 
-export interface Diagnostics {
+export interface PageDiagnostics {
   readonly expectFailure: (failure: ExpectedFailure) => void;
+}
+
+export interface Diagnostics extends PageDiagnostics {
+  readonly watch: (page: Page) => Promise<PageDiagnostics>;
+}
+
+interface WatchedPage extends PageDiagnostics {
+  readonly verify: () => Promise<void>;
 }
 
 function describeFailure(failure: ExpectedFailure): string {
@@ -142,55 +150,74 @@ async function reportPolicyViolations(page: Page): Promise<void> {
   });
 }
 
-export const diagnosedTest = test.extend<{ diagnostics: Diagnostics }>({
-  diagnostics: [
-    async ({ page, deployment }, use): Promise<void> => {
-      await reportPolicyViolations(page);
-      const problems: string[] = [];
-      const failures: string[] = [];
-      const expected: string[] = [];
-      page.on('console', (message) => {
-        if (message.type() === 'error' && !failedResourceLog.test(message.text())) {
-          problems.push(`console: ${message.text()}`);
+async function watchPage(page: Page, deployment: Deployment): Promise<WatchedPage> {
+  await reportPolicyViolations(page);
+  const problems: string[] = [];
+  const failures: string[] = [];
+  const expected: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error' && !failedResourceLog.test(message.text())) {
+      problems.push(`console: ${message.text()}`);
+    }
+  });
+  page.on('pageerror', (error) => {
+    problems.push(`page error: ${error.message}`);
+  });
+  let documents = 0;
+  const documentOf = new Map<Request, number>();
+  page.on('request', (request) => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+      documents += 1;
+    }
+    documentOf.set(request, documents);
+  });
+  const failureChecks: Promise<void>[] = [];
+  page.on('requestfailed', (request) => {
+    failureChecks.push(
+      request.response().then((response) => {
+        const reason = request.failure()?.errorText ?? '';
+        const leftBehind = documents > (documentOf.get(request) ?? documents);
+        if (response === null && !(cancelledRequest.test(reason) && leftBehind)) {
+          problems.push(`request failed: ${request.method()} ${request.url()} ${reason}`);
         }
-      });
-      page.on('pageerror', (error) => {
-        problems.push(`page error: ${error.message}`);
-      });
-      let documents = 0;
-      const documentOf = new Map<Request, number>();
-      page.on('request', (request) => {
-        if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
-          documents += 1;
-        }
-        documentOf.set(request, documents);
-      });
-      const failureChecks: Promise<void>[] = [];
-      page.on('requestfailed', (request) => {
-        failureChecks.push(
-          request.response().then((response) => {
-            const reason = request.failure()?.errorText ?? '';
-            const leftBehind = documents > (documentOf.get(request) ?? documents);
-            if (response === null && !(cancelledRequest.test(reason) && leftBehind)) {
-              problems.push(`request failed: ${request.method()} ${request.url()} ${reason}`);
-            }
-          }),
-        );
-      });
-      page.on('response', (response) => {
-        const url = new URL(response.url());
-        if (response.status() >= 400 && url.origin === deployment.origin) {
-          failures.push(`${response.request().method()} ${url.pathname}${url.search} ${String(response.status())}`);
-        }
-      });
-      await use({
-        expectFailure: (failure) => {
-          expected.push(describeFailure(failure));
-        },
-      });
+      }),
+    );
+  });
+  page.on('response', (response) => {
+    const url = new URL(response.url());
+    if (response.status() >= 400 && url.origin === deployment.origin) {
+      failures.push(`${response.request().method()} ${url.pathname}${url.search} ${String(response.status())}`);
+    }
+  });
+  return {
+    expectFailure: (failure): void => {
+      expected.push(describeFailure(failure));
+    },
+    verify: async (): Promise<void> => {
       await Promise.all(failureChecks);
       expect(problems).toEqual([]);
       expect([...failures].sort()).toEqual([...expected].sort());
+    },
+  };
+}
+
+export const diagnosedTest = test.extend<{ diagnostics: Diagnostics }>({
+  diagnostics: [
+    async ({ page, deployment }, use): Promise<void> => {
+      const main = await watchPage(page, deployment);
+      const others: WatchedPage[] = [];
+      await use({
+        expectFailure: main.expectFailure,
+        watch: async (other): Promise<PageDiagnostics> => {
+          const watched = await watchPage(other, deployment);
+          others.push(watched);
+          return watched;
+        },
+      });
+      await main.verify();
+      for (const watched of others) {
+        await watched.verify();
+      }
     },
     { auto: true },
   ],

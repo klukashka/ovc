@@ -58,6 +58,8 @@ async function show(card: StudentCard): Promise<void> {
     onChanged: (): void => undefined,
     onStale: (): void => undefined,
     onWithdrawn: (): void => undefined,
+    onRemoved: (): void => undefined,
+    onChangedElsewhere: (): void => undefined,
   };
   const router = createMemoryRouter([{ path: '*', element: <StudentCardView card={card} handlers={handlers} /> }], {
     initialEntries: [`/students/${card.id}`],
@@ -153,16 +155,34 @@ describe('the student card', () => {
     }
   });
 
-  test.each([
-    ['provisional', 'Email не подтверждён'],
-    ['reclaim_pending', 'Ждём ответа ученика'],
-    ['ended', 'Занятия завершены'],
-  ] as const)('a %s card shows its state word and no invitation actions', async (state, word) => {
-    await show({ ...activeCard, state, account: state === 'provisional' ? activeCard.account : null });
+  test('a provisional card shows its state word, the account and the action that ends it', async () => {
+    await show({ ...activeCard, state: 'provisional', groups: [] });
 
     const names = buttonNames();
 
-    expect(screen.getByText(word)).toBeDefined();
+    expect(screen.getByText('Email не подтверждён')).toBeDefined();
+    expect(screen.getByText('Анна Петрова')).toBeDefined();
+    expect(names).toEqual(['Сохранить', 'Сохранить', 'Завершить занятия']);
+  });
+
+  test('a reclaim-pending card shows its state word, no account and the action that ends it', async () => {
+    await show({ ...activeCard, state: 'reclaim_pending', account: null, groups: [] });
+
+    const names = buttonNames();
+
+    expect(screen.getByText('Ждём ответа ученика')).toBeDefined();
+    expect(screen.getByText('Владелец этого адреса решает, продолжать ли занятия с вами.')).toBeDefined();
+    expect(screen.queryByText('Анна Петрова')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Аккаунт ученика' })).toBeNull();
+    expect(names).toEqual(['Сохранить', 'Сохранить', 'Завершить занятия']);
+  });
+
+  test('an ended card shows its state word and no invitation or removal actions', async () => {
+    await show({ ...activeCard, state: 'ended' });
+
+    const names = buttonNames();
+
+    expect(screen.getByText('Занятия завершены')).toBeDefined();
     expect(names).toEqual(['Сохранить', 'Сохранить']);
   });
 });

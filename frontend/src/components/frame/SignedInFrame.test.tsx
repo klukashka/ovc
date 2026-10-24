@@ -5,6 +5,7 @@ import { RouterProvider, createMemoryRouter } from 'react-router';
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { MediaQueriesContext, PreferencesContext, fixedMediaQueries, wideLayoutQuery } from '../../app/context.ts';
+import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
 import { type Me, Session, SessionContext } from '../../lib/api/session.ts';
 import { httpAuthTransport } from '../../lib/api/transport.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
@@ -65,11 +66,13 @@ async function renderFrame(
     <MediaQueriesContext value={fixedMediaQueries(wide ? [wideLayoutQuery] : [])}>
       <PreferencesContext value={memoryPreferenceStore()}>
         <SessionContext value={unusedSession()}>
-          <QueryClientProvider client={new QueryClient()}>
-            <I18nextProvider i18n={i18n}>
-              <RouterProvider router={router} />
-            </I18nextProvider>
-          </QueryClientProvider>
+          <ApiClientContext value={createApiClient('https://ovc.example', globalThis.fetch)}>
+            <QueryClientProvider client={new QueryClient()}>
+              <I18nextProvider i18n={i18n}>
+                <RouterProvider router={router} />
+              </I18nextProvider>
+            </QueryClientProvider>
+          </ApiClientContext>
         </SessionContext>
       </PreferencesContext>
     </MediaQueriesContext>,
@@ -89,7 +92,7 @@ afterEach(() => {
 
 describe('the signed-in frame of a student', () => {
   test('shows the student sections in English and no tutor sections', async () => {
-    await renderFrame(account('student'), '/tutors', true, 'en');
+    await renderFrame(account('student'), '/homework', true, 'en');
 
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' });
 
@@ -101,7 +104,7 @@ describe('the signed-in frame of a student', () => {
   });
 
   test('a shared page opened from the sidebar keeps the student frame and focuses its heading', async () => {
-    await renderFrame(account('student'), '/tutors', true);
+    await renderFrame(account('student'), '/homework', true);
 
     await click(within(screen.getByRole('navigation')).getByRole('link', { name: 'Расписание' }));
 
@@ -112,7 +115,7 @@ describe('the signed-in frame of a student', () => {
   });
 
   test('below 1024 px the bell keeps the student frame', async () => {
-    await renderFrame(account('student'), '/tutors', false);
+    await renderFrame(account('student'), '/homework', false);
 
     await click(within(screen.getByRole('banner')).getByRole('link', { name: 'Уведомления' }));
 
@@ -123,12 +126,43 @@ describe('the signed-in frame of a student', () => {
   });
 
   test('below 1024 px a title override replaces the route title in the top bar', async () => {
-    await renderFrame(account('student'), '/tutors', false, 'ru', 'page.notFound');
+    await renderFrame(account('student'), '/homework', false, 'ru', 'page.notFound');
 
     const banner = screen.getByRole('banner');
 
     expect(within(banner).getByText('Страница не найдена')).toBeDefined();
-    expect(within(banner).queryByText('Мои репетиторы')).toBeNull();
+    expect(within(banner).queryByText('Задания')).toBeNull();
+  });
+});
+
+describe('the signed-in frame of an unconfirmed student', () => {
+  test('lists only Home, My tutors and Settings in the sidebar', async () => {
+    await renderFrame(account('student', 'unverified'), '/homework', true);
+
+    const navigation = screen.getByRole('navigation', { name: 'Основная навигация' });
+
+    const labels = within(navigation)
+      .getAllByRole('link')
+      .map((link) => link.textContent);
+    expect(labels).toEqual(['Главная', 'Мои репетиторы', 'Настройки']);
+  });
+
+  test('below 1024 px the top bar has no notifications bell', async () => {
+    await renderFrame(account('student', 'unverified'), '/homework', false);
+
+    const banner = screen.getByRole('banner');
+
+    expect(within(banner).queryByRole('link', { name: 'Уведомления' })).toBeNull();
+  });
+
+  test('the confirmation banner asks to confirm to keep studying and offers to send the link again', async () => {
+    await renderFrame(account('student', 'unverified'), '/homework', true);
+
+    const banner = screen.getByRole('region', { name: 'Подтверждение email' });
+
+    expect(banner.textContent).toContain('Подтвердите email, чтобы продолжить занятия с репетитором.');
+    expect(banner.textContent).toContain('student@example.org');
+    expect(within(banner).getByRole('button', { name: 'Отправить ссылку ещё раз' })).toBeDefined();
   });
 });
 

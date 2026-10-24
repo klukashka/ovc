@@ -43,7 +43,12 @@ export function useAction(onSettled?: (state: ActionState) => void): Action {
   };
 }
 
-const staleCodes: ReadonlySet<string> = new Set(['not_found', 'relationship_not_active', 'not_editable']);
+const staleCodes: ReadonlySet<string> = new Set([
+  'not_found',
+  'relationship_not_active',
+  'relationship_not_provisional',
+  'not_editable',
+]);
 
 export function showsStaleData(state: ActionState): boolean {
   return state.kind === 'refused' && state.error.code !== undefined && staleCodes.has(state.error.code);

@@ -59,7 +59,7 @@ export function StudentSignUpPage(): ReactElement {
   );
 }
 
-function browserTimezone(): string {
+export function browserTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
@@ -68,7 +68,7 @@ type SignUpState =
   | { readonly kind: 'sending' }
   | { readonly kind: 'sent'; readonly email: string };
 
-function LanguageChoice({ interfaceLanguage }: { readonly interfaceLanguage: Language }): ReactElement {
+export function LanguageChoice({ interfaceLanguage }: { readonly interfaceLanguage: Language }): ReactElement {
   const { t } = useTranslation();
   const selectId = useId();
   const [chosen, setChosen] = useState<Language | null>(null);
@@ -102,7 +102,7 @@ function LanguageChoice({ interfaceLanguage }: { readonly interfaceLanguage: Lan
   );
 }
 
-function ConsentField({ error }: { readonly error: string | undefined }): ReactElement {
+export function ConsentField({ error }: { readonly error: string | undefined }): ReactElement {
   const { t } = useTranslation();
   const checkboxId = useId();
   const errorId = useId();

@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { type ReactElement, type SyntheticEvent, useId, useRef, useState } from 'react';
+import { type ReactElement, type SyntheticEvent, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 
 import { type ActionState, done, refusedBy, showsStaleData, useAction } from '../../components/ui/action.ts';
 import { Avatar } from '../../components/ui/Avatar.tsx';
@@ -16,13 +16,22 @@ import {
   linkClass,
   stringField,
 } from '../../components/ui/Form.tsx';
+import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { components } from '../../lib/api/schema.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
-import { type StudentCard, fetchStudentCard, studentCardKey, studentsKey, withdrawnNotice } from './api.ts';
+import {
+  type StudentCard,
+  fetchStudentCard,
+  hasNotice,
+  removedNotice,
+  studentCardKey,
+  studentsKey,
+  withdrawnNotice,
+} from './api.ts';
 import { GroupDots } from './GroupDots.tsx';
 import { InvitationLink } from './InvitationLink.tsx';
 import { StateBadge } from './StateBadge.tsx';
@@ -38,6 +47,20 @@ export interface CardHandlers {
   readonly onChanged: (card: StudentCard) => void;
   readonly onStale: () => void;
   readonly onWithdrawn: () => void;
+  readonly onRemoved: (newCard: StudentCard) => void;
+  readonly onChangedElsewhere: () => void;
+}
+
+function useDialogAction(
+  setOpen: (open: boolean) => void,
+  onChangedElsewhere: () => void,
+): ReturnType<typeof useAction> {
+  return useAction((state) => {
+    if (showsStaleData(state)) {
+      setOpen(false);
+      onChangedElsewhere();
+    }
+  });
 }
 
 function useStaleAwareAction(onStale: () => void): ReturnType<typeof useAction> {
@@ -199,12 +222,12 @@ function WithdrawInvitation({
 }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
-  const action = useStaleAwareAction(handlers.onStale);
+  const [open, setOpen] = useState(false);
+  const action = useDialogAction(setOpen, handlers.onChangedElsewhere);
   const opener = useRef<HTMLButtonElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const headingId = useId();
   const consequenceId = useId();
-  const [open, setOpen] = useState(false);
 
   function withdraw(): void {
     action.run(async (): Promise<ActionState> => {
@@ -275,6 +298,97 @@ function WithdrawInvitation({
   );
 }
 
+function RemoveStudent({
+  cardId,
+  state,
+  handlers,
+}: {
+  readonly cardId: string;
+  readonly state: 'provisional' | 'reclaim_pending';
+  readonly handlers: CardHandlers;
+}): ReactElement {
+  const { t } = useTranslation();
+  const client = useApiClient();
+  const [open, setOpen] = useState(false);
+  const action = useDialogAction(setOpen, handlers.onChangedElsewhere);
+  const opener = useRef<HTMLButtonElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+  const headingId = useId();
+  const consequenceId = useId();
+
+  function remove(): void {
+    action.run(async (): Promise<ActionState> => {
+      const { data, error, response } = await client.POST('/api/v1/students/{id}/remove', {
+        params: { path: { id: cardId } },
+      });
+      if (data === undefined) {
+        return refusedBy(response, error);
+      }
+      handlers.onRemoved(data.new_card);
+      return done;
+    });
+  }
+
+  return (
+    <section className="flex flex-col items-start gap-3">
+      <button
+        ref={opener}
+        type="button"
+        onClick={() => {
+          action.reset();
+          setOpen(true);
+        }}
+        className={dangerButtonClass}
+      >
+        {t('studentCard.end')}
+      </button>
+      <ModalDialog
+        open={open}
+        busy={action.busy}
+        labelledBy={headingId}
+        describedBy={consequenceId}
+        returnFocus={opener}
+        initialFocus={cancel}
+        onClose={() => {
+          setOpen(false);
+        }}
+      >
+        <div className="flex flex-col gap-4">
+          <h2 id={headingId} className="text-heading">
+            {t('studentCard.removeTitle')}
+          </h2>
+          <p id={consequenceId}>
+            {t(state === 'provisional' ? 'studentCard.removeConsequence' : 'studentCard.removeReclaimConsequence')}
+          </p>
+          <Refusal state={action.state} />
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              disabled={action.busy}
+              aria-busy={action.busy}
+              onClick={remove}
+              className={dangerButtonClass}
+            >
+              {t('studentCard.removeSubmit')}
+            </button>
+            <button
+              ref={cancel}
+              type="button"
+              disabled={action.busy}
+              onClick={() => {
+                setOpen(false);
+              }}
+              className={textButtonClass}
+            >
+              {t('studentCard.cancel')}
+            </button>
+          </div>
+        </div>
+      </ModalDialog>
+    </section>
+  );
+}
+
 function AccountDetails({ account }: { readonly account: NonNullable<StudentCard['account']> }): ReactElement {
   const { t } = useTranslation();
   return (
@@ -311,6 +425,7 @@ export function StudentCardView({
         </div>
       </div>
       {card.account === null ? null : <AccountDetails account={card.account} />}
+      {card.state === 'reclaim_pending' ? <p className="text-text-muted">{t('studentCard.waitingForOwner')}</p> : null}
       {card.state === 'invited' && card.invitation !== null ? (
         <InvitationLink
           cardId={card.id}
@@ -326,6 +441,9 @@ export function StudentCardView({
       <DetailsForm card={card} handlers={handlers} />
       <NotesForm card={card} handlers={handlers} />
       {card.state === 'invited' ? <WithdrawInvitation cardId={card.id} handlers={handlers} /> : null}
+      {card.state === 'provisional' || card.state === 'reclaim_pending' ? (
+        <RemoveStudent cardId={card.id} state={card.state} handlers={handlers} />
+      ) : null}
     </>
   );
 }
@@ -335,7 +453,26 @@ export function StudentCardPage(): ReactElement {
   const client = useApiClient();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { t } = useTranslation();
+  const [removedCard, setRemovedCard] = useState<string | null>(null);
+  const removalNoticed = hasNotice(location.state, removedNotice);
+  if (removalNoticed && removedCard !== studentId) {
+    setRemovedCard(studentId);
+  } else if (!removalNoticed && removedCard !== null && removedCard !== studentId) {
+    setRemovedCard(null);
+  }
+  const [changedCard, setChangedCard] = useState<{ readonly id: string; readonly count: number } | null>(null);
+  if (changedCard !== null && changedCard.id !== studentId) {
+    setChangedCard(null);
+  }
   const key = studentCardKey(studentId);
+
+  useEffect(() => {
+    if (hasNotice(location.state, removedNotice)) {
+      void navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+    }
+  }, [location, navigate]);
   const query = useQuery({
     queryKey: key,
     queryFn: ({ signal }) => fetchStudentCard(client, studentId, signal),
@@ -380,6 +517,17 @@ export function StudentCardPage(): ReactElement {
             void navigate('/students?state=invited', { state: { notice: withdrawnNotice } });
             void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
           },
+          onChangedElsewhere: () => {
+            setChangedCard((previous) => ({ id: studentId, count: (previous?.count ?? 0) + 1 }));
+            void queryClient.invalidateQueries({ queryKey: key });
+          },
+          onRemoved: (newCard) => {
+            void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
+            void navigate(`/students/${encodeURIComponent(newCard.id)}`, {
+              replace: true,
+              state: { notice: removedNotice },
+            });
+          },
         }}
       />
     );
@@ -391,6 +539,10 @@ export function StudentCardPage(): ReactElement {
       {...(error === null && query.data !== undefined ? { headingText: query.data.display_name } : {})}
       focusTitle={notFound}
     >
+      {removedCard === null ? null : <LiveNotice message={t('studentCard.removed')} />}
+      {changedCard === null || notFound ? null : (
+        <FocusedNotice key={changedCard.count} message={t('studentCard.changedElsewhere')} />
+      )}
       {body()}
     </Page>
   );

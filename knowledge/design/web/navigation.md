@@ -30,7 +30,7 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 | `/signup/tutor`, `/signup/student` | Sign-up form | Consent checkbox, language preselected from the interface language, which follows the browser until the person chooses one; `/signup/student` is the sign-up with a required tutor code, with a hint to open the tutor's link instead ([ADR-0014](../../../docs/decisions/0014-students-join-through-their-tutor.md)) |
 | `/verify-email?token=` | Email confirmation result | Then continues to the home page, or to `/reclaim` when the outcome is `choice_required`; without a token, a signed-in unverified account sees "Check your email" with a resend button |
 | `/forgot-password`, `/reset-password?token=` | Password reset | After a reset answering `choice_required`, the next sign-in lands on `/reclaim` |
-| `/invite/{token}` | Accept invitation | Reachable signed in or out; shows the tutor; create an account or sign in in place, or accept while signed in |
+| `/invite/{token}` | Accept invitation | Reachable signed in or out, also while a reclaim choice is pending; shows the tutor; create an account or sign in in place, or accept while signed in; the address becomes `/invite` on the first render, and `/invite` alone asks to open the link again |
 | `/unsubscribe?token=` | Unsubscribe confirmation | Works without signing in |
 | `/privacy` | Privacy policy | Linked from the consent checkbox; a placeholder until the owner supplies the text |
 
@@ -65,20 +65,20 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 | `/homework/{submissionId}` | Assignment: take it, or see results |
 | `/messages`, `/messages/{channelId}` | Messages |
 | `/tutors` | My tutors, enter a tutor code, stop studying |
-| `/reclaim` | Keep or drop the links and requests made before the email was confirmed; reachable only while `GET /users/me` reports `reclaim_pending: true` |
+| `/reclaim` | Keep or drop the links and requests made before the email was confirmed; sign-in lands on it while `GET /users/me` reports `reclaim_pending: true`; opened when nothing waits, it says so; a tutor gets Not found |
 | `/notifications` | Notifications |
 | `/settings/profile`, `/settings/account`, `/settings/notifications` | Settings sections |
 
 ## Rules
 
-- **After sign-in:** a tutor goes to `/today`, a student to `/home`, and an account whose `GET /users/me` reports `reclaim_pending: true` to `/reclaim`. A `next` parameter is honoured only when it starts with exactly one `/` (not `//` or `/\`), and when resolving it against the OVC origin with the URL parser yields the same origin; anything else is ignored.
+- **After sign-in:** a tutor goes to `/today`, a student to `/home`, and an account whose `GET /users/me` reports `reclaim_pending: true` to `/reclaim`, even when a `next` parameter names another address. Such an account may still open an invitation and accept it; the invitation page then links to `/reclaim` ("You have links waiting for your choice"). A `next` parameter is honoured only when it starts with exactly one `/` (not `//` or `/\`), and when resolving it against the OVC origin with the URL parser yields the same origin; anything else is ignored.
 - **Wrong role:** a tutor address opened by a student (or the reverse) shows Not found inside the user's own frame, never a hint that the address exists. An address both roles share opens in the signed-in user's own frame.
 - **Anonymous visitors** opening a private address are redirected to `/?next=<address>`, with the path and query encoded; after an explicit sign-out or a block the redirect goes to `/` without `next`.
 - **While the session is loading** at start-up, every address shows a loading status; when the server cannot be reached, a message with a retry button.
 - **Unverified accounts:**
   - a tutor sees a confirmation banner on every page;
   - an unverified tutor trying to invite, schedule a lesson or regenerate the tutor code gets the confirmation prompt instead;
-  - an unverified student sees a confirmation banner on every page and reaches Home, My tutors and Settings, which keep sign-out, the language switch and deletion reachable; every other private address redirects to `/verify-email`; this is widened in slices 5, 6 and 9 to the provisional relationship's lessons, chat and work;
+  - an unverified student sees a confirmation banner on every page, with the email and a button that sends the link again, and reaches Home, My tutors and Settings, which keep sign-out, the language switch and deletion reachable; the sidebar shows only those sections and the narrow top bar has no notifications bell; every other private address redirects to `/verify-email`; this is widened in slices 5, 6 and 9 to the provisional relationship's lessons, chat and work;
   - the rule is the access rule in `src/routes/access.ts`, unit-tested as a permission rule; it hides what the API would refuse and decides nothing the API does not.
 - **Other refusals:**
   - `403 forbidden` shows a toast explaining the action is not allowed;
@@ -93,7 +93,7 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 `/invite/{token}`, `/verify-email?token=`, `/reset-password?token=` and `/unsubscribe?token=` follow one rule:
 
 - the static server sends `Referrer-Policy: no-referrer` for them, as for every page;
-- the page reads the token, then removes it from the address bar with `history.replaceState`;
+- the page reads the token, then removes it from the address bar with `history.replaceState`; the invitation page does so in a layout route above the session check, so the address changes on the first render, even while the session is loading or the server is unavailable;
 - the invitation page keeps its token in memory only: signing in or creating an account happens in place, and the token never travels in `next` or any other address;
 - the page loads nothing from other origins (fonts and images are self-hosted; avatars come from the OVC origin);
 - the reverse proxy logs them with the token replaced by a placeholder ([observability](../../specs/observability.md#safe-content)).

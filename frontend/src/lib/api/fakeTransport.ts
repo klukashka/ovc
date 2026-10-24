@@ -30,6 +30,8 @@ interface RefreshCookie {
 type StudentCard = components['schemas']['StudentCard'];
 
 const cardPathPrefix = '/api/v1/students/';
+const invitationPathPrefix = '/api/v1/invitations/';
+const fakeTokenPrefix = 'fake-';
 
 interface FakeCard {
   readonly tutorId: string;
@@ -45,7 +47,11 @@ function fakeCard(id: string, displayName: string): StudentCard {
     account: null,
     groups: [],
     notes: '',
-    invitation: { url: `https://ovc.example/invite/fake-${id}`, expires_at: '2026-11-07T15:00:00Z', status: 'open' },
+    invitation: {
+      url: `https://ovc.example/invite/${fakeTokenPrefix}${id}`,
+      expires_at: '2026-11-07T15:00:00Z',
+      status: 'open',
+    },
     linked_at: null,
     ended_at: null,
     ended_by: null,
@@ -92,6 +98,7 @@ export class FakeAuthServer {
   private reuse = false;
   private readonly sent: string[] = [];
   private readonly cards = new Map<string, FakeCard>();
+  private failingInvitationReads = 0;
 
   get refreshes(): number {
     return this.refreshCount;
@@ -171,6 +178,10 @@ export class FakeAuthServer {
 
   failNextAccountRead(): void {
     this.failingAccountReads += 1;
+  }
+
+  failNextInvitationRead(): void {
+    this.failingInvitationReads += 1;
   }
 
   failNextRefresh(): void {
@@ -280,6 +291,9 @@ export class FakeAuthServer {
     if (path === '/api/v1/students' || path.startsWith(cardPathPrefix)) {
       return this.answerCards(request, token, path);
     }
+    if (request.method === 'GET' && path.startsWith(invitationPathPrefix)) {
+      return this.answerInvitation(decodeURIComponent(path.slice(invitationPathPrefix.length)));
+    }
     if (path !== '/api/v1/auth/logout') {
       return refusal(404, 'not_found');
     }
@@ -325,6 +339,21 @@ export class FakeAuthServer {
       return refusal(404, 'not_found');
     }
     return json(200, found.card);
+  }
+
+  private answerInvitation(invitationToken: string): Response {
+    if (this.failingInvitationReads > 0) {
+      this.failingInvitationReads -= 1;
+      return refusal(503, 'service_unavailable');
+    }
+    const found = invitationToken.startsWith(fakeTokenPrefix)
+      ? this.cards.get(invitationToken.slice(fakeTokenPrefix.length))
+      : undefined;
+    const tutor = [...this.accounts.values()].find((account) => account.me.id === found?.tutorId);
+    if (found?.card.state !== 'invited' || tutor === undefined) {
+      return refusal(404, 'not_found');
+    }
+    return json(200, { tutor: { name: tutor.me.name, avatar_id: tutor.me.avatar_id, subjects: [] } });
   }
 
   private async readAccount(token: string): Promise<Response> {

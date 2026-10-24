@@ -6,7 +6,7 @@ import { Page } from '../../components/ui/Page.tsx';
 import { type ApiError, asApiError } from '../../lib/api/client.ts';
 import { type SignInResult, useSession, useSessionState } from '../../lib/api/session.ts';
 
-type Refusal =
+export type SignInRefusal =
   | { readonly kind: 'credentials' }
   | { readonly kind: 'blocked' }
   | { readonly kind: 'throttled'; readonly minutes: number }
@@ -16,7 +16,7 @@ const fieldClass =
   'min-h-11 w-full rounded-md border border-border-strong bg-field px-3 text-body-phone text-text tablet:text-body';
 const linkClass = 'inline-flex min-h-11 items-center text-accent-text underline';
 
-function refusalOf(result: Extract<SignInResult, { kind: 'refused' }>): Refusal {
+export function refusalOf(result: Extract<SignInResult, { kind: 'refused' }>): SignInRefusal {
   switch (result.error.code) {
     case 'invalid_credentials':
     case 'validation_failed':
@@ -32,7 +32,13 @@ function refusalOf(result: Extract<SignInResult, { kind: 'refused' }>): Refusal 
   }
 }
 
-function RefusalMessage({ id, refusal }: { readonly id: string; readonly refusal: Refusal }): ReactElement {
+export function RefusalMessage({
+  id,
+  refusal,
+}: {
+  readonly id: string;
+  readonly refusal: SignInRefusal;
+}): ReactElement {
   const { t } = useTranslation();
   const element = useRef<HTMLParagraphElement>(null);
 
@@ -76,7 +82,7 @@ export function SignInPage(): ReactElement {
   const refusalId = useId();
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [refusal, setRefusal] = useState<Refusal | null>(
+  const [refusal, setRefusal] = useState<SignInRefusal | null>(
     state.kind === 'signedOut' && state.reason === 'blocked' ? { kind: 'blocked' } : null,
   );
 

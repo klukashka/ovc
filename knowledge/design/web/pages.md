@@ -33,18 +33,19 @@ FR-2.1, FR-2.2, FR-1.2, FR-1.3.
 - **Shows:** tutor avatar, name and subjects, and "{tutor} invites you to study on OVC".
 - **Signed out:** "Create account" and "Sign in to accept", both in place, whatever the invitation's email:
   - "Create account" asks for name, email, password, language and the consent checkbox; the page never shows or pre-fills the invited email;
-  - after creating the account the page signs in with the chosen password and lands on Home, linked to the tutor with the confirmation banner; when that sign-in fails it shows "Check your email, or sign in to accept", never a wrong-password error;
+  - after creating the account the page signs in with the chosen password and lands on Home, linked to the tutor with the confirmation banner; when that sign-in fails it shows "Check your email, or sign in to accept" and switches to the sign-in form, never a wrong-password error;
+  - when the email was already taken and the password signs in to that account, and the account is confirmed (`active`), the page stays on the invitation and offers "Accept", keeping the link in memory; otherwise it lands on Home;
   - "Sign in to accept" signs in on the same page and then offers "Accept".
-- **Signed in as a student:** one "Accept" button; accepting lands on My tutors.
-- **Signed in as a tutor:** an explanation that tutor accounts cannot study, with a sign-out link (`role_mismatch`).
+- **Signed in as a student:** "You are signed in as {email}", one "Accept" button and "Use another account", which signs out on the page and keeps the invitation; accepting lands on My tutors. An account whose earlier links wait for the [reclaim choice](#keep-or-drop-earlier-links) may still accept, and the page also shows a link "You have links waiting for your choice" to `/reclaim`.
+- **Signed in as a tutor:** an explanation that tutor accounts cannot study, with a button that signs out on the page and keeps the invitation (`role_mismatch`).
 - **Signed in as an unconfirmed student who already joined a tutor:** "Confirm your email first" with a resend button (`email_not_verified`).
 - **Another email:** "This invitation is for another email address" (`invitation_email_mismatch`), for a sign-up and a signed-in acceptance alike.
 - **Invalid, expired, used or revoked:** one message, "This invitation is no longer valid — ask your tutor for a new link".
-- **The page** never shows the invitee's email, removes the token from the address bar after loading, and keeps it in memory only, never in `next`.
+- **The page** never shows the invitee's email, removes the link's secret part from the address bar on its first render (before the session has loaded), and keeps it in memory only, never in `next`. Its address `/invite/{token}` is replaced with `/invite`; opened as `/invite` alone (for example after a reload), it shows "Open the link from your tutor again".
 
 ### Confirmation, password reset, unsubscribe
 
-FR-1.1, FR-1.5, FR-13.3. Single-purpose pages with one result message and one next step. The confirmation page refuses an unknown, expired, used, superseded or malformed link at once, before any password is asked for; the reset page learns that the link is invalid only when the new password is sent. The confirmation page, opened in a browser not signed in to that account, first asks for a new password (with the strength hint) and then confirms; it then shows the outcome: "You are now studying with your tutor" (`linked`), "Request sent. Waiting for the tutor." (`request_sent`), "This code is no longer valid — enter a new one" (`code_invalid`), or, for `choice_required`, continues to the [reclaim page](#keep-or-drop-earlier-links). The reset page continues to sign-in, after which an account with a pending choice lands on the reclaim page. Unsubscribe names the email group and asks the user to confirm with a button (nothing changes when the page merely loads), then offers a link to all email settings. Token pages remove the token from the address bar after reading it.
+FR-1.1, FR-1.5, FR-13.3. Single-purpose pages with one result message and one next step. The confirmation page refuses an unknown, expired, used, superseded or malformed link at once, before any password is asked for; the reset page learns that the link is invalid only when the new password is sent. The confirmation page, opened in a browser not signed in to that account, first asks for a new password (with the strength hint) and then confirms; it then shows the outcome with a "Continue" link to the home page: "You are now studying with your tutor" (`linked`), "Request sent. Waiting for the tutor." (`request_sent`), "This code is no longer valid — enter a new one" (`code_invalid`); with no outcome it goes straight to the home page, and for `choice_required` it continues to the [reclaim page](#keep-or-drop-earlier-links). The reset page continues to sign-in, after which an account with a pending choice lands on the reclaim page; when the reset answers `choice_required` it adds "After you sign in, choose which earlier links and requests to keep". Unsubscribe names the email group and asks the user to confirm with a button (nothing changes when the page merely loads), then offers a link to all email settings. Token pages remove the token from the address bar after reading it.
 
 ## Tutor pages
 
@@ -151,8 +152,9 @@ FR-2.5, FR-2.7, FR-11.3.
 
   In slice 3 the card shows the header, groups and notes; the tabs arrive with the slices that add lessons and work.
 - **Invited card:** the invitation link with Copy, Send and Regenerate, its expiry, "Link revoked after repeated wrong emails" when the mismatch limit revoked it, and "Withdraw invitation".
-- **Provisional card:** the badge "Email not confirmed", the account's name and email, and "End", which removes the student after a dialog explaining that the link is discarded and a new card with a fresh link replaces it.
-- **Reclaim-pending card:** the badge "Waiting for the student", no account details, and the same "End".
+- **Provisional card:** the badge "Email not confirmed", the account's name and email, and "End working together", which removes the student after a dialog explaining that the link is discarded and a new card with a fresh link replaces it (Cancel focused first; the dialog's button is "End"); the new card then opens with the notice "The link was removed. This new card has a fresh invitation link."
+- **Reclaim-pending card:** the badge "Waiting for the student", the line "The owner of this email is deciding whether to keep studying with you", no account details, and the same "End working together", whose dialog says that the owner has not chosen yet and is not told.
+- **A dialog action refused because the card changed meanwhile** (for example a removal answering `relationship_not_provisional` after the owner kept the link, or a withdrawal of a card that was linked) closes the dialog and shows the notice "This card changed in the meantime. Its current state is shown below.", which takes focus, above the reloaded card.
 - **Ended card:** "Invite again" creates a new link with Copy and Send; history stays visible.
 - **End dialog** for an active student names the consequences: the student leaves the tutor's groups, future lessons are cancelled, the chat becomes read-only, and the student gets an email.
 
@@ -288,7 +290,7 @@ FR-15.3, FR-5.1, FR-2.6.
 - **Next seven days** (side column): the student's lessons starting within seven days, cancelled ones left out, one row each with weekday, time and tutor label, and a link to the schedule.
 - **My tutors** (side column): each active tutor with label, subject and a Message link, and "Enter a tutor code"; the tutor filter does not hide this list.
 - **No tutor yet:** "Enter your tutor's code" with an input; with a pending request, "Request sent. Waiting for the tutor." instead.
-- **An unconfirmed student** sees the confirmation banner "Confirm your email to keep studying with your tutor" with a resend button, and reaches Home, My tutors and Settings only.
+- **An unconfirmed student** sees the confirmation banner "Confirm your email to keep studying with your tutor. We sent a link to {email}." with the button "Send the link again", and reaches Home, My tutors and Settings only; the sidebar shows only those sections, and below 1024 px the top bar has no notifications bell.
 - **In slice 3** Home shows the tutor parts (no tutor yet, request sent, My tutors) from `GET /tutors` and `GET /join-requests/sent`; the rest arrives with `GET /home` in slice 10.
 - **Computer layout:** greeting and a one-line summary of the day, the tutor filter, then a main column (next lesson panel, to do, recently checked) and a 300 px side column (next seven days, my tutors).
 - **Phone:** columns stack with the next lesson first, and the Join button stays within thumb reach.
@@ -332,7 +334,7 @@ FR-1.2. Address `/reclaim`, reached after a confirmation or reset that answers `
 - **The account:** its current name and avatar with a link to edit them, before anything is kept.
 - **Items:** each tutor link and each request with the tutor's avatar, name and subjects, and Keep or Drop; dropped items are removed and their tutors are not told.
 - **Deadline:** "Choose by {date}; anything not kept by then is dropped".
-- **Saving** sends every choice at once; a refusal reloads the list.
+- **Saving** sends every choice at once; a refusal reloads the list with "The list has changed. Check your choices and save again". After saving, the page shows the outcome (as on the confirmation page, or "Your choices are saved") with "Continue" to Home; opened when nothing waits, it says "Nothing is waiting for your choice".
 
 ### Messages and settings (student)
 

@@ -146,6 +146,43 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
     check((await errorCode(read)) === 'not_found', 'expected not_found');
   },
 
+  'the link of a new card shows its tutor without a session': async (subject) => {
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const created = cardFields(
+      await (await subject.transport.send(cardRequest(subject, token, '', { display_name: 'Invited student' }))).json(),
+    );
+    const invitationToken =
+      typeof created.url === 'string' ? (new URL(created.url).pathname.split('/').at(-1) ?? '') : '';
+    const me: unknown = await (await subject.transport.me(token, timeout())).json();
+    const tutorName = typeof me === 'object' && me !== null && 'name' in me ? me.name : undefined;
+
+    const page = await subject.transport.send(
+      new Request(`${subject.origin}/api/v1/invitations/${encodeURIComponent(invitationToken)}`),
+    );
+
+    check(page.status === 200, `expected 200, got ${String(page.status)}`);
+    const body: unknown = await page.json();
+    const tutor = typeof body === 'object' && body !== null && 'tutor' in body ? body.tutor : undefined;
+    check(
+      typeof tutor === 'object' &&
+        tutor !== null &&
+        'name' in tutor &&
+        tutor.name === tutorName &&
+        'subjects' in tutor &&
+        Array.isArray(tutor.subjects),
+      'expected the tutor of the card',
+    );
+  },
+
+  'an unknown invitation token answers not_found without a session': async (subject) => {
+    const response = await subject.transport.send(
+      new Request(`${subject.origin}/api/v1/invitations/an-unknown-invitation-token`),
+    );
+
+    check(response.status === 404, `expected 404, got ${String(response.status)}`);
+    check((await errorCode(response)) === 'not_found', 'expected not_found');
+  },
+
   'a refresh without a session answers 204 with no token': async (subject) => {
     const response = await subject.transport.refresh(timeout());
 

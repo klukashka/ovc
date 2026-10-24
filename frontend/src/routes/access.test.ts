@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'vitest';
 
 import type { Me, SessionState } from '../lib/api/session.ts';
-import { type Address, type Audience, routeAccess } from './access.ts';
+import { type Address, type Audience, reachable, routeAccess } from './access.ts';
 
 const origin = 'https://ovc.example';
 
-function account(role: Me['role'], state: Me['state']): Me {
+function account(role: Me['role'], state: Me['state'], reclaimPending = false): Me {
   return {
     id: '00000000-0000-4000-8000-000000000001',
     name: 'A person',
@@ -13,7 +13,7 @@ function account(role: Me['role'], state: Me['state']): Me {
     email_verified: state === 'active',
     timezone: 'Europe/Moscow',
     avatar_id: null,
-    reclaim_pending: false,
+    reclaim_pending: reclaimPending,
     role,
     state,
     language: 'en',
@@ -21,8 +21,8 @@ function account(role: Me['role'], state: Me['state']): Me {
   };
 }
 
-function signedIn(role: Me['role'], state: Me['state'] = 'active'): SessionState {
-  return { kind: 'signedIn', me: account(role, state) };
+function signedIn(role: Me['role'], state: Me['state'] = 'active', reclaimPending = false): SessionState {
+  return { kind: 'signedIn', me: account(role, state, reclaimPending) };
 }
 
 function at(pathname: string, search = ''): Address {
@@ -79,7 +79,7 @@ describe('route access for signed-in accounts', () => {
     ['tutor', 'active', '/today'],
     ['tutor', 'unverified', '/today'],
     ['student', 'active', '/home'],
-    ['student', 'unverified', '/verify-email'],
+    ['student', 'unverified', '/home'],
   ])('a %s (%s) at sign-in goes home to %s', (role, state, home) => {
     const access = routeAccess(signedIn(role, state), 'guest', at('/'), origin);
 
@@ -132,19 +132,52 @@ describe('route access for signed-in accounts', () => {
   });
 
   test.each<[Audience, string]>([
-    ['student', '/home'],
+    ['student', '/homework'],
+    ['student', '/homework/00000000-0000-4000-8000-000000000003'],
     ['shared', '/schedule'],
-    ['shared', '/settings/profile'],
+    ['shared', '/lessons/00000000-0000-4000-8000-000000000004'],
+    ['shared', '/messages'],
+    ['shared', '/notifications'],
+    ['student', '/homey'],
+    ['tutor', '/students'],
   ])('an unverified student is sent from the %s address %s to the confirmation page', (audience, pathname) => {
     const access = routeAccess(signedIn('student', 'unverified'), audience, at(pathname), origin);
 
     expect(access).toEqual({ kind: 'redirect', to: '/verify-email' });
   });
 
-  test('an unverified student keeps account settings', () => {
-    const access = routeAccess(signedIn('student', 'unverified'), 'shared', at('/settings/account'), origin);
+  test.each<[Audience, string]>([
+    ['student', '/home'],
+    ['student', '/tutors'],
+    ['shared', '/settings/profile'],
+    ['shared', '/settings/account'],
+    ['shared', '/settings/notifications'],
+  ])('an unverified student reaches the %s address %s', (audience, pathname) => {
+    const access = routeAccess(signedIn('student', 'unverified'), audience, at(pathname), origin);
 
     expect(access.kind).toBe('signedIn');
+  });
+
+  test('an unverified student opening a tutor settings section sees not found, not the confirmation page', () => {
+    const access = routeAccess(signedIn('student', 'unverified'), 'tutor', at('/settings/teaching'), origin);
+
+    expect(access.kind).toBe('notFound');
+  });
+
+  test.each<[Me['role'], Me['state'], string, boolean]>([
+    ['student', 'unverified', '/home', true],
+    ['student', 'unverified', '/tutors', true],
+    ['student', 'unverified', '/settings/account', true],
+    ['student', 'unverified', '/schedule', false],
+    ['student', 'unverified', '/notifications', false],
+    ['student', 'active', '/schedule', true],
+    ['tutor', 'unverified', '/schedule', true],
+  ])('for a %s (%s) the address %s is reachable: %s', (role, state, pathname, expected) => {
+    const me = account(role, state);
+
+    const result = reachable(me, pathname);
+
+    expect(result).toBe(expected);
   });
 
   test('an unverified student is sent from an unknown address to the confirmation page as from a known one', () => {
@@ -153,9 +186,77 @@ describe('route access for signed-in accounts', () => {
     expect(access).toEqual({ kind: 'redirect', to: '/verify-email' });
   });
 
+  test.each<Me['role']>(['tutor', 'student'])(
+    'the invitation page stays public for a signed-in %s, in or out of a pending choice',
+    (role) => {
+      const states = [
+        signedIn(role),
+        signedIn(role, 'active', true),
+        { kind: 'signedOut', reason: 'anonymous' } as const,
+      ];
+
+      const kinds = states.map((state) => routeAccess(state, 'public', at('/invite'), origin).kind);
+
+      expect(kinds).toEqual(['public', 'public', 'public']);
+    },
+  );
+
   test('a public address stays public for a signed-in account', () => {
     const access = routeAccess(signedIn('tutor'), 'public', at('/verify-email'), origin);
 
     expect(access).toEqual({ kind: 'public' });
+  });
+});
+
+describe('route access while a reclaim choice is pending', () => {
+  test.each<[string, string]>([
+    ['', '/reclaim'],
+    ['?next=%2Fschedule', '/reclaim'],
+  ])('sign-in with %j lands on the choice page', (search, expected) => {
+    const access = routeAccess(signedIn('student', 'active', true), 'guest', at('/', search), origin);
+
+    expect(access).toEqual({ kind: 'redirect', to: expected });
+  });
+
+  test('the choice page is shown in the signed-in frame', () => {
+    const state = signedIn('student', 'active', true);
+
+    const access = routeAccess(state, 'reclaim', at('/reclaim'), origin);
+
+    expect(access).toEqual({ kind: 'signedIn', me: state.kind === 'signedIn' ? state.me : null });
+  });
+
+  test('other pages stay reachable during a pending choice', () => {
+    const access = routeAccess(signedIn('student', 'active', true), 'shared', at('/schedule'), origin);
+
+    expect(access.kind).toBe('signedIn');
+  });
+
+  test('without a pending choice a student still opens the choice page, which says nothing waits', () => {
+    const state = signedIn('student');
+
+    const access = routeAccess(state, 'reclaim', at('/reclaim'), origin);
+
+    expect(access).toEqual({ kind: 'signedIn', me: state.kind === 'signedIn' ? state.me : null });
+  });
+
+  test('a tutor opening the choice page sees not found in their own frame', () => {
+    const state = signedIn('tutor');
+
+    const access = routeAccess(state, 'reclaim', at('/reclaim'), origin);
+
+    expect(access).toEqual({ kind: 'notFound', me: state.kind === 'signedIn' ? state.me : null });
+  });
+
+  test('an unconfirmed student opening the choice page is sent to the confirmation page', () => {
+    const access = routeAccess(signedIn('student', 'unverified'), 'reclaim', at('/reclaim'), origin);
+
+    expect(access).toEqual({ kind: 'redirect', to: '/verify-email' });
+  });
+
+  test('an anonymous visitor of the choice page is sent to sign in with next', () => {
+    const access = routeAccess({ kind: 'signedOut', reason: 'anonymous' }, 'reclaim', at('/reclaim'), origin);
+
+    expect(access).toEqual({ kind: 'redirect', to: '/?next=%2Freclaim' });
   });
 });

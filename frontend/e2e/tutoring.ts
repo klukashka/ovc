@@ -19,7 +19,7 @@ function headers(deployment: Deployment, token: string | null): Record<string, s
 export async function callApi(
   deployment: Deployment,
   token: string | null,
-  method: 'GET' | 'POST' | 'DELETE',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
 ): Promise<ApiAnswer> {
@@ -70,9 +70,116 @@ export async function tutorCode(deployment: Deployment, tutor: TestAccount): Pro
 }
 
 export async function invitationIsUsable(deployment: Deployment, link: string): Promise<boolean> {
-  const token = new URL(link).pathname.split('/').at(-1) ?? '';
+  const token = invitationToken(link);
   const answer = await callApi(deployment, null, 'GET', `/invitations/${encodeURIComponent(token)}`);
   return answer.status === 200;
+}
+
+export function invitationToken(link: string): string {
+  return new URL(link).pathname.split('/').at(-1) ?? '';
+}
+
+export interface CreatedCard {
+  readonly id: string;
+  readonly link: string;
+}
+
+export async function createCard(
+  deployment: Deployment,
+  tutor: TestAccount,
+  displayName: string,
+  email: string | null,
+): Promise<CreatedCard> {
+  const created = await callApi(deployment, await accessToken(deployment, tutor), 'POST', '/students', {
+    display_name: displayName,
+    ...(email === null ? {} : { email }),
+  });
+  expectStatus(created, 201, 'creating a card');
+  return { id: text(created.body, 'id'), link: text(field(created.body, 'invitation'), 'url') };
+}
+
+export async function sendInvitation(deployment: Deployment, tutor: TestAccount, cardId: string): Promise<void> {
+  const sent = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'POST',
+    `/students/${encodeURIComponent(cardId)}/invitation/send`,
+  );
+  expectStatus(sent, 202, 'sending the invitation');
+}
+
+export async function signUpOnInvitation(
+  deployment: Deployment,
+  link: string,
+  student: TestAccount,
+  language: 'ru' | 'en',
+): Promise<void> {
+  const accepted = await callApi(
+    deployment,
+    null,
+    'POST',
+    `/invitations/${encodeURIComponent(invitationToken(link))}/accept`,
+    {
+      name: student.name,
+      email: student.email,
+      password: student.password,
+      language,
+      timezone: 'Europe/Moscow',
+      consent: true,
+    },
+  );
+  expectStatus(accepted, 202, 'sign-up on the invitation');
+}
+
+export async function myTutorNames(deployment: Deployment, student: TestAccount): Promise<string[]> {
+  const answer = await callApi(deployment, await accessToken(deployment, student), 'GET', '/tutors');
+  expectStatus(answer, 200, 'listing the tutors');
+  const tutors: unknown = field(answer.body, 'tutors');
+  if (!Array.isArray(tutors)) {
+    throw new Error('the tutors are not a list');
+  }
+  return tutors.map((tutor: unknown) => text(field(tutor, 'tutor'), 'name'));
+}
+
+export async function setCardNotes(
+  deployment: Deployment,
+  tutor: TestAccount,
+  cardId: string,
+  notes: string,
+): Promise<void> {
+  const patched = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'PATCH',
+    `/students/${encodeURIComponent(cardId)}`,
+    { notes },
+  );
+  expectStatus(patched, 200, 'saving the notes');
+}
+
+export async function removeStudent(deployment: Deployment, tutor: TestAccount, cardId: string): Promise<void> {
+  const removed = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'POST',
+    `/students/${encodeURIComponent(cardId)}/remove`,
+  );
+  expectStatus(removed, 200, 'removing the student');
+}
+
+export async function enterTutorCode(deployment: Deployment, student: TestAccount, code: string): Promise<void> {
+  const entered = await callApi(deployment, await accessToken(deployment, student), 'POST', '/join-requests', { code });
+  expectStatus(entered, 200, 'entering the tutor code');
+}
+
+export async function visibleJoinRequests(deployment: Deployment, tutor: TestAccount): Promise<number> {
+  const answer = await callApi(deployment, await accessToken(deployment, tutor), 'GET', '/join-requests');
+  expectStatus(answer, 200, 'listing join requests');
+  const items: unknown = field(answer.body, 'items');
+  if (!Array.isArray(items)) {
+    throw new Error('the join requests are not a list');
+  }
+  return items.length;
 }
 
 async function signUpStudentWithCode(
@@ -129,33 +236,27 @@ export async function seedActiveStudent(
   control: TestControl,
   tutor: TestAccount,
   displayName: string,
+  language: 'ru' | 'en' = 'en',
 ): Promise<{ readonly student: TestAccount; readonly cardId: string }> {
   const student = newTestAccount(displayName, 'student');
-  const tutorToken = await accessToken(deployment, tutor);
-  const created = await callApi(deployment, tutorToken, 'POST', '/students', {
-    display_name: displayName,
-    email: student.email,
-  });
-  expectStatus(created, 201, 'creating a card');
-  const cardId = text(created.body, 'id');
-  const link = text(field(created.body, 'invitation'), 'url');
-  const token = new URL(link).pathname.split('/').at(-1) ?? '';
-  const accepted = await callApi(deployment, null, 'POST', `/invitations/${encodeURIComponent(token)}/accept`, {
-    name: student.name,
-    email: student.email,
-    password: student.password,
-    language: 'en',
-    timezone: 'Europe/Moscow',
-    consent: true,
-  });
-  expectStatus(accepted, 202, 'sign-up on the invitation');
+  const card = await createCard(deployment, tutor, displayName, student.email);
+  const cardId = card.id;
+  await signUpOnInvitation(deployment, card.link, student, language);
+  await confirmInTheOwnBrowser(deployment, control, student);
+  return { student, cardId };
+}
+
+export async function confirmInTheOwnBrowser(
+  deployment: Deployment,
+  control: TestControl,
+  student: TestAccount,
+): Promise<void> {
   await control.tick();
   const confirmation = confirmationToken(await control.mail(student.email));
   const confirmed = await callApi(deployment, await accessToken(deployment, student), 'POST', '/auth/verify-email', {
     token: confirmation,
   });
   expectStatus(confirmed, 200, 'confirmation in the student’s own browser');
-  return { student, cardId };
 }
 
 export async function seedInvitedCards(deployment: Deployment, tutor: TestAccount, count: number): Promise<void> {

@@ -3,7 +3,10 @@ import { type RouteObject, createBrowserRouter } from 'react-router';
 
 import { RouteFocus } from '../components/frame/RouteFocus.tsx';
 import { PlaceholderPage } from '../components/ui/Page.tsx';
+import { InvitationPage } from '../features/auth/InvitationPage.tsx';
+import { InvitationTokenHolder } from '../features/auth/InvitationToken.tsx';
 import { ForgotPasswordPage, PrivacyPage, ResetPasswordPage } from '../features/auth/PasswordPages.tsx';
+import { ReclaimPage } from '../features/auth/ReclaimPage.tsx';
 import { SignInPage } from '../features/auth/SignInPage.tsx';
 import { SignUpChoicePage, StudentSignUpPage, TutorSignUpPage } from '../features/auth/SignUpPages.tsx';
 import { VerifyEmailPage } from '../features/auth/VerifyEmailPage.tsx';
@@ -13,6 +16,7 @@ import { TeachingSettingsPage } from '../features/settings/TeachingSettingsPage.
 import { StudentCardPage } from '../features/students/StudentCardPage.tsx';
 import { StudentsPage } from '../features/students/StudentsPage.tsx';
 import { HomePage } from '../features/home/HomePage.tsx';
+import { MyTutorsPage } from '../features/tutors/MyTutorsPage.tsx';
 import type { RouteHandle } from '../app/handles.ts';
 import { Gate } from './Gate.tsx';
 import { NotFoundPage } from './NotFoundPage.tsx';
@@ -41,7 +45,7 @@ export const studentPages: RouteObject[] = [
   page('/home', 'page.home', <HomePage />),
   page('/homework', 'page.homework'),
   page('/homework/:submissionId', 'page.assignment'),
-  page('/tutors', 'page.tutors'),
+  page('/tutors', 'page.tutors', <MyTutorsPage />),
 ];
 
 export const sharedPages: RouteObject[] = [
@@ -72,10 +76,22 @@ const frames: RouteObject[] = [
       page('/forgot-password', 'page.forgotPassword', <ForgotPasswordPage />),
       page('/reset-password', 'page.resetPassword', <ResetPasswordPage />),
       page('/privacy', 'page.privacy', <PrivacyPage />),
-      page('/invite/:token', 'page.invitation'),
       page('/unsubscribe', 'page.unsubscribe'),
     ],
   },
+  {
+    path: '/invite/:token?',
+    element: <InvitationTokenHolder />,
+    children: [
+      {
+        element: <Gate audience="public" />,
+        children: [
+          { index: true, element: <InvitationPage />, handle: { title: 'page.invitation' } satisfies RouteHandle },
+        ],
+      },
+    ],
+  },
+  { element: <Gate audience="reclaim" />, children: [page('/reclaim', 'page.reclaim', <ReclaimPage />)] },
   { element: <Gate audience="tutor" />, children: tutorPages },
   { element: <Gate audience="student" />, children: studentPages },
   { element: <Gate audience="shared" />, children: sharedPages },

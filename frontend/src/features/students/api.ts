@@ -14,6 +14,12 @@ export const studentsKey = ['students'] as const;
 
 export const withdrawnNotice = 'withdrawn';
 
+export const removedNotice = 'removed';
+
+export function hasNotice(state: unknown, notice: string): boolean {
+  return typeof state === 'object' && state !== null && 'notice' in state && state.notice === notice;
+}
+
 export function studentListKey(state: StudentListState, search: string): readonly unknown[] {
   return [...studentsKey, 'list', state, search];
 }
