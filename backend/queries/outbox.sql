@@ -3,6 +3,16 @@ INSERT INTO outbox (id, lane, priority, kind, payload, idempotency_key, status, 
 VALUES (@id, @lane, @priority, @kind, @payload, @idempotency_key, 'pending', @next_attempt_at, @created_at)
 ON CONFLICT (idempotency_key) DO NOTHING;
 
+-- name: InsertOutboxRows :execrows
+INSERT INTO outbox (id, lane, priority, kind, payload, idempotency_key, status, next_attempt_at, created_at)
+SELECT queued.id, sqlc.arg(lane)::text, sqlc.arg(priority)::smallint, sqlc.arg(kind)::text, queued.payload::jsonb, queued.idempotency_key,
+    'pending', sqlc.arg(next_attempt_at)::timestamptz, sqlc.arg(created_at)::timestamptz
+FROM (
+    SELECT unnest(sqlc.arg(ids)::uuid[]) AS id, unnest(sqlc.arg(payloads)::text[]) AS payload,
+        unnest(sqlc.arg(idempotency_keys)::text[]) AS idempotency_key
+) AS queued
+ON CONFLICT (idempotency_key) DO NOTHING;
+
 -- name: ClaimOutbox :many
 WITH claimable AS MATERIALIZED (
     SELECT candidate.id

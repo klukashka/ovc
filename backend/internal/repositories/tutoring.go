@@ -358,7 +358,10 @@ func (r Relationships) AwaitsReclaimChoice(ctx context.Context, student domain.U
 	return awaits != nil && *awaits, nil
 }
 
-type DiscardedForTutorDeletion = dbgen.DiscardRelationshipsForTutorDeletionRow
+type (
+	DiscardedForTutorDeletion = dbgen.DiscardRelationshipsForTutorDeletionRow
+	EndedForTutorDeletion     = dbgen.EndRelationshipsForTutorDeletionRow
+)
 
 func (r Relationships) LockOfTutor(ctx context.Context, tutor domain.UserID) error {
 	_, err := r.queries.LockTutorRelationships(ctx, tutor)
@@ -370,7 +373,7 @@ func (r Relationships) DiscardForTutorDeletion(ctx context.Context, tutor domain
 	return one(discarded, err, "discard relationships for tutor deletion")
 }
 
-func (r Relationships) EndForTutorDeletion(ctx context.Context, tutor domain.UserID, now time.Time) ([]Relationship, error) {
+func (r Relationships) EndForTutorDeletion(ctx context.Context, tutor domain.UserID, now time.Time) ([]EndedForTutorDeletion, error) {
 	ended, err := r.queries.EndRelationshipsForTutorDeletion(ctx, dbgen.EndRelationshipsForTutorDeletionParams{Now: now, TutorID: tutor})
 	return one(ended, err, "end relationships for tutor deletion")
 }

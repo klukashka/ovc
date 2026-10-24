@@ -215,7 +215,7 @@ RETURNING relationships.id, relationships.tutor_id, relationships.student_id, di
 UPDATE relationships
 SET state = 'ended', ended_by = 'deletion', ended_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
 WHERE tutor_id = @tutor_id AND state = 'active'
-RETURNING *;
+RETURNING id, tutor_id, student_id;
 
 -- name: DeleteTutorMemberships :many
 DELETE FROM group_members

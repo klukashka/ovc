@@ -27,7 +27,7 @@ type tutorDeletion struct {
 	revoked      int64
 	expired      int64
 	archived     []domain.GroupID
-	emailsQueued int
+	emailsQueued int64
 }
 
 func (s *Service) OnAccountDeleted(
@@ -84,7 +84,8 @@ func (s *Service) applyTutorDeletion(ctx context.Context, repos repositories.Rep
 		removed[relationship]++
 	}
 	for _, link := range ended {
-		deletion.ended = append(deletion.ended, ending{link: link, by: domain.EndedByDeletion, memberships: removed[link.ID]})
+		card := repositories.Relationship{ID: link.ID, TutorID: link.TutorID, StudentID: link.StudentID}
+		deletion.ended = append(deletion.ended, ending{link: card, by: domain.EndedByDeletion, memberships: removed[link.ID]})
 	}
 	if deletion.archived, err = repos.Groups.ArchiveAllOfTutor(ctx, tutor, now); err != nil {
 		return tutorDeletion{}, err
@@ -95,7 +96,9 @@ func (s *Service) applyTutorDeletion(ctx context.Context, repos repositories.Rep
 	return deletion, nil
 }
 
-func (s *Service) endForTutorDeletion(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, now time.Time) ([]repositories.Relationship, error) {
+func (s *Service) endForTutorDeletion(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, now time.Time,
+) ([]repositories.EndedForTutorDeletion, error) {
 	transition, allowed := domain.NextRelationshipState(domain.RelationshipActive, domain.CauseTutorDeleted)
 	if !allowed || transition.To != domain.RelationshipEnded || transition.EndedBy != domain.EndedByDeletion {
 		return nil, fmt.Errorf("end the relationships of tutor %s: %w", tutor, errDeletionTransition)
@@ -117,8 +120,12 @@ func (s *Service) queueTutorDeletedEmails(ctx context.Context, repos repositorie
 	if err != nil {
 		return err
 	}
+	if len(confirmed) == 0 {
+		return nil
+	}
 	tutor := hex.EncodeToString(deletion.tutor[:])
 	deletedAt := now.UnixMicro()
+	rows := make([]repositories.QueuedOutboxRow, 0, len(confirmed))
 	for _, student := range confirmed {
 		recipient := hex.EncodeToString(student[:])
 		payload, err := json.Marshal(domain.TutorDeletedPayload{Tutor: tutor, DeletedAtMicros: deletedAt, Recipient: recipient})
@@ -129,15 +136,17 @@ func (s *Service) queueTutorDeletedEmails(ctx context.Context, repos repositorie
 		if err != nil {
 			return err
 		}
-		_, err = repos.Outbox.Insert(ctx, repositories.NewOutboxRow{
-			ID: id, Lane: domain.LaneEmail, Priority: domain.PriorityNormal, Kind: domain.EventTutorDeleted, Payload: payload,
-			IdempotencyKey: fmt.Sprintf("%s:%s:%d:%s", domain.EventTutorDeleted, tutor, deletedAt, recipient), NextAttemptAt: now, CreatedAt: now,
+		rows = append(rows, repositories.QueuedOutboxRow{
+			ID: id, Payload: payload, IdempotencyKey: fmt.Sprintf("%s:%s:%d:%s", domain.EventTutorDeleted, tutor, deletedAt, recipient),
 		})
-		if err != nil {
-			return err
-		}
-		deletion.emailsQueued++
 	}
+	queued, err := repos.Outbox.InsertAll(ctx, repositories.NewOutboxRows{
+		Lane: domain.LaneEmail, Priority: domain.PriorityNormal, Kind: domain.EventTutorDeleted, NextAttemptAt: now, CreatedAt: now, Rows: rows,
+	})
+	if err != nil {
+		return err
+	}
+	deletion.emailsQueued = queued
 	return nil
 }
 
@@ -154,7 +163,7 @@ func (s *Service) announceTutorDeletion(ctx context.Context, deletion tutorDelet
 	}
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "tutor.deletion_applied", slog.String("tutor_id", deletion.tutor.String()),
 		slog.Int("ended", len(deletion.ended)), slog.Int("discarded", deletion.discarded), slog.Int64("invitations_revoked", deletion.revoked),
-		slog.Int64("requests_expired", deletion.expired), slog.Int("groups_archived", len(deletion.archived)), slog.Int("emails_queued", deletion.emailsQueued))
+		slog.Int64("requests_expired", deletion.expired), slog.Int("groups_archived", len(deletion.archived)), slog.Int64("emails_queued", deletion.emailsQueued))
 }
 
 func (s *Service) applyStudentDeletion(ctx context.Context, repos repositories.Repositories, student domain.UserID, now time.Time) (accounts.Announce, error) {

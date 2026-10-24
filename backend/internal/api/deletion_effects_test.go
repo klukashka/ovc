@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -199,6 +200,109 @@ func TestNoTutorDeletedEmailToUnconfirmedStudents(t *testing.T) {
 	}
 	if len(h.mailTo(t, "member-2@example.org")) != 0 || hasSubject(subjects(h.mailTo(t, newcomerEmail)), tutorDeletedSubject) {
 		t.Fatal("an unconfirmed student was emailed")
+	}
+}
+
+type queuedTutorDeleted struct {
+	IdempotencyKey string
+	Payload        domain.TutorDeletedPayload
+	Lane           string
+	Priority       int16
+	Status         string
+	NextAttemptAt  time.Time
+	CreatedAt      time.Time
+}
+
+func (h *authHarness) queuedTutorDeleted(t *testing.T) []queuedTutorDeleted {
+	t.Helper()
+	rows, err := h.database.Pool.Query(context.Background(),
+		"SELECT idempotency_key, payload::text, lane, priority, status, next_attempt_at, created_at FROM outbox WHERE kind = $1 ORDER BY idempotency_key",
+		string(domain.EventTutorDeleted))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var queued []queuedTutorDeleted
+	for rows.Next() {
+		var row queuedTutorDeleted
+		var payload string
+		if err := rows.Scan(&row.IdempotencyKey, &payload, &row.Lane, &row.Priority, &row.Status, &row.NextAttemptAt, &row.CreatedAt); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal([]byte(payload), &row.Payload); err != nil {
+			t.Fatal(err)
+		}
+		queued = append(queued, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return queued
+}
+
+func expectedTutorDeleted(tutor domain.UserID, deletedAt time.Time, students ...domain.UserID) []queuedTutorDeleted {
+	encodedTutor := hex.EncodeToString(tutor[:])
+	expected := make([]queuedTutorDeleted, 0, len(students))
+	for _, student := range students {
+		recipient := hex.EncodeToString(student[:])
+		expected = append(expected, queuedTutorDeleted{
+			IdempotencyKey: fmt.Sprintf("tutor.deleted:%s:%d:%s", encodedTutor, deletedAt.UnixMicro(), recipient),
+			Payload:        domain.TutorDeletedPayload{Tutor: encodedTutor, DeletedAtMicros: deletedAt.UnixMicro(), Recipient: recipient},
+			Lane:           "email", Priority: 1, Status: "pending", NextAttemptAt: deletedAt, CreatedAt: deletedAt,
+		})
+	}
+	return expected
+}
+
+func sameQueuedRows(got []queuedTutorDeleted, want []queuedTutorDeleted) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for index := range got {
+		if got[index].IdempotencyKey != want[index].IdempotencyKey || got[index].Payload != want[index].Payload || got[index].Lane != want[index].Lane ||
+			got[index].Priority != want[index].Priority || got[index].Status != want[index].Status ||
+			!got[index].NextAttemptAt.Equal(want[index].NextAttemptAt) || !got[index].CreatedAt.Equal(want[index].CreatedAt) {
+			return false
+		}
+	}
+	return true
+}
+
+func TestTutorDeletionQueuesOneTutorDeletedRowPerConfirmedStudentOfAnEndedRelationship(t *testing.T) {
+	h := newFlowHarness(t)
+	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	otherTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 9, "other-tutor@example.org")
+	first := h.seedStudentAccount(t, 2, domain.AccountActive)
+	second := h.seedStudentAccount(t, 3, domain.AccountActive)
+	unconfirmed := h.seedStudentAccount(t, 4, domain.AccountUnverified)
+	formerlyEnded := h.seedStudentAccount(t, 5, domain.AccountActive)
+	provisional := h.seedStudentAccount(t, 6, domain.AccountUnverified)
+	h.seedCard(t, tutor, 1, domain.RelationshipActive, &first)
+	h.seedCard(t, tutor, 2, domain.RelationshipActive, &second)
+	h.seedCard(t, tutor, 3, domain.RelationshipActive, &unconfirmed)
+	h.seedCard(t, tutor, 4, domain.RelationshipEnded, &formerlyEnded)
+	h.seedCard(t, tutor, 5, domain.RelationshipProvisional, &provisional)
+	h.seedCard(t, tutor, 6, domain.RelationshipInvited, nil)
+	h.seedCard(t, otherTutor, 7, domain.RelationshipActive, &first)
+	deletedAt := h.now(t)
+
+	deleted := h.deleteMe(t, token, accountPassword)
+
+	if deleted.status != http.StatusNoContent {
+		t.Fatalf("the tutor's deletion answered %d %s", deleted.status, deleted.body)
+	}
+	if queued, want := h.queuedTutorDeleted(t), expectedTutorDeleted(tutor, deletedAt, first, second); !sameQueuedRows(queued, want) {
+		t.Fatalf("the queued tutor.deleted rows are %+v, want %+v", queued, want)
+	}
+	if h.countRows(t, "SELECT count(id) FROM relationships WHERE tutor_id = $1::uuid AND state = 'ended' AND ended_by = 'deletion'", tutor.String()) != 3 {
+		t.Fatal("the deletion did not end exactly the three active relationships")
+	}
+	if h.countRows(t, "SELECT count(id) FROM relationships WHERE tutor_id = $1::uuid AND state = 'active'", otherTutor.String()) != 1 {
+		t.Fatal("the deletion touched another tutor's relationship")
+	}
+	logs := h.logs.String()
+	if strings.Count(logs, relationshipEndedMsg) != 3 || !strings.Contains(logs, `"ended":3`) || !strings.Contains(logs, `"emails_queued":2`) {
+		t.Fatalf("the deletion did not record its three endings and two queued emails: %s", logs)
 	}
 }
 

@@ -65,6 +65,21 @@ type OutboxClaim struct {
 	LeaseEnds time.Time
 }
 
+type QueuedOutboxRow struct {
+	ID             domain.OutboxID
+	Payload        []byte
+	IdempotencyKey string
+}
+
+type NewOutboxRows struct {
+	Lane          domain.OutboxLane
+	Priority      domain.OutboxPriority
+	Kind          domain.OutboxKind
+	NextAttemptAt time.Time
+	CreatedAt     time.Time
+	Rows          []QueuedOutboxRow
+}
+
 type Outbox struct {
 	queries *dbgen.Queries
 }
@@ -72,6 +87,22 @@ type Outbox struct {
 func (r Outbox) Insert(ctx context.Context, row NewOutboxRow) (bool, error) {
 	rows, err := r.queries.InsertOutbox(ctx, row)
 	return applied(rows, err, "insert outbox row")
+}
+
+func (r Outbox) InsertAll(ctx context.Context, batch NewOutboxRows) (int64, error) {
+	params := dbgen.InsertOutboxRowsParams{
+		Lane: string(batch.Lane), Priority: int16(batch.Priority), Kind: string(batch.Kind), NextAttemptAt: batch.NextAttemptAt, CreatedAt: batch.CreatedAt,
+		Payloads: make([]string, 0, len(batch.Rows)), IdempotencyKeys: make([]string, 0, len(batch.Rows)),
+	}
+	ids := make([]domain.OutboxID, 0, len(batch.Rows))
+	for _, row := range batch.Rows {
+		ids = append(ids, row.ID)
+		params.Payloads = append(params.Payloads, string(row.Payload))
+		params.IdempotencyKeys = append(params.IdempotencyKeys, row.IdempotencyKey)
+	}
+	params.Ids = uuids(ids)
+	rows, err := r.queries.InsertOutboxRows(ctx, params)
+	return counted(rows, err, "insert outbox rows")
 }
 
 func (r Outbox) Claim(ctx context.Context, claim OutboxClaim) ([]ClaimedOutboxRow, error) {

@@ -9,6 +9,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"ovc/backend/internal/domain"
 )
 
@@ -207,6 +208,45 @@ func (q *Queries) InsertOutbox(ctx context.Context, arg InsertOutboxParams) (int
 		arg.IdempotencyKey,
 		arg.NextAttemptAt,
 		arg.CreatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertOutboxRows = `-- name: InsertOutboxRows :execrows
+INSERT INTO outbox (id, lane, priority, kind, payload, idempotency_key, status, next_attempt_at, created_at)
+SELECT queued.id, $1::text, $2::smallint, $3::text, queued.payload::jsonb, queued.idempotency_key,
+    'pending', $4::timestamptz, $5::timestamptz
+FROM (
+    SELECT unnest($6::uuid[]) AS id, unnest($7::text[]) AS payload,
+        unnest($8::text[]) AS idempotency_key
+) AS queued
+ON CONFLICT (idempotency_key) DO NOTHING
+`
+
+type InsertOutboxRowsParams struct {
+	Lane            string
+	Priority        int16
+	Kind            string
+	NextAttemptAt   time.Time
+	CreatedAt       time.Time
+	Ids             []pgtype.UUID
+	Payloads        []string
+	IdempotencyKeys []string
+}
+
+func (q *Queries) InsertOutboxRows(ctx context.Context, arg InsertOutboxRowsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertOutboxRows,
+		arg.Lane,
+		arg.Priority,
+		arg.Kind,
+		arg.NextAttemptAt,
+		arg.CreatedAt,
+		arg.Ids,
+		arg.Payloads,
+		arg.IdempotencyKeys,
 	)
 	if err != nil {
 		return 0, err

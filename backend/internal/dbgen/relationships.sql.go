@@ -325,7 +325,7 @@ const endRelationshipsForTutorDeletion = `-- name: EndRelationshipsForTutorDelet
 UPDATE relationships
 SET state = 'ended', ended_by = 'deletion', ended_at = $1::timestamptz, updated_at = $1::timestamptz
 WHERE tutor_id = $2 AND state = 'active'
-RETURNING id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at
+RETURNING id, tutor_id, student_id
 `
 
 type EndRelationshipsForTutorDeletionParams struct {
@@ -333,33 +333,22 @@ type EndRelationshipsForTutorDeletionParams struct {
 	TutorID domain.UserID
 }
 
-func (q *Queries) EndRelationshipsForTutorDeletion(ctx context.Context, arg EndRelationshipsForTutorDeletionParams) ([]Relationship, error) {
+type EndRelationshipsForTutorDeletionRow struct {
+	ID        domain.RelationshipID
+	TutorID   domain.UserID
+	StudentID *domain.UserID
+}
+
+func (q *Queries) EndRelationshipsForTutorDeletion(ctx context.Context, arg EndRelationshipsForTutorDeletionParams) ([]EndRelationshipsForTutorDeletionRow, error) {
 	rows, err := q.db.Query(ctx, endRelationshipsForTutorDeletion, arg.Now, arg.TutorID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Relationship
+	var items []EndRelationshipsForTutorDeletionRow
 	for rows.Next() {
-		var i Relationship
-		if err := rows.Scan(
-			&i.ID,
-			&i.TutorID,
-			&i.StudentID,
-			&i.State,
-			&i.DiscardReason,
-			&i.EndedBy,
-			&i.DisplayName,
-			&i.Email,
-			&i.Colour,
-			&i.Notes,
-			&i.CreateKey,
-			&i.LinkedAt,
-			&i.EndedAt,
-			&i.DiscardedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
+		var i EndRelationshipsForTutorDeletionRow
+		if err := rows.Scan(&i.ID, &i.TutorID, &i.StudentID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
