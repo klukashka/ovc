@@ -105,13 +105,13 @@ test('the confirmation link opened in a signed-in browser asks for no password a
   await otherPage.goto('/today');
   await expect(otherPage.getByRole('region', { name: 'Подтверждение email' })).toBeVisible();
   const tab = await page.context().newPage();
-
   await tab.goto(link);
-
   await expectSignedInToToday(tab);
   await expect(tab.getByLabel('Новый пароль')).toHaveCount(0);
   await expect(tab.getByRole('region', { name: 'Подтверждение email' })).toHaveCount(0);
+
   await otherPage.reload();
+
   await expect(otherPage.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
   await elsewhere.close();
 });
@@ -195,13 +195,13 @@ test('a forgotten password is reset through the emailed link and the new passwor
   await control.tick();
   const link = emailedLink(await control.mail(account.email), '/reset-password');
   const newPassword = `${account.password} renewed`;
-
   await page.goto(link);
   await expect(page).toHaveURL('/reset-password');
   await page.getByLabel('Новый пароль').fill(newPassword);
   await page.getByRole('button', { name: 'Сохранить пароль' }).click();
   await expect(page.getByRole('status')).toHaveText('Пароль изменён. Войдите с новым паролем.');
   await expect(page.getByRole('status')).toBeFocused();
+
   await page.getByRole('main').getByRole('link', { name: 'Войти', exact: true }).click();
   await page.getByLabel('Email').fill(account.email);
   await page.getByLabel('Пароль', { exact: true }).fill(newPassword);

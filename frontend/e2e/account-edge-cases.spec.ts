@@ -127,11 +127,11 @@ test.describe('account edge cases', () => {
     const otherPage = await elsewhere.newPage();
     await signedInAt(otherPage, account, '/today');
     await signedInAt(page, account, '/settings/account');
-
     await page.getByRole('main').getByRole('button', { name: 'Выйти на всех устройствах' }).click();
-
     await expect(page.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
+
     await otherPage.reload();
+
     await expect(otherPage.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
     await elsewhere.close();
   });
@@ -145,13 +145,13 @@ test.describe('account edge cases', () => {
     const account = await seedVerifiedUser(deployment, 'Tutor changing a password');
     const newPassword = `${account.password} changed`;
     await signedInAt(page, account, '/settings/account');
-
     await passwordForm(page).getByLabel('Текущий пароль').fill(account.password);
     await passwordForm(page).getByLabel('Новый пароль').fill(newPassword);
     await passwordForm(page).getByRole('button', { name: 'Сменить пароль' }).click();
-
     await expect(passwordForm(page).getByRole('status')).toHaveText('Пароль изменён.');
+
     await page.reload();
+
     await expect(page.getByRole('heading', { level: 1, name: 'Аккаунт' })).toBeVisible();
     expect(await apiSignIn(page, account, account.password)).toBe(401);
     expect(await apiSignIn(page, account, newPassword)).toBe(200);
@@ -315,28 +315,28 @@ test.describe('account edge cases', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme-preference', 'light');
   });
 
-  test('a tutor saves subjects', async ({ page, deployment }) => {
+  test('the subjects a tutor saved are shown after a reload', async ({ page, deployment }) => {
     const account = await seedVerifiedUser(deployment, 'Tutor of two languages');
     await signedInAt(page, account, '/settings/profile');
     const details = page.getByRole('form', { name: 'Имя и описание' });
     await details.getByLabel('Предметы').fill('Английский, Немецкий');
-
     await details.getByRole('button', { name: 'Сохранить' }).click();
-
     await expect(details.getByRole('status')).toHaveText('Сохранено.');
+
     await page.reload();
+
     await expect(page.getByLabel('Предметы')).toHaveValue('Английский, Немецкий');
   });
 
-  test('an avatar is uploaded, shown and removed', async ({ page, deployment }) => {
+  test('an uploaded avatar shown from its avatar address is removed', async ({ page, deployment }) => {
     const account = await seedVerifiedUser(deployment, 'Tutor with a photo');
     await signedInAt(page, account, '/settings/profile');
     const photo = page.getByRole('img', { name: 'Фото: Tutor with a photo' });
-
     await page
       .getByLabel('Загрузить фото')
       .setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: onePixelPng });
     await expect(photo).toHaveAttribute('src', /^\/api\/v1\/avatars\/[0-9a-f-]{36}$/);
+
     await page.getByRole('button', { name: 'Удалить фото' }).click();
 
     await expect(page.getByText('Фото не загружено.')).toBeVisible();

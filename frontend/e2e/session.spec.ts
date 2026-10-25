@@ -48,9 +48,9 @@ test('a blocked account is signed out and told it is blocked when it signs in ag
   await signInThroughTheForm(page, blocked.email, blocked.password);
   await expect(page).toHaveURL('/today');
   deployment.administer(['users', 'block', blocked.email]);
-
   await page.reload();
   await expect(page).toHaveURL('/?next=%2Ftoday');
+
   await signInThroughTheForm(page, blocked.email, blocked.password);
 
   await expect(page.getByText('Этот аккаунт заблокирован.')).toBeVisible();
@@ -68,7 +68,7 @@ test('pilot-4 › step 8 anonymous redirect', async ({ page, request }) => {
   expect(await me.json()).toMatchObject({ error: { code: 'unauthenticated' } });
 });
 
-test('signing in follows next, signing out returns to sign-in and stores only known preferences', async ({
+test('signing in follows next, signing out returns to sign-in that a reload keeps, and only known preferences are stored', async ({
   page,
   tutor,
 }) => {
@@ -77,12 +77,12 @@ test('signing in follows next, signing out returns to sign-in and stores only kn
   await expect(page.getByRole('heading', { level: 1, name: 'Расписание' })).toBeVisible();
   const signedInUrl = page.url();
   const signedInStorage = await browserStorage(page);
-
   await signOutThroughTheMenu(page);
-
   await expect(page).toHaveURL('/');
   await expect(page.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
+
   await page.reload();
+
   await expect(page.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
   expect(new URL(signedInUrl).pathname + new URL(signedInUrl).search).toBe('/schedule?week=3');
   for (const storage of [signedInStorage, await browserStorage(page)]) {

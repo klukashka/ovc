@@ -12,6 +12,7 @@ import {
   invitationToken,
   myTutorNames,
   confirmInTheOwnBrowser,
+  removeStudent,
   seedActiveStudent,
   sendInvitation,
   setCardNotes,
@@ -224,18 +225,21 @@ test.describe('Anna in Russian on a phone', () => {
 test.describe('in English', () => {
   test.use({ locale: 'en-GB', colorScheme: 'dark' });
 
-  test('invitations › tutor sees the role explanation', async ({ page, deployment }) => {
+  test('invitations › a tutor sees the role explanation and signs out to use a student account', async ({
+    page,
+    deployment,
+  }) => {
     const maria = await seedVerifiedUser(deployment, 'Maria', 'en');
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
     const card = await createCard(deployment, maria, 'A new student', null);
     await signInThroughTheApi(page, pavel);
-
     await page.goto(card.link);
     await expect(page).toHaveURL('/invite');
     await expect(page.getByRole('status')).toHaveText(
       'Tutor accounts cannot study. To accept this invitation, sign out and use a student account.',
     );
     await expect(page.getByRole('button', { name: 'Accept' })).toHaveCount(0);
+
     await page.getByRole('button', { name: 'Sign out to use a student account' }).click();
 
     await expect(page.getByRole('button', { name: 'Create account' })).toBeFocused();
@@ -269,7 +273,6 @@ test.describe('in English', () => {
     page,
     deployment,
     control,
-    diagnostics,
   }) => {
     const maria = await seedVerifiedUser(deployment, 'Maria', 'en');
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
@@ -283,7 +286,6 @@ test.describe('in English', () => {
         foreignRequests.push(request.url());
       }
     });
-
     const opened = await page.goto(card.link);
     expect(opened?.headers()['referrer-policy']).toBe('no-referrer');
     await expect(page).toHaveURL('/invite');
@@ -299,6 +301,7 @@ test.describe('in English', () => {
     await expect(page.getByRole('status')).toBeFocused();
     await expect(page).toHaveURL('/invite');
     await expectTokenNowhere(page, token);
+
     await page.getByRole('button', { name: 'Accept' }).click();
 
     await expect(page).toHaveURL('/tutors');
@@ -309,18 +312,30 @@ test.describe('in English', () => {
     expect(addresses.filter((address) => new URL(address).searchParams.has('next'))).toEqual([]);
     expect(foreignRequests).toEqual([]);
     expect((await myTutorNames(deployment, student)).sort()).toEqual(['Maria', 'Pavel']);
+  });
 
+  test('invitations › an invitation that is no longer valid is refused and a reload asks to open the link again', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
     diagnostics.expectFailure({ method: 'GET', path: '/api/v1/invitations/not-a-real-token', status: 404 });
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { student } = await seedActiveStudent(deployment, control, pavel, 'Boris');
+    await signInThroughTheApi(page, student);
     await page.goto('/invite/not-a-real-token');
     await expect(page.getByRole('alert')).toHaveText(
       'This invitation is no longer valid — ask your tutor for a new link.',
     );
     await expect(page).toHaveURL('/invite');
+
     await page.reload();
+
     await expect(page.getByText('Open the link from your tutor again.')).toBeVisible();
   });
 
-  test('invitations › a sign-up with a taken email and its own password stays on the page to accept', async ({
+  test('invitations › a sign-up with a taken email and its own password stays on the page and accepts', async ({
     page,
     deployment,
     control,
@@ -330,13 +345,13 @@ test.describe('in English', () => {
     const { student } = await seedActiveStudent(deployment, control, pavel, 'Boris');
     const card = await createCard(deployment, maria, 'Boris', null);
     await page.goto(card.link);
-
     await signUpOnThePage(page, student, englishSignUp);
-
     await expect(page.getByRole('status')).toHaveText(`You are signed in as ${student.email}.`);
     await expect(page.getByRole('status')).toBeFocused();
     await expect(page).toHaveURL('/invite');
+
     await page.getByRole('button', { name: 'Accept' }).click();
+
     await expect(page).toHaveURL('/tutors');
     await expectTutors(page, ['Pavel', 'Maria']);
   });
@@ -483,7 +498,6 @@ test.describe('in English', () => {
   test('students › a provisional student is removed and a new card with a fresh link replaces it', async ({
     page,
     deployment,
-    diagnostics,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
     const boris = newTestAccount('Boris Account', 'student');
@@ -494,12 +508,12 @@ test.describe('in English', () => {
     await page.goto(`/students/${card.id}`);
     await expect(page.getByRole('main').getByText('Email not confirmed')).toBeVisible();
     await expect(page.getByText('Boris Account')).toBeVisible();
-
     const opener = page.getByRole('button', { name: 'End working together' });
     await opener.click();
     const dialog = page.getByRole('dialog', { name: 'End working together?' });
     await expect(dialog).toContainText('A new card with a fresh link replaces this one');
     await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+
     await dialog.getByRole('button', { name: 'End', exact: true }).click();
 
     await expect(page).not.toHaveURL(`/students/${card.id}`);
@@ -516,8 +530,23 @@ test.describe('in English', () => {
     expect(freshLink?.trim()).not.toBe(card.link);
     expect(await invitationIsUsable(deployment, freshLink?.trim() ?? '')).toBe(true);
     expect(await myTutorNames(deployment, boris)).toEqual([]);
+  });
+
+  test('students › the address of a removed provisional student is not found', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const boris = newTestAccount('Boris Account', 'student');
+    const card = await createCard(deployment, pavel, 'Boris', boris.email);
+    await signUpOnInvitation(deployment, card.link, boris, 'en');
+    await removeStudent(deployment, pavel, card.id);
     diagnostics.expectFailure({ method: 'GET', path: `/api/v1/students/${card.id}`, status: 404 });
+    await signInThroughTheApi(page, pavel);
+
     await page.goto(`/students/${card.id}`);
+
     await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
   });
 });

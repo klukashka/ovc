@@ -331,13 +331,13 @@ test.describe('in English, the student list', () => {
     await page.goto('/students');
     const rows = page.getByRole('list', { name: 'Active', exact: true }).locator(':scope > li');
     await expectRowsNamed(rows, ['Anna', 'Boris']);
-
     await page.getByLabel('Group', { exact: true }).selectOption({ label: 'Evening algebra' });
     await page.getByRole('search', { name: 'Search students' }).getByRole('button', { name: 'Search' }).click();
-
     await expect(page).toHaveURL(`/students?state=active&group=${groupId}`);
     await expectRowsNamed(rows, ['Anna']);
+
     await page.reload();
+
     await expectRowsNamed(rows, ['Anna']);
     await expect(page.getByLabel('Group', { exact: true })).toHaveValue(groupId);
   });

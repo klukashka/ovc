@@ -21,7 +21,7 @@ Written on 2026-10-24, after the slice review of [roadmap slice 3](../../docs/ro
 7. **`chore/dependency-upgrades`.** zod 4.6.6, puppeteer 25.13.0 and dompurify 3.4.17 once they are two weeks old (2026-10-25 and 2026-10-26), before their triage entries expire on 2026-10-27; undici 8.12.2 after 2026-10-29 with the `ignoreGhsas` entries removed by hand; Node 26.12.1 or later from 2026-11-04; a dated research entry for the DOMPurify copies bundled inside mermaid and ZenUML.
 8. **`chore/consolidate-suites`.** Before slice 4 adds tests: the end-to-end and Go suites are consolidated back under the 180 s threshold of the slice 3 plan, the journey-style tests outside the pilot scenarios are split, and the full check run, including the security scans, is measured on an idle machine.
 
-9. **`chore/split-journey-tests`.** Before slice 4 adds tests, the non-pilot end-to-end tests that still interleave act and assert, found while the suites were consolidated and listed in the journey-test row of the slice 3 known limitations, are split into tests with three phases, keeping every assertion and the full check run under 180 s (decided by the owner on 2026-10-25).
+9. **`chore/split-journey-tests`.** Before slice 4 adds tests, the non-pilot end-to-end tests that still interleave act and assert, found while the suites were consolidated and listed in the journey-test row of the slice 3 known limitations, are split into tests with three phases, keeping every assertion and the full check run under 180 s (decided by the owner on 2026-10-25). The change removed that row once every listed test was split; the [check-budget record](../analysis/check-budget-2026-10-25-consolidated.md#after-splitting-the-journey-tests) lists the result.
 
 ## Accepted
 

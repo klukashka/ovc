@@ -119,7 +119,7 @@ test.describe('Boris in English', () => {
     await mariaContext.close();
   });
 
-  test('confirmation › a held request whose tutor is no longer active answers that the code is not valid', async ({
+  test('confirmation › a held request whose tutor is no longer active answers that the code is not valid and continues to code entry', async ({
     page,
     deployment,
     control,
@@ -130,12 +130,12 @@ test.describe('Boris in English', () => {
     deployment.administer(['users', 'block', maria.email]);
     await signInThroughTheApi(page, boris);
     await control.tick();
-
     await page.goto(emailedLinkTo(await control.mail(boris.email), '/verify-email'));
-
     await expect(page.getByRole('status')).toHaveText('This code is no longer valid — enter a new one.');
     await expect(page.getByRole('status')).toBeFocused();
+
     await page.getByRole('main').getByRole('link', { name: 'Continue' }).click();
+
     await expect(page).toHaveURL('/home');
     await expect(page.getByText('No tutor yet.')).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Enter your tutor’s code' })).toBeVisible();
@@ -410,29 +410,38 @@ test.describe('in Russian', () => {
     expect(await busyControls(page)).toEqual([['Отклонить: Requester 02']]);
   });
 
-  test('join requests › arriving requests move neither the Students controls nor the Today code and status', async ({
+  test('join requests › arriving requests do not move the Students controls', async ({ page, deployment, control }) => {
+    const studentsControls = ['main nav', 'main form[role="search"]'];
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    await seedJoinRequests(deployment, control, maria, 1);
+    await recordFirstOffsets(page, studentsControls);
+    await signInThroughTheApi(page, maria);
+
+    await page.goto('/students');
+
+    await expect(joinRequests(page).getByRole('listitem')).toHaveCount(1);
+    await expect(page.getByRole('heading', { level: 2, name: 'Пригласите первого ученика' })).toBeVisible();
+    const onStudents = await offsetsBelowHeading(page, studentsControls);
+    expect(Object.keys(onStudents.first).sort()).toEqual([...studentsControls].sort());
+    expect(onStudents.now).toEqual(onStudents.first);
+  });
+
+  test('join requests › arriving requests do not move the Today code and status', async ({
     page,
     deployment,
     control,
   }) => {
-    const studentsControls = ['main nav', 'main form[role="search"]'];
     const todayParts = ['main h3', 'main [data-readiness]'];
     const maria = await seedVerifiedUser(deployment, 'Мария');
     await seedJoinRequests(deployment, control, maria, 1);
-    await recordFirstOffsets(page, [...studentsControls, ...todayParts]);
+    await recordFirstOffsets(page, todayParts);
     await signInThroughTheApi(page, maria);
 
-    await page.goto('/students');
-    await expect(joinRequests(page).getByRole('listitem')).toHaveCount(1);
-    await expect(page.getByRole('heading', { level: 2, name: 'Пригласите первого ученика' })).toBeVisible();
-    const onStudents = await offsetsBelowHeading(page, studentsControls);
     await page.goto('/today');
+
     await expect(joinRequests(page).getByRole('listitem')).toHaveCount(1);
     await expect(page.locator('main [data-readiness="ready"]')).toBeVisible();
     const onToday = await offsetsBelowHeading(page, todayParts);
-
-    expect(Object.keys(onStudents.first).sort()).toEqual([...studentsControls].sort());
-    expect(onStudents.now).toEqual(onStudents.first);
     expect(Object.keys(onToday.first).sort()).toEqual([...todayParts].sort());
     expect(onToday.now).toEqual(onToday.first);
   });

@@ -66,10 +66,17 @@ test('signing out from an unknown address returns to sign-in', async ({ page, de
   await expect(page.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
 });
 
-test('the sign-up language follows the interface until the person chooses one', async ({ page }) => {
+test('the sign-up language follows the interface while the person has not chosen one', async ({ page }) => {
   await page.goto('/signup/tutor');
   await expect(signUpLanguage(page)).toHaveValue('ru');
 
+  await page.getByRole('button', { name: 'English' }).click();
+
+  await expect(signUpLanguage(page)).toHaveValue('en');
+});
+
+test('the sign-up language stops following the interface once the person chooses one', async ({ page }) => {
+  await page.goto('/signup/tutor');
   await page.getByRole('button', { name: 'English' }).click();
   await expect(signUpLanguage(page)).toHaveValue('en');
   await signUpLanguage(page).selectOption('ru');

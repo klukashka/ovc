@@ -106,13 +106,12 @@ test.describe('in Russian', () => {
     expect(await shownLink(page.getByRole('main'))).toBe(link);
   });
 
-  test('unverified tutor › invite and regenerate show the confirmation prompt', async ({
+  test('unverified tutor › Students shows the confirmation prompt instead of Add student', async ({
     page,
     deployment,
     diagnostics,
   }) => {
     diagnostics.expectFailure({ method: 'GET', path: '/api/v1/students?state=active', status: 403 });
-    diagnostics.expectFailure({ method: 'GET', path: '/api/v1/tutor/blocked-requesters', status: 403 });
     const tutor = newTestAccount('Неподтверждённый репетитор');
     await registerTutor(deployment, tutor, 'ru');
     await signInThroughTheApi(page, tutor);
@@ -125,7 +124,20 @@ test.describe('in Russian', () => {
       '/verify-email',
     );
     await expect(page.getByRole('button', { name: 'Добавить ученика' })).toHaveCount(0);
+  });
+
+  test('unverified tutor › teaching settings show the code with the confirmation prompt instead of regenerate', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    diagnostics.expectFailure({ method: 'GET', path: '/api/v1/tutor/blocked-requesters', status: 403 });
+    const tutor = newTestAccount('Неподтверждённый репетитор');
+    await registerTutor(deployment, tutor, 'ru');
+    await signInThroughTheApi(page, tutor);
+
     await page.goto('/settings/teaching');
+
     await expect(page.getByText(/^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/)).toBeVisible();
     await expect(page.getByText('Код начнёт работать, когда вы подтвердите email.')).toBeVisible();
     await expect(page.getByText('Подтвердите email, чтобы код заработал и его можно было обновить.')).toBeVisible();
@@ -138,15 +150,38 @@ test.describe('in Russian', () => {
   });
 });
 
+async function createThroughTheDialog(page: Page, email: string): Promise<Locator> {
+  await page.getByRole('button', { name: 'Add student' }).click();
+  const form = page.getByRole('dialog', { name: 'New student' });
+  await form.getByLabel('Name').fill('Boris');
+  await form.getByLabel('Email (optional)').fill(email);
+  await form.getByRole('button', { name: 'Create invitation' }).click();
+  const ready = page.getByRole('dialog', { name: 'The invitation is ready' });
+  await expect(ready.getByRole('heading', { name: 'The invitation is ready' })).toBeFocused();
+  return ready;
+}
+
+async function withdrawThroughTheDialog(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Withdraw invitation' }).click();
+  await page
+    .getByRole('dialog', { name: 'Withdraw the invitation?' })
+    .getByRole('button', { name: 'Withdraw', exact: true })
+    .click();
+}
+
+function listLoaded(page: Page, state: 'active' | 'invited'): Promise<unknown> {
+  return page.waitForResponse(
+    (response) => new URL(response.url()).search === `?state=${state}` && response.status() === 200,
+  );
+}
+
 test.describe('in English with the dark theme', () => {
   test.use({ locale: 'en-GB', colorScheme: 'dark' });
 
-  test('students › add, copy, send, regenerate, withdraw', async ({
+  test('students › creating an invitation focuses the ready dialog and Copy link copies its link', async ({
     page,
     browserName,
     deployment,
-    control,
-    diagnostics,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
     const boris = newTestAccount('Boris', 'student');
@@ -156,45 +191,84 @@ test.describe('in English with the dark theme', () => {
     await signInThroughTheApi(page, pavel);
     await page.goto('/students');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-
-    await page.getByRole('button', { name: 'Add student' }).click();
-    const form = page.getByRole('dialog', { name: 'New student' });
-    await form.getByLabel('Name').fill('Boris');
-    await form.getByLabel('Email (optional)').fill(boris.email);
-    await form.getByRole('button', { name: 'Create invitation' }).click();
-    const ready = page.getByRole('dialog', { name: 'The invitation is ready' });
-    await expect(ready.getByRole('heading', { name: 'The invitation is ready' })).toBeFocused();
+    const ready = await createThroughTheDialog(page, boris.email);
     const created = await shownLink(ready);
+
     await ready.getByRole('button', { name: 'Copy link' }).click();
+
     await expect(ready.getByRole('status')).toHaveText('Link copied.');
     await expect(ready.getByRole('status')).toBeFocused();
     if (clipboardReadable) {
       expect(await clipboardText(page)).toBe(created);
     }
+    expect(await busyControls(page)).toEqual([['Create invitation']]);
+    expect(addresses.filter((address) => address.includes('/invite/'))).toEqual([]);
+  });
+
+  test('students › Open the card from the ready invitation shows the invitation it created', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const boris = newTestAccount('Boris', 'student');
+    const addresses = recordAddresses(page);
+    await recordBusyControls(page);
+    await signInThroughTheApi(page, pavel);
+    await page.goto('/students');
+    const ready = await createThroughTheDialog(page, boris.email);
+    const created = await shownLink(ready);
+
     await ready.getByRole('link', { name: 'Open the card' }).click();
+
     await expect(page.getByRole('heading', { level: 1, name: 'Boris' })).toBeFocused();
     await expect(page.getByRole('main').getByText('Invitation sent')).toBeVisible();
     await expect(page.getByText(/^Valid until \d{1,2} [A-Z][a-z]{2}, \d{2}:\d{2}$/)).toBeVisible();
     expect(await shownLink(page.getByRole('main'))).toBe(created);
+    expect(await busyControls(page)).toEqual([['Create invitation']]);
+    expect(addresses.filter((address) => address.includes('/invite/'))).toEqual([]);
+  });
 
+  test('students › after Send by email, Create a new link replaces the emailed link and only the new one works', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const boris = newTestAccount('Boris', 'student');
+    const card = await createCard(deployment, pavel, 'Boris', boris.email);
+    const addresses = recordAddresses(page);
+    await recordBusyControls(page);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${card.id}`);
+    expect(await shownLink(page.getByRole('main'))).toBe(card.link);
     await page.getByRole('button', { name: 'Send by email' }).click();
     await expect(page.getByRole('status')).toHaveText('Sent.');
     await expect(page.getByRole('status')).toBeFocused();
     await control.tick();
+
     await page.getByRole('button', { name: 'Create a new link' }).click();
+
     await expect(page.getByRole('status')).toHaveText('A new link was created. The old one no longer works.');
     await expect(page.getByRole('status')).toBeFocused();
     const regenerated = await shownLink(page.getByRole('main'));
-    const busy = await busyControls(page);
-
-    expect(busy).toEqual([['Create invitation'], ['Send by email'], ['Create a new link']]);
-    expect(regenerated).not.toBe(created);
-    expect(await invitationIsUsable(deployment, created)).toBe(false);
+    expect(await busyControls(page)).toEqual([['Send by email'], ['Create a new link']]);
+    expect(regenerated).not.toBe(card.link);
+    expect(await invitationIsUsable(deployment, card.link)).toBe(false);
     expect(await invitationIsUsable(deployment, regenerated)).toBe(true);
     const emailed = invitationLinks((await control.mail(boris.email)).flatMap((message) => message.links));
-    expect(emailed).toEqual([created]);
+    expect(emailed).toEqual([card.link]);
+    expect(addresses.filter((address) => address.includes('/invite/'))).toEqual([]);
+  });
 
-    const cardAddress = page.url();
+  test('students › withdrawing after Escape and a second opening removes the card and keeps no link', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const card = await createCard(deployment, pavel, 'Boris', newTestAccount('Boris', 'student').email);
+    const addresses = recordAddresses(page);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${card.id}`);
     const opener = page.getByRole('button', { name: 'Withdraw invitation' });
     await opener.click();
     const confirm = page.getByRole('dialog', { name: 'Withdraw the invitation?' });
@@ -203,47 +277,67 @@ test.describe('in English with the dark theme', () => {
     await expect(opener).toBeFocused();
     await opener.click();
     await expect(confirm.getByRole('button', { name: 'Cancel' })).toBeFocused();
+
     await confirm.getByRole('button', { name: 'Withdraw', exact: true }).click();
 
     await expect(page).toHaveURL('/students?state=invited');
     await expect(page.getByRole('status').filter({ hasText: 'The invitation was withdrawn.' })).toBeVisible();
     await expect(page.getByText('No open invitations.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add student' })).toBeVisible();
-    expect(await invitationIsUsable(deployment, regenerated)).toBe(false);
+    expect(await invitationIsUsable(deployment, card.link)).toBe(false);
     await expectNoLinkStored(page);
-    const activeLoaded = page.waitForResponse(
-      (response) => new URL(response.url()).search === '?state=active' && response.status() === 200,
-    );
+    expect(addresses.filter((address) => address.includes('/invite/'))).toEqual([]);
+  });
+
+  test('students › after a withdrawal, Active, Back and a reload drop the notice and show no open invitations', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const card = await createCard(deployment, pavel, 'Boris', newTestAccount('Boris', 'student').email);
+    const addresses = recordAddresses(page);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${card.id}`);
+    await withdrawThroughTheDialog(page);
+    await expect(page.getByRole('status').filter({ hasText: 'The invitation was withdrawn.' })).toBeVisible();
+    const activeLoaded = listLoaded(page, 'active');
     await page.getByRole('link', { name: 'Active', exact: true }).click();
     await activeLoaded;
     await expect(page.getByText(/^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/)).toBeVisible();
     await expect(page.getByText('The invitation was withdrawn.')).toHaveCount(0);
-    const invitedAgain = page.waitForResponse(
-      (response) => new URL(response.url()).search === '?state=invited' && response.status() === 200,
-    );
+    const invitedAgain = listLoaded(page, 'invited');
     await page.goBack();
     await invitedAgain;
     await expect(page.getByText('No open invitations.')).toBeVisible();
+
     await page.reload();
+
     await expect(page.getByText('No open invitations.')).toBeVisible();
     await expect(page.getByText('The invitation was withdrawn.')).toHaveCount(0);
-    diagnostics.expectFailure({
-      method: 'GET',
-      path: new URL(cardAddress).pathname.replace('/students/', '/api/v1/students/'),
-      status: 404,
-    });
-    await page.goto(cardAddress);
+    expect(addresses.filter((address) => address.includes('/invite/'))).toEqual([]);
+  });
+
+  test('students › the address of a withdrawn card is not found', async ({ page, deployment, diagnostics }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const card = await createCard(deployment, pavel, 'Boris', null);
+    expect(
+      (await callApi(deployment, await accessToken(deployment, pavel), 'DELETE', `/students/${card.id}`)).status,
+    ).toBe(204);
+    diagnostics.expectFailure({ method: 'GET', path: `/api/v1/students/${card.id}`, status: 404 });
+    const addresses = recordAddresses(page);
+    await signInThroughTheApi(page, pavel);
+
+    await page.goto(`/students/${card.id}`);
+
     await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
     expect(addresses.filter((address) => address.includes('/invite/'))).toEqual([]);
   });
 
-  test('students › the card of an active student keeps notes and refuses a duplicate email', async ({
+  test('students › the card of an active student opens from its row without invitation controls and keeps saved notes', async ({
     page,
     deployment,
     control,
-    diagnostics,
   }) => {
-    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/students', status: 409 });
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
     const { student, cardId } = await seedActiveStudent(deployment, control, pavel, 'Boris');
     await signInThroughTheApi(page, pavel);
@@ -251,7 +345,6 @@ test.describe('in English with the dark theme', () => {
     const row = page.getByRole('link', { name: /Boris/ });
     await expect(row).toContainText(student.email);
     await expect(row).not.toContainText('Invitation sent');
-
     await row.click();
     await expect(page).toHaveURL(`/students/${cardId}`);
     await expect(page.getByRole('heading', { level: 1, name: 'Boris' })).toBeFocused();
@@ -262,35 +355,49 @@ test.describe('in English with the dark theme', () => {
     await notes.getByRole('button', { name: 'Save' }).click();
     await expect(notes.getByRole('status')).toHaveText('Saved.');
     await expect(notes.getByRole('status')).toBeFocused();
-    await page.reload();
-    await expect(page.getByRole('form', { name: 'Notes' }).getByLabel('Notes')).toHaveValue('Prefers evening lessons.');
 
+    await page.reload();
+
+    await expect(page.getByRole('form', { name: 'Notes' }).getByLabel('Notes')).toHaveValue('Prefers evening lessons.');
+  });
+
+  test('students › a new student with the email of an active student is refused with a link to that card', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/students', status: 409 });
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { student, cardId } = await seedActiveStudent(deployment, control, pavel, 'Boris');
+    await signInThroughTheApi(page, pavel);
     await page.goto('/students');
     await page.getByRole('button', { name: 'Add student' }).click();
     const form = page.getByRole('dialog', { name: 'New student' });
     await form.getByLabel('Name').fill('Boris again');
     await form.getByLabel('Email (optional)').fill(student.email);
     await form.getByRole('button', { name: 'Create invitation' }).click();
-
     await expect(form.getByRole('alert')).toHaveText('A student with this email already exists.');
+
     await form.getByRole('link', { name: 'Open the card of this student' }).click();
+
     await expect(page).toHaveURL(`/students/${cardId}`);
   });
 
-  test('students › tabs and search live in the address and pages load on demand', async ({
+  test('students › the Invited tab lives in the address and Show more loads the remaining invitations', async ({
     page,
     deployment,
-    control,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    await seedActiveStudent(deployment, control, pavel, 'Vera Active');
     await seedInvitedCards(deployment, pavel, 31);
     await signInThroughTheApi(page, pavel);
     await page.goto('/students?state=invited');
     await expect(page.getByRole('link', { name: 'Invited', exact: true })).toHaveAttribute('aria-current', 'page');
     const rows = page.getByRole('list', { name: 'Invited' }).getByRole('listitem');
     await expect(rows).toHaveCount(30);
+
     await page.getByRole('button', { name: 'Show more' }).click();
+
     await expect(rows).toHaveCount(31);
     await expect(rows.nth(30).getByRole('link')).toBeFocused();
     await expect(page.getByRole('button', { name: 'Show more' })).toHaveCount(0);
@@ -298,19 +405,30 @@ test.describe('in English with the dark theme', () => {
     expect(new Set(names)).toEqual(
       new Set(Array.from({ length: 31 }, (_, index) => `Invited ${String(index + 1).padStart(2, '0')}`)),
     );
+  });
 
+  test('students › the search lives in the address and Back restores the earlier search', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    await seedActiveStudent(deployment, control, pavel, 'Vera Active');
+    await signInThroughTheApi(page, pavel);
+    await page.goto('/students?state=invited');
     await page.getByRole('link', { name: 'Active', exact: true }).click();
     await expect(page.getByRole('list', { name: 'Active' }).getByRole('link', { name: /Vera Active/ })).toBeVisible();
     await page.getByLabel('Name or email').fill('vera');
     await page.getByRole('button', { name: 'Search', exact: true }).click();
-
     await expect(page).toHaveURL('/students?state=active&q=vera');
     await expect(page.getByRole('link', { name: 'Clear search' })).toBeVisible();
     await expect(page.getByRole('link', { name: /Vera Active/ })).toBeVisible();
     await page.getByLabel('Name or email').fill('nobody');
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.getByText('Nobody matches the search.')).toBeVisible();
+
     await page.goBack();
+
     await expect(page.getByRole('link', { name: /Vera Active/ })).toBeVisible();
     await expect(page.getByLabel('Name or email')).toHaveValue('vera');
   });

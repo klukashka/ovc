@@ -27,7 +27,11 @@ async function unblockThroughTheApi(deployment: Deployment, tutor: TestAccount, 
 
 test.use({ locale: 'ru-RU' });
 
-test('teaching settings › code and regenerate', async ({ page, browserName, deployment }) => {
+test('teaching settings › after the code is copied, regenerating it shows a new code and its notice takes focus', async ({
+  page,
+  browserName,
+  deployment,
+}) => {
   const maria = await seedVerifiedUser(deployment, 'Мария');
   const before = await tutorCode(deployment, maria);
   if (browserName === 'chromium') {
@@ -37,13 +41,13 @@ test('teaching settings › code and regenerate', async ({ page, browserName, de
   await page.goto('/settings/teaching');
   const section = page.getByRole('region', { name: 'Код репетитора' });
   await expect(section.getByText(codePattern)).toHaveText(before);
-
   await section.getByRole('button', { name: 'Скопировать код' }).click();
   await expect(section.getByRole('status')).toHaveText('Код скопирован.');
   await expect(section.getByRole('status')).toBeFocused();
   if (browserName === 'chromium') {
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(before);
   }
+
   await section.getByRole('button', { name: 'Обновить код' }).click();
 
   await expect(section.getByRole('status')).toHaveText('Создан новый код. Старый больше не работает.');
@@ -72,7 +76,11 @@ test('teaching settings › the daily regeneration limit is explained', async ({
   await expect(section.getByRole('alert')).toBeFocused();
 });
 
-test('teaching settings › blocked students and unblock', async ({ page, deployment, control }) => {
+test('teaching settings › a student blocked meanwhile appears after a reload and unblocking empties the list', async ({
+  page,
+  deployment,
+  control,
+}) => {
   const maria = await seedVerifiedUser(deployment, 'Мария');
   await recordBusyControls(page);
   await signInThroughTheApi(page, maria);
@@ -80,9 +88,9 @@ test('teaching settings › blocked students and unblock', async ({ page, deploy
   const section = page.getByRole('region', { name: 'Заблокированные ученики' });
   await expect(section.getByText('Вы никого не заблокировали.')).toBeVisible();
   const blocked = await seedBlockedStudent(deployment, control, maria, 'Назойливый ученик');
-
   await page.reload();
   await expect(section.getByText(blocked.name)).toBeVisible();
+
   await section.getByRole('button', { name: `Разблокировать: ${blocked.name}` }).click();
 
   await expect(section.getByRole('status')).toHaveText('Ученик разблокирован.');
