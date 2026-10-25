@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { checkBundle, kilobyte, parseManifest } from './bundle-budget.ts';
+import { checkBundle, kilobyte, parseManifest, type ServedEntry, unexpectedServedEntries } from './bundle-budget.ts';
 
 const homePage = 'src/features/home/HomePage.tsx';
 const todayPage = 'src/features/home/TodayPage.tsx';
@@ -123,5 +123,70 @@ describe('bundle check', () => {
     const parse = (): unknown => parseManifest(malformed);
 
     expect(parse).toThrow('manifest entry index.html has no file');
+  });
+});
+
+describe('served build contents', () => {
+  const publicFiles = new Set(['favicon.svg', 'theme-init.js']);
+
+  function builtOutput(extra: readonly ServedEntry[] = []): ServedEntry[] {
+    return [
+      { path: 'index.html', kind: 'file' },
+      { path: 'favicon.svg', kind: 'file' },
+      { path: 'theme-init.js', kind: 'file' },
+      { path: 'assets', kind: 'directory' },
+      { path: 'assets/index-a1b2.js', kind: 'file' },
+      { path: 'assets/index-a1b2.css', kind: 'file' },
+      { path: 'assets/golos-text-cyrillic.woff2', kind: 'file' },
+      { path: 'assets/golos-text-cyrillic.woff', kind: 'file' },
+      ...extra,
+    ];
+  }
+
+  test('accepts the page, the public files and hashed assets', () => {
+    const entries = builtOutput();
+
+    const unexpected = unexpectedServedEntries(entries, publicFiles);
+
+    expect(unexpected).toEqual([]);
+  });
+
+  test('refuses source maps, manifests, reports and keys wherever they appear', () => {
+    const entries = builtOutput([
+      { path: 'assets/index-a1b2.js.map', kind: 'file' },
+      { path: '.vite', kind: 'directory' },
+      { path: '.vite/manifest.json', kind: 'file' },
+      { path: 'stats.html', kind: 'file' },
+      { path: 'assets/preview-private-key.pem', kind: 'file' },
+    ]);
+
+    const unexpected = unexpectedServedEntries(entries, publicFiles);
+
+    expect(unexpected).toEqual([
+      '.vite (directory)',
+      '.vite/manifest.json (file)',
+      'assets/index-a1b2.js.map (file)',
+      'assets/preview-private-key.pem (file)',
+      'stats.html (file)',
+    ]);
+  });
+
+  test('refuses a symbolic link even when its name looks like an asset', () => {
+    const entries = builtOutput([{ path: 'assets/report.js', kind: 'link' }]);
+
+    const unexpected = unexpectedServedEntries(entries, publicFiles);
+
+    expect(unexpected).toEqual(['assets/report.js (link)']);
+  });
+
+  test('refuses a nested folder inside the assets folder', () => {
+    const entries = builtOutput([
+      { path: 'assets/nested', kind: 'directory' },
+      { path: 'assets/nested/chunk.js', kind: 'file' },
+    ]);
+
+    const unexpected = unexpectedServedEntries(entries, publicFiles);
+
+    expect(unexpected).toEqual(['assets/nested (directory)', 'assets/nested/chunk.js (file)']);
   });
 });

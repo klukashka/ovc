@@ -1,12 +1,20 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
-import { buildManifestPath, checkBundle, parseManifest } from './bundle-budget.ts';
+import {
+  buildManifestPath,
+  checkBundle,
+  parseManifest,
+  type ServedEntry,
+  type ServedEntryKind,
+  unexpectedServedEntries,
+} from './bundle-budget.ts';
 
 const frontendRoot = resolve(import.meta.dirname, '..');
 const distRoot = resolve(frontendRoot, 'dist');
 const pagePattern = /Pages?\.tsx$/;
+const publicRoot = resolve(frontendRoot, 'public');
 
 function pageModules(): string[] {
   const features = resolve(frontendRoot, 'src', 'features');
@@ -14,6 +22,32 @@ function pageModules(): string[] {
     .filter((name) => pagePattern.test(name))
     .map((name) => relative(frontendRoot, join(features, name)))
     .sort();
+}
+
+function entryKind(path: string): ServedEntryKind {
+  const entry = lstatSync(path);
+  if (entry.isSymbolicLink()) {
+    return 'link';
+  }
+  if (entry.isDirectory()) {
+    return 'directory';
+  }
+  return entry.isFile() ? 'file' : 'other';
+}
+
+function servedEntries(root: string): ServedEntry[] {
+  return readdirSync(root, { recursive: true, encoding: 'utf8' }).map((name) => ({
+    path: name,
+    kind: entryKind(join(root, name)),
+  }));
+}
+
+function publicFiles(): Set<string> {
+  return new Set(
+    servedEntries(publicRoot)
+      .filter((entry) => entry.kind === 'file')
+      .map((entry) => entry.path),
+  );
 }
 
 function gzipSize(file: string): number {
@@ -30,6 +64,11 @@ function manifestJson(): unknown {
 
 if (existsSync(join(distRoot, '.vite'))) {
   process.stderr.write('dist/.vite exists: the build left its manifest in the served build\n');
+  process.exit(1);
+}
+const unexpected = unexpectedServedEntries(servedEntries(distRoot), publicFiles());
+if (unexpected.length > 0) {
+  process.stderr.write(`dist/ holds entries the served build must not contain:\n${unexpected.join('\n')}\n`);
   process.exit(1);
 }
 const pages = pageModules();

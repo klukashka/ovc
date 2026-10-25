@@ -171,3 +171,29 @@ export function checkBundle(
   }
   return { lines, failures };
 }
+
+export type ServedEntryKind = 'file' | 'directory' | 'link' | 'other';
+
+export interface ServedEntry {
+  path: string;
+  kind: ServedEntryKind;
+}
+
+const servedAssetPattern = /^assets\/[^/]+\.(?:js|css|woff2?)$/;
+
+function isServedPath(entry: ServedEntry, publicFiles: ReadonlySet<string>): boolean {
+  if (entry.kind === 'directory') {
+    return entry.path === 'assets';
+  }
+  if (entry.kind !== 'file') {
+    return false;
+  }
+  return entry.path === entryKey || publicFiles.has(entry.path) || servedAssetPattern.test(entry.path);
+}
+
+export function unexpectedServedEntries(entries: readonly ServedEntry[], publicFiles: ReadonlySet<string>): string[] {
+  return entries
+    .filter((entry) => !isServedPath(entry, publicFiles))
+    .map((entry) => `${entry.path} (${entry.kind})`)
+    .sort();
+}
