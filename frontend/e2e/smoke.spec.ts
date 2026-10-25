@@ -5,18 +5,16 @@ import { diagnosedTest as test, expect } from './fixtures.ts';
 
 import { contentSecurityPolicy } from '../security-headers.ts';
 
-const firstBodyThemeKey = 'ovcFirstBodyTheme';
-
-async function recordThemeAtFirstBody(page: Page, key: string): Promise<void> {
-  await page.addInitScript((storageKey) => {
+async function recordThemeAtFirstBody(page: Page): Promise<void> {
+  await page.addInitScript(() => {
     const observer = new MutationObserver(() => {
       if (document.querySelector('body') !== null) {
-        Reflect.set(globalThis, storageKey, document.documentElement.dataset.theme ?? 'unset');
+        window.ovcFirstBodyTheme = document.documentElement.dataset.theme ?? 'unset';
         observer.disconnect();
       }
     });
     observer.observe(document, { childList: true, subtree: true });
-  }, key);
+  });
 }
 
 test.use({ locale: 'ru-RU' });
@@ -212,11 +210,11 @@ test.describe('with the dark colour scheme', () => {
   test.use({ colorScheme: 'dark' });
 
   test('the theme is applied before the body is parsed', async ({ page }) => {
-    await recordThemeAtFirstBody(page, firstBodyThemeKey);
+    await recordThemeAtFirstBody(page);
 
     await page.goto('/today');
 
-    const themeAtFirstBody = await page.evaluate((key) => String(Reflect.get(globalThis, key)), firstBodyThemeKey);
+    const themeAtFirstBody = await page.evaluate(() => String(window.ovcFirstBodyTheme));
     expect(themeAtFirstBody).toBe('dark');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(28, 27, 24)');

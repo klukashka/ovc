@@ -1,12 +1,18 @@
 import type { Page } from '@playwright/test';
 
-const busyKey = 'ovcBusyControls';
-const offsetsKey = 'ovcFirstOffsets';
+declare global {
+  interface Window {
+    ovcBusyControls?: string[][];
+    ovcFirstOffsets?: Map<string, number>;
+    ovcFirstBodyTheme?: string;
+    ovcSchemeChanges?: number;
+  }
+}
 
 export async function recordBusyControls(page: Page): Promise<void> {
-  await page.addInitScript((key) => {
+  await page.addInitScript(() => {
     const snapshots: string[][] = [];
-    Reflect.set(window, key, snapshots);
+    window.ovcBusyControls = snapshots;
     const busy = 'button[aria-busy="true"]';
     new MutationObserver((records) => {
       if (records.some((record) => record.target instanceof Element && record.target.matches(busy))) {
@@ -17,11 +23,11 @@ export async function recordBusyControls(page: Page): Promise<void> {
         );
       }
     }).observe(document, { subtree: true, attributes: true, attributeFilter: ['aria-busy'] });
-  }, busyKey);
+  });
 }
 
 export async function busyControls(page: Page): Promise<string[][]> {
-  const recorded: unknown = await page.evaluate((key): unknown => Reflect.get(window, key), busyKey);
+  const recorded: unknown = await page.evaluate((): unknown => window.ovcBusyControls);
   if (
     !Array.isArray(recorded) ||
     !recorded.every(
@@ -36,9 +42,9 @@ export async function busyControls(page: Page): Promise<string[][]> {
 
 export async function recordFirstOffsets(page: Page, selectors: readonly string[]): Promise<void> {
   await page.addInitScript(
-    ({ key, tracked }) => {
+    ({ tracked }) => {
       const first = new Map<string, number>();
-      Reflect.set(window, key, first);
+      window.ovcFirstOffsets = first;
       function measure(): void {
         const heading = document.querySelector('main h1');
         if (heading === null) {
@@ -54,7 +60,7 @@ export async function recordFirstOffsets(page: Page, selectors: readonly string[
       }
       new MutationObserver(measure).observe(document, { subtree: true, childList: true, attributes: true });
     },
-    { key: offsetsKey, tracked: selectors },
+    { tracked: selectors },
   );
 }
 
@@ -65,13 +71,12 @@ export interface Offsets {
 
 export async function offsetsBelowHeading(page: Page, selectors: readonly string[]): Promise<Offsets> {
   return page.evaluate(
-    ({ key, tracked }) => {
-      const recorded: unknown = Reflect.get(window, key);
-      const first = recorded instanceof Map ? recorded : new Map<unknown, unknown>();
+    ({ tracked }) => {
+      const first = window.ovcFirstOffsets ?? new Map<string, number>();
       const heading = document.querySelector('main h1');
       const offsets: { first: Record<string, number>; now: Record<string, number> } = { first: {}, now: {} };
       for (const selector of tracked) {
-        const earliest: unknown = first.get(selector);
+        const earliest = first.get(selector);
         const element = document.querySelector(selector);
         if (typeof earliest === 'number') {
           offsets.first[selector] = earliest;
@@ -82,6 +87,6 @@ export async function offsetsBelowHeading(page: Page, selectors: readonly string
       }
       return offsets;
     },
-    { key: offsetsKey, tracked: selectors },
+    { tracked: selectors },
   );
 }

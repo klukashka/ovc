@@ -11,7 +11,6 @@ const onePixelPng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   'base64',
 );
-const schemeChangesKey = 'ovcSchemeChanges';
 
 async function freshContext(browser: Browser, deployment: Deployment): Promise<BrowserContext> {
   return browser.newContext({ baseURL: deployment.origin, ignoreHTTPSErrors: true, locale: 'ru-RU' });
@@ -65,19 +64,17 @@ async function confirmDeletion(page: Page, password: string): Promise<void> {
 }
 
 async function countSchemeChanges(page: Page): Promise<void> {
-  await page.evaluate((key) => {
-    Reflect.set(globalThis, key, 0);
+  await page.evaluate(() => {
+    window.ovcSchemeChanges = 0;
     globalThis.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-      Reflect.set(globalThis, key, Number(Reflect.get(globalThis, key)) + 1);
+      window.ovcSchemeChanges = Number(window.ovcSchemeChanges) + 1;
     });
-  }, schemeChangesKey);
+  });
 }
 
 async function switchScheme(page: Page, colorScheme: 'light' | 'dark', changesSoFar: number): Promise<void> {
   await page.emulateMedia({ colorScheme });
-  await expect
-    .poll(() => page.evaluate((key) => Number(Reflect.get(globalThis, key)), schemeChangesKey))
-    .toBe(changesSoFar + 1);
+  await expect.poll(() => page.evaluate(() => Number(window.ovcSchemeChanges))).toBe(changesSoFar + 1);
 }
 
 test.describe('account edge cases', () => {

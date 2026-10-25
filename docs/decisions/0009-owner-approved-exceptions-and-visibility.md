@@ -1,7 +1,7 @@
 # ADR-0009: Owner-approved exceptions to base rules, and tutor-only scores
 
 - Status: accepted, 2026-10-20; superseded in part by [ADR-0014](0014-students-join-through-their-tutor.md) on 2026-10-22 (the first bullet of item 4)
-- Reviewed: decided by the project owner on 2026-10-20, item 7 on 2026-10-21; wording pending line-by-line owner review; the superseded-in-part note of 2026-10-22 pending owner review
+- Reviewed: decided by the project owner on 2026-10-20, item 7 on 2026-10-21, item 8 on 2026-10-25; wording pending line-by-line owner review; the superseded-in-part note of 2026-10-22 pending owner review
 - Deciders: project owner
 - Related: [ADR-0004](0004-bigbluebutton-primary-provider.md), [ADR-0005](0005-tutor-centric-domain.md), [ADR-0006](0006-background-worker-and-email.md), [ADR-0014](0014-students-join-through-their-tutor.md), FR-1.2, FR-5.1, FR-5.3, FR-9.3, FR-11.1, [threat model](../threat-model.md)
 - Superseded parts: the first bullet of item 4, under which only an invitation sent by email confirmed the invitee's email; since [ADR-0014](0014-students-join-through-their-tutor.md) no invitation confirms an email, and a link accepted before confirmation is provisional. The text below is kept as written for the record.
@@ -12,7 +12,7 @@ The design reviews of the tutor-centric product found places where the specifica
 
 ## Decision
 
-The project owner approved, on 2026-10-20 (items 1 to 6) and 2026-10-21 (item 7):
+The project owner approved, on 2026-10-20 (items 1 to 6), 2026-10-21 (item 7) and 2026-10-25 (item 8, its wording pending owner review):
 
 1. **Credentials in URLs** are allowed for exactly these, each bounded in lifetime and scope, never signing anyone in to OVC, and never logged:
    - invitation links;
@@ -35,6 +35,7 @@ The project owner approved, on 2026-10-20 (items 1 to 6) and 2026-10-21 (item 7)
    - They see the status of their work, the tutor's comments, feedback and corrected files, and, when the answer policy allows, the correct answers with explanations.
    - Scores and analytics are the tutor's working tools.
 7. **Agents may run local commands with the owner's development settings** until OVC has hosting. The owner keeps the root `.env` (Compose credentials) and `backend/.env` (backend settings) with development-only values, and edits and later moves them. Agents never open, print, copy or edit these or any other environment file; the only sanctioned use is `tools/dev-env.sh <command>`, which loads those two files into that one command's environment without printing them. Other environment files, such as `backend/.env.local` with real provider secrets for live checks, are never loaded by the wrapper and stay owner-only. The exception ends when hosting exists; then the wrapper, its check `tools/check-dev-env.sh`, the hook's support for it with its cases, and their documentation in `AGENTS.md`, the threat model, the development guide and the AI development inventory are removed.
+8. **Two narrow exceptions to the testing rules** (pending owner review): a step test of a pilot scenario suite, whose title starts with `pilot-<n> › step <k>` or `pilot-<n> › steps <k>–<m>` and names the scenario steps it proves (a `pilot-<n> › seed` test is not one), may act and assert in turns, because the intermediate states of a scenario step are its acceptance criteria; and a test may create, through its own connection to the test database created for it, a database object whose only effect is to raise a real database error for one item, never through application code, migrations or the end-to-end test control surface, only to prove that a worker job isolates that item's failure. Every other test keeps three phases and changes nothing about how the database behaves.
 
 ## Alternatives considered
 
@@ -60,5 +61,6 @@ The project owner approved, on 2026-10-20 (items 1 to 6) and 2026-10-21 (item 7)
 - [Functional requirements](../requirements/functional.md) (FR-1.2, FR-5.1, FR-5.3, FR-9.3, FR-11.1), [product overview](../product.md)
 - [Pages](../../knowledge/design/web/pages.md), [states](../../knowledge/design/web/states.md), [pilot scenarios](../../knowledge/design/web/pilot-scenarios.md)
 - [Email content](../../knowledge/specs/notifications.md#email), [threat model](../threat-model.md) (T-19, T-30)
+- [Testing](../../AGENTS.md#testing) (item 8)
 - [Change workflow](../../AGENTS.md#change-workflow), [AI development verification](../../knowledge/reviews/ai-development-setup.md#minimal-inventory)
 - [Secrets](../../AGENTS.md#security) and the [local settings wrapper](../development.md#local-services) (item 7), [threat model](../threat-model.md) (T-19)

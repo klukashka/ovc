@@ -55,6 +55,19 @@ const forbiddenFetchReplacement = [
   },
 ];
 
+const reflectMessage =
+  'AGENTS.md, types are precise and safe: no Reflect API in hand-written TypeScript and JavaScript; use typed access instead.';
+
+const forbiddenReflectGlobals = [{ name: 'Reflect', message: reflectMessage }];
+
+const forbiddenReflectSyntax = [
+  { selector: "MemberExpression[property.name='Reflect']", message: reflectMessage },
+  { selector: "MemberExpression[property.value='Reflect']", message: reflectMessage },
+  { selector: "MemberExpression > TemplateLiteral.property[quasis.0.value.raw='Reflect']", message: reflectMessage },
+  { selector: "ObjectPattern > Property[key.name='Reflect']", message: reflectMessage },
+  { selector: "ObjectPattern > Property[key.value='Reflect']", message: reflectMessage },
+];
+
 const domSinkMessage = 'Render text through React; never write HTML, run strings as code or parse markup.';
 const cookieMessage = 'OVC keeps tokens out of script-readable cookies; the refresh cookie is HttpOnly.';
 const storageMessage = 'Web Storage is used only through src/lib/preferences.';
@@ -217,7 +230,13 @@ export default defineConfig(
     rules: {
       '@eslint-community/eslint-comments/no-use': ['error', { allow: [] }],
       'no-restricted-properties': ['error', ...forbiddenTestDoubles],
-      'no-restricted-syntax': ['error', ...forbiddenFetchReplacement, ...forbiddenDynamicImports],
+      'no-restricted-syntax': [
+        'error',
+        ...forbiddenFetchReplacement,
+        ...forbiddenDynamicImports,
+        ...forbiddenReflectSyntax,
+      ],
+      'no-restricted-globals': ['error', ...forbiddenReflectGlobals],
       'no-restricted-imports': ['error', forbiddenTestDoubleImports],
     },
   },
@@ -238,10 +257,16 @@ export default defineConfig(
         'error',
         ...forbiddenFetchReplacement,
         ...forbiddenDynamicImports,
+        ...forbiddenReflectSyntax,
         ...forbiddenDomSyntax,
         ...forbiddenStorageSyntax,
       ],
-      'no-restricted-globals': ['error', ...forbiddenDomGlobals, ...forbiddenStorageGlobals],
+      'no-restricted-globals': [
+        'error',
+        ...forbiddenReflectGlobals,
+        ...forbiddenDomGlobals,
+        ...forbiddenStorageGlobals,
+      ],
     },
   },
   {
@@ -255,9 +280,15 @@ export default defineConfig(
         'error',
         ...forbiddenFetchReplacement,
         ...forbiddenDynamicImports,
+        ...forbiddenReflectSyntax,
         ...forbiddenDomSyntax,
       ],
-      'no-restricted-globals': ['error', ...forbiddenDomGlobals, { name: 'cookieStore', message: cookieMessage }],
+      'no-restricted-globals': [
+        'error',
+        ...forbiddenReflectGlobals,
+        ...forbiddenDomGlobals,
+        { name: 'cookieStore', message: cookieMessage },
+      ],
     },
   },
 );

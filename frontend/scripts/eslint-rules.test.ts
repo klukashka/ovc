@@ -41,6 +41,22 @@ describe('frontend lint configuration', () => {
     ['assigning fetch by computed key', "window['fetch'] = async () => Response.error();\n", 'no-restricted-syntax'],
     ['Reflect.set on fetch', "Reflect.set(globalThis, 'fetch', null);\n", 'no-restricted-syntax'],
     ['Object.assign of fetch', 'Object.assign(globalThis, { fetch: null });\n', 'no-restricted-syntax'],
+    ['a Reflect.get call', "export const value: unknown = Reflect.get(globalThis, 'x');\n", 'no-restricted-globals'],
+    [
+      'Reflect reached through globalThis',
+      "export const value: unknown = globalThis.Reflect.get(globalThis, 'x');\n",
+      'no-restricted-syntax',
+    ],
+    [
+      'Reflect reached by computed key',
+      "export const value: unknown = globalThis['Reflect'].get(globalThis, 'x');\n",
+      'no-restricted-syntax',
+    ],
+    [
+      'destructured Reflect',
+      'const { Reflect: reflection } = globalThis;\nexport const value = reflection;\n',
+      'no-restricted-syntax',
+    ],
     [
       'an ESLint directive',
       '// eslint-disable-next-line\nexport const value = 1;\n',
@@ -231,6 +247,19 @@ describe('frontend lint configuration', () => {
 
     expect(otherScript).toEqual(expect.arrayContaining(['no-restricted-syntax', 'no-implied-eval']));
     expect(themeScript).toEqual([]);
+  });
+
+  test.each([
+    ['an end-to-end page script', 'e2e/observers.ts'],
+    ['a frontend script', 'scripts/check-comments.ts'],
+    ['a configuration file', 'playwright.config.ts'],
+    ['a public script', 'public/theme-init.js'],
+  ])('refuses a Reflect.get call in %s', async (_name, path) => {
+    const source = "Reflect.get(globalThis, 'x');\n";
+
+    const found = await ruleIds(source, resolve(frontendRoot, path));
+
+    expect(found).toContain('no-restricted-globals');
   });
 
   test('accepts an ordinary attribute whose value looks like a handler name', async () => {
