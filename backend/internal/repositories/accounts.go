@@ -29,6 +29,7 @@ type (
 	JobRunRecord      = dbgen.RecordJobRunParams
 	EmailTokenLookup  = dbgen.GetUsableEmailTokenParams
 	SessionPrincipal  = dbgen.GetSessionPrincipalRow
+	SessionStanding   = dbgen.GetSessionStandingsRow
 	PasswordRehash    = dbgen.UpdateUserPasswordHashParams
 	LockedCredentials = dbgen.LockUserCredentialsRow
 	SignUp            = dbgen.CreateUserIfEmailFreeParams
@@ -177,6 +178,11 @@ func (r Sessions) ByID(ctx context.Context, id domain.SessionID) (Session, error
 func (r Sessions) Principal(ctx context.Context, id domain.SessionID) (SessionPrincipal, error) {
 	principal, err := r.queries.GetSessionPrincipal(ctx, id)
 	return one(principal, err, "session principal")
+}
+
+func (r Sessions) Standings(ctx context.Context, ids []domain.SessionID) ([]SessionStanding, error) {
+	standings, err := r.queries.GetSessionStandings(ctx, uuids(ids))
+	return standings, done(err, "session standings")
 }
 
 func (r Sessions) Rotate(ctx context.Context, rotation SessionRotation) (int64, error) {

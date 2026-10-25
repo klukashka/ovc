@@ -116,6 +116,15 @@ linters:
               desc: password hashing and other cryptography belong to internal/core
             - pkg: github.com/golang-jwt/jwt
               desc: access tokens belong to internal/core
+        websocket:
+          files:
+            - $all
+            - "!**/internal/realtime/**"
+            - "!**/internal/api/*_test.go"
+            - "!**/cmd/internal/startup/*_test.go"
+          deny:
+            - pkg: github.com/coder/websocket
+              desc: the WebSocket library belongs to internal/realtime; only API and process tests dial with it
         goose:
           files:
             - $all

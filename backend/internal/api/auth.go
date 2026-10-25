@@ -41,6 +41,7 @@ const (
 	AudienceStudentUnverifiedOK Audience = "student, unverified ok"
 	AudienceRefreshCookie       Audience = "refresh cookie"
 	AudienceOptionalUser        Audience = "public, optional bearer"
+	AudienceFirstFrame          Audience = "user, unverified ok, by first frame"
 )
 
 type audienceRule struct {
@@ -255,7 +256,13 @@ func (r *router) recordClientAddress(ctx huma.Context, next func(huma.Context)) 
 }
 
 func (r *router) requireOrigin(ctx huma.Context, next func(huma.Context)) {
-	if ctx.Header("Origin") != r.auth.PublicOrigin {
+	var origins []string
+	ctx.EachHeader(func(name string, value string) {
+		if strings.EqualFold(name, "Origin") {
+			origins = append(origins, value)
+		}
+	})
+	if !exactOrigin(origins, r.auth.PublicOrigin) {
 		r.writeError(ctx, domain.ErrorForbidden)
 		return
 	}

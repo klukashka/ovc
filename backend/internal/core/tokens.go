@@ -24,6 +24,7 @@ var (
 type AccessClaims struct {
 	UserID    [16]byte
 	SessionID [16]byte
+	ExpiresAt time.Time
 }
 
 type AccessTokens struct {
@@ -84,7 +85,7 @@ func (t *AccessTokens) Verify(text string, now time.Time) (AccessClaims, error) 
 	if errors.Is(err, jwt.ErrTokenExpired) {
 		return AccessClaims{}, ErrAccessTokenExpired
 	}
-	if err != nil || claims.IssuedAt == nil {
+	if err != nil || claims.IssuedAt == nil || claims.ExpiresAt == nil {
 		return AccessClaims{}, ErrAccessTokenInvalid
 	}
 	user, userErr := decodeID(claims.Subject)
@@ -92,7 +93,7 @@ func (t *AccessTokens) Verify(text string, now time.Time) (AccessClaims, error) 
 	if userErr != nil || sessionErr != nil {
 		return AccessClaims{}, ErrAccessTokenInvalid
 	}
-	return AccessClaims{UserID: user, SessionID: session}, nil
+	return AccessClaims{UserID: user, SessionID: session, ExpiresAt: claims.ExpiresAt.UTC()}, nil
 }
 
 func decodeID(text string) ([16]byte, error) {

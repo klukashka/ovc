@@ -327,14 +327,18 @@ func TestConfirmFromAnotherBrowserRequiresPasswordAndRevokesSessions(t *testing.
 
 	withPassword := fmt.Sprintf(`{"token":%q,"new_password":"mailbox owner password"}`, token)
 	foreignOrigin := h.postJSON(t, "/api/v1/auth/verify-email", withPassword, map[string]string{"Origin": "https://meet.ovc.example"})
+	twoOrigins := h.sendHeaders(t, http.MethodPost, "/api/v1/auth/verify-email", withPassword, http.Header{
+		"Origin": []string{publicOrigin, publicOrigin}, "Content-Type": []string{"application/json"}, "X-Forwarded-For": []string{homeAddress},
+	})
 	withoutPassword := h.verify(t, fmt.Sprintf(`{"token":%q}`, token), "")
 	confirmed := h.verify(t, withPassword, "")
 	squatterRefresh := h.refresh(t, refreshValue(t, squatter))
 	oldPassword := h.login(t, newcomerEmail, newcomerPassword)
 	me := h.me(t, accessToken(t, confirmed))
 
-	if foreignOrigin.status != http.StatusForbidden || code(t, foreignOrigin) != "forbidden" {
-		t.Fatalf("a foreign origin answered %d %s", foreignOrigin.status, foreignOrigin.body)
+	if foreignOrigin.status != http.StatusForbidden || code(t, foreignOrigin) != "forbidden" ||
+		twoOrigins.status != http.StatusForbidden || code(t, twoOrigins) != "forbidden" {
+		t.Fatalf("a foreign origin answered %d %s, two origins %d", foreignOrigin.status, foreignOrigin.body, twoOrigins.status)
 	}
 	if withoutPassword.status != http.StatusUnprocessableEntity || !slices.Equal(fields(t, withoutPassword), []string{"body.new_password:required"}) {
 		t.Fatalf("without a password %d %s", withoutPassword.status, withoutPassword.body)

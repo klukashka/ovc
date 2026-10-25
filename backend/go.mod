@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.1
+	github.com/coder/websocket v1.8.15
 	github.com/danielgtaylor/huma/v2 v2.39.1
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 	github.com/emersion/go-smtp v0.25.0

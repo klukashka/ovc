@@ -105,6 +105,7 @@ func TestAccessTokensRefuseForgeriesAndExpireWithLeeway(t *testing.T) {
 	other := core.NewAccessTokens(keys(t, "other-signing-material-0123456789ab"), "https://ovc.example", 15*time.Minute)
 	foreignIssuer := core.NewAccessTokens(keys(t, "token-signing-material-0123456789ab"), "https://attacker.example", 15*time.Minute)
 	claims := core.AccessClaims{UserID: [16]byte{1}, SessionID: [16]byte{2}}
+	expected := core.AccessClaims{UserID: claims.UserID, SessionID: claims.SessionID, ExpiresAt: tokenNow.Add(15 * time.Minute)}
 	issue := func(source *core.AccessTokens) string {
 		token, err := source.Issue(claims, tokenNow)
 		if err != nil {
@@ -124,7 +125,7 @@ func TestAccessTokensRefuseForgeriesAndExpireWithLeeway(t *testing.T) {
 		forgeries = append(forgeries, forgedErr)
 	}
 
-	if err != nil || verified != claims {
+	if err != nil || verified != expected {
 		t.Fatalf("within leeway: %+v, %v", verified, err)
 	}
 	if !errors.Is(expired, core.ErrAccessTokenExpired) {

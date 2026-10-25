@@ -1,0 +1,41 @@
+package schemas
+
+import (
+	"encoding/json"
+
+	"ovc/backend/internal/domain"
+)
+
+type ClientFrame struct {
+	Type    domain.FrameType `json:"type"`
+	Ref     *string          `json:"ref,omitempty"`
+	Payload json.RawMessage  `json:"payload,omitempty"`
+}
+
+type AuthPayload struct {
+	AccessToken string `json:"access_token"`
+}
+
+type ServerFrame[Payload any] struct {
+	Type    domain.FrameType `json:"type"`
+	Ref     *string          `json:"ref,omitempty"`
+	Payload *Payload         `json:"payload,omitempty"`
+}
+
+type ReadyPayload struct{}
+
+type NotificationNewPayload struct {
+	ID string `json:"id"`
+}
+
+type EntityChangedPayload struct {
+	Kind domain.EntityKind `json:"kind"`
+	ID   string            `json:"id"`
+}
+
+type FrameErrorPayload struct {
+	Code      domain.ErrorCode `json:"code"`
+	Message   string           `json:"message"`
+	RequestID string           `json:"request_id"`
+	Ref       *string          `json:"ref"`
+}

@@ -65,7 +65,9 @@ func newServer(t *testing.T) (*httptest.Server, *testdb.Database) {
 	preferences := notifications.NewPreferences(notifications.PreferenceDependencies{
 		Store: repositories.NewStore(database.Pool), Clock: shared, Tokens: links, Keys: keys, Logger: logger,
 	})
-	routes := testcontrol.New(logger, shared, worker.New(logger, shared, queue, lanes, nil, worker.DefaultTiming()), sink, preferences)
+	routes := testcontrol.New(testcontrol.Dependencies{
+		Logger: logger, Clock: shared, Worker: worker.New(logger, shared, queue, lanes, nil, worker.DefaultTiming()), Sink: sink, Preferences: preferences,
+	})
 	handler, err := api.NewHandler(api.Options{
 		Logger:       logger,
 		Now:          clock.System{}.Now,

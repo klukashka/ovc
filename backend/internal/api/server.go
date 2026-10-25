@@ -14,6 +14,7 @@ import (
 
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
+	"ovc/backend/internal/realtime"
 	"ovc/backend/internal/schemas"
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/notifications"
@@ -75,6 +76,7 @@ type Options struct {
 	Files         *files.Service
 	Tutoring      *tutoring.Service
 	Preferences   *notifications.Preferences
+	Realtime      *realtime.Gateway
 }
 
 func NewHandler(options Options) (http.Handler, error) {
@@ -103,6 +105,9 @@ func newHandler(options Options, registerExtra func(*router)) (http.Handler, err
 			}
 		})
 	}
+	mux.Handle(http.MethodGet+" "+realtimePath, &realtimeRoute{
+		gateway: options.Realtime, origin: options.Auth.PublicOrigin, trustedProxies: options.Auth.TrustedProxies, logger: options.Logger,
+	})
 	if options.Mount != nil {
 		options.Mount(mux)
 	}
@@ -173,6 +178,7 @@ func (r *router) registerAll(readiness ReadinessFunc) {
 	r.registerHealth(readiness)
 	r.registerAuth()
 	r.registerTutoring()
+	r.registerRealtimeAudience()
 }
 
 func failedCheck(err error) string {

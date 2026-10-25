@@ -6,10 +6,12 @@ import (
 	"time"
 
 	"ovc/backend/internal/adapters/clock"
+	"ovc/backend/internal/adapters/listener"
 	"ovc/backend/internal/adapters/mail"
 	"ovc/backend/internal/adapters/storage"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
+	"ovc/backend/internal/realtime"
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/files"
@@ -159,4 +161,33 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 		{Name: domain.JobJoinRequestsExpire, Every: time.Hour, Run: tutoringService.ExpireJoinRequests},
 	}
 	return worker.New(logger, source, queue, lanes, jobs, worker.DefaultTiming()), nil
+}
+
+type Realtime struct {
+	Gateway  *realtime.Gateway
+	Listener *listener.Listener
+}
+
+func NewRealtime(
+	logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, sessions realtime.Sessions,
+) (Realtime, error) {
+	gateway, err := realtime.New(realtime.Dependencies{
+		Sessions: sessions, Clock: source, Now: clock.System{}.Now, NewID: core.NewRandomID, Logger: logger,
+		PublicOrigin: settings.PublicURL, Timing: realtime.DefaultTiming(), Limits: realtime.DefaultLimits(),
+	})
+	if err != nil {
+		return Realtime{}, err
+	}
+	instance, err := core.NewID[domain.InstanceID](random)
+	if err != nil {
+		return Realtime{}, err
+	}
+	adapter, err := listener.New(listener.Dependencies{
+		DatabaseURL: settings.DatabaseURL, Instance: instance, Heartbeats: repositories.NewStore(database.Pool).Repositories().Signals,
+		Consumer: gateway, Logger: logger, Timing: listener.DefaultTiming(),
+	})
+	if err != nil {
+		return Realtime{}, err
+	}
+	return Realtime{Gateway: gateway, Listener: adapter}, nil
 }

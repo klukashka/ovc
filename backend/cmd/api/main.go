@@ -127,6 +127,15 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	if err != nil {
 		return err
 	}
+	live, err := startup.NewRealtime(logging.Logger, settings, database, source, random, accountService)
+	if err != nil {
+		return err
+	}
+	live.Gateway.Start(ctx, live.Listener)
+	listening := core.Run(ctx, logging.Logger, "realtime.listener", func() error {
+		live.Listener.Run(ctx)
+		return nil
+	})
 	options := api.Options{
 		Logger:       logging.Logger,
 		Now:          systemClock.Now,
@@ -138,6 +147,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		Files:       fileService,
 		Tutoring:    tutoringService,
 		Preferences: preferences,
+		Realtime:    live.Gateway,
 		DocsEnabled: settings.APIDocsEnabled,
 		Auth:        api.Auth{Accounts: accountService, PublicOrigin: settings.PublicURL, TrustedProxies: settings.TrustedProxies},
 	}
@@ -147,7 +157,9 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		if err != nil {
 			return err
 		}
-		options.Mount = testcontrol.New(logging.Logger, shared, background, sink, preferences).Mount
+		options.Mount = testcontrol.New(testcontrol.Dependencies{
+			Logger: logging.Logger, Clock: shared, Worker: background, Sink: sink, Preferences: preferences, Realtime: live.Gateway,
+		}).Mount
 	}
 	handler, err := api.NewHandler(options)
 	if err != nil {
@@ -174,8 +186,12 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	}
 	shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
+	live.Gateway.Shutdown(shutdownContext)
 	if err := server.Shutdown(shutdownContext); err != nil {
 		return fmt.Errorf("shut down http: %w", err)
+	}
+	if err := <-listening; err != nil {
+		return fmt.Errorf("stop the realtime listener: %w", err)
 	}
 	return nil
 }

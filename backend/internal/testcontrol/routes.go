@@ -16,6 +16,7 @@ import (
 	"ovc/backend/internal/adapters/mail"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
+	"ovc/backend/internal/realtime"
 	"ovc/backend/internal/schemas"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/worker"
@@ -35,15 +36,31 @@ type Routes struct {
 	worker      *worker.Worker
 	sink        *mail.Sink
 	preferences *notifications.Preferences
+	realtime    *realtime.Gateway
 }
 
-func New(logger *slog.Logger, shared *clock.Shared, w *worker.Worker, sink *mail.Sink, preferences *notifications.Preferences) *Routes {
-	return &Routes{logger: logger, clock: shared, worker: w, sink: sink, preferences: preferences}
+type Dependencies struct {
+	Logger      *slog.Logger
+	Clock       *clock.Shared
+	Worker      *worker.Worker
+	Sink        *mail.Sink
+	Preferences *notifications.Preferences
+	Realtime    *realtime.Gateway
+}
+
+func New(deps Dependencies) *Routes {
+	return &Routes{
+		logger: deps.Logger, clock: deps.Clock, worker: deps.Worker, sink: deps.Sink, preferences: deps.Preferences, realtime: deps.Realtime,
+	}
 }
 
 func (routes *Routes) Mount(mux *http.ServeMux) {
 	mux.Handle("POST /__test__/mail", routes.guard(routes.mail))
 	mux.Handle("POST /__test__/unsubscribe-token", routes.guard(routes.unsubscribeToken))
+	if routes.realtime != nil {
+		mux.Handle("POST /__test__/presence", routes.guard(routes.presence))
+		mux.Handle("POST /__test__/realtime/close", routes.guard(routes.closeSockets))
+	}
 	if routes.clock == nil {
 		return
 	}
@@ -121,6 +138,67 @@ func (routes *Routes) unsubscribeToken(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(ctx, routes.logger, w, unsubscribeTokenResponse{Token: token})
+}
+
+type presenceRequest struct {
+	User string `json:"user"`
+}
+
+type presenceResponse struct {
+	Online  bool `json:"online"`
+	Sockets int  `json:"sockets"`
+}
+
+type closeRequest struct {
+	User string           `json:"user"`
+	Code domain.CloseCode `json:"code"`
+}
+
+type closeResponse struct {
+	Closed int `json:"closed"`
+}
+
+func (routes *Routes) presence(w http.ResponseWriter, r *http.Request) {
+	var request presenceRequest
+	if !decode(routes.logger, w, r, &request) {
+		return
+	}
+	ctx := r.Context()
+	user, ok := domain.ParseUUID[domain.UserID](request.User)
+	if !ok {
+		writeError(ctx, routes.logger, w, domain.ErrorValidationFailed, []schemas.FieldError{{Path: "user", Code: string(domain.FieldInvalid)}})
+		return
+	}
+	presence := routes.realtime.Presence(user)
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(ctx, routes.logger, w, presenceResponse{Online: presence.Online, Sockets: presence.Sockets})
+}
+
+func (routes *Routes) closeSockets(w http.ResponseWriter, r *http.Request) {
+	var request closeRequest
+	if !decode(routes.logger, w, r, &request) {
+		return
+	}
+	ctx := r.Context()
+	user, ok := domain.ParseUUID[domain.UserID](request.User)
+	var problems []schemas.FieldError
+	if !ok {
+		problems = append(problems, schemas.FieldError{Path: "user", Code: string(domain.FieldInvalid)})
+	}
+	if request.Code != domain.CloseTooMany && request.Code != domain.CloseReconnect {
+		problems = append(problems, schemas.FieldError{Path: "code", Code: string(domain.FieldInvalid)})
+	}
+	if len(problems) > 0 {
+		writeError(ctx, routes.logger, w, domain.ErrorValidationFailed, problems)
+		return
+	}
+	closed, err := routes.realtime.CloseAccount(user, request.Code)
+	if err != nil {
+		routes.fail(ctx, w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(ctx, routes.logger, w, closeResponse{Closed: closed})
 }
 
 type clockRequest struct {
@@ -218,7 +296,7 @@ func isLoopbackHost(hostHeader string) bool {
 	return loopbackHosts[host]
 }
 
-func decode[T clockRequest | mailRequest | unsubscribeTokenRequest | struct{}](logger *slog.Logger, w http.ResponseWriter, r *http.Request, target *T) bool {
+func decode[T clockRequest | mailRequest | unsubscribeTokenRequest | presenceRequest | closeRequest | struct{}](logger *slog.Logger, w http.ResponseWriter, r *http.Request, target *T) bool {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	err := decoder.Decode(target)
@@ -254,7 +332,7 @@ func trailingDataError(decoder *json.Decoder) error {
 	return err
 }
 
-func writeJSON[T clockResponse | tickResponse | mailResponse | unsubscribeTokenResponse](ctx context.Context, logger *slog.Logger, w http.ResponseWriter, body T) {
+func writeJSON[T clockResponse | tickResponse | mailResponse | unsubscribeTokenResponse | presenceResponse | closeResponse](ctx context.Context, logger *slog.Logger, w http.ResponseWriter, body T) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		panic("a test control response could not be encoded")

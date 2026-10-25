@@ -123,8 +123,11 @@ func newAuthHarnessServing(t *testing.T, trusted []netip.Prefix, newHandler func
 	return newAuthHarnessStoring(t, trusted, newHandler, func(local *teststorage.Storage) storage.Store { return local.Store })
 }
 
+type optionsHook func(options *api.Options, shared *clock.Shared, logger *slog.Logger)
+
 func newAuthHarnessStoring(
 	t *testing.T, trusted []netip.Prefix, newHandler func(api.Options) (http.Handler, error), objectsFor func(*teststorage.Storage) storage.Store,
+	hooks ...optionsHook,
 ) *authHarness {
 	t.Helper()
 	database := testdb.New(t)
@@ -167,14 +170,18 @@ func newAuthHarnessStoring(
 		t.Fatal(err)
 	}
 	preferences := notifications.NewPreferences(notifications.PreferenceDependencies{Store: store, Clock: shared, Tokens: links, Keys: keys, Logger: logger})
-	handler, err := newHandler(api.Options{
+	options := api.Options{
 		Logger: logger, Now: clock.System{}.Now, NewRequestID: core.NewRandomID,
 		Readiness:   func(context.Context) error { return nil },
 		Auth:        api.Auth{Accounts: service, PublicOrigin: publicOrigin, TrustedProxies: trusted},
 		Files:       fileService,
 		Tutoring:    tutoringService,
 		Preferences: preferences,
-	})
+	}
+	for _, hook := range hooks {
+		hook(&options, shared, logger)
+	}
+	handler, err := newHandler(options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,14 +276,29 @@ func (h *authHarness) send(t *testing.T, method string, path string, body string
 	return result
 }
 
+func (h *authHarness) sendHeaders(t *testing.T, method string, path string, body string, headers http.Header) response {
+	t.Helper()
+	result, err := h.trySendHeaders(method, path, body, headers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
 func (h *authHarness) trySend(method string, path string, body string, headers map[string]string) (response, error) {
+	all := http.Header{}
+	for name, value := range headers {
+		all.Set(name, value)
+	}
+	return h.trySendHeaders(method, path, body, all)
+}
+
+func (h *authHarness) trySendHeaders(method string, path string, body string, headers http.Header) (response, error) {
 	request, err := http.NewRequestWithContext(context.Background(), method, h.server.URL+path, strings.NewReader(body))
 	if err != nil {
 		return response{}, err
 	}
-	for name, value := range headers {
-		request.Header.Set(name, value)
-	}
+	request.Header = headers
 	result, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return response{}, err
@@ -695,6 +717,12 @@ func TestRefreshRejectsForeignOrigin(t *testing.T) {
 	results := []response{
 		h.send(t, http.MethodPost, "/api/v1/auth/refresh", "", map[string]string{"Origin": "https://video.ovc.example", "Cookie": "__Host-ovc_refresh=" + cookie}),
 		h.send(t, http.MethodPost, "/api/v1/auth/refresh", "", map[string]string{"Cookie": "__Host-ovc_refresh=" + cookie}),
+		h.sendHeaders(t, http.MethodPost, "/api/v1/auth/refresh", "", http.Header{
+			"Origin": []string{publicOrigin, "https://video.ovc.example"}, "Cookie": []string{"__Host-ovc_refresh=" + cookie},
+		}),
+		h.sendHeaders(t, http.MethodPost, "/api/v1/auth/refresh", "", http.Header{
+			"Origin": []string{publicOrigin, publicOrigin}, "Cookie": []string{"__Host-ovc_refresh=" + cookie},
+		}),
 	}
 
 	for _, result := range results {
@@ -716,9 +744,15 @@ func TestLoginRejectsForeignOriginAndMissingContentType(t *testing.T) {
 	foreign := h.send(t, http.MethodPost, "/api/v1/auth/login", body, map[string]string{"Origin": "https://attacker.example", "Content-Type": "application/json"})
 	foreignInvalid := h.send(t, http.MethodPost, "/api/v1/auth/login", "{", map[string]string{"Origin": "https://attacker.example", "Content-Type": "application/json"})
 	untyped := h.send(t, http.MethodPost, "/api/v1/auth/login", body, map[string]string{"Origin": publicOrigin})
+	twoOrigins := h.sendHeaders(t, http.MethodPost, "/api/v1/auth/login", body, http.Header{
+		"Origin": []string{publicOrigin, "https://attacker.example"}, "Content-Type": []string{"application/json"},
+	})
 
 	if foreign.status != http.StatusForbidden || foreignInvalid.status != http.StatusForbidden || untyped.status != http.StatusUnsupportedMediaType {
 		t.Fatalf("foreign %d, untyped %d %s", foreign.status, untyped.status, untyped.body)
+	}
+	if twoOrigins.status != http.StatusForbidden || code(t, twoOrigins) != "forbidden" {
+		t.Fatalf("two origins answered %d %s", twoOrigins.status, twoOrigins.body)
 	}
 }
 
@@ -806,6 +840,11 @@ func TestEveryOperationDeclaresAnAudience(t *testing.T) {
 			})
 			if result.status != http.StatusUnauthorized || code(t, result) != "unauthenticated" {
 				t.Fatalf("%s %s with a forged token answered %d %s", operation.Method, operation.Path, result.status, result.body)
+			}
+		case api.AudienceFirstFrame:
+			result := h.send(t, operation.Method, operation.Path, "", nil)
+			if result.status != http.StatusForbidden || code(t, result) != "forbidden" {
+				t.Fatalf("%s %s without an origin answered %d %s", operation.Method, operation.Path, result.status, result.body)
 			}
 		case api.AudienceUser, api.AudienceUnverifiedOK, api.AudienceTutor, api.AudienceTutorUnverifiedOK, api.AudienceStudent, api.AudienceStudentUnverifiedOK:
 			result := h.send(t, operation.Method, operation.Path, "", nil)

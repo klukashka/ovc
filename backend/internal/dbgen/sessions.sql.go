@@ -9,6 +9,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"ovc/backend/internal/domain"
 )
 
@@ -128,6 +129,49 @@ func (q *Queries) GetSessionPrincipal(ctx context.Context, id domain.SessionID) 
 		&i.State,
 	)
 	return i, err
+}
+
+const getSessionStandings = `-- name: GetSessionStandings :many
+SELECT sessions.id, sessions.user_id, sessions.revoked_at, sessions.expires_at, users.role, users.state
+FROM sessions
+JOIN users ON users.id = sessions.user_id
+WHERE sessions.id = ANY ($1::uuid[])
+`
+
+type GetSessionStandingsRow struct {
+	ID        domain.SessionID
+	UserID    domain.UserID
+	RevokedAt *time.Time
+	ExpiresAt time.Time
+	Role      domain.Role
+	State     domain.AccountState
+}
+
+func (q *Queries) GetSessionStandings(ctx context.Context, ids []pgtype.UUID) ([]GetSessionStandingsRow, error) {
+	rows, err := q.db.Query(ctx, getSessionStandings, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetSessionStandingsRow
+	for rows.Next() {
+		var i GetSessionStandingsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.RevokedAt,
+			&i.ExpiresAt,
+			&i.Role,
+			&i.State,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const revokeOtherUserSessions = `-- name: RevokeOtherUserSessions :execrows
