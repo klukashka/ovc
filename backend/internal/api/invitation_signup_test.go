@@ -250,6 +250,7 @@ func signUpHeaders() map[string]string {
 }
 
 func TestInvitationSignUpAnswersIdenticallyForNewAndExistingEmail(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	h.seedUserAs(t, domain.RoleStudent, 2, "taken@example.org", "correct horse battery", currentHash)
@@ -295,6 +296,7 @@ func TestInvitationSignUpAnswersIdenticallyForNewAndExistingEmail(t *testing.T) 
 }
 
 func TestCopiedAndEmailedLinksBehaveIdentically(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	copiedCard := h.newCard(t, tutor, "Copied", "copied@example.org")
@@ -329,6 +331,7 @@ func TestCopiedAndEmailedLinksBehaveIdentically(t *testing.T) {
 }
 
 func TestEmailBoundCardRefusesAnotherEmail(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, tutor, cardName, cardEmail)
@@ -353,6 +356,7 @@ func TestEmailBoundCardRefusesAnotherEmail(t *testing.T) {
 }
 
 func TestFiveMismatchesRevokeTheLink(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, tutor, cardName, cardEmail)
@@ -386,6 +390,7 @@ func TestFiveMismatchesRevokeTheLink(t *testing.T) {
 }
 
 func TestMismatchIsCountedBeforeHashing(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	link := linkToken(t, h.newCard(t, tutor, cardName, cardEmail).Invitation)
@@ -402,6 +407,7 @@ func TestMismatchIsCountedBeforeHashing(t *testing.T) {
 }
 
 func TestForwardedLinkUsedOnceCannotBeUsedAgain(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, tutor, cardName, "")
@@ -427,6 +433,7 @@ func TestForwardedLinkUsedOnceCannotBeUsedAgain(t *testing.T) {
 }
 
 func TestConcurrentAcceptancesLinkOnce(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, tutor, cardName, "")
@@ -470,6 +477,7 @@ func TestConcurrentAcceptancesLinkOnce(t *testing.T) {
 }
 
 func TestBlockedTutorsLinkIsInvalid(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	link := linkToken(t, h.newCard(t, tutor, cardName, "").Invitation)
@@ -489,6 +497,7 @@ func TestBlockedTutorsLinkIsInvalid(t *testing.T) {
 }
 
 func TestConfirmationInTheOwnBrowserActivatesTheLink(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, _ := h.linkedStudent(t, tutor, newcomerEmail)
@@ -511,6 +520,7 @@ func TestConfirmationInTheOwnBrowserActivatesTheLink(t *testing.T) {
 }
 
 func TestAcceptWithBearerAndSignUpFieldsIsRefused(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, tutor, cardName, cardEmail)
@@ -536,8 +546,10 @@ func TestAcceptWithBearerAndSignUpFieldsIsRefused(t *testing.T) {
 }
 
 func TestRemovalRacingConfirmationHasOneOutcome(t *testing.T) {
+	t.Parallel()
 	for _, confirmationFirst := range []bool{true, false} {
 		t.Run(fmt.Sprintf("confirmation first %t", confirmationFirst), func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			card, student := h.linkedStudent(t, tutor, newcomerEmail)
@@ -590,6 +602,7 @@ func TestRemovalRacingConfirmationHasOneOutcome(t *testing.T) {
 }
 
 func TestRemovedProvisionalStudentLosesTheTutorAndTheTutorGetsANewCard(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	invited := h.newCard(t, tutor, "Still invited", "invited@example.org")
@@ -643,6 +656,7 @@ func TestRemovedProvisionalStudentLosesTheTutorAndTheTutorGetsANewCard(t *testin
 }
 
 func TestRemovingAnActiveCardIsRefused(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	first, second := h.seedStudent(t, 2), h.seedStudent(t, 3)
@@ -662,6 +676,7 @@ func TestRemovingAnActiveCardIsRefused(t *testing.T) {
 }
 
 func TestUnverifiedLinkedAccountCanStillBeDeletedAndCleanedUp(t *testing.T) {
+	t.Parallel()
 	removals := map[string]func(t *testing.T, h *authHarness){
 		"its own deletion": func(t *testing.T, h *authHarness) {
 			t.Helper()
@@ -678,6 +693,7 @@ func TestUnverifiedLinkedAccountCanStillBeDeletedAndCleanedUp(t *testing.T) {
 	}
 	for name, remove := range removals {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			card, student := h.linkedStudent(t, tutor, newcomerEmail)
@@ -707,6 +723,7 @@ func TestUnverifiedLinkedAccountCanStillBeDeletedAndCleanedUp(t *testing.T) {
 }
 
 func TestUnconfirmedLinkedStudentIsRemovedAfter7DaysSilently(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, student := h.linkedStudent(t, tutor, "")
@@ -738,6 +755,7 @@ func TestUnconfirmedLinkedStudentIsRemovedAfter7DaysSilently(t *testing.T) {
 }
 
 func TestSameBrowserConfirmationRechecksTheSessionUnderTheLock(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, student := h.linkedStudent(t, tutor, newcomerEmail)
@@ -770,6 +788,7 @@ func TestSameBrowserConfirmationRechecksTheSessionUnderTheLock(t *testing.T) {
 }
 
 func TestResetAnswersNullOutcomeForAnActiveAccount(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student := h.seedUserAs(t, domain.RoleStudent, 2, newcomerEmail, newcomerPassword, currentHash)
@@ -789,6 +808,7 @@ func TestResetAnswersNullOutcomeForAnActiveAccount(t *testing.T) {
 }
 
 func TestTutoringFlowsLogNoEmailsNamesNotesOrTokens(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, tutor, cardName, newcomerEmail)
@@ -821,6 +841,7 @@ func TestTutoringFlowsLogNoEmailsNamesNotesOrTokens(t *testing.T) {
 }
 
 func TestInvitationSignUpReportsMissingFieldsAsRequired(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, tutor, cardName, cardEmail)
@@ -858,6 +879,7 @@ func TestInvitationSignUpReportsMissingFieldsAsRequired(t *testing.T) {
 }
 
 func TestRemovalRacingThePurgeOfTheAccountAnswersNotFound(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, student := h.linkedStudent(t, tutor, newcomerEmail)

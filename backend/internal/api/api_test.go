@@ -121,6 +121,7 @@ func decodeError(t *testing.T, body string) errorBody {
 }
 
 func TestHealthRoutesAgainstTheDatabase(t *testing.T) {
+	t.Parallel()
 	database := testdb.New(t)
 	h := newHarness(t, func(ctx context.Context) error { return core.Ping(ctx, database.Pool) }, nil, false)
 
@@ -136,6 +137,7 @@ func TestHealthRoutesAgainstTheDatabase(t *testing.T) {
 }
 
 func TestReadyReportsUnavailableDatabaseWithoutDriverDetail(t *testing.T) {
+	t.Parallel()
 	settings := core.Settings{DatabaseURL: core.NewSecret("postgres://ovc:pw@127.0.0.1:1/ovc_dev?connect_timeout=1"), DBPoolSize: 1}
 	pool, err := core.OpenPool(context.Background(), settings, slog.New(slog.DiscardHandler), clock.System{}.Now)
 	if err != nil {
@@ -161,6 +163,7 @@ func TestReadyReportsUnavailableDatabaseWithoutDriverDetail(t *testing.T) {
 }
 
 func TestUnmatchedRoutesAndMethodsAreStructured(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil, nil, false)
 
 	missing, missingBody := get(t, h, http.MethodGet, "/nope?token=sentinel", nil)
@@ -186,6 +189,7 @@ func TestUnmatchedRoutesAndMethodsAreStructured(t *testing.T) {
 }
 
 func TestRequestIDIsKeptOnlyWhenValid(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil, nil, false)
 	cases := map[string]struct {
 		values []string
@@ -218,6 +222,7 @@ func TestRequestIDIsKeptOnlyWhenValid(t *testing.T) {
 }
 
 func TestSecurityHeadersOnEveryResponse(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil, nil, false)
 
 	ok, _ := get(t, h, http.MethodGet, "/api/v1/health/live", nil)
@@ -231,6 +236,7 @@ func TestSecurityHeadersOnEveryResponse(t *testing.T) {
 }
 
 func TestPanicsAreRecoveredWithoutTheirValue(t *testing.T) {
+	t.Parallel()
 	mount := func(mux *http.ServeMux) {
 		mux.HandleFunc("GET /boom", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("X-Handler-Header", "set-before-panic")
@@ -262,6 +268,7 @@ func TestPanicsAreRecoveredWithoutTheirValue(t *testing.T) {
 }
 
 func TestPanicAfterTheResponseStartedAbortsTheConnection(t *testing.T) {
+	t.Parallel()
 	mount := func(mux *http.ServeMux) {
 		mux.HandleFunc("GET /half", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -292,6 +299,7 @@ func TestPanicAfterTheResponseStartedAbortsTheConnection(t *testing.T) {
 }
 
 func TestAccessRecordsUseRouteTemplates(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil, nil, false)
 
 	get(t, h, http.MethodGet, "/api/v1/health/live", nil)
@@ -303,6 +311,7 @@ func TestAccessRecordsUseRouteTemplates(t *testing.T) {
 }
 
 func TestValidationErrorsNeverEchoSubmittedValues(t *testing.T) {
+	t.Parallel()
 	newHarness(t, nil, nil, false)
 
 	statusError := huma.NewError(http.StatusUnprocessableEntity, "sentinel-message",
@@ -324,6 +333,7 @@ func TestValidationErrorsNeverEchoSubmittedValues(t *testing.T) {
 }
 
 func TestOpenAPIDocumentAndDocsRoute(t *testing.T) {
+	t.Parallel()
 	document, err := api.OpenAPIDocument()
 	if err != nil {
 		t.Fatal(err)

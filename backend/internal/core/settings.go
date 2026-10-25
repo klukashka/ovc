@@ -154,6 +154,15 @@ func TestDatabaseAdminURLFromEnvironment() (Secret, error) {
 	return NewSecret(value), nil
 }
 
+func TestDatabaseTLSChosenInEnvironment() bool {
+	for _, name := range []string{"PGSSLMODE", "PGSERVICE"} {
+		if _, set := os.LookupEnv(name); set {
+			return true
+		}
+	}
+	return false
+}
+
 func TestStorageFromEnvironment(bucket string) (StorageSettings, error) {
 	return testStorageFrom(os.LookupEnv, bucket)
 }

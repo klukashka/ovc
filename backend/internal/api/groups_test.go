@@ -214,6 +214,7 @@ func fieldsOf(t *testing.T, result response) []string {
 }
 
 func TestTutorBuildsAGroupAndItShowsOnCardsListsAndTheStudentFilter(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	members := h.activeCards(t, tutor, 10, 7)
@@ -278,6 +279,7 @@ func TestTutorBuildsAGroupAndItShowsOnCardsListsAndTheStudentFilter(t *testing.T
 }
 
 func TestTutorCannotReachAnotherTutorsGroup(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	owner, ownerToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -313,6 +315,7 @@ func TestTutorCannotReachAnotherTutorsGroup(t *testing.T) {
 }
 
 func TestTutorCannotAddAnotherTutorsStudentToAGroup(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	owner, ownerToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	other, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -345,6 +348,7 @@ func TestTutorCannotAddAnotherTutorsStudentToAGroup(t *testing.T) {
 }
 
 func TestUnconfirmedStudentCannotJoinAGroup(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	active := h.activeCards(t, tutor, 10, 1)
@@ -382,6 +386,7 @@ func TestUnconfirmedStudentCannotJoinAGroup(t *testing.T) {
 }
 
 func TestGroupRefusesThe31stMember(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	cards := h.activeCards(t, tutor, 10, domain.GroupMemberLimit+1)
@@ -410,6 +415,7 @@ SELECT gen_random_uuid(), $1, 'A seeded group', 'teal', CASE WHEN position % 2 =
 FROM generate_series(1, $3::integer) AS position`
 
 func TestGroupCapCountsArchivedGroups(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	if _, err := h.database.Pool.Exec(context.Background(), seedGroups, tutor, authStart, domain.GroupLimitPerTutor-2); err != nil {
@@ -454,6 +460,7 @@ func TestGroupCapCountsArchivedGroups(t *testing.T) {
 }
 
 func TestArchivedGroupRefusesNewMembers(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	cards := h.activeCards(t, tutor, 10, 3)
@@ -488,6 +495,7 @@ func TestArchivedGroupRefusesNewMembers(t *testing.T) {
 }
 
 func TestArchiveAndUnarchiveAreIdempotent(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	group := h.newGroup(t, token, groupName, nil)
@@ -512,6 +520,7 @@ func TestArchiveAndUnarchiveAreIdempotent(t *testing.T) {
 }
 
 func TestRepeatedGroupIdempotencyKeyReturnsTheFirstGroup(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	cards := h.activeCards(t, tutor, 10, 2)
@@ -533,6 +542,7 @@ func TestRepeatedGroupIdempotencyKeyReturnsTheFirstGroup(t *testing.T) {
 }
 
 func TestGroupBodiesAreRefusedBeforeScope(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	cards := h.activeCards(t, tutor, 10, 1)
@@ -603,6 +613,7 @@ func (h *authHarness) holdGroup(t *testing.T, group string) func() {
 }
 
 func TestConcurrentAdditionsStopAtTheMemberLimit(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	cards := h.activeCards(t, tutor, 10, domain.GroupMemberLimit+1)

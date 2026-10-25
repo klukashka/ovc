@@ -215,8 +215,10 @@ var squatterWrites = map[string]squatterWrite{
 }
 
 func TestRequestAuthenticatedBeforeReclaimCannotActAfterIt(t *testing.T) {
+	t.Parallel()
 	for name, write := range squatterWrites {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			user, squatter := h.signedInAs(t, write.role, domain.AccountUnverified, 2, newcomerEmail)
 			h.resend(t, newcomerEmail)
@@ -246,6 +248,7 @@ func TestRequestAuthenticatedBeforeReclaimCannotActAfterIt(t *testing.T) {
 		})
 	}
 	t.Run("the reclaim choice", func(t *testing.T) {
+		t.Parallel()
 		h := newFlowHarness(t)
 		_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 		card, student := h.squat(t, tutor, newcomerEmail, newcomerEmail)

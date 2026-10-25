@@ -91,7 +91,30 @@ test('teaching settings › blocked students and unblock', async ({ page, deploy
   expect(await busyControls(page)).toEqual([[`Разблокировать: ${blocked.name}`]]);
 });
 
-test('teaching settings › each unblock of a student unblocked meanwhile is refused with an alert that takes focus', async ({
+test('teaching settings › an unblock of a student unblocked meanwhile is refused with an alert that takes focus', async ({
+  page,
+  deployment,
+  control,
+  diagnostics,
+}) => {
+  const maria = await seedVerifiedUser(deployment, 'Мария');
+  const first = await seedBlockedStudent(deployment, control, maria, 'Первый разблокированный ученик');
+  await seedBlockedStudent(deployment, control, maria, 'Второй разблокированный ученик');
+  await signInThroughTheApi(page, maria);
+  await page.goto('/settings/teaching');
+  const section = page.getByRole('region', { name: 'Заблокированные ученики' });
+  await expect(section.getByRole('button', { name: /^Разблокировать: / })).toHaveCount(2);
+  const firstId = await unblockThroughTheApi(deployment, maria, first.name);
+  diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/tutor/blocked-requesters/${firstId}`, status: 404 });
+
+  await section.getByRole('button', { name: `Разблокировать: ${first.name}` }).click();
+
+  await expect(section.getByRole('alert')).toHaveText('Этот ученик уже не заблокирован. Список обновлён.');
+  await expect(section.getByRole('alert')).toBeFocused();
+  await expect(section.getByRole('button', { name: /^Разблокировать: / })).toHaveCount(1);
+});
+
+test('teaching settings › a second refused unblock while the alert shows takes focus again', async ({
   page,
   deployment,
   control,
@@ -107,13 +130,11 @@ test('teaching settings › each unblock of a student unblocked meanwhile is ref
   await expect(section.getByRole('button', { name: /^Разблокировать: / })).toHaveCount(2);
   const firstId = await unblockThroughTheApi(deployment, maria, first.name);
   diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/tutor/blocked-requesters/${firstId}`, status: 404 });
-
   await section.getByRole('button', { name: `Разблокировать: ${first.name}` }).click();
-  await expect(alert).toHaveText('Этот ученик уже не заблокирован. Список обновлён.');
-  await expect(alert).toBeFocused();
   await expect(section.getByRole('button', { name: /^Разблокировать: / })).toHaveCount(1);
   const secondId = await unblockThroughTheApi(deployment, maria, second.name);
   diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/tutor/blocked-requesters/${secondId}`, status: 404 });
+
   await section.getByRole('button', { name: `Разблокировать: ${second.name}` }).click();
 
   await expect(alert).toHaveText('Этот ученик уже не заблокирован. Список обновлён.');

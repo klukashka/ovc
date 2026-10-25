@@ -206,6 +206,7 @@ func errorDetails(t *testing.T, result response) map[string]string {
 }
 
 func TestTutorCreatesReadsEditsAndRegeneratesACardWithoutLoggingPrivateText(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 
@@ -266,6 +267,7 @@ func TestTutorCreatesReadsEditsAndRegeneratesACardWithoutLoggingPrivateText(t *t
 }
 
 func TestTutorCannotReachAnotherTutorsStudentCard(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	owner, ownerToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "another-tutor@example.org")
@@ -333,6 +335,7 @@ func TestTutorCannotReachAnotherTutorsStudentCard(t *testing.T) {
 }
 
 func TestUnverifiedTutorCannotCreateACard(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountUnverified, 1, tutorEmail)
 
@@ -348,6 +351,7 @@ func TestUnverifiedTutorCannotCreateACard(t *testing.T) {
 }
 
 func TestDuplicateCardEmailNamesTheExistingCard(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, other := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "another-tutor@example.org")
@@ -370,6 +374,7 @@ func TestDuplicateCardEmailNamesTheExistingCard(t *testing.T) {
 }
 
 func TestCardLimitRefusesThe51stCardOfTheDay(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	for index := range 50 {
@@ -393,6 +398,7 @@ func TestCardLimitRefusesThe51stCardOfTheDay(t *testing.T) {
 }
 
 func TestCardEmailChangesAreLimitedPerDay(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, token, cardName, cardEmail)
@@ -415,6 +421,7 @@ func TestCardEmailChangesAreLimitedPerDay(t *testing.T) {
 }
 
 func TestRepeatedIdempotencyKeyReturnsTheFirstCard(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, other := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "another-tutor@example.org")
@@ -441,6 +448,7 @@ func TestRepeatedIdempotencyKeyReturnsTheFirstCard(t *testing.T) {
 }
 
 func TestRepeatedWithdrawAnswers204(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, token, cardName, cardEmail)
@@ -462,6 +470,7 @@ func TestRepeatedWithdrawAnswers204(t *testing.T) {
 }
 
 func TestWithdrawingALinkedCardIsRefused(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	students := []domain.UserID{h.seedStudent(t, 2), h.seedStudent(t, 3), h.seedStudent(t, 4), h.seedStudent(t, 5), h.seedStudent(t, 6)}
@@ -497,6 +506,7 @@ func TestWithdrawingALinkedCardIsRefused(t *testing.T) {
 }
 
 func TestLinkedCardsRefuseEmailChangesAndOnlyEndedCardsRegenerate(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	students := []domain.UserID{h.seedStudent(t, 2), h.seedStudent(t, 3), h.seedStudent(t, 4), h.seedStudent(t, 5)}
@@ -543,6 +553,7 @@ func TestLinkedCardsRefuseEmailChangesAndOnlyEndedCardsRegenerate(t *testing.T) 
 }
 
 func TestInvalidInvitationTokensAnswerIdentically(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	blockedTutor, blockedToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "blocked-tutor@example.org")
@@ -595,6 +606,7 @@ func TestInvalidInvitationTokensAnswerIdentically(t *testing.T) {
 }
 
 func TestCardEmailChangeIssuesAFreshLink(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, token, cardName, cardEmail)
@@ -629,6 +641,7 @@ func TestCardEmailChangeIssuesAFreshLink(t *testing.T) {
 }
 
 func TestResponsesCarryingALinkAreNotStored(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	created := h.createCard(t, token, cardBody(cardName, cardEmail), "key")
@@ -657,6 +670,7 @@ func TestResponsesCarryingALinkAreNotStored(t *testing.T) {
 }
 
 func TestExpiredInvitationsLoseTheirCiphertext(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	old := h.newCard(t, token, "Invited first", "")
@@ -680,6 +694,7 @@ func TestExpiredInvitationsLoseTheirCiphertext(t *testing.T) {
 }
 
 func TestInvitationTokensNeverReachAccessRecords(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	link := linkToken(t, h.newCard(t, token, cardName, "").Invitation)
@@ -701,6 +716,7 @@ func TestInvitationTokensNeverReachAccessRecords(t *testing.T) {
 }
 
 func TestStudentListFiltersSearchesAndPages(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	students := []domain.UserID{h.seedStudent(t, 2), h.seedStudent(t, 3), h.seedStudent(t, 4)}
@@ -764,6 +780,7 @@ func TestStudentListFiltersSearchesAndPages(t *testing.T) {
 }
 
 func TestInvitationRegenerationLimit(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, token, cardName, cardEmail)
@@ -795,6 +812,7 @@ func TestInvitationRegenerationLimit(t *testing.T) {
 }
 
 func TestCreatedCardReadsBackUnchanged(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	h.at(t, authStart.Add(1234567*time.Nanosecond))
@@ -852,6 +870,7 @@ func (h *authHarness) createConcurrently(t *testing.T, token string, attempts in
 }
 
 func TestConcurrentCardCreationsStopAtTheLimit(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, other := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "another-tutor@example.org")

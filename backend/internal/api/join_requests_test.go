@@ -201,6 +201,7 @@ func (h *authHarness) suppressedForLimit(t *testing.T, tutor domain.UserID, id b
 }
 
 func TestRegeneratedCodeStopsWorkingAtOnce(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, unconfirmed := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 2, newcomerEmail)
@@ -225,6 +226,7 @@ func TestRegeneratedCodeStopsWorkingAtOnce(t *testing.T) {
 }
 
 func TestBlockedTutorsCodeIsInvalid(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -257,6 +259,7 @@ func TestBlockedTutorsCodeIsInvalid(t *testing.T) {
 }
 
 func TestTutorEnteringACodeGetsRoleMismatch(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, other := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -276,6 +279,7 @@ func TestTutorEnteringACodeGetsRoleMismatch(t *testing.T) {
 }
 
 func TestCodeEntryBodyIsRefusedBeforeAnyRequestIsCreated(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -295,6 +299,7 @@ func TestCodeEntryBodyIsRefusedBeforeAnyRequestIsCreated(t *testing.T) {
 }
 
 func TestHeldRequestIsInvisibleUntilConfirmation(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	tutorCode := h.storedCode(t, tutor)
@@ -334,6 +339,7 @@ func TestHeldRequestIsInvisibleUntilConfirmation(t *testing.T) {
 }
 
 func TestHeldRequestReleasedAtConfirmationRespectsBlockAndLimit(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	visibleTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	blockingTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -374,6 +380,7 @@ func TestHeldRequestReleasedAtConfirmationRespectsBlockAndLimit(t *testing.T) {
 }
 
 func TestSuppressedRequestBecomesVisibleWhenASlotFrees(t *testing.T) {
+	t.Parallel()
 	frees := map[string]func(t *testing.T, h *authHarness, tutor domain.UserID){
 		"a decline": func(t *testing.T, h *authHarness, tutor domain.UserID) {
 			t.Helper()
@@ -397,6 +404,7 @@ func TestSuppressedRequestBecomesVisibleWhenASlotFrees(t *testing.T) {
 	}
 	for name, free := range frees {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			h.fillPendingRequests(t, tutor)
@@ -437,6 +445,7 @@ func sameLifecycle(first sentRequest, second sentRequest) bool {
 }
 
 func TestUnblockLeavesBlockedRequestsToExpireLikeAnyOther(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	otherTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -498,6 +507,7 @@ func TestUnblockLeavesBlockedRequestsToExpireLikeAnyOther(t *testing.T) {
 }
 
 func TestReentryAfterUnblockReopensTheClosedRequest(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	otherTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -538,6 +548,7 @@ func TestReentryAfterUnblockReopensTheClosedRequest(t *testing.T) {
 }
 
 func TestReentryAfterUnblockIntoAFullTutorIsSuppressedNotRefused(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 3, studentEmail)
@@ -558,6 +569,7 @@ func TestReentryAfterUnblockIntoAFullTutorIsSuppressedNotRefused(t *testing.T) {
 }
 
 func TestCodeEntryAfterTheRequestIsOverdueStartsANewOne(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -614,8 +626,10 @@ var hiddenRequests = map[string]hiddenRequest{
 }
 
 func TestOwningTutorCannotDecideHiddenRequests(t *testing.T) {
+	t.Parallel()
 	for name, hide := range hiddenRequests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			request := hide(t, h, tutor, tutorToken)
@@ -650,6 +664,7 @@ func TestOwningTutorCannotDecideHiddenRequests(t *testing.T) {
 }
 
 func TestRequestsOfAnOperatorBlockedStudentReturnAfterTheUnblock(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -674,8 +689,10 @@ func TestRequestsOfAnOperatorBlockedStudentReturnAfterTheUnblock(t *testing.T) {
 }
 
 func TestUnblockRacingACodeEntryHasOneOutcome(t *testing.T) {
+	t.Parallel()
 	for _, unblockFirst := range []bool{true, false} {
 		t.Run(fmt.Sprintf("unblock first %t", unblockFirst), func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -724,6 +741,7 @@ func TestUnblockRacingACodeEntryHasOneOutcome(t *testing.T) {
 }
 
 func TestStudentCodeSignUpAnswersIdenticallyForNewAndExistingEmail(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	h.seedUserAs(t, domain.RoleStudent, 2, studentEmail, "correct horse battery", currentHash)
@@ -755,6 +773,7 @@ func TestStudentCodeSignUpAnswersIdenticallyForNewAndExistingEmail(t *testing.T)
 }
 
 func TestStudentSignUpWithAnInvalidCodeCreatesNothing(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	regenerated := h.storedCode(t, tutor).Display()
@@ -787,6 +806,7 @@ func TestStudentSignUpWithAnInvalidCodeCreatesNothing(t *testing.T) {
 }
 
 func TestCodeSignUpReservesThePerAddressSlotFirst(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	for attempt := range 10 {
@@ -810,6 +830,7 @@ func TestCodeSignUpReservesThePerAddressSlotFirst(t *testing.T) {
 }
 
 func TestJoinRequestThrottleRefusesTheEleventhCodeInAnHour(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 2, newcomerEmail)
@@ -837,6 +858,7 @@ func TestJoinRequestThrottleRefusesTheEleventhCodeInAnHour(t *testing.T) {
 }
 
 func TestTutorPendingRequestLimitAnswersTutorUnavailable(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	h.fillPendingRequestsWith(t, tutor, "filler-", domain.VisiblePendingRequestCap-5)
@@ -870,6 +892,7 @@ func TestTutorPendingRequestLimitAnswersTutorUnavailable(t *testing.T) {
 }
 
 func TestUnconfirmedCodeEntryNeverAnswersTutorUnavailable(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	h.fillPendingRequests(t, tutor)
@@ -884,6 +907,7 @@ func TestUnconfirmedCodeEntryNeverAnswersTutorUnavailable(t *testing.T) {
 }
 
 func TestDeclineAndBlockKeepsLaterRequestsPendingForTheStudent(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -921,6 +945,7 @@ func TestDeclineAndBlockKeepsLaterRequestsPendingForTheStudent(t *testing.T) {
 }
 
 func TestAcceptLinksTheInvitedCardWithTheConfirmedEmail(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -949,6 +974,7 @@ func TestAcceptLinksTheInvitedCardWithTheConfirmedEmail(t *testing.T) {
 }
 
 func TestReactivationByJoinRequest(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -971,6 +997,7 @@ func TestReactivationByJoinRequest(t *testing.T) {
 }
 
 func TestAcceptedRequestRevokesTheCardsOpenLink(t *testing.T) {
+	t.Parallel()
 	cards := map[string]func(t *testing.T, h *authHarness, tutor domain.UserID, tutorToken string, student domain.UserID) (string, string){
 		"an invited card": func(t *testing.T, h *authHarness, _ domain.UserID, tutorToken string, _ domain.UserID) (string, string) {
 			t.Helper()
@@ -992,6 +1019,7 @@ func TestAcceptedRequestRevokesTheCardsOpenLink(t *testing.T) {
 	}
 	for name, prepare := range cards {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -1027,6 +1055,7 @@ func TestAcceptedRequestRevokesTheCardsOpenLink(t *testing.T) {
 }
 
 func TestAcceptedRequestWithoutACardCopiesTheAccountName(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -1057,6 +1086,7 @@ func TestAcceptedRequestWithoutACardCopiesTheAccountName(t *testing.T) {
 }
 
 func TestJoinRequestsExpireAfter14Days(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -1117,6 +1147,7 @@ func anotherTutorsBlockedStudent(t *testing.T, h *authHarness) (response, respon
 }
 
 func TestTutorCannotDecideAnotherTutorsJoinRequest(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	owner, ownerToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	intruder, intruderToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -1146,6 +1177,7 @@ func TestTutorCannotDecideAnotherTutorsJoinRequest(t *testing.T) {
 }
 
 func TestStudentSeesOnlyTheirOwnRequests(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, first := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -1173,6 +1205,7 @@ func TestStudentSeesOnlyTheirOwnRequests(t *testing.T) {
 }
 
 func TestCodeEntryDuringAPendingChoiceKeepsTheRequest(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, squatter := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 2, newcomerEmail)
@@ -1203,6 +1236,7 @@ func TestCodeEntryDuringAPendingChoiceKeepsTheRequest(t *testing.T) {
 }
 
 func TestCodeEntryWithAReclaimPendingLinkAnswersAlreadyLinked(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, student := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
@@ -1393,8 +1427,10 @@ func lockOrderRaces() map[string]lockOrderRace {
 }
 
 func TestSlotFreeingPathsFollowTheLockOrder(t *testing.T) {
+	t.Parallel()
 	for name, race := range lockOrderRaces() {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			contested := race.contested(t, h)
 			entrant := h.racingEntrant(t)
@@ -1425,6 +1461,7 @@ func TestSlotFreeingPathsFollowTheLockOrder(t *testing.T) {
 }
 
 func TestJoinRequestListsPageWithoutGapsOrRepeats(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	h.fillPendingRequestsWith(t, tutor, "filler-", 5)
@@ -1466,6 +1503,7 @@ func TestJoinRequestListsPageWithoutGapsOrRepeats(t *testing.T) {
 }
 
 func TestOverdueRequestLeavesTheTutorsViewBeforeTheJob(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -1491,6 +1529,7 @@ func TestOverdueRequestLeavesTheTutorsViewBeforeTheJob(t *testing.T) {
 }
 
 func TestOperatorBlockedStudentsHiddenRequestStillCountsTowardTheLimit(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	blocked, blockedToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -1514,6 +1553,7 @@ func TestOperatorBlockedStudentsHiddenRequestStillCountsTowardTheLimit(t *testin
 }
 
 func TestBlockedStudentsListPagesThroughTiesWithoutGapsOrRepeats(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	for index := range 5 {
@@ -1603,6 +1643,7 @@ WHERE join_requests.state IN ('held', 'pending') AND users.email::text LIKE $1`,
 }
 
 func TestJoinRequestExpirySkipsFailingRequestsAcrossTheBatchBoundary(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	due := authStart.Add(-time.Hour)
@@ -1622,6 +1663,7 @@ func TestJoinRequestExpirySkipsFailingRequestsAcrossTheBatchBoundary(t *testing.
 }
 
 func TestJoinRequestExpiryResumesPastPersistentFailures(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	h.seedDueRequests(t, tutor, "failing-", 1000, authStart.Add(-2*time.Hour))
@@ -1665,6 +1707,7 @@ func (h *authHarness) endRelationship(t *testing.T, id string) {
 }
 
 func TestSignedInAcceptanceAfterAnUnblockAcceptsTheClosedRequest(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	otherTutor, otherToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -1692,6 +1735,7 @@ func TestSignedInAcceptanceAfterAnUnblockAcceptsTheClosedRequest(t *testing.T) {
 }
 
 func TestSignedInAcceptanceAfterTheExpiryLeavesTheRequestExpired(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -1716,6 +1760,7 @@ func TestSignedInAcceptanceAfterTheExpiryLeavesTheRequestExpired(t *testing.T) {
 }
 
 func TestStudentDeletionClosesTheRequestsAnUnblockClosed(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -1734,6 +1779,7 @@ func TestStudentDeletionClosesTheRequestsAnUnblockClosed(t *testing.T) {
 }
 
 func TestStudentDeletionClosingAnUnblockClosedRowLeavesThatTutorAlone(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -1763,6 +1809,7 @@ func TestStudentDeletionClosingAnUnblockClosedRowLeavesThatTutorAlone(t *testing
 }
 
 func TestConcurrentStudentDeletionsSharingTutorsFinishWithoutADeadlock(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	first, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	second, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -1872,8 +1919,10 @@ func racingCodeUses() map[string]racingCodeUse {
 }
 
 func TestRegenerationCommittedWhileACodeWaitsMakesTheOldCodeInvalid(t *testing.T) {
+	t.Parallel()
 	for name, use := range racingCodeUses() {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			oldCode := h.storedCode(t, tutor).Display()
@@ -1899,6 +1948,7 @@ func TestRegenerationCommittedWhileACodeWaitsMakesTheOldCodeInvalid(t *testing.T
 }
 
 func TestBlockedStudentGetsTutorUnavailableLikeAnyOtherWhileTheLimitIsFull(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	blocked, blockedToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -1922,6 +1972,7 @@ func TestBlockedStudentGetsTutorUnavailableLikeAnyOtherWhileTheLimitIsFull(t *te
 }
 
 func TestOverdueHeldRequestsExpireAtTheirOwnExpiry(t *testing.T) {
+	t.Parallel()
 	paths := map[string]func(t *testing.T, h *authHarness, owner string, request domain.JoinRequestID) response{
 		"kept at the owner's choice": func(t *testing.T, h *authHarness, owner string, request domain.JoinRequestID) response {
 			t.Helper()
@@ -1938,6 +1989,7 @@ func TestOverdueHeldRequestsExpireAtTheirOwnExpiry(t *testing.T) {
 	}
 	for name, path := range paths {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			student, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 2, newcomerEmail)

@@ -393,7 +393,30 @@ test.describe('in English', () => {
     await expect(page).toHaveURL(`/students/${card.id}`);
   });
 
-  test('students › two stale refusals in a row each move focus to the changed-card notice', async ({
+  test('students › withdrawing an invitation accepted meanwhile moves focus to the changed-card notice', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const boris = newTestAccount('Boris Account', 'student');
+    const card = await createCard(deployment, pavel, 'Boris', boris.email);
+    diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/students/${card.id}`, status: 409 });
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${card.id}`);
+    await page.getByRole('button', { name: 'Withdraw invitation' }).click();
+    await signUpOnInvitation(deployment, card.link, boris, 'en');
+
+    await page
+      .getByRole('dialog', { name: 'Withdraw the invitation?' })
+      .getByRole('button', { name: 'Withdraw' })
+      .click();
+
+    await expect(page.getByRole('status').filter({ hasText: 'This card changed in the meantime.' })).toBeFocused();
+    await expect(page.getByRole('main').getByText('Email not confirmed')).toBeVisible();
+  });
+
+  test('students › a second stale refusal while the changed-card notice shows moves focus to it again', async ({
     page,
     deployment,
     control,
@@ -413,8 +436,7 @@ test.describe('in English', () => {
       .getByRole('dialog', { name: 'Withdraw the invitation?' })
       .getByRole('button', { name: 'Withdraw' })
       .click();
-    await expect(notice).toBeFocused();
-    await expect(page.getByRole('main').getByText('Email not confirmed')).toBeVisible();
+    await notice.waitFor();
     await page.getByRole('button', { name: 'End working together' }).click();
     await expect(
       page.getByRole('dialog', { name: 'End working together?' }).getByRole('button', { name: 'Cancel' }),

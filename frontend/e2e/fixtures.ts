@@ -49,7 +49,7 @@ function isSentMail(value: unknown): value is SentMail {
   );
 }
 
-function testControl(deployment: Deployment): TestControl {
+export function testControl(deployment: Deployment): TestControl {
   return {
     mail: async (to: string): Promise<SentMail[]> => {
       const messages = await post(deployment.apiUrl, '/__test__/mail', { to });

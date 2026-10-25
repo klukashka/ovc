@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"net/url"
+	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -41,22 +42,18 @@ func NewMigratedTo(tb testing.TB, version int64) *Database {
 
 func NewNamed(tb testing.TB, name string, migrate bool) *Database {
 	tb.Helper()
-	admin, err := core.TestDatabaseAdminURLFromEnvironment()
-	if err != nil {
-		tb.Fatalf("test database: %v", err)
-	}
+	admin := adminURL(tb)
 	ctx := context.Background()
 	verifyLocal(tb, ctx, admin)
-	adminConnection, err := pgx.Connect(ctx, admin.Reveal())
+	server, err := adminPool(admin)
 	if err != nil {
-		tb.Fatalf("connect to the test database server: %s", core.ErrorKind(err))
+		tb.Fatalf("open the pool for the test database server: %s", core.ErrorKind(err))
 	}
-	defer closeConnection(tb, adminConnection)
 	identifier := pgx.Identifier{name}.Sanitize()
-	if _, err := adminConnection.Exec(ctx, "CREATE DATABASE "+identifier); err != nil {
+	if _, err := server.Exec(ctx, "CREATE DATABASE "+identifier); err != nil {
 		tb.Fatalf("create test database %s: %s", name, core.ErrorKind(err))
 	}
-	tb.Cleanup(func() { drop(tb, admin, name, identifier) })
+	tb.Cleanup(func() { drop(tb, server, name, identifier) })
 
 	databaseURL, err := withDatabaseName(admin, name)
 	if err != nil {
@@ -72,6 +69,43 @@ func NewNamed(tb testing.TB, name string, migrate bool) *Database {
 		applyMigrations(tb, pool)
 	}
 	return &Database{Name: name, URL: databaseURL, Pool: pool}
+}
+
+func adminURL(tb testing.TB) core.Secret {
+	tb.Helper()
+	admin, err := core.TestDatabaseAdminURLFromEnvironment()
+	if err != nil {
+		tb.Fatalf("test database: %v", err)
+	}
+	parsed, err := url.Parse(admin.Reveal())
+	if err != nil || parsed.Scheme == "" {
+		tb.Fatalf("test database: %v", errAdminURLForm)
+	}
+	query := parsed.Query()
+	if query.Has(sslModeParameter) || query.Has(serviceParameter) || core.TestDatabaseTLSChosenInEnvironment() {
+		return admin
+	}
+	query.Set(sslModeParameter, "disable")
+	parsed.RawQuery = query.Encode()
+	return core.NewSecret(parsed.String())
+}
+
+const (
+	sslModeParameter = "sslmode"
+	serviceParameter = "service"
+)
+
+var sharedAdmin struct {
+	once sync.Once
+	pool *pgxpool.Pool
+	err  error
+}
+
+func adminPool(admin core.Secret) (*pgxpool.Pool, error) {
+	sharedAdmin.once.Do(func() {
+		sharedAdmin.pool, sharedAdmin.err = pgxpool.New(context.Background(), admin.Reveal())
+	})
+	return sharedAdmin.pool, sharedAdmin.err
 }
 
 func verifyReachedDatabase(tb testing.TB, ctx context.Context, pool *pgxpool.Pool, name string) {
@@ -135,15 +169,8 @@ func runMigrations(tb testing.TB, pool *pgxpool.Pool, apply func(context.Context
 	}
 }
 
-func drop(tb testing.TB, admin core.Secret, name string, identifier string) {
-	ctx := context.Background()
-	connection, err := pgx.Connect(ctx, admin.Reveal())
-	if err != nil {
-		tb.Errorf("connect to drop test database %s: %s", name, core.ErrorKind(err))
-		return
-	}
-	defer closeConnection(tb, connection)
-	if _, err := connection.Exec(ctx, "DROP DATABASE IF EXISTS "+identifier+" WITH (FORCE)"); err != nil {
+func drop(tb testing.TB, server *pgxpool.Pool, name string, identifier string) {
+	if _, err := server.Exec(context.Background(), "DROP DATABASE IF EXISTS "+identifier+" WITH (FORCE)"); err != nil {
 		tb.Errorf("drop test database %s: %s", name, core.ErrorKind(err))
 	}
 }
@@ -158,11 +185,5 @@ func verifyLocal(tb testing.TB, ctx context.Context, admin core.Secret) {
 		tb.Fatalf("test database: %v", err)
 	default:
 		tb.Fatalf("check the test database host: %s", core.ErrorKind(err))
-	}
-}
-
-func closeConnection(tb testing.TB, connection *pgx.Conn) {
-	if err := connection.Close(context.Background()); err != nil {
-		tb.Errorf("close admin connection: %s", core.ErrorKind(err))
 	}
 }

@@ -63,17 +63,6 @@ test('pages and proxied API responses carry the security headers', async ({ page
   expect(apiResponse.headers()['x-content-type-options']).toBe('nosniff');
 });
 
-test('the preview server answers no cross-origin requests', async ({ request }) => {
-  const preflight = await request.fetch('/api/v1/health/live', {
-    method: 'OPTIONS',
-    headers: { Origin: 'http://localhost:9', 'Access-Control-Request-Method': 'GET' },
-  });
-  const simple = await request.get('/api/v1/health/live', { headers: { Origin: 'http://localhost:9' } });
-
-  expect(preflight.headers()['access-control-allow-origin']).toBeUndefined();
-  expect(simple.headers()['access-control-allow-origin']).toBeUndefined();
-});
-
 test('the tutor frame shows the tutor sections and server readiness', async ({ signedInPage: page }) => {
   await page.goto('/today');
 

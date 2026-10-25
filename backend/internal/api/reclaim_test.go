@@ -192,6 +192,7 @@ func sameInstant(got *time.Time, want time.Time) bool {
 }
 
 func TestReclaimDoesNotActivateALinkWithoutAcceptance(t *testing.T) {
+	t.Parallel()
 	reclaims := map[string]func(t *testing.T, h *authHarness) response{
 		"confirmation from another browser": func(t *testing.T, h *authHarness) response {
 			t.Helper()
@@ -204,6 +205,7 @@ func TestReclaimDoesNotActivateALinkWithoutAcceptance(t *testing.T) {
 	}
 	for name, reclaim := range reclaims {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			card, student := h.squat(t, tutor, newcomerEmail, newcomerEmail)
@@ -239,7 +241,9 @@ func TestReclaimDoesNotActivateALinkWithoutAcceptance(t *testing.T) {
 }
 
 func TestReclaimKeepActivatesAndDropRemoves(t *testing.T) {
+	t.Parallel()
 	t.Run("keep", func(t *testing.T) {
+		t.Parallel()
 		h := newFlowHarness(t)
 		_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 		card, student := h.squat(t, tutor, newcomerEmail, newcomerEmail)
@@ -267,6 +271,7 @@ func TestReclaimKeepActivatesAndDropRemoves(t *testing.T) {
 		}
 	})
 	t.Run("drop an email-less link", func(t *testing.T) {
+		t.Parallel()
 		h := newFlowHarness(t)
 		tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 		card, student := h.squat(t, tutor, "", newcomerEmail)
@@ -304,6 +309,7 @@ func TestReclaimKeepActivatesAndDropRemoves(t *testing.T) {
 }
 
 func TestReclaimChoiceMustNameEveryPendingItem(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	otherTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -337,6 +343,7 @@ func TestReclaimChoiceMustNameEveryPendingItem(t *testing.T) {
 }
 
 func TestRepeatedReclaimChoiceAnswersTheCurrentState(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, _ := h.squat(t, tutor, newcomerEmail, newcomerEmail)
@@ -366,6 +373,7 @@ func TestRepeatedReclaimChoiceAnswersTheCurrentState(t *testing.T) {
 }
 
 func TestReclaimChoiceRefusesItemsOfAnotherAccount(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	otherTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -399,6 +407,7 @@ func TestReclaimChoiceRefusesItemsOfAnotherAccount(t *testing.T) {
 }
 
 func TestKeepingALinkOfAnInactiveTutorDropsIt(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, student := h.squat(t, tutor, newcomerEmail, newcomerEmail)
@@ -425,6 +434,7 @@ func TestKeepingALinkOfAnInactiveTutorDropsIt(t *testing.T) {
 }
 
 func TestSignedInAcceptanceOfTheSameTutorCountsAsAKeep(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	first, student := h.linkedStudent(t, tutor, newcomerEmail)
@@ -456,6 +466,7 @@ func TestSignedInAcceptanceOfTheSameTutorCountsAsAKeep(t *testing.T) {
 }
 
 func TestTutorCanRemoveAReclaimPendingLink(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, student := h.squat(t, tutor, newcomerEmail, newcomerEmail)
@@ -485,6 +496,7 @@ func TestTutorCanRemoveAReclaimPendingLink(t *testing.T) {
 }
 
 func TestReclaimPendingCardShowsNoAccount(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, _ := h.squat(t, tutor, "", newcomerEmail)
@@ -510,6 +522,7 @@ func TestReclaimPendingCardShowsNoAccount(t *testing.T) {
 }
 
 func TestReclaimPendingLinkIsHiddenFromMyTutorsAndCannotBeEnded(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, _ := h.squat(t, tutor, "", newcomerEmail)
@@ -533,6 +546,7 @@ func TestReclaimPendingLinkIsHiddenFromMyTutorsAndCannotBeEnded(t *testing.T) {
 }
 
 func TestTutorDeletionDiscardsReclaimPendingLinksWithoutANewCard(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, student := h.squat(t, tutor, newcomerEmail, newcomerEmail)
@@ -564,6 +578,7 @@ func TestTutorDeletionDiscardsReclaimPendingLinksWithoutANewCard(t *testing.T) {
 }
 
 func TestStudentDeletionDropsReclaimPendingLinks(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	otherTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -593,6 +608,7 @@ func TestStudentDeletionDropsReclaimPendingLinks(t *testing.T) {
 }
 
 func TestReclaimItemsAreDroppedWhenTheDeadlinePasses(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	otherTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -647,8 +663,10 @@ func awaitTick(t *testing.T, done <-chan error) {
 }
 
 func TestReclaimExpiryRacingTheOwnersChoiceHasOneOutcome(t *testing.T) {
+	t.Parallel()
 	for _, choiceFirst := range []bool{true, false} {
 		t.Run(fmt.Sprintf("choice first %t", choiceFirst), func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			card, student := h.squat(t, tutor, newcomerEmail, newcomerEmail)
@@ -692,6 +710,7 @@ func TestReclaimExpiryRacingTheOwnersChoiceHasOneOutcome(t *testing.T) {
 }
 
 func TestReclaimByResetListsItemsAfterSignIn(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	otherTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -732,6 +751,7 @@ func TestReclaimByResetListsItemsAfterSignIn(t *testing.T) {
 }
 
 func TestResetAnswersChoiceRequiredForAnUnverifiedAccountWithLinks(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	h.squat(t, tutor, "", newcomerEmail)
@@ -749,6 +769,7 @@ func TestResetAnswersChoiceRequiredForAnUnverifiedAccountWithLinks(t *testing.T)
 }
 
 func TestVerifyEmailFromAnotherBrowserAnswersChoiceRequired(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(t *testing.T, h *authHarness) string{
 		"a browser signed out": func(*testing.T, *authHarness) string { return "" },
 		"a browser signed in to another account": func(t *testing.T, h *authHarness) string {
@@ -759,6 +780,7 @@ func TestVerifyEmailFromAnotherBrowserAnswersChoiceRequired(t *testing.T) {
 	}
 	for name, bearer := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			card, _ := h.squat(t, tutor, newcomerEmail, newcomerEmail)
@@ -776,6 +798,7 @@ func TestVerifyEmailFromAnotherBrowserAnswersChoiceRequired(t *testing.T) {
 }
 
 func TestMeReportsAPendingReclaim(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	otherTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -801,6 +824,7 @@ func TestMeReportsAPendingReclaim(t *testing.T) {
 }
 
 func TestReclaimPageDataShowsTheCurrentNameAndAvatar(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	h.squat(t, tutor, newcomerEmail, newcomerEmail)
@@ -849,7 +873,9 @@ func (h *authHarness) rowVersion(t *testing.T, user domain.UserID) string {
 }
 
 func TestTutorRemovalAndDeletionNeverWriteTheStudentsUserRow(t *testing.T) {
+	t.Parallel()
 	t.Run("removal", func(t *testing.T) {
+		t.Parallel()
 		h := newFlowHarness(t)
 		_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 		card, student := h.squat(t, tutor, newcomerEmail, newcomerEmail)
@@ -863,6 +889,7 @@ func TestTutorRemovalAndDeletionNeverWriteTheStudentsUserRow(t *testing.T) {
 		}
 	})
 	t.Run("deletion", func(t *testing.T) {
+		t.Parallel()
 		h := newFlowHarness(t)
 		_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 		card, student := h.squat(t, tutor, newcomerEmail, newcomerEmail)
@@ -884,6 +911,7 @@ func TestTutorRemovalAndDeletionNeverWriteTheStudentsUserRow(t *testing.T) {
 }
 
 func TestReclaimExpiresHeldRequestsUnlessKept(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	visibleTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	blockingTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -963,6 +991,7 @@ SELECT gen_random_uuid(), $1, users.id, 'pending', 'none', false, $2, $3 FROM us
 }
 
 func TestReclaimChoiceBodyIsRefusedBeforeAnyItemIsDecided(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, _ := h.squat(t, tutor, newcomerEmail, newcomerEmail)
@@ -984,6 +1013,7 @@ func TestReclaimChoiceBodyIsRefusedBeforeAnyItemIsDecided(t *testing.T) {
 }
 
 func TestKeepingALinkHonoursTheChoiceForARequestToTheSameTutor(t *testing.T) {
+	t.Parallel()
 	decisions := map[string]struct {
 		choice func(link string, request string) reclaimChoice
 		want   string
@@ -997,6 +1027,7 @@ func TestKeepingALinkHonoursTheChoiceForARequestToTheSameTutor(t *testing.T) {
 	}
 	for name, decision := range decisions {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			card, student := h.squat(t, tutor, newcomerEmail, newcomerEmail)
@@ -1019,6 +1050,7 @@ func TestKeepingALinkHonoursTheChoiceForARequestToTheSameTutor(t *testing.T) {
 }
 
 func TestKeepingAnExpiredHeldRequestAnswersCodeInvalid(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	otherTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 2, newcomerEmail)
@@ -1077,6 +1109,7 @@ func (h *authHarness) deadlinesLeft(t *testing.T, pattern string) int64 {
 }
 
 func TestReclaimExpirySkipsAFailingAccountAndRunsTheRest(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.seedDueReclaims(t, "before-", 1, authStart.Add(-3*time.Hour))
 	h.seedDueReclaims(t, "failing-", 1, authStart.Add(-2*time.Hour))
@@ -1095,6 +1128,7 @@ func TestReclaimExpirySkipsAFailingAccountAndRunsTheRest(t *testing.T) {
 }
 
 func TestReclaimExpiryPagesPastFailuresUpToItsBound(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.seedDueReclaims(t, "failing-", 100, authStart.Add(-3*time.Hour))
 	h.seedDueReclaims(t, "due-", 901, authStart.Add(-2*time.Hour))

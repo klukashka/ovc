@@ -570,3 +570,13 @@ export async function archiveGroup(deployment: Deployment, tutor: TestAccount, g
   );
   expectStatus(archived, 200, 'archiving the group');
 }
+
+export async function unarchiveGroup(deployment: Deployment, tutor: TestAccount, groupId: string): Promise<void> {
+  const unarchived = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'POST',
+    `/groups/${encodeURIComponent(groupId)}/unarchive`,
+  );
+  expectStatus(unarchived, 200, 'unarchiving the group');
+}

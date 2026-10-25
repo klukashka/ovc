@@ -24,6 +24,7 @@ func sameAvatar(got *string, want string) bool {
 }
 
 func TestEndedCardHidesADeletedStudentsAccountAndKeepsTheCardUntilThePurge(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.withNotes(t, parties.tutorToken, parties.card.ID, cardNotes)
@@ -66,6 +67,7 @@ func TestEndedCardHidesADeletedStudentsAccountAndKeepsTheCardUntilThePurge(t *te
 }
 
 func TestBlockedListHidesADeletedStudentsAccount(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)

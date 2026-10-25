@@ -163,21 +163,28 @@ test('the deletion dialog opens on its password field', async ({ page, deploymen
   await expect(dialog.getByLabel('Текущий пароль')).toBeFocused();
 });
 
-test('a busy save keeps focus on its button', async ({ page, deployment }) => {
+test('a busy preferences save keeps focus on its button', async ({ page, deployment }) => {
   const account = await seedVerifiedUser(deployment, 'Фокус на кнопке сохранения');
   await signedInAt(page, account, '/settings/account');
   const preferences = page.getByRole('form', { name: 'Язык, часовой пояс и тема' });
   const save = preferences.getByRole('button', { name: 'Сохранить' });
-  const password = page.getByRole('form', { name: 'Сменить пароль' });
-  const change = password.getByRole('button', { name: 'Сменить пароль' });
-
   await save.focus();
+
   await page.keyboard.press('Enter');
+
   await expect(preferences.getByRole('status')).toHaveText('Сохранено.');
   await expect(save).toBeFocused();
+});
+
+test('a busy password change keeps focus on its button', async ({ page, deployment }) => {
+  const account = await seedVerifiedUser(deployment, 'Фокус на кнопке смены пароля');
+  await signedInAt(page, account, '/settings/account');
+  const password = page.getByRole('form', { name: 'Сменить пароль' });
+  const change = password.getByRole('button', { name: 'Сменить пароль' });
   await password.getByLabel('Текущий пароль').fill(account.password);
   await password.getByLabel('Новый пароль').fill(`${account.password} changed`);
   await change.focus();
+
   await page.keyboard.press('Enter');
 
   await expect(password.getByRole('status')).toHaveText('Пароль изменён.');

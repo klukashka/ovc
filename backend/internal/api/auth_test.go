@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
@@ -60,6 +61,22 @@ func (r *countingRandom) Read(buffer []byte) (int, error) {
 	return len(buffer), nil
 }
 
+var processSeed = sync.OnceValues(func() ([]byte, error) {
+	seed := make([]byte, 16)
+	_, err := rand.Read(seed)
+	return seed, err
+})
+
+func randomPerTest(t *testing.T) *countingRandom {
+	t.Helper()
+	process, err := processSeed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := sha256.Sum256(append(append([]byte{}, process...), t.Name()...))
+	return &countingRandom{counter: binary.BigEndian.Uint64(seed[:8])}
+}
+
 func tutorCodeSource(user domain.UserID) *countingRandom {
 	return &countingRandom{counter: binary.BigEndian.Uint64(user[:8])}
 }
@@ -110,7 +127,7 @@ func newAuthHarnessStoring(
 ) *authHarness {
 	t.Helper()
 	database := testdb.New(t)
-	random := &countingRandom{}
+	random := randomPerTest(t)
 	logs := &safeBuffer{}
 	logger := slog.New(core.NewContextHandler(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	shared := clock.NewShared(database.Pool)
@@ -422,6 +439,7 @@ func code(t *testing.T, result response) string {
 }
 
 func TestLoginSetsExactlyTheHostOnlyRefreshCookie(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 
@@ -445,6 +463,7 @@ func TestLoginSetsExactlyTheHostOnlyRefreshCookie(t *testing.T) {
 }
 
 func TestLoginAnswersIdenticallyForAnUnknownEmailAWrongPasswordAndADeletedAccount(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	deleted := h.seedUser(t, 2, "deleted@example.org", "correct horse battery", currentHash)
@@ -470,6 +489,7 @@ func TestLoginAnswersIdenticallyForAnUnknownEmailAWrongPasswordAndADeletedAccoun
 }
 
 func TestLoginThrottlesTheSixthFailureWithin15Minutes(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	h.advance(t, 5*time.Minute+30*time.Second)
@@ -493,6 +513,7 @@ func TestLoginThrottlesTheSixthFailureWithin15Minutes(t *testing.T) {
 }
 
 func TestParallelWrongPasswordsVerifyAtMostFivePasswords(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	statuses := make([]int, 20)
@@ -521,6 +542,7 @@ func TestParallelWrongPasswordsVerifyAtMostFivePasswords(t *testing.T) {
 }
 
 func TestTheTwentyFirstFailureFromOneAddressIsThrottled(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	for attempt := range 20 {
 		if result := h.login(t, fmt.Sprintf("person%d@example.org", attempt), "wrong horse battery"); result.status != http.StatusUnauthorized {
@@ -539,6 +561,7 @@ func TestTheTwentyFirstFailureFromOneAddressIsThrottled(t *testing.T) {
 }
 
 func TestBlockedAccountIsRevealedOnlyAfterTheCorrectPassword(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	if blocked, err := h.store.Repositories().Users.Block(context.Background(), user, authStart); err != nil || !blocked {
@@ -557,6 +580,7 @@ func TestBlockedAccountIsRevealedOnlyAfterTheCorrectPassword(t *testing.T) {
 }
 
 func TestLoginRehashesAPasswordWithStaleParameters(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", staleHash)
 
@@ -569,6 +593,7 @@ func TestLoginRehashesAPasswordWithStaleParameters(t *testing.T) {
 }
 
 func TestParallelSignInsWithAStaleHashAllSucceed(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", staleHash)
 	statuses := make([]int, 4)
@@ -597,6 +622,7 @@ func TestParallelSignInsWithAStaleHashAllSucceed(t *testing.T) {
 }
 
 func TestRefreshReuseRevokesTheSession(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	first := h.login(t, tutorEmail, "correct horse battery")
@@ -621,6 +647,7 @@ func TestRefreshReuseRevokesTheSession(t *testing.T) {
 }
 
 func TestForgedStaleGenerationIsRefusedWithoutRevoking(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	current := refreshValue(t, h.refresh(t, refreshValue(t, h.login(t, tutorEmail, "correct horse battery"))))
@@ -649,6 +676,7 @@ func TestForgedStaleGenerationIsRefusedWithoutRevoking(t *testing.T) {
 }
 
 func TestRefreshRejectsForeignOrigin(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	cookie := refreshValue(t, h.login(t, tutorEmail, "correct horse battery"))
@@ -669,6 +697,7 @@ func TestRefreshRejectsForeignOrigin(t *testing.T) {
 }
 
 func TestLoginRejectsForeignOriginAndMissingContentType(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	body := `{"email":"tutor@example.org","password":"correct horse battery"}`
@@ -683,6 +712,7 @@ func TestLoginRejectsForeignOriginAndMissingContentType(t *testing.T) {
 }
 
 func TestRefreshWithoutCookieAnswers204(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 
 	result := h.refresh(t, "")
@@ -693,6 +723,7 @@ func TestRefreshWithoutCookieAnswers204(t *testing.T) {
 }
 
 func TestAccessTokenExpiresByTheSharedClock(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	token := accessToken(t, h.login(t, tutorEmail, "correct horse battery"))
@@ -708,6 +739,7 @@ func TestAccessTokenExpiresByTheSharedClock(t *testing.T) {
 }
 
 func TestLogoutRevokesTheSessionAndLogoutAllEverySession(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	first := accessToken(t, h.login(t, tutorEmail, "correct horse battery"))
@@ -728,6 +760,7 @@ func TestLogoutRevokesTheSessionAndLogoutAllEverySession(t *testing.T) {
 }
 
 func TestEveryOperationDeclaresAnAudience(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	document, err := api.OpenAPIDocument()
 	if err != nil {
@@ -775,6 +808,7 @@ func TestEveryOperationDeclaresAnAudience(t *testing.T) {
 }
 
 func TestRefreshExpiresThirtyDaysAfterSignInWhateverTheRotations(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	cookie := refreshValue(t, h.login(t, tutorEmail, "correct horse battery"))
@@ -793,6 +827,7 @@ func TestRefreshExpiresThirtyDaysAfterSignInWhateverTheRotations(t *testing.T) {
 }
 
 func TestBlockedAccountLosesRefreshAndAccess(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	signedIn := h.login(t, tutorEmail, "correct horse battery")
@@ -812,6 +847,7 @@ func TestBlockedAccountLosesRefreshAndAccess(t *testing.T) {
 }
 
 func TestConcurrentRefreshesWithOneCookieRotateOnceAndRevokeAsReuse(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	cookie := refreshValue(t, h.login(t, tutorEmail, "correct horse battery"))
@@ -845,6 +881,7 @@ func TestConcurrentRefreshesWithOneCookieRotateOnceAndRevokeAsReuse(t *testing.T
 }
 
 func TestAccountFlowsLogNoSecretsOrEmails(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	signedIn := h.login(t, tutorEmail, "correct horse battery")
@@ -870,6 +907,7 @@ func TestAccountFlowsLogNoSecretsOrEmails(t *testing.T) {
 }
 
 func TestClientAddressWalksForwardedHeadersFromTheRightPastTrustedProxies(t *testing.T) {
+	t.Parallel()
 	trusted := []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("127.0.0.1/32")}
 	cases := map[string]struct {
 		remote    string
@@ -898,6 +936,7 @@ func TestClientAddressWalksForwardedHeadersFromTheRightPastTrustedProxies(t *tes
 }
 
 func TestEveryPublishedOperationDescribesTheErrorEnvelope(t *testing.T) {
+	t.Parallel()
 	document, err := api.OpenAPIDocument()
 	if err != nil {
 		t.Fatal(err)
@@ -931,6 +970,7 @@ func TestEveryPublishedOperationDescribesTheErrorEnvelope(t *testing.T) {
 }
 
 func TestAThrottledAddressDoesNotLockTheVictimOutElsewhere(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarnessBehind(t, []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")})
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	from := func(address string, email string, password string) response {
@@ -960,6 +1000,7 @@ func TestAThrottledAddressDoesNotLockTheVictimOutElsewhere(t *testing.T) {
 }
 
 func TestAPasswordChangedDuringVerificationStartsNoSession(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 
@@ -976,6 +1017,7 @@ func TestAPasswordChangedDuringVerificationStartsNoSession(t *testing.T) {
 }
 
 func TestAStaleHashRehashLostToAPasswordChangeStartsNoSession(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", staleHash)
 
@@ -995,6 +1037,7 @@ func TestAStaleHashRehashLostToAPasswordChangeStartsNoSession(t *testing.T) {
 }
 
 func TestABlockDuringVerificationStartsNoSession(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	user := h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 
@@ -1013,6 +1056,7 @@ func TestABlockDuringVerificationStartsNoSession(t *testing.T) {
 }
 
 func TestBusyHashingDoesNotSpendSignInAttempts(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	h.hasher.FailVerifications(core.ErrHashingBusy)
@@ -1035,6 +1079,7 @@ func TestBusyHashingDoesNotSpendSignInAttempts(t *testing.T) {
 }
 
 func TestAttemptsRefusedByALimitDoNotSpendTheAddressBudget(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	for range 5 {
@@ -1056,6 +1101,7 @@ func TestAttemptsRefusedByALimitDoNotSpendTheAddressBudget(t *testing.T) {
 }
 
 func TestAnAttemptRefusedByTheAddressLimitIsNotCounted(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	for attempt := range 20 {
 		if result := h.login(t, fmt.Sprintf("person%d@example.org", attempt), "wrong horse battery"); result.status != http.StatusUnauthorized {

@@ -124,6 +124,7 @@ func (f tutoringFixture) invitationState(t *testing.T, id domain.InvitationID) (
 }
 
 func TestInvitationConsumptionIsSingleUse(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	tutor := f.tutor(t, 1)
 	card := f.card(t, invitedCard(10, tutor))
@@ -166,6 +167,7 @@ func TestInvitationConsumptionIsSingleUse(t *testing.T) {
 }
 
 func TestExpiredOrBoundInvitationIsConsumedOnlyByItsAccount(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	tutor := f.tutor(t, 1)
 	bound, stranger := f.student(t, 30), f.student(t, 31)
@@ -194,6 +196,7 @@ func TestExpiredOrBoundInvitationIsConsumedOnlyByItsAccount(t *testing.T) {
 }
 
 func TestOneOpenInvitationPerCard(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	tutor := f.tutor(t, 1)
 	card := f.card(t, invitedCard(10, tutor))
@@ -218,6 +221,7 @@ func TestOneOpenInvitationPerCard(t *testing.T) {
 }
 
 func TestAnotherTutorCannotRevokeAnInvitation(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	tutor, other := f.tutor(t, 1), f.tutor(t, 2)
 	invitation := openInvitation(20, f.card(t, invitedCard(10, tutor)))
@@ -236,6 +240,7 @@ func TestAnotherTutorCannotRevokeAnInvitation(t *testing.T) {
 }
 
 func TestMismatchIsCountedOnlyForTheUsableInvitationOfThePresentedToken(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	tutor, other := f.tutor(t, 1), f.tutor(t, 2)
 	presented := openInvitation(20, f.card(t, invitedCard(10, tutor)))
@@ -262,6 +267,7 @@ func TestMismatchIsCountedOnlyForTheUsableInvitationOfThePresentedToken(t *testi
 }
 
 func TestOneProvisionalRelationshipPerStudent(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	first, second := f.tutor(t, 1), f.tutor(t, 2)
 	student := f.student(t, 3)
@@ -290,6 +296,7 @@ func joinRequest(id byte, tutor domain.UserID, student domain.UserID, state doma
 }
 
 func TestOnePendingRequestPerTutorAndStudent(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	tutor, other := f.tutor(t, 1), f.tutor(t, 2)
 	student := f.student(t, 3)
@@ -320,6 +327,7 @@ func TestOnePendingRequestPerTutorAndStudent(t *testing.T) {
 }
 
 func TestMismatchCounterRevokesAtFiveUnderConcurrency(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	invitation := openInvitation(20, f.card(t, invitedCard(10, f.tutor(t, 1))))
 	if err := f.repos.Invitations.Create(context.Background(), invitation); err != nil {
@@ -360,6 +368,7 @@ func TestMismatchCounterRevokesAtFiveUnderConcurrency(t *testing.T) {
 }
 
 func TestRemovalSucceedsOnlyWhileProvisional(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	tutor, other := f.tutor(t, 1), f.tutor(t, 2)
 	email, notes := "student@example.org", "Prefers mornings"
@@ -430,6 +439,7 @@ func cardsAt(f tutoringFixture, t *testing.T, tutor domain.UserID, count int, fi
 }
 
 func TestStudentsKeysetPagesWithoutGapsOrRepeats(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	tutor, other := f.tutor(t, 1), f.tutor(t, 2)
 	listed := cardsAt(f, t, tutor, 23, 1)
@@ -497,6 +507,7 @@ func TestStudentsKeysetPagesWithoutGapsOrRepeats(t *testing.T) {
 }
 
 func TestStudentListSearchesLiterallyAndFiltersByGroup(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	tutor := f.tutor(t, 1)
 	names := map[byte]string{10: "100% Anna", 11: "Boris_K", 12: `C\D`, 13: "Dmitry", 14: "Anna Petrova"}
@@ -557,6 +568,7 @@ func TestStudentListSearchesLiterallyAndFiltersByGroup(t *testing.T) {
 }
 
 func TestRelationshipStateChecksRefuseInconsistentRows(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	tutor := f.tutor(t, 1)
 	student := f.student(t, 2)
@@ -626,6 +638,7 @@ func TestRelationshipStateChecksRefuseInconsistentRows(t *testing.T) {
 }
 
 func TestEveryCascadingForeignKeyIsIndexed(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	const statement = `
 SELECT constraint_row.conrelid::regclass::text || '.' || constraint_row.conname,
@@ -678,6 +691,7 @@ ORDER BY 1`
 }
 
 func TestTutorCodeIsMintedAgainOnACollision(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	first, second, third := f.account(t, 1, domain.RoleTutor), f.account(t, 2, domain.RoleTutor), f.account(t, 3, domain.RoleTutor)
 	profile := func(user domain.UserID) repositories.NewTutorProfile {
@@ -705,6 +719,7 @@ func TestTutorCodeIsMintedAgainOnACollision(t *testing.T) {
 }
 
 func TestGroupMembershipCannotCrossTutors(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	tutor, other := f.tutor(t, 1), f.tutor(t, 2)
 	ownCard := f.card(t, linkedCard(10, tutor, f.student(t, 30), domain.RelationshipActive))
@@ -733,6 +748,7 @@ func TestGroupMembershipCannotCrossTutors(t *testing.T) {
 }
 
 func TestInvitationAndJoinRequestChecksRefuseInconsistentRows(t *testing.T) {
+	t.Parallel()
 	f := newTutoringFixture(t)
 	tutor := f.tutor(t, 1)
 	student := f.student(t, 2)

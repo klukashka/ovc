@@ -33,6 +33,7 @@ func outcomeFor(rule audienceRule, who caller) string {
 }
 
 func TestAudiencesRefuseTheOtherRoleBeforeAnUnconfirmedEmail(t *testing.T) {
+	t.Parallel()
 	expected := map[Audience]map[caller]string{
 		AudienceUser: {
 			activeTutor: admittedOutcome, unverifiedTutor: "email_not_verified",

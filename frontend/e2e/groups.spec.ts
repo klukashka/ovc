@@ -2,7 +2,14 @@ import type { Locator, Page } from '@playwright/test';
 
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { type TestControl, diagnosedTest as test, expect, expectRowsNamed, seedVerifiedUser } from './fixtures.ts';
+import {
+  type TestControl,
+  diagnosedTest as test,
+  expect,
+  expectRowsNamed,
+  seedVerifiedUser,
+  testControl,
+} from './fixtures.ts';
 import { busyControls, recordBusyControls } from './observers.ts';
 import {
   accessToken,
@@ -17,6 +24,7 @@ import {
   seedActiveStudentsThroughCode,
   seedEmptyGroups,
   seedStudentThroughCode,
+  unarchiveGroup,
 } from './tutoring.ts';
 
 const unknownGroupId = '00000000-0000-4000-8000-00000000abcd';
@@ -104,7 +112,11 @@ test.describe('Maria in Russian', () => {
 test.describe('in English', () => {
   test.use({ locale: 'en-GB', colorScheme: 'dark' });
 
-  test('groups › archive and unarchive, removal', async ({ page, deployment, control }) => {
+  test('groups › removing a student from the group moves focus to the notice', async ({
+    page,
+    deployment,
+    control,
+  }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
     const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
     const boris = await seedActiveStudent(deployment, control, pavel, 'Boris');
@@ -122,6 +134,19 @@ test.describe('in English', () => {
     await expect(groupMembers).toHaveText([/Anna/]);
     expect(await busyControls(page)).toEqual([['Remove from the group: Boris']]);
     expect(await cardState(deployment, pavel, boris.cardId)).toEqual({ state: 'active', groups: [] });
+  });
+
+  test('groups › archiving a group moves focus to the notice and takes no new students', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await expectRowsNamed(members(page, 'Students'), ['Anna']);
 
     await page.getByRole('button', { name: 'Archive group' }).click();
 
@@ -131,25 +156,75 @@ test.describe('in English', () => {
     await expect(page.getByRole('button', { name: 'Add students' })).toHaveCount(0);
     await expect(page.getByText('An archived group takes no new students.')).toBeVisible();
     expect(await cardState(deployment, pavel, anna.cardId)).toEqual({ state: 'active', groups: [] });
+  });
+
+  test('groups › unarchiving a group moves focus to the notice and lists the group on its cards again', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    await archiveGroup(deployment, pavel, groupId);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await expect(page.getByRole('main').getByText('Archived', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Unarchive group' }).click();
 
     const unarchived = page.getByRole('status').filter({ hasText: 'The group is active again.' });
     await expect(unarchived).toBeFocused();
     await expect(page.getByRole('main').getByText('Archived', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Add students' })).toBeVisible();
     expect(await cardState(deployment, pavel, anna.cardId)).toEqual({ state: 'active', groups: ['Evening algebra'] });
+  });
+
+  test('groups › the Add students dialog of an unarchived group opens on its search with only the students outside it', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
+    await seedActiveStudent(deployment, control, pavel, 'Boris');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    await archiveGroup(deployment, pavel, groupId);
+    await unarchiveGroup(deployment, pavel, groupId);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
 
     await page.getByRole('button', { name: 'Add students' }).click();
+
     const dialog = page.getByRole('dialog', { name: 'Add students' });
     await expect(dialog.getByRole('searchbox', { name: 'Search students' })).toBeFocused();
     await expect(dialog.getByRole('checkbox')).toHaveCount(1);
+    await expect(dialog.getByRole('checkbox', { name: 'Boris' })).toHaveCount(1);
+  });
+
+  test('groups › adding a student to an unarchived group closes the dialog and moves focus to the notice', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
+    await seedActiveStudent(deployment, control, pavel, 'Boris');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    await archiveGroup(deployment, pavel, groupId);
+    await unarchiveGroup(deployment, pavel, groupId);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await page.getByRole('button', { name: 'Add students' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add students' });
     await dialog.getByRole('checkbox', { name: 'Boris' }).check();
+
     await dialog.getByRole('button', { name: 'Add', exact: true }).click();
 
     const added = page.getByRole('status').filter({ hasText: 'The students were added to the group.' });
     await expect(added).toBeFocused();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expectRowsNamed(groupMembers, ['Anna', 'Boris']);
+    await expectRowsNamed(members(page, 'Students'), ['Anna', 'Boris']);
     expect((await groupMemberNames(deployment, pavel, groupId)).sort()).toEqual(['Anna', 'Boris']);
   });
 
@@ -238,49 +313,6 @@ test.describe('in English', () => {
     await expect(details.getByRole('radio', { name: 'Teal' })).toBeChecked();
     expect(await groupMemberNames(deployment, pavel, groupId)).toEqual(['Anna']);
   });
-
-  test('groups › show more in the member choice moves focus to the first new student', async ({
-    page,
-    deployment,
-    control,
-  }) => {
-    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    await seedActiveStudentsThroughCode(deployment, control, pavel, 31);
-    await signInThroughTheApi(page, pavel);
-    await page.goto('/groups');
-    await page.getByRole('button', { name: 'New group' }).click();
-    const choices = page.getByRole('dialog', { name: 'New group' }).getByRole('checkbox');
-    await expect(choices).toHaveCount(30);
-
-    await page.getByRole('dialog', { name: 'New group' }).getByRole('button', { name: 'Show more' }).click();
-
-    await expect(choices).toHaveCount(31);
-    await expect(choices.nth(30)).toBeFocused();
-  });
-
-  test('groups › show more that adds no visible student moves focus to the last student shown', async ({
-    page,
-    deployment,
-    control,
-  }) => {
-    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const cardIds = await seedActiveStudentsThroughCode(deployment, control, pavel, 31);
-    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [
-      await cardBeyondTheFirstPage(deployment, pavel, cardIds),
-    ]);
-    await signInThroughTheApi(page, pavel);
-    await page.goto(`/groups/${groupId}`);
-    await page.getByRole('button', { name: 'Add students' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Add students' });
-    const choices = dialog.getByRole('checkbox');
-    await expect(choices).toHaveCount(30);
-
-    await dialog.getByRole('button', { name: 'Show more' }).press('Enter');
-
-    await expect(dialog.getByRole('button', { name: 'Show more' })).toHaveCount(0);
-    await expect(choices).toHaveCount(30);
-    await expect(choices.nth(29)).toBeFocused();
-  });
 });
 
 test.describe('in English, the student list', () => {
@@ -344,36 +376,6 @@ test.describe('in English, refusals', () => {
     await expect(dialog.getByRole('checkbox', { name: 'Boris' })).toHaveCount(0);
     await expect(dialog.getByRole('checkbox', { name: 'Anna' })).toBeChecked();
     await expect(dialog.getByText('Chosen: 1 of 30')).toBeVisible();
-  });
-
-  test('groups › adding to a group that filled up meanwhile says that a group holds at most 30 students', async ({
-    page,
-    deployment,
-    control,
-    diagnostics,
-  }) => {
-    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const cardIds = await seedActiveStudentsThroughCode(deployment, control, pavel, 31);
-    const beyond = await cardBeyondTheFirstPage(deployment, pavel, cardIds);
-    const [chosen = '', meanwhile = '', ...others] = cardIds.filter((id) => id !== beyond);
-    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [beyond, ...others]);
-    diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/groups/${groupId}`, status: 422 });
-    await signInThroughTheApi(page, pavel);
-    await page.goto(`/groups/${groupId}`);
-    await page.getByRole('button', { name: 'Add students' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Add students' });
-    await dialog.getByRole('checkbox', { name: studentName(cardIds, chosen), exact: true }).check();
-    await addToGroup(deployment, pavel, groupId, [meanwhile]);
-
-    await dialog.getByRole('button', { name: 'Add', exact: true }).click();
-
-    const alert = dialog.getByRole('alert');
-    await expect(alert).toHaveText('A group holds at most 30 students.');
-    await expect(alert).toBeFocused();
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByText('Chosen: 0 of 0')).toBeVisible();
-    await expect(dialog.getByRole('button', { name: 'Add', exact: true })).toHaveAttribute('aria-disabled', 'true');
-    expect(await groupMemberNames(deployment, pavel, groupId)).toHaveLength(30);
   });
 
   test('groups › the group after the 200th is refused with the limit message', async ({
@@ -447,4 +449,88 @@ test.describe('in English, refusals', () => {
       await expect(shown.getByText('Secret algebra')).toHaveCount(0);
     }
   });
+});
+
+interface StudentsOfPavel {
+  readonly pavel: TestAccount;
+  readonly cardIds: readonly string[];
+}
+
+const withStudentsOfPavel = test.extend<object, { studentsOfPavel: StudentsOfPavel }>({
+  studentsOfPavel: [
+    async ({ deployment }, use): Promise<void> => {
+      const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+      const cardIds = await seedActiveStudentsThroughCode(deployment, testControl(deployment), pavel, 31);
+      await use({ pavel, cardIds });
+    },
+    { scope: 'worker' },
+  ],
+});
+
+withStudentsOfPavel.describe('in English, one tutor with 31 active students shared by the tests below', () => {
+  withStudentsOfPavel.describe.configure({ mode: 'default' });
+  withStudentsOfPavel.use({ locale: 'en-GB', colorScheme: 'dark' });
+
+  withStudentsOfPavel(
+    'groups › show more in the member choice moves focus to the first new student',
+    async ({ page, studentsOfPavel: { pavel } }) => {
+      await signInThroughTheApi(page, pavel);
+      await page.goto('/groups');
+      await page.getByRole('button', { name: 'New group' }).click();
+      const choices = page.getByRole('dialog', { name: 'New group' }).getByRole('checkbox');
+      await expect(choices).toHaveCount(30);
+
+      await page.getByRole('dialog', { name: 'New group' }).getByRole('button', { name: 'Show more' }).click();
+
+      await expect(choices).toHaveCount(31);
+      await expect(choices.nth(30)).toBeFocused();
+    },
+  );
+
+  withStudentsOfPavel(
+    'groups › show more that adds no visible student moves focus to the last student shown',
+    async ({ page, deployment, studentsOfPavel: { pavel, cardIds } }) => {
+      const groupId = await createGroup(deployment, pavel, 'Evening algebra', [
+        await cardBeyondTheFirstPage(deployment, pavel, cardIds),
+      ]);
+      await signInThroughTheApi(page, pavel);
+      await page.goto(`/groups/${groupId}`);
+      await page.getByRole('button', { name: 'Add students' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Add students' });
+      const choices = dialog.getByRole('checkbox');
+      await expect(choices).toHaveCount(30);
+
+      await dialog.getByRole('button', { name: 'Show more' }).press('Enter');
+
+      await expect(dialog.getByRole('button', { name: 'Show more' })).toHaveCount(0);
+      await expect(choices).toHaveCount(30);
+      await expect(choices.nth(29)).toBeFocused();
+    },
+  );
+
+  withStudentsOfPavel(
+    'groups › adding to a group that filled up meanwhile says that a group holds at most 30 students',
+    async ({ page, deployment, diagnostics, studentsOfPavel: { pavel, cardIds } }) => {
+      const beyond = await cardBeyondTheFirstPage(deployment, pavel, cardIds);
+      const [chosen = '', meanwhile = '', ...others] = cardIds.filter((id) => id !== beyond);
+      const groupId = await createGroup(deployment, pavel, 'Evening algebra', [beyond, ...others]);
+      diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/groups/${groupId}`, status: 422 });
+      await signInThroughTheApi(page, pavel);
+      await page.goto(`/groups/${groupId}`);
+      await page.getByRole('button', { name: 'Add students' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Add students' });
+      await dialog.getByRole('checkbox', { name: studentName(cardIds, chosen), exact: true }).check();
+      await addToGroup(deployment, pavel, groupId, [meanwhile]);
+
+      await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+
+      const alert = dialog.getByRole('alert');
+      await expect(alert).toHaveText('A group holds at most 30 students.');
+      await expect(alert).toBeFocused();
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText('Chosen: 0 of 0')).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Add', exact: true })).toHaveAttribute('aria-disabled', 'true');
+      expect(await groupMemberNames(deployment, pavel, groupId)).toHaveLength(30);
+    },
+  );
 });

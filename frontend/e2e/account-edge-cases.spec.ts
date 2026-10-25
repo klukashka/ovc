@@ -3,7 +3,7 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
-import { accessToken, callApi, createCard, invitationToken, seedActiveStudent, tutorCode } from './tutoring.ts';
+import { seedActiveStudent } from './tutoring.ts';
 
 test.use({ locale: 'ru-RU' });
 
@@ -78,44 +78,47 @@ async function switchScheme(page: Page, colorScheme: 'light' | 'dark', changesSo
 }
 
 test.describe('account edge cases', () => {
-  test('FR-1.3 role mismatch', async ({ page, browser, deployment, control }) => {
-    const maria = await seedVerifiedUser(deployment, 'Мария');
+  test('FR-1.3 › a tutor opening My tutors sees that the page is not found and no code form', async ({
+    page,
+    deployment,
+  }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const { student: anna } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
-    const pavelToken = await accessToken(deployment, pavel);
-    const card = await createCard(deployment, maria, 'Pavel', pavel.email);
-
-    const codeEntry = await callApi(deployment, pavelToken, 'POST', '/join-requests', {
-      code: await tutorCode(deployment, maria),
-    });
-    const acceptance = await callApi(
-      deployment,
-      pavelToken,
-      'POST',
-      `/invitations/${encodeURIComponent(invitationToken(card.link))}/accept`,
-      {},
-    );
-    const tutorList = await callApi(deployment, pavelToken, 'GET', '/tutors');
-    const requestList = await callApi(deployment, await accessToken(deployment, anna), 'GET', '/join-requests');
-
-    expect(codeEntry.status).toBe(409);
-    expect(codeEntry.body).toMatchObject({ error: { code: 'role_mismatch' } });
-    expect(acceptance.status).toBe(409);
-    expect(acceptance.body).toMatchObject({ error: { code: 'role_mismatch' } });
-    expect(tutorList.status).toBe(404);
-    expect(requestList.status).toBe(404);
     await signInThroughTheApi(page, pavel);
+
     await page.goto('/tutors');
+
     await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
     await expect(page.getByRole('form', { name: 'Tutor code' })).toHaveCount(0);
-    const annaContext = await freshContext(browser, deployment);
-    const annaPage = await annaContext.newPage();
-    await signedInAt(annaPage, anna, '/today');
-    await expect(annaPage.getByRole('heading', { level: 1, name: 'Страница не найдена' })).toBeVisible();
-    await annaPage.goto('/students');
-    await expect(annaPage.getByRole('heading', { level: 1, name: 'Страница не найдена' })).toBeVisible();
-    await expect(annaPage.getByRole('region', { name: 'Заявки на занятия' })).toHaveCount(0);
-    await annaContext.close();
+  });
+
+  test('FR-1.3 › a student opening Today sees that the page is not found inside the signed-in frame', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const { student: anna } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    await signInThroughTheApi(page, anna);
+
+    await page.goto('/today');
+
+    await expect(page.getByRole('navigation', { name: 'Основная навигация' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Страница не найдена' })).toBeVisible();
+  });
+
+  test('FR-1.3 › a student opening Students sees that the page is not found and no join requests', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const { student: anna } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    await signInThroughTheApi(page, anna);
+
+    await page.goto('/students');
+
+    await expect(page.getByRole('heading', { level: 1, name: 'Страница не найдена' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Заявки на занятия' })).toHaveCount(0);
   });
 
   test('signing out everywhere ends the sessions of other browsers', async ({ page, browser, deployment }) => {

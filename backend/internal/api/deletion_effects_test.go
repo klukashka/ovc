@@ -123,6 +123,7 @@ func hasSubject(messages []string, subject string) bool {
 }
 
 func TestTutorDeletionEndsRelationshipsDiscardsCardsAndProvisionalLinksArchivesGroupsAndEmailsStudents(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.setAccount(t, parties.tutor, markupTutorName, domain.LanguageEnglish)
@@ -183,6 +184,7 @@ func TestTutorDeletionEndsRelationshipsDiscardsCardsAndProvisionalLinksArchivesG
 }
 
 func TestNoTutorDeletedEmailToUnconfirmedStudents(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	unconfirmed := h.seedStudentAccount(t, 2, domain.AccountUnverified)
@@ -269,6 +271,7 @@ func sameQueuedRows(got []queuedTutorDeleted, want []queuedTutorDeleted) bool {
 }
 
 func TestTutorDeletionQueuesOneTutorDeletedRowPerConfirmedStudentOfAnEndedRelationship(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	otherTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 9, "other-tutor@example.org")
@@ -307,6 +310,7 @@ func TestTutorDeletionQueuesOneTutorDeletedRowPerConfirmedStudentOfAnEndedRelati
 }
 
 func TestStudentDeletionEndsRelationshipsWithoutEmail(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	deletedAt := h.now(t)
@@ -334,6 +338,7 @@ func TestStudentDeletionEndsRelationshipsWithoutEmail(t *testing.T) {
 }
 
 func TestPurgeOfStudentKeepsTheTutorsHistoryUnderTheCardName(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.withNotes(t, parties.tutorToken, parties.card.ID, cardNotes)
@@ -361,6 +366,7 @@ func TestPurgeOfStudentKeepsTheTutorsHistoryUnderTheCardName(t *testing.T) {
 }
 
 func TestPurgeOfTutorDeletesCardsNotesInvitationsRequestsAndGroupsInBatches(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.withNotes(t, parties.tutorToken, parties.card.ID, cardNotes)
@@ -395,6 +401,7 @@ func TestPurgeOfTutorDeletesCardsNotesInvitationsRequestsAndGroupsInBatches(t *t
 }
 
 func TestTutorPurgeStopsAtItsBatchBudgetAndResumes(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	h.seedInvitedCards(t, tutor, 60*500)
@@ -422,6 +429,7 @@ func TestTutorPurgeStopsAtItsBatchBudgetAndResumes(t *testing.T) {
 }
 
 func TestRestoredTutorKeepsRelationshipsEnded(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.deleteMe(t, parties.tutorToken, accountPassword)
@@ -446,6 +454,7 @@ func TestRestoredTutorKeepsRelationshipsEnded(t *testing.T) {
 }
 
 func TestTutorDeletedEmailIsObsoleteAfterRestore(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.deleteMe(t, parties.tutorToken, accountPassword)
@@ -461,6 +470,7 @@ func TestTutorDeletedEmailIsObsoleteAfterRestore(t *testing.T) {
 }
 
 func TestTutorDeletionRevokesAnEndedCardsRegeneratedLink(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.endAsTutor(t, parties.tutorToken, parties.card.ID)
@@ -480,6 +490,7 @@ func TestTutorDeletionRevokesAnEndedCardsRegeneratedLink(t *testing.T) {
 }
 
 func TestStudentPurgeClearsCardEmailsAlsoOnDiscardedRowsAndKeepsEndingFields(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorA, tokenA := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, tokenB := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 3, secondTutorEmail)
@@ -532,6 +543,7 @@ func ptr(text string) *string {
 }
 
 func TestStudentPurgeGivesABlockedTutorANewCardWhoseLinkWorksOnlyWhileTheTutorIsActive(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, student := h.linkedStudent(t, token, newcomerEmail)
@@ -570,6 +582,7 @@ func TestStudentPurgeGivesABlockedTutorANewCardWhoseLinkWorksOnlyWhileTheTutorIs
 }
 
 func TestPurgeEndsAStillActiveRelationshipBeforeKeepingItAsHistory(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	unconfirmed := h.seedStudentAccount(t, 2, domain.AccountUnverified)
@@ -596,6 +609,7 @@ func TestPurgeEndsAStillActiveRelationshipBeforeKeepingItAsHistory(t *testing.T)
 }
 
 func TestRestoreIsRefusedOnceThePurgeIsDue(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	h.deleteMe(t, token, accountPassword)
@@ -612,6 +626,7 @@ func TestRestoreIsRefusedOnceThePurgeIsDue(t *testing.T) {
 }
 
 func TestOutboxRowOfAPurgedSubjectIsObsolete(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	_, secondStudent := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 3, requestingEmail)
@@ -634,6 +649,7 @@ func TestOutboxRowOfAPurgedSubjectIsObsolete(t *testing.T) {
 }
 
 func TestUnblockIntoUnverifiedRestartsTheClockOfALinkedStudent(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, _ := h.linkedStudent(t, token, newcomerEmail)
@@ -827,9 +843,11 @@ func awaitChange(t *testing.T, done <-chan error) {
 }
 
 func TestTutorStateChangeRacingALinkHasOneOutcome(t *testing.T) {
+	t.Parallel()
 	for linkName, link := range racingLinks() {
 		for changeName, change := range racingStateChanges() {
 			t.Run(changeName+" before "+linkName, func(t *testing.T) {
+				t.Parallel()
 				h := newFlowHarness(t)
 				tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 				prepared := link.prepare(t, h, tutor, tutorToken)
@@ -858,6 +876,7 @@ func TestTutorStateChangeRacingALinkHasOneOutcome(t *testing.T) {
 		}
 	}
 	t.Run("invitation sign-up before the operator's block", func(t *testing.T) {
+		t.Parallel()
 		h := newFlowHarness(t)
 		tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 		prepared := racingLinks()["invitation sign-up"].prepare(t, h, tutor, tutorToken)
@@ -881,8 +900,10 @@ func TestTutorStateChangeRacingALinkHasOneOutcome(t *testing.T) {
 }
 
 func TestTutorDeletionRacingTheOwnersReclaimChoiceHasOneOutcome(t *testing.T) {
+	t.Parallel()
 	for _, choiceFirst := range []bool{true, false} {
 		t.Run(fmt.Sprintf("choice first %t", choiceFirst), func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			card, student := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
@@ -1013,9 +1034,11 @@ func (h *authHarness) tutorWriteTrace(t *testing.T, tutor domain.UserID) tutorWr
 }
 
 func TestTutorWriteAuthenticatedBeforeTheTutorStoppedBeingActiveIsRefused(t *testing.T) {
+	t.Parallel()
 	for writeName, write := range tutorWrites() {
 		for changeName, change := range racingStateChanges() {
 			t.Run(changeName+" before "+writeName, func(t *testing.T) {
+				t.Parallel()
 				h := newFlowHarness(t)
 				tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 				_, studentToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -1102,8 +1125,10 @@ func operatorTutorChanges() map[string]operatorTutorChange {
 }
 
 func TestOperatorStateChangesOfATutorTakeTheProfileLock(t *testing.T) {
+	t.Parallel()
 	for name, change := range operatorTutorChanges() {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			change.prepare(t, h, tutor)
@@ -1146,8 +1171,10 @@ func (h *authHarness) assertDiscarded(t *testing.T, tutor domain.UserID, card st
 }
 
 func TestTutorRemovalRacingTheTutorsDeletionHasOneOutcome(t *testing.T) {
+	t.Parallel()
 	for _, removalFirst := range []bool{true, false} {
 		t.Run(fmt.Sprintf("removal first %t", removalFirst), func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			card, student := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
@@ -1190,10 +1217,12 @@ func TestTutorRemovalRacingTheTutorsDeletionHasOneOutcome(t *testing.T) {
 }
 
 func TestStopStudyingRacingTheTutorsDeletionHasOneOutcome(t *testing.T) {
+	t.Parallel()
 	stop := func(h *authHarness, studentToken string, card string) <-chan pendingAnswer {
 		return h.sendInBackground(http.MethodPost, tutorsPath+card+"/end", "", jsonCall(studentToken))
 	}
 	t.Run("committed while the deletion waits", func(t *testing.T) {
+		t.Parallel()
 		h := newFlowHarness(t)
 		tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 		card, student := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
@@ -1213,6 +1242,7 @@ func TestStopStudyingRacingTheTutorsDeletionHasOneOutcome(t *testing.T) {
 		h.assertNothingOpenOfDeletedTutor(t, tutor, student)
 	})
 	t.Run("sent before the deletion and locked after it", func(t *testing.T) {
+		t.Parallel()
 		h := newFlowHarness(t)
 		tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 		card, student := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
@@ -1234,6 +1264,7 @@ func TestStopStudyingRacingTheTutorsDeletionHasOneOutcome(t *testing.T) {
 }
 
 func TestTutorDeletionRecordsWhenEachOpenRequestEnded(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	closedStudent, closedToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)

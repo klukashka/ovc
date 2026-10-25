@@ -148,6 +148,7 @@ func (h *authHarness) signedInTutor(t *testing.T) string {
 }
 
 func TestAvatarIsBoundServedAndReplaced(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	token := h.signedInTutor(t)
 	first := uploadedID(t, h.upload(t, token, "Me.PNG", pngBytes(t, 4, 4)))
@@ -184,6 +185,7 @@ func TestAvatarIsBoundServedAndReplaced(t *testing.T) {
 }
 
 func TestAvatarRefusesOversizeAndDisguisedFiles(t *testing.T) {
+	t.Parallel()
 	webp, err := base64.StdEncoding.DecodeString(tinyLosslessWebP)
 	if err != nil {
 		t.Fatal(err)
@@ -205,6 +207,7 @@ func TestAvatarRefusesOversizeAndDisguisedFiles(t *testing.T) {
 	}
 	for name, testCase := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			token := h.signedInTutor(t)
 
@@ -218,6 +221,7 @@ func TestAvatarRefusesOversizeAndDisguisedFiles(t *testing.T) {
 }
 
 func TestWebPAvatarIsStoredAsPNG(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	token := h.signedInTutor(t)
 	webp, err := base64.StdEncoding.DecodeString(tinyLosslessWebP)
@@ -233,6 +237,7 @@ func TestWebPAvatarIsStoredAsPNG(t *testing.T) {
 }
 
 func TestUnboundAttachmentIsNotServedAsAvatar(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	token := h.signedInTutor(t)
 	h.seedUser(t, 2, "other@example.org", "correct horse battery", currentHash)
@@ -270,6 +275,7 @@ func TestUnboundAttachmentIsNotServedAsAvatar(t *testing.T) {
 }
 
 func TestAvatarMetadataIsRemoved(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	token := h.signedInTutor(t)
 	id := uploadedID(t, h.upload(t, token, "photo.jpeg", jpegWithMetadata(t)))
@@ -283,6 +289,7 @@ func TestAvatarMetadataIsRemoved(t *testing.T) {
 }
 
 func TestPendingUploadsAreLimitedAndExpireAfter24Hours(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	token := h.signedInTutor(t)
 	var keys []string
@@ -309,6 +316,7 @@ func TestPendingUploadsAreLimitedAndExpireAfter24Hours(t *testing.T) {
 }
 
 func TestProfileUpdateValidatesFieldsAndKeepsTutorTextForTutors(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor := h.signedInTutor(t)
 	h.seedUserAs(t, domain.RoleStudent, 2, "student@example.org", "correct horse battery", currentHash)
@@ -343,6 +351,7 @@ func TestProfileUpdateValidatesFieldsAndKeepsTutorTextForTutors(t *testing.T) {
 }
 
 func TestReadinessReportsAnUnreachableBucket(t *testing.T) {
+	t.Parallel()
 	settings := teststorage.New(t).Settings
 	settings.Bucket = "ovc-missing-" + core.NewRandomID()[:12]
 	logs := &safeBuffer{}
@@ -378,6 +387,7 @@ func TestReadinessReportsAnUnreachableBucket(t *testing.T) {
 }
 
 func TestAnUploadWithoutAFilePartIsRefusedAsMissing(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	token := h.signedInTutor(t)
 	var body bytes.Buffer
@@ -401,6 +411,7 @@ func (h *authHarness) uploadForm(t *testing.T, token string, body string, conten
 }
 
 func TestAFormWithTwoPartsStoresNothingAndAMalformedOneIsABadRequest(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	token := h.signedInTutor(t)
 	var body bytes.Buffer
@@ -439,6 +450,7 @@ func TestAFormWithTwoPartsStoresNothingAndAMalformedOneIsABadRequest(t *testing.
 }
 
 func TestAnExpiredUploadCannotBeBoundBeforeTheWorkerRemovesIt(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	token := h.signedInTutor(t)
 	id := uploadedID(t, h.upload(t, token, "me.png", pngBytes(t, 2, 2)))
@@ -453,6 +465,7 @@ func TestAnExpiredUploadCannotBeBoundBeforeTheWorkerRemovesIt(t *testing.T) {
 }
 
 func TestExpiredPendingUploadsDoNotCountBeforeTheExpiryJobRuns(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	token := h.signedInTutor(t)
 	for range 3 {
@@ -469,6 +482,7 @@ func TestExpiredPendingUploadsDoNotCountBeforeTheExpiryJobRuns(t *testing.T) {
 }
 
 func TestAnAvatarWhoseObjectIsMissingAnswersNotFoundAndIsReported(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	token := h.signedInTutor(t)
 	avatar := uploadedID(t, h.upload(t, token, "me.png", pngBytes(t, 2, 2)))
@@ -549,6 +563,7 @@ func (f fetchedAvatar) incomplete() bool {
 }
 
 func TestAnAvatarObjectShorterThanRecordedAbortsTheResponseAndIsReported(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	avatar, _ := h.boundAvatarWithStoredObject(t, func(original []byte) []byte { return original[:len(original)/2] })
 
@@ -563,6 +578,7 @@ func TestAnAvatarObjectShorterThanRecordedAbortsTheResponseAndIsReported(t *test
 }
 
 func TestAnAvatarObjectLongerThanRecordedAbortsTheResponseAndIsReported(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	avatar, _ := h.boundAvatarWithStoredObject(t, func(original []byte) []byte { return append(original, 0) })
 

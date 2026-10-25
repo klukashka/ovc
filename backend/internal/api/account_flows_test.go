@@ -199,6 +199,7 @@ func comparableHeaders(headers http.Header) map[string]string {
 }
 
 func TestRegisterAnswersIdenticallyForNewAndExistingEmail(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 
@@ -221,6 +222,7 @@ func TestRegisterAnswersIdenticallyForNewAndExistingEmail(t *testing.T) {
 }
 
 func TestDuplicateSignUpSendsOneNoticePerDayAndNoneForADeletedAccount(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	deleted := h.seedUser(t, 2, "gone@example.org", "correct horse battery", currentHash)
@@ -245,6 +247,7 @@ func TestDuplicateSignUpSendsOneNoticePerDayAndNoneForADeletedAccount(t *testing
 }
 
 func TestRegisterRefusesInvalidInput(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		change func(*signUp)
 		field  string
@@ -261,6 +264,7 @@ func TestRegisterRefusesInvalidInput(t *testing.T) {
 	}
 	for name, testCase := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			form := tutorSignUp(newcomerEmail)
 			testCase.change(&form)
@@ -275,6 +279,7 @@ func TestRegisterRefusesInvalidInput(t *testing.T) {
 }
 
 func TestRegisterAcceptsALongCyrillicPasswordAndFallsBackToUTCForAnUnknownZone(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	form := tutorSignUp(newcomerEmail)
 	form.Password = strings.Repeat("п", 128)
@@ -289,6 +294,7 @@ func TestRegisterAcceptsALongCyrillicPasswordAndFallsBackToUTCForAnUnknownZone(t
 }
 
 func TestSignUpAndResetRequestsShareTheLimitOfTenPerHourPerAddress(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	for index := range 9 {
 		if result := h.register(t, tutorSignUp(fmt.Sprintf("person%d@example.org", index))); result.status != http.StatusAccepted {
@@ -312,6 +318,7 @@ func TestSignUpAndResetRequestsShareTheLimitOfTenPerHourPerAddress(t *testing.T)
 }
 
 func TestConfirmFromAnotherBrowserRequiresPasswordAndRevokesSessions(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.register(t, tutorSignUp(newcomerEmail))
 	squatter := h.login(t, newcomerEmail, newcomerPassword)
@@ -354,6 +361,7 @@ func TestConfirmFromAnotherBrowserRequiresPasswordAndRevokesSessions(t *testing.
 }
 
 func TestConfirmFromTheSignedInBrowserKeepsOnlyThatSession(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.register(t, tutorSignUp(newcomerEmail))
 	here := h.login(t, newcomerEmail, newcomerPassword)
@@ -378,6 +386,7 @@ func TestConfirmFromTheSignedInBrowserKeepsOnlyThatSession(t *testing.T) {
 }
 
 func TestConfirmationTokenIsMintedAtDispatchAndSupersedesEarlierOnes(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.register(t, tutorSignUp(newcomerEmail))
 	minted := h.countRows(t, "SELECT count(id) FROM email_tokens WHERE purpose <> $1", "")
@@ -418,6 +427,7 @@ func (h *authHarness) countRows(t *testing.T, query string, argument string) int
 }
 
 func TestConfirmationTokenExpiresAfter24Hours(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.register(t, tutorSignUp(newcomerEmail))
 	h.tick(t)
@@ -432,6 +442,7 @@ func TestConfirmationTokenExpiresAfter24Hours(t *testing.T) {
 }
 
 func TestConfirmationAppliesOnlyToAnUnverifiedAccount(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.register(t, tutorSignUp(newcomerEmail))
 	h.register(t, tutorSignUp("blocked@example.org"))
@@ -458,6 +469,7 @@ func TestConfirmationAppliesOnlyToAnUnverifiedAccount(t *testing.T) {
 }
 
 func TestConfirmationAndResetEmailsShareTheAccountSendingLimits(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.register(t, tutorSignUp(newcomerEmail))
 	moments := []time.Duration{0, 61 * time.Second, 122 * time.Second, 183 * time.Second, 244 * time.Second, 305 * time.Second,
@@ -486,6 +498,7 @@ func TestConfirmationAndResetEmailsShareTheAccountSendingLimits(t *testing.T) {
 }
 
 func TestPublicResendAndForgotAnswerIdenticallyForUnknownEmails(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.register(t, tutorSignUp(newcomerEmail))
 	h.at(t, authStart.Add(61*time.Second))
@@ -512,6 +525,7 @@ func TestPublicResendAndForgotAnswerIdenticallyForUnknownEmails(t *testing.T) {
 }
 
 func TestSignedInResendIsRateLimitedAndSendsNothingToAnActiveAccount(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	h.register(t, tutorSignUp(newcomerEmail))
@@ -535,6 +549,7 @@ func TestSignedInResendIsRateLimitedAndSendsNothingToAnActiveAccount(t *testing.
 }
 
 func TestPasswordResetRevokesSessionsAndConfirmsTheEmail(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.register(t, tutorSignUp(newcomerEmail))
 	signedIn := h.login(t, newcomerEmail, newcomerPassword)
@@ -566,6 +581,7 @@ func TestPasswordResetRevokesSessionsAndConfirmsTheEmail(t *testing.T) {
 }
 
 func TestResetTokenExpiresAfterOneHour(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	h.forgot(t, tutorEmail)
@@ -581,6 +597,7 @@ func TestResetTokenExpiresAfterOneHour(t *testing.T) {
 }
 
 func TestResetIsRefusedForADeletedAccount(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	deleted := h.seedUser(t, 2, "gone@example.org", "correct horse battery", currentHash)
 	h.forgot(t, "gone@example.org")
@@ -598,6 +615,7 @@ func TestResetIsRefusedForADeletedAccount(t *testing.T) {
 }
 
 func TestChangePasswordRevokesOtherSessionsAndKeepsThisOne(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	here := h.login(t, tutorEmail, "correct horse battery")
@@ -622,6 +640,7 @@ func TestChangePasswordRevokesOtherSessionsAndKeepsThisOne(t *testing.T) {
 }
 
 func TestWrongCurrentPasswordIsRefusedAndThrottledAfterFiveAttempts(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	token := accessToken(t, h.login(t, tutorEmail, "correct horse battery"))
@@ -650,6 +669,7 @@ func TestWrongCurrentPasswordIsRefusedAndThrottledAfterFiveAttempts(t *testing.T
 }
 
 func TestAccountEmailsFollowTheLanguageAndCarryNoUserText(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	form := tutorSignUp(newcomerEmail)
 	form.Name = "Zelda <b>Bold</b>"
@@ -685,6 +705,7 @@ func (h *authHarness) obsoleteRows(t *testing.T, kind domain.OutboxKind) int64 {
 }
 
 func TestQueuedAccountEmailsAreDroppedWhenTheirSubjectChangedBeforeDispatch(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	h.seedUser(t, 2, "owner@example.org", "correct horse battery", currentHash)
@@ -718,6 +739,7 @@ func TestQueuedAccountEmailsAreDroppedWhenTheirSubjectChangedBeforeDispatch(t *t
 }
 
 func TestAnUnverifiedPasswordChangeKeepsTheMailboxOwnersLinks(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.register(t, tutorSignUp(newcomerEmail))
 	squatter := accessToken(t, h.login(t, newcomerEmail, newcomerPassword))
@@ -737,6 +759,7 @@ func TestAnUnverifiedPasswordChangeKeepsTheMailboxOwnersLinks(t *testing.T) {
 }
 
 func TestSignUpRightAfterAResetRequestAnswersAlikeForANewAndATakenEmail(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	h.forgot(t, newcomerEmail)
@@ -764,6 +787,7 @@ func TestSignUpRightAfterAResetRequestAnswersAlikeForANewAndATakenEmail(t *testi
 }
 
 func TestAnUnverifiedPasswordChangeKeepsAQueuedConfirmation(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.register(t, tutorSignUp(newcomerEmail))
 	squatter := accessToken(t, h.login(t, newcomerEmail, newcomerPassword))
@@ -780,6 +804,7 @@ func TestAnUnverifiedPasswordChangeKeepsAQueuedConfirmation(t *testing.T) {
 }
 
 func TestRegisterStoresUTCForAZoneNameThatIsNotCanonical(t *testing.T) {
+	t.Parallel()
 	names := map[string]string{
 		"dot segments":   "Europe/./Moscow",
 		"over 64 bytes":  "Europe/" + strings.Repeat("./", 40) + "Moscow",
@@ -790,6 +815,7 @@ func TestRegisterStoresUTCForAZoneNameThatIsNotCanonical(t *testing.T) {
 	}
 	for label, zone := range names {
 		t.Run(label, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			form := tutorSignUp(newcomerEmail)
 			form.Timezone = zone

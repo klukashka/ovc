@@ -40,6 +40,7 @@ func (h *authHarness) rowsOwnedBy(t *testing.T, user domain.UserID) map[string]i
 }
 
 func TestDeleteAccountRequiresThePasswordAndSignsOutEverywhere(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	here := h.login(t, tutorEmail, "correct horse battery")
@@ -63,6 +64,7 @@ func TestDeleteAccountRequiresThePasswordAndSignsOutEverywhere(t *testing.T) {
 }
 
 func TestDeletingAnUnverifiedAccountPurgesItAtOnceAndFreesTheEmail(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.register(t, tutorSignUp(newcomerEmail))
 	user := h.userID(t, newcomerEmail)
@@ -85,6 +87,7 @@ func TestDeletingAnUnverifiedAccountPurgesItAtOnceAndFreesTheEmail(t *testing.T)
 }
 
 func TestPurgeRemovesAccountRowsAndAvatarAfter30Days(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	token := h.signedInTutor(t)
 	user := h.userID(t, tutorEmail)
@@ -135,6 +138,7 @@ func TestPurgeRemovesAccountRowsAndAvatarAfter30Days(t *testing.T) {
 }
 
 func TestUnverifiedAccountIsRemovedAfter7Days(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.register(t, tutorSignUp(newcomerEmail))
 	user := h.userID(t, newcomerEmail)
@@ -155,6 +159,7 @@ func TestUnverifiedAccountIsRemovedAfter7Days(t *testing.T) {
 }
 
 func TestAConfirmedAccountIsNotRemovedAsUnverified(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 
@@ -167,6 +172,7 @@ func TestAConfirmedAccountIsNotRemovedAsUnverified(t *testing.T) {
 }
 
 func TestDeletionIsThrottledAfterFiveWrongPasswords(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	token := h.signedInTutor(t)
 	for range 5 {
@@ -213,6 +219,7 @@ func (h *authHarness) chargeAnUploadTo(t *testing.T, uploader domain.UserID, tut
 }
 
 func TestAPurgeThatCannotRemoveSomeAccountsStillRemovesTheOnesBehindThem(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	uploader := h.seedUser(t, 250, "uploader@example.org", "correct horse battery", currentHash)
 	passwordHash, err := h.hasher.Hash(context.Background(), "correct horse battery")
@@ -244,6 +251,7 @@ func TestAPurgeThatCannotRemoveSomeAccountsStillRemovesTheOnesBehindThem(t *test
 }
 
 func TestFinishedSessionsAndOldEmailRequestsAreCleanedUp(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
 	keptCookie := refreshValue(t, h.login(t, tutorEmail, "correct horse battery"))

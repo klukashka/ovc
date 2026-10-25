@@ -33,6 +33,7 @@ func waitForJoined(t *testing.T, shared *sharedReadiness, expected int) {
 }
 
 func TestConcurrentCallersShareOneInFlightCheck(t *testing.T) {
+	t.Parallel()
 	release := make(chan struct{})
 	var checks atomic.Int32
 	shared := &sharedReadiness{

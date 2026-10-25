@@ -111,6 +111,7 @@ func decode(t *testing.T, body string) decodedError {
 }
 
 func TestBodyErrorsAreStructuredAndNeverEchoInput(t *testing.T) {
+	t.Parallel()
 	server := newBodyServer(t)
 	cases := map[string]struct {
 		body   string
@@ -138,6 +139,7 @@ func TestBodyErrorsAreStructuredAndNeverEchoInput(t *testing.T) {
 }
 
 func TestValidationNamesTheField(t *testing.T) {
+	t.Parallel()
 	server := newBodyServer(t)
 
 	status, body := postBody(t, server, strings.NewReader(`{"name": "too-long"}`))
@@ -149,6 +151,7 @@ func TestValidationNamesTheField(t *testing.T) {
 }
 
 func TestValidBodiesAreAccepted(t *testing.T) {
+	t.Parallel()
 	server := newBodyServer(t)
 
 	status, body := postBody(t, server, strings.NewReader(`{"name": "anna"}`))
@@ -159,6 +162,7 @@ func TestValidBodiesAreAccepted(t *testing.T) {
 }
 
 func TestEveryRegisteredOperationSetsTheBodyLimits(t *testing.T) {
+	t.Parallel()
 	humaAPI := newAPI(http.NewServeMux())
 	(&router{api: humaAPI, logger: slog.New(slog.DiscardHandler)}).registerAll(nil)
 
@@ -186,6 +190,7 @@ func TestEveryRegisteredOperationSetsTheBodyLimits(t *testing.T) {
 }
 
 func TestUnknownPropertiesNeverEchoTheirNames(t *testing.T) {
+	t.Parallel()
 	server := newBodyServer(t)
 	for _, body := range []string{`{"name": "a", "sentinelkey": 1}`, `{"name": "a", "sentinel.dotted": 1}`, `{"name": "a", "sentinel[0]": 1}`} {
 		t.Run(body, func(t *testing.T) {
@@ -203,6 +208,7 @@ func TestUnknownPropertiesNeverEchoTheirNames(t *testing.T) {
 }
 
 func TestUnsupportedMediaTypeCarriesNoFields(t *testing.T) {
+	t.Parallel()
 	server := newBodyServer(t)
 	request, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL+"/echo", strings.NewReader("name"))
 	if err != nil {
@@ -259,6 +265,7 @@ func sendStalledBody(t *testing.T, server *httptest.Server) (string, time.Durati
 }
 
 func TestAStalledBodyStillGetsAStructuredError(t *testing.T) {
+	t.Parallel()
 	server := newBodyServerWithLimits(t, bodyServerLimits{bodyRead: 300 * time.Millisecond, read: 300 * time.Millisecond, write: 2 * time.Second})
 
 	response, elapsed := sendStalledBody(t, server)
@@ -272,6 +279,7 @@ func TestAStalledBodyStillGetsAStructuredError(t *testing.T) {
 }
 
 func TestUncleanPathsGetAStructuredNotFound(t *testing.T) {
+	t.Parallel()
 	server := newBodyServer(t)
 	for _, path := range []string{"//echo", "/x/../echo", "/./echo"} {
 		t.Run(path, func(t *testing.T) {

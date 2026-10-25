@@ -192,22 +192,78 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
 test.describe('Anna in Russian', () => {
   test.use({ locale: 'ru-RU', timezoneId: 'Europe/Berlin', colorScheme: 'light' });
 
-  test('my tutors › stop studying', async ({ page, deployment, control }) => {
+  test('my tutors › the stop studying dialog opens on Cancel and says that the student leaves the tutor’s groups', async ({
+    page,
+    deployment,
+    control,
+  }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
     const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
-    const groupId = await createGroup(deployment, maria, 'B1 evening', [cardId]);
+    await createGroup(deployment, maria, 'B1 evening', [cardId]);
+    await signInThroughTheApi(page, anna);
+    await page.goto('/tutors');
+    await page.getByRole('button', { name: 'Другие действия: Мария' }).click();
+
+    await page.getByRole('button', { name: 'Прекратить занятия' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Прекратить занятия с этим репетитором?' });
+    await expect(dialog.getByRole('button', { name: 'Отмена' })).toBeFocused();
+    await expect(dialog).toContainText('Вы выйдете из групп этого репетитора');
+  });
+
+  test('my tutors › cancelling stop studying returns focus to the menu button', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
     await signInThroughTheApi(page, anna);
     await page.goto('/tutors');
     const menu = page.getByRole('button', { name: 'Другие действия: Мария' });
     await menu.click();
     await page.getByRole('button', { name: 'Прекратить занятия' }).click();
     const dialog = page.getByRole('dialog', { name: 'Прекратить занятия с этим репетитором?' });
-    await expect(dialog.getByRole('button', { name: 'Отмена' })).toBeFocused();
-    await expect(dialog).toContainText('Вы выйдете из групп этого репетитора');
+
     await dialog.getByRole('button', { name: 'Отмена' }).click();
+
     await expect(menu).toBeFocused();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await cardState(deployment, maria, cardId)).toEqual({ state: 'active', groups: [] });
+  });
+
+  test('my tutors › the stop studying dialog opens again after Cancel', async ({ page, deployment, control }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const { student: anna } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    await signInThroughTheApi(page, anna);
+    await page.goto('/tutors');
+    const menu = page.getByRole('button', { name: 'Другие действия: Мария' });
     await menu.click();
     await page.getByRole('button', { name: 'Прекратить занятия' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Прекратить занятия с этим репетитором?' });
+    await dialog.getByRole('button', { name: 'Отмена' }).click();
+    await expect(menu).toBeFocused();
+
+    await menu.click();
+    await page.getByRole('button', { name: 'Прекратить занятия' }).click();
+
+    await expect(dialog.getByRole('button', { name: 'Отмена' })).toBeFocused();
+    await expect(dialog.getByRole('button', { name: 'Прекратить занятия' })).toHaveAttribute('aria-disabled', 'false');
+  });
+
+  test('my tutors › stop studying ends the relationship, leaves the groups, emails the tutor once and moves focus to the notice', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    const groupId = await createGroup(deployment, maria, 'B1 evening', [cardId]);
+    await signInThroughTheApi(page, anna);
+    await page.goto('/tutors');
+    await page.getByRole('button', { name: 'Другие действия: Мария' }).click();
+    await page.getByRole('button', { name: 'Прекратить занятия' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Прекратить занятия с этим репетитором?' });
     await expect(dialog.getByRole('button', { name: 'Прекратить занятия' })).toHaveAttribute('aria-disabled', 'false');
 
     await dialog.getByRole('button', { name: 'Прекратить занятия' }).click();

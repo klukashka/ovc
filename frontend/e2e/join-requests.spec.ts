@@ -1,8 +1,8 @@
 import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 
-import { emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { type TestControl, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { busyControls, offsetsBelowHeading, recordBusyControls, recordFirstOffsets } from './observers.ts';
 import {
   acceptSignedIn,
@@ -10,6 +10,7 @@ import {
   decideJoinRequest,
   deleteAccount,
   endRelationship,
+  enterTutorCode,
   registerStudentWithCode,
   seedActiveStudent,
   seedDeclinedRequests,
@@ -144,11 +145,13 @@ test.describe('Boris in English', () => {
 test.describe('Anna in Russian', () => {
   test.use({ locale: 'ru-RU', timezoneId: 'Europe/Berlin', colorScheme: 'light' });
 
-  test('my tutors › past tutors and code entry', async ({ page, browser, deployment, control, diagnostics }) => {
-    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/join-requests', status: 422 });
+  test('my tutors › past tutors list an ended relationship and a closed account', async ({
+    page,
+    deployment,
+    control,
+  }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const olga = await seedVerifiedUser(deployment, 'Ольга');
     const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
     await acceptSignedIn(deployment, anna, (await createCard(deployment, pavel, 'Anna', anna.email)).link);
     await endRelationship(deployment, maria, cardId);
@@ -162,14 +165,44 @@ test.describe('Anna in Russian', () => {
     await expect(past).toHaveCount(2);
     await expect(past.filter({ hasText: 'Мария' })).toContainText(/Занятия завершены \d/);
     await expect(past.filter({ hasText: 'Pavel' })).toContainText(/Аккаунт закрыт — результаты доступны до \d/);
+  });
+
+  test('my tutors › a code that is no longer valid is refused with an alert that takes focus', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/join-requests', status: 422 });
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    await endRelationship(deployment, maria, cardId);
+    await signInThroughTheApi(page, anna);
+    await page.goto('/tutors');
     const entry = page.getByRole('form', { name: 'Код репетитора' });
     await entry.getByLabel('Код репетитора').fill('2222-2222');
+
     await entry.getByRole('button', { name: 'Отправить запрос' }).click();
+
     await expect(entry.getByRole('alert')).toHaveText('Этот код больше не действует — попросите у репетитора новый.');
     await expect(entry.getByRole('alert')).toBeFocused();
     await expect(page.getByRole('region', { name: 'Отправленные запросы' })).toHaveCount(0);
+  });
 
+  test('my tutors › a valid code sends a request, empties the field and lists the request as sent', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const olga = await seedVerifiedUser(deployment, 'Ольга');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    await endRelationship(deployment, maria, cardId);
+    await signInThroughTheApi(page, anna);
+    await page.goto('/tutors');
+    const entry = page.getByRole('form', { name: 'Код репетитора' });
     await entry.getByLabel('Код репетитора').fill(await tutorCode(deployment, olga));
+
     await entry.getByRole('button', { name: 'Отправить запрос' }).click();
 
     await expect(entry.getByRole('status')).toHaveText('Запрос отправлен. Ждём ответа репетитора.');
@@ -178,52 +211,133 @@ test.describe('Anna in Russian', () => {
     const requests = sentRequests(page, 'Отправленные запросы');
     await expect(requests).toHaveCount(1);
     await expect(requests).toContainText(['Запрос отправлен']);
+  });
 
-    const olgaContext = await tutorContext(browser, deployment);
-    const olgaPage = await olgaContext.newPage();
-    await diagnostics.watch(olgaPage);
-    await recordBusyControls(olgaPage);
-    await signInThroughTheApi(olgaPage, olga);
-    await olgaPage.goto('/students');
-    const request = joinRequests(olgaPage).getByRole('listitem').filter({ hasText: anna.email });
-    await request.getByRole('button', { name: 'Другие действия: Анна' }).click();
-    await joinRequests(olgaPage).getByRole('button', { name: 'Отклонить и заблокировать' }).click();
-    const declined = joinRequests(olgaPage).getByRole('status');
-    await expect(declined).toHaveText('Заявка отклонена. Заявки этого ученика к вам больше не приходят.');
-    await expect(declined).toBeFocused();
-    await expect(joinRequests(olgaPage).getByRole('listitem')).toHaveCount(0);
-    expect(await busyControls(olgaPage)).toEqual([['Другие действия: Анна']]);
+  test('my tutors › after an invalid code alert the form still sends a valid code', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/join-requests', status: 422 });
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const olga = await seedVerifiedUser(deployment, 'Ольга');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    await endRelationship(deployment, maria, cardId);
+    await signInThroughTheApi(page, anna);
+    await page.goto('/tutors');
+    const entry = page.getByRole('form', { name: 'Код репетитора' });
+    await entry.getByLabel('Код репетитора').fill('2222-2222');
+    await entry.getByRole('button', { name: 'Отправить запрос' }).click();
+    await entry.getByRole('alert').waitFor();
+    await entry.getByLabel('Код репетитора').fill(await tutorCode(deployment, olga));
 
-    await page.reload();
+    await entry.getByRole('button', { name: 'Отправить запрос' }).click();
+
+    await expect(entry.getByRole('status')).toHaveText('Запрос отправлен. Ждём ответа репетитора.');
+    await expect(entry.getByRole('status')).toBeFocused();
+    await expect(entry.getByLabel('Код репетитора')).toHaveValue('');
+    await expect(sentRequests(page, 'Отправленные запросы')).toHaveCount(1);
+    expect(await visibleJoinRequests(deployment, olga)).toBe(1);
+  });
+
+  test('my tutors › a request the tutor declined with a block shows as not accepted', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { anna } = await seedRequestBlockedByOlga(deployment, control);
+    await signInThroughTheApi(page, anna);
+
+    await page.goto('/tutors');
+
+    const requests = sentRequests(page, 'Отправленные запросы');
     await expect(requests).toHaveCount(1);
     await expect(requests).toContainText(['Не принят']);
     await expect(requests).toContainText(['Ваш запрос не приняли.']);
+  });
+
+  test('my tutors › the code of a tutor who blocked the student lists a new sent request that the tutor never sees', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { anna, olga } = await seedRequestBlockedByOlga(deployment, control);
     await control.advance(60);
+    await signInThroughTheApi(page, anna);
+    await page.goto('/tutors');
+    const entry = page.getByRole('form', { name: 'Код репетитора' });
+    const requests = sentRequests(page, 'Отправленные запросы');
+    await expect(requests).toHaveCount(1);
     await entry.getByLabel('Код репетитора').fill(await tutorCode(deployment, olga));
+
     await entry.getByRole('button', { name: 'Отправить запрос' }).click();
+
     await expect(entry.getByRole('status')).toHaveText('Запрос отправлен. Ждём ответа репетитора.');
     await expect(requests).toHaveCount(2);
     await expect(requests.first()).toContainText('Запрос отправлен. Ждём ответа репетитора.');
     await expect(requests.last()).toContainText('Не принят');
-    await olgaPage.reload();
-    await expect(olgaPage.getByRole('heading', { level: 1, name: 'Ученики' })).toBeVisible();
-    await expect(joinRequests(olgaPage)).toHaveCount(0);
     expect(await visibleJoinRequests(deployment, olga)).toBe(0);
-    await olgaContext.close();
+  });
+});
+
+test.describe('Olga in Russian', () => {
+  test.use({
+    locale: 'ru-RU',
+    timezoneId: 'Europe/Moscow',
+    viewport: { width: 1280, height: 800 },
+    colorScheme: 'light',
+  });
+
+  test('join requests › decline and block on Students moves focus to the notice and empties the list', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { anna, olga } = await seedRequestToOlga(deployment, control);
+    await recordBusyControls(page);
+    await signInThroughTheApi(page, olga);
+    await page.goto('/students');
+    const request = joinRequests(page).getByRole('listitem').filter({ hasText: anna.email });
+    await request.getByRole('button', { name: 'Другие действия: Анна' }).click();
+
+    await joinRequests(page).getByRole('button', { name: 'Отклонить и заблокировать' }).click();
+
+    const declined = joinRequests(page).getByRole('status');
+    await expect(declined).toHaveText('Заявка отклонена. Заявки этого ученика к вам больше не приходят.');
+    await expect(declined).toBeFocused();
+    await expect(joinRequests(page).getByRole('listitem')).toHaveCount(0);
+    expect(await busyControls(page)).toEqual([['Другие действия: Анна']]);
+  });
+
+  test('join requests › a new request of a blocked student does not appear on Students', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { anna, olga } = await seedRequestBlockedByOlga(deployment, control);
+    await control.advance(60);
+    await enterTutorCode(deployment, anna, await tutorCode(deployment, olga));
+    await signInThroughTheApi(page, olga);
+
+    await page.goto('/students');
+
+    await expect(page.getByRole('heading', { level: 1, name: 'Ученики' })).toBeVisible();
+    await expect(joinRequests(page)).toHaveCount(0);
+    expect(await visibleJoinRequests(deployment, olga)).toBe(0);
   });
 });
 
 test.describe('in Russian', () => {
   test.use({ locale: 'ru-RU', colorScheme: 'light' });
 
-  test('join requests › show more, a plain decline and a decision on a request that changed meanwhile', async ({
+  test('join requests › show more on Today moves focus to the first new request', async ({
     page,
     deployment,
     control,
-    diagnostics,
   }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
-    const requesters = await seedJoinRequests(deployment, control, maria, pageSize + 1);
+    await seedJoinRequests(deployment, control, maria, pageSize + 1);
     await recordBusyControls(page);
     await signInThroughTheApi(page, maria);
     await page.goto('/today');
@@ -234,36 +348,66 @@ test.describe('in Russian', () => {
 
     await expect(accepts).toHaveCount(pageSize + 1);
     await expect(accepts.nth(pageSize)).toBeFocused();
+    expect(await busyControls(page)).toEqual([['Показать ещё']]);
+  });
+
+  test('join requests › a plain decline on Today removes the request and moves focus to the notice', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const requesters = await seedJoinRequests(deployment, control, maria, 2);
+    await recordBusyControls(page);
+    await signInThroughTheApi(page, maria);
+    await page.goto('/today');
     const rows = joinRequests(page).getByRole('listitem');
     const firstEmail = emailOf(requesters, 'Requester 01');
+
     await rows
       .filter({ hasText: firstEmail })
       .getByRole('button', { name: /^Отклонить: / })
       .click();
+
     const declined = joinRequests(page).getByRole('status');
     await expect(declined).toHaveText('Заявка отклонена.');
     await expect(declined).toBeFocused();
     await expect(rows.filter({ hasText: firstEmail })).toHaveCount(0);
+    await expect(rows.filter({ hasText: emailOf(requesters, 'Requester 02') })).toHaveCount(1);
+    expect(await busyControls(page)).toEqual([['Отклонить: Requester 01']]);
+  });
+
+  test('join requests › a decline of a request accepted meanwhile is refused with an alert that takes focus', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const requesters = await seedJoinRequests(deployment, control, maria, 2);
+    await recordBusyControls(page);
+    await signInThroughTheApi(page, maria);
+    await page.goto('/today');
+    const rows = joinRequests(page).getByRole('listitem');
     const secondEmail = emailOf(requesters, 'Requester 02');
+    await expect(rows.filter({ hasText: secondEmail })).toHaveCount(1);
     const acceptedElsewhere = await decideJoinRequest(deployment, maria, secondEmail, 'accept');
     diagnostics.expectFailure({
       method: 'POST',
       path: `/api/v1/join-requests/${acceptedElsewhere}/decline`,
       status: 409,
     });
+
     await rows
       .filter({ hasText: secondEmail })
       .getByRole('button', { name: /^Отклонить: / })
       .click();
+
     const changed = joinRequests(page).getByRole('alert');
     await expect(changed).toHaveText('Эта заявка уже не действует. Список обновлён.');
     await expect(changed).toBeFocused();
     await expect(rows.filter({ hasText: secondEmail })).toHaveCount(0);
-    expect(await busyControls(page)).toEqual([
-      ['Показать ещё'],
-      ['Отклонить: Requester 01'],
-      ['Отклонить: Requester 02'],
-    ]);
+    expect(await busyControls(page)).toEqual([['Отклонить: Requester 02']]);
   });
 
   test('join requests › arriving requests move neither the Students controls nor the Today code and status', async ({
@@ -364,4 +508,25 @@ function emailOf(students: readonly { readonly name: string; readonly email: str
     throw new Error(`no seeded requester named ${name}`);
   }
   return student.email;
+}
+
+async function seedRequestToOlga(
+  deployment: Deployment,
+  control: TestControl,
+): Promise<{ readonly anna: TestAccount; readonly olga: TestAccount }> {
+  const maria = await seedVerifiedUser(deployment, 'Мария');
+  const olga = await seedVerifiedUser(deployment, 'Ольга');
+  const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+  await endRelationship(deployment, maria, cardId);
+  await enterTutorCode(deployment, anna, await tutorCode(deployment, olga));
+  return { anna, olga };
+}
+
+async function seedRequestBlockedByOlga(
+  deployment: Deployment,
+  control: TestControl,
+): Promise<{ readonly anna: TestAccount; readonly olga: TestAccount }> {
+  const seeded = await seedRequestToOlga(deployment, control);
+  await decideJoinRequest(deployment, seeded.olga, seeded.anna.email, 'block');
+  return seeded;
 }

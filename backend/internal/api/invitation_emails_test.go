@@ -67,6 +67,7 @@ func sameAnswer(first response, second response) bool {
 }
 
 func TestInvitationEmailRespectsTheTutorsBudget(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, token, cardName, cardEmail)
@@ -100,6 +101,7 @@ func TestInvitationEmailRespectsTheTutorsBudget(t *testing.T) {
 }
 
 func TestRecipientCapIsSilent(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, first := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, second := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "another-tutor@example.org")
@@ -133,6 +135,7 @@ func TestRecipientCapIsSilent(t *testing.T) {
 }
 
 func TestRecipientCapResetsOnTheNextUTCDay(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, token, cardName, cardEmail)
@@ -171,6 +174,7 @@ func (h *authHarness) invitationsOf(t *testing.T, card string) int64 {
 }
 
 func TestSendingAMismatchRevokedLinkIssuesAFreshOneCountedAsARegeneration(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, token, cardName, cardEmail)
@@ -192,6 +196,7 @@ func TestSendingAMismatchRevokedLinkIssuesAFreshOneCountedAsARegeneration(t *tes
 }
 
 func TestSendNeedingAFreshLinkIsRefusedWhenRegenerationsAreUsedUp(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	other := h.newCard(t, token, "Another pupil", "")
@@ -220,6 +225,7 @@ func TestSendNeedingAFreshLinkIsRefusedWhenRegenerationsAreUsedUp(t *testing.T) 
 }
 
 func TestSendingAnOpenOrExpiredLinkCountsNoRegeneration(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	open := h.newCard(t, token, cardName, cardEmail)
@@ -240,6 +246,7 @@ func TestSendingAnOpenOrExpiredLinkCountsNoRegeneration(t *testing.T) {
 }
 
 func TestMissingCardEmailIsRefusedBeforeTheExhaustedBudget(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, token, cardName, cardEmail)
@@ -254,6 +261,7 @@ func TestMissingCardEmailIsRefusedBeforeTheExhaustedBudget(t *testing.T) {
 }
 
 func TestBudgetRefusalLeavesAnExpiredLinkUnrevoked(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, token, cardName, cardEmail)
@@ -275,6 +283,7 @@ func TestBudgetRefusalLeavesAnExpiredLinkUnrevoked(t *testing.T) {
 }
 
 func TestUnreadableInvitationCiphertextMakesTheEmailDead(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, token, cardName, cardEmail)
@@ -296,6 +305,7 @@ func TestUnreadableInvitationCiphertextMakesTheEmailDead(t *testing.T) {
 }
 
 func TestNoInvitationEmailToABlockedOrDeletedAccount(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	blocked := h.seedStudent(t, 2)
@@ -343,6 +353,7 @@ func TestNoInvitationEmailToABlockedOrDeletedAccount(t *testing.T) {
 }
 
 func TestInvitationSendRefusesCardsThatCannotTakeIt(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, unverified := h.signedInAs(t, domain.RoleTutor, domain.AccountUnverified, 2, "unconfirmed-tutor@example.org")
@@ -378,6 +389,7 @@ func TestInvitationSendRefusesCardsThatCannotTakeIt(t *testing.T) {
 }
 
 func TestSendingAnExpiredLinkSendsAFreshOne(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card := h.newCard(t, token, cardName, cardEmail)
@@ -400,6 +412,7 @@ func TestSendingAnExpiredLinkSendsAFreshOne(t *testing.T) {
 }
 
 func TestSendingACardWithoutAnOpenLinkIssuesOne(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student := h.seedStudent(t, 2)
@@ -424,6 +437,7 @@ func TestSendingACardWithoutAnOpenLinkIssuesOne(t *testing.T) {
 }
 
 func TestInvitationEmailIsObsoleteOnceTheLinkIsUsedRevokedOrExpired(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	blockedTutor, blockedToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "blocked-tutor@example.org")
@@ -466,6 +480,7 @@ func TestInvitationEmailIsObsoleteOnceTheLinkIsUsedRevokedOrExpired(t *testing.T
 }
 
 func TestInvitationTokenNeverInOutboxPayloadOrLogs(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	h.setAccount(t, tutor, "Anna Tutorova", domain.LanguageEnglish)
@@ -503,6 +518,7 @@ func TestInvitationTokenNeverInOutboxPayloadOrLogs(t *testing.T) {
 }
 
 func TestInvitationEmailEscapesTheTutorNameAndKeepsItOutOfTheSubject(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	h.setAccount(t, tutor, `Anna <a href="https://evil.example/">Click</a> & "Co"`, domain.LanguageEnglish)
@@ -534,6 +550,7 @@ func TestInvitationEmailEscapesTheTutorNameAndKeepsItOutOfTheSubject(t *testing.
 }
 
 func TestInvitationEmailFollowsTheRecipientsLanguageOrTheTutors(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	englishTutor, englishToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	russianTutor, russianToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "russian-tutor@example.org")
@@ -604,6 +621,7 @@ func (h *authHarness) sendNeedingAFreshLink(t *testing.T, recipient string, prep
 }
 
 func TestDroppedSendIssuesTheFreshLinkLikeAQueuedOne(t *testing.T) {
+	t.Parallel()
 	nothing := func(*testing.T, *authHarness) {}
 	capped := func(t *testing.T, h *authHarness) {
 		t.Helper()
@@ -638,6 +656,7 @@ func TestDroppedSendIssuesTheFreshLinkLikeAQueuedOne(t *testing.T) {
 
 	for name, drop := range drops {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newAuthHarness(t)
 
 			dropped := h.sendNeedingAFreshLink(t, drop.recipient, drop.prepare)

@@ -88,6 +88,7 @@ func onlyMessage(t *testing.T, messages []mail.SinkMessage, subject string) mail
 }
 
 func TestTutorEndingRemovesFromGroupsAndEmailsTheStudent(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.setAccount(t, parties.tutor, markupTutorName, domain.LanguageEnglish)
@@ -133,6 +134,7 @@ func TestTutorEndingRemovesFromGroupsAndEmailsTheStudent(t *testing.T) {
 }
 
 func TestStudentEndingRemovesFromGroupsAndEmailsTheTutor(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 
@@ -163,6 +165,7 @@ func TestStudentEndingRemovesFromGroupsAndEmailsTheTutor(t *testing.T) {
 }
 
 func TestStudentCannotEndAnotherStudentsRelationship(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	_, intruder := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 3, "another-student@example.org")
@@ -183,6 +186,7 @@ func TestStudentCannotEndAnotherStudentsRelationship(t *testing.T) {
 }
 
 func TestStudentEndAnswersNotFoundForOwnInvitedDiscardedOrReclaimPendingIds(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	secondTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 3, secondTutorEmail)
@@ -212,7 +216,9 @@ func TestStudentEndAnswersNotFoundForOwnInvitedDiscardedOrReclaimPendingIds(t *t
 }
 
 func TestEndedEmailToTheTutorUsesTheCardNameEscaped(t *testing.T) {
+	t.Parallel()
 	t.Run("a card the tutor named", func(t *testing.T) {
+		t.Parallel()
 		h := newFlowHarness(t)
 		_, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 		student, studentToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -239,6 +245,7 @@ func TestEndedEmailToTheTutorUsesTheCardNameEscaped(t *testing.T) {
 		}
 	})
 	t.Run("a card created by accepting a join request", func(t *testing.T) {
+		t.Parallel()
 		h := newFlowHarness(t)
 		tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 		student, studentToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -261,6 +268,7 @@ func TestEndedEmailToTheTutorUsesTheCardNameEscaped(t *testing.T) {
 }
 
 func TestEndedEmailIsNotSentToAnUnverifiedRecipient(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 2, studentEmail)
@@ -278,6 +286,7 @@ func TestEndedEmailIsNotSentToAnUnverifiedRecipient(t *testing.T) {
 }
 
 func TestEndingIsIdempotent(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 
@@ -303,6 +312,7 @@ func TestEndingIsIdempotent(t *testing.T) {
 }
 
 func TestEndingAnInvitedCardIsRefusedAndADiscardedCardIsNotFound(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	unverified, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 2, "unconfirmed@example.org")
@@ -342,6 +352,7 @@ func TestEndingAnInvitedCardIsRefusedAndADiscardedCardIsNotFound(t *testing.T) {
 }
 
 func TestReactivationByInvitationKeepsHistoryAndRestoresNoGroups(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.withNotes(t, parties.tutorToken, parties.card.ID, "Prefers mornings")
@@ -374,6 +385,7 @@ func TestReactivationByInvitationKeepsHistoryAndRestoresNoGroups(t *testing.T) {
 }
 
 func TestReactivationByJoinRequestAfterAnEndingRestoresNoGroups(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.stopStudying(t, parties.studentToken, parties.card.ID)
@@ -392,6 +404,7 @@ func TestReactivationByJoinRequestAfterAnEndingRestoresNoGroups(t *testing.T) {
 }
 
 func TestReactivationByInvitationAcceptsARequestAnUnblockClosed(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.endAsTutor(t, parties.tutorToken, parties.card.ID)
@@ -422,6 +435,7 @@ func TestReactivationByInvitationAcceptsARequestAnUnblockClosed(t *testing.T) {
 }
 
 func TestRelationshipEndedEmailIsObsoleteAfterReactivation(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.stopStudying(t, parties.studentToken, parties.card.ID)
@@ -436,6 +450,7 @@ func TestRelationshipEndedEmailIsObsoleteAfterReactivation(t *testing.T) {
 }
 
 func TestEndedEmailOfAnEarlierEndingIsObsoleteAfterTheRelationshipEndsAgain(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.stopStudying(t, parties.studentToken, parties.card.ID)
@@ -453,6 +468,7 @@ func TestEndedEmailOfAnEarlierEndingIsObsoleteAfterTheRelationshipEndsAgain(t *t
 }
 
 func TestEndedAgainAfterAJoinRequestReactivationHoldsNoOpenInvitation(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.endAsTutor(t, parties.tutorToken, parties.card.ID)
@@ -476,6 +492,7 @@ func TestEndedAgainAfterAJoinRequestReactivationHoldsNoOpenInvitation(t *testing
 }
 
 func TestStopStudyingOnAProvisionalLinkRemovesIt(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, student := h.linkedStudent(t, tutorToken, newcomerEmail)
@@ -514,6 +531,7 @@ func TestStopStudyingOnAProvisionalLinkRemovesIt(t *testing.T) {
 }
 
 func TestEndingRacingAGroupChangeLeavesNoMembership(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	cards := h.activeCards(t, tutor, 10, 2)
@@ -569,6 +587,7 @@ func anotherStudentsRelationship(t *testing.T, h *authHarness) (response, respon
 }
 
 func TestEndedEmailFollowsTheRecipientsLanguage(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	h.setAccount(t, parties.tutor, "Ирина", domain.LanguageRussian)

@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 import { resolveRunOutput, runOutputVariable } from './e2e/run-output.ts';
 
-const browserlessSuites = ['**/session-transport.spec.ts'];
+const browserlessSuites = ['**/session-transport.spec.ts', '**/api-contracts.spec.ts'];
 const runOutput = resolveRunOutput(import.meta.dirname, process.env[runOutputVariable], process.pid);
 process.env[runOutputVariable] = runOutput;
 

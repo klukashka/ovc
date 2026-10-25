@@ -87,6 +87,7 @@ func claim(t *testing.T, store *repositories.Store, lease byte, limit int32) []d
 }
 
 func TestUsersRoundTripNamedIdentifiersAndCaseInsensitiveEmail(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	createUser(t, store, domain.UserID{7}, "Tutor@Example.org")
 
@@ -102,6 +103,7 @@ func TestUsersRoundTripNamedIdentifiersAndCaseInsensitiveEmail(t *testing.T) {
 }
 
 func TestRateLimitReservationIsAtomicUnderConcurrency(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	slot := repositories.RateLimitSlot{Purpose: "sign_in_email", Subject: hash("subject"), WindowStart: instant}
 	const attempts = 20
@@ -135,6 +137,7 @@ func TestRateLimitReservationIsAtomicUnderConcurrency(t *testing.T) {
 }
 
 func TestRateLimitReleaseNeverGoesBelowZero(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	slot := repositories.RateLimitSlot{Purpose: "sign_in_email", Subject: hash("subject"), WindowStart: instant}
 	limits := store.Repositories().RateLimits
@@ -151,6 +154,7 @@ func TestRateLimitReleaseNeverGoesBelowZero(t *testing.T) {
 }
 
 func TestOutboxClaimsByPriorityWithoutOverlapAndOnlyDueRows(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	insertOutbox(t, store, 1, domain.PriorityNormal, instant.Add(-time.Minute))
 	insertOutbox(t, store, 2, domain.PriorityNormal, instant.Add(-2*time.Minute))
@@ -166,6 +170,7 @@ func TestOutboxClaimsByPriorityWithoutOverlapAndOnlyDueRows(t *testing.T) {
 }
 
 func TestOutboxConcurrentClaimsNeverShareARow(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	for id := byte(1); id <= 12; id++ {
 		insertOutbox(t, store, id, domain.PriorityNormal, instant)
@@ -204,6 +209,7 @@ func TestOutboxConcurrentClaimsNeverShareARow(t *testing.T) {
 }
 
 func TestOutboxTransitionsRequireTheCurrentLease(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	outbox := store.Repositories().Outbox
 	insertOutbox(t, store, 1, domain.PriorityNormal, instant)
@@ -222,6 +228,7 @@ func TestOutboxTransitionsRequireTheCurrentLease(t *testing.T) {
 }
 
 func TestOutboxExpiredLeaseKillsOnlyRowsThatUsedEveryAttempt(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	outbox := store.Repositories().Outbox
 	insertOutbox(t, store, 1, domain.PriorityNormal, instant)
@@ -257,6 +264,7 @@ func TestOutboxExpiredLeaseKillsOnlyRowsThatUsedEveryAttempt(t *testing.T) {
 }
 
 func TestOutboxRowFirstReclaimedReturnsToPending(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	insertOutbox(t, store, 1, domain.PriorityNormal, instant)
 	claim(t, store, 1, 1)
@@ -270,6 +278,7 @@ func TestOutboxRowFirstReclaimedReturnsToPending(t *testing.T) {
 }
 
 func TestOutboxRetryAndFailureFollowTheLease(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	outbox := store.Repositories().Outbox
 	insertOutbox(t, store, 1, domain.PriorityNormal, instant)
@@ -292,6 +301,7 @@ func TestOutboxRetryAndFailureFollowTheLease(t *testing.T) {
 }
 
 func TestFinishedOutboxRowsAreDeletedByTheirOwnRetention(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	outbox := store.Repositories().Outbox
 	insertOutbox(t, store, 1, domain.PriorityNormal, instant)
@@ -320,6 +330,7 @@ func TestFinishedOutboxRowsAreDeletedByTheirOwnRetention(t *testing.T) {
 }
 
 func TestOutboxInsertIsIdempotentByKey(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	insertOutbox(t, store, 1, domain.PriorityNormal, instant)
 
@@ -334,6 +345,7 @@ func TestOutboxInsertIsIdempotentByKey(t *testing.T) {
 }
 
 func TestSessionRotationIsCompareAndSwap(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	createUser(t, store, domain.UserID{1}, "tutor@example.org")
 	sessions := store.Repositories().Sessions
@@ -372,6 +384,7 @@ func TestSessionRotationIsCompareAndSwap(t *testing.T) {
 }
 
 func TestRevokedOrExpiredSessionsNeverRotate(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	createUser(t, store, domain.UserID{1}, "tutor@example.org")
 	sessions := store.Repositories().Sessions
@@ -401,6 +414,7 @@ func TestRevokedOrExpiredSessionsNeverRotate(t *testing.T) {
 }
 
 func TestAUserHasAtMostOneAvatarReference(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	createUser(t, store, domain.UserID{1}, "tutor@example.org")
 	attachments := store.Repositories().Attachments
@@ -429,6 +443,7 @@ func TestAUserHasAtMostOneAvatarReference(t *testing.T) {
 }
 
 func TestEmailTokenIsConsumedOnceAndNeverAfterExpiry(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	createUser(t, store, domain.UserID{1}, "tutor@example.org")
 	tokens := store.Repositories().EmailTokens
@@ -460,6 +475,7 @@ func TestEmailTokenIsConsumedOnceAndNeverAfterExpiry(t *testing.T) {
 }
 
 func TestEmailTokenIsNeverConsumedForTheOtherPurpose(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	createUser(t, store, domain.UserID{1}, "tutor@example.org")
 	tokens := store.Repositories().EmailTokens
@@ -483,6 +499,7 @@ func TestEmailTokenIsNeverConsumedForTheOtherPurpose(t *testing.T) {
 }
 
 func TestExpiredRateLimitCountersAreDeletedInBatches(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	limits := store.Repositories().RateLimits
 	for index := range 5 {
@@ -501,6 +518,7 @@ func TestExpiredRateLimitCountersAreDeletedInBatches(t *testing.T) {
 }
 
 func TestPasswordRehashReplacesOnlyTheHashItWasComputedFrom(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	createUser(t, store, domain.UserID{1}, "tutor@example.org")
 	users := store.Repositories().Users
@@ -526,6 +544,7 @@ func TestPasswordRehashReplacesOnlyTheHashItWasComputedFrom(t *testing.T) {
 }
 
 func TestOfTwoEmailRequestsAtTheSameInstantExactlyOneIsCurrent(t *testing.T) {
+	t.Parallel()
 	store := newStore(t)
 	user := domain.UserID{1}
 	createUser(t, store, user, "tutor@example.org")

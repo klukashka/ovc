@@ -95,6 +95,7 @@ func (h *authHarness) storedCode(t *testing.T, tutor domain.UserID) domain.Tutor
 }
 
 func TestTutorReadsAndRegeneratesTheCodeWithoutLoggingIt(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	original := h.storedCode(t, tutor)
@@ -125,6 +126,7 @@ func TestTutorReadsAndRegeneratesTheCodeWithoutLoggingIt(t *testing.T) {
 }
 
 func TestUnverifiedTutorCannotRegenerateTheCode(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountUnverified, 1, tutorEmail)
 	original := h.storedCode(t, tutor)
@@ -144,6 +146,7 @@ func TestUnverifiedTutorCannotRegenerateTheCode(t *testing.T) {
 }
 
 func TestCodeRegenerationLimit(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	seen := map[string]bool{h.storedCode(t, tutor).Display(): true}
@@ -182,6 +185,7 @@ func TestCodeRegenerationLimit(t *testing.T) {
 }
 
 func TestConcurrentRegenerationsStopAtTheLimit(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	original := h.storedCode(t, tutor).Display()
@@ -306,6 +310,7 @@ func assertRoleRefusals(t *testing.T, h *authHarness, operations []api.Operation
 }
 
 func TestStudentCallingTutorRoutesGetsNotFound(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	original := h.storedCode(t, tutor)
@@ -330,6 +335,7 @@ var studentRoutesOfSliceThree = []string{
 }
 
 func TestTutorCallingStudentRoutesGetsNotFound(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	_, active := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, unverified := h.signedInAs(t, domain.RoleTutor, domain.AccountUnverified, 2, "unconfirmed@example.org")
@@ -464,6 +470,7 @@ func anotherAccountsPendingUploadIsNoAvatar(t *testing.T, h *authHarness) (respo
 }
 
 func TestEveryScopedRouteHasADenialCase(t *testing.T) {
+	t.Parallel()
 	scoped := map[string]bool{}
 	for _, operation := range api.Operations() {
 		if strings.Contains(operation.Path, "{") {
@@ -488,6 +495,7 @@ func TestEveryScopedRouteHasADenialCase(t *testing.T) {
 			continue
 		}
 		t.Run(key, func(t *testing.T) {
+			t.Parallel()
 			h := newAuthHarness(t)
 
 			expected, overridden := denialStatuses[key]
@@ -651,6 +659,7 @@ func (h *authHarness) wrongRoleTokens(t *testing.T) map[domain.Role]map[string]s
 }
 
 func TestUnconfirmedEmailIsRefusedBeforeTheBodyIsRead(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarnessServing(t, nil, api.NewHandlerWithBodyProbe)
 	_, unverified := h.signedInAs(t, domain.RoleTutor, domain.AccountUnverified, 1, tutorEmail)
 	_, active := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "confirmed-tutor@example.org")
@@ -681,6 +690,7 @@ func TestUnconfirmedEmailIsRefusedBeforeTheBodyIsRead(t *testing.T) {
 }
 
 func TestWrongRoleGetsNotFoundBeforeTheBodyIsRead(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarnessServing(t, nil, api.NewHandlerWithBodyProbe)
 	tokens := h.wrongRoleTokens(t)
 
@@ -705,6 +715,7 @@ func roleSpecificOperationsWithABody(document publishedDocument) map[string]bool
 }
 
 func TestWrongRoleGetsNotFoundBeforeBodyValidation(t *testing.T) {
+	t.Parallel()
 	h := newAuthHarness(t)
 	tokens := h.wrongRoleTokens(t)
 	_, confirmedTutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 5, "confirmed-tutor@example.org")

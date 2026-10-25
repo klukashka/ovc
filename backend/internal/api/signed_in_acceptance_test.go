@@ -129,6 +129,7 @@ func randomInvitationToken() string {
 }
 
 func TestTutorAcceptingAnInvitationGetsRoleMismatch(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, owner := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, activeTutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -159,6 +160,7 @@ func TestTutorAcceptingAnInvitationGetsRoleMismatch(t *testing.T) {
 }
 
 func TestUnconfirmedStudentCannotAcceptASecondTutorsInvitation(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, firstTutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, secondTutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -188,6 +190,7 @@ func TestUnconfirmedStudentCannotAcceptASecondTutorsInvitation(t *testing.T) {
 }
 
 func TestUnconfirmedStudentWithoutALinkMayAcceptAFirstInvitation(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, secondTutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -232,6 +235,7 @@ func TestUnconfirmedStudentWithoutALinkMayAcceptAFirstInvitation(t *testing.T) {
 }
 
 func TestSignedInAcceptanceOfAnEmailBoundCardCountsTheMismatch(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, other := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, otherEmail)
@@ -262,7 +266,9 @@ func TestSignedInAcceptanceOfAnEmailBoundCardCountsTheMismatch(t *testing.T) {
 }
 
 func TestSecondCardOfTheSameStudentIsMerged(t *testing.T) {
+	t.Parallel()
 	t.Run("into an active relationship", func(t *testing.T) {
+		t.Parallel()
 		h := newFlowHarness(t)
 		tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 		student, signedIn := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -292,6 +298,7 @@ func TestSecondCardOfTheSameStudentIsMerged(t *testing.T) {
 		}
 	})
 	t.Run("into an ended relationship with an open link", func(t *testing.T) {
+		t.Parallel()
 		h := newFlowHarness(t)
 		tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 		student, signedIn := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -322,6 +329,7 @@ func TestSecondCardOfTheSameStudentIsMerged(t *testing.T) {
 }
 
 func TestEndedCardInvitationAcceptsOnlyTheBoundAccount(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student, signedIn := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -363,6 +371,7 @@ func TestEndedCardInvitationAcceptsOnlyTheBoundAccount(t *testing.T) {
 }
 
 func TestSharedStudentIsIsolatedBetweenTutors(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, ivan := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, pavel := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -401,6 +410,7 @@ func TestSharedStudentIsIsolatedBetweenTutors(t *testing.T) {
 }
 
 func TestNotesNeverReachAStudentResponse(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, student := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, cardEmail)
@@ -430,6 +440,7 @@ func TestNotesNeverReachAStudentResponse(t *testing.T) {
 }
 
 func TestStudentSeesOnlyTheirOwnTutors(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	firstTutorID, firstTutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	_, secondTutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -470,7 +481,9 @@ func TestStudentSeesOnlyTheirOwnTutors(t *testing.T) {
 }
 
 func TestConcurrentAcceptancesByOneAccountNeverAnswer500(t *testing.T) {
+	t.Parallel()
 	t.Run("an unconfirmed account and two tutors", func(t *testing.T) {
+		t.Parallel()
 		h := newFlowHarness(t)
 		_, firstTutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 		_, secondTutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
@@ -501,6 +514,7 @@ func TestConcurrentAcceptancesByOneAccountNeverAnswer500(t *testing.T) {
 		}
 	})
 	t.Run("a confirmed account and two cards of one tutor", func(t *testing.T) {
+		t.Parallel()
 		h := newFlowHarness(t)
 		_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 		student, signedIn := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
@@ -532,12 +546,14 @@ func TestConcurrentAcceptancesByOneAccountNeverAnswer500(t *testing.T) {
 }
 
 func TestSignedInAcceptanceRechecksTheSessionUnderTheLock(t *testing.T) {
+	t.Parallel()
 	cases := map[string]domain.AccountState{
 		"a reset reclaims the unconfirmed account":                             domain.AccountUnverified,
 		"a reset revokes the confirmed account's sessions and keeps its state": domain.AccountActive,
 	}
 	for name, state := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newFlowHarness(t)
 			_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			student, signedIn := h.signedInAs(t, domain.RoleStudent, state, 2, studentEmail)
@@ -572,6 +588,7 @@ func TestSignedInAcceptanceRechecksTheSessionUnderTheLock(t *testing.T) {
 }
 
 func TestSignedInAcceptanceOfAnUnusableTokenAnswersIdentically(t *testing.T) {
+	t.Parallel()
 	h := newFlowHarness(t)
 	tutorID, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	blockedTutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
