@@ -33,7 +33,7 @@ Recordings (FR-5.4 to FR-5.6) and analytics (FR-11.2 to FR-11.4) are outside the
 | 2 | Maria | Confirm email | Opens the emailed link in a fresh browser, sets a new password: `POST /auth/verify-email` with `{token, new_password}` | Signed in; Today shows the first-run checklist |
 | 3 | Maria | Settings | `PATCH /users/me` | Bio saved; checklist step done |
 | 4 | Maria | Students | `POST /students` with Anna's email, then `POST /students/{id}/invitation/send` | Card for Anna; invitation email in the sink |
-| 5 | Anna | Accept invitation, Home, Confirm email | `GET /invitations/{token}`, `POST /invitations/{token}/accept` from the emailed link, then the confirmation link in the same browser: `POST /auth/verify-email` with `{token}` | Anna creates her account on the invitation page and is signed in; Home shows Maria as her tutor with the confirmation banner, and Maria's card shows "Email not confirmed"; after confirming, the banner is gone, the outcome is `linked` and the relationship is active |
+| 5 | Anna | Accept invitation, Home, Confirm email | `GET /invitations/{token}`, `POST /invitations/{token}/accept` from the emailed link, then the confirmation link in the same browser: `POST /auth/verify-email` with `{token}` | Anna creates her account on the invitation page and is signed in; Home shows Maria as her tutor with the confirmation banner, and Maria's card shows "Email not confirmed" without a reload; Maria's bell shows 1, and the row names the card by its display name with "Invitation accepted" (`GET /notifications`); after confirming, the banner is gone, the outcome is `linked`, the relationship is active, and no second row arrives |
 | 6 | Maria | Schedule | `POST /lessons` (series, Tuesdays and Thursdays at 18:00, 8 lessons) | Eight lessons in the calendar; Anna's Schedule shows them at 16:00; her lesson page shows `time.other_zone` with 18:00 and Moscow |
 | 7 | Clock, Worker | — | `harness: POST /clock` to 60 minutes before the first lesson, `harness: POST /tick` | The 1-hour reminder emails for Maria and Anna are in the sink, in Russian, with Anna's in Berlin time |
 | 8 | Clock | — | `harness: POST /clock` to 5 minutes before the first lesson | — |
@@ -62,8 +62,8 @@ Each question has an explanation.
 | # | Actor | Page | Operation | Expected |
 |---|---|---|---|---|
 | 1 | Maria | Settings | `GET /tutor/code` | The tutor code is shown |
-| 2 | Boris | Sign up, Confirm email | `POST /auth/register` (student, with the code) on `/signup/student`, signs in, then opens the confirmation link in the same browser: `POST /auth/verify-email` with `{token}` | Before confirming, Maria's Today shows no request; after confirming, the outcome is `request_sent` and Boris sees "Request sent. Waiting for the tutor." |
-| 3 | Maria | Today | `POST /join-requests/{id}/accept` | The request disappears; Boris appears in Students |
+| 2 | Boris | Sign up, Confirm email | `POST /auth/register` (student, with the code) on `/signup/student`, signs in, then opens the confirmation link in the same browser: `POST /auth/verify-email` with `{token}` | Before confirming, Maria's Today shows no request and her bell no row; after confirming, the outcome is `request_sent` and Boris sees "Request sent. Waiting for the tutor."; the request appears on Maria's open Today without a reload, with a `join_request.created` row in her notifications |
+| 3 | Maria | Today | `POST /join-requests/{id}/accept` | The request disappears; Boris appears in Students; Boris's bell shows a `join_request.accepted` row labelled with Maria's name |
 | 4 | Maria | Groups | "New group", `POST /groups` | Group "B1 evening" with Anna and Boris; its chat exists |
 | 5 | Maria | Library, Builder | `POST /library/folders`, `POST /uploads?context=library`, `POST /library/materials`, `POST /library/templates`, `PUT /library/templates/{id}` | The template above is in the library; the preview shows its five blocks in order without answer keys |
 | 6 | Maria | Issue dialog | `POST /issues` (group, deadline in 2 days, answers after checking) | Both students get the assignment and an email |
@@ -102,7 +102,7 @@ Seed:
 | 11 | Clock, Worker | — | `harness: POST /clock` +31 minutes, `harness: POST /tick` | No second digest for the same message |
 | 12 | Maria | Lesson | `PATCH /lessons/{id}` with scope `this` (the next Wednesday lesson moves to 20:00) | A "lesson moved" email to Anna in Russian, with 18:00 her time |
 | 13 | Clock, Worker | — | `harness: POST /clock` to 60 minutes before the moved lesson, `harness: POST /tick` | The reminder uses the new time; none for the old time |
-| 14 | Anna | Unsubscribe | Opens the unsubscribe link from the digest, presses the button: `POST /unsubscribe?token=`, then closes the tab; the test waits until `harness: POST /presence` reports her offline | The preference is off |
+| 14 | Anna | Unsubscribe | (`pending implementation` until the digest of slice 6 carries the link) Opens the unsubscribe link from the digest, presses the button: `POST /unsubscribe?token=`, then closes the tab; the test waits until `harness: POST /presence` reports her offline | The preference is off |
 | 15 | Boris, Clock, Worker | — | Another group message, `harness: POST /clock` +11 minutes, `harness: POST /tick` | No digest to Anna, under the same conditions in which step 10 produced one |
 
 ## Scenario 4: ending a relationship and refusals
@@ -116,13 +116,13 @@ Seed:
 
 | # | Actor | Page | Operation | Expected |
 |---|---|---|---|---|
-| 1 | Maria | Student card | `POST /students/{id}/end` for Boris | Boris's future one-to-one lessons are cancelled and his series ends; one aggregated email to Boris; he leaves "B1 evening" |
+| 1 | Maria | Student card | `POST /students/{id}/end` for Boris | Boris's future one-to-one lessons are cancelled and his series ends; one aggregated email to Boris; he leaves "B1 evening"; Boris gets a `relationship.ended` row in his notifications |
 | 2 | Clock, Worker | — | `harness: POST /clock` +2 days, `harness: POST /tick` | Horizon extension creates no new lessons for the ended series |
 | 3 | Boris | Messages | — | The private chat with Maria is read-only, with its composer disabled; the group chat is no longer listed |
 | 4 | Boris | Lesson | Opens the group lesson's address | Not found |
 | 5 | Boris | Homework | — | The Closed tab shows the group assignment, which cannot be submitted |
 | 6 | Boris | Accept invitation | Opens the copied link from the seed again | "This invitation is no longer valid" |
-| 7 | Maria | Student card (Ended) | "Invite again", `POST /students/{id}/invitation`; Boris accepts the new link | The relationship is active again with its history; the chat is writable; Boris is not back in the group |
+| 7 | Maria | Student card (Ended) | "Invite again", `POST /students/{id}/invitation`; Boris accepts the new link | The relationship is active again with its history; the chat is writable; Boris is not back in the group; Maria gets an `invitation.accepted` row naming the card |
 | 8 | Anonymous | Any private page | Any private operation | Redirect to `/?next=…`; the API returns 401 |
 
 ## Supplementary suites
@@ -140,9 +140,9 @@ Smaller Playwright or integration suites cover what the pilots do not walk throu
 | Homework policies | integration + Playwright | FR-6.3 template edits after issue, FR-8.4 withdrawal and its races, FR-10.3 return blocked under "after submission", overrides, updated reviews, draft corrected files refused, the answer-key contract test, number-parsing and normalisation units |
 | Chat edits and presence | Playwright | FR-12.3 edit and delete, FR-12.4 presence, FR-12.5 read-only channels |
 | Files | integration | FR-14.1 size and type refusals, FR-14.2 quota refusal |
-| Notifications | integration | FR-13.1 list and unread count, every email event, obsolete-at-dispatch rules, idempotency of in-app rows and emails, RFC 8058 unsubscribe |
+| Notifications | integration | FR-13.1 list and unread count, every email event, obsolete-at-dispatch rules, idempotency of in-app rows and emails, RFC 8058 unsubscribe; active from slice 4 for FR-13.1, the idempotency of in-app rows and RFC 8058 unsubscribe, with the email events of later slices pending |
 | Progress and onboarding | Playwright | FR-11.3 student progress, FR-15.2 checklist dismissal, FR-17 language switch across every page |
-| Realtime resilience | Playwright | WebSocket disconnect and reconnect with refetch, `4401` after sign-out everywhere, `4429` handling |
+| Realtime resilience | Playwright | WebSocket disconnect and reconnect with refetch, `4401` after sign-out everywhere, `4429` handling; active from slice 4, with the server-side closes driven by `harness: POST /realtime/close` and socket closes awaited through `harness: POST /presence` |
 | Operator command | integration | FR-16.1 list, block, unblock, restore, set quota |
 
 ## Coverage

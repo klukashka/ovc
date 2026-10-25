@@ -10,7 +10,7 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 - **Signed-in frame (both roles)**, styled per [tokens](tokens.md#components) and decided in [ADR-0010](../../../docs/decisions/0010-quiet-visual-language.md):
   - a 248 px left sidebar on the `sidebar` background, full height, scrolling on its own;
   - at the top, the user's avatar initial and name; clicking it opens the account menu (Settings, Sign out); next to it, a "Hide sidebar" icon button;
-  - below, the role's sections as items with an outline icon, a label and an optional count, then Notifications (with the unread count) and Settings at the end of the list;
+  - below, the role's sections as items with an outline icon, a label and an optional count, then Notifications (with the unread count, "99+" above 99; it opens the notifications panel, [pages](pages.md#notifications)) and Settings at the end of the list;
   - when hidden on a computer, a "Show sidebar" icon button stays in the top-left corner and carries an `accent-text` dot when any section count or the unread-notification count is above zero (its accessible name then ends with "new items" / "есть новое"); the choice is remembered per browser;
   - the page itself may have a thin top bar with breadcrumbs and the page's own actions (the builder, review and lesson pages), never a second navigation.
 - **Tutor sections:** Today, Schedule, Students, Groups, Homework (count: needs checking), Messages (count: unread). Homework opens `/homework/library` and has three tabs: Library, Issued and Needs checking.
@@ -31,7 +31,7 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 | `/verify-email?token=` | Email confirmation result | Then continues to the home page, or to `/reclaim` when the outcome is `choice_required`; without a token, a signed-in unverified account sees "Check your email" with a resend button |
 | `/forgot-password`, `/reset-password?token=` | Password reset | After a reset answering `choice_required`, the next sign-in lands on `/reclaim` |
 | `/invite/{token}` | Accept invitation | Reachable signed in or out, also while a reclaim choice is pending; shows the tutor; create an account or sign in in place, or accept while signed in; the address becomes `/invite` on the first render, and `/invite` alone asks to open the link again |
-| `/unsubscribe?token=` | Unsubscribe confirmation | Works without signing in |
+| `/unsubscribe?token=` | Unsubscribe confirmation | Works without signing in and never signs in; the address becomes `/unsubscribe` on the first render, and `/unsubscribe` alone shows the invalid-link message |
 | `/privacy` | Privacy policy | Linked from the consent checkbox; a placeholder until the owner supplies the text |
 
 ## Tutor addresses
@@ -83,10 +83,10 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
   - the rule is the access rule in `src/routes/access.ts`, unit-tested as a permission rule; it hides what the API would refuse and decides nothing the API does not.
 - **Other refusals:**
   - `403 forbidden` shows a toast explaining the action is not allowed;
-  - `account_blocked` and a WebSocket close with `4401` that a token refresh cannot fix sign the user out with a message.
+  - `account_blocked` and a WebSocket close with `4401` that a token refresh cannot fix sign the user out with a message. The session's refresh reports its result instead of a boolean: renewed, or ended with a reason. A refresh refused with `403 account_blocked` ends the session as blocked, with the blocked message; any other refusal ends it with the reason `sessionEnded` and the message "You were signed out on this device" ([states](states.md#notifications)), because a revoked and a deleted session cannot, and must not, be told apart.
 - **A deep link** to a resource the user cannot see shows Not found (`404` from the API).
 - **Signing out** returns to `/` and clears cached data.
-- **Notification links** open the related page: lesson, submission, review, channel or student card.
+- **Notification links** open the related page: in slice 4 the student card (`student_card`), the Students page, whose pending requests list the request (`join_requests`), and My tutors (`my_tutors`); from later slices the lesson, submission, review and channel. A link the API returns as `null`, because its subject is outside the caller's current scope, is not shown as a link.
 - **Filters and tabs** that change what is shown are reflected in the address, so reload and Back keep the view.
 
 ## Token pages
@@ -96,5 +96,7 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 - the static server sends `Referrer-Policy: no-referrer` for them, as for every page;
 - the page reads the token, then removes it from the address bar with `history.replaceState`; the invitation page does so in a layout route above the session check, so the address changes on the first render, even while the session is loading or the server is unavailable;
 - the invitation page keeps its token in memory only: signing in or creating an account happens in place, and the token never travels in `next` or any other address;
+- the unsubscribe page keeps its token in component state only, like the invitation page, and never in `next`;
+- the address replacement runs in the entry chunk, so the token leaves the address before any lazily loaded route code runs (slice 4 loads each route's page module on demand);
 - the page loads nothing from other origins (fonts and images are self-hosted; avatars come from the OVC origin);
 - the reverse proxy logs them with the token replaced by a placeholder ([observability](../../specs/observability.md#safe-content)).

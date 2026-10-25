@@ -13,9 +13,10 @@ Behavior for FR-13 and the worker that delivers it. Decisions: [ADR-0006](../../
 | `relationship.ended` | the other party of the ending: the student when the tutor ends it, the tutor when the student ends it; nobody when a deletion ends it | yes | yes | required |
 | `tutor.deleted` | each student whose relationship with the tutor was `active` at deletion and whose email is confirmed | — | yes | required |
 | `group.archived` | group members | yes | yes | `lesson_changes` |
-| `join_request.created` | tutor | yes | no | — |
-| `join_request.declined` | student | yes | no | — |
-| `invitation.accepted`, `join_request.accepted` | tutor, student | yes | no | — |
+| `invitation.accepted` | the tutor whose invitation linked its card | yes | no | — |
+| `join_request.created` | the tutor, once the request is visible to them | yes | no | — |
+| `join_request.accepted` | the student who sent the request | yes | no | — |
+| `join_request.declined` | the student who sent the request | yes | no | — |
 | `lesson.reminder_24h` | audience and tutor | no | yes | `lesson_reminders` |
 | `lesson.reminder_1h` | audience and tutor | yes | yes | `lesson_reminders` |
 | `lesson.moved`, `lesson.cancelled` | audience | yes | yes | `lesson_changes` |
@@ -36,19 +37,55 @@ Behavior for FR-13 and the worker that delivers it. Decisions: [ADR-0006](../../
   - when a group is archived, in the `group.archived` email, likewise;
   - when a tutor deletes their account, in the `tutor.deleted` email, and no other email goes out for that deletion.
 - Each event names its tutor, so the student's interface and emails carry the tutor label and colour.
-- **Slice 3** sends the `invitation.created`, `relationship.ended` and `tutor.deleted` emails; `relationship.ended` and `tutor.deleted` carry no lesson list until slice 5, the in-app rows of the relationship events arrive with the notification table in slice 4, and `group.archived` waits for slice 5.
+- **Slice 3** sends the `invitation.created`, `relationship.ended` and `tutor.deleted` emails; `relationship.ended` and `tutor.deleted` carry no lesson list until slice 5, and `group.archived` waits for slice 5. **Slice 4** adds the notification table and the in-app rows of the slice 3 events ([in-app producers](#in-app-producers-in-slice-4)); the first optional email, and with it the unsubscribe headers and the dispatch-time preference check, arrives with slice 5.
 - **Unconfirmed recipients:** no notification email reaches an address whose account is `unverified`: at dispatch every email other than the account emails (confirmation, reset, duplicate sign-up notice) and invitation emails is dropped for such a recipient, including `relationship.ended` and `tutor.deleted`, and removing a provisional link sends nothing.
 
 ## Channels
 
 - **In-app:**
-  - a notification row per recipient, with event, tutor, a short structured payload (identifiers and titles, never message bodies or answers), creation time and read time;
-  - rows are written by the producer (a service or a scheduler job) in its own transaction, with the recipients decided at that moment; email preferences never suppress them;
-  - each row has the same idempotency key as its email ([keys](#outbox-and-worker)) and is inserted with `ON CONFLICT DO NOTHING`;
-  - `notification.new` is published through the [broadcaster](realtime-and-video.md#broadcaster) only when a row was actually inserted, after commit, so rows created by the worker reach connected users too and repeated job runs never duplicate them;
-  - `GET /notifications` returns newest first, 30 per page, with `unread_count`;
-  - rows older than 90 days are deleted.
+  - a notification row per recipient stores identifiers only, never names, titles, message bodies or answers: the recipient, the tutor, the student the event concerns, the event, its subject (the relationship or the join request) and the relationship for the tutor colour, with creation time and read time ([data model](data-model.md#notification)); labels are resolved when the rows are read ([labels and links](#labels-and-links)), so no row keeps a copy of a name that a purge or a later edit should remove;
+  - rows are written by the producer (a service or a scheduler job) in its own transaction, with the recipients decided at that moment from the rows it holds locked; email preferences never suppress them;
+  - each row has an idempotency key, the same as its email's where the event has one ([keys](#outbox-and-worker)), and is inserted with `ON CONFLICT DO NOTHING`;
+  - `notification.new` is signalled through the [broadcaster](realtime-and-video.md#broadcaster) in the same transaction, only when a row was actually inserted, and is delivered once that transaction commits, so rows created by the worker reach connected users too and repeated job runs never duplicate them;
+  - **purge:** once the purge of an account commits (the 30-day purge, the 7-day cleanup of an unconfirmed account, or the immediate purge of an unconfirmed account its owner deletes), no notification row names that account as recipient, tutor or student. The rows have no foreign keys; the purge deletes them through indexes inside its batches, and every producer of a row that names an account holds a lock that the purge of that account also takes (the account's user row, its tutor profile, or the relationship or join request row the purge discards or deletes) and checks the state again under it, so a producer waiting behind a purge finds its subject gone and inserts nothing;
+  - **retention:** the hourly `notifications.cleanup` job deletes rows older than 90 days through the `created_at` index, in batches of 1,000, at most 10 batches per run, oldest first, and the next run resumes where it stopped.
 - **Email:** rendered and sent by the worker through SMTP ([email](#email)).
+
+### In-app producers in slice 4
+
+Each row below is written in the producer's transaction with `ON CONFLICT DO NOTHING`, and `notification.new` is signalled only when the row was inserted:
+
+| Event | Recipient | Produced when | Key |
+|---|---|---|---|
+| `invitation.accepted` | the tutor | an invitation links its card: a new account (also while the link is provisional, when the card changes to "Email not confirmed"), a signed-in acceptance, a merge, a reactivation; no second row when the email is later confirmed | `(invitation.accepted, invitation, tutor)` |
+| `join_request.created` | the tutor | a request becomes visible to the tutor: created visible, released at confirmation or by the owner's keep after a reclaim, un-suppressed, or reopened in place after an unblock | `(join_request.created, request, tutor)` |
+| `join_request.accepted` | the student | the tutor accepts | `(join_request.accepted, request, student)` |
+| `join_request.declined` | the student | the tutor declines, with or without a block, as one identical row | `(join_request.declined, request, student)` |
+| `relationship.ended` | the other party | either party ends the relationship; nobody when a deletion ends it | `(relationship.ended, relationship, ended_at)`, the key of its email |
+
+- A held or suppressed request produces nothing for the tutor, and a block, a suppression or an unblock produces nothing for the student ([T-33](../../docs/threat-model.md#threats-and-controls)).
+- Tutor deletion and student deletion insert no notification rows.
+
+### Labels and links
+
+`GET /notifications` resolves each row's label and link at read time, under the rules every other route applies to the caller:
+
+| Event | Recipient | Label | Colour | Link |
+|---|---|---|---|---|
+| `invitation.accepted` | tutor | the card's own display name, never the account name a possibly squatting account chose ([T-44](../../docs/threat-model.md#threats-and-controls)) | `null` | `student_card` with the relationship, while the card is in the tutor's scope |
+| `join_request.created` | tutor | the request's account name only while the request is visible and pending, or accepted, and "Deleted account" while that account is `deleted`; otherwise (declined, expired, closed by an unblock, or of an operator-blocked account) `null`, so the name never outlives the tutor's scope | `null` | `join_requests` with the request, while the request is in the tutor's scope |
+| `relationship.ended` | tutor | the card's own display name | `null` | `student_card` with the relationship, while the card is in the tutor's scope |
+| `join_request.accepted` | student | the tutor's account name | the relationship's colour | `my_tutors` with the relationship, while My tutors lists it |
+| `join_request.declined` | student | `null`, because the student's sent requests carry no tutor name ([accounts](accounts.md#tutor-code-and-join-requests)) and no relationship formed (the exception in FR-2.6) | `null` | `my_tutors` with the join request's identifier, which opens the sent requests; every other `my_tutors` link carries a relationship identifier |
+| `relationship.ended` | student | the tutor's account name | the relationship's colour | `my_tutors` with the relationship, while My tutors lists it |
+
+- A link whose subject is outside the caller's current scope is `null`, and the row is shown without a link.
+- Labels are user-written names: the interface renders them as text, never as HTML or links ([T-14](../../docs/threat-model.md#threats-and-controls)), and the row's text never interpolates them ([states](../design/web/states.md#notifications)).
+
+### Notification routes
+
+- **`GET /notifications?limit=&cursor=`** answers `{items: [{id, event, created_at, read_at, label, colour, link}], next_cursor, unread_count}` with one schema for both roles: `label` is a string or `null`, `colour` a palette key or `null` (students only), and `link` is `{kind: student_card | join_requests | my_tutors, id}` or `null`. Newest first, keyset paginated on `(created_at, id)`, 30 per page by default and at most 100 (the panel asks for 10), `Cache-Control: no-store`. `unread_count` counts at most 100 unread rows, and the interface shows "99+" above 99.
+- **`POST /notifications/read`** takes exactly one of `{ids}` (1 to 100 of the caller's rows) or `{through}` (one of the caller's rows: that row and every row of the caller older than it by `(created_at, id)`), and answers `{unread_count}`. It is idempotent. An identifier that is not one of the caller's rows answers `404 not_found` like a random one, before `422 validation_failed` for both fields or neither. It is a write open to unconfirmed accounts, so it locks the account's row and checks the session again ([locks and the session re-check](accounts.md#locks-and-the-session-re-check)), and it signals `entity.changed` with kind `notification` to the caller's own sockets. Accepted gap: a row whose `created_at` precedes the `through` row but whose producer commits after the list was shown is marked read without having been shown; the window is one producer transaction, and the row's `notification.new` still arrives, so the client refetches and lists it as read. Closing the gap would need a commit-ordered sequence, which PostgreSQL does not offer without serialising producers.
 
 ## Email
 
@@ -64,7 +101,7 @@ Behavior for FR-13 and the worker that delivers it. Decisions: [ADR-0006](../../
   - invitation emails carry the card's one open invitation link, whose token the worker decrypts from the stored ciphertext at dispatch ([invitations](accounts.md#invitations)); a row whose ciphertext the current key cannot open becomes `dead` with `permanent`; the payload holds the invitation identifier and the send count, and the `Message-ID` also includes the invitation identifier;
   - confirmation and reset emails have their token minted by the worker in a committed transaction just before sending, invalidating earlier tokens of the same purpose, so a retried send mints and commits a new token first;
   - no outbox payload ever contains a token.
-- **Optional emails** carry one-click unsubscribe headers:
+- **Optional emails** carry one-click unsubscribe headers, from the first optional email in slice 5; the token is minted at render time and never stored in an outbox payload:
   - `List-Unsubscribe` points to `https://<OVC origin>/api/v1/unsubscribe?token=…`;
   - `List-Unsubscribe-Post: List-Unsubscribe=One-Click`;
   - both headers are covered by the DKIM signature.
@@ -78,7 +115,7 @@ Each **email** is decided again when the worker sends it, not only when it is qu
 
 - the recipient is `blocked` or `deleted`, or the address is undeliverable for an optional email;
 - the recipient is `unverified` and the email is neither an account email (confirmation, reset, duplicate sign-up notice) nor an invitation email; each email builder reports the state of the recipient's account (for an invitation, the account that holds the card's email, if any), and the dispatcher applies the account-state parts of this rule and the previous one (blocked, deleted and unverified recipients) to every kind; it does not yet check undeliverable addresses for optional emails, which arrive with the first optional email;
-- the recipient's preference group is off; a missing preference row means on;
+- the recipient's preference group is off; a missing preference row means on (from the first optional email in slice 5, which brings this check);
 - the recipient is no longer in the audience the event was about (for lesson, issue and group events);
 - the subject is obsolete:
 
@@ -124,15 +161,26 @@ Each **email** is decided again when the worker sends it, not only when it is qu
 
 ## Preferences and unsubscribe
 
-- **Preference groups:** each user has one switch per optional group: `lesson_reminders`, `lesson_changes`, `homework`, `results`, `submissions` (tutors) and `message_digest`. All are on by default.
+Slice 4 stores preferences, mints and verifies tokens, and serves the routes and pages; the worker mints tokens from slice 5, when the first optional email carries them.
+
+- **Preference groups** per role, listed in this fixed order and all on by default:
+  - tutors: `lesson_reminders`, `submissions`, `message_digest`;
+  - students: `lesson_reminders`, `lesson_changes`, `homework`, `results`, `message_digest`.
+- **Routes:** `GET /users/me/email-preferences` and `PUT /users/me/email-preferences` use `{groups: [{group, enabled}]}`, listing the caller's role's groups in that order, one schema for both roles. `PUT` takes a partial list and answers the full one; a group of the other role answers `422 validation_failed` with `not_allowed`, and a group named twice with `invalid`. A save writes one row per named group and locks the account's row and checks the session again first ([locks and the session re-check](accounts.md#locks-and-the-session-re-check)). Both answer with `Cache-Control: no-store`. Saving preferences also clears an undeliverable mark once bounce intake exists (slice 10).
 - **Unsubscribe token:**
-  - stateless, signed with a dedicated key (`OVC_UNSUBSCRIBE_SIGNING_SECRET`);
-  - carries the purpose `unsubscribe`, the account, the group and an expiry 90 days after the email was sent;
-  - it never signs the user in.
+  - `v1.<payload>.<mac>`, each part in unpadded base64url: the payload is the account identifier (16 bytes), the group (1 byte) and the expiry (8 bytes, Unix seconds, big-endian); the MAC is an untruncated HMAC-SHA-256 over the payload under a key derived by HKDF-SHA-256 from `OVC_UNSUBSCRIBE_SIGNING_SECRET` with the info string `unsubscribe`, so the purpose is bound to the key;
+  - minted at dispatch, through the signer in `internal/core`, with an expiry 90 days after the send; it is never stored, never logged and never placed in an outbox payload;
+  - parsed strictly, and its MAC compared in constant time, before any query, so a forged token costs no database work;
+  - its payload is readable, not encrypted: it shows the account's opaque identifier to anyone holding the link;
+  - it never signs the user in, sets no cookie and returns no token.
+- **The key:** `OVC_UNSUBSCRIBE_SIGNING_SECRET` is a dedicated secret of at least 32 bytes, required by the API and the worker from the change that adds it and refused when it equals `OVC_JWT_SECRET` or `OVC_FIELD_ENCRYPTION_KEY`; rotating the JWT secret signs everyone out by design and must not also invalidate 90-day unsubscribe links ([configuration](../architecture/detailed.md#configuration)).
 - **Two entry points:**
   - **Mail clients** performing RFC 8058 one-click unsubscribe send `POST /api/v1/unsubscribe?token=…` with the body `List-Unsubscribe=One-Click`.
-  - **People** opening the link in the email body land on the web page `/unsubscribe?token=…`. It calls `GET /api/v1/unsubscribe/preview?token=…`, which returns only the group name. The page shows a confirmation button that sends the same `POST`.
-- **Behavior:** the `POST` is idempotent and repeatable. Nothing changes on any `GET`, so link scanners cannot unsubscribe anyone.
+  - **People** opening the link in the email body land on the web page `/unsubscribe?token=…`, which follows the [token page rule](../design/web/navigation.md#token-pages). It calls `GET /api/v1/unsubscribe/preview?token=…`, which answers only `{group}` and changes nothing. The page shows a confirmation button that sends the same `POST`.
+- **`POST /unsubscribe?token=`** accepts no body, or a body of at most 1 KiB that is `application/x-www-form-urlencoded` or `multipart/form-data` (media types parsed with their parameters, such as `charset` or `boundary`) holding exactly the field `List-Unsubscribe` with the value `One-Click`, and answers `204`. Another content type answers `415 unsupported_media_type`; a form or multipart body without that field, with another value or with any other field answers `422 validation_failed` (`body.List-Unsubscribe`). It upserts the one preference row without locking the user row; the foreign key takes `FOR KEY SHARE`, so a concurrent purge either finishes first, and the upsert's foreign-key violation answers `422 token_invalid`, or waits for the upsert.
+- **Refusals,** the same on the preview and on the `POST`: every invalid, expired, forged or malformed token, and a token of an account that no longer exists or is `deleted` or `blocked`, answers `422 token_invalid` and changes nothing.
+- **Order of checks:** the token's format and MAC (no query); then, for a token with a valid MAC, a limit of 60 requests per hour per account and group counted across both routes (`429 rate_limited` with `Retry-After`), because mail providers send one-click `POST`s from shared addresses, so a per-address limit would refuse unrelated recipients; then the account and the change. An invalid token costs no query and is refused before any limit; a per-address limit on invalid tokens is added only if a measurement asks for it.
+- **Behavior:** the `POST` is idempotent and repeatable. Nothing changes on any `GET`, so link scanners cannot unsubscribe anyone. An unsubscribe changes only the preference, never an undeliverable mark. Both routes send `Cache-Control: no-store` and `Referrer-Policy: no-referrer`; access records carry only route templates, and the reverse proxy planned for slice 10 must redact the `token` query parameter of `/unsubscribe` and `/api/v1/unsubscribe` in its logs.
 - **Required emails** ignore preferences.
 
 ## Outbox and worker
@@ -163,17 +211,20 @@ Each **email** is decided again when the worker sends it, not only when it is qu
   | Recording copies | `(recording, attempt generation)` |
   | Everything else | `(event, subject, recipient)` |
 
-- **Two loops**, each in its own task (the target design; slice 2 runs them as one sequential pass, described under "One pass" below):
+- **The scheduler loop and one loop per lane**, each in its own goroutine (from slice 4; slice 2 runs them as one sequential pass, described under "One pass" below):
   - **Dispatcher:**
-    - **claiming:** for each lane, it claims up to that lane's free slots of due rows, high priority first, in a short transaction (`FOR UPDATE SKIP LOCKED`). It increments `attempts`, sets `in_progress` with a fresh lease token and a lease of 5 minutes (60 minutes for `recording_copy`, renewed while it streams), and commits. It polls every second; from slice 4 it is also woken by a `NOTIFY` when rows are inserted, over the listener connection that slice adds;
+    - **claiming:** each lane has a slot count equal to its concurrency. Its loop claims up to its free slots of due rows, high priority first, in a short transaction (`FOR UPDATE SKIP LOCKED`), starts each claimed effect at once, and claims again as soon as a slot frees; when nothing is due it polls every second. A claim increments `attempts`, sets `in_progress` with a fresh lease token and a lease of 5 minutes (60 minutes for `recording_copy`, renewed while it streams), and commits. A row is claimed only when a slot is free, so a claimed row starts at once; a slot is released only after the row's completion or retry update, so one worker never claims a row twice. Lanes run side by side, so a slow email never stalls its own lane beyond its slot or another lane at all. The lanes registered in slice 4 are `email` (10 slots) and `storage_delete` (4);
+    - **no `NOTIFY` wake-up:** a wake-up when rows are inserted is deferred until a measurement asks for it. It would need a second listening connection, in the worker, with its own lifecycle and loss handling, and a `pg_notify` in every transaction that inserts an outbox row would put each such commit on PostgreSQL's notification lock; polling every second keeps a reminder far inside NFR-4.5's two minutes;
     - **SMTP:** connections are reused across sends, and the provider's sustained send rate is recorded when the provider is chosen, because NFR-4.5 depends on it;
     - **performing:** each effect runs outside any transaction, with a timeout shorter than its lease (30 seconds for email and provider calls);
     - **completing:** marking a row `done`, or scheduling its retry, is a conditional update on its lease token, so a reclaimed row's late finisher changes nothing;
     - **retries:** use exponential backoff from 30 seconds up to 1 hour, with jitter from an injected random source;
     - **dead rows:** after 8 attempts, or when a lease expires on a row that already has 8 attempts, the row becomes `dead` and an `ERROR` event is emitted. A failure that can never succeed (an outbox kind with no email defined, or a message the mail adapter refuses as malformed) makes the row `dead` at once with the error code `permanent`; an email builder treats a payload it cannot parse the same way. Where an entity owns the effect it records the failure (a recording becomes `failed`); dead emails have no entity effect;
     - **lanes:** each has its own concurrency limit (email 10, provider calls 4, recording copies 1, storage deletes 4), so long copies never delay emails;
+    - **the scheduler loop** runs due jobs and reclaims expired leases every second;
+    - **failures:** a failure of the worker's own infrastructure (claiming, completing) ends the run with an error; on shutdown no lane claims, and effects already started finish within their timeout;
     - **leases:** rows with an expired lease are reclaimed.
-  - **One pass:** `Tick(now)` runs the due scheduler jobs, reclaims expired leases, then claims and performs due rows lane by lane until none remains at `now`, so a second tick at the same instant has no further effect. In slice 2 a lane claims a batch of up to its concurrency and waits for the whole batch before claiming again, and lanes drain one after another; per-lane loops that refill slots as they free up, with lanes running side by side, replace this in slice 4, before lesson reminders depend on prompt delivery (NFR-4.5): measured at the slice 2 review, one slow email in ten cut a lane's throughput about ninefold and emails delayed the storage-delete lane, and long copies (`recording_copy`, after the MVP) must never delay emails. A pass stops claiming after 4 minutes of wall time, below the 5-minute lease, so a row claimed late in a long pass never starts with an expired lease. A panic in an effect counts as a failed attempt. With `OVC_CLOCK=system` the worker process calls it every second; with `OVC_CLOCK=test` only `POST /__test__/tick` calls it, at the shared clock's instant, and the clock and tick routes exist only in that mode. On shutdown the worker claims nothing new and lets effects already started finish within their timeout.
+  - **One pass:** `Tick(now)` runs the due scheduler jobs and reclaims expired leases, then runs every lane's loop side by side until no row is due at `now` and none is in flight, so a second tick at the same instant has no further effect. A pass stops claiming after 4 minutes of wall time, below the 5-minute lease, so a row claimed late in a long pass never starts with an expired lease; this claim budget applies to `Tick` only, because the continuous loops claim only into free slots. A panic in an effect frees its slot and counts as a failed attempt. With `OVC_CLOCK=system` the worker process runs the continuous loops; with `OVC_CLOCK=test` only `POST /__test__/tick` runs `Tick`, at the shared clock's instant, and the clock and tick routes exist only in that mode. On shutdown the worker claims nothing new and lets effects already started finish within their timeout. Until the per-lane loops land in slice 4, slice 2's pass is sequential: with `OVC_CLOCK=system` the worker calls `Tick` every second, a lane claims a batch of up to its concurrency and waits for the whole batch before claiming again, and lanes drain one after another; measured at the slice 2 review, one slow email in ten cut a lane's throughput about ninefold and emails delayed the storage-delete lane, which is why the loops replace it before lesson reminders depend on prompt delivery (NFR-4.5), and long copies (`recording_copy`, after the MVP) must never delay emails.
   - **Message identifiers:** an email's `Message-ID` is derived from its outbox idempotency key and the host of `OVC_PUBLIC_URL`, so a retried send keeps the same identifier.
   - **Scheduler:** runs jobs whose due time has passed, recording each run in a job-run table, so hourly and daily jobs catch up once after downtime. A job that fails is recorded as `failed` and reported as `job.run` at ERROR with an error kind, and the pass continues with the other jobs and the lanes (an owner decision): only a failure of the worker's own infrastructure, such as recording a job run or claiming rows, ends the pass. A purge that cannot remove one account skips past it within the run, so the accounts behind it are still purged.
     - **Every minute:** reminders, digests, the lesson status job.
@@ -182,12 +233,12 @@ Each **email** is decided again when the worker sends it, not only when it is qu
       - recording and upload expiry; `invitations.expire` (500 per run; clears the ciphertext of expired invitations), `join_requests.expire` (batches of 200, at most 5 per run; a failing request is skipped, and a run that stops at its bound is resumed where it stopped by the next run) and `reclaim.expire` (batches of 100 accounts, at most 1,000 per run; drops reclaim items left unchosen for 7 days);
       - the 7-day transition of `held_quota` recordings to `failed`;
       - recording provider-copy cleanup;
-      - cleanup of unverified accounts, rate-limit windows, notifications and the outbox (`done` rows after 7 days, `dead` rows after 30 days, each status deleted by its own statement so both use the partial index);
+      - cleanup of unverified accounts, rate-limit windows, notifications (`notifications.cleanup`, rows older than 90 days, as under [channels](#channels)) and the outbox (`done` rows after 7 days, `dead` rows after 30 days, each status deleted by its own statement so both use the partial index);
       - cleanup of sessions that expired or were revoked more than a day ago (`sessions.cleanup`) and of email requests older than 7 days with their tokens (`email_requests.cleanup`);
       - account purge.
     - **Daily:** series horizon extension and the automatic retry of held recordings.
 - **Bounds:** every job processes fixed-size batches through an index on its due column (partial where most rows are never due), within a time budget per run, and continues where it stopped: jobs that select by a window keep progress markers (reminders) or cursors in the job-run table (reconciliation). Purges delete in batches of bounded size per transaction.
 - **Testing:**
-  - with `OVC_CLOCK=test` both loops are paused, and only the harness runs the worker;
+  - with `OVC_CLOCK=test` the scheduler and lane loops are paused, and only the harness runs the worker;
   - `Tick(now)` runs one scheduler pass at `now` and then dispatches every due row until none remain;
   - running it twice with the same `now` has no extra effect.

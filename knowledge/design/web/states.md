@@ -83,6 +83,52 @@ While the window is open and the lesson is not yet live, students see "The room 
 | read-only channel | banner above the composer, composer disabled | This chat is read-only | Чат доступен только для чтения |
 | unread | count badge beside Messages, and a bold channel name in the channel list | — | — |
 
+## Notifications
+
+Slice 4. The texts in this section are a proposal to confirm when F2 (notifications) and F3 (settings and unsubscribe) build the screens; the rule that a row shows its label (a name) and its text as separate elements is the contract, so no name stands in a position that needs a grammatical case in Russian; labels are user-written and shown as text only.
+
+| Event | Recipient | English | Русский |
+|---|---|---|---|
+| `invitation.accepted` | tutor | Invitation accepted | Приглашение принято |
+| `join_request.created` | tutor | New request to study with you | Новый запрос на занятия |
+| `join_request.accepted` | student | Your request was accepted | Ваш запрос принят |
+| `join_request.declined` | student | Your request was not accepted | Ваш запрос не принят |
+| `relationship.ended` | tutor or student | Working together has ended | Совместные занятия завершены |
+
+| Element | English | Русский |
+|---|---|---|
+| Panel and page heading | Notifications | Уведомления |
+| Count above 99 | 99+ | 99+ |
+| Mark all as read | Mark all as read | Отметить все как прочитанные |
+| Link from the panel | Show all notifications | Все уведомления |
+| Empty | No notifications yet | Уведомлений пока нет |
+| Polite announcement | New notification | Новое уведомление |
+| Label of a deleted requester | Deleted account | Удалённый аккаунт |
+
+**Email groups,** in Settings → Notifications and on the unsubscribe page:
+
+| Group | English | Русский |
+|---|---|---|
+| `lesson_reminders` | Lesson reminders | Напоминания об уроках |
+| `lesson_changes` | Lesson changes | Изменения в расписании |
+| `homework` | New assignments | Новые задания |
+| `results` | Checked work | Проверенные работы |
+| `submissions` | Submitted work | Сданные работы |
+| `message_digest` | Unread messages | Непрочитанные сообщения |
+
+**Unsubscribe page and sign-out messages:**
+
+| Element | English | Русский |
+|---|---|---|
+| Group line | Emails: {group} | Письма: {group} |
+| Confirm button | Turn off these emails | Отключить эти письма |
+| Result | These emails are turned off | Эти письма отключены |
+| Link to settings | All email settings | Все настройки писем |
+| Invalid link | This link is no longer valid | Ссылка больше не действует |
+| Signed out after an unfixable `4401` (`sessionEnded`) | You were signed out on this device | Вы вышли из аккаунта на этом устройстве |
+
+`{group}` is the group's name from the table above, which stands after a colon and needs no case.
+
 ## Tutor labels
 
 In every student view, items carry their tutor's label: an 8 px dot in the relationship colour plus the tutor's name (or initials in narrow layouts). The filter "All tutors / {name}" sits at the top of Home, Schedule and Homework.

@@ -47,6 +47,12 @@ FR-2.1, FR-2.2, FR-1.2, FR-1.3.
 
 FR-1.1, FR-1.5, FR-13.3. Single-purpose pages with one result message and one next step. The confirmation page refuses an unknown, expired, used, superseded or malformed link at once, before any password is asked for; the reset page learns that the link is invalid only when the new password is sent. The confirmation page, opened in a browser not signed in to that account, first asks for a new password (with the strength hint) and then confirms; it then shows the outcome with a "Continue" link to the home page: "You are now studying with your tutor" (`linked`), "Request sent. Waiting for the tutor." (`request_sent`), "This code is no longer valid — enter a new one" (`code_invalid`); with no outcome it goes straight to the home page, and for `choice_required` it continues to the [reclaim page](#keep-or-drop-earlier-links). The reset page continues to sign-in, after which an account with a pending choice lands on the reclaim page; when the reset answers `choice_required` it adds "After you sign in, choose which earlier links and requests to keep". Unsubscribe names the email group and asks the user to confirm with a button (nothing changes when the page merely loads), then offers a link to all email settings. Token pages remove the token from the address bar after reading it.
 
+- **Unsubscribe** (`/unsubscribe?token=`, slice 4) works without signing in and never signs anyone in. The token handling below is the contract; the page's messages, button and focus are a proposal to confirm when F3 builds the page:
+  - it reads the token once on its first render, replaces the address with `/unsubscribe` before any request, and keeps the token only in component state, never in the query cache, storage, history state, `next` or any other address; opened as `/unsubscribe` alone it shows the invalid-link message;
+  - it loads `GET /unsubscribe/preview` and shows the group's name with the button "Turn off these emails"; every `token_invalid` shows one message, "This link is no longer valid", with a link to sign in and change the email settings; `rate_limited` shows the throttling message with the minutes to wait;
+  - confirming sends `POST /unsubscribe` with no body; the button stays busy until the answer, and the result "These emails are turned off" replaces the button and takes focus, with the link "All email settings" to Settings → Notifications (which asks to sign in when signed out);
+  - the page's texts are in [states](states.md#notifications).
+
 ## Tutor pages
 
 ### Today
@@ -272,7 +278,7 @@ FR-1.4–FR-1.7, FR-5.6, FR-13.3, FR-14.2, FR-17.
   - change password, sign out everywhere, delete account;
   - deleting asks for the password in a dialog that names the consequence, and the sign-in page then says the account was deleted;
   - the consequence names the role's effects on tutoring: for a tutor, that working together ends with every student and the students get an email, the invitation links and the tutor code stop working, join requests expire and the groups are archived; for a student, that studying ends with every tutor, the student leaves their groups and the requests to tutors expire.
-- **Notifications:** email switches per group.
+- **Notifications** (`/settings/notifications`, slice 4, also for an unconfirmed account; the save-per-switch behaviour and the wording are a proposal to confirm when F3 builds the page): one switch per optional email group of the role, in the order the API lists them, each with its name from [states](states.md#notifications) and a one-line description; tutors see Lesson reminders, Submitted work and Unread messages, and students Lesson reminders, Lesson changes, New assignments, Checked work and Unread messages. A switch saves at once with `PUT /users/me/email-preferences` naming only that group, stays busy while saving and keeps focus; a failed save puts the switch back and shows an error toast with Retry. A sentence says that required emails (confirmation, password reset, invitations, ended relationships and a tutor's deletion) cannot be turned off.
 - **Teaching (tutor):**
   - tutor code with Copy and Regenerate (an unconfirmed tutor gets the confirmation prompt instead of Regenerate);
   - recording retention;
@@ -284,12 +290,16 @@ FR-1.4–FR-1.7, FR-5.6, FR-13.3, FR-14.2, FR-17.
 
 ### Notifications
 
-FR-13.1, FR-2.6. Address `/notifications`; the Notifications item in the sidebar (the "bell") shows the unread count and opens a panel with the latest 10 and a link to the page.
+FR-13.1, FR-2.6. Address `/notifications`; the Notifications item in the sidebar (the "bell"), and below 1024 px the Notifications button in the top bar, shows the unread count and opens a panel with the latest 10 and a link to the page. Built in slice 4 from `GET /notifications` and `POST /notifications/read` ([notification routes](../../specs/notifications.md#notification-routes)). The panel's focus on opening, "99+", `{through}` for Mark all as read and the polite announcements come from the slice 4 plan; the accessible name with the count, focus returning to the bell after a click outside, and the plain-text rows without a link are a proposal to confirm when F2 builds the screens.
 
-- **Rows:** icon, one-line text (for students with the tutor label), relative time, unread dot; clicking opens the related page and marks the row read.
-- **Actions:** "Mark all as read".
+- **The count:** the unread count from the API, shown as "99+" above 99, and hidden at zero; the item's accessible name includes the count ("Notifications, 3 unread").
+- **The panel:** opening it moves focus to its heading "Notifications"; `Esc`, a click outside or choosing a row closes it, and `Esc` and a click outside return focus to the bell. It lists the latest 10 rows (`limit=10`), "Mark all as read" and "Show all notifications", which opens the page.
+- **The page:** the rows newest first, 30 per page with "Show more", which moves focus to the first new row, and "Mark all as read".
+- **Rows:** icon, the label when there is one (the tutor label with its colour dot for students; the card's name or the requester's account name for tutors), the event's one-line text from [states](states.md#notifications) (which never interpolates a name), relative time, and an unread dot. The label is shown as text only, never as HTML or a link. A row with a link opens the related page (the student card, the Students page with its join requests, or My tutors) and marks the row read with `{ids}`; a row whose link is `null` is plain text, not a link, and "Mark all as read" marks it.
+- **Mark all as read** sends `{through}` with the newest row shown, so a row that arrived after the list was shown stays unread; the action keeps focus on its button and announces the result politely.
 - **Empty:** "No notifications yet".
-- **Live updates:** new rows arrive live and are announced politely to screen readers.
+- **Live updates:** a `notification.new` frame refetches the list, the panel and the count, and a polite live region announces "New notification" without moving focus; an `entity.changed` frame of kind `notification` (a read change in another tab) refetches them silently.
+- **An unconfirmed student** sees no bell and no panel, although the routes answer for them ([navigation](navigation.md#rules)); the rows produced meanwhile appear once the email is confirmed.
 
 ## Student pages
 
@@ -383,11 +393,13 @@ Same as the tutor's, without tutor-only sections; direct channels are named by t
   - uploads show the refusal inline: "File is larger than {limit}", "This file type is not allowed here", "Storage is full";
   - a stale edit (a template, a review draft) shows "This changed elsewhere" with "Reload" and keeps the user's unsaved text visible;
   - the edit forms of a student card (name, email, notes) and a group (name, colour) stay mounted, so focus stays where the page section puts it; when a field's stored value changes, the field shows it at once only while the user has not changed the field since it last showed a stored value, so a background refetch never overwrites typing; after a reload because the card or group changed meanwhile (a refusal that shows the changed-meanwhile notice, or an edit refused as stale), every field whose stored value changed since it last showed one shows the current value, and the other fields keep the unsaved typing.
-- **Offline:** a banner "No connection — reconnecting…".
+- **Offline** (slice 6, with chat, whose composer first needs it; until then pages keep working through REST while the realtime client reconnects): a banner "No connection — reconnecting…" in the signed-in frame, above the page's content and below the narrow top bar, outside the page itself, so it never takes focus and the page's heading stays first; a polite live region announces it once when it appears and once when the connection returns.
   - Assignment answers are kept and saved when the connection returns.
   - Other actions are disabled while offline, with the reason in a tooltip.
-  - The realtime client reconnects with backoff and refetches visible data on reconnect.
-- **Live data:** frames from the realtime channel trigger a refetch of the affected item and never replace it directly. Lists keep the scroll position.
+  - The realtime client reconnects with backoff and refetches visible data on reconnect (slice 4).
+- **Live data:** frames from the realtime channel trigger a refetch of the affected item and never replace it directly ([live refetch mapping](../../architecture/detailed.md#live-refetch-mapping)). Lists keep the scroll position.
+  - **Focus on live refetch:** a refetch that keeps the focused element leaves focus where it is. When a live refetch removes the focused row of a list, focus moves to the row that took its place, else to the previous row, else to the list's heading. When it removes the subject of an open dialog, the dialog closes and the page's notice that says so takes focus: "This student is no longer on your list.", "This request was already answered." and similar, each defined by its page; for a dialog without such a notice, the page's changed-meanwhile notice is used. Each of these moves has a `toBeFocused` test.
+  - **Pages with live refetch in slice 4:** Students (its tabs and pending requests), the student card, groups and the group page, Today's join-request panel, My tutors and student Home.
 - **Time:**
   - every time is shown in the viewer's timezone;
   - the lesson page adds the other party's time when it differs, using the `time.other_zone` string from [states](states.md#time-and-scores) with the city of the IANA timezone taken from a bundled, localised table;

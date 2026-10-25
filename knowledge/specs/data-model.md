@@ -47,6 +47,7 @@ erDiagram
   SUBMISSION ||--o{ REVIEW_REVISION : "checked through"
   ATTACHMENT ||--o{ ATTACHMENT_REFERENCE : "used by"
   USER ||--o{ NOTIFICATION : receives
+  USER ||--o{ EMAIL_PREFERENCE : chooses
 ```
 
 ## Accounts
@@ -71,8 +72,8 @@ erDiagram
 | `deleted_at` | set exactly when `state = 'deleted'`; partial index where `state = 'deleted'` |
 | `reclaim_until` | slice 3; the deadline of a [reclaim](accounts.md#provisional-links-and-reclaim), set once by the reclaim to 7 days after it and cleared by the owner's choice, by a signed-in acceptance that keeps the last waiting link, by the account's deletion, or by `reclaim.expire`; written only by the account's own transactions and only a hint for the job, since whether a choice is due is derived from the waiting rows; partial index where not null |
 | `email_undeliverable_at` | added with the email provider choice |
-| `online_until` | persisted presence; slice 4 |
-| `last_seen_at` | slice 4 |
+| `online_until` | persisted presence; slice 6, with presence frames and the message digest, its only consumers |
+| `last_seen_at` | slice 6 |
 | `digest_pending_since` | partial index where not null; slice 6 |
 | `last_digest_at` | slice 6 |
 
@@ -95,7 +96,22 @@ One per tutor user.
 
 ### Session
 
-`id` (also the `sid` claim), `user_id`, `generation`, `refresh_hash`, `expires_at`, `revoked_at`, `last_used_at`. The refresh cookie carries the session identifier, the generation and a random part; `refresh_hash` is the SHA-256 hash of the current random part. Rotation is one conditional update on the identifier, generation, hash, `revoked_at` and `expires_at`, so concurrent refreshes cannot both rotate, and a presented generation older than the current one identifies reuse only when the server can authenticate that older cookie as one it issued. The table keeps no hash of earlier generations, so the cookie, `<sid>.<generation>.<random>.<mac>`, also carries an untruncated HMAC-SHA-256 over the identifier and generation, keyed with a key derived by HKDF-SHA-256 from `OVC_JWT_SECRET` with the info string `refresh-generation`, never the signing key itself, and compared in constant time. A cookie whose MAC fails, whose generation is newer than the stored one, or whose generation is current but whose random part does not match is refused without revoking anything; only a valid MAC with an older generation revokes. Rotating `OVC_JWT_SECRET` therefore invalidates every refresh cookie, which are then refused without revocation. `expires_at` is fixed at sign-in and never extended. No user-agent summary is collected. An index on `expires_at` and a partial index on `revoked_at` where it is set serve the hourly cleanup, which deletes a session a day after it expires or is revoked.
+`id` (also the `sid` claim), `user_id`, `generation`, `refresh_hash`, `expires_at`, `revoked_at`, `last_used_at`. The refresh cookie carries the session identifier, the generation and a random part; `refresh_hash` is the SHA-256 hash of the current random part. Rotation is one conditional update on the identifier, generation, hash, `revoked_at` and `expires_at`, so concurrent refreshes cannot both rotate, and a presented generation older than the current one identifies reuse only when the server can authenticate that older cookie as one it issued. The table keeps no hash of earlier generations, so the cookie, `<sid>.<generation>.<random>.<mac>`, also carries an untruncated HMAC-SHA-256 over the identifier and generation, keyed with a key derived by HKDF-SHA-256 from `OVC_JWT_SECRET` with the info string `refresh-generation`, never the signing key itself, and compared in constant time. A cookie whose MAC fails, whose generation is newer than the stored one, or whose generation is current but whose random part does not match is refused without revoking anything; only a valid MAC with an older generation revokes. Rotating `OVC_JWT_SECRET` therefore invalidates every refresh cookie, which are then refused without revocation. `expires_at` is fixed at sign-in and never extended. No user-agent summary is collected. An index on `expires_at` and a partial index on `revoked_at` where it is set serve the hourly cleanup, which deletes a session a day after it expires or is revoked. Revoking a session fires a [revocation trigger](#revocation-triggers).
+
+### Revocation triggers
+
+Slice 4 adds three row-level `AFTER` triggers, so every path that revokes a session or ends an account, in the API, the worker or `ovc-admin`, today and later, signals the [broadcaster](realtime-and-video.md#broadcaster) in its own transaction, sign-out's single autocommit statement included:
+
+| Trigger | Fires |
+|---|---|
+| `AFTER UPDATE OF revoked_at ON sessions FOR EACH ROW WHEN (OLD.revoked_at IS NULL AND NEW.revoked_at IS NOT NULL)` | a session is revoked; the signal names the session's `user_id` |
+| `AFTER UPDATE OF state ON users FOR EACH ROW WHEN (NEW.state IN ('blocked', 'deleted') AND OLD.state IS DISTINCT FROM NEW.state)` | an account is blocked or marked deleted |
+| `AFTER DELETE ON users FOR EACH ROW` | an account is deleted by the purge, the 7-day cleanup or the immediate purge of an unconfirmed account |
+
+- Each trigger calls its own PL/pgSQL function, which calls `pg_notify('ovc_realtime', …)` with a `recheck` payload built by `json_build_object` from the account's identifier only, in the form the listener parses (`{"v": 1, "k": "recheck", "u": [<user id>]}`); a test parses every trigger-built payload with the listener's parser.
+- An unrelated update of a session or user row, an update of an already revoked session and a state change to `active` or `unverified` send nothing.
+- PostgreSQL collapses identical notifications within one transaction, so revoking every session of an account sends one signal; a purge batch sends one signal per purged account.
+- The function bodies are dollar-quoted, multi-statement PL/pgSQL, which goose splits at their semicolons unless each body is wrapped in `-- +goose StatementBegin` and `-- +goose StatementEnd`. These markers are admitted only around a function body in `backend/migrations/*.sql`, each alone on its line, through an exception that AGENTS.md gains before this migration lands; the conventions tests enforce both conditions. Otherwise the migration holds the goose `Up` and `Down` markers and SQL without comments.
 
 ### Email token and email request
 
@@ -379,11 +395,26 @@ Constraints and indexes:
 
 ### Notification
 
-`id`, `user_id`, `event`, `tutor_id`, `idempotency_key` (unique), `payload` (identifiers and titles only), `created_at`, `read_at`. Indexes `(user_id, created_at, id)`, `(created_at)` and a partial `(user_id)` where `read_at` is null for unread counts.
+Slice 4. Rows store identifiers only, never names or titles; labels are resolved at read time ([labels and links](notifications.md#labels-and-links)).
+
+| Column | Notes |
+|---|---|
+| `id` | |
+| `user_id` | the recipient |
+| `tutor_id` | the tutor the event concerns |
+| `student_id` | the student the event concerns; nullable |
+| `event` | checked against the five slice 4 events (`invitation.accepted`, `join_request.created`, `join_request.accepted`, `join_request.declined`, `relationship.ended`); later slices widen the check with their events |
+| `subject_id` | the relationship or the join request |
+| `relationship_id` | nullable; for the tutor colour |
+| `idempotency_key` | unique |
+| `created_at`, `read_at` | |
+
+- **No foreign keys:** inserting a row with a key to the recipient would take `FOR KEY SHARE` on the recipient's user row late in the transaction, which the lock order forbids (user rows are locked up front), and tutor deletion must never lock a student's row. The purge deletes the rows explicitly instead ([purge](#purge)).
+- **Indexes:** `(user_id, created_at DESC, id DESC)` for the list, a partial `(user_id)` where `read_at` is null for unread counts, `(created_at)` for retention, `(tutor_id)` and a partial `(student_id)` where `student_id` is not null for the purge.
 
 ### Email preference
 
-`user_id`, `group` (`lesson_reminders`, `lesson_changes`, `homework`, `results`, `submissions`, `message_digest`), `enabled`. Primary key on the pair. A missing row means enabled.
+Slice 4. `user_id` (references the user, `ON DELETE CASCADE`), `email_group` (`lesson_reminders`, `lesson_changes`, `homework`, `results`, `submissions`, `message_digest`, checked; the column is not named `group`, which is a reserved word), `enabled`, `updated_at`. Primary key `(user_id, email_group)`. A missing row means enabled; a save writes a row per named group.
 
 ### Outbox
 
@@ -419,7 +450,7 @@ Created by the normal migrations in every database, but written only by the test
 
 ## Purge
 
-What the purge job does 30 days after an account is deleted. Slice 2 implements the rows for users, sessions, email requests and tokens, tutor profiles, and attachments with their references: every upload of the account is deleted, and each still-stored object gets a `storage_delete` outbox row carrying its storage key, so the object is deleted after its row is gone. Throttle counters are pseudonymous and expire with their windows. Slice 3 adds the relationship, invitation, join-request, blocked-requester and group rows; a tutor purge deletes group members, groups, invitations, join requests, blocked requesters and relationships in batches of 500 rows per transaction, each locking the user row and re-checking that the account is still `deleted`, and then deletes the profile and the user in a final transaction. One run of the purge job spends at most 100 such batches across all accounts and the next run continues where it stopped ([account deletion](accounts.md#account-deletion)).
+What the purge job does 30 days after an account is deleted. Slice 2 implements the rows for users, sessions, email requests and tokens, tutor profiles, and attachments with their references: every upload of the account is deleted, and each still-stored object gets a `storage_delete` outbox row carrying its storage key, so the object is deleted after its row is gone. Throttle counters are pseudonymous and expire with their windows. Slice 3 adds the relationship, invitation, join-request, blocked-requester and group rows; a tutor purge deletes group members, groups, invitations, join requests, blocked requesters and relationships in batches of 500 rows per transaction, each locking the user row and re-checking that the account is still `deleted`, and then deletes the profile and the user in a final transaction. One run of the purge job spends at most 100 such batches across all accounts and the next run continues where it stopped ([account deletion](accounts.md#account-deletion)). Slice 4 adds the notification rows that name the account and the account's email preferences, on every purge path: the 30-day purge, the 7-day cleanup and the immediate purge of an unconfirmed account its owner deletes.
 
 | Table | Student purge | Tutor purge |
 |---|---|---|
@@ -437,7 +468,8 @@ What the purge job does 30 days after an account is deleted. Slice 2 implements 
 | Issue | — | Deleted |
 | Submission, answer, review revision | Deleted; analytics no longer count them | Deleted |
 | Attachment, reference, quota charge | References from deleted rows removed; unreferenced files deleted | Same |
-| Notification, email preference | The student's rows deleted | The tutor's rows deleted, and other users' rows that name the tutor |
+| Notification | Every row whose `user_id`, `tutor_id` or `student_id` is the student deleted, through their indexes, inside the purge's batches | Every row whose `user_id`, `tutor_id` or `student_id` is the tutor deleted, likewise |
+| Email preference | Removed with the user row (`ON DELETE CASCADE`) | Same |
 
 ## Indexes and integrity notes
 
@@ -452,5 +484,6 @@ What the purge job does 30 days after an account is deleted. Slice 2 implements 
   - `lesson_roster.student_id`;
   - `channel_member.user_id`.
 - Every foreign key that cascades, restricts or sets null on delete is indexed, so a purge never scans a table for referencing rows.
+- Notification rows have no foreign keys, so the purge's deletion of the rows that name an account goes through the `user_id`, `tutor_id` and `student_id` indexes; every purge path (the 30-day purge, the 7-day cleanup and the immediate purge) applies it, and once it commits no row names the account, because every producer of such a row holds a lock that the purge also takes ([channels](notifications.md#channels)).
 - Message pagination, notification lists, the student list, join-request lists and the review queue use keyset ordering on indexed columns, never `OFFSET`.
 - Every periodic job reads through the partial index on its due column named above and processes a bounded batch per run.

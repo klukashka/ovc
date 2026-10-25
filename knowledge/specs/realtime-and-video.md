@@ -34,42 +34,115 @@ Covers chat, live updates and in-app notifications over one WebSocket (FR-12, FR
 
 ### Principle
 
-The database is the source of truth; the WebSocket is a delivery channel. Every message is committed first, then published. A reconnecting client recovers missed messages from the history route, never from the socket.
+The database is the source of truth; the WebSocket is a delivery channel. Every change is committed first; the signal that announces it is written inside the same transaction and delivered only once that transaction commits ([broadcaster](#broadcaster)). Frames carry identifiers only, never the authoritative state: a client refetches through REST, which enforces scope again. A reconnecting client recovers missed data through REST, never from the socket (NFR-4.3).
+
+Slice 4 builds the connection, authentication and revocation, the broadcaster, and the frames `ready`, `notification.new`, `entity.changed`, `pong` and `error` from the server and `auth` and `ping` from the client; chat frames, presence and typing arrive with slice 6. The [slice 4 plan](../plans/slice-4.md#3-decisions-the-plan-proposes) records the alternatives and reasons behind the rules below.
 
 ### Connection
 
-- **Endpoint:** one WebSocket per browser tab at `WSS /api/v1/ws`. The URL carries no credentials, and the gateway accepts only connections whose `Origin` is the OVC origin: `coder/websocket` is configured with that exact origin in `OriginPatterns`, never a wildcard that could admit the conferencing subdomain, and `InsecureSkipVerify` is never set.
-- **Authentication:**
-  - the first client frame must be `{"type": "auth", "payload": {"access_token": "<JWT>"}}` within 5 seconds;
-  - otherwise, or with an invalid or expired token, the server closes with code `4401`;
-  - at most 500 unauthenticated sockets per instance are accepted;
-  - the client refreshes its token and reconnects with exponential backoff and random jitter.
-- **Registry:**
-  - after authentication, the gateway registers the socket in the connection registry, which `internal/realtime` owns, and removes it on every close path;
-  - **presence is persisted:** while a user has a socket, the gateway extends `user.online_until` to now plus 90 seconds about once a minute, batching these updates per instance. When the user's last socket on the instance closes, it sets `online_until` and `last_seen_at` to now. `last_seen_at` is always a past instant: the time of the last connection activity. Every process and instance can therefore tell who is online.
+- **Endpoint:** one WebSocket per browser tab at `GET /api/v1/ws`, audience `user, unverified ok`, authenticated by its first frame. The URL carries no credential, and the gateway reads no cookie.
+- **Before the upgrade:**
+  - the route is registered outside huma but passes the same outer handlers as every other route: recovery, request identifier, security headers and the access record, which names the route template only;
+  - it requires exactly one `Origin` header, equal to the normalised `OVC_PUBLIC_URL` in scheme, host and port, compared by the same plain `net/http` function that the sign-in, refresh and confirmation routes use over every `Origin` value; a missing, foreign or repeated `Origin` answers `403 forbidden`, and an `Origin` that merely equals the request's `Host` is foreign unless it equals the OVC origin;
+  - a request that is not a WebSocket upgrade answers `400 bad_request`; a full unauthenticated budget (below) answers `503 service_unavailable` with `Retry-After: 5`; each of these answers carries the API error body and `Cache-Control: no-store`;
+  - only then is `coder/websocket` asked to accept the upgrade, with `OriginPatterns` holding the OVC host only and never `InsecureSkipVerify`, as a second check. The library's own origin rule is weaker than OVC's (for example it accepts a missing `Origin`, matches the host without the scheme and refuses with a plain-text `403`); the gateway's own check decides, so the contract does not depend on the library's behaviour, which is confirmed against the pinned version and recorded in the [stack table](../architecture/detailed.md#stack-per-component) when the dependency is added.
+- **After the upgrade:** the read and write deadlines of the HTTP request are cleared; the gateway sets its own deadlines per frame.
+- **Authentication:** the first client frame must be `auth` within 5 seconds of the upgrade (an injected duration that tests shorten); [authentication and revocation](#authentication-and-revocation) has the rules.
+- **Registry:** `internal/realtime` owns the connection registry: a socket is registered under its account and session when its `auth` frame has a valid token, and removed on every close path.
+- **Limits:**
+  - at most 500 unauthenticated sockets per instance and 20 per client address (the trusted client address of `OVC_TRUSTED_PROXY_CIDRS`, as for every per-IP limit); the next upgrade answers `503`;
+  - at most 20 authenticated sockets per account per instance; the 21st `auth` closes with `4429`, and the client backs off up to 60 seconds. Residual: a stolen access token can fill its account's 20 slots until the token lapses or the session is revoked.
 - **Bounds:**
-  - **outbound:** each socket has a bounded queue of 256 frames or 1 MiB. A socket whose queue overflows is closed with `4429`, and the client reconnects and refetches; this is the contract that replaces delivery guarantees for slow consumers. Each frame is serialised once for all its recipients.
-  - **inbound:** frames are at most 16 KiB (`SetReadLimit(16384)` on every connection), and at most 20 frames per second per socket are accepted; typing frames are coalesced to one per channel every 2 seconds. Violations get an `error` frame, and repeated violations close the socket with `4429`.
-  - **liveness:** the server pings every 25 seconds and closes a socket with no pong for 60 seconds.
-  - **database access:** each inbound frame uses its own short database session; no session is held per connection.
-- **Membership:**
-  - resolved by the server when each frame is published, from a per-instance cache that the broadcaster invalidates on every membership change, so removed members and ended relationships stop receiving immediately;
-  - clients never subscribe to arbitrary channels.
-- **Revocation:** sockets of a revoked session, a blocked account or a deleted account are closed with `4401` ([roles and accounts](accounts.md#roles-and-accounts)).
+  - **outbound:** each socket has a FIFO queue of at most 256 frames or 1 MiB, frames held while the socket is suspended included; an enqueue that would exceed either closes the socket with `4429` instead of waiting; the writer writes with a 10-second deadline and closes with `4429` when it passes. A slow socket therefore never delays the listener or another socket ([ADR-0009](../../docs/decisions/0009-owner-approved-exceptions-and-visibility.md), item 3). Each frame is serialised once and the same bytes are enqueued for every recipient socket on the instance;
+  - **inbound:** text frames only, and a binary frame closes with `1003`; a frame over 16 KiB closes with `1009`, which the library sends on its read limit (`SetReadLimit(16384)`); a malformed frame, an unknown type or a type reserved for slice 6 gets an `error` frame (`bad_request`) and the socket stays open; more than 20 frames in a second get `error` frames (`rate_limited`), and five violations within 10 seconds close with `4429`; any frame other than `auth` before authentication closes with `4401`. From slice 6, typing frames are coalesced to one per channel every 2 seconds;
+  - **`ref`:** a client frame reference must match `^[A-Za-z0-9._-]{1,64}$`, the request identifier's character set, or the frame is malformed; `ref` values are echoed in `pong` and `error` frames and never logged;
+  - **liveness:** the server pings every 25 seconds and closes a socket without a pong for 60 seconds;
+  - **database access:** a socket holds no database session; each lookup it needs runs on a short pool session.
+- **Shutdown:** on shutdown the gateway closes every socket with `1001` before the HTTP server's 40-second drain.
+- **Goroutines:** every reader, writer, re-check and listener goroutine starts through `core.Go`, which recovers and logs a panic ([observability](observability.md#output-and-failure-behavior)).
+- **The client** (`frontend/src/lib/realtime`):
+  - one reconnecting client per tab, owned by the session epoch: it connects while the session is signed in and is closed and discarded when the epoch changes;
+  - it sends `auth` with the in-memory access token, refreshed first when it expires within 30 seconds, and sends every new access token the session obtains in-band as another `auth` frame on the open socket;
+  - it reconnects with exponential backoff from 1 to 30 seconds with full jitter, and waits up to 60 seconds after `4429`; after every `ready` that follows a reconnect (not an in-band re-authentication) it refetches the visible data ([live refetch mapping](../architecture/detailed.md#live-refetch-mapping));
+  - on `4401` it refreshes once: a new token reconnects, and a refused refresh ends the session with the reason the refresh reports ([navigation](../design/web/navigation.md#rules));
+  - it sends `ping` every 30 seconds and reconnects when no `pong` arrives within 10 seconds;
+  - the socket factory is injected, and the fake socket of the component tests is checked against the frames the real gateway emits by the same contract test as the client's parser ([frame format](#frame-format)).
+- **Chat membership** (slice 6): resolved by the server when each chat frame is published, from a per-instance cache that the broadcaster invalidates on every membership change, so removed members and ended relationships stop receiving immediately; clients never subscribe to arbitrary channels.
+
+### Authentication and revocation
+
+- **`auth`:** the access token is verified as on REST (signature, expiry, claims). The socket is then registered under its account and session, **suspended** and tagged with the listener's current generation ([broadcaster](#broadcaster)), before the session lookup. The lookup checks that the session is neither revoked nor expired and that the account is `active` or `unverified`. `ready` is sent, and the socket starts receiving, only when:
+  - the lookup passed;
+  - the listener's generation is unchanged;
+  - every `recheck` for the account that arrived after the registration was followed by a passing lookup: a `recheck` that arrives during authentication triggers one more lookup after the first, and when that lookup passes and the generation is still unchanged the socket gets `ready`, so another session's sign-out does not close an authenticating socket.
+
+  Otherwise the socket closes with `4401` (a failed lookup) or `1013` (a changed generation). A revocation committed while a socket authenticates is therefore never missed: its `recheck` finds the registered socket. A full per-account budget closes with `4429`, and a lost listener closes with `1013` until `LISTEN` is re-established.
+- **In-band `auth`:** a later `auth` frame with a valid token for the same session and the same account verifies its token every time, shares the socket's one-per-second session lookup (below) and reuses its result within that second, because the session must be the same, keeps the later of the recorded and the new token expiry and is answered with `ready`; an `auth` for another session or another account closes with `4401`.
+- **Token lapse:** the gateway records the access token's `exp` at `auth`. When the recorded expiry plus a grace of 30 seconds passes without a fresh token, the socket closes with `4401`, so a socket never lives longer than its access token.
+- **Inbound frames after `auth`** repeat the session and account lookup, but one socket performs at most one lookup per second and frames within that second reuse its result; a failure closes with `4401`. `ping` is answered with `pong` echoing `ref`.
+- **Revocation:** every path that revokes a session or ends an account signals a `recheck` for the account inside its own transaction, through the database triggers of the [data model](data-model.md#revocation-triggers): sign-out (`POST /auth/logout`), sign out everywhere, refresh-token reuse, the same-browser confirmation (the other sessions), a reclaim (every session, the squatter's included), a password reset, a password change (the other sessions), account deletion, an operator block through `ovc-admin` in its own process, the 7-day cleanup of an unconfirmed account and the purge. On a `recheck`:
+  - the listener marks that account's local sockets suspended at once and hands the account to the re-check worker; the listener itself never waits for a query;
+  - at most one re-check per account runs at a time, and signals that arrive meanwhile make it run once more afterwards;
+  - while suspended, frames for those sockets are queued and count against the outbound bound, so an overflow closes with `4429`;
+  - one query with a 2-second timeout re-reads their sessions and the account; failing sockets close with `4401`, and the others deliver their queued frames in order and resume;
+  - a failed query closes the account's sockets with `1012`, and each reconnect authenticates afresh.
+- **Bound:** a `recheck` is delivered at commit, so a revoked session's sockets close with `4401` within 5 seconds while the listener is alive; a listener that has been silent for 5 seconds is detected by its missing heartbeat, and every local socket is then closed with `1012` ([broadcaster](#broadcaster)).
+- **Sweep:** every 60 seconds the gateway re-checks the session and account of every local socket in one batched query and closes with `4401` those whose session expired or was revoked, or whose account is no longer `active` or `unverified`, matching the per-frame lookup, as defence in depth.
+- **Narrowing on lost scope:** ending a relationship, removing a provisional or reclaim-pending student, a dropped reclaim link and a tutor's or a student's deletion close no socket of the other party (the deleted account's own sockets close through the trigger on its state). Their transactions decide the recipients of `entity.changed` from relationship rows they hold locked ([authorization of frames](#authorization-of-frames)), so the student of a removed or dropped link gets one last `relationship` frame, refetches My tutors, which no longer lists the tutor, and gets nothing about that relationship afterwards; after an ending, frames reach the former student only when the student's projection changes again (a reactivation, `account_closed_until`). Sockets close only when a session or the account itself ends, or when the access token lapses without a fresh one.
 
 ### Frame format
 
-Typed JSON frames; types and close codes are enums in `internal/domain`, and payloads are structs in `internal/schemas`.
+Typed JSON text frames: `{"type": <enum>, "ref"?: string, "payload"?: object}`, with unknown properties refused. Types and close codes are enums in `internal/domain`, and payloads are structs in `internal/schemas`. They are not published through OpenAPI, because generating schemas for them would need reflection in hand-written code: the frontend mirrors them by hand in `frontend/src/lib/realtime/frames.ts` with a strict parser, and a contract test drives every server frame type and close code through the real backend and parses each frame with that parser, so a field the gateway adds, renames or removes fails it. On the Go side, `TestEveryFrameTypeHasAGatewayTest` fails when a frame type or close code of the enums has no gateway test that produces it.
 
-| Direction | Types |
+| Direction | Type | Payload | Notes |
+|---|---|---|---|
+| client → server | `auth` | `{access_token}` | first frame, within 5 seconds of the upgrade; later, a fresh token of the same session; the token is never logged |
+| client → server | `ping` | — | re-checks the session and account (at most once per second); answered with `pong` |
+| server → client | `ready` | `{}` | after a successful `auth`, first or in-band |
+| server → client | `notification.new` | `{id}` | a notification row was inserted for this account |
+| server → client | `entity.changed` | `{kind, id}` | refetch the entity through REST |
+| server → client | `pong` | — | echoes `ref` |
+| server → client | `error` | `{code, message, request_id, ref}` | `request_id` is the inbound frame's identifier and `ref` echoes the client's reference; the socket stays open |
+
+- **`entity.changed` kinds:** `relationship`, `join_request` and `notification` from slice 4; `lesson` from slice 5, `channel` from slice 6, `issue` and `submission` from slice 9, and `recording` after the MVP.
+- **Reserved for slice 6:** client frames `message.send`, `message.read`, `typing.start` and `typing.stop`, and server frames `message.new`, `message.updated`, `message.deleted`, `read.updated`, `typing` and `presence`. Until then a reserved client type gets an `error` frame like an unknown one.
+
+**Close codes:**
+
+| Code | Meaning | Client |
+|---|---|---|
+| `1000` | the client closed | — |
+| `1001` | server shutdown | reconnects with backoff |
+| `1003` | a binary frame | reconnects with backoff |
+| `1009` | a frame over 16 KiB | reconnects with backoff |
+| `1012` | the listener was lost or a re-check failed | reconnects with backoff |
+| `1013` | the listener is not back yet | reconnects later, with backoff |
+| `4401` | authentication failed, the token lapsed, or the session or account no longer allows the socket | refreshes once, then reconnects or ends the session |
+| `4429` | slow consumer, repeated frame violations, or too many sockets of the account | reconnects after up to 60 seconds |
+
+Close reasons are fixed short strings, never data.
+
+### Authorization of frames
+
+Inbound frames in slice 4 (`auth`, `ping`) carry no identifier, so nothing is resolved in a client-chosen scope, and clients never subscribe. Outbound recipients are decided in the producer's transaction, from rows it holds locked: a transaction that names a student as a frame recipient reads the relationship row with at least `FOR SHARE`, which conflicts with the `FOR UPDATE` and `FOR NO KEY UPDATE` locks that ending, removal and dropping a reclaim link take, so a producer waiting behind a removal sees the row discarded and names no former student ([lock order](accounts.md#locks-and-the-session-re-check)). A student gets a frame only when the student's own view changes, so the timing and presence of frames never tell a student that a tutor blocked them or suppressed their request, nor that a tutor edited private notes.
+
+| Frame | Recipients |
 |---|---|
-| Client → server | `auth`, `message.send`, `message.read`, `typing.start`, `typing.stop`, `ping` |
-| Server → client | `message.new`, `message.updated`, `message.deleted`, `read.updated`, `typing`, `presence`, `notification.new`, `entity.changed`, `pong`, `error` |
+| `notification.new` | the recipient of the inserted row only |
+| `entity.changed relationship` | the tutor on every committed change of the card; the linked student account only when the student-visible projection of the relationship changes: the `MyTutor` fields that come from the relationship row (`state`, `colour`, `ended_at`, `ended_by`, `account_closed_until`), including the change that removes the relationship from the student's view (removal, a dropped reclaim link); never another tutor of the same student. Tutor-only edits (notes, the card name, the card email) send the student nothing |
+| `entity.changed join_request` | the tutor only for requests inside the tutor's scope at commit (never held, suppressed, closed by an unblock or of an operator-blocked account); the student only when the student's `SentJoinRequest` changes through a decision: accept, and decline, which sends the same frame with or without a block; the student's own code entry sends one identical frame to the student's other sockets whether the request was created, existing, held or suppressed |
+| `entity.changed notification` | the recipient's own sockets, after a read change, so other tabs update the badge |
+| `recheck`, `heartbeat` signals | not frames: they close or keep sockets, or prove the listener alive |
 
-- An `error` frame carries `{"code", "message", "request_id", "ref"}`, where `ref` echoes the client's frame reference. The socket stays open unless the error is an authentication failure.
-- `entity.changed` carries `{kind, id}` with `kind` one of `lesson`, `issue`, `submission`, `recording`, `channel`, `relationship`.
+- Creation, release, suppression, un-suppression, the closing by an unblock, a repeated decline that adds a block, expiry (which the student's list derives from times) and an operator block send the student nothing distinguishable.
+- Every frame also reaches the acting account's other sockets, within the same rules.
+- `entity.changed` to students when a tutor edits their own profile (name, bio, subjects) waits until a page needs it; students see the change on their next fetch.
+- Tutor deletion locks no student's user row and sends its `relationship` frames in signals of at most 100 recipients each.
+- Denial tests connect a second tutor who shares the student and prove that no frame about the first tutor's relationship or requests reaches it, and prove that a student's frames are identical whether or not the tutor blocked them.
 
 ### Send path
+
+Chat (slice 6) follows the same path as every other producer:
 
 ```mermaid
 sequenceDiagram
@@ -77,13 +150,13 @@ sequenceDiagram
   participant GW as WebSocket gateway
   participant SVC as Chat service
   participant DB as PostgreSQL
-  participant BC as Broadcaster
+  participant BC as Listener on every API instance
   participant B as Other members
   A->>GW: message.send {ref, channel_id, body, attachment_ids}
   GW->>SVC: send(user, channel_id, body, attachments)
   SVC->>SVC: authorize membership and writability, validate, rate limit
-  SVC->>DB: insert message, bind attachments, flag offline members for the digest, commit
-  SVC->>BC: publish message.new for the channel
+  SVC->>DB: insert message, bind attachments, flag offline members for the digest, signal, commit
+  DB-->>BC: signal delivered after commit
   BC-->>A: message.new
   BC-->>B: message.new
 ```
@@ -93,6 +166,9 @@ sequenceDiagram
 
 ### Presence and typing
 
+Slice 6 adds these with chat; slice 4 keeps presence only in each API instance's registry, which the test control route `POST /__test__/presence` reports as `{online, sockets}` ([development](../../docs/development.md#end-to-end-test-harness)).
+
+- **Persisted presence** (slice 6): while a user has a socket, the gateway extends `user.online_until` to now plus 90 seconds about once a minute, batching these updates per instance. When the user's last socket on the instance closes, it sets `online_until` and `last_seen_at` to now. `last_seen_at` is always a past instant: the time of the last connection activity. Every process and instance can therefore tell who is online. The columns arrive with presence frames and the message digest, their only consumers.
 - A user is online while their `online_until` is in the future.
 - Presence changes are sent only to users who share a writable channel with them, debounced to at most one change per user every 5 seconds.
 - Typing frames are relayed to the channel's other connected members and expire on the client after 5 seconds.
@@ -100,20 +176,29 @@ sequenceDiagram
 
 ### In-app notifications and live updates
 
-- Services publish `notification.new` to individual users after a notification row is committed ([notifications](notifications.md#channels)).
-- Services publish `entity.changed` when an entity visible to the user changes, for example a lesson becoming live.
+- A producer that inserts a notification row signals `notification.new` to its recipient in the same transaction, only when the row was actually inserted ([notifications](notifications.md#channels)).
+- A producer that changes an entity a user sees signals `entity.changed` to the recipients of the [authorization rules](#authorization-of-frames), for example when a card changes or a request is decided, and from slice 5 when a lesson becomes live.
 - The client refetches the entity through REST; frames never carry the authoritative state.
 
 ### Broadcaster
 
-- The broadcaster is an interface in `internal/adapters`, so services can publish without importing the gateway.
-- **The production implementation** uses PostgreSQL `NOTIFY` after commit, with a small payload of identifiers (payloads are limited to 8,000 bytes).
-- **Delivery:**
-  - the publishing API instance delivers to its local sockets directly from the frame it already holds;
-  - every other instance, and every publication from the worker or `ovc-admin`, is received on a dedicated listening connection per API instance, owned by `internal/realtime`;
-  - that instance loads the referenced rows in batches (`id = ANY(…)`) on a pool session, never on the listening connection, then delivers.
-- So worker notifications and revocations reach connected users, and several API instances work later.
-- **Tests** use the same implementation against the test database; an in-process fake checked by the same contract tests is allowed in unit and contract tests only.
+- **Signals are written inside the committing transaction.** A producer issues `SELECT pg_notify($1, $2)` with bound parameters through the `Signals` repository in `internal/repositories`, as a statement of its own transaction; revocation signals come from database triggers ([revocation triggers](data-model.md#revocation-triggers)). PostgreSQL delivers a notification only when that transaction commits, in commit order, and never for a rolled-back one, so no crash between commit and publish can lose a signal. Every API instance, the producing one included, delivers from its own listening connection; there is no direct local path.
+- **Payload:** versioned JSON on the channel `ovc_realtime`, `{"v": 1, "k": "recheck" | "notification" | "entity" | "heartbeat", "u": [user ids], "e": kind, "i": id}`, at most 7,900 bytes and 100 recipients; a producer with more recipients sends several signals. The trigger-built `recheck` payloads use the same form. PostgreSQL collapses identical notifications within one transaction, so revoking every session of an account sends one signal.
+- **Kinds:**
+  - `recheck {u}` asks every instance to re-check the sockets of those accounts;
+  - `notification {u: [recipient], i}` delivers `notification.new`;
+  - `entity {u, e, i}` delivers `entity.changed`;
+  - `heartbeat {i}` keeps the listener's liveness; `i` carries the sending instance's identifier, and it is written through the `Signals` repository like every other signal.
+- **Signals carry no authority.** The listener parses every payload strictly into its typed form and drops anything else with `realtime.signal.rejected`. A forged or replayed `recheck` can only make an instance check sockets, which closes nothing that is still valid; a forged `notification` or `entity` signal carries only identifiers whose content REST authorises again. Only database roles can `NOTIFY`.
+- **Recipients are decided by the producer**, which already holds the rows and the scope rules under its locks; the listener never resolves recipients again at delivery, which would read state from a later moment.
+- **Listening:** each API instance holds one dedicated listening connection, owned by an adapter in `internal/adapters` and consumed by `internal/realtime`. The listener handles notifications one at a time, never waits for a query and enqueues frames without blocking; each socket's queue is FIFO, so one socket sees frames in commit order.
+- **Liveness fails closed:**
+  - the listening connection uses TCP keepalives and, where the driver and the platform support it (Linux in production), `tcp_user_timeout`; whether the pinned `pgx` exposes it is confirmed when the listener is built, and detection does not depend on it, because the heartbeat below detects a silent connection;
+  - each instance sends itself a `heartbeat` signal every 2 seconds on its pool through the `Signals` repository, and the listener is lost when it has received none of its own heartbeats for 5 seconds, when the connection errors or when `LISTEN` fails;
+  - a lost listener closes every local socket with `1012`, and closes new sockets after `auth` with `1013` until `LISTEN` is established again; the listener reconnects with backoff from 1 to 30 seconds and increments its generation, which authenticating sockets compare ([authentication](#authentication-and-revocation)).
+- **A full notification queue fails notifying commits.** A listener that stops consuming lets PostgreSQL's notification queue fill, and every transaction that notifies then fails at commit, sign-outs and producers included; the listener never waits on a socket or a query, and the heartbeat detects and reconnects a stalled listener. Every notifying transaction also takes PostgreSQL's notification lock at commit, after all its row locks, so sign-outs, purge batches, producers and heartbeats serialise on it; the slice review measures both.
+- **No in-process fake.** Publishing is a database statement, so tests use the real listener against the test database; tests of the listening connection may put an in-process TCP forwarder in front of the test PostgreSQL that relays every byte unchanged and can only stop relaying, once the agent configuration allows it.
+- **The worker and `ovc-admin`** signal through the same statements and triggers in their own transactions, so their changes and revocations reach connected users; several API instances work later without a change to this path.
 
 ## Video
 
