@@ -17,7 +17,7 @@ import (
 
 const backendRoot = "../.."
 
-var skippedDirectories = map[string]bool{"bin": true, "dbgen": true, "tmp": true}
+var skippedDirectories = map[string]bool{"bin": true, "internal/dbgen": true, "tmp": true}
 
 func sourceFiles(t *testing.T, extension string) []string {
 	t.Helper()
@@ -26,11 +26,12 @@ func sourceFiles(t *testing.T, extension string) []string {
 		if err != nil {
 			return err
 		}
-		if skippedDirectories[entry.Name()] {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
+		relative, err := filepath.Rel(backendRoot, path)
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() && skippedDirectories[filepath.ToSlash(relative)] {
+			return filepath.SkipDir
 		}
 		if entry.Type()&fs.ModeSymlink != 0 {
 			return errors.New(path + ": symbolic links are not allowed in the backend tree")
