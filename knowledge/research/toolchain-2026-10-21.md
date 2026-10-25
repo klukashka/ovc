@@ -30,7 +30,7 @@ Pinned 2026-10-21 in `tools/docs` (package manifest, lockfile and pnpm policy) i
 |---|---|---|
 | markdownlint-cli | 0.49.1 (2026-07-14) | 0.45.0 pulled `glob`, `js-yaml`, `markdown-it` and `minimatch` versions with high-severity advisories; 0.49.1 adds rule `MD060`, turned off in `.markdownlint.json` |
 | @mermaid-js/mermaid-cli | 12.0.0 (2026-09-24) | Declares `puppeteer` ^25 as a peer |
-| puppeteer | 25.12.0 (2026-09-23) | Its install script, which downloads a browser, is denied in `tools/docs/pnpm-workspace.yaml` |
+| puppeteer | 25.13.0 (2026-10-08; 25.12.0 of 2026-09-23 until 2026-10-25) | Its install script, which downloads a browser, is denied in `tools/docs/pnpm-workspace.yaml` |
 | playwright-core | 1.63.0 | Same version as the frontend's Playwright, used only to locate its Chromium for the renderer |
 | lychee | 0.24.2 | Installed outside the repository with the official instructions; no checksum is recorded |
 
@@ -40,5 +40,3 @@ Overrides in `tools/docs/pnpm-workspace.yaml` raise `smol-toml` to 1.9.0 and `js
 |---|---|---|
 | GHSA-gfr2-rv44-r23c (high, CVSS 7.5), GHSA-vfgh-jcmw-g37q (low, CVSS 3.7) | `markdown-it` 14.3.2 | The fix 14.3.3 was published 2026-10-16 and is younger than the minimum release age; the linter parses only this repository's Markdown. Accepted until 2026-11-15 |
 | GHSA-238p-pmpm-9mq7 (low, CVSS 2.1) | `katex` 0.16.47 | Fixed only in the 0.18 line, outside mermaid's 0.16 range; the renderer processes only this repository's diagrams offline. Accepted until 2027-01-21 |
-| GHSA-cg2g-xh64-v4q7 (critical, CVSS 9.2), GHSA-mrv2-3pqr-j5jr (high, CVSS 7.6), GHSA-c6gr-qvv4-5v3f (low) | `dompurify` 3.4.16, a lockfile dependency of mermaid 12.1.0 and `@zenuml/core` 3.50.1 | The renderer never loads it: mermaid-cli loads only the self-contained browser bundles, which carry their own DOMPurify (3.4.12 in mermaid, 3.3.1 in the ZenUML plugin), and lockfile scanning cannot see those copies. The fix 3.4.17 was published 2026-10-12 and is younger than the minimum release age. Accepted on exposure: the renderer reads only this repository's Markdown, passes strings to DOMPurify with mermaid's default configuration (no diagram sets `dompurifyConfig`) and discards its output. Accepted until 2026-10-27, when the lockfile copy is upgraded; the bundled copies change only with a mermaid or ZenUML release |
-| GHSA-mrhx-c7xc-m3w5 (high, CVSS 4.0 8.2) | `zod` 3.25.76, a dependency of `chromium-bidi` 17.0.2 under puppeteer 25.12.0 | zod is loaded only by chromium-bidi's WebDriver BiDi mapper, which puppeteer starts only in WebDriver BiDi mode and with a no-op command parser; the renderer drives Chromium over CDP, so zod never validates anything. puppeteer 25.13.0 moves to chromium-bidi 157.0.8090-0 on zod `^4.6.5`, which resolves to the fixed 4.6.6 once it passes the minimum release age on 2026-10-25. Accepted until 2026-10-27, when puppeteer is upgraded |

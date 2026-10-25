@@ -1,9 +1,4 @@
 [[IgnoredVulns]]
-id = "GHSA-mrhx-c7xc-m3w5"
-ignoreUntil = 2026-10-27T00:00:00Z
-reason = "High severity (CVSS 4.0 8.2): zod 4.6.5 reached only through eslint-plugin-react-hooks 7.1.1 and its zod-validation-error dependency, a development dependency of the linter that validates the lint configuration written in this repository; nothing in the application build or the browser bundle imports zod, so no untrusted input reaches it. The fix 4.6.6 was published 2026-10-11 and is younger than the two-week minimum release age until 2026-10-25. Upgrade once it is old enough. Triage: knowledge/research/frontend-toolchain-2026-10-21.md"
-
-[[IgnoredVulns]]
 id = "GHSA-xjj6-f33q-929c"
 ignoreUntil = 2026-10-31T00:00:00Z
 reason = "High severity (CVSS 3.1 7.5): denial of service through excessive content encodings in undici 8.11.2 reached only through jsdom 30.1.2, the DOM of the Vitest unit tests, a development dependency; jsdom uses that package only for its own resource loading, XHR and WebSocket, and the unit tests load no external resources and open no XHR, WebSocket or EventSource through jsdom (fetch in tests is Node's built-in one, which the unit tests do not call), and nothing in the application build imports undici. The fix 8.12.2 was published 2026-10-15 and is younger than the two-week minimum release age until 2026-10-29. Upgrade once it is old enough, and remove the matching auditConfig.ignoreGhsas entry by hand. Triage: knowledge/research/frontend-toolchain-2026-10-21.md"
