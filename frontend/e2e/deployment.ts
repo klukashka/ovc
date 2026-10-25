@@ -269,6 +269,7 @@ function backendEnvironment(
     OVC_PUBLIC_URL: origin,
     OVC_JWT_SECRET: randomBytes(32).toString('hex'),
     OVC_FIELD_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
+    OVC_UNSUBSCRIBE_SIGNING_SECRET: randomBytes(32).toString('base64'),
     OVC_TRUSTED_PROXY_CIDRS: '127.0.0.1/32',
     OVC_STORAGE_BACKEND: 's3',
     OVC_STORAGE_ENDPOINT: settings.storage.endpoint,

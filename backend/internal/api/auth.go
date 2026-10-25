@@ -20,6 +20,7 @@ import (
 	"ovc/backend/internal/schemas"
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/tutoring"
 )
 
@@ -77,13 +78,14 @@ type Auth struct {
 }
 
 type router struct {
-	api        huma.API
-	auth       Auth
-	files      *files.Service
-	tutoring   *tutoring.Service
-	now        func() time.Time
-	logger     *slog.Logger
-	operations []OperationAudience
+	api         huma.API
+	auth        Auth
+	files       *files.Service
+	tutoring    *tutoring.Service
+	preferences *notifications.Preferences
+	now         func() time.Time
+	logger      *slog.Logger
+	operations  []OperationAudience
 }
 
 func register[Input any, Output any](r *router, op huma.Operation, audience Audience, handler func(context.Context, *Input) (*Output, error)) {
@@ -233,6 +235,7 @@ func (r *router) registerAuth() {
 	r.registerAccountFlows()
 	r.registerProfileRoutes()
 	r.registerReclaimRoutes()
+	r.registerPreferenceRoutes()
 }
 
 func (r *router) recordClientAddress(ctx huma.Context, next func(huma.Context)) {

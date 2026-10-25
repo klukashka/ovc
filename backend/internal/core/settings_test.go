@@ -36,6 +36,7 @@ func validValues() map[string]string {
 	values["OVC_STORAGE_ACCESS_KEY"] = sentinel("storage-access-key")
 	values["OVC_STORAGE_"+"SECRET_KEY"] = sentinel("storage-secret-key")
 	values["OVC_FIELD_ENCRYPTION_KEY"] = sentinelFieldKey
+	values["OVC_UNSUBSCRIBE_SIGNING_SECRET"] = sentinelUnsubscribeSecret
 	return values
 }
 

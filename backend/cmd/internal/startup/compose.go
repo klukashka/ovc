@@ -79,6 +79,20 @@ func NewAccounts(
 	}), nil
 }
 
+func NewPreferences(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source) (*notifications.Preferences, error) {
+	keys, err := core.DeriveKeys(settings.JWTSecret)
+	if err != nil {
+		return nil, err
+	}
+	tokens, err := core.NewUnsubscribeTokens(settings.UnsubscribeKey)
+	if err != nil {
+		return nil, err
+	}
+	return notifications.NewPreferences(notifications.PreferenceDependencies{
+		Store: repositories.NewStore(database.Pool), Clock: source, Tokens: tokens, Keys: keys, Logger: logger,
+	}), nil
+}
+
 type Mailer struct {
 	mail.Mailer
 	Close func() error

@@ -198,6 +198,19 @@ var squatterWrites = map[string]squatterWrite{
 		}
 		return send, unchanged
 	}},
+	"an email preference save": {role: domain.RoleStudent, act: func(t *testing.T, h *authHarness, user domain.UserID, token string) (squatterRequest, unchangedCheck) {
+		t.Helper()
+		send := func() <-chan pendingAnswer {
+			return h.sendInBackground(http.MethodPut, "/api/v1/users/me/email-preferences", `{"groups":[{"group":"homework","enabled":false}]}`, authorised(token))
+		}
+		unchanged := func(t *testing.T) {
+			t.Helper()
+			if h.countRows(t, "SELECT count(user_id) FROM email_preferences WHERE user_id = $1::uuid", user.String()) != 0 {
+				t.Fatal("the squatter's preference save landed")
+			}
+		}
+		return send, unchanged
+	}},
 	"a confirmation resend": {role: domain.RoleStudent, act: func(t *testing.T, h *authHarness, user domain.UserID, token string) (squatterRequest, unchangedCheck) {
 		t.Helper()
 		before := h.countRows(t, "SELECT count(id) FROM email_requests WHERE user_id = $1::uuid", user.String())

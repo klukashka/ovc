@@ -105,6 +105,7 @@ type authHarness struct {
 	worker    *worker.Worker
 	objects   *storage.S3
 	contested *contestedRow
+	links     core.UnsubscribeTokens
 }
 
 func newAuthHarness(t *testing.T) *authHarness {
@@ -157,12 +158,22 @@ func newAuthHarnessStoring(
 		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}, Avatars: fileService, Uploads: fileService,
 		Tutoring: tutoringService,
 	})
+	_, unsubscribeSecret, err := core.RandomToken(random, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	links, err := core.NewUnsubscribeTokens(core.NewSecret(unsubscribeSecret))
+	if err != nil {
+		t.Fatal(err)
+	}
+	preferences := notifications.NewPreferences(notifications.PreferenceDependencies{Store: store, Clock: shared, Tokens: links, Keys: keys, Logger: logger})
 	handler, err := newHandler(api.Options{
 		Logger: logger, Now: clock.System{}.Now, NewRequestID: core.NewRandomID,
-		Readiness: func(context.Context) error { return nil },
-		Auth:      api.Auth{Accounts: service, PublicOrigin: publicOrigin, TrustedProxies: trusted},
-		Files:     fileService,
-		Tutoring:  tutoringService,
+		Readiness:   func(context.Context) error { return nil },
+		Auth:        api.Auth{Accounts: service, PublicOrigin: publicOrigin, TrustedProxies: trusted},
+		Files:       fileService,
+		Tutoring:    tutoringService,
+		Preferences: preferences,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +215,7 @@ func newAuthHarnessStoring(
 	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, jobs, worker.DefaultTiming())
 	return &authHarness{
 		server: server, store: store, clock: shared, hasher: hasher, logs: logs,
-		database: database, sink: sink, worker: background, objects: objects,
+		database: database, sink: sink, worker: background, objects: objects, links: links,
 	}
 }
 

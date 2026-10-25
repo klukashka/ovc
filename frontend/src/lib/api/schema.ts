@@ -559,6 +559,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/unsubscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["unsubscribe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/unsubscribe/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["unsubscribe-preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/uploads": {
         parameters: {
             query?: never;
@@ -589,6 +621,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["users-me-update"];
+        trace?: never;
+    };
+    "/api/v1/users/me/email-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["users-me-email-preferences"];
+        put: operations["users-me-email-preferences-update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/users/me/reclaim": {
@@ -663,6 +711,14 @@ export interface components {
             expires_in?: number;
             /** @enum {string|null} */
             outcome: "choice_required" | "linked" | "request_sent" | "code_invalid" | null;
+        };
+        EmailPreference: {
+            enabled: boolean;
+            /** @enum {string} */
+            group: "lesson_reminders" | "lesson_changes" | "homework" | "results" | "submissions" | "message_digest";
+        };
+        EmailPreferences: {
+            groups: components["schemas"]["EmailPreference"][];
         };
         Error: {
             error: components["schemas"]["ErrorBody"];
@@ -1006,6 +1062,10 @@ export interface components {
         TutorJoinRequestPage: {
             items: components["schemas"]["TutorJoinRequest"][];
             next_cursor: string | null;
+        };
+        UnsubscribePreview: {
+            /** @enum {string} */
+            group: "lesson_reminders" | "lesson_changes" | "homework" | "results" | "submissions" | "message_digest";
         };
         UploadedFile: {
             filename: string;
@@ -5041,6 +5101,185 @@ export interface operations {
             };
         };
     };
+    unsubscribe: {
+        parameters: {
+            query?: {
+                token?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/x-www-form-urlencoded": {
+                    "List-Unsubscribe": string;
+                };
+                "multipart/form-data": {
+                    "List-Unsubscribe": string;
+                };
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "unsubscribe-preview": {
+        parameters: {
+            query?: {
+                token?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsubscribePreview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "uploads-create": {
         parameters: {
             query: {
@@ -5388,6 +5627,198 @@ export interface operations {
             };
         };
     };
+    "users-me-email-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailPreferences"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "users-me-email-preferences-update": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailPreferences"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailPreferences"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "users-me-reclaim": {
         parameters: {
             query?: never;
@@ -5603,6 +6034,7 @@ export const pathsApiV1UploadsPostParametersQueryContextValues: ReadonlyArray<Fl
 export const cardGroupColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CardGroup"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const cardInvitationStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CardInvitation"]["status"]> = ["open", "expired", "revoked_after_mismatches"];
 export const emailConfirmedOutcomeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EmailConfirmed"]["outcome"]> = ["choice_required", "linked", "request_sent", "code_invalid"];
+export const emailPreferenceGroupValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EmailPreference"]["group"]> = ["lesson_reminders", "lesson_changes", "homework", "results", "submissions", "message_digest"];
 export const errorBodyCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorBody"]["code"]> = ["bad_request", "unauthenticated", "token_expired", "invalid_signature", "invalid_credentials", "email_not_verified", "account_blocked", "forbidden", "not_found", "method_not_allowed", "conflict", "lesson_overlap", "lesson_not_live", "outside_join_window", "not_editable", "answer_frozen", "already_linked", "student_exists", "relationship_not_active", "audience_not_active", "role_mismatch", "invitation_invalid", "invitation_email_mismatch", "relationship_not_provisional", "return_not_allowed", "issue_has_submissions", "channel_read_only", "edit_window_passed", "gone", "payload_too_large", "unsupported_media_type", "validation_failed", "lesson_in_past", "tutor_code_invalid", "token_invalid", "rate_limited", "tutor_unavailable", "internal", "provider_unavailable", "service_unavailable", "quota_exceeded"];
 export const groupColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Group"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const groupPatchColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["GroupPatch"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
@@ -5633,3 +6065,4 @@ export const studentCardEnded_byValues: ReadonlyArray<FlattenedDeepRequired<comp
 export const studentCardStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCard"]["state"]> = ["invited", "provisional", "reclaim_pending", "active", "ended"];
 export const studentCardSummaryEnded_byValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardSummary"]["ended_by"]> = ["tutor", "student", "deletion"];
 export const studentCardSummaryStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardSummary"]["state"]> = ["invited", "provisional", "reclaim_pending", "active", "ended"];
+export const unsubscribePreviewGroupValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["UnsubscribePreview"]["group"]> = ["lesson_reminders", "lesson_changes", "homework", "results", "submissions", "message_digest"];

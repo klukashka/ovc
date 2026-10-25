@@ -27,6 +27,7 @@ type Repositories struct {
 	JoinRequests  JoinRequests
 	Blocked       BlockedRequesters
 	Groups        Groups
+	Preferences   EmailPreferences
 }
 
 type Store struct {
@@ -77,6 +78,7 @@ func newRepositories(queries *dbgen.Queries) Repositories {
 		JoinRequests:  JoinRequests{queries: queries},
 		Blocked:       BlockedRequesters{queries: queries},
 		Groups:        Groups{queries: queries},
+		Preferences:   EmailPreferences{queries: queries},
 	}
 }
 

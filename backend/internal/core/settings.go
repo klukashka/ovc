@@ -88,6 +88,7 @@ const (
 	varFileQuota       = "OVC_DEFAULT_FILE_QUOTA_BYTES"
 	varRecordingQuota  = "OVC_DEFAULT_RECORDING_QUOTA_BYTES"
 	varFieldKey        = "OVC_FIELD_ENCRYPTION_KEY"
+	varUnsubscribeKey  = "OVC_UNSUBSCRIBE_SIGNING_SECRET"
 
 	minimumTrustedIPv4Bits = 8
 	minimumTrustedIPv6Bits = 32
@@ -98,7 +99,7 @@ func VariableNames() []string {
 		varHTTPAddr, varDatabaseURL, varDBPoolSize, varLogLevel, varLogFormat, varAPIDocsEnabled,
 		varTestControl, varClock, varMeetingProvider, varMailBackend, varPublicURL, varSMTPHost, varSMTPPort,
 		varSMTPTLS, varSMTPUsername, varSMTPPassword, varMailFrom, varJWTSecret, varAccessTTL, varRefreshTTL,
-		varTrustedProxies, varTestDatabaseURL, varFileQuota, varRecordingQuota, varFieldKey,
+		varTrustedProxies, varTestDatabaseURL, varFileQuota, varRecordingQuota, varFieldKey, varUnsubscribeKey,
 	}, storageVariableNames()...)
 }
 
@@ -126,6 +127,7 @@ type Settings struct {
 	TutorQuotas     TutorQuotas
 	Storage         StorageSettings
 	FieldKey        Secret
+	UnsubscribeKey  Secret
 }
 
 type TutorQuotas struct {
@@ -197,6 +199,7 @@ func Load(lookup Lookup, process Process) (Settings, error) {
 	if process == ProcessAPI || process == ProcessWorker {
 		problems = append(problems, settings.loadStorageSettings(lookup)...)
 		problems = append(problems, settings.loadFieldKey(lookup)...)
+		problems = append(problems, settings.loadUnsubscribeKey(lookup)...)
 	}
 	poolSize, err := int32Or(lookup, varDBPoolSize, defaultPool)
 	if err != nil {

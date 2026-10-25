@@ -295,6 +295,14 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: JobResult
+          - column: email_preferences.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: email_preferences.email_group
+            go_type:
+              import: ovc/backend/internal/domain
+              type: EmailGroup
           - column: mail_sink.id
             go_type:
               import: ovc/backend/internal/domain

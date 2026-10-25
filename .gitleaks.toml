@@ -1,0 +1,7 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Start-up refusal tests name the unsubscribe signing secret variable beside values generated per run, never a real secret"
+targetRules = ["generic-api-key"]
+paths = ['''^backend/cmd/internal/startup/settings_process_test\.go$''']

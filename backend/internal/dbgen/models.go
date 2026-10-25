@@ -43,6 +43,13 @@ type BlockedRequester struct {
 	CreatedAt time.Time
 }
 
+type EmailPreference struct {
+	UserID     domain.UserID
+	EmailGroup domain.EmailGroup
+	Enabled    bool
+	UpdatedAt  time.Time
+}
+
 type EmailRequest struct {
 	ID        domain.EmailRequestID
 	UserID    domain.UserID

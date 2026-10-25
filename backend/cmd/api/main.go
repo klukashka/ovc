@@ -123,6 +123,10 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	if err != nil {
 		return err
 	}
+	preferences, err := startup.NewPreferences(logging.Logger, settings, database, source)
+	if err != nil {
+		return err
+	}
 	options := api.Options{
 		Logger:       logging.Logger,
 		Now:          systemClock.Now,
@@ -133,6 +137,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		),
 		Files:       fileService,
 		Tutoring:    tutoringService,
+		Preferences: preferences,
 		DocsEnabled: settings.APIDocsEnabled,
 		Auth:        api.Auth{Accounts: accountService, PublicOrigin: settings.PublicURL, TrustedProxies: settings.TrustedProxies},
 	}
@@ -142,7 +147,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		if err != nil {
 			return err
 		}
-		options.Mount = testcontrol.New(logging.Logger, shared, background, sink).Mount
+		options.Mount = testcontrol.New(logging.Logger, shared, background, sink, preferences).Mount
 	}
 	handler, err := api.NewHandler(options)
 	if err != nil {

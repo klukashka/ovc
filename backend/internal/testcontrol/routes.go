@@ -17,6 +17,7 @@ import (
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/schemas"
+	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/worker"
 )
 
@@ -29,18 +30,20 @@ const (
 var errTrailingData = errors.New("trailing data after the JSON body")
 
 type Routes struct {
-	logger *slog.Logger
-	clock  *clock.Shared
-	worker *worker.Worker
-	sink   *mail.Sink
+	logger      *slog.Logger
+	clock       *clock.Shared
+	worker      *worker.Worker
+	sink        *mail.Sink
+	preferences *notifications.Preferences
 }
 
-func New(logger *slog.Logger, shared *clock.Shared, w *worker.Worker, sink *mail.Sink) *Routes {
-	return &Routes{logger: logger, clock: shared, worker: w, sink: sink}
+func New(logger *slog.Logger, shared *clock.Shared, w *worker.Worker, sink *mail.Sink, preferences *notifications.Preferences) *Routes {
+	return &Routes{logger: logger, clock: shared, worker: w, sink: sink, preferences: preferences}
 }
 
 func (routes *Routes) Mount(mux *http.ServeMux) {
 	mux.Handle("POST /__test__/mail", routes.guard(routes.mail))
+	mux.Handle("POST /__test__/unsubscribe-token", routes.guard(routes.unsubscribeToken))
 	if routes.clock == nil {
 		return
 	}
@@ -82,6 +85,42 @@ func (routes *Routes) mail(w http.ResponseWriter, r *http.Request) {
 		response = append(response, mailMessage{Subject: message.Subject, Text: message.Text, HTML: message.HTML, Links: message.Links, SentAt: message.SentAt})
 	}
 	writeJSON(ctx, routes.logger, w, response)
+}
+
+type unsubscribeTokenRequest struct {
+	User  string            `json:"user"`
+	Group domain.EmailGroup `json:"group"`
+}
+
+type unsubscribeTokenResponse struct {
+	Token string `json:"token"`
+}
+
+func (routes *Routes) unsubscribeToken(w http.ResponseWriter, r *http.Request) {
+	var request unsubscribeTokenRequest
+	if !decode(routes.logger, w, r, &request) {
+		return
+	}
+	ctx := r.Context()
+	user, ok := domain.ParseUUID[domain.UserID](request.User)
+	var problems []schemas.FieldError
+	if !ok {
+		problems = append(problems, schemas.FieldError{Path: "user", Code: string(domain.FieldInvalid)})
+	}
+	if !request.Group.Known() {
+		problems = append(problems, schemas.FieldError{Path: "group", Code: string(domain.FieldInvalid)})
+	}
+	if len(problems) > 0 {
+		writeError(ctx, routes.logger, w, domain.ErrorValidationFailed, problems)
+		return
+	}
+	token, err := routes.preferences.MintUnsubscribeToken(ctx, user, request.Group)
+	if err != nil {
+		routes.fail(ctx, w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(ctx, routes.logger, w, unsubscribeTokenResponse{Token: token})
 }
 
 type clockRequest struct {
@@ -179,7 +218,7 @@ func isLoopbackHost(hostHeader string) bool {
 	return loopbackHosts[host]
 }
 
-func decode[T clockRequest | mailRequest | struct{}](logger *slog.Logger, w http.ResponseWriter, r *http.Request, target *T) bool {
+func decode[T clockRequest | mailRequest | unsubscribeTokenRequest | struct{}](logger *slog.Logger, w http.ResponseWriter, r *http.Request, target *T) bool {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	err := decoder.Decode(target)
@@ -215,7 +254,7 @@ func trailingDataError(decoder *json.Decoder) error {
 	return err
 }
 
-func writeJSON[T clockResponse | tickResponse | mailResponse](ctx context.Context, logger *slog.Logger, w http.ResponseWriter, body T) {
+func writeJSON[T clockResponse | tickResponse | mailResponse | unsubscribeTokenResponse](ctx context.Context, logger *slog.Logger, w http.ResponseWriter, body T) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		panic("a test control response could not be encoded")

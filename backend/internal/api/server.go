@@ -16,6 +16,7 @@ import (
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/schemas"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/tutoring"
 )
 
@@ -73,6 +74,7 @@ type Options struct {
 	Auth          Auth
 	Files         *files.Service
 	Tutoring      *tutoring.Service
+	Preferences   *notifications.Preferences
 }
 
 func NewHandler(options Options) (http.Handler, error) {
@@ -83,7 +85,10 @@ func newHandler(options Options, registerExtra func(*router)) (http.Handler, err
 	mux := http.NewServeMux()
 	api := newAPI(mux)
 	readiness := &sharedReadiness{check: options.Readiness, now: options.Now, logger: options.Logger}
-	routes := &router{api: api, auth: options.Auth, files: options.Files, tutoring: options.Tutoring, now: options.Now, logger: options.Logger}
+	routes := &router{
+		api: api, auth: options.Auth, files: options.Files, tutoring: options.Tutoring, preferences: options.Preferences,
+		now: options.Now, logger: options.Logger,
+	}
 	routes.registerAll(readiness.run)
 	registerExtra(routes)
 	if options.DocsEnabled {

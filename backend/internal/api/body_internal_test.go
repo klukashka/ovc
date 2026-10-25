@@ -17,6 +17,7 @@ import (
 
 	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/core"
+	"ovc/backend/internal/domain"
 )
 
 type echoInput struct {
@@ -180,8 +181,11 @@ func TestEveryRegisteredOperationSetsTheBodyLimits(t *testing.T) {
 	}
 	for _, registered := range operations {
 		wantBytes, wantTimeout := int64(maxJSONBodyBytes), bodyReadTimeout
-		if registered.OperationID == "uploads-create" {
+		switch registered.OperationID {
+		case "uploads-create":
 			wantBytes, wantTimeout = uploadBodyBytes, uploadReadDeadline
+		case "unsubscribe":
+			wantBytes = domain.UnsubscribeFormMaxBytes
 		}
 		if registered.MaxBodyBytes != wantBytes || registered.BodyReadTimeout != wantTimeout {
 			t.Fatalf("%s has limits %d and %s", registered.OperationID, registered.MaxBodyBytes, registered.BodyReadTimeout)

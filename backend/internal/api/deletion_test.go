@@ -29,6 +29,7 @@ func (h *authHarness) rowsOwnedBy(t *testing.T, user domain.UserID) map[string]i
 		"tutor_profiles":        "SELECT count(user_id) FROM tutor_profiles WHERE user_id = $1::uuid",
 		"attachments":           "SELECT count(id) FROM attachments WHERE uploader_id = $1::uuid",
 		"attachment_references": "SELECT count(attachment_id) FROM attachment_references WHERE ref_id = $1::uuid",
+		"email_preferences":     "SELECT count(user_id) FROM email_preferences WHERE user_id = $1::uuid",
 	}
 	owned := map[string]int64{}
 	for table, query := range queries {

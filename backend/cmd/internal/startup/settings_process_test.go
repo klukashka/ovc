@@ -18,9 +18,27 @@ func fieldKeyRefusals() map[string]string {
 	}
 }
 
+func shortUnsubscribeSecret() string {
+	return unsubscribeSecretForTheRun[:31]
+}
+
+func unsubscribeSecretRefusals() map[string]string {
+	return map[string]string{
+		"missing secret":                 unsetVariable("OVC_UNSUBSCRIBE_SIGNING_SECRET"),
+		"short secret":                   "OVC_UNSUBSCRIBE_SIGNING_SECRET=" + shortUnsubscribeSecret(),
+		"secret equal to the JWT secret": "OVC_UNSUBSCRIBE_SIGNING_SECRET=" + jwtSecretForTheRun,
+		"secret equal to the field key":  "OVC_UNSUBSCRIBE_SIGNING_SECRET=" + fieldKeyForTheRun,
+	}
+}
+
 func revealsAValue(result outcome) bool {
 	output := result.stdout + result.stderr
-	return strings.Contains(output, "sentinel") || strings.Contains(output, shortFieldKey) || strings.Contains(output, fieldKeyForTheRun)
+	for _, value := range []string{"sentinel", shortFieldKey, fieldKeyForTheRun, unsubscribeSecretForTheRun, shortUnsubscribeSecret(), jwtSecretForTheRun} {
+		if strings.Contains(output, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestCheckSettingsPrintsOnlyOkOrTheSettingsError(t *testing.T) {
@@ -28,15 +46,21 @@ func TestCheckSettingsPrintsOnlyOkOrTheSettingsError(t *testing.T) {
 		t.Run(binary, func(t *testing.T) {
 			accepted := runBinary(t, binary, []string{unreachableDatabase}, "check-settings")
 			refused := map[string]outcome{}
+			variables := map[string]string{}
 			for name, variable := range fieldKeyRefusals() {
 				refused[name] = runBinary(t, binary, []string{unreachableDatabase, variable}, "check-settings")
+				variables[name] = "OVC_FIELD_ENCRYPTION_KEY"
+			}
+			for name, variable := range unsubscribeSecretRefusals() {
+				refused[name] = runBinary(t, binary, []string{unreachableDatabase, variable}, "check-settings")
+				variables[name] = "OVC_UNSUBSCRIBE_SIGNING_SECRET"
 			}
 
 			if accepted.exitCode != 0 || accepted.stdout != "ok\n" || accepted.stderr != "" {
 				t.Fatalf("valid settings: %d %q %q", accepted.exitCode, accepted.stdout, accepted.stderr)
 			}
 			for name, result := range refused {
-				if result.exitCode != 1 || result.stdout != "" || !strings.HasPrefix(result.stderr, "configuration: OVC_FIELD_ENCRYPTION_KEY: ") {
+				if result.exitCode != 1 || result.stdout != "" || !strings.HasPrefix(result.stderr, "configuration: "+variables[name]+": ") {
 					t.Fatalf("%s: %d %q %q", name, result.exitCode, result.stdout, result.stderr)
 				}
 				if revealsAValue(result) || strings.Count(result.stderr, "\n") != 1 {
@@ -80,6 +104,27 @@ func TestProcessesRefuseToStartWithoutAValidFieldEncryptionKey(t *testing.T) {
 
 				if result.exitCode != 1 || !strings.Contains(result.stderr, "OVC_FIELD_ENCRYPTION_KEY") || strings.Contains(result.stdout, "process.started") {
 					t.Fatalf("expected a start-up refusal naming the key, got %d %q %q", result.exitCode, result.stdout, result.stderr)
+				}
+				if revealsAValue(result) {
+					t.Fatal("the refusal shows a value")
+				}
+			})
+		}
+	}
+}
+
+func TestProcessesRefuseToStartWithoutAValidUnsubscribeSigningSecret(t *testing.T) {
+	t.Parallel()
+	commands := map[string][]string{"api": nil, "worker": nil}
+	for name, variable := range unsubscribeSecretRefusals() {
+		for command, args := range commands {
+			t.Run(name+"/"+command, func(t *testing.T) {
+				t.Parallel()
+
+				result := runBinary(t, command, []string{unreachableDatabase, variable}, args...)
+
+				if result.exitCode != 1 || !strings.Contains(result.stderr, "OVC_UNSUBSCRIBE_SIGNING_SECRET") || strings.Contains(result.stdout, "process.started") {
+					t.Fatalf("expected a start-up refusal naming the secret, got %d %q %q", result.exitCode, result.stdout, result.stderr)
 				}
 				if revealsAValue(result) {
 					t.Fatal("the refusal shows a value")

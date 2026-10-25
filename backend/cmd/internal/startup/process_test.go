@@ -29,8 +29,10 @@ import (
 )
 
 var (
-	binaries          string
-	fieldKeyForTheRun string
+	binaries                   string
+	fieldKeyForTheRun          string
+	unsubscribeSecretForTheRun string
+	jwtSecretForTheRun         string
 )
 
 func TestMain(m *testing.M) {
@@ -39,6 +41,16 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	fieldKeyForTheRun = base64.StdEncoding.EncodeToString(keyBytes)
+	secretBytes := make([]byte, 32)
+	if _, err := rand.Read(secretBytes); err != nil {
+		panic(err)
+	}
+	unsubscribeSecretForTheRun = base64.StdEncoding.EncodeToString(secretBytes)
+	jwtBytes := make([]byte, 32)
+	if _, err := rand.Read(jwtBytes); err != nil {
+		panic(err)
+	}
+	jwtSecretForTheRun = base64.StdEncoding.EncodeToString(jwtBytes)
 	directory, err := os.MkdirTemp("", "ovc-binaries-")
 	if err != nil {
 		panic(err)
@@ -85,8 +97,9 @@ func storageDefaults() map[string]string {
 func withPublicURL(env []string) []string {
 	defaults := storageDefaults()
 	defaults["OVC_PUBLIC_URL"] = "https://ovc.example"
-	defaults["OVC_JWT_SECRET"] = "process-test-signing-material-0123456789"
+	defaults["OVC_JWT_SECRET"] = jwtSecretForTheRun
 	defaults["OVC_FIELD_ENCRYPTION_KEY"] = fieldKeyForTheRun
+	defaults["OVC_UNSUBSCRIBE_SIGNING_SECRET"] = unsubscribeSecretForTheRun
 	var result []string
 	for _, variable := range env {
 		if strings.Contains(variable, "=") {
