@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10, slice reviews and the Go backend added the same day, slice 1 adjusted on 2026-10-21 (sqlc and `ovc-admin` moved to slice 2); slice 1 closed and follow-up items placed in slices 2, 8 and 10 on 2026-10-21 after its slice review; parts of FR-1 and FR-16 moved from slice 2 to slices 3 and 4 the same day with the slice 2 plan; recordings and analytics moved after the MVP on 2026-10-22 by the owner's decision, and the pilot deployment items added to slices 7 and 10 the same day (ADR-0013), and the worker's per-lane refill loops placed in slice 4 the same day; slice 2 closed on 2026-10-22 after its slice review, with follow-up items placed in slices 3, 4 and 10; the slice 3 plan approved the same day, with its deferred items placed in slices 4, 5, 6, 9 and 10; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product, phone layouts added to slice 10, slice reviews and the Go backend added the same day, slice 1 adjusted on 2026-10-21 (sqlc and `ovc-admin` moved to slice 2); slice 1 closed and follow-up items placed in slices 2, 8 and 10 on 2026-10-21 after its slice review; parts of FR-1 and FR-16 moved from slice 2 to slices 3 and 4 the same day with the slice 2 plan; recordings and analytics moved after the MVP on 2026-10-22 by the owner's decision, and the pilot deployment items added to slices 7 and 10 the same day (ADR-0013), and the worker's per-lane refill loops placed in slice 4 the same day; slice 2 closed on 2026-10-22 after its slice review, with follow-up items placed in slices 3, 4 and 10; the slice 3 plan approved the same day, with its deferred items placed in slices 4, 5, 6, 9 and 10; slice 3 closed on 2026-10-25 after its slice review, with the dependency upgrades and the suite consolidation placed before slice 4 and the per-account purge budget in slice 5; pending line-by-line owner review.
 
 Build order, slice by slice. Each slice is runnable and reviewable on its own and ends with its checks registered in the [development guide](development.md). A slice is done when:
 
@@ -46,6 +46,8 @@ Also carried over from the [slice 2 review](../knowledge/reviews/slice-2-review.
 
 Built as the [slice 3 plan](../knowledge/plans/slice-3.md#1-problem-outcome-and-scope) (pending owner review).
 
+Closed at the commit "Record the slice 3 review and close the slice", after the [slice 3 review](../knowledge/reviews/slice-3-review.md) and its six follow-up changes; the dependency upgrades and the suite consolidation of its [follow-up plan](../knowledge/plans/slice-3-review-follow-ups.md) land before slice 4 adds code and tests, and the purge budget per account moves to slice 5 (pending owner review).
+
 ## Slice 4: realtime and in-app notifications
 
 FR-13.1, FR-13.3, and from slice 2 the closing of live connections on sign-out, deletion and blocking in FR-1.4, FR-1.7 and FR-16.1 ([accounts](../knowledge/specs/accounts.md#roles-and-accounts)). The WebSocket gateway with first-frame authentication, the connection registry and broadcaster, `notification.new` and `entity.changed` frames, the notifications panel, email preferences and one-click unsubscribe. The worker's lanes run side by side with per-lane loops that refill slots as they free up, before lesson reminders depend on prompt delivery (NFR-4.5).
@@ -59,6 +61,8 @@ Also from slice 3 ([slice 3 plan](../knowledge/plans/slice-3.md#1-problem-outcom
 FR-4, FR-13.2 (lesson emails). One-off lessons and weekly series in the tutor's timezone, scoped edits and cancellations, overlap warnings, calendars, lesson status, the lesson page without video, and lesson reminders and change emails.
 
 Also from slice 3 ([slice 3 plan](../knowledge/plans/slice-3.md#1-problem-outcome-and-scope)): the `group.archived` email; the lesson effects of ending a relationship, removing a provisional student, removing a group member, archiving a group and deleting a tutor, with the cancelled lessons listed in `relationship.ended` and `tutor.deleted`; and one-to-one lessons only for a provisional student (pending owner review).
+
+Also from the [slice 3 review](../knowledge/reviews/slice-3-review.md#carried-over): each account gets its own share of a purge run's budget, so one large tutor purge no longer delays the purge of other accounts by whole hourly runs (pending owner review).
 
 ## Slice 6: chat and files
 
