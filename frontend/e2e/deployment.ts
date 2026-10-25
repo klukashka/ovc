@@ -2,9 +2,10 @@ import { type ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_pr
 import { randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, createWriteStream, mkdirSync, openSync, readdirSync, rmSync } from 'node:fs';
 import { createConnection } from 'node:net';
+import { userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { type RunLockHolder, acquireRunLock, holdsRunLock, releaseRunLock } from './run-lock.ts';
+import { type RunLockHolder, acquireRunLock, holdsRunLock, machineRunLockPath, releaseRunLock } from './run-lock.ts';
 import { assertOutputRootIsReal, playwrightOutputRoot } from './run-output.ts';
 
 const frontendRoot = resolve(import.meta.dirname, '..');
@@ -13,7 +14,7 @@ const backendRoot = resolve(repositoryRoot, 'backend');
 const outputRoot = resolve(frontendRoot, 'test-results', 'deployment');
 const binariesRoot = join(outputRoot, 'bin');
 const tlsRoot = join(outputRoot, 'tls');
-const runLockPath = resolve(frontendRoot, 'test-results', 'e2e-run.lock');
+const runLockPath = machineRunLockPath(process.platform, userInfo().homedir);
 const runOutputsRoot = playwrightOutputRoot(frontendRoot);
 const previewCertificate = join(tlsRoot, 'preview-certificate.pem');
 const previewPrivateKey = join(tlsRoot, 'preview-private-key.pem');
@@ -190,7 +191,7 @@ function assertStillHeld(holder: RunLockHolder): void {
 }
 
 export function takeRunLock(): void {
-  const holder = { pid: process.pid, startedAt: new Date().toISOString() };
+  const holder = { pid: process.pid, startedAt: new Date().toISOString(), checkout: repositoryRoot };
   acquireRunLock(runLockPath, holder, (message) => {
     process.stderr.write(`${message}\n`);
   });
