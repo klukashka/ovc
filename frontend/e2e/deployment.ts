@@ -1,8 +1,11 @@
 import { type ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chmodSync, closeSync, createWriteStream, mkdirSync, openSync } from 'node:fs';
+import { chmodSync, closeSync, createWriteStream, mkdirSync, openSync, readdirSync, rmSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { join, resolve } from 'node:path';
+
+import { type RunLockHolder, acquireRunLock, holdsRunLock, releaseRunLock } from './run-lock.ts';
+import { assertOutputRootIsReal, playwrightOutputRoot } from './run-output.ts';
 
 const frontendRoot = resolve(import.meta.dirname, '..');
 const repositoryRoot = resolve(frontendRoot, '..');
@@ -10,6 +13,8 @@ const backendRoot = resolve(repositoryRoot, 'backend');
 const outputRoot = resolve(frontendRoot, 'test-results', 'deployment');
 const binariesRoot = join(outputRoot, 'bin');
 const tlsRoot = join(outputRoot, 'tls');
+const runLockPath = resolve(frontendRoot, 'test-results', 'e2e-run.lock');
+const runOutputsRoot = playwrightOutputRoot(frontendRoot);
 const previewCertificate = join(tlsRoot, 'preview-certificate.pem');
 const previewPrivateKey = join(tlsRoot, 'preview-private-key.pem');
 const readinessDeadlineMilliseconds = 30_000;
@@ -174,8 +179,57 @@ function createPreviewCertificate(): void {
   chmodSync(previewPrivateKey, 0o600);
 }
 
+const runLock: { holder: RunLockHolder | undefined } = { holder: undefined };
+
+function assertStillHeld(holder: RunLockHolder): void {
+  if (!holdsRunLock(runLockPath, holder)) {
+    throw new Error(
+      `${runLockPath} no longer holds this run (pid ${String(holder.pid)}, started ${holder.startedAt}); another run took it, so this run stops instead of touching the shared deployment files and bucket`,
+    );
+  }
+}
+
+export function takeRunLock(): void {
+  const holder = { pid: process.pid, startedAt: new Date().toISOString() };
+  acquireRunLock(runLockPath, holder, (message) => {
+    process.stderr.write(`${message}\n`);
+  });
+  runLock.holder = holder;
+  process.once('exit', () => {
+    releaseRunLock(runLockPath, holder);
+  });
+  assertStillHeld(holder);
+}
+
+export function removeEarlierRunOutputs(currentOutputs: readonly string[]): void {
+  if (runLock.holder === undefined) {
+    throw new Error('earlier run outputs are removed only after this run takes the run lock');
+  }
+  assertStillHeld(runLock.holder);
+  const kept = new Set(currentOutputs.map((output) => resolve(output)));
+  assertOutputRootIsReal(frontendRoot);
+  mkdirSync(runOutputsRoot, { recursive: true });
+  assertOutputRootIsReal(frontendRoot);
+  for (const entry of readdirSync(runOutputsRoot)) {
+    const path = join(runOutputsRoot, entry);
+    if (!kept.has(path)) {
+      rmSync(path, { recursive: true, force: true });
+    }
+  }
+}
+
 export function finishRun(): void {
-  deleteStorageBucket();
+  const { holder } = runLock;
+  if (holder === undefined) {
+    return;
+  }
+  assertStillHeld(holder);
+  try {
+    deleteStorageBucket();
+  } finally {
+    releaseRunLock(runLockPath, holder);
+    runLock.holder = undefined;
+  }
 }
 
 export function prepareRun(): void {

@@ -1,18 +1,23 @@
 import { ESLint } from 'eslint';
 import { resolve } from 'node:path';
-import { describe, expect, test } from 'vitest';
+import { beforeAll, describe, expect, test } from 'vitest';
 
 const frontendRoot = resolve(import.meta.dirname, '..');
 const fixturePath = resolve(frontendRoot, 'src/lib/preferences/store.ts');
 const componentPath = resolve(frontendRoot, 'src/routes/NotFoundPage.tsx');
 
+const eslint = new ESLint({ cwd: frontendRoot, flags: ['unstable_native_nodejs_ts_config'] });
+
 async function ruleIds(source: string, filePath: string = fixturePath): Promise<string[]> {
-  const eslint = new ESLint({ cwd: frontendRoot, flags: ['unstable_native_nodejs_ts_config'] });
   const [result] = await eslint.lintText(source, { filePath });
   return (result?.messages ?? []).map((message) => message.ruleId ?? 'fatal');
 }
 
 describe('frontend lint configuration', () => {
+  beforeAll(async () => {
+    await eslint.lintText('export const warm = 1;\n', { filePath: fixturePath });
+  });
+
   test.each([
     ['importing vi', "import { vi } from 'vitest';\nexport const tools = vi;\n", 'no-restricted-imports'],
     [

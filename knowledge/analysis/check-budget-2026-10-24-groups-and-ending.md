@@ -23,3 +23,12 @@ A second end-to-end run right after took 74.2 seconds, so the end-to-end time is
   - seeding: every test seeds its own confirmed tutor through sign-up and confirmation, and several seed 31 accounts (the "show more" tests of join requests, sent requests, blocked students and the member choice, 2 to 3.5 seconds each per browser); a tutor shared per file where tests do not mutate it, as the plan proposes, and smaller pages for the "show more" checks would cut most of it;
   - the slowest files are `account-edge-cases.spec.ts` (46 seconds of test time), `smoke.spec.ts` (41), `join-requests.spec.ts` (41), `signup.spec.ts` (40) and `invitations.spec.ts` (38);
   - a cold run was not measured, and no measurement was repeated on an idle machine.
+
+## Method for the next measurement
+
+This record, like the earlier ones, did not time the security scans, although every change must pass them before it is ready. The next check-budget record times the full local check run as the [development guide](../../docs/development.md) lists it, which adds these rows, run from the repository root:
+
+- `go -C tools tool gitleaks git --redact --no-banner ..` and `go -C tools tool gitleaks git --staged --redact --no-banner ..`;
+- the four OSV-Scanner lockfile scans: `go -C tools tool osv-scanner scan source --no-call-analysis=go --lockfile=go.mod`, `go -C tools tool osv-scanner scan source --no-call-analysis=go --lockfile=../backend/go.mod`, `go -C tools tool osv-scanner scan source --lockfile=../frontend/pnpm-lock.yaml` and `go -C tools tool osv-scanner scan source --lockfile=docs/pnpm-lock.yaml`.
+
+It also runs on an otherwise idle machine, one command after another, as the change that consolidates the suites before slice 4 requires.
