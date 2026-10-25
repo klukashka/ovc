@@ -124,7 +124,9 @@ func constraintNodes(file *ast.File) map[ast.Node]bool {
 }
 
 var (
-	gooseMarkers    = map[string]bool{"-- +goose Up": true, "-- +goose Down": true}
+	gooseMarkers = map[string]bool{
+		"-- +goose Up": true, "-- +goose Down": true, statementBeginMarker: true, statementEndMarker: true,
+	}
 	queryAnnotation = regexp.MustCompile(`^-- name: [A-Z][A-Za-z0-9]* :(one|many|exec|execrows)$`)
 )
 
@@ -208,7 +210,11 @@ func TestSQLCommentDetection(t *testing.T) {
 	}{
 		{sqlMigration, "-- +goose Up", false},
 		{sqlMigration, "-- +goose Down", false},
-		{sqlMigration, "-- +goose StatementBegin", true},
+		{sqlMigration, "-- +goose StatementBegin", false},
+		{sqlMigration, "-- +goose StatementEnd", false},
+		{sqlMigration, "-- +goose StatementBegin x", true},
+		{sqlQuery, "-- +goose StatementBegin", true},
+		{sqlOther, "-- +goose StatementEnd", true},
 		{sqlMigration, "-- name: ListUsers :many", true},
 		{sqlMigration, "CREATE TABLE users (id uuid); -- explain", true},
 		{sqlQuery, "-- name: ListUsers :many", false},
@@ -235,6 +241,198 @@ func TestSQLCommentDetection(t *testing.T) {
 			t.Errorf("sqlLineIsComment(%d, %q) = %v, want %v", testCase.kind, testCase.line, found, testCase.comment)
 		}
 	}
+}
+
+const (
+	statementBeginMarker = "-- +goose StatementBegin"
+	statementEndMarker   = "-- +goose StatementEnd"
+	statementMarkerText  = "+goose statement"
+)
+
+var (
+	functionStatementHead = regexp.MustCompile(`(?is)^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+[A-Za-z_][A-Za-z0-9_.]*\s*\(`)
+	bodyOpening           = regexp.MustCompile(`(?is)^[^;'"$]*\sAS\s+(\$([A-Za-z_][A-Za-z0-9_]*)?\$)`)
+)
+
+func argumentListEnd(text string, opening int) int {
+	depth := 0
+	for index := opening; index < len(text); index++ {
+		switch text[index] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return index + 1
+			}
+		case '\'', '"', '$', ';':
+			return -1
+		}
+	}
+	return -1
+}
+
+func isSingleFunctionStatement(statement string) bool {
+	text := strings.TrimSpace(statement)
+	head := functionStatementHead.FindStringIndex(text)
+	if head == nil {
+		return false
+	}
+	afterArguments := argumentListEnd(text, head[1]-1)
+	if afterArguments < 0 {
+		return false
+	}
+	opening := bodyOpening.FindStringSubmatchIndex(text[afterArguments:])
+	if opening == nil {
+		return false
+	}
+	tagStart, tagEnd := afterArguments+opening[2], afterArguments+opening[3]
+	tag := text[tagStart:tagEnd]
+	bodyLength := strings.Index(text[tagEnd:], tag)
+	if bodyLength < 0 || !strings.Contains(text[tagEnd:tagEnd+bodyLength], ";") {
+		return false
+	}
+	rest := text[tagEnd+bodyLength+len(tag):]
+	return strings.Count(rest, ";") == 1 && strings.HasSuffix(rest, ";")
+}
+
+func lineProblem(line int, message string) string {
+	return strconv.Itoa(line) + ": " + message
+}
+
+func statementMarkerProblems(kind sqlFileKind, content string) []string {
+	var problems []string
+	var statement []string
+	open := false
+	openedAt := 0
+	for index, line := range strings.Split(content, "\n") {
+		number := index + 1
+		text := strings.TrimRight(line, "\r")
+		isMigration := kind == sqlMigration
+		switch {
+		case isMigration && text == statementBeginMarker:
+			if open {
+				problems = append(problems, lineProblem(number, "StatementBegin inside an open statement"))
+			}
+			open, openedAt, statement = true, number, nil
+		case isMigration && text == statementEndMarker:
+			if !open {
+				problems = append(problems, lineProblem(number, "StatementEnd without StatementBegin"))
+				continue
+			}
+			if !isSingleFunctionStatement(strings.Join(statement, "\n")) {
+				problems = append(problems, lineProblem(openedAt, "statement markers wrap something other than one function"))
+			}
+			open = false
+		case strings.Contains(strings.ToLower(text), statementMarkerText):
+			problems = append(problems, lineProblem(number, "statement marker with other text or outside migrations"))
+		case open:
+			statement = append(statement, text)
+		}
+	}
+	if open {
+		problems = append(problems, lineProblem(openedAt, "StatementBegin without StatementEnd"))
+	}
+	return problems
+}
+
+const wrappedFunction = `-- +goose Up
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION signal_recheck() RETURNS trigger AS $$
+BEGIN
+    PERFORM pg_notify('ovc_realtime', NEW.user_id::text);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+CREATE TRIGGER sessions_revoked AFTER UPDATE ON sessions FOR EACH ROW EXECUTE FUNCTION signal_recheck();
+
+-- +goose Down
+DROP TRIGGER sessions_revoked ON sessions;
+DROP FUNCTION signal_recheck();
+`
+
+func TestMigrationStatementMarkersOnlyWrapFunctionBodies(t *testing.T) {
+	accepted := map[string]string{
+		"a function body with a dollar tag": wrappedFunction,
+		"a plain function with a named dollar tag": "-- +goose StatementBegin\n" +
+			"CREATE FUNCTION one() RETURNS integer AS $body$ SELECT 1; $body$ LANGUAGE sql;\n" +
+			"-- +goose StatementEnd\n",
+		"no statement markers": "-- +goose Up\nCREATE TABLE users (id uuid);\n",
+	}
+	refused := map[string]string{
+		"a marker with trailing text": strings.Replace(wrappedFunction, statementBeginMarker, statementBeginMarker+" ok", 1),
+		"an indented marker":          strings.Replace(wrappedFunction, statementEndMarker, " "+statementEndMarker, 1),
+		"an unpaired begin":           strings.Replace(wrappedFunction, statementEndMarker+"\n", "", 1),
+		"an unpaired end":             strings.Replace(wrappedFunction, statementBeginMarker+"\n", "", 1),
+		"a nested begin": strings.Replace(
+			wrappedFunction, "BEGIN\n", statementBeginMarker+"\nBEGIN\n", 1,
+		),
+		"a table":     "-- +goose StatementBegin\nCREATE TABLE users (id uuid);\n-- +goose StatementEnd\n",
+		"a procedure": "-- +goose StatementBegin\nCREATE PROCEDURE p() AS $$ SELECT 1; $$ LANGUAGE sql;\n-- +goose StatementEnd\n",
+		"a do block":  "-- +goose StatementBegin\nDO $$ BEGIN PERFORM 1; END; $$;\n-- +goose StatementEnd\n",
+		"a function and another statement": strings.Replace(
+			wrappedFunction, "$$ LANGUAGE plpgsql;\n", "$$ LANGUAGE plpgsql;\nDROP TABLE users;\n", 1,
+		),
+		"an unquoted function body": "-- +goose StatementBegin\n" +
+			"CREATE FUNCTION one() RETURNS integer LANGUAGE sql RETURN 1;\n-- +goose StatementEnd\n",
+		"an empty wrapping": "-- +goose StatementBegin\n-- +goose StatementEnd\n",
+		"a dollar tag inside the function name": "-- +goose StatementBegin\n" +
+			"CREATE FUNCTION a$x$b() RETURNS void AS $$ BEGIN END; $$ LANGUAGE plpgsql; DROP TABLE users; $x$;\n" +
+			"-- +goose StatementEnd\n",
+		"a dollar quote inside a single-quoted literal": "-- +goose StatementBegin\n" +
+			"CREATE FUNCTION one(x text DEFAULT '$$') RETURNS text AS 'a'; DROP TABLE users; SELECT '$$' LANGUAGE sql;\n" +
+			"-- +goose StatementEnd\n",
+		"a body without a semicolon": "-- +goose StatementBegin\n" +
+			"CREATE FUNCTION one() RETURNS integer AS $$ SELECT 1 $$ LANGUAGE sql;\n-- +goose StatementEnd\n",
+	}
+	refusedOutsideMigrations := wrappedFunction
+
+	for name, content := range accepted {
+		t.Run("accepts "+name, func(t *testing.T) {
+			problems := statementMarkerProblems(sqlMigration, content)
+
+			if len(problems) > 0 {
+				t.Errorf("unexpected problems: %v", problems)
+			}
+		})
+	}
+	for name, content := range refused {
+		t.Run("refuses "+name, func(t *testing.T) {
+			problems := statementMarkerProblems(sqlMigration, content)
+
+			if len(problems) == 0 {
+				t.Error("expected a problem, found none")
+			}
+		})
+	}
+	for name, kind := range map[string]sqlFileKind{"queries": sqlQuery, "other SQL files": sqlOther} {
+		t.Run("refuses markers in "+name, func(t *testing.T) {
+			problems := statementMarkerProblems(kind, refusedOutsideMigrations)
+
+			if len(problems) != 2 {
+				t.Errorf("expected two problems, found %v", problems)
+			}
+		})
+	}
+	t.Run("accepts the backend SQL files", func(t *testing.T) {
+		files := sourceFiles(t, ".sql")
+
+		var problems []string
+		for _, path := range files {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, problem := range statementMarkerProblems(sqlKind(backendRoot, path), string(content)) {
+				problems = append(problems, path+":"+problem)
+			}
+		}
+
+		if len(problems) > 0 {
+			t.Fatalf("misplaced goose statement markers:\n%s", strings.Join(problems, "\n"))
+		}
+	})
 }
 
 const repositoryRoot = "../../.."

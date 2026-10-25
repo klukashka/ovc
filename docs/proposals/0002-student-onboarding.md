@@ -2,6 +2,7 @@
 
 - Status: accepted, 2026-10-22, as [ADR-0014](../decisions/0014-students-join-through-their-tutor.md)
 - Reviewed: direction and the rules marked "decided" below chosen by the project owner on 2026-10-21, including the scope of the email rule and a new card after removal; the proposal, with the amendments listed under [Decision](#decision), accepted by the owner on 2026-10-22; wording, including the reclaim answer and the decision of 2026-10-22, pending line-by-line owner review
+- Later change (2026-10-25, pending owner review): the point that, from slice 4, a removed account's live connections close became narrowing under the slice 4 plan (`knowledge/plans/slice-4.md`, D37): no socket closes on lost scope, and the removed account's sockets stop receiving anything about that tutor; the text below is kept as written for the record.
 - Author: project owner, written up by an agent
 - Date: 2026-10-21
 - Trigger: implemented in roadmap slice 3, together with invitations and the tutor code; to be accepted before slice 3 starts

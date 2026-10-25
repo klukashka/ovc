@@ -1,7 +1,7 @@
 # ADR-0009: Owner-approved exceptions to base rules, and tutor-only scores
 
 - Status: accepted, 2026-10-20; superseded in part by [ADR-0014](0014-students-join-through-their-tutor.md) on 2026-10-22 (the first bullet of item 4)
-- Reviewed: decided by the project owner on 2026-10-20, item 7 on 2026-10-21, item 8 on 2026-10-25; wording pending line-by-line owner review; the superseded-in-part note of 2026-10-22 pending owner review
+- Reviewed: decided by the project owner on 2026-10-20, item 7 on 2026-10-21, item 8 on 2026-10-25 (its listener-forwarder and goose statement-marker exceptions also on 2026-10-25), and the rewording of item 2 on 2026-10-25; wording pending line-by-line owner review; the additions to item 8 and the rewording of item 2 pending owner review; the superseded-in-part note of 2026-10-22 pending owner review
 - Deciders: project owner
 - Related: [ADR-0004](0004-bigbluebutton-primary-provider.md), [ADR-0005](0005-tutor-centric-domain.md), [ADR-0006](0006-background-worker-and-email.md), [ADR-0014](0014-students-join-through-their-tutor.md), FR-1.2, FR-5.1, FR-5.3, FR-9.3, FR-11.1, [threat model](../threat-model.md)
 - Superseded parts: the first bullet of item 4, under which only an invitation sent by email confirmed the invitee's email; since [ADR-0014](0014-students-join-through-their-tutor.md) no invitation confirms an email, and a link accepted before confirmation is provisional. The text below is kept as written for the record.
@@ -12,7 +12,7 @@ The design reviews of the tutor-centric product found places where the specifica
 
 ## Decision
 
-The project owner approved, on 2026-10-20 (items 1 to 6), 2026-10-21 (item 7) and 2026-10-25 (item 8, its wording pending owner review):
+The project owner approved, on 2026-10-20 (items 1 to 6), 2026-10-21 (item 7) and 2026-10-25 (item 8 and the rewording of item 2, their wording pending owner review):
 
 1. **Credentials in URLs** are allowed for exactly these, each bounded in lifetime and scope, never signing anyone in to OVC, and never logged:
    - invitation links;
@@ -23,7 +23,7 @@ The project owner approved, on 2026-10-20 (items 1 to 6), 2026-10-21 (item 7) an
    - 5-minute signed storage URLs for authorized downloads, recordings and the lesson presentation fetched by the conferencing server.
 
    Access and refresh tokens never appear in URLs.
-2. **Infrastructure adapters may keep their own state in PostgreSQL:** the `NOTIFY` broadcaster, the database mail sink and the shared test clock. Business data is still read and written only by repositories.
+2. **Infrastructure adapters may keep their own state in PostgreSQL:** the database mail sink and the shared test clock. Business data is still read and written only by repositories. The broadcaster keeps no state of its own (pending owner review): its signals are written with `pg_notify` inside the committing transaction by the `Signals` repository and by database triggers, and the PostgreSQL listener adapter only holds a listening connection.
 3. **Slow WebSocket consumers are closed** (`4429`) and recover by reconnecting and refetching through REST. This replaces any guarantee that every frame reaches every connected client; the database stays the source of truth.
 4. **Product refinements:**
    - only an invitation sent by email from OVC confirms the invitee's email; a copied link, or an invitation without an email, requires confirming the email first;
@@ -35,7 +35,7 @@ The project owner approved, on 2026-10-20 (items 1 to 6), 2026-10-21 (item 7) an
    - They see the status of their work, the tutor's comments, feedback and corrected files, and, when the answer policy allows, the correct answers with explanations.
    - Scores and analytics are the tutor's working tools.
 7. **Agents may run local commands with the owner's development settings** until OVC has hosting. The owner keeps the root `.env` (Compose credentials) and `backend/.env` (backend settings) with development-only values, and edits and later moves them. Agents never open, print, copy or edit these or any other environment file; the only sanctioned use is `tools/dev-env.sh <command>`, which loads those two files into that one command's environment without printing them. Other environment files, such as `backend/.env.local` with real provider secrets for live checks, are never loaded by the wrapper and stay owner-only. The exception ends when hosting exists; then the wrapper, its check `tools/check-dev-env.sh`, the hook's support for it with its cases, and their documentation in `AGENTS.md`, the threat model, the development guide and the AI development inventory are removed.
-8. **Two narrow exceptions to the testing rules** (pending owner review): a step test of a pilot scenario suite, whose title starts with `pilot-<n> › step <k>` or `pilot-<n> › steps <k>–<m>` and names the scenario steps it proves (a `pilot-<n> › seed` test is not one), may act and assert in turns, because the intermediate states of a scenario step are its acceptance criteria; and a test may create, through its own connection to the test database created for it, a database object whose only effect is to raise a real database error for one item, never through application code, migrations or the end-to-end test control surface, only to prove that a worker job isolates that item's failure. Every other test keeps three phases and changes nothing about how the database behaves.
+8. **Four narrow exceptions to the testing and code rules** (pending owner review): a step test of a pilot scenario suite, whose title starts with `pilot-<n> › step <k>` or `pilot-<n> › steps <k>–<m>` and names the scenario steps it proves (a `pilot-<n> › seed` test is not one), may act and assert in turns, because the intermediate states of a scenario step are its acceptance criteria; a test may create, through its own connection to the test database created for it, a database object whose only effect is to raise a real database error for one item, never through application code, migrations or the end-to-end test control surface, only to prove that a worker job isolates that item's failure; only in tests of the database listener's liveness (its heartbeat and the detection of a silent connection), a test may put an in-process TCP forwarder in front of the test PostgreSQL, because a silent connection cannot otherwise be produced without patching the driver: `internal/testdb` builds it from the database endpoint the integration-test fixture has already checked, it listens only on `127.0.0.1` on an ephemeral port, dials only that checked host and port and relays every byte unchanged in both directions, and its only other behavior is to stop relaying in both directions at once and permanently, after which it may close both connections, never resuming, delaying or dropping individual bytes; and `backend/migrations/*.sql` may hold `-- +goose StatementBegin` and `-- +goose StatementEnd`, each alone on its line, paired, and only around one `CREATE FUNCTION` or `CREATE OR REPLACE FUNCTION` statement whose dollar-quoted body holds at least one semicolon at which goose would otherwise split it, enforced by the conventions tests. Every other test keeps three phases, changes nothing about how the database behaves and alters nothing about the database connection's behavior, and no other comment-like marker enters a migration.
 
 ## Alternatives considered
 
@@ -61,6 +61,6 @@ The project owner approved, on 2026-10-20 (items 1 to 6), 2026-10-21 (item 7) an
 - [Functional requirements](../requirements/functional.md) (FR-1.2, FR-5.1, FR-5.3, FR-9.3, FR-11.1), [product overview](../product.md)
 - [Pages](../../knowledge/design/web/pages.md), [states](../../knowledge/design/web/states.md), [pilot scenarios](../../knowledge/design/web/pilot-scenarios.md)
 - [Email content](../../knowledge/specs/notifications.md#email), [threat model](../threat-model.md) (T-19, T-30)
-- [Testing](../../AGENTS.md#testing) (item 8)
+- [Testing](../../AGENTS.md#testing), [Code](../../AGENTS.md#code) and the conventions tests in `backend/internal/conventions/` (item 8)
 - [Change workflow](../../AGENTS.md#change-workflow), [AI development verification](../../knowledge/reviews/ai-development-setup.md#minimal-inventory)
 - [Secrets](../../AGENTS.md#security) and the [local settings wrapper](../development.md#local-services) (item 7), [threat model](../threat-model.md) (T-19)
