@@ -140,6 +140,9 @@ func (p *Purger) purge(ctx context.Context, repos repositories.Repositories, use
 	if _, err := repos.Users.Delete(ctx, user); err != nil {
 		return nil, err
 	}
+	if _, err := repos.Notifications.DeleteNaming(ctx, user); err != nil {
+		return nil, err
+	}
 	p.logger.LogAttrs(ctx, slog.LevelInfo, "account.purged", userAttribute(user), slog.Int("batches", batches))
 	return announce, nil
 }

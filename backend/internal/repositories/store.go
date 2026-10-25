@@ -29,6 +29,7 @@ type Repositories struct {
 	Groups        Groups
 	Preferences   EmailPreferences
 	Signals       Signals
+	Notifications Notifications
 }
 
 type Store struct {
@@ -81,6 +82,7 @@ func newRepositories(queries *dbgen.Queries) Repositories {
 		Groups:        Groups{queries: queries},
 		Preferences:   EmailPreferences{queries: queries},
 		Signals:       Signals{queries: queries},
+		Notifications: Notifications{queries: queries},
 	}
 }
 

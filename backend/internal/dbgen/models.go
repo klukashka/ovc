@@ -131,6 +131,19 @@ type MailSink struct {
 	SentAt    time.Time
 }
 
+type Notification struct {
+	ID             domain.NotificationID
+	UserID         domain.UserID
+	TutorID        domain.UserID
+	StudentID      *domain.UserID
+	Event          domain.NotificationEvent
+	SubjectID      domain.EntityID
+	RelationshipID *domain.RelationshipID
+	IdempotencyKey string
+	CreatedAt      time.Time
+	ReadAt         *time.Time
+}
+
 type Outbox struct {
 	ID             domain.OutboxID
 	Lane           domain.OutboxLane

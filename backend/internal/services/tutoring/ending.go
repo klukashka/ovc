@@ -26,6 +26,7 @@ type ending struct {
 	link        repositories.Relationship
 	by          domain.EndedBy
 	memberships int64
+	notified    *createdNotification
 }
 
 func (s *Service) EndByTutor(ctx context.Context, tutor domain.UserID, id domain.RelationshipID) (Card, error) {
@@ -137,12 +138,38 @@ func (s *Service) endLink(
 	if err != nil {
 		return ending{}, err
 	}
+	if err := relationshipChanged(ctx, repos, ended, true); err != nil {
+		return ending{}, err
+	}
+	done := ending{link: ended, by: transition.EndedBy, memberships: memberships}
 	if transition.EndedBy.EmailsTheOtherParty() {
 		if err := s.queueEndedEmail(ctx, repos, ended, now); err != nil {
 			return ending{}, err
 		}
+		done.notified, err = s.notifyEnded(ctx, repos, ended, transition.EndedBy, now)
+		if err != nil {
+			return ending{}, err
+		}
 	}
-	return ending{link: ended, by: transition.EndedBy, memberships: memberships}, nil
+	return done, nil
+}
+
+func (s *Service) notifyEnded(
+	ctx context.Context, repos repositories.Repositories, ended repositories.Relationship, by domain.EndedBy, now time.Time,
+) (*createdNotification, error) {
+	if ended.StudentID == nil || ended.EndedAt == nil {
+		return nil, fmt.Errorf("relationship %s: %w", ended.ID, errEndedWithoutTime)
+	}
+	recipient := *ended.StudentID
+	if by == domain.EndedByStudent {
+		recipient = ended.TutorID
+	}
+	relationship := ended.ID
+	return s.notify(ctx, repos, notificationRow{
+		event: domain.NotificationRelationshipEnded, recipient: recipient, tutor: ended.TutorID, student: *ended.StudentID,
+		subject: domain.EntityID(ended.ID), relationship: &relationship,
+		key: domain.RelationshipEndedKey(ended.ID, ended.EndedAt.UnixMicro()),
+	}, now)
 }
 
 func (s *Service) queueEndedEmail(ctx context.Context, repos repositories.Repositories, ended repositories.Relationship, now time.Time) error {
@@ -161,7 +188,7 @@ func (s *Service) queueEndedEmail(ctx context.Context, repos repositories.Reposi
 	}
 	_, err = repos.Outbox.Insert(ctx, repositories.NewOutboxRow{
 		ID: id, Lane: domain.LaneEmail, Priority: domain.PriorityNormal, Kind: domain.EventRelationshipEnded, Payload: payload,
-		IdempotencyKey: fmt.Sprintf("%s:%s:%d", domain.EventRelationshipEnded, identifier, endedAt), NextAttemptAt: now, CreatedAt: now,
+		IdempotencyKey: domain.RelationshipEndedKey(ended.ID, endedAt), NextAttemptAt: now, CreatedAt: now,
 	})
 	return err
 }
@@ -173,4 +200,5 @@ func (s *Service) logEnded(ctx context.Context, ended ending) {
 		attributes = append(attributes, slog.String("user_id", ended.link.StudentID.String()))
 	}
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "relationship.ended", attributes...)
+	s.logNotified(ctx, ended.notified)
 }

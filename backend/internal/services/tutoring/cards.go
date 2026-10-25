@@ -247,6 +247,9 @@ func (s *Service) CreateCard(ctx context.Context, tutor domain.UserID, request N
 		if err != nil {
 			return err
 		}
+		if err := cardChanged(ctx, repos, tutor, row.ID); err != nil {
+			return err
+		}
 		created = true
 		card, err = s.fullCard(ctx, repos, tutor, row, now)
 		return err
@@ -352,6 +355,11 @@ func (s *Service) UpdateCard(ctx context.Context, tutor domain.UserID, id domain
 		updated, fields, err := s.applyChange(ctx, repos, row, change, now)
 		if err != nil {
 			return err
+		}
+		if len(fields) > 0 {
+			if err := cardChanged(ctx, repos, tutor, id); err != nil {
+				return err
+			}
 		}
 		changed = fields
 		card, err = s.fullCard(ctx, repos, tutor, updated, now)
@@ -492,7 +500,7 @@ func (s *Service) WithdrawCard(ctx context.Context, tutor domain.UserID, id doma
 			return err
 		}
 		withdrawn = true
-		return nil
+		return cardChanged(ctx, repos, tutor, id)
 	})
 	if err != nil {
 		return err
@@ -527,6 +535,9 @@ func (s *Service) RegenerateInvitation(ctx context.Context, tutor domain.UserID,
 			return err
 		}
 		if err := s.replaceInvitation(ctx, repos, row, domain.RevokeRegenerated, now); err != nil {
+			return err
+		}
+		if err := cardChanged(ctx, repos, tutor, id); err != nil {
 			return err
 		}
 		issued, err = s.invitationView(ctx, repos, row, now)

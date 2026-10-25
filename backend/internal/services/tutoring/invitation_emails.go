@@ -98,7 +98,10 @@ func (s *Service) sendInvitation(ctx context.Context, repos repositories.Reposit
 	if err != nil {
 		return "", err
 	}
-	return sendQueued, s.queueInvitationEmail(ctx, repos, invitation, send, now)
+	if err := s.queueInvitationEmail(ctx, repos, invitation, send, now); err != nil {
+		return "", err
+	}
+	return sendQueued, cardChanged(ctx, repos, tutor, id)
 }
 
 func (s *Service) reserveTutorBudget(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, now time.Time) error {

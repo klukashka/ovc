@@ -380,6 +380,10 @@ var denialCases = map[string]denialCase{
 	"POST /api/v1/groups/{id}/unarchive":                  anotherTutorsGroup(http.MethodPost, "/unarchive", ""),
 }
 
+var bodyIdentifierDenialCases = map[string]denialCase{
+	"POST /api/v1/notifications/read": anotherAccountsNotification,
+}
+
 var denialStatuses = map[string]int{
 	"POST /api/v1/invitations/{token}/accept": http.StatusConflict,
 }
@@ -506,6 +510,29 @@ func TestEveryScopedRouteHasADenialCase(t *testing.T) {
 			outOfScope, random := denial(t, h)
 
 			if outOfScope.status != expected || refusal(t, outOfScope) != refusal(t, random) {
+				t.Fatalf("out of scope %d %s, random %d %s", outOfScope.status, outOfScope.body, random.status, random.body)
+			}
+		})
+	}
+}
+
+func TestEveryBodyIdentifierRouteHasADenialCase(t *testing.T) {
+	t.Parallel()
+	operations := map[string]bool{}
+	for _, operation := range api.Operations() {
+		operations[strings.ToUpper(operation.Method)+" "+operation.Path] = true
+	}
+	for key, denial := range bodyIdentifierDenialCases {
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+			h := newFlowHarness(t)
+
+			outOfScope, random := denial(t, h)
+
+			if !operations[key] {
+				t.Fatalf("the denial case %s names no operation", key)
+			}
+			if outOfScope.status != http.StatusNotFound || refusal(t, outOfScope) != refusal(t, random) {
 				t.Fatalf("out of scope %d %s, random %d %s", outOfScope.status, outOfScope.body, random.status, random.body)
 			}
 		})

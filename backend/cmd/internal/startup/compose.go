@@ -95,6 +95,10 @@ func NewPreferences(logger *slog.Logger, settings core.Settings, database *core.
 	}), nil
 }
 
+func NewInbox(logger *slog.Logger, database *core.Database, source clock.Source) *notifications.Inbox {
+	return notifications.NewInbox(notifications.InboxDependencies{Store: repositories.NewStore(database.Pool), Clock: source, Logger: logger})
+}
+
 type Mailer struct {
 	mail.Mailer
 	Close func() error
@@ -127,6 +131,7 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 	fileService := files.New(files.Dependencies{Store: store, Objects: objects, Clock: source, Random: random, Logger: logger})
 	tutoringService := tutoring.New(tutoring.Dependencies{Store: store, Clock: source, Random: random, Cipher: cipher, Logger: logger})
 	purger := accounts.NewPurger(store, fileService, tutoringService, logger)
+	inbox := notifications.NewInbox(notifications.InboxDependencies{Store: store, Clock: source, Logger: logger})
 	queue := outbox.New(store, random, logger)
 	accountEmails, err := notifications.NewAccountEmails(store, random, settings.PublicURL)
 	if err != nil {
@@ -159,6 +164,7 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 		{Name: domain.JobInvitationsExpire, Every: time.Hour, Run: tutoringService.ExpireInvitations},
 		{Name: domain.JobReclaimExpire, Every: time.Hour, Run: tutoringService.ExpireReclaims},
 		{Name: domain.JobJoinRequestsExpire, Every: time.Hour, Run: tutoringService.ExpireJoinRequests},
+		{Name: domain.JobNotificationsCleanup, Every: time.Hour, Run: inbox.Cleanup},
 	}
 	return worker.New(logger, source, queue, lanes, jobs, worker.DefaultTiming()), nil
 }

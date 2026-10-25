@@ -367,6 +367,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["notifications-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["notifications-read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/students": {
         parameters: {
             query?: never;
@@ -885,6 +917,41 @@ export interface components {
         NewStudentCard: {
             display_name: string;
             email?: string;
+        };
+        Notification: {
+            /** @enum {string|null} */
+            colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink" | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @enum {string} */
+            event: "invitation.accepted" | "join_request.created" | "join_request.accepted" | "join_request.declined" | "relationship.ended";
+            /** Format: uuid */
+            id: string;
+            label: string | null;
+            label_deleted: boolean;
+            link: components["schemas"]["NotificationLink"] | null;
+            /** Format: date-time */
+            read_at: string | null;
+        };
+        NotificationLink: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "student_card" | "join_requests" | "my_tutors";
+        };
+        NotificationPage: {
+            items: components["schemas"]["Notification"][];
+            next_cursor: string | null;
+            /** Format: int64 */
+            unread_count: number;
+        };
+        NotificationRead: {
+            ids?: string[] | null;
+            through?: string;
+        };
+        NotificationUnread: {
+            /** Format: int64 */
+            unread_count: number;
         };
         PasswordReset: {
             /** @enum {string|null} */
@@ -3367,6 +3434,210 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "notifications-list": {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "notifications-read": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationRead"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationUnread"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6051,6 +6322,9 @@ export const myTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components
 export const myTutorEnded_byValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MyTutor"]["ended_by"]> = ["tutor", "student", "deletion"];
 export const myTutorStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MyTutor"]["state"]> = ["active", "provisional", "ended"];
 export const newGroupColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NewGroup"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
+export const notificationColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
+export const notificationEventValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["event"]> = ["invitation.accepted", "join_request.created", "join_request.accepted", "join_request.declined", "relationship.ended"];
+export const notificationLinkKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NotificationLink"]["kind"]> = ["student_card", "join_requests", "my_tutors"];
 export const passwordResetOutcomeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["PasswordReset"]["outcome"]> = ["choice_required"];
 export const profilePatchLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["language"]> = ["ru", "en"];
 export const profilePatchThemeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["theme"]> = ["light", "dark", "system"];

@@ -90,10 +90,29 @@ func (s *Service) applyTutorDeletion(ctx context.Context, repos repositories.Rep
 	if deletion.archived, err = repos.Groups.ArchiveAllOfTutor(ctx, tutor, now); err != nil {
 		return tutorDeletion{}, err
 	}
+	if err := signalTutorDeletion(ctx, repos, deletion); err != nil {
+		return tutorDeletion{}, err
+	}
 	if err := s.queueTutorDeletedEmails(ctx, repos, &deletion, now); err != nil {
 		return tutorDeletion{}, err
 	}
 	return deletion, nil
+}
+
+func signalTutorDeletion(ctx context.Context, repos repositories.Repositories, deletion tutorDeletion) error {
+	links := append([]repositories.Relationship{}, deletion.removed...)
+	for _, ended := range deletion.ended {
+		links = append(links, ended.link)
+	}
+	for _, link := range links {
+		if link.StudentID == nil {
+			continue
+		}
+		if err := repos.Signals.Entity(ctx, []domain.UserID{*link.StudentID}, domain.EntityRelationship, domain.EntityID(link.ID)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) endForTutorDeletion(
@@ -281,6 +300,9 @@ func (s *Service) OnAccountPurged(
 		}
 		transition, allowed := domain.NextRelationshipState(link.State, domain.CauseStudentPurged)
 		if !allowed || !transition.NewCard {
+			if err := cardChanged(ctx, repos, link.TutorID, link.ID); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		if _, err := s.removeLink(ctx, repos, link, now); err != nil {
@@ -335,6 +357,7 @@ func (s *Service) PurgeTutorBatch(ctx context.Context, repos repositories.Reposi
 		repos.JoinRequests.DeleteBatchOfTutor,
 		repos.Blocked.DeleteBatchOfTutor,
 		repos.Relationships.DeleteBatchOfTutor,
+		repos.Notifications.DeleteBatchNaming,
 	}
 	for _, step := range steps {
 		deleted, err := step(ctx, tutor, tutorPurgeBatchRows)

@@ -147,6 +147,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		Files:       fileService,
 		Tutoring:    tutoringService,
 		Preferences: preferences,
+		Inbox:       startup.NewInbox(logging.Logger, database, source),
 		Realtime:    live.Gateway,
 		DocsEnabled: settings.APIDocsEnabled,
 		Auth:        api.Auth{Accounts: accountService, PublicOrigin: settings.PublicURL, TrustedProxies: settings.TrustedProxies},

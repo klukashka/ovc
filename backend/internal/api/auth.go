@@ -84,6 +84,7 @@ type router struct {
 	files       *files.Service
 	tutoring    *tutoring.Service
 	preferences *notifications.Preferences
+	inbox       *notifications.Inbox
 	now         func() time.Time
 	logger      *slog.Logger
 	operations  []OperationAudience
@@ -237,6 +238,7 @@ func (r *router) registerAuth() {
 	r.registerProfileRoutes()
 	r.registerReclaimRoutes()
 	r.registerPreferenceRoutes()
+	r.registerNotificationRoutes()
 }
 
 func (r *router) recordClientAddress(ctx huma.Context, next func(huma.Context)) {

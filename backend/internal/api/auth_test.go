@@ -170,6 +170,7 @@ func newAuthHarnessStoring(
 		t.Fatal(err)
 	}
 	preferences := notifications.NewPreferences(notifications.PreferenceDependencies{Store: store, Clock: shared, Tokens: links, Keys: keys, Logger: logger})
+	inbox := notifications.NewInbox(notifications.InboxDependencies{Store: store, Clock: shared, Logger: logger})
 	options := api.Options{
 		Logger: logger, Now: clock.System{}.Now, NewRequestID: core.NewRandomID,
 		Readiness:   func(context.Context) error { return nil },
@@ -177,6 +178,7 @@ func newAuthHarnessStoring(
 		Files:       fileService,
 		Tutoring:    tutoringService,
 		Preferences: preferences,
+		Inbox:       inbox,
 	}
 	for _, hook := range hooks {
 		hook(&options, shared, logger)
@@ -218,6 +220,7 @@ func newAuthHarnessStoring(
 		{Name: domain.JobInvitationsExpire, Every: time.Hour, Run: tutoringService.ExpireInvitations},
 		{Name: domain.JobReclaimExpire, Every: time.Hour, Run: tutoringService.ExpireReclaims},
 		{Name: domain.JobJoinRequestsExpire, Every: time.Hour, Run: tutoringService.ExpireJoinRequests},
+		{Name: domain.JobNotificationsCleanup, Every: time.Hour, Run: inbox.Cleanup},
 	}
 	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, jobs, worker.DefaultTiming())
 	return &authHarness{

@@ -95,8 +95,9 @@ const (
 )
 
 type unsuppressedRequest struct {
-	tutor   domain.UserID
-	request repositories.UnsuppressedRequest
+	tutor    domain.UserID
+	request  repositories.UnsuppressedRequest
+	notified *createdNotification
 }
 
 type codeEntry struct {
@@ -105,6 +106,7 @@ type codeEntry struct {
 	reopened     *requestVisibility
 	kept         *releasedRequest
 	unsuppressed []unsuppressedRequest
+	notified     *createdNotification
 }
 
 func (s *Service) PrecheckCode(ctx context.Context, text string) (accounts.CodeCheck, error) {
@@ -199,7 +201,10 @@ func (s *Service) EnterCode(ctx context.Context, principal accounts.Principal, t
 			return err
 		}
 		entry, err = s.enter(ctx, repos, principal, check.Tutor, now)
-		return err
+		if err != nil {
+			return err
+		}
+		return requestChanged(ctx, repos, entry.request.ID, principal.UserID)
 	})
 	if err != nil {
 		return SentJoinRequest{}, err
@@ -276,7 +281,10 @@ func (s *Service) enter(ctx context.Context, repos repositories.Repositories, pr
 		return codeEntry{}, err
 	}
 	entry.request, entry.created = sentView(request, now), &visibility
-	return entry, nil
+	if visibility == visibilityVisible {
+		entry.notified, err = s.requestVisible(ctx, repos, request.ID, tutor, student, now)
+	}
+	return entry, err
 }
 
 func (s *Service) reopen(ctx context.Context, repos repositories.Repositories, closed repositories.JoinRequest, now time.Time) (codeEntry, error) {
@@ -293,11 +301,15 @@ func (s *Service) reopen(ctx context.Context, repos repositories.Repositories, c
 	}
 	current := closed
 	current.State, current.Suppressed, current.DecidedAt = domain.JoinRequestPending, suppressed, nil
+	entry := codeEntry{request: sentView(current, now)}
 	visibility := visibilityVisible
 	if suppressed != domain.SuppressionNone {
 		visibility = visibilitySuppressed
+	} else {
+		entry.notified, err = s.requestVisible(ctx, repos, closed.ID, closed.TutorID, closed.StudentID, now)
 	}
-	return codeEntry{request: sentView(current, now), reopened: &visibility}, nil
+	entry.reopened = &visibility
+	return entry, err
 }
 
 func (s *Service) expireOverdue(ctx context.Context, repos repositories.Repositories, overdue repositories.JoinRequest, now time.Time) ([]unsuppressedRequest, error) {
@@ -400,6 +412,7 @@ func (s *Service) announceEntry(ctx context.Context, student domain.UserID, tuto
 		s.logReleased(ctx, student, *entry.kept)
 	}
 	s.logUnsuppressed(ctx, entry.unsuppressed)
+	s.logNotified(ctx, entry.notified)
 }
 
 func (s *Service) logCreated(ctx context.Context, tutor domain.UserID, student domain.UserID, id domain.JoinRequestID, visibility requestVisibility) {
@@ -414,12 +427,14 @@ func (s *Service) logReleased(ctx context.Context, student domain.UserID, releas
 	}
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "join_request.released", slog.String("tutor_id", released.request.TutorID.String()),
 		slog.String("user_id", student.String()), slog.String("visibility", string(visibility)))
+	s.logNotified(ctx, released.notified)
 }
 
 func (s *Service) logUnsuppressed(ctx context.Context, requests []unsuppressedRequest) {
 	for _, freed := range requests {
 		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "join_request.unsuppressed", slog.String("tutor_id", freed.tutor.String()),
 			slog.String("user_id", freed.request.StudentID.String()), slog.String("join_request_id", freed.request.ID.String()))
+		s.logNotified(ctx, freed.notified)
 	}
 }
 
@@ -445,7 +460,11 @@ func (s *Service) releaseHeld(
 	if !released {
 		return "", nil, fmt.Errorf("release the locked join request %s: %w", request.ID, repositories.ErrNotFound)
 	}
-	return domain.LinkOutcomeRequestSent, &releasedRequest{request: request, suppressed: suppressed}, nil
+	kept := &releasedRequest{request: request, suppressed: suppressed}
+	if suppressed == domain.SuppressionNone {
+		kept.notified, err = s.requestVisible(ctx, repos, request.ID, request.TutorID, request.StudentID, now)
+	}
+	return domain.LinkOutcomeRequestSent, kept, err
 }
 
 func (s *Service) releaseAtConfirmation(ctx context.Context, repos repositories.Repositories, student domain.UserID, now time.Time) ([]domain.LinkOutcome, []releasedRequest, error) {
@@ -483,7 +502,11 @@ func (s *Service) unsuppress(ctx context.Context, repos repositories.Repositorie
 	}
 	freed := make([]unsuppressedRequest, 0, len(rows))
 	for _, row := range rows {
-		freed = append(freed, unsuppressedRequest{tutor: tutor, request: row})
+		notified, err := s.requestVisible(ctx, repos, row.ID, tutor, row.StudentID, now)
+		if err != nil {
+			return nil, err
+		}
+		freed = append(freed, unsuppressedRequest{tutor: tutor, request: row, notified: notified})
 	}
 	return freed, nil
 }
@@ -517,6 +540,7 @@ type tutorDecision struct {
 	relationship *repositories.Relationship
 	effect       acceptanceEffect
 	unsuppressed []unsuppressedRequest
+	notified     *createdNotification
 	decided      bool
 	blocked      bool
 }
@@ -567,6 +591,20 @@ func (s *Service) AcceptRequest(ctx context.Context, tutor domain.UserID, id dom
 			decision.decided = true
 			decision.relationship = &linked
 			decision.unsuppressed, err = s.unsuppress(ctx, repos, tutor, now)
+			if err != nil {
+				return err
+			}
+			if err := relationshipChanged(ctx, repos, linked, true); err != nil {
+				return err
+			}
+			if err := requestChanged(ctx, repos, id, tutor, request.StudentID); err != nil {
+				return err
+			}
+			relationship := linked.ID
+			decision.notified, err = s.notify(ctx, repos, notificationRow{
+				event: domain.NotificationJoinRequestAccepted, recipient: request.StudentID, tutor: tutor, student: request.StudentID,
+				subject: domain.EntityID(id), relationship: &relationship, key: domain.JoinRequestAcceptedKey(id, request.StudentID),
+			}, now)
 			if err != nil {
 				return err
 			}
@@ -732,6 +770,16 @@ func (s *Service) DeclineRequest(ctx context.Context, tutor domain.UserID, id do
 			if err != nil {
 				return err
 			}
+			if err := requestChanged(ctx, repos, id, tutor, request.StudentID); err != nil {
+				return err
+			}
+			decision.notified, err = s.notify(ctx, repos, notificationRow{
+				event: domain.NotificationJoinRequestDeclined, recipient: request.StudentID, tutor: tutor, student: request.StudentID,
+				subject: domain.EntityID(id), key: domain.JoinRequestDeclinedKey(id, request.StudentID),
+			}, now)
+			if err != nil {
+				return err
+			}
 		default:
 			return decisionRefusal(request)
 		}
@@ -779,6 +827,7 @@ func (s *Service) announceTutorDecision(ctx context.Context, tutor domain.UserID
 		}
 	}
 	s.logUnsuppressed(ctx, decision.unsuppressed)
+	s.logNotified(ctx, decision.notified)
 }
 
 func (s *Service) Unblock(ctx context.Context, tutor domain.UserID, student domain.UserID) error {

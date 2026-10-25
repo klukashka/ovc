@@ -66,6 +66,7 @@ const (
 type releasedRequest struct {
 	request    repositories.JoinRequest
 	suppressed domain.Suppression
+	notified   *createdNotification
 }
 
 type reclaimDecision struct {
@@ -110,6 +111,9 @@ func (s *Service) reclaim(ctx context.Context, repos repositories.Repositories, 
 		}
 		if !reclaimed {
 			return "", nil, fmt.Errorf("reclaim the locked relationship %s: %w", link.ID, repositories.ErrNotFound)
+		}
+		if err := relationshipChanged(ctx, repos, link, true); err != nil {
+			return "", nil, err
 		}
 		moved = append(moved, link)
 	}
@@ -429,6 +433,9 @@ func (s *Service) keepLink(
 		return false, fmt.Errorf("keep the locked relationship %s: %w", link.ID, repositories.ErrNotFound)
 	}
 	if _, err := repos.Invitations.RevokeOpen(ctx, link.TutorID, link.ID, domain.RevokeLinked, now); err != nil {
+		return false, err
+	}
+	if err := relationshipChanged(ctx, repos, link, true); err != nil {
 		return false, err
 	}
 	decision.kept++

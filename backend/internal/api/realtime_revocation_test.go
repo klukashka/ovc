@@ -91,6 +91,7 @@ func TestReclaimClosesTheSquattersSockets(t *testing.T) {
 	h.reclaimed(t, newcomerEmail)
 
 	squatter.expectCloseWithin(t, domain.CloseUnauthenticated, started)
+	tutorSocket.expect(t, domain.FrameEntityChanged)
 	tutorSocket.expectAlive(t)
 }
 

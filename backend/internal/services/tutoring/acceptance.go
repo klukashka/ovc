@@ -26,6 +26,7 @@ type signedInLink struct {
 	reactivated  bool
 	keptReclaim  bool
 	unsuppressed []unsuppressedRequest
+	notified     *createdNotification
 }
 
 func (s *Service) AcceptSignedIn(ctx context.Context, principal accounts.Principal, token string) (MyTutor, error) {
@@ -175,7 +176,17 @@ func (s *Service) linkSignedIn(
 	if _, err := repos.Invitations.RevokeOpen(ctx, link.kept.TutorID, link.kept.ID, domain.RevokeLinked, now); err != nil {
 		return signedInLink{}, err
 	}
-	return link, nil
+	link.kept.StudentID = &student
+	if err := relationshipChanged(ctx, repos, link.kept, true); err != nil {
+		return signedInLink{}, err
+	}
+	if link.kept.ID != card.ID {
+		if err := cardChanged(ctx, repos, card.TutorID, card.ID); err != nil {
+			return signedInLink{}, err
+		}
+	}
+	link.notified, err = s.invitationAccepted(ctx, repos, check.Invitation, link.kept, student, now)
+	return link, err
 }
 
 func splitLinkRows(rows []repositories.Relationship, card domain.RelationshipID) (repositories.Relationship, *repositories.Relationship, bool) {
@@ -258,4 +269,5 @@ func (s *Service) announceSignedIn(ctx context.Context, student domain.UserID, l
 		s.logReclaimDecided(ctx, student, reclaimDecision{kept: 1}, decidedByOwner)
 	}
 	s.logUnsuppressed(ctx, link.unsuppressed)
+	s.logNotified(ctx, link.notified)
 }

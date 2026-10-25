@@ -158,10 +158,19 @@ func (s *Service) LinkAtSignUp(
 	if !linked {
 		return nil, s.refused(ctx, refusalInvalid, &check)
 	}
+	card.StudentID = &user
+	if err := relationshipChanged(ctx, repos, card, true); err != nil {
+		return nil, err
+	}
+	notified, err := s.invitationAccepted(ctx, repos, check.Invitation, card, user, now)
+	if err != nil {
+		return nil, err
+	}
 	return func(ctx context.Context) {
 		attributes := append(cardAttributes(card.TutorID, card.ID), slog.String("user_id", user.String()),
 			slog.String("path", "new_account"), slog.String("effect", string(transition.To)))
 		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "invitation.accepted", attributes...)
+		s.logNotified(ctx, notified)
 	}, nil
 }
 
@@ -197,6 +206,9 @@ func (s *Service) OnEmailConfirmed(
 		}
 		if !activated {
 			return "", nil, fmt.Errorf("activate the locked relationship %s: %w", link.ID, repositories.ErrNotFound)
+		}
+		if err := relationshipChanged(ctx, repos, link, true); err != nil {
+			return "", nil, err
 		}
 		confirmed = append(confirmed, link)
 		outcomes = append(outcomes, domain.LinkOutcomeLinked)
@@ -302,6 +314,12 @@ func (s *Service) removeLink(ctx context.Context, repos repositories.Repositorie
 	}
 	fresh, err := repos.Relationships.ForTutor(ctx, link.TutorID, id)
 	if err != nil {
+		return repositories.Relationship{}, err
+	}
+	if err := relationshipChanged(ctx, repos, link, true); err != nil {
+		return repositories.Relationship{}, err
+	}
+	if err := cardChanged(ctx, repos, link.TutorID, fresh.ID); err != nil {
 		return repositories.Relationship{}, err
 	}
 	return fresh, s.issueInvitation(ctx, repos, fresh, now)

@@ -76,6 +76,7 @@ type Options struct {
 	Files         *files.Service
 	Tutoring      *tutoring.Service
 	Preferences   *notifications.Preferences
+	Inbox         *notifications.Inbox
 	Realtime      *realtime.Gateway
 }
 
@@ -89,7 +90,8 @@ func newHandler(options Options, registerExtra func(*router)) (http.Handler, err
 	readiness := &sharedReadiness{check: options.Readiness, now: options.Now, logger: options.Logger}
 	routes := &router{
 		api: api, auth: options.Auth, files: options.Files, tutoring: options.Tutoring, preferences: options.Preferences,
-		now: options.Now, logger: options.Logger,
+		inbox: options.Inbox,
+		now:   options.Now, logger: options.Logger,
 	}
 	routes.registerAll(readiness.run)
 	registerExtra(routes)

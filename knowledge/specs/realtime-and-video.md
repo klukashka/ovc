@@ -138,7 +138,7 @@ Inbound frames in slice 4 (`auth`, `ping`) carry no identifier, so nothing is re
 - Creation, release, suppression, un-suppression, the closing by an unblock, a repeated decline that adds a block, expiry (which the student's list derives from times) and an operator block send the student nothing distinguishable.
 - Every frame also reaches the acting account's other sockets, within the same rules.
 - `entity.changed` to students when a tutor edits their own profile (name, bio, subjects) waits until a page needs it; students see the change on their next fetch.
-- Tutor deletion locks no student's user row and sends its `relationship` frames in signals of at most 100 recipients each.
+- Tutor deletion locks no student's user row and sends one `relationship` signal per relationship it ends or removes, naming only that relationship's student, so every signal stays far under the limit of 100 recipients; a student's purge sends the tutor one `relationship` frame per card that loses the student.
 - Denial tests connect a second tutor who shares the student and prove that no frame about the first tutor's relationship or requests reaches it, and prove that a student's frames are identical whether or not the tutor blocked them.
 
 ### Send path

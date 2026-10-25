@@ -295,6 +295,36 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: JobResult
+          - column: notifications.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: NotificationID
+          - column: notifications.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: notifications.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: notifications.student_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+              pointer: true
+          - column: notifications.event
+            go_type:
+              import: ovc/backend/internal/domain
+              type: NotificationEvent
+          - column: notifications.subject_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: EntityID
+          - column: notifications.relationship_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: RelationshipID
+              pointer: true
           - column: email_preferences.user_id
             go_type:
               import: ovc/backend/internal/domain

@@ -86,6 +86,21 @@ type squatterRequest = func() <-chan pendingAnswer
 type unchangedCheck = func(t *testing.T)
 
 var squatterWrites = map[string]squatterWrite{
+	"a notification read": {role: domain.RoleStudent, act: func(t *testing.T, h *authHarness, user domain.UserID, token string) (squatterRequest, unchangedCheck) {
+		t.Helper()
+		tutor, _ := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 9, secondTutorEmail)
+		seeded := h.seedNotifications(t, user, tutor, 1, authStart)
+		send := func() <-chan pendingAnswer {
+			return h.sendInBackground(http.MethodPost, notificationsPath+"/read", fmt.Sprintf(`{"through":%q}`, seeded[0]), authorised(token))
+		}
+		unchanged := func(t *testing.T) {
+			t.Helper()
+			if h.countRows(t, "SELECT count(id) FROM notifications WHERE id = $1::uuid AND read_at IS NULL", seeded[0]) != 1 {
+				t.Fatal("the squatter's read landed")
+			}
+		}
+		return send, unchanged
+	}},
 	"a signed-in acceptance": {role: domain.RoleStudent, act: func(t *testing.T, h *authHarness, user domain.UserID, token string) (squatterRequest, unchangedCheck) {
 		t.Helper()
 		_, tutor := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 9, secondTutorEmail)
