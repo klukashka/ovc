@@ -76,8 +76,16 @@ export async function confirmFromAnotherBrowser(
   }
 }
 
+export async function pageSettled(page: Page): Promise<void> {
+  await page.locator('main h1').waitFor();
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+}
+
 export async function signInThroughTheApi(page: Page, account: TestAccount): Promise<void> {
   await page.goto('/');
+  await pageSettled(page);
   const status = await page.evaluate(async ({ email, password }) => {
     const response = await fetch('/api/v1/auth/login', {
       method: 'POST',

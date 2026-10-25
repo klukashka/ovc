@@ -3,25 +3,11 @@ import { type RouteObject, createBrowserRouter } from 'react-router';
 
 import { RouteFocus } from '../components/frame/RouteFocus.tsx';
 import { PlaceholderPage } from '../components/ui/Page.tsx';
-import { InvitationPage } from '../features/auth/InvitationPage.tsx';
+import { AddressTokenHolder } from '../features/auth/AddressToken.tsx';
 import { InvitationTokenHolder } from '../features/auth/InvitationToken.tsx';
-import { ForgotPasswordPage, PrivacyPage, ResetPasswordPage } from '../features/auth/PasswordPages.tsx';
-import { ReclaimPage } from '../features/auth/ReclaimPage.tsx';
-import { SignInPage } from '../features/auth/SignInPage.tsx';
-import { SignUpChoicePage, StudentSignUpPage, TutorSignUpPage } from '../features/auth/SignUpPages.tsx';
-import { VerifyEmailPage } from '../features/auth/VerifyEmailPage.tsx';
-import { GroupPage } from '../features/groups/GroupPage.tsx';
-import { GroupsPage } from '../features/groups/GroupsPage.tsx';
-import { AccountSettingsPage } from '../features/settings/AccountSettingsPage.tsx';
-import { ProfileSettingsPage } from '../features/settings/ProfileSettingsPage.tsx';
-import { TeachingSettingsPage } from '../features/settings/TeachingSettingsPage.tsx';
-import { StudentCardPage } from '../features/students/StudentCardPage.tsx';
-import { StudentsPage } from '../features/students/StudentsPage.tsx';
-import { HomePage } from '../features/home/HomePage.tsx';
-import { TodayPage } from '../features/home/TodayPage.tsx';
-import { MyTutorsPage } from '../features/tutors/MyTutorsPage.tsx';
 import type { RouteHandle } from '../app/handles.ts';
 import { Gate } from './Gate.tsx';
+import { lazyPage } from './LazyPage.tsx';
 import { NotFoundPage } from './NotFoundPage.tsx';
 
 function page(path: string, title: RouteHandle['title'], element: ReactElement = <PlaceholderPage />): RouteObject {
@@ -29,26 +15,57 @@ function page(path: string, title: RouteHandle['title'], element: ReactElement =
   return { path, element, handle };
 }
 
+const todayPage = lazyPage(async () => (await import('../features/home/TodayPage.tsx')).TodayPage);
+const studentsPage = lazyPage(async () => (await import('../features/students/StudentsPage.tsx')).StudentsPage);
+const studentCardPage = lazyPage(
+  async () => (await import('../features/students/StudentCardPage.tsx')).StudentCardPage,
+);
+const groupsPage = lazyPage(async () => (await import('../features/groups/GroupsPage.tsx')).GroupsPage);
+const groupPage = lazyPage(async () => (await import('../features/groups/GroupPage.tsx')).GroupPage);
+const teachingSettingsPage = lazyPage(
+  async () => (await import('../features/settings/TeachingSettingsPage.tsx')).TeachingSettingsPage,
+);
+const homePage = lazyPage(async () => (await import('../features/home/HomePage.tsx')).HomePage);
+const myTutorsPage = lazyPage(async () => (await import('../features/tutors/MyTutorsPage.tsx')).MyTutorsPage);
+const profileSettingsPage = lazyPage(
+  async () => (await import('../features/settings/ProfileSettingsPage.tsx')).ProfileSettingsPage,
+);
+const accountSettingsPage = lazyPage(
+  async () => (await import('../features/settings/AccountSettingsPage.tsx')).AccountSettingsPage,
+);
+const signInPage = lazyPage(async () => (await import('../features/auth/SignInPage.tsx')).SignInPage);
+const signUpChoicePage = lazyPage(async () => (await import('../features/auth/SignUpPages.tsx')).SignUpChoicePage);
+const tutorSignUpPage = lazyPage(async () => (await import('../features/auth/SignUpPages.tsx')).TutorSignUpPage);
+const studentSignUpPage = lazyPage(async () => (await import('../features/auth/SignUpPages.tsx')).StudentSignUpPage);
+const forgotPasswordPage = lazyPage(
+  async () => (await import('../features/auth/PasswordPages.tsx')).ForgotPasswordPage,
+);
+const privacyPage = lazyPage(async () => (await import('../features/auth/PasswordPages.tsx')).PrivacyPage);
+const verifyEmailPage = lazyPage(async () => (await import('../features/auth/VerifyEmailPage.tsx')).VerifyEmailPage);
+const resetPasswordPage = lazyPage(async () => (await import('../features/auth/PasswordPages.tsx')).ResetPasswordPage);
+const invitationPage = lazyPage(async () => (await import('../features/auth/InvitationPage.tsx')).InvitationPage);
+const reclaimPage = lazyPage(async () => (await import('../features/auth/ReclaimPage.tsx')).ReclaimPage);
+
 export const tutorPages: RouteObject[] = [
-  page('/today', 'page.today', <TodayPage />),
-  page('/students', 'page.students', <StudentsPage />),
-  page('/students/:studentId', 'page.student', <StudentCardPage />),
-  page('/groups', 'page.groups', <GroupsPage />),
-  page('/groups/:groupId', 'page.group', <GroupPage />),
+  page('/today', 'page.today', todayPage),
+  page('/students', 'page.students', studentsPage),
+  page('/students/:studentId', 'page.student', studentCardPage),
+  page('/groups', 'page.groups', groupsPage),
+  page('/groups/:groupId', 'page.group', groupPage),
   page('/homework/library', 'page.library'),
   page('/homework/templates/:templateId', 'page.builder'),
   page('/homework/issued', 'page.issued'),
   page('/homework/issued/:issueId', 'page.issue'),
   page('/homework/review', 'page.review'),
   page('/homework/review/:submissionId', 'page.reviewSubmission'),
-  page('/settings/teaching', 'page.settingsTeaching', <TeachingSettingsPage />),
+  page('/settings/teaching', 'page.settingsTeaching', teachingSettingsPage),
 ];
 
 export const studentPages: RouteObject[] = [
-  page('/home', 'page.home', <HomePage />),
+  page('/home', 'page.home', homePage),
   page('/homework', 'page.homework'),
   page('/homework/:submissionId', 'page.assignment'),
-  page('/tutors', 'page.tutors', <MyTutorsPage />),
+  page('/tutors', 'page.tutors', myTutorsPage),
 ];
 
 export const sharedPages: RouteObject[] = [
@@ -57,8 +74,8 @@ export const sharedPages: RouteObject[] = [
   page('/messages', 'page.messages'),
   page('/messages/:channelId', 'page.messages'),
   page('/notifications', 'page.notifications'),
-  page('/settings/profile', 'page.settingsProfile', <ProfileSettingsPage />),
-  page('/settings/account', 'page.settingsAccount', <AccountSettingsPage />),
+  page('/settings/profile', 'page.settingsProfile', profileSettingsPage),
+  page('/settings/account', 'page.settingsAccount', accountSettingsPage),
   page('/settings/notifications', 'page.settingsNotifications'),
 ];
 
@@ -66,20 +83,30 @@ const frames: RouteObject[] = [
   {
     element: <Gate audience="guest" />,
     children: [
-      page('/', 'page.signIn', <SignInPage />),
-      page('/signup', 'page.signUp', <SignUpChoicePage />),
-      page('/signup/tutor', 'page.signUpTutor', <TutorSignUpPage />),
-      page('/signup/student', 'page.signUpStudent', <StudentSignUpPage />),
+      page('/', 'page.signIn', signInPage),
+      page('/signup', 'page.signUp', signUpChoicePage),
+      page('/signup/tutor', 'page.signUpTutor', tutorSignUpPage),
+      page('/signup/student', 'page.signUpStudent', studentSignUpPage),
     ],
   },
   {
     element: <Gate audience="public" />,
     children: [
-      page('/verify-email', 'page.verifyEmail', <VerifyEmailPage />),
-      page('/forgot-password', 'page.forgotPassword', <ForgotPasswordPage />),
-      page('/reset-password', 'page.resetPassword', <ResetPasswordPage />),
-      page('/privacy', 'page.privacy', <PrivacyPage />),
-      page('/unsubscribe', 'page.unsubscribe'),
+      page('/forgot-password', 'page.forgotPassword', forgotPasswordPage),
+      page('/privacy', 'page.privacy', privacyPage),
+    ],
+  },
+  {
+    element: <AddressTokenHolder />,
+    children: [
+      {
+        element: <Gate audience="public" />,
+        children: [
+          page('/verify-email', 'page.verifyEmail', verifyEmailPage),
+          page('/reset-password', 'page.resetPassword', resetPasswordPage),
+          page('/unsubscribe', 'page.unsubscribe'),
+        ],
+      },
     ],
   },
   {
@@ -89,12 +116,19 @@ const frames: RouteObject[] = [
       {
         element: <Gate audience="public" />,
         children: [
-          { index: true, element: <InvitationPage />, handle: { title: 'page.invitation' } satisfies RouteHandle },
+          {
+            index: true,
+            element: invitationPage,
+            handle: { title: 'page.invitation' } satisfies RouteHandle,
+          },
         ],
       },
     ],
   },
-  { element: <Gate audience="reclaim" />, children: [page('/reclaim', 'page.reclaim', <ReclaimPage />)] },
+  {
+    element: <Gate audience="reclaim" />,
+    children: [page('/reclaim', 'page.reclaim', reclaimPage)],
+  },
   { element: <Gate audience="tutor" />, children: tutorPages },
   { element: <Gate audience="student" />, children: studentPages },
   { element: <Gate audience="shared" />, children: sharedPages },

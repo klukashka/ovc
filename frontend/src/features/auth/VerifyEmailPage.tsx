@@ -1,6 +1,6 @@
 import { type ReactElement, type SyntheticEvent, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, Navigate, useLocation } from 'react-router';
+import { Link, Navigate } from 'react-router';
 
 import {
   FormAlert,
@@ -20,7 +20,7 @@ import type { components } from '../../lib/api/schema.ts';
 import { type SessionState, useSession, useSessionState } from '../../lib/api/session.ts';
 import { reclaimAddress } from '../../routes/access.ts';
 import { CheckEmail } from './CheckEmail.tsx';
-import { useAddressToken } from './useAddressToken.ts';
+import { useAddressToken } from './AddressToken.tsx';
 
 type EmailConfirmed = components['schemas']['EmailConfirmed'];
 
@@ -83,7 +83,6 @@ function NoToken({ state }: { readonly state: SessionState }): ReactElement {
 export function VerifyEmailPage(): ReactElement {
   const { t } = useTranslation();
   const token = useAddressToken();
-  const { search } = useLocation();
   const client = useApiClient();
   const session = useSession();
   const sessionState = useSessionState();
@@ -122,7 +121,7 @@ export function VerifyEmailPage(): ReactElement {
     });
   }
 
-  const ready = settled(sessionState) && !new URLSearchParams(search).has('token');
+  const ready = settled(sessionState);
   useEffect(() => {
     if (token === null || !ready || sent.current) {
       return;

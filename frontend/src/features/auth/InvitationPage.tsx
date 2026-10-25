@@ -439,7 +439,7 @@ function AcceptPanel({
 
 export function InvitationPage(): ReactElement {
   const { t } = useTranslation();
-  const { token, addressCleared } = useInvitationToken();
+  const { token } = useInvitationToken();
   const client = useApiClient();
   const session = useSession();
   const sessionState = useSessionState();
@@ -450,7 +450,7 @@ export function InvitationPage(): ReactElement {
   const settled = sessionState.kind === 'signedIn' || sessionState.kind === 'signedOut';
 
   useEffect(() => {
-    if (token === null || !settled || !addressCleared) {
+    if (token === null || !settled) {
       return undefined;
     }
     const controller = new AbortController();
@@ -473,7 +473,7 @@ export function InvitationPage(): ReactElement {
     return (): void => {
       controller.abort();
     };
-  }, [token, settled, addressCleared, attempt, client]);
+  }, [token, settled, attempt, client]);
 
   function markInvalid(): void {
     setInvitation({ kind: 'invalid' });

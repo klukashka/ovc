@@ -1,15 +1,44 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { readFileSync } from 'node:fs';
-import { loadEnv } from 'vite';
+import { mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { type Plugin, loadEnv } from 'vite';
 import { defineConfig } from 'vitest/config';
 
+import { buildManifestPath, firstLoadModules } from './scripts/bundle-budget.ts';
 import { pageHeaders, responseHeaders } from './security-headers.ts';
 
 const defaultApiTarget = 'http://127.0.0.1:8000';
 
 function apiProxy(target: string): Record<string, { target: string; changeOrigin: boolean }> {
   return { '/api': { target, changeOrigin: false } };
+}
+
+function moveBuildManifest(): Plugin {
+  return {
+    name: 'ovc-move-build-manifest',
+    apply: 'build',
+    writeBundle(options): void {
+      const outDir = options.dir ?? resolve(import.meta.dirname, 'dist');
+      mkdirSync(dirname(buildManifestPath), { recursive: true });
+      renameSync(join(outDir, '.vite', 'manifest.json'), buildManifestPath);
+      rmSync(join(outDir, '.vite'), { recursive: true });
+    },
+  };
+}
+
+function firstLoadGroups(): {
+  name: string;
+  test: (id: string) => boolean;
+  priority: number;
+  includeDependenciesRecursively: boolean;
+}[] {
+  return firstLoadModules.map(({ chunk, module }) => ({
+    name: chunk,
+    test: (id: string): boolean => id.endsWith(`/${module}`),
+    priority: 1,
+    includeDependenciesRecursively: false,
+  }));
 }
 
 function setting(value: string | undefined): string | undefined {
@@ -35,8 +64,17 @@ export default defineConfig(({ mode }) => {
   const environment = loadEnv(mode, import.meta.dirname, 'OVC_FRONTEND_');
   const apiTarget = environment.OVC_FRONTEND_API_TARGET ?? defaultApiTarget;
   return {
-    plugins: [react(), tailwindcss()],
-    build: { assetsInlineLimit: 0, sourcemap: false },
+    plugins: [react(), tailwindcss(), moveBuildManifest()],
+    build: {
+      assetsInlineLimit: 0,
+      sourcemap: false,
+      manifest: true,
+      rolldownOptions: {
+        output: {
+          codeSplitting: { groups: [...firstLoadGroups(), { name: 'vendor', test: /[\\/]node_modules[\\/]/ }] },
+        },
+      },
+    },
     server: {
       host: '127.0.0.1',
       port: 5173,

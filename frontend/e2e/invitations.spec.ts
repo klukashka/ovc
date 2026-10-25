@@ -3,6 +3,7 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { recordLazyChunkAddresses } from './observers.ts';
 import {
   createCard,
   decideJoinRequest,
@@ -280,6 +281,7 @@ test.describe('in English', () => {
     const card = await createCard(deployment, maria, 'Boris', null);
     const token = invitationToken(card.link);
     const addresses = recordAddresses(page);
+    const chunkAddresses = await recordLazyChunkAddresses(page, deployment.origin);
     const foreignRequests: string[] = [];
     page.on('request', (request) => {
       if (new URL(request.url()).origin !== deployment.origin) {
@@ -310,6 +312,8 @@ test.describe('in English', () => {
     expect(addresses.at(-1)).not.toContain(token);
     expect(addressesAfterRemoval(addresses, token).filter((address) => address.includes(token))).toEqual([]);
     expect(addresses.filter((address) => new URL(address).searchParams.has('next'))).toEqual([]);
+    expect(chunkAddresses).not.toEqual([]);
+    expect(chunkAddresses.filter((address) => address.includes(token))).toEqual([]);
     expect(foreignRequests).toEqual([]);
     expect((await myTutorNames(deployment, student)).sort()).toEqual(['Maria', 'Pavel']);
   });

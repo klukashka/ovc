@@ -12,7 +12,10 @@ import { createI18n } from '../../lib/i18n/i18n.ts';
 import { MediaQueriesContext, PreferencesContext, fixedMediaQueries } from '../../app/context.ts';
 import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { memoryPreferenceStore } from '../../lib/preferences/store.ts';
+import { PlaceholderPage } from '../../components/ui/Page.tsx';
+import { lazyPage } from '../../routes/LazyPage.tsx';
 import { routes } from '../../routes/router.tsx';
+import { AddressTokenHolder } from './AddressToken.tsx';
 import { InvitationPage } from './InvitationPage.tsx';
 import { InvitationTokenHolder } from './InvitationToken.tsx';
 import { ResetPasswordPage } from './PasswordPages.tsx';
@@ -30,7 +33,9 @@ function unstartedSession(): Session {
 }
 
 function routerAt(element: ReactElement, address: string): ReturnType<typeof createMemoryRouter> {
-  return createMemoryRouter([{ path: '*', element }], { initialEntries: [address] });
+  return createMemoryRouter([{ element: <AddressTokenHolder />, children: [{ path: '*', element }] }], {
+    initialEntries: [address],
+  });
 }
 
 function invitationRouterAt(address: string): ReturnType<typeof createMemoryRouter> {
@@ -88,11 +93,61 @@ async function renderApp(session: Session, address: string): Promise<ReturnType<
   return router;
 }
 
+function addressOf(router: ReturnType<typeof createMemoryRouter>): string {
+  const { pathname, search } = router.state.location;
+  return `${pathname}${search}`;
+}
+
+async function addressWhenThePageModuleLoads(
+  holder: ReactElement,
+  path: string,
+  address: string,
+): Promise<string | null> {
+  const loadedAt: string[] = [];
+  const router = createMemoryRouter(
+    [
+      {
+        path,
+        element: holder,
+        children: [
+          {
+            index: true,
+            element: lazyPage(() => {
+              loadedAt.push(addressOf(router));
+              return Promise.resolve(PlaceholderPage);
+            }),
+          },
+        ],
+      },
+    ],
+    { initialEntries: [address] },
+  );
+  await show(router);
+  await screen.findByText('Эта страница появится в одном из следующих этапов.');
+  return loadedAt[0] ?? null;
+}
+
 afterEach(() => {
   cleanup();
 });
 
 describe('token pages', () => {
+  test('a confirmation, reset or unsubscribe token leaves the address before the page module is loaded', async () => {
+    const holder = <AddressTokenHolder />;
+
+    const address = await addressWhenThePageModuleLoads(holder, '/reset-password', '/reset-password?token=secret');
+
+    expect(address).toBe('/reset-password');
+  });
+
+  test('an invitation token leaves the address before the page module is loaded', async () => {
+    const holder = <InvitationTokenHolder />;
+
+    const address = await addressWhenThePageModuleLoads(holder, '/invite/:token?', '/invite/secret');
+
+    expect(address).toBe('/invite');
+  });
+
   test('the confirmation page removes the token from the address while the session is still loading', async () => {
     const router = routerAt(<VerifyEmailPage />, '/verify-email?token=secret-token-value');
 

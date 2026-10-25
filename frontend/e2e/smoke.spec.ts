@@ -63,6 +63,16 @@ test('pages and proxied API responses carry the security headers', async ({ page
   expect(apiResponse.headers()['x-content-type-options']).toBe('nosniff');
 });
 
+test('the preview server has no build manifest to serve', async ({ request, deployment }) => {
+  const addresses = ['/.vite/manifest.json', '//.vite/manifest.json', '//%2Evite/manifest.json'];
+
+  const bodies = await Promise.all(
+    addresses.map(async (address) => (await request.get(`${deployment.origin}${address}`)).text()),
+  );
+
+  expect(bodies.filter((body) => body.includes('isEntry'))).toEqual([]);
+});
+
 test('the tutor frame shows the tutor sections and server readiness', async ({ signedInPage: page }) => {
   await page.goto('/today');
 

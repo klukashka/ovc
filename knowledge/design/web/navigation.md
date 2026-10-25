@@ -94,9 +94,9 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 `/invite/{token}`, `/verify-email?token=`, `/reset-password?token=` and `/unsubscribe?token=` follow one rule:
 
 - the static server sends `Referrer-Policy: no-referrer` for them, as for every page;
-- the page reads the token, then removes it from the address bar with `history.replaceState`; the invitation page does so in a layout route above the session check, so the address changes on the first render, even while the session is loading or the server is unavailable;
+- the page reads the token, then removes it from the address bar with `history.replaceState`; every token page does so in a layout route above the session check, which renders nothing below it while the address still carries a token, so the address changes on the first render, even while the session is loading or the server is unavailable, and before the page's own code is requested;
 - the invitation page keeps its token in memory only: signing in or creating an account happens in place, and the token never travels in `next` or any other address;
 - the unsubscribe page keeps its token in component state only, like the invitation page, and never in `next`;
-- the address replacement runs in the entry chunk, so the token leaves the address before any lazily loaded route code runs (slice 4 loads each route's page module on demand);
+- the address replacement runs in the entry chunk's static imports, so the token leaves the address before any lazily loaded route code is requested or runs (from slice 4 each route's page module loads on demand);
 - the page loads nothing from other origins (fonts and images are self-hosted; avatars come from the OVC origin);
 - the reverse proxy logs them with the token replaced by a placeholder ([observability](../../specs/observability.md#safe-content)).

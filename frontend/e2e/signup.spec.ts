@@ -9,6 +9,7 @@ import {
 } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { expect, seedVerifiedUser, test } from './fixtures.ts';
+import { recordLazyChunkAddresses } from './observers.ts';
 
 test.use({ locale: 'ru-RU' });
 
@@ -269,11 +270,18 @@ test('confirming another account in a signed-in browser warns, signs out first a
   await expect(otherTab.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
 });
 
-test('a confirmation link with an over-long token is refused without asking for a password', async ({ page }) => {
+test('a confirmation link with an over-long token leaves the address before any page chunk loads and is refused', async ({
+  page,
+  deployment,
+}) => {
+  const chunkAddresses = await recordLazyChunkAddresses(page, deployment.origin);
+
   await page.goto(`/verify-email?token=${'a'.repeat(65)}`);
 
   await expect(page.getByRole('alert')).toHaveText('Ссылка недействительна или устарела.');
   await expect(page.getByLabel('Новый пароль')).toHaveCount(0);
+  expect(chunkAddresses).not.toEqual([]);
+  expect(chunkAddresses.filter((address) => address.includes('token='))).toEqual([]);
 });
 
 test('a signed-in account can sign out from the public frame', async ({ page, deployment }) => {
@@ -320,7 +328,11 @@ test('a problem the server finds is shown under the field it names', async ({ pa
   await expect(page.getByText('Проверьте значение.')).toBeVisible();
 });
 
-test('a reset link with an over-long token is refused when the new password is sent', async ({ page }) => {
+test('a reset link with an over-long token leaves the address before any page chunk loads and is refused on sending', async ({
+  page,
+  deployment,
+}) => {
+  const chunkAddresses = await recordLazyChunkAddresses(page, deployment.origin);
   await page.goto(`/reset-password?token=${'a'.repeat(65)}`);
   await page.getByLabel('Новый пароль').fill('a sufficiently long password');
 
@@ -328,4 +340,6 @@ test('a reset link with an over-long token is refused when the new password is s
 
   await expect(page.getByRole('alert')).toHaveText('Ссылка недействительна или устарела.');
   await expect(page.getByRole('link', { name: 'Запросить новую ссылку' })).toBeVisible();
+  expect(chunkAddresses).not.toEqual([]);
+  expect(chunkAddresses.filter((address) => address.includes('token='))).toEqual([]);
 });

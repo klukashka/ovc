@@ -5,12 +5,11 @@ export const invitationAddress = '/invite';
 
 export interface HeldInvitation {
   readonly token: string | null;
-  readonly addressCleared: boolean;
 }
 
-const InvitationTokenContext = createContext<HeldInvitation>({ token: null, addressCleared: true });
+const InvitationTokenContext = createContext<HeldInvitation>({ token: null });
 
-export function InvitationTokenHolder(): ReactElement {
+export function InvitationTokenHolder(): ReactElement | null {
   const { token } = useParams();
   const navigate = useNavigate();
   const [held, setHeld] = useState(() => (token === undefined || token === '' ? null : token));
@@ -24,8 +23,11 @@ export function InvitationTokenHolder(): ReactElement {
     }
   }, [token, navigate]);
 
+  if (token !== undefined) {
+    return null;
+  }
   return (
-    <InvitationTokenContext value={{ token: held, addressCleared: token === undefined }}>
+    <InvitationTokenContext value={{ token: held }}>
       <Fragment key={held ?? ''}>
         <Outlet />
       </Fragment>

@@ -16,7 +16,7 @@ import {
 import { Page } from '../../components/ui/Page.tsx';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSession } from '../../lib/api/session.ts';
-import { useAddressToken } from './useAddressToken.ts';
+import { useAddressToken } from './AddressToken.tsx';
 
 type Request =
   | { readonly kind: 'editing'; readonly error: ApiError | null; readonly retryAfter: number | null }

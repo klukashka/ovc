@@ -101,7 +101,7 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `app` | Shared React contexts and hooks (preferences, media queries), the role sections and route handles the frames and pages read |
 | `components/frame` | Public and signed-in frames, sidebar and its overlay, language switch, focus on route change |
 | `components/ui` | Shared primitives built on the [tokens](../design/web/tokens.md) |
-| `routes` | Thin route components and role guards ([navigation](../design/web/navigation.md)); from slice 4 each route's page module loads on demand, while the frames, the access rule and the token pages' address replacement stay in the entry chunk, so a token leaves the address before any lazily loaded code runs |
+| `routes` | Thin route components and role guards ([navigation](../design/web/navigation.md)); from slice 4 each route's page module loads on demand, while the frames, the access rule and the token pages' address replacement stay in the entry chunk's static imports, which load and run before the router starts, so a token leaves the address before any lazily loaded code is requested or runs; `pnpm check:bundle` checks that the access rule and the token holders stay in that first load |
 
 ### Live refetch mapping
 

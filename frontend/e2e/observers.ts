@@ -90,3 +90,19 @@ export async function offsetsBelowHeading(page: Page, selectors: readonly string
     { tracked: selectors },
   );
 }
+
+const scriptAsset = /\/assets\/[^/]+\.js$/;
+const shellScript = /(?:src|href)="(\/assets\/[^"]+\.js)"/g;
+
+export async function recordLazyChunkAddresses(page: Page, origin: string): Promise<string[]> {
+  const shell = await (await page.request.get(`${origin}/`)).text();
+  const initial = new Set([...shell.matchAll(shellScript)].map((match) => match[1]));
+  const addresses: string[] = [];
+  await page.route(scriptAsset, async (route) => {
+    if (!initial.has(new URL(route.request().url()).pathname)) {
+      addresses.push(await page.evaluate(() => globalThis.location.href));
+    }
+    await route.continue();
+  });
+  return addresses;
+}
