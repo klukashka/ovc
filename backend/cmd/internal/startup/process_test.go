@@ -360,14 +360,15 @@ func TestWorkerRunsAndShutsDown(t *testing.T) {
 	}()
 
 	started := nextLine(t, ctx, lines, "process.started")
-	ticked := waitForLine(t, ctx, lines, "worker.tick")
+	laneStarted := waitForLine(t, ctx, lines, "outbox.lane.started")
+	scheduled := waitForLine(t, ctx, lines, "job.run")
 	signalErr := worker.Process.Signal(syscall.SIGTERM)
 	stopped := waitForLine(t, ctx, lines, "process.stopped")
 	drainLines(t, ctx, lines)
 	waitErr := worker.Wait()
 
-	if !strings.Contains(started, `"smtp_host"`) || !ticked || signalErr != nil || !stopped || waitErr != nil {
-		t.Fatalf("started %s, ticked %v, signal %v, stopped %v, exit %v", started, ticked, signalErr, stopped, waitErr)
+	if !strings.Contains(started, `"smtp_host"`) || !laneStarted || !scheduled || signalErr != nil || !stopped || waitErr != nil {
+		t.Fatalf("started %s, lane started %v, scheduled %v, signal %v, stopped %v, exit %v", started, laneStarted, scheduled, signalErr, stopped, waitErr)
 	}
 }
 

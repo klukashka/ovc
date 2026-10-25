@@ -29,6 +29,7 @@ import (
 	"ovc/backend/internal/adapters/mail"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/testdb"
+	"ovc/backend/internal/testmail"
 )
 
 func fixtureLogin() string {
@@ -62,7 +63,7 @@ func message(to string, subject string) mail.Message {
 }
 
 func TestMailContract(t *testing.T) {
-	for name, start := range map[string]func(t *testing.T) backend{"smtp": startSMTP, "smtp-implicit": startImplicitSMTP, "sink": startSink} {
+	for name, start := range map[string]func(t *testing.T) backend{"smtp": startSMTP, "smtp-implicit": startImplicitSMTP, "sink": startSink, "testmail": startTestMail} {
 		t.Run(name, func(t *testing.T) {
 			t.Run("delivers the recipient, subject and both bodies", func(t *testing.T) {
 				subject := backendFor(t, start)
@@ -138,6 +139,12 @@ func startSink(t *testing.T) backend {
 		return result
 	}
 	return backend{mailer: sink, inbox: inbox, cleanup: func() {}}
+}
+
+func startTestMail(t *testing.T) backend {
+	t.Helper()
+	sink := startSink(t)
+	return backend{mailer: testmail.New(sink.mailer), inbox: sink.inbox, cleanup: sink.cleanup}
 }
 
 type capture struct {
