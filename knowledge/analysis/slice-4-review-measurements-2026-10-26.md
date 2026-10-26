@@ -283,3 +283,34 @@ The entry is 4.4 KB under its limit. All 19 page modules load on demand.
 - **Lock-contention baseline:** no route that writes is free of signals, so the contention comparison is one signal against two.
 - **Deletion dataset:** the membership count of the slice 3 dataset is not recorded. This dataset has 10,000 memberships, which takes 7 ms to delete and does not affect the comparison.
 - **Cold run:** only the Go and golangci-lint caches were emptied; the frontend caches stayed warm.
+
+## Mass reconnect after `1012`, repeated after the follow-up changes (2026-10-26)
+
+Repeated on 2026-10-26 on `main` at `3137edd`, which holds two changes of the [slice 4 review follow-ups](../plans/slice-4-review-follow-ups.md): the listener sends its heartbeat on its own connection instead of through the pool, and after a `1012` close the web client waits at least `listenerReconnectMilliseconds` (1 s) plus its jittered backoff before reconnecting. The pass mark from the plan is full recovery of all 2,000 sockets in under 15 seconds.
+
+- **Method:** the backend harness of the gateway measurement above, in a separate detached worktree at `3137edd` that was removed afterwards, run through `tools/dev-env.sh`, on the same machine. Its only changes were the listener's `ConnectionHeartbeats` in place of the pool's signals, and one client setting that adds a fixed delay before the jittered backoff after a `1012` close. One API instance with a pool of 10, 2,000 signed-in students each holding one socket from its own forwarded address, the listener through the test forwarder, and production timing. Each storm terminated the listener's backend with `pg_terminate_backend`, so the gateway closed every socket with `1012`, and the harness waited until all 2,000 sockets were ready again and registered. Each client issued one `GET /api/v1/notifications` after each new `ready`, standing in for the refetch. Two variants ran alternately, 15 storms each:
+  - **Without the delay:** the harness's earlier client, which reconnects after a random delay below `1 s × 2^attempt`, so the first attempt falls between 0 and 1 s. It matches the "client backoff, refetch" variant above.
+  - **With the delay:** the same backoff plus 1 s after a `1012` close, as the web client now does (`1 s + random × min(30 s, 1 s × 2^attempt)`); other close codes and failed dials add no delay, as in the web client.
+
+  The harness's clients send a `ping` right after `ready` and reset their attempt counter on its `pong`; the web client pings 30 s after `ready`. Every storm started with every client's counter reset.
+- **Machine state:** load average 2.76 before (15-minute 8.47, falling after other work) and 2.68 after. Nothing else ran alongside. The run took 18 minutes.
+- **Results:**
+
+| Variant | Listener back after | All 2,000 ready again after | Median client back after | `1013` closes per storm | Failed client dials per storm |
+|---|---|---|---|---|---|
+| Without the delay | 8.0 to 51.0 s (median 30.0 s) | 26.4 to 103.7 s (median 61.8 s); none under 15 s | 18.5 to 72.2 s | 161 to 4,948 | 3,174 to 6,451 |
+| With the delay | 1.02 to 1.04 s in every storm | 5.6 to 23.4 s (median 11.8 s); 13 of 15 under 15 s | 1.9 to 16.3 s | 0 to 13 | 0 to 1,770 |
+
+Recovery with the delay, per storm in order: 7.9, 8.1, 11.4, 12.9, 13.9, 23.4, 23.0, 11.8, 11.7, 12.3, 13.1, 5.6, 7.9, 11.7 and 11.8 s.
+
+- **Heartbeat losses, `1013` and `503`:**
+  - No storm of either variant lost the listener to a heartbeat. Besides the deliberate termination (`connection`, SQLSTATE 57P01), the only listener losses were its own reconnections timing out (`connect`, `timeout`): 1 to 4 in every storm without the delay, none with it.
+  - `1013 listener_down` closes fell from 161 to 4,948 per storm without the delay to at most 13 with it.
+  - No upgrade was refused with `503` and no `ws.upgrade.refused` record was logged in any storm.
+  - The pool reached its 10 connections in every storm.
+- **Findings:**
+  - **The delay removes the refusal cascade.** With the delay, almost every client reconnects after the listener is back, which is about 1 s after the loss, so the clients' backoff no longer grows on `1013`.
+  - **Without the delay the listener's own reconnection stalls.** Its first reconnection timed out after the 5-second `ConnectTimeout` in every storm while 2,000 clients dialled at once. It came back only after its backoff of 1, 2, 4 and 8 s, at 8 to 51 s, and the `1013` refusals stretched recovery to about a minute.
+  - **The remaining tail is the loopback stack.** The four storms with the delay in which no client dial failed recovered in 5.6 to 8.1 s. In the other eleven, 102 to 1,770 client dials failed with `connect: operation timed out` on loopback, the single-host stall recorded above, and each failed dial raised that client's backoff; they recovered in 11.4 to 23.4 s, and the two storms over 15 s had 438 and 1,770 such failures. The peak was 2,319 to 5,108 `TIME_WAIT` sockets with the delay and 4,893 to 5,987 without it, against 16,384 ephemeral ports.
+- **Comparison:** the median full recovery fell from 61.8 s to 11.8 s. The earlier measurement's 60 to 81 s for the same variant without the delay is reproduced (26 to 104 s here).
+- **Verdict:** failed against the pass mark of full recovery under 15 seconds: 13 of the 15 storms with the delay recovered in under 15 s, and 2 took 23.0 and 23.4 s. Both slow storms were dominated by loopback dial timeouts of the single-host setup rather than by the gateway or the listener, so whether a production network meets the mark is unverified. No heartbeat loss, no `503` and at most 13 `1013` closes per storm were observed with the delay.
