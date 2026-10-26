@@ -48,8 +48,10 @@ UPDATE join_requests SET state = 'expired', owner_choice_pending = false, decide
 WHERE id = @id AND state = 'held';
 
 -- name: CountVisiblePendingJoinRequests :one
-SELECT count(id) FROM join_requests
-WHERE tutor_id = @tutor_id AND state = 'pending' AND suppressed = 'none' AND expires_at > sqlc.arg(now)::timestamptz;
+SELECT count(join_requests.id) FROM join_requests
+JOIN users AS students ON students.id = join_requests.student_id
+WHERE join_requests.tutor_id = @tutor_id AND join_requests.state = 'pending' AND join_requests.suppressed = 'none'
+    AND students.state <> 'blocked' AND join_requests.expires_at > sqlc.arg(now)::timestamptz;
 
 -- name: LockOpenJoinRequest :one
 SELECT * FROM join_requests
@@ -126,11 +128,12 @@ LIMIT sqlc.arg(row_limit);
 UPDATE join_requests SET suppressed = 'none'
 WHERE join_requests.id IN (
     SELECT waiting.id FROM join_requests AS waiting
+    JOIN users AS students ON students.id = waiting.student_id
     WHERE waiting.tutor_id = @tutor_id AND waiting.state = 'pending' AND waiting.suppressed = 'limit'
-        AND waiting.expires_at > sqlc.arg(now)::timestamptz
+        AND students.state <> 'blocked' AND waiting.expires_at > sqlc.arg(now)::timestamptz
     ORDER BY waiting.created_at, waiting.id
     LIMIT sqlc.arg(slots)::bigint
-    FOR UPDATE
+    FOR UPDATE OF waiting
 )
 RETURNING join_requests.id, join_requests.student_id;
 

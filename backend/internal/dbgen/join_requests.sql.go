@@ -75,8 +75,10 @@ func (q *Queries) CloseUnblockedJoinRequestsOfStudent(ctx context.Context, arg C
 }
 
 const countVisiblePendingJoinRequests = `-- name: CountVisiblePendingJoinRequests :one
-SELECT count(id) FROM join_requests
-WHERE tutor_id = $1 AND state = 'pending' AND suppressed = 'none' AND expires_at > $2::timestamptz
+SELECT count(join_requests.id) FROM join_requests
+JOIN users AS students ON students.id = join_requests.student_id
+WHERE join_requests.tutor_id = $1 AND join_requests.state = 'pending' AND join_requests.suppressed = 'none'
+    AND students.state <> 'blocked' AND join_requests.expires_at > $2::timestamptz
 `
 
 type CountVisiblePendingJoinRequestsParams struct {
@@ -838,11 +840,12 @@ const unsuppressJoinRequests = `-- name: UnsuppressJoinRequests :many
 UPDATE join_requests SET suppressed = 'none'
 WHERE join_requests.id IN (
     SELECT waiting.id FROM join_requests AS waiting
+    JOIN users AS students ON students.id = waiting.student_id
     WHERE waiting.tutor_id = $1 AND waiting.state = 'pending' AND waiting.suppressed = 'limit'
-        AND waiting.expires_at > $2::timestamptz
+        AND students.state <> 'blocked' AND waiting.expires_at > $2::timestamptz
     ORDER BY waiting.created_at, waiting.id
     LIMIT $3::bigint
-    FOR UPDATE
+    FOR UPDATE OF waiting
 )
 RETURNING join_requests.id, join_requests.student_id
 `

@@ -1528,7 +1528,7 @@ func TestOverdueRequestLeavesTheTutorsViewBeforeTheJob(t *testing.T) {
 	}
 }
 
-func TestOperatorBlockedStudentsHiddenRequestStillCountsTowardTheLimit(t *testing.T) {
+func TestOperatorBlockedStudentsHiddenRequestTakesNoSlotOfTheLimit(t *testing.T) {
 	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
@@ -1536,19 +1536,60 @@ func TestOperatorBlockedStudentsHiddenRequestStillCountsTowardTheLimit(t *testin
 	_, entrant := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 3, entrantEmail)
 	h.fillPendingRequestsWith(t, tutor, "filler-", domain.VisiblePendingRequestCap-1)
 	tutorCode := h.storedCode(t, tutor).Display()
-	h.enteredRequest(t, blockedToken, tutorCode)
+	hidden := h.enteredRequest(t, blockedToken, tutorCode)
 	if _, err := h.store.Repositories().Users.Block(context.Background(), blocked, authStart); err != nil {
 		t.Fatal(err)
 	}
 
+	entered := h.enterCode(t, entrant, tutorCode)
 	listed := h.tutorRequests(t, tutorToken)
-	refused := h.enterCode(t, entrant, tutorCode)
 
-	if len(listed) != domain.VisiblePendingRequestCap-1 {
+	if entered.status != http.StatusOK {
+		t.Fatalf("an entry beside the hidden request answered %d %s", entered.status, entered.body)
+	}
+	request := requestIDOf(t, sentRequestOf(t, entered))
+	if got := h.storedRequest(t, request); got.State != "pending" || got.Suppressed != "none" {
+		t.Fatalf("the entrant's request is %+v", got)
+	}
+	if len(listed) != domain.VisiblePendingRequestCap || !listsRequest(listed, request) || listsRequest(listed, hidden) {
 		t.Fatalf("the tutor sees %d requests", len(listed))
 	}
+}
+
+func TestAnOperatorsUnblockCanLeaveTheVisibleCountAboveTheLimit(t *testing.T) {
+	t.Parallel()
+	h := newFlowHarness(t)
+	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	blocked, blockedToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
+	_, entrant := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 3, entrantEmail)
+	_, lateEntrant := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 4, "late-entrant@example.org")
+	h.fillPendingRequestsWith(t, tutor, "filler-", domain.VisiblePendingRequestCap-1)
+	tutorCode := h.storedCode(t, tutor).Display()
+	h.enteredRequest(t, blockedToken, tutorCode)
+	if _, err := h.store.Repositories().Users.Block(context.Background(), blocked, authStart); err != nil {
+		t.Fatal(err)
+	}
+	h.enteredRequest(t, entrant, tutorCode)
+	if _, err := h.operators().Unblock(context.Background(), studentEmail); err != nil {
+		t.Fatal(err)
+	}
+	waiting := h.suppressedForLimit(t, tutor, 5, newcomerEmail)
+	log := h.recordFrames(t)
+
+	listed := h.tutorRequests(t, tutorToken)
+	refused := h.enterCode(t, lateEntrant, tutorCode)
+	h.mustAnswer(t, h.declineRequest(t, tutorToken, h.oldestFiller(t, tutor, "filler-"), false), http.StatusOK)
+	frames := log.settle(t, h)
+
+	if len(listed) != domain.VisiblePendingRequestCap+1 {
+		t.Fatalf("after the unblock the tutor sees %d requests", len(listed))
+	}
 	if refused.status != http.StatusTooManyRequests || code(t, refused) != "tutor_unavailable" {
-		t.Fatalf("an entry against the full limit answered %d %s", refused.status, refused.body)
+		t.Fatalf("an entry above the limit answered %d %s", refused.status, refused.body)
+	}
+	if h.storedRequest(t, waiting).Suppressed != "limit" || hasFrame(frames, tutor, domain.EntityJoinRequest, waiting.String()) ||
+		notificationFrames(frames, tutor) != 0 {
+		t.Fatalf("a decline that left the count at the limit sent the tutor %v", framesTo(frames, tutor))
 	}
 }
 

@@ -290,6 +290,71 @@ func TestBlockStateNeverReachesTheStudent(t *testing.T) {
 			t.Fatalf("the un-suppression sent the tutor %v", framesTo(frames, tutor))
 		}
 	})
+	t.Run("un-suppression skips an operator-blocked requester", func(t *testing.T) {
+		t.Parallel()
+		h := newFlowHarness(t)
+		tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+		h.fillPendingRequests(t, tutor)
+		blockedRequest := h.suppressedForLimit(t, tutor, 2, studentEmail)
+		otherRequest := h.suppressedForLimit(t, tutor, 3, newcomerEmail)
+		blockedStudent := h.userID(t, studentEmail)
+		if _, err := h.operators().Block(context.Background(), studentEmail); err != nil {
+			t.Fatal(err)
+		}
+		log := h.recordFrames(t)
+
+		h.mustAnswer(t, h.declineRequest(t, tutorToken, h.oldestFiller(t, tutor, "filler-"), false), http.StatusOK)
+		whileBlocked := log.settle(t, h)
+		stateWhileBlocked := h.storedRequest(t, blockedRequest)
+		visibleWhileBlocked := h.tutorRequests(t, tutorToken)
+		rowsWhileBlocked := h.notificationsOf(t, tutorToken)
+		if _, err := h.operators().Unblock(context.Background(), studentEmail); err != nil {
+			t.Fatal(err)
+		}
+		unblocked := log.settle(t, h)
+		stateAfterUnblock := h.storedRequest(t, blockedRequest)
+		h.mustAnswer(t, h.declineRequest(t, tutorToken, h.oldestFiller(t, tutor, "filler-"), false), http.StatusOK)
+		freed := log.settle(t, h)
+		rowsAfterFreedSlot := h.notificationsOf(t, tutorToken)
+
+		if stateWhileBlocked.Suppressed != "limit" || h.storedRequest(t, otherRequest).Suppressed != "none" {
+			t.Fatalf("while blocked the requester's request is %+v and the next one %+v", stateWhileBlocked, h.storedRequest(t, otherRequest))
+		}
+		if hasFrame(whileBlocked, tutor, domain.EntityJoinRequest, blockedRequest.String()) || notificationFrames(whileBlocked, tutor) != 1 ||
+			!hasFrame(whileBlocked, tutor, domain.EntityJoinRequest, otherRequest.String()) {
+			t.Fatalf("the freed slot sent the tutor %v", framesTo(whileBlocked, tutor))
+		}
+		if countLinksTo(rowsWhileBlocked, blockedRequest) != 0 || countLinksTo(rowsWhileBlocked, otherRequest) != 1 {
+			t.Fatalf("while blocked the tutor has the notification rows %+v", rowsWhileBlocked)
+		}
+		if len(visibleWhileBlocked) != domain.VisiblePendingRequestCap || listsRequest(visibleWhileBlocked, blockedRequest) {
+			t.Fatalf("while blocked the tutor sees %d requests", len(visibleWhileBlocked))
+		}
+		if stateAfterUnblock.Suppressed != "limit" || len(framesTo(unblocked, tutor)) != 0 {
+			t.Fatalf("the unblock left the request %+v and sent the tutor %v", stateAfterUnblock, framesTo(unblocked, tutor))
+		}
+		if h.storedRequest(t, blockedRequest).Suppressed != "none" || countLinksTo(rowsAfterFreedSlot, blockedRequest) != 1 ||
+			!hasFrame(freed, tutor, domain.EntityJoinRequest, blockedRequest.String()) || notificationFrames(freed, tutor) != 1 {
+			t.Fatalf("the slot freed after the unblock sent the tutor %v", framesTo(freed, tutor))
+		}
+		if got := framesTo(slices.Concat(whileBlocked, unblocked, freed), blockedStudent); len(got) != 0 {
+			t.Fatalf("the student was sent %v", got)
+		}
+	})
+}
+
+func countLinksTo(items []notificationItem, request domain.JoinRequestID) int {
+	count := 0
+	for _, item := range items {
+		if linksTo(domain.NotificationJoinRequestCreated, domain.LinkJoinRequests, request.String())(item) {
+			count++
+		}
+	}
+	return count
+}
+
+func listsRequest(requests []tutorRequest, request domain.JoinRequestID) bool {
+	return slices.ContainsFunc(requests, func(listed tutorRequest) bool { return listed.ID == request.String() })
 }
 
 func TestTutorOnlyCardEditsSendTheStudentNothing(t *testing.T) {
