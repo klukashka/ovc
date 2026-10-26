@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Status: amended 2026-10-20 with ADR-0004 to ADR-0012, and 2026-10-22 with ADR-0013 and with ADR-0014 and its notes on ADR-0005 and ADR-0009, and 2026-10-26 with ADR-0015 and its notes on ADR-0006 and ADR-0008 and with ADR-0016, and with ADR-0017, pending owner review; pending line-by-line owner review.
+Status: amended 2026-10-20 with ADR-0004 to ADR-0012, and 2026-10-22 with ADR-0013 and with ADR-0014 and its notes on ADR-0005 and ADR-0009, and 2026-10-26 with ADR-0015 and its notes on ADR-0006 and ADR-0008 and with ADR-0016, and with ADR-0017, pending owner review; amended 2026-10-27 with ADR-0018 (pending owner review); pending line-by-line owner review.
 
 One record per significant decision, in the MADR shape: context, decision, alternatives considered, consequences, where it is applied. Records are numbered in writing order and never renumbered; a record that changes an earlier one says so in its header (`Supersedes` / `Superseded by`), and the earlier record is kept with its status updated ([ADR-0001](0001-record-architecture-decisions.md)).
 
@@ -23,6 +23,7 @@ One record per significant decision, in the MADR shape: context, decision, alter
 | [ADR-0015](0015-web-push.md) | Web push from an installable web app in slice 10, with content-free payloads, session-bound subscriptions and push-service hosts fixed in code; off until the legal assessment before the pilot; a messenger bot later (pending owner review) | accepted; not enabled until the legal assessment and the decision record on minors are recorded |
 | [ADR-0016](0016-modular-monolith.md) | A modular monolith: the API and the worker from one codebase and one database, enforced layers, the outbox and `LISTEN/NOTIFY` in PostgreSQL, one VM for the pilot, and the signals that justify extracting a service (pending owner review) | accepted |
 | [ADR-0017](0017-dependency-release-age.md) | A three-day release age for dependencies until the first deployment, enforced by `pnpm lint`; 14 days, a review of the three-day window and updates only for a recorded reason from then on | accepted (pending owner review) |
+| [ADR-0018](0018-targeted-checks-and-merge-gate.md) | Change checks per change from a table in the development guide, and the full local check run once per merge in a locked merge gate bound to the base commit and the tested tree; Markdown-only changes gate on the documentation and secret checks (pending owner review) | accepted |
 
 ## Writing a new record
 

@@ -1,6 +1,6 @@
 # Non-functional requirements
 
-Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after design review and for computer-first layouts (NFR-5.2); recordings and analytics marked as after the MVP on 2026-10-22 by the owner's decision, so requirements on recording copies and analytics apply once those land; NFR-1.4 amended on 2026-10-26 with the web push exception of ADR-0015, pending owner review; pending line-by-line owner review. Numeric targets are proposals until the owner accepts them and a measured baseline exists for the component they constrain.
+Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after design review and for computer-first layouts (NFR-5.2); recordings and analytics marked as after the MVP on 2026-10-22 by the owner's decision, so requirements on recording copies and analytics apply once those land; NFR-1.4 amended on 2026-10-26 with the web push exception of ADR-0015, pending owner review; NFR-6.1 amended on 2026-10-27 with the merge gate of ADR-0018, pending owner review; pending line-by-line owner review. Numeric targets are proposals until the owner accepts them and a measured baseline exists for the component they constrain.
 
 ## NFR-1 Security and privacy
 
@@ -42,7 +42,7 @@ Proposed reference deployment for every target below: one API instance and one w
 
 ## NFR-6 Maintainability and verification
 
-- **NFR-6.1** Strict static checks and tests as defined in [AGENTS.md](../../AGENTS.md) pass before any change is done.
+- **NFR-6.1** Strict static checks and tests as defined in [AGENTS.md](../../AGENTS.md) pass in the merge gate before any change merges, or, for a Markdown-only change, the documentation checks and Gitleaks ([ADR-0018](../decisions/0018-targeted-checks-and-merge-gate.md); amended 2026-10-27, pending owner review).
 - **NFR-6.2** The full local check run finishes in under 10 minutes.
 - **NFR-6.3** Every executable component emits structured diagnostics as defined in the [observability specification](../../knowledge/specs/observability.md).
 - **NFR-6.4** The four [pilot scenarios](../../knowledge/design/web/pilot-scenarios.md) run as automated end-to-end tests before the MVP is complete.

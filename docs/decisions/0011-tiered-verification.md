@@ -3,7 +3,7 @@
 - Status: accepted, 2026-10-20
 - Reviewed: decided by the project owner on 2026-10-20, including the explicit approval this policy reduction needs; the after-fix rule amended on 2026-10-21 with the owner's approval and clarified the same day as part of the owner-approved slice 1 review fixes; the after-fix rule and the slice review amended on 2026-10-22 by the owner's decision after the slice 2 review; wording pending line-by-line owner review
 - Deciders: project owner
-- Related: [AGENTS.md](../../AGENTS.md#development-verification), [ovc-verify](../../.claude/skills/ovc-verify/SKILL.md), [roadmap](../roadmap.md), [ADR-0009](0009-owner-approved-exceptions-and-visibility.md)
+- Related: [AGENTS.md](../../AGENTS.md#development-verification), [ovc-verify](../../.claude/skills/ovc-verify/SKILL.md), [roadmap](../roadmap.md), [ADR-0009](0009-owner-approved-exceptions-and-visibility.md), [ADR-0018](0018-targeted-checks-and-merge-gate.md) (the checks of each tier are the change checks, and the full run moves to the merge gate; amended 2026-10-27, pending owner review)
 
 ## Context
 
@@ -46,3 +46,4 @@ The plan for a whole slice gets one standard reviewer before work starts; a slic
 - [Development guide, local review](../development.md#local-review)
 - [Roadmap](../roadmap.md)
 - [AI development verification](../../knowledge/reviews/ai-development-setup.md)
+- [ADR-0018](0018-targeted-checks-and-merge-gate.md): change checks per change and the merge gate (pending owner review)

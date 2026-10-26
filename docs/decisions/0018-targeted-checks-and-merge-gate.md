@@ -1,0 +1,49 @@
+# ADR-0018: Change checks per change, one full check run in a merge gate
+
+- Status: accepted, 2026-10-27
+- Reviewed: decided by the project owner on 2026-10-27, including the explicit approval this policy reduction needs, the exception for Markdown-only changes and the deferral of a script that derives the change checks; wording pending owner review, line by line
+- Deciders: project owner
+- Related: [ADR-0011](0011-tiered-verification.md), [ADR-0009](0009-owner-approved-exceptions-and-visibility.md), [AGENTS.md](../../AGENTS.md#development-verification), [ovc-verify](../../.claude/skills/ovc-verify/SKILL.md), [development guide](../development.md#change-checks-and-the-merge-gate), NFR-6.1, NFR-6.2, [threat model: T-41](../threat-model.md), [plan](../../knowledge/plans/targeted-checks-and-merge-gate.md)
+
+## Context
+
+Every agent that implemented a change ran the full local check run of the [development guide](../development.md#tool-setup) before it reported readiness, and again after each fix. The run took 186.7 seconds cold on an idle machine and several minutes under load. When several agents worked at once, their runs competed for the shared PostgreSQL, Docker, the per-user end-to-end run lock and the CPU, so runs failed for environmental reasons or took far longer than measured. The value of the full run is a `main` on which every check passes; running it in every implementing context added nothing to that.
+
+## Decision
+
+- **Change checks.** An implementing agent runs the checks of what its diff touches, from the [change-check table](../development.md#change-checks-and-the-merge-gate) of the development guide, and reports them as its readiness evidence. Any path the table does not list, or any doubt, means the full run. A check it did not run is reported as `deferred to the merge gate`, never as `passed`. "The checks" of the tiers and of the after-fix rule of ADR-0011 are the change checks.
+- **Merge gate.** Before every merge into `main`, the coordinating agent runs the merge gate, `tools/merge-gate.sh`: the full local check run on the exact tree that `main` will hold. The coordinator runs `main`'s copy of the script from a scratch folder, pointed at the checkout with `--repo`, so a change to the gate is gated by the gate it replaces. The gate
+  - takes a per-user merge-gate lock built like the end-to-end run lock, so the coordinators of parallel sessions never run two gates at once, and a second gate fails at once naming the holder;
+  - refuses a working tree with unstaged or untracked files (and, for a fast-forward merge, staged ones), and by name, without reading them, the ignored files that would change what the checks run (Compose overrides, `go.work`, `.npmrc` and pnpmfiles), so the tracked files the checks read are the tested tree; other ignored files stay outside it and can still change what the checks run, and the gate never inspects environment files, which `tools/dev-env.sh` loads for the backend and end-to-end commands and Vite's `loadEnv` reads for `OVC_FRONTEND_` variables;
+  - records `main`'s commit at its start, the tested tree, the check list and the scope: `HEAD^{tree}` of the branch for `git merge --ff-only`, or `git write-tree` of the squashed index for `git merge --squash`, which must equal the branch merged into `main` (`git merge-tree --write-tree`);
+  - after the merge, its finishing step checks that `main` advanced from the recorded commit only by this merge, that `main^{tree}` equals the tested tree and that the gate ran the full run (or the Markdown-only list for a Markdown-only scope). It detects a moved `main` or a differing tree only after the merge and cannot prevent it; it then fails and keeps the lock for the owner. Nothing is edited, restaged or committed between the gate and the merge. A failed squash gate leaves the staged squash on `main`, which only the owner unstages, because agents never reset or restore.
+  - has a self-test check list for its own test only, which it refuses without an explicit test lock folder, on the repository the script belongs to and on any repository holding `tools/merge-gate.sh`, and which the finishing step never accepts.
+- **Failures.** A failed command blocks the merge and sends the change back to its branch, where its fix follows the after-fix rule. One rerun is allowed only when the output shows a named infrastructure error and no test assertion failed (Docker or PostgreSQL unreachable, `too many clients`), quoted in the merge report; a test that fails and then passes is reported as failed and handled as a flaky-test bug; a second infrastructure failure goes to the owner. Every gate appends its result to a log in the lock folder, and the report lists the earlier attempts for the same tree. A check never turns green by weakening it.
+- **One gate per merge,** never batched, so a failure points at one change.
+- **Merge report** to the owner after each merge: the change, the recorded base commit, the tested tree and its earlier attempts, `main^{tree}` after the merge (equal), the check list, the scope and every command with its exit result, as printed by the gate and its finishing step.
+- **Markdown-only changes.** A change whose diff holds only regular Markdown files (mode 100644, no links, submodules or mode changes) under `docs/` and `knowledge/` that no test, script or generator reads gates on the documentation checks and Gitleaks over staged changes and over history, with the same lock, clean tree and hashes. `knowledge/architecture/detailed.md` is excluded, because the package-layer architecture test parses it; the gate excludes any other Markdown file whose name appears in any file of the repository that is not Markdown. A test or script that reads Markdown by walking a folder or by a pattern, without naming the file, is not detected; the documentation checks still run on every Markdown-only change.
+- Tiers, reviewers, the security trigger, the after-fix rule, the slice review, NFR-6.2's budget and the content of every check are unchanged. The change that introduced this decision kept the earlier rule for itself: it ran the full run at readiness and again at its merge gate. Because `main` held no copy of the gate before it merged, that change was gated once by its own copy of `tools/merge-gate.sh`, after the full run at readiness under the earlier rule, and its merge report records that.
+
+## Alternatives considered
+
+- **The full run in every implementing agent:** the earlier rule; it proves each branch, but parallel runs contend for shared services and fail or slow down for reasons unrelated to the change.
+- **One gate for a batch of merges:** fewer runs, but a failure no longer points at one change, and the batch has to be split to find it.
+- **Full runs only at the slice close:** cheapest, but `main` could stay broken for a whole slice and every later change would build on it.
+- **A script that derives the change checks from the diff** (`tools/check-changed.sh`): removes judgement from the table lookup; deferred and revisited at slice 5's close ([slice 5 plan](../../knowledge/plans/slice-5.md)), because the gate already catches a misjudged table before `main`.
+
+## Consequences
+
+- An implementing agent's readiness evidence is narrower; a wrongly chosen change-check set lets a review run on a diff that later fails the gate, after review. The gate catches it before `main`, and the table errs wide.
+- Merges are serialised by the merge-gate lock; serial gates of about three minutes bound merges to roughly 15 to 20 an hour, far above the current pace.
+- The coordinator reports the gate's evidence itself; the merge report carries the hashes and the command results the script printed, which reviewers and the owner can rerun (T-41).
+- `main` receives only commits on which the full run passed, except Markdown-only changes under the exception above.
+- A change to the gate script takes effect only after it has merged, because each gate runs `main`'s copy (T-41).
+
+## Where it is applied
+
+- [AGENTS.md, change workflow and development verification](../../AGENTS.md#development-verification)
+- [ovc-verify](../../.claude/skills/ovc-verify/SKILL.md)
+- [Development guide, change checks and the merge gate](../development.md#change-checks-and-the-merge-gate)
+- `tools/merge-gate.sh` and its test `tools/check-merge-gate.sh`
+- [NFR-6.1](../requirements/non-functional.md), [roadmap](../roadmap.md), [T-41](../threat-model.md)
+- [AI development verification](../../knowledge/reviews/ai-development-setup.md)
