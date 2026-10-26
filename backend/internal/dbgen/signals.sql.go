@@ -22,3 +22,18 @@ func (q *Queries) NotifySignal(ctx context.Context, arg NotifySignalParams) erro
 	_, err := q.db.Exec(ctx, notifySignal, arg.Channel, arg.Payload)
 	return err
 }
+
+const notifySignals = `-- name: NotifySignals :exec
+SELECT pg_notify($1::text, signals.payload)
+FROM unnest($2::text[]) AS signals (payload)
+`
+
+type NotifySignalsParams struct {
+	Channel  string
+	Payloads []string
+}
+
+func (q *Queries) NotifySignals(ctx context.Context, arg NotifySignalsParams) error {
+	_, err := q.db.Exec(ctx, notifySignals, arg.Channel, arg.Payloads)
+	return err
+}

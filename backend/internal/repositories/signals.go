@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"ovc/backend/internal/dbgen"
 	"ovc/backend/internal/domain"
@@ -17,9 +18,23 @@ func (r Signals) Notification(ctx context.Context, user domain.UserID, notificat
 }
 
 func (r Signals) Entity(ctx context.Context, users []domain.UserID, entity domain.EntityKind, id domain.EntityID) error {
-	for _, recipients := range domain.SplitRecipients(users) {
-		if err := r.send(ctx, domain.EntitySignal{Users: recipients, Entity: entity, ID: id}, "entity signal"); err != nil {
-			return err
+	return r.Entities(ctx, []domain.EntitySignal{{Users: users, Entity: entity, ID: id}})
+}
+
+func (r Signals) Entities(ctx context.Context, signals []domain.EntitySignal) error {
+	var payloads []string
+	for _, signal := range signals {
+		for _, recipients := range domain.SplitRecipients(signal.Users) {
+			payload, err := domain.EncodeSignal(domain.EntitySignal{Users: recipients, Entity: signal.Entity, ID: signal.ID})
+			if err != nil {
+				return fmt.Errorf("entity signal: %w", err)
+			}
+			payloads = append(payloads, string(payload))
+		}
+	}
+	for chunk := range slices.Chunk(payloads, domain.MaxSignalsPerStatement) {
+		if err := r.queries.NotifySignals(ctx, dbgen.NotifySignalsParams{Channel: domain.SignalChannel, Payloads: chunk}); err != nil {
+			return done(err, "entity signals")
 		}
 	}
 	return nil

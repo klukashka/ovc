@@ -50,10 +50,11 @@ func (k EntityKind) Valid() bool {
 }
 
 const (
-	SignalChannel       = "ovc_realtime"
-	SignalVersion       = 1
-	MaxSignalBytes      = 7900
-	MaxSignalRecipients = 100
+	SignalChannel          = "ovc_realtime"
+	SignalVersion          = 1
+	MaxSignalBytes         = 7900
+	MaxSignalRecipients    = 100
+	MaxSignalsPerStatement = 1000
 )
 
 type Signal interface {

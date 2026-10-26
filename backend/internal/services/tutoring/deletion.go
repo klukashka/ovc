@@ -104,15 +104,14 @@ func signalTutorDeletion(ctx context.Context, repos repositories.Repositories, d
 	for _, ended := range deletion.ended {
 		links = append(links, ended.link)
 	}
+	signals := make([]domain.EntitySignal, 0, len(links))
 	for _, link := range links {
 		if link.StudentID == nil {
 			continue
 		}
-		if err := repos.Signals.Entity(ctx, []domain.UserID{*link.StudentID}, domain.EntityRelationship, domain.EntityID(link.ID)); err != nil {
-			return err
-		}
+		signals = append(signals, domain.EntitySignal{Users: []domain.UserID{*link.StudentID}, Entity: domain.EntityRelationship, ID: domain.EntityID(link.ID)})
 	}
-	return nil
+	return repos.Signals.Entities(ctx, signals)
 }
 
 func (s *Service) endForTutorDeletion(
