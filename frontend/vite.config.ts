@@ -1,8 +1,9 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
+import { Agent } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
-import { type Plugin, loadEnv } from 'vite';
+import { type Plugin, type ProxyOptions, loadEnv } from 'vite';
 import { defineConfig } from 'vitest/config';
 
 import { buildManifestPath, firstLoadModules } from './scripts/bundle-budget.ts';
@@ -10,11 +11,13 @@ import { realtimePath } from './src/lib/realtime/socket.ts';
 import { pageHeaders, responseHeaders } from './security-headers.ts';
 
 const defaultApiTarget = 'http://127.0.0.1:8000';
+const idleApiConnectionMilliseconds = 60_000;
 
-function apiProxy(target: string): Record<string, { target: string; changeOrigin: boolean; ws: boolean }> {
+function apiProxy(target: string): Record<string, ProxyOptions> {
+  const reusedConnections = new Agent({ keepAlive: true, timeout: idleApiConnectionMilliseconds });
   return {
     [`^${realtimePath}$`]: { target, changeOrigin: false, ws: true },
-    '/api': { target, changeOrigin: false, ws: false },
+    '/api': { target, changeOrigin: false, ws: false, agent: reusedConnections },
   };
 }
 
