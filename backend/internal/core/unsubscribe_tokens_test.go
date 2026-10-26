@@ -146,6 +146,55 @@ func TestUnsubscribeTokenRoundTripsAndRefusesTampering(t *testing.T) {
 	}
 }
 
+const base64URLAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+func withTrailingBitSet(t *testing.T, token string, index int) string {
+	t.Helper()
+	part := strings.Split(token, ".")[index]
+	last := strings.IndexByte(base64URLAlphabet, part[len(part)-1])
+	respelled := part[:len(part)-1] + string(base64URLAlphabet[last|1])
+	original, originalErr := base64.RawURLEncoding.DecodeString(part)
+	lenient, lenientErr := base64.RawURLEncoding.DecodeString(respelled)
+	if originalErr != nil || lenientErr != nil || !bytes.Equal(original, lenient) || respelled == part {
+		t.Fatalf("the respelled part %q is not a second spelling of %q", respelled, part)
+	}
+	return replacedPart(token, index, respelled)
+}
+
+func withInserted(token string, index int, at int, inserted string) string {
+	part := strings.Split(token, ".")[index]
+	return replacedPart(token, index, part[:at]+inserted+part[at:])
+}
+
+func TestUnsubscribeTokenRefusesNewlinesAndNonZeroTrailingBits(t *testing.T) {
+	tokens := unsubscribeTokens(t, sentinelUnsubscribeSecret)
+	minted, err := tokens.Mint(unsubscribeUser, domain.EmailGroupHomework, tokenNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{
+		"a newline in the payload":           withInserted(minted, 1, 10, "\n"),
+		"a carriage return in the payload":   withInserted(minted, 1, 10, "\r"),
+		"a newline in the mac":               withInserted(minted, 2, 20, "\n"),
+		"a trailing newline":                 minted + "\n",
+		"a space in the payload":             withInserted(minted, 1, 10, " "),
+		"trailing bits set in the payload":   withTrailingBitSet(t, minted, 1),
+		"trailing bits set in the mac":       withTrailingBitSet(t, minted, 2),
+		"a newline before the mac separator": withInserted(minted, 1, len(strings.Split(minted, ".")[1]), "\n"),
+	}
+
+	results := map[string]error{}
+	for name, token := range cases {
+		_, results[name] = tokens.Verify(token, tokenNow)
+	}
+
+	for name, verifyErr := range results {
+		if !errors.Is(verifyErr, core.ErrUnsubscribeTokenMalformed) {
+			t.Errorf("%s: %v", name, verifyErr)
+		}
+	}
+}
+
 func TestUnsubscribeTokenExpiresAfter90Days(t *testing.T) {
 	tokens := unsubscribeTokens(t, sentinelUnsubscribeSecret)
 	minted, err := tokens.Mint(unsubscribeUser, domain.EmailGroupLessonReminders, tokenNow)

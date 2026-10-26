@@ -120,7 +120,7 @@ func splitUnsubscribeToken(text string) ([]byte, []byte, bool) {
 		return nil, nil, false
 	}
 	parts := strings.Split(text, ".")
-	if len(parts) != 3 || parts[0] != unsubscribeTokenVersion {
+	if len(parts) != 3 || parts[0] != unsubscribeTokenVersion || !inBase64URLAlphabet(parts[1]) || !inBase64URLAlphabet(parts[2]) {
 		return nil, nil, false
 	}
 	encoding := base64.RawURLEncoding.Strict()
@@ -130,6 +130,17 @@ func splitUnsubscribeToken(text string) ([]byte, []byte, bool) {
 		return nil, nil, false
 	}
 	return payload, mac, true
+}
+
+func inBase64URLAlphabet(part string) bool {
+	for index := range len(part) {
+		character := part[index]
+		letter := (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z')
+		if !letter && (character < '0' || character > '9') && character != '-' && character != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func (t UnsubscribeTokens) mac(payload []byte) []byte {

@@ -7,10 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"ovc/backend/internal/adapters/listener"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
-	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/testdb"
 	"ovc/backend/internal/testdb/forwarder"
 )
@@ -80,7 +82,7 @@ func TestListenerReconnectsAfterItsConnectionIsTerminated(t *testing.T) {
 }
 
 type pausableHeartbeats struct {
-	signals   repositories.Signals
+	sends     listener.ConnectionHeartbeats
 	mu        sync.Mutex
 	paused    bool
 	failing   bool
@@ -92,11 +94,11 @@ type pausableHeartbeats struct {
 
 var errHeartbeatRefused = errors.New("the heartbeat write is refused on purpose")
 
-func newPausableHeartbeats(database *testdb.Database) *pausableHeartbeats {
-	return &pausableHeartbeats{signals: repositories.NewStore(database.Pool).Repositories().Signals, changed: make(chan struct{})}
+func newPausableHeartbeats() *pausableHeartbeats {
+	return &pausableHeartbeats{changed: make(chan struct{})}
 }
 
-func (h *pausableHeartbeats) Heartbeat(ctx context.Context, instance domain.InstanceID) error {
+func (h *pausableHeartbeats) Heartbeat(ctx context.Context, connection *pgx.Conn, instance domain.InstanceID) error {
 	h.mu.Lock()
 	h.calls++
 	paused, refused := h.paused, h.failing || (h.alternate && h.calls%2 == 0)
@@ -107,7 +109,7 @@ func (h *pausableHeartbeats) Heartbeat(ctx context.Context, instance domain.Inst
 	if refused {
 		return errHeartbeatRefused
 	}
-	if err := h.signals.Heartbeat(ctx, instance); err != nil {
+	if err := h.sends.Heartbeat(ctx, connection, instance); err != nil {
 		return err
 	}
 	h.mu.Lock()
@@ -142,6 +144,12 @@ func (h *pausableHeartbeats) failEveryWrite() {
 	h.failing = true
 }
 
+func (h *pausableHeartbeats) sentCount() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.sent
+}
+
 func (h *pausableHeartbeats) waitSent(t *testing.T, count int) {
 	t.Helper()
 	deadline := time.NewTimer(waitLimit)
@@ -164,7 +172,7 @@ func (h *pausableHeartbeats) waitSent(t *testing.T, count int) {
 func TestMissingHeartbeatsAreDetectedAndFailClosed(t *testing.T) {
 	t.Parallel()
 	database := testdb.New(t)
-	heartbeats := newPausableHeartbeats(database)
+	heartbeats := newPausableHeartbeats()
 	timing := fastTiming()
 	f := startOn(t, database, database.URL, heartbeats, timing)
 	heartbeats.waitSent(t, int(timing.LossAfter/timing.HeartbeatInterval)+3)
@@ -182,6 +190,55 @@ func TestMissingHeartbeatsAreDetectedAndFailClosed(t *testing.T) {
 		t.Fatal("the listener was lost while its heartbeats arrived")
 	}
 	f.logs.waitForLoss(t, listener.LossHeartbeat)
+}
+
+func (f *fixture) holdEveryPoolConnection(t *testing.T) func() {
+	t.Helper()
+	acquiring, cancel := context.WithTimeout(context.Background(), waitLimit)
+	defer cancel()
+	var held []*pgxpool.Conn
+	for range f.database.Pool.Config().MaxConns {
+		connection, err := f.database.Pool.Acquire(acquiring)
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = append(held, connection)
+	}
+	released := false
+	release := func() {
+		if released {
+			return
+		}
+		released = true
+		for _, connection := range held {
+			connection.Release()
+		}
+	}
+	t.Cleanup(release)
+	return release
+}
+
+func TestAHeldPoolDoesNotDelayTheHeartbeat(t *testing.T) {
+	t.Parallel()
+	database := testdb.New(t)
+	heartbeats := newPausableHeartbeats()
+	timing := fastTiming()
+	f := startOn(t, database, database.URL, heartbeats, timing)
+	heartbeats.waitSent(t, 1)
+	release := f.holdEveryPoolConnection(t)
+	beforeHolding := heartbeats.sentCount()
+
+	heartbeats.waitSent(t, beforeHolding+int(timing.LossAfter/timing.HeartbeatInterval)+3)
+	whileHeld, _ := f.recorder.snapshot()
+	_, liveWhileHeld := f.listener.State()
+	release()
+
+	if anyLoss(whileHeld) || !liveWhileHeld {
+		t.Fatal("the listener was lost while every pool connection was held")
+	}
+	if generation, live := f.listener.State(); generation != 1 || !live {
+		t.Fatalf("after the pool was held the listener is at generation %d, live %v", generation, live)
+	}
 }
 
 func TestASilentListenerIsDetectedAndFailsClosed(t *testing.T) {
@@ -206,7 +263,7 @@ func TestASilentListenerIsDetectedAndFailsClosed(t *testing.T) {
 func TestFailingHeartbeatWritesLoseTheListenerOnlyBySilence(t *testing.T) {
 	t.Parallel()
 	database := testdb.New(t)
-	heartbeats := newPausableHeartbeats(database)
+	heartbeats := newPausableHeartbeats()
 	heartbeats.failEverySecondWrite()
 	timing := fastTiming()
 	f := startOn(t, database, database.URL, heartbeats, timing)
@@ -290,19 +347,19 @@ func TestAConsumerBlockedWhenConnectedDoesNotKeepTheListenerLive(t *testing.T) {
 }
 
 type panickingHeartbeats struct {
-	signals repositories.Signals
-	once    sync.Once
+	sends listener.ConnectionHeartbeats
+	once  sync.Once
 }
 
-func (h *panickingHeartbeats) Heartbeat(ctx context.Context, instance domain.InstanceID) error {
+func (h *panickingHeartbeats) Heartbeat(ctx context.Context, connection *pgx.Conn, instance domain.InstanceID) error {
 	h.once.Do(func() { panic("a heartbeat bug") })
-	return h.signals.Heartbeat(ctx, instance)
+	return h.sends.Heartbeat(ctx, connection, instance)
 }
 
 func TestAPanickingHeartbeatLosesTheListenerAndReconnects(t *testing.T) {
 	t.Parallel()
 	database := testdb.New(t)
-	heartbeats := &panickingHeartbeats{signals: repositories.NewStore(database.Pool).Repositories().Signals}
+	heartbeats := &panickingHeartbeats{}
 
 	f := startOn(t, database, database.URL, heartbeats, fastTiming())
 	f.recorder.waitFor(t, "the loss of generation 1 by the panic", func(events []event) bool {
@@ -319,7 +376,7 @@ func TestAPanickingHeartbeatLosesTheListenerAndReconnects(t *testing.T) {
 func TestAPanickingLossCallbackStillFailsClosedAndReconnects(t *testing.T) {
 	t.Parallel()
 	database := testdb.New(t)
-	heartbeats := newPausableHeartbeats(database)
+	heartbeats := newPausableHeartbeats()
 	var once sync.Once
 	consumer := newRecorder()
 	consumer.onLost = func() { once.Do(func() { panic("a loss callback bug") }) }

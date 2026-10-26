@@ -171,7 +171,7 @@ func listenTo(t *testing.T, f cardFixture) *signalCollector {
 	}
 	collector := newSignalCollector()
 	adapter, err := listener.New(listener.Dependencies{
-		DatabaseURL: f.database.URL, Instance: instance, Heartbeats: repositories.NewStore(f.database.Pool).Repositories().Signals,
+		DatabaseURL: f.database.URL, Instance: instance, Heartbeats: listener.ConnectionHeartbeats{},
 		Consumer: collector, Logger: slog.New(slog.DiscardHandler), Timing: listener.DefaultTiming(),
 	})
 	if err != nil {

@@ -175,6 +175,11 @@ SELECT count(pid) FROM waiting`
 
 func (h *authHarness) holdRow(t *testing.T, lockQuery string, key string) func() {
 	t.Helper()
+	return h.holdRowThen(t, lockQuery, key, "")
+}
+
+func (h *authHarness) holdRowThen(t *testing.T, lockQuery string, key string, beforeCommit string) func() {
+	t.Helper()
 	holder, err := h.database.Pool.Begin(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -197,6 +202,11 @@ func (h *authHarness) holdRow(t *testing.T, lockQuery string, key string) func()
 	}
 	h.contested = &row
 	return func() {
+		if beforeCommit != "" {
+			if _, err := holder.Exec(context.Background(), beforeCommit, key); err != nil {
+				t.Fatal(err)
+			}
+		}
 		released = true
 		if err := holder.Commit(context.Background()); err != nil {
 			t.Fatal(err)

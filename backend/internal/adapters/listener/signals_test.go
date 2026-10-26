@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"ovc/backend/internal/adapters/listener"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 )
@@ -338,7 +339,7 @@ func TestSignalPayloadsCarryNoTokenOrPersonalData(t *testing.T) {
 	sendErr := errors.Join(
 		signals.Notification(context.Background(), user, domain.NotificationID{1}),
 		signals.Entity(context.Background(), []domain.UserID{user}, domain.EntityRelationship, domain.EntityID{1}),
-		signals.Heartbeat(context.Background(), domain.InstanceID{1}),
+		listener.ConnectionHeartbeats{}.Heartbeat(context.Background(), raw.connection, domain.InstanceID{1}),
 	)
 	_, revokeErr := f.store.Repositories().Sessions.Revoke(context.Background(), domain.SessionID{7}, instant)
 	_, blockErr := f.store.Repositories().Users.Block(context.Background(), user, instant)

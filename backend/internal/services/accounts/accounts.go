@@ -22,7 +22,6 @@ const (
 	signInWindow       = 15 * time.Minute
 	signInEmailLimit   = 5
 	signInAddressLimit = 20
-	ipv6BucketBits     = 64
 
 	purposeSignInEmail   domain.RateLimitPurpose = "sign_in_email"
 	purposeSignInAddress domain.RateLimitPurpose = "sign_in_address"
@@ -321,7 +320,7 @@ func (s *Service) Me(ctx context.Context, principal Principal) (Profile, error) 
 func (s *Service) signInSlots(email string, address netip.Addr, now time.Time) (repositories.RateLimitSlot, repositories.RateLimitSlot) {
 	window, _ := domain.FixedWindow(now, signInWindow)
 	emailSlot := repositories.RateLimitSlot{Purpose: purposeSignInEmail, Subject: s.deps.Keys.ThrottleSubject(string(purposeSignInEmail), email), WindowStart: window}
-	addressSlot := repositories.RateLimitSlot{Purpose: purposeSignInAddress, Subject: s.deps.Keys.ThrottleSubject(string(purposeSignInAddress), addressBucket(address)), WindowStart: window}
+	addressSlot := repositories.RateLimitSlot{Purpose: purposeSignInAddress, Subject: s.deps.Keys.ThrottleSubject(string(purposeSignInAddress), domain.AddressBucket(address).String()), WindowStart: window}
 	return emailSlot, addressSlot
 }
 
@@ -354,14 +353,6 @@ func (s *Service) throttled(ctx context.Context, scope string, now time.Time) er
 	s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "auth.login.throttled", slog.String("scope", scope))
 	_, retryAfter := domain.FixedWindow(now, signInWindow)
 	return &ThrottledError{RetryAfter: retryAfter}
-}
-
-func addressBucket(address netip.Addr) string {
-	bucket := address.Unmap()
-	if bucket.Is6() {
-		bucket = netip.PrefixFrom(bucket, ipv6BucketBits).Masked().Addr()
-	}
-	return bucket.String()
 }
 
 func (s *Service) release(ctx context.Context, slots ...repositories.RateLimitSlot) error {

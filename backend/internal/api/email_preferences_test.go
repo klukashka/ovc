@@ -561,26 +561,47 @@ func (h *authHarness) holdUserDeletion(t *testing.T, user domain.UserID) func() 
 	return h.holdRow(t, "DELETE FROM users WHERE id = $1::uuid RETURNING "+lockedRowPosition, user.String())
 }
 
+func (h *authHarness) holdUserForPurge(t *testing.T, user domain.UserID) func() {
+	t.Helper()
+	return h.holdRowThen(t, "SELECT "+lockedRowPosition+" FROM users WHERE id = $1::uuid FOR UPDATE", user.String(), "DELETE FROM users WHERE id = $1::uuid")
+}
+
 func TestUnsubscribeRacingThePurgeAnswersTokenInvalid(t *testing.T) {
 	t.Parallel()
-	h := newFlowHarness(t)
-	student := h.seedUserAs(t, domain.RoleStudent, 2, studentEmail, accountPassword, currentHash)
-	link := h.mintLink(t, student, domain.EmailGroupHomework, authStart)
-	purged := h.holdUserDeletion(t, student)
-
-	answer := h.sendInBackground(http.MethodPost, unsubscribePath+"?token="+url.QueryEscape(link), "", nil)
-	h.waitForLockWaiters(t, 1)
-	purged()
-	refused := awaitAnswer(t, answer)
-
-	if refused.status != http.StatusUnprocessableEntity || code(t, refused) != "token_invalid" {
-		t.Fatalf("the unsubscribe racing the purge answered %d %s", refused.status, refused.body)
+	races := map[string]struct {
+		stored bool
+		hold   func(h *authHarness, t *testing.T, user domain.UserID) func()
+	}{
+		"the purge deleted the account":                     {hold: (*authHarness).holdUserDeletion},
+		"the purge deleted the account and its preference":  {stored: true, hold: (*authHarness).holdUserDeletion},
+		"the purge locked the account and deletes it later": {hold: (*authHarness).holdUserForPurge},
 	}
-	if h.countRows(t, "SELECT count(user_id) FROM email_preferences WHERE user_id = $1::uuid", student.String()) != 0 || h.userExists(t, studentEmail) {
-		t.Fatal("the purged account kept a row")
-	}
-	if levels := h.refusals(t); !slices.Equal(levels["account_state"], []string{"INFO"}) {
-		t.Fatalf("the refusal was recorded as %v", levels)
+	for name, race := range races {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			h := newFlowHarness(t)
+			student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
+			if race.stored {
+				h.savePreferences(t, token, `{"groups":[{"group":"homework","enabled":true}]}`)
+			}
+			link := h.mintLink(t, student, domain.EmailGroupHomework, authStart)
+			purged := race.hold(h, t, student)
+
+			answer := h.sendInBackground(http.MethodPost, unsubscribePath+"?token="+url.QueryEscape(link), "", nil)
+			h.waitForLockWaiters(t, 1)
+			purged()
+			refused := awaitAnswer(t, answer)
+
+			if refused.status != http.StatusUnprocessableEntity || code(t, refused) != "token_invalid" {
+				t.Fatalf("the unsubscribe racing the purge answered %d %s", refused.status, refused.body)
+			}
+			if h.countRows(t, "SELECT count(user_id) FROM email_preferences WHERE user_id = $1::uuid", student.String()) != 0 || h.userExists(t, studentEmail) {
+				t.Fatal("the purged account kept a row")
+			}
+			if levels := h.refusals(t); !slices.Equal(levels["account_state"], []string{"INFO"}) {
+				t.Fatalf("the refusal was recorded as %v", levels)
+			}
+		})
 	}
 }
 

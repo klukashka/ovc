@@ -189,7 +189,7 @@ func NewRealtime(
 		return Realtime{}, err
 	}
 	adapter, err := listener.New(listener.Dependencies{
-		DatabaseURL: settings.DatabaseURL, Instance: instance, Heartbeats: repositories.NewStore(database.Pool).Repositories().Signals,
+		DatabaseURL: settings.DatabaseURL, Instance: instance, Heartbeats: listener.ConnectionHeartbeats{},
 		Consumer: gateway, Logger: logger, Timing: listener.DefaultTiming(),
 	})
 	if err != nil {

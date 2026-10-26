@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"net/netip"
 	"testing"
 	"time"
 
@@ -24,6 +25,29 @@ func TestFixedWindowStartsOnTheBoundaryAndCountsDownToTheNext(t *testing.T) {
 
 		if !start.Equal(testCase.start) || retryAfter != testCase.retryAfter {
 			t.Errorf("FixedWindow(%v) = %v, %v; want %v, %v", testCase.now, start, retryAfter, testCase.start, testCase.retryAfter)
+		}
+	}
+}
+
+func TestAddressesAreBucketedByIPv4AddressOrIPv6Slash64(t *testing.T) {
+	cases := map[string]string{
+		"203.0.113.5":          "203.0.113.5",
+		"::ffff:203.0.113.5":   "203.0.113.5",
+		"2001:db8:1:2:3:4:5:6": "2001:db8:1:2::",
+		"2001:db8:1:2:ffff::1": "2001:db8:1:2::",
+		"2001:db8:1:3::1":      "2001:db8:1:3::",
+		"::1":                  "::",
+		"fe80::1%en0":          "fe80::",
+	}
+
+	buckets := map[string]netip.Addr{}
+	for address := range cases {
+		buckets[address] = domain.AddressBucket(netip.MustParseAddr(address))
+	}
+
+	for address, want := range cases {
+		if got := buckets[address]; got != netip.MustParseAddr(want) {
+			t.Errorf("AddressBucket(%s) = %s, want %s", address, got, want)
 		}
 	}
 }

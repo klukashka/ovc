@@ -101,7 +101,7 @@ func (h *authHarness) recordFrames(t *testing.T) *frameLog {
 		t.Fatal(err)
 	}
 	adapter, err := listener.New(listener.Dependencies{
-		DatabaseURL: h.database.URL, Instance: instance, Heartbeats: h.store.Repositories().Signals, Consumer: log,
+		DatabaseURL: h.database.URL, Instance: instance, Heartbeats: listener.ConnectionHeartbeats{}, Consumer: log,
 		Logger: slog.New(slog.NewJSONHandler(h.logs, nil)), Timing: listener.DefaultTiming(),
 	})
 	if err != nil {

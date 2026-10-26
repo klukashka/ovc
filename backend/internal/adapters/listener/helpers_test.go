@@ -210,7 +210,7 @@ func startWith(
 	t.Helper()
 	store := repositories.NewStore(database.Pool)
 	if heartbeats == nil {
-		heartbeats = store.Repositories().Signals
+		heartbeats = listener.ConnectionHeartbeats{}
 	}
 	instance, err := core.NewID[domain.InstanceID](core.CryptoRandom())
 	if err != nil {

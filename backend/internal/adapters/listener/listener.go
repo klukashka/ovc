@@ -32,7 +32,22 @@ const (
 )
 
 type Heartbeats interface {
-	Heartbeat(ctx context.Context, instance domain.InstanceID) error
+	Heartbeat(ctx context.Context, connection *pgx.Conn, instance domain.InstanceID) error
+}
+
+type ConnectionHeartbeats struct{}
+
+const notifyStatement = "SELECT pg_notify($1, $2)"
+
+func (ConnectionHeartbeats) Heartbeat(ctx context.Context, connection *pgx.Conn, instance domain.InstanceID) error {
+	payload, err := domain.EncodeSignal(domain.HeartbeatSignal{Instance: instance})
+	if err != nil {
+		return fmt.Errorf("encode the heartbeat: %w", err)
+	}
+	if _, err := connection.Exec(ctx, notifyStatement, domain.SignalChannel, string(payload)); err != nil {
+		return fmt.Errorf("notify the heartbeat: %w", err)
+	}
+	return nil
 }
 
 type Consumer interface {
@@ -295,29 +310,29 @@ func (l *Listener) serve(ctx context.Context, connection *pgx.Conn, lost *loss) 
 			lost.report(LossHeartbeat, cause)
 		})
 	})
-	beating := make(chan struct{})
-	core.Go(waiting, l.logger, "realtime.listener.heartbeat", func(context.Context) {
-		defer close(beating)
-		if err := <-core.Run(waiting, l.logger, "realtime.listener.heartbeat.send", func() error {
-			l.sendHeartbeats(waiting, lost)
-			return nil
-		}); err != nil {
-			stop(err)
-			lost.report(LossPanic, err)
-		}
-	})
 	defer func() {
 		silence.Stop()
 		stop(nil)
 		l.becomeLost(lost.generation)
-		<-beating
 	}()
 	l.logger.LogAttrs(ctx, slog.LevelInfo, "realtime.listener.connected", slog.Uint64("generation", uint64(lost.generation)))
 	l.consumer.ListenerConnected(lost.generation)
 	proved := false
+	received := func(notification *pgconn.Notification) {
+		if l.handle(ctx, notification) {
+			proved = true
+			silence.Reset(l.timing.LossAfter)
+		}
+	}
 	for {
-		notification, err := connection.WaitForNotification(waiting)
-		if err != nil {
+		if err := <-core.Run(waiting, l.logger, "realtime.listener.heartbeat.send", func() error {
+			l.sendHeartbeat(waiting, connection, lost)
+			return nil
+		}); err != nil {
+			stop(err)
+			return LossPanic, proved, err
+		}
+		if err := l.receiveUntilBeat(waiting, connection, received); err != nil {
 			cause := context.Cause(waiting)
 			switch {
 			case errors.Is(cause, errHeartbeatMissing):
@@ -327,30 +342,29 @@ func (l *Listener) serve(ctx context.Context, connection *pgx.Conn, lost *loss) 
 			}
 			return LossConnection, proved, err
 		}
-		if l.handle(ctx, notification) {
-			proved = true
-			silence.Reset(l.timing.LossAfter)
-		}
 	}
 }
 
-func (l *Listener) sendHeartbeats(ctx context.Context, lost *loss) {
-	ticker := time.NewTicker(l.timing.HeartbeatInterval)
-	defer ticker.Stop()
-	for {
-		l.sendHeartbeat(ctx, lost)
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
-}
-
-func (l *Listener) sendHeartbeat(ctx context.Context, lost *loss) {
-	sendContext, cancel := context.WithTimeout(ctx, l.timing.HeartbeatInterval)
+func (l *Listener) receiveUntilBeat(ctx context.Context, connection *pgx.Conn, received func(*pgconn.Notification)) error {
+	beat, cancel := context.WithTimeout(ctx, l.timing.HeartbeatInterval)
 	defer cancel()
-	if err := l.heartbeats.Heartbeat(sendContext, l.instance); err != nil {
+	for {
+		notification, err := connection.WaitForNotification(beat)
+		if notification != nil {
+			received(notification)
+		}
+		switch {
+		case err == nil:
+		case ctx.Err() == nil && beat.Err() != nil && !connection.IsClosed():
+			return nil
+		default:
+			return err
+		}
+	}
+}
+
+func (l *Listener) sendHeartbeat(ctx context.Context, connection *pgx.Conn, lost *loss) {
+	if err := l.heartbeats.Heartbeat(ctx, connection, l.instance); err != nil {
 		lost.heartbeatFailed(fmt.Errorf("send heartbeat: %w", err))
 		return
 	}

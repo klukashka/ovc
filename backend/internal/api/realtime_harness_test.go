@@ -97,7 +97,7 @@ func newLiveHarness(t *testing.T, tuning liveTuning) *liveHarness {
 		tuning.listener(&timing)
 	}
 	adapter, err := listener.New(listener.Dependencies{
-		DatabaseURL: h.database.URL, Instance: instance, Heartbeats: h.store.Repositories().Signals, Consumer: gateway,
+		DatabaseURL: h.database.URL, Instance: instance, Heartbeats: listener.ConnectionHeartbeats{}, Consumer: gateway,
 		Logger: slog.New(core.NewContextHandler(slog.NewJSONHandler(h.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))), Timing: timing,
 	})
 	if err != nil {

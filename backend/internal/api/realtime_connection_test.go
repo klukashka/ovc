@@ -143,6 +143,35 @@ func TestUnauthenticatedSocketLimitsAnswer503(t *testing.T) {
 	}
 }
 
+func TestPerAddressSocketLimitCountsMappedIPv4AsIPv4AndIPv6BySlash64(t *testing.T) {
+	t.Parallel()
+	h := newLiveHarness(t, liveTuning{gateway: func(deps *realtime.Dependencies) {
+		deps.Limits.PerAddress = 2
+	}})
+	h.openFrom(t, "198.51.100.7")
+	h.openFrom(t, "::ffff:198.51.100.7")
+	h.openFrom(t, "2001:db8:1:2::1")
+	h.openFrom(t, "2001:db8:1:2:ffff::9")
+
+	_, thirdIPv4 := h.openFrom(t, "198.51.100.7")
+	_, thirdMapped := h.openFrom(t, "::ffff:198.51.100.7")
+	_, thirdInPrefix := h.openFrom(t, "2001:db8:1:2:abcd::3")
+	_, otherPrefix := h.openFrom(t, "2001:db8:1:3::1")
+
+	if thirdIPv4 != http.StatusServiceUnavailable || thirdMapped != http.StatusServiceUnavailable {
+		t.Fatalf("a third socket of one IPv4 address answered %d plain and %d mapped", thirdIPv4, thirdMapped)
+	}
+	if thirdInPrefix != http.StatusServiceUnavailable {
+		t.Fatalf("a third socket of one IPv6 /64 answered %d", thirdInPrefix)
+	}
+	if otherPrefix != http.StatusSwitchingProtocols {
+		t.Fatalf("a socket of another IPv6 /64 answered %d", otherPrefix)
+	}
+	if h.countLogs(`"ws.upgrade.refused"`, `"reason":"address_busy"`) != 3 {
+		t.Fatalf("the refusals were not recorded:\n%s", h.logs.String())
+	}
+}
+
 func TestTheWebSocketRouteHasTheOuterHandlers(t *testing.T) {
 	t.Parallel()
 	h := newLiveHarness(t, liveTuning{})

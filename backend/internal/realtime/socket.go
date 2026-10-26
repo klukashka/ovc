@@ -441,7 +441,7 @@ func (s *socket) becomeReady(round uint64) (uint64, readyOutcome) {
 	s.suspended = false
 	if s.reserved {
 		s.reserved = false
-		s.g.releaseLocked(s.reservation.address)
+		s.g.releaseLocked(s.reservation.bucket)
 	}
 	s.g.enqueueLocked(s, encode(domain.FrameReady, nil, &schemas.ReadyPayload{}))
 	return round, readyGranted

@@ -643,7 +643,7 @@ func queueEmail[Payload domain.EmailRequestPayload | domain.AccountPayload](ctx 
 }
 
 func (s *Service) reserveRequestAddress(ctx context.Context, address netip.Addr, now time.Time) error {
-	count, err := s.deps.Store.Repositories().RateLimits.Reserve(ctx, s.limitSlot(requestAddressLimit, addressBucket(address), now))
+	count, err := s.deps.Store.Repositories().RateLimits.Reserve(ctx, s.limitSlot(requestAddressLimit, domain.AddressBucket(address).String(), now))
 	if err != nil {
 		return err
 	}

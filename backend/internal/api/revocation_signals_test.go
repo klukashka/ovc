@@ -76,7 +76,7 @@ func (h *authHarness) watchSignals(t *testing.T) *signalWatch {
 		t.Fatal(err)
 	}
 	adapter, err := listener.New(listener.Dependencies{
-		DatabaseURL: h.database.URL, Instance: instance, Heartbeats: h.store.Repositories().Signals, Consumer: watch,
+		DatabaseURL: h.database.URL, Instance: instance, Heartbeats: listener.ConnectionHeartbeats{}, Consumer: watch,
 		Logger: slog.New(slog.NewJSONHandler(h.logs, nil)), Timing: listener.DefaultTiming(),
 	})
 	if err != nil {

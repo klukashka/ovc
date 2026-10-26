@@ -230,29 +230,30 @@ func (g *Gateway) Shutdown(ctx context.Context) {
 }
 
 type Reservation struct {
-	address netip.Addr
+	bucket netip.Addr
 }
 
 func (g *Gateway) Reserve(address netip.Addr) (Reservation, UpgradeRefusal) {
+	bucket := domain.AddressBucket(address)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.closing || g.pending >= g.deps.Limits.Unauthenticated {
 		return Reservation{}, UpgradeBusy
 	}
-	if g.byAddress[address] >= g.deps.Limits.PerAddress {
+	if g.byAddress[bucket] >= g.deps.Limits.PerAddress {
 		return Reservation{}, UpgradeAddressBusy
 	}
 	g.pending++
-	g.byAddress[address]++
+	g.byAddress[bucket]++
 	g.served.Add(1)
-	return Reservation{address: address}, UpgradeAccepted
+	return Reservation{bucket: bucket}, UpgradeAccepted
 }
 
-func (g *Gateway) releaseLocked(address netip.Addr) {
+func (g *Gateway) releaseLocked(bucket netip.Addr) {
 	g.pending--
-	g.byAddress[address]--
-	if g.byAddress[address] <= 0 {
-		delete(g.byAddress, address)
+	g.byAddress[bucket]--
+	if g.byAddress[bucket] <= 0 {
+		delete(g.byAddress, bucket)
 	}
 }
 
@@ -261,7 +262,7 @@ func (g *Gateway) Serve(w http.ResponseWriter, r *http.Request, reservation Rese
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: g.originHosts})
 	if err != nil {
 		g.mu.Lock()
-		g.releaseLocked(reservation.address)
+		g.releaseLocked(reservation.bucket)
 		g.mu.Unlock()
 		g.deps.Logger.LogAttrs(r.Context(), slog.LevelWarn, "ws.upgrade.refused", slog.String("reason", "accept"))
 		return
@@ -311,7 +312,7 @@ func (g *Gateway) closeLocked(s *socket, code domain.CloseCode, reason string) {
 	close(s.done)
 	if s.reserved {
 		s.reserved = false
-		g.releaseLocked(s.reservation.address)
+		g.releaseLocked(s.reservation.bucket)
 	}
 	if found, ok := g.accounts[s.user]; ok && s.phase != phaseAwaiting {
 		delete(found.sockets, s)

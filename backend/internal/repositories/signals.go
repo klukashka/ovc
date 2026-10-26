@@ -40,10 +40,6 @@ func (r Signals) Entities(ctx context.Context, signals []domain.EntitySignal) er
 	return nil
 }
 
-func (r Signals) Heartbeat(ctx context.Context, instance domain.InstanceID) error {
-	return r.send(ctx, domain.HeartbeatSignal{Instance: instance}, "heartbeat signal")
-}
-
 func (r Signals) send(ctx context.Context, signal domain.Signal, what string) error {
 	payload, err := domain.EncodeSignal(signal)
 	if err != nil {
