@@ -13,7 +13,7 @@ Checked 2026-10-21 against the Go module proxy (`go list -m -versions -json`) an
 | golangci-lint | 2.14.0 | 2026-09-24 | `tools/go.mod`; 2.15.0 of 2026-10-16 skipped |
 | govulncheck (`golang.org/x/vuln`) | 1.8.0 | 2026-09-08 | `tools/go.mod`; 1.9.0 of 2026-10-11 skipped |
 
-golangci-lint and govulncheck must type-check the backend module, which `go -C tools tool` cannot do from the tools module, so they are built from the pinned versions into the ignored `bin/` directory and run from `backend/` ([development guide](../../docs/development.md#backend-checks)).
+golangci-lint and govulncheck must type-check the backend module, which `go -C tools tool` cannot do from the tools module, so they are built from the pinned versions into the ignored `bin/` directory and run from `backend/`; since 2026-10-26 Gitleaks, OSV-Scanner and sqlc are built there too, to stop compiling them on every check run, and `tools/check-tool-binaries.sh` confirms their versions ([development guide](../../docs/development.md#backend-checks)).
 
 ## huma defaults confirmed at 2.39.1
 
