@@ -166,8 +166,29 @@ func (f *Forwarder) relay(tb testing.TB, from net.Conn, to net.Conn) {
 			if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
 				tb.Logf("forwarder: read ended: %s", core.ErrorKind(err))
 			}
+			f.endStream(tb, to)
 			return
 		}
+	}
+}
+
+type halfCloser interface {
+	CloseWrite() error
+}
+
+func (f *Forwarder) endStream(tb testing.TB, to net.Conn) {
+	f.relaying.RLock()
+	defer f.relaying.RUnlock()
+	if f.stopped {
+		return
+	}
+	closer, ok := to.(halfCloser)
+	if !ok {
+		tb.Errorf("forwarder: a %T cannot pass end of stream on", to)
+		return
+	}
+	if err := closer.CloseWrite(); err != nil && !errors.Is(err, net.ErrClosed) {
+		tb.Logf("forwarder: pass end of stream on: %s", core.ErrorKind(err))
 	}
 }
 
