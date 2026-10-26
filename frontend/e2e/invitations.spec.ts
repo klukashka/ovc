@@ -384,6 +384,7 @@ test.describe('in English', () => {
   });
 
   test('students › ending a student who confirmed meanwhile closes the dialog and shows the current card', async ({
+    socketSlots,
     page,
     deployment,
     control,
@@ -394,6 +395,7 @@ test.describe('in English', () => {
     const card = await createCard(deployment, pavel, 'Boris', boris.email);
     diagnostics.expectFailure({ method: 'POST', path: `/api/v1/students/${card.id}/remove`, status: 409 });
     await signUpOnInvitation(deployment, card.link, boris, 'en');
+    await socketSlots.keepPageSocketsOff(pavel);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/students/${card.id}`);
     await page.getByRole('button', { name: 'End working together' }).click();
@@ -413,6 +415,7 @@ test.describe('in English', () => {
   });
 
   test('students › withdrawing an invitation accepted meanwhile moves focus to the changed-card notice', async ({
+    socketSlots,
     page,
     deployment,
     diagnostics,
@@ -421,6 +424,7 @@ test.describe('in English', () => {
     const boris = newTestAccount('Boris Account', 'student');
     const card = await createCard(deployment, pavel, 'Boris', boris.email);
     diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/students/${card.id}`, status: 409 });
+    await socketSlots.keepPageSocketsOff(pavel);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/students/${card.id}`);
     await page.getByRole('button', { name: 'Withdraw invitation' }).click();
@@ -436,6 +440,7 @@ test.describe('in English', () => {
   });
 
   test('students › a second stale refusal while the changed-card notice shows moves focus to it again', async ({
+    socketSlots,
     page,
     deployment,
     control,
@@ -446,6 +451,7 @@ test.describe('in English', () => {
     const card = await createCard(deployment, pavel, 'Boris', boris.email);
     diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/students/${card.id}`, status: 409 });
     diagnostics.expectFailure({ method: 'POST', path: `/api/v1/students/${card.id}/remove`, status: 409 });
+    await socketSlots.keepPageSocketsOff(pavel);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/students/${card.id}`);
     const notice = page.getByRole('status').filter({ hasText: 'This card changed in the meantime.' });
@@ -476,6 +482,7 @@ test.describe('in English', () => {
   });
 
   test('students › invite again on a card reactivated meanwhile moves focus to the changed-card notice', async ({
+    socketSlots,
     page,
     deployment,
     control,
@@ -485,6 +492,7 @@ test.describe('in English', () => {
     const { student: anna, cardId } = await seedActiveStudent(deployment, control, pavel, 'Anna');
     await endRelationship(deployment, pavel, cardId);
     diagnostics.expectFailure({ method: 'POST', path: `/api/v1/students/${cardId}/invitation`, status: 409 });
+    await socketSlots.keepPageSocketsOff(pavel);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/students/${cardId}`);
     await expect(page.getByRole('button', { name: 'Invite again' })).toBeVisible();

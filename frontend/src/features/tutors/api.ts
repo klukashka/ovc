@@ -9,22 +9,17 @@ export const myTutorsKey = ['tutors'] as const;
 
 export const sentRequestsKey = ['join-requests', 'sent'] as const;
 
-export async function fetchMyTutors(client: ApiClient, signal: AbortSignal): Promise<readonly MyTutor[]> {
-  const { data, error, response } = await client.GET('/api/v1/tutors', { signal });
+export async function fetchMyTutors(client: ApiClient): Promise<readonly MyTutor[]> {
+  const { data, error, response } = await client.GET('/api/v1/tutors');
   if (data === undefined) {
     throw apiErrorFrom(response.status, error);
   }
   return data.tutors;
 }
 
-export async function fetchSentRequestsPage(
-  client: ApiClient,
-  cursor: string | null,
-  signal: AbortSignal,
-): Promise<SentJoinRequestPage> {
+export async function fetchSentRequestsPage(client: ApiClient, cursor: string | null): Promise<SentJoinRequestPage> {
   const { data, error, response } = await client.GET('/api/v1/join-requests/sent', {
     params: { query: cursor === null ? {} : { cursor } },
-    signal,
   });
   if (data === undefined) {
     throw apiErrorFrom(response.status, error);

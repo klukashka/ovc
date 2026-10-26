@@ -102,6 +102,7 @@ export const ru = {
     forgotPassword: 'Забыли пароль?',
     signUp: 'Зарегистрироваться',
     accountDeleted: 'Аккаунт удалён.',
+    sessionEnded: 'Вы вышли из аккаунта на этом устройстве',
     wrongCredentials: 'Неверный email или пароль.',
     blocked: 'Этот аккаунт заблокирован.',
     throttled:
@@ -448,6 +449,7 @@ export const ru = {
     inviteAgainTitle: 'Снова заниматься вместе',
     inviteAgainHint: 'По новой ссылке ученик вернётся к этой карточке и её истории, но не в ваши группы.',
     inviteAgain: 'Пригласить снова',
+    gone: 'Этого ученика больше нет в вашем списке.',
   },
   groups: {
     list: 'Группы',

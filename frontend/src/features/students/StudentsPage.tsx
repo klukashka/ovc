@@ -16,6 +16,7 @@ import {
 } from '../../components/ui/Form.tsx';
 import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
+import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
 import { useAddressValue } from '../../components/ui/serverValue.ts';
@@ -89,7 +90,7 @@ function GroupFilter({ group }: { readonly group: string }): ReactElement | null
   const select = useAddressValue<HTMLSelectElement>(group);
   const groups = useQuery({
     queryKey: groupsKey,
-    queryFn: ({ signal }) => fetchGroups(client, signal),
+    queryFn: () => fetchGroups(client),
     enabled: me.state === 'active',
     retry: false,
   });
@@ -175,7 +176,7 @@ function StudentRow({ card }: { readonly card: StudentCardSummary }): ReactEleme
   const { t } = useTranslation();
   const email = card.email ?? card.account?.email ?? null;
   return (
-    <li className="border-t border-border">
+    <li data-row={card.id} className="border-t border-border">
       <Link
         to={`/students/${encodeURIComponent(card.id)}`}
         className="grid min-h-11 grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 px-2 py-3 hover:bg-surface tablet:grid-cols-[auto_minmax(0,2fr)_minmax(0,2fr)_minmax(14rem,1fr)]"
@@ -211,7 +212,7 @@ function EmptyList({
   const firstStudent = state === 'active' && !filtered;
   const code = useQuery({
     queryKey: tutorCodeKey,
-    queryFn: ({ signal }) => fetchTutorCode(client, signal),
+    queryFn: () => fetchTutorCode(client),
     enabled: firstStudent,
     retry: false,
   });
@@ -269,7 +270,7 @@ function StudentList({
   const { state, search, group } = view;
   const query = useInfiniteQuery({
     queryKey: studentListKey(state, search, group),
-    queryFn: ({ pageParam, signal }) => fetchStudentsPage(client, { state, search, group, cursor: pageParam }, signal),
+    queryFn: ({ pageParam }) => fetchStudentsPage(client, { state, search, group, cursor: pageParam }),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.next_cursor,
     placeholderData: keepPreviousData,
@@ -281,6 +282,11 @@ function StudentList({
     cards.length,
     ':scope > li > a',
     query.isFetchingNextPage,
+  );
+  useFocusAfterRemovedRow(
+    listRef,
+    cards.map((card) => card.id),
+    ':scope > a',
   );
   if (query.isPending) {
     return <DelayedLoading />;

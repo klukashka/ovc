@@ -19,6 +19,7 @@ import {
   stringField,
   textButtonClass,
 } from '../../components/ui/Form.tsx';
+import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { FocusedNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
@@ -244,6 +245,15 @@ function Members({ group, handlers }: { readonly group: Group; readonly handlers
   const [removing, setRemoving] = useState<string | null>(null);
   const action = useAction();
   const archived = group.archived_at !== null;
+  const listRef = useRef<HTMLUListElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useFocusAfterRemovedRow(
+    listRef,
+    group.members.map((member) => member.relationship_id),
+    'a',
+    heading,
+    action.busy || notice !== null,
+  );
 
   function remove(id: string): void {
     if (action.busy) {
@@ -267,7 +277,7 @@ function Members({ group, handlers }: { readonly group: Group; readonly handlers
 
   return (
     <section aria-labelledby={headingId} className="flex flex-col items-start gap-3">
-      <h2 id={headingId} className="text-heading">
+      <h2 ref={heading} id={headingId} tabIndex={-1} className="text-heading outline-none">
         {t('groups.members')}
       </h2>
       <p className="text-small text-text-muted">
@@ -280,9 +290,13 @@ function Members({ group, handlers }: { readonly group: Group; readonly handlers
       {group.members.length === 0 ? (
         <p className="text-text-muted">{t('groups.noMembers')}</p>
       ) : (
-        <ul aria-labelledby={headingId} className="w-full border-b border-border">
+        <ul ref={listRef} aria-labelledby={headingId} className="w-full border-b border-border">
           {group.members.map((member) => (
-            <li key={member.relationship_id} className="flex flex-wrap items-center gap-3 border-t border-border py-3">
+            <li
+              key={member.relationship_id}
+              data-row={member.relationship_id}
+              className="flex flex-wrap items-center gap-3 border-t border-border py-3"
+            >
               <Avatar name={member.display_name} avatarId={member.avatar_id} />
               <span className="flex min-w-0 flex-1 flex-col">
                 <Link
@@ -434,7 +448,7 @@ export function GroupPage(): ReactElement {
   }
   const query = useQuery({
     queryKey: key,
-    queryFn: ({ signal }) => fetchGroup(client, groupId, signal),
+    queryFn: () => fetchGroup(client, groupId),
     retry: false,
   });
   const error = query.isError ? asApiError(query.error) : null;

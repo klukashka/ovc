@@ -92,13 +92,13 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `features/chat` | Channel list, conversation, composer, presence, typing |
 | `features/notifications` | The Notifications item ("bell") with the unread count in the sidebar and the narrow top bar, the panel with the latest 10, the `/notifications` page, marking rows read, polite announcements of new rows |
 | `features/settings` | Profile, account, notifications (email switches per group), teaching settings (tutor code, blocked students), and the `/unsubscribe` token page |
-| `lib/api` | Typed API client generated from OpenAPI, error type, token handling; the session reaches the network only through the `AuthTransport` adapter (HTTP, and an in-memory fake for unit tests checked by the same contract against the real backend) |
-| `lib/realtime` | One reconnecting WebSocket client per tab, owned by the session epoch: `auth` and in-band re-authentication with the in-memory access token, backoff with jitter, `ping` and `pong`, the hand-written frame types and strict parser in `frames.ts`, an injected socket factory with a fake checked by the frame contract test, and the [live refetch mapping](#live-refetch-mapping) |
+| `lib/api` | Typed API client generated from OpenAPI, error type, token handling; the session reaches the network only through the `AuthTransport` adapter (HTTP, and an in-memory fake for unit tests checked by the same contract against the real backend); from slice 4 the session's refresh reports its result (renewed, ended with a reason, or superseded by another epoch), and the session hands the realtime client fresh access tokens tagged with their epoch |
+| `lib/realtime` | One reconnecting WebSocket client per tab, owned by the session epoch: `auth` and in-band re-authentication with the in-memory access token, backoff with jitter, `ping` and `pong`, the hand-written frame types and strict parser in `frames.ts`, an injected socket factory with a fake gateway (`fakeGateway.ts`) checked by the frame contract test (`realtimeContract.ts`, run against the fake in the unit tests and against the real gateway in the Chromium-only browserless suite), and the [live refetch mapping](#live-refetch-mapping); the client is loaded on demand after the first sign-in, outside the first load, and is closed on `pagehide` and started again when the page returns from the back-forward cache |
 | `lib/i18n` | i18next setup, ICU formatting, error-code messages, `ru` and `en` resources |
 | `lib/preferences` | Per-browser preferences before sign-in (language, theme, sidebar), with an in-memory store for tests |
 | `lib/format` | Dates and times in the viewer's language and timezone (`en-GB` and Russian forms, 24-hour time) |
 | `lib/clipboard` | Copying text, such as invitation links and the tutor code, through the Clipboard API only, reporting a refusal instead of falling back to another channel |
-| `app` | Shared React contexts and hooks (preferences, media queries), the role sections and route handles the frames and pages read |
+| `app` | Shared React contexts and hooks (preferences, media queries), the role sections and route handles the frames and pages read; from slice 4 the query client, the live refetch mapping and the start of the realtime client |
 | `components/frame` | Public and signed-in frames, sidebar and its overlay, language switch, focus on route change |
 | `components/ui` | Shared primitives built on the [tokens](../design/web/tokens.md) |
 | `routes` | Thin route components and role guards ([navigation](../design/web/navigation.md)); from slice 4 each route's page module loads on demand, while the frames, the access rule and the token pages' address replacement stay in the entry chunk's static imports, which load and run before the router starts, so a token leaves the address before any lazily loaded code is requested or runs; `pnpm check:bundle` checks that the access rule and the token holders stay in that first load |
@@ -112,7 +112,9 @@ Frames never carry state; `lib/realtime` turns each into TanStack Query invalida
 | `entity.changed relationship` | the Students list and its tabs, the student card with that identifier, group pages (members), My tutors, the tutor list on student Home |
 | `entity.changed join_request` | the tutor's join requests (Students and Today), the student's sent requests (My tutors and Home) |
 | `entity.changed notification`, `notification.new` | the notification list, the panel and the badge |
-| `ready` after a reconnect | every active query |
+| the first `ready` of a socket (the first connection or a reconnect) | every active query that holds an answer or is being fetched |
+
+Queries are invalidated by key prefix, so only the queries a page has mounted are fetched again. The application's query client lets a running fetch finish instead of aborting it when a frame or a page's own action asks for the same query, and fetches once more after it when it ended with data, because that fetch may have started before the change; so a live frame and the action that caused it never abort each other's request, and the last answer is never older than the change. A list row that a refetch removes moves focus through the shared hook in `components/ui/liveRows.ts`.
 
 ## Package layers
 

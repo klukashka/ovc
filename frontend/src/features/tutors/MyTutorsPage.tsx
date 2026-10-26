@@ -17,6 +17,17 @@ const stopNotice = {
   changed: 'tutors.changed',
 } as const;
 
+function vanishedTutor(chosen: MyTutor | null, tutors: readonly MyTutor[] | undefined): StopOutcome | null {
+  if (chosen === null || tutors === undefined) {
+    return null;
+  }
+  const listed = tutors.find((tutor) => tutor.relationship_id === chosen.relationship_id);
+  if (listed === undefined) {
+    return 'removed';
+  }
+  return listed.state === 'ended' ? 'changed' : null;
+}
+
 function PastTutors({ tutors }: { readonly tutors: readonly MyTutor[] }): ReactElement | null {
   const { t } = useTranslation();
   const headingId = useId();
@@ -45,6 +56,7 @@ export function MyTutorsPage(): ReactElement {
       ? null
       : (currentTutors(query.data ?? []).find((tutor) => tutor.relationship_id === chosen.relationship_id) ?? chosen);
   const [outcome, setOutcome] = useState<{ readonly kind: StopOutcome; readonly count: number } | null>(null);
+  const vanished = vanishedTutor(chosen, checking ? undefined : query.data);
   const opener = useRef<HTMLElement | null>(null);
 
   function current(): ReactElement {
@@ -94,6 +106,7 @@ export function MyTutorsPage(): ReactElement {
       <PastTutors tutors={query.isSuccess ? pastTutors(query.data) : []} />
       <StopStudyingDialog
         tutor={stopping}
+        vanished={vanished}
         checking={checking}
         returnFocus={opener}
         onClose={() => {

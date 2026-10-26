@@ -62,6 +62,8 @@ async function show(card: StudentCard): Promise<void> {
     onRemoved: (): void => undefined,
     onEnded: (): void => undefined,
     onChangedElsewhere: (): void => undefined,
+    onDialog: (): void => undefined,
+    onLeaving: (): void => undefined,
   };
   const router = createMemoryRouter([{ path: '*', element: <StudentCardView card={card} handlers={handlers} /> }], {
     initialEntries: [`/students/${card.id}`],

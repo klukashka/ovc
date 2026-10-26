@@ -317,6 +317,7 @@ test.describe('Boris in English', () => {
   });
 
   test('my tutors › stopping a link the tutor removed meanwhile closes the dialog and shows the current list', async ({
+    socketSlots,
     page,
     deployment,
     diagnostics,
@@ -326,6 +327,7 @@ test.describe('Boris in English', () => {
     const card = await createCard(deployment, pavel, 'Boris', boris.email);
     await signUpOnInvitation(deployment, card.link, boris, 'en');
     diagnostics.expectFailure({ method: 'POST', path: `/api/v1/tutors/${card.id}/end`, status: 404 });
+    await socketSlots.keepPageSocketsOff(boris);
     await signInThroughTheApi(page, boris);
     await page.goto('/tutors');
     await page.getByRole('button', { name: 'More actions for Pavel' }).click();
@@ -348,12 +350,14 @@ test.describe('Boris in English', () => {
   });
 
   test('my tutors › a tutor who ended the relationship while the menu was open closes the dialog with the changed-meanwhile notice', async ({
+    socketSlots,
     page,
     deployment,
     control,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
     const { student: anna, cardId } = await seedActiveStudent(deployment, control, pavel, 'Anna');
+    await socketSlots.keepPageSocketsOff(anna);
     await signInThroughTheApi(page, anna);
     await page.goto('/tutors');
     await page.getByRole('button', { name: 'More actions for Pavel' }).click();

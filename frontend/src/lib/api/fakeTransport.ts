@@ -93,6 +93,7 @@ export class FakeAuthServer {
   private failingAccountChecks = 0;
   private failingAccountReads = 0;
   private failingRefreshes = 0;
+  private lostRefreshes = 0;
   private accountReadGate: Promise<void> | null = null;
   private accountReadReceived: () => void = () => undefined;
   private joinRequestReadGate: Promise<void> | null = null;
@@ -212,17 +213,48 @@ export class FakeAuthServer {
     this.failingRefreshes += 1;
   }
 
+  loseNextRefresh(): void {
+    this.lostRefreshes += 1;
+  }
+
   block(email: string): void {
-    const account = this.accounts.get(email);
-    if (account === undefined) {
-      throw new Error('no fake account has this email');
-    }
-    account.blocked = true;
+    this.blockWithoutRevoking(email);
+    this.revokeSessionsOf(email);
+  }
+
+  blockWithoutRevoking(email: string): void {
+    this.account(email).blocked = true;
+  }
+
+  revokeSessionsOf(email: string): void {
+    const account = this.account(email);
     for (const session of this.sessions.values()) {
       if (session.accountId === account.me.id) {
         session.revoked = true;
       }
     }
+  }
+
+  private account(email: string): FakeAccount {
+    const account = this.accounts.get(email);
+    if (account === undefined) {
+      throw new Error('no fake account has this email');
+    }
+    return account;
+  }
+
+  liveSessionOf(token: string): { readonly accountId: string; readonly sessionId: number } | null {
+    const access = this.tokens.get(token);
+    const session = this.sessionOf(token);
+    if (access === undefined || session === undefined || this.refusedToken(token) !== null) {
+      return null;
+    }
+    return { accountId: session.accountId, sessionId: access.sessionId };
+  }
+
+  sessionIsLive(sessionId: number): boolean {
+    const session = this.sessions.get(sessionId);
+    return session !== undefined && !session.revoked;
   }
 
   issuedBy(token: string): string | undefined {
@@ -263,9 +295,16 @@ export class FakeAuthServer {
   private async refresh(): Promise<Response> {
     const presented = this.storedRefresh;
     await nextTurn();
-    const answer = this.failingRefreshes > 0 ? this.failRefresh() : this.rotate(presented);
+    const lost = this.lostRefreshes > 0;
+    if (lost) {
+      this.lostRefreshes -= 1;
+    }
+    const answer = this.failingRefreshes > 0 ? this.failRefresh() : this.rotate(lost ? null : presented);
     this.refreshReceived();
     await this.refreshGate;
+    if (lost) {
+      throw new TypeError('the connection was lost before the refresh answered');
+    }
     return answer;
   }
 
@@ -288,6 +327,9 @@ export class FakeAuthServer {
       }
       this.storedRefresh = null;
       return refusal(401, 'unauthenticated');
+    }
+    if ([...this.accounts.values()].some((account) => account.me.id === session.accountId && account.blocked)) {
+      return refusal(403, 'account_blocked');
     }
     session.generation += 1;
     this.grantedRefreshes += 1;
@@ -479,19 +521,50 @@ export function unsharedLocks(): LockManagerLike {
 export interface ManualScheduler extends Scheduler {
   readonly runAll: () => void;
   readonly nextSchedule: () => Promise<number>;
+  readonly pass: (milliseconds: number) => void;
+  readonly pendingDelays: () => readonly number[];
 }
 
 export function manualScheduler(): ManualScheduler {
-  const tasks = new Set<() => void>();
+  const tasks = new Map<() => void, number>();
   const waiting: ((milliseconds: number) => void)[] = [];
+  let elapsed = 0;
+
+  function earliestDueBy(limit: number): (() => void) | null {
+    let earliest: { readonly task: () => void; readonly due: number } | null = null;
+    for (const [task, due] of tasks) {
+      if (due <= limit && (earliest === null || due < earliest.due)) {
+        earliest = { task, due };
+      }
+    }
+    if (earliest === null) {
+      return null;
+    }
+    elapsed = earliest.due;
+    tasks.delete(earliest.task);
+    return earliest.task;
+  }
+
   return {
+    now: () => elapsed,
+    pass: (milliseconds): void => {
+      const target = elapsed + milliseconds;
+      for (let task = earliestDueBy(target); task !== null; task = earliestDueBy(target)) {
+        task();
+      }
+      elapsed = target;
+    },
+    pendingDelays: () => [...tasks.values()].map((due) => due - elapsed).sort((left, right) => left - right),
     schedule: (milliseconds, task) => {
-      tasks.add(task);
+      const scheduled = (): void => {
+        task();
+      };
+      tasks.set(scheduled, elapsed + milliseconds);
       for (const notify of waiting.splice(0)) {
         notify(milliseconds);
       }
       return (): void => {
-        tasks.delete(task);
+        tasks.delete(scheduled);
       };
     },
     nextSchedule: () =>
@@ -499,7 +572,7 @@ export function manualScheduler(): ManualScheduler {
         waiting.push(resolve);
       }),
     runAll: (): void => {
-      const due = [...tasks];
+      const due = [...tasks.keys()];
       tasks.clear();
       for (const task of due) {
         task();

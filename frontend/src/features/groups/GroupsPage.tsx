@@ -97,7 +97,7 @@ export function GroupsPage(): ReactElement {
   const opener = useRef<HTMLButtonElement>(null);
   const query = useQuery({
     queryKey: groupsKey,
-    queryFn: ({ signal }) => fetchGroups(client, signal),
+    queryFn: () => fetchGroups(client),
     retry: false,
   });
 

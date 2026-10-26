@@ -4,7 +4,7 @@ import {
   useInfiniteQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { type ReactElement, type ReactNode, useId, useState } from 'react';
+import { type ReactElement, type ReactNode, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { type ActionState, done, refusedBy, showsStaleData, useAction } from '../../components/ui/action.ts';
@@ -18,6 +18,7 @@ import {
   quietButtonClass,
 } from '../../components/ui/Form.tsx';
 import { MoreIcon } from '../../components/ui/icons.tsx';
+import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Refusal } from '../../components/ui/Refusal.tsx';
@@ -27,7 +28,7 @@ import { type ApiClient, apiErrorFrom, asApiError, useApiClient } from '../../li
 import type { components } from '../../lib/api/schema.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDate } from '../../lib/format/dates.ts';
-import { studentsKey } from './api.ts';
+import { joinRequestsKey, studentsKey } from './api.ts';
 
 type TutorJoinRequest = components['schemas']['TutorJoinRequest'];
 type TutorJoinRequestPage = components['schemas']['TutorJoinRequestPage'];
@@ -40,16 +41,9 @@ const decisionNotice = {
   block: 'joinRequests.blocked',
 } as const;
 
-export const joinRequestsKey = ['join-requests', 'received'] as const;
-
-async function fetchJoinRequestsPage(
-  client: ApiClient,
-  cursor: string | null,
-  signal: AbortSignal,
-): Promise<TutorJoinRequestPage> {
+async function fetchJoinRequestsPage(client: ApiClient, cursor: string | null): Promise<TutorJoinRequestPage> {
   const { data, error, response } = await client.GET('/api/v1/join-requests', {
     params: { query: cursor === null ? {} : { cursor } },
-    signal,
   });
   if (data === undefined) {
     throw apiErrorFrom(response.status, error);
@@ -71,7 +65,7 @@ function useReceivedJoinRequests(): UseInfiniteQueryResult<InfiniteData<TutorJoi
   const me = useSignedInAccount();
   return useInfiniteQuery({
     queryKey: joinRequestsKey,
-    queryFn: ({ pageParam, signal }) => fetchJoinRequestsPage(client, pageParam, signal),
+    queryFn: ({ pageParam }) => fetchJoinRequestsPage(client, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.next_cursor,
     enabled: me.state === 'active',
@@ -100,7 +94,7 @@ function RequestRow({
   const me = useSignedInAccount();
   const name = request.student.name;
   return (
-    <li className="flex flex-wrap items-center gap-3 border-t border-border py-3">
+    <li data-row={request.id} className="flex flex-wrap items-center gap-3 border-t border-border py-3">
       <Avatar name={name} avatarId={request.student.avatar_id} />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-strong">{name}</span>
@@ -170,6 +164,7 @@ export function JoinRequests({
   const queryClient = useQueryClient();
   const me = useSignedInAccount();
   const headingId = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
   const [decided, setDecided] = useState<{ readonly decision: Decision; readonly count: number } | null>(null);
   const [deciding, setDeciding] = useState<{ readonly id: string; readonly decision: Decision } | null>(null);
   const [refusals, setRefusals] = useState(0);
@@ -180,6 +175,13 @@ export function JoinRequests({
     requests.length,
     ':scope > li [data-first-in-row]',
     query.isFetchingNextPage,
+  );
+  useFocusAfterRemovedRow(
+    listRef,
+    requests.map((request) => request.id),
+    '[data-first-in-row]',
+    heading,
+    action.busy,
   );
 
   function decide(id: string, decision: Decision): void {
@@ -290,7 +292,7 @@ export function JoinRequests({
   }
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 id={headingId} className="text-heading">
+      <h2 ref={heading} id={headingId} tabIndex={-1} className="text-heading outline-none">
         {t('joinRequests.title')}
       </h2>
       {body()}

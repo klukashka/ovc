@@ -12,6 +12,8 @@ export const studentListStates: readonly StudentListState[] = pathsApiV1Students
 
 export const studentsKey = ['students'] as const;
 
+export const joinRequestsKey = ['join-requests', 'received'] as const;
+
 export const withdrawnNotice = 'withdrawn';
 
 export const removedNotice = 'removed';
@@ -20,8 +22,10 @@ export function hasNotice(state: unknown, notice: string): boolean {
   return typeof state === 'object' && state !== null && 'notice' in state && state.notice === notice;
 }
 
+export const studentListsKey = [...studentsKey, 'list'] as const;
+
 export function studentListKey(state: StudentListState, search: string, group: string): readonly unknown[] {
-  return [...studentsKey, 'list', state, search, group];
+  return [...studentListsKey, state, search, group];
 }
 
 export function studentCardKey(id: string): readonly unknown[] {
@@ -40,7 +44,6 @@ export async function fetchStudentsPage(
     readonly group: string;
     readonly cursor: string | null;
   },
-  signal: AbortSignal,
 ): Promise<StudentCardPage> {
   const { data, error, response } = await client.GET('/api/v1/students', {
     params: {
@@ -51,7 +54,6 @@ export async function fetchStudentsPage(
         ...(filter.cursor === null ? {} : { cursor: filter.cursor }),
       },
     },
-    signal,
   });
   if (data === undefined) {
     throw apiErrorFrom(response.status, error);
@@ -59,10 +61,9 @@ export async function fetchStudentsPage(
   return data;
 }
 
-export async function fetchStudentCard(client: ApiClient, id: string, signal: AbortSignal): Promise<StudentCard> {
+export async function fetchStudentCard(client: ApiClient, id: string): Promise<StudentCard> {
   const { data, error, response } = await client.GET('/api/v1/students/{id}', {
     params: { path: { id } },
-    signal,
   });
   if (data === undefined) {
     throw apiErrorFrom(response.status, error);

@@ -114,7 +114,6 @@ test.describe('Boris in English', () => {
     await expect(joinRequests(mariaPage).getByText('Новых заявок нет.')).toBeVisible();
     await mariaPage.goto('/students');
     await expect(mariaPage.getByRole('list', { name: 'Активные' }).getByRole('link', { name: /Boris/ })).toBeVisible();
-    await page.reload();
     await expect(page.getByRole('list', { name: 'Tutors' }).getByRole('listitem')).toHaveText([/Мария/]);
     await mariaContext.close();
   });
@@ -378,6 +377,7 @@ test.describe('in Russian', () => {
   });
 
   test('join requests › a decline of a request accepted meanwhile is refused with an alert that takes focus', async ({
+    socketSlots,
     page,
     deployment,
     control,
@@ -386,6 +386,7 @@ test.describe('in Russian', () => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
     const requesters = await seedJoinRequests(deployment, control, maria, 2);
     await recordBusyControls(page);
+    await socketSlots.keepPageSocketsOff(maria);
     await signInThroughTheApi(page, maria);
     await page.goto('/today');
     const rows = joinRequests(page).getByRole('listitem');

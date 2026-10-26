@@ -44,16 +44,16 @@ export function memberCapReached(error: ApiError): boolean {
   return error.fieldCode('add') === 'too_long' || error.fieldCode('member_ids') === 'invalid';
 }
 
-export async function fetchGroups(client: ApiClient, signal: AbortSignal): Promise<readonly GroupSummary[]> {
-  const { data, error, response } = await client.GET('/api/v1/groups', { signal });
+export async function fetchGroups(client: ApiClient): Promise<readonly GroupSummary[]> {
+  const { data, error, response } = await client.GET('/api/v1/groups');
   if (data === undefined) {
     throw apiErrorFrom(response.status, error);
   }
   return data.groups;
 }
 
-export async function fetchGroup(client: ApiClient, id: string, signal: AbortSignal): Promise<Group> {
-  const { data, error, response } = await client.GET('/api/v1/groups/{id}', { params: { path: { id } }, signal });
+export async function fetchGroup(client: ApiClient, id: string): Promise<Group> {
+  const { data, error, response } = await client.GET('/api/v1/groups/{id}', { params: { path: { id } } });
   if (data === undefined) {
     throw apiErrorFrom(response.status, error);
   }
@@ -64,7 +64,6 @@ export async function fetchActiveStudentsPage(
   client: ApiClient,
   search: string,
   cursor: string | null,
-  signal: AbortSignal,
 ): Promise<StudentCardPage> {
   const { data, error, response } = await client.GET('/api/v1/students', {
     params: {
@@ -74,7 +73,6 @@ export async function fetchActiveStudentsPage(
         ...(cursor === null ? {} : { cursor }),
       },
     },
-    signal,
   });
   if (data === undefined) {
     throw apiErrorFrom(response.status, error);

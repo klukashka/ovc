@@ -150,8 +150,8 @@ function isErrorEnvelope(value: unknown): value is { error: ReceivedErrorBody } 
   );
 }
 
-export async function fetchReadiness(client: ApiClient, signal: AbortSignal): Promise<ReadyStatus> {
-  const { data, error, response } = await client.GET('/api/v1/health/ready', { signal });
+export async function fetchReadiness(client: ApiClient): Promise<ReadyStatus> {
+  const { data, error, response } = await client.GET('/api/v1/health/ready');
   if (data?.status === 'ready') {
     return data;
   }

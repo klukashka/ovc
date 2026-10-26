@@ -21,8 +21,8 @@ type Outcome = components['schemas']['ReclaimDecided']['outcome'];
 
 const reclaimKey = ['reclaim'] as const;
 
-async function fetchReclaimList(client: ApiClient, signal: AbortSignal): Promise<ReclaimList> {
-  const { data, error, response } = await client.GET('/api/v1/users/me/reclaim', { signal });
+async function fetchReclaimList(client: ApiClient): Promise<ReclaimList> {
+  const { data, error, response } = await client.GET('/api/v1/users/me/reclaim');
   if (data === undefined) {
     throw apiErrorFrom(response.status, error);
   }
@@ -184,7 +184,7 @@ export function ReclaimPage(): ReactElement {
   const [saved, setSaved] = useState<{ readonly outcome: Outcome; readonly reloadFailed: boolean } | null>(null);
   const query = useQuery({
     queryKey: reclaimKey,
-    queryFn: ({ signal }) => fetchReclaimList(client, signal),
+    queryFn: () => fetchReclaimList(client),
     enabled: saved === null,
     gcTime: 0,
     retry: false,

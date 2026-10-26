@@ -6,12 +6,16 @@ import { type Plugin, loadEnv } from 'vite';
 import { defineConfig } from 'vitest/config';
 
 import { buildManifestPath, firstLoadModules } from './scripts/bundle-budget.ts';
+import { realtimePath } from './src/lib/realtime/socket.ts';
 import { pageHeaders, responseHeaders } from './security-headers.ts';
 
 const defaultApiTarget = 'http://127.0.0.1:8000';
 
-function apiProxy(target: string): Record<string, { target: string; changeOrigin: boolean }> {
-  return { '/api': { target, changeOrigin: false } };
+function apiProxy(target: string): Record<string, { target: string; changeOrigin: boolean; ws: boolean }> {
+  return {
+    [`^${realtimePath}$`]: { target, changeOrigin: false, ws: true },
+    '/api': { target, changeOrigin: false, ws: false },
+  };
 }
 
 function moveBuildManifest(): Plugin {

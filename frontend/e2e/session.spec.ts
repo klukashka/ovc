@@ -6,6 +6,7 @@ import { expect, seedVerifiedUser, test } from './fixtures.ts';
 test.use({ locale: 'ru-RU' });
 
 const knownPreferenceKeys = ['ovc.language', 'ovc.sidebar', 'ovc.theme'];
+const accessTokenExpiredWithinSocketGrace = 15 * 60 + 10;
 
 async function signInThroughTheForm(page: Page, email: string, password: string): Promise<void> {
   await page.getByLabel('Email').fill(email);
@@ -48,13 +49,13 @@ test('a blocked account is signed out and told it is blocked when it signs in ag
   await signInThroughTheForm(page, blocked.email, blocked.password);
   await expect(page).toHaveURL('/today');
   deployment.administer(['users', 'block', blocked.email]);
-  await page.reload();
-  await expect(page).toHaveURL('/?next=%2Ftoday');
+  await expect(page.getByRole('status')).toHaveText('Вы вышли из аккаунта на этом устройстве');
+  await expect(page).toHaveURL('/');
 
   await signInThroughTheForm(page, blocked.email, blocked.password);
 
   await expect(page.getByText('Этот аккаунт заблокирован.')).toBeVisible();
-  await expect(page).toHaveURL('/?next=%2Ftoday');
+  await expect(page).toHaveURL('/');
 });
 
 test('pilot-4 › step 8 anonymous redirect', async ({ page, request }) => {
@@ -195,7 +196,7 @@ test('an expired access token is refreshed once and the request is retried', asy
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Сегодня' })).toBeVisible();
   await expectTodayLoaded(page);
   const responses = authResponses(page);
-  await control.advance(16 * 60);
+  await control.advance(accessTokenExpiredWithinSocketGrace);
 
   await signOutThroughTheMenu(page);
 

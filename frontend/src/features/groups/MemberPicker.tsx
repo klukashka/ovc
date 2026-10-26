@@ -95,7 +95,7 @@ function StudentChoices({
   const client = useApiClient();
   const query = useInfiniteQuery({
     queryKey: activeStudentsKey(search),
-    queryFn: ({ pageParam, signal }) => fetchActiveStudentsPage(client, search, pageParam, signal),
+    queryFn: ({ pageParam }) => fetchActiveStudentsPage(client, search, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.next_cursor,
     refetchOnWindowFocus: false,

@@ -8,13 +8,12 @@ import { Page } from '../../components/ui/Page.tsx';
 import { asApiError } from '../../lib/api/client.ts';
 import { currentTutors } from '../tutors/api.ts';
 import { CodeEntry } from '../tutors/CodeEntry.tsx';
-import { hasPendingRequest, useSentRequests } from '../tutors/SentRequests.tsx';
+import { type SentRequestsQuery, hasPendingRequest, useSentRequests } from '../tutors/SentRequests.tsx';
 import { TutorList, TutorsLoadFailed, useMyTutors } from '../tutors/TutorList.tsx';
 import { Readiness } from './Readiness.tsx';
 
-function FirstTutor(): ReactElement {
+function FirstTutor({ query }: { readonly query: SentRequestsQuery }): ReactElement {
   const { t } = useTranslation();
-  const query = useSentRequests();
   if (query.isPending) {
     return <DelayedLoading />;
   }
@@ -39,6 +38,7 @@ function FirstTutor(): ReactElement {
 function StudentTutors(): ReactElement {
   const { t } = useTranslation();
   const query = useMyTutors();
+  const sentRequests = useSentRequests();
   if (query.isPending) {
     return <DelayedLoading />;
   }
@@ -47,7 +47,7 @@ function StudentTutors(): ReactElement {
   }
   const tutors = currentTutors(query.data);
   if (tutors.length === 0) {
-    return <FirstTutor />;
+    return <FirstTutor query={sentRequests} />;
   }
   return (
     <>

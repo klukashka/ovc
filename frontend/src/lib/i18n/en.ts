@@ -101,6 +101,7 @@ export const en: Resources = {
     forgotPassword: 'Forgot password?',
     signUp: 'Sign up',
     accountDeleted: 'Your account has been deleted.',
+    sessionEnded: 'You were signed out on this device',
     wrongCredentials: 'The email or password is incorrect.',
     blocked: 'This account is blocked.',
     throttled: 'Too many attempts, try again in {minutes, plural, one {# minute} other {# minutes}}.',
@@ -442,6 +443,7 @@ export const en: Resources = {
     inviteAgainTitle: 'Work together again',
     inviteAgainHint: 'A new link brings the student back to this card and its history, but not back into your groups.',
     inviteAgain: 'Invite again',
+    gone: 'This student is no longer on your list.',
   },
   groups: {
     list: 'Groups',

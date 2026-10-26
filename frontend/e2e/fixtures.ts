@@ -9,6 +9,8 @@ import {
   signInThroughTheApi,
 } from './accounts.ts';
 import { type Deployment, readE2ESettings, startDeployment } from './deployment.ts';
+import { type SocketSlotHolder, socketSlotHolder } from './realtime.ts';
+import { type FailedRequest, unexpectedFailures } from './request-failures.ts';
 
 export interface SentMail {
   readonly subject: string;
@@ -81,7 +83,7 @@ export async function seedVerifiedUser(
 }
 
 export const test = base.extend<
-  { control: TestControl; signedInPage: Page },
+  { control: TestControl; signedInPage: Page; socketSlots: SocketSlotHolder },
   { deployment: Deployment; tutor: TestAccount }
 >({
   deployment: [
@@ -111,6 +113,14 @@ export const test = base.extend<
   control: async ({ deployment }, use): Promise<void> => {
     await use(testControl(deployment));
   },
+  socketSlots: async ({ deployment }, use): Promise<void> => {
+    const holder = socketSlotHolder(deployment);
+    try {
+      await use(holder);
+    } finally {
+      holder.release();
+    }
+  },
   signedInPage: async ({ page, tutor }, use): Promise<void> => {
     await signInThroughTheApi(page, tutor);
     await use(page);
@@ -139,7 +149,6 @@ function describeFailure(failure: ExpectedFailure): string {
   return `${failure.method} ${failure.path} ${String(failure.status)}`;
 }
 
-const cancelledRequest = /abort|cancel/i;
 const failedResourceLog = /^Failed to load resource: the server responded with a status of \d{3}/;
 
 async function reportPolicyViolations(page: Page): Promise<void> {
@@ -171,16 +180,16 @@ async function watchPage(page: Page, deployment: Deployment): Promise<WatchedPag
     }
     documentOf.set(request, documents);
   });
-  const failureChecks: Promise<void>[] = [];
+  const failureChecks: Promise<FailedRequest>[] = [];
   page.on('requestfailed', (request) => {
+    const document = documentOf.get(request) ?? Number.POSITIVE_INFINITY;
     failureChecks.push(
-      request.response().then((response) => {
-        const reason = request.failure()?.errorText ?? '';
-        const leftBehind = documents > (documentOf.get(request) ?? documents);
-        if (response === null && !(cancelledRequest.test(reason) && leftBehind)) {
-          problems.push(`request failed: ${request.method()} ${request.url()} ${reason}`);
-        }
-      }),
+      request.response().then((response) => ({
+        description: `${request.method()} ${request.url()}`,
+        reason: request.failure()?.errorText ?? '',
+        answered: response !== null,
+        document,
+      })),
     );
   });
   page.on('response', (response) => {
@@ -194,8 +203,8 @@ async function watchPage(page: Page, deployment: Deployment): Promise<WatchedPag
       expected.push(describeFailure(failure));
     },
     verify: async (): Promise<void> => {
-      await Promise.all(failureChecks);
-      expect(problems).toEqual([]);
+      const failedRequests = await Promise.all(failureChecks);
+      expect([...problems, ...unexpectedFailures(failedRequests, documents)]).toEqual([]);
       expect([...failures].sort()).toEqual([...expected].sort());
     },
   };

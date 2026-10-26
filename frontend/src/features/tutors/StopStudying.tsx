@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { type ReactElement, type RefObject, useId, useRef } from 'react';
+import { type ReactElement, type RefObject, useEffect, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { type ActionState, done, refusedBy, showsStaleData, useAction } from '../../components/ui/action.ts';
@@ -13,12 +13,14 @@ export type StopOutcome = 'ended' | 'removed' | 'changed';
 
 export function StopStudyingDialog({
   tutor,
+  vanished,
   checking,
   returnFocus,
   onClose,
   onSettled,
 }: {
   readonly tutor: MyTutor | null;
+  readonly vanished: StopOutcome | null;
   readonly checking: boolean;
   readonly returnFocus: RefObject<HTMLElement | null>;
   readonly onClose: () => void;
@@ -40,6 +42,13 @@ export function StopStudyingDialog({
       void queryClient.invalidateQueries({ queryKey: myTutorsKey });
     }
   });
+
+  useEffect(() => {
+    if (vanished !== null && !action.busy) {
+      action.reset();
+      onSettled(vanished);
+    }
+  }, [vanished, action, onSettled]);
 
   function stop(chosen: MyTutor): void {
     action.run(async (): Promise<ActionState> => {

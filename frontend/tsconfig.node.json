@@ -15,6 +15,9 @@
     "scripts",
     "e2e",
     "src/lib/api/transport.ts",
-    "src/lib/api/transportContract.ts"
+    "src/lib/api/transportContract.ts",
+    "src/lib/realtime/frames.ts",
+    "src/lib/realtime/socket.ts",
+    "src/lib/realtime/realtimeContract.ts"
   ]
 }

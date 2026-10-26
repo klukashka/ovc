@@ -18,7 +18,7 @@ function useTutorCode(): UseQueryResult<TutorCodeValue> {
   const client = useApiClient();
   return useQuery({
     queryKey: tutorCodeKey,
-    queryFn: ({ signal }) => fetchTutorCode(client, signal),
+    queryFn: () => fetchTutorCode(client),
     retry: false,
   });
 }

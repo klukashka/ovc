@@ -528,6 +528,7 @@ test.describe('in English with the dark theme', () => {
   });
 
   test('students › a card that changed meanwhile shows its current name and keeps the unsaved notes', async ({
+    socketSlots,
     page,
     deployment,
     diagnostics,
@@ -536,6 +537,7 @@ test.describe('in English with the dark theme', () => {
     const boris = newTestAccount('Boris', 'student');
     const card = await createCard(deployment, pavel, 'Boris', boris.email);
     diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/students/${card.id}`, status: 409 });
+    await socketSlots.keepPageSocketsOff(pavel);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/students/${card.id}`);
     const notes = page.getByRole('form', { name: 'Notes' }).getByLabel('Notes');

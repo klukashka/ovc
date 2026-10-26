@@ -23,7 +23,7 @@ export function Readiness(): ReactElement {
   const client = useApiClient();
   const query = useQuery({
     queryKey: ['health', 'ready'],
-    queryFn: ({ signal }) => fetchReadiness(client, signal),
+    queryFn: () => fetchReadiness(client),
     retry: false,
     refetchInterval: 30_000,
     gcTime: 0,

@@ -126,6 +126,7 @@ Slice 4. The texts in this section are a proposal to confirm when F2 (notificati
 | Link to settings | All email settings | Все настройки писем |
 | Invalid link | This link is no longer valid | Ссылка больше не действует |
 | Signed out after an unfixable `4401` (`sessionEnded`) | You were signed out on this device | Вы вышли из аккаунта на этом устройстве |
+| A student card that a live refetch found gone | This student is no longer on your list. | Этого ученика больше нет в вашем списке. |
 
 `{group}` is the group's name from the table above, which stands after a colon and needs no case.
 

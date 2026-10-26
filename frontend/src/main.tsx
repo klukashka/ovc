@@ -1,6 +1,6 @@
 import './styles.css';
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { I18nextProvider } from 'react-i18next';
@@ -8,6 +8,7 @@ import { RouterProvider } from 'react-router';
 
 import { applyAccountPreferences, darkSchemeQuery, followSystemTheme } from './app/accountPreferences.ts';
 import { PreferencesContext } from './app/context.ts';
+import { FollowingQueryClient } from './app/queryClient.ts';
 import { ApiClientContext, createApiClient } from './lib/api/client.ts';
 import { type Me, Session, SessionContext, browserLocks, browserScheduler } from './lib/api/session.ts';
 import { httpAuthTransport } from './lib/api/transport.ts';
@@ -35,12 +36,21 @@ const session = new Session({
   scheduler: browserScheduler,
 });
 const apiClient = createApiClient(origin, session.authorizedFetch);
-const queryClient = new QueryClient();
+const queryClient = new FollowingQueryClient();
 
 let appliedAccount: Me | null = null;
+let realtimeRequested = false;
 session.subscribe(() => {
   const state = session.snapshot();
   const account = state.kind === 'signedIn' ? state.me : null;
+  if (account !== null && !realtimeRequested) {
+    realtimeRequested = true;
+    import('./app/realtime.ts')
+      .then(({ startRealtime }) => {
+        startRealtime(session, queryClient, origin);
+      })
+      .catch(reportError);
+  }
   if (account?.id !== appliedAccount?.id) {
     queryClient.clear();
   }

@@ -276,7 +276,7 @@ function SignOutEverywhereSection(): ReactElement {
 
   async function signOutEverywhere(): Promise<void> {
     setOutcome({ kind: 'sending' });
-    const { error, response } = await client.POST('/api/v1/auth/logout-all');
+    const { error, response } = await session.whileEnding(() => client.POST('/api/v1/auth/logout-all'));
     if (!response.ok) {
       setOutcome(refusedFrom(response, error));
       return;
@@ -336,9 +336,9 @@ function DeleteAccountSection({ role }: { readonly role: Me['role'] }): ReactEle
 
   async function remove(data: FormData): Promise<void> {
     setOutcome({ kind: 'sending' });
-    const { error: refusal, response } = await client.DELETE('/api/v1/users/me', {
-      body: { password: stringField(data, 'password') },
-    });
+    const { error: refusal, response } = await session.whileEnding(() =>
+      client.DELETE('/api/v1/users/me', { body: { password: stringField(data, 'password') } }),
+    );
     if (!response.ok) {
       setOutcome(refusedFrom(response, refusal));
       return;

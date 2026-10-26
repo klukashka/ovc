@@ -23,14 +23,9 @@ type BlockedRequester = components['schemas']['BlockedRequester'];
 
 const blockedKey = ['tutor', 'blocked-requesters'] as const;
 
-async function fetchBlockedPage(
-  client: ApiClient,
-  cursor: string | null,
-  signal: AbortSignal,
-): Promise<BlockedRequesterPage> {
+async function fetchBlockedPage(client: ApiClient, cursor: string | null): Promise<BlockedRequesterPage> {
   const { data, error, response } = await client.GET('/api/v1/tutor/blocked-requesters', {
     params: { query: cursor === null ? {} : { cursor } },
-    signal,
   });
   if (data === undefined) {
     throw apiErrorFrom(response.status, error);
@@ -62,7 +57,7 @@ function TutorCodeSection(): ReactElement {
   const [notice, setNotice] = useState<CodeNotice>('none');
   const query = useQuery({
     queryKey: tutorCodeKey,
-    queryFn: ({ signal }) => fetchTutorCode(client, signal),
+    queryFn: () => fetchTutorCode(client),
     retry: false,
   });
 
@@ -199,7 +194,7 @@ function BlockedStudentsSection(): ReactElement {
   const [refusals, setRefusals] = useState(0);
   const query = useInfiniteQuery({
     queryKey: blockedKey,
-    queryFn: ({ pageParam, signal }) => fetchBlockedPage(client, pageParam, signal),
+    queryFn: ({ pageParam }) => fetchBlockedPage(client, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.next_cursor,
     retry: false,

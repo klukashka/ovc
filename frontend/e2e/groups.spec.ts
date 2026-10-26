@@ -347,6 +347,7 @@ test.describe('in English, refusals', () => {
   test.use({ locale: 'en-GB', colorScheme: 'dark' });
 
   test('groups › a chosen student who stopped being active meanwhile leaves the choice and the dialog stays open', async ({
+    socketSlots,
     page,
     deployment,
     control,
@@ -356,6 +357,7 @@ test.describe('in English, refusals', () => {
     await seedActiveStudent(deployment, control, pavel, 'Anna');
     const boris = await seedActiveStudent(deployment, control, pavel, 'Boris');
     diagnostics.expectFailure({ method: 'POST', path: '/api/v1/groups', status: 409 });
+    await socketSlots.keepPageSocketsOff(pavel);
     await signInThroughTheApi(page, pavel);
     await page.goto('/groups');
     await page.getByRole('button', { name: 'New group' }).click();

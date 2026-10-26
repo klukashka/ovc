@@ -14,9 +14,15 @@ export interface LockManagerLike {
 
 export interface Scheduler {
   schedule(milliseconds: number, task: () => void): () => void;
+  now(): number;
 }
 
-export type SignedOutReason = 'anonymous' | 'signedOut' | 'blocked' | 'accountDeleted';
+export type SignedOutReason = 'anonymous' | 'signedOut' | 'blocked' | 'accountDeleted' | 'sessionEnded';
+
+export type RefreshResult =
+  | { readonly kind: 'renewed' }
+  | { readonly kind: 'ended'; readonly reason: SignedOutReason }
+  | { readonly kind: 'superseded' };
 
 export type SessionState =
   | { readonly kind: 'unknown' }
@@ -40,6 +46,8 @@ const refreshShare = 0.8;
 const refreshTimeoutMilliseconds = 15_000;
 const proactiveRetryMilliseconds = 30_000;
 const apiPrefix = '/api/';
+const superseded: RefreshResult = { kind: 'superseded' };
+const renewed: RefreshResult = { kind: 'renewed' };
 
 function oneOf<Value extends string>(values: readonly Value[], candidate: unknown): candidate is Value {
   return values.some((value) => value === candidate);
@@ -106,10 +114,13 @@ export class Session {
   private readonly deps: SessionDependencies;
   private current: SessionState = { kind: 'unknown' };
   private token: string | null = null;
+  private tokenExpiresAt = 0;
   private epoch = 0;
-  private pendingRefresh: Promise<boolean> | null = null;
+  private pendingRefresh: Promise<RefreshResult> | null = null;
+  private readonly endingActions = new Set<Promise<unknown>>();
   private cancelScheduled: (() => void) | null = null;
   private readonly listeners = new Set<() => void>();
+  private readonly tokenListeners = new Set<(token: string, epoch: number) => void>();
 
   constructor(dependencies: SessionDependencies) {
     this.deps = dependencies;
@@ -124,6 +135,44 @@ export class Session {
 
   readonly snapshot = (): SessionState => this.current;
 
+  readonly currentEpoch = (): number => this.epoch;
+
+  readonly subscribeTokens = (listener: (token: string, epoch: number) => void): (() => void) => {
+    this.tokenListeners.add(listener);
+    return (): void => {
+      this.tokenListeners.delete(listener);
+    };
+  };
+
+  readonly whileEnding = async <Result>(work: () => Promise<Result>): Promise<Result> => {
+    const running = work();
+    this.endingActions.add(running);
+    try {
+      return await running;
+    } finally {
+      this.endingActions.delete(running);
+    }
+  };
+
+  readonly refreshAfterSocketRefusal = async (): Promise<RefreshResult> => {
+    const epoch = this.epoch;
+    while (this.endingActions.size > 0) {
+      await Promise.allSettled([...this.endingActions]);
+    }
+    return epoch === this.epoch ? this.refresh() : superseded;
+  };
+
+  readonly freshToken = async (minimumValidityMilliseconds: number, epoch: number): Promise<string | null> => {
+    if (epoch !== this.epoch) {
+      return null;
+    }
+    if (this.token !== null && this.tokenExpiresAt - this.deps.scheduler.now() > minimumValidityMilliseconds) {
+      return this.token;
+    }
+    const result = await this.refresh();
+    return result.kind === 'renewed' && epoch === this.epoch ? this.token : null;
+  };
+
   readonly authorizedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const request = new Request(input, init);
     const retry = request.clone();
@@ -137,8 +186,8 @@ export class Session {
       if (epoch !== this.epoch) {
         return response;
       }
-      const renewed = this.token !== null && this.token !== sentToken ? true : await this.refresh();
-      if (renewed && epoch === this.epoch) {
+      const replaced = this.token !== null && this.token !== sentToken;
+      if ((replaced || (await this.refresh()).kind === 'renewed') && epoch === this.epoch) {
         const retried = await this.deps.transport.send(this.withToken(retry));
         return epoch === this.epoch ? this.watch(retried, epoch) : retried;
       }
@@ -148,16 +197,19 @@ export class Session {
 
   readonly start = async (): Promise<void> => {
     this.set({ kind: 'unknown' });
+    const epoch = this.epoch;
     try {
-      if (await this.refresh()) {
+      if ((await this.refresh()).kind === 'renewed') {
         await this.loadMe();
       }
     } catch {
-      this.end({ kind: 'unavailable' });
+      if (epoch === this.epoch) {
+        this.end({ kind: 'unavailable' });
+      }
     }
   };
 
-  readonly refresh = async (): Promise<boolean> => {
+  readonly refresh = async (): Promise<RefreshResult> => {
     if (this.pendingRefresh !== null) {
       return this.pendingRefresh;
     }
@@ -214,13 +266,14 @@ export class Session {
     await this.loadMe();
   };
 
-  readonly signOut = async (): Promise<void> => {
-    const response = await this.authorizedFetch(`${this.deps.origin}/api/v1/auth/logout`, { method: 'POST' });
-    if (!response.ok && response.status !== 401) {
-      throw await errorOf(response);
-    }
-    this.end({ kind: 'signedOut', reason: 'signedOut' });
-  };
+  readonly signOut = (): Promise<void> =>
+    this.whileEnding(async () => {
+      const response = await this.authorizedFetch(`${this.deps.origin}/api/v1/auth/logout`, { method: 'POST' });
+      if (!response.ok && response.status !== 401) {
+        throw await errorOf(response);
+      }
+      this.end({ kind: 'signedOut', reason: 'signedOut' });
+    });
 
   private async installAccount(token: unknown, epoch: number): Promise<void> {
     try {
@@ -259,73 +312,76 @@ export class Session {
     ) {
       this.end({ kind: 'signedOut', reason: 'blocked' });
     } else if (response.status === 401 && this.current.kind === 'signedIn') {
-      this.end({ kind: 'signedOut', reason: 'anonymous' });
+      this.end({ kind: 'signedOut', reason: 'sessionEnded' });
     }
     return response;
   }
 
-  private async refreshNow(epoch: number): Promise<boolean> {
+  private async refreshNow(epoch: number): Promise<RefreshResult> {
     const response = await this.deps.transport.refresh(AbortSignal.timeout(refreshTimeoutMilliseconds));
     if (epoch !== this.epoch) {
-      return false;
+      return superseded;
     }
     if (response.status === 200) {
       const token: unknown = await response.json();
       if (epoch !== this.epoch) {
-        return false;
+        return superseded;
       }
       if (!isAccessToken(token)) {
         throw new Error('the server answered an access token of an unexpected shape');
       }
-      if (!(await this.belongsToShownAccount(token, epoch)) || epoch !== this.epoch) {
-        return false;
+      const owner = await this.ownerOf(token, epoch);
+      if (owner === 'superseded') {
+        return superseded;
+      }
+      if (owner === 'another') {
+        return this.endWith('anonymous');
       }
       this.acceptToken(token);
-      return true;
+      return renewed;
     }
     if (response.status === 204 || response.status === 401) {
-      this.end({ kind: 'signedOut', reason: 'anonymous' });
-      return false;
+      return this.endWith(this.current.kind === 'signedIn' ? 'sessionEnded' : 'anonymous');
     }
     const error = await errorOf(response);
     if (epoch !== this.epoch) {
-      return false;
+      return superseded;
     }
     if (error.code === 'account_blocked') {
-      this.end({ kind: 'signedOut', reason: 'blocked' });
-      return false;
+      return this.endWith('blocked');
     }
     throw error;
   }
 
-  private async belongsToShownAccount(token: AccessToken, epoch: number): Promise<boolean> {
+  private endWith(reason: SignedOutReason): RefreshResult {
+    this.end({ kind: 'signedOut', reason });
+    return { kind: 'ended', reason };
+  }
+
+  private async ownerOf(token: AccessToken, epoch: number): Promise<'shown' | 'another' | 'superseded'> {
     if (this.current.kind !== 'signedIn') {
-      return true;
+      return 'shown';
     }
     const shown = this.current.me.id;
     const response = await this.deps.transport.me(token.access_token, AbortSignal.timeout(refreshTimeoutMilliseconds));
     if (epoch !== this.epoch) {
-      return false;
+      return 'superseded';
     }
     if (!response.ok) {
       const error = await errorOf(response);
       if (epoch !== this.epoch) {
-        return false;
+        return 'superseded';
       }
       throw error;
     }
     const me: unknown = await response.json();
     if (epoch !== this.epoch) {
-      return false;
+      return 'superseded';
     }
     if (!isMe(me)) {
       throw new Error('the server answered an account of an unexpected shape');
     }
-    if (me.id !== shown) {
-      this.end({ kind: 'signedOut', reason: 'anonymous' });
-      return false;
-    }
-    return true;
+    return me.id === shown ? 'shown' : 'another';
   }
 
   private acceptToken(value: unknown): void {
@@ -333,6 +389,10 @@ export class Session {
       throw new Error('the server answered an access token of an unexpected shape');
     }
     this.token = value.access_token;
+    this.tokenExpiresAt = this.deps.scheduler.now() + value.expires_in * 1000;
+    for (const listener of this.tokenListeners) {
+      listener(value.access_token, this.epoch);
+    }
     this.scheduleRefresh(value.expires_in * 1000 * refreshShare, value.expires_in * 1000 * (1 - refreshShare));
   }
 
@@ -376,6 +436,7 @@ export class Session {
   private end(state: SessionState): void {
     this.epoch += 1;
     this.token = null;
+    this.tokenExpiresAt = 0;
     this.pendingRefresh = null;
     this.cancelScheduled?.();
     this.cancelScheduled = null;
@@ -397,6 +458,7 @@ export const browserScheduler: Scheduler = {
       window.clearTimeout(handle);
     };
   },
+  now: () => performance.now(),
 };
 
 export function browserLocks(locks: LockManager | undefined): LockManagerLike {

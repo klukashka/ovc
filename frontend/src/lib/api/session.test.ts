@@ -279,7 +279,7 @@ describe('the session when the server fails', () => {
     const answer = await readAccount(session);
 
     expect(answer.status).toBe(401);
-    expect(session.snapshot()).toEqual({ kind: 'signedOut', reason: 'anonymous' });
+    expect(session.snapshot()).toEqual({ kind: 'signedOut', reason: 'sessionEnded' });
   });
 
   test('signing in to a blocked account is refused as account_blocked', async () => {
@@ -306,5 +306,65 @@ describe('the session bearer', () => {
     await session.authorizedFetch(address);
 
     expect(sentSince(shared, mark)).toEqual(['']);
+  });
+});
+
+describe('session', () => {
+  test('refresh reports blocked or sessionEnded', async () => {
+    const revoked = browser();
+    const revokedTab = await signedInTab(revoked);
+    revoked.server.revokeSessionsOf(first.email);
+    const blocked = browser();
+    const blockedTab = await signedInTab(blocked);
+    blocked.server.blockWithoutRevoking(first.email);
+
+    const results = await Promise.all([revokedTab.refresh(), blockedTab.refresh()]);
+
+    expect(results).toEqual([
+      { kind: 'ended', reason: 'sessionEnded' },
+      { kind: 'ended', reason: 'blocked' },
+    ]);
+    expect([revokedTab.snapshot(), blockedTab.snapshot()]).toEqual([
+      { kind: 'signedOut', reason: 'sessionEnded' },
+      { kind: 'signedOut', reason: 'blocked' },
+    ]);
+  });
+
+  test('a socket refusal while the tab ends its own session waits for it, and refreshes only if it failed', async () => {
+    const ended = browser();
+    const endedTab = await signedInTab(ended);
+    const refreshesBeforeEnding = ended.server.refreshes;
+    const failed = browser();
+    const failedTab = await signedInTab(failed);
+    const refreshesBeforeFailure = failed.server.refreshes;
+    const ending = endedTab.whileEnding(() => endedTab.signOut());
+    const failing = failedTab.whileEnding(() => Promise.reject(new Error('the sign-out answer was lost')));
+
+    const results = await Promise.all([
+      endedTab.refreshAfterSocketRefusal(),
+      failedTab.refreshAfterSocketRefusal(),
+      ending,
+      failing.catch(() => undefined),
+    ]);
+
+    expect(results.slice(0, 2)).toEqual([{ kind: 'superseded' }, { kind: 'renewed' }]);
+    expect(ended.server.refreshes).toBe(refreshesBeforeEnding);
+    expect(failed.server.refreshes).toBe(refreshesBeforeFailure + 1);
+  });
+
+  test('start keeps a session that a revocation replaced meanwhile', async () => {
+    const shared = browser();
+    await signedInTab(shared);
+    const session = tab(shared);
+    const paused = shared.server.pauseRefreshes();
+    shared.server.loseNextRefresh();
+    const starting = session.start();
+    await paused.answered;
+    session.endRevoked('signedOut');
+
+    paused.resume();
+    await starting;
+
+    expect(session.snapshot()).toEqual({ kind: 'signedOut', reason: 'signedOut' });
   });
 });

@@ -1,10 +1,11 @@
 import { type UseQueryResult, useQuery } from '@tanstack/react-query';
-import type { ReactElement } from 'react';
+import { type ReactElement, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ActionMenu } from '../../components/ui/ActionMenu.tsx';
 import { Avatar } from '../../components/ui/Avatar.tsx';
 import { MoreIcon } from '../../components/ui/icons.tsx';
+import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { LoadFailed } from '../../components/ui/LoadState.tsx';
 import { paletteDotClass } from '../../components/ui/palette.ts';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
@@ -16,7 +17,7 @@ export function useMyTutors(): UseQueryResult<readonly MyTutor[]> {
   const client = useApiClient();
   return useQuery({
     queryKey: myTutorsKey,
-    queryFn: ({ signal }) => fetchMyTutors(client, signal),
+    queryFn: () => fetchMyTutors(client),
     retry: false,
   });
 }
@@ -64,7 +65,7 @@ function TutorRow({
   const { t } = useTranslation();
   const profile = tutor.tutor;
   return (
-    <li className="flex items-start gap-3 border-t border-border py-3">
+    <li data-row={tutor.relationship_id} className="flex items-start gap-3 border-t border-border py-3">
       <Avatar name={profile.name} avatarId={profile.avatar_id} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <p className="inline-flex items-center gap-2 text-strong">
@@ -108,8 +109,14 @@ export function TutorList({
   readonly withBio: boolean;
   readonly onStopStudying?: (tutor: MyTutor) => void;
 }): ReactElement {
+  const listRef = useRef<HTMLUListElement>(null);
+  useFocusAfterRemovedRow(
+    listRef,
+    tutors.map((tutor) => tutor.relationship_id),
+    'button',
+  );
   return (
-    <ul aria-label={label} className="w-full border-b border-border">
+    <ul ref={listRef} aria-label={label} className="w-full border-b border-border">
       {tutors.map((tutor) => (
         <TutorRow key={tutor.relationship_id} tutor={tutor} withBio={withBio} onStopStudying={onStopStudying} />
       ))}
