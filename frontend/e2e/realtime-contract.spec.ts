@@ -1,11 +1,11 @@
 import { type RealtimeContractSubject, realtimeContract } from '../src/lib/realtime/realtimeContract.ts';
 import type { TestAccount } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { type TestControl, expect, seedVerifiedUser, test } from './fixtures.ts';
+import { expect, seedVerifiedUser, test } from './fixtures.ts';
 import { accountId, closeSockets, nodeSocketFactory } from './realtime.ts';
 import { accessToken, callApi, createCard, seedJoinRequests } from './tutoring.ts';
 
-function realSubject(deployment: Deployment, control: TestControl, tutor: TestAccount): RealtimeContractSubject {
+function realSubject(deployment: Deployment, tutor: TestAccount): RealtimeContractSubject {
   return {
     sockets: nodeSocketFactory(deployment),
     token: () => accessToken(deployment, tutor),
@@ -22,7 +22,7 @@ function realSubject(deployment: Deployment, control: TestControl, tutor: TestAc
       await createCard(deployment, tutor, 'Карточка для контракта', null);
     },
     notify: async (): Promise<void> => {
-      await seedJoinRequests(deployment, control, tutor, 1);
+      await seedJoinRequests(deployment, tutor, 1);
     },
     readNotifications: async (): Promise<void> => {
       const token = await accessToken(deployment, tutor);
@@ -40,8 +40,8 @@ function realSubject(deployment: Deployment, control: TestControl, tutor: TestAc
 
 test.describe('the realtime gateway against the client parser and the fake socket', () => {
   for (const [name, scenario] of Object.entries(realtimeContract)) {
-    test(`keeps the contract: ${name}`, async ({ deployment, control }) => {
-      const subject = realSubject(deployment, control, await seedVerifiedUser(deployment, 'Репетитор для контракта'));
+    test(`keeps the contract: ${name}`, async ({ deployment }) => {
+      const subject = realSubject(deployment, await seedVerifiedUser(deployment, 'Репетитор для контракта'));
 
       const run = scenario(subject);
 

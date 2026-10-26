@@ -2,7 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { type TestControl, diagnosedTest as test, expect, expectRowsNamed, seedVerifiedUser } from './fixtures.ts';
+import { diagnosedTest as test, expect, expectRowsNamed, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
 import { busyControls, recordBusyControls } from './observers.ts';
 import {
   accessToken,
@@ -15,18 +15,18 @@ import {
   groupMemberNames,
   seedActiveStudent,
   seedEmptyGroups,
-  seedStudentThroughCode,
   unarchiveGroup,
+  signUpActiveStudentOnInvitation,
+  signUpStudentThroughCode,
 } from './tutoring.ts';
 
 const unknownGroupId = '00000000-0000-4000-8000-00000000abcd';
 
 async function seedForeignGroup(
   deployment: Deployment,
-  control: TestControl,
 ): Promise<{ readonly olga: TestAccount; readonly groupId: string }> {
   const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-  const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
+  const anna = await seedActiveStudent(deployment, pavel, 'Anna');
   const groupId = await createGroup(deployment, pavel, 'Secret algebra', [anna.cardId]);
   return { olga: await seedVerifiedUser(deployment, 'Olga', 'en'), groupId };
 }
@@ -74,9 +74,9 @@ test.describe('Maria in Russian', () => {
     deployment,
     control,
   }) => {
-    const maria = await seedVerifiedUser(deployment, 'Мария');
-    const anna = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
-    const boris = await seedStudentThroughCode(deployment, control, maria, 'Boris', 'en');
+    const maria = await signUpAndConfirmTutor(deployment, 'Мария');
+    const anna = await signUpActiveStudentOnInvitation(deployment, control, maria, 'Анна', 'ru');
+    const boris = await signUpStudentThroughCode(deployment, control, maria, 'Boris', 'en');
     await signInThroughTheApi(page, maria);
     await page.goto('/groups');
     await expect(page.getByRole('heading', { level: 2, name: 'Групп пока нет' })).toBeVisible();
@@ -104,14 +104,10 @@ test.describe('Maria in Russian', () => {
 test.describe('in English', () => {
   test.use({ locale: 'en-GB', colorScheme: 'dark' });
 
-  test('groups › removing a student from the group moves focus to the notice', async ({
-    page,
-    deployment,
-    control,
-  }) => {
+  test('groups › removing a student from the group moves focus to the notice', async ({ page, deployment }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
-    const boris = await seedActiveStudent(deployment, control, pavel, 'Boris');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const boris = await seedActiveStudent(deployment, pavel, 'Boris');
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId, boris.cardId]);
     await recordBusyControls(page);
     await signInThroughTheApi(page, pavel);
@@ -131,10 +127,9 @@ test.describe('in English', () => {
   test('groups › archiving a group moves focus to the notice and takes no new students', async ({
     page,
     deployment,
-    control,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/groups/${groupId}`);
@@ -153,10 +148,9 @@ test.describe('in English', () => {
   test('groups › unarchiving a group moves focus to the notice and lists the group on its cards again', async ({
     page,
     deployment,
-    control,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
     await archiveGroup(deployment, pavel, groupId);
     await signInThroughTheApi(page, pavel);
@@ -175,11 +169,10 @@ test.describe('in English', () => {
   test('groups › the Add students dialog of an unarchived group opens on its search with only the students outside it', async ({
     page,
     deployment,
-    control,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
-    await seedActiveStudent(deployment, control, pavel, 'Boris');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    await seedActiveStudent(deployment, pavel, 'Boris');
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
     await archiveGroup(deployment, pavel, groupId);
     await unarchiveGroup(deployment, pavel, groupId);
@@ -197,11 +190,10 @@ test.describe('in English', () => {
   test('groups › adding a student to an unarchived group closes the dialog and moves focus to the notice', async ({
     page,
     deployment,
-    control,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
-    await seedActiveStudent(deployment, control, pavel, 'Boris');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    await seedActiveStudent(deployment, pavel, 'Boris');
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
     await archiveGroup(deployment, pavel, groupId);
     await unarchiveGroup(deployment, pavel, groupId);
@@ -220,9 +212,9 @@ test.describe('in English', () => {
     expect((await groupMemberNames(deployment, pavel, groupId)).sort()).toEqual(['Anna', 'Boris']);
   });
 
-  test('groups › renaming saves the name with a notice that takes focus', async ({ page, deployment, control }) => {
+  test('groups › renaming saves the name with a notice that takes focus', async ({ page, deployment }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/groups/${groupId}`);
@@ -241,10 +233,9 @@ test.describe('in English', () => {
   test('groups › a background refetch of a group changed meanwhile keeps the unsaved name and colour', async ({
     page,
     deployment,
-    control,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/groups/${groupId}`);
@@ -270,12 +261,11 @@ test.describe('in English', () => {
   test('groups › adding to a group archived meanwhile closes the dialog and shows the current group', async ({
     page,
     deployment,
-    control,
     diagnostics,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
-    await seedActiveStudent(deployment, control, pavel, 'Boris');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    await seedActiveStudent(deployment, pavel, 'Boris');
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
     diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/groups/${groupId}`, status: 409 });
     await signInThroughTheApi(page, pavel);
@@ -313,11 +303,10 @@ test.describe('in English, the student list', () => {
   test('students › the group filter lives in the address and lists only the group’s students', async ({
     page,
     deployment,
-    control,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
-    await seedActiveStudent(deployment, control, pavel, 'Boris');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    await seedActiveStudent(deployment, pavel, 'Boris');
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
     await signInThroughTheApi(page, pavel);
     await page.goto('/students');
@@ -342,12 +331,11 @@ test.describe('in English, refusals', () => {
     socketSlots,
     page,
     deployment,
-    control,
     diagnostics,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    await seedActiveStudent(deployment, control, pavel, 'Anna');
-    const boris = await seedActiveStudent(deployment, control, pavel, 'Boris');
+    await seedActiveStudent(deployment, pavel, 'Anna');
+    const boris = await seedActiveStudent(deployment, pavel, 'Boris');
     diagnostics.expectFailure({ method: 'POST', path: '/api/v1/groups', status: 409 });
     await socketSlots.keepPageSocketsOff(pavel);
     await signInThroughTheApi(page, pavel);
@@ -398,10 +386,9 @@ test.describe('in English, refusals', () => {
   test('students › another tutor’s group and an unknown group in the filter are not available and show nothing of the group', async ({
     page,
     deployment,
-    control,
     diagnostics,
   }) => {
-    const { olga, groupId } = await seedForeignGroup(deployment, control);
+    const { olga, groupId } = await seedForeignGroup(deployment);
     const unknownPage = await page.context().newPage();
     const unknownDiagnostics = await diagnostics.watch(unknownPage);
     diagnostics.expectFailure({ method: 'GET', path: `/api/v1/students?state=active&group=${groupId}`, status: 404 });
@@ -425,10 +412,9 @@ test.describe('in English, refusals', () => {
   test('groups › another tutor’s group and an unknown group are not found and show nothing of the group', async ({
     page,
     deployment,
-    control,
     diagnostics,
   }) => {
-    const { olga, groupId } = await seedForeignGroup(deployment, control);
+    const { olga, groupId } = await seedForeignGroup(deployment);
     const unknownPage = await page.context().newPage();
     const unknownDiagnostics = await diagnostics.watch(unknownPage);
     diagnostics.expectFailure({ method: 'GET', path: `/api/v1/groups/${groupId}`, status: 404 });

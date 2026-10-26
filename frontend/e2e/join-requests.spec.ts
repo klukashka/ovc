@@ -3,7 +3,7 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { bellIn, panelRowsIn } from './notifications.ts';
-import { type TestControl, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
 import { busyControls, offsetsBelowHeading, recordBusyControls, recordFirstOffsets } from './observers.ts';
 import {
   acceptSignedIn,
@@ -58,7 +58,7 @@ test.describe('Boris in English', () => {
     control,
     diagnostics,
   }) => {
-    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const maria = await signUpAndConfirmTutor(deployment, 'Мария');
     const boris = newTestAccount('Boris', 'student');
     const mariaContext = await tutorContext(browser, deployment);
     const mariaPage = await mariaContext.newPage();
@@ -160,14 +160,10 @@ test.describe('Boris in English', () => {
 test.describe('Anna in Russian', () => {
   test.use({ locale: 'ru-RU', timezoneId: 'Europe/Berlin', colorScheme: 'light' });
 
-  test('my tutors › past tutors list an ended relationship and a closed account', async ({
-    page,
-    deployment,
-    control,
-  }) => {
+  test('my tutors › past tutors list an ended relationship and a closed account', async ({ page, deployment }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
     await acceptSignedIn(deployment, anna, (await createCard(deployment, pavel, 'Anna', anna.email)).link);
     await endRelationship(deployment, maria, cardId);
     await deleteAccount(deployment, pavel);
@@ -185,12 +181,11 @@ test.describe('Anna in Russian', () => {
   test('my tutors › a code that is no longer valid is refused with an alert that takes focus', async ({
     page,
     deployment,
-    control,
     diagnostics,
   }) => {
     diagnostics.expectFailure({ method: 'POST', path: '/api/v1/join-requests', status: 422 });
     const maria = await seedVerifiedUser(deployment, 'Мария');
-    const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
     await endRelationship(deployment, maria, cardId);
     await signInThroughTheApi(page, anna);
     await page.goto('/tutors');
@@ -207,11 +202,10 @@ test.describe('Anna in Russian', () => {
   test('my tutors › a valid code sends a request, empties the field and lists the request as sent', async ({
     page,
     deployment,
-    control,
   }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
     const olga = await seedVerifiedUser(deployment, 'Ольга');
-    const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
     await endRelationship(deployment, maria, cardId);
     await signInThroughTheApi(page, anna);
     await page.goto('/tutors');
@@ -231,13 +225,12 @@ test.describe('Anna in Russian', () => {
   test('my tutors › after an invalid code alert the form still sends a valid code', async ({
     page,
     deployment,
-    control,
     diagnostics,
   }) => {
     diagnostics.expectFailure({ method: 'POST', path: '/api/v1/join-requests', status: 422 });
     const maria = await seedVerifiedUser(deployment, 'Мария');
     const olga = await seedVerifiedUser(deployment, 'Ольга');
-    const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
     await endRelationship(deployment, maria, cardId);
     await signInThroughTheApi(page, anna);
     await page.goto('/tutors');
@@ -256,12 +249,8 @@ test.describe('Anna in Russian', () => {
     expect(await visibleJoinRequests(deployment, olga)).toBe(1);
   });
 
-  test('my tutors › a request the tutor declined with a block shows as not accepted', async ({
-    page,
-    deployment,
-    control,
-  }) => {
-    const { anna } = await seedRequestBlockedByOlga(deployment, control);
+  test('my tutors › a request the tutor declined with a block shows as not accepted', async ({ page, deployment }) => {
+    const { anna } = await seedRequestBlockedByOlga(deployment);
     await signInThroughTheApi(page, anna);
 
     await page.goto('/tutors');
@@ -277,7 +266,7 @@ test.describe('Anna in Russian', () => {
     deployment,
     control,
   }) => {
-    const { anna, olga } = await seedRequestBlockedByOlga(deployment, control);
+    const { anna, olga } = await seedRequestBlockedByOlga(deployment);
     await control.advance(60);
     await signInThroughTheApi(page, anna);
     await page.goto('/tutors');
@@ -307,9 +296,8 @@ test.describe('Olga in Russian', () => {
   test('join requests › decline and block on Students moves focus to the notice and empties the list', async ({
     page,
     deployment,
-    control,
   }) => {
-    const { anna, olga } = await seedRequestToOlga(deployment, control);
+    const { anna, olga } = await seedRequestToOlga(deployment);
     await recordBusyControls(page);
     await signInThroughTheApi(page, olga);
     await page.goto('/students');
@@ -330,7 +318,7 @@ test.describe('Olga in Russian', () => {
     deployment,
     control,
   }) => {
-    const { anna, olga } = await seedRequestBlockedByOlga(deployment, control);
+    const { anna, olga } = await seedRequestBlockedByOlga(deployment);
     await control.advance(60);
     await enterTutorCode(deployment, anna, await tutorCode(deployment, olga));
     await signInThroughTheApi(page, olga);
@@ -367,10 +355,9 @@ test.describe('in Russian', () => {
   test('join requests › a plain decline on Today removes the request and moves focus to the notice', async ({
     page,
     deployment,
-    control,
   }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
-    const requesters = await seedJoinRequests(deployment, control, maria, 2);
+    const requesters = await seedJoinRequests(deployment, maria, 2);
     await recordBusyControls(page);
     await signInThroughTheApi(page, maria);
     await page.goto('/today');
@@ -394,11 +381,10 @@ test.describe('in Russian', () => {
     socketSlots,
     page,
     deployment,
-    control,
     diagnostics,
   }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
-    const requesters = await seedJoinRequests(deployment, control, maria, 2);
+    const requesters = await seedJoinRequests(deployment, maria, 2);
     await recordBusyControls(page);
     await socketSlots.keepPageSocketsOff(maria);
     await signInThroughTheApi(page, maria);
@@ -425,10 +411,10 @@ test.describe('in Russian', () => {
     expect(await busyControls(page)).toEqual([['Отклонить: Requester 02']]);
   });
 
-  test('join requests › arriving requests do not move the Students controls', async ({ page, deployment, control }) => {
+  test('join requests › arriving requests do not move the Students controls', async ({ page, deployment }) => {
     const studentsControls = ['main nav', 'main form[role="search"]'];
     const maria = await seedVerifiedUser(deployment, 'Мария');
-    await seedJoinRequests(deployment, control, maria, 1);
+    await seedJoinRequests(deployment, maria, 1);
     await recordFirstOffsets(page, studentsControls);
     await signInThroughTheApi(page, maria);
 
@@ -441,14 +427,10 @@ test.describe('in Russian', () => {
     expect(onStudents.now).toEqual(onStudents.first);
   });
 
-  test('join requests › arriving requests do not move the Today code and status', async ({
-    page,
-    deployment,
-    control,
-  }) => {
+  test('join requests › arriving requests do not move the Today code and status', async ({ page, deployment }) => {
     const todayParts = ['main h3', 'main [data-readiness]'];
     const maria = await seedVerifiedUser(deployment, 'Мария');
-    await seedJoinRequests(deployment, control, maria, 1);
+    await seedJoinRequests(deployment, maria, 1);
     await recordFirstOffsets(page, todayParts);
     await signInThroughTheApi(page, maria);
 
@@ -464,7 +446,7 @@ test.describe('in Russian', () => {
   test('my tutors › show more moves focus to the first new sent request', async ({ page, deployment, control }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
     const olga = await seedVerifiedUser(deployment, 'Ольга');
-    const { student: anna } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    const { student: anna } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
     await seedDeclinedRequests(deployment, control, anna, olga, pageSize + 1);
     await signInThroughTheApi(page, anna);
     await page.goto('/tutors');
@@ -487,8 +469,8 @@ test.describe('in Russian', () => {
   }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
     const olga = await seedVerifiedUser(deployment, 'Ольга');
-    const { student: anna } = await seedStudentThroughCode(deployment, control, maria, 'Анна', 'ru');
-    await control.advance(60);
+    const { student: anna } = await seedStudentThroughCode(deployment, maria, 'Анна', 'ru');
+    await control.advance(3601);
     await seedDeclinedRequests(deployment, control, anna, olga, pageSize);
     await signInThroughTheApi(page, anna);
     await page.goto('/tutors');
@@ -506,11 +488,10 @@ test.describe('in Russian', () => {
   test('home › a code sent from Home replaces the field with a notice that takes focus', async ({
     page,
     deployment,
-    control,
   }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
     const olga = await seedVerifiedUser(deployment, 'Ольга');
-    const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
     await endRelationship(deployment, maria, cardId);
     await signInThroughTheApi(page, anna);
     await page.goto('/home');
@@ -536,11 +517,10 @@ function emailOf(students: readonly { readonly name: string; readonly email: str
 
 async function seedRequestToOlga(
   deployment: Deployment,
-  control: TestControl,
 ): Promise<{ readonly anna: TestAccount; readonly olga: TestAccount }> {
   const maria = await seedVerifiedUser(deployment, 'Мария');
   const olga = await seedVerifiedUser(deployment, 'Ольга');
-  const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+  const { student: anna, cardId } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
   await endRelationship(deployment, maria, cardId);
   await enterTutorCode(deployment, anna, await tutorCode(deployment, olga));
   return { anna, olga };
@@ -548,9 +528,8 @@ async function seedRequestToOlga(
 
 async function seedRequestBlockedByOlga(
   deployment: Deployment,
-  control: TestControl,
 ): Promise<{ readonly anna: TestAccount; readonly olga: TestAccount }> {
-  const seeded = await seedRequestToOlga(deployment, control);
+  const seeded = await seedRequestToOlga(deployment);
   await decideJoinRequest(deployment, seeded.olga, seeded.anna.email, 'block');
   return seeded;
 }

@@ -25,8 +25,7 @@ import (
 )
 
 const (
-	refreshCookieName = "__Host-ovc_refresh"
-	noStore           = "no-store"
+	noStore = "no-store"
 )
 
 type Audience string
@@ -390,14 +389,9 @@ func tokens(signIn accounts.SignIn) *tokenOutput {
 }
 
 func refreshCookie(value string, lifetime time.Duration) string {
-	cookie := http.Cookie{
-		Name: refreshCookieName, Value: value, Path: "/", MaxAge: int(lifetime.Seconds()),
-		Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode,
-	}
-	return cookie.String()
+	return schemas.RefreshCookie(value, lifetime)
 }
 
 func clearedCookie() string {
-	cookie := http.Cookie{Name: refreshCookieName, Value: "", Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode}
-	return cookie.String()
+	return schemas.ClearedRefreshCookie()
 }

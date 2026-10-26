@@ -8,7 +8,7 @@ import {
   signInThroughTheApi,
 } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { expect, seedVerifiedUser, test } from './fixtures.ts';
+import { expect, seedVerifiedUser, test, signUpAndConfirmTutor } from './fixtures.ts';
 import { recordLazyChunkAddresses } from './observers.ts';
 
 test.use({ locale: 'ru-RU' });
@@ -75,8 +75,8 @@ test('pilot-1 › steps 1–3 sign up, confirm in a fresh browser with a new pas
 });
 
 test('pilot-3 › step 1 seeded tutors are confirmed and sign in to Today', async ({ page, deployment }) => {
-  const maria = await seedVerifiedUser(deployment, 'Мария');
-  const anotherTutor = await seedVerifiedUser(deployment, 'Ольга');
+  const maria = await signUpAndConfirmTutor(deployment, 'Мария');
+  const anotherTutor = await signUpAndConfirmTutor(deployment, 'Ольга');
 
   await signInThroughTheApi(page, maria);
   await page.goto('/today');

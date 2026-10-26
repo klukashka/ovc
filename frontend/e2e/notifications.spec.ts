@@ -113,9 +113,9 @@ test.describe('notifications in Russian on a computer', () => {
     await expect(sidebarBell(page)).toHaveAttribute('aria-expanded', 'false');
   });
 
-  test('notifications › opening a row marks it read and opens its page', async ({ page, deployment, control }) => {
+  test('notifications › opening a row marks it read and opens its page', async ({ page, deployment }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
-    const { cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    const { cardId } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
     await signInThroughTheApi(page, maria);
     await page.goto('/today');
     await expect(sidebarBell(page)).toHaveAccessibleName('Уведомления, 1 непрочитанное');
@@ -139,14 +139,14 @@ test.describe('notifications in Russian on a computer', () => {
     socketSlots,
   }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
-    await seedJoinRequests(deployment, control, maria, 1);
+    await seedJoinRequests(deployment, maria, 1);
     await socketSlots.keepPageSocketsOff(maria);
     await signInThroughTheApi(page, maria);
     await page.goto('/today');
     const shown = await openPanel(page);
     await expect(rowsOf(shown)).toHaveCount(1);
     await control.advance(60);
-    await seedJoinRequests(deployment, control, maria, 1);
+    await seedJoinRequests(deployment, maria, 1);
     const markAll = shown.getByRole('button', { name: 'Отметить все как прочитанные' });
 
     await markAll.press('Enter');
@@ -163,7 +163,6 @@ test.describe('notifications in Russian on a computer', () => {
     page,
     context,
     deployment,
-    control,
     diagnostics,
   }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
@@ -176,7 +175,7 @@ test.describe('notifications in Russian on a computer', () => {
     const heading = page.getByRole('heading', { level: 1, name: 'Сегодня' });
     await heading.focus();
 
-    await seedJoinRequests(deployment, control, maria, 1);
+    await seedJoinRequests(deployment, maria, 1);
 
     await expect(page.locator('[aria-live="polite"]').filter({ hasText: 'Новое уведомление' })).toHaveCount(1);
     await expect(heading).toBeFocused();
@@ -184,10 +183,10 @@ test.describe('notifications in Russian on a computer', () => {
     await expect(sidebarBell(otherTab)).toHaveAccessibleName('Уведомления, 1 непрочитанное');
   });
 
-  test('notifications › a label with markup is shown as text', async ({ page, deployment, control }) => {
+  test('notifications › a label with markup is shown as text', async ({ page, deployment }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
     const markup = '<img src=x onerror="document.title=1"><b>Боб</b>';
-    await seedStudentThroughCode(deployment, control, maria, markup, 'ru');
+    await seedStudentThroughCode(deployment, maria, markup, 'ru');
     await signInThroughTheApi(page, maria);
     await page.goto('/today');
     await expect(sidebarBell(page)).toHaveAccessibleName('Уведомления, 1 непрочитанное');

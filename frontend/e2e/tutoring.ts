@@ -1,4 +1,11 @@
-import { type TestAccount, confirmationToken, newTestAccount, testNetAddress } from './accounts.ts';
+import {
+  type TestAccount,
+  confirmationToken,
+  newTestAccount,
+  seedAccount,
+  seededSession,
+  testNetAddress,
+} from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import type { TestControl } from './fixtures.ts';
 
@@ -55,6 +62,9 @@ function expectStatus(answer: ApiAnswer, status: number, what: string): void {
 }
 
 export async function accessToken(deployment: Deployment, account: TestAccount): Promise<string> {
+  if (account.seededOn !== null) {
+    return (await seededSession(account.seededOn, account)).accessToken;
+  }
   const answer = await callApi(deployment, null, 'POST', '/auth/login', {
     email: account.email,
     password: account.password,
@@ -201,15 +211,10 @@ export async function registerStudentWithCode(
   expectStatus(registered, 202, 'student sign-up');
 }
 
-async function signUpStudentWithCode(
-  deployment: Deployment,
-  control: TestControl,
-  student: TestAccount,
-  code: string,
-): Promise<void> {
-  await registerStudentWithCode(deployment, student, code);
-  await control.tick();
-  await confirmByMail(deployment, control, student);
+async function seedStudentWithRequest(deployment: Deployment, name: string, code: string): Promise<TestAccount> {
+  const student = await seedAccount(deployment, name, 'student', 'ru');
+  await enterTutorCode(deployment, student, code);
+  return student;
 }
 
 async function confirmByMail(deployment: Deployment, control: TestControl, student: TestAccount): Promise<void> {
@@ -266,47 +271,31 @@ async function tutorCodeWith(deployment: Deployment, tutorToken: string): Promis
 
 export async function seedBlockedStudent(
   deployment: Deployment,
-  control: TestControl,
   tutor: TestAccount,
   name: string,
 ): Promise<TestAccount> {
   const tutorToken = await accessToken(deployment, tutor);
-  const student = newTestAccount(name, 'student');
-  await signUpStudentWithCode(deployment, control, student, await tutorCodeWith(deployment, tutorToken));
+  const student = await seedStudentWithRequest(deployment, name, await tutorCodeWith(deployment, tutorToken));
   await declineWithBlock(deployment, tutorToken, student);
   return student;
 }
 
 async function seedRequesters(
   deployment: Deployment,
-  control: TestControl,
   code: string,
   count: number,
   prefix: string,
 ): Promise<readonly TestAccount[]> {
-  const students = Array.from({ length: count }, (_, index) =>
-    newTestAccount(`${prefix} ${String(index + 1).padStart(2, '0')}`, 'student'),
+  return Promise.all(
+    Array.from({ length: count }, (_, index) =>
+      seedStudentWithRequest(deployment, `${prefix} ${String(index + 1).padStart(2, '0')}`, code),
+    ),
   );
-  await Promise.all(students.map((student) => registerStudentWithCode(deployment, student, code)));
-  await control.tick();
-  await Promise.all(students.map((student) => confirmByMail(deployment, control, student)));
-  return students;
 }
 
-export async function seedBlockedStudents(
-  deployment: Deployment,
-  control: TestControl,
-  tutor: TestAccount,
-  count: number,
-): Promise<void> {
+export async function seedBlockedStudents(deployment: Deployment, tutor: TestAccount, count: number): Promise<void> {
   const tutorToken = await accessToken(deployment, tutor);
-  const students = await seedRequesters(
-    deployment,
-    control,
-    await tutorCodeWith(deployment, tutorToken),
-    count,
-    'Blocked',
-  );
+  const students = await seedRequesters(deployment, await tutorCodeWith(deployment, tutorToken), count, 'Blocked');
   for (const student of students) {
     await declineWithBlock(deployment, tutorToken, student);
   }
@@ -314,11 +303,10 @@ export async function seedBlockedStudents(
 
 export async function seedJoinRequests(
   deployment: Deployment,
-  control: TestControl,
   tutor: TestAccount,
   count: number,
 ): Promise<readonly TestAccount[]> {
-  return seedRequesters(deployment, control, await tutorCode(deployment, tutor), count, 'Requester');
+  return seedRequesters(deployment, await tutorCode(deployment, tutor), count, 'Requester');
 }
 
 const codeEntriesPerHour = 10;
@@ -347,6 +335,18 @@ export async function seedDeclinedRequests(
 
 export async function seedActiveStudent(
   deployment: Deployment,
+  tutor: TestAccount,
+  displayName: string,
+  language: 'ru' | 'en' = 'en',
+): Promise<{ readonly student: TestAccount; readonly cardId: string }> {
+  const student = await seedAccount(deployment, displayName, 'student', language);
+  const card = await createCard(deployment, tutor, displayName, student.email);
+  await acceptSignedIn(deployment, student, card.link);
+  return { student, cardId: card.id };
+}
+
+export async function signUpActiveStudentOnInvitation(
+  deployment: Deployment,
   control: TestControl,
   tutor: TestAccount,
   displayName: string,
@@ -354,10 +354,9 @@ export async function seedActiveStudent(
 ): Promise<{ readonly student: TestAccount; readonly cardId: string }> {
   const student = newTestAccount(displayName, 'student');
   const card = await createCard(deployment, tutor, displayName, student.email);
-  const cardId = card.id;
   await signUpOnInvitation(deployment, card.link, student, language);
   await confirmInTheOwnBrowser(deployment, control, student);
-  return { student, cardId };
+  return { student, cardId: card.id };
 }
 
 export async function confirmInTheOwnBrowser(
@@ -422,6 +421,18 @@ async function acceptRequestOf(deployment: Deployment, tutorToken: string, stude
 }
 
 export async function seedStudentThroughCode(
+  deployment: Deployment,
+  tutor: TestAccount,
+  name: string,
+  language: 'ru' | 'en' = 'en',
+): Promise<{ readonly student: TestAccount; readonly cardId: string }> {
+  const tutorToken = await accessToken(deployment, tutor);
+  const student = await seedAccount(deployment, name, 'student', language);
+  await enterTutorCode(deployment, student, await tutorCodeWith(deployment, tutorToken));
+  return { student, cardId: await acceptRequestOf(deployment, tutorToken, student.email) };
+}
+
+export async function signUpStudentThroughCode(
   deployment: Deployment,
   control: TestControl,
   tutor: TestAccount,
@@ -507,18 +518,11 @@ export async function cardStatesNamed(
 
 export async function seedActiveStudentsThroughCode(
   deployment: Deployment,
-  control: TestControl,
   tutor: TestAccount,
   count: number,
 ): Promise<readonly string[]> {
   const tutorToken = await accessToken(deployment, tutor);
-  const students = await seedRequesters(
-    deployment,
-    control,
-    await tutorCodeWith(deployment, tutorToken),
-    count,
-    'Student',
-  );
+  const students = await seedRequesters(deployment, await tutorCodeWith(deployment, tutorToken), count, 'Student');
   const cardIds: string[] = [];
   for (const student of students) {
     cardIds.push(await acceptRequestOf(deployment, tutorToken, student.email));

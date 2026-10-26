@@ -12,10 +12,10 @@ test('the preview server answers no cross-origin requests', async ({ request }) 
   expect(simple.headers()['access-control-allow-origin']).toBeUndefined();
 });
 
-test('FR-1.3 › student routes refuse a tutor and tutor routes refuse a student', async ({ deployment, control }) => {
+test('FR-1.3 › student routes refuse a tutor and tutor routes refuse a student', async ({ deployment }) => {
   const maria = await seedVerifiedUser(deployment, 'Мария');
   const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-  const { student: anna } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+  const { student: anna } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
   const pavelToken = await accessToken(deployment, pavel);
   const card = await createCard(deployment, maria, 'Pavel', pavel.email);
 

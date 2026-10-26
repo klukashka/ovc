@@ -1,7 +1,7 @@
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 
 import { newTestAccount, registerTutor, signInThroughTheApi } from './accounts.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
 import { busyControls, recordBusyControls } from './observers.ts';
 import {
   accessToken,
@@ -70,7 +70,7 @@ test.describe('in Russian', () => {
     deployment,
     control,
   }) => {
-    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const maria = await signUpAndConfirmTutor(deployment, 'Мария');
     const anna = newTestAccount('Анна', 'student');
     await signInThroughTheApi(page, maria);
     await page.goto('/students');
@@ -335,10 +335,9 @@ test.describe('in English with the dark theme', () => {
   test('students › the card of an active student opens from its row without invitation controls and keeps saved notes', async ({
     page,
     deployment,
-    control,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const { student, cardId } = await seedActiveStudent(deployment, control, pavel, 'Boris');
+    const { student, cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
     await signInThroughTheApi(page, pavel);
     await page.goto('/students');
     const row = page.getByRole('link', { name: /Boris/ });
@@ -363,12 +362,11 @@ test.describe('in English with the dark theme', () => {
   test('students › a new student with the email of an active student is refused with a link to that card', async ({
     page,
     deployment,
-    control,
     diagnostics,
   }) => {
     diagnostics.expectFailure({ method: 'POST', path: '/api/v1/students', status: 409 });
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const { student, cardId } = await seedActiveStudent(deployment, control, pavel, 'Boris');
+    const { student, cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
     await signInThroughTheApi(page, pavel);
     await page.goto('/students');
     await page.getByRole('button', { name: 'Add student' }).click();
@@ -409,10 +407,9 @@ test.describe('in English with the dark theme', () => {
   test('students › the search lives in the address and Back restores the earlier search', async ({
     page,
     deployment,
-    control,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    await seedActiveStudent(deployment, control, pavel, 'Vera Active');
+    await seedActiveStudent(deployment, pavel, 'Vera Active');
     await signInThroughTheApi(page, pavel);
     await page.goto('/students?state=invited');
     await page.getByRole('link', { name: 'Active', exact: true }).click();

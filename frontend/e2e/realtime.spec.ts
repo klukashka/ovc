@@ -104,7 +104,6 @@ test('realtime › signing out everywhere in another browser signs this tab out 
 test("realtime › a tutor's Students page and Today show a join request without reloading", async ({
   page,
   deployment,
-  control,
 }) => {
   const maria = await seedVerifiedUser(deployment, 'Мария');
   const user = await accountId(deployment, maria);
@@ -115,7 +114,7 @@ test("realtime › a tutor's Students page and Today show a join request without
   await expect(today.getByRole('region', { name: 'Заявки на занятия' })).toBeVisible();
   await waitForSockets(deployment, user, 2);
 
-  await seedJoinRequests(deployment, control, maria, 1);
+  await seedJoinRequests(deployment, maria, 1);
 
   for (const shown of [page, today]) {
     await expect(shown.getByRole('region', { name: 'Заявки на занятия' }).getByRole('listitem')).toHaveCount(1);

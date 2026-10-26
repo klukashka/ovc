@@ -3,7 +3,7 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { bellIn, panelRowsIn } from './notifications.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
 import { recordLazyChunkAddresses } from './observers.ts';
 import {
   createCard,
@@ -20,6 +20,7 @@ import {
   setCardNotes,
   signUpOnInvitation,
   tutorCode,
+  signUpActiveStudentOnInvitation,
 } from './tutoring.ts';
 
 const knownPreferenceKeys = ['ovc.language', 'ovc.sidebar', 'ovc.theme'];
@@ -141,7 +142,7 @@ test.describe('Anna in Russian on a phone', () => {
     control,
     diagnostics,
   }) => {
-    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const maria = await signUpAndConfirmTutor(deployment, 'Мария');
     const anna = newTestAccount('Анна', 'student');
     const card = await createCard(deployment, maria, 'Анна', anna.email);
     await sendInvitation(deployment, maria, card.id);
@@ -209,9 +210,9 @@ test.describe('Anna in Russian on a phone', () => {
     deployment,
     control,
   }) => {
-    const maria = await seedVerifiedUser(deployment, 'Мария');
-    const { student: anna } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
-    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const maria = await signUpAndConfirmTutor(deployment, 'Мария');
+    const { student: anna } = await signUpActiveStudentOnInvitation(deployment, control, maria, 'Анна', 'ru');
+    const pavel = await signUpAndConfirmTutor(deployment, 'Pavel', 'en');
     const card = await createCard(deployment, pavel, 'Anna', anna.email);
     await sendInvitation(deployment, pavel, card.id);
     await control.tick();
@@ -280,14 +281,10 @@ test.describe('in English', () => {
     expect(await invitationIsUsable(deployment, card.link)).toBe(true);
   });
 
-  test('invitations › the token leaves the address and never appears in next', async ({
-    page,
-    deployment,
-    control,
-  }) => {
+  test('invitations › the token leaves the address and never appears in next', async ({ page, deployment }) => {
     const maria = await seedVerifiedUser(deployment, 'Maria', 'en');
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const { student } = await seedActiveStudent(deployment, control, pavel, 'Boris');
+    const { student } = await seedActiveStudent(deployment, pavel, 'Boris');
     const card = await createCard(deployment, maria, 'Boris', null);
     const token = invitationToken(card.link);
     const addresses = recordAddresses(page);
@@ -331,12 +328,11 @@ test.describe('in English', () => {
   test('invitations › an invitation that is no longer valid is refused and a reload asks to open the link again', async ({
     page,
     deployment,
-    control,
     diagnostics,
   }) => {
     diagnostics.expectFailure({ method: 'GET', path: '/api/v1/invitations/not-a-real-token', status: 404 });
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const { student } = await seedActiveStudent(deployment, control, pavel, 'Boris');
+    const { student } = await seedActiveStudent(deployment, pavel, 'Boris');
     await signInThroughTheApi(page, student);
     await page.goto('/invite/not-a-real-token');
     await expect(page.getByRole('alert')).toHaveText(
@@ -352,11 +348,10 @@ test.describe('in English', () => {
   test('invitations › a sign-up with a taken email and its own password stays on the page and accepts', async ({
     page,
     deployment,
-    control,
   }) => {
     const maria = await seedVerifiedUser(deployment, 'Maria', 'en');
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const { student } = await seedActiveStudent(deployment, control, pavel, 'Boris');
+    const { student } = await seedActiveStudent(deployment, pavel, 'Boris');
     const card = await createCard(deployment, maria, 'Boris', null);
     await page.goto(card.link);
     await signUpOnThePage(page, student, englishSignUp);
@@ -373,13 +368,12 @@ test.describe('in English', () => {
   test('invitations › a sign-up with a taken email and another password asks to check the email or sign in', async ({
     page,
     deployment,
-    control,
     diagnostics,
   }) => {
     diagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/login', status: 401 });
     const maria = await seedVerifiedUser(deployment, 'Maria', 'en');
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const { student } = await seedActiveStudent(deployment, control, pavel, 'Boris');
+    const { student } = await seedActiveStudent(deployment, pavel, 'Boris');
     const card = await createCard(deployment, maria, 'Boris', null);
     await page.goto(card.link);
 
@@ -495,11 +489,10 @@ test.describe('in English', () => {
     socketSlots,
     page,
     deployment,
-    control,
     diagnostics,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const { student: anna, cardId } = await seedActiveStudent(deployment, control, pavel, 'Anna');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, pavel, 'Anna');
     await endRelationship(deployment, pavel, cardId);
     diagnostics.expectFailure({ method: 'POST', path: `/api/v1/students/${cardId}/invitation`, status: 409 });
     await socketSlots.keepPageSocketsOff(pavel);

@@ -9,7 +9,7 @@ End-to-end journeys that define what "the product works" means. Each scenario be
   - every expected result holds;
   - no unexpected console error, failed request or HTTP error occurs (a startup refresh without a cookie answers `204` and is not an error);
   - automated accessibility checks report no violations on every page visited, once the checker is adopted.
-- **Isolation:** each suite seeds its own accounts with unique emails through the real API, using the same operations the steps use.
+- **Isolation:** each suite seeds its own accounts with unique emails. The step and seed tests of these scenarios (`pilot-<n> › …`) seed them through the real API, using the same operations the steps use; other end-to-end tests that need a confirmed account only as setup may create it through the account seeding routes of the [test harness](../../../docs/development.md#end-to-end-test-harness).
 - **Strings:** expected interface texts are asserted by their keys in [states](states.md) or the i18n resources, rendered in the actor's language, never by hard-coded English.
 
 ## Actors

@@ -6,6 +6,7 @@ import {
   confirmationToken,
   newTestAccount,
   registerTutor,
+  seedAccount,
   signInThroughTheApi,
 } from './accounts.ts';
 import { type Deployment, readE2ESettings, startDeployment } from './deployment.ts';
@@ -75,6 +76,14 @@ export async function seedVerifiedUser(
   name: string,
   language: 'ru' | 'en' = 'ru',
 ): Promise<TestAccount> {
+  return seedAccount(deployment, name, 'tutor', language);
+}
+
+export async function signUpAndConfirmTutor(
+  deployment: Deployment,
+  name: string,
+  language: 'ru' | 'en' = 'ru',
+): Promise<TestAccount> {
   const control = testControl(deployment);
   const account = newTestAccount(name);
   await registerTutor(deployment, account, language);
@@ -139,13 +148,7 @@ export const test = base.extend<
   mariaAndAnna: [
     async ({ deployment }, use): Promise<void> => {
       const maria = await seedVerifiedUser(deployment, 'Мария');
-      const { student: anna, cardId } = await seedActiveStudent(
-        deployment,
-        testControl(deployment),
-        maria,
-        'Анна',
-        'ru',
-      );
+      const { student: anna, cardId } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
       await use({ maria, anna, cardId });
     },
     { scope: 'worker' },
@@ -160,7 +163,7 @@ export const test = base.extend<
   studentsOfPavel: [
     async ({ deployment }, use): Promise<void> => {
       const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-      const cardIds = await seedActiveStudentsThroughCode(deployment, testControl(deployment), pavel, 31);
+      const cardIds = await seedActiveStudentsThroughCode(deployment, pavel, 31);
       await use({ pavel, cardIds });
     },
     { scope: 'worker' },
@@ -168,7 +171,7 @@ export const test = base.extend<
   mariaWithJoinRequests: [
     async ({ deployment }, use): Promise<void> => {
       const maria = await seedVerifiedUser(deployment, 'Мария');
-      await seedJoinRequests(deployment, testControl(deployment), maria, 31);
+      await seedJoinRequests(deployment, maria, 31);
       await use({ maria });
     },
     { scope: 'worker' },

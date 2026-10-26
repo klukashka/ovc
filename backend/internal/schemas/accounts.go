@@ -1,6 +1,26 @@
 package schemas
 
-import "ovc/backend/internal/domain"
+import (
+	"net/http"
+	"time"
+
+	"ovc/backend/internal/domain"
+)
+
+const RefreshCookieName = "__Host-ovc_refresh"
+
+func RefreshCookie(value string, lifetime time.Duration) string {
+	cookie := http.Cookie{
+		Name: RefreshCookieName, Value: value, Path: "/", MaxAge: int(lifetime.Seconds()),
+		Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode,
+	}
+	return cookie.String()
+}
+
+func ClearedRefreshCookie() string {
+	cookie := http.Cookie{Name: RefreshCookieName, Value: "", Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode}
+	return cookie.String()
+}
 
 type LoginRequest struct {
 	Email    string `json:"email" minLength:"3" maxLength:"254"`

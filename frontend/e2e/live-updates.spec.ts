@@ -2,7 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { type TestControl, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { accountId, waitForSockets } from './realtime.ts';
 import {
   confirmInTheOwnBrowser,
@@ -29,14 +29,9 @@ interface RequestsOnToday {
   readonly shown: readonly TestAccount[];
 }
 
-async function requestsOnToday(
-  page: Page,
-  deployment: Deployment,
-  control: TestControl,
-  count: number,
-): Promise<RequestsOnToday> {
+async function requestsOnToday(page: Page, deployment: Deployment, count: number): Promise<RequestsOnToday> {
   const maria = await seedVerifiedUser(deployment, 'Мария');
-  const requesters = await seedJoinRequests(deployment, control, maria, count);
+  const requesters = await seedJoinRequests(deployment, maria, count);
   await signInThroughTheApi(page, maria);
   await page.goto('/today');
   const rows = joinRequests(page).getByRole('listitem');
@@ -61,12 +56,8 @@ function shownAt(shown: readonly TestAccount[], index: number): TestAccount {
   return found;
 }
 
-test('live updates › removing the focused request row moves focus to the next row', async ({
-  page,
-  deployment,
-  control,
-}) => {
-  const { maria, shown } = await requestsOnToday(page, deployment, control, 3);
+test('live updates › removing the focused request row moves focus to the next row', async ({ page, deployment }) => {
+  const { maria, shown } = await requestsOnToday(page, deployment, 3);
   await acceptButton(page, shownAt(shown, 1).name).focus();
 
   await decideJoinRequest(deployment, maria, shownAt(shown, 1).email, 'accept');
@@ -78,9 +69,8 @@ test('live updates › removing the focused request row moves focus to the next 
 test('live updates › removing the focused request row moves focus to the previous row when it was the last', async ({
   page,
   deployment,
-  control,
 }) => {
-  const { maria, shown } = await requestsOnToday(page, deployment, control, 2);
+  const { maria, shown } = await requestsOnToday(page, deployment, 2);
   await acceptButton(page, shownAt(shown, 1).name).focus();
 
   await decideJoinRequest(deployment, maria, shownAt(shown, 1).email, 'decline');
@@ -91,9 +81,8 @@ test('live updates › removing the focused request row moves focus to the previ
 test('live updates › removing the focused request row moves focus to the list heading when it was the only row', async ({
   page,
   deployment,
-  control,
 }) => {
-  const { maria, shown } = await requestsOnToday(page, deployment, control, 1);
+  const { maria, shown } = await requestsOnToday(page, deployment, 1);
   await acceptButton(page, shownAt(shown, 0).name).focus();
 
   await decideJoinRequest(deployment, maria, shownAt(shown, 0).email, 'block');
@@ -172,10 +161,9 @@ test('live updates › a stop dialog whose tutor removed the link closes onto th
 test('live updates › a stop dialog whose tutor ended the relationship closes onto the changed notice', async ({
   page,
   deployment,
-  control,
 }) => {
   const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-  const { student: anna, cardId } = await seedActiveStudent(deployment, control, pavel, 'Anna');
+  const { student: anna, cardId } = await seedActiveStudent(deployment, pavel, 'Anna');
   await signInThroughTheApi(page, anna);
   await page.goto('/tutors');
   await page.getByRole('button', { name: 'More actions for Pavel' }).click();
@@ -194,11 +182,10 @@ test('live updates › a stop dialog whose tutor ended the relationship closes o
 test('live updates › removing the focused group member moves focus to the next member', async ({
   page,
   deployment,
-  control,
 }) => {
   const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-  const anna = await seedActiveStudent(deployment, control, pavel, 'Anna');
-  const boris = await seedActiveStudent(deployment, control, pavel, 'Boris');
+  const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+  const boris = await seedActiveStudent(deployment, pavel, 'Boris');
   const groupId = await createGroup(deployment, pavel, 'B1 evening', [anna.cardId, boris.cardId]);
   await signInThroughTheApi(page, pavel);
   await page.goto(`/groups/${groupId}`);

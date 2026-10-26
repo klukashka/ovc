@@ -48,7 +48,7 @@ test.describe('the HTTP authentication transport against the real backend', () =
         otherTutorEmail: otherTutor.email,
         otherTutorPassword: otherTutor.password,
         student: async (): Promise<{ readonly email: string; readonly password: string }> => {
-          const { student } = await seedActiveStudent(deployment, control, otherTutor, 'Contract student');
+          const { student } = await seedActiveStudent(deployment, otherTutor, 'Contract student');
           return { email: student.email, password: student.password };
         },
         expireAccessTokens: (): Promise<void> => control.advance(16 * 60),

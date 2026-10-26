@@ -4,10 +4,19 @@ import type { Page } from '@playwright/test';
 
 import type { Deployment } from './deployment.ts';
 
+export type SeedingDeployment = Pick<Deployment, 'apiUrl' | 'origin'>;
+
 export interface TestAccount {
   readonly name: string;
   readonly email: string;
   readonly password: string;
+  readonly seededOn: SeedingDeployment | null;
+}
+
+export interface SeededSession {
+  readonly accessToken: string;
+  readonly refreshCookie: string;
+  readonly lifetimeSeconds: number;
 }
 
 export interface SentMailLinks {
@@ -22,7 +31,78 @@ export function testNetAddress(): string {
 
 export function newTestAccount(name: string, role: 'tutor' | 'student' = 'tutor'): TestAccount {
   const suffix = randomBytes(6).toString('hex');
-  return { name, email: `${role}-${suffix}@example.org`, password: `probe horse battery ${suffix}` };
+  return { name, email: `${role}-${suffix}@example.org`, password: `probe horse battery ${suffix}`, seededOn: null };
+}
+
+const refreshCookieName = '__Host-ovc_refresh';
+
+function stringField(value: unknown, name: string): string {
+  if (typeof value !== 'object' || value === null || !(name in value)) {
+    throw new Error(`the test control answer has no ${name}`);
+  }
+  const found: unknown = (value as Record<string, unknown>)[name];
+  if (typeof found !== 'string') {
+    throw new Error(`${name} is not a string`);
+  }
+  return found;
+}
+
+async function postToTestControl(
+  deployment: SeedingDeployment,
+  path: string,
+  body: unknown,
+): Promise<{ readonly body: unknown; readonly session: SeededSession }> {
+  const response = await fetch(`${deployment.apiUrl}${path}`, {
+    signal: AbortSignal.timeout(10_000),
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (response.status !== 200) {
+    throw new Error(`${path} answered ${String(response.status)}`);
+  }
+  const answer: unknown = await response.json();
+  const header = response.headers.getSetCookie().find((candidate) => candidate.startsWith(`${refreshCookieName}=`));
+  const cookie = header?.split(';')[0];
+  const lifetime = header === undefined ? undefined : /; Max-Age=([1-9][0-9]*)/.exec(header)?.[1];
+  if (cookie === undefined || lifetime === undefined) {
+    throw new Error(`${path} set no refresh cookie`);
+  }
+  return {
+    body: answer,
+    session: {
+      accessToken: stringField(answer, 'access_token'),
+      refreshCookie: cookie.slice(refreshCookieName.length + 1),
+      lifetimeSeconds: Number(lifetime),
+    },
+  };
+}
+
+export async function seedAccount(
+  deployment: SeedingDeployment,
+  name: string,
+  role: 'tutor' | 'student',
+  language: 'ru' | 'en',
+): Promise<TestAccount> {
+  const { email } = newTestAccount(name, role);
+  const seeded = await postToTestControl(deployment, '/__test__/accounts', {
+    role,
+    name,
+    email,
+    language,
+    timezone: 'Europe/Moscow',
+  });
+  return {
+    name,
+    email,
+    password: stringField(seeded.body, 'password'),
+    seededOn: { apiUrl: deployment.apiUrl, origin: deployment.origin },
+  };
+}
+
+export async function seededSession(deployment: SeedingDeployment, account: TestAccount): Promise<SeededSession> {
+  const answer = await postToTestControl(deployment, '/__test__/session', { email: account.email });
+  return answer.session;
 }
 
 async function postFromAnotherBrowser(deployment: Deployment, path: string, body: unknown): Promise<Response> {
@@ -84,6 +164,21 @@ export async function pageSettled(page: Page): Promise<void> {
 }
 
 export async function signInThroughTheApi(page: Page, account: TestAccount): Promise<void> {
+  if (account.seededOn !== null) {
+    const session = await seededSession(account.seededOn, account);
+    await page.context().addCookies([
+      {
+        name: refreshCookieName,
+        value: session.refreshCookie,
+        url: account.seededOn.origin,
+        expires: Math.floor(Date.now() / 1000) + session.lifetimeSeconds,
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Strict',
+      },
+    ]);
+    return;
+  }
   await page.goto('/');
   await pageSettled(page);
   const status = await page.evaluate(async ({ email, password }) => {

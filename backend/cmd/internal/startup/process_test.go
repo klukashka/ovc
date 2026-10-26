@@ -524,6 +524,7 @@ func TestSinkRefusedForProductionDatabaseName(t *testing.T) {
 type exchange struct {
 	status int
 	body   string
+	header http.Header
 }
 
 func call(t *testing.T, ctx context.Context, method string, url string, body string, headers map[string]string) exchange {
@@ -546,7 +547,7 @@ func call(t *testing.T, ctx context.Context, method string, url string, body str
 	if err := response.Body.Close(); err != nil {
 		t.Fatal(err)
 	}
-	return exchange{status: response.StatusCode, body: string(read)}
+	return exchange{status: response.StatusCode, body: string(read), header: response.Header}
 }
 
 func seedTutor(t *testing.T, database *testdb.Database, password string) {

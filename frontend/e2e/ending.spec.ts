@@ -3,7 +3,7 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { notificationRows, bellIn, panelRowsIn } from './notifications.ts';
-import { diagnosedTest as test, expect, expectRowsNamed, seedVerifiedUser } from './fixtures.ts';
+import { diagnosedTest as test, expect, expectRowsNamed, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
 import {
   cardState,
   cardStatesNamed,
@@ -18,6 +18,7 @@ import {
   seedActiveStudent,
   setCardNotes,
   signUpOnInvitation,
+  signUpActiveStudentOnInvitation,
 } from './tutoring.ts';
 
 const endedForStudent = 'Your lessons with a tutor on OVC have ended';
@@ -78,8 +79,8 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
     deployment,
     control,
   }) => {
-    const maria = await seedVerifiedUser(deployment, 'Мария');
-    const anna = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    const maria = await signUpAndConfirmTutor(deployment, 'Мария');
+    const anna = await signUpActiveStudentOnInvitation(deployment, control, maria, 'Анна', 'ru');
     const groupId = await createGroup(deployment, maria, 'B1 evening', [anna.cardId]);
     const boris = newTestAccount('Boris', 'student');
     const card = await createCard(deployment, maria, 'Boris', boris.email);
@@ -208,10 +209,9 @@ test.describe('Anna in Russian', () => {
   test('my tutors › the stop studying dialog opens on Cancel and says that the student leaves the tutor’s groups', async ({
     page,
     deployment,
-    control,
   }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
-    const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
     await createGroup(deployment, maria, 'B1 evening', [cardId]);
     await signInThroughTheApi(page, anna);
     await page.goto('/tutors');
@@ -273,7 +273,7 @@ test.describe('Anna in Russian', () => {
     control,
   }) => {
     const maria = await seedVerifiedUser(deployment, 'Мария');
-    const { student: anna, cardId } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
     const groupId = await createGroup(deployment, maria, 'B1 evening', [cardId]);
     await signInThroughTheApi(page, anna);
     await page.goto('/tutors');
@@ -369,10 +369,9 @@ test.describe('Boris in English', () => {
     socketSlots,
     page,
     deployment,
-    control,
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const { student: anna, cardId } = await seedActiveStudent(deployment, control, pavel, 'Anna');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, pavel, 'Anna');
     await socketSlots.keepPageSocketsOff(anna);
     await signInThroughTheApi(page, anna);
     await page.goto('/tutors');

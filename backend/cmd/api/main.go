@@ -14,6 +14,7 @@ import (
 	"ovc/backend/internal/adapters/storage"
 	"ovc/backend/internal/api"
 	"ovc/backend/internal/core"
+	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/testcontrol"
 )
 
@@ -158,8 +159,13 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		if err != nil {
 			return err
 		}
+		seeder, err := accounts.NewSeeder(accountService)
+		if err != nil {
+			return err
+		}
 		options.Mount = testcontrol.New(testcontrol.Dependencies{
 			Logger: logging.Logger, Clock: shared, Worker: background, Sink: sink, Preferences: preferences, Realtime: live.Gateway,
+			Seeder: seeder,
 		}).Mount
 	}
 	handler, err := api.NewHandler(options)

@@ -79,7 +79,6 @@ test('teaching settings › the daily regeneration limit is explained', async ({
 test('teaching settings › a student blocked meanwhile appears after a reload and unblocking empties the list', async ({
   page,
   deployment,
-  control,
 }) => {
   const maria = await seedVerifiedUser(deployment, 'Мария');
   await recordBusyControls(page);
@@ -87,7 +86,7 @@ test('teaching settings › a student blocked meanwhile appears after a reload a
   await page.goto('/settings/teaching');
   const section = page.getByRole('region', { name: 'Заблокированные ученики' });
   await expect(section.getByText('Вы никого не заблокировали.')).toBeVisible();
-  const blocked = await seedBlockedStudent(deployment, control, maria, 'Назойливый ученик');
+  const blocked = await seedBlockedStudent(deployment, maria, 'Назойливый ученик');
   await page.reload();
   await expect(section.getByText(blocked.name)).toBeVisible();
 
@@ -102,12 +101,11 @@ test('teaching settings › a student blocked meanwhile appears after a reload a
 test('teaching settings › an unblock of a student unblocked meanwhile is refused with an alert that takes focus', async ({
   page,
   deployment,
-  control,
   diagnostics,
 }) => {
   const maria = await seedVerifiedUser(deployment, 'Мария');
-  const first = await seedBlockedStudent(deployment, control, maria, 'Первый разблокированный ученик');
-  await seedBlockedStudent(deployment, control, maria, 'Второй разблокированный ученик');
+  const first = await seedBlockedStudent(deployment, maria, 'Первый разблокированный ученик');
+  await seedBlockedStudent(deployment, maria, 'Второй разблокированный ученик');
   await signInThroughTheApi(page, maria);
   await page.goto('/settings/teaching');
   const section = page.getByRole('region', { name: 'Заблокированные ученики' });
@@ -125,12 +123,11 @@ test('teaching settings › an unblock of a student unblocked meanwhile is refus
 test('teaching settings › a second refused unblock while the alert shows takes focus again', async ({
   page,
   deployment,
-  control,
   diagnostics,
 }) => {
   const maria = await seedVerifiedUser(deployment, 'Мария');
-  const first = await seedBlockedStudent(deployment, control, maria, 'Первый разблокированный ученик');
-  const second = await seedBlockedStudent(deployment, control, maria, 'Второй разблокированный ученик');
+  const first = await seedBlockedStudent(deployment, maria, 'Первый разблокированный ученик');
+  const second = await seedBlockedStudent(deployment, maria, 'Второй разблокированный ученик');
   await signInThroughTheApi(page, maria);
   await page.goto('/settings/teaching');
   const section = page.getByRole('region', { name: 'Заблокированные ученики' });
@@ -154,10 +151,9 @@ test('teaching settings › a second refused unblock while the alert shows takes
 test('teaching settings › a blocked student who deleted their account is listed without the account', async ({
   page,
   deployment,
-  control,
 }) => {
   const maria = await seedVerifiedUser(deployment, 'Мария');
-  const blocked = await seedBlockedStudent(deployment, control, maria, 'Удаливший аккаунт ученик');
+  const blocked = await seedBlockedStudent(deployment, maria, 'Удаливший аккаунт ученик');
   await deleteAccount(deployment, blocked);
   await signInThroughTheApi(page, maria);
 
@@ -171,13 +167,9 @@ test('teaching settings › a blocked student who deleted their account is liste
   ).toBeVisible();
 });
 
-test('teaching settings › show more moves focus to the first new blocked student', async ({
-  page,
-  deployment,
-  control,
-}) => {
+test('teaching settings › show more moves focus to the first new blocked student', async ({ page, deployment }) => {
   const maria = await seedVerifiedUser(deployment, 'Мария');
-  await seedBlockedStudents(deployment, control, maria, pageSize + 1);
+  await seedBlockedStudents(deployment, maria, pageSize + 1);
   await signInThroughTheApi(page, maria);
   await page.goto('/settings/teaching');
   const section = page.getByRole('region', { name: 'Заблокированные ученики' });
