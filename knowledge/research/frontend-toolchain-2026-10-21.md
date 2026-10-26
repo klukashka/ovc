@@ -6,7 +6,7 @@ Checked 2026-10-21 against the npm registry (`npm view <package> time`) and each
 
 | Component | Version | Where it is pinned |
 |---|---|---|
-| Node | 26.0.0 (Node 26.12.0 bundles undici 8.11.2 and 26.12.1 bundles undici 8.12.2, read from `deps/undici/src/package.json` at each release tag on 2026-10-26) | `frontend/.node-version`, `engines` in `frontend/package.json` |
+| Node | 26.12.1 (published 2026-10-21, admitted under the 3-day release age of ADR-0017, installed on 2026-10-26 with the official nodejs.org macOS installer, its checksum not recorded) since 2026-10-26, 26.0.0 before (Node 26.12.0 bundles undici 8.11.2 and 26.12.1 bundles undici 8.12.2, read from `deps/undici/src/package.json` at each release tag on 2026-10-26) | `frontend/.node-version`, `engines` in `frontend/package.json` |
 | pnpm | 12.14.0 | `packageManager` in `frontend/package.json` |
 
 Node 26 runs the TypeScript build scripts in `frontend/scripts/` and `frontend/e2e/` directly through its built-in type stripping, so they use only erasable syntax (`erasableSyntaxOnly` in the TypeScript configuration).
