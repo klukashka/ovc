@@ -2,6 +2,7 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 
 import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
+import { bellIn, panelRowsIn } from './notifications.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { recordLazyChunkAddresses } from './observers.ts';
 import {
@@ -168,6 +169,14 @@ test.describe('Anna in Russian on a phone', () => {
     await mariaPage.goto(`/students/${card.id}`);
     await expect(mariaPage.getByRole('main').getByText('Email не подтверждён')).toBeVisible();
     await expect(mariaPage.getByRole('button', { name: 'Завершить занятия' })).toBeVisible();
+    const mariaBell = bellIn(mariaPage, /^Уведомления/);
+    await expect(mariaBell).toHaveAccessibleName('Уведомления, 1 непрочитанное');
+    await mariaBell.click();
+    const mariaRows = panelRowsIn(mariaPage, 'Уведомления');
+    await expect(mariaRows).toHaveCount(1);
+    await expect(mariaRows.first()).toContainText('Анна');
+    await expect(mariaRows.first()).toContainText('Приглашение принято');
+    await mariaPage.keyboard.press('Escape');
 
     await control.tick();
     await page.goto(emailedLinkTo(await control.mail(anna.email), '/verify-email'));
@@ -181,6 +190,7 @@ test.describe('Anna in Russian on a phone', () => {
     await expect(page.getByRole('region', { name: 'Подтверждение email' })).toHaveCount(0);
     await mariaPage.reload();
     await expect(mariaPage.getByRole('heading', { level: 1, name: 'Анна' })).toBeVisible();
+    await expect(mariaBell).toHaveAccessibleName('Уведомления, 1 непрочитанное');
     await expect(mariaPage.getByRole('heading', { level: 2, name: 'Аккаунт ученика' })).toBeVisible();
     await expect(mariaPage.getByRole('main').getByText(anna.name, { exact: true }).last()).toBeVisible();
     for (const word of ['Email не подтверждён', 'Ждём ответа ученика', 'Приглашение отправлено', 'Занятия завершены']) {

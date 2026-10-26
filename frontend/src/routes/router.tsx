@@ -33,6 +33,9 @@ const profileSettingsPage = lazyPage(
 const accountSettingsPage = lazyPage(
   async () => (await import('../features/settings/AccountSettingsPage.tsx')).AccountSettingsPage,
 );
+const notificationsPage = lazyPage(
+  async () => (await import('../features/notifications/NotificationsPage.tsx')).NotificationsPage,
+);
 const signInPage = lazyPage(async () => (await import('../features/auth/SignInPage.tsx')).SignInPage);
 const signUpChoicePage = lazyPage(async () => (await import('../features/auth/SignUpPages.tsx')).SignUpChoicePage);
 const tutorSignUpPage = lazyPage(async () => (await import('../features/auth/SignUpPages.tsx')).TutorSignUpPage);
@@ -73,7 +76,7 @@ export const sharedPages: RouteObject[] = [
   page('/lessons/:lessonId', 'page.lesson'),
   page('/messages', 'page.messages'),
   page('/messages/:channelId', 'page.messages'),
-  page('/notifications', 'page.notifications'),
+  page('/notifications', 'page.notifications', notificationsPage),
   page('/settings/profile', 'page.settingsProfile', profileSettingsPage),
   page('/settings/account', 'page.settingsAccount', accountSettingsPage),
   page('/settings/notifications', 'page.settingsNotifications'),

@@ -1,13 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { MediaQueriesContext, PreferencesContext, fixedMediaQueries, wideLayoutQuery } from '../../app/context.ts';
 import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
+import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { type Me, Session, SessionContext } from '../../lib/api/session.ts';
-import { httpAuthTransport } from '../../lib/api/transport.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import type { Language } from '../../lib/i18n/resources.ts';
 import { memoryPreferenceStore } from '../../lib/preferences/store.ts';
@@ -34,9 +34,9 @@ function account(role: Me['role'], state: Me['state'] = 'active'): Me {
 function unusedSession(): Session {
   return new Session({
     origin: 'https://ovc.example',
-    transport: httpAuthTransport('https://ovc.example', globalThis.fetch),
-    locks: { request: (_name, callback) => callback() },
-    scheduler: { schedule: () => (): void => undefined, now: () => 0 },
+    transport: new FakeAuthServer().transport(),
+    locks: memoryLocks(),
+    scheduler: manualScheduler(),
   });
 }
 
@@ -62,11 +62,12 @@ async function renderFrame(
     ],
     { initialEntries: [address] },
   );
+  const session = unusedSession();
   render(
     <MediaQueriesContext value={fixedMediaQueries(wide ? [wideLayoutQuery] : [])}>
       <PreferencesContext value={memoryPreferenceStore()}>
-        <SessionContext value={unusedSession()}>
-          <ApiClientContext value={createApiClient('https://ovc.example', globalThis.fetch)}>
+        <SessionContext value={session}>
+          <ApiClientContext value={createApiClient('https://ovc.example', session.authorizedFetch)}>
             <QueryClientProvider client={new QueryClient()}>
               <I18nextProvider i18n={i18n}>
                 <RouterProvider router={router} />
@@ -99,7 +100,8 @@ describe('the signed-in frame of a student', () => {
     const labels = within(navigation)
       .getAllByRole('link')
       .map((link) => link.textContent);
-    expect(labels).toEqual(['Home', 'Schedule', 'Homework', 'Messages', 'My tutors', 'Notifications', 'Settings']);
+    expect(labels).toEqual(['Home', 'Schedule', 'Homework', 'Messages', 'My tutors', 'Settings']);
+    expect(within(navigation).getByRole('button', { name: 'Notifications' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'A student of languages, Account menu' })).toBeDefined();
   });
 
@@ -114,13 +116,17 @@ describe('the signed-in frame of a student', () => {
     expect(within(screen.getByRole('navigation')).queryByRole('link', { name: 'Ученики' })).toBeNull();
   });
 
-  test('below 1024 px the bell keeps the student frame', async () => {
-    await renderFrame(account('student'), '/homework', false);
+  test('below 1024 px the notifications page keeps the student frame and the top bar keeps the bell', async () => {
+    await renderFrame(account('student'), '/notifications', false);
 
-    await click(within(screen.getByRole('banner')).getByRole('link', { name: 'Уведомления' }));
+    const heading = await screen.findByRole('heading', { level: 1, name: 'Уведомления' });
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Уведомления' })).toBeDefined();
+    expect(heading).toBeDefined();
+    expect(within(screen.getByRole('banner')).getByRole('button', { name: 'Уведомления' })).toBeDefined();
     const overlay = screen.getByRole('dialog', { hidden: true });
+    expect(within(overlay).getByRole('link', { name: 'Уведомления', hidden: true }).getAttribute('href')).toBe(
+      '/notifications',
+    );
     expect(within(overlay).getByRole('link', { name: 'Мои репетиторы', hidden: true })).toBeDefined();
     expect(within(overlay).queryByRole('link', { name: 'Ученики', hidden: true })).toBeNull();
   });
@@ -152,7 +158,8 @@ describe('the signed-in frame of an unconfirmed student', () => {
 
     const banner = screen.getByRole('banner');
 
-    expect(within(banner).queryByRole('link', { name: 'Уведомления' })).toBeNull();
+    expect(within(banner).queryByRole('button', { name: /Уведомления/ })).toBeNull();
+    expect(within(banner).queryByRole('link', { name: /Уведомления/ })).toBeNull();
   });
 
   test('the confirmation banner asks to confirm to keep studying and offers to send the link again', async () => {
@@ -182,5 +189,49 @@ describe('the confirmation banner', () => {
     const banner = screen.queryByRole('region', { name: 'Подтверждение email' });
 
     expect(banner).toBeNull();
+  });
+});
+
+async function openedPanelHeading(bell: HTMLElement): Promise<HTMLElement> {
+  await click(bell);
+  const heading = await screen.findByRole('heading', { level: 2, name: 'Уведомления' });
+  await waitFor(() => {
+    expect(document.activeElement).toBe(heading);
+  });
+  return heading;
+}
+
+async function nextFrame(): Promise<void> {
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+describe('the notifications bell', () => {
+  test('a click outside the panel closes it and returns focus to the bell', async () => {
+    await renderFrame(account('tutor'), '/schedule', true);
+    const bell = within(screen.getByRole('navigation')).getByRole('button', { name: 'Уведомления' });
+    await openedPanelHeading(bell);
+
+    await act(async () => {
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      await nextFrame();
+    });
+
+    expect(screen.queryByRole('region', { name: 'Уведомления' })).toBeNull();
+    expect(bell.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(bell);
+  });
+
+  test('below 1024 px the top bar bell opens the panel on its heading and Escape returns focus to the bell', async () => {
+    await renderFrame(account('student'), '/homework', false);
+    const bell = within(screen.getByRole('banner')).getByRole('button', { name: 'Уведомления' });
+    const heading = await openedPanelHeading(bell);
+
+    await act(async () => {
+      heading.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole('region', { name: 'Уведомления' })).toBeNull();
+    expect(document.activeElement).toBe(bell);
   });
 });

@@ -103,6 +103,9 @@ Slice 4. The texts in this section are a proposal to confirm when F2 (notificati
 | Link from the panel | Show all notifications | Все уведомления |
 | Empty | No notifications yet | Уведомлений пока нет |
 | Polite announcement | New notification | Новое уведомление |
+| Accessible name of the bell above 99 | Notifications, more than 99 unread | Уведомления, больше 99 непрочитанных |
+| Unread row, for screen readers | Unread | Не прочитано |
+| Result of Mark all as read | All notifications are marked as read. | Все уведомления отмечены как прочитанные. |
 | Label of a deleted requester | Deleted account | Удалённый аккаунт |
 
 **Email groups,** in Settings → Notifications and on the unsubscribe page:

@@ -85,3 +85,23 @@ export function LoadFailed({
     </div>
   );
 }
+
+export function ModuleLoadFailed(): ReactElement {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col items-start gap-3">
+      <p role="alert" className="text-strong">
+        {t('load.pageFailed')}
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          window.location.reload();
+        }}
+        className={quietButtonClass}
+      >
+        {t('load.reload')}
+      </button>
+    </div>
+  );
+}

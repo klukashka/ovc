@@ -3,13 +3,15 @@ import { type ReactElement, type ReactNode, type RefObject, useCallback, useEffe
 import { useTranslation } from 'react-i18next';
 import { Link, Outlet } from 'react-router';
 
+import { NotificationAnnouncer, NotificationsBell, useUnreadCount } from '../../features/notifications/Bell.tsx';
+
 import { useMediaQuery, usePreferences, wideLayoutQuery } from '../../app/context.ts';
 import { preferenceKeys } from '../../lib/preferences/store.ts';
 import { useRouteTitle } from '../../app/handles.ts';
 import { type SectionCounts, hasNews } from '../../app/sections.ts';
 import type { Me } from '../../lib/api/session.ts';
 import { reachable } from '../../routes/access.ts';
-import { BellIcon, SidebarIcon } from '../ui/icons.tsx';
+import { SidebarIcon } from '../ui/icons.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { StudentConfirmation } from './StudentConfirmation.tsx';
 import { SkipLink, mainContentId } from './SkipLink.tsx';
@@ -157,14 +159,14 @@ function NarrowTopBar({
   news,
   overlayOpen,
   onShow,
-  notifications,
+  withBell,
 }: {
   readonly title: ParseKeys | undefined;
   readonly showButton: RefObject<HTMLButtonElement | null>;
   readonly news: boolean;
   readonly overlayOpen: boolean;
   readonly onShow: () => void;
-  readonly notifications: number | null;
+  readonly withBell: boolean;
 }): ReactElement {
   const { t } = useTranslation();
   const routeTitle = useRouteTitle();
@@ -172,20 +174,7 @@ function NarrowTopBar({
     <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-bg px-2 py-1">
       <ShowSidebarButton buttonRef={showButton} news={news} expanded={overlayOpen} onClick={onShow} />
       <p className="flex-1 truncate text-strong">{t(title ?? routeTitle)}</p>
-      {notifications === null ? null : (
-        <Link
-          to="/notifications"
-          aria-label={t('frame.notificationsWithCount', { count: notifications })}
-          className={`${iconButton} gap-1 px-2`}
-        >
-          <BellIcon />
-          {notifications > 0 ? (
-            <span aria-hidden="true" className="tabular text-caption text-text">
-              {notifications}
-            </span>
-          ) : null}
-        </Link>
-      )}
+      {withBell ? <NotificationsBell placement="topBar" /> : null}
     </header>
   );
 }
@@ -229,7 +218,9 @@ export function SignedInFrame({
   }
   const showButton = useRef<HTMLButtonElement>(null);
   const hideButtonRef = useRef<HTMLButtonElement>(null);
-  const counts: SectionCounts = {};
+  const withBell = reachable(me, '/notifications');
+  const unread = useUnreadCount(withBell);
+  const counts: SectionCounts = withBell ? { notifications: unread } : {};
   const news = hasNews(counts);
 
   const rememberSidebar = useCallback(
@@ -263,6 +254,7 @@ export function SignedInFrame({
     <Sidebar
       me={me}
       counts={counts}
+      bell={wide && withBell ? <NotificationsBell placement="sidebar" /> : null}
       headerAction={hideButton}
       onNavigate={() => {
         setOverlayOpen(false);
@@ -273,8 +265,9 @@ export function SignedInFrame({
   return (
     <div className="min-h-dvh bg-bg text-text">
       <SkipLink />
+      {withBell ? <NotificationAnnouncer /> : null}
       {wide && sidebarShown ? (
-        <aside className="fixed inset-y-0 left-0 w-sidebar border-r border-border">{sidebar}</aside>
+        <aside className="fixed inset-y-0 left-0 z-20 w-sidebar border-r border-border">{sidebar}</aside>
       ) : null}
       {wide && !sidebarShown ? (
         <div className="fixed top-3 left-3 z-10">
@@ -299,7 +292,7 @@ export function SignedInFrame({
             onShow={() => {
               setOverlayOpen(true);
             }}
-            notifications={reachable(me, '/notifications') ? (counts.notifications ?? 0) : null}
+            withBell={withBell}
           />
           <SidebarOverlay open={overlayOpen} onClose={closeOverlay} returnFocus={showButton} label={t('frame.sidebar')}>
             {sidebar}

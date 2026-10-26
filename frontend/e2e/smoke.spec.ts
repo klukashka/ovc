@@ -77,18 +77,10 @@ test('the tutor frame shows the tutor sections and server readiness', async ({ s
   await page.goto('/today');
 
   const navigation = page.getByRole('navigation', { name: 'Основная навигация' });
-  for (const label of [
-    'Сегодня',
-    'Расписание',
-    'Ученики',
-    'Группы',
-    'Задания',
-    'Сообщения',
-    'Уведомления',
-    'Настройки',
-  ]) {
+  for (const label of ['Сегодня', 'Расписание', 'Ученики', 'Группы', 'Задания', 'Сообщения', 'Настройки']) {
     await expect(navigation.getByRole('link', { name: label })).toBeVisible();
   }
+  await expect(navigation.getByRole('button', { name: /^Уведомления/ })).toBeVisible();
   await expect(navigation.getByRole('link', { name: 'Сегодня' })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('region', { name: 'Состояние сервера' }).getByRole('status')).toHaveText('Сервер готов');
   await expect(page).toHaveTitle('Сегодня · OVC');
@@ -130,7 +122,7 @@ test.describe('below 1024 px', () => {
     await page.goto('/today');
 
     const showButton = page.getByRole('button', { name: 'Показать боковую панель' });
-    const bell = page.getByRole('banner').getByRole('link', { name: 'Уведомления' });
+    const bell = page.getByRole('banner').getByRole('button', { name: /^Уведомления/ });
     await expect(page.getByRole('banner').getByText('Сегодня')).toBeVisible();
     for (const target of [showButton, bell]) {
       const box = await target.boundingBox();

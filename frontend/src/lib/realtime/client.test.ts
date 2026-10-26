@@ -2,6 +2,7 @@ import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { describe, expect, test } from 'vitest';
 
 import { liveRefetch } from '../../app/liveRefetch.ts';
+import { NotificationArrivals } from '../../app/notificationArrivals.ts';
 import { studentsKey } from '../../features/students/api.ts';
 import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../api/fakeTransport.ts';
 import { Session } from '../api/session.ts';
@@ -170,7 +171,7 @@ describe('realtime client', () => {
       },
     });
     const unsubscribe = observer.subscribe(() => undefined);
-    const rig = await connectedRig(liveRefetch(queryClient));
+    const rig = await connectedRig(liveRefetch(queryClient, new NotificationArrivals()));
     await eventually(() => {
       expect(fetches).toBe(2);
     });

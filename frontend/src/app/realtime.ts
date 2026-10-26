@@ -4,10 +4,11 @@ import { type Session, browserScheduler } from '../lib/api/session.ts';
 import { RealtimeClient, connectWhileSignedIn } from '../lib/realtime/client.ts';
 import { browserSocketFactory } from '../lib/realtime/socket.ts';
 import { liveRefetch } from './liveRefetch.ts';
+import { notificationArrivals } from './notificationArrivals.ts';
 
 export function startRealtime(session: Session, queryClient: QueryClient, origin: string): void {
   const sockets = browserSocketFactory(origin);
-  const onEvent = liveRefetch(queryClient);
+  const onEvent = liveRefetch(queryClient, notificationArrivals);
   const connect = (): (() => void) =>
     connectWhileSignedIn(
       session,

@@ -2,6 +2,7 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
+import { notificationRows, bellIn, panelRowsIn } from './notifications.ts';
 import { diagnosedTest as test, expect, expectRowsNamed, seedVerifiedUser } from './fixtures.ts';
 import {
   cardState,
@@ -123,6 +124,11 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
     expect(ended).toHaveLength(1);
     expect(await groupMemberNames(deployment, maria, groupId)).toEqual(['Анна']);
     expect(await cardState(deployment, maria, borisCard)).toEqual({ state: 'ended', groups: [] });
+    expect((await notificationRows(deployment, boris)).at(0)).toEqual({
+      event: 'relationship.ended',
+      label: 'Мария',
+      unread: true,
+    });
   });
 
   test('pilot-4 › step 6 the copied link from the seed is no longer valid for Boris', async ({
@@ -178,6 +184,13 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
 
     await expect(borisPage).toHaveURL('/tutors');
     await expect(rowsOf(borisPage, 'Tutors')).toHaveText([/Мария/]);
+    await bellIn(page, /^Уведомления/).click();
+    const borisAccepted = panelRowsIn(page, 'Уведомления')
+      .filter({ hasText: 'Boris' })
+      .filter({ hasText: 'Приглашение принято' })
+      .filter({ hasText: 'Не прочитано' });
+    await expect(borisAccepted).toHaveCount(2);
+    await page.keyboard.press('Escape');
     await page.reload();
     await expect(page.getByRole('heading', { level: 1, name: 'Boris' })).toBeVisible();
     await expect(page.getByRole('main').getByText('Занятия завершены', { exact: true })).toHaveCount(0);

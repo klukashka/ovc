@@ -33,6 +33,7 @@ export const ru = {
     resendConfirmation: 'Отправить ссылку ещё раз',
     notificationsWithCount:
       '{count, plural, =0 {Уведомления} one {Уведомления, # непрочитанное} few {Уведомления, # непрочитанных} many {Уведомления, # непрочитанных} other {Уведомления, # непрочитанного}}',
+    notificationsOverCap: 'Уведомления, больше 99 непрочитанных',
   },
   section: {
     today: 'Сегодня',
@@ -534,6 +535,25 @@ export const ru = {
     unblocked: 'Ученик разблокирован.',
     unblockChanged: 'Этот ученик уже не заблокирован. Список обновлён.',
     showMore: 'Показать ещё',
+  },
+  notifications: {
+    heading: 'Уведомления',
+    list: 'Уведомления',
+    markAllRead: 'Отметить все как прочитанные',
+    allMarkedRead: 'Все уведомления отмечены как прочитанные.',
+    showAll: 'Все уведомления',
+    empty: 'Уведомлений пока нет',
+    arrived: 'Новое уведомление',
+    deletedAccount: 'Удалённый аккаунт',
+    unread: 'Не прочитано',
+    showMore: 'Показать ещё',
+    event: {
+      invitationAccepted: 'Приглашение принято',
+      joinRequestCreated: 'Новый запрос на занятия',
+      joinRequestAccepted: 'Ваш запрос принят',
+      joinRequestDeclined: 'Ваш запрос не принят',
+      relationshipEnded: 'Совместные занятия завершены',
+    },
   },
   errors: {
     bad_request: 'Запрос не удалось обработать. Обновите страницу и попробуйте ещё раз.',

@@ -1,12 +1,12 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 
 import { groupsKey, memberChoiceKey } from '../features/groups/api.ts';
+import { notificationsKey } from '../features/notifications/api.ts';
 import { joinRequestsKey, studentCardKey, studentListsKey } from '../features/students/api.ts';
 import { myTutorsKey, sentRequestsKey } from '../features/tutors/api.ts';
 import type { RealtimeEvent } from '../lib/realtime/client.ts';
 import type { EntityKind } from '../lib/realtime/frames.ts';
-
-export const notificationsKey = ['notifications'] as const;
+import type { NotificationArrivals } from './notificationArrivals.ts';
 
 function queriesOf(entity: EntityKind, id: string): readonly QueryKey[] {
   switch (entity) {
@@ -19,7 +19,10 @@ function queriesOf(entity: EntityKind, id: string): readonly QueryKey[] {
   }
 }
 
-export function liveRefetch(queryClient: QueryClient): (event: RealtimeEvent) => void {
+export function liveRefetch(
+  queryClient: QueryClient,
+  arrivals: Pick<NotificationArrivals, 'arrived'>,
+): (event: RealtimeEvent) => void {
   return (event) => {
     switch (event.kind) {
       case 'connected':
@@ -28,6 +31,7 @@ export function liveRefetch(queryClient: QueryClient): (event: RealtimeEvent) =>
         });
         return;
       case 'notification':
+        arrivals.arrived();
         void queryClient.invalidateQueries({ queryKey: notificationsKey });
         return;
       case 'entity':

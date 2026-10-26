@@ -32,6 +32,7 @@ export const en: Resources = {
     resendConfirmation: 'Send the link again',
     notificationsWithCount:
       '{count, plural, =0 {Notifications} one {Notifications, # unread} other {Notifications, # unread}}',
+    notificationsOverCap: 'Notifications, more than 99 unread',
   },
   section: {
     today: 'Today',
@@ -526,6 +527,25 @@ export const en: Resources = {
     unblocked: 'The student was unblocked.',
     unblockChanged: 'This student is no longer blocked. The list is up to date.',
     showMore: 'Show more',
+  },
+  notifications: {
+    heading: 'Notifications',
+    list: 'Notifications',
+    markAllRead: 'Mark all as read',
+    allMarkedRead: 'All notifications are marked as read.',
+    showAll: 'Show all notifications',
+    empty: 'No notifications yet',
+    arrived: 'New notification',
+    deletedAccount: 'Deleted account',
+    unread: 'Unread',
+    showMore: 'Show more',
+    event: {
+      invitationAccepted: 'Invitation accepted',
+      joinRequestCreated: 'New request to study with you',
+      joinRequestAccepted: 'Your request was accepted',
+      joinRequestDeclined: 'Your request was not accepted',
+      relationshipEnded: 'Working together has ended',
+    },
   },
   errors: {
     bad_request: 'The request could not be processed. Reload the page and try again.',

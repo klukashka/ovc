@@ -2,6 +2,7 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 
 import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
+import { bellIn, panelRowsIn } from './notifications.ts';
 import { type TestControl, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { busyControls, offsetsBelowHeading, recordBusyControls, recordFirstOffsets } from './observers.ts';
 import {
@@ -90,6 +91,8 @@ test.describe('Boris in English', () => {
     await mariaPage.goto('/today');
     await expect(joinRequests(mariaPage).getByText('Новых заявок нет.')).toBeVisible();
     expect(await visibleJoinRequests(deployment, maria)).toBe(0);
+    const mariaBell = bellIn(mariaPage, /^Уведомления/);
+    await expect(mariaBell).toHaveAccessibleName('Уведомления');
 
     await control.tick();
     await page.goto(emailedLinkTo(await control.mail(boris.email), '/verify-email'));
@@ -100,10 +103,16 @@ test.describe('Boris in English', () => {
     await expect(page.getByText('Request sent. Waiting for the tutor.')).toBeVisible();
     await expect(page.getByRole('region', { name: 'Email confirmation' })).toHaveCount(0);
 
-    await mariaPage.reload();
     const row = joinRequests(mariaPage).getByRole('listitem').filter({ hasText: boris.email });
     await expect(row).toContainText('Boris');
     await expect(row).toContainText('Хочет заниматься');
+    await expect(mariaBell).toHaveAccessibleName('Уведомления, 1 непрочитанное');
+    await mariaBell.click();
+    const mariaRows = panelRowsIn(mariaPage, 'Уведомления');
+    await expect(mariaRows).toHaveCount(1);
+    await expect(mariaRows.first()).toContainText('Boris');
+    await expect(mariaRows.first()).toContainText('Новый запрос на занятия');
+    await mariaPage.keyboard.press('Escape');
     await expect(joinRequests(mariaPage).getByText(codePattern)).toHaveText(code);
     await row.getByRole('button', { name: 'Принять: Boris' }).click();
 
@@ -115,6 +124,13 @@ test.describe('Boris in English', () => {
     await mariaPage.goto('/students');
     await expect(mariaPage.getByRole('list', { name: 'Активные' }).getByRole('link', { name: /Boris/ })).toBeVisible();
     await expect(page.getByRole('list', { name: 'Tutors' }).getByRole('listitem')).toHaveText([/Мария/]);
+    const borisBell = bellIn(page, /^Notifications/);
+    await expect(borisBell).toHaveAccessibleName('Notifications, 1 unread');
+    await borisBell.click();
+    const borisRows = panelRowsIn(page, 'Notifications');
+    await expect(borisRows).toHaveCount(1);
+    await expect(borisRows.first()).toContainText('Мария');
+    await expect(borisRows.first()).toContainText('Your request was accepted');
     await mariaContext.close();
   });
 

@@ -9,6 +9,7 @@ import { reachable } from '../../routes/access.ts';
 interface SidebarProps {
   readonly me: Me;
   readonly counts: SectionCounts;
+  readonly bell: ReactNode;
   readonly headerAction: ReactNode;
   readonly onNavigate: () => void;
 }
@@ -175,7 +176,7 @@ function AccountMenu({ me }: { readonly me: Me }): ReactElement {
   );
 }
 
-export function Sidebar({ me, counts, headerAction, onNavigate }: SidebarProps): ReactElement {
+export function Sidebar({ me, counts, bell, headerAction, onNavigate }: SidebarProps): ReactElement {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   return (
@@ -201,15 +202,19 @@ export function Sidebar({ me, counts, headerAction, onNavigate }: SidebarProps):
         <ul className="mt-4 flex flex-col gap-0.5 border-t border-border pt-4">
           {trailingSections
             .filter((section) => reachable(me, section.to))
-            .map((section) => (
-              <SidebarItem
-                key={section.key}
-                section={section}
-                count={counts[section.key] ?? 0}
-                current={isCurrent(section, pathname)}
-                onNavigate={onNavigate}
-              />
-            ))}
+            .map((section) =>
+              section.key === 'notifications' && bell !== null ? (
+                <li key={section.key}>{bell}</li>
+              ) : (
+                <SidebarItem
+                  key={section.key}
+                  section={section}
+                  count={counts[section.key] ?? 0}
+                  current={isCurrent(section, pathname)}
+                  onNavigate={onNavigate}
+                />
+              ),
+            )}
         </ul>
       </nav>
     </div>

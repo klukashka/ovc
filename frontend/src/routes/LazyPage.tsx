@@ -1,8 +1,6 @@
 import { type ComponentType, type ReactElement, useEffect, useLayoutEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
-import { quietButtonClass } from '../components/ui/Form.tsx';
-import { DelayedLoading, focusHeadingIfLost } from '../components/ui/LoadState.tsx';
+import { DelayedLoading, ModuleLoadFailed, focusHeadingIfLost } from '../components/ui/LoadState.tsx';
 import { Page } from '../components/ui/Page.tsx';
 
 function headingHasFocus(): boolean {
@@ -27,23 +25,9 @@ function PageLoading(): ReactElement {
 }
 
 function PageLoadFailed(): ReactElement {
-  const { t } = useTranslation();
   return (
     <Page>
-      <div className="flex flex-col items-start gap-3">
-        <p role="alert" className="text-strong">
-          {t('load.pageFailed')}
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            window.location.reload();
-          }}
-          className={quietButtonClass}
-        >
-          {t('load.reload')}
-        </button>
-      </div>
+      <ModuleLoadFailed />
     </Page>
   );
 }
