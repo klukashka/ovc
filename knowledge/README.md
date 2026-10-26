@@ -8,7 +8,7 @@ Load the entry sections, follow their links, and read the governing decision bef
 
 | Task | Entry sections and governing context |
 |---|---|
-| Locate a component or package | [Module and contract map](architecture/detailed.md#module-and-contract-map), [package layers](architecture/detailed.md#package-layers), [glossary](architecture/detailed.md#glossary) |
+| Locate a component or package | [Module and contract map](architecture/detailed.md#module-and-contract-map), [package layers](architecture/detailed.md#package-layers), [glossary](architecture/detailed.md#glossary), [ADR-0016](../docs/decisions/0016-modular-monolith.md) |
 | Choose or add a dependency or tool | [Stack per component](architecture/detailed.md#stack-per-component), [ADR-0002](../docs/decisions/0002-implementation-stack.md), dependency rules in [AGENTS.md](../AGENTS.md#code) |
 | Select required reviews and checks | [AI development verification](reviews/ai-development-setup.md), [ovc-verify](../.claude/skills/ovc-verify/SKILL.md), [development commands](../docs/development.md) |
 | Add or change configuration or deployment | [Configuration](architecture/detailed.md#configuration), [deployment shapes](architecture/detailed.md#deployment-shapes), [ADR-0008](../docs/decisions/0008-hosting-and-data-residency.md) |
@@ -21,7 +21,7 @@ Load the entry sections, follow their links, and read the governing decision bef
 | Chat, WebSocket frames, presence, live updates | [Chat](specs/realtime-and-video.md#chat), [frame format](specs/realtime-and-video.md#frame-format) |
 | Library, builder, block types, normalisation | [Library](specs/homework.md#library), [assignment blocks](specs/homework.md#assignment-blocks), [normalisation](specs/homework.md#short-answer-normalisation) |
 | Issuing, answer visibility, submitting, reviewing, analytics | [Homework](specs/homework.md), especially [answer visibility](specs/homework.md#answer-visibility) |
-| Emails, reminders, digests, preferences, outbox, worker jobs | [Notifications](specs/notifications.md), [ADR-0006](../docs/decisions/0006-background-worker-and-email.md) |
+| Emails, reminders, digests, preferences, outbox, worker jobs, web push | [Notifications](specs/notifications.md), [ADR-0006](../docs/decisions/0006-background-worker-and-email.md), [ADR-0015](../docs/decisions/0015-web-push.md) |
 | Uploads, quotas, downloads | [Files](specs/files.md) |
 | Logging, levels, correlation, redaction | [Observability](specs/observability.md) |
 | Assess a trust boundary or security claim | [Threat model](../docs/threat-model.md), then its linked contracts |

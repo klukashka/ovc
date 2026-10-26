@@ -3,7 +3,8 @@
 - Status: accepted, 2026-10-20
 - Reviewed: pending line-by-line owner review
 - Deciders: project owner
-- Related: FR-4.2, FR-5.6, FR-13, [notifications specification](../../knowledge/specs/notifications.md)
+- Amended by: [ADR-0015](0015-web-push.md), which adds web push as a second external channel in slice 10 (pending owner review)
+- Related: FR-4.2, FR-5.6, FR-13, [notifications specification](../../knowledge/specs/notifications.md), [ADR-0016](0016-modular-monolith.md) (pending owner review)
 
 ## Context
 
@@ -29,7 +30,7 @@ Sending email inside a request would couple user actions to the mail provider's 
   - moves a row to `dead` after a bounded number of attempts, with a diagnostic event.
 - **Scheduled jobs** derive their work from current database state at run time. A reminder is built from the lesson as it is when the reminder is due, so a moved lesson never receives a stale reminder.
 - **Time is injected.** The worker exposes a single `Tick(now)` step used by tests with a fake clock; production runs each outbox lane in its own loop beside a scheduler, and `Tick(now)` runs one pass of the same work for tests (pending owner review).
-- **Email** is the only external notification channel in the MVP:
+- **Email** is the only external notification channel in the MVP (amended by [ADR-0015](0015-web-push.md), which adds web push in slice 10, pending owner review):
   - sent over SMTP through a provider hosted in Russia;
   - with SPF, DKIM and DMARC configured;
   - rendered per recipient in their language and timezone at send time;

@@ -1,6 +1,6 @@
 # Product
 
-Status: draft written 2026-10-20, visual language revised the same day after the owner chose a direction on the prototype; recordings and analytics marked as after the MVP on 2026-10-22 by the owner's decision, and the tutor-code wording amended the same day by ADR-0014, pending owner review; pending line-by-line owner review.
+Status: draft written 2026-10-20, visual language revised the same day after the owner chose a direction on the prototype; recordings and analytics marked as after the MVP on 2026-10-22 by the owner's decision, and the tutor-code wording amended the same day by ADR-0014, pending owner review; web push moved into the first release on 2026-10-26 by ADR-0015, pending owner review; pending line-by-line owner review.
 
 This page explains what OVC is, who it serves and how it feels to use. It is not normative: the binding statements are the [functional requirements](requirements/functional.md), and where this page and a requirement differ, the requirement wins.
 
@@ -66,4 +66,4 @@ Element-by-element descriptions are in [the page design](../knowledge/design/web
 
 ## Not in the first release
 
-Payments and lesson balances ([proposal 0001](proposals/0001-payment-ledger.md)), timed tests and multiple attempts, students booking slots themselves, accounts that are both tutor and student, an administration web interface, push notifications, calendar export.
+Payments and lesson balances ([proposal 0001](proposals/0001-payment-ledger.md)), timed tests and multiple attempts, students booking slots themselves, accounts that are both tutor and student, an administration web interface, calendar export, a bot in a messenger and apps in the app stores. Web push from an installable web app is in the first release, off until the legal assessment and the decision record on minors before the pilot allow it ([ADR-0015](decisions/0015-web-push.md), pending owner review).

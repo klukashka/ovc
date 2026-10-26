@@ -3,6 +3,7 @@
 - Status: accepted, 2026-10-20
 - Reviewed: pending line-by-line owner review
 - Deciders: project owner
+- Amended by: [ADR-0015](0015-web-push.md), with one exception for web push metadata to the browser vendors' push services (pending owner review)
 - Related: [ADR-0004](0004-bigbluebutton-primary-provider.md), [ADR-0006](0006-background-worker-and-email.md), NFR-1, [threat model](../threat-model.md)
 
 ## Context
@@ -29,4 +30,4 @@ OVC's users are mainly in Russia. Russian personal-data law (Federal Law 152-FZ)
 
 ## Where it is applied
 
-[Stack and deployment](../../knowledge/architecture/detailed.md#deployment-shapes), [non-functional requirements](../requirements/non-functional.md), [threat model](../threat-model.md).
+[Stack and deployment](../../knowledge/architecture/detailed.md#deployment-shapes), [non-functional requirements](../requirements/non-functional.md), [threat model](../threat-model.md), [web push](0015-web-push.md) (pending owner review).

@@ -4,7 +4,7 @@
 - Reviewed: decided by the project owner on 2026-10-22 from the [hosting research](../../knowledge/research/hosting-2026-10-22.md); wording pending line-by-line owner review
 - Deciders: project owner
 - Amends: [ADR-0004](0004-bigbluebutton-primary-provider.md) in its BigBlueButton host size, for the pilot only
-- Related: [ADR-0004](0004-bigbluebutton-primary-provider.md), [ADR-0006](0006-background-worker-and-email.md), [ADR-0008](0008-hosting-and-data-residency.md), [deployment shapes](../../knowledge/architecture/detailed.md#deployment-shapes), [threat model](../threat-model.md)
+- Related: [ADR-0004](0004-bigbluebutton-primary-provider.md), [ADR-0016](0016-modular-monolith.md) (pending owner review), [ADR-0006](0006-background-worker-and-email.md), [ADR-0008](0008-hosting-and-data-residency.md), [deployment shapes](../../knowledge/architecture/detailed.md#deployment-shapes), [threat model](../threat-model.md)
 
 ## Context
 

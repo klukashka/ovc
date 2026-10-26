@@ -3,7 +3,7 @@
 - Status: accepted, 2026-10-20; backend and Python tooling rows superseded by [ADR-0012](0012-go-backend.md) the same day
 - Reviewed: pending line-by-line owner review
 - Deciders: project owner
-- Related: [ADR-0003](0003-embedded-video-provider.md), [stack per component](../../knowledge/architecture/detailed.md#stack-per-component)
+- Related: [ADR-0003](0003-embedded-video-provider.md), [ADR-0016](0016-modular-monolith.md) (pending owner review), [stack per component](../../knowledge/architecture/detailed.md#stack-per-component)
 
 ## Context
 

@@ -91,7 +91,7 @@ Crash reporting and analytics for an app would also have to stay in Russia or be
 
 ## The owner's answers
 
-Given by the project owner on 2026-10-25. They are decisions in intent, not yet recorded where they take effect: each lands through a decision record or an approved roadmap change in `docs/`, as the [open implementation questions](../architecture/detailed.md#open-implementation-questions) track.
+Given by the project owner on 2026-10-25. They are decisions in intent, not yet recorded where they take effect: each lands through a decision record or an approved roadmap change in `docs/`, as the [open implementation questions](../architecture/detailed.md#open-implementation-questions) track. Answers 2 to 4, and answer 1 as a dependency before the pilot, were recorded on 2026-10-26 in [ADR-0015](../../docs/decisions/0015-web-push.md) and the [roadmap](../../docs/roadmap.md), pending owner review.
 
 1. **Minors:** (a), the decision record on minors and the assessment of a legal guardian's consent land before the pilot.
 2. **After the MVP:** (a), recordings and homework analytics first, then the ledger with attendance, then parents, with the order revisited if pilot tutors still keep payments elsewhere by week 4 of the pilot.

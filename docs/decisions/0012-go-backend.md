@@ -3,7 +3,7 @@
 - Status: accepted, 2026-10-20; supersedes the backend and Python tooling rows of [ADR-0002](0002-implementation-stack.md)
 - Reviewed: decided by the project owner on 2026-10-20 before any backend code existed; wording pending line-by-line owner review
 - Deciders: project owner
-- Related: [ADR-0002](0002-implementation-stack.md), [ADR-0006](0006-background-worker-and-email.md), [stack per component](../../knowledge/architecture/detailed.md#stack-per-component), [package layers](../../knowledge/architecture/detailed.md#package-layers)
+- Related: [ADR-0002](0002-implementation-stack.md), [ADR-0016](0016-modular-monolith.md) (pending owner review), [ADR-0006](0006-background-worker-and-email.md), [stack per component](../../knowledge/architecture/detailed.md#stack-per-component), [package layers](../../knowledge/architecture/detailed.md#package-layers)
 
 ## Context
 
