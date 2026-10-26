@@ -11,7 +11,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "lint": "eslint --flag unstable_native_nodejs_ts_config --max-warnings 0 . && node scripts/check-comments.ts && node scripts/check-source-types.ts && node scripts/check-ignored-advisories.ts",
+    "lint": "eslint --flag unstable_native_nodejs_ts_config --max-warnings 0 . && node scripts/check-comments.ts && node scripts/check-source-types.ts && node scripts/check-ignored-advisories.ts && node scripts/check-release-age.ts",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run",

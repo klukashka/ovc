@@ -3,7 +3,7 @@ strictDepBuilds: true
 peerDependencyRules:
   allowedVersions:
     openapi-typescript>typescript: '6'
-minimumReleaseAge: 20160
+minimumReleaseAge: 4320
 auditConfig:
   ignoreGhsas:
     - GHSA-xjj6-f33q-929c
