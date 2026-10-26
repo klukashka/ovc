@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test';
+import { type Page, type WebSocket as PageWebSocket, expect } from '@playwright/test';
 
 import { authFrame, closeCodes, parseServerFrame } from '../src/lib/realtime/frames.ts';
 import {
@@ -6,6 +6,7 @@ import {
   type SocketFactory,
   type WebSocketLike,
   realtimeAddress,
+  realtimePath,
   webSocketFactory,
 } from '../src/lib/realtime/socket.ts';
 import { type TestAccount, testNetAddress } from './accounts.ts';
@@ -84,7 +85,7 @@ type NodeWebSocketConstructor = new (
 ) => WebSocketLike;
 
 const NodeWebSocket = WebSocket as unknown as NodeWebSocketConstructor;
-const socketsPerAccount = 20;
+const socketSlotSearchCeiling = 100;
 
 export function nodeSocketFactory(deployment: Deployment): SocketFactory {
   const address = realtimeAddress(deployment.apiUrl);
@@ -92,7 +93,9 @@ export function nodeSocketFactory(deployment: Deployment): SocketFactory {
   return webSocketFactory(() => new NodeWebSocket(address, { headers }));
 }
 
-function authenticatedSocket(sockets: SocketFactory, token: string): Promise<RealtimeSocket> {
+type SlotAttempt = { readonly held: RealtimeSocket } | { readonly refused: true };
+
+function slotAttempt(sockets: SocketFactory, token: string): Promise<SlotAttempt> {
   return new Promise((resolve, reject) => {
     let ready = false;
     const socket = sockets({
@@ -102,33 +105,81 @@ function authenticatedSocket(sockets: SocketFactory, token: string): Promise<Rea
       onText: (text) => {
         if (!ready && parseServerFrame(text)?.type === 'ready') {
           ready = true;
-          resolve(socket);
+          resolve({ held: socket });
         }
       },
       onBinary: () => undefined,
       onClose: (code) => {
-        if (!ready) {
-          reject(new Error(`a socket holding a slot closed with ${String(code)} before it was ready`));
+        if (ready) {
+          return;
+        }
+        if (code === closeCodes.tooMany) {
+          resolve({ refused: true });
+        } else {
+          reject(new Error(`a socket taking a slot closed with ${String(code)} before it was ready`));
         }
       },
     });
   });
 }
 
+interface PageSocket {
+  readonly socket: PageWebSocket;
+  admitted: boolean;
+}
+
+function watchPageSockets(page: Page): PageSocket[] {
+  const opened: PageSocket[] = [];
+  page.on('websocket', (socket) => {
+    if (new URL(socket.url()).pathname !== realtimePath) {
+      return;
+    }
+    const watched: PageSocket = { socket, admitted: false };
+    opened.push(watched);
+    socket.on('framereceived', ({ payload }) => {
+      if (typeof payload === 'string' && parseServerFrame(payload)?.type === 'ready') {
+        watched.admitted = true;
+      }
+    });
+  });
+  return opened;
+}
+
 export interface SocketSlotHolder {
   readonly keepPageSocketsOff: (account: TestAccount) => Promise<void>;
+  readonly expectPageSocketsRefused: () => Promise<void>;
   readonly release: () => void;
 }
 
-export function socketSlotHolder(deployment: Deployment): SocketSlotHolder {
+export function socketSlotHolder(deployment: Deployment, page: Page): SocketSlotHolder {
   const held: RealtimeSocket[] = [];
+  let pageSockets: PageSocket[] | undefined;
   return {
     keepPageSocketsOff: async (account): Promise<void> => {
       const sockets = nodeSocketFactory(deployment);
       const token = await accessToken(deployment, account);
-      for (let slot = 0; slot < socketsPerAccount; slot += 1) {
-        held.push(await authenticatedSocket(sockets, token));
+      for (let attempt = 0; attempt < socketSlotSearchCeiling; attempt += 1) {
+        const outcome = await slotAttempt(sockets, token);
+        if ('refused' in outcome) {
+          pageSockets = watchPageSockets(page);
+          return;
+        }
+        held.push(outcome.held);
       }
+      throw new Error(`the gateway admitted ${String(socketSlotSearchCeiling)} sockets of one account`);
+    },
+    expectPageSocketsRefused: async (): Promise<void> => {
+      const watched = pageSockets;
+      if (watched === undefined) {
+        return;
+      }
+      await expect
+        .poll(() => watched.length > 0 && watched.every((entry) => entry.socket.isClosed()), {
+          message: `every page socket on ${realtimePath} is closed while the slots are held`,
+          timeout: presenceDeadlineMilliseconds,
+        })
+        .toBe(true);
+      expect(watched.filter((entry) => entry.admitted).map((entry) => entry.socket.url())).toEqual([]);
     },
     release: (): void => {
       for (const socket of held) {

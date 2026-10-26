@@ -7,6 +7,7 @@ export interface ManifestChunk {
   readonly isDynamicEntry: boolean;
   readonly imports: readonly string[];
   readonly css: readonly string[];
+  readonly assets: readonly string[];
 }
 
 export type Manifest = ReadonlyMap<string, ManifestChunk>;
@@ -86,6 +87,7 @@ export function parseManifest(json: unknown): Manifest {
       isDynamicEntry: flag('isDynamicEntry' in value ? value.isDynamicEntry : undefined, 'isDynamicEntry', key),
       imports: strings('imports' in value ? value.imports : undefined, 'imports', key),
       css: strings('css' in value ? value.css : undefined, 'css', key),
+      assets: strings('assets' in value ? value.assets : undefined, 'assets', key),
     });
   }
   return chunks;
@@ -181,19 +183,83 @@ export interface ServedEntry {
 
 const servedAssetPattern = /^assets\/[^/]+\.(?:js|css|woff2?)$/;
 
-function isServedPath(entry: ServedEntry, publicFiles: ReadonlySet<string>): boolean {
+export interface ServedFiles {
+  readonly trackedPublicFiles: ReadonlySet<string>;
+  readonly namedAssets: ReadonlySet<string>;
+}
+
+export function manifestNamedFiles(manifest: Manifest): Set<string> {
+  return new Set([...manifest.values()].flatMap((chunk) => [chunk.file, ...chunk.css, ...chunk.assets]));
+}
+
+export interface PublicListing {
+  readonly indexEntries: string;
+  readonly uncommitted: string;
+}
+
+export interface CommittedPublicFiles {
+  readonly files: ReadonlySet<string>;
+  readonly problems: readonly string[];
+}
+
+const regularFileModes: readonly string[] = ['100644', '100755'];
+const indexEntryPattern = /^(\S) (\d{6}) [0-9a-f]+ \d\t(.+)$/s;
+const plainIndexTag = 'H';
+
+function records(listing: string): string[] {
+  return listing.split('\0').filter((record) => record !== '');
+}
+
+export function committedPublicFiles(
+  publicFolder: string,
+  listing: PublicListing,
+  kindOf: (path: string) => ServedEntryKind,
+): CommittedPublicFiles {
+  const uncommitted = records(listing.uncommitted);
+  const problems =
+    uncommitted.length === 0
+      ? []
+      : [
+          `${publicFolder}/ has changes that are not committed: ${uncommitted.map((record) => record.trim()).join(', ')}`,
+        ];
+  const files = new Set<string>();
+  for (const record of records(listing.indexEntries)) {
+    const match = indexEntryPattern.exec(record);
+    if (match === null) {
+      throw new Error(`unreadable index entry under ${publicFolder}/: ${record}`);
+    }
+    const [, tag = '', mode = '', path = ''] = match;
+    if (tag === plainIndexTag && regularFileModes.includes(mode) && kindOf(path) === 'file') {
+      files.add(path.slice(publicFolder.length + 1));
+    }
+  }
+  return { files, problems };
+}
+
+function isDotted(path: string): boolean {
+  return path.split('/').some((segment) => segment.startsWith('.'));
+}
+
+function isServedPath(entry: ServedEntry, served: ServedFiles): boolean {
+  if (isDotted(entry.path)) {
+    return false;
+  }
   if (entry.kind === 'directory') {
     return entry.path === 'assets';
   }
   if (entry.kind !== 'file') {
     return false;
   }
-  return entry.path === entryKey || publicFiles.has(entry.path) || servedAssetPattern.test(entry.path);
+  return (
+    entry.path === entryKey ||
+    served.trackedPublicFiles.has(entry.path) ||
+    (servedAssetPattern.test(entry.path) && served.namedAssets.has(entry.path))
+  );
 }
 
-export function unexpectedServedEntries(entries: readonly ServedEntry[], publicFiles: ReadonlySet<string>): string[] {
+export function unexpectedServedEntries(entries: readonly ServedEntry[], served: ServedFiles): string[] {
   return entries
-    .filter((entry) => !isServedPath(entry, publicFiles))
+    .filter((entry) => !isServedPath(entry, served))
     .map((entry) => `${entry.path} (${entry.kind})`)
     .sort();
 }

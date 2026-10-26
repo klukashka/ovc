@@ -166,10 +166,11 @@ export const test = base.extend<
   control: async ({ deployment }, use): Promise<void> => {
     await use(testControl(deployment));
   },
-  socketSlots: async ({ deployment }, use): Promise<void> => {
-    const holder = socketSlotHolder(deployment);
+  socketSlots: async ({ deployment, page }, use): Promise<void> => {
+    const holder = socketSlotHolder(deployment, page);
     try {
       await use(holder);
+      await holder.expectPageSocketsRefused();
     } finally {
       holder.release();
     }
@@ -225,23 +226,31 @@ async function watchPage(page: Page, deployment: Deployment): Promise<WatchedPag
   page.on('pageerror', (error) => {
     problems.push(`page error: ${error.message}`);
   });
-  let documents = 0;
-  const documentOf = new Map<Request, number>();
+  let step = 0;
+  const navigations: number[] = [];
+  const requests: number[] = [];
+  const startOf = new Map<Request, number>();
   page.on('request', (request) => {
+    step += 1;
     if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
-      documents += 1;
+      navigations.push(step);
+    } else {
+      requests.push(step);
     }
-    documentOf.set(request, documents);
+    startOf.set(request, step);
   });
   const failureChecks: Promise<FailedRequest>[] = [];
   page.on('requestfailed', (request) => {
-    const document = documentOf.get(request) ?? Number.POSITIVE_INFINITY;
+    step += 1;
+    const started = startOf.get(request) ?? Number.POSITIVE_INFINITY;
+    const failed = step;
     failureChecks.push(
       request.response().then((response) => ({
         description: `${request.method()} ${request.url()}`,
         reason: request.failure()?.errorText ?? '',
         answered: response !== null,
-        document,
+        started,
+        failed,
       })),
     );
   });
@@ -257,7 +266,7 @@ async function watchPage(page: Page, deployment: Deployment): Promise<WatchedPag
     },
     verify: async (): Promise<void> => {
       const failedRequests = await Promise.all(failureChecks);
-      expect([...problems, ...unexpectedFailures(failedRequests, documents)]).toEqual([]);
+      expect([...problems, ...unexpectedFailures(failedRequests, { navigations, requests })]).toEqual([]);
       expect([...failures].sort()).toEqual([...expected].sort());
     },
   };

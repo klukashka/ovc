@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'vitest';
 
-import { checkBundle, kilobyte, parseManifest, type ServedEntry, unexpectedServedEntries } from './bundle-budget.ts';
+import {
+  checkBundle,
+  committedPublicFiles,
+  kilobyte,
+  manifestNamedFiles,
+  parseManifest,
+  type ServedEntry,
+  type ServedFiles,
+  unexpectedServedEntries,
+} from './bundle-budget.ts';
 
 const homePage = 'src/features/home/HomePage.tsx';
 const todayPage = 'src/features/home/TodayPage.tsx';
@@ -127,7 +136,17 @@ describe('bundle check', () => {
 });
 
 describe('served build contents', () => {
-  const publicFiles = new Set(['favicon.svg', 'theme-init.js']);
+  const served: ServedFiles = {
+    trackedPublicFiles: new Set(['favicon.svg', 'theme-init.js']),
+    namedAssets: new Set([
+      'assets/index-a1b2.js',
+      'assets/index-a1b2.css',
+      'assets/golos-text-cyrillic.woff2',
+      'assets/golos-text-cyrillic.woff',
+      'assets/report.js',
+      'assets/nested/chunk.js',
+    ]),
+  };
 
   function builtOutput(extra: readonly ServedEntry[] = []): ServedEntry[] {
     return [
@@ -146,7 +165,7 @@ describe('served build contents', () => {
   test('accepts the page, the public files and hashed assets', () => {
     const entries = builtOutput();
 
-    const unexpected = unexpectedServedEntries(entries, publicFiles);
+    const unexpected = unexpectedServedEntries(entries, served);
 
     expect(unexpected).toEqual([]);
   });
@@ -160,7 +179,7 @@ describe('served build contents', () => {
       { path: 'assets/preview-private-key.pem', kind: 'file' },
     ]);
 
-    const unexpected = unexpectedServedEntries(entries, publicFiles);
+    const unexpected = unexpectedServedEntries(entries, served);
 
     expect(unexpected).toEqual([
       '.vite (directory)',
@@ -174,7 +193,7 @@ describe('served build contents', () => {
   test('refuses a symbolic link even when its name looks like an asset', () => {
     const entries = builtOutput([{ path: 'assets/report.js', kind: 'link' }]);
 
-    const unexpected = unexpectedServedEntries(entries, publicFiles);
+    const unexpected = unexpectedServedEntries(entries, served);
 
     expect(unexpected).toEqual(['assets/report.js (link)']);
   });
@@ -185,8 +204,93 @@ describe('served build contents', () => {
       { path: 'assets/nested/chunk.js', kind: 'file' },
     ]);
 
-    const unexpected = unexpectedServedEntries(entries, publicFiles);
+    const unexpected = unexpectedServedEntries(entries, served);
 
     expect(unexpected).toEqual(['assets/nested (directory)', 'assets/nested/chunk.js (file)']);
+  });
+
+  test('refuses a file in the public folder that Git does not track', () => {
+    const entries = builtOutput([{ path: 'notes.txt', kind: 'file' }]);
+
+    const unexpected = unexpectedServedEntries(entries, served);
+
+    expect(unexpected).toEqual(['notes.txt (file)']);
+  });
+
+  test('refuses dotfiles, also when Git tracks them in the public folder', () => {
+    const entries = builtOutput([
+      { path: '.env.production', kind: 'file' },
+      { path: '.well-known', kind: 'directory' },
+      { path: 'assets/.index-a1b2.js', kind: 'file' },
+    ]);
+    const withTrackedDotfile: ServedFiles = {
+      trackedPublicFiles: new Set([...served.trackedPublicFiles, '.env.production']),
+      namedAssets: new Set([...served.namedAssets, 'assets/.index-a1b2.js']),
+    };
+
+    const unexpected = unexpectedServedEntries(entries, withTrackedDotfile);
+
+    expect(unexpected).toEqual(['.env.production (file)', '.well-known (directory)', 'assets/.index-a1b2.js (file)']);
+  });
+
+  test('refuses an asset file that the build manifest does not name', () => {
+    const entries = builtOutput([{ path: 'assets/leftover-c3d4.js', kind: 'file' }]);
+
+    const unexpected = unexpectedServedEntries(entries, served);
+
+    expect(unexpected).toEqual(['assets/leftover-c3d4.js (file)']);
+  });
+
+  test('names the chunk files, their stylesheets and their assets from the manifest', () => {
+    const manifest = parseManifest({
+      'index.html': {
+        file: 'assets/index-a1b2.js',
+        css: ['assets/index-a1b2.css'],
+        assets: ['assets/golos-text-cyrillic.woff2'],
+      },
+      'src/features/home/HomePage.tsx': { file: 'assets/HomePage-e5f6.js', isDynamicEntry: true },
+    });
+
+    const named = manifestNamedFiles(manifest);
+
+    expect([...named].sort()).toEqual([
+      'assets/HomePage-e5f6.js',
+      'assets/golos-text-cyrillic.woff2',
+      'assets/index-a1b2.css',
+      'assets/index-a1b2.js',
+    ]);
+  });
+
+  test('serves only committed regular files of the public folder, never a link, an assumed-unchanged or a skipped entry', () => {
+    const listing = {
+      indexEntries: [
+        'H 100644 aaaf7945d168a15611e96918078c2880c276eebe 0\tpublic/favicon.svg',
+        'H 100755 2a3921f54ce5d1a653558e9fd9948290fe2e34b9 0\tpublic/theme-init.js',
+        'H 120000 3b18e512dba79e4c8300dd08aeb37f8e728b8dad 0\tpublic/notes.txt',
+        'H 100644 4b825dc642cb6eb9a060e54bf8d69288fbee4904 0\tpublic/replaced.txt',
+        'h 100644 5c1b14949828006ed75a3e8858957f86a2f7e2eb 0\tpublic/assumed-unchanged.txt',
+        'S 100644 6d0b8c1f2f3e4a5b6c7d8e9f0a1b2c3d4e5f6a7b 0\tpublic/skipped.txt',
+      ].join('\0'),
+      uncommitted: '',
+    };
+    const kinds = new Map([['public/replaced.txt', 'link' as const]]);
+
+    const committed = committedPublicFiles('public', listing, (path) => kinds.get(path) ?? 'file');
+
+    expect([...committed.files].sort()).toEqual(['favicon.svg', 'theme-init.js']);
+    expect(committed.problems).toEqual([]);
+  });
+
+  test('refuses a public folder with uncommitted or untracked changes', () => {
+    const listing = {
+      indexEntries: 'H 100644 aaaf7945d168a15611e96918078c2880c276eebe 0\tpublic/favicon.svg',
+      uncommitted: [' M public/favicon.svg', 'A  public/staged.txt', '?? public/new.txt'].join('\0'),
+    };
+
+    const committed = committedPublicFiles('public', listing, () => 'file');
+
+    expect(committed.problems).toEqual([
+      'public/ has changes that are not committed: M public/favicon.svg, A  public/staged.txt, ?? public/new.txt',
+    ]);
   });
 });
