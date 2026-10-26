@@ -33,6 +33,7 @@ type EmailPreference = components['schemas']['EmailPreference'];
 
 const cardPathPrefix = '/api/v1/students/';
 const joinRequestsPath = '/api/v1/join-requests';
+const notificationsPath = '/api/v1/notifications';
 const invitationPathPrefix = '/api/v1/invitations/';
 const fakeTokenPrefix = 'fake-';
 const emailPreferencesPath = '/api/v1/users/me/email-preferences';
@@ -133,6 +134,8 @@ export class FakeAuthServer {
   private joinRequestReadGate: Promise<void> | null = null;
   private joinRequestReadReceived: () => void = () => undefined;
   private failingJoinRequestReads = 0;
+  private notificationReadsFailing = false;
+  private failingCardReads = 0;
   private refreshCount = 0;
   private reuse = false;
   private readonly sent: string[] = [];
@@ -233,6 +236,14 @@ export class FakeAuthServer {
 
   failJoinRequestReads(count: number): void {
     this.failingJoinRequestReads += count;
+  }
+
+  failNotificationReads(failing: boolean): void {
+    this.notificationReadsFailing = failing;
+  }
+
+  failNextCardRead(): void {
+    this.failingCardReads += 1;
   }
 
   failNextAccountCheck(): void {
@@ -419,6 +430,9 @@ export class FakeAuthServer {
     if (request.method === 'GET' && path === joinRequestsPath) {
       return this.readJoinRequests(token);
     }
+    if (request.method === 'GET' && path === notificationsPath) {
+      return this.readNotifications(token);
+    }
     if (path === emailPreferencesPath) {
       return this.answerPreferences(request, token);
     }
@@ -469,6 +483,10 @@ export class FakeAuthServer {
     if (request.method !== 'GET' || found?.tutorId !== tutorId) {
       return refusal(404, 'not_found');
     }
+    if (this.failingCardReads > 0) {
+      this.failingCardReads -= 1;
+      return refusal(503, 'service_unavailable');
+    }
     return json(200, found.card);
   }
 
@@ -504,6 +522,17 @@ export class FakeAuthServer {
       return refusal(500, 'internal');
     }
     return json(200, { items: [], next_cursor: null });
+  }
+
+  private readNotifications(token: string): Response {
+    const refused = this.refusedToken(token);
+    if (refused !== null) {
+      return refused;
+    }
+    if (this.notificationReadsFailing) {
+      return refusal(503, 'service_unavailable');
+    }
+    return json(200, { items: [], next_cursor: null, unread_count: 0 });
   }
 
   private async answerPreferences(request: Request, token: string): Promise<Response> {
@@ -645,12 +674,14 @@ export interface ManualScheduler extends Scheduler {
   readonly nextSchedule: () => Promise<number>;
   readonly pass: (milliseconds: number) => void;
   readonly pendingDelays: () => readonly number[];
+  readonly suspend: (milliseconds: number) => void;
 }
 
 export function manualScheduler(): ManualScheduler {
   const tasks = new Map<() => void, number>();
   const waiting: ((milliseconds: number) => void)[] = [];
   let elapsed = 0;
+  let suspended = 0;
 
   function earliestDueBy(limit: number): (() => void) | null {
     let earliest: { readonly task: () => void; readonly due: number } | null = null;
@@ -668,7 +699,10 @@ export function manualScheduler(): ManualScheduler {
   }
 
   return {
-    now: () => elapsed,
+    wallClock: () => elapsed + suspended,
+    suspend: (milliseconds): void => {
+      suspended += milliseconds;
+    },
     pass: (milliseconds): void => {
       const target = elapsed + milliseconds;
       for (let task = earliestDueBy(target); task !== null; task = earliestDueBy(target)) {

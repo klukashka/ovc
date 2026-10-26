@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { ApiError } from '../../lib/api/client.ts';
 import { quietButtonClass } from './Form.tsx';
+import { LiveNotice } from './LiveNotice.tsx';
 
 const loadingDelayMilliseconds = 300;
 
@@ -44,13 +45,17 @@ export function focusHeadingIfLost(): void {
   }
 }
 
-function useFocusHeadingAfterRetry(retried: { readonly current: boolean }): void {
+function useFocusAfterRetry(retried: { readonly current: boolean }, focusIfLost: () => void): void {
+  const latest = useRef(focusIfLost);
+  useEffect(() => {
+    latest.current = focusIfLost;
+  }, [focusIfLost]);
   useEffect(
     () => (): void => {
       if (!retried.current) {
         return;
       }
-      focusHeadingIfLost();
+      latest.current();
     },
     [retried],
   );
@@ -59,18 +64,48 @@ function useFocusHeadingAfterRetry(retried: { readonly current: boolean }): void
 export function LoadFailed({
   error,
   onRetry,
+  focusIfLost = focusHeadingIfLost,
+}: {
+  readonly error: ApiError;
+  readonly onRetry: () => void;
+  readonly focusIfLost?: () => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const retried = useRef(false);
+  useFocusAfterRetry(retried, focusIfLost);
+  return (
+    <div className="flex flex-col items-start gap-3">
+      <p role="alert" className="text-strong">
+        {t('load.failed')}
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          retried.current = true;
+          onRetry();
+        }}
+        className={quietButtonClass}
+      >
+        {t('load.retry')}
+      </button>
+      <p className="text-caption text-text-muted">{t('load.requestId', { requestId: error.requestId ?? '—' })}</p>
+    </div>
+  );
+}
+
+export function RefetchFailed({
+  error,
+  onRetry,
 }: {
   readonly error: ApiError;
   readonly onRetry: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   const retried = useRef(false);
-  useFocusHeadingAfterRetry(retried);
+  useFocusAfterRetry(retried, focusHeadingIfLost);
   return (
-    <div className="flex flex-col items-start gap-3">
-      <p role="alert" className="text-strong">
-        {t('load.failed')}
-      </p>
+    <div className="flex flex-col items-start gap-2">
+      <LiveNotice message={t('load.refetchFailed')} />
       <button
         type="button"
         onClick={() => {

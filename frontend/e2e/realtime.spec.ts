@@ -13,6 +13,35 @@ function socketAddresses(page: Page): string[] {
   return addresses;
 }
 
+interface ReconnectRecord {
+  readonly openSockets: () => number;
+  readonly socketCounts: readonly number[];
+  readonly joinRequestReads: () => number;
+  readonly readsBeforeSocket: readonly number[];
+}
+
+function recordSocketsAndJoinRequestReads(page: Page): ReconnectRecord {
+  const socketCounts: number[] = [];
+  const readsBeforeSocket: number[] = [];
+  let open = 0;
+  let reads = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/v1/join-requests' && request.method() === 'GET') {
+      reads += 1;
+    }
+  });
+  page.on('websocket', (socket: WebSocket) => {
+    readsBeforeSocket.push(reads);
+    open += 1;
+    socketCounts.push(open);
+    socket.on('close', () => {
+      open -= 1;
+      socketCounts.push(open);
+    });
+  });
+  return { openSockets: () => open, socketCounts, joinRequestReads: () => reads, readsBeforeSocket };
+}
+
 for (const code of [4429, 1012] as const) {
   test(`realtime › reconnects and refetches after the server closes with ${String(code)}`, async ({
     page,
@@ -21,18 +50,20 @@ for (const code of [4429, 1012] as const) {
     const maria = await seedVerifiedUser(deployment, 'Мария');
     const user = await accountId(deployment, maria);
     await signInThroughTheApi(page, maria);
+    const record = recordSocketsAndJoinRequestReads(page);
     await page.goto('/today');
     await expect(page.getByRole('region', { name: 'Заявки на занятия' })).toBeVisible();
     await waitForSockets(deployment, user, 1);
-    const refetched = page.waitForRequest(
-      (request) => new URL(request.url()).pathname === '/api/v1/join-requests' && request.method() === 'GET',
-    );
 
     const closed = await closeSockets(deployment, user, code);
 
-    await refetched;
-    expect(closed).toBe(1);
+    await expect.poll(() => record.socketCounts.length).toBe(3);
     await waitForSockets(deployment, user, 1);
+    const readsBeforeReconnect = record.readsBeforeSocket[1] ?? Number.POSITIVE_INFINITY;
+    await expect.poll(() => record.joinRequestReads()).toBeGreaterThan(readsBeforeReconnect);
+    expect(closed).toBe(1);
+    expect(record.socketCounts).toEqual([1, 0, 1]);
+    expect(record.openSockets()).toBe(1);
   });
 }
 

@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useId, useRef } from 'react';
+import { type ReactElement, useCallback, useEffect, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
@@ -8,7 +8,13 @@ import { asApiError } from '../../lib/api/client.ts';
 import { type PanelProps, useLatestNotifications } from './Bell.tsx';
 import { MarkAllRead, NotificationList } from './NotificationRows.tsx';
 
-function PanelBody({ onChoose }: { readonly onChoose: () => void }): ReactElement {
+function PanelBody({
+  onChoose,
+  focusPanelIfLost,
+}: {
+  readonly onChoose: () => void;
+  readonly focusPanelIfLost: () => void;
+}): ReactElement {
   const { t } = useTranslation();
   const query = useLatestNotifications(true);
   const showAll = (
@@ -27,6 +33,7 @@ function PanelBody({ onChoose }: { readonly onChoose: () => void }): ReactElemen
         onRetry={() => {
           void query.refetch();
         }}
+        focusIfLost={focusPanelIfLost}
       />
     );
   }
@@ -54,6 +61,11 @@ export function NotificationsPanel({ id, className, button, onClose }: PanelProp
   const headingId = useId();
   const panel = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
+  const focusPanelHeadingIfLost = useCallback(() => {
+    if (focusIsLost()) {
+      heading.current?.focus();
+    }
+  }, []);
 
   useEffect(() => {
     heading.current?.focus();
@@ -75,7 +87,8 @@ export function NotificationsPanel({ id, className, button, onClose }: PanelProp
     function closeOnEscape(event: KeyboardEvent): void {
       const target = event.target;
       const fromPanel =
-        target instanceof Node && (element?.contains(target) === true || button.current?.contains(target) === true);
+        focusIsLost() ||
+        (target instanceof Node && (element?.contains(target) === true || button.current?.contains(target) === true));
       if (event.key === 'Escape' && fromPanel) {
         event.preventDefault();
         event.stopPropagation();
@@ -109,6 +122,7 @@ export function NotificationsPanel({ id, className, button, onClose }: PanelProp
           onClose();
           requestAnimationFrame(focusHeadingIfLost);
         }}
+        focusPanelIfLost={focusPanelHeadingIfLost}
       />
     </section>
   );

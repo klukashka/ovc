@@ -112,7 +112,7 @@ Frames never carry state; `lib/realtime` turns each into TanStack Query invalida
 | `entity.changed relationship` | the Students list and its tabs, the student card with that identifier, group pages (members), My tutors, the tutor list on student Home |
 | `entity.changed join_request` | the tutor's join requests (Students and Today), the student's sent requests (My tutors and Home) |
 | `entity.changed notification`, `notification.new` | the notification list, the panel and the badge |
-| the first `ready` of a socket (the first connection or a reconnect) | every active query that holds an answer or is being fetched |
+| the first `ready` of a socket (the first connection or a reconnect) | every active query that holds an answer or is being fetched, and after a reconnect (a `ready` that follows an earlier `ready` or a failed or refused attempt of the same client, or the first `ready` of a client resumed after `beforeunload` or restored from the back-forward cache) also every active query whose last fetch ended in an error |
 
 Queries are invalidated by key prefix, so only the queries a page has mounted are fetched again. The application's query client lets a running fetch finish instead of aborting it when a frame or a page's own action asks for the same query, and fetches once more after it when it ended with data, because that fetch may have started before the change; so a live frame and the action that caused it never abort each other's request, and the last answer is never older than the change. A list row that a refetch removes moves focus through the shared hook in `components/ui/liveRows.ts`.
 

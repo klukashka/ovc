@@ -21,7 +21,7 @@ import {
 } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { FocusedNotice } from '../../components/ui/LiveNotice.tsx';
-import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
+import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
 import { StatusWord } from '../../components/ui/StatusWord.tsx';
@@ -451,7 +451,10 @@ export function GroupPage(): ReactElement {
     queryFn: () => fetchGroup(client, groupId),
     retry: false,
   });
-  const error = query.isError ? asApiError(query.error) : null;
+  const queryError = query.isError ? asApiError(query.error) : null;
+  const refetchError =
+    queryError !== null && queryError.code !== 'not_found' && query.data !== undefined ? queryError : null;
+  const error = refetchError === null ? queryError : null;
   const notFound = error?.code === 'not_found';
 
   function body(): ReactElement {
@@ -498,6 +501,14 @@ export function GroupPage(): ReactElement {
       focusTitle={notFound}
     >
       {changed === null || notFound ? null : <FocusedNotice key={changed.count} message={t('groups.changed')} />}
+      {refetchError === null ? null : (
+        <RefetchFailed
+          error={refetchError}
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
       {body()}
     </Page>
   );

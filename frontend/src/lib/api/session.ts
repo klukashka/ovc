@@ -14,7 +14,7 @@ export interface LockManagerLike {
 
 export interface Scheduler {
   schedule(milliseconds: number, task: () => void): () => void;
-  now(): number;
+  wallClock(): number;
 }
 
 export type SignedOutReason = 'anonymous' | 'signedOut' | 'blocked' | 'accountDeleted' | 'sessionEnded';
@@ -166,7 +166,7 @@ export class Session {
     if (epoch !== this.epoch) {
       return null;
     }
-    if (this.token !== null && this.tokenExpiresAt - this.deps.scheduler.now() > minimumValidityMilliseconds) {
+    if (this.token !== null && this.tokenExpiresAt - this.deps.scheduler.wallClock() > minimumValidityMilliseconds) {
       return this.token;
     }
     const result = await this.refresh();
@@ -389,7 +389,7 @@ export class Session {
       throw new Error('the server answered an access token of an unexpected shape');
     }
     this.token = value.access_token;
-    this.tokenExpiresAt = this.deps.scheduler.now() + value.expires_in * 1000;
+    this.tokenExpiresAt = this.deps.scheduler.wallClock() + value.expires_in * 1000;
     for (const listener of this.tokenListeners) {
       listener(value.access_token, this.epoch);
     }
@@ -458,7 +458,7 @@ export const browserScheduler: Scheduler = {
       window.clearTimeout(handle);
     };
   },
-  now: () => performance.now(),
+  wallClock: () => Date.now(),
 };
 
 export function browserLocks(locks: LockManager | undefined): LockManagerLike {

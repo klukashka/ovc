@@ -28,7 +28,7 @@ function unstartedSession(): Session {
     origin,
     transport: httpAuthTransport('https://ovc.example', globalThis.fetch),
     locks: { request: (_name, callback) => callback() },
-    scheduler: { schedule: () => (): void => undefined, now: () => 0 },
+    scheduler: { schedule: () => (): void => undefined, wallClock: () => 0 },
   });
 }
 

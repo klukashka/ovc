@@ -1,7 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { diagnosedTest, expect, seedVerifiedUser, testControl } from './fixtures.ts';
 import { notificationRows } from './notifications.ts';
 import { accountId, waitForSockets } from './realtime.ts';
 import {
@@ -34,25 +34,23 @@ interface ManyRowsSeed {
   readonly maria: TestAccount;
 }
 
-let manyRows: ManyRowsSeed | null = null;
-
-function seededManyRows(): ManyRowsSeed {
-  if (manyRows === null) {
-    throw new Error('the seed with 31 notifications has not run');
-  }
-  return manyRows;
-}
+const test = diagnosedTest.extend<object, { manyRows: ManyRowsSeed }>({
+  manyRows: [
+    async ({ deployment }, use): Promise<void> => {
+      const maria = await seedVerifiedUser(deployment, 'Мария');
+      await seedJoinRequests(deployment, testControl(deployment), maria, 31);
+      await use({ maria });
+    },
+    { scope: 'worker' },
+  ],
+});
 
 test.describe('notifications in Russian on a computer', () => {
   test.use({ locale: 'ru-RU', timezoneId: 'Europe/Moscow', viewport: { width: 1280, height: 800 } });
 
   test.describe('with 31 notifications', () => {
-    test.describe.configure({ mode: 'serial' });
-
-    test('notifications › the panel shows the latest 10 and opens the page', async ({ page, deployment, control }) => {
-      const maria = await seedVerifiedUser(deployment, 'Мария');
-      await seedJoinRequests(deployment, control, maria, 31);
-      manyRows = { maria };
+    test('notifications › the panel shows the latest 10 and opens the page', async ({ page, deployment, manyRows }) => {
+      const { maria } = manyRows;
       const newest = (await notificationRows(deployment, maria)).slice(0, 10).map((row) => row.label ?? '');
       await signInThroughTheApi(page, maria);
       await page.goto('/today');
@@ -71,8 +69,11 @@ test.describe('notifications in Russian on a computer', () => {
       );
     });
 
-    test('notifications › Show all notifications in the panel opens the page on its heading', async ({ page }) => {
-      const { maria } = seededManyRows();
+    test('notifications › Show all notifications in the panel opens the page on its heading', async ({
+      page,
+      manyRows,
+    }) => {
+      const { maria } = manyRows;
       await signInThroughTheApi(page, maria);
       await page.goto('/today');
       const shown = await openPanel(page);
@@ -86,8 +87,8 @@ test.describe('notifications in Russian on a computer', () => {
       await expect(rowsOf(page.getByRole('main'))).toHaveCount(30);
     });
 
-    test('notifications › Show more on the page moves focus to the first new row', async ({ page }) => {
-      const { maria } = seededManyRows();
+    test('notifications › Show more on the page moves focus to the first new row', async ({ page, manyRows }) => {
+      const { maria } = manyRows;
       await signInThroughTheApi(page, maria);
       await page.goto('/notifications');
       const rows = rowsOf(page.getByRole('main'));

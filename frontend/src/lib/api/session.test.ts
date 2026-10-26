@@ -271,6 +271,23 @@ describe('the session when the server fails', () => {
     expect(signedInAs(session)).toBe(first.id);
   });
 
+  test('a token whose lifetime passed in wall-clock time while timers were suspended is renewed before use', async () => {
+    const shared = browser();
+    const scheduler = manualScheduler();
+    const session = await signedInTab(shared, scheduler);
+    const [tokenBeforeSleep] = await tokensSentByNextRequest(shared, session);
+    shared.server.advance(16 * 60);
+    scheduler.suspend(16 * 60 * 1000);
+
+    const token = await session.freshToken(30_000, session.currentEpoch());
+
+    expect(shared.server.refreshes).toBe(1);
+    expect(token).not.toBeNull();
+    expect(token).not.toBe(tokenBeforeSleep);
+    expect(scheduler.pendingDelays()).toEqual([720_000]);
+    expect(await tokensSentByNextRequest(shared, session)).toEqual([token]);
+  });
+
   test('a signed-in tab whose account is blocked ends on its next request', async () => {
     const shared = browser();
     const session = await signedInTab(shared);

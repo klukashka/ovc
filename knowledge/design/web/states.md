@@ -165,6 +165,7 @@ The bundled timezone table gives each city in the form the string needs: "Moscow
 - **Toasts:**
   - confirm completed actions in one short sentence ("Lesson cancelled" / "Урок отменён");
   - errors persist until dismissed and offer a retry when the action is retryable.
+- **A failed refetch of a loaded page** keeps the page and says: "The latest data could not be loaded. The page shows what was loaded before." / "Не удалось обновить данные. На странице показано то, что загрузилось раньше.", with Retry ("Try again" / "Повторить").
 - **Inline validation** appears below the field after the first blur or submit, in `danger`, with an icon.
 - **Destructive actions** (ending a relationship from either side, removing a provisional student, cancelling a series, deleting a recording, deleting the account) need a confirmation dialog that names the consequence. Deleting the account additionally asks for the password.
 

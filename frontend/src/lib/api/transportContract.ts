@@ -83,6 +83,10 @@ function joinRequestsRequest(subject: ContractSubject, token: string): Request {
   return new Request(`${subject.origin}/api/v1/join-requests`, { headers: { Authorization: `Bearer ${token}` } });
 }
 
+function notificationsRequest(subject: ContractSubject, token: string): Request {
+  return new Request(`${subject.origin}/api/v1/notifications`, { headers: { Authorization: `Bearer ${token}` } });
+}
+
 function emailPreferencesRequest(subject: ContractSubject, token: string, body?: unknown): Request {
   return new Request(`${subject.origin}/api/v1/users/me/email-preferences`, {
     method: body === undefined ? 'GET' : 'PUT',
@@ -247,6 +251,28 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
         `expected exactly {items: [], next_cursor: null}, got ${JSON.stringify(body)}`,
       );
     },
+
+  'a tutor without notifications reads an empty page with no unread rows': async (subject) => {
+    const token = await accessToken(await subject.transport.login(subject.otherTutorEmail, subject.otherTutorPassword));
+
+    const read = await subject.transport.send(notificationsRequest(subject, token));
+
+    check(read.status === 200, `expected 200, got ${String(read.status)}`);
+    const body: unknown = await read.json();
+    check(
+      typeof body === 'object' &&
+        body !== null &&
+        Object.keys(body).sort().join(',') === 'items,next_cursor,unread_count' &&
+        'items' in body &&
+        Array.isArray(body.items) &&
+        body.items.length === 0 &&
+        'next_cursor' in body &&
+        body.next_cursor === null &&
+        'unread_count' in body &&
+        body.unread_count === 0,
+      `expected exactly {items: [], next_cursor: null, unread_count: 0}, got ${JSON.stringify(body)}`,
+    );
+  },
 
   'a student reading the join requests is refused as on an unknown route with not_found': async (subject) => {
     const { email, password } = await subject.student();

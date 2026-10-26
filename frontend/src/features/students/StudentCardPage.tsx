@@ -21,7 +21,7 @@ import {
   textButtonClass,
 } from '../../components/ui/Form.tsx';
 import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
-import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
+import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
 import { useStoredValue, valueAccess } from '../../components/ui/serverValue.ts';
@@ -643,7 +643,10 @@ export function StudentCardPage(): ReactElement {
     retry: false,
   });
 
-  const error = query.isError ? asApiError(query.error) : null;
+  const queryError = query.isError ? asApiError(query.error) : null;
+  const refetchError =
+    queryError !== null && queryError.code !== 'not_found' && query.data !== undefined ? queryError : null;
+  const error = refetchError === null ? queryError : null;
   const gone = error?.code === 'not_found' && query.data !== undefined;
   const notFound = error?.code === 'not_found' && !gone;
   const [dialogSubject, setDialogSubject] = useState<{ readonly id: string; readonly state: string } | null>(null);
@@ -749,6 +752,14 @@ export function StudentCardPage(): ReactElement {
         <FocusedNotice key={changedCard.count} message={t('studentCard.changedElsewhere')} />
       )}
       {endedCard === null || notFound || gone ? null : <FocusedNotice message={t('studentCard.ended')} />}
+      {refetchError === null ? null : (
+        <RefetchFailed
+          error={refetchError}
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
       {body()}
     </Page>
   );

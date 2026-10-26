@@ -27,7 +27,10 @@ export function liveRefetch(
     switch (event.kind) {
       case 'connected':
         void queryClient.invalidateQueries({
-          predicate: (query) => query.state.status === 'success' || query.state.fetchStatus === 'fetching',
+          predicate: (query) =>
+            query.state.status === 'success' ||
+            query.state.fetchStatus === 'fetching' ||
+            (event.reconnect && query.state.status === 'error'),
         });
         return;
       case 'notification':

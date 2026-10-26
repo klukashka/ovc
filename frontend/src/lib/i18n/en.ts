@@ -364,6 +364,7 @@ export const en: Resources = {
     failed: 'Something went wrong.',
     retry: 'Try again',
     requestId: 'Request code: {requestId}',
+    refetchFailed: 'The latest data could not be loaded. The page shows what was loaded before.',
     pageFailed: 'This page could not be loaded. Check your connection and reload the page.',
     reload: 'Reload the page',
   },

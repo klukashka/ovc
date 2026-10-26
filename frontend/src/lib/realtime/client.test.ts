@@ -70,6 +70,7 @@ async function connectedRig(onEvent: (event: RealtimeEvent) => void = () => unde
         onFailure: (error): void => {
           failures.push(error);
         },
+        connectedBefore: false,
       }),
   );
   await eventually(() => {
@@ -160,7 +161,7 @@ describe('realtime client', () => {
     expect(rig.failures).toEqual([]);
   });
 
-  test('backs off with jitter and refetches active queries after ready', async () => {
+  test('waits at least the listener reconnect delay after 1012, backs off with jitter and refetches after ready', async () => {
     const queryClient = new QueryClient();
     let fetches = 0;
     const observer = new QueryObserver(queryClient, {
@@ -183,10 +184,64 @@ describe('realtime client', () => {
     await eventually(() => {
       expect(fetches).toBe(3);
     });
-    expect(delays).toEqual([500, 1_000, 2_000, 4_000, 8_000, 15_000, 15_000]);
+    expect(delays).toEqual([1_500, 1_000, 2_000, 4_000, 8_000, 15_000, 15_000]);
     expect(rig.gateway.readySockets(tutor.id)).toBe(1);
     expect(rig.failures).toEqual([]);
     unsubscribe();
+  });
+
+  test('marks only the readiness after the first connection as a reconnect', async () => {
+    const events: RealtimeEvent[] = [];
+    const rig = await connectedRig((event) => {
+      events.push(event);
+    });
+
+    await closeAfterEveryReady(rig, 1);
+
+    expect(events).toEqual([
+      { kind: 'connected', reconnect: false },
+      { kind: 'connected', reconnect: true },
+    ]);
+  });
+
+  test('marks a first readiness after refused attempts as a reconnect', async () => {
+    const events: RealtimeEvent[] = [];
+    const server = new FakeAuthServer();
+    server.addAccount(tutor);
+    const gateway = new FakeGateway(server);
+    const session = new Session({
+      origin,
+      transport: server.transport(),
+      locks: memoryLocks(),
+      scheduler: manualScheduler(),
+    });
+    await session.signIn(tutor.email, tutor.password);
+    gateway.refuseConnections(1);
+    const clock = manualScheduler();
+
+    const disconnect = connectWhileSignedIn(
+      session,
+      (epoch): RealtimeClient =>
+        new RealtimeClient({
+          sockets: gateway.sockets,
+          tokens: session,
+          epoch,
+          scheduler: clock,
+          random: (): number => 0.5,
+          onEvent: (event): void => {
+            events.push(event);
+          },
+          onFailure: (): void => undefined,
+          connectedBefore: false,
+        }),
+    );
+    await passEveryReconnectDelay(clock, 1);
+    await eventually(() => {
+      expect(gateway.readySockets(tutor.id)).toBe(1);
+    });
+
+    expect(events).toEqual([{ kind: 'connected', reconnect: true }]);
+    disconnect();
   });
 
   test('the backoff starts over only after a pong', async () => {
@@ -200,8 +255,8 @@ describe('realtime client', () => {
     await afterNextPong(rig);
     const afterPong = await closeAfterEveryReady(rig, 1);
 
-    expect(beforePong).toEqual([500, 1_000]);
-    expect(afterPong).toEqual([500]);
+    expect(beforePong).toEqual([1_500, 2_000]);
+    expect(afterPong).toEqual([1_500]);
     expect(rig.failures).toEqual([]);
   });
 

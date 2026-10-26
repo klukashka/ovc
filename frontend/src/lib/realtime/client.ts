@@ -8,11 +8,12 @@ export const pongWithinMilliseconds = 10_000;
 export const firstBackoffMilliseconds = 1_000;
 export const backoffCapMilliseconds = 30_000;
 export const tooManyBackoffCapMilliseconds = 60_000;
+export const listenerReconnectMilliseconds = 1_000;
 
 export type RealtimeEvent =
   | { readonly kind: 'notification'; readonly id: string }
   | { readonly kind: 'entity'; readonly entity: EntityKind; readonly id: string }
-  | { readonly kind: 'connected' };
+  | { readonly kind: 'connected'; readonly reconnect: boolean };
 
 export interface TokenSource {
   readonly freshToken: (minimumValidityMilliseconds: number, epoch: number) => Promise<string | null>;
@@ -29,6 +30,7 @@ export interface ClientDependencies {
   readonly random: () => number;
   readonly onEvent: (event: RealtimeEvent) => void;
   readonly onFailure: (error: Error) => void;
+  readonly connectedBefore: boolean;
 }
 
 interface Connection {
@@ -44,6 +46,7 @@ export class RealtimeClient {
   private connection: Connection | null = null;
   private generation = 0;
   private attempt = 0;
+  private connectedBefore: boolean;
   private latestToken: string | null = null;
   private pings = 0;
   private awaitedPong: string | null = null;
@@ -54,6 +57,7 @@ export class RealtimeClient {
 
   constructor(dependencies: ClientDependencies) {
     this.deps = dependencies;
+    this.connectedBefore = dependencies.connectedBefore;
   }
 
   start(): void {
@@ -165,7 +169,8 @@ export class RealtimeClient {
     if (this.latestToken !== null && this.latestToken !== connection.sentToken) {
       this.renewed(this.latestToken);
     }
-    this.deps.onEvent({ kind: 'connected' });
+    this.deps.onEvent({ kind: 'connected', reconnect: this.connectedBefore || this.attempt > 0 });
+    this.connectedBefore = true;
   }
 
   private renewed(token: string): void {
@@ -218,6 +223,10 @@ export class RealtimeClient {
       }
       return;
     }
+    if (code === closeCodes.reconnect) {
+      this.reconnectLater(backoffCapMilliseconds, listenerReconnectMilliseconds);
+      return;
+    }
     this.reconnectLater(code === closeCodes.tooMany ? tooManyBackoffCapMilliseconds : backoffCapMilliseconds);
   }
 
@@ -227,13 +236,13 @@ export class RealtimeClient {
     this.reconnectLater(backoffCapMilliseconds);
   }
 
-  private reconnectLater(cap: number): void {
+  private reconnectLater(cap: number, floor = 0): void {
     if (this.stopped) {
       return;
     }
     const ceiling = Math.min(cap, firstBackoffMilliseconds * 2 ** this.attempt);
     this.attempt += 1;
-    this.cancelReconnect = this.deps.scheduler.schedule(this.deps.random() * ceiling, () => {
+    this.cancelReconnect = this.deps.scheduler.schedule(floor + this.deps.random() * ceiling, () => {
       void this.connect();
     });
   }

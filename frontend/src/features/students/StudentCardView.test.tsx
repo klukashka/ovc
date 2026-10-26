@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { afterEach, describe, expect, test } from 'vitest';
@@ -38,8 +38,7 @@ const activeCard: StudentCard = {
   linked_at: '2026-10-25T15:00:00Z',
 };
 
-async function signedInTutor(): Promise<Session> {
-  const server = new FakeAuthServer();
+async function signedInTutor(server: FakeAuthServer = new FakeAuthServer()): Promise<Session> {
   server.addAccount({ id: 'tutor-1', name: 'Мария', email: 'maria@example.org', password: 'a long password' });
   const session = new Session({
     origin,
@@ -86,6 +85,64 @@ async function show(card: StudentCard): Promise<void> {
 
 function buttonNames(): string[] {
   return screen.getAllByRole('button').map((button) => button.textContent);
+}
+
+const refetchFailedText = 'Не удалось обновить данные. На странице показано то, что загрузилось раньше.';
+
+interface LoadedCard {
+  readonly server: FakeAuthServer;
+  readonly queryClient: QueryClient;
+  readonly card: StudentCard;
+  readonly notes: HTMLElement;
+}
+
+async function showLoadedCardWithTyping(): Promise<LoadedCard> {
+  const server = new FakeAuthServer();
+  const session = await signedInTutor(server);
+  const created = await session.authorizedFetch(`${origin}/api/v1/students`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ display_name: 'Борис' }),
+  });
+  const card = (await created.json()) as StudentCard;
+  const queryClient = new QueryClient();
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/students/:studentId',
+        element: (
+          <main>
+            <StudentCardPage />
+          </main>
+        ),
+      },
+    ],
+    { initialEntries: [`/students/${card.id}`] },
+  );
+  render(
+    <SessionContext value={session}>
+      <ApiClientContext value={createApiClient(origin, session.authorizedFetch)}>
+        <QueryClientProvider client={queryClient}>
+          <I18nextProvider i18n={await createI18n('ru')}>
+            <RouterProvider router={router} />
+          </I18nextProvider>
+        </QueryClientProvider>
+      </ApiClientContext>
+    </SessionContext>,
+  );
+  await screen.findByRole('heading', { level: 1, name: 'Борис' });
+  const notes = screen.getByRole('textbox', { name: 'Заметки' });
+  notes.focus();
+  fireEvent.change(notes, { target: { value: 'Unsaved typing' } });
+  return { server, queryClient, card, notes };
+}
+
+async function failOneRefetch({ server, queryClient, card }: LoadedCard): Promise<void> {
+  server.failNextCardRead();
+  await act(async () => {
+    await queryClient.invalidateQueries({ queryKey: studentCardKey(card.id) });
+  });
+  await screen.findByText(refetchFailedText);
 }
 
 afterEach(() => {
@@ -246,5 +303,38 @@ describe('the student card page', () => {
       expect(queryClient.getQueryData(studentCardKey(card.id))).toBeUndefined();
     });
     expect(screen.queryByText(card.invitation?.url ?? '')).toBeNull();
+  });
+
+  test('keeps unsaved typing and the loaded card when a background refetch fails, with a polite notice', async () => {
+    const shown = await showLoadedCardWithTyping();
+
+    await failOneRefetch(shown);
+
+    const notice = screen.getByText(refetchFailedText);
+    expect(notice.closest('[role="status"]')).not.toBeNull();
+    expect(document.activeElement).toBe(shown.notes);
+    expect(screen.getByRole('heading', { level: 1, name: 'Борис' })).toBeDefined();
+    expect(screen.queryByText('Что-то пошло не так.')).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Заметки' })).toBe(shown.notes);
+    expect(shown.notes).toHaveProperty('value', 'Unsaved typing');
+  });
+
+  test('Retry on the refetch notice clears it, keeps the typing and moves focus to the page heading', async () => {
+    const shown = await showLoadedCardWithTyping();
+    await failOneRefetch(shown);
+    const retry = screen.getByRole('button', { name: 'Повторить' });
+    retry.focus();
+
+    await act(async () => {
+      retry.click();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText(refetchFailedText)).toBeNull();
+    });
+
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Борис' }));
+    expect(screen.getByRole('textbox', { name: 'Заметки' })).toBe(shown.notes);
+    expect(shown.notes).toHaveProperty('value', 'Unsaved typing');
   });
 });
