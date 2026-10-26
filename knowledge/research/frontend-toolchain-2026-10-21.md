@@ -57,8 +57,4 @@ Node 26 runs the TypeScript build scripts in `frontend/scripts/` and `frontend/e
 
 ### Accepted findings
 
-Accepted findings, listed in `frontend/osv-scanner.toml` and in `auditConfig.ignoreGhsas` of `frontend/pnpm-workspace.yaml` (OSV-Scanner and `pnpm audit` over `frontend/pnpm-lock.yaml`, rechecked 2026-10-24):
-
-| Advisory | Package | Reason |
-|---|---|---|
-| GHSA-xjj6-f33q-929c (high, CVSS 3.1 7.5), GHSA-4qv8-2p9j-2685 (moderate, CVSS 3.1 5.9), GHSA-f72v-6w45-q472 (moderate, CVSS 3.1 5.9) | `undici` 8.11.2, through `jsdom` 30.1.2 under Vitest | Checked 2026-10-24: jsdom is the DOM of the unit tests, which load no external resources and open no XHR, WebSocket or EventSource through jsdom; nothing in the application build imports undici. The fix 8.12.2 was published 2026-10-15 and is younger than the minimum release age. Accepted until 2026-10-31, then upgraded; the upgrade change also removes the three `auditConfig.ignoreGhsas` entries by hand |
+None since 2026-10-26: OSV-Scanner and `pnpm audit` over `frontend/pnpm-lock.yaml` report nothing after undici resolved to 8.12.3 (published 2026-10-19) through jsdom 30.1.2, which fixes the three undici advisories accepted until then; `frontend/osv-scanner.toml` is empty and `pnpm-workspace.yaml` has no `auditConfig`. The earlier entries were accepted until that upgrade, rechecked 2026-10-24.

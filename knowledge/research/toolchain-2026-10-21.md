@@ -1,6 +1,6 @@
 # Backend toolchain and library versions
 
-Checked 2026-10-21 against the Go module proxy (`go list -m -versions -json`) and the libraries' source at the pinned versions. Releases younger than two weeks were skipped. Facts here are volatile; recheck them before relying on them after this date. The documentation tools' accepted findings were rechecked on 2026-10-22.
+Checked 2026-10-21 against the Go module proxy (`go list -m -versions -json`) and the libraries' source at the pinned versions. Releases younger than two weeks were skipped. Facts here are volatile; recheck them before relying on them after this date. The documentation tools' accepted findings were rechecked on 2026-10-22 and on 2026-10-26, when markdown-it 14.3.3 removed its two accepted advisories.
 
 ## Versions
 
@@ -28,7 +28,7 @@ Pinned 2026-10-21 in `tools/docs` (package manifest, lockfile and pnpm policy) i
 
 | Tool | Version | Note |
 |---|---|---|
-| markdownlint-cli | 0.49.1 (2026-07-14) | 0.45.0 pulled `glob`, `js-yaml`, `markdown-it` and `minimatch` versions with high-severity advisories; 0.49.1 adds rule `MD060`, turned off in `.markdownlint.json` |
+| markdownlint-cli | 0.49.1 (2026-07-14), with `markdown-it` 14.3.3 (published 2026-10-16) resolved since 2026-10-26 | 0.45.0 pulled `glob`, `js-yaml`, `markdown-it` and `minimatch` versions with high-severity advisories; 0.49.1 adds rule `MD060`, turned off in `.markdownlint.json` |
 | @mermaid-js/mermaid-cli | 12.0.0 (2026-09-24) | Declares `puppeteer` ^25 as a peer |
 | puppeteer | 25.13.0 (2026-10-08; 25.12.0 of 2026-09-23 until 2026-10-25) | Its install script, which downloads a browser, is denied in `tools/docs/pnpm-workspace.yaml` |
 | playwright-core | 1.63.0 | Same version as the frontend's Playwright, used only to locate its Chromium for the renderer |
@@ -38,5 +38,4 @@ Overrides in `tools/docs/pnpm-workspace.yaml` raise `smol-toml` to 1.9.0 and `js
 
 | Advisory | Package | Reason |
 |---|---|---|
-| GHSA-gfr2-rv44-r23c (high, CVSS 7.5), GHSA-vfgh-jcmw-g37q (low, CVSS 3.7) | `markdown-it` 14.3.2 | The fix 14.3.3 was published 2026-10-16 and is younger than the minimum release age; the linter parses only this repository's Markdown. Accepted until 2026-11-15 |
 | GHSA-238p-pmpm-9mq7 (low, CVSS 2.1) | `katex` 0.16.47 | Fixed only in the 0.18 line, outside mermaid's 0.16 range; the renderer processes only this repository's diagrams offline. Accepted until 2027-01-21 |

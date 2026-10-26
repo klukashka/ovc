@@ -1,14 +1,4 @@
 [[IgnoredVulns]]
-id = "GHSA-gfr2-rv44-r23c"
-ignoreUntil = 2026-11-15T00:00:00Z
-reason = "High severity (CVSS 7.5): markdown-it 14.3.2 inside the documentation linter; the fix 14.3.3 was published 2026-10-16; it was younger than the two-week minimum release age when this was triaged, and ADR-0017 now lets the next dependency change upgrade it. The linter parses only this repository's own Markdown."
-
-[[IgnoredVulns]]
 id = "GHSA-238p-pmpm-9mq7"
 ignoreUntil = 2027-01-21T00:00:00Z
 reason = "Low-severity katex 0.16.47 inside the diagram renderer; the fix is in the 0.18 line, outside mermaid's declared 0.16 range. The renderer processes only this repository's own diagrams, offline, and its output is discarded."
-
-[[IgnoredVulns]]
-id = "GHSA-vfgh-jcmw-g37q"
-ignoreUntil = 2026-11-15T00:00:00Z
-reason = "Low-severity markdown-it 14.3.2 finding inside the documentation linter, fixed in 14.3.3, which the next dependency change upgrades under ADR-0017; same exposure as GHSA-gfr2-rv44-r23c."
