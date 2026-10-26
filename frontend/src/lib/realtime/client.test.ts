@@ -6,29 +6,12 @@ import { NotificationArrivals } from '../../app/notificationArrivals.ts';
 import { studentsKey } from '../../features/students/api.ts';
 import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../api/fakeTransport.ts';
 import { Session } from '../api/session.ts';
+import { eventually } from '../eventually.ts';
 import { type RealtimeEvent, RealtimeClient, connectWhileSignedIn } from './client.ts';
 import { closeCodes } from './frames.ts';
 import { FakeGateway } from './fakeGateway.ts';
 
 const origin = 'https://ovc.example';
-const deadlineMilliseconds = 2_000;
-
-async function eventually(condition: () => void): Promise<void> {
-  const deadline = Date.now() + deadlineMilliseconds;
-  for (;;) {
-    try {
-      condition();
-      return;
-    } catch (error) {
-      if (Date.now() >= deadline) {
-        throw error;
-      }
-    }
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 5);
-    });
-  }
-}
 const tutor = { id: 'tutor-a', name: 'A tutor', email: 'a@example.org', password: 'a long enough password' };
 const other = { id: 'tutor-b', name: 'B tutor', email: 'b@example.org', password: 'another long password' };
 

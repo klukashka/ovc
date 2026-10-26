@@ -2,27 +2,9 @@ import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { describe, expect, test } from 'vitest';
 
 import { latestNotificationsKey } from '../features/notifications/api.ts';
+import { eventually } from '../lib/eventually.ts';
 import { liveRefetch } from './liveRefetch.ts';
 import { NotificationArrivals } from './notificationArrivals.ts';
-
-const deadlineMilliseconds = 2_000;
-
-async function eventually(condition: () => void): Promise<void> {
-  const deadline = Date.now() + deadlineMilliseconds;
-  for (;;) {
-    try {
-      condition();
-      return;
-    } catch (error) {
-      if (Date.now() >= deadline) {
-        throw error;
-      }
-    }
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 5);
-    });
-  }
-}
 
 function countFailingFirst(fetches: { count: number }): () => Promise<number> {
   return () => {

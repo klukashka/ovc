@@ -1,7 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 
-import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
-import { diagnosedTest, expect, seedVerifiedUser, testControl } from './fixtures.ts';
+import { newTestAccount, signInThroughTheApi } from './accounts.ts';
+import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { notificationRows } from './notifications.ts';
 import { accountId, waitForSockets } from './realtime.ts';
 import {
@@ -30,27 +30,18 @@ async function openPanel(page: Page): Promise<Locator> {
   return panel(page);
 }
 
-interface ManyRowsSeed {
-  readonly maria: TestAccount;
-}
-
-const test = diagnosedTest.extend<object, { manyRows: ManyRowsSeed }>({
-  manyRows: [
-    async ({ deployment }, use): Promise<void> => {
-      const maria = await seedVerifiedUser(deployment, 'Мария');
-      await seedJoinRequests(deployment, testControl(deployment), maria, 31);
-      await use({ maria });
-    },
-    { scope: 'worker' },
-  ],
-});
-
 test.describe('notifications in Russian on a computer', () => {
   test.use({ locale: 'ru-RU', timezoneId: 'Europe/Moscow', viewport: { width: 1280, height: 800 } });
 
   test.describe('with 31 notifications', () => {
-    test('notifications › the panel shows the latest 10 and opens the page', async ({ page, deployment, manyRows }) => {
-      const { maria } = manyRows;
+    test.describe.configure({ mode: 'default' });
+
+    test('notifications › the panel shows the latest 10 and opens the page', async ({
+      page,
+      deployment,
+      mariaWithJoinRequests,
+    }) => {
+      const { maria } = mariaWithJoinRequests;
       const newest = (await notificationRows(deployment, maria)).slice(0, 10).map((row) => row.label ?? '');
       await signInThroughTheApi(page, maria);
       await page.goto('/today');
@@ -71,9 +62,9 @@ test.describe('notifications in Russian on a computer', () => {
 
     test('notifications › Show all notifications in the panel opens the page on its heading', async ({
       page,
-      manyRows,
+      mariaWithJoinRequests,
     }) => {
-      const { maria } = manyRows;
+      const { maria } = mariaWithJoinRequests;
       await signInThroughTheApi(page, maria);
       await page.goto('/today');
       const shown = await openPanel(page);
@@ -87,8 +78,11 @@ test.describe('notifications in Russian on a computer', () => {
       await expect(rowsOf(page.getByRole('main'))).toHaveCount(30);
     });
 
-    test('notifications › Show more on the page moves focus to the first new row', async ({ page, manyRows }) => {
-      const { maria } = manyRows;
+    test('notifications › Show more on the page moves focus to the first new row', async ({
+      page,
+      mariaWithJoinRequests,
+    }) => {
+      const { maria } = mariaWithJoinRequests;
       await signInThroughTheApi(page, maria);
       await page.goto('/notifications');
       const rows = rowsOf(page.getByRole('main'));

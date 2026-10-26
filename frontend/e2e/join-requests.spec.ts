@@ -348,11 +348,9 @@ test.describe('in Russian', () => {
 
   test('join requests › show more on Today moves focus to the first new request', async ({
     page,
-    deployment,
-    control,
+    mariaWithJoinRequests,
   }) => {
-    const maria = await seedVerifiedUser(deployment, 'Мария');
-    await seedJoinRequests(deployment, control, maria, pageSize + 1);
+    const { maria } = mariaWithJoinRequests;
     await recordBusyControls(page);
     await signInThroughTheApi(page, maria);
     await page.goto('/today');

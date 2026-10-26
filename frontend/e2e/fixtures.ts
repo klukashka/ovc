@@ -11,7 +11,7 @@ import {
 import { type Deployment, readE2ESettings, startDeployment } from './deployment.ts';
 import { type SocketSlotHolder, socketSlotHolder } from './realtime.ts';
 import { type FailedRequest, unexpectedFailures } from './request-failures.ts';
-import { createGroup, seedActiveStudent, seedActiveStudentsThroughCode } from './tutoring.ts';
+import { createGroup, seedActiveStudent, seedActiveStudentsThroughCode, seedJoinRequests } from './tutoring.ts';
 
 export interface SentMail {
   readonly subject: string;
@@ -99,11 +99,16 @@ export interface StudentsOfPavel {
   readonly cardIds: readonly string[];
 }
 
+export interface MariaWithJoinRequests {
+  readonly maria: TestAccount;
+}
+
 interface SharedActors {
   readonly tutor: TestAccount;
   readonly mariaAndAnna: MariaAndAnna;
   readonly pavelAndAGroup: PavelAndAGroup;
   readonly studentsOfPavel: StudentsOfPavel;
+  readonly mariaWithJoinRequests: MariaWithJoinRequests;
 }
 
 export const test = base.extend<
@@ -157,6 +162,14 @@ export const test = base.extend<
       const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
       const cardIds = await seedActiveStudentsThroughCode(deployment, testControl(deployment), pavel, 31);
       await use({ pavel, cardIds });
+    },
+    { scope: 'worker' },
+  ],
+  mariaWithJoinRequests: [
+    async ({ deployment }, use): Promise<void> => {
+      const maria = await seedVerifiedUser(deployment, 'Мария');
+      await seedJoinRequests(deployment, testControl(deployment), maria, 31);
+      await use({ maria });
     },
     { scope: 'worker' },
   ],

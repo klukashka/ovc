@@ -1,21 +1,18 @@
 import { QueryObserver } from '@tanstack/react-query';
 import { describe, expect, test } from 'vitest';
 
+import { eventually } from '../lib/eventually.ts';
 import { FollowingQueryClient } from './queryClient.ts';
 
 async function heldFetch(held: readonly HeldFetch[], index: number): Promise<HeldFetch> {
-  const deadline = Date.now() + 2_000;
-  for (let found = held[index]; ; found = held[index]) {
-    if (found !== undefined) {
-      return found;
-    }
-    if (Date.now() >= deadline) {
-      throw new Error(`fetch ${String(index)} never started`);
-    }
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 5);
-    });
+  await eventually(() => {
+    expect(held[index]).toBeDefined();
+  });
+  const found = held[index];
+  if (found === undefined) {
+    throw new Error(`fetch ${String(index)} never started`);
   }
+  return found;
 }
 
 interface HeldFetch {

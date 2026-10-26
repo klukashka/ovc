@@ -4,30 +4,13 @@ import { describe, expect, test } from 'vitest';
 import { latestNotificationsKey } from '../features/notifications/api.ts';
 import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../lib/api/fakeTransport.ts';
 import { Session } from '../lib/api/session.ts';
+import { eventually } from '../lib/eventually.ts';
 import { FakeGateway } from '../lib/realtime/fakeGateway.ts';
 import { resumeAfterBeforeUnloadMilliseconds, wireRealtime } from './realtime.ts';
 
 const origin = 'https://ovc.example';
 const tutor = { id: 'tutor-a', name: 'A tutor', email: 'a@example.org', password: 'a long enough password' };
 const other = { id: 'tutor-b', name: 'B tutor', email: 'b@example.org', password: 'another long password' };
-const deadlineMilliseconds = 2_000;
-
-async function eventually(condition: () => void): Promise<void> {
-  const deadline = Date.now() + deadlineMilliseconds;
-  for (;;) {
-    try {
-      condition();
-      return;
-    } catch (error) {
-      if (Date.now() >= deadline) {
-        throw error;
-      }
-    }
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 5);
-    });
-  }
-}
 
 interface WiredPage {
   readonly server: FakeAuthServer;

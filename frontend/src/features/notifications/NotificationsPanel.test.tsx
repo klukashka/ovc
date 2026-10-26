@@ -13,7 +13,12 @@ import { NotificationsBell } from './Bell.tsx';
 const origin = 'https://ovc.example';
 const tutor = { id: 'tutor-1', name: 'Мария', email: 'maria@example.org', password: 'a long password' };
 
+async function loadThePanelModuleTheBellLoadsOnDemand(): Promise<void> {
+  await import('./NotificationsPanel.tsx');
+}
+
 async function showBellWithFailingReads(): Promise<FakeAuthServer> {
+  await loadThePanelModuleTheBellLoadsOnDemand();
   const server = new FakeAuthServer();
   server.addAccount(tutor);
   server.failNotificationReads(true);
