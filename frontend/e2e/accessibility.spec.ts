@@ -54,9 +54,8 @@ test('the skip link is the first stop and moves focus to the main content', asyn
   await expect(page.locator('main')).toBeFocused();
 });
 
-test('signing out from an unknown address returns to sign-in', async ({ page, deployment }) => {
-  const account = await seedVerifiedUser(deployment, 'Выход с неизвестного адреса');
-  await signedInAt(page, account, '/no/such/page');
+test('signing out from an unknown address returns to sign-in', async ({ page, tutor }) => {
+  await signedInAt(page, tutor, '/no/such/page');
   await expect(page.getByRole('heading', { level: 1, name: 'Страница не найдена' })).toBeVisible();
 
   await page.getByRole('button', { name: /Меню аккаунта/ }).click();
@@ -146,9 +145,8 @@ test('an avatar saved while another field has focus leaves the focus there', asy
   await expect(name).toBeFocused();
 });
 
-test('Escape on the deletion dialog returns focus to the button that opened it', async ({ page, deployment }) => {
-  const account = await seedVerifiedUser(deployment, 'Фокус после диалога');
-  await signedInAt(page, account, '/settings/account');
+test('Escape on the deletion dialog returns focus to the button that opened it', async ({ page, tutor }) => {
+  await signedInAt(page, tutor, '/settings/account');
   const opener = page.getByRole('button', { name: 'Удалить аккаунт' });
   await opener.click();
   await expect(page.getByRole('dialog', { name: 'Удалить аккаунт?' })).toBeVisible();
@@ -159,9 +157,8 @@ test('Escape on the deletion dialog returns focus to the button that opened it',
   await expect(opener).toBeFocused();
 });
 
-test('the deletion dialog opens on its password field', async ({ page, deployment }) => {
-  const account = await seedVerifiedUser(deployment, 'Фокус в диалоге удаления');
-  await signedInAt(page, account, '/settings/account');
+test('the deletion dialog opens on its password field', async ({ page, tutor }) => {
+  await signedInAt(page, tutor, '/settings/account');
 
   await page.getByRole('button', { name: 'Удалить аккаунт' }).click();
 

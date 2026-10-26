@@ -11,6 +11,7 @@ import {
 import { type Deployment, readE2ESettings, startDeployment } from './deployment.ts';
 import { type SocketSlotHolder, socketSlotHolder } from './realtime.ts';
 import { type FailedRequest, unexpectedFailures } from './request-failures.ts';
+import { createGroup, seedActiveStudent, seedActiveStudentsThroughCode } from './tutoring.ts';
 
 export interface SentMail {
   readonly subject: string;
@@ -82,9 +83,32 @@ export async function seedVerifiedUser(
   return account;
 }
 
+export interface MariaAndAnna {
+  readonly maria: TestAccount;
+  readonly anna: TestAccount;
+  readonly cardId: string;
+}
+
+export interface PavelAndAGroup {
+  readonly pavel: TestAccount;
+  readonly groupId: string;
+}
+
+export interface StudentsOfPavel {
+  readonly pavel: TestAccount;
+  readonly cardIds: readonly string[];
+}
+
+interface SharedActors {
+  readonly tutor: TestAccount;
+  readonly mariaAndAnna: MariaAndAnna;
+  readonly pavelAndAGroup: PavelAndAGroup;
+  readonly studentsOfPavel: StudentsOfPavel;
+}
+
 export const test = base.extend<
   { control: TestControl; signedInPage: Page; socketSlots: SocketSlotHolder },
-  { deployment: Deployment; tutor: TestAccount }
+  { deployment: Deployment } & SharedActors
 >({
   deployment: [
     async ({ browserName }, use, workerInfo): Promise<void> => {
@@ -104,6 +128,35 @@ export const test = base.extend<
   tutor: [
     async ({ deployment }, use): Promise<void> => {
       await use(await seedVerifiedUser(deployment, 'Тестовый репетитор'));
+    },
+    { scope: 'worker' },
+  ],
+  mariaAndAnna: [
+    async ({ deployment }, use): Promise<void> => {
+      const maria = await seedVerifiedUser(deployment, 'Мария');
+      const { student: anna, cardId } = await seedActiveStudent(
+        deployment,
+        testControl(deployment),
+        maria,
+        'Анна',
+        'ru',
+      );
+      await use({ maria, anna, cardId });
+    },
+    { scope: 'worker' },
+  ],
+  pavelAndAGroup: [
+    async ({ deployment }, use): Promise<void> => {
+      const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+      await use({ pavel, groupId: await createGroup(deployment, pavel, 'Evening algebra', []) });
+    },
+    { scope: 'worker' },
+  ],
+  studentsOfPavel: [
+    async ({ deployment }, use): Promise<void> => {
+      const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+      const cardIds = await seedActiveStudentsThroughCode(deployment, testControl(deployment), pavel, 31);
+      await use({ pavel, cardIds });
     },
     { scope: 'worker' },
   ],

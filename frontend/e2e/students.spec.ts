@@ -7,7 +7,6 @@ import {
   accessToken,
   callApi,
   createCard,
-  createGroup,
   invitationIsUsable,
   seedActiveStudent,
   seedInvitedCards,
@@ -433,98 +432,106 @@ test.describe('in English with the dark theme', () => {
     await expect(page.getByLabel('Name or email')).toHaveValue('vera');
   });
 
-  test('students › Enter in the search field keeps focus on the field and an empty search keeps Add student', async ({
-    page,
-    deployment,
-  }) => {
-    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    await signInThroughTheApi(page, pavel);
-    await page.goto('/students');
-    const field = page.getByLabel('Name or email');
-    await field.fill('nobody');
+  test.describe('Pavel with one empty group, shared by the tests below', () => {
+    test.describe.configure({ mode: 'default' });
 
-    await field.press('Enter');
+    test('students › Enter in the search field keeps focus on the field and an empty search keeps Add student', async ({
+      page,
+      pavelAndAGroup: { pavel },
+    }) => {
+      await signInThroughTheApi(page, pavel);
+      await page.goto('/students');
+      const field = page.getByLabel('Name or email');
+      await field.fill('nobody');
 
-    await expect(page).toHaveURL('/students?state=active&q=nobody');
-    await expect(page.getByText('Nobody matches the search.')).toBeVisible();
-    await expect(field).toBeFocused();
-    await expect(field).toHaveValue('nobody');
-    await expect(page.getByRole('button', { name: 'Add student' })).toBeVisible();
-  });
+      await field.press('Enter');
 
-  test('students › the Search button keeps focus after a group is chosen', async ({ page, deployment }) => {
-    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const groupId = await createGroup(deployment, pavel, 'Evening algebra', []);
-    await signInThroughTheApi(page, pavel);
-    await page.goto('/students');
-    const search = page.getByRole('search', { name: 'Search students' });
-    await search.getByLabel('Group', { exact: true }).selectOption({ label: 'Evening algebra' });
+      await expect(page).toHaveURL('/students?state=active&q=nobody');
+      await expect(page.getByText('Nobody matches the search.')).toBeVisible();
+      await expect(field).toBeFocused();
+      await expect(field).toHaveValue('nobody');
+      await expect(page.getByRole('button', { name: 'Add student' })).toBeVisible();
+    });
 
-    await search.getByRole('button', { name: 'Search', exact: true }).press('Enter');
+    test('students › the Search button keeps focus after a group is chosen', async ({
+      page,
+      pavelAndAGroup: { pavel, groupId },
+    }) => {
+      await signInThroughTheApi(page, pavel);
+      await page.goto('/students');
+      const search = page.getByRole('search', { name: 'Search students' });
+      await search.getByLabel('Group', { exact: true }).selectOption({ label: 'Evening algebra' });
 
-    await expect(page).toHaveURL(`/students?state=active&group=${groupId}`);
-    await expect(search.getByRole('button', { name: 'Search', exact: true })).toBeFocused();
-    await expect(search.getByLabel('Group', { exact: true })).toHaveValue(groupId);
-    await expect(search.getByRole('link', { name: 'Clear search' })).toBeVisible();
-  });
+      await search.getByRole('button', { name: 'Search', exact: true }).press('Enter');
 
-  test('students › Clear search empties the filters and moves focus to the search field', async ({
-    page,
-    deployment,
-  }) => {
-    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const groupId = await createGroup(deployment, pavel, 'Evening algebra', []);
-    await signInThroughTheApi(page, pavel);
-    await page.goto(`/students?state=active&group=${groupId}&q=vera`);
-    const search = page.getByRole('search', { name: 'Search students' });
-    await expect(search.getByLabel('Name or email')).toHaveValue('vera');
+      await expect(page).toHaveURL(`/students?state=active&group=${groupId}`);
+      await expect(search.getByRole('button', { name: 'Search', exact: true })).toBeFocused();
+      await expect(search.getByLabel('Group', { exact: true })).toHaveValue(groupId);
+      await expect(search.getByRole('link', { name: 'Clear search' })).toBeVisible();
+    });
 
-    await search.getByRole('link', { name: 'Clear search' }).click();
+    test('students › Clear search empties the filters and moves focus to the search field', async ({
+      page,
+      pavelAndAGroup: { pavel, groupId },
+    }) => {
+      await signInThroughTheApi(page, pavel);
+      await page.goto(`/students?state=active&group=${groupId}&q=vera`);
+      const search = page.getByRole('search', { name: 'Search students' });
+      await expect(search.getByLabel('Name or email')).toHaveValue('vera');
 
-    await expect(page).toHaveURL('/students?state=active');
-    await expect(search.getByLabel('Name or email')).toBeFocused();
-    await expect(search.getByLabel('Name or email')).toHaveValue('');
-    await expect(search.getByLabel('Group', { exact: true })).toHaveValue('');
-    await expect(search.getByRole('link', { name: 'Clear search' })).toHaveCount(0);
-  });
+      await search.getByRole('link', { name: 'Clear search' }).click();
 
-  test('students › a malformed group in the address is not available and links to all groups', async ({
-    page,
-    deployment,
-    diagnostics,
-  }) => {
-    diagnostics.expectFailure({ method: 'GET', path: '/api/v1/students?state=active&group=not-a-group', status: 422 });
-    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    await signInThroughTheApi(page, pavel);
+      await expect(page).toHaveURL('/students?state=active');
+      await expect(search.getByLabel('Name or email')).toBeFocused();
+      await expect(search.getByLabel('Name or email')).toHaveValue('');
+      await expect(search.getByLabel('Group', { exact: true })).toHaveValue('');
+      await expect(search.getByRole('link', { name: 'Clear search' })).toHaveCount(0);
+    });
 
-    await page.goto('/students?group=not-a-group');
+    test('students › a malformed group in the address is not available and links to all groups', async ({
+      page,
+      diagnostics,
+      pavelAndAGroup: { pavel },
+    }) => {
+      diagnostics.expectFailure({
+        method: 'GET',
+        path: '/api/v1/students?state=active&group=not-a-group',
+        status: 422,
+      });
+      await signInThroughTheApi(page, pavel);
 
-    await expect(page.getByText('This group is not available.')).toBeVisible();
-    await expect(page.getByRole('main').getByRole('link', { name: 'All groups' })).toHaveAttribute(
-      'href',
-      '/students?state=active',
-    );
-    await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);
-  });
+      await page.goto('/students?group=not-a-group');
 
-  test('students › an over-long search in the address is explained and links to the list without it', async ({
-    page,
-    deployment,
-    diagnostics,
-  }) => {
-    const longSearch = 'a'.repeat(255);
-    diagnostics.expectFailure({ method: 'GET', path: `/api/v1/students?state=active&q=${longSearch}`, status: 422 });
-    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    await signInThroughTheApi(page, pavel);
+      await expect(page.getByText('This group is not available.')).toBeVisible();
+      await expect(page.getByRole('main').getByRole('link', { name: 'All groups' })).toHaveAttribute(
+        'href',
+        '/students?state=active',
+      );
+      await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+    });
 
-    await page.goto(`/students?q=${longSearch}`);
+    test('students › an over-long search in the address is explained and links to the list without it', async ({
+      page,
+      diagnostics,
+      pavelAndAGroup: { pavel },
+    }) => {
+      const longSearch = 'a'.repeat(255);
+      diagnostics.expectFailure({
+        method: 'GET',
+        path: `/api/v1/students?state=active&q=${longSearch}`,
+        status: 422,
+      });
+      await signInThroughTheApi(page, pavel);
 
-    await expect(page.getByText('This search cannot be used. A search holds at most 254 characters.')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Show the list without the search' })).toHaveAttribute(
-      'href',
-      '/students?state=active',
-    );
-    await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+      await page.goto(`/students?q=${longSearch}`);
+
+      await expect(page.getByText('This search cannot be used. A search holds at most 254 characters.')).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Show the list without the search' })).toHaveAttribute(
+        'href',
+        '/students?state=active',
+      );
+      await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+    });
   });
 
   test('students › a card that changed meanwhile shows its current name and keeps the unsaved notes', async ({

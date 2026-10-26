@@ -3,7 +3,6 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
-import { seedActiveStudent } from './tutoring.ts';
 
 test.use({ locale: 'ru-RU' });
 
@@ -89,36 +88,6 @@ test.describe('account edge cases', () => {
 
     await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
     await expect(page.getByRole('form', { name: 'Tutor code' })).toHaveCount(0);
-  });
-
-  test('FR-1.3 › a student opening Today sees that the page is not found inside the signed-in frame', async ({
-    page,
-    deployment,
-    control,
-  }) => {
-    const maria = await seedVerifiedUser(deployment, 'Мария');
-    const { student: anna } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
-    await signInThroughTheApi(page, anna);
-
-    await page.goto('/today');
-
-    await expect(page.getByRole('navigation', { name: 'Основная навигация' })).toBeVisible();
-    await expect(page.getByRole('heading', { level: 1, name: 'Страница не найдена' })).toBeVisible();
-  });
-
-  test('FR-1.3 › a student opening Students sees that the page is not found and no join requests', async ({
-    page,
-    deployment,
-    control,
-  }) => {
-    const maria = await seedVerifiedUser(deployment, 'Мария');
-    const { student: anna } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
-    await signInThroughTheApi(page, anna);
-
-    await page.goto('/students');
-
-    await expect(page.getByRole('heading', { level: 1, name: 'Страница не найдена' })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Заявки на занятия' })).toHaveCount(0);
   });
 
   test('signing out everywhere ends the sessions of other browsers', async ({ page, browser, deployment }) => {
@@ -216,31 +185,6 @@ test.describe('account edge cases', () => {
     await expect(deletionDialog(page).getByRole('alert')).toHaveText(
       /^Слишком много попыток, попробуйте через \d+ (минуту|минуты|минут)\.$/,
     );
-  });
-
-  test('the deletion dialog names the consequences for a tutor and for a student', async ({
-    page,
-    browser,
-    deployment,
-    control,
-  }) => {
-    const maria = await seedVerifiedUser(deployment, 'Мария');
-    const { student: anna } = await seedActiveStudent(deployment, control, maria, 'Анна', 'ru');
-    const annaContext = await freshContext(browser, deployment);
-    const annaPage = await annaContext.newPage();
-    await signedInAt(page, maria, '/settings/account');
-    await signedInAt(annaPage, anna, '/settings/account');
-
-    await openDeletionDialog(page);
-    await openDeletionDialog(annaPage);
-
-    await expect(deletionDialog(page)).toContainText(
-      'Занятия со всеми учениками завершатся, и ученики получат письмо; ссылки-приглашения и код репетитора перестанут работать, заявки к вам истекут, а группы уйдут в архив.',
-    );
-    await expect(deletionDialog(annaPage)).toContainText(
-      'Занятия со всеми репетиторами завершатся, вы выйдете из их групп, а ваши запросы репетиторам истекут.',
-    );
-    await annaContext.close();
   });
 
   test('deleting the account signs out and the account no longer signs in', async ({
@@ -373,5 +317,56 @@ test.describe('account edge cases', () => {
     expect(stored.local).toContain('ovc.theme');
     expect(stored.session).toBe(0);
     expect(stored.cookie).toBe('');
+  });
+});
+
+test.describe('Maria and her student Anna, shared by the tests below', () => {
+  test.describe.configure({ mode: 'default' });
+
+  test('FR-1.3 › a student opening Today sees that the page is not found inside the signed-in frame', async ({
+    page,
+    mariaAndAnna: { anna },
+  }) => {
+    await signInThroughTheApi(page, anna);
+
+    await page.goto('/today');
+
+    await expect(page.getByRole('navigation', { name: 'Основная навигация' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Страница не найдена' })).toBeVisible();
+  });
+
+  test('FR-1.3 › a student opening Students sees that the page is not found and no join requests', async ({
+    page,
+    mariaAndAnna: { anna },
+  }) => {
+    await signInThroughTheApi(page, anna);
+
+    await page.goto('/students');
+
+    await expect(page.getByRole('heading', { level: 1, name: 'Страница не найдена' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Заявки на занятия' })).toHaveCount(0);
+  });
+
+  test('the deletion dialog names the consequences for a tutor and for a student', async ({
+    page,
+    browser,
+    deployment,
+    mariaAndAnna: { maria, anna },
+  }) => {
+    const annaContext = await freshContext(browser, deployment);
+    const annaPage = await annaContext.newPage();
+    await signedInAt(page, maria, '/settings/account');
+    await signedInAt(annaPage, anna, '/settings/account');
+
+    await openDeletionDialog(page);
+    await openDeletionDialog(annaPage);
+
+    await expect(deletionDialog(page)).toContainText(
+      'Занятия со всеми учениками завершатся, и ученики получат письмо; ссылки-приглашения и код репетитора перестанут работать, заявки к вам истекут, а группы уйдут в архив.',
+    );
+    await expect(deletionDialog(annaPage)).toContainText(
+      'Занятия со всеми репетиторами завершатся, вы выйдете из их групп, а ваши запросы репетиторам истекут.',
+    );
+    await annaContext.close();
   });
 });

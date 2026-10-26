@@ -2,14 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import {
-  type TestControl,
-  diagnosedTest as test,
-  expect,
-  expectRowsNamed,
-  seedVerifiedUser,
-  testControl,
-} from './fixtures.ts';
+import { type TestControl, diagnosedTest as test, expect, expectRowsNamed, seedVerifiedUser } from './fixtures.ts';
 import { busyControls, recordBusyControls } from './observers.ts';
 import {
   accessToken,
@@ -21,7 +14,6 @@ import {
   endRelationship,
   groupMemberNames,
   seedActiveStudent,
-  seedActiveStudentsThroughCode,
   seedEmptyGroups,
   seedStudentThroughCode,
   unarchiveGroup,
@@ -453,86 +445,73 @@ test.describe('in English, refusals', () => {
   });
 });
 
-interface StudentsOfPavel {
-  readonly pavel: TestAccount;
-  readonly cardIds: readonly string[];
-}
+test.describe('in English, one tutor with 31 active students shared by the tests below', () => {
+  test.describe.configure({ mode: 'default' });
+  test.use({ locale: 'en-GB', colorScheme: 'dark' });
 
-const withStudentsOfPavel = test.extend<object, { studentsOfPavel: StudentsOfPavel }>({
-  studentsOfPavel: [
-    async ({ deployment }, use): Promise<void> => {
-      const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-      const cardIds = await seedActiveStudentsThroughCode(deployment, testControl(deployment), pavel, 31);
-      await use({ pavel, cardIds });
-    },
-    { scope: 'worker' },
-  ],
-});
+  test('groups › show more in the member choice moves focus to the first new student', async ({
+    page,
+    studentsOfPavel: { pavel },
+  }) => {
+    await signInThroughTheApi(page, pavel);
+    await page.goto('/groups');
+    await page.getByRole('button', { name: 'New group' }).click();
+    const choices = page.getByRole('dialog', { name: 'New group' }).getByRole('checkbox');
+    await expect(choices).toHaveCount(30);
 
-withStudentsOfPavel.describe('in English, one tutor with 31 active students shared by the tests below', () => {
-  withStudentsOfPavel.describe.configure({ mode: 'default' });
-  withStudentsOfPavel.use({ locale: 'en-GB', colorScheme: 'dark' });
+    await page.getByRole('dialog', { name: 'New group' }).getByRole('button', { name: 'Show more' }).click();
 
-  withStudentsOfPavel(
-    'groups › show more in the member choice moves focus to the first new student',
-    async ({ page, studentsOfPavel: { pavel } }) => {
-      await signInThroughTheApi(page, pavel);
-      await page.goto('/groups');
-      await page.getByRole('button', { name: 'New group' }).click();
-      const choices = page.getByRole('dialog', { name: 'New group' }).getByRole('checkbox');
-      await expect(choices).toHaveCount(30);
+    await expect(choices).toHaveCount(31);
+    await expect(choices.nth(30)).toBeFocused();
+  });
 
-      await page.getByRole('dialog', { name: 'New group' }).getByRole('button', { name: 'Show more' }).click();
+  test('groups › show more that adds no visible student moves focus to the last student shown', async ({
+    page,
+    deployment,
+    studentsOfPavel: { pavel, cardIds },
+  }) => {
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [
+      await cardBeyondTheFirstPage(deployment, pavel, cardIds),
+    ]);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await page.getByRole('button', { name: 'Add students' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add students' });
+    const choices = dialog.getByRole('checkbox');
+    await expect(choices).toHaveCount(30);
 
-      await expect(choices).toHaveCount(31);
-      await expect(choices.nth(30)).toBeFocused();
-    },
-  );
+    await dialog.getByRole('button', { name: 'Show more' }).press('Enter');
 
-  withStudentsOfPavel(
-    'groups › show more that adds no visible student moves focus to the last student shown',
-    async ({ page, deployment, studentsOfPavel: { pavel, cardIds } }) => {
-      const groupId = await createGroup(deployment, pavel, 'Evening algebra', [
-        await cardBeyondTheFirstPage(deployment, pavel, cardIds),
-      ]);
-      await signInThroughTheApi(page, pavel);
-      await page.goto(`/groups/${groupId}`);
-      await page.getByRole('button', { name: 'Add students' }).click();
-      const dialog = page.getByRole('dialog', { name: 'Add students' });
-      const choices = dialog.getByRole('checkbox');
-      await expect(choices).toHaveCount(30);
+    await expect(dialog.getByRole('button', { name: 'Show more' })).toHaveCount(0);
+    await expect(choices).toHaveCount(30);
+    await expect(choices.nth(29)).toBeFocused();
+  });
 
-      await dialog.getByRole('button', { name: 'Show more' }).press('Enter');
+  test('groups › adding to a group that filled up meanwhile says that a group holds at most 30 students', async ({
+    page,
+    deployment,
+    diagnostics,
+    studentsOfPavel: { pavel, cardIds },
+  }) => {
+    const beyond = await cardBeyondTheFirstPage(deployment, pavel, cardIds);
+    const [chosen = '', meanwhile = '', ...others] = cardIds.filter((id) => id !== beyond);
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [beyond, ...others]);
+    diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/groups/${groupId}`, status: 422 });
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await page.getByRole('button', { name: 'Add students' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add students' });
+    await dialog.getByRole('checkbox', { name: studentName(cardIds, chosen), exact: true }).check();
+    await addToGroup(deployment, pavel, groupId, [meanwhile]);
 
-      await expect(dialog.getByRole('button', { name: 'Show more' })).toHaveCount(0);
-      await expect(choices).toHaveCount(30);
-      await expect(choices.nth(29)).toBeFocused();
-    },
-  );
+    await dialog.getByRole('button', { name: 'Add', exact: true }).click();
 
-  withStudentsOfPavel(
-    'groups › adding to a group that filled up meanwhile says that a group holds at most 30 students',
-    async ({ page, deployment, diagnostics, studentsOfPavel: { pavel, cardIds } }) => {
-      const beyond = await cardBeyondTheFirstPage(deployment, pavel, cardIds);
-      const [chosen = '', meanwhile = '', ...others] = cardIds.filter((id) => id !== beyond);
-      const groupId = await createGroup(deployment, pavel, 'Evening algebra', [beyond, ...others]);
-      diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/groups/${groupId}`, status: 422 });
-      await signInThroughTheApi(page, pavel);
-      await page.goto(`/groups/${groupId}`);
-      await page.getByRole('button', { name: 'Add students' }).click();
-      const dialog = page.getByRole('dialog', { name: 'Add students' });
-      await dialog.getByRole('checkbox', { name: studentName(cardIds, chosen), exact: true }).check();
-      await addToGroup(deployment, pavel, groupId, [meanwhile]);
-
-      await dialog.getByRole('button', { name: 'Add', exact: true }).click();
-
-      const alert = dialog.getByRole('alert');
-      await expect(alert).toHaveText('A group holds at most 30 students.');
-      await expect(alert).toBeFocused();
-      await expect(dialog).toBeVisible();
-      await expect(dialog.getByText('Chosen: 0 of 0')).toBeVisible();
-      await expect(dialog.getByRole('button', { name: 'Add', exact: true })).toHaveAttribute('aria-disabled', 'true');
-      expect(await groupMemberNames(deployment, pavel, groupId)).toHaveLength(30);
-    },
-  );
+    const alert = dialog.getByRole('alert');
+    await expect(alert).toHaveText('A group holds at most 30 students.');
+    await expect(alert).toBeFocused();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('Chosen: 0 of 0')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Add', exact: true })).toHaveAttribute('aria-disabled', 'true');
+    expect(await groupMemberNames(deployment, pavel, groupId)).toHaveLength(30);
+  });
 });
