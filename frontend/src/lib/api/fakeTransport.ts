@@ -28,11 +28,45 @@ interface RefreshCookie {
 }
 
 type StudentCard = components['schemas']['StudentCard'];
+type EmailGroup = components['schemas']['EmailPreference']['group'];
+type EmailPreference = components['schemas']['EmailPreference'];
 
 const cardPathPrefix = '/api/v1/students/';
 const joinRequestsPath = '/api/v1/join-requests';
 const invitationPathPrefix = '/api/v1/invitations/';
 const fakeTokenPrefix = 'fake-';
+const emailPreferencesPath = '/api/v1/users/me/email-preferences';
+const unsubscribePath = '/api/v1/unsubscribe';
+const unsubscribePreviewPath = '/api/v1/unsubscribe/preview';
+
+const emailGroupsOf: Readonly<Record<Me['role'], readonly EmailGroup[]>> = {
+  tutor: ['lesson_reminders', 'submissions', 'message_digest'],
+  student: ['lesson_reminders', 'lesson_changes', 'homework', 'results', 'message_digest'],
+};
+
+interface UnsubscribeGrant {
+  readonly accountId: string;
+  readonly group: EmailGroup;
+}
+
+function isEmailPreference(value: unknown): value is EmailPreference {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'group' in value &&
+    typeof value.group === 'string' &&
+    'enabled' in value &&
+    typeof value.enabled === 'boolean'
+  );
+}
+
+function requestedPreferences(body: unknown): EmailPreference[] | null {
+  if (typeof body !== 'object' || body === null || !('groups' in body) || !Array.isArray(body.groups)) {
+    return null;
+  }
+  const groups: unknown[] = body.groups;
+  return groups.every(isEmailPreference) ? groups : null;
+}
 
 interface FakeCard {
   readonly tutorId: string;
@@ -104,6 +138,10 @@ export class FakeAuthServer {
   private readonly sent: string[] = [];
   private readonly cards = new Map<string, FakeCard>();
   private failingInvitationReads = 0;
+  private failingPreferenceSaves = 0;
+  private failingUnsubscribes = 0;
+  private readonly disabledGroups = new Map<string, Set<EmailGroup>>();
+  private readonly unsubscribeGrants = new Map<string, UnsubscribeGrant>();
 
   get refreshes(): number {
     return this.refreshCount;
@@ -207,6 +245,24 @@ export class FakeAuthServer {
 
   failNextInvitationRead(): void {
     this.failingInvitationReads += 1;
+  }
+
+  failNextPreferenceSave(): void {
+    this.failingPreferenceSaves += 1;
+  }
+
+  failNextUnsubscribe(): void {
+    this.failingUnsubscribes += 1;
+  }
+
+  unsubscribeToken(email: string, group: EmailGroup): string {
+    const token = `${fakeTokenPrefix}unsubscribe-${String(this.unsubscribeGrants.size + 1)}`;
+    this.unsubscribeGrants.set(token, { accountId: this.account(email).me.id, group });
+    return token;
+  }
+
+  emailGroupEnabled(email: string, group: EmailGroup): boolean {
+    return !(this.disabledGroups.get(this.account(email).me.id)?.has(group) ?? false);
   }
 
   failNextRefresh(): void {
@@ -363,6 +419,12 @@ export class FakeAuthServer {
     if (request.method === 'GET' && path === joinRequestsPath) {
       return this.readJoinRequests(token);
     }
+    if (path === emailPreferencesPath) {
+      return this.answerPreferences(request, token);
+    }
+    if (path === unsubscribePreviewPath || path === unsubscribePath) {
+      return this.answerUnsubscribe(request, path);
+    }
     if (path !== '/api/v1/auth/logout') {
       return refusal(404, 'not_found');
     }
@@ -442,6 +504,66 @@ export class FakeAuthServer {
       return refusal(500, 'internal');
     }
     return json(200, { items: [], next_cursor: null });
+  }
+
+  private async answerPreferences(request: Request, token: string): Promise<Response> {
+    const refused = this.refusedToken(token);
+    if (refused !== null) {
+      return refused;
+    }
+    const accountId = this.sessionOf(token)?.accountId ?? '';
+    const caller = [...this.accounts.values()].find((account) => account.me.id === accountId);
+    if (caller === undefined) {
+      return refusal(401, 'unauthenticated');
+    }
+    const groups = emailGroupsOf[caller.me.role];
+    if (request.method === 'PUT') {
+      if (this.failingPreferenceSaves > 0) {
+        this.failingPreferenceSaves -= 1;
+        return refusal(503, 'service_unavailable');
+      }
+      const requested = requestedPreferences(await request.json());
+      if (requested === null || requested.some((preference) => !groups.includes(preference.group))) {
+        return refusal(422, 'validation_failed');
+      }
+      for (const preference of requested) {
+        this.setEmailGroup(accountId, preference.group, preference.enabled);
+      }
+    } else if (request.method !== 'GET') {
+      return refusal(405, 'method_not_allowed');
+    }
+    const disabled = this.disabledGroups.get(accountId);
+    return json(200, { groups: groups.map((group) => ({ group, enabled: !(disabled?.has(group) ?? false) })) });
+  }
+
+  private answerUnsubscribe(request: Request, path: string): Response {
+    const grant = this.unsubscribeGrants.get(new URL(request.url).searchParams.get('token') ?? '');
+    const owner = [...this.accounts.values()].find((account) => account.me.id === grant?.accountId);
+    if (grant === undefined || owner === undefined || owner.blocked) {
+      return refusal(422, 'token_invalid');
+    }
+    if (path === unsubscribePreviewPath && request.method === 'GET') {
+      return json(200, { group: grant.group });
+    }
+    if (path === unsubscribePath && request.method === 'POST') {
+      if (this.failingUnsubscribes > 0) {
+        this.failingUnsubscribes -= 1;
+        return refusal(503, 'service_unavailable');
+      }
+      this.setEmailGroup(grant.accountId, grant.group, false);
+      return new Response(null, { status: 204 });
+    }
+    return refusal(405, 'method_not_allowed');
+  }
+
+  private setEmailGroup(accountId: string, group: EmailGroup, enabled: boolean): void {
+    const disabled = this.disabledGroups.get(accountId) ?? new Set<EmailGroup>();
+    if (enabled) {
+      disabled.delete(group);
+    } else {
+      disabled.add(group);
+    }
+    this.disabledGroups.set(accountId, disabled);
   }
 
   private async readAccount(token: string): Promise<Response> {

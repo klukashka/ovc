@@ -1,4 +1,7 @@
+import type { components } from './schema.ts';
 import type { AuthTransport } from './transport.ts';
+
+type EmailGroup = components['schemas']['EmailPreference']['group'];
 
 export interface ContractSubject {
   readonly transport: AuthTransport;
@@ -10,6 +13,7 @@ export interface ContractSubject {
   readonly student: () => Promise<{ readonly email: string; readonly password: string }>;
   readonly expireAccessTokens: () => Promise<void>;
   readonly blockAccount: () => Promise<void>;
+  readonly unsubscribeToken: (group: EmailGroup) => Promise<string>;
 }
 
 export type ContractScenario = (subject: ContractSubject) => Promise<void>;
@@ -77,6 +81,24 @@ function cardRequest(subject: ContractSubject, token: string, path: string, body
 
 function joinRequestsRequest(subject: ContractSubject, token: string): Request {
   return new Request(`${subject.origin}/api/v1/join-requests`, { headers: { Authorization: `Bearer ${token}` } });
+}
+
+function emailPreferencesRequest(subject: ContractSubject, token: string, body?: unknown): Request {
+  return new Request(`${subject.origin}/api/v1/users/me/email-preferences`, {
+    method: body === undefined ? 'GET' : 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+}
+
+function unsubscribeRequest(subject: ContractSubject, method: 'GET' | 'POST', token: string): Request {
+  const path = method === 'GET' ? '/api/v1/unsubscribe/preview' : '/api/v1/unsubscribe';
+  return new Request(`${subject.origin}${path}?${new URLSearchParams({ token }).toString()}`, { method });
+}
+
+async function emailGroups(response: Response): Promise<string> {
+  check(response.status === 200, `expected 200 with the email groups, got ${String(response.status)}`);
+  return JSON.stringify(await response.json());
 }
 
 function cardFields(value: unknown): { id: unknown; name: unknown; state: unknown; url: unknown } {
@@ -276,6 +298,37 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
 
     check(response.status === 404, `expected 404, got ${String(response.status)}`);
     check((await errorCode(response)) === 'not_found', 'expected not_found');
+  },
+
+  'an unsubscribe link previews its group and turns it off only on POST, and a tampered link is token_invalid': async (
+    subject,
+  ) => {
+    const access = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const unsubscribeToken = await subject.unsubscribeToken('submissions');
+    const before = await emailGroups(await subject.transport.send(emailPreferencesRequest(subject, access)));
+
+    const preview = await subject.transport.send(unsubscribeRequest(subject, 'GET', unsubscribeToken));
+    const afterPreview = await emailGroups(await subject.transport.send(emailPreferencesRequest(subject, access)));
+    const applied = await subject.transport.send(unsubscribeRequest(subject, 'POST', unsubscribeToken));
+    const afterPost = await emailGroups(await subject.transport.send(emailPreferencesRequest(subject, access)));
+    const saved = await emailGroups(
+      await subject.transport.send(
+        emailPreferencesRequest(subject, access, { groups: [{ group: 'submissions', enabled: true }] }),
+      ),
+    );
+    const tampered = await subject.transport.send(unsubscribeRequest(subject, 'GET', `${unsubscribeToken}x`));
+
+    const allOn =
+      '{"groups":[{"group":"lesson_reminders","enabled":true},{"group":"submissions","enabled":true},{"group":"message_digest","enabled":true}]}';
+    check(before === allOn, `expected the tutor's three groups on, got ${before}`);
+    check(preview.status === 200, `expected 200, got ${String(preview.status)}`);
+    check(JSON.stringify(await preview.json()) === '{"group":"submissions"}', 'expected exactly the group');
+    check(afterPreview === allOn, `expected the preview to change nothing, got ${afterPreview}`);
+    check(applied.status === 204, `expected 204, got ${String(applied.status)}`);
+    check(afterPost.includes('{"group":"submissions","enabled":false}'), `expected submissions off, got ${afterPost}`);
+    check(saved === allOn, `expected the save to answer the full list, got ${saved}`);
+    check(tampered.status === 422, `expected 422, got ${String(tampered.status)}`);
+    check((await errorCode(tampered)) === 'token_invalid', 'expected token_invalid');
   },
 
   'a refresh without a session answers 204 with no token': async (subject) => {

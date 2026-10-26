@@ -108,21 +108,31 @@ Slice 4. The texts in this section are a proposal to confirm when F2 (notificati
 | Result of Mark all as read | All notifications are marked as read. | Все уведомления отмечены как прочитанные. |
 | Label of a deleted requester | Deleted account | Удалённый аккаунт |
 
-**Email groups,** in Settings → Notifications and on the unsubscribe page:
+**Email groups,** in Settings → Notifications and on the unsubscribe page, each with the one-line description Settings shows below its name:
 
-| Group | English | Русский |
+| Group | English | Русский | Description (English) | Description (Русский) |
+|---|---|---|---|---|
+| `lesson_reminders` | Lesson reminders | Напоминания об уроках | Before each lesson starts. | Перед началом каждого урока. |
+| `lesson_changes` | Lesson changes | Изменения в расписании | When a lesson is moved or cancelled. | Когда урок переносят или отменяют. |
+| `homework` | New assignments | Новые задания | When a tutor gives you an assignment. | Когда репетитор выдаёт задание. |
+| `results` | Checked work | Проверенные работы | When a tutor has checked your work. | Когда репетитор проверил вашу работу. |
+| `submissions` | Submitted work | Сданные работы | When a student hands in work. | Когда ученик сдаёт работу. |
+| `message_digest` | Unread messages | Непрочитанные сообщения | A summary of messages you have not read. | Сводка сообщений, которые вы не прочитали. |
+
+**Settings → Notifications:**
+
+| Element | English | Русский |
 |---|---|---|
-| `lesson_reminders` | Lesson reminders | Напоминания об уроках |
-| `lesson_changes` | Lesson changes | Изменения в расписании |
-| `homework` | New assignments | Новые задания |
-| `results` | Checked work | Проверенные работы |
-| `submissions` | Submitted work | Сданные работы |
-| `message_digest` | Unread messages | Непрочитанные сообщения |
+| Section heading | Optional emails | Необязательные письма |
+| Required emails | Required emails cannot be turned off: email confirmation, password reset, invitations, the end of working together and a tutor’s account deletion. | Обязательные письма отключить нельзя: подтверждение адреса, сброс пароля, приглашения, завершение совместных занятий и удаление аккаунта репетитора. |
+| Failed save, followed by the error's own message | The setting for “{group}” was not saved. | Настройка «{group}» не сохранена. |
+| Retry | Try again | Повторить |
 
 **Unsubscribe page and sign-out messages:**
 
 | Element | English | Русский |
 |---|---|---|
+| While the preview loads | Checking the link | Проверяем ссылку |
 | Group line | Emails: {group} | Письма: {group} |
 | Confirm button | Turn off these emails | Отключить эти письма |
 | Result | These emails are turned off | Эти письма отключены |

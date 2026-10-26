@@ -36,6 +36,12 @@ const accountSettingsPage = lazyPage(
 const notificationsPage = lazyPage(
   async () => (await import('../features/notifications/NotificationsPage.tsx')).NotificationsPage,
 );
+const notificationSettingsPage = lazyPage(
+  async () => (await import('../features/settings/NotificationSettingsPage.tsx')).NotificationSettingsPage,
+);
+const unsubscribePage = lazyPage(
+  async () => (await import('../features/settings/UnsubscribePage.tsx')).UnsubscribePage,
+);
 const signInPage = lazyPage(async () => (await import('../features/auth/SignInPage.tsx')).SignInPage);
 const signUpChoicePage = lazyPage(async () => (await import('../features/auth/SignUpPages.tsx')).SignUpChoicePage);
 const tutorSignUpPage = lazyPage(async () => (await import('../features/auth/SignUpPages.tsx')).TutorSignUpPage);
@@ -79,7 +85,7 @@ export const sharedPages: RouteObject[] = [
   page('/notifications', 'page.notifications', notificationsPage),
   page('/settings/profile', 'page.settingsProfile', profileSettingsPage),
   page('/settings/account', 'page.settingsAccount', accountSettingsPage),
-  page('/settings/notifications', 'page.settingsNotifications'),
+  page('/settings/notifications', 'page.settingsNotifications', notificationSettingsPage),
 ];
 
 const frames: RouteObject[] = [
@@ -107,7 +113,7 @@ const frames: RouteObject[] = [
         children: [
           page('/verify-email', 'page.verifyEmail', verifyEmailPage),
           page('/reset-password', 'page.resetPassword', resetPasswordPage),
-          page('/unsubscribe', 'page.unsubscribe'),
+          page('/unsubscribe', 'page.unsubscribe', unsubscribePage),
         ],
       },
     ],

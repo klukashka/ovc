@@ -35,6 +35,10 @@ function fakeSubject(): ContractSubject {
       server.block('a@example.org');
       await Promise.resolve();
     },
+    unsubscribeToken: async (group): Promise<string> => {
+      await Promise.resolve();
+      return server.unsubscribeToken('a@example.org', group);
+    },
   };
 }
 

@@ -491,3 +491,5 @@ Revision 7 (2026-10-25): the owner relaxed D39 for the frontend, so F0 depends o
 Revision 9 (2026-10-26): F1 notes added after section 8, with the owner's choice to keep the stale-answer Playwright tests by holding the account's socket slots.
 
 Revision 8 (2026-10-25): the owner decided D44 during F0: the entry budget covers the JavaScript of the entry and all its static imports, at most 180 KB gzip, beside the 250 KB student and 400 KB tutor first-load budgets; D34 and the F0 acceptance criteria say so.
+
+Owner decision of 2026-10-26: F1, F2 and F3 merge with the full local run above the 180-second consolidation threshold (201.8, 237.4 and 257.2 seconds, each measured on a machine loaded by other sessions) instead of consolidating suites in the same change; the cold run on an idle machine at the slice review, after the test database template change of slice 5 (B0) and the fix of the intermittent end-to-end failures, decides whether suites are consolidated. The error of a failed email preference save is an inline message beside its switch with a Retry button instead of a toast, because the frontend has no shared toast component.
