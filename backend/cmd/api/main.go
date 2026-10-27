@@ -124,6 +124,10 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	if err != nil {
 		return err
 	}
+	scheduleService, err := startup.NewSchedule(logging.Logger, settings, database, source, random)
+	if err != nil {
+		return err
+	}
 	preferences, err := startup.NewPreferences(logging.Logger, settings, database, source)
 	if err != nil {
 		return err
@@ -147,6 +151,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		),
 		Files:       fileService,
 		Tutoring:    tutoringService,
+		Schedule:    scheduleService,
 		Preferences: preferences,
 		Inbox:       startup.NewInbox(logging.Logger, database, source),
 		Realtime:    live.Gateway,

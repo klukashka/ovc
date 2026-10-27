@@ -378,10 +378,12 @@ var denialCases = map[string]denialCase{
 	"PATCH /api/v1/groups/{id}":                           anotherTutorsGroup(http.MethodPatch, "", `{"name":"Taken over","colour":"ink"}`),
 	"POST /api/v1/groups/{id}/archive":                    anotherTutorsGroup(http.MethodPost, "/archive", ""),
 	"POST /api/v1/groups/{id}/unarchive":                  anotherTutorsGroup(http.MethodPost, "/unarchive", ""),
+	"GET /api/v1/lessons/{id}":                            anotherTutorsLesson,
 }
 
 var bodyIdentifierDenialCases = map[string]denialCase{
 	"POST /api/v1/notifications/read": anotherAccountsNotification,
+	"POST /api/v1/lessons":            anotherTutorsLessonAudience,
 }
 
 var denialStatuses = map[string]int{

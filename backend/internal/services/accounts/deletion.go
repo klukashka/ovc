@@ -137,6 +137,9 @@ func (p *Purger) purge(ctx context.Context, repos repositories.Repositories, use
 	if err := p.uploads.PurgeUploadsOf(ctx, repos, user, now); err != nil {
 		return nil, err
 	}
+	if _, err := repos.Lessons.DeleteRosterOfStudent(ctx, user); err != nil {
+		return nil, err
+	}
 	if _, err := repos.Users.Delete(ctx, user); err != nil {
 		return nil, err
 	}
@@ -167,6 +170,11 @@ func (r *purgeRun) exhausted() bool {
 	return r.batchesLeft <= 0
 }
 
+type duePurge struct {
+	id      domain.UserID
+	batches int
+}
+
 func (p *Purger) purgeDue(ctx context.Context, now time.Time, due func(context.Context, repositories.Repositories, int32) ([]domain.UserID, error)) (int64, error) {
 	var purged int64
 	var failures []error
@@ -177,68 +185,77 @@ func (p *Purger) purgeDue(ctx context.Context, now time.Time, due func(context.C
 		if err != nil {
 			return purged, errors.Join(append(failures, err)...)
 		}
+		pending := make([]duePurge, 0, len(ids))
 		for _, id := range ids {
-			done, err := p.purgeIfDue(ctx, id, now, run)
-			if err != nil {
-				skipped++
-				failures = append(failures, err)
-				p.logger.LogAttrs(ctx, slog.LevelError, "account.purge_failed", userAttribute(id), slog.String("kind", core.ErrorKind(err)))
-				continue
-			}
-			if done {
-				purged++
-			}
-			if run.exhausted() {
-				return purged, errors.Join(failures...)
-			}
+			pending = append(pending, duePurge{id: id})
 		}
-		if len(ids) < purgeBatch {
+		for len(pending) > 0 && !run.exhausted() {
+			var next []duePurge
+			for _, account := range pending {
+				if run.exhausted() {
+					next = append(next, account)
+					continue
+				}
+				finished, done, err := p.purgeStep(ctx, account, now, run)
+				switch {
+				case err != nil:
+					skipped++
+					failures = append(failures, err)
+					p.logger.LogAttrs(ctx, slog.LevelError, "account.purge_failed", userAttribute(account.id), slog.String("kind", core.ErrorKind(err)))
+				case done:
+					purged++
+				case !finished:
+					account.batches++
+					next = append(next, account)
+				}
+			}
+			pending = next
+		}
+		for _, account := range pending {
+			p.logger.LogAttrs(ctx, slog.LevelInfo, "account.purge_paused", userAttribute(account.id), slog.Int("batches", account.batches))
+		}
+		if run.exhausted() || len(ids) < purgeBatch {
 			break
 		}
 	}
 	return purged, errors.Join(failures...)
 }
 
-func (p *Purger) purgeIfDue(ctx context.Context, id domain.UserID, now time.Time, run *purgeRun) (bool, error) {
-	batches := 0
-	for !run.exhausted() {
-		finished, purged := false, false
-		announce := Announce(Silent)
-		err := p.store.WithTx(ctx, func(repos repositories.Repositories) error {
-			state, err := repos.Users.LockForPurge(ctx, id)
-			if errors.Is(err, repositories.ErrNotFound) {
-				finished = true
-				return nil
-			}
-			if err != nil {
+func (p *Purger) purgeStep(ctx context.Context, account duePurge, now time.Time, run *purgeRun) (bool, bool, error) {
+	finished, purged := false, false
+	announce := Announce(Silent)
+	err := p.store.WithTx(ctx, func(repos repositories.Repositories) error {
+		state, err := repos.Users.LockForPurge(ctx, account.id)
+		if errors.Is(err, repositories.ErrNotFound) {
+			finished = true
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !purgeIsDue(state, now) {
+			finished = true
+			return nil
+		}
+		if state.Role == domain.RoleTutor {
+			deleted, err := p.tutoring.PurgeTutorBatch(ctx, repos, account.id)
+			if err != nil || deleted > 0 {
 				return err
 			}
-			if !purgeIsDue(state, now) {
-				finished = true
-				return nil
-			}
-			if state.Role == domain.RoleTutor {
-				deleted, err := p.tutoring.PurgeTutorBatch(ctx, repos, id)
-				if err != nil || deleted > 0 {
-					return err
-				}
-			}
-			finished, purged = true, true
-			announce, err = p.purge(ctx, repos, id, now, batches)
-			return err
-		})
-		if err != nil {
-			return false, err
 		}
-		if finished {
-			announce(ctx)
-			return purged, nil
-		}
-		batches++
-		run.batchesLeft--
+		finished, purged = true, true
+		announce, err = p.purge(ctx, repos, account.id, now, account.batches)
+		return err
+	})
+	if err != nil {
+		return false, false, err
 	}
-	p.logger.LogAttrs(ctx, slog.LevelInfo, "account.purge_paused", userAttribute(id), slog.Int("batches", batches))
-	return false, nil
+	if finished {
+		announce(ctx)
+		return true, purged, nil
+	}
+	run.batchesLeft--
+	return false, false, nil
 }
 
 func purgeIsDue(state repositories.PurgeState, now time.Time) bool {

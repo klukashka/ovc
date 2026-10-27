@@ -26,8 +26,10 @@ type FieldError struct {
 }
 
 type ErrorDetails struct {
-	StudentID       *string  `json:"student_id,omitempty" format:"uuid"`
-	RelationshipIDs []string `json:"relationship_ids,omitempty" format:"uuid"`
+	StudentID       *string             `json:"student_id,omitempty" format:"uuid"`
+	RelationshipIDs []string            `json:"relationship_ids,omitempty" format:"uuid"`
+	Lessons         []OverlappingLesson `json:"lessons,omitempty"`
+	More            *int                `json:"more,omitempty"`
 }
 
 type ErrorBody struct {

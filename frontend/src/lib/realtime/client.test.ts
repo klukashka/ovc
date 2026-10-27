@@ -110,6 +110,24 @@ async function tokenOf(server: FakeAuthServer, account: typeof other): Promise<u
 }
 
 describe('realtime client', () => {
+  test('accepts a lesson entity frame without dropping the socket', async () => {
+    const events: RealtimeEvent[] = [];
+    const rig = await connectedRig((event) => {
+      events.push(event);
+    });
+    const opened = rig.gateway.socketsOpened;
+
+    rig.gateway.changed(tutor.id, 'lesson', 'a-lesson');
+
+    await eventually(() => {
+      expect(events).toContainEqual({ kind: 'entity', entity: 'lesson', id: 'a-lesson' });
+    });
+    expect(rig.failures).toEqual([]);
+    expect(rig.gateway.socketsOpened).toBe(opened);
+    expect(rig.gateway.readySockets(tutor.id)).toBe(1);
+    rig.disconnect();
+  });
+
   test("refreshes once on 4401 and reconnects, or signs out with the refresh's reason", async () => {
     const renewable = await connectedRig();
     const revoked = await connectedRig();

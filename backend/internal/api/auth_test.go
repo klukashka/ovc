@@ -28,6 +28,7 @@ import (
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/outbox"
+	"ovc/backend/internal/services/schedule"
 	"ovc/backend/internal/services/tutoring"
 	"ovc/backend/internal/testdb"
 	"ovc/backend/internal/testhasher"
@@ -155,6 +156,7 @@ func newAuthHarnessStoring(
 	tutoringService := tutoring.New(tutoring.Dependencies{
 		Store: store, Clock: shared, Random: random, Keys: keys, Cipher: cipher, PublicURL: publicOrigin, Logger: logger,
 	})
+	scheduleService := schedule.New(schedule.Dependencies{Store: store, Clock: shared, Random: random, Keys: keys, Logger: logger})
 	service := accounts.New(accounts.Dependencies{
 		Store: store, Clock: shared, Random: random, Hasher: hasher, Keys: keys, Logger: logger,
 		Tokens: core.NewAccessTokens(keys, publicOrigin, 15*time.Minute), RefreshTTL: 30 * 24 * time.Hour,
@@ -177,6 +179,7 @@ func newAuthHarnessStoring(
 		Auth:        api.Auth{Accounts: service, PublicOrigin: publicOrigin, TrustedProxies: trusted},
 		Files:       fileService,
 		Tutoring:    tutoringService,
+		Schedule:    scheduleService,
 		Preferences: preferences,
 		Inbox:       inbox,
 	}

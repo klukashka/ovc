@@ -2,10 +2,12 @@ import { readdirSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
 
 export const sourceExtensions: ReadonlySet<string> = new Set(['.ts', '.tsx', '.css']);
+export const namedDataFiles: ReadonlySet<string> = new Set(['src/lib/time/timezone-cities.json']);
+
 export const publicExtensions: ReadonlySet<string> = new Set(['.js', '.svg', '.png', '.ico', '.webp', '.woff2']);
 
 export function unlintedFiles(paths: readonly string[], allowed: ReadonlySet<string>): string[] {
-  return paths.filter((path) => !allowed.has(extname(path)));
+  return paths.filter((path) => !allowed.has(extname(path)) && !namedDataFiles.has(path));
 }
 
 function filesUnder(directory: string): string[] {
@@ -21,6 +23,9 @@ export function checkSourceTypes(frontendRoot: string): string[] {
     ['public', publicExtensions],
   ];
   return checked.flatMap(([directory, allowed]) =>
-    unlintedFiles(filesUnder(resolve(frontendRoot, directory)), allowed).map((path) => relative(frontendRoot, path)),
+    unlintedFiles(
+      filesUnder(resolve(frontendRoot, directory)).map((path) => relative(frontendRoot, path)),
+      allowed,
+    ),
   );
 }

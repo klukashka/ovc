@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"runtime"
 	"time"
+	_ "time/tzdata"
 
 	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/adapters/listener"
@@ -17,6 +18,7 @@ import (
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/outbox"
+	"ovc/backend/internal/services/schedule"
 	"ovc/backend/internal/services/tutoring"
 	"ovc/backend/internal/worker"
 )
@@ -51,6 +53,14 @@ func NewTutoring(logger *slog.Logger, settings core.Settings, database *core.Dat
 		Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Cipher: cipher,
 		PublicURL: settings.PublicURL, Logger: logger,
 	}), nil
+}
+
+func NewSchedule(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource) (*schedule.Service, error) {
+	keys, err := core.DeriveKeys(settings.JWTSecret)
+	if err != nil {
+		return nil, err
+	}
+	return schedule.New(schedule.Dependencies{Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Logger: logger}), nil
 }
 
 func NewAccounts(

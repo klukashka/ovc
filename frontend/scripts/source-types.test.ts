@@ -11,6 +11,14 @@ describe('source file types', () => {
     expect(unlinted).toEqual(['src/x.js', 'src/y.mts', 'src/z.jsx', 'src/w.cjs']);
   });
 
+  test('allows only the named timezone city table as data in src', () => {
+    const paths = ['src/lib/time/timezone-cities.json', 'src/lib/time/other.json', 'src/lib/timezone-cities.json'];
+
+    const unlinted = unlintedFiles(paths, sourceExtensions);
+
+    expect(unlinted).toEqual(['src/lib/time/other.json', 'src/lib/timezone-cities.json']);
+  });
+
   test('allows only linted scripts and static assets in public', () => {
     const paths = ['public/theme-init.js', 'public/favicon.svg', 'public/a.mjs', 'public/b.html', 'public/c.cjs'];
 

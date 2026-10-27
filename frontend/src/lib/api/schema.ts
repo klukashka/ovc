@@ -175,6 +175,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["calendar-get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/groups": {
         parameters: {
             query?: never;
@@ -361,6 +377,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["join-requests-decline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lessons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["lessons-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lessons/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["lessons-get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -709,6 +757,33 @@ export interface components {
             items: components["schemas"]["BlockedRequester"][];
             next_cursor: string | null;
         };
+        Calendar: {
+            items: components["schemas"]["CalendarItem"][];
+            truncated: boolean;
+        };
+        CalendarAudience: {
+            /** @enum {string|null} */
+            colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink" | null;
+            /** @enum {string} */
+            kind: "one_to_one" | "group";
+            label: string | null;
+            /** @enum {string|null} */
+            label_kind: "individual" | "group" | "removed_student" | null;
+        };
+        CalendarItem: {
+            audience: components["schemas"]["CalendarAudience"];
+            /** Format: date-time */
+            ends_at: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            starts_at: string;
+            /** @enum {string} */
+            status: "scheduled" | "live" | "ended" | "cancelled";
+            timezone: string;
+            title: string;
+            tutor: components["schemas"]["LessonTutor"] | null;
+        };
         CardAccount: {
             /** Format: uuid */
             avatar_id: string | null;
@@ -733,6 +808,10 @@ export interface components {
         ChangePasswordRequest: {
             current_password: string;
             new_password: string;
+        };
+        CreatedLessons: {
+            lessons: components["schemas"]["LessonDetail"][];
+            series: components["schemas"]["LessonSeries"] | null;
         };
         DeleteAccountRequest: {
             password: string;
@@ -764,6 +843,9 @@ export interface components {
             request_id: string;
         };
         ErrorDetails: {
+            lessons?: components["schemas"]["OverlappingLesson"][] | null;
+            /** Format: int64 */
+            more?: number;
             relationship_ids?: string[] | null;
             /** Format: uuid */
             student_id?: string;
@@ -854,6 +936,63 @@ export interface components {
         JoinRequestSent: {
             request: components["schemas"]["SentJoinRequest"];
         };
+        LessonAudience: {
+            /** @enum {string|null} */
+            colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink" | null;
+            /** @enum {string} */
+            kind: "one_to_one" | "group";
+            label: string | null;
+            /** @enum {string|null} */
+            label_kind: "individual" | "group" | "removed_student" | null;
+            members: components["schemas"]["LessonMember"][] | null;
+        };
+        LessonDetail: {
+            audience: components["schemas"]["LessonAudience"];
+            /** Format: date-time */
+            cancelled_at: string | null;
+            description: string | null;
+            /** Format: int64 */
+            duration_minutes: number;
+            /** Format: date-time */
+            ends_at: string;
+            /** Format: uuid */
+            id: string;
+            other_timezone: string | null;
+            /** Format: uuid */
+            series_id: string | null;
+            /** Format: date-time */
+            starts_at: string;
+            /** @enum {string} */
+            status: "scheduled" | "live" | "ended" | "cancelled";
+            timezone: string;
+            title: string;
+            tutor: components["schemas"]["LessonTutor"] | null;
+            /** Format: int32 */
+            version: number;
+        };
+        LessonMember: {
+            label: string;
+            /** @enum {string|null} */
+            label_kind: "deleted_account" | null;
+        };
+        LessonSeries: {
+            /** Format: int64 */
+            count: number | null;
+            /** Format: int64 */
+            duration_minutes: number;
+            end_date: string | null;
+            first_date: string;
+            /** Format: uuid */
+            id: string;
+            start: string;
+            timezone: string;
+            weekdays: number[];
+        };
+        LessonTutor: {
+            /** @enum {string|null} */
+            colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink" | null;
+            name: string;
+        };
         LiveStatus: {
             /** @enum {string} */
             status: "ok";
@@ -914,6 +1053,23 @@ export interface components {
             member_ids: string[];
             name: string;
         };
+        NewLesson: {
+            allow_overlap?: boolean;
+            /** Format: int32 */
+            count?: number;
+            date: string;
+            description?: string;
+            /** Format: int32 */
+            duration_minutes: number;
+            end_date?: string;
+            /** Format: uuid */
+            group_id?: string;
+            /** Format: uuid */
+            relationship_id?: string;
+            start: string;
+            title: string;
+            weekdays?: number[];
+        };
         NewStudentCard: {
             display_name: string;
             email?: string;
@@ -952,6 +1108,13 @@ export interface components {
         NotificationUnread: {
             /** Format: int64 */
             unread_count: number;
+        };
+        OverlappingLesson: {
+            /** Format: date-time */
+            ends_at: string;
+            /** Format: date-time */
+            starts_at: string;
+            title: string;
         };
         PasswordReset: {
             /** @enum {string|null} */
@@ -1996,6 +2159,103 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "calendar-get": {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                tutor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Calendar"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3434,6 +3694,228 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "lessons-create": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewLesson"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedLessons"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "lessons-get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6302,6 +6784,10 @@ type ReadonlyArray<T> = [
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const pathsApiV1StudentsGetParametersQueryStateValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/students"]["get"]["parameters"]["query"]["state"]> = ["active", "invited", "ended"];
 export const pathsApiV1UploadsPostParametersQueryContextValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/uploads"]["post"]["parameters"]["query"]["context"]> = ["avatar"];
+export const calendarAudienceColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CalendarAudience"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
+export const calendarAudienceKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CalendarAudience"]["kind"]> = ["one_to_one", "group"];
+export const calendarAudienceLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CalendarAudience"]["label_kind"]> = ["individual", "group", "removed_student"];
+export const calendarItemStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CalendarItem"]["status"]> = ["scheduled", "live", "ended", "cancelled"];
 export const cardGroupColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CardGroup"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const cardInvitationStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CardInvitation"]["status"]> = ["open", "expired", "revoked_after_mismatches"];
 export const emailConfirmedOutcomeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EmailConfirmed"]["outcome"]> = ["choice_required", "linked", "request_sent", "code_invalid"];
@@ -6313,6 +6799,12 @@ export const groupSummaryColourValues: ReadonlyArray<FlattenedDeepRequired<compo
 export const invitationAcceptRequestLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["InvitationAcceptRequest"]["language"]> = ["ru", "en"];
 export const issuedInvitationStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssuedInvitation"]["status"]> = ["open"];
 export const joinRequestDecisionStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["JoinRequestDecision"]["state"]> = ["declined"];
+export const lessonAudienceColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonAudience"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
+export const lessonAudienceKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonAudience"]["kind"]> = ["one_to_one", "group"];
+export const lessonAudienceLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonAudience"]["label_kind"]> = ["individual", "group", "removed_student"];
+export const lessonDetailStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonDetail"]["status"]> = ["scheduled", "live", "ended", "cancelled"];
+export const lessonMemberLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonMember"]["label_kind"]> = ["deleted_account"];
+export const lessonTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonTutor"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const liveStatusStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LiveStatus"]["status"]> = ["ok"];
 export const meLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Me"]["language"]> = ["ru", "en"];
 export const meRoleValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Me"]["role"]> = ["tutor", "student"];

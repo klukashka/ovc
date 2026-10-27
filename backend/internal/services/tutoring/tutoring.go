@@ -59,6 +59,8 @@ type Dependencies struct {
 	Cipher    core.FieldCipher
 	PublicURL string
 	Logger    *slog.Logger
+
+	PurgeBatchRows int32
 }
 
 type Service struct {

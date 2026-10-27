@@ -7,6 +7,7 @@ package dbgen
 import (
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"ovc/backend/internal/domain"
 )
 
@@ -118,6 +119,62 @@ type JoinRequest struct {
 	ExpiresAt          time.Time
 	DecidedAt          *time.Time
 	CreatedAt          time.Time
+}
+
+type Lesson struct {
+	ID                  domain.LessonID
+	TutorID             domain.UserID
+	SeriesID            *domain.SeriesID
+	OccurrenceDate      pgtype.Date
+	RelationshipID      *domain.RelationshipID
+	GroupID             *domain.GroupID
+	Title               string
+	Description         *string
+	StartsAt            time.Time
+	DurationMinutes     int16
+	Status              domain.LessonStatus
+	Timezone            string
+	ScheduleRevision    int32
+	Version             int32
+	Reminded24hRevision *int32
+	Reminded1hRevision  *int32
+	OverriddenFields    []string
+	CancelledAt         *time.Time
+	CancelCause         *domain.CancelCause
+	CreateKey           *string
+	LiveAt              *time.Time
+	EndedAt             *time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
+type LessonRoster struct {
+	LessonID       domain.LessonID
+	StudentID      domain.UserID
+	LessonStartsAt time.Time
+	AddedAt        time.Time
+}
+
+type LessonSeries struct {
+	ID                domain.SeriesID
+	TutorID           domain.UserID
+	RelationshipID    *domain.RelationshipID
+	GroupID           *domain.GroupID
+	Weekdays          []int16
+	LocalStart        pgtype.Time
+	DurationMinutes   int16
+	Timezone          string
+	FirstDate         pgtype.Date
+	EndDate           pgtype.Date
+	Count             *int16
+	Title             string
+	Description       *string
+	MaterialisedUntil pgtype.Date
+	SplitFromSeriesID *domain.SeriesID
+	CreateKey         *string
+	EndedAt           *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 type MailSink struct {

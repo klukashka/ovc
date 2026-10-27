@@ -15,7 +15,7 @@ import (
 	"ovc/backend/internal/services/accounts"
 )
 
-const tutorPurgeBatchRows = 500
+const DefaultPurgeBatchRows int32 = 500
 
 var errDeletionTransition = errors.New("a relationship cannot take the transition of an account's deletion")
 
@@ -350,6 +350,9 @@ func (s *Service) tutorActive(ctx context.Context, repos repositories.Repositori
 
 func (s *Service) PurgeTutorBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) (int64, error) {
 	steps := []func(context.Context, domain.UserID, int32) (int64, error){
+		repos.Lessons.DeleteRosterBatchOfTutor,
+		repos.Lessons.DeleteBatchOfTutor,
+		repos.Lessons.DeleteSeriesBatchOfTutor,
 		repos.Groups.DeleteMembersBatchOfTutor,
 		repos.Groups.DeleteBatchOfTutor,
 		repos.Invitations.DeleteBatchOfTutor,
@@ -359,10 +362,17 @@ func (s *Service) PurgeTutorBatch(ctx context.Context, repos repositories.Reposi
 		repos.Notifications.DeleteBatchNaming,
 	}
 	for _, step := range steps {
-		deleted, err := step(ctx, tutor, tutorPurgeBatchRows)
+		deleted, err := step(ctx, tutor, s.purgeBatchRows())
 		if err != nil || deleted > 0 {
 			return deleted, err
 		}
 	}
 	return 0, nil
+}
+
+func (s *Service) purgeBatchRows() int32 {
+	if s.deps.PurgeBatchRows > 0 {
+		return s.deps.PurgeBatchRows
+	}
+	return DefaultPurgeBatchRows
 }

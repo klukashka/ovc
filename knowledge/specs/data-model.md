@@ -120,7 +120,7 @@ Slice 4 adds three row-level `AFTER` triggers, so every path that revokes a sess
 
 ### Rate limit counter
 
-`purpose`, `subject`, `window_start`, `count`; primary key on the three key columns, plus an index on `window_start` for cleanup. `subject` is the 32-byte HMAC-SHA-256 of the email, IP address (IPv6 by /64), account or tutor, keyed with a key derived by HKDF-SHA-256 from `OVC_JWT_SECRET` with the info string `throttle`, never the signing key itself, so no raw address is stored. A slot is reserved with one `INSERT … ON CONFLICT … DO UPDATE … RETURNING count` before any hashing work. From slice 5 the dispatcher also reserves here, with the purpose `lesson_emails`, the recipient's account as `subject` and the UTC day as `window_start`, one slot per student-addressed lesson email (`lesson_reminders` and `lesson_changes` together, at most 20 per day), reserved only after every other dispatch check passed, immediately before sending, and only while the counter is below 20, so an email dropped over the cap holds no slot, and released with `ReleaseRateLimitSlot` for the `window_start` of its own reservation when the send fails, and the hourly cleanup of rate-limit windows removes the old counters ([dispatch-time checks](notifications.md#dispatch-time-checks)).
+`purpose`, `subject`, `window_start`, `count`; primary key on the three key columns, plus an index on `window_start` for cleanup. `subject` is the 32-byte HMAC-SHA-256 of the email, IP address (IPv6 by /64), account or tutor, keyed with a key derived by HKDF-SHA-256 from `OVC_JWT_SECRET` with the info string `throttle`, never the signing key itself, so no raw address is stored. A slot is reserved with one `INSERT … ON CONFLICT … DO UPDATE … RETURNING count` before any hashing work. From slice 5 lesson write attempts reserve here with the purpose `lesson_writes_hour`, the tutor as `subject` and the hour as `window_start` (at most 120 per tutor per hour, committed after the schema checks and the replay and before every check of the service, and kept when the request is refused, [scheduling limits](schedule.md#scheduling-limits)), and the dispatcher also reserves here, with the purpose `lesson_emails`, the recipient's account as `subject` and the UTC day as `window_start`, one slot per student-addressed lesson email (`lesson_reminders` and `lesson_changes` together, at most 20 per day), reserved only after every other dispatch check passed, immediately before sending, and only while the counter is below 20, so an email dropped over the cap holds no slot, and released with `ReleaseRateLimitSlot` for the `window_start` of its own reservation when the send fails, and the hourly cleanup of rate-limit windows removes the old counters ([dispatch-time checks](notifications.md#dispatch-time-checks)).
 
 ## Relationships and groups
 
@@ -197,7 +197,7 @@ Slice 5 adds the `lesson_series`, `lesson` and `lesson_roster` tables. Series an
 | Column | Notes |
 |---|---|
 | `id` | |
-| `tutor_id` | references the tutor profile, `ON DELETE RESTRICT` |
+| `tutor_id` | references the tutor profile, `ON DELETE RESTRICT`; indexed as `(tutor_id, created_at DESC, id)`, which orders the tutor purge's series batches |
 | `relationship_id` xor `group_id` | each with the tutor in its key, `ON DELETE RESTRICT` |
 | `weekdays` | set of 1–7 |
 | `local_start` | time |
@@ -237,7 +237,7 @@ Slice 5 adds the `lesson_series`, `lesson` and `lesson_roster` tables. Series an
 Indexes:
 
 - unique `(series_id, occurrence_date)`;
-- `(tutor_id, starts_at)`, `(relationship_id, starts_at)` and `(group_id, starts_at)`;
+- `(tutor_id, starts_at, id)`, which also orders the tutor purge's lesson batches, `(relationship_id, starts_at)` and `(group_id, starts_at)`;
 - partial `(group_id, starts_at)` where `status = 'scheduled'`, for the group page;
 - partial `(starts_at)` where `status = 'scheduled'`;
 - partial `(starts_at)` where `status = 'live'`;
@@ -462,7 +462,7 @@ Created by the normal migrations in every database, but written only by the test
 
 What the purge job does 30 days after an account is deleted. Slice 2 implements the rows for users, sessions, email requests and tokens, tutor profiles, and attachments with their references: every upload of the account is deleted, and each still-stored object gets a `storage_delete` outbox row carrying its storage key, so the object is deleted after its row is gone. Throttle counters are pseudonymous and expire with their windows. Slice 3 adds the relationship, invitation, join-request, blocked-requester and group rows; a tutor purge deletes group members, groups, invitations, join requests, blocked requesters and relationships in batches of 500 rows per transaction, each locking the user row and re-checking that the account is still `deleted`, and then deletes the profile and the user in a final transaction. One run of the purge job spends at most 100 such batches across all accounts and the next run continues where it stopped ([account deletion](accounts.md#account-deletion)). Slice 4 adds the notification rows that name the account and the account's email preferences, on every purge path: the 30-day purge, the 7-day cleanup and the immediate purge of an unconfirmed account its owner deletes. Slice 5 adds:
 
-- **lesson batches:** the tutor purge's batch kinds gain lesson rosters, lessons and series (newest series first, so a series is deleted before the series it was split from), each 500 rows at a time in key order, before group members, because lessons and series restrict the deletion of the profile, the relationships and the groups; the student purge deletes the account's roster rows inside its batches;
+- **lesson batches:** the tutor purge's batch kinds gain lesson rosters, lessons and series (newest series first, so a series is deleted before the series it was split from), each 500 rows at a time in key order, before group members, because lessons and series restrict the deletion of the profile, the relationships and the groups; the student purge deletes the account's roster rows in one statement of the transaction that deletes the user row, after its relationships are discarded;
 - **a share per account:** a run of `accounts.purge` (and of `accounts.cleanup_unverified`) gives the due accounts its 100 batch transactions round-robin: each round gives every account still due one batch, oldest deletion first, until the budget is spent or no account is due, so one large tutor purge no longer delays the purge of other accounts by whole runs; `account.purge_paused` reports the batches each account spent.
 
 | Table | Student purge | Tutor purge |
@@ -473,7 +473,7 @@ What the purge job does 30 days after an account is deleted. Slice 2 implements 
 | Relationship | On every row of the student, discarded ones included, `student_id` and the card `email` set to null; non-discarded rows become `discarded` (`student_purged`), keeping `ended_at` and `ended_by`, for the tutor's history under the card's display name; a provisional or reclaim-pending link gets the removal effects first, so its tutor gets a new card (also while the tutor is blocked; its link is invalid until the tutor is `active` again); an `active` row is first ended (`deletion`) | Deleted |
 | Invitation, join request, blocked requester | Invitations bound to the student, and the student's join requests and blocked-requester rows, deleted; `used_by` set to null | Rows of the tutor deleted |
 | Group, group member | Memberships deleted | Groups and memberships deleted |
-| Lesson series, lesson, roster | Roster rows of the student deleted through the `student_id` index, inside the purge's batches | Deleted in batches: rosters, then lessons, then series, before group members |
+| Lesson series, lesson, roster | Roster rows of the student deleted through the `student_id` index in one statement of the transaction that deletes the user row, after the student's relationships are discarded | Deleted in batches: rosters, then lessons, then series, before group members |
 | Meeting, recording | Kept until each recording's expiry | Media and rows deleted |
 | Channel, channel member | Memberships deleted | Channels deleted |
 | Message | Body erased, `sender_id` null, its attachment references removed | Messages of the tutor's channels deleted |

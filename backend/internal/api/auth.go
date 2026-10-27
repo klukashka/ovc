@@ -21,6 +21,7 @@ import (
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/notifications"
+	"ovc/backend/internal/services/schedule"
 	"ovc/backend/internal/services/tutoring"
 )
 
@@ -82,6 +83,7 @@ type router struct {
 	auth        Auth
 	files       *files.Service
 	tutoring    *tutoring.Service
+	schedule    *schedule.Service
 	preferences *notifications.Preferences
 	inbox       *notifications.Inbox
 	now         func() time.Time

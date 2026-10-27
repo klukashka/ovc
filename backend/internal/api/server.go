@@ -18,6 +18,7 @@ import (
 	"ovc/backend/internal/schemas"
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/notifications"
+	"ovc/backend/internal/services/schedule"
 	"ovc/backend/internal/services/tutoring"
 )
 
@@ -75,6 +76,7 @@ type Options struct {
 	Auth          Auth
 	Files         *files.Service
 	Tutoring      *tutoring.Service
+	Schedule      *schedule.Service
 	Preferences   *notifications.Preferences
 	Inbox         *notifications.Inbox
 	Realtime      *realtime.Gateway
@@ -89,7 +91,7 @@ func newHandler(options Options, registerExtra func(*router)) (http.Handler, err
 	api := newAPI(mux)
 	readiness := &sharedReadiness{check: options.Readiness, now: options.Now, logger: options.Logger}
 	routes := &router{
-		api: api, auth: options.Auth, files: options.Files, tutoring: options.Tutoring, preferences: options.Preferences,
+		api: api, auth: options.Auth, files: options.Files, tutoring: options.Tutoring, schedule: options.Schedule, preferences: options.Preferences,
 		inbox: options.Inbox,
 		now:   options.Now, logger: options.Logger,
 	}
@@ -180,6 +182,7 @@ func (r *router) registerAll(readiness ReadinessFunc) {
 	r.registerHealth(readiness)
 	r.registerAuth()
 	r.registerTutoring()
+	r.registerSchedule()
 	r.registerRealtimeAudience()
 }
 

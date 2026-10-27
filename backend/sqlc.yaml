@@ -337,3 +337,66 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: EntityID
+          - column: lessons.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: LessonID
+          - column: lessons.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: lessons.series_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: SeriesID
+              pointer: true
+          - column: lessons.relationship_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: RelationshipID
+              pointer: true
+          - column: lessons.group_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: GroupID
+              pointer: true
+          - column: lessons.status
+            go_type:
+              import: ovc/backend/internal/domain
+              type: LessonStatus
+          - column: lessons.cancel_cause
+            go_type:
+              import: ovc/backend/internal/domain
+              type: CancelCause
+              pointer: true
+          - column: lesson_series.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: SeriesID
+          - column: lesson_series.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: lesson_series.relationship_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: RelationshipID
+              pointer: true
+          - column: lesson_series.group_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: GroupID
+              pointer: true
+          - column: lesson_series.split_from_series_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: SeriesID
+              pointer: true
+          - column: lesson_roster.lesson_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: LessonID
+          - column: lesson_roster.student_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
