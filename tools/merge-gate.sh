@@ -6,37 +6,59 @@ lock_name=merge-gate.lock
 log_name=merge-gate.log
 
 full_checks=(
-  ".|tools/check-tool-binaries.sh"
-  ".|pnpm --dir tools/docs install --frozen-lockfile"
-  ".|tools/docs/check-docs.sh"
-  ".|bin/gitleaks git --redact --no-banner --config .gitleaks.toml ."
-  ".|bin/gitleaks git --staged --redact --no-banner --config .gitleaks.toml ."
-  ".|bin/osv-scanner scan source --no-call-analysis=go --lockfile=tools/go.mod"
-  ".|bin/osv-scanner scan source --no-call-analysis=go --lockfile=backend/go.mod"
-  ".|bin/osv-scanner scan source --lockfile=frontend/pnpm-lock.yaml"
-  ".|bin/osv-scanner scan source --lockfile=tools/docs/pnpm-lock.yaml"
-  "backend|go mod tidy -diff"
-  'backend|unformatted="$(gofmt -l .)" && test -z "$unformatted"'
-  "backend|go vet ./..."
-  "backend|../bin/golangci-lint run ./..."
-  "backend|../bin/govulncheck ./..."
-  "backend|../tools/dev-env.sh go test -race -count=1 ./..."
-  "backend|../bin/sqlc -f sqlc.yaml diff"
-  "frontend|pnpm install --frozen-lockfile"
-  "frontend|pnpm typecheck"
-  "frontend|pnpm lint"
-  "frontend|pnpm format:check"
-  "frontend|pnpm test"
-  "frontend|pnpm build"
-  "frontend|pnpm check:classes"
-  "frontend|pnpm check:bundle"
-  "frontend|pnpm api:check"
-  "frontend|pnpm audit --audit-level high"
-  "frontend|../tools/dev-env.sh pnpm e2e"
-  ".|python3 .claude/hooks/check_guard_secrets.py"
-  ".|tools/check-dev-env.sh"
-  ".|tools/check-merge-gate.sh"
+  "pre|.|tools/check-tool-binaries.sh"
+  "B|.|pnpm --dir tools/docs install --frozen-lockfile"
+  "B|.|tools/docs/check-docs.sh"
+  "B|.|bin/gitleaks git --redact --no-banner --config .gitleaks.toml ."
+  "B|.|bin/gitleaks git --staged --redact --no-banner --config .gitleaks.toml ."
+  "B|.|bin/osv-scanner scan source --no-call-analysis=go --lockfile=tools/go.mod"
+  "B|.|bin/osv-scanner scan source --no-call-analysis=go --lockfile=backend/go.mod"
+  "B|.|bin/osv-scanner scan source --lockfile=frontend/pnpm-lock.yaml"
+  "B|.|bin/osv-scanner scan source --lockfile=tools/docs/pnpm-lock.yaml"
+  "B|backend|go mod tidy -diff"
+  'B|backend|unformatted="$(gofmt -l .)" && test -z "$unformatted"'
+  "B|backend|go vet ./..."
+  "B|backend|../bin/golangci-lint run ./..."
+  "B|backend|../bin/govulncheck ./..."
+  "A|backend|../tools/dev-env.sh go test -race -count=1 ./..."
+  "B|backend|../bin/sqlc -f sqlc.yaml diff"
+  "C|frontend|pnpm install --frozen-lockfile"
+  "C|frontend|pnpm typecheck"
+  "C|frontend|pnpm lint"
+  "C|frontend|pnpm format:check"
+  "C|frontend|pnpm test"
+  "C|frontend|pnpm build"
+  "C|frontend|pnpm check:classes"
+  "C|frontend|pnpm check:bundle"
+  "C|frontend|pnpm api:check"
+  "C|frontend|pnpm audit --audit-level high"
+  "e2e|frontend|../tools/dev-env.sh pnpm e2e"
+  "C|.|python3 .claude/hooks/check_guard_secrets.py"
+  "C|.|tools/check-dev-env.sh"
+  "C|.|tools/check-merge-gate.sh"
 )
+
+lane_self_test_checks=(
+  "pre|.|if test -f steps/pre.sh; then bash steps/pre.sh; fi"
+  "A|.|if test -f steps/a1.sh; then bash steps/a1.sh; fi"
+  "B|.|if test -f steps/b1.sh; then bash steps/b1.sh; fi"
+  "C|.|if test -f steps/c1.sh; then bash steps/c1.sh; fi"
+  "A|.|if test -f steps/a2.sh; then bash steps/a2.sh; fi"
+  "B|.|if test -f steps/b2.sh; then bash steps/b2.sh; fi"
+  "e2e|.|if test -f steps/e2e.sh; then bash steps/e2e.sh; fi"
+  "C|.|if test -f steps/c2.sh; then bash steps/c2.sh; fi"
+)
+
+lane_slots="pre A B C e2e"
+lane_start_timeout=60
+lane_stop_grace=20
+lane_kill_grace=10
+lane_end_grace=30
+log_retention_minutes=10080
+log_tail_lines=40
+command_record_pattern='^(pre|A|B|C|e2e)[|](0|[1-9][0-9]{0,3})[|](0|[1-9][0-9]{0,2})[|][0-9]{1,6}([.][0-9])?$'
+done_record_pattern='^(pre|A|B|C|e2e)[|]done[|][0-9]{1,6}([.][0-9])?$'
+recorded_lanes=""
 
 docs_only_checks=(
   ".|tools/check-tool-binaries.sh"
@@ -69,8 +91,8 @@ influential_ignored_files=(
 
 usage() {
   printf '%s\n' \
-    'usage: merge-gate.sh gate --ff-only [--change BRANCH] [--repo PATH] [--lock-dir PATH] [--checks full|self-test]' \
-    '       merge-gate.sh gate --squash --change BRANCH [--repo PATH] [--lock-dir PATH] [--checks full|self-test]' \
+    'usage: merge-gate.sh gate --ff-only [--change BRANCH] [--repo PATH] [--lock-dir PATH] [--checks full|self-test|self-test-lanes] [--lane-grace SECONDS]' \
+    '       merge-gate.sh gate --squash --change BRANCH [--repo PATH] [--lock-dir PATH] [--checks full|self-test|self-test-lanes] [--lane-grace SECONDS]' \
     '       merge-gate.sh finish [--repo PATH] [--lock-dir PATH]' \
     '       merge-gate.sh release [--repo PATH] [--lock-dir PATH]' >&2
   exit 2
@@ -123,7 +145,7 @@ script_common_dir() {
 }
 
 refuse_unsafe_self_test() {
-  [[ "$requested_checks" == self-test ]] || return 0
+  [[ "$requested_checks" == self-test || "$requested_checks" == self-test-lanes ]] || return 0
   [[ "$lock_dir_given" == yes ]] || fail "--checks self-test needs an explicit --lock-dir outside the default lock folder"
   [[ "$lock_dir" == /* ]] || fail "the lock folder $lock_dir is not an absolute path"
   [[ "$(canonical_folder "$lock_dir")" != "$(canonical_folder "$(default_lock_dir)")" ]] ||
@@ -139,6 +161,16 @@ prepare_lock_dir() {
   [[ "$lock_dir" == /* ]] || fail "the lock folder $lock_dir is not an absolute path"
   has_control_character "$lock_dir" && fail "the lock folder path holds a control character"
   [[ -L "$lock_dir" ]] && fail "$lock_dir is a link, not a lock folder"
+  case "$(canonical_folder "$lock_dir")/" in
+    "$(canonical_folder "$root")"/*) fail "the lock folder $lock_dir lies inside the checkout $root" ;;
+  esac
+  local ancestor="$lock_dir"
+  while [[ -n "$ancestor" ]]; do
+    if [[ -e "$ancestor" && "$ancestor" -ef "$root" ]]; then
+      fail "the lock folder $lock_dir lies inside the checkout $root"
+    fi
+    ancestor="${ancestor%/*}"
+  done
   if [[ ! -e "$lock_dir" ]]; then
     (umask 077 && mkdir -p "$lock_dir")
   fi
@@ -172,6 +204,7 @@ clear_holder() {
   holder_tree=""
   holder_checks=""
   holder_scope=""
+  holder_lanes=""
 }
 
 read_lock_file() {
@@ -195,10 +228,13 @@ read_lock_file() {
       tree) holder_tree="$value" ;;
       checks) holder_checks="$value" ;;
       scope) holder_scope="$value" ;;
+      lanes) holder_lanes="$value" ;;
       *) fail "$file is not a merge gate lock; remove it by hand once no gate is active" ;;
     esac
   done <"$file"
   [[ "$holder_pid" =~ ^[1-9][0-9]*$ && -n "$holder_started" && "$holder_checkout" == /* && "$holder_common" == /* ]] ||
+    fail "$file is not a merge gate lock; remove it by hand once no gate is active"
+  [[ -z "$holder_lanes" || "$holder_lanes" =~ ^[1-9][0-9]*(,[1-9][0-9]*)*$ ]] ||
     fail "$file is not a merge gate lock; remove it by hand once no gate is active"
   case "$holder_state" in
     running | passed) ;;
@@ -214,6 +250,22 @@ read_lock() {
 write_lock_content() {
   printf 'pid=%s\nstarted_at=%s\ncheckout=%s\ncommon_dir=%s\nstate=%s\nmode=%s\nchange=%s\nbase=%s\nhead=%s\ntree=%s\nchecks=%s\nscope=%s\n' \
     "$$" "$started_at" "$root" "$common_dir" "$1" "$mode" "$change" "$base" "$head" "$tree" "$check_list" "$scope"
+  if [[ -n "$recorded_lanes" ]]; then
+    printf 'lanes=%s\n' "$recorded_lanes"
+  fi
+}
+
+group_alive() {
+  kill -0 -- "-$1" 2>/dev/null
+}
+
+holder_alive() {
+  local group
+  kill -0 "$holder_pid" 2>/dev/null && return 0
+  for group in ${holder_lanes//,/ }; do
+    group_alive "$group" && return 0
+  done
+  return 1
 }
 
 new_lock_file() {
@@ -225,8 +277,8 @@ new_lock_file() {
 }
 
 holder_description() {
-  printf 'a merge gate from %s (pid %s, started %s, %s) holds %s' \
-    "$holder_checkout" "$holder_pid" "$holder_started" "$holder_state" "$lock_path"
+  printf 'a merge gate from %s (pid %s, lane process groups %s, started %s, %s) holds %s' \
+    "$holder_checkout" "$holder_pid" "${holder_lanes:-none}" "$holder_started" "$holder_state" "$lock_path"
 }
 
 try_link_lock() {
@@ -250,8 +302,8 @@ reclaim_stale_lock() {
   moved="$lock_dir/.merge-gate.stale.$$.$RANDOM$RANDOM"
   mv "$lock_path" "$moved" 2>/dev/null || fail "could not move the stale lock $lock_path aside"
   if read_lock_file "$moved" && [[ "$holder_state" == running && "$holder_pid" == "$stale_pid" && "$holder_started" == "$stale_started" ]] &&
-    ! kill -0 "$holder_pid" 2>/dev/null; then
-    printf 'merge gate: reclaimed %s left by pid %s from %s, which is no longer running\n' \
+    ! holder_alive; then
+    printf 'merge gate: reclaimed %s left by pid %s from %s, which is no longer running and has no running lane\n' \
       "$lock_path" "$stale_pid" "$stale_checkout" >&2
     rm -f "$moved"
     return 0
@@ -265,7 +317,7 @@ reclaim_stale_lock() {
 
 take_lock() {
   try_link_lock && return 0
-  if read_lock && [[ "$holder_state" == running ]] && ! kill -0 "$holder_pid" 2>/dev/null; then
+  if read_lock && [[ "$holder_state" == running ]] && ! holder_alive; then
     reclaim_stale_lock
     try_link_lock && return 0
     read_lock || fail "could not take $lock_path"
@@ -282,6 +334,13 @@ release_if_running() {
   if [[ "$holding" == yes ]] && lock_is_ours && [[ "$holder_state" == running ]]; then
     rm -f "$lock_path"
   fi
+}
+
+rewrite_running_lock() {
+  lock_is_ours || fail "$lock_path no longer holds this gate"
+  local temporary
+  temporary="$(new_lock_file running)"
+  mv -f "$temporary" "$lock_path"
 }
 
 mark_passed() {
@@ -414,6 +473,393 @@ docs_only_change() {
   return 0
 }
 
+laned_list() {
+  [[ "$check_list" == full || "$check_list" == self-test-lanes ]]
+}
+
+now_seconds() {
+  python3 -c 'import time; print("%.3f" % time.time())'
+}
+
+elapsed_seconds() {
+  awk -v start="$1" -v end="$2" 'BEGIN { printf "%.1f", end - start }'
+}
+
+split_checks() {
+  local entry rest tag earlier index=0
+  entry_tags=()
+  entry_directories=()
+  entry_commands=()
+  for entry in "${checks[@]}"; do
+    tag="${entry%%|*}"
+    rest="${entry#*|}"
+    case " $lane_slots " in
+      *" $tag "*) ;;
+      *) fail "entry $index of the $check_list check list names the unknown slot $tag" ;;
+    esac
+    [[ "$rest" == *"|"* ]] || fail "entry $index of the $check_list check list names no folder"
+    earlier=0
+    while [[ "$earlier" -lt "$index" ]]; do
+      [[ "${entry_directories[earlier]}|${entry_commands[earlier]}" != "$rest" ]] ||
+        fail "entry $index of the $check_list check list repeats entry $earlier"
+      earlier=$((earlier + 1))
+    done
+    entry_tags[index]="$tag"
+    entry_directories[index]="${rest%%|*}"
+    entry_commands[index]="${rest#*|}"
+    index=$((index + 1))
+  done
+  entry_count="$index"
+}
+
+prepare_log_folder() {
+  find "$lock_dir" -maxdepth 1 -type d -name 'logs.*' -mmin "+$log_retention_minutes" -exec rm -rf {} + ||
+    fail "could not remove the command logs older than seven days from $lock_dir"
+  log_folder="$(umask 077 && mktemp -d "$lock_dir/logs.XXXXXX")"
+  chmod 700 "$log_folder"
+}
+
+run_lane() {
+  local slot="$1" token="" index=0 status started finished log
+  trap - EXIT INT TERM
+  read -r -n 1 -t "$lane_start_timeout" -u 8 token || exit 1
+  exec 8<&-
+  [[ "$token" == g ]] || exit 1
+  started="$(now_seconds 9>&-)"
+  while [[ "$index" -lt "$entry_count" ]]; do
+    if [[ "${entry_tags[index]}" == "$slot" ]]; then
+      log="$log_folder/$index.log"
+      (umask 077 && : >"$log") 9>&-
+      status=0
+      (cd "$root/${entry_directories[index]}" && exec bash -c "${entry_commands[index]}") </dev/null >>"$log" 2>&1 9>&- ||
+        status=$?
+      finished="$(now_seconds 9>&-)"
+      printf '%s|%s|%s|%s\n' "$slot" "$index" "$status" "$(elapsed_seconds "$started" "$finished" 9>&-)" >&9
+      started="$finished"
+      [[ "$status" == 0 ]] || break
+    fi
+    index=$((index + 1))
+  done
+  finished="$(now_seconds 9>&-)"
+  printf '%s|done|%s\n' "$slot" "$(elapsed_seconds "$phase_started" "$finished" 9>&-)" >&9
+}
+
+lane_groups_list() {
+  local pair groups=""
+  for pair in $active_lanes; do
+    groups="$groups${groups:+,}${pair#*:}"
+  done
+  printf '%s' "$groups"
+}
+
+lanes_with_live_groups() {
+  local pair live=""
+  for pair in $active_lanes; do
+    if group_alive "${pair#*:}"; then
+      live="$live${live:+ }$pair"
+    fi
+  done
+  printf '%s' "$live"
+}
+
+wait_for_lane_groups() {
+  local deadline=$((SECONDS + $1))
+  while [[ -n "$(lanes_with_live_groups)" ]]; do
+    [[ "$SECONDS" -lt "$deadline" ]] || return 1
+    sleep 0.1
+  done
+}
+
+open_fifo() {
+  local fifo="$log_folder/$2.fifo"
+  mkfifo -m 600 "$fifo"
+  case "$1" in
+    8) exec 8<>"$fifo" ;;
+    9) exec 9<>"$fifo" ;;
+  esac
+  rm -f "$fifo"
+}
+
+start_lanes() {
+  local slot
+  open_fifo 8 start
+  open_fifo 9 records
+  phase_started="$(now_seconds 9>&-)"
+  set -m
+  for slot in "$@"; do
+    run_lane "$slot" &
+    active_lanes="$active_lanes${active_lanes:+ }$slot:$!"
+  done
+  set +m
+  recorded_lanes="$(lane_groups_list)"
+  rewrite_running_lock
+  for slot in "$@"; do
+    printf 'g' >&8
+  done
+  exec 8<&-
+}
+
+add_problem() {
+  problems="$problems$1"$'\n'
+}
+
+wait_lanes() {
+  local pair status
+  for pair in $active_lanes; do
+    status=0
+    wait "${pair#*:}" || status=$?
+    [[ "$status" == 0 ]] || add_problem "lane ${pair%%:*} ended with status $status"
+  done
+}
+
+collect_lane_records() {
+  local line
+  phase_records=""
+  printf 'end\n' >&9
+  while :; do
+    if ! read -r -t 10 -u 9 line; then
+      add_problem "the lane record pipe ended without its end marker"
+      break
+    fi
+    [[ "$line" != end ]] || break
+    phase_records="$phase_records$line"$'\n'
+  done
+  exec 9<&-
+  record_lines="$record_lines$phase_records"
+}
+
+end_lanes() {
+  local pair
+  if [[ -n "$(lanes_with_live_groups)" ]]; then
+    printf 'merge gate: waiting up to %s seconds for the remaining processes of lane:process-group %s to end\n' \
+      "$lane_end_grace" "$(lanes_with_live_groups)" >&2
+  fi
+  if ! wait_for_lane_groups "$lane_end_grace"; then
+    for pair in $(lanes_with_live_groups); do
+      add_problem "processes of lane ${pair%%:*} (process group ${pair#*:}) were still running $lane_end_grace seconds after it ended"
+    done
+    return 0
+  fi
+  active_lanes=""
+  recorded_lanes=""
+  rewrite_running_lock
+}
+
+signal_lane_group() {
+  kill -"$1" -- "-$2" 2>/dev/null || ! group_alive "$2" ||
+    printf 'merge gate: could not send %s to lane process group %s\n' "$1" "$2" >&2
+}
+
+stop_lanes() {
+  local pair status
+  [[ -n "$active_lanes" ]] || return 0
+  for pair in $active_lanes; do
+    signal_lane_group TERM "${pair#*:}"
+  done
+  for pair in $active_lanes; do
+    status=0
+    wait "${pair#*:}" 2>/dev/null || status=$?
+  done
+  if [[ -n "$(lanes_with_live_groups)" ]]; then
+    printf 'merge gate: waiting up to %s seconds for the processes of lane:process-group %s to end\n' \
+      "$lane_stop_grace" "$(lanes_with_live_groups)" >&2
+  fi
+  if ! wait_for_lane_groups "$lane_stop_grace"; then
+    for pair in $(lanes_with_live_groups); do
+      signal_lane_group KILL "${pair#*:}"
+    done
+    if ! wait_for_lane_groups "$lane_kill_grace"; then
+      printf 'merge gate: lane process groups %s still run after TERM and KILL; the lock %s stays held\n' \
+        "$(lanes_with_live_groups)" "$lock_path" >&2
+      return 1
+    fi
+  fi
+  active_lanes=""
+}
+
+on_exit() {
+  local exit_status=$? stopped=yes
+  stop_lanes || stopped=no
+  if [[ "$holding" == yes && "$attempt_logged" == no ]]; then
+    attempt_logged=yes
+    printf 'merge gate: stopped with status %s before a result; command logs: %s\n' "$exit_status" "${log_folder:-none}" >&2
+    if [[ "$exit_status" == 130 ]]; then
+      (append_log interrupted) || printf 'merge gate: the interrupted attempt is missing from %s\n' "$log_path" >&2
+    else
+      (append_log stopped) || printf 'merge gate: the stopped attempt is missing from %s\n' "$log_path" >&2
+    fi
+  fi
+  if [[ "$stopped" == yes ]]; then
+    release_if_running
+  fi
+}
+
+records_of() {
+  local line
+  while IFS= read -r line; do
+    if [[ "$line" =~ $command_record_pattern && "$line" == "$1|$2|"* ]]; then
+      printf '%s\n' "$line"
+    fi
+  done <<<"$record_lines"
+}
+
+done_records_of() {
+  local line
+  while IFS= read -r line; do
+    if [[ "$line" =~ $done_record_pattern && "$line" == "$1|done|"* ]]; then
+      printf '%s\n' "$line"
+    fi
+  done <<<"$record_lines"
+}
+
+line_count() {
+  if [[ -z "$1" ]]; then
+    printf '0'
+  else
+    printf '%s\n' "$1" | awk 'END { printf "%d", NR }'
+  fi
+}
+
+record_field() {
+  printf '%s' "$1" | cut -d'|' -f"$2"
+}
+
+check_lane_records() {
+  local phase_slots=" $* " slot line line_number index lines count failed_before
+  line_number=0
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    line_number=$((line_number + 1))
+    slot="${line%%|*}"
+    if [[ "$line" =~ $command_record_pattern ]]; then
+      index="$(record_field "$line" 2)"
+      if [[ "$phase_slots" != *" $slot "* || "$index" -ge "$entry_count" || "${entry_tags[index]}" != "$slot" ]]; then
+        add_problem "lane $slot reported a record for entry $index, which is not in lane $slot"
+      fi
+    elif [[ "$line" =~ $done_record_pattern ]]; then
+      [[ "$phase_slots" == *" $slot "* ]] || add_problem "lane $slot reported its end outside its phase"
+    else
+      add_problem "line $line_number of the lane records of $* is malformed"
+    fi
+  done <<<"$phase_records"
+  for slot in "$@"; do
+    count="$(line_count "$(done_records_of "$slot")")"
+    [[ "$count" == 1 ]] || add_problem "lane $slot reported its end $count times"
+    failed_before=no
+    index=0
+    while [[ "$index" -lt "$entry_count" ]]; do
+      if [[ "${entry_tags[index]}" == "$slot" ]]; then
+        lines="$(records_of "$slot" "$index")"
+        count="$(line_count "$lines")"
+        if [[ "$count" == 0 ]]; then
+          [[ "$failed_before" == yes ]] || add_problem "entry $index of lane $slot has no record"
+          failed_before=yes
+        elif [[ "$count" != 1 ]]; then
+          add_problem "entry $index of lane $slot has $count records"
+          failed_before=yes
+        elif [[ "$(record_field "$lines" 3)" != 0 ]]; then
+          failed_check=yes
+          failed_before=yes
+        fi
+      fi
+      index=$((index + 1))
+    done
+  done
+}
+
+run_phase() {
+  printf 'merge gate: running %s, command logs in %s\n' "$*" "$log_folder" >&2
+  start_lanes "$@"
+  wait_lanes
+  collect_lane_records
+  end_lanes
+  phase_times="$phase_times$*|$(elapsed_seconds "$phase_started" "$(now_seconds)")"$'\n'
+  check_lane_records "$@"
+  if [[ "$failed_check" == yes ]]; then
+    laned_failure="a check failed"
+  elif [[ -n "$problems" ]]; then
+    laned_failure="${problems%%$'\n'*}"
+  fi
+}
+
+run_laned_checks() {
+  local changed
+  prepare_log_folder
+  run_phase pre
+  if [[ -n "$laned_failure" ]]; then
+    return 0
+  fi
+  run_phase A B C
+  if [[ -n "$laned_failure" ]]; then
+    return 0
+  fi
+  if changed="$(state_change_during_gate)"; then
+    laned_failure="the checkout changed during the gate: $changed"
+    return 0
+  fi
+  run_phase e2e
+}
+
+print_laned_results() {
+  local index tag lines count exit_status seconds slot log phase timings=""
+  index=0
+  while [[ "$index" -lt "$entry_count" ]]; do
+    tag="${entry_tags[index]}"
+    lines="$(records_of "$tag" "$index")"
+    count="$(line_count "$lines")"
+    case "$count" in
+      0)
+        if [[ -n "$log_folder" && -f "$log_folder/$index.log" ]]; then
+          printf 'no record: %s: %s: %s\n' "$tag" "${entry_directories[index]}" "${entry_commands[index]}"
+        else
+          printf 'not run: %s: %s: %s\n' "$tag" "${entry_directories[index]}" "${entry_commands[index]}"
+        fi
+        ;;
+      1)
+        exit_status="$(record_field "$lines" 3)"
+        seconds="$(record_field "$lines" 4)"
+        timings="$timings$tag $seconds"$'\n'
+        printf 'exit %s: %s: %s s: %s: %s\n' "$exit_status" "$tag" "$seconds" "${entry_directories[index]}" "${entry_commands[index]}"
+        ;;
+      *) printf '%s records: %s: %s: %s\n' "$count" "$tag" "${entry_directories[index]}" "${entry_commands[index]}" ;;
+    esac
+    index=$((index + 1))
+  done
+  for slot in $lane_slots; do
+    lines="$(done_records_of "$slot")"
+    if [[ "$(line_count "$lines")" == 1 ]]; then
+      printf 'lane %s wall time: %s s\n' "$slot" "$(record_field "$lines" 3)"
+    else
+      printf 'lane %s wall time: not run\n' "$slot"
+    fi
+    printf 'lane %s command seconds: %s\n' "$slot" \
+      "$(printf '%s' "$timings" | awk -v slot="$slot" '$1 == slot { total += $2 } END { printf "%.1f", total }')"
+  done
+  while IFS= read -r phase; do
+    [[ -n "$phase" ]] || continue
+    printf 'phase %s wall time with the wait for its processes: %s s\n' "${phase%%|*}" "${phase#*|}"
+  done <<<"$phase_times"
+  printf 'summed command seconds: %s\n' "$(printf '%s' "$timings" | awk '{ total += $2 } END { printf "%.1f", total }')"
+  printf 'gate wall time: %s s\n' "$(elapsed_seconds "$gate_started" "$(now_seconds)")"
+  printf 'cores: %s\n' "$(getconf _NPROCESSORS_ONLN)"
+  printf 'command logs: %s\n' "${log_folder:-none}"
+  if [[ -n "$problems" ]]; then
+    printf 'lane problems:\n%s' "$problems"
+  fi
+  index=0
+  while [[ "$index" -lt "$entry_count" ]]; do
+    log="$log_folder/$index.log"
+    if [[ -n "$log_folder" && -f "$log" ]]; then
+      lines="$(records_of "${entry_tags[index]}" "$index")"
+      if [[ "$(line_count "$lines")" != 1 || "$(record_field "$lines" 3)" != 0 ]]; then
+        printf 'last %s lines of the log of %s: %s:\n' "$log_tail_lines" "${entry_tags[index]}" "${entry_commands[index]}"
+        tail -n "$log_tail_lines" "$log"
+      fi
+    fi
+    index=$((index + 1))
+  done
+}
+
 run_checks() {
   local entry directory command status
   local failed=no
@@ -462,14 +908,19 @@ print_report() {
   else
     printf 'earlier attempts for this tree: none\n'
   fi
-  for line in "${results[@]}"; do
-    printf '%s\n' "$line"
-  done
+  if laned_list; then
+    print_laned_results
+  else
+    for line in "${results[@]}"; do
+      printf '%s\n' "$line"
+    done
+  fi
   printf 'result: %s\n' "$1"
 }
 
 gate_failed() {
   print_report "failed: $1"
+  attempt_logged=yes
   append_log failed
   exit 1
 }
@@ -486,7 +937,20 @@ gate() {
   check_list=""
   results=()
   attempts=""
-  trap release_if_running EXIT
+  active_lanes=""
+  recorded_lanes=""
+  log_folder=""
+  problems=""
+  failed_check=no
+  laned_failure=""
+  entry_count=0
+  gate_started=""
+  record_lines=""
+  phase_records=""
+  phase_times=""
+  phase_started=""
+  attempt_logged=no
+  trap on_exit EXIT
   trap 'exit 130' INT TERM
   record_state
   if docs_only_change; then
@@ -495,22 +959,33 @@ gate() {
     scope=full
   fi
   case "$requested_checks" in
-    self-test) check_list=self-test ;;
+    self-test | self-test-lanes) check_list="$requested_checks" ;;
     full) check_list="$scope" ;;
   esac
   case "$check_list" in
     full) checks=("${full_checks[@]}") ;;
     docs-only) checks=("${docs_only_checks[@]}") ;;
     self-test) checks=("${self_test_checks[@]}") ;;
+    self-test-lanes) checks=("${lane_self_test_checks[@]}") ;;
   esac
+  if laned_list; then
+    split_checks
+    gate_started="$(now_seconds)"
+  fi
   take_lock
   holding=yes
   prepare_log
   attempts="$(earlier_attempts)"
-  run_checks || gate_failed "a check failed"
+  if laned_list; then
+    run_laned_checks
+    [[ -z "$laned_failure" ]] || gate_failed "$laned_failure"
+  else
+    run_checks || gate_failed "a check failed"
+  fi
   if changed="$(state_change_during_gate)"; then
     gate_failed "the checkout changed during the gate: $changed"
   fi
+  attempt_logged=yes
   append_log passed
   mark_passed
   print_report passed
@@ -582,72 +1057,91 @@ release() {
     return 0
   fi
   [[ "$holder_common" == "$common_dir" ]] || fail "$(holder_description) for another repository"
-  if [[ "$holder_state" == running ]] && kill -0 "$holder_pid" 2>/dev/null; then
-    fail "$(holder_description) and is still running"
+  if [[ "$holder_state" == running ]] && holder_alive; then
+    fail "$(holder_description) and it or one of its lanes is still running"
   fi
   rm -f "$lock_path"
   printf 'merge gate: released %s, held by pid %s from %s (%s)\n' "$lock_path" "$holder_pid" "$holder_checkout" "$holder_state"
 }
 
-[[ $# -ge 1 ]] || usage
-subcommand="$1"
-shift
-mode=""
-repo_arg=""
-lock_dir=""
-lock_dir_given=no
-change_arg=""
-requested_checks=full
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --ff-only) mode=ff-only ;;
-    --squash) mode=squash ;;
-    --repo)
-      [[ $# -ge 2 ]] || usage
-      repo_arg="$2"
-      shift
+main() {
+  [[ $# -ge 1 ]] || usage
+  subcommand="$1"
+  shift
+  mode=""
+  repo_arg=""
+  lock_dir=""
+  lock_dir_given=no
+  change_arg=""
+  requested_checks=full
+  lane_grace=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --ff-only) mode=ff-only ;;
+      --squash) mode=squash ;;
+      --repo)
+        [[ $# -ge 2 ]] || usage
+        repo_arg="$2"
+        shift
+        ;;
+      --lock-dir)
+        [[ $# -ge 2 ]] || usage
+        lock_dir="$2"
+        lock_dir_given=yes
+        shift
+        ;;
+      --change)
+        [[ $# -ge 2 && -n "$2" ]] || usage
+        change_arg="$2"
+        shift
+        ;;
+      --checks)
+        [[ $# -ge 2 ]] || usage
+        case "$2" in
+          full | self-test | self-test-lanes) requested_checks="$2" ;;
+          *) usage ;;
+        esac
+        shift
+        ;;
+      --lane-grace)
+        [[ $# -ge 2 && "$2" =~ ^[1-9][0-9]?$ ]] || usage
+        lane_grace="$2"
+        shift
+        ;;
+      *) usage ;;
+    esac
+    shift
+  done
+
+  resolve_repo
+  [[ -n "$lock_dir" ]] || lock_dir="$(default_lock_dir)"
+  refuse_unsafe_self_test
+  if [[ -n "$lane_grace" ]]; then
+    [[ "$subcommand" == gate && ( "$requested_checks" == self-test || "$requested_checks" == self-test-lanes ) ]] ||
+      fail "--lane-grace is accepted only by a gate with --checks self-test or self-test-lanes"
+    lane_end_grace="$lane_grace"
+    lane_stop_grace="$lane_grace"
+    lane_kill_grace="$lane_grace"
+  fi
+  prepare_lock_dir
+
+  case "$subcommand" in
+    gate)
+      [[ -n "$mode" ]] || usage
+      gate
       ;;
-    --lock-dir)
-      [[ $# -ge 2 ]] || usage
-      lock_dir="$2"
-      lock_dir_given=yes
-      shift
+    finish)
+      [[ -z "$mode" && -z "$change_arg" && "$requested_checks" == full ]] || usage
+      finish
       ;;
-    --change)
-      [[ $# -ge 2 && -n "$2" ]] || usage
-      change_arg="$2"
-      shift
-      ;;
-    --checks)
-      [[ $# -ge 2 ]] || usage
-      case "$2" in
-        full | self-test) requested_checks="$2" ;;
-        *) usage ;;
-      esac
-      shift
+    release)
+      [[ -z "$mode" && -z "$change_arg" && "$requested_checks" == full ]] || usage
+      release
       ;;
     *) usage ;;
   esac
-  shift
-done
+}
 
-resolve_repo
-[[ -n "$lock_dir" ]] || lock_dir="$(default_lock_dir)"
-refuse_unsafe_self_test
-prepare_lock_dir
-
-case "$subcommand" in
-  gate)
-    [[ -n "$mode" ]] || usage
-    gate
-    ;;
-  finish)
-    [[ -z "$mode" && -z "$change_arg" && "$requested_checks" == full ]] || usage
-    finish
-    ;;
-  release)
-    [[ -z "$mode" && -z "$change_arg" && "$requested_checks" == full ]] || usage
-    release
-    ;;
-  *) usage ;;
-esac
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

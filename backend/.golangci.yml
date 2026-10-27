@@ -2,6 +2,7 @@ version: "2"
 
 run:
   tests: true
+  allow-serial-runners: true
 
 linters:
   default: standard
