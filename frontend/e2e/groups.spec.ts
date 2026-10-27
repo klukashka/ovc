@@ -259,6 +259,7 @@ test.describe('in English', () => {
   });
 
   test('groups › adding to a group archived meanwhile closes the dialog and shows the current group', async ({
+    socketSlots,
     page,
     deployment,
     diagnostics,
@@ -268,6 +269,7 @@ test.describe('in English', () => {
     await seedActiveStudent(deployment, pavel, 'Boris');
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
     diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/groups/${groupId}`, status: 409 });
+    await socketSlots.keepPageSocketsOff(pavel);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/groups/${groupId}`);
     await page.getByRole('button', { name: 'Add students' }).click();
@@ -474,6 +476,7 @@ test.describe('in English, one tutor with 31 active students shared by the tests
   });
 
   test('groups › adding to a group that filled up meanwhile says that a group holds at most 30 students', async ({
+    socketSlots,
     page,
     deployment,
     diagnostics,
@@ -483,6 +486,7 @@ test.describe('in English, one tutor with 31 active students shared by the tests
     const [chosen = '', meanwhile = '', ...others] = cardIds.filter((id) => id !== beyond);
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [beyond, ...others]);
     diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/groups/${groupId}`, status: 422 });
+    await socketSlots.keepPageSocketsOff(pavel);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/groups/${groupId}`);
     await page.getByRole('button', { name: 'Add students' }).click();

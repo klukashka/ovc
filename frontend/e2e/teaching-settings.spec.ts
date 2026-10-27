@@ -3,11 +3,13 @@ import type { TestAccount } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { busyControls, recordBusyControls } from './observers.ts';
+import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { accessToken, callApi, deleteAccount, seedBlockedStudent, seedBlockedStudents, tutorCode } from './tutoring.ts';
 
 const codePattern = /^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/;
 const dailyRegenerations = 10;
 const pageSize = 30;
+const blockedQueryPaths = ['/api/v1/tutor/blocked-requesters'];
 
 async function unblockThroughTheApi(deployment: Deployment, tutor: TestAccount, name: string): Promise<string> {
   const token = await accessToken(deployment, tutor);
@@ -107,9 +109,11 @@ test('teaching settings › an unblock of a student unblocked meanwhile is refus
   const first = await seedBlockedStudent(deployment, maria, 'Первый разблокированный ученик');
   await seedBlockedStudent(deployment, maria, 'Второй разблокированный ученик');
   await signInThroughTheApi(page, maria);
+  const traffic = trafficAfterReady(page, blockedQueryPaths);
   await page.goto('/settings/teaching');
   const section = page.getByRole('region', { name: 'Заблокированные ученики' });
   await expect(section.getByRole('button', { name: /^Разблокировать: / })).toHaveCount(2);
+  await expectRefetchedAfterTheSocketIsReady(traffic);
   const firstId = await unblockThroughTheApi(deployment, maria, first.name);
   diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/tutor/blocked-requesters/${firstId}`, status: 404 });
 
@@ -129,10 +133,12 @@ test('teaching settings › a second refused unblock while the alert shows takes
   const first = await seedBlockedStudent(deployment, maria, 'Первый разблокированный ученик');
   const second = await seedBlockedStudent(deployment, maria, 'Второй разблокированный ученик');
   await signInThroughTheApi(page, maria);
+  const traffic = trafficAfterReady(page, blockedQueryPaths);
   await page.goto('/settings/teaching');
   const section = page.getByRole('region', { name: 'Заблокированные ученики' });
   const alert = section.getByRole('alert');
   await expect(section.getByRole('button', { name: /^Разблокировать: / })).toHaveCount(2);
+  await expectRefetchedAfterTheSocketIsReady(traffic);
   const firstId = await unblockThroughTheApi(deployment, maria, first.name);
   diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/tutor/blocked-requesters/${firstId}`, status: 404 });
   await section.getByRole('button', { name: `Разблокировать: ${first.name}` }).click();
