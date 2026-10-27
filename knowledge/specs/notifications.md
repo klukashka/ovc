@@ -12,7 +12,7 @@ Behavior for FR-13 and the worker that delivers it. Decisions: [ADR-0006](../../
 | `signup.duplicate_attempt` | the existing account | — | yes | required |
 | `relationship.ended` | the other party of the ending: the student when the tutor ends it, the tutor when the student ends it; nobody when a deletion ends it | yes | yes | required |
 | `tutor.deleted` | each student whose relationship with the tutor was `active` at deletion and whose email is confirmed | — | yes | required |
-| `group.archived` | group members | yes | yes | `lesson_changes` |
+| `group.archived` | the group's members at archiving | yes | yes | `lesson_changes` |
 | `invitation.accepted` | the tutor whose invitation linked its card | yes | no | — |
 | `join_request.created` | the tutor, once the request is visible to them | yes | no | — |
 | `join_request.accepted` | the student who sent the request | yes | no | — |
@@ -35,15 +35,24 @@ Behavior for FR-13 and the worker that delivers it. Decisions: [ADR-0006](../../
 - **Aggregated emails:**
   - when a relationship ends, the cancelled lessons are listed in the `relationship.ended` email, and no separate `lesson.cancelled` emails go out;
   - when a group is archived, in the `group.archived` email, likewise;
-  - when a tutor deletes their account, in the `tutor.deleted` email, and no other email goes out for that deletion.
+  - when a tutor deletes their account, in the `tutor.deleted` email, and no other email goes out for that deletion;
+  - a provisional link's discarded lessons are cancelled silently, with no email and no in-app row ([lessons and series](schedule.md#lessons-and-series)).
+- **Finding the listed lessons at dispatch:** payloads stay identifiers only, and the worker finds each aggregated email's lessons from the cancellation cause, the subject and the instant ([schedule](schedule.md#lessons-and-series)):
+  - `relationship.ended` lists the lessons with `cancel_cause = 'relationship_ended'` of that relationship whose `cancelled_at` equals its `ended_at`;
+  - `group.archived` lists the lessons with `cancel_cause = 'group_archived'` of that group whose `cancelled_at` equals its `archived_at` and whose roster includes the recipient;
+  - `tutor.deleted` lists the lessons with `cancel_cause = 'tutor_deleted'` of that tutor whose `cancelled_at` equals its `deleted_at` and whose roster includes the recipient;
+  - `lesson.series_changed` carries the operation identifier and the identifiers of the affected lessons (at most 100 per series operation) and lists those whose roster or current audience includes the recipient at dispatch;
+  - `cancelled_at` is written in the same transaction from the value the ending, archiving or deletion statement stored, read back with `RETURNING` at the column's microsecond precision, never from a second clock read, so the equality holds; a relationship reactivated and ended again gets a new `ended_at` and lists only its own cancellations;
+  - each email lists at most 20 lessons in start order and then "and {count} more".
+- **Lesson emails** carry the lesson's title, its start in the recipient's profile timezone and language, and its audience label from the [label table](schedule.md#labels-per-role), and link to the lesson page for the description; they never carry the description.
 - Each event names its tutor, so the student's interface and emails carry the tutor label and colour.
-- **Slice 3** sends the `invitation.created`, `relationship.ended` and `tutor.deleted` emails; `relationship.ended` and `tutor.deleted` carry no lesson list until slice 5, and `group.archived` waits for slice 5. **Slice 4** adds the notification table and the in-app rows of the slice 3 events ([in-app producers](#in-app-producers-in-slice-4)); the first optional email, and with it the unsubscribe headers and the dispatch-time preference check, arrives with slice 5.
+- **Slice 3** sends the `invitation.created`, `relationship.ended` and `tutor.deleted` emails; `relationship.ended` and `tutor.deleted` carry no lesson list until slice 5, and `group.archived` waits for slice 5. **Slice 4** adds the notification table and the in-app rows of the slice 3 events ([in-app producers](#in-app-producers-in-slice-4)). **Slice 5** adds the lesson events, the `group.archived` email and row, the lesson lists of the aggregated emails ([in-app producers](#in-app-producers-in-slice-5)) and the first optional emails, and with them the unsubscribe headers and link, minting tokens at render time and the dispatch-time preference check ([optional emails](#email)).
 - **Unconfirmed recipients:** no notification email reaches an address whose account is `unverified`: at dispatch every email other than the account emails (confirmation, reset, duplicate sign-up notice) and invitation emails is dropped for such a recipient, including `relationship.ended` and `tutor.deleted`, and removing a provisional link sends nothing.
 
 ## Channels
 
 - **In-app:**
-  - a notification row per recipient stores identifiers only, never names, titles, message bodies or answers: the recipient, the tutor, the student the event concerns, the event, its subject (the relationship or the join request) and the relationship for the tutor colour, with creation time and read time ([data model](data-model.md#notification)); labels are resolved when the rows are read ([labels and links](#labels-and-links)), so no row keeps a copy of a name that a purge or a later edit should remove;
+  - a notification row per recipient stores identifiers only, never names, titles, message bodies or answers: the recipient, the tutor, the student the event concerns, the event, its subject (the relationship, the join request, from slice 5 the lesson or the group) and the relationship for the tutor colour, with creation time and read time ([data model](data-model.md#notification)); labels are resolved when the rows are read ([labels and links](#labels-and-links)), so no row keeps a copy of a name that a purge or a later edit should remove;
   - rows are written by the producer (a service or a scheduler job) in its own transaction, with the recipients decided at that moment from the rows it holds locked; email preferences never suppress them;
   - each row has an idempotency key, the same as its email's where the event has one ([keys](#outbox-and-worker)), and is inserted with `ON CONFLICT DO NOTHING`;
   - `notification.new` is signalled through the [broadcaster](realtime-and-video.md#broadcaster) in the same transaction, only when a row was actually inserted, and is delivered once that transaction commits, so rows created by the worker reach connected users too and repeated job runs never duplicate them;
@@ -67,6 +76,21 @@ Each row below is written in the producer's transaction with `ON CONFLICT DO NOT
 - A held or suppressed request produces nothing for the tutor, and a block, a suppression or an unblock produces nothing for the student ([T-33](../../docs/threat-model.md#threats-and-controls)).
 - Tutor deletion and student deletion insert no notification rows.
 
+### In-app producers in slice 5
+
+The notification `event` check widens with the five events below. Each row's key is its email's key from the [key table](#outbox-and-worker), and its recipients are decided in the producer's transaction under the [schedule's locks](schedule.md#locks-and-jobs):
+
+| Event | Recipient | `subject_id` | `student_id` | Produced when |
+|---|---|---|---|---|
+| `lesson.reminder_1h` | each student of the current audience, and the tutor | the lesson | the student recipient; for the tutor's row the student of a one-to-one lesson, `null` for a group lesson | the reminder job queues the 1-hour reminder |
+| `lesson.moved` | each student of the current audience | the lesson | the student recipient | one lesson's start or duration changes |
+| `lesson.cancelled` | each student of the frozen roster | the lesson | the student recipient | the tutor cancels one lesson |
+| `lesson.series_changed` | each student of the roster or current audience of an affected lesson, once per operation | the occurrence the tutor acted on | the student recipient | an edit or cancellation of "this and following" |
+| `group.archived` | each member at archiving | the group | the student recipient | the tutor archives the group |
+
+- `relationship_id` names the recipient's relationship with the tutor, so students see the tutor colour.
+- The cancellations of an ending, an archiving or a tutor deletion produce no `lesson.cancelled` row; they are part of the `relationship.ended` and `group.archived` rows (a tutor deletion inserts none), and a provisional link's discarded lessons produce none.
+
 ### Labels and links
 
 `GET /notifications` resolves each row's label and link at read time, under the rules every other route applies to the caller:
@@ -79,46 +103,59 @@ Each row below is written in the producer's transaction with `ON CONFLICT DO NOT
 | `join_request.accepted` | student | the tutor's account name, while My tutors lists the relationship | the relationship's colour, likewise | `my_tutors` with the relationship, while My tutors lists it |
 | `join_request.declined` | student | `null`, because the student's sent requests carry no tutor name ([accounts](accounts.md#tutor-code-and-join-requests)) and no relationship formed (the exception in FR-2.6) | `null` | `my_tutors` with the join request's identifier, which opens the sent requests; every other `my_tutors` link carries a relationship identifier |
 | `relationship.ended` | student | the tutor's account name, while My tutors lists the relationship | the relationship's colour, likewise | `my_tutors` with the relationship, while My tutors lists it |
+| `lesson.reminder_1h` | tutor | the lesson's title | `null` | `lesson` with the lesson |
+| `lesson.reminder_1h`, `lesson.moved`, `lesson.cancelled`, `lesson.series_changed` | student | the lesson's title, while the lesson is [visible](schedule.md#visibility) to the student | the relationship's colour, while My tutors lists the relationship | `lesson` with the lesson, while it is visible to the student |
+| `group.archived` | student | the group's label from the [label table](schedule.md#labels-per-role): the group's name while the student is a member, otherwise `null` with `label_kind: group`, which the interface shows as the neutral "Group lesson" | the relationship's colour, while My tutors lists the relationship | `null`: an archived group has no page a student can open |
 
+- Lesson titles are tutor-written text: the same text-only rule applies to them as to names ([titles and descriptions](schedule.md#titles-and-descriptions)).
 - A link whose subject is outside the caller's current scope is `null`, and the row is shown without a link. On `invitation.accepted` and `relationship.ended` rows, a tutor's card label is the card's own display name while the card row exists, also after it is discarded; its link is `null` once the card is discarded.
 - `label_deleted` is `true` only for a `join_request.created` row of an accepted request whose requesting account is `deleted`; the label of that row is `null`, and a deleted requester of a request that was not accepted is shown like any request outside the tutor's scope. The interface renders its own "Deleted account" text ([states](../design/web/states.md#notifications)).
 - Labels are user-written names: the interface renders them as text, never as HTML or links ([T-14](../../docs/threat-model.md#threats-and-controls)), and the row's text never interpolates them ([states](../design/web/states.md#notifications)).
 
 ### Notification routes
 
-- **`GET /notifications?limit=&cursor=`** answers `{items: [{id, event, created_at, read_at, label, label_deleted, colour, link}], next_cursor, unread_count}` with one schema for both roles: `label` is a string or `null`, `label_deleted` a boolean ([labels and links](#labels-and-links)), `colour` a palette key or `null` (students only), and `link` is `{kind: student_card | join_requests | my_tutors, id}` or `null`. Newest first, keyset paginated on `(created_at, id)`, 30 per page by default and at most 100 (the panel asks for 10), `Cache-Control: no-store`. `unread_count` counts at most 100 unread rows, and the interface shows "99+" above 99.
+- **`GET /notifications?limit=&cursor=`** answers `{items: [{id, event, created_at, read_at, label, label_deleted, label_kind, colour, link}], next_cursor, unread_count}` with one schema for both roles: `label` is a string or `null`, `label_deleted` a boolean ([labels and links](#labels-and-links)), `label_kind` (from slice 5) a fixed label code of the [label table](schedule.md#labels-per-role) or `null`, set only with a `null` label, `colour` a palette key or `null` (students only), and `link` is `{kind: student_card | join_requests | my_tutors | lesson, id}` or `null` (`lesson` from slice 5). Newest first, keyset paginated on `(created_at, id)`, 30 per page by default and at most 100 (the panel asks for 10), `Cache-Control: no-store`. `unread_count` counts at most 100 unread rows, and the interface shows "99+" above 99.
 - **`POST /notifications/read`** takes exactly one of `{ids}` (1 to 100 of the caller's rows) or `{through}` (one of the caller's rows: that row and every row of the caller older than it by `(created_at, id)`), and answers `{unread_count}`. It is idempotent. An identifier that is not one of the caller's rows answers `404 not_found` like a random one, before `422 validation_failed` for both fields or neither. It is a write open to unconfirmed accounts, so it locks the account's row and checks the session again ([locks and the session re-check](accounts.md#locks-and-the-session-re-check)), and, when it marked at least one row, it signals `entity.changed` with kind `notification` to the caller's own sockets. An empty `ids` list answers `422` (`invalid`), and one beside `through` counts as both fields. Accepted gap: a row whose `created_at` precedes the `through` row but whose producer commits after the list was shown is marked read without having been shown; the window is one producer transaction, and the row's `notification.new` still arrives, so the client refetches and lists it as read. Closing the gap would need a commit-ordered sequence, which PostgreSQL does not offer without serialising producers.
 
 ## Email
 
-- **Templates** exist per event, in Russian and English, as HTML and plain text. They are rendered at send time in the recipient's language and timezone with ICU plural rules. The account emails (confirmation, reset, duplicate sign-up) share one HTML and one text template in `internal/services/notifications/templates`, rendered with `html/template` and `text/template`, and take their wording from the catalogue in `internal/core`; they contain no user-written text and no counts, so plural rules arrive with the first email that shows a count.
-- **Content:** subject and body include only what the recipient may see; emails to students never contain points or scores. A message digest names channels and counts, never message text. Links point to OVC pages, never to provider or storage URLs.
-- **Escaping:** user-written text (names, titles) is HTML-escaped in HTML bodies and appears in plain text only as text.
+- **Templates** exist per event, in Russian and English, as HTML and plain text. They are rendered at send time in the recipient's language and timezone. The account emails (confirmation, reset, duplicate sign-up) share one HTML and one text template in `internal/services/notifications/templates`, rendered with `html/template` and `text/template`, and take their wording from the catalogue in `internal/core`; they contain no user-written text and no counts.
+- **Plural rules and dates** arrive in slice 5 with the first emails that show a count or a lesson time, without a dependency: the CLDR cardinal rules for Russian (`one`, `few`, `many`, `other`) and English (`one`, `other`) are hand-written in `internal/core`, unit-tested over the numbers 0, 1, 2, 4, 5, 11, 12, 14, 21, 22, 25, 101 and 111, and used by the email catalogue. Emails show a lesson's start in the recipient's profile timezone and language (Russian month names in the genitive), with the city from the [timezone city table](schedule.md#recurrence-and-timezones) when the recipient's zone differs from the lesson's tutor-side zone, through the hand-written catalogue in `internal/core`.
+- **Content:** subject and body include only what the recipient may see; emails to students never contain points or scores. A message digest names channels and counts, never message text. Lesson emails carry the title, the time and the audience label and never the description. Links point to OVC pages, never to provider or storage URLs.
+- **Escaping:** user-written text (names, titles) is HTML-escaped in HTML bodies and appears in plain text only as text, with runs of whitespace and line breaks collapsed; lesson titles also lose bidirectional controls and zero-width characters in both bodies; in subjects and headers it follows the [title rule](schedule.md#titles-and-descriptions).
 - **Relationship emails:** the invitation email is written in the language of the account that holds the card's email, otherwise in the tutor's; the tutor's name appears only in its body, as escaped plain text, never as a link or in the subject, and the only link is the OVC invitation link. The `relationship.ended` email to a tutor names the student by the tutor's own card display name, escaped, never by the current account name; for a card created from a join request that is the tutor-owned copy taken at accept time. The `relationship.ended` email is written in the recipient's language; to a student it names the tutor by the tutor's account name and links to My tutors, and to a tutor it links to the student card; its payload holds only the relationship identifier and `ended_at`, from which the worker reads everything else at dispatch. The `tutor.deleted` email is queued in the deletion's transaction for each student whose relationship the deletion ended and whose email is confirmed at that moment, is written in the student's language, names the tutor by the tutor's account name, escaped, and links only to My tutors; the worker reads the tutor and the recipient at dispatch. The three slice 3 emails share one new HTML and text template pair, `relationship.html` and `relationship.txt` in `internal/services/notifications/templates`, with their wording in the catalogue in `internal/core`; the user-written name stands in its own paragraph, with runs of whitespace and line breaks collapsed to single spaces.
 - **Headers:**
-  - user-written text that reaches a header (names, titles) has CR and LF removed and is encoded with RFC 2047;
+  - user-written text that reaches a header (names, titles) has CR and LF removed, loses bidirectional controls and zero-width characters, and is encoded with RFC 2047;
   - the `Message-ID` is derived from the outbox idempotency key, so a retried send keeps its identifier;
-  - for token-bearing emails it also includes the token identifier, so a re-minted token is a distinct message.
+  - confirmation and reset emails also include the identifier of the token minted for the send, so a re-minted token is a distinct message; invitation emails also include the invitation identifier; an unsubscribe token has no identifier, so a retried optional email keeps its `Message-ID` although its token is minted again.
 - **Emails with tokens:**
   - invitation emails carry the card's one open invitation link, whose token the worker decrypts from the stored ciphertext at dispatch ([invitations](accounts.md#invitations)); a row whose ciphertext the current key cannot open becomes `dead` with `permanent`; the payload holds the invitation identifier and the send count, and the `Message-ID` also includes the invitation identifier;
   - confirmation and reset emails have their token minted by the worker in a committed transaction just before sending, invalidating earlier tokens of the same purpose, so a retried send mints and commits a new token first;
   - no outbox payload ever contains a token.
-- **Optional emails** carry one-click unsubscribe headers, from the first optional email in slice 5; the token is minted at render time and never stored in an outbox payload:
+- **Optional emails** (the groups `lesson_reminders` and `lesson_changes` from slice 5) carry one-click unsubscribe headers and a visible link:
   - `List-Unsubscribe` points to `https://<OVC origin>/api/v1/unsubscribe?token=…`;
   - `List-Unsubscribe-Post: List-Unsubscribe=One-Click`;
-  - both headers are covered by the DKIM signature.
+  - both bodies carry a visible "Turn off these emails" link to `/unsubscribe?token=…`;
+  - one token is minted per send at render time through the signer in `internal/core`, naming the recipient's own account and the email's preference group; it is never stored, never placed in a payload and never logged;
+  - DKIM signing is the provider's, and must cover both headers; the local sink signs nothing, so the deployment checks of slice 10 confirm that the provider signs them.
 - **Sender:** a fixed address on the OVC domain with SPF, DKIM and DMARC. The SMTP connection uses a 30-second timeout.
-- **Bounces and complaints** reported by the provider mark the address undeliverable. That stops optional emails until the user saves their email preferences again. How bounces arrive depends on the provider chosen ([open questions](../architecture/detailed.md#open-implementation-questions)). The chosen provider must keep message logs for at most 30 days.
-- **Tests** use the database mail sink, which the [test harness](../../docs/development.md#end-to-end-test-harness) can read.
+- **Bounces and complaints** reported by the provider mark the address undeliverable. That stops optional emails until the user saves their email preferences again. How bounces arrive depends on the provider chosen ([open questions](../architecture/detailed.md#open-implementation-questions)); the undeliverable check at dispatch lands with the bounce intake in slice 10, because no mark can be set before it. The chosen provider must keep message logs for at most 30 days.
+- **Tests** use the database mail sink, which the [test harness](../../docs/development.md#end-to-end-test-harness) can read; from slice 5 the sink also stores each email's headers as sent, so tests read unsubscribe tokens from the emails themselves.
 
 ## Dispatch-time checks
 
 Each **email** is decided again when the worker sends it, not only when it is queued (in-app rows are not re-checked). The worker loads the recipients, preferences and subjects of a claimed batch in a few batched queries. It drops a row, marking it `done` with reason `obsolete`, when:
 
 - the recipient is `blocked` or `deleted`, or the address is undeliverable for an optional email;
-- the recipient is `unverified` and the email is neither an account email (confirmation, reset, duplicate sign-up notice) nor an invitation email; each email builder reports the state of the recipient's account (for an invitation, the account that holds the card's email, if any), and the dispatcher applies the account-state parts of this rule and the previous one (blocked, deleted and unverified recipients) to every kind; it does not yet check undeliverable addresses for optional emails, which arrive with the first optional email;
-- the recipient's preference group is off; a missing preference row means on (from the first optional email in slice 5, which brings this check);
-- the recipient is no longer in the audience the event was about (for lesson, issue and group events);
+- the recipient is `unverified` and the email is neither an account email (confirmation, reset, duplicate sign-up notice) nor an invitation email; each email builder reports the state of the recipient's account (for an invitation, the account that holds the card's email, if any), and the dispatcher applies the account-state parts of this rule and the previous one (blocked, deleted and unverified recipients) to every kind; the undeliverable check for optional emails lands with the bounce intake in slice 10;
+- the recipient's preference group is off; a missing preference row means on. From slice 5 the dispatcher reads the recipient's preference group in the batched recipient query and records `email.dropped` (DEBUG, `reason` `preference`);
+- the recipient is a student over the daily cap of lesson emails: one cap of 20 per student per UTC day covers the student-addressed `lesson_reminders` and `lesson_changes` emails together; a tutor's emails about their own lessons are not capped, because the tutor's own write limit bounds them. The dispatcher reserves the slot only after every other check of this list has passed (eligibility, obsolescence, preference, the tutor's state), immediately before sending, atomically in a per-recipient, per-UTC-day counter, as the rate-limit windows do ([rate limit counter](data-model.md#rate-limit-counter)), and conditionally: the counter is incremented only while it is below 20, so an email dropped over the cap holds no slot; when the send fails, transiently or permanently, it releases the slot (`ReleaseRateLimitSlot`) of its own reservation, naming that reservation's `window_start`, so a send failing after UTC midnight never decrements the next day, and a retried send and an obsolete row use no slot; the hourly cleanup of rate-limit windows removes old counters. An email over the cap is dropped (`obsolete`, recorded as `email.dropped` with `reason` `daily_cap`), while its in-app row still arrives; the 24-hour reminder has no in-app row, so a 24-hour reminder over the cap is lost. Residual: an ambiguous or crashed send may count once more or once less: an SMTP timeout after the provider accepted the message releases the slot and the retry delivers the email again, and a crash between the reservation and the send uses a slot for an email that was not sent;
+- the event is a student-addressed lesson email (a reminder, `lesson.moved`, `lesson.cancelled`, `lesson.series_changed`) and the lesson's tutor is not `active`, for example blocked by the operator: the email is dropped (`obsolete`, recorded as `email.dropped` with `reason` `tutor_inactive`), the lesson is not cancelled, and emails queued after an unblock are sent as usual;
+- the recipient is no longer in the audience the event was about (for lesson, issue and group events). For the lesson events of slice 5:
+  - reminders and `lesson.moved`: the lesson's current audience, so a student whose relationship ended, became `reclaim_pending` or was discarded, or who left the group, gets nothing; the tutor stays a recipient of their own lesson's reminders while the tutor is `active`;
+  - `lesson.cancelled`: the frozen roster;
+  - `lesson.series_changed`: the roster or the current audience of a listed lesson;
+  - `group.archived`: the members at archiving whose relationship with the tutor is still `active` at dispatch;
 - the subject is obsolete:
 
   | Event | Obsolete when |
@@ -135,14 +172,15 @@ Each **email** is decided again when the worker sends it, not only when it is qu
   | `tutor.deleted` | The tutor is no longer `deleted` |
   | Any event | The subject row no longer exists (it was purged) |
 
-`lesson.cancelled` and `lesson.series_changed` are always sent while the recipient remains eligible.
+`lesson.cancelled` and `lesson.series_changed` are always sent while the recipient remains eligible and under the daily cap.
 
 ## Reminders
 
 - **Schedule:** a scheduler job runs every minute.
-- **Window:** for each reminder kind with offset `o` (24 hours or 1 hour), it selects `scheduled` lessons whose start lies in `(now + o − 15 minutes, now + o]` and whose remembered reminder revision for that kind differs from their schedule revision. It uses a partial index on lesson start over scheduled lessons.
-- **Rows:** it writes one in-app row (for the 1-hour reminder) and one outbox row per recipient, with idempotency key `(event, lesson, recipient, schedule revision)` and `ON CONFLICT DO NOTHING`. In the same transaction it records the lesson's reminder revision for that kind.
+- **Window:** for each reminder kind with offset `o` (24 hours or 1 hour), it selects `scheduled` lessons whose start lies in `(now + o − 15 minutes, now + o]` and whose remembered reminder revision for that kind differs from their schedule revision. It uses a partial index on lesson start over scheduled lessons, 50 lessons at a time.
+- **Rows:** each lesson is handled in its own transaction, which locks the audience's relationships, the group, the series and the lesson in the [schedule's lock order](schedule.md#locks-and-jobs) and decides the recipients under those locks: the current audience and the tutor. It writes one in-app row (for the 1-hour reminder) and one outbox row per recipient, with idempotency key `(event, lesson, recipient, schedule revision)` and `ON CONFLICT DO NOTHING`. In the same transaction it records the lesson's reminder revision for that kind.
 - **Progress:** a run keeps taking batches until no lesson in the window is left or its 20-second time budget is used. The revision marker means a large burst of lessons starting together is worked through completely, never reselected.
+- **Late scheduling:** a lesson scheduled or moved inside a reminder window gets only the reminders still ahead of it; no other email stands in for a missed reminder, and `lesson.moved` tells the audience of a move.
 - **Lateness:** a reminder whose window has passed is never selected, which bounds lateness to 15 minutes without separate skip records.
 - **Moved lessons** get a new revision and therefore new keys; reminders queued for the old revision become obsolete at dispatch.
 
@@ -163,7 +201,7 @@ Each **email** is decided again when the worker sends it, not only when it is qu
 
 ## Preferences and unsubscribe
 
-Slice 4 stores preferences, mints and verifies tokens, and serves the routes and pages; the worker mints tokens from slice 5, when the first optional email carries them.
+Slice 4 stores preferences, mints and verifies tokens, and serves the routes and pages; the worker mints tokens from slice 5, when the first optional email carries them, and the test control route that minted them for tests in slice 4 is removed then, so tests read tokens from the emails in the sink.
 
 - **Preference groups** per role, listed in this fixed order and all on by default:
   - tutors: `lesson_reminders`, `submissions`, `message_digest`;
@@ -200,7 +238,7 @@ Slice 4 stores preferences, mints and verifies tokens, and serves the routes and
   |---|---|
   | Reminders, `lesson.moved` | `(event, lesson, recipient, schedule revision)` |
   | `lesson.cancelled` | `(event, lesson, recipient)` |
-  | `lesson.series_changed` | `(event, operation identifier, recipient)`; the identifier is generated per request and kept in the payload |
+  | `lesson.series_changed` | `(event, operation identifier, recipient)`; the identifier is generated per request and kept in the payload with the identifiers of the affected lessons (at most 100) |
   | `group.archived` | `(event, group, archived_at, recipient)` |
   | `relationship.ended` | `(event, relationship, ended_at)` |
   | `submission.submitted` | `(event, submission, submitted_at)` |
@@ -229,7 +267,7 @@ Slice 4 stores preferences, mints and verifies tokens, and serves the routes and
   - **One pass:** `Tick(now)` runs the due scheduler jobs and reclaims expired leases, then runs every lane's loop side by side until no row is due at `now` and none is in flight, so a second tick at the same instant has no further effect. A pass stops claiming after 4 minutes of wall time, below the 5-minute lease, so a row claimed late in a long pass never starts with an expired lease; this claim budget applies to `Tick` only, because the continuous loops claim only into free slots. A panic in an effect frees its slot and counts as a failed attempt. With `OVC_CLOCK=system` the worker process runs the continuous loops; with `OVC_CLOCK=test` only `POST /__test__/tick` runs `Tick`, at the shared clock's instant, and the clock and tick routes exist only in that mode. On shutdown the worker claims nothing new and lets effects already started finish within their timeout.
   - **Message identifiers:** an email's `Message-ID` is derived from its outbox idempotency key and the host of `OVC_PUBLIC_URL`, so a retried send keeps the same identifier.
   - **Scheduler:** runs jobs whose due time has passed, recording each run in a job-run table, so hourly and daily jobs catch up once after downtime. A job that fails is recorded as `failed` and reported as `job.run` at ERROR with an error kind, and the pass continues with the other jobs and the lanes (an owner decision): only a failure of the worker's own infrastructure, such as recording a job run or claiming rows, ends the pass. A purge that cannot remove one account skips past it within the run, so the accounts behind it are still purged.
-    - **Every minute:** reminders, digests, the lesson status job.
+    - **Every minute:** reminders, digests, the lesson status job (its bounds are in the [schedule](schedule.md#lesson-status-and-join-window)).
     - **Every 30 minutes:** recording reconciliation.
     - **Hourly:**
       - recording and upload expiry; `invitations.expire` (500 per run; clears the ciphertext of expired invitations), `join_requests.expire` (batches of 200, at most 5 per run; a failing request is skipped, and a run that stops at its bound is resumed where it stopped by the next run) and `reclaim.expire` (batches of 100 accounts, at most 1,000 per run; drops reclaim items left unchosen for 7 days);
@@ -237,8 +275,8 @@ Slice 4 stores preferences, mints and verifies tokens, and serves the routes and
       - recording provider-copy cleanup;
       - cleanup of unverified accounts, rate-limit windows, notifications (`notifications.cleanup`, rows older than 90 days, as under [channels](#channels)) and the outbox (`done` rows after 7 days, `dead` rows after 30 days, each status deleted by its own statement so both use the partial index);
       - cleanup of sessions that expired or were revoked more than a day ago (`sessions.cleanup`) and of email requests older than 7 days with their tokens (`email_requests.cleanup`);
-      - account purge.
-    - **Daily:** series horizon extension and the automatic retry of held recordings.
+      - account purge, whose budget of 100 batch transactions per run (and that of `accounts.cleanup_unverified`) is shared round-robin from slice 5: each round gives every account still due one batch, oldest deletion first, until the budget is spent or no account is due ([purge](data-model.md#purge)).
+    - **Daily:** series horizon extension (batches of 200 series, taken until no candidate is left or the run's time budget is spent, [materialisation](schedule.md#recurrence-and-timezones)) and the automatic retry of held recordings.
 - **Bounds:** every job processes fixed-size batches through an index on its due column (partial where most rows are never due), within a time budget per run, and continues where it stopped: jobs that select by a window keep progress markers (reminders) or cursors in the job-run table (reconciliation). Purges delete in batches of bounded size per transaction.
 - **Testing:**
   - with `OVC_CLOCK=test` the scheduler and lane loops are paused, and only the harness runs the worker;

@@ -15,7 +15,30 @@ Recording states apply once recordings land [after the MVP](../../../docs/roadma
 | `ended`, did not take place | nobody joined | `text-muted` | dash | Did not take place | Не состоялся |
 | `cancelled` | cancelled | `danger` | cross | Cancelled | Отменён |
 
-While the window is open and the lesson is not yet live, students see "The room opens when your tutor joins" / "Комната откроется, когда подключится преподаватель"; the tutor's name appears separately in the lesson header.
+While the window is open and the lesson is not yet live, students see "The room opens when your tutor joins" / "Комната откроется, когда подключится преподаватель"; the tutor's name appears separately in the lesson header. In slice 5, before joining exists, a `scheduled` lesson shows "Starting soon" inside the window and becomes "Did not take place" 30 minutes after its end ([schedule](../../specs/schedule.md#lesson-status-and-join-window)).
+
+**Schedule and lesson texts** (slice 5; a proposal to confirm when the schedule and lesson pages are built; the labels are fixed texts that stand in for names, so they never carry a card name to students):
+
+| Key or element | English | Русский |
+|---|---|---|
+| `lesson.individual` (`label_kind` `individual`), a student's label of a one-to-one lesson | Individual lesson | Индивидуальный урок |
+| `lesson.group` (`label_kind` `group`), a former member's label of a group lesson and of its `group.archived` row | Group lesson | Групповой урок |
+| `lesson.removed_student` (`label_kind` `removed_student`), the tutor's label of a card discarded by a removal, a dropped link or a tutor deletion | Removed student | Удалённый ученик |
+| `lesson.deleted_account` (`label_kind` `deleted_account`), shown beside a member's card name when the member's account is deleted | Deleted account | Удалённый аккаунт |
+| Before the join window | Room opens at {time} | Комната откроется в {time} |
+| Default title: alone for a one-to-one lesson, followed by the group's name for a group lesson, never by a card name | Lesson | Урок |
+| Hint below the title | Students see the title | Ученики видят название |
+| Overlap warning action | Schedule anyway | Всё равно запланировать |
+| Overlapping lessons left out of the list | {count, plural, one {and # more lesson} other {and # more lessons}} | {count, plural, one {и ещё # урок} few {и ещё # урока} many {и ещё # уроков} other {и ещё # урока}} |
+| Scope choice | This lesson / This and following lessons | Этот урок / Этот и следующие уроки |
+| Weekday change | End this series and create a new one | Завершить серию и создать новую |
+| Polite announcement after creating | Lesson scheduled | Урок запланирован |
+| Polite announcement after editing | Lesson changed | Урок изменён |
+| Changed-meanwhile notice | This lesson changed in the meantime. Its current state is shown below. | Этот урок тем временем изменился. Ниже показано его текущее состояние. |
+| Cancelled, with its date | Cancelled {date} | Отменён {date} |
+| Archive confirmation | {count, plural, one {# future lesson will be cancelled.} other {# future lessons will be cancelled.}} Unarchiving the group restores neither lessons nor series. | {count, plural, one {# будущий урок будет отменён.} few {# будущих урока будут отменены.} many {# будущих уроков будут отменены.} other {# будущего урока будут отменены.}} Возврат группы из архива не восстановит ни уроки, ни серии. |
+
+The API sends the fixed labels above as codes: `label` is `null` and `label_kind` names the fixed label, and the interface renders its key in the viewer's language, as it renders "Deleted account" for `label_deleted` on notification rows ([labels per role](../../specs/schedule.md#labels-per-role)). Lesson titles are shown as text in their own element isolated with `dir="auto"` ([titles and descriptions](../../specs/schedule.md#titles-and-descriptions)).
 
 ## Homework (student view)
 
@@ -94,6 +117,13 @@ Slice 4. The texts in this section are a proposal to confirm when F2 (notificati
 | `join_request.accepted` | student | Your request was accepted | Ваш запрос принят |
 | `join_request.declined` | student | Your request was not accepted | Ваш запрос не принят |
 | `relationship.ended` | tutor or student | Working together has ended | Совместные занятия завершены |
+| `lesson.reminder_1h` (slice 5) | tutor or student | The lesson starts in an hour | Урок начнётся через час |
+| `lesson.moved` (slice 5) | student | The lesson was moved | Урок перенесён |
+| `lesson.cancelled` (slice 5) | student | The lesson was cancelled | Урок отменён |
+| `lesson.series_changed` (slice 5) | student | Lessons of a series changed | Уроки серии изменились |
+| `group.archived` (slice 5) | student | The group was archived | Группа перенесена в архив |
+
+The slice 5 rows are a proposal to confirm when the notification rows of the lesson events are built; their label is the lesson's title, or the group's label from the [label table](../../specs/schedule.md#labels-per-role), shown beside the text as for the slice 4 rows.
 
 | Element | English | Русский |
 |---|---|---|
@@ -157,8 +187,9 @@ Strings with fixed keys, so tests assert by key and both languages stay in step.
 | `homework.score` | {earned} of {max} ({percent}) | {earned} из {max} ({percent}) |
 | `homework.not_scored` | Not scored | Без оценки |
 | `time.other_zone` | {time} {city} time ({local} your time) | {time} по времени {city} ({local} по вашему) |
+| `time.other_offset` | {time} {offset} ({local} your time) | {time} по {offset} ({local} по вашему) |
 
-The bundled timezone table gives each city in the form the string needs: "Moscow" in English and the genitive "Москвы" in Russian.
+The bundled timezone table gives each city in the form the string needs: "Moscow" in English and the genitive "Москвы" in Russian. A zone the table does not list uses `time.other_offset`, where `{offset}` is the zone's offset at that instant in the form `UTC±hh:mm` (from slice 5; the wording is a proposal to confirm with the lesson page).
 
 ## Feedback messages
 

@@ -36,12 +36,12 @@ Recordings (FR-5.4 to FR-5.6) and analytics (FR-11.2 to FR-11.4) are outside the
 | 5 | Anna | Accept invitation, Home, Confirm email | `GET /invitations/{token}`, `POST /invitations/{token}/accept` from the emailed link, then the confirmation link in the same browser: `POST /auth/verify-email` with `{token}` | Anna creates her account on the invitation page and is signed in; Home shows Maria as her tutor with the confirmation banner, and Maria's card shows "Email not confirmed" without a reload; Maria's bell shows 1, and the row names the card by its display name with "Invitation accepted" (`GET /notifications`); after confirming, the banner is gone, the outcome is `linked`, the relationship is active, and no second row arrives |
 | 6 | Maria | Schedule | `POST /lessons` (series, Tuesdays and Thursdays at 18:00, 8 lessons) | Eight lessons in the calendar; Anna's Schedule shows them at 16:00; her lesson page shows `time.other_zone` with 18:00 and Moscow |
 | 7 | Clock, Worker | — | `harness: POST /clock` to 60 minutes before the first lesson, `harness: POST /tick` | The 1-hour reminder emails for Maria and Anna are in the sink, in Russian, with Anna's in Berlin time |
-| 8 | Clock | — | `harness: POST /clock` to 5 minutes before the first lesson | — |
-| 9 | Anna | Home | — | "The room opens when your tutor joins"; no Join button |
-| 10 | Maria | Lesson | `POST /lessons/{id}/join` | The fake room opens in a new tab as moderator, showing her name; the lesson becomes live |
-| 11 | Anna | Home | `POST /lessons/{id}/join` | The Join button appears without reload; the fake room opens as viewer, showing her name |
+| 8 | Clock | — | (`pending implementation` until joining in slice 7) `harness: POST /clock` to 5 minutes before the first lesson | — |
+| 9 | Anna | Home | (`pending implementation` until joining in slice 7 and `GET /home` in slice 10) | "The room opens when your tutor joins"; no Join button |
+| 10 | Maria | Lesson | (`pending implementation` until slice 7) `POST /lessons/{id}/join` | The fake room opens in a new tab as moderator, showing her name; the lesson becomes live |
+| 11 | Anna | Home | (`pending implementation` until slice 7) `POST /lessons/{id}/join` | The Join button appears without reload; the fake room opens as viewer, showing her name |
 | 12 | Maria | — | `harness: POST /fake-provider/lessons/{lesson}/recording` start, then stop | The fake room shows its recording state as on, then off, to both |
-| 13 | Maria | Lesson | "End lesson", `POST /lessons/{id}/end` | The lesson shows "Ended" for both; in the MVP the lesson page shows no Recordings block for Maria or Anna |
+| 13 | Maria | Lesson | (`pending implementation` until slice 7) "End lesson", `POST /lessons/{id}/end` | The lesson shows "Ended" for both; in the MVP the lesson page shows no Recordings block for Maria or Anna |
 | 14 | Worker | — | `harness: POST /fake-provider/lessons/{lesson}/ready`, `harness: POST /tick` | The recording appears on the lesson page for Maria and Anna, available until 90 days later |
 | 15 | Anna | Lesson | `GET /recordings/{id}/playback` | The player loads the returned signed URL; the same API request without a session gets 401 |
 
@@ -91,9 +91,9 @@ Seed:
 |---|---|---|---|---|
 | 1 | Pavel | Sign up, confirm, Students | `POST /auth/register`, `POST /auth/verify-email`, `POST /students` with Anna's email, `POST /students/{id}/invitation/send` | The invitation email to Anna is in the sink |
 | 2 | Anna | Accept invitation (signed in) | `POST /invitations/{token}/accept` | Pavel is added; Anna's My tutors shows both tutors with their colours |
-| 3 | Pavel | Schedule, Builder, Issue dialog | `POST /lessons` (Monday at 10:00 his time), `POST /library/templates`, `POST /issues` | — |
-| 4 | Anna | Schedule, Home | `GET /calendar`, `GET /home` | Schedule shows lessons from both tutors, each with its tutor label; Home lists work and the next seven days' lessons from both, and both tutors in My tutors; filtering by Pavel shows only his items in every section except My tutors |
-| 5 | Pavel | Student card | `GET /students/{id}` | Only Pavel's lesson and work with Anna; none of Maria's |
+| 3 | Pavel | Schedule, Builder, Issue dialog | `POST /lessons` (Monday at 10:00 his time), `POST /library/templates`, `POST /issues` (the lesson part from slice 5; the template and the issue `pending implementation` until slices 8 and 9) | — |
+| 4 | Anna | Schedule, Home | `GET /calendar`, `GET /home` (the Schedule part from slice 5; the Home part `pending implementation` until slice 10) | Schedule shows lessons from both tutors, each with its tutor label; Home lists work and the next seven days' lessons from both, and both tutors in My tutors; filtering by Pavel shows only his items in every section except My tutors |
+| 5 | Pavel | Student card | `GET /students/{id}`, `GET /students/{id}/lessons` (the lesson part from slice 5; the work part `pending implementation` until slice 9) | Only Pavel's lesson and work with Anna; none of Maria's |
 | 6 | Anna | Messages | `POST /uploads?context=chat&scope=channel:…`, `POST /channels/{id}/messages` with a picture | Maria sees the message live with a preview; the unread badge on Maria's Messages; Anna shows as online in Maria's chat header |
 | 7 | Boris | Messages | Types in the group chat composer and sends (`message.send`) | Anna and Maria see the typing indicator while he types, then the message live |
 | 8 | Anna | — | Closes all her tabs; the test waits until `harness: POST /presence` reports her offline | — |
@@ -134,13 +134,13 @@ Smaller Playwright or integration suites cover what the pilots do not walk throu
 | Account edge cases | Playwright + integration | FR-1.3 role mismatch, FR-1.4 sign out everywhere, FR-1.5 reset and change, FR-1.7 deletion and purge, FR-1.8 throttling, refresh reuse, squatting and cleanup of unverified accounts |
 | Requests and invitations | integration + Playwright | FR-2.3 decline, block and expiry, regeneration, email-bound and student-bound refusal, provisional links, reclaim and races, FR-2.5 notes, FR-2.8 a student stops studying |
 | Groups | Playwright | FR-3.3 member removal with work still submittable, FR-3.4 archive and unarchive |
-| Schedule edits | integration + Playwright | FR-4.2 daylight-saving gap and overlap, FR-4.3 "this and following" splits (including the first occurrence and concurrent extension), FR-4.4 overlap confirmation beyond the horizon, automatic end and "did not take place", joins after a relationship ends |
+| Schedule edits | integration + Playwright | FR-4.2 daylight-saving gap and overlap, FR-4.3 "this and following" splits (including the first occurrence and concurrent extension), FR-4.4 overlap confirmation beyond the horizon, automatic end and "did not take place", joins after a relationship ends; active from slice 5 except the joins, which wait for slice 7 |
 | Video embed | Playwright | FR-5.3 with `harness: POST /settings/embed` on: embedded room, the 15-second hint, switching to a new tab, focus mode, disposal on leave |
 | Recordings | integration | FR-5.6 retention and deletion, quota hold and retry, reconciliation without callbacks, callback replays |
 | Homework policies | integration + Playwright | FR-6.3 template edits after issue, FR-8.4 withdrawal and its races, FR-10.3 return blocked under "after submission", overrides, updated reviews, draft corrected files refused, the answer-key contract test, number-parsing and normalisation units |
 | Chat edits and presence | Playwright | FR-12.3 edit and delete, FR-12.4 presence, FR-12.5 read-only channels |
 | Files | integration | FR-14.1 size and type refusals, FR-14.2 quota refusal |
-| Notifications | integration | FR-13.1 list and unread count, every email event, obsolete-at-dispatch rules, idempotency of in-app rows and emails, RFC 8058 unsubscribe; active from slice 4 for FR-13.1, the idempotency of in-app rows and RFC 8058 unsubscribe, with the email events of later slices pending |
+| Notifications | integration | FR-13.1 list and unread count, every email event, obsolete-at-dispatch rules, idempotency of in-app rows and emails, RFC 8058 unsubscribe; active from slice 4 for FR-13.1, the idempotency of in-app rows and RFC 8058 unsubscribe, and from slice 5 for the lesson emails, their obsolete-at-dispatch rules and one-click unsubscribe from a real email, with the email events of later slices pending |
 | Progress and onboarding | Playwright | FR-11.3 student progress, FR-15.2 checklist dismissal, FR-17 language switch across every page |
 | Realtime resilience | Playwright | WebSocket disconnect and reconnect with refetch, `4401` after sign-out everywhere, `4429` handling; active from slice 4, with the server-side closes driven by `harness: POST /realtime/close` and socket closes awaited through `harness: POST /presence` |
 | Operator command | integration | FR-16.1 list, block, unblock, restore, set quota |

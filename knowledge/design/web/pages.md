@@ -83,27 +83,35 @@ FR-15.1, FR-15.2, FR-2.3, FR-5.1.
 
 ### Schedule
 
-FR-4.1–FR-4.5.
+FR-4.1–FR-4.5. Built in slice 5 from `GET /calendar` and `POST /lessons` ([schedule](../../specs/schedule.md)); the slice 5 wording and focus rules below are pending the owner's confirmation.
 
-- **Toolbar:** Week, Month, Today, previous and next, and "New lesson".
+- **Toolbar:** Week, Month, Today, previous and next, and "New lesson". Previous and next keep focus on the pressed button.
 - **Week:** a time grid in the viewer's profile timezone; lesson blocks in the audience colour with title and status. Cancelled lessons are struck through and muted. Clicking a free slot pre-fills "New lesson".
 - **Month:** days with up to three lessons and "+{n} more". Lesson blocks and "+{n} more" keep 44 px touch targets.
 - **Phone:** an agenda list grouped by day.
+- **Construction:** the week grid, the month grid and the agenda are built with CSS grid and `Intl.DateTimeFormat` in the viewer's profile timezone, without a date or calendar library; the local-midnight bounds of a range come from a small helper that iterates on the zone offset, unit-tested across a daylight-saving change in both directions. The range bounds are the only instants the client computes; it never converts a local time into an instant for saving.
+- **Titles** are plain text: shown as text in their own element isolated with `dir="auto"`, with line breaks kept, never as HTML or links ([titles and descriptions](../../specs/schedule.md#titles-and-descriptions)).
 - **New lesson dialog:**
-  - audience picker: a student or a group, with search;
-  - title, date, start time and duration;
+  - opens with focus on its first field;
+  - audience picker: a student (also one whose email is not confirmed, for one-to-one lessons) or a group, with search;
+  - title, prefilled with "Lesson" for a one-to-one lesson and with "Lesson" and the group's name for a group lesson, never with the card's display name, editable, with the hint "Students see the title"; date, start time and duration;
   - "Repeat weekly" with weekday toggles and "Ends on {date}" or "After {n} lessons";
-  - description and materials from the library.
-- **Overlap warning:** an inline list of overlapping lessons with "Schedule anyway".
+  - description; materials from the library arrive in slice 8;
+  - a saved lesson closes the dialog, returns focus to the control that opened it and announces "Lesson scheduled" politely.
+- **Overlap warning:** an inline list of the overlapping lessons (at most 20, then "and {count} more") with "Schedule anyway" after the list; the warning takes focus inside the dialog.
 - **Editing or cancelling a series occurrence** asks: "This lesson" or "This and following lessons". Weekday changes are offered as "End this series and create a new one".
 
 ### Lesson
 
-FR-4.6, FR-4.7, FR-5.1–FR-5.6.
+FR-4.6, FR-4.7, FR-5.1–FR-5.6. Built in slice 5 without video from `GET /lessons/{id}`, `PATCH /lessons/{id}` and `POST /lessons/{id}/cancel`; the video area, the materials and the assignments arrive with slices 7, 8 and 9.
 
 - **Header:**
-  - title, audience, date and time (with the second timezone when it differs), status badge, and description;
-  - for the tutor: Edit and Cancel while the lesson is scheduled, and "End lesson" while it is live, with a confirmation.
+  - title, audience, date and time (with the second timezone when it differs: `time.other_zone`, or `time.other_offset` for a zone without a city), status badge, and description, as plain text with line breaks kept;
+  - the audience follows the [label table](../../specs/schedule.md#labels-per-role): the tutor sees the card's display name or the group's name and the members by card name; a student sees "Individual lesson" or the group's name (the neutral "Group lesson" after leaving the group) and the tutor's name with the tutor colour, never card names or a member list;
+  - for the tutor: Edit and Cancel while the lesson is scheduled and has not started, and from slice 7 "End lesson" while it is live, with a confirmation.
+- **Edit and cancel dialogs** (slice 5): editing opens on its first field; for a series occurrence it first asks for the scope, and "This and following lessons" offers no date. Cancelling opens on its dismiss button (Cancel). A saved edit closes the dialog, returns focus to the control that opened it and announces "Lesson changed" politely; a dismissed dialog returns focus there too. A refusal because the lesson changed meanwhile (`not_editable`, `conflict`) closes the dialog onto the notice "This lesson changed in the meantime. Its current state is shown below.", which takes focus above the reloaded lesson. An overlap on a move shows the overlap warning as in the New lesson dialog.
+- **Live changes:** `entity.changed` of kind `lesson` refetches the page; an open dialog whose lesson changed closes onto the changed-meanwhile notice.
+- **In slice 5,** with no joining yet: before the window both roles see "Room opens at {time}"; inside the window the status word is "Starting soon", students see "The room opens when your tutor joins", and the tutor sees the time and status without a join area; every past lesson shows "Did not take place".
 - **Video area**, driven by these join states:
 
   | State | Tutor sees | Student sees |
@@ -144,7 +152,7 @@ FR-2.1, FR-2.3, FR-2.5.
 - **Tabs:** Active (including students whose email is not confirmed and links waiting for the student), Invited, Ended, with search; the tab and the search are in the address.
 - **Search:** searching, with the Search button or Enter in the field, keeps focus where it was, and the field and the group choice show what the address holds after every change of the address (including Back); "Clear search" appears while a search or a group is applied, empties both and moves focus to the search field.
 - **Group filter:** beside the search, a "Group" choice of every group of the tutor ("All groups" first, archived groups marked "(archived)"), applied with the search and kept in the address as `group=`; it is shown once the tutor has a group. A group the tutor cannot reach, or a `group=` value that is not a group identifier, shows "This group is not available." with a link to all groups; a search the API refuses (longer than 254 characters) shows "This search cannot be used. A search holds at most 254 characters." with the link "Show the list without the search"; neither offers Retry.
-- **Rows:** avatar, display name, email, state and groups; next lesson, open assignments and last activity arrive with the slices that add them.
+- **Rows:** avatar, display name, email, state and groups, and from slice 5 the next lesson; open assignments and last activity arrive with the slices that add them.
 - **"Add student" dialog:**
   - display name and optional email, then "Create invitation";
   - the result shows the link with Copy and, if an email was given, "Send by email"; sending shows "Sent" as a toast and never a delivery status.
@@ -156,10 +164,10 @@ FR-2.1, FR-2.3, FR-2.5.
 
 FR-2.5, FR-2.7, FR-11.3.
 
-- **Header:** avatar, display name, email, groups, relationship state, and the buttons Message, Schedule a lesson, Issue assignment (each from the slice that adds it), and End working together (in an overflow menu).
+- **Header:** avatar, display name, email, groups, relationship state, and the buttons Message, Schedule a lesson, Issue assignment (each from the slice that adds it), and End working together (in an overflow menu). From slice 5 "Schedule a lesson" opens the New lesson dialog with the card preselected.
 - **Tabs:**
-  - Overview: next lessons, open assignments, private notes editor (marked "Only you see this");
-  - Lessons: history with status and recordings;
+  - Overview: next lessons (the next three from slice 5), open assignments, private notes editor (marked "Only you see this");
+  - Lessons (from slice 5): the history, newest first, with status; recordings after the MVP;
   - Homework: every issue with state and score;
   - Progress: a chronological list of checked work with score percentages and a simple bar per item.
 
@@ -176,17 +184,18 @@ FR-2.5, FR-2.7, FR-11.3.
 
 FR-3.
 
-- **List:** name, colour, member avatars, next lesson, and "New group".
+- **List:** name, colour, member avatars, next lesson (from slice 5), and "New group".
 - **"New group" dialog:** name, colour from the palette, and members picked from active students with search.
 - **Group page:**
   - members with Add and Remove;
-  - lessons, issued assignments and a link to the group chat;
+  - lessons: from slice 5 the next five, a link to the Schedule and "Schedule a lesson", which opens the New lesson dialog with the group preselected; issued assignments and a link to the group chat;
   - Archive and Unarchive.
+- **Archiving with lessons** (from slice 5): archiving a group that has future lessons or a series that has not ended opens a confirmation dialog that states how many future lessons are cancelled and that unarchiving restores neither lessons nor series, with Cancel focused first; dismissing it returns focus to "Archive group". Without either, the group is archived at once, as in slice 3. The page decides from `future_lesson_count` and `has_open_series` of `GET /groups/{id}`, and the dialog's count is `future_lesson_count`.
 - **Adding a member** shows which existing assignments they will not receive.
 - **In slice 3** (no lessons, assignments or chat yet):
   - the list shows each group's colour dot, name, up to five member avatars with "+{n}" for the rest, the member count and "Archived" for an archived group; non-archived groups come first; the empty state's action is "New group";
   - the "New group" dialog opens on its name field and offers the eight palette colours (the first one no other unarchived group uses is preselected) and a member choice: a search over the tutor's active students (students whose email is not confirmed and links waiting for the student are left out), checkboxes with name and email, "Show more" for the next page, which moves focus to the first new checkbox, and "Chosen: {count} of 30", beyond which no further student can be chosen; creating opens the new group's page, whose heading takes focus as on every route change;
-  - the group page shows the colour, "Archived" when archived, the members with their card name, account name and a "Remove" button each, "Add students", "Name and colour" with Save, and "Archive group" or "Unarchive group" with a sentence on what it does; archiving has no dialog in slice 3, because groups have no lessons, series or chat yet, so archiving removes nothing that unarchiving does not restore; slice 5, where archiving cancels lessons and ends series that unarchiving does not restore, revisits whether it needs a confirmation;
+  - the group page shows the colour, "Archived" when archived, the members with their card name, account name and a "Remove" button each, "Add students", "Name and colour" with Save, and "Archive group" or "Unarchive group" with a sentence on what it does; archiving has no dialog in slice 3, because groups have no lessons, series or chat yet, so archiving removes nothing that unarchiving does not restore; slice 5 adds the confirmation above for groups with future lessons or a series that has not ended;
   - "Add students" opens a dialog with the same member choice, limited to the free places, which opens on its search field; adding closes it and the notice "The students were added to the group." takes focus; an archived group offers no "Add students" and says that it takes no new students;
   - removing a member, archiving and unarchiving each show a notice that takes focus ("The student was removed from the group.", "The group is archived.", "The group is active again.");
   - a refusal because chosen students stopped being active (`relationship_not_active`) keeps the dialog open, takes them off the choice and says so; a member outside the tutor's scope (`not_found`) empties the choice and asks to choose again; the 30-member and 200-group limits each have their own message; an addition refused because the group was archived meanwhile (`audience_not_active`) closes the dialog and shows "This group changed in the meantime. Its current state is shown below.", which takes focus above the reloaded group.
@@ -297,7 +306,7 @@ FR-13.1, FR-2.6. Address `/notifications`; the Notifications item in the sidebar
 - **Below 1024 px** the top bar's Notifications button opens the panel under the top bar; in the sidebar overlay, Notifications is a link to the page with the count, because the panel does not fit beside the overlay.
 - **The panel:** opening it moves focus to its heading "Notifications"; `Esc`, a click outside or choosing a row closes it, and `Esc` and a click outside return focus to the bell (a click on another control leaves focus there). A failed load in the panel shows the shared load failure with Retry; after Retry, once the failure is gone, focus moves to the panel's heading when it was lost, so focus stays in the open panel; `Esc` also closes the panel while focus is lost (on no element, on a removed element or on the page's `main`). Leaving the panel with Tab closes it without moving focus. Choosing a row or "Show all notifications" while its page is already open closes the panel and moves focus to the page heading. A route change closes the panel. It lists the latest 10 rows (`limit=10`), "Mark all as read" and "Show all notifications", which opens the page.
 - **The page:** the rows newest first, 30 per page with "Show more", which moves focus to the first new row, and "Mark all as read".
-- **Rows:** icon, the label when there is one (the tutor label with its colour dot for students; the card's name or the requester's account name for tutors), the event's one-line text from [states](states.md#notifications) (which never interpolates a name), relative time ("now", then minutes, hours and days up to a week, then the date and time, with the full date and time as the time's title), and an unread dot with the visually hidden word "Unread". The label is shown as text only, never as HTML or a link. A row with a link opens the related page (the student card, the Students page with its join requests, or My tutors) and marks the row read with `{ids}`; a row whose link is `null` is plain text, not a link, and "Mark all as read" marks it.
+- **Rows:** icon, the label when there is one (the tutor label with its colour dot for students; the card's name or the requester's account name for tutors), the event's one-line text from [states](states.md#notifications) (which never interpolates a name), relative time ("now", then minutes, hours and days up to a week, then the date and time, with the full date and time as the time's title), and an unread dot with the visually hidden word "Unread". The label is shown as text only, never as HTML or a link. A row with a link opens the related page (the student card, the Students page with its join requests, My tutors, or from slice 5 the lesson page) and marks the row read with `{ids}`; a row whose link is `null` is plain text, not a link, and "Mark all as read" marks it.
 - **Mark all as read** sends `{through}` with the newest row shown, so a row that arrived after the list was shown stays unread; the action keeps focus on its button and announces the result "All notifications are marked as read." politely; a refusal shows the shared refusal alert. The list and the count are then refetched.
 - **Empty:** "No notifications yet".
 - **Live updates:** a `notification.new` frame refetches the list, the panel and the count, and a polite live region in the signed-in frame (outside the page, not a `status` role, so it never competes with a page's own status) announces "New notification" without moving focus, once for the frames that arrive within one animation frame; an `entity.changed` frame of kind `notification` (a read change in another tab) refetches them silently.
@@ -325,7 +334,7 @@ FR-15.3, FR-5.1, FR-2.6.
 
 ### Schedule (student)
 
-FR-4.5. Agenda by day on phones; week and month from 768 px. Each item has its tutor label, the tutor filter sits at the top, and there are no editing controls.
+FR-4.5. Agenda by day on phones; week and month from 768 px. Each item has its tutor label, the tutor filter sits at the top (kept in the address as `tutor=`, listing the tutors of My tutors), and there are no editing controls. Items show "Individual lesson" or the group's label from the [label table](../../specs/schedule.md#labels-per-role), never a card name. From slice 5 an unconfirmed student whose My tutors lists a provisional relationship also reaches Schedule and the lesson pages of that relationship's one-to-one lessons ([navigation](navigation.md#rules)).
 
 ### Homework (student)
 
@@ -403,10 +412,10 @@ Same as the tutor's, without tutor-only sections; direct channels are named by t
   - The realtime client reconnects with backoff and refetches visible data on reconnect (slice 4).
 - **Live data:** frames from the realtime channel trigger a refetch of the affected item and never replace it directly ([live refetch mapping](../../architecture/detailed.md#live-refetch-mapping)). Lists keep the scroll position.
   - **Focus on live refetch:** a refetch that keeps the focused element leaves focus where it is. When a live refetch removes the focused row of a list, focus moves to the row that took its place, else to the previous row, else to the list's heading, or to the page's heading for a list without one or a list that disappears with its last row. When it removes the subject of an open dialog, the dialog closes and the page's notice that says so takes focus: "This student is no longer on your list.", "This request was already answered." and similar, each defined by its page; for a dialog without such a notice, the page's changed-meanwhile notice is used. Each of these moves has a `toBeFocused` test.
-  - **Pages with live refetch in slice 4:** Students (its tabs and pending requests), the student card, groups and the group page, Today's join-request panel, My tutors and student Home.
+  - **Pages with live refetch in slice 4:** Students (its tabs and pending requests), the student card, groups and the group page, Today's join-request panel, My tutors and student Home; from slice 5 also the Schedule and the lesson page, through `entity.changed` of kind `lesson`.
 - **Time:**
   - every time is shown in the viewer's timezone;
-  - the lesson page adds the other party's time when it differs, using the `time.other_zone` string from [states](states.md#time-and-scores) with the city of the IANA timezone taken from a bundled, localised table;
+  - the lesson page adds the other party's time when it differs, using the `time.other_zone` string from [states](states.md#time-and-scores) with the city of the IANA timezone taken from a bundled, localised table loaded with the lesson page's code, and `time.other_offset` with the `UTC±hh:mm` offset for a zone the table does not list;
   - deadlines show both an absolute time and a relative hint ("in 2 days").
 - **Responsive:**
   - "phone" means narrower than 768 px; every page works from 360 px;

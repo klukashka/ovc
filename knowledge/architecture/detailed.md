@@ -49,7 +49,7 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `internal/realtime` | WebSocket gateway (exact-origin check, first-frame and in-band authentication, inbound frame limits), connection registry and its goroutine lifetimes, per-socket outbound queues, suspension and the re-check worker, token lapse, the sweep, listener-loss handling, shutdown, and delivery of signals from the listener to local sockets | [Realtime](../specs/realtime-and-video.md#connection) |
 | `internal/services/accounts` | Registration, verification, sessions, passwords, deletion | [Accounts](../specs/accounts.md) |
 | `internal/services/tutoring` | Relationships, invitations, join requests, groups | [Accounts](../specs/accounts.md#tutorstudent-relationships) |
-| `internal/services/schedule` | Lessons, series, recurrence, status | [Schedule](../specs/schedule.md) |
+| `internal/services/schedule` | Lessons, series, materialisation, overlap checks, the visibility of lessons, the label table, and the status, reminder and horizon-extension work the worker runs; recurrence and timezone arithmetic comes from `internal/domain/schedule` | [Schedule](../specs/schedule.md) |
 | `internal/services/meetings` | Meetings, joins, callbacks, recordings | [Video](../specs/realtime-and-video.md#video) |
 | `internal/services/library` | Folders, materials, templates | [Homework](../specs/homework.md#library) |
 | `internal/services/homework` | Issues, submissions, scoring, reviews, analytics | [Homework](../specs/homework.md) |
@@ -63,7 +63,9 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `internal/schemas` | Request and response structs that huma validates and publishes as OpenAPI, with separate student and tutor variants; the WebSocket frame payload structs, which are not published through OpenAPI and are mirrored by hand in the frontend, checked by a contract test; the refresh cookie builder shared by the API and the test control routes | [API](../specs/api.md#conventions), [frame format](../specs/realtime-and-video.md#frame-format) |
 | `internal/adapters` | Storage (S3, in-memory fake), meeting provider (BigBlueButton, fake), mail (SMTP, database sink), clock (system, shared fake), and from slice 4 the PostgreSQL listener: one dedicated `LISTEN` connection per API instance with keepalives, the self-heartbeat, a generation and reconnect with backoff; there is no in-process broadcaster | [Video](../specs/realtime-and-video.md#provider-interface), [files](../specs/files.md), [notifications](../specs/notifications.md#email) |
 | `internal/domain` | Named types and enumerations, value types and pure rules: normalisation, scoring, recurrence expansion, state transitions | domain specifications |
-| `internal/core` | Settings, security primitives (from slice 4 also the unsubscribe token signer), the `pgx` connection pool, logging bootstrap, i18n of emails | [Configuration](#configuration), [observability](../specs/observability.md) |
+| `internal/domain/schedule` | From slice 5: the pure recurrence and timezone rules, without I/O: occurrence dates from weekdays, first date and end, and each occurrence's start instant with the gap and repeated-time rules computed from the zone's transitions | [Recurrence and timezones](../specs/schedule.md#recurrence-and-timezones) |
+| `internal/core` | Settings, security primitives (from slice 4 also the unsubscribe token signer), the `pgx` connection pool, logging bootstrap, i18n of emails (from slice 5 with the hand-written Russian and English plural rules and the date forms of emails) | [Configuration](#configuration), [observability](../specs/observability.md), [email](../specs/notifications.md#email) |
+| `internal/core/timezonecities` | From slice 5: the timezone city table for emails, `timezone-cities.json` embedded with `//go:embed`, one of two identical copies with `frontend/src/lib/time/timezone-cities.json`, which `TestTimezoneCityTablesAreIdentical` compares byte for byte | [Recurrence and timezones](../specs/schedule.md#recurrence-and-timezones) |
 | `internal/worker` | Outbox dispatcher (from slice 4 one loop per lane that refills its slots) and scheduled jobs, the `Tick(now)` entry point | [Outbox and worker](../specs/notifications.md#outbox-and-worker) |
 | `internal/admin` | The `ovc-admin` command line: parsing, output, exit codes and the audit event | [Administration command](../specs/accounts.md#administration-command) |
 | `internal/testcontrol` | The end-to-end test control routes, present only with `OVC_TEST_CONTROL=1`; from slice 4 also presence from the API instance's registry, closing a user's sockets with `4429` or `1012` through the real gateway, and minting an unsubscribe token through the real signer; after slice 4 also seeding confirmed accounts and their sessions through the accounts service's seeder | [Test harness](../../docs/development.md#end-to-end-test-harness) |
@@ -97,6 +99,7 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `lib/i18n` | i18next setup, ICU formatting, error-code messages, `ru` and `en` resources |
 | `lib/preferences` | Per-browser preferences before sign-in (language, theme, sidebar), with an in-memory store for tests |
 | `lib/format` | Dates and times in the viewer's language and timezone (`en-GB` and Russian forms, 24-hour time) |
+| `lib/time` | From slice 5: the timezone city table (`timezone-cities.json`, identical to the backend copy and loaded only with the lesson page's code) and the helper that computes local-midnight range bounds in a zone by iterating on its offset; no date or calendar dependency |
 | `lib/clipboard` | Copying text, such as invitation links and the tutor code, through the Clipboard API only, reporting a refusal instead of falling back to another channel |
 | `app` | Shared React contexts and hooks (preferences, media queries), the role sections and route handles the frames and pages read; from slice 4 the query client, the live refetch mapping and the start of the realtime client |
 | `components/frame` | Public and signed-in frames, sidebar and its overlay, language switch, focus on route change |
@@ -112,6 +115,7 @@ Frames never carry state; `lib/realtime` turns each into TanStack Query invalida
 | `entity.changed relationship` | the Students list and its tabs, the student card with that identifier, group pages (members), My tutors, the tutor list on student Home |
 | `entity.changed join_request` | the tutor's join requests (Students and Today), the student's sent requests (My tutors and Home) |
 | `entity.changed notification`, `notification.new` | the notification list, the panel and the badge |
+| `entity.changed lesson` (from slice 5) | the Schedule's calendar ranges, the lesson page with that identifier, the student card's next lessons and Lessons tab, the group page's next lessons, and the next lesson on the Students and Groups lists |
 | the first `ready` of a socket (the first connection or a reconnect) | every active query that holds an answer or is being fetched, and after a reconnect (a `ready` that follows an earlier `ready` or a failed or refused attempt of the same client, or the first `ready` of a client resumed after `beforeunload` or restored from the back-forward cache) also every active query whose last fetch ended in an error |
 
 Queries are invalidated by key prefix, so only the queries a page has mounted are fetched again. The application's query client lets a running fetch finish instead of aborting it when a frame or a page's own action asks for the same query, and fetches once more after it when it ended with data, because that fetch may have started before the change; so a live frame and the action that caused it never abort each other's request, and the last answer is never older than the change. A list row that a refetch removes moves focus through the shared hook in `components/ui/liveRows.ts`.
@@ -127,6 +131,7 @@ Infrastructure adapters that keep their own state in PostgreSQL, namely the data
 | Package | May import |
 |---|---|
 | `internal/domain` | standard library only |
+| `internal/domain/schedule` | `internal/domain` |
 | `migrations` | standard library only |
 | `internal/core` | `internal/domain` |
 | `internal/dbgen` | `internal/domain` (for sqlc type overrides) |
@@ -134,6 +139,7 @@ Infrastructure adapters that keep their own state in PostgreSQL, namely the data
 | `internal/repositories` | `internal/domain`, `internal/core`, `internal/dbgen` |
 | `internal/adapters` | `internal/domain`, `internal/core` |
 | `internal/services` | `internal/domain`, `internal/core`, `internal/repositories`, `internal/adapters`, `internal/schemas` |
+| `internal/services/schedule` | `internal/domain`, `internal/domain/schedule`, `internal/core`, `internal/repositories`, `internal/adapters`, `internal/schemas` |
 | `internal/realtime` | `internal/domain`, `internal/core`, `internal/schemas`, `internal/services`, `internal/adapters` (the listener interface) |
 | `internal/api` | `internal/domain`, `internal/core`, `internal/schemas`, `internal/services`, `internal/realtime` |
 | `internal/worker` | `internal/domain`, `internal/core`, `internal/services`, `internal/adapters` |
@@ -237,7 +243,7 @@ The configuration of the first deployment and of every later one lives in a `dep
 | Group | A tutor's named set of students with its own chat, lessons and issues |
 | Lesson | One scheduled session for a student or a group |
 | Series | A weekly pattern that generates lessons |
-| Roster | The students frozen into a lesson when it becomes live |
+| Roster | The students frozen into a lesson when it leaves `scheduled`: when it becomes live, is cancelled or is ended by the status job |
 | Meeting | The BigBlueButton room behind one lesson |
 | Recording | A copy of a meeting recording stored and served by OVC |
 | Material | A library file |
@@ -265,6 +271,7 @@ The configuration of the first deployment and of every later one lives in a `dep
 | Embedded client works on all supported browsers | "Open in new tab" always available | Slice 7 probe |
 | Which Russian providers for hosting, storage and SMTP; compared in [hosting research](../research/hosting-2026-10-22.md) | All in Russia | Before first deployment |
 | How downloads get `X-Content-Type-Options: nosniff` when the S3-compatible provider cannot add response headers (for example a proxy in front of signed downloads) | Never serve an upload without `nosniff` ([T-35](../../docs/threat-model.md#threats-and-controls)) | Before first deployment, with the provider probe |
+| Which field of `GET /lessons/{id}` carries the series rule that the lesson page's side column shows ([pages](../design/web/pages.md#lesson)) | One schema for both roles ([lesson detail](../specs/schedule.md#lesson-detail)) | Slice 5, before the lesson edits and cancellation change merges, because that change carries the backend field |
 | Thumbnails for image previews | Originals constrained by the client in the MVP | After MVP |
 | Malware scanning of uploads | Content-type allowlist and size limits are mandatory regardless | After MVP |
 | Offline queue for assignment answers beyond retrying | Autosave with versions | Slice 9 |

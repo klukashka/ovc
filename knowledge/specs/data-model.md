@@ -120,7 +120,7 @@ Slice 4 adds three row-level `AFTER` triggers, so every path that revokes a sess
 
 ### Rate limit counter
 
-`purpose`, `subject`, `window_start`, `count`; primary key on the three key columns, plus an index on `window_start` for cleanup. `subject` is the 32-byte HMAC-SHA-256 of the email, IP address (IPv6 by /64), account or tutor, keyed with a key derived by HKDF-SHA-256 from `OVC_JWT_SECRET` with the info string `throttle`, never the signing key itself, so no raw address is stored. A slot is reserved with one `INSERT … ON CONFLICT … DO UPDATE … RETURNING count` before any hashing work.
+`purpose`, `subject`, `window_start`, `count`; primary key on the three key columns, plus an index on `window_start` for cleanup. `subject` is the 32-byte HMAC-SHA-256 of the email, IP address (IPv6 by /64), account or tutor, keyed with a key derived by HKDF-SHA-256 from `OVC_JWT_SECRET` with the info string `throttle`, never the signing key itself, so no raw address is stored. A slot is reserved with one `INSERT … ON CONFLICT … DO UPDATE … RETURNING count` before any hashing work. From slice 5 the dispatcher also reserves here, with the purpose `lesson_emails`, the recipient's account as `subject` and the UTC day as `window_start`, one slot per student-addressed lesson email (`lesson_reminders` and `lesson_changes` together, at most 20 per day), reserved only after every other dispatch check passed, immediately before sending, and only while the counter is below 20, so an email dropped over the cap holds no slot, and released with `ReleaseRateLimitSlot` for the `window_start` of its own reservation when the send fails, and the hourly cleanup of rate-limit windows removes the old counters ([dispatch-time checks](notifications.md#dispatch-time-checks)).
 
 ## Relationships and groups
 
@@ -190,58 +190,68 @@ Constraints and indexes:
 
 ## Schedule
 
+Slice 5 adds the `lesson_series`, `lesson` and `lesson_roster` tables. Series and lessons reference the tutor profile, the relationship and the group with `ON DELETE RESTRICT`, so the tutor purge deletes them first ([purge](#purge)); the relationship key is `(relationship_id, tutor_id)` against the relationship's `(id, tutor_id)` and the group key `(group_id, tutor_id)` against the group's `(id, tutor_id)`, as for group members, so a lesson or series can only hold its own tutor's audience; the xor of relationship and group is a check constraint. Materials, and the material tables below, arrive with the library in slice 8.
+
 ### Lesson series
 
 | Column | Notes |
 |---|---|
 | `id` | |
-| `tutor_id` | |
-| `relationship_id` xor `group_id` | |
+| `tutor_id` | references the tutor profile, `ON DELETE RESTRICT` |
+| `relationship_id` xor `group_id` | each with the tutor in its key, `ON DELETE RESTRICT` |
 | `weekdays` | set of 1–7 |
 | `local_start` | time |
 | `duration_minutes` | |
 | `timezone` | |
 | `first_date` | |
 | `end_date` xor `count` | |
-| `title`, `description` | |
+| `title`, `description` | title 1–120 characters, description at most 2,000, both plain text as entered |
 | `materialised_until` | partial index where `ended_at` is null |
-| `split_from_series_id` | |
+| `split_from_series_id` | references the series, `ON DELETE SET NULL`, indexed |
+| `create_key` | the `Idempotency-Key` of the creating request, nullable; unique `(tutor_id, create_key)` where not null |
 | `ended_at` | |
 
-**Series material:** `series_id`, `material_id`, `position`; primary key `(series_id, material_id)`.
+**Series material** (slice 8): `series_id`, `material_id`, `position`; primary key `(series_id, material_id)`.
 
 ### Lesson
 
 | Column | Notes |
 |---|---|
 | `id` | |
-| `tutor_id` | |
-| `series_id` | nullable |
+| `tutor_id` | references the tutor profile, `ON DELETE RESTRICT` |
+| `series_id` | nullable; references the series |
 | `occurrence_date` | nullable; set for series occurrences |
-| `relationship_id` xor `group_id` | |
-| `title`, `description` | |
+| `relationship_id` xor `group_id` | each with the tutor in its key, `ON DELETE RESTRICT` |
+| `title`, `description` | title 1–120 characters, description at most 2,000, both plain text as entered |
 | `starts_at`, `duration_minutes` | |
 | `status` | `scheduled`, `live`, `ended`, `cancelled` |
 | `timezone` | the tutor-side timezone: the series timezone, or the tutor's at creation for one-off lessons |
 | `schedule_revision` | incremented on every change to start or duration |
+| `version` | incremented on every change of any field an edit changes; edits are conditional on it ([edits](schedule.md#rules-for-all-edits)) |
 | `reminded_24h_revision`, `reminded_1h_revision` | the schedule revision the reminders were last written for |
-| `overridden_fields` | set |
+| `overridden_fields` | set of start time, date, duration, title, description and materials (`materials` is accepted before slice 8, which adds the material tables) |
+| `cancelled_at`, `cancel_cause` | `cancel_cause` is `tutor`, `relationship_ended`, `provisional_removed`, `group_archived` or `tutor_deleted`; both are set exactly when the status is `cancelled`, checked |
+| `create_key` | the `Idempotency-Key` of the creating request of a one-off lesson, nullable; unique `(tutor_id, create_key)` where not null |
 | `live_at`, `ended_at` | "took place" means `live_at` is set |
 
 Indexes:
 
 - unique `(series_id, occurrence_date)`;
 - `(tutor_id, starts_at)`, `(relationship_id, starts_at)` and `(group_id, starts_at)`;
+- partial `(group_id, starts_at)` where `status = 'scheduled'`, for the group page;
 - partial `(starts_at)` where `status = 'scheduled'`;
-- partial `(starts_at)` where `status = 'live'`.
+- partial `(starts_at)` where `status = 'live'`;
+- partial `(cancel_cause, cancelled_at)` where `cancelled_at` is not null, for the aggregated emails that list cancelled lessons ([notifications](notifications.md#events)).
 
 ### Lesson roster
 
-`lesson_id`, `student_id`, `lesson_starts_at` (copied from the lesson for calendar queries), `added_at`. Primary key on the pair, and an index on `(student_id, lesson_starts_at)`.
+`lesson_id` (references the lesson, `ON DELETE CASCADE`), `student_id`, `lesson_starts_at` (copied from the lesson for calendar queries), `added_at`. Primary key on the pair, and an index on `(student_id, lesson_starts_at)`.
+
+- **No foreign key to the user:** inserting a roster row with a key to the student would take `FOR KEY SHARE` on the student's user row, and tutor deletion, which freezes rosters, must lock no student's user row ([accounts](accounts.md#locks-and-the-session-re-check)). A roster row is inserted only while its transaction holds the student's relationship row with at least `FOR SHARE` and has re-checked its state; a student's purge discards those relationships before it deletes the account's roster rows through the `student_id` index and then the user row, so an inserter waiting behind the purge finds the relationship discarded and inserts nothing.
 
 ### Lesson links
 
-**Lesson material:** `lesson_id`, `material_id`, `position`; primary key `(lesson_id, material_id)`. The lesson's linked issues are `issue.lesson_id`.
+**Lesson material** (slice 8): `lesson_id`, `material_id`, `position`; primary key `(lesson_id, material_id)`. The lesson's linked issues are `issue.lesson_id`.
 
 ### Meeting
 
@@ -403,8 +413,8 @@ Slice 4. Rows store identifiers only, never names or titles; labels are resolved
 | `user_id` | the recipient |
 | `tutor_id` | the tutor the event concerns |
 | `student_id` | the student the event concerns; nullable |
-| `event` | checked against the five slice 4 events (`invitation.accepted`, `join_request.created`, `join_request.accepted`, `join_request.declined`, `relationship.ended`); later slices widen the check with their events |
-| `subject_id` | the relationship or the join request |
+| `event` | checked against the five slice 4 events (`invitation.accepted`, `join_request.created`, `join_request.accepted`, `join_request.declined`, `relationship.ended`), widened in slice 5 with `lesson.reminder_1h`, `lesson.moved`, `lesson.cancelled`, `lesson.series_changed` and `group.archived`; later slices widen the check with their events |
+| `subject_id` | the relationship or the join request; from slice 5 the lesson (for `lesson.series_changed`, the occurrence the tutor acted on) or the group ([in-app producers in slice 5](notifications.md#in-app-producers-in-slice-5)) |
 | `relationship_id` | nullable; for the tutor colour |
 | `idempotency_key` | unique |
 | `created_at`, `read_at` | |
@@ -446,11 +456,14 @@ Partial indexes on `(lane, priority, next_attempt_at)` where pending, and on `(l
 Created by the normal migrations in every database, but written only by the test adapters (the shared test clock and the database mail sink), which run only against test and development databases:
 
 - **Test clock:** a single row with the shared instant.
-- **Mail sink:** recipient, subject, bodies, links and sent time.
+- **Mail sink:** recipient, subject, bodies, links and sent time; from slice 5 also the headers as sent, so tests read the unsubscribe headers and tokens.
 
 ## Purge
 
-What the purge job does 30 days after an account is deleted. Slice 2 implements the rows for users, sessions, email requests and tokens, tutor profiles, and attachments with their references: every upload of the account is deleted, and each still-stored object gets a `storage_delete` outbox row carrying its storage key, so the object is deleted after its row is gone. Throttle counters are pseudonymous and expire with their windows. Slice 3 adds the relationship, invitation, join-request, blocked-requester and group rows; a tutor purge deletes group members, groups, invitations, join requests, blocked requesters and relationships in batches of 500 rows per transaction, each locking the user row and re-checking that the account is still `deleted`, and then deletes the profile and the user in a final transaction. One run of the purge job spends at most 100 such batches across all accounts and the next run continues where it stopped ([account deletion](accounts.md#account-deletion)). Slice 4 adds the notification rows that name the account and the account's email preferences, on every purge path: the 30-day purge, the 7-day cleanup and the immediate purge of an unconfirmed account its owner deletes.
+What the purge job does 30 days after an account is deleted. Slice 2 implements the rows for users, sessions, email requests and tokens, tutor profiles, and attachments with their references: every upload of the account is deleted, and each still-stored object gets a `storage_delete` outbox row carrying its storage key, so the object is deleted after its row is gone. Throttle counters are pseudonymous and expire with their windows. Slice 3 adds the relationship, invitation, join-request, blocked-requester and group rows; a tutor purge deletes group members, groups, invitations, join requests, blocked requesters and relationships in batches of 500 rows per transaction, each locking the user row and re-checking that the account is still `deleted`, and then deletes the profile and the user in a final transaction. One run of the purge job spends at most 100 such batches across all accounts and the next run continues where it stopped ([account deletion](accounts.md#account-deletion)). Slice 4 adds the notification rows that name the account and the account's email preferences, on every purge path: the 30-day purge, the 7-day cleanup and the immediate purge of an unconfirmed account its owner deletes. Slice 5 adds:
+
+- **lesson batches:** the tutor purge's batch kinds gain lesson rosters, lessons and series (newest series first, so a series is deleted before the series it was split from), each 500 rows at a time in key order, before group members, because lessons and series restrict the deletion of the profile, the relationships and the groups; the student purge deletes the account's roster rows inside its batches;
+- **a share per account:** a run of `accounts.purge` (and of `accounts.cleanup_unverified`) gives the due accounts its 100 batch transactions round-robin: each round gives every account still due one batch, oldest deletion first, until the budget is spent or no account is due, so one large tutor purge no longer delays the purge of other accounts by whole runs; `account.purge_paused` reports the batches each account spent.
 
 | Table | Student purge | Tutor purge |
 |---|---|---|
@@ -460,7 +473,7 @@ What the purge job does 30 days after an account is deleted. Slice 2 implements 
 | Relationship | On every row of the student, discarded ones included, `student_id` and the card `email` set to null; non-discarded rows become `discarded` (`student_purged`), keeping `ended_at` and `ended_by`, for the tutor's history under the card's display name; a provisional or reclaim-pending link gets the removal effects first, so its tutor gets a new card (also while the tutor is blocked; its link is invalid until the tutor is `active` again); an `active` row is first ended (`deletion`) | Deleted |
 | Invitation, join request, blocked requester | Invitations bound to the student, and the student's join requests and blocked-requester rows, deleted; `used_by` set to null | Rows of the tutor deleted |
 | Group, group member | Memberships deleted | Groups and memberships deleted |
-| Lesson series, lesson, roster | Roster rows of the student deleted | Deleted |
+| Lesson series, lesson, roster | Roster rows of the student deleted through the `student_id` index, inside the purge's batches | Deleted in batches: rosters, then lessons, then series, before group members |
 | Meeting, recording | Kept until each recording's expiry | Media and rows deleted |
 | Channel, channel member | Memberships deleted | Channels deleted |
 | Message | Body erased, `sender_id` null, its attachment references removed | Messages of the tutor's channels deleted |
@@ -479,6 +492,7 @@ What the purge job does 30 days after an account is deleted. Slice 2 implements 
   - `invitation.relationship_id`, `invitation.bound_student_id`, `invitation.used_by`;
   - `join_request.tutor_id`, `join_request.student_id`, `blocked_requester.student_id`;
   - `group.tutor_id`, `group_member.relationship_id`;
+  - `lesson_series.tutor_id`, `lesson_series.relationship_id`, `lesson_series.group_id` and `lesson_series.split_from_series_id`, as the rule below requires, and the lesson indexes above, which lead with `tutor_id`, `relationship_id`, `group_id` and `series_id`;
   - `issue.tutor_id`, `issue.relationship_id`, `issue.group_id`;
   - `submission.student_id`;
   - `lesson_roster.student_id`;
