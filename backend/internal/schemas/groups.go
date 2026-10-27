@@ -3,6 +3,8 @@ package schemas
 import (
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"ovc/backend/internal/domain"
 )
 
@@ -22,6 +24,13 @@ type Group struct {
 	Members    []GroupMember `json:"members" nullable:"false"`
 }
 
+type GroupDetail struct {
+	Group
+	NextLessons       []CalendarItem `json:"next_lessons" nullable:"false"`
+	FutureLessonCount int64          `json:"future_lesson_count"`
+	HasOpenSeries     bool           `json:"has_open_series"`
+}
+
 type GroupSummary struct {
 	ID          string        `json:"id" format:"uuid"`
 	Name        string        `json:"name"`
@@ -29,6 +38,11 @@ type GroupSummary struct {
 	ArchivedAt  *time.Time    `json:"archived_at" nullable:"true"`
 	MemberCount int64         `json:"member_count"`
 	Members     []GroupMember `json:"members" nullable:"false"`
+	NextLesson  *CalendarItem `json:"next_lesson"`
+}
+
+func (GroupSummary) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	return nullableReferences(schema, "next_lesson")
 }
 
 type GroupList struct {

@@ -527,6 +527,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/students/{id}/lessons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["students-lessons-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/students/{id}/remove": {
         parameters: {
             query?: never;
@@ -805,6 +821,10 @@ export interface components {
             status: "open" | "expired" | "revoked_after_mismatches";
             url: string | null;
         };
+        CardLessonPage: {
+            items: components["schemas"]["CalendarItem"][];
+            next_cursor: string | null;
+        };
         ChangePasswordRequest: {
             current_password: string;
             new_password: string;
@@ -867,6 +887,20 @@ export interface components {
             members: components["schemas"]["GroupMember"][];
             name: string;
         };
+        GroupDetail: {
+            /** Format: date-time */
+            archived_at: string | null;
+            /** @enum {string} */
+            colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink";
+            /** Format: int64 */
+            future_lesson_count: number;
+            has_open_series: boolean;
+            /** Format: uuid */
+            id: string;
+            members: components["schemas"]["GroupMember"][];
+            name: string;
+            next_lessons: components["schemas"]["CalendarItem"][];
+        };
         GroupList: {
             groups: components["schemas"]["GroupSummary"][];
         };
@@ -898,6 +932,7 @@ export interface components {
             member_count: number;
             members: components["schemas"]["GroupMember"][];
             name: string;
+            next_lesson: components["schemas"]["CalendarItem"] | null;
         };
         InvitationAcceptRequest: {
             consent?: boolean;
@@ -1249,6 +1284,27 @@ export interface components {
             /** @enum {string} */
             state: "invited" | "provisional" | "reclaim_pending" | "active" | "ended";
         };
+        StudentCardDetail: {
+            account: components["schemas"]["CardAccount"] | null;
+            /** Format: date-time */
+            created_at: string;
+            display_name: string;
+            email: string | null;
+            /** Format: date-time */
+            ended_at: string | null;
+            /** @enum {string|null} */
+            ended_by: "tutor" | "student" | "deletion" | null;
+            groups: components["schemas"]["CardGroup"][];
+            /** Format: uuid */
+            id: string;
+            invitation: components["schemas"]["CardInvitation"] | null;
+            /** Format: date-time */
+            linked_at: string | null;
+            next_lessons: components["schemas"]["CalendarItem"][];
+            notes: string;
+            /** @enum {string} */
+            state: "invited" | "provisional" | "reclaim_pending" | "active" | "ended";
+        };
         StudentCardPage: {
             items: components["schemas"]["StudentCardSummary"][];
             next_cursor: string | null;
@@ -1273,6 +1329,7 @@ export interface components {
             id: string;
             /** Format: date-time */
             linked_at: string | null;
+            next_lesson: components["schemas"]["CalendarItem"] | null;
             /** @enum {string} */
             state: "invited" | "provisional" | "reclaim_pending" | "active" | "ended";
         };
@@ -2530,7 +2587,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Group"];
+                    "application/json": components["schemas"]["GroupDetail"];
                 };
             };
             /** @description Bad Request */
@@ -4427,7 +4484,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StudentCard"];
+                    "application/json": components["schemas"]["StudentCardDetail"];
                 };
             };
             /** @description Bad Request */
@@ -5080,6 +5137,113 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "students-lessons-list": {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CardLessonPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6794,6 +6958,7 @@ export const emailConfirmedOutcomeValues: ReadonlyArray<FlattenedDeepRequired<co
 export const emailPreferenceGroupValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EmailPreference"]["group"]> = ["lesson_reminders", "lesson_changes", "homework", "results", "submissions", "message_digest"];
 export const errorBodyCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorBody"]["code"]> = ["bad_request", "unauthenticated", "token_expired", "invalid_signature", "invalid_credentials", "email_not_verified", "account_blocked", "forbidden", "not_found", "method_not_allowed", "conflict", "lesson_overlap", "lesson_not_live", "outside_join_window", "not_editable", "answer_frozen", "already_linked", "student_exists", "relationship_not_active", "audience_not_active", "role_mismatch", "invitation_invalid", "invitation_email_mismatch", "relationship_not_provisional", "return_not_allowed", "issue_has_submissions", "channel_read_only", "edit_window_passed", "gone", "payload_too_large", "unsupported_media_type", "validation_failed", "lesson_in_past", "tutor_code_invalid", "token_invalid", "rate_limited", "tutor_unavailable", "internal", "provider_unavailable", "service_unavailable", "quota_exceeded"];
 export const groupColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Group"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
+export const groupDetailColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["GroupDetail"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const groupPatchColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["GroupPatch"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const groupSummaryColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["GroupSummary"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const invitationAcceptRequestLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["InvitationAcceptRequest"]["language"]> = ["ru", "en"];
@@ -6829,6 +6994,8 @@ export const registerRequestRoleValues: ReadonlyArray<FlattenedDeepRequired<comp
 export const sentJoinRequestStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SentJoinRequest"]["state"]> = ["pending", "accepted", "not_accepted", "expired"];
 export const studentCardEnded_byValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCard"]["ended_by"]> = ["tutor", "student", "deletion"];
 export const studentCardStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCard"]["state"]> = ["invited", "provisional", "reclaim_pending", "active", "ended"];
+export const studentCardDetailEnded_byValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardDetail"]["ended_by"]> = ["tutor", "student", "deletion"];
+export const studentCardDetailStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardDetail"]["state"]> = ["invited", "provisional", "reclaim_pending", "active", "ended"];
 export const studentCardSummaryEnded_byValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardSummary"]["ended_by"]> = ["tutor", "student", "deletion"];
 export const studentCardSummaryStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardSummary"]["state"]> = ["invited", "provisional", "reclaim_pending", "active", "ended"];
 export const unsubscribePreviewGroupValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["UnsubscribePreview"]["group"]> = ["lesson_reminders", "lesson_changes", "homework", "results", "submissions", "message_digest"];

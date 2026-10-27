@@ -13,6 +13,24 @@ import (
 	"ovc/backend/internal/domain"
 )
 
+const countFutureLessonsOfGroup = `-- name: CountFutureLessonsOfGroup :one
+SELECT count(id) FROM lessons
+WHERE group_id = $1 AND tutor_id = $2 AND status = 'scheduled' AND starts_at > $3::timestamptz
+`
+
+type CountFutureLessonsOfGroupParams struct {
+	GroupID *domain.GroupID
+	TutorID domain.UserID
+	Now     time.Time
+}
+
+func (q *Queries) CountFutureLessonsOfGroup(ctx context.Context, arg CountFutureLessonsOfGroupParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countFutureLessonsOfGroup, arg.GroupID, arg.TutorID, arg.Now)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countFutureLessonsOfTutor = `-- name: CountFutureLessonsOfTutor :one
 SELECT count(id) FROM lessons WHERE tutor_id = $1 AND status = 'scheduled' AND starts_at > $2::timestamptz
 `
@@ -392,6 +410,321 @@ func (q *Queries) GetTutorSeriesByCreateKey(ctx context.Context, arg GetTutorSer
 	return i, err
 }
 
+const groupHasOpenSeries = `-- name: GroupHasOpenSeries :one
+SELECT EXISTS (
+    SELECT 1 FROM lesson_series AS series
+    WHERE series.group_id = $1 AND series.tutor_id = $2 AND series.ended_at IS NULL AND (
+        (series.end_date IS NOT NULL AND series.end_date >= ($3::timestamptz AT TIME ZONE series.timezone)::date)
+        OR (series.count IS NOT NULL AND EXISTS (
+            SELECT 1 FROM lessons WHERE lessons.series_id = series.id AND lessons.starts_at > $3::timestamptz
+        ))
+    )
+)
+`
+
+type GroupHasOpenSeriesParams struct {
+	GroupID *domain.GroupID
+	TutorID domain.UserID
+	Now     time.Time
+}
+
+func (q *Queries) GroupHasOpenSeries(ctx context.Context, arg GroupHasOpenSeriesParams) (bool, error) {
+	row := q.db.QueryRow(ctx, groupHasOpenSeries, arg.GroupID, arg.TutorID, arg.Now)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const listCardLessonHistory = `-- name: ListCardLessonHistory :many
+WITH visible AS (
+    (SELECT lessons.id FROM lessons
+    WHERE lessons.relationship_id = $2 AND lessons.tutor_id = $3
+        AND ($4::timestamptz IS NULL
+            OR (lessons.starts_at, lessons.id) < ($4::timestamptz, $5::uuid))
+    ORDER BY lessons.starts_at DESC, lessons.id DESC
+    LIMIT $1::int)
+    UNION ALL
+    (SELECT lessons.id FROM group_members
+    JOIN lessons ON lessons.group_id = group_members.group_id
+    WHERE group_members.relationship_id = $2 AND group_members.tutor_id = $3 AND lessons.status = 'scheduled'
+        AND ($4::timestamptz IS NULL
+            OR (lessons.starts_at, lessons.id) < ($4::timestamptz, $5::uuid))
+    ORDER BY lessons.starts_at DESC, lessons.id DESC
+    LIMIT $1::int)
+    UNION ALL
+    (SELECT lessons.id FROM relationships AS owner
+    JOIN lesson_roster ON lesson_roster.student_id = owner.student_id
+    JOIN lessons ON lessons.id = lesson_roster.lesson_id
+    WHERE owner.id = $2 AND owner.tutor_id = $3
+        AND lessons.tutor_id = $3 AND lessons.group_id IS NOT NULL AND lessons.status <> 'scheduled'
+        AND ($4::timestamptz IS NULL
+            OR (lesson_roster.lesson_starts_at <= $4::timestamptz
+                AND (lesson_roster.lesson_starts_at, lesson_roster.lesson_id) < ($4::timestamptz, $5::uuid)))
+    ORDER BY lesson_roster.lesson_starts_at DESC, lesson_roster.lesson_id DESC
+    LIMIT $1::int)
+)
+SELECT
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.relationship_id, lessons.group_id,
+    card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
+    card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
+FROM visible
+JOIN lessons ON lessons.id = visible.id
+LEFT JOIN relationships AS card ON card.id = lessons.relationship_id
+LEFT JOIN groups AS lesson_group ON lesson_group.id = lessons.group_id
+ORDER BY lessons.starts_at DESC, lessons.id DESC
+LIMIT $1::int
+`
+
+type ListCardLessonHistoryParams struct {
+	RowLimit       int32
+	RelationshipID *domain.RelationshipID
+	TutorID        domain.UserID
+	AfterStartsAt  *time.Time
+	AfterID        pgtype.UUID
+}
+
+type ListCardLessonHistoryRow struct {
+	ID                domain.LessonID
+	Title             string
+	StartsAt          time.Time
+	DurationMinutes   int16
+	Status            domain.LessonStatus
+	Timezone          string
+	RelationshipID    *domain.RelationshipID
+	GroupID           *domain.GroupID
+	CardName          *string
+	CardState         string
+	CardDiscardReason *domain.DiscardReason
+	CardColour        *domain.Colour
+	GroupName         *string
+	GroupColour       string
+}
+
+func (q *Queries) ListCardLessonHistory(ctx context.Context, arg ListCardLessonHistoryParams) ([]ListCardLessonHistoryRow, error) {
+	rows, err := q.db.Query(ctx, listCardLessonHistory,
+		arg.RowLimit,
+		arg.RelationshipID,
+		arg.TutorID,
+		arg.AfterStartsAt,
+		arg.AfterID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCardLessonHistoryRow
+	for rows.Next() {
+		var i ListCardLessonHistoryRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.StartsAt,
+			&i.DurationMinutes,
+			&i.Status,
+			&i.Timezone,
+			&i.RelationshipID,
+			&i.GroupID,
+			&i.CardName,
+			&i.CardState,
+			&i.CardDiscardReason,
+			&i.CardColour,
+			&i.GroupName,
+			&i.GroupColour,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCardNextLessons = `-- name: ListCardNextLessons :many
+WITH candidates AS (
+    (SELECT lessons.id FROM lessons
+    WHERE lessons.relationship_id = $2 AND lessons.tutor_id = $3 AND lessons.status = 'scheduled'
+        AND lessons.starts_at > $4::timestamptz
+    ORDER BY lessons.starts_at, lessons.id
+    LIMIT $1::int)
+    UNION ALL
+    (SELECT lessons.id FROM group_members
+    JOIN lessons ON lessons.group_id = group_members.group_id
+    WHERE group_members.relationship_id = $2 AND group_members.tutor_id = $3 AND lessons.status = 'scheduled'
+        AND lessons.starts_at > $4::timestamptz
+    ORDER BY lessons.starts_at, lessons.id
+    LIMIT $1::int)
+)
+SELECT
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.relationship_id, lessons.group_id,
+    card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
+    card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
+FROM candidates
+JOIN lessons ON lessons.id = candidates.id
+LEFT JOIN relationships AS card ON card.id = lessons.relationship_id
+LEFT JOIN groups AS lesson_group ON lesson_group.id = lessons.group_id
+ORDER BY lessons.starts_at, lessons.id
+LIMIT $1::int
+`
+
+type ListCardNextLessonsParams struct {
+	RowLimit       int32
+	RelationshipID *domain.RelationshipID
+	TutorID        domain.UserID
+	Now            time.Time
+}
+
+type ListCardNextLessonsRow struct {
+	ID                domain.LessonID
+	Title             string
+	StartsAt          time.Time
+	DurationMinutes   int16
+	Status            domain.LessonStatus
+	Timezone          string
+	RelationshipID    *domain.RelationshipID
+	GroupID           *domain.GroupID
+	CardName          *string
+	CardState         string
+	CardDiscardReason *domain.DiscardReason
+	CardColour        *domain.Colour
+	GroupName         *string
+	GroupColour       string
+}
+
+func (q *Queries) ListCardNextLessons(ctx context.Context, arg ListCardNextLessonsParams) ([]ListCardNextLessonsRow, error) {
+	rows, err := q.db.Query(ctx, listCardNextLessons,
+		arg.RowLimit,
+		arg.RelationshipID,
+		arg.TutorID,
+		arg.Now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCardNextLessonsRow
+	for rows.Next() {
+		var i ListCardNextLessonsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.StartsAt,
+			&i.DurationMinutes,
+			&i.Status,
+			&i.Timezone,
+			&i.RelationshipID,
+			&i.GroupID,
+			&i.CardName,
+			&i.CardState,
+			&i.CardDiscardReason,
+			&i.CardColour,
+			&i.GroupName,
+			&i.GroupColour,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCardsNextLesson = `-- name: ListCardsNextLesson :many
+SELECT
+    requested.id AS card_id, lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.relationship_id, lessons.group_id,
+    card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
+    card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
+FROM relationships AS requested
+JOIN LATERAL (
+    SELECT candidates.id FROM (
+        (SELECT own.id, own.starts_at FROM lessons AS own
+        WHERE own.relationship_id = requested.id AND own.tutor_id = requested.tutor_id AND own.status = 'scheduled'
+            AND own.starts_at > $1::timestamptz
+        ORDER BY own.starts_at, own.id
+        LIMIT 1)
+        UNION ALL
+        (SELECT shared.id, shared.starts_at FROM group_members
+        JOIN lessons AS shared ON shared.group_id = group_members.group_id
+        WHERE group_members.relationship_id = requested.id AND group_members.tutor_id = requested.tutor_id
+            AND shared.status = 'scheduled' AND shared.starts_at > $1::timestamptz
+        ORDER BY shared.starts_at, shared.id
+        LIMIT 1)
+    ) AS candidates
+    ORDER BY candidates.starts_at, candidates.id
+    LIMIT 1
+) AS next ON true
+JOIN lessons ON lessons.id = next.id
+LEFT JOIN relationships AS card ON card.id = lessons.relationship_id
+LEFT JOIN groups AS lesson_group ON lesson_group.id = lessons.group_id
+WHERE requested.tutor_id = $2 AND requested.id = ANY ($3::uuid[])
+`
+
+type ListCardsNextLessonParams struct {
+	Now     time.Time
+	TutorID domain.UserID
+	Ids     []pgtype.UUID
+}
+
+type ListCardsNextLessonRow struct {
+	CardID            domain.RelationshipID
+	ID                domain.LessonID
+	Title             string
+	StartsAt          time.Time
+	DurationMinutes   int16
+	Status            domain.LessonStatus
+	Timezone          string
+	RelationshipID    *domain.RelationshipID
+	GroupID           *domain.GroupID
+	CardName          *string
+	CardState         string
+	CardDiscardReason *domain.DiscardReason
+	CardColour        *domain.Colour
+	GroupName         *string
+	GroupColour       string
+}
+
+func (q *Queries) ListCardsNextLesson(ctx context.Context, arg ListCardsNextLessonParams) ([]ListCardsNextLessonRow, error) {
+	rows, err := q.db.Query(ctx, listCardsNextLesson, arg.Now, arg.TutorID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCardsNextLessonRow
+	for rows.Next() {
+		var i ListCardsNextLessonRow
+		if err := rows.Scan(
+			&i.CardID,
+			&i.ID,
+			&i.Title,
+			&i.StartsAt,
+			&i.DurationMinutes,
+			&i.Status,
+			&i.Timezone,
+			&i.RelationshipID,
+			&i.GroupID,
+			&i.CardName,
+			&i.CardState,
+			&i.CardDiscardReason,
+			&i.CardColour,
+			&i.GroupName,
+			&i.GroupColour,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGroupLessonMembers = `-- name: ListGroupLessonMembers :many
 SELECT member.group_id, card.display_name, coalesce(account.state, '')::text AS account_state
 FROM group_members AS member
@@ -422,6 +755,165 @@ func (q *Queries) ListGroupLessonMembers(ctx context.Context, arg ListGroupLesso
 	for rows.Next() {
 		var i ListGroupLessonMembersRow
 		if err := rows.Scan(&i.GroupID, &i.DisplayName, &i.AccountState); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGroupNextLessons = `-- name: ListGroupNextLessons :many
+SELECT
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.relationship_id, lessons.group_id,
+    card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
+    card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
+FROM lessons
+LEFT JOIN relationships AS card ON card.id = lessons.relationship_id
+LEFT JOIN groups AS lesson_group ON lesson_group.id = lessons.group_id
+WHERE lessons.group_id = $1 AND lessons.tutor_id = $2 AND lessons.status = 'scheduled'
+    AND lessons.starts_at > $3::timestamptz
+ORDER BY lessons.starts_at, lessons.id
+LIMIT $4::int
+`
+
+type ListGroupNextLessonsParams struct {
+	GroupID  *domain.GroupID
+	TutorID  domain.UserID
+	Now      time.Time
+	RowLimit int32
+}
+
+type ListGroupNextLessonsRow struct {
+	ID                domain.LessonID
+	Title             string
+	StartsAt          time.Time
+	DurationMinutes   int16
+	Status            domain.LessonStatus
+	Timezone          string
+	RelationshipID    *domain.RelationshipID
+	GroupID           *domain.GroupID
+	CardName          *string
+	CardState         string
+	CardDiscardReason *domain.DiscardReason
+	CardColour        *domain.Colour
+	GroupName         *string
+	GroupColour       string
+}
+
+func (q *Queries) ListGroupNextLessons(ctx context.Context, arg ListGroupNextLessonsParams) ([]ListGroupNextLessonsRow, error) {
+	rows, err := q.db.Query(ctx, listGroupNextLessons,
+		arg.GroupID,
+		arg.TutorID,
+		arg.Now,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGroupNextLessonsRow
+	for rows.Next() {
+		var i ListGroupNextLessonsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.StartsAt,
+			&i.DurationMinutes,
+			&i.Status,
+			&i.Timezone,
+			&i.RelationshipID,
+			&i.GroupID,
+			&i.CardName,
+			&i.CardState,
+			&i.CardDiscardReason,
+			&i.CardColour,
+			&i.GroupName,
+			&i.GroupColour,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGroupsNextLesson = `-- name: ListGroupsNextLesson :many
+SELECT
+    requested.id AS requested_group_id, lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status,
+    lessons.timezone, lessons.relationship_id, lessons.group_id,
+    card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
+    card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
+FROM groups AS requested
+JOIN LATERAL (
+    SELECT upcoming.id FROM lessons AS upcoming
+    WHERE upcoming.group_id = requested.id AND upcoming.tutor_id = requested.tutor_id AND upcoming.status = 'scheduled'
+        AND upcoming.starts_at > $1::timestamptz
+    ORDER BY upcoming.starts_at, upcoming.id
+    LIMIT 1
+) AS next ON true
+JOIN lessons ON lessons.id = next.id
+LEFT JOIN relationships AS card ON card.id = lessons.relationship_id
+LEFT JOIN groups AS lesson_group ON lesson_group.id = lessons.group_id
+WHERE requested.tutor_id = $2 AND requested.id = ANY ($3::uuid[])
+`
+
+type ListGroupsNextLessonParams struct {
+	Now     time.Time
+	TutorID domain.UserID
+	Ids     []pgtype.UUID
+}
+
+type ListGroupsNextLessonRow struct {
+	RequestedGroupID  domain.GroupID
+	ID                domain.LessonID
+	Title             string
+	StartsAt          time.Time
+	DurationMinutes   int16
+	Status            domain.LessonStatus
+	Timezone          string
+	RelationshipID    *domain.RelationshipID
+	GroupID           *domain.GroupID
+	CardName          *string
+	CardState         string
+	CardDiscardReason *domain.DiscardReason
+	CardColour        *domain.Colour
+	GroupName         *string
+	GroupColour       string
+}
+
+func (q *Queries) ListGroupsNextLesson(ctx context.Context, arg ListGroupsNextLessonParams) ([]ListGroupsNextLessonRow, error) {
+	rows, err := q.db.Query(ctx, listGroupsNextLesson, arg.Now, arg.TutorID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGroupsNextLessonRow
+	for rows.Next() {
+		var i ListGroupsNextLessonRow
+		if err := rows.Scan(
+			&i.RequestedGroupID,
+			&i.ID,
+			&i.Title,
+			&i.StartsAt,
+			&i.DurationMinutes,
+			&i.Status,
+			&i.Timezone,
+			&i.RelationshipID,
+			&i.GroupID,
+			&i.CardName,
+			&i.CardState,
+			&i.CardDiscardReason,
+			&i.CardColour,
+			&i.GroupName,
+			&i.GroupColour,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

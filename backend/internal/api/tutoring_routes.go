@@ -15,6 +15,7 @@ import (
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/schemas"
 	"ovc/backend/internal/services/accounts"
+	"ovc/backend/internal/services/schedule"
 	"ovc/backend/internal/services/tutoring"
 )
 
@@ -57,6 +58,22 @@ type updateCardInput struct {
 type cardOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         schemas.StudentCard
+}
+
+type cardDetailOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         schemas.StudentCardDetail
+}
+
+type cardLessonsInput struct {
+	ID     string `path:"id"`
+	Limit  int32  `query:"limit" default:"30" minimum:"1" maximum:"100"`
+	Cursor string `query:"cursor" maxLength:"128"`
+}
+
+type cardLessonsOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         schemas.CardLessonPage
 }
 
 type withdrawOutput struct {
@@ -181,6 +198,10 @@ func (r *router) registerStudentCards() {
 	get.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
 	register(r, get, AudienceTutor, r.card)
 
+	lessons := operation("students-lessons-list", http.MethodGet, studentsPath+"/{id}/lessons")
+	lessons.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
+	register(r, lessons, AudienceTutor, r.cardLessons)
+
 	update := operation("students-update", http.MethodPatch, studentsPath+"/{id}")
 	update.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests)
 	register(r, update, AudienceTutor, r.updateCard)
@@ -250,9 +271,22 @@ func (r *router) listCards(ctx context.Context, input *studentListInput) (*stude
 	if err != nil {
 		return nil, r.tutoringError(ctx, "students.list.failed", err)
 	}
+	ids := make([]domain.RelationshipID, 0, len(page.Items))
+	for _, card := range page.Items {
+		ids = append(ids, card.ID)
+	}
+	next, err := r.schedule.CardsNextLesson(ctx, principalFrom(ctx).UserID, ids)
+	if err != nil {
+		return nil, r.scheduleError(ctx, "students.list.failed", err)
+	}
 	body := schemas.StudentCardPage{Items: make([]schemas.StudentCardSummary, 0, len(page.Items)), NextCursor: page.NextCursor}
 	for _, card := range page.Items {
-		body.Items = append(body.Items, cardSummaryBody(card))
+		summary := schemas.StudentCardSummary{CardFields: cardFieldsBody(card)}
+		if lesson, found := next[card.ID]; found {
+			item := calendarItemBody(lesson)
+			summary.NextLesson = &item
+		}
+		body.Items = append(body.Items, summary)
 	}
 	return &studentListOutput{CacheControl: noStore, Body: body}, nil
 }
@@ -272,16 +306,33 @@ func (r *router) createCard(ctx context.Context, input *createCardInput) (*cardO
 	return &cardOutput{CacheControl: noStore, Body: cardBody(card)}, nil
 }
 
-func (r *router) card(ctx context.Context, input *cardInput) (*cardOutput, error) {
+func (r *router) card(ctx context.Context, input *cardInput) (*cardDetailOutput, error) {
 	id, valid := domain.ParseUUID[domain.RelationshipID](input.ID)
 	if !valid {
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
-	card, err := r.tutoring.Card(ctx, principalFrom(ctx).UserID, id)
+	tutor := principalFrom(ctx).UserID
+	card, err := r.tutoring.Card(ctx, tutor, id)
 	if err != nil {
 		return nil, r.tutoringError(ctx, "students.get.failed", err)
 	}
-	return &cardOutput{CacheControl: noStore, Body: cardBody(card)}, nil
+	next, err := r.schedule.CardNextLessons(ctx, tutor, id)
+	if err != nil {
+		return nil, r.scheduleError(ctx, "students.get.failed", err)
+	}
+	return &cardDetailOutput{CacheControl: noStore, Body: schemas.StudentCardDetail{StudentCard: cardBody(card), NextLessons: calendarItemsBody(next)}}, nil
+}
+
+func (r *router) cardLessons(ctx context.Context, input *cardLessonsInput) (*cardLessonsOutput, error) {
+	id, valid := domain.ParseUUID[domain.RelationshipID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	page, err := r.schedule.CardHistory(ctx, principalFrom(ctx).UserID, id, schedule.HistoryQuery{Cursor: input.Cursor, Limit: input.Limit})
+	if err != nil {
+		return nil, r.scheduleError(ctx, "students.lessons.list.failed", err)
+	}
+	return &cardLessonsOutput{CacheControl: noStore, Body: schemas.CardLessonPage{Items: calendarItemsBody(page.Items), NextCursor: page.NextCursor}}, nil
 }
 
 func (r *router) updateCard(ctx context.Context, input *updateCardInput) (*cardOutput, error) {
@@ -515,8 +566,8 @@ func (r *router) tutoringError(ctx context.Context, event string, err error) err
 	return r.internal(ctx, event, err)
 }
 
-func cardSummaryBody(card tutoring.Card) schemas.StudentCardSummary {
-	summary := schemas.StudentCardSummary{
+func cardFieldsBody(card tutoring.Card) schemas.CardFields {
+	summary := schemas.CardFields{
 		ID: card.ID.String(), State: card.State, DisplayName: card.DisplayName, Email: card.Email,
 		Groups: make([]schemas.CardGroup, 0, len(card.Groups)), LinkedAt: utc(card.LinkedAt), EndedAt: utc(card.EndedAt),
 		EndedBy: card.EndedBy, CreatedAt: card.CreatedAt.UTC(),
@@ -533,7 +584,7 @@ func cardSummaryBody(card tutoring.Card) schemas.StudentCardSummary {
 }
 
 func cardBody(card tutoring.Card) schemas.StudentCard {
-	body := schemas.StudentCard{StudentCardSummary: cardSummaryBody(card), Notes: card.Notes}
+	body := schemas.StudentCard{CardFields: cardFieldsBody(card), Notes: card.Notes}
 	if card.Invitation != nil {
 		body.Invitation = &schemas.CardInvitation{URL: card.Invitation.URL, ExpiresAt: card.Invitation.ExpiresAt.UTC(), Status: card.Invitation.Status}
 	}

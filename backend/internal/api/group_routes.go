@@ -38,6 +38,11 @@ type groupOutput struct {
 	Body         schemas.Group
 }
 
+type groupDetailOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         schemas.GroupDetail
+}
+
 func (r *router) registerGroups() {
 	list := operation("groups-list", http.MethodGet, groupsPath)
 	list.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
@@ -70,12 +75,25 @@ func (r *router) listGroups(ctx context.Context, _ *struct{}) (*groupListOutput,
 	if err != nil {
 		return nil, r.groupError(ctx, "groups.list.failed", err)
 	}
+	ids := make([]domain.GroupID, 0, len(groups))
+	for _, group := range groups {
+		ids = append(ids, group.ID)
+	}
+	next, err := r.schedule.GroupsNextLesson(ctx, principalFrom(ctx).UserID, ids)
+	if err != nil {
+		return nil, r.scheduleError(ctx, "groups.list.failed", err)
+	}
 	body := schemas.GroupList{Groups: make([]schemas.GroupSummary, 0, len(groups))}
 	for _, group := range groups {
-		body.Groups = append(body.Groups, schemas.GroupSummary{
+		summary := schemas.GroupSummary{
 			ID: group.ID.String(), Name: group.Name, Colour: group.Colour, ArchivedAt: utc(group.ArchivedAt),
 			MemberCount: group.MemberCount, Members: groupMembersBody(group.FirstMembers),
-		})
+		}
+		if lesson, found := next[group.ID]; found {
+			item := calendarItemBody(lesson)
+			summary.NextLesson = &item
+		}
+		body.Groups = append(body.Groups, summary)
 	}
 	return &groupListOutput{CacheControl: noStore, Body: body}, nil
 }
@@ -99,16 +117,25 @@ func (r *router) createGroup(ctx context.Context, input *createGroupInput) (*gro
 	return &groupOutput{CacheControl: noStore, Body: groupBody(group)}, nil
 }
 
-func (r *router) group(ctx context.Context, input *groupInput) (*groupOutput, error) {
+func (r *router) group(ctx context.Context, input *groupInput) (*groupDetailOutput, error) {
 	id, valid := domain.ParseUUID[domain.GroupID](input.ID)
 	if !valid {
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
-	group, err := r.tutoring.Group(ctx, principalFrom(ctx).UserID, id)
+	tutor := principalFrom(ctx).UserID
+	group, err := r.tutoring.Group(ctx, tutor, id)
 	if err != nil {
 		return nil, r.groupError(ctx, "groups.get.failed", err)
 	}
-	return &groupOutput{CacheControl: noStore, Body: groupBody(group)}, nil
+	lessons, err := r.schedule.GroupLessons(ctx, tutor, id)
+	if err != nil {
+		return nil, r.scheduleError(ctx, "groups.get.failed", err)
+	}
+	body := schemas.GroupDetail{
+		Group: groupBody(group), NextLessons: calendarItemsBody(lessons.Next), FutureLessonCount: lessons.FutureLessonCount,
+		HasOpenSeries: lessons.HasOpenSeries,
+	}
+	return &groupDetailOutput{CacheControl: noStore, Body: body}, nil
 }
 
 func (r *router) updateGroup(ctx context.Context, input *updateGroupInput) (*groupOutput, error) {

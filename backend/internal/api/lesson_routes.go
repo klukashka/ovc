@@ -86,15 +86,24 @@ func (r *router) calendar(ctx context.Context, input *calendarInput) (*calendarO
 	if err != nil {
 		return nil, r.scheduleError(ctx, "calendar.get.failed", err)
 	}
-	body := schemas.Calendar{Items: make([]schemas.CalendarItem, 0, len(calendar.Items)), Truncated: calendar.Truncated}
-	for _, item := range calendar.Items {
-		body.Items = append(body.Items, schemas.CalendarItem{
-			ID: item.ID.String(), Title: item.Title, StartsAt: item.StartsAt, EndsAt: item.EndsAt(), Status: item.Status, Timezone: item.Timezone,
-			Audience: schemas.CalendarAudience{Kind: item.Audience.Kind, Label: item.Audience.Label, LabelKind: item.Audience.LabelKind, Colour: item.Audience.Colour},
-			Tutor:    tutorLabelBody(item.Tutor),
-		})
-	}
+	body := schemas.Calendar{Items: calendarItemsBody(calendar.Items), Truncated: calendar.Truncated}
 	return &calendarOutput{CacheControl: noStore, Body: body}, nil
+}
+
+func calendarItemBody(item schedule.CalendarItem) schemas.CalendarItem {
+	return schemas.CalendarItem{
+		ID: item.ID.String(), Title: item.Title, StartsAt: item.StartsAt, EndsAt: item.EndsAt(), Status: item.Status, Timezone: item.Timezone,
+		Audience: schemas.CalendarAudience{Kind: item.Audience.Kind, Label: item.Audience.Label, LabelKind: item.Audience.LabelKind, Colour: item.Audience.Colour},
+		Tutor:    tutorLabelBody(item.Tutor),
+	}
+}
+
+func calendarItemsBody(items []schedule.CalendarItem) []schemas.CalendarItem {
+	body := make([]schemas.CalendarItem, 0, len(items))
+	for _, item := range items {
+		body = append(body, calendarItemBody(item))
+	}
+	return body
 }
 
 var errAudienceUnparsed = errors.New("an audience identifier passed the schema but is not a UUID")

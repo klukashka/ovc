@@ -323,3 +323,111 @@ func (r Lessons) DeleteRosterOfStudent(ctx context.Context, student domain.UserI
 	rows, err := r.queries.DeleteStudentRosterRows(ctx, student)
 	return counted(rows, err, "delete a student's roster rows")
 }
+
+type LessonCursor struct {
+	StartsAt time.Time
+	ID       domain.LessonID
+}
+
+type CardNextLesson struct {
+	Card   domain.RelationshipID
+	Lesson TutorCalendarItem
+}
+
+type GroupNextLesson struct {
+	Group  domain.GroupID
+	Lesson TutorCalendarItem
+}
+
+func (r Lessons) CardNext(ctx context.Context, tutor domain.UserID, card domain.RelationshipID, now time.Time, limit int32) ([]TutorCalendarItem, error) {
+	rows, err := r.queries.ListCardNextLessons(ctx, dbgen.ListCardNextLessonsParams{RelationshipID: &card, TutorID: tutor, Now: now, RowLimit: limit})
+	if err != nil {
+		return nil, done(err, "next lessons of a card")
+	}
+	items := make([]TutorCalendarItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, TutorCalendarItem(row))
+	}
+	return items, nil
+}
+
+func (r Lessons) CardHistory(
+	ctx context.Context, tutor domain.UserID, card domain.RelationshipID, after *LessonCursor, limit int32,
+) ([]TutorCalendarItem, error) {
+	params := dbgen.ListCardLessonHistoryParams{RelationshipID: &card, TutorID: tutor, RowLimit: limit}
+	if after != nil {
+		params.AfterStartsAt = &after.StartsAt
+		params.AfterID = pgtype.UUID{Bytes: after.ID, Valid: true}
+	}
+	rows, err := r.queries.ListCardLessonHistory(ctx, params)
+	if err != nil {
+		return nil, done(err, "lesson history of a card")
+	}
+	items := make([]TutorCalendarItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, TutorCalendarItem(row))
+	}
+	return items, nil
+}
+
+func (r Lessons) CardsNext(ctx context.Context, tutor domain.UserID, cards []domain.RelationshipID, now time.Time) ([]CardNextLesson, error) {
+	if len(cards) == 0 {
+		return nil, nil
+	}
+	rows, err := r.queries.ListCardsNextLesson(ctx, dbgen.ListCardsNextLessonParams{TutorID: tutor, Ids: uuids(cards), Now: now})
+	if err != nil {
+		return nil, done(err, "next lessons of cards")
+	}
+	next := make([]CardNextLesson, 0, len(rows))
+	for _, row := range rows {
+		next = append(next, CardNextLesson{Card: row.CardID, Lesson: TutorCalendarItem{
+			ID: row.ID, Title: row.Title, StartsAt: row.StartsAt, DurationMinutes: row.DurationMinutes, Status: row.Status,
+			Timezone: row.Timezone, RelationshipID: row.RelationshipID, GroupID: row.GroupID, CardName: row.CardName,
+			CardState: row.CardState, CardDiscardReason: row.CardDiscardReason, CardColour: row.CardColour, GroupName: row.GroupName,
+			GroupColour: row.GroupColour,
+		}})
+	}
+	return next, nil
+}
+
+func (r Lessons) GroupNext(ctx context.Context, tutor domain.UserID, group domain.GroupID, now time.Time, limit int32) ([]TutorCalendarItem, error) {
+	rows, err := r.queries.ListGroupNextLessons(ctx, dbgen.ListGroupNextLessonsParams{GroupID: &group, TutorID: tutor, Now: now, RowLimit: limit})
+	if err != nil {
+		return nil, done(err, "next lessons of a group")
+	}
+	items := make([]TutorCalendarItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, TutorCalendarItem(row))
+	}
+	return items, nil
+}
+
+func (r Lessons) GroupsNext(ctx context.Context, tutor domain.UserID, groups []domain.GroupID, now time.Time) ([]GroupNextLesson, error) {
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	rows, err := r.queries.ListGroupsNextLesson(ctx, dbgen.ListGroupsNextLessonParams{TutorID: tutor, Ids: uuids(groups), Now: now})
+	if err != nil {
+		return nil, done(err, "next lessons of groups")
+	}
+	next := make([]GroupNextLesson, 0, len(rows))
+	for _, row := range rows {
+		next = append(next, GroupNextLesson{Group: row.RequestedGroupID, Lesson: TutorCalendarItem{
+			ID: row.ID, Title: row.Title, StartsAt: row.StartsAt, DurationMinutes: row.DurationMinutes, Status: row.Status,
+			Timezone: row.Timezone, RelationshipID: row.RelationshipID, GroupID: row.GroupID, CardName: row.CardName,
+			CardState: row.CardState, CardDiscardReason: row.CardDiscardReason, CardColour: row.CardColour, GroupName: row.GroupName,
+			GroupColour: row.GroupColour,
+		}})
+	}
+	return next, nil
+}
+
+func (r Lessons) CountFutureOfGroup(ctx context.Context, tutor domain.UserID, group domain.GroupID, now time.Time) (int64, error) {
+	count, err := r.queries.CountFutureLessonsOfGroup(ctx, dbgen.CountFutureLessonsOfGroupParams{GroupID: &group, TutorID: tutor, Now: now})
+	return one(count, err, "count future lessons of a group")
+}
+
+func (r Lessons) GroupHasOpenSeries(ctx context.Context, tutor domain.UserID, group domain.GroupID, now time.Time) (bool, error) {
+	open, err := r.queries.GroupHasOpenSeries(ctx, dbgen.GroupHasOpenSeriesParams{GroupID: &group, TutorID: tutor, Now: now})
+	return one(open, err, "whether a group has an open series")
+}

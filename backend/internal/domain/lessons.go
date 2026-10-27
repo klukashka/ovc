@@ -77,6 +77,8 @@ const (
 	LessonWritesPerHour       = 120
 	OverlapListLimit          = 20
 	CalendarItemLimit         = 1000
+	CardNextLessonCount       = 3
+	GroupNextLessonCount      = 5
 	CalendarMaxRange          = 62 * 24 * time.Hour
 	CalendarRangeMargin       = 24 * time.Hour
 	LessonMaxDurationSpan     = LessonMaxDuration * time.Minute

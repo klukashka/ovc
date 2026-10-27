@@ -25,6 +25,7 @@ import (
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/realtime"
 	"ovc/backend/internal/repositories"
+	"ovc/backend/internal/testdb"
 	"ovc/backend/internal/teststorage"
 )
 
@@ -73,7 +74,7 @@ func newLiveHarness(t *testing.T, tuning liveTuning) *liveHarness {
 	var gateway *realtime.Gateway
 	trusted := []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}
 	h := newAuthHarnessStoring(t, trusted, api.NewHandler, func(local *teststorage.Storage) storage.Store { return local.Store },
-		func(options *api.Options, shared *clock.Shared, logger *slog.Logger) {
+		func(options *api.Options, shared *clock.Shared, logger *slog.Logger, _ *testdb.Database) {
 			deps := realtime.Dependencies{
 				Sessions: options.Auth.Accounts, Clock: shared, Now: clock.System{}.Now, NewID: core.NewRandomID, Logger: logger,
 				PublicOrigin: publicOrigin, Timing: quietTiming(), Limits: realtime.DefaultLimits(),

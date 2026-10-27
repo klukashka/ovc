@@ -6,8 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -821,9 +823,21 @@ func TestCreatedCardReadsBackUnchanged(t *testing.T) {
 	created := h.createCard(t, token, cardBody(cardName, cardEmail), "")
 	read := h.cardCall(t, token, http.MethodGet, decodeCard(t, created).ID, "", "")
 
-	if created.body != read.body {
+	createdFields, readFields := rawFields(t, created), rawFields(t, read)
+	nextLessons, carried := readFields["next_lessons"]
+	delete(readFields, "next_lessons")
+	if !carried || string(nextLessons) != "[]" || !maps.EqualFunc(createdFields, readFields, slices.Equal) {
 		t.Fatalf("the created card\n%s\nreads back as\n%s", created.body, read.body)
 	}
+}
+
+func rawFields(t *testing.T, result response) map[string]json.RawMessage {
+	t.Helper()
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(result.body), &fields); err != nil {
+		t.Fatalf("not a JSON object: %d %s", result.status, result.body)
+	}
+	return fields
 }
 
 type concurrentAnswers struct {

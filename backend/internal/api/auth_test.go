@@ -124,7 +124,7 @@ func newAuthHarnessServing(t *testing.T, trusted []netip.Prefix, newHandler func
 	return newAuthHarnessStoring(t, trusted, newHandler, func(local *teststorage.Storage) storage.Store { return local.Store })
 }
 
-type optionsHook func(options *api.Options, shared *clock.Shared, logger *slog.Logger)
+type optionsHook func(options *api.Options, shared *clock.Shared, logger *slog.Logger, database *testdb.Database)
 
 func newAuthHarnessStoring(
 	t *testing.T, trusted []netip.Prefix, newHandler func(api.Options) (http.Handler, error), objectsFor func(*teststorage.Storage) storage.Store,
@@ -184,7 +184,7 @@ func newAuthHarnessStoring(
 		Inbox:       inbox,
 	}
 	for _, hook := range hooks {
-		hook(&options, shared, logger)
+		hook(&options, shared, logger, database)
 	}
 	handler, err := newHandler(options)
 	if err != nil {

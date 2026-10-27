@@ -362,6 +362,7 @@ type denialCase func(t *testing.T, h *authHarness) (outOfScope response, random 
 var denialCases = map[string]denialCase{
 	"GET /api/v1/avatars/{id}":                            anotherAccountsPendingUploadIsNoAvatar,
 	"GET /api/v1/students/{id}":                           anotherTutorsCard(http.MethodGet, "", ""),
+	"GET /api/v1/students/{id}/lessons":                   anotherTutorsCard(http.MethodGet, "/lessons", ""),
 	"PATCH /api/v1/students/{id}":                         anotherTutorsCard(http.MethodPatch, "", `{"display_name":"Renamed","email":"renamed@example.org"}`),
 	"DELETE /api/v1/students/{id}":                        anotherTutorsCard(http.MethodDelete, "", ""),
 	"POST /api/v1/students/{id}/invitation":               anotherTutorsCard(http.MethodPost, "/invitation", ""),

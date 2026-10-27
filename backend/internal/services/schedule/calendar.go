@@ -86,18 +86,22 @@ func tutorCalendar(ctx context.Context, repos repositories.Repositories, tutor d
 	rows, truncated := truncate(rows)
 	calendar := Calendar{Items: make([]CalendarItem, 0, len(rows)), Truncated: truncated}
 	for _, row := range rows {
-		source := tutorLabelSource{
-			relationship: row.RelationshipID, cardName: row.CardName, cardState: row.CardState, cardDiscardReason: row.CardDiscardReason,
-			cardColour: row.CardColour, groupName: row.GroupName, groupColour: row.GroupColour,
-		}
-		audience := source.audience()
-		audience.Members = nil
-		calendar.Items = append(calendar.Items, CalendarItem{
-			ID: row.ID, Title: row.Title, StartsAt: row.StartsAt.UTC(), DurationMinutes: int(row.DurationMinutes), Status: row.Status,
-			Timezone: row.Timezone, Audience: audience,
-		})
+		calendar.Items = append(calendar.Items, tutorItem(row))
 	}
 	return calendar, nil
+}
+
+func tutorItem(row repositories.TutorCalendarItem) CalendarItem {
+	source := tutorLabelSource{
+		relationship: row.RelationshipID, cardName: row.CardName, cardState: row.CardState, cardDiscardReason: row.CardDiscardReason,
+		cardColour: row.CardColour, groupName: row.GroupName, groupColour: row.GroupColour,
+	}
+	audience := source.audience()
+	audience.Members = nil
+	return CalendarItem{
+		ID: row.ID, Title: row.Title, StartsAt: row.StartsAt.UTC(), DurationMinutes: int(row.DurationMinutes), Status: row.Status,
+		Timezone: row.Timezone, Audience: audience,
+	}
 }
 
 func studentCalendar(ctx context.Context, repos repositories.Repositories, student domain.UserID, query CalendarQuery) (Calendar, error) {

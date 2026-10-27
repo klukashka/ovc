@@ -41,7 +41,7 @@ type IssuedInvitation struct {
 	Status    domain.InvitationStatus `json:"status" enum:"open"`
 }
 
-type StudentCardSummary struct {
+type CardFields struct {
 	ID          string                   `json:"id" format:"uuid"`
 	State       domain.RelationshipState `json:"state" enum:"invited,provisional,reclaim_pending,active,ended"`
 	DisplayName string                   `json:"display_name"`
@@ -54,18 +54,37 @@ type StudentCardSummary struct {
 	CreatedAt   time.Time                `json:"created_at"`
 }
 
+type StudentCardSummary struct {
+	CardFields
+	NextLesson *CalendarItem `json:"next_lesson"`
+}
+
 func (StudentCardSummary) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	return nullableReferences(schema, "account")
+	return nullableReferences(schema, "account", "next_lesson")
 }
 
 type StudentCard struct {
-	StudentCardSummary
+	CardFields
 	Notes      string          `json:"notes"`
 	Invitation *CardInvitation `json:"invitation"`
 }
 
 func (StudentCard) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
 	return nullableReferences(schema, "account", "invitation")
+}
+
+type StudentCardDetail struct {
+	StudentCard
+	NextLessons []CalendarItem `json:"next_lessons" nullable:"false"`
+}
+
+func (StudentCardDetail) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	return nullableReferences(schema, "account", "invitation")
+}
+
+type CardLessonPage struct {
+	Items      []CalendarItem `json:"items" nullable:"false"`
+	NextCursor *string        `json:"next_cursor" nullable:"true"`
 }
 
 func nullableReferences(schema *huma.Schema, properties ...string) *huma.Schema {

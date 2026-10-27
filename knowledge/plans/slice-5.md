@@ -386,3 +386,12 @@ Revision 8 (2026-10-27): the owner answered eight questions raised while S2 was 
 Note on D9 and D17 for S5: the stored-instant equality of `cancelled_at` governs the statement order of ending and archiving, so S5 freezes the rosters from the audience before the change, performs the change and reads its instant back, and then cancels the lessons with that instant; it does not cancel before the change, as D9's wording would literally say.
 
 Note of 2026-10-27: `tools/check-changed.sh`, a script that would derive the change checks of [ADR-0018](../../docs/decisions/0018-targeted-checks-and-merge-gate.md) from a diff, is deferred by the owner's decision and revisited at slice 5's close; until then the change-check table of the [development guide](../../docs/development.md#change-checks-and-the-merge-gate) is applied by hand, and the merge gate catches a misjudged set before `main` ([plan](targeted-checks-and-merge-gate.md)).
+
+Revision 9 (2026-10-27): the owner answered four questions raised while S6 was implemented, each with the recommended option, and S6 records them in the [schedule specification](../specs/schedule.md#lessons-on-the-tutoring-pages) and the API specification:
+
+- **The card's lessons:** the card relationship's one-to-one lessons in every status, plus the tutor's group lessons that hold the card's student under D12's student rule (`scheduled` lessons of the groups the card belongs to now, and lessons that are not `scheduled` whose frozen roster holds the student), limited to the card's tutor.
+- **Items:** `next_lessons`, `next_lesson` and the card's history reuse the tutor's `GET /calendar` item schema, with the tutor column's labels and colours.
+- **Next lessons:** `scheduled` lessons whose start is after now, earliest first.
+- **The history:** every lesson of the card in every status, future and cancelled ones included, newest first, with the API's `limit` and `cursor`.
+
+The settled points stand as S6 implements them: `future_lesson_count` counts the group's `scheduled` lessons starting after now, `has_open_series` uses the per-tutor series cap's rule of a series that has not ended, and the group's next lessons are its `scheduled` lessons starting after now. Only `GET /students/{id}` and `GET /groups/{id}` carry the new detail fields; the write routes answering a card or a group keep their slice 3 schemas.

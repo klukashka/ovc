@@ -238,3 +238,148 @@ WHERE id IN (
 
 -- name: DeleteStudentRosterRows :execrows
 DELETE FROM lesson_roster WHERE student_id = @student_id;
+
+-- name: ListCardNextLessons :many
+WITH candidates AS (
+    (SELECT lessons.id FROM lessons
+    WHERE lessons.relationship_id = @relationship_id AND lessons.tutor_id = @tutor_id AND lessons.status = 'scheduled'
+        AND lessons.starts_at > sqlc.arg(now)::timestamptz
+    ORDER BY lessons.starts_at, lessons.id
+    LIMIT sqlc.arg(row_limit)::int)
+    UNION ALL
+    (SELECT lessons.id FROM group_members
+    JOIN lessons ON lessons.group_id = group_members.group_id
+    WHERE group_members.relationship_id = @relationship_id AND group_members.tutor_id = @tutor_id AND lessons.status = 'scheduled'
+        AND lessons.starts_at > sqlc.arg(now)::timestamptz
+    ORDER BY lessons.starts_at, lessons.id
+    LIMIT sqlc.arg(row_limit)::int)
+)
+SELECT
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.relationship_id, lessons.group_id,
+    card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
+    card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
+FROM candidates
+JOIN lessons ON lessons.id = candidates.id
+LEFT JOIN relationships AS card ON card.id = lessons.relationship_id
+LEFT JOIN groups AS lesson_group ON lesson_group.id = lessons.group_id
+ORDER BY lessons.starts_at, lessons.id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ListCardLessonHistory :many
+WITH visible AS (
+    (SELECT lessons.id FROM lessons
+    WHERE lessons.relationship_id = @relationship_id AND lessons.tutor_id = @tutor_id
+        AND (sqlc.narg(after_starts_at)::timestamptz IS NULL
+            OR (lessons.starts_at, lessons.id) < (sqlc.narg(after_starts_at)::timestamptz, sqlc.narg(after_id)::uuid))
+    ORDER BY lessons.starts_at DESC, lessons.id DESC
+    LIMIT sqlc.arg(row_limit)::int)
+    UNION ALL
+    (SELECT lessons.id FROM group_members
+    JOIN lessons ON lessons.group_id = group_members.group_id
+    WHERE group_members.relationship_id = @relationship_id AND group_members.tutor_id = @tutor_id AND lessons.status = 'scheduled'
+        AND (sqlc.narg(after_starts_at)::timestamptz IS NULL
+            OR (lessons.starts_at, lessons.id) < (sqlc.narg(after_starts_at)::timestamptz, sqlc.narg(after_id)::uuid))
+    ORDER BY lessons.starts_at DESC, lessons.id DESC
+    LIMIT sqlc.arg(row_limit)::int)
+    UNION ALL
+    (SELECT lessons.id FROM relationships AS owner
+    JOIN lesson_roster ON lesson_roster.student_id = owner.student_id
+    JOIN lessons ON lessons.id = lesson_roster.lesson_id
+    WHERE owner.id = @relationship_id AND owner.tutor_id = @tutor_id
+        AND lessons.tutor_id = @tutor_id AND lessons.group_id IS NOT NULL AND lessons.status <> 'scheduled'
+        AND (sqlc.narg(after_starts_at)::timestamptz IS NULL
+            OR (lesson_roster.lesson_starts_at <= sqlc.narg(after_starts_at)::timestamptz
+                AND (lesson_roster.lesson_starts_at, lesson_roster.lesson_id) < (sqlc.narg(after_starts_at)::timestamptz, sqlc.narg(after_id)::uuid)))
+    ORDER BY lesson_roster.lesson_starts_at DESC, lesson_roster.lesson_id DESC
+    LIMIT sqlc.arg(row_limit)::int)
+)
+SELECT
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.relationship_id, lessons.group_id,
+    card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
+    card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
+FROM visible
+JOIN lessons ON lessons.id = visible.id
+LEFT JOIN relationships AS card ON card.id = lessons.relationship_id
+LEFT JOIN groups AS lesson_group ON lesson_group.id = lessons.group_id
+ORDER BY lessons.starts_at DESC, lessons.id DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ListCardsNextLesson :many
+SELECT
+    requested.id AS card_id, lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.relationship_id, lessons.group_id,
+    card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
+    card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
+FROM relationships AS requested
+JOIN LATERAL (
+    SELECT candidates.id FROM (
+        (SELECT own.id, own.starts_at FROM lessons AS own
+        WHERE own.relationship_id = requested.id AND own.tutor_id = requested.tutor_id AND own.status = 'scheduled'
+            AND own.starts_at > sqlc.arg(now)::timestamptz
+        ORDER BY own.starts_at, own.id
+        LIMIT 1)
+        UNION ALL
+        (SELECT shared.id, shared.starts_at FROM group_members
+        JOIN lessons AS shared ON shared.group_id = group_members.group_id
+        WHERE group_members.relationship_id = requested.id AND group_members.tutor_id = requested.tutor_id
+            AND shared.status = 'scheduled' AND shared.starts_at > sqlc.arg(now)::timestamptz
+        ORDER BY shared.starts_at, shared.id
+        LIMIT 1)
+    ) AS candidates
+    ORDER BY candidates.starts_at, candidates.id
+    LIMIT 1
+) AS next ON true
+JOIN lessons ON lessons.id = next.id
+LEFT JOIN relationships AS card ON card.id = lessons.relationship_id
+LEFT JOIN groups AS lesson_group ON lesson_group.id = lessons.group_id
+WHERE requested.tutor_id = @tutor_id AND requested.id = ANY (sqlc.arg(ids)::uuid[]);
+
+-- name: ListGroupNextLessons :many
+SELECT
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.relationship_id, lessons.group_id,
+    card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
+    card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
+FROM lessons
+LEFT JOIN relationships AS card ON card.id = lessons.relationship_id
+LEFT JOIN groups AS lesson_group ON lesson_group.id = lessons.group_id
+WHERE lessons.group_id = @group_id AND lessons.tutor_id = @tutor_id AND lessons.status = 'scheduled'
+    AND lessons.starts_at > sqlc.arg(now)::timestamptz
+ORDER BY lessons.starts_at, lessons.id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ListGroupsNextLesson :many
+SELECT
+    requested.id AS requested_group_id, lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status,
+    lessons.timezone, lessons.relationship_id, lessons.group_id,
+    card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
+    card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
+FROM groups AS requested
+JOIN LATERAL (
+    SELECT upcoming.id FROM lessons AS upcoming
+    WHERE upcoming.group_id = requested.id AND upcoming.tutor_id = requested.tutor_id AND upcoming.status = 'scheduled'
+        AND upcoming.starts_at > sqlc.arg(now)::timestamptz
+    ORDER BY upcoming.starts_at, upcoming.id
+    LIMIT 1
+) AS next ON true
+JOIN lessons ON lessons.id = next.id
+LEFT JOIN relationships AS card ON card.id = lessons.relationship_id
+LEFT JOIN groups AS lesson_group ON lesson_group.id = lessons.group_id
+WHERE requested.tutor_id = @tutor_id AND requested.id = ANY (sqlc.arg(ids)::uuid[]);
+
+-- name: CountFutureLessonsOfGroup :one
+SELECT count(id) FROM lessons
+WHERE group_id = @group_id AND tutor_id = @tutor_id AND status = 'scheduled' AND starts_at > sqlc.arg(now)::timestamptz;
+
+-- name: GroupHasOpenSeries :one
+SELECT EXISTS (
+    SELECT 1 FROM lesson_series AS series
+    WHERE series.group_id = @group_id AND series.tutor_id = @tutor_id AND series.ended_at IS NULL AND (
+        (series.end_date IS NOT NULL AND series.end_date >= (sqlc.arg(now)::timestamptz AT TIME ZONE series.timezone)::date)
+        OR (series.count IS NOT NULL AND EXISTS (
+            SELECT 1 FROM lessons WHERE lessons.series_id = series.id AND lessons.starts_at > sqlc.arg(now)::timestamptz
+        ))
+    )
+);
