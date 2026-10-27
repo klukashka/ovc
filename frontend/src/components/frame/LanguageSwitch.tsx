@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { usePreferences } from '../../app/context.ts';
+import { reportLanguageLoadFailure, switchLanguage } from '../../lib/i18n/i18n.ts';
 import { type Language, languages } from '../../lib/i18n/resources.ts';
 import { preferenceKeys } from '../../lib/preferences/store.ts';
 
@@ -14,9 +15,12 @@ export function LanguageSwitch({
   const preferences = usePreferences();
 
   function choose(language: Language): void {
-    preferences.write(preferenceKeys.language, language);
-    void i18n.changeLanguage(language);
-    onChosen?.(language);
+    switchLanguage(i18n, language).then((applied) => {
+      if (applied) {
+        preferences.write(preferenceKeys.language, language);
+        onChosen?.(language);
+      }
+    }, reportLanguageLoadFailure);
   }
 
   return (

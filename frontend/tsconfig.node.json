@@ -17,6 +17,7 @@
     "src/lib/api/schema.ts",
     "src/lib/api/transport.ts",
     "src/lib/api/transportContract.ts",
+    "src/lib/i18n/languages.ts",
     "src/lib/realtime/frames.ts",
     "src/lib/realtime/socket.ts",
     "src/lib/realtime/realtimeContract.ts"

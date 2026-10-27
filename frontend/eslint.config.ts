@@ -6,6 +6,8 @@ import { defineConfig } from 'eslint/config';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
+import { languageChunks } from './scripts/bundle-budget.ts';
+
 const testDoubleMessage = 'Use a fake behind an injected interface instead of replacing behavior.';
 const fetchMessage = 'Do not replace fetch; inject a fake client instead.';
 
@@ -193,6 +195,23 @@ const testOnlyModuleImports = {
   ],
 };
 
+const languageTextsMessage =
+  'A language file holds only its texts: it loads before the first render, so it imports only types and runs no code.';
+
+const languageTextsSyntax = [
+  "ImportDeclaration[importKind!='type']",
+  'ImportExpression',
+  'ExportAllDeclaration',
+  'ExportNamedDeclaration[source]',
+  'CallExpression',
+  'NewExpression',
+  'TaggedTemplateExpression',
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ArrowFunctionExpression',
+  'ClassDeclaration',
+].map((selector) => ({ selector, message: languageTextsMessage }));
+
 export default defineConfig(
   { ignores: ['dist', 'node_modules', 'playwright-report', 'test-results', 'src/lib/api/schema.ts'] },
   js.configs.recommended,
@@ -272,6 +291,20 @@ export default defineConfig(
   {
     files: ['public/**/*.js'],
     rules: { '@typescript-eslint/no-implied-eval': 'off', 'no-implied-eval': 'error' },
+  },
+  {
+    files: languageChunks.map(({ module }) => module),
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...forbiddenFetchReplacement,
+        ...forbiddenDynamicImports,
+        ...forbiddenReflectSyntax,
+        ...forbiddenDomSyntax,
+        ...forbiddenStorageSyntax,
+        ...languageTextsSyntax,
+      ],
+    },
   },
   {
     files: ['src/lib/preferences/store.ts', 'public/theme-init.js'],

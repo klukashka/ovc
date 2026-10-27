@@ -205,6 +205,8 @@ export interface ExpectedFailure {
 
 export interface PageDiagnostics {
   readonly expectFailure: (failure: ExpectedFailure) => void;
+  readonly expectAbortedRequest: (path: RegExp) => void;
+  readonly expectConsoleError: (text: string) => void;
 }
 
 export interface Diagnostics extends PageDiagnostics {
@@ -220,6 +222,52 @@ function describeFailure(failure: ExpectedFailure): string {
 }
 
 const failedResourceLog = /^Failed to load resource: the server responded with a status of \d{3}/;
+const abortedResourceLog = 'Failed to load resource';
+
+interface ConsoleError {
+  readonly text: string;
+  readonly path: string;
+}
+
+function pathOf(address: string): string {
+  return URL.canParse(address) ? new URL(address).pathname : address;
+}
+
+function unexpectedConsoleErrors(
+  errors: readonly ConsoleError[],
+  expectedTexts: readonly string[],
+  abortedPaths: readonly RegExp[],
+): string[] {
+  const awaited = [...expectedTexts];
+  const unexpected: string[] = [];
+  for (const error of errors) {
+    const declared = awaited.indexOf(error.text);
+    if (declared !== -1) {
+      awaited.splice(declared, 1);
+    } else if (!(error.text.startsWith(abortedResourceLog) && abortedPaths.some((path) => path.test(error.path)))) {
+      unexpected.push(`console: ${error.text}`);
+    }
+  }
+  const unseen = awaited.map((text) => `expected console error did not appear: ${text}`);
+  return [...unexpected, ...unseen];
+}
+
+interface FailedAt {
+  readonly failed: FailedRequest;
+  readonly path: string;
+}
+
+function unexpectedAborts(failures: readonly FailedAt[], abortedPaths: readonly RegExp[]): FailedRequest[] {
+  return failures
+    .filter((failure) => !abortedPaths.some((path) => path.test(failure.path)))
+    .map((failure) => failure.failed);
+}
+
+function unseenAborts(failures: readonly FailedAt[], abortedPaths: readonly RegExp[]): string[] {
+  return abortedPaths
+    .filter((path) => !failures.some((failure) => path.test(failure.path)))
+    .map((path) => `expected aborted request did not happen: ${String(path)}`);
+}
 
 async function reportPolicyViolations(page: Page): Promise<void> {
   await page.addInitScript(() => {
@@ -232,11 +280,14 @@ async function reportPolicyViolations(page: Page): Promise<void> {
 async function watchPage(page: Page, deployment: Deployment): Promise<WatchedPage> {
   await reportPolicyViolations(page);
   const problems: string[] = [];
+  const consoleErrors: ConsoleError[] = [];
   const failures: string[] = [];
   const expected: string[] = [];
+  const expectedConsoleErrors: string[] = [];
+  const abortedPaths: RegExp[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error' && !failedResourceLog.test(message.text())) {
-      problems.push(`console: ${message.text()}`);
+      consoleErrors.push({ text: message.text(), path: pathOf(message.location().url) });
     }
   });
   page.on('pageerror', (error) => {
@@ -255,18 +306,21 @@ async function watchPage(page: Page, deployment: Deployment): Promise<WatchedPag
     }
     startOf.set(request, step);
   });
-  const failureChecks: Promise<FailedRequest>[] = [];
+  const failureChecks: Promise<FailedAt>[] = [];
   page.on('requestfailed', (request) => {
     step += 1;
     const started = startOf.get(request) ?? Number.POSITIVE_INFINITY;
     const failed = step;
     failureChecks.push(
       request.response().then((response) => ({
-        description: `${request.method()} ${request.url()}`,
-        reason: request.failure()?.errorText ?? '',
-        answered: response !== null,
-        started,
-        failed,
+        failed: {
+          description: `${request.method()} ${request.url()}`,
+          reason: request.failure()?.errorText ?? '',
+          answered: response !== null,
+          started,
+          failed,
+        },
+        path: pathOf(request.url()),
       })),
     );
   });
@@ -280,9 +334,20 @@ async function watchPage(page: Page, deployment: Deployment): Promise<WatchedPag
     expectFailure: (failure): void => {
       expected.push(describeFailure(failure));
     },
+    expectAbortedRequest: (path): void => {
+      abortedPaths.push(path);
+    },
+    expectConsoleError: (text): void => {
+      expectedConsoleErrors.push(text);
+    },
     verify: async (): Promise<void> => {
       const failedRequests = await Promise.all(failureChecks);
-      expect([...problems, ...unexpectedFailures(failedRequests, { navigations, requests })]).toEqual([]);
+      expect([
+        ...unexpectedConsoleErrors(consoleErrors, expectedConsoleErrors, abortedPaths),
+        ...problems,
+        ...unexpectedFailures(unexpectedAborts(failedRequests, abortedPaths), { navigations, requests }),
+        ...unseenAborts(failedRequests, abortedPaths),
+      ]).toEqual([]);
       expect([...failures].sort()).toEqual([...expected].sort());
     },
   };
@@ -295,6 +360,8 @@ export const diagnosedTest = test.extend<{ diagnostics: Diagnostics }>({
       const others: WatchedPage[] = [];
       await use({
         expectFailure: main.expectFailure,
+        expectAbortedRequest: main.expectAbortedRequest,
+        expectConsoleError: main.expectConsoleError,
         watch: async (other): Promise<PageDiagnostics> => {
           const watched = await watchPage(other, deployment);
           others.push(watched);

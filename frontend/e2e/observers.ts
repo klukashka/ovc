@@ -1,5 +1,7 @@
 import type { Page } from '@playwright/test';
 
+import { languageChunkPattern } from '../scripts/bundle-budget.ts';
+
 declare global {
   interface Window {
     ovcBusyControls?: string[][];
@@ -99,7 +101,8 @@ export async function recordLazyChunkAddresses(page: Page, origin: string): Prom
   const initial = new Set([...shell.matchAll(shellScript)].map((match) => match[1]));
   const addresses: string[] = [];
   await page.route(scriptAsset, async (route) => {
-    if (!initial.has(new URL(route.request().url()).pathname)) {
+    const path = new URL(route.request().url()).pathname;
+    if (!initial.has(path) && !languageChunkPattern.test(path.slice(1))) {
       addresses.push(await page.evaluate(() => globalThis.location.href));
     }
     await route.continue();

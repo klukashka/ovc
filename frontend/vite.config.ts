@@ -6,7 +6,13 @@ import { dirname, join, resolve } from 'node:path';
 import { type Plugin, type ProxyOptions, loadEnv } from 'vite';
 import { defineConfig } from 'vitest/config';
 
-import { buildManifestPath, firstLoadModules } from './scripts/bundle-budget.ts';
+import {
+  buildManifestPath,
+  firstLoadModules,
+  languageChunkContentProblems,
+  languageChunkFileName,
+  languageChunks,
+} from './scripts/bundle-budget.ts';
 import { realtimePath } from './src/lib/realtime/socket.ts';
 import { pageHeaders, responseHeaders } from './security-headers.ts';
 
@@ -34,6 +40,20 @@ function moveBuildManifest(): Plugin {
   };
 }
 
+function languageChunksHoldOnlyTexts(): Plugin {
+  return {
+    name: 'ovc-language-chunks-hold-only-texts',
+    apply: 'build',
+    generateBundle(_options, bundle): void {
+      const chunks = Object.values(bundle).flatMap((output) => (output.type === 'chunk' ? [output] : []));
+      const problems = languageChunkContentProblems(chunks);
+      if (problems.length > 0) {
+        this.error(`language chunks must hold only their own texts:\n${problems.join('\n')}`);
+      }
+    },
+  };
+}
+
 function firstLoadGroups(): {
   name: string;
   test: (id: string) => boolean;
@@ -46,6 +66,11 @@ function firstLoadGroups(): {
     priority: 1,
     includeDependenciesRecursively: false,
   }));
+}
+
+function chunkFileName(chunk: { facadeModuleId: string | null }): string {
+  const language = languageChunks.find(({ module }) => chunk.facadeModuleId?.endsWith(`/${module}`) === true);
+  return language === undefined ? 'assets/[name]-[hash].js' : languageChunkFileName(language.language);
 }
 
 function setting(value: string | undefined): string | undefined {
@@ -71,13 +96,14 @@ export default defineConfig(({ mode }) => {
   const environment = loadEnv(mode, import.meta.dirname, 'OVC_FRONTEND_');
   const apiTarget = environment.OVC_FRONTEND_API_TARGET ?? defaultApiTarget;
   return {
-    plugins: [react(), tailwindcss(), moveBuildManifest()],
+    plugins: [react(), tailwindcss(), languageChunksHoldOnlyTexts(), moveBuildManifest()],
     build: {
       assetsInlineLimit: 0,
       sourcemap: false,
       manifest: true,
       rolldownOptions: {
         output: {
+          chunkFileNames: chunkFileName,
           codeSplitting: { groups: [...firstLoadGroups(), { name: 'vendor', test: /[\\/]node_modules[\\/]/ }] },
         },
       },

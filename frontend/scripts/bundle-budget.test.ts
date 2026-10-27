@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  type BuiltChunk,
   checkBundle,
   committedPublicFiles,
   kilobyte,
+  languageChunkContentProblems,
   manifestNamedFiles,
   parseManifest,
   type ServedEntry,
@@ -16,6 +18,9 @@ const todayPage = 'src/features/home/TodayPage.tsx';
 const pageModules = [homePage, todayPage];
 
 const firstLoadChunks = ['_gate', '_rule', '_address', '_invitation'];
+
+const russianTexts = 'src/lib/i18n/ru.ts';
+const englishTexts = 'src/lib/i18n/en.ts';
 
 function firstLoadEntries(homeImports: readonly string[]): Record<string, unknown> {
   return {
@@ -39,8 +44,10 @@ function manifestWith(
       isEntry: true,
       imports: entryImports,
       css: ['assets/index.css'],
-      dynamicImports: [homePage, todayPage],
+      dynamicImports: [homePage, todayPage, russianTexts, englishTexts],
     },
+    [russianTexts]: { file: 'assets/language-ru-a1.js', isDynamicEntry: true },
+    [englishTexts]: { file: 'assets/language-en-b2.js', isDynamicEntry: true },
     _vendor: { file: 'assets/vendor.js' },
     [todayPage]: { file: 'assets/TodayPage.js', isDynamicEntry: true, imports: ['_vendor'] },
     _shared: { file: 'assets/shared.js', imports: ['_vendor'] },
@@ -76,8 +83,66 @@ describe('bundle check', () => {
     );
 
     expect(report.failures).toEqual([
-      'the entry and its static imports are 181.0 KB gzip of JavaScript, above 180.0 KB',
+      'the entry and its static imports with the largest language chunk are 181.0 KB gzip of JavaScript, above 180.0 KB',
       "the first load of a student's Home is 256.0 KB gzip, above 250.0 KB",
+    ]);
+  });
+
+  test('counts the largest language chunk in the entry and page budgets', () => {
+    const manifest = manifestWith(['_vendor', ...firstLoadChunks]);
+    const languageSizes = { 'assets/language-ru-a1.js': 6, 'assets/language-en-b2.js': 5 };
+
+    const report = checkBundle(
+      manifest,
+      pageModules,
+      sizes({ ...withinBudget, ...languageSizes, 'assets/index.js': 35 }),
+    );
+
+    expect(report.lines).toEqual([
+      'entry and its static imports: 175.0 KB gzip of JavaScript, with the largest language chunk 6.0 KB: 181.0 KB (limit 180.0 KB)',
+      "first load of a student's Home: 196.0 KB gzip (limit 250.0 KB)",
+      "first load of a tutor's Today: 191.0 KB gzip (limit 400.0 KB)",
+      '2 page modules load on demand',
+    ]);
+    expect(report.failures).toEqual([
+      'the entry and its static imports with the largest language chunk are 181.0 KB gzip of JavaScript, above 180.0 KB',
+    ]);
+  });
+
+  test('fails when a language is part of the first load of every page or has no chunk of its own', () => {
+    const manifest = manifestWith(['_vendor', ...firstLoadChunks, russianTexts], [], [englishTexts]);
+
+    const report = checkBundle(manifest, pageModules, sizes(withinBudget));
+
+    expect(report.failures).toEqual([
+      `${russianTexts} is not a language chunk loaded on demand`,
+      `${englishTexts} is not a language chunk loaded on demand`,
+    ]);
+  });
+
+  test('fails when a language chunk is not named as one, so the token pages could not tell it from route code', () => {
+    const extra = { [englishTexts]: { file: 'assets/en-b2.js', isDynamicEntry: true } };
+    const manifest = manifestWith(['_vendor', ...firstLoadChunks], [], [], extra);
+
+    const report = checkBundle(manifest, pageModules, sizes(withinBudget));
+
+    expect(report.failures).toEqual([`${englishTexts} is not a language chunk loaded on demand`]);
+  });
+
+  test('fails when a language chunk imports other chunks or another chunk takes a language chunk name', () => {
+    const extra = {
+      [russianTexts]: { file: 'assets/language-ru-a1.js', isDynamicEntry: true, imports: ['_shared'] },
+      [englishTexts]: { file: 'assets/language-en-b2.js', isDynamicEntry: true, dynamicImports: [todayPage] },
+      [todayPage]: { file: 'assets/language-ru-c3.js', isDynamicEntry: true, imports: ['_vendor'] },
+    };
+    const manifest = manifestWith(['_vendor', ...firstLoadChunks], [], [], extra);
+
+    const report = checkBundle(manifest, pageModules, sizes(withinBudget));
+
+    expect(report.failures).toEqual([
+      `${russianTexts} imports other chunks, so its chunk could carry code`,
+      `${englishTexts} imports other chunks, so its chunk could carry code`,
+      `${todayPage} is built as assets/language-ru-c3.js, a language chunk name, but is not a language's texts`,
     ]);
   });
 
@@ -132,6 +197,44 @@ describe('bundle check', () => {
     const parse = (): unknown => parseManifest(malformed);
 
     expect(parse).toThrow('manifest entry index.html has no file');
+  });
+});
+
+describe('language chunk contents', () => {
+  const root = '/work/frontend';
+
+  function builtChunk(fileName: string, facade: string | null, modules: readonly string[]): BuiltChunk {
+    return {
+      fileName,
+      facadeModuleId: facade === null ? null : `${root}/${facade}`,
+      moduleIds: modules.map((module) => `${root}/${module}`),
+    };
+  }
+
+  test('accepts each language built alone into its own chunk', () => {
+    const chunks = [
+      builtChunk('assets/language-ru-a1.js', russianTexts, [russianTexts]),
+      builtChunk('assets/language-en-b2.js', englishTexts, [englishTexts]),
+      builtChunk('assets/index.js', 'index.html', ['src/main.tsx', 'src/lib/i18n/i18n.ts']),
+    ];
+
+    const problems = languageChunkContentProblems(chunks);
+
+    expect(problems).toEqual([]);
+  });
+
+  test('refuses a language chunk that also holds code and a language merged into another chunk', () => {
+    const chunks = [
+      builtChunk('assets/language-ru-a1.js', russianTexts, [russianTexts, 'src/lib/format/dates.ts']),
+      builtChunk('assets/index.js', 'index.html', ['src/main.tsx', englishTexts]),
+    ];
+
+    const problems = languageChunkContentProblems(chunks);
+
+    expect(problems).toEqual([
+      `assets/language-ru-a1.js holds ${russianTexts} together with other modules`,
+      `assets/index.js holds ${englishTexts} together with other modules`,
+    ]);
   });
 });
 

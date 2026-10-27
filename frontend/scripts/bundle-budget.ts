@@ -1,11 +1,14 @@
 import { resolve } from 'node:path';
 
+import { type Language, languages } from '../src/lib/i18n/languages.ts';
+
 export interface ManifestChunk {
   readonly file: string;
   readonly name: string | null;
   readonly isEntry: boolean;
   readonly isDynamicEntry: boolean;
   readonly imports: readonly string[];
+  readonly dynamicImports: readonly string[];
   readonly css: readonly string[];
   readonly assets: readonly string[];
 }
@@ -40,6 +43,53 @@ export const firstLoadModules: readonly FirstLoadModule[] = [
   { chunk: 'address-token', module: 'src/features/auth/AddressToken.tsx' },
   { chunk: 'invitation-token', module: 'src/features/auth/InvitationToken.tsx' },
 ];
+
+export interface LanguageChunk {
+  readonly language: Language;
+  readonly module: string;
+}
+
+export const languageChunks: readonly LanguageChunk[] = languages.map((language) => ({
+  language,
+  module: `src/lib/i18n/${language}.ts`,
+}));
+
+export const languageChunkPattern = new RegExp(`^assets/language-(${languages.join('|')})-[^/]+\\.js$`);
+
+export function languageChunkFileName(language: Language): string {
+  return `assets/language-${language}-[hash].js`;
+}
+
+export function languageOfChunkFile(file: string): Language | null {
+  const named = languageChunkPattern.exec(file)?.[1];
+  return languages.find((language) => language === named) ?? null;
+}
+
+export interface BuiltChunk {
+  readonly fileName: string;
+  readonly facadeModuleId: string | null;
+  readonly moduleIds: readonly string[];
+}
+
+function isModule(id: string | null, module: string): boolean {
+  return id?.endsWith(`/${module}`) === true;
+}
+
+export function languageChunkContentProblems(chunks: readonly BuiltChunk[]): string[] {
+  const problems: string[] = [];
+  for (const { module } of languageChunks) {
+    const holders = chunks.filter((chunk) => chunk.moduleIds.some((id) => isModule(id, module)));
+    for (const holder of holders) {
+      if (holder.moduleIds.length !== 1 || !isModule(holder.facadeModuleId, module)) {
+        problems.push(`${holder.fileName} holds ${module} together with other modules`);
+      }
+    }
+    if (holders.length !== 1) {
+      problems.push(`${module} is built into ${String(holders.length)} chunks instead of one of its own`);
+    }
+  }
+  return problems;
+}
 
 export const firstLoadBudgets: readonly Budget[] = [
   { name: "a student's Home", pages: ['src/features/home/HomePage.tsx'], limit: 250 * kilobyte },
@@ -86,6 +136,7 @@ export function parseManifest(json: unknown): Manifest {
       isEntry: flag('isEntry' in value ? value.isEntry : undefined, 'isEntry', key),
       isDynamicEntry: flag('isDynamicEntry' in value ? value.isDynamicEntry : undefined, 'isDynamicEntry', key),
       imports: strings('imports' in value ? value.imports : undefined, 'imports', key),
+      dynamicImports: strings('dynamicImports' in value ? value.dynamicImports : undefined, 'dynamicImports', key),
       css: strings('css' in value ? value.css : undefined, 'css', key),
       assets: strings('assets' in value ? value.assets : undefined, 'assets', key),
     });
@@ -126,6 +177,44 @@ function kilobytes(bytes: number): string {
   return `${(bytes / kilobyte).toFixed(1)} KB`;
 }
 
+interface LanguageLoad {
+  readonly size: number;
+  readonly failures: readonly string[];
+}
+
+function largestLanguageLoad(
+  manifest: Manifest,
+  initial: ReadonlySet<string>,
+  sizeOf: (file: string) => number,
+): LanguageLoad {
+  const failures: string[] = [];
+  let largest = 0;
+  for (const { language, module } of languageChunks) {
+    const chunk = manifest.get(module);
+    if (
+      chunk === undefined ||
+      !chunk.isDynamicEntry ||
+      initial.has(chunk.file) ||
+      languageOfChunkFile(chunk.file) !== language
+    ) {
+      failures.push(`${module} is not a language chunk loaded on demand`);
+      continue;
+    }
+    if (chunk.imports.length > 0 || chunk.dynamicImports.length > 0) {
+      failures.push(`${module} imports other chunks, so its chunk could carry code`);
+    }
+    const added = new Set([...staticFiles(manifest, [module])].filter((file) => !initial.has(file)));
+    largest = Math.max(largest, total(added, sizeOf));
+  }
+  const languageFiles = new Set(languageChunks.map(({ module }) => manifest.get(module)?.file));
+  for (const [key, chunk] of manifest) {
+    if (languageChunkPattern.test(chunk.file) && !languageFiles.has(chunk.file)) {
+      failures.push(`${key} is built as ${chunk.file}, a language chunk name, but is not a language's texts`);
+    }
+  }
+  return { size: largest, failures };
+}
+
 function inFirstLoad(manifest: Manifest, initial: ReadonlySet<string>, chunk: string): boolean {
   const named = [...manifest.values()].filter((candidate) => candidate.name === chunk);
   return named.length === 1 && named.every((candidate) => initial.has(candidate.file) && !candidate.isDynamicEntry);
@@ -143,17 +232,20 @@ export function checkBundle(
     failures.push(`${entryKey} is not an entry of the build`);
   }
   const initial = staticFiles(manifest, [entryKey]);
-  const entrySize = total(new Set([...initial].filter((file) => file.endsWith('.js'))), sizeOf);
+  const staticSize = total(new Set([...initial].filter((file) => file.endsWith('.js'))), sizeOf);
+  const language = largestLanguageLoad(manifest, initial, sizeOf);
+  failures.push(...language.failures);
+  const entrySize = staticSize + language.size;
   lines.push(
-    `entry and its static imports: ${kilobytes(entrySize)} gzip of JavaScript (limit ${kilobytes(entryLimit)})`,
+    `entry and its static imports: ${kilobytes(staticSize)} gzip of JavaScript, with the largest language chunk ${kilobytes(language.size)}: ${kilobytes(entrySize)} (limit ${kilobytes(entryLimit)})`,
   );
   if (entrySize > entryLimit) {
     failures.push(
-      `the entry and its static imports are ${kilobytes(entrySize)} gzip of JavaScript, above ${kilobytes(entryLimit)}`,
+      `the entry and its static imports with the largest language chunk are ${kilobytes(entrySize)} gzip of JavaScript, above ${kilobytes(entryLimit)}`,
     );
   }
   for (const budget of firstLoadBudgets) {
-    const size = total(staticFiles(manifest, [entryKey, ...budget.pages]), sizeOf);
+    const size = total(staticFiles(manifest, [entryKey, ...budget.pages]), sizeOf) + language.size;
     lines.push(`first load of ${budget.name}: ${kilobytes(size)} gzip (limit ${kilobytes(budget.limit)})`);
     if (size > budget.limit) {
       failures.push(`the first load of ${budget.name} is ${kilobytes(size)} gzip, above ${kilobytes(budget.limit)}`);

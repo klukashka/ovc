@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import type { i18n } from 'i18next';
 import { I18nextProvider } from 'react-i18next';
 import { afterEach, describe, expect, test } from 'vitest';
@@ -21,9 +21,11 @@ async function renderSwitch(preferences: PreferenceStore): Promise<i18n> {
 }
 
 async function choose(name: string): Promise<void> {
-  await act(async () => {
+  act(() => {
     screen.getByRole('button', { name }).click();
-    await Promise.resolve();
+  });
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name }).getAttribute('aria-pressed')).toBe('true');
   });
 }
 

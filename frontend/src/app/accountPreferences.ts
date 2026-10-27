@@ -1,6 +1,7 @@
 import type { i18n } from 'i18next';
 
 import type { Me } from '../lib/api/session.ts';
+import { reportLanguageLoadFailure, switchLanguage } from '../lib/i18n/i18n.ts';
 import { type PreferenceStore, preferenceKeys } from '../lib/preferences/store.ts';
 
 export const darkSchemeQuery = '(prefers-color-scheme: dark)';
@@ -31,11 +32,16 @@ export async function applyAccountPreferences(
   root: HTMLElement,
   prefersDark: boolean,
 ): Promise<void> {
-  preferences.write(preferenceKeys.language, me.language);
   preferences.write(preferenceKeys.theme, me.theme);
   root.dataset.themePreference = me.theme;
   root.dataset.theme = resolvedTheme(me.theme, prefersDark);
-  if (translations.language !== me.language) {
-    await translations.changeLanguage(me.language);
+  const applied =
+    translations.language === me.language ||
+    (await switchLanguage(translations, me.language).catch((error: unknown) => {
+      reportLanguageLoadFailure(error);
+      return false;
+    }));
+  if (applied) {
+    preferences.write(preferenceKeys.language, me.language);
   }
 }

@@ -298,4 +298,25 @@ describe('frontend lint configuration', () => {
 
     expect(found).toEqual([]);
   });
+
+  test.each([
+    ['a value import', "import { languages } from './languages.ts';\nexport const ru = { list: languages };\n"],
+    ['a dynamic import', "export const ru = { later: import('./languages.ts') };\n"],
+    ['a re-export', "export { languages } from './languages.ts';\n"],
+    ['a call', 'export const ru = { stamp: String(1) };\n'],
+    ['a function', 'export const ru = { stamp: (): string => "x" };\n'],
+  ])('refuses %s in a language file', async (_name, source) => {
+    const found = await ruleIds(source, resolve(frontendRoot, 'src/lib/i18n/ru.ts'));
+
+    expect(found).toContain('no-restricted-syntax');
+  });
+
+  test('accepts texts with a type-only import in a language file', async () => {
+    const source =
+      "import type { Resources } from './resources.ts';\n\nexport const en: Resources = {} as Resources;\n";
+
+    const found = await ruleIds(source, resolve(frontendRoot, 'src/lib/i18n/en.ts'));
+
+    expect(found).not.toContain('no-restricted-syntax');
+  });
 });
