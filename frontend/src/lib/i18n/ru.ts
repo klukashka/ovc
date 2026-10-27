@@ -585,6 +585,7 @@ export const ru = {
       joinRequestAccepted: 'Ваш запрос принят',
       joinRequestDeclined: 'Ваш запрос не принят',
       relationshipEnded: 'Совместные занятия завершены',
+      lessonReminder1h: 'Урок начнётся через час',
     },
   },
   errors: {

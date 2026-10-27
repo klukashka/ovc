@@ -48,25 +48,15 @@ func newServer(t *testing.T) (*httptest.Server, *testdb.Database) {
 	shared := clock.NewShared(database.Pool)
 	random := &countingRandom{}
 	sink := mail.NewSink(database.Pool, random)
-	notifier, err := notifications.New(sink, "https://ovc.example", map[domain.OutboxKind]notifications.Builder{greetingKind: greeting{}})
+	notifier, err := notifications.New(sink, "https://ovc.example", map[domain.OutboxKind]notifications.Builder{greetingKind: greeting{}},
+		notifications.Dispatch{Logger: logger})
 	if err != nil {
 		t.Fatal(err)
 	}
 	queue := outbox.New(repositories.NewStore(database.Pool), random, logger)
 	lanes := []worker.Lane{{Name: domain.LaneEmail, Concurrency: 2, Perform: notifier.Deliver}}
-	links, err := core.NewUnsubscribeTokens(core.NewSecret("test-unsubscribe-material-0123456789abcdef"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	keys, err := core.DeriveKeys(core.NewSecret("test-signing-material-0123456789abcdef"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	preferences := notifications.NewPreferences(notifications.PreferenceDependencies{
-		Store: repositories.NewStore(database.Pool), Clock: shared, Tokens: links, Keys: keys, Logger: logger,
-	})
 	routes := testcontrol.New(testcontrol.Dependencies{
-		Logger: logger, Clock: shared, Worker: worker.New(logger, shared, queue, lanes, nil, worker.DefaultTiming()), Sink: sink, Preferences: preferences,
+		Logger: logger, Clock: shared, Worker: worker.New(logger, shared, queue, lanes, nil, worker.DefaultTiming()), Sink: sink,
 	})
 	handler, err := api.NewHandler(api.Options{
 		Logger:       logger,
@@ -238,25 +228,6 @@ func TestMailRouteRequiresARecipient(t *testing.T) {
 
 	if status != http.StatusUnprocessableEntity || errorCode(t, body) != "validation_failed" {
 		t.Fatalf("got %d %s", status, body)
-	}
-}
-
-func TestUnsubscribeTokenRouteRefusesAMalformedUserOrAnUnknownGroup(t *testing.T) {
-	server, _ := newServer(t)
-	post(t, server, "/__test__/clock", "application/json", "", `{"set":"2030-03-10T09:00:00Z"}`)
-
-	badUser, badUserBody := post(t, server, "/__test__/unsubscribe-token", "application/json", "", `{"user":"x","group":"homework"}`)
-	badGroup, badGroupBody := post(t, server, "/__test__/unsubscribe-token", "application/json", "", `{"user":"`+domain.UserID{1}.String()+`","group":"news"}`)
-	minted, mintedBody := post(t, server, "/__test__/unsubscribe-token", "application/json", "", `{"user":"`+domain.UserID{1}.String()+`","group":"homework"}`)
-
-	if badUser != http.StatusUnprocessableEntity || !strings.Contains(badUserBody, `"path":"user"`) {
-		t.Fatalf("a malformed user answered %d %s", badUser, badUserBody)
-	}
-	if badGroup != http.StatusUnprocessableEntity || !strings.Contains(badGroupBody, `"path":"group"`) {
-		t.Fatalf("an unknown group answered %d %s", badGroup, badGroupBody)
-	}
-	if minted != http.StatusOK || !strings.Contains(mintedBody, `"token":"v1.`) {
-		t.Fatalf("minting answered %d %s", minted, mintedBody)
 	}
 }
 

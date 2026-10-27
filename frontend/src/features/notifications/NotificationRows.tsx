@@ -27,6 +27,7 @@ const eventTexts = {
   'join_request.accepted': 'notifications.event.joinRequestAccepted',
   'join_request.declined': 'notifications.event.joinRequestDeclined',
   'relationship.ended': 'notifications.event.relationshipEnded',
+  'lesson.reminder_1h': 'notifications.event.lessonReminder1h',
 } as const satisfies Readonly<Record<NotificationEvent, string>>;
 
 export function useMarkRead(): (selection: ReadSelection) => Promise<void> {

@@ -14,12 +14,13 @@ const (
 	NotificationJoinRequestAccepted NotificationEvent = "join_request.accepted"
 	NotificationJoinRequestDeclined NotificationEvent = "join_request.declined"
 	NotificationRelationshipEnded   NotificationEvent = "relationship.ended"
+	NotificationLessonReminder1h    NotificationEvent = "lesson.reminder_1h"
 )
 
 func NotificationEvents() []NotificationEvent {
 	return []NotificationEvent{
 		NotificationInvitationAccepted, NotificationJoinRequestCreated, NotificationJoinRequestAccepted,
-		NotificationJoinRequestDeclined, NotificationRelationshipEnded,
+		NotificationJoinRequestDeclined, NotificationRelationshipEnded, NotificationLessonReminder1h,
 	}
 }
 

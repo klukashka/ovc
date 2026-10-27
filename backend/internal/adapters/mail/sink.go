@@ -16,18 +16,21 @@ import (
 )
 
 const (
-	statementInsertSink = "INSERT INTO mail_sink (id, recipient, subject, text_body, html_body, links, message_id, sent_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
-	statementReadSink   = "SELECT subject, text_body, html_body, links, sent_at FROM mail_sink WHERE recipient = $1 ORDER BY sent_at, id"
+	statementInsertSink = "INSERT INTO mail_sink (id, recipient, subject, text_body, html_body, links, message_id, sent_at, headers) " +
+		"VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
+	statementReadSink = "SELECT subject, text_body, html_body, links, sent_at, message_id, headers FROM mail_sink WHERE recipient = $1 ORDER BY sent_at, id"
 )
 
 var linkPattern = regexp.MustCompile(`https?://[^\s<>"']+`)
 
 type SinkMessage struct {
-	Subject string
-	Text    string
-	HTML    string
-	Links   []string
-	SentAt  time.Time
+	Subject   string
+	Text      string
+	HTML      string
+	Links     []string
+	SentAt    time.Time
+	MessageID string
+	Headers   map[string]string
 }
 
 type Sink struct {
@@ -47,8 +50,12 @@ func (s *Sink) Send(ctx context.Context, message Message) error {
 	if err != nil {
 		return err
 	}
+	headers := map[string]string{}
+	for _, header := range messageHeaders(message) {
+		headers[header[0]] = header[1]
+	}
 	_, err = s.pool.Exec(ctx, statementInsertSink, id, message.To, singleLine(message.Subject), message.Text, message.HTML,
-		links(message), message.MessageID, message.Date.UTC())
+		links(message), message.MessageID, message.Date.UTC(), headers)
 	if err != nil {
 		return fmt.Errorf("write the mail sink: %w", err)
 	}
@@ -64,7 +71,7 @@ func (s *Sink) Messages(ctx context.Context, recipient string) ([]SinkMessage, e
 	var messages []SinkMessage
 	for rows.Next() {
 		var message SinkMessage
-		if err := rows.Scan(&message.Subject, &message.Text, &message.HTML, &message.Links, &message.SentAt); err != nil {
+		if err := rows.Scan(&message.Subject, &message.Text, &message.HTML, &message.Links, &message.SentAt, &message.MessageID, &message.Headers); err != nil {
 			return nil, fmt.Errorf("read a mail sink row: %w", err)
 		}
 		message.SentAt = message.SentAt.UTC()

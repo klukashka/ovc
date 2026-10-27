@@ -3,13 +3,14 @@ package mail
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
-	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
 	"net/mail"
 	"net/textproto"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -17,13 +18,20 @@ import (
 var ErrInvalidMessage = errors.New("the message cannot be sent")
 
 type Message struct {
-	To        string
-	Subject   string
-	Text      string
-	HTML      string
-	MessageID string
-	Date      time.Time
+	To          string
+	Subject     string
+	Text        string
+	HTML        string
+	MessageID   string
+	Date        time.Time
+	Unsubscribe string
 }
+
+const (
+	headerListUnsubscribe     = "List-Unsubscribe"
+	headerListUnsubscribePost = "List-Unsubscribe-Post"
+	oneClickUnsubscribe       = "List-Unsubscribe=One-Click"
+)
 
 type Mailer interface {
 	Send(ctx context.Context, message Message) error
@@ -44,7 +52,48 @@ func validate(message Message) error {
 	if message.Date.IsZero() {
 		return fmt.Errorf("%w: the message has no date", ErrInvalidMessage)
 	}
+	if malformedUnsubscribe(message.Unsubscribe) {
+		return fmt.Errorf("%w: the unsubscribe address is malformed", ErrInvalidMessage)
+	}
 	return nil
+}
+
+func malformedUnsubscribe(address string) bool {
+	if address == "" {
+		return false
+	}
+	parsed, err := url.Parse(address)
+	return err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" || strings.ContainsAny(address, "\r\n<> ,")
+}
+
+const encodedWordBytes = 45
+
+func encodedSubject(subject string) string {
+	words := []string{}
+	var chunk []byte
+	for _, character := range subject {
+		encoded := []byte(string(character))
+		if len(chunk)+len(encoded) > encodedWordBytes {
+			words = append(words, "=?utf-8?b?"+base64.StdEncoding.EncodeToString(chunk)+"?=")
+			chunk = nil
+		}
+		chunk = append(chunk, encoded...)
+	}
+	words = append(words, "=?utf-8?b?"+base64.StdEncoding.EncodeToString(chunk)+"?=")
+	return strings.Join(words, "\r\n ")
+}
+
+func messageHeaders(message Message) [][2]string {
+	headers := [][2]string{
+		{"Subject", encodedSubject(singleLine(message.Subject))},
+		{"Date", message.Date.UTC().Format(time.RFC1123Z)},
+		{"Message-ID", "<" + message.MessageID + ">"},
+	}
+	if message.Unsubscribe != "" {
+		headers = append(headers, [2]string{headerListUnsubscribe, "<" + message.Unsubscribe + ">"},
+			[2]string{headerListUnsubscribePost, oneClickUnsubscribe})
+	}
+	return headers
 }
 
 func compose(from string, message Message) ([]byte, error) {
@@ -64,15 +113,9 @@ func compose(from string, message Message) ([]byte, error) {
 	}
 
 	var composed bytes.Buffer
-	headers := [][2]string{
-		{"From", from},
-		{"To", message.To},
-		{"Subject", mime.BEncoding.Encode("utf-8", singleLine(message.Subject))},
-		{"Date", message.Date.UTC().Format(time.RFC1123Z)},
-		{"Message-ID", "<" + message.MessageID + ">"},
-		{"MIME-Version", "1.0"},
-		{"Content-Type", "multipart/alternative; boundary=" + parts.Boundary()},
-	}
+	headers := [][2]string{{"From", from}, {"To", message.To}}
+	headers = append(headers, messageHeaders(message)...)
+	headers = append(headers, [2]string{"MIME-Version", "1.0"}, [2]string{"Content-Type", "multipart/alternative; boundary=" + parts.Boundary()})
 	for _, header := range headers {
 		composed.WriteString(header[0] + ": " + header[1] + "\r\n")
 	}

@@ -1,0 +1,404 @@
+package schedule
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"slices"
+	"time"
+
+	"ovc/backend/internal/adapters/clock"
+	"ovc/backend/internal/core"
+	"ovc/backend/internal/domain"
+	"ovc/backend/internal/repositories"
+)
+
+const jobAudienceAttempts = 2
+
+var errAudienceMoved = errors.New("the audience changed between reading and locking it")
+
+type JobSettings struct {
+	Wall            func() time.Time
+	StatusLimit     int32
+	ReminderBatch   int32
+	ReminderBudget  time.Duration
+	ExtensionBatch  int32
+	ExtensionBudget time.Duration
+}
+
+func DefaultJobSettings() JobSettings {
+	return JobSettings{
+		Wall: clock.System{}.Now, StatusLimit: 500, ReminderBatch: 50, ReminderBudget: 20 * time.Second,
+		ExtensionBatch: 200, ExtensionBudget: 2 * time.Minute,
+	}
+}
+
+type Jobs struct {
+	service  *Service
+	settings JobSettings
+}
+
+func NewJobs(service *Service, settings JobSettings) *Jobs {
+	return &Jobs{service: service, settings: settings}
+}
+
+type audienceMember struct {
+	student      domain.UserID
+	relationship domain.RelationshipID
+}
+
+type jobAudience struct {
+	members []audienceMember
+	active  bool
+}
+
+func (a jobAudience) students() []domain.UserID {
+	students := make([]domain.UserID, 0, len(a.members))
+	for _, member := range a.members {
+		students = append(students, member.student)
+	}
+	return students
+}
+
+func lockJobAudience(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, relationship *domain.RelationshipID, group *domain.GroupID,
+) (jobAudience, error) {
+	if relationship != nil {
+		locked, err := repos.Lessons.LockRelationship(ctx, tutor, *relationship)
+		if errors.Is(err, repositories.ErrNotFound) {
+			return jobAudience{}, nil
+		}
+		if err != nil {
+			return jobAudience{}, err
+		}
+		if locked.StudentID == nil || (locked.State != domain.RelationshipActive && locked.State != domain.RelationshipProvisional) {
+			return jobAudience{}, nil
+		}
+		return jobAudience{members: []audienceMember{{student: *locked.StudentID, relationship: locked.ID}}, active: true}, nil
+	}
+	if group == nil {
+		return jobAudience{}, nil
+	}
+	read, err := repos.Groups.MemberIDs(ctx, tutor, *group)
+	if err != nil {
+		return jobAudience{}, err
+	}
+	locked, err := repos.Lessons.LockRelationships(ctx, tutor, sortedRelationships(read))
+	if err != nil {
+		return jobAudience{}, err
+	}
+	archivedAt, err := repos.Lessons.LockGroup(ctx, tutor, *group)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return jobAudience{}, nil
+	}
+	if err != nil {
+		return jobAudience{}, err
+	}
+	members, err := repos.Groups.MemberIDs(ctx, tutor, *group)
+	if err != nil {
+		return jobAudience{}, err
+	}
+	audience := jobAudience{active: archivedAt == nil}
+	lockedIDs := make([]domain.RelationshipID, 0, len(locked))
+	for _, row := range locked {
+		lockedIDs = append(lockedIDs, row.ID)
+		if row.StudentID != nil {
+			audience.members = append(audience.members, audienceMember{student: *row.StudentID, relationship: row.ID})
+		}
+	}
+	if !slices.Equal(sortedRelationships(members), lockedIDs) {
+		return jobAudience{}, errAudienceMoved
+	}
+	return audience, nil
+}
+
+func (j *Jobs) withAudienceRetry(ctx context.Context, work func(repos repositories.Repositories) error) (bool, error) {
+	for attempt := 1; ; attempt++ {
+		err := j.service.deps.Store.WithTx(ctx, work)
+		if !errors.Is(err, errAudienceMoved) {
+			return true, err
+		}
+		if attempt == jobAudienceAttempts {
+			return false, nil
+		}
+	}
+}
+
+func lessonAttributes(lesson domain.LessonID) slog.Attr {
+	return slog.String("lesson_id", lesson.String())
+}
+
+func (j *Jobs) EndUnjoined(ctx context.Context, now time.Time) (int64, error) {
+	endedBefore := now.Add(-domain.LessonEndGrace)
+	due, err := j.service.deps.Store.Repositories().Lessons.DueToEnd(ctx, endedBefore, j.settings.StatusLimit)
+	if err != nil {
+		return 0, err
+	}
+	var ended int64
+	var failures []error
+	for _, lesson := range due {
+		applied, err := j.endLesson(ctx, lesson, endedBefore, now)
+		if err != nil {
+			failures = append(failures, err)
+			j.service.deps.Logger.LogAttrs(ctx, slog.LevelError, "lesson.end_failed", lessonAttributes(lesson), slog.String("kind", core.ErrorKind(err)))
+			continue
+		}
+		if applied {
+			ended++
+		}
+	}
+	j.service.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "lesson.ended_unjoined", slog.Int64("count", ended))
+	return ended, errors.Join(failures...)
+}
+
+func (j *Jobs) endLesson(ctx context.Context, id domain.LessonID, endedBefore time.Time, now time.Time) (bool, error) {
+	ended := false
+	var tutor domain.UserID
+	_, err := j.withAudienceRetry(ctx, func(repos repositories.Repositories) error {
+		ended = false
+		lesson, err := repos.Lessons.JobAudience(ctx, id)
+		if errors.Is(err, repositories.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		tutor = lesson.TutorID
+		audience, err := lockJobAudience(ctx, repos, lesson.TutorID, lesson.RelationshipID, lesson.GroupID)
+		if err != nil {
+			return err
+		}
+		if lesson.SeriesID != nil {
+			if err := repos.Lessons.LockSeriesShared(ctx, *lesson.SeriesID); err != nil {
+				return err
+			}
+		}
+		locked, err := repos.Lessons.LockForJob(ctx, id)
+		if errors.Is(err, repositories.ErrNotFound) {
+			return nil
+		}
+		if err != nil || locked.Status != domain.LessonScheduled {
+			return err
+		}
+		ended, err = repos.Lessons.EndUnjoined(ctx, id, endedBefore, now)
+		if err != nil || !ended {
+			return err
+		}
+		students := audience.students()
+		if err := repos.Lessons.FreezeRoster(ctx, id, students, now); err != nil {
+			return err
+		}
+		return repos.Signals.Entity(ctx, append([]domain.UserID{lesson.TutorID}, students...), domain.EntityLesson, domain.EntityID(id))
+	})
+	if err != nil {
+		return false, err
+	}
+	if ended {
+		j.service.deps.Logger.LogAttrs(ctx, slog.LevelDebug, "lesson.ended_unjoined", tutorAttribute(tutor), lessonAttributes(id))
+	}
+	return ended, nil
+}
+
+type reminderTally struct {
+	lessons    int64
+	recipients int64
+	created    []queuedNotification
+}
+
+type queuedNotification struct {
+	id        domain.NotificationID
+	recipient domain.UserID
+}
+
+func (j *Jobs) QueueReminders(ctx context.Context, now time.Time) (int64, error) {
+	var total int64
+	var failures []error
+	deadline := j.settings.Wall().Add(j.settings.ReminderBudget)
+	for _, kind := range domain.ReminderKinds() {
+		queued, err := j.queueReminders(ctx, kind, now, deadline)
+		total += queued
+		if err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return total, errors.Join(failures...)
+}
+
+func (j *Jobs) queueReminders(ctx context.Context, kind domain.ReminderKind, now time.Time, deadline time.Time) (int64, error) {
+	windowStart, windowEnd := kind.Window(now)
+	after := repositories.ReminderCandidate{StartsAt: windowStart}
+	var tally reminderTally
+	var failures []error
+	for j.settings.Wall().Before(deadline) {
+		batch, err := j.service.deps.Store.Repositories().Lessons.ReminderCandidates(ctx, repositories.ReminderQuery{
+			DayBefore: kind.DayBefore, WindowStart: windowStart, WindowEnd: windowEnd, After: after, Limit: j.settings.ReminderBatch,
+		})
+		if err != nil {
+			failures = append(failures, err)
+			break
+		}
+		for _, candidate := range batch {
+			if err := j.remind(ctx, kind, candidate.ID, windowStart, windowEnd, now, &tally); err != nil {
+				failures = append(failures, err)
+				j.service.deps.Logger.LogAttrs(ctx, slog.LevelError, "lesson.reminder_failed", lessonAttributes(candidate.ID),
+					slog.String("kind", core.ErrorKind(err)))
+			}
+		}
+		if len(batch) < int(j.settings.ReminderBatch) {
+			break
+		}
+		after = batch[len(batch)-1]
+	}
+	for _, created := range tally.created {
+		j.service.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "notification.created", slog.String("event", string(domain.NotificationLessonReminder1h)),
+			slog.String("target_user_id", created.recipient.String()), slog.String("notification_id", created.id.String()))
+	}
+	j.service.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "lesson.reminders_queued", slog.String("reminder", string(kind.Event)),
+		slog.Int64("lessons", tally.lessons), slog.Int64("recipients", tally.recipients))
+	return tally.lessons, errors.Join(failures...)
+}
+
+func (j *Jobs) remind(
+	ctx context.Context, kind domain.ReminderKind, id domain.LessonID, windowStart time.Time, windowEnd time.Time, now time.Time, tally *reminderTally,
+) error {
+	var queued reminderTally
+	_, err := j.withAudienceRetry(ctx, func(repos repositories.Repositories) error {
+		queued = reminderTally{}
+		lesson, err := repos.Lessons.JobAudience(ctx, id)
+		if errors.Is(err, repositories.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		audience, err := lockJobAudience(ctx, repos, lesson.TutorID, lesson.RelationshipID, lesson.GroupID)
+		if err != nil {
+			return err
+		}
+		if lesson.SeriesID != nil {
+			if err := repos.Lessons.LockSeriesShared(ctx, *lesson.SeriesID); err != nil {
+				return err
+			}
+		}
+		locked, err := repos.Lessons.LockForJob(ctx, id)
+		if errors.Is(err, repositories.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !reminderDue(kind, locked, windowStart, windowEnd) {
+			return nil
+		}
+		reminder := reminderRows{kind: kind, lesson: lesson, revision: locked.ScheduleRevision, now: now}
+		if err := j.service.queueReminderRows(ctx, repos, reminder, audience, &queued); err != nil {
+			return err
+		}
+		_, err = repos.Lessons.MarkReminded(ctx, id, kind.DayBefore, locked.ScheduleRevision)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	tally.lessons += queued.lessons
+	tally.recipients += queued.recipients
+	tally.created = append(tally.created, queued.created...)
+	return nil
+}
+
+func reminderDue(kind domain.ReminderKind, lesson repositories.LockedJobLesson, windowStart time.Time, windowEnd time.Time) bool {
+	reminded := lesson.Reminded1hRevision
+	if kind.DayBefore {
+		reminded = lesson.Reminded24hRevision
+	}
+	if lesson.Status != domain.LessonScheduled || (reminded != nil && *reminded == lesson.ScheduleRevision) {
+		return false
+	}
+	return lesson.StartsAt.After(windowStart) && !lesson.StartsAt.After(windowEnd)
+}
+
+type reminderRows struct {
+	kind     domain.ReminderKind
+	lesson   repositories.JobLessonAudience
+	revision int32
+	now      time.Time
+}
+
+func (s *Service) queueReminderRows(
+	ctx context.Context, repos repositories.Repositories, reminder reminderRows, audience jobAudience, queued *reminderTally,
+) error {
+	lesson := reminder.lesson
+	var oneToOneStudent *domain.UserID
+	if lesson.RelationshipID != nil && len(audience.members) == 1 {
+		oneToOneStudent = &audience.members[0].student
+	}
+	recipients := []notificationTarget{{user: lesson.TutorID, student: oneToOneStudent}}
+	for _, member := range audience.members {
+		student, relationship := member.student, member.relationship
+		recipients = append(recipients, notificationTarget{user: student, student: &student, relationship: &relationship})
+	}
+	for _, recipient := range recipients {
+		if err := s.queueReminderEmail(ctx, repos, reminder, recipient.user); err != nil {
+			return err
+		}
+		if !reminder.kind.InApp {
+			continue
+		}
+		created, err := s.insertReminderRow(ctx, repos, reminder, recipient)
+		if err != nil {
+			return err
+		}
+		if created != nil {
+			queued.created = append(queued.created, *created)
+		}
+	}
+	queued.lessons++
+	queued.recipients += int64(len(recipients))
+	return nil
+}
+
+type notificationTarget struct {
+	user         domain.UserID
+	student      *domain.UserID
+	relationship *domain.RelationshipID
+}
+
+func (s *Service) queueReminderEmail(ctx context.Context, repos repositories.Repositories, reminder reminderRows, recipient domain.UserID) error {
+	payload, err := encodeJSON(domain.LessonReminderPayload{
+		Lesson: hexID(reminder.lesson.ID), Recipient: hexID(recipient), Revision: reminder.revision,
+	})
+	if err != nil {
+		return err
+	}
+	id, err := core.NewID[domain.OutboxID](s.deps.Random)
+	if err != nil {
+		return err
+	}
+	_, err = repos.Outbox.Insert(ctx, repositories.NewOutboxRow{
+		ID: id, Lane: domain.LaneEmail, Priority: domain.PriorityHigh, Kind: reminder.kind.Event, Payload: payload,
+		IdempotencyKey: domain.LessonReminderKey(reminder.kind.Event, reminder.lesson.ID, recipient, reminder.revision),
+		NextAttemptAt:  reminder.now, CreatedAt: reminder.now,
+	})
+	return err
+}
+
+func (s *Service) insertReminderRow(
+	ctx context.Context, repos repositories.Repositories, reminder reminderRows, target notificationTarget,
+) (*queuedNotification, error) {
+	id, err := core.NewID[domain.NotificationID](s.deps.Random)
+	if err != nil {
+		return nil, err
+	}
+	inserted, err := repos.Notifications.Insert(ctx, repositories.NewNotification{
+		ID: id, UserID: target.user, TutorID: reminder.lesson.TutorID, StudentID: target.student, Event: domain.NotificationLessonReminder1h,
+		SubjectID: domain.EntityID(reminder.lesson.ID), RelationshipID: target.relationship,
+		IdempotencyKey: domain.LessonReminderKey(reminder.kind.Event, reminder.lesson.ID, target.user, reminder.revision), CreatedAt: reminder.now,
+	})
+	if err != nil || !inserted {
+		return nil, err
+	}
+	if err := repos.Signals.Notification(ctx, target.user, id); err != nil {
+		return nil, err
+	}
+	return &queuedNotification{id: id, recipient: target.user}, nil
+}

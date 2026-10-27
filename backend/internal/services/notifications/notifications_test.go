@@ -3,6 +3,7 @@ package notifications_test
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"slices"
 	"strings"
 	"testing"
@@ -56,7 +57,7 @@ func newService(t *testing.T, mailer mail.Mailer) *notifications.Service {
 			Email: notifications.Email{To: "tutor@example.org", Subject: "Hello", Text: "Hi", HTML: "<p>Hi</p>"}, Identity: "token-2",
 			Recipient: notifications.NoAccountRecipient(),
 		}},
-	})
+	}, notifications.Dispatch{Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +148,7 @@ func recipientService(t *testing.T, mailer mail.Mailer, kinds []domain.OutboxKin
 			Email: notifications.Email{To: "student@example.org", Subject: "Hello", Text: "Hi", HTML: "<p>Hi</p>"}, Recipient: notifications.AccountRecipient(state),
 		}}
 	}
-	service, err := notifications.New(mailer, "https://ovc.example", builders)
+	service, err := notifications.New(mailer, "https://ovc.example", builders, notifications.Dispatch{Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatal(err)
 	}

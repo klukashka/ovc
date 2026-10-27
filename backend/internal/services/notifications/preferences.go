@@ -132,14 +132,6 @@ func (p *Preferences) Unsubscribe(ctx context.Context, token string) error {
 	return nil
 }
 
-func (p *Preferences) MintUnsubscribeToken(ctx context.Context, user domain.UserID, group domain.EmailGroup) (string, error) {
-	now, err := p.deps.Clock.Instant(ctx)
-	if err != nil {
-		return "", err
-	}
-	return p.deps.Tokens.Mint(user, group, now)
-}
-
 func (p *Preferences) admit(ctx context.Context, token string) (core.UnsubscribeClaims, error) {
 	now, err := p.deps.Clock.Instant(ctx)
 	if err != nil {

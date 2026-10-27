@@ -32,6 +32,7 @@ import (
 	"ovc/backend/internal/services/tutoring"
 	"ovc/backend/internal/testdb"
 	"ovc/backend/internal/testhasher"
+	"ovc/backend/internal/testmail"
 	"ovc/backend/internal/teststorage"
 	"ovc/backend/internal/worker"
 )
@@ -107,6 +108,30 @@ type authHarness struct {
 	objects   *storage.S3
 	contested *contestedRow
 	links     core.UnsubscribeTokens
+	keys      core.Keys
+	mailer    *testmail.Sender
+	schedule  *schedule.Service
+	jobs      *lessonJobs
+}
+
+type lessonJobs struct {
+	mutex   sync.Mutex
+	current *schedule.Jobs
+}
+
+func (j *lessonJobs) use(jobs *schedule.Jobs) {
+	j.mutex.Lock()
+	defer j.mutex.Unlock()
+	j.current = jobs
+}
+
+func (j *lessonJobs) run(job func(*schedule.Jobs, context.Context, time.Time) (int64, error)) func(context.Context, time.Time) (int64, error) {
+	return func(ctx context.Context, now time.Time) (int64, error) {
+		j.mutex.Lock()
+		current := j.current
+		j.mutex.Unlock()
+		return job(current, ctx, now)
+	}
 }
 
 func newAuthHarness(t *testing.T) *authHarness {
@@ -193,6 +218,7 @@ func newAuthHarnessStoring(
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	sink := mail.NewSink(database.Pool, random)
+	mailer := testmail.New(sink)
 	accountEmails, err := notifications.NewAccountEmails(store, random, publicOrigin)
 	if err != nil {
 		t.Fatal(err)
@@ -201,20 +227,25 @@ func newAuthHarnessStoring(
 	if err != nil {
 		t.Fatal(err)
 	}
-	builders, err := notifications.Combine(accountEmails.Builders(), relationshipEmails.Builders())
+	lessonEmails, err := notifications.NewLessonEmails(store, links, publicOrigin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	notifier, err := notifications.New(sink, publicOrigin, builders)
+	builders, err := notifications.Combine(accountEmails.Builders(), relationshipEmails.Builders(), lessonEmails.Builders())
 	if err != nil {
 		t.Fatal(err)
 	}
+	notifier, err := notifications.New(mailer, publicOrigin, builders, notifications.Dispatch{Store: store, Keys: keys, Logger: logger})
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs := &lessonJobs{current: schedule.NewJobs(scheduleService, schedule.DefaultJobSettings())}
 	lanes := []worker.Lane{
 		{Name: domain.LaneEmail, Concurrency: 10, Perform: notifier.Deliver},
 		{Name: domain.LaneStorageDelete, Concurrency: 4, Perform: fileService.DeleteObject},
 	}
 	purger := accounts.NewPurger(store, fileService, tutoringService, logger)
-	jobs := []worker.Job{
+	scheduled := []worker.Job{
 		{Name: domain.JobUploadsExpire, Every: time.Hour, Run: fileService.ExpirePending},
 		{Name: domain.JobAccountsPurge, Every: time.Hour, Run: purger.PurgeDeleted},
 		{Name: domain.JobAccountsCleanupUnverified, Every: time.Hour, Run: purger.CleanupUnverified},
@@ -224,11 +255,15 @@ func newAuthHarnessStoring(
 		{Name: domain.JobReclaimExpire, Every: time.Hour, Run: tutoringService.ExpireReclaims},
 		{Name: domain.JobJoinRequestsExpire, Every: time.Hour, Run: tutoringService.ExpireJoinRequests},
 		{Name: domain.JobNotificationsCleanup, Every: time.Hour, Run: inbox.Cleanup},
+		{Name: domain.JobLessonStatus, Every: time.Minute, Run: jobs.run((*schedule.Jobs).EndUnjoined)},
+		{Name: domain.JobLessonReminders, Every: time.Minute, Run: jobs.run((*schedule.Jobs).QueueReminders)},
+		{Name: domain.JobSeriesExtension, Every: time.Hour, Run: jobs.run((*schedule.Jobs).ExtendHorizons)},
 	}
-	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, jobs, worker.DefaultTiming())
+	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, scheduled, worker.DefaultTiming())
 	return &authHarness{
 		server: server, store: store, clock: shared, hasher: hasher, logs: logs,
 		database: database, sink: sink, worker: background, objects: objects, links: links,
+		keys: keys, mailer: mailer, schedule: scheduleService, jobs: jobs,
 	}
 }
 

@@ -1,0 +1,12 @@
+{{.Intro}}
+
+{{.Title}}
+
+{{range .Details}}{{.Label}}: {{.Value}}
+{{end}}
+{{.Action}}: {{.ActionURL}}
+
+{{.Note}}
+
+{{.UnsubscribeNote}}
+{{.Unsubscribe}}: {{.UnsubscribeURL}}

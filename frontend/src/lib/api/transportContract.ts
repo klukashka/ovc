@@ -1,7 +1,4 @@
-import type { components } from './schema.ts';
 import type { AuthTransport } from './transport.ts';
-
-type EmailGroup = components['schemas']['EmailPreference']['group'];
 
 export interface ContractSubject {
   readonly transport: AuthTransport;
@@ -13,7 +10,7 @@ export interface ContractSubject {
   readonly student: () => Promise<{ readonly email: string; readonly password: string }>;
   readonly expireAccessTokens: () => Promise<void>;
   readonly blockAccount: () => Promise<void>;
-  readonly unsubscribeToken: (group: EmailGroup) => Promise<string>;
+  readonly unsubscribeToken: () => Promise<string>;
 }
 
 export type ContractScenario = (subject: ContractSubject) => Promise<void>;
@@ -329,8 +326,8 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
   'an unsubscribe link previews its group and turns it off only on POST, and a tampered link is token_invalid': async (
     subject,
   ) => {
+    const unsubscribeToken = await subject.unsubscribeToken();
     const access = await accessToken(await subject.transport.login(subject.email, subject.password));
-    const unsubscribeToken = await subject.unsubscribeToken('submissions');
     const before = await emailGroups(await subject.transport.send(emailPreferencesRequest(subject, access)));
 
     const preview = await subject.transport.send(unsubscribeRequest(subject, 'GET', unsubscribeToken));
@@ -339,7 +336,7 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
     const afterPost = await emailGroups(await subject.transport.send(emailPreferencesRequest(subject, access)));
     const saved = await emailGroups(
       await subject.transport.send(
-        emailPreferencesRequest(subject, access, { groups: [{ group: 'submissions', enabled: true }] }),
+        emailPreferencesRequest(subject, access, { groups: [{ group: 'lesson_reminders', enabled: true }] }),
       ),
     );
     const tampered = await subject.transport.send(unsubscribeRequest(subject, 'GET', `${unsubscribeToken}x`));
@@ -348,10 +345,13 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
       '{"groups":[{"group":"lesson_reminders","enabled":true},{"group":"submissions","enabled":true},{"group":"message_digest","enabled":true}]}';
     check(before === allOn, `expected the tutor's three groups on, got ${before}`);
     check(preview.status === 200, `expected 200, got ${String(preview.status)}`);
-    check(JSON.stringify(await preview.json()) === '{"group":"submissions"}', 'expected exactly the group');
+    check(JSON.stringify(await preview.json()) === '{"group":"lesson_reminders"}', 'expected exactly the group');
     check(afterPreview === allOn, `expected the preview to change nothing, got ${afterPreview}`);
     check(applied.status === 204, `expected 204, got ${String(applied.status)}`);
-    check(afterPost.includes('{"group":"submissions","enabled":false}'), `expected submissions off, got ${afterPost}`);
+    check(
+      afterPost.includes('{"group":"lesson_reminders","enabled":false}'),
+      `expected lesson reminders off, got ${afterPost}`,
+    );
     check(saved === allOn, `expected the save to answer the full list, got ${saved}`);
     check(tampered.status === 422, `expected 422, got ${String(tampered.status)}`);
     check((await errorCode(tampered)) === 'token_invalid', 'expected token_invalid');

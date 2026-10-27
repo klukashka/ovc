@@ -9,13 +9,13 @@ import (
 )
 
 type NotificationLink struct {
-	Kind domain.NotificationLinkKind `json:"kind" enum:"student_card,join_requests,my_tutors"`
+	Kind domain.NotificationLinkKind `json:"kind" enum:"student_card,join_requests,my_tutors,lesson"`
 	ID   string                      `json:"id" format:"uuid"`
 }
 
 type Notification struct {
 	ID           string                   `json:"id" format:"uuid"`
-	Event        domain.NotificationEvent `json:"event" enum:"invitation.accepted,join_request.created,join_request.accepted,join_request.declined,relationship.ended"`
+	Event        domain.NotificationEvent `json:"event" enum:"invitation.accepted,join_request.created,join_request.accepted,join_request.declined,relationship.ended,lesson.reminder_1h"`
 	CreatedAt    time.Time                `json:"created_at"`
 	ReadAt       *time.Time               `json:"read_at" nullable:"true"`
 	Label        *string                  `json:"label" nullable:"true"`

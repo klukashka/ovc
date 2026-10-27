@@ -12,6 +12,7 @@ import (
 type heldSend struct {
 	recipient string
 	release   chan struct{}
+	failure   error
 }
 
 type Sender struct {
@@ -68,6 +69,20 @@ func (s *Sender) Release(recipient string) bool {
 	return true
 }
 
+func (s *Sender) Fail(recipient string, failure error) bool {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	index := slices.IndexFunc(s.held, func(send *heldSend) bool { return send.recipient == recipient })
+	if index < 0 {
+		return false
+	}
+	s.held[index].failure = failure
+	close(s.held[index].release)
+	s.held = slices.Delete(s.held, index, index+1)
+	s.notifyLocked()
+	return true
+}
+
 func (s *Sender) HeldRecipients() []string {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -106,7 +121,7 @@ func (s *Sender) waitIfPaused(ctx context.Context, recipient string) error {
 	s.mutex.Unlock()
 	select {
 	case <-send.release:
-		return nil
+		return send.failure
 	case <-ctx.Done():
 		s.abandon(send)
 		return fmt.Errorf("wait for a paused send: %w", ctx.Err())

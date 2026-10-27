@@ -91,7 +91,7 @@ func (i *Inbox) List(ctx context.Context, principal accounts.Principal, query Pa
 			next := encodeCursor(last.CreatedAt, last.ID)
 			page.NextCursor = &next
 		}
-		subjects, err := loadSubjects(ctx, repos, rows)
+		subjects, err := loadSubjects(ctx, repos, principal, rows)
 		if err != nil {
 			return err
 		}
@@ -217,11 +217,13 @@ func readProblem(path string, code domain.FieldCode) error {
 type subjects struct {
 	relationships map[domain.RelationshipID]repositories.NotificationRelationship
 	requests      map[domain.JoinRequestID]repositories.NotificationJoinRequest
+	lessons       map[domain.LessonID]string
 }
 
-func loadSubjects(ctx context.Context, repos repositories.Repositories, rows []repositories.Notification) (subjects, error) {
+func loadSubjects(ctx context.Context, repos repositories.Repositories, principal accounts.Principal, rows []repositories.Notification) (subjects, error) {
 	var relationshipIDs []domain.RelationshipID
 	var requestIDs []domain.JoinRequestID
+	var lessonIDs []domain.LessonID
 	for _, row := range rows {
 		if row.RelationshipID != nil {
 			relationshipIDs = append(relationshipIDs, *row.RelationshipID)
@@ -229,10 +231,17 @@ func loadSubjects(ctx context.Context, repos repositories.Repositories, rows []r
 		if subjectIsRequest(row.Event) {
 			requestIDs = append(requestIDs, domain.JoinRequestID(row.SubjectID))
 		}
+		if row.Event == domain.NotificationLessonReminder1h {
+			lessonIDs = append(lessonIDs, domain.LessonID(row.SubjectID))
+		}
 	}
 	loaded := subjects{
 		relationships: map[domain.RelationshipID]repositories.NotificationRelationship{},
 		requests:      map[domain.JoinRequestID]repositories.NotificationJoinRequest{},
+		lessons:       map[domain.LessonID]string{},
+	}
+	if err := loaded.loadLessons(ctx, repos, principal, lessonIDs); err != nil {
+		return subjects{}, err
 	}
 	if len(relationshipIDs) > 0 {
 		relationships, err := repos.Notifications.Relationships(ctx, relationshipIDs)
@@ -255,11 +264,31 @@ func loadSubjects(ctx context.Context, repos repositories.Repositories, rows []r
 	return loaded, nil
 }
 
+func (s subjects) loadLessons(ctx context.Context, repos repositories.Repositories, principal accounts.Principal, ids []domain.LessonID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	var visible []repositories.NotificationLesson
+	var err error
+	if principal.Role == domain.RoleTutor {
+		visible, err = repos.Lessons.TutorNotificationLessons(ctx, principal.UserID, ids)
+	} else {
+		visible, err = repos.Lessons.StudentNotificationLessons(ctx, principal.UserID, ids)
+	}
+	if err != nil {
+		return err
+	}
+	for _, lesson := range visible {
+		s.lessons[lesson.ID] = lesson.Title
+	}
+	return nil
+}
+
 func subjectIsRequest(event domain.NotificationEvent) bool {
 	switch event {
 	case domain.NotificationJoinRequestCreated, domain.NotificationJoinRequestAccepted, domain.NotificationJoinRequestDeclined:
 		return true
-	case domain.NotificationInvitationAccepted, domain.NotificationRelationshipEnded:
+	case domain.NotificationInvitationAccepted, domain.NotificationRelationshipEnded, domain.NotificationLessonReminder1h:
 		return false
 	}
 	return false
@@ -282,8 +311,25 @@ func (s subjects) item(principal accounts.Principal, row repositories.Notificati
 		if request, found := s.requests[domain.JoinRequestID(row.SubjectID)]; found && request.StudentID == principal.UserID {
 			item.Link = &Link{Kind: domain.LinkMyTutors, ID: domain.EntityID(request.ID)}
 		}
+	case domain.NotificationLessonReminder1h:
+		s.lessonRow(principal, row, &item)
 	}
 	return item
+}
+
+func (s subjects) lessonRow(principal accounts.Principal, row repositories.Notification, item *Item) {
+	title, visible := s.lessons[domain.LessonID(row.SubjectID)]
+	if !visible {
+		return
+	}
+	item.Label = &title
+	item.Link = &Link{Kind: domain.NotificationLessonLink, ID: row.SubjectID}
+	if principal.Role == domain.RoleTutor || row.RelationshipID == nil {
+		return
+	}
+	if link, found := s.relationships[*row.RelationshipID]; found && link.StudentID != nil && *link.StudentID == principal.UserID && listedInMyTutors(link.State) {
+		item.Colour = link.Colour
+	}
 }
 
 func (s subjects) tutorCard(tutor domain.UserID, row repositories.Notification, item *Item) {

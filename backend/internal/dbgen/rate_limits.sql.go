@@ -74,3 +74,30 @@ func (q *Queries) ReserveRateLimitSlot(ctx context.Context, arg ReserveRateLimit
 	err := row.Scan(&count)
 	return count, err
 }
+
+const reserveRateLimitSlotBelow = `-- name: ReserveRateLimitSlotBelow :one
+INSERT INTO rate_limit_counters (purpose, subject, window_start, count)
+VALUES ($1, $2, $3, 1)
+ON CONFLICT (purpose, subject, window_start) DO UPDATE SET count = rate_limit_counters.count + 1
+WHERE rate_limit_counters.count < $4::int
+RETURNING count
+`
+
+type ReserveRateLimitSlotBelowParams struct {
+	Purpose     domain.RateLimitPurpose
+	Subject     []byte
+	WindowStart time.Time
+	Below       int32
+}
+
+func (q *Queries) ReserveRateLimitSlotBelow(ctx context.Context, arg ReserveRateLimitSlotBelowParams) (int32, error) {
+	row := q.db.QueryRow(ctx, reserveRateLimitSlotBelow,
+		arg.Purpose,
+		arg.Subject,
+		arg.WindowStart,
+		arg.Below,
+	)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}

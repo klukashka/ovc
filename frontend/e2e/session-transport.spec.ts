@@ -4,7 +4,7 @@ import { testNetAddress } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { expect, seedVerifiedUser, test } from './fixtures.ts';
 import { seedActiveStudent } from './tutoring.ts';
-import { mintUnsubscribeToken } from './unsubscribe.ts';
+import { unsubscribeTokenFromAReminder } from './unsubscribe.ts';
 
 const refreshCookie = '__Host-ovc_refresh';
 
@@ -56,8 +56,7 @@ test.describe('the HTTP authentication transport against the real backend', () =
           deployment.administer(['users', 'block', account.email]);
           return Promise.resolve();
         },
-        unsubscribeToken: (group: Parameters<typeof mintUnsubscribeToken>[2]): Promise<string> =>
-          mintUnsubscribeToken(deployment, account, group),
+        unsubscribeToken: (): Promise<string> => unsubscribeTokenFromAReminder(deployment, control, account),
       };
 
       const run = scenario(subject);

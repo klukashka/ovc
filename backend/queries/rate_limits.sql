@@ -17,3 +17,10 @@ WHERE (purpose, subject, window_start) IN (
     WHERE expired.window_start < @before
     LIMIT sqlc.arg(batch_size)
 );
+
+-- name: ReserveRateLimitSlotBelow :one
+INSERT INTO rate_limit_counters (purpose, subject, window_start, count)
+VALUES (@purpose, @subject, @window_start, 1)
+ON CONFLICT (purpose, subject, window_start) DO UPDATE SET count = rate_limit_counters.count + 1
+WHERE rate_limit_counters.count < sqlc.arg(below)::int
+RETURNING count;

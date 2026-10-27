@@ -35,9 +35,9 @@ function fakeSubject(): ContractSubject {
       server.block('a@example.org');
       await Promise.resolve();
     },
-    unsubscribeToken: async (group): Promise<string> => {
+    unsubscribeToken: async (): Promise<string> => {
       await Promise.resolve();
-      return server.unsubscribeToken('a@example.org', group);
+      return server.unsubscribeToken('a@example.org', 'lesson_reminders');
     },
   };
 }

@@ -186,6 +186,7 @@ type MailSink struct {
 	Links     []string
 	MessageID string
 	SentAt    time.Time
+	Headers   []byte
 }
 
 type Notification struct {

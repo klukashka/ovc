@@ -577,6 +577,7 @@ export const en: Resources = {
       joinRequestAccepted: 'Your request was accepted',
       joinRequestDeclined: 'Your request was not accepted',
       relationshipEnded: 'Working together has ended',
+      lessonReminder1h: 'The lesson starts in an hour',
     },
   },
   errors: {

@@ -39,10 +39,12 @@ func fixtureLogin() string {
 var sentAt = time.Date(2026, time.October, 21, 9, 30, 0, 0, time.UTC)
 
 type received struct {
-	To      string
-	Subject string
-	Text    string
-	HTML    string
+	To          string
+	Subject     string
+	Text        string
+	HTML        string
+	Unsubscribe string
+	OneClick    string
 }
 
 type backend struct {
@@ -92,6 +94,47 @@ func TestMailContract(t *testing.T) {
 				}
 			})
 
+			t.Run("carries the one-click unsubscribe headers of an optional email", func(t *testing.T) {
+				subject := backendFor(t, start)
+				optional := message("tutor@example.org", "Lesson in 1 hour")
+				optional.Unsubscribe = "https://ovc.example/api/v1/unsubscribe?token=v1.abc.def"
+
+				errs := []error{
+					subject.mailer.Send(context.Background(), optional),
+					subject.mailer.Send(context.Background(), message("student@example.org", "Confirm your email")),
+				}
+
+				inbox, required := subject.inbox(t, "tutor@example.org"), subject.inbox(t, "student@example.org")
+				if errors.Join(errs...) != nil || len(inbox) != 1 || len(required) != 1 {
+					t.Fatalf("send %v, inboxes %+v and %+v", errs, inbox, required)
+				}
+				if inbox[0].Unsubscribe != "<"+optional.Unsubscribe+">" || inbox[0].OneClick != "List-Unsubscribe=One-Click" {
+					t.Fatalf("the optional email carries %q and %q", inbox[0].Unsubscribe, inbox[0].OneClick)
+				}
+				if required[0].Unsubscribe != "" || required[0].OneClick != "" {
+					t.Fatalf("a required email carries %q and %q", required[0].Unsubscribe, required[0].OneClick)
+				}
+			})
+
+			t.Run("refuses a malformed unsubscribe address", func(t *testing.T) {
+				subject := backendFor(t, start)
+				var errs []error
+				for _, address := range []string{"https://ovc.example/u?token=a\r\nBcc: victim@example.org", "https://ovc.example/u?token=a>", "mailto:a@example.org"} {
+					malformed := message("tutor@example.org", "Hello")
+					malformed.Unsubscribe = address
+					errs = append(errs, subject.mailer.Send(context.Background(), malformed))
+				}
+
+				for _, err := range errs {
+					if !errors.Is(err, mail.ErrInvalidMessage) {
+						t.Fatalf("expected a refusal, got %v", err)
+					}
+				}
+				if inbox := subject.inbox(t, "tutor@example.org"); len(inbox) != 0 {
+					t.Fatalf("a refused message was delivered: %+v", inbox)
+				}
+			})
+
 			t.Run("refuses a recipient that is not one plain address", func(t *testing.T) {
 				subject := backendFor(t, start)
 
@@ -134,7 +177,10 @@ func startSink(t *testing.T) backend {
 			if !stored.SentAt.Equal(sentAt) || len(stored.Links) != 1 || stored.Links[0] != "https://ovc.example/verify-email?token=abc" {
 				t.Fatalf("stored %+v", stored)
 			}
-			result = append(result, received{To: to, Subject: stored.Subject, Text: stored.Text, HTML: stored.HTML})
+			result = append(result, received{
+				To: to, Subject: stored.Subject, Text: stored.Text, HTML: stored.HTML,
+				Unsubscribe: stored.Headers["List-Unsubscribe"], OneClick: stored.Headers["List-Unsubscribe-Post"],
+			})
 		}
 		return result
 	}
@@ -236,7 +282,7 @@ func parse(reader io.Reader) (received, error) {
 	if err != nil {
 		return received{}, err
 	}
-	result := received{Subject: subject}
+	result := received{Subject: subject, Unsubscribe: parsed.Header.Get("List-Unsubscribe"), OneClick: parsed.Header.Get("List-Unsubscribe-Post")}
 	parts := multipart.NewReader(parsed.Body, params["boundary"])
 	for {
 		part, err := parts.NextPart()

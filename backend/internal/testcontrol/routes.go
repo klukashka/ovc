@@ -19,7 +19,6 @@ import (
 	"ovc/backend/internal/realtime"
 	"ovc/backend/internal/schemas"
 	"ovc/backend/internal/services/accounts"
-	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/worker"
 )
 
@@ -32,35 +31,29 @@ const (
 var errTrailingData = errors.New("trailing data after the JSON body")
 
 type Routes struct {
-	logger      *slog.Logger
-	clock       *clock.Shared
-	worker      *worker.Worker
-	sink        *mail.Sink
-	preferences *notifications.Preferences
-	realtime    *realtime.Gateway
-	seeder      *accounts.Seeder
+	logger   *slog.Logger
+	clock    *clock.Shared
+	worker   *worker.Worker
+	sink     *mail.Sink
+	realtime *realtime.Gateway
+	seeder   *accounts.Seeder
 }
 
 type Dependencies struct {
-	Logger      *slog.Logger
-	Clock       *clock.Shared
-	Worker      *worker.Worker
-	Sink        *mail.Sink
-	Preferences *notifications.Preferences
-	Realtime    *realtime.Gateway
-	Seeder      *accounts.Seeder
+	Logger   *slog.Logger
+	Clock    *clock.Shared
+	Worker   *worker.Worker
+	Sink     *mail.Sink
+	Realtime *realtime.Gateway
+	Seeder   *accounts.Seeder
 }
 
 func New(deps Dependencies) *Routes {
-	return &Routes{
-		logger: deps.Logger, clock: deps.Clock, worker: deps.Worker, sink: deps.Sink, preferences: deps.Preferences, realtime: deps.Realtime,
-		seeder: deps.Seeder,
-	}
+	return &Routes{logger: deps.Logger, clock: deps.Clock, worker: deps.Worker, sink: deps.Sink, realtime: deps.Realtime, seeder: deps.Seeder}
 }
 
 func (routes *Routes) Mount(mux *http.ServeMux) {
 	mux.Handle("POST /__test__/mail", routes.guard(routes.mail))
-	mux.Handle("POST /__test__/unsubscribe-token", routes.guard(routes.unsubscribeToken))
 	if routes.seeder != nil {
 		mux.Handle("POST /__test__/accounts", routes.guard(routes.seedAccount))
 		mux.Handle("POST /__test__/session", routes.guard(routes.seedSession))
@@ -81,11 +74,13 @@ type mailRequest struct {
 }
 
 type mailMessage struct {
-	Subject string    `json:"subject"`
-	Text    string    `json:"text"`
-	HTML    string    `json:"html"`
-	Links   []string  `json:"links"`
-	SentAt  time.Time `json:"sent_at"`
+	Subject   string            `json:"subject"`
+	Text      string            `json:"text"`
+	HTML      string            `json:"html"`
+	Links     []string          `json:"links"`
+	SentAt    time.Time         `json:"sent_at"`
+	MessageID string            `json:"message_id"`
+	Headers   map[string]string `json:"headers"`
 }
 
 type mailResponse []mailMessage
@@ -107,45 +102,12 @@ func (routes *Routes) mail(w http.ResponseWriter, r *http.Request) {
 	}
 	response := mailResponse{}
 	for _, message := range stored {
-		response = append(response, mailMessage{Subject: message.Subject, Text: message.Text, HTML: message.HTML, Links: message.Links, SentAt: message.SentAt})
+		response = append(response, mailMessage{
+			Subject: message.Subject, Text: message.Text, HTML: message.HTML, Links: message.Links, SentAt: message.SentAt,
+			MessageID: message.MessageID, Headers: message.Headers,
+		})
 	}
 	writeJSON(ctx, routes.logger, w, response)
-}
-
-type unsubscribeTokenRequest struct {
-	User  string            `json:"user"`
-	Group domain.EmailGroup `json:"group"`
-}
-
-type unsubscribeTokenResponse struct {
-	Token string `json:"token"`
-}
-
-func (routes *Routes) unsubscribeToken(w http.ResponseWriter, r *http.Request) {
-	var request unsubscribeTokenRequest
-	if !decode(routes.logger, w, r, &request) {
-		return
-	}
-	ctx := r.Context()
-	user, ok := domain.ParseUUID[domain.UserID](request.User)
-	var problems []schemas.FieldError
-	if !ok {
-		problems = append(problems, schemas.FieldError{Path: "user", Code: string(domain.FieldInvalid)})
-	}
-	if !request.Group.Known() {
-		problems = append(problems, schemas.FieldError{Path: "group", Code: string(domain.FieldInvalid)})
-	}
-	if len(problems) > 0 {
-		writeError(ctx, routes.logger, w, domain.ErrorValidationFailed, problems)
-		return
-	}
-	token, err := routes.preferences.MintUnsubscribeToken(ctx, user, request.Group)
-	if err != nil {
-		routes.fail(ctx, w, err)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(ctx, routes.logger, w, unsubscribeTokenResponse{Token: token})
 }
 
 type presenceRequest struct {
@@ -387,7 +349,7 @@ func isLoopbackHost(hostHeader string) bool {
 	return loopbackHosts[host]
 }
 
-func decode[T clockRequest | mailRequest | unsubscribeTokenRequest | presenceRequest | closeRequest | seedAccountRequest | seedSessionRequest | struct{}](logger *slog.Logger, w http.ResponseWriter, r *http.Request, target *T) bool {
+func decode[T clockRequest | mailRequest | presenceRequest | closeRequest | seedAccountRequest | seedSessionRequest | struct{}](logger *slog.Logger, w http.ResponseWriter, r *http.Request, target *T) bool {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	err := decoder.Decode(target)
@@ -423,7 +385,7 @@ func trailingDataError(decoder *json.Decoder) error {
 	return err
 }
 
-func writeJSON[T clockResponse | tickResponse | mailResponse | unsubscribeTokenResponse | presenceResponse | closeResponse | seedAccountResponse | schemas.AccessToken](ctx context.Context, logger *slog.Logger, w http.ResponseWriter, body T) {
+func writeJSON[T clockResponse | tickResponse | mailResponse | presenceResponse | closeResponse | seedAccountResponse | schemas.AccessToken](ctx context.Context, logger *slog.Logger, w http.ResponseWriter, body T) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		panic("a test control response could not be encoded")

@@ -151,14 +151,29 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 	if err != nil {
 		return nil, err
 	}
-	builders, err := notifications.Combine(accountEmails.Builders(), relationshipEmails.Builders())
+	unsubscribeTokens, err := core.NewUnsubscribeTokens(settings.UnsubscribeKey)
 	if err != nil {
 		return nil, err
 	}
-	notifier, err := notifications.New(mailer, settings.PublicURL, builders)
+	lessonEmails, err := notifications.NewLessonEmails(store, unsubscribeTokens, settings.PublicURL)
 	if err != nil {
 		return nil, err
 	}
+	builders, err := notifications.Combine(accountEmails.Builders(), relationshipEmails.Builders(), lessonEmails.Builders())
+	if err != nil {
+		return nil, err
+	}
+	keys, err := core.DeriveKeys(settings.JWTSecret)
+	if err != nil {
+		return nil, err
+	}
+	notifier, err := notifications.New(mailer, settings.PublicURL, builders, notifications.Dispatch{Store: store, Keys: keys, Logger: logger})
+	if err != nil {
+		return nil, err
+	}
+	lessonJobs := schedule.NewJobs(
+		schedule.New(schedule.Dependencies{Store: store, Clock: source, Random: random, Keys: keys, Logger: logger}), schedule.DefaultJobSettings(),
+	)
 	lanes := []worker.Lane{
 		{Name: domain.LaneEmail, Concurrency: emailLaneConcurrency, Perform: notifier.Deliver},
 		{Name: domain.LaneStorageDelete, Concurrency: deleteLaneConcurrency, Perform: fileService.DeleteObject},
@@ -175,6 +190,9 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 		{Name: domain.JobReclaimExpire, Every: time.Hour, Run: tutoringService.ExpireReclaims},
 		{Name: domain.JobJoinRequestsExpire, Every: time.Hour, Run: tutoringService.ExpireJoinRequests},
 		{Name: domain.JobNotificationsCleanup, Every: time.Hour, Run: inbox.Cleanup},
+		{Name: domain.JobLessonStatus, Every: time.Minute, Run: lessonJobs.EndUnjoined},
+		{Name: domain.JobLessonReminders, Every: time.Minute, Run: lessonJobs.QueueReminders},
+		{Name: domain.JobSeriesExtension, Every: time.Hour, Run: lessonJobs.ExtendHorizons},
 	}
 	return worker.New(logger, source, queue, lanes, jobs, worker.DefaultTiming()), nil
 }

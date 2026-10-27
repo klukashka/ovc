@@ -5,7 +5,7 @@ import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { recordLazyChunkAddresses } from './observers.ts';
 import { accessToken, callApi } from './tutoring.ts';
-import { mintUnsubscribeToken } from './unsubscribe.ts';
+import { unsubscribeTokenFromAReminder } from './unsubscribe.ts';
 
 async function enabledGroups(deployment: Deployment, account: TestAccount): Promise<string> {
   const answer = await callApi(
@@ -22,6 +22,8 @@ const tutorGroupsOn =
   '{"groups":[{"group":"lesson_reminders","enabled":true},{"group":"submissions","enabled":true},{"group":"message_digest","enabled":true}]}';
 const submissionsOff =
   '{"groups":[{"group":"lesson_reminders","enabled":true},{"group":"submissions","enabled":false},{"group":"message_digest","enabled":true}]}';
+const lessonRemindersOff =
+  '{"groups":[{"group":"lesson_reminders","enabled":false},{"group":"submissions","enabled":true},{"group":"message_digest","enabled":true}]}';
 
 function recordAddresses(page: Page): string[] {
   const addresses: string[] = [];
@@ -71,15 +73,19 @@ test("settings › email switches show the role's groups and save", async ({ pag
   expect(await enabledGroups(deployment, account)).toBe(submissionsOff);
 });
 
-test('unsubscribe › the page names the group and changes nothing until confirmed', async ({ page, deployment }) => {
+test('unsubscribe › the page names the group and changes nothing until confirmed', async ({
+  page,
+  deployment,
+  control,
+}) => {
   const account = await seedVerifiedUser(deployment, 'Отписка');
-  const token = await mintUnsubscribeToken(deployment, account, 'submissions');
+  const token = await unsubscribeTokenFromAReminder(deployment, control, account);
   const confirm = page.getByRole('button', { name: 'Turn off these emails' });
   const result = page.getByRole('status').filter({ hasText: 'These emails are turned off' });
 
   await page.goto(`/unsubscribe?token=${token}`);
   await confirm.waitFor();
-  const groupLineBeforeConfirming = await page.getByText('Emails: Submitted work').count();
+  const groupLineBeforeConfirming = await page.getByText('Emails: Lesson reminders').count();
   const preferencesBeforeConfirming = await enabledGroups(deployment, account);
   await confirm.click();
   await result.waitFor();
@@ -88,17 +94,17 @@ test('unsubscribe › the page names the group and changes nothing until confirm
   expect(preferencesBeforeConfirming).toBe(tutorGroupsOn);
   await expect(result).toBeFocused();
   await expect(confirm).toHaveCount(0);
-  await expect(page.getByText('Emails: Submitted work')).toBeVisible();
+  await expect(page.getByText('Emails: Lesson reminders')).toBeVisible();
   await expect(page.getByRole('link', { name: 'All email settings' })).toHaveAttribute(
     'href',
     '/settings/notifications',
   );
-  expect(await enabledGroups(deployment, account)).toBe(submissionsOff);
+  expect(await enabledGroups(deployment, account)).toBe(lessonRemindersOff);
 });
 
-test('unsubscribe › the token leaves the address and never appears in next', async ({ page, deployment }) => {
+test('unsubscribe › the token leaves the address and never appears in next', async ({ page, deployment, control }) => {
   const account = await seedVerifiedUser(deployment, 'Адрес отписки');
-  const token = await mintUnsubscribeToken(deployment, account, 'submissions');
+  const token = await unsubscribeTokenFromAReminder(deployment, control, account);
   const addresses = recordAddresses(page);
   const chunkAddresses = await recordLazyChunkAddresses(page, deployment.origin);
   const foreignRequests: string[] = [];
@@ -117,7 +123,7 @@ test('unsubscribe › the token leaves the address and never appears in next', a
   await page.getByRole('button', { name: 'Sign in' }).click();
 
   await expect(page).toHaveURL('/settings/notifications');
-  await expect(page.getByRole('switch', { name: 'Сданные работы' })).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByRole('switch', { name: 'Напоминания об уроках' })).toHaveAttribute('aria-checked', 'false');
   expect(opened?.headers()['referrer-policy']).toBe('no-referrer');
   await expectTokenNowhere(page, token);
   const afterRemoval = addresses.slice(addresses.findIndex((address) => !address.includes(token)));

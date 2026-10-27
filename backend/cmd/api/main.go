@@ -169,7 +169,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 			return err
 		}
 		options.Mount = testcontrol.New(testcontrol.Dependencies{
-			Logger: logging.Logger, Clock: shared, Worker: background, Sink: sink, Preferences: preferences, Realtime: live.Gateway,
+			Logger: logging.Logger, Clock: shared, Worker: background, Sink: sink, Realtime: live.Gateway,
 			Seeder: seeder,
 		}).Mount
 	}

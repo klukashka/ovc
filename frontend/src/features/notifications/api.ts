@@ -46,5 +46,7 @@ export function linkAddress(link: NotificationLink): string {
       return '/students';
     case 'my_tutors':
       return '/tutors';
+    case 'lesson':
+      return `/lessons/${encodeURIComponent(link.id)}`;
   }
 }
