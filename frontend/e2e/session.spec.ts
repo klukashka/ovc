@@ -1,9 +1,8 @@
-import type { Page, Request, Response } from '@playwright/test';
+import type { Page, Response } from '@playwright/test';
 
-import { parseServerFrame } from '../src/lib/realtime/frames.ts';
-import { realtimePath } from '../src/lib/realtime/socket.ts';
 import { newTestAccount, registerTutor, signInThroughTheApi } from './accounts.ts';
 import { expect, seedVerifiedUser, test } from './fixtures.ts';
+import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 
 test.use({ locale: 'ru-RU' });
 
@@ -192,66 +191,13 @@ test('two tabs refreshing at once keep the session', async ({ signedInPage: page
 
 const todayQueryPaths = ['/api/v1/notifications', '/api/v1/tutor/code', '/api/v1/join-requests'];
 
-interface TrafficAfterReady {
-  readonly readyReceived: () => boolean;
-  readonly unsettled: () => string[];
-}
-
-function apiPathOf(request: Request): string | null {
-  const path = new URL(request.url()).pathname;
-  return path.startsWith('/api/') && path !== realtimePath ? path : null;
-}
-
-function trafficAfterReady(page: Page): TrafficAfterReady {
-  let ready = false;
-  const pending = new Set<Request>();
-  const answeredAfterReady = new Set<string>();
-  page.on('websocket', (socket) => {
-    socket.on('framereceived', ({ payload }) => {
-      if (typeof payload === 'string' && parseServerFrame(payload)?.type === 'ready') {
-        ready = true;
-      }
-    });
-  });
-  const startedAfterReady = new Set<Request>();
-  page.on('request', (request) => {
-    if (apiPathOf(request) !== null) {
-      pending.add(request);
-      if (ready) {
-        startedAfterReady.add(request);
-      }
-    }
-  });
-  const settled = (request: Request): void => {
-    const path = apiPathOf(request);
-    pending.delete(request);
-    if (path !== null && startedAfterReady.has(request)) {
-      answeredAfterReady.add(path);
-    }
-  };
-  page.on('requestfinished', settled);
-  page.on('requestfailed', settled);
-  return {
-    readyReceived: () => ready,
-    unsettled: () => [
-      ...[...pending].map((request) => apiPathOf(request) ?? ''),
-      ...todayQueryPaths.filter((path) => !answeredAfterReady.has(path)),
-    ],
-  };
-}
-
-async function expectTodayRefetchedAfterTheSocketIsReady(traffic: TrafficAfterReady): Promise<void> {
-  await expect.poll(() => traffic.readyReceived()).toBe(true);
-  await expect.poll(() => traffic.unsettled()).toEqual([]);
-}
-
 test('an expired access token is refreshed once and the request is retried', async ({ page, tutor, control }) => {
   await signInThroughTheApi(page, tutor);
-  const traffic = trafficAfterReady(page);
+  const traffic = trafficAfterReady(page, todayQueryPaths);
   await page.goto('/today');
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Сегодня' })).toBeVisible();
   await expectTodayLoaded(page);
-  await expectTodayRefetchedAfterTheSocketIsReady(traffic);
+  await expectRefetchedAfterTheSocketIsReady(traffic);
   const responses = authResponses(page);
   await control.advance(accessTokenExpiredWithinSocketGrace);
 

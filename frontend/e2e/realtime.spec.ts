@@ -2,7 +2,13 @@ import type { Page, WebSocket } from '@playwright/test';
 
 import { newTestAccount, signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
-import { accountId, closeSockets, waitForSockets } from './realtime.ts';
+import {
+  accountId,
+  closeSockets,
+  expectRefetchedAfterTheSocketIsReady,
+  trafficAfterReady,
+  waitForSockets,
+} from './realtime.ts';
 import { accessToken, callApi, createCard, removeStudent, seedJoinRequests, signUpOnInvitation } from './tutoring.ts';
 
 function socketAddresses(page: Page): string[] {
@@ -80,6 +86,14 @@ test('realtime › the socket address carries no token and no CSP violation occu
   expect(addresses).toEqual([new URL('/api/v1/ws', deployment.origin.replace(/^https:/, 'wss:')).toString()]);
 });
 
+const studentsQueryPaths = [
+  '/api/v1/notifications',
+  '/api/v1/join-requests',
+  '/api/v1/groups',
+  '/api/v1/students',
+  '/api/v1/tutor/code',
+];
+
 test('realtime › signing out everywhere in another browser signs this tab out with a message', async ({
   page,
   deployment,
@@ -88,7 +102,9 @@ test('realtime › signing out everywhere in another browser signs this tab out 
   const maria = await seedVerifiedUser(deployment, 'Мария');
   const user = await accountId(deployment, maria);
   await signInThroughTheApi(page, maria);
+  const traffic = trafficAfterReady(page, studentsQueryPaths);
   await page.goto('/students');
+  await expectRefetchedAfterTheSocketIsReady(traffic);
   await waitForSockets(deployment, user, 1);
   diagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/refresh', status: 401 });
 

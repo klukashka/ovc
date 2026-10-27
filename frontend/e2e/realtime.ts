@@ -1,4 +1,4 @@
-import { type Page, type WebSocket as PageWebSocket, expect } from '@playwright/test';
+import { type Page, type WebSocket as PageWebSocket, type Request, expect } from '@playwright/test';
 
 import { authFrame, closeCodes, parseServerFrame } from '../src/lib/realtime/frames.ts';
 import {
@@ -69,6 +69,59 @@ export async function waitForSockets(deployment: Deployment, user: string, socke
   await expect
     .poll(async () => (await presence(deployment, user)).sockets, { timeout: presenceDeadlineMilliseconds })
     .toBe(sockets);
+}
+
+export interface TrafficAfterReady {
+  readonly readyReceived: () => boolean;
+  readonly unsettled: () => string[];
+}
+
+function apiPathOf(request: Request): string | null {
+  const path = new URL(request.url()).pathname;
+  return path.startsWith('/api/') && path !== realtimePath ? path : null;
+}
+
+export function trafficAfterReady(page: Page, queryPaths: readonly string[]): TrafficAfterReady {
+  let ready = false;
+  const pending = new Set<Request>();
+  const answeredAfterReady = new Set<string>();
+  page.on('websocket', (socket) => {
+    socket.on('framereceived', ({ payload }) => {
+      if (typeof payload === 'string' && parseServerFrame(payload)?.type === 'ready') {
+        ready = true;
+      }
+    });
+  });
+  const startedAfterReady = new Set<Request>();
+  page.on('request', (request) => {
+    if (apiPathOf(request) !== null) {
+      pending.add(request);
+      if (ready) {
+        startedAfterReady.add(request);
+      }
+    }
+  });
+  const settled = (request: Request): void => {
+    const path = apiPathOf(request);
+    pending.delete(request);
+    if (path !== null && startedAfterReady.has(request)) {
+      answeredAfterReady.add(path);
+    }
+  };
+  page.on('requestfinished', settled);
+  page.on('requestfailed', settled);
+  return {
+    readyReceived: () => ready,
+    unsettled: () => [
+      ...[...pending].map((request) => apiPathOf(request) ?? ''),
+      ...queryPaths.filter((path) => !answeredAfterReady.has(path)),
+    ],
+  };
+}
+
+export async function expectRefetchedAfterTheSocketIsReady(traffic: TrafficAfterReady): Promise<void> {
+  await expect.poll(() => traffic.readyReceived()).toBe(true);
+  await expect.poll(() => traffic.unsettled()).toEqual([]);
 }
 
 export async function closeSockets(deployment: Deployment, user: string, code: 4429 | 1012): Promise<number> {
