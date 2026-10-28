@@ -81,7 +81,7 @@ Behavior for FR-1, FR-2, FR-3 and FR-16. Decisions: [ADR-0005](../../docs/decisi
   - requesting a reset always returns the same response, within the sending limits above;
   - the worker mints the emailed token (32 bytes, hashed and committed before sending, valid for 1 hour, single use);
   - a successful reset revokes all sessions.
-- **Password change** requires the current password and revokes every other session. Wrong current passwords are counted per account in their own counter with the same numbers as the sign-in failure limit (5 in 15 minutes), separate from the sign-in counters, and an attempt refused by it returns its slot; the sixth attempt answers `429` with `Retry-After`, and a correct password returns its slot.
+- **Password change** requires the current password and revokes every other session. Wrong current passwords are counted per account in their own counter with the same numbers as the sign-in failure limit (5 per fixed 15-minute window), separate from the sign-in counters and shared by every current-password check (password change and [account deletion](#account-deletion)), and an attempt refused by it returns its slot; the sixth attempt in a window, on either route, answers `429` with `Retry-After`, and a correct password returns its slot.
 - **Email change** is not in the MVP. A feature that adds it must move signed-in acceptance's binding check (the card email against the account's email) under the account's row lock, because signed-in acceptance reads the account email before it takes that lock.
 
 ## Tutor–student relationships
@@ -301,7 +301,7 @@ Ending an `ended` relationship again returns it unchanged and queues no second e
 
 ## Account deletion
 
-- **Starting deletion:** it requires the current password and an explicit confirmation. The account becomes `deleted` at once: sessions are revoked, sockets are closed and sign-in is refused. A purge job runs 30 days later.
+- **Starting deletion:** it requires the current password and an explicit confirmation. A wrong password answers `422` and is counted in the same per-account counter as password change, shared by every current-password check (5 per fixed 15-minute window, [sessions and passwords](#sessions-and-passwords)); beyond it the attempt answers `429` with `Retry-After`, returns its slot and changes nothing, and a correct password returns its slot. The account becomes `deleted` at once: sessions are revoked, sockets are closed and sign-in is refused. A purge job runs 30 days later.
 - **From deletion until purge**, the account's messages show their sender as "Deleted user" and keep their bodies.
 - **Student deletion:**
   - active relationships end (`ended_by` `deletion`), with the effects above, lessons included, without sending `relationship.ended`;

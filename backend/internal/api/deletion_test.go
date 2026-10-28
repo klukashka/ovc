@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -187,6 +188,53 @@ func TestDeletionIsThrottledAfterFiveWrongPasswords(t *testing.T) {
 	}
 	if user, err := h.store.Repositories().Users.ByEmail(context.Background(), tutorEmail); err != nil || user.State != domain.AccountActive {
 		t.Fatalf("the throttled deletion changed the account: %+v %v", user, err)
+	}
+}
+
+func TestWrongPasswordsOnChangeAndDeletionShareOneLimit(t *testing.T) {
+	t.Parallel()
+	h := newFlowHarness(t)
+	token := h.signedInTutor(t)
+	before, err := h.store.Repositories().Users.ByEmail(context.Background(), tutorEmail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changePassword := func(current string) response {
+		body := fmt.Sprintf(`{"current_password":%q,"new_password":"a brand new password"}`, current)
+		return h.postJSON(t, "/api/v1/auth/password/change", body, map[string]string{"Authorization": "Bearer " + token})
+	}
+	var changeRefusals, deletionRefusals []response
+	for range 3 {
+		changeRefusals = append(changeRefusals, changePassword("wrong horse battery"))
+	}
+	for range 2 {
+		deletionRefusals = append(deletionRefusals, h.deleteMe(t, token, "wrong horse battery"))
+	}
+
+	throttledDeletion := h.deleteMe(t, token, "correct horse battery")
+	throttledChange := changePassword("correct horse battery")
+
+	for _, refusal := range changeRefusals {
+		if refusal.status != http.StatusUnprocessableEntity || !slices.Equal(fields(t, refusal), []string{"body.current_password:incorrect"}) {
+			t.Fatalf("a wrong current password on change answered %d %s", refusal.status, refusal.body)
+		}
+	}
+	for _, refusal := range deletionRefusals {
+		if refusal.status != http.StatusUnprocessableEntity || !slices.Equal(fields(t, refusal), []string{"body.password:incorrect"}) {
+			t.Fatalf("a wrong password on deletion answered %d %s", refusal.status, refusal.body)
+		}
+	}
+	for _, throttled := range []response{throttledDeletion, throttledChange} {
+		if throttled.status != http.StatusTooManyRequests || throttled.headers.Get("Retry-After") == "" {
+			t.Fatalf("an attempt beyond the shared limit answered %d %s", throttled.status, throttled.body)
+		}
+	}
+	user, err := h.store.Repositories().Users.ByEmail(context.Background(), tutorEmail)
+	if err != nil || user.State != domain.AccountActive || user.PasswordHash != before.PasswordHash {
+		t.Fatalf("a throttled attempt changed the account: %+v %v", user, err)
+	}
+	if counted := h.countRows(t, "SELECT coalesce(max(count), 0) FROM rate_limit_counters WHERE purpose = $1", "current_password"); counted != 5 {
+		t.Fatalf("the shared counter holds %d attempts", counted)
 	}
 }
 
