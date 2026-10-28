@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { localMidnight, utcOffsetText } from './localDates.ts';
+import { localInstant, localMidnight, utcOffsetText } from './localDates.ts';
 
 function midnightsAround(dates: readonly `${number}-${number}-${number}`[], timeZone: string): string[] {
   return dates.map((date) => new Date(localMidnight(date, timeZone)).toISOString());
@@ -19,6 +19,40 @@ describe('range helper', () => {
     expect(berlinSpring).toEqual(['2026-03-27T23:00:00.000Z', '2026-03-28T23:00:00.000Z', '2026-03-29T22:00:00.000Z']);
     expect(berlinAutumn).toEqual(['2026-10-23T22:00:00.000Z', '2026-10-24T22:00:00.000Z', '2026-10-25T23:00:00.000Z']);
     expect(havana).toEqual(['2026-03-07T05:00:00.000Z', '2026-03-08T05:00:00.000Z', '2026-03-09T04:00:00.000Z']);
+  });
+});
+
+describe('local instant', () => {
+  test('a local time skipped by clocks jumping forward is shifted forward by the gap, east and west of UTC', () => {
+    const skipped = [
+      localInstant('2026-03-29', 150, 'Europe/Berlin'),
+      localInstant('2026-03-08', 150, 'America/New_York'),
+      localInstant('2026-10-04', 135, 'Australia/Lord_Howe'),
+    ];
+
+    expect(skipped.map((instant) => new Date(instant).toISOString())).toEqual([
+      '2026-03-29T01:30:00.000Z',
+      '2026-03-08T07:30:00.000Z',
+      '2026-10-03T15:45:00.000Z',
+    ]);
+  });
+
+  test('a local time repeated by clocks falling back takes the earlier instant, east and west of UTC', () => {
+    const repeated = [
+      localInstant('2026-10-25', 150, 'Europe/Berlin'),
+      localInstant('2026-11-01', 90, 'America/New_York'),
+    ];
+
+    expect(repeated.map((instant) => new Date(instant).toISOString())).toEqual([
+      '2026-10-25T00:30:00.000Z',
+      '2026-11-01T05:30:00.000Z',
+    ]);
+  });
+
+  test('an ordinary local time maps to its one instant', () => {
+    const instant = localInstant('2026-11-03', 18 * 60, 'Europe/Moscow');
+
+    expect(new Date(instant).toISOString()).toBe('2026-11-03T15:00:00.000Z');
   });
 });
 

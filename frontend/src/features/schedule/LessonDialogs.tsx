@@ -399,8 +399,38 @@ export function EditLessonDialog({
   );
 }
 
+type CancelPurpose = 'cancel' | 'endSeries';
+
+interface CancelTexts {
+  readonly title: string;
+  readonly consequence: string;
+  readonly confirm: string;
+}
+
+function cancelTexts(t: TFunction, purpose: CancelPurpose, scope: LessonScope): CancelTexts {
+  if (purpose === 'endSeries') {
+    return {
+      title: t('lessonEndSeries.title'),
+      consequence: t('lessonEndSeries.consequence'),
+      confirm: t('lessonEndSeries.confirm'),
+    };
+  }
+  return scope === 'this'
+    ? {
+        title: t('lessonCancel.title'),
+        consequence: t('lessonCancel.thisConsequence'),
+        confirm: t('lessonCancel.confirm'),
+      }
+    : {
+        title: t('lessonCancel.title'),
+        consequence: t('lessonCancel.followingConsequence'),
+        confirm: t('lessonCancel.confirmFollowing'),
+      };
+}
+
 function CancelForm({
   lesson,
+  purpose,
   headingId,
   consequenceId,
   dismissButton,
@@ -408,6 +438,7 @@ function CancelForm({
   handlers,
 }: {
   readonly lesson: LessonDetail;
+  readonly purpose: CancelPurpose;
   readonly headingId: string;
   readonly consequenceId: string;
   readonly dismissButton: RefObject<HTMLButtonElement | null>;
@@ -417,9 +448,11 @@ function CancelForm({
   const { t } = useTranslation();
   const client = useApiClient();
   const firstScope = useRef<HTMLInputElement>(null);
-  const [scope, setScope] = useState<LessonScope>('this');
+  const [chosenScope, setScope] = useState<LessonScope>('this');
   const [refusals, setRefusals] = useState(0);
   const refusal = action.state.kind === 'refused' && !isStale(action.state) ? action.state : null;
+  const scope = purpose === 'endSeries' ? 'following' : chosenScope;
+  const texts = cancelTexts(t, purpose, scope);
 
   function confirm(): void {
     action.run(async (): Promise<ActionState> => {
@@ -448,9 +481,9 @@ function CancelForm({
   return (
     <div className="flex flex-col gap-4">
       <h2 id={headingId} className="font-serif text-title">
-        {t('lessonCancel.title')}
+        {texts.title}
       </h2>
-      {lesson.series_id === null ? null : (
+      {lesson.series_id === null || purpose === 'endSeries' ? null : (
         <ScopeChoice
           legend={t('lessonCancel.scope')}
           scope={scope}
@@ -462,15 +495,13 @@ function CancelForm({
           }}
         />
       )}
-      <p id={consequenceId}>
-        {t(scope === 'this' ? 'lessonCancel.thisConsequence' : 'lessonCancel.followingConsequence')}
-      </p>
+      <p id={consequenceId}>{texts.consequence}</p>
       {refusal === null ? null : (
         <FormAlert key={refusals}>{refusalText(t, refusal.error, refusal.retryAfter, undefined)}</FormAlert>
       )}
       <div className="flex flex-wrap gap-3">
         <ActionButton busy={action.busy} onClick={confirm} className={dangerButtonClass}>
-          {t(scope === 'this' ? 'lessonCancel.confirm' : 'lessonCancel.confirmFollowing')}
+          {texts.confirm}
         </ActionButton>
         <ActionButton
           ref={dismissButton}
@@ -488,11 +519,13 @@ function CancelForm({
 
 export function CancelLessonDialog({
   lesson,
+  purpose = 'cancel',
   action,
   returnFocus,
   handlers,
 }: {
   readonly lesson: LessonDetail | null;
+  readonly purpose?: CancelPurpose;
   readonly action: Action;
   readonly returnFocus: RefObject<HTMLElement | null>;
   readonly handlers: DialogHandlers;
@@ -513,6 +546,7 @@ export function CancelLessonDialog({
       {lesson === null ? null : (
         <CancelForm
           lesson={lesson}
+          purpose={purpose}
           headingId={headingId}
           consequenceId={consequenceId}
           dismissButton={dismissButton}

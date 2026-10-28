@@ -25,3 +25,7 @@ The growth since F1 includes the lesson page change (F2) and this change. This c
 | After the review fixes: `schedule` and `notifications` specs in three engines | 116 | 26.4 s | passed |
 
 The change adds 16 Playwright tests per engine (12 in its first commit, 4 after the review): pilot 4 steps 2 and 4 (step 1 is extended in place), pilot 3 step 5, four group tests (the archive confirmation's opening, dismissal and confirmation, and "Schedule a lesson" on the group page), three student card and Students tests, after the review a failed "Show more" in the card's Lessons and three focus moves when a live refetch removes a focused next lesson, the unconfirmed student's Schedule and the lesson change row of the notifications. Each seeds through the API in under a second, so on a loaded machine they add a few seconds to the end-to-end lane, which stays at 1.8 minutes.
+
+## Merge gate
+
+The merge gate's run of this change on 2026-10-28 passed in 174.6 s in total, under the slice plan's 178 s target. Its lanes took 45.5 s (A), 39.6 s (B) and 47.6 s (C), and the end-to-end lane 126.0 s with 839 tests.

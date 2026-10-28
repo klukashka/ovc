@@ -18,13 +18,16 @@ import { isLocalDate, localDateOf, utcOffsetText } from '../../lib/time/localDat
 import { cityOf } from '../../lib/time/timezoneCities.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import { type ChangedLessons, type LessonDetail, type LessonSeries, fetchLesson } from './api.ts';
+import type { Audience } from './AudiencePicker.tsx';
 import { formatClock, formatFullDate, formatLongDay, formatWeekdayName } from './calendarFormat.ts';
 import { calendarKey, lessonKey, lessonsKey } from './keys.ts';
 import { CancelLessonDialog, EditLessonDialog } from './LessonDialogs.tsx';
 import { audienceLabel } from './LessonParts.tsx';
 import { type LessonPhase, dialogOutdated, isEditable, phaseOf, roomOpensAt, useLessonClock } from './lessonTiming.ts';
+import { type LessonPrefill, NewLessonDialog, nextFullHour } from './NewLessonDialog.tsx';
+import { seriesTimingIn } from './seriesTiming.ts';
 
-type DialogKind = 'edit' | 'cancel';
+type DialogKind = 'edit' | 'cancel' | 'endSeries';
 
 interface OpenDialog {
   readonly kind: DialogKind;
@@ -317,13 +320,44 @@ export function LessonView({
   );
 }
 
+function sameAudience(t: TFunction, audience: LessonDetail['audience']): Audience | null {
+  const name = audienceLabel(t, audience);
+  if (audience.relationship_id !== undefined) {
+    return { kind: 'one_to_one', id: audience.relationship_id, name };
+  }
+  if (audience.group_id !== undefined) {
+    return { kind: 'group', id: audience.group_id, name };
+  }
+  return null;
+}
+
+function nextSeriesPrefill(t: TFunction, lesson: LessonDetail, series: LessonSeries, timeZone: string): LessonPrefill {
+  const audience = sameAudience(t, lesson.audience);
+  const timing = seriesTimingIn(series, localDateOf(Date.parse(lesson.starts_at), series.timezone), timeZone);
+  return {
+    date: timing.date,
+    start: timing.start,
+    durationMinutes: series.duration_minutes,
+    weekdays: timing.weekdays,
+    ...(audience === null ? {} : { audience }),
+  };
+}
+
+function seriesEndsBefore(changed: ChangedLessons, lesson: LessonDetail, series: LessonSeries): boolean {
+  const ended = changed.series;
+  const occurrenceDate = localDateOf(Date.parse(lesson.starts_at), series.timezone);
+  return ended !== null && ended.count === null && ended.end_date !== null && ended.end_date < occurrenceDate;
+}
+
 function TutorControls({
   editButton,
   cancelButton,
+  endSeriesButton,
   onOpen,
 }: {
   readonly editButton: RefObject<HTMLButtonElement | null>;
   readonly cancelButton: RefObject<HTMLButtonElement | null>;
+  readonly endSeriesButton: RefObject<HTMLButtonElement | null> | null;
   readonly onOpen: (kind: DialogKind) => void;
 }): ReactElement {
   const { t } = useTranslation();
@@ -349,6 +383,18 @@ function TutorControls({
       >
         {t('lesson.cancel')}
       </button>
+      {endSeriesButton === null ? null : (
+        <button
+          ref={endSeriesButton}
+          type="button"
+          onClick={() => {
+            onOpen('endSeries');
+          }}
+          className={quietButtonClass}
+        >
+          {t('lesson.endSeries')}
+        </button>
+      )}
     </div>
   );
 }
@@ -369,7 +415,10 @@ export function LessonPage(): ReactElement {
   const key = lessonKey(lessonId);
   const editButton = useRef<HTMLButtonElement>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
+  const endSeriesButton = useRef<HTMLButtonElement>(null);
   const [dialog, setDialog] = useState<OpenDialog | null>(null);
+  const [nextSeries, setNextSeries] = useState<LessonPrefill | null>(null);
+  const [closedPrefill] = useState<LessonPrefill>(() => nextFullHour(Date.now(), me.timezone));
   const [notice, setNotice] = useState<PageNotice | null>(null);
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const action = useAction();
@@ -412,9 +461,27 @@ export function LessonPage(): ReactElement {
     setDialog(null);
     if (kind === 'edit') {
       setAnnouncement(t('lesson.changed'));
-    } else {
+    }
+    if (kind === 'cancel') {
       noticeOf('cancelled');
     }
+  }
+
+  function seriesEnded(ended: LessonDetail, changed: ChangedLessons): void {
+    if (ended.series === null || !seriesEndsBefore(changed, ended, ended.series)) {
+      stale();
+      return;
+    }
+    saved('endSeries', changed);
+    setNextSeries(nextSeriesPrefill(t, ended, ended.series, me.timezone));
+  }
+
+  function nextSeriesClosed(): void {
+    if (nextSeries === null) {
+      return;
+    }
+    setNextSeries(null);
+    noticeOf('cancelled');
   }
 
   function stale(): void {
@@ -451,7 +518,14 @@ export function LessonPage(): ReactElement {
         me={me}
         now={now}
         controls={
-          tutorWrites ? <TutorControls editButton={editButton} cancelButton={cancelButton} onOpen={open} /> : null
+          tutorWrites ? (
+            <TutorControls
+              editButton={editButton}
+              cancelButton={cancelButton}
+              endSeriesButton={lesson.series === null ? null : endSeriesButton}
+              onOpen={open}
+            />
+          ) : null
         }
       />
     );
@@ -501,6 +575,31 @@ export function LessonPage(): ReactElement {
                 saved('cancel', changed);
               },
               onStale: stale,
+            }}
+          />
+          <CancelLessonDialog
+            lesson={dialog?.kind === 'endSeries' ? dialog.lesson : null}
+            purpose="endSeries"
+            action={action}
+            returnFocus={endSeriesButton}
+            handlers={{
+              onDismiss: dismissed,
+              onSaved: (changed) => {
+                if (dialog !== null) {
+                  seriesEnded(dialog.lesson, changed);
+                }
+              },
+              onStale: stale,
+            }}
+          />
+          <NewLessonDialog
+            open={nextSeries !== null}
+            prefill={nextSeries ?? closedPrefill}
+            returnFocus={endSeriesButton}
+            onClose={nextSeriesClosed}
+            onScheduled={() => {
+              nextSeriesClosed();
+              setAnnouncement(t('schedule.scheduled'));
             }}
           />
         </>

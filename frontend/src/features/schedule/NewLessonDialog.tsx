@@ -29,6 +29,8 @@ export interface LessonPrefill {
   readonly date: LocalDate;
   readonly start: string;
   readonly audience?: Audience;
+  readonly durationMinutes?: number;
+  readonly weekdays?: readonly number[];
 }
 
 export function nextFullHour(now: number, timeZone: string): LessonPrefill {
@@ -65,9 +67,11 @@ function lessonRefusal(t: TFunction, state: ActionState): string | null {
 function SeriesFields({
   error,
   firstDate,
+  chosenWeekdays,
 }: {
   readonly error: ApiError | null;
   readonly firstDate: string;
+  readonly chosenWeekdays: readonly number[];
 }): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
@@ -85,7 +89,13 @@ function SeriesFields({
           {weekdays.map((weekday) => (
             <li key={weekday}>
               <label className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border-strong px-3 text-small has-checked:border-accent has-checked:text-strong">
-                <input type="checkbox" name="weekday" value={weekday} className="size-4 accent-accent" />
+                <input
+                  type="checkbox"
+                  name="weekday"
+                  value={weekday}
+                  defaultChecked={chosenWeekdays.includes(weekday)}
+                  className="size-4 accent-accent"
+                />
                 <span aria-hidden="true">{formatWeekdayName(weekday, me.language, 'short')}</span>
                 <span className="sr-only">{formatWeekdayName(weekday, me.language, 'long')}</span>
               </label>
@@ -201,7 +211,7 @@ function NewLessonForm({
   const [audience, setAudience] = useState<Audience | null>(preselected);
   const [title, setTitle] = useState(() => defaultTitle(t, preselected));
   const [titleEdited, setTitleEdited] = useState(false);
-  const [repeat, setRepeat] = useState(false);
+  const [repeat, setRepeat] = useState(prefill.weekdays !== undefined);
   const [missing, setMissing] = useState<'audience' | 'weekdays' | null>(null);
   const [refusals, setRefusals] = useState(0);
   const [missingAttempts, setMissingAttempts] = useState(0);
@@ -330,7 +340,7 @@ function NewLessonForm({
             label={t('newLesson.duration')}
             name="duration_minutes"
             type="number"
-            defaultValue={String(defaultDurationMinutes)}
+            defaultValue={String(prefill.durationMinutes ?? defaultDurationMinutes)}
             min={lessonDurationLimits.minimum}
             max={lessonDurationLimits.maximum}
             step={lessonDurationLimits.step}
@@ -348,7 +358,9 @@ function NewLessonForm({
           />
           {t('newLesson.repeat')}
         </label>
-        {repeat ? <SeriesFields error={error} firstDate={prefill.date} /> : null}
+        {repeat ? (
+          <SeriesFields error={error} firstDate={prefill.date} chosenWeekdays={prefill.weekdays ?? []} />
+        ) : null}
         {missing === 'weekdays' ? <FormAlert key={missingAttempts}>{t('newLesson.weekdaysRequired')}</FormAlert> : null}
         <div className="flex flex-col gap-1">
           <label htmlFor={descriptionId} className="text-label">

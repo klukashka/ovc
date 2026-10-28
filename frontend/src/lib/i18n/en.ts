@@ -639,6 +639,7 @@ export const en: Resources = {
     edit: 'Edit lesson',
     cancel: 'Cancel lesson',
     changed: 'Lesson changed',
+    endSeries: 'End this series and create a new one',
     cancelledNotice: 'Lesson cancelled',
     changedMeanwhile: 'This lesson changed in the meantime. Its current state is shown below.',
   },
@@ -658,6 +659,12 @@ export const en: Resources = {
     followingConsequence: 'This lesson and every following lesson of the series are cancelled, and the series ends.',
     confirm: 'Cancel lesson',
     confirmFollowing: 'Cancel lessons',
+  },
+  lessonEndSeries: {
+    title: 'End this series and create a new one',
+    consequence:
+      'This lesson and every following lesson of the series are cancelled, and the series ends. A new lesson then opens with the same student or group, time and weekdays.',
+    confirm: 'End the series',
   },
   time: {
     other_zone: '{time} {city} time ({local} your time)',

@@ -118,6 +118,19 @@ export function localMidnight(date: LocalDate, timeZone: string): number {
   return start;
 }
 
+const instantProbes = [-24 * millisecondsPerHour, 24 * millisecondsPerHour];
+
+export function localInstant(date: LocalDate, minutes: number, timeZone: string): number {
+  const wallClock = utcNoon(date).getTime() - 12 * millisecondsPerHour + minutes * millisecondsPerMinute;
+  const candidates = instantProbes.map((probe) => wallClock - offsetAt(wallClock + probe, timeZone));
+  const existing = candidates.filter((candidate) => wallClock - candidate === offsetAt(candidate, timeZone));
+  return existing.length > 0 ? Math.min(...existing) : Math.max(...candidates);
+}
+
+export function daysBetween(from: LocalDate, to: LocalDate): number {
+  return Math.round((utcNoon(to).getTime() - utcNoon(from).getTime()) / (24 * millisecondsPerHour));
+}
+
 export function addDays(date: LocalDate, days: number): LocalDate {
   const moment = utcNoon(date);
   moment.setUTCDate(moment.getUTCDate() + days);

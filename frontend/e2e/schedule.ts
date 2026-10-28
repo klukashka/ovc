@@ -214,3 +214,33 @@ export async function cardLessonStatuses(
     return status;
   });
 }
+
+export async function scheduledCardLessonStarts(
+  deployment: Deployment,
+  tutor: TestAccount,
+  cardId: string,
+): Promise<readonly string[]> {
+  const answer = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'GET',
+    `/students/${cardId}/lessons?limit=100`,
+  );
+  if (answer.status !== 200) {
+    throw new Error(`reading the card's lessons answered ${String(answer.status)}`);
+  }
+  const items = field(answer.body, 'items');
+  if (!Array.isArray(items)) {
+    throw new Error("the card's lessons are not a list");
+  }
+  return items
+    .filter((item: unknown) => field(item, 'status') === 'scheduled')
+    .map((item: unknown) => {
+      const start = field(item, 'starts_at');
+      if (typeof start !== 'string') {
+        throw new Error('a lesson has no start');
+      }
+      return start;
+    })
+    .sort();
+}
