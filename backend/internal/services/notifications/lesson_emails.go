@@ -86,6 +86,7 @@ func (l *LessonEmails) Builders() map[domain.OutboxKind]Builder {
 	builders[domain.EventLessonMoved] = lessonMovedEmail{emails: l}
 	builders[domain.EventLessonCancelled] = lessonCancelledEmail{emails: l}
 	builders[domain.EventLessonSeriesChanged] = seriesChangedEmail{emails: l}
+	builders[domain.EventGroupArchived] = groupArchivedEmail{emails: l}
 	return builders
 }
 
@@ -167,10 +168,6 @@ type lessonRender struct {
 }
 
 func (l *LessonEmails) render(source lessonRender, now time.Time) (Email, error) {
-	token, err := l.tokens.Mint(source.recipient.ID, source.group, now)
-	if err != nil {
-		return Email{}, err
-	}
 	when, err := l.when(source.recipient, source.lesson.StartsAt, source.lesson.Timezone)
 	if err != nil {
 		return Email{}, err
@@ -185,8 +182,16 @@ func (l *LessonEmails) render(source lessonRender, now time.Time) (Email, error)
 		Details: details, Lessons: source.lines, More: source.more,
 		Action: source.text.Action, ActionURL: l.publicURL + lessonPagePath + source.lesson.ID.String(), Note: source.text.Note,
 		Unsubscribe: source.text.Unsubscribe, UnsubscribeNote: source.text.UnsubscribeNote,
-		UnsubscribeURL: l.publicURL + unsubscribePagePath + "?token=" + url.QueryEscape(token),
 	}
+	return l.execute(view, source.recipient, source.group, now)
+}
+
+func (l *LessonEmails) execute(view lessonView, recipient repositories.User, group domain.EmailGroup, now time.Time) (Email, error) {
+	token, err := l.tokens.Mint(recipient.ID, group, now)
+	if err != nil {
+		return Email{}, err
+	}
+	view.UnsubscribeURL = l.publicURL + unsubscribePagePath + "?token=" + url.QueryEscape(token)
 	var html, plain bytes.Buffer
 	if err := l.html.Execute(&html, view); err != nil {
 		return Email{}, domain.PermanentEffect(fmt.Errorf("render the lesson email: %w", err))
@@ -195,19 +200,23 @@ func (l *LessonEmails) render(source lessonRender, now time.Time) (Email, error)
 		return Email{}, domain.PermanentEffect(fmt.Errorf("render the lesson email: %w", err))
 	}
 	return Email{
-		To: source.recipient.Email, Subject: view.Subject, Text: plain.String(), HTML: html.String(),
+		To: recipient.Email, Subject: view.Subject, Text: plain.String(), HTML: html.String(),
 		Unsubscribe: l.publicURL + unsubscribeAPIPath + "?token=" + url.QueryEscape(token),
 	}, nil
 }
 
 func (l *LessonEmails) when(recipient repositories.User, startsAt time.Time, lessonTimezone string) (string, error) {
+	return lessonStart(l.cities, recipient, startsAt, lessonTimezone)
+}
+
+func lessonStart(cities timezonecities.Table, recipient repositories.User, startsAt time.Time, lessonTimezone string) (string, error) {
 	zone, err := time.LoadLocation(recipient.Timezone)
 	if err != nil {
 		return "", fmt.Errorf("load the recipient's timezone: %w", err)
 	}
 	var label *core.ZoneLabel
 	if recipient.Timezone != lessonTimezone {
-		place := l.cities.Describe(zone, startsAt)
+		place := cities.Describe(zone, startsAt)
 		label = &core.ZoneLabel{Offset: place.Offset}
 		if place.City != nil {
 			label.City = place.City.English

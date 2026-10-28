@@ -44,7 +44,7 @@ func (r *router) listNotifications(ctx context.Context, input *pageInput) (*noti
 	for _, item := range page.Items {
 		shown := schemas.Notification{
 			ID: item.ID.String(), Event: item.Event, CreatedAt: item.CreatedAt, ReadAt: item.ReadAt, Label: item.Label,
-			LabelDeleted: item.LabelDeleted, Colour: item.Colour,
+			LabelDeleted: item.LabelDeleted, LabelKind: item.LabelKind, Colour: item.Colour,
 		}
 		if item.Link != nil {
 			shown.Link = &schemas.NotificationLink{Kind: item.Link.Kind, ID: item.Link.ID.String()}

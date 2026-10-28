@@ -50,6 +50,7 @@ type Item struct {
 	ReadAt       *time.Time
 	Label        *string
 	LabelDeleted bool
+	LabelKind    *domain.LabelKind
 	Colour       *domain.Colour
 	Link         *Link
 }
@@ -218,12 +219,14 @@ type subjects struct {
 	relationships map[domain.RelationshipID]repositories.NotificationRelationship
 	requests      map[domain.JoinRequestID]repositories.NotificationJoinRequest
 	lessons       map[domain.LessonID]string
+	groups        map[domain.GroupID]repositories.NotificationGroup
 }
 
 func loadSubjects(ctx context.Context, repos repositories.Repositories, principal accounts.Principal, rows []repositories.Notification) (subjects, error) {
 	var relationshipIDs []domain.RelationshipID
 	var requestIDs []domain.JoinRequestID
 	var lessonIDs []domain.LessonID
+	var groupIDs []domain.GroupID
 	for _, row := range rows {
 		if row.RelationshipID != nil {
 			relationshipIDs = append(relationshipIDs, *row.RelationshipID)
@@ -234,14 +237,27 @@ func loadSubjects(ctx context.Context, repos repositories.Repositories, principa
 		if subjectIsLesson(row.Event) {
 			lessonIDs = append(lessonIDs, domain.LessonID(row.SubjectID))
 		}
+		if row.Event == domain.NotificationGroupArchived {
+			groupIDs = append(groupIDs, domain.GroupID(row.SubjectID))
+		}
 	}
 	loaded := subjects{
 		relationships: map[domain.RelationshipID]repositories.NotificationRelationship{},
 		requests:      map[domain.JoinRequestID]repositories.NotificationJoinRequest{},
 		lessons:       map[domain.LessonID]string{},
+		groups:        map[domain.GroupID]repositories.NotificationGroup{},
 	}
 	if err := loaded.loadLessons(ctx, repos, principal, lessonIDs); err != nil {
 		return subjects{}, err
+	}
+	if principal.Role == domain.RoleStudent && len(groupIDs) > 0 {
+		groups, err := repos.Notifications.Groups(ctx, principal.UserID, groupIDs)
+		if err != nil {
+			return subjects{}, err
+		}
+		for _, group := range groups {
+			loaded.groups[group.ID] = group
+		}
 	}
 	if len(relationshipIDs) > 0 {
 		relationships, err := repos.Notifications.Relationships(ctx, relationshipIDs)
@@ -289,7 +305,7 @@ func subjectIsRequest(event domain.NotificationEvent) bool {
 	case domain.NotificationJoinRequestCreated, domain.NotificationJoinRequestAccepted, domain.NotificationJoinRequestDeclined:
 		return true
 	case domain.NotificationInvitationAccepted, domain.NotificationRelationshipEnded, domain.NotificationLessonReminder1h,
-		domain.NotificationLessonMoved, domain.NotificationLessonCancelled, domain.NotificationSeriesChanged:
+		domain.NotificationLessonMoved, domain.NotificationLessonCancelled, domain.NotificationSeriesChanged, domain.NotificationGroupArchived:
 		return false
 	}
 	return false
@@ -300,7 +316,7 @@ func subjectIsLesson(event domain.NotificationEvent) bool {
 	case domain.NotificationLessonReminder1h, domain.NotificationLessonMoved, domain.NotificationLessonCancelled, domain.NotificationSeriesChanged:
 		return true
 	case domain.NotificationInvitationAccepted, domain.NotificationJoinRequestCreated, domain.NotificationJoinRequestAccepted,
-		domain.NotificationJoinRequestDeclined, domain.NotificationRelationshipEnded:
+		domain.NotificationJoinRequestDeclined, domain.NotificationRelationshipEnded, domain.NotificationGroupArchived:
 		return false
 	}
 	return false
@@ -325,8 +341,34 @@ func (s subjects) item(principal accounts.Principal, row repositories.Notificati
 		}
 	case domain.NotificationLessonReminder1h, domain.NotificationLessonMoved, domain.NotificationLessonCancelled, domain.NotificationSeriesChanged:
 		s.lessonRow(principal, row, &item)
+	case domain.NotificationGroupArchived:
+		s.archivedGroupRow(principal, row, &item)
 	}
 	return item
+}
+
+func (s subjects) archivedGroupRow(principal accounts.Principal, row repositories.Notification, item *Item) {
+	group, found := s.groups[domain.GroupID(row.SubjectID)]
+	if principal.Role != domain.RoleStudent || !found || group.TutorID != row.TutorID {
+		return
+	}
+	if group.Member {
+		name := group.Name
+		item.Label = &name
+	} else {
+		kind := domain.LabelGroup
+		item.LabelKind = &kind
+	}
+	s.studentColour(principal.UserID, row, item)
+}
+
+func (s subjects) studentColour(student domain.UserID, row repositories.Notification, item *Item) {
+	if row.RelationshipID == nil {
+		return
+	}
+	if link, found := s.relationships[*row.RelationshipID]; found && link.StudentID != nil && *link.StudentID == student && listedInMyTutors(link.State) {
+		item.Colour = link.Colour
+	}
 }
 
 func (s subjects) lessonRow(principal accounts.Principal, row repositories.Notification, item *Item) {
@@ -336,12 +378,10 @@ func (s subjects) lessonRow(principal accounts.Principal, row repositories.Notif
 	}
 	item.Label = &title
 	item.Link = &Link{Kind: domain.NotificationLessonLink, ID: row.SubjectID}
-	if principal.Role == domain.RoleTutor || row.RelationshipID == nil {
+	if principal.Role == domain.RoleTutor {
 		return
 	}
-	if link, found := s.relationships[*row.RelationshipID]; found && link.StudentID != nil && *link.StudentID == principal.UserID && listedInMyTutors(link.State) {
-		item.Colour = link.Colour
-	}
+	s.studentColour(principal.UserID, row, item)
 }
 
 func (s subjects) tutorCard(tutor domain.UserID, row repositories.Notification, item *Item) {

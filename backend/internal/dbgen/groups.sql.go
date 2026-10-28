@@ -40,9 +40,10 @@ func (q *Queries) AddGroupMembers(ctx context.Context, arg AddGroupMembersParams
 	return result.RowsAffected(), nil
 }
 
-const archiveGroup = `-- name: ArchiveGroup :execrows
+const archiveGroup = `-- name: ArchiveGroup :one
 UPDATE groups SET archived_at = $1::timestamptz, updated_at = $1::timestamptz
 WHERE id = $2 AND tutor_id = $3 AND archived_at IS NULL
+RETURNING archived_at
 `
 
 type ArchiveGroupParams struct {
@@ -51,12 +52,11 @@ type ArchiveGroupParams struct {
 	TutorID domain.UserID
 }
 
-func (q *Queries) ArchiveGroup(ctx context.Context, arg ArchiveGroupParams) (int64, error) {
-	result, err := q.db.Exec(ctx, archiveGroup, arg.Now, arg.ID, arg.TutorID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+func (q *Queries) ArchiveGroup(ctx context.Context, arg ArchiveGroupParams) (*time.Time, error) {
+	row := q.db.QueryRow(ctx, archiveGroup, arg.Now, arg.ID, arg.TutorID)
+	var archived_at *time.Time
+	err := row.Scan(&archived_at)
+	return archived_at, err
 }
 
 const archiveTutorGroups = `-- name: ArchiveTutorGroups :many

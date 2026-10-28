@@ -579,6 +579,7 @@ export const ru = {
     empty: 'Уведомлений пока нет',
     arrived: 'Новое уведомление',
     deletedAccount: 'Удалённый аккаунт',
+    groupLesson: 'Групповой урок',
     unread: 'Не прочитано',
     showMore: 'Показать ещё',
     event: {
@@ -591,6 +592,7 @@ export const ru = {
       lessonMoved: 'Урок перенесён',
       lessonCancelled: 'Урок отменён',
       lessonSeriesChanged: 'Уроки серии изменились',
+      groupArchived: 'Группа перенесена в архив',
     },
   },
   lesson: {

@@ -472,15 +472,7 @@ func applyGroupDetails(ctx context.Context, repos repositories.Repositories, row
 	return fields, nil
 }
 
-func (s *Service) ArchiveGroup(ctx context.Context, tutor domain.UserID, id domain.GroupID) (Group, error) {
-	return s.setArchived(ctx, tutor, id, true)
-}
-
 func (s *Service) UnarchiveGroup(ctx context.Context, tutor domain.UserID, id domain.GroupID) (Group, error) {
-	return s.setArchived(ctx, tutor, id, false)
-}
-
-func (s *Service) setArchived(ctx context.Context, tutor domain.UserID, id domain.GroupID, archive bool) (Group, error) {
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return Group{}, err
@@ -494,33 +486,28 @@ func (s *Service) setArchived(ctx context.Context, tutor domain.UserID, id domai
 		if _, err := repos.Groups.LockForTutor(ctx, tutor, id); err != nil {
 			return groupScope(err)
 		}
-		if archive {
-			changed, err = repos.Groups.Archive(ctx, tutor, id, now)
-		} else {
-			changed, err = repos.Groups.Unarchive(ctx, tutor, id, now)
-		}
-		if err != nil {
+		if changed, err = repos.Groups.Unarchive(ctx, tutor, id, now); err != nil {
 			return err
 		}
-		row, err := repos.Groups.ForTutor(ctx, tutor, id)
-		if err != nil {
-			return err
-		}
-		group, err = s.groupView(ctx, repos, row)
+		group, err = s.currentGroup(ctx, repos, tutor, id)
 		return err
 	})
 	if err != nil {
 		return Group{}, err
 	}
 	if changed {
-		event := "group.unarchived"
-		if archive {
-			event = "group.archived"
-		}
 		attributes := append(groupAttributes(tutor, id), slog.Int("members", len(group.Members)))
-		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, event, attributes...)
+		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "group.unarchived", attributes...)
 	}
 	return group, nil
+}
+
+func (s *Service) currentGroup(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.GroupID) (Group, error) {
+	row, err := repos.Groups.ForTutor(ctx, tutor, id)
+	if err != nil {
+		return Group{}, err
+	}
+	return s.groupView(ctx, repos, row)
 }
 
 func groupAttributes(tutor domain.UserID, group domain.GroupID) []slog.Attr {

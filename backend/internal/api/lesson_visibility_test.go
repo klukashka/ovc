@@ -283,13 +283,13 @@ func TestLessonPagesDenyFormerAudiences(t *testing.T) {
 	provisional := h.scheduled(t, parties.tutorToken, oneOffFor(squatter, "2030-03-14", "18:00")).Lessons[0]
 	squatterToken := h.studentToken(t, 30)
 	h.groupCall(t, parties.tutorToken, http.MethodPatch, parties.group, "", `{"remove":["`+parties.other+`"]}`)
-	h.endAsTutor(t, parties.tutorToken, parties.card)
+	h.endRelationship(t, parties.card)
 	h.cardCall(t, parties.tutorToken, http.MethodPost, squatter, "/remove", "")
 
 	denied := map[string]response{
-		"an ended relationship's lesson":     h.lessonPage(t, parties.studentToken, individual.ID),
-		"a removed member's group lesson":    h.lessonPage(t, h.studentToken(t, 11), groupLesson.ID),
-		"a former provisional account's one": h.lessonPage(t, squatterToken, provisional.ID),
+		"an ended relationship's scheduled lesson": h.lessonPage(t, parties.studentToken, individual.ID),
+		"a removed member's group lesson":          h.lessonPage(t, h.studentToken(t, 11), groupLesson.ID),
+		"a former provisional account's one":       h.lessonPage(t, squatterToken, provisional.ID),
 	}
 
 	random := h.lessonPage(t, parties.studentToken, randomCardID)

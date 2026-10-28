@@ -27,6 +27,7 @@ type tutorDeletion struct {
 	revoked      int64
 	expired      int64
 	archived     []domain.GroupID
+	lessons      []lessonEffects
 	emailsQueued int64
 }
 
@@ -51,10 +52,15 @@ func (s *Service) applyTutorDeletion(ctx context.Context, repos repositories.Rep
 	if err := repos.Relationships.LockOfTutor(ctx, tutor); err != nil {
 		return tutorDeletion{}, err
 	}
+	audience, err := s.audienceOfTutor(ctx, repos, tutor)
+	if err != nil {
+		return tutorDeletion{}, err
+	}
 	discarded, err := repos.Relationships.DiscardForTutorDeletion(ctx, tutor, now)
 	if err != nil {
 		return tutorDeletion{}, err
 	}
+	var discardedLinks []repositories.LinkStudent
 	for _, card := range discarded {
 		transition, allowed := domain.NextRelationshipState(card.PreviousState, domain.CauseTutorDeleted)
 		if !allowed || transition.To != domain.RelationshipDiscarded || transition.NewCard {
@@ -63,6 +69,9 @@ func (s *Service) applyTutorDeletion(ctx context.Context, repos repositories.Rep
 		deletion.discarded++
 		if card.PreviousState != domain.RelationshipInvited {
 			deletion.removed = append(deletion.removed, repositories.Relationship{ID: card.ID, TutorID: card.TutorID, StudentID: card.StudentID})
+			if card.StudentID != nil {
+				discardedLinks = append(discardedLinks, repositories.LinkStudent{Relationship: card.ID, Student: *card.StudentID})
+			}
 		}
 	}
 	ended, err := s.endForTutorDeletion(ctx, repos, tutor, now)
@@ -90,6 +99,9 @@ func (s *Service) applyTutorDeletion(ctx context.Context, repos repositories.Rep
 	if deletion.archived, err = repos.Groups.ArchiveAllOfTutor(ctx, tutor, now); err != nil {
 		return tutorDeletion{}, err
 	}
+	if deletion.lessons, err = s.cancelTutorLessons(ctx, repos, tutor, discardedLinks, audience, now); err != nil {
+		return tutorDeletion{}, err
+	}
 	if err := signalTutorDeletion(ctx, repos, deletion); err != nil {
 		return tutorDeletion{}, err
 	}
@@ -97,6 +109,58 @@ func (s *Service) applyTutorDeletion(ctx context.Context, repos repositories.Rep
 		return tutorDeletion{}, err
 	}
 	return deletion, nil
+}
+
+func (s *Service) audienceOfTutor(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) (lessonAudience, error) {
+	links, err := repos.Lessons.ActiveAudienceOfTutor(ctx, tutor)
+	if err != nil {
+		return lessonAudience{}, err
+	}
+	members, err := repos.Lessons.GroupMembersOfTutor(ctx, tutor)
+	if err != nil {
+		return lessonAudience{}, err
+	}
+	audience := lessonAudience{links: make(map[domain.RelationshipID]domain.UserID, len(links)), groups: map[domain.GroupID][]domain.UserID{}}
+	for _, link := range links {
+		audience.links[link.Relationship] = link.Student
+	}
+	for _, member := range members {
+		audience.groups[member.Group] = append(audience.groups[member.Group], member.Student)
+	}
+	return audience, nil
+}
+
+func (s *Service) cancelTutorLessons(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, discarded []repositories.LinkStudent, audience lessonAudience,
+	deletedAt time.Time,
+) ([]lessonEffects, error) {
+	whole := repositories.EffectScope{Tutor: tutor, WholeTutor: true}
+	series, err := s.endSeries(ctx, repos, whole, deletedAt)
+	if err != nil {
+		return nil, err
+	}
+	removed := lessonEffects{tutor: tutor, cause: domain.CancelProvisionalRemoved}
+	if len(discarded) > 0 {
+		links := make([]domain.RelationshipID, 0, len(discarded))
+		for _, link := range discarded {
+			links = append(links, link.Relationship)
+		}
+		removed, err = s.cancelLessons(ctx, repos, lessonCancellation{
+			scope: repositories.EffectScope{Tutor: tutor, Relationships: links}, cause: domain.CancelProvisionalRemoved, at: deletedAt,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := repos.Lessons.DeleteRosterRowsOfLinks(ctx, discarded); err != nil {
+			return nil, err
+		}
+	}
+	deleted, err := s.cancelLessons(ctx, repos, lessonCancellation{scope: whole, cause: domain.CancelTutorDeleted, at: deletedAt, audience: audience})
+	if err != nil {
+		return nil, err
+	}
+	deleted.series = series
+	return []lessonEffects{removed, deleted}, nil
 }
 
 func signalTutorDeletion(ctx context.Context, repos repositories.Repositories, deletion tutorDeletion) error {
@@ -175,6 +239,7 @@ func (s *Service) announceTutorDeletion(ctx context.Context, deletion tutorDelet
 	for _, link := range deletion.removed {
 		s.logRemoved(ctx, link, removedByTutorDeletion)
 	}
+	s.logLessonEffects(ctx, deletion.lessons...)
 	for _, group := range deletion.archived {
 		attributes := append(groupAttributes(deletion.tutor, group), slog.Int("members", 0))
 		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "group.archived", attributes...)
@@ -226,6 +291,7 @@ func (s *Service) applyStudentDeletion(ctx context.Context, repos repositories.R
 		for _, link := range decision.removed {
 			s.logRemoved(ctx, link, removedByStudent)
 		}
+		s.logLessonEffects(ctx, decision.lessons...)
 		for _, done := range ended {
 			s.logEnded(ctx, done)
 		}
@@ -287,6 +353,7 @@ func (s *Service) OnAccountPurged(
 		return nil, err
 	}
 	var removed []repositories.Relationship
+	var lessons []lessonEffects
 	var ended []ending
 	for _, link := range links {
 		if link.State == domain.RelationshipActive {
@@ -304,10 +371,11 @@ func (s *Service) OnAccountPurged(
 			}
 			continue
 		}
-		if _, err := s.removeLink(ctx, repos, link, now); err != nil {
+		_, effects, err := s.removeLink(ctx, repos, link, now)
+		if err != nil {
 			return nil, err
 		}
-		removed = append(removed, link)
+		removed, lessons = append(removed, link), append(lessons, effects)
 	}
 	if err := repos.Relationships.ForgetPurgedStudent(ctx, user, now); err != nil {
 		return nil, err
@@ -319,6 +387,7 @@ func (s *Service) OnAccountPurged(
 		for _, link := range removed {
 			s.logRemoved(ctx, link, removedByCleanup)
 		}
+		s.logLessonEffects(ctx, lessons...)
 	}, nil
 }
 

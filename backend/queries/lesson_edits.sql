@@ -74,7 +74,13 @@ ORDER BY starts_at, id;
 
 -- name: IsOnLessonRoster :one
 SELECT EXISTS (
-    SELECT 1 FROM lesson_roster WHERE lesson_id = @lesson_id AND student_id = @student_id
+    SELECT 1 FROM lesson_roster
+    JOIN lessons ON lessons.id = lesson_roster.lesson_id
+    WHERE lesson_roster.lesson_id = @lesson_id AND lesson_roster.student_id = @student_id
+        AND NOT EXISTS (
+            SELECT 1 FROM relationships AS waiting
+            WHERE waiting.id = lessons.relationship_id AND waiting.state = 'reclaim_pending'
+        )
 ) AS listed;
 
 -- name: ListLessonsForChangeEmail :many

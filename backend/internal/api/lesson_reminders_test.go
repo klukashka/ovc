@@ -177,7 +177,7 @@ func TestALessonEmailAfterAnEndingOrAReclaimIsDroppedAtDispatch(t *testing.T) {
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	ended := h.linkedCard(t, tutor, 10, domain.RelationshipActive)
 	reclaimed := h.linkedCard(t, tutor, 20, domain.RelationshipActive)
-	h.lessonAt(t, token, ended, firstLessonDate, firstLessonLocal)
+	endedLesson := h.lessonAt(t, token, ended, firstLessonDate, firstLessonLocal)
 	h.lessonAt(t, token, reclaimed, firstLessonDate, firstLessonLocal)
 	h.at(t, hourBeforeFirst)
 	h.queueReminders(t)
@@ -191,7 +191,8 @@ func TestALessonEmailAfterAnEndingOrAReclaimIsDroppedAtDispatch(t *testing.T) {
 	if len(h.remindersFor(t, "member-10@example.org", domain.EventLessonReminder1h)) != 0 || len(h.mailTo(t, "member-20@example.org")) != 0 {
 		t.Fatal("a student outside the audience got a reminder")
 	}
-	if h.outboxOf(t, domain.EventLessonReminder1h, "done:obsolete") != 2 || len(h.remindersFor(t, tutorEmail, domain.EventLessonReminder1h)) != 2 {
+	if h.lessonState(t, endedLesson) != "cancelled" || h.outboxOf(t, domain.EventLessonReminder1h, "done:obsolete") != 3 ||
+		len(h.remindersFor(t, tutorEmail, domain.EventLessonReminder1h)) != 1 {
 		t.Fatalf("the tutor got %d reminders", len(h.remindersFor(t, tutorEmail, domain.EventLessonReminder1h)))
 	}
 }

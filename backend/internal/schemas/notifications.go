@@ -15,11 +15,12 @@ type NotificationLink struct {
 
 type Notification struct {
 	ID           string                   `json:"id" format:"uuid"`
-	Event        domain.NotificationEvent `json:"event" enum:"invitation.accepted,join_request.created,join_request.accepted,join_request.declined,relationship.ended,lesson.reminder_1h,lesson.moved,lesson.cancelled,lesson.series_changed"`
+	Event        domain.NotificationEvent `json:"event" enum:"invitation.accepted,join_request.created,join_request.accepted,join_request.declined,relationship.ended,lesson.reminder_1h,lesson.moved,lesson.cancelled,lesson.series_changed,group.archived"`
 	CreatedAt    time.Time                `json:"created_at"`
 	ReadAt       *time.Time               `json:"read_at" nullable:"true"`
 	Label        *string                  `json:"label" nullable:"true"`
 	LabelDeleted bool                     `json:"label_deleted"`
+	LabelKind    *domain.LabelKind        `json:"label_kind" enum:"group" nullable:"true"`
 	Colour       *domain.Colour           `json:"colour" enum:"clay,slate,moss,plum,ochre,teal,rust,ink" nullable:"true"`
 	Link         *NotificationLink        `json:"link"`
 }

@@ -18,13 +18,14 @@ const (
 	NotificationLessonMoved         NotificationEvent = "lesson.moved"
 	NotificationLessonCancelled     NotificationEvent = "lesson.cancelled"
 	NotificationSeriesChanged       NotificationEvent = "lesson.series_changed"
+	NotificationGroupArchived       NotificationEvent = "group.archived"
 )
 
 func NotificationEvents() []NotificationEvent {
 	return []NotificationEvent{
 		NotificationInvitationAccepted, NotificationJoinRequestCreated, NotificationJoinRequestAccepted,
 		NotificationJoinRequestDeclined, NotificationRelationshipEnded, NotificationLessonReminder1h, NotificationLessonMoved,
-		NotificationLessonCancelled, NotificationSeriesChanged,
+		NotificationLessonCancelled, NotificationSeriesChanged, NotificationGroupArchived,
 	}
 }
 

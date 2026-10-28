@@ -31,6 +31,7 @@ const eventTexts = {
   'lesson.moved': 'notifications.event.lessonMoved',
   'lesson.cancelled': 'notifications.event.lessonCancelled',
   'lesson.series_changed': 'notifications.event.lessonSeriesChanged',
+  'group.archived': 'notifications.event.groupArchived',
 } as const satisfies Readonly<Record<NotificationEvent, string>>;
 
 export function useMarkRead(): (selection: ReadSelection) => Promise<void> {
@@ -50,7 +51,8 @@ function Label({ item }: { readonly item: Notification }): ReactElement | null {
   if (item.label_deleted) {
     return <span className="text-strong">{t('notifications.deletedAccount')}</span>;
   }
-  if (item.label === null) {
+  const label = item.label ?? (item.label_kind === 'group' ? t('notifications.groupLesson') : null);
+  if (label === null) {
     return null;
   }
   return (
@@ -58,7 +60,7 @@ function Label({ item }: { readonly item: Notification }): ReactElement | null {
       {item.colour === null ? null : (
         <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${paletteDotClass[item.colour]}`} />
       )}
-      <span className="min-w-0 break-words">{item.label}</span>
+      <span className="min-w-0 break-words">{label}</span>
     </span>
   );
 }

@@ -239,6 +239,7 @@ func (s *Service) RemoveStudent(ctx context.Context, tutor domain.UserID, id dom
 	}
 	var card Card
 	var removed repositories.Relationship
+	var lessons lessonEffects
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		seen, err := repos.Relationships.ForTutor(ctx, tutor, id)
 		if errors.Is(err, repositories.ErrNotFound) {
@@ -270,11 +271,11 @@ func (s *Service) RemoveStudent(ctx context.Context, tutor domain.UserID, id dom
 		if !removable(locked) || *locked.StudentID != *seen.StudentID {
 			return ErrRelationshipNotProvisional
 		}
-		fresh, err := s.removeLink(ctx, repos, locked, now)
+		fresh, effects, err := s.removeLink(ctx, repos, locked, now)
 		if err != nil {
 			return err
 		}
-		removed = locked
+		removed, lessons = locked, effects
 		card, err = s.fullCard(ctx, repos, tutor, fresh, now)
 		return err
 	})
@@ -282,6 +283,7 @@ func (s *Service) RemoveStudent(ctx context.Context, tutor domain.UserID, id dom
 		return Card{}, err
 	}
 	s.logRemoved(ctx, removed, removedByTutor)
+	s.logLessonEffects(ctx, lessons)
 	return card, nil
 }
 
@@ -290,39 +292,48 @@ func removable(card repositories.Relationship) bool {
 	return allowed && transition.NewCard && card.StudentID != nil
 }
 
-func (s *Service) removeLink(ctx context.Context, repos repositories.Repositories, link repositories.Relationship, now time.Time) (repositories.Relationship, error) {
+func (s *Service) removeLink(
+	ctx context.Context, repos repositories.Repositories, link repositories.Relationship, now time.Time,
+) (repositories.Relationship, lessonEffects, error) {
 	discarded, err := repos.Relationships.Remove(ctx, link.TutorID, link.ID, now)
 	if errors.Is(err, repositories.ErrNotFound) {
-		return repositories.Relationship{}, ErrRelationshipNotProvisional
+		return repositories.Relationship{}, lessonEffects{}, ErrRelationshipNotProvisional
 	}
 	if err != nil {
-		return repositories.Relationship{}, err
+		return repositories.Relationship{}, lessonEffects{}, err
 	}
 	if _, err := repos.Invitations.RevokeOpen(ctx, link.TutorID, link.ID, domain.RevokeRemoved, now); err != nil {
-		return repositories.Relationship{}, err
+		return repositories.Relationship{}, lessonEffects{}, err
+	}
+	var lessons lessonEffects
+	if discarded.StudentID != nil {
+		discardedLink := []repositories.LinkStudent{{Relationship: link.ID, Student: *discarded.StudentID}}
+		if lessons, err = s.discardLinkLessons(ctx, repos, discardedLink, link.TutorID, now); err != nil {
+			return repositories.Relationship{}, lessonEffects{}, err
+		}
 	}
 	id, err := core.NewID[domain.RelationshipID](s.deps.Random)
 	if err != nil {
-		return repositories.Relationship{}, err
+		return repositories.Relationship{}, lessonEffects{}, err
 	}
 	err = repos.Relationships.Create(ctx, repositories.NewRelationship{
 		ID: id, TutorID: link.TutorID, State: domain.RelationshipInvited, DisplayName: discarded.DisplayName, Email: discarded.Email,
 		Notes: discarded.Notes, CreatedAt: now,
 	})
 	if err != nil {
-		return repositories.Relationship{}, err
+		return repositories.Relationship{}, lessonEffects{}, err
 	}
 	fresh, err := repos.Relationships.ForTutor(ctx, link.TutorID, id)
 	if err != nil {
-		return repositories.Relationship{}, err
+		return repositories.Relationship{}, lessonEffects{}, err
 	}
 	if err := relationshipChanged(ctx, repos, link, true); err != nil {
-		return repositories.Relationship{}, err
+		return repositories.Relationship{}, lessonEffects{}, err
 	}
 	if err := cardChanged(ctx, repos, link.TutorID, fresh.ID); err != nil {
-		return repositories.Relationship{}, err
+		return repositories.Relationship{}, lessonEffects{}, err
 	}
-	return fresh, s.issueInvitation(ctx, repos, fresh, now)
+	return fresh, lessons, s.issueInvitation(ctx, repos, fresh, now)
 }
 
 func (s *Service) logRemoved(ctx context.Context, link repositories.Relationship, cause removalCause) {

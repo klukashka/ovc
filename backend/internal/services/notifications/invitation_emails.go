@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"ovc/backend/internal/core"
+	"ovc/backend/internal/core/timezonecities"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 )
@@ -25,19 +26,23 @@ var relationshipText string
 const invitationPathPrefix = "/invite/"
 
 type relationshipView struct {
-	Language  domain.Language
-	Subject   string
-	Intro     string
-	Name      string
-	Lines     []string
-	Action    string
-	ActionURL string
-	Note      string
+	Language       domain.Language
+	Subject        string
+	Intro          string
+	Name           string
+	Lines          []string
+	LessonsHeading string
+	Lessons        []string
+	More           string
+	Action         string
+	ActionURL      string
+	Note           string
 }
 
 type RelationshipEmails struct {
 	store     *repositories.Store
 	cipher    core.FieldCipher
+	cities    timezonecities.Table
 	publicURL string
 	html      *htmltemplate.Template
 	text      *texttemplate.Template
@@ -52,7 +57,13 @@ func NewRelationshipEmails(store *repositories.Store, cipher core.FieldCipher, p
 	if err != nil {
 		return nil, fmt.Errorf("parse the relationship email text template: %w", err)
 	}
-	return &RelationshipEmails{store: store, cipher: cipher, publicURL: strings.TrimRight(publicURL, "/"), html: html, text: text}, nil
+	cities, err := timezonecities.Load()
+	if err != nil {
+		return nil, err
+	}
+	return &RelationshipEmails{
+		store: store, cipher: cipher, cities: cities, publicURL: strings.TrimRight(publicURL, "/"), html: html, text: text,
+	}, nil
 }
 
 func (r *RelationshipEmails) Builders() map[domain.OutboxKind]Builder {
@@ -114,7 +125,7 @@ func (b invitationEmail) Build(ctx context.Context, row repositories.ClaimedOutb
 	if !found {
 		return Composition{}, domain.PermanentEffect(fmt.Errorf("%w: no %s text in %s", errUnknownKind, row.Kind, recipient.language))
 	}
-	email, err := b.emails.render(recipient.language, text, *invitation.Email, tutor.Name, link)
+	email, err := b.emails.render(recipient.language, text, *invitation.Email, tutor.Name, link, cancelledList{})
 	if err != nil {
 		return Composition{}, err
 	}
@@ -150,10 +161,13 @@ func (b invitationEmail) link(invitation repositories.InvitationEmail) (string, 
 	return b.emails.publicURL + invitationPathPrefix + token, nil
 }
 
-func (r *RelationshipEmails) render(language domain.Language, text core.RelationshipText, to string, name string, actionURL string) (Email, error) {
+func (r *RelationshipEmails) render(
+	language domain.Language, text core.RelationshipText, to string, name string, actionURL string, cancelled cancelledList,
+) (Email, error) {
 	view := relationshipView{
 		Language: language, Subject: text.Subject, Intro: text.Intro, Name: strings.Join(strings.Fields(name), " "),
-		Lines: text.Lines, Action: text.Action, ActionURL: actionURL, Note: text.Note,
+		Lines: text.Lines, LessonsHeading: cancelled.heading, Lessons: cancelled.lines, More: cancelled.more,
+		Action: text.Action, ActionURL: actionURL, Note: text.Note,
 	}
 	var html, plain bytes.Buffer
 	if err := r.html.Execute(&html, view); err != nil {

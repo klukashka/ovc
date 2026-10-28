@@ -26,6 +26,7 @@ type ending struct {
 	link        repositories.Relationship
 	by          domain.EndedBy
 	memberships int64
+	lessons     lessonEffects
 	notified    *createdNotification
 }
 
@@ -77,6 +78,7 @@ func (s *Service) StopStudying(ctx context.Context, principal accounts.Principal
 	var result StudentEnding
 	var ended *ending
 	var removed *repositories.Relationship
+	var lessons lessonEffects
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		if err := accounts.LockActingAccount(ctx, repos, principal, now, principal.State); err != nil {
 			return err
@@ -90,10 +92,11 @@ func (s *Service) StopStudying(ctx context.Context, principal accounts.Principal
 		}
 		switch link.State {
 		case domain.RelationshipProvisional:
-			if _, err := s.removeLink(ctx, repos, link, now); err != nil {
+			_, effects, err := s.removeLink(ctx, repos, link, now)
+			if err != nil {
 				return err
 			}
-			removed, result.Removed = &link, true
+			removed, result.Removed, lessons = &link, true, effects
 			return nil
 		case domain.RelationshipActive:
 			done, err := s.endLink(ctx, repos, link, domain.CauseStudentStopped, now)
@@ -113,6 +116,7 @@ func (s *Service) StopStudying(ctx context.Context, principal accounts.Principal
 	}
 	if removed != nil {
 		s.logRemoved(ctx, *removed, removedByStudent)
+		s.logLessonEffects(ctx, lessons)
 	}
 	if ended != nil {
 		s.logEnded(ctx, *ended)
@@ -124,9 +128,10 @@ func (s *Service) endLink(
 	ctx context.Context, repos repositories.Repositories, link repositories.Relationship, cause domain.RelationshipCause, now time.Time,
 ) (ending, error) {
 	transition, allowed := domain.NextRelationshipState(link.State, cause)
-	if !allowed || transition.To != domain.RelationshipEnded {
+	if !allowed || transition.To != domain.RelationshipEnded || link.StudentID == nil {
 		return ending{}, ErrRelationshipNotActive
 	}
+	student := *link.StudentID
 	ended, err := repos.Relationships.End(ctx, link, transition.EndedBy, now)
 	if errors.Is(err, repositories.ErrNotFound) {
 		return ending{}, fmt.Errorf("end the locked relationship %s: %w", link.ID, err)
@@ -138,10 +143,14 @@ func (s *Service) endLink(
 	if err != nil {
 		return ending{}, err
 	}
+	lessons, err := s.endLinkLessons(ctx, repos, ended, student)
+	if err != nil {
+		return ending{}, err
+	}
 	if err := relationshipChanged(ctx, repos, ended, true); err != nil {
 		return ending{}, err
 	}
-	done := ending{link: ended, by: transition.EndedBy, memberships: memberships}
+	done := ending{link: ended, by: transition.EndedBy, memberships: memberships, lessons: lessons}
 	if transition.EndedBy.EmailsTheOtherParty() {
 		if err := s.queueEndedEmail(ctx, repos, ended, now); err != nil {
 			return ending{}, err
@@ -200,5 +209,6 @@ func (s *Service) logEnded(ctx context.Context, ended ending) {
 		attributes = append(attributes, slog.String("user_id", ended.link.StudentID.String()))
 	}
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "relationship.ended", attributes...)
+	s.logLessonEffects(ctx, ended.lessons)
 	s.logNotified(ctx, ended.notified)
 }

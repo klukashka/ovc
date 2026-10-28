@@ -571,6 +571,7 @@ export const en: Resources = {
     empty: 'No notifications yet',
     arrived: 'New notification',
     deletedAccount: 'Deleted account',
+    groupLesson: 'Group lesson',
     unread: 'Unread',
     showMore: 'Show more',
     event: {
@@ -583,6 +584,7 @@ export const en: Resources = {
       lessonMoved: 'The lesson was moved',
       lessonCancelled: 'The lesson was cancelled',
       lessonSeriesChanged: 'Lessons of a series changed',
+      groupArchived: 'The group was archived',
     },
   },
   lesson: {

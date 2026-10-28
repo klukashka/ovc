@@ -289,6 +289,9 @@ WHERE lessons.id = $2::uuid AND (
     OR (lessons.status <> 'scheduled' AND EXISTS (
         SELECT 1 FROM lesson_roster
         WHERE lesson_roster.lesson_id = lessons.id AND lesson_roster.student_id = $1::uuid
+    ) AND NOT EXISTS (
+        SELECT 1 FROM relationships AS waiting
+        WHERE waiting.id = lessons.relationship_id AND waiting.state = 'reclaim_pending'
     ))
 )
 `
@@ -1015,6 +1018,10 @@ WITH visible AS (
     WHERE lesson_roster.student_id = $1::uuid AND lessons.status <> 'scheduled'
         AND lesson_roster.lesson_starts_at < $5::timestamptz
         AND lesson_roster.lesson_starts_at > $2::timestamptz - interval '240 minutes'
+        AND NOT EXISTS (
+            SELECT 1 FROM relationships AS waiting
+            WHERE waiting.id = lessons.relationship_id AND waiting.state = 'reclaim_pending'
+        )
 )
 SELECT
     lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,

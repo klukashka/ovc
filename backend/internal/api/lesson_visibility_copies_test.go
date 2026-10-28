@@ -47,9 +47,7 @@ func TestTheThreeStudentVisibilityQueriesAgree(t *testing.T) {
 	if removed := h.groupCall(t, token, http.MethodPatch, group.ID, "", `{"remove":`+idList(cards[1:2])+`}`); removed.status != http.StatusOK {
 		t.Fatalf("removing the member answered %d %s", removed.status, removed.body)
 	}
-	if ended := h.endAsTutor(t, token, cards[2]); ended.status != http.StatusOK {
-		t.Fatalf("ending answered %d %s", ended.status, ended.body)
-	}
+	h.endRelationship(t, cards[2])
 	cases := []visibilityCase{
 		{"a current member's scheduled group lesson", 11, scheduledGroup, true},
 		{"a current member's cancelled roster lesson", 11, cancelledGroup, true},

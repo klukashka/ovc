@@ -1151,11 +1151,13 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             /** @enum {string} */
-            event: "invitation.accepted" | "join_request.created" | "join_request.accepted" | "join_request.declined" | "relationship.ended" | "lesson.reminder_1h" | "lesson.moved" | "lesson.cancelled" | "lesson.series_changed";
+            event: "invitation.accepted" | "join_request.created" | "join_request.accepted" | "join_request.declined" | "relationship.ended" | "lesson.reminder_1h" | "lesson.moved" | "lesson.cancelled" | "lesson.series_changed" | "group.archived";
             /** Format: uuid */
             id: string;
             label: string | null;
             label_deleted: boolean;
+            /** @enum {string|null} */
+            label_kind: "group" | null;
             link: components["schemas"]["NotificationLink"] | null;
             /** Format: date-time */
             read_at: string | null;
@@ -2878,6 +2880,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7274,7 +7285,8 @@ export const myTutorEnded_byValues: ReadonlyArray<FlattenedDeepRequired<componen
 export const myTutorStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MyTutor"]["state"]> = ["active", "provisional", "ended"];
 export const newGroupColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NewGroup"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const notificationColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
-export const notificationEventValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["event"]> = ["invitation.accepted", "join_request.created", "join_request.accepted", "join_request.declined", "relationship.ended", "lesson.reminder_1h", "lesson.moved", "lesson.cancelled", "lesson.series_changed"];
+export const notificationEventValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["event"]> = ["invitation.accepted", "join_request.created", "join_request.accepted", "join_request.declined", "relationship.ended", "lesson.reminder_1h", "lesson.moved", "lesson.cancelled", "lesson.series_changed", "group.archived"];
+export const notificationLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["label_kind"]> = ["group"];
 export const notificationLinkKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NotificationLink"]["kind"]> = ["student_card", "join_requests", "my_tutors", "lesson"];
 export const passwordResetOutcomeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["PasswordReset"]["outcome"]> = ["choice_required"];
 export const profilePatchLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["language"]> = ["ru", "en"];

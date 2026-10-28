@@ -4,6 +4,10 @@
 
 {{range .Lines}}{{.}}
 
+{{end}}{{if .Lessons}}{{.LessonsHeading}}
+{{range .Lessons}}- {{.}}
+{{end}}{{if .More}}{{.More}}
+{{end}}
 {{end}}{{if .ActionURL}}{{.Action}}: {{.ActionURL}}
 
 {{end}}{{.Note}}

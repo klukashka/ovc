@@ -184,6 +184,7 @@ type notificationItem struct {
 	ReadAt       *time.Time        `json:"read_at"`
 	Label        *string           `json:"label"`
 	LabelDeleted bool              `json:"label_deleted"`
+	LabelKind    *string           `json:"label_kind"`
 	Colour       *string           `json:"colour"`
 	Link         *notificationLink `json:"link"`
 }

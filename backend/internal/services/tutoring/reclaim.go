@@ -74,6 +74,7 @@ type reclaimDecision struct {
 	dropped      int
 	outcomes     []domain.LinkOutcome
 	removed      []repositories.Relationship
+	lessons      []lessonEffects
 	released     []releasedRequest
 	unsuppressed []unsuppressedRequest
 }
@@ -450,11 +451,13 @@ func (s *Service) dropLink(
 	if !allowed || !transition.NewCard {
 		return fmt.Errorf("drop relationship %s: %w", link.ID, errReclaimTransition)
 	}
-	if _, err := s.removeLink(ctx, repos, link, now); err != nil {
+	_, lessons, err := s.removeLink(ctx, repos, link, now)
+	if err != nil {
 		return err
 	}
 	decision.dropped++
 	decision.removed = append(decision.removed, link)
+	decision.lessons = append(decision.lessons, lessons)
 	return nil
 }
 
@@ -506,6 +509,7 @@ func (s *Service) announceDecision(ctx context.Context, student domain.UserID, d
 	for _, link := range decision.removed {
 		s.logRemoved(ctx, link, removedByReclaim)
 	}
+	s.logLessonEffects(ctx, decision.lessons...)
 	for _, released := range decision.released {
 		s.logReleased(ctx, student, released)
 	}

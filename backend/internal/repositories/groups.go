@@ -2,13 +2,17 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"ovc/backend/internal/dbgen"
 	"ovc/backend/internal/domain"
 )
+
+var errArchivedWithoutTime = errors.New("an archived group returned no archiving time")
 
 type (
 	Group              = dbgen.Group
@@ -57,9 +61,18 @@ func (r Groups) UpdateDetails(ctx context.Context, change GroupDetailsChange) (b
 	return applied(rows, err, "update group details")
 }
 
-func (r Groups) Archive(ctx context.Context, tutor domain.UserID, id domain.GroupID, now time.Time) (bool, error) {
-	rows, err := r.queries.ArchiveGroup(ctx, dbgen.ArchiveGroupParams{Now: now, ID: id, TutorID: tutor})
-	return applied(rows, err, "archive group")
+func (r Groups) Archive(ctx context.Context, tutor domain.UserID, id domain.GroupID, now time.Time) (*time.Time, error) {
+	archivedAt, err := r.queries.ArchiveGroup(ctx, dbgen.ArchiveGroupParams{Now: now, ID: id, TutorID: tutor})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, done(err, "archive group")
+	}
+	if archivedAt == nil {
+		return nil, done(errArchivedWithoutTime, "archive group")
+	}
+	return archivedAt, nil
 }
 
 func (r Groups) Unarchive(ctx context.Context, tutor domain.UserID, id domain.GroupID, now time.Time) (bool, error) {

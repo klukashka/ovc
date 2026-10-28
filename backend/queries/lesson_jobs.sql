@@ -129,5 +129,8 @@ WHERE lessons.id = ANY (sqlc.arg(ids)::uuid[]) AND (
     OR (lessons.status <> 'scheduled' AND EXISTS (
         SELECT 1 FROM lesson_roster
         WHERE lesson_roster.lesson_id = lessons.id AND lesson_roster.student_id = sqlc.arg(student_id)::uuid
+    ) AND NOT EXISTS (
+        SELECT 1 FROM relationships AS waiting
+        WHERE waiting.id = lessons.relationship_id AND waiting.state = 'reclaim_pending'
     ))
 );

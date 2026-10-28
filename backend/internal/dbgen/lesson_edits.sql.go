@@ -156,7 +156,13 @@ func (q *Queries) GetTutorLessonAudience(ctx context.Context, arg GetTutorLesson
 
 const isOnLessonRoster = `-- name: IsOnLessonRoster :one
 SELECT EXISTS (
-    SELECT 1 FROM lesson_roster WHERE lesson_id = $1 AND student_id = $2
+    SELECT 1 FROM lesson_roster
+    JOIN lessons ON lessons.id = lesson_roster.lesson_id
+    WHERE lesson_roster.lesson_id = $1 AND lesson_roster.student_id = $2
+        AND NOT EXISTS (
+            SELECT 1 FROM relationships AS waiting
+            WHERE waiting.id = lessons.relationship_id AND waiting.state = 'reclaim_pending'
+        )
 ) AS listed
 `
 

@@ -21,9 +21,10 @@ SELECT * FROM groups WHERE tutor_id = @tutor_id ORDER BY archived_at IS NOT NULL
 UPDATE groups SET name = @name, colour = @colour, updated_at = sqlc.arg(now)::timestamptz
 WHERE id = @id AND tutor_id = @tutor_id;
 
--- name: ArchiveGroup :execrows
+-- name: ArchiveGroup :one
 UPDATE groups SET archived_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
-WHERE id = @id AND tutor_id = @tutor_id AND archived_at IS NULL;
+WHERE id = @id AND tutor_id = @tutor_id AND archived_at IS NULL
+RETURNING archived_at;
 
 -- name: UnarchiveGroup :execrows
 UPDATE groups SET archived_at = NULL, updated_at = sqlc.arg(now)::timestamptz

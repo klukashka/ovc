@@ -62,7 +62,7 @@ func (r *router) registerGroups() {
 	register(r, update, AudienceTutor, r.updateGroup)
 
 	archive := operation("groups-archive", http.MethodPost, groupsPath+"/{id}/archive")
-	archive.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
+	archive.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict)
 	register(r, archive, AudienceTutor, r.archiveGroup)
 
 	unarchive := operation("groups-unarchive", http.MethodPost, groupsPath+"/{id}/unarchive")
@@ -222,6 +222,8 @@ func (r *router) groupError(ctx context.Context, event string, err error) error 
 		return NewError(ctx, domain.ErrorNotFound)
 	case errors.Is(err, tutoring.ErrGroupArchived):
 		return NewError(ctx, domain.ErrorAudienceNotActive)
+	case errors.Is(err, tutoring.ErrConflict):
+		return NewError(ctx, domain.ErrorConflict)
 	case errors.As(err, &inactive):
 		ids := make([]string, 0, len(inactive.Relationships))
 		for _, id := range inactive.Relationships {

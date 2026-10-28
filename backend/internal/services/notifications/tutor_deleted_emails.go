@@ -46,7 +46,13 @@ func (b tutorDeletedEmail) Build(ctx context.Context, row repositories.ClaimedOu
 	if !found {
 		return Composition{}, domain.PermanentEffect(fmt.Errorf("%w: no %s text in %s", errUnknownKind, row.Kind, recipient.Language))
 	}
-	email, err := b.emails.render(recipient.Language, text, recipient.Email, tutor.Name, b.emails.publicURL+myTutorsPath)
+	cancelled, err := listCancelled(ctx, repos, b.emails.cities, recipient, repositories.EffectCancellations{
+		Cause: domain.CancelTutorDeleted, CancelledAt: *tutor.DeletedAt, Tutor: tutor.ID, OnRosterOf: &recipient.ID,
+	})
+	if err != nil {
+		return Composition{}, err
+	}
+	email, err := b.emails.render(recipient.Language, text, recipient.Email, tutor.Name, b.emails.publicURL+myTutorsPath, cancelled)
 	if err != nil {
 		return Composition{}, err
 	}

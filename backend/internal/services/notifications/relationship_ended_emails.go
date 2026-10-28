@@ -57,7 +57,13 @@ func (b relationshipEndedEmail) Build(ctx context.Context, row repositories.Clai
 	if !found {
 		return Composition{}, domain.PermanentEffect(fmt.Errorf("%w: no %s text in %s", errUnknownKind, row.Kind, parties.recipient.Language))
 	}
-	email, err := b.emails.render(parties.recipient.Language, text, parties.recipient.Email, parties.name, parties.actionURL)
+	cancelled, err := listCancelled(ctx, repos, b.emails.cities, parties.recipient, repositories.EffectCancellations{
+		Cause: domain.CancelRelationshipEnded, CancelledAt: *link.EndedAt, Tutor: link.TutorID, Link: &id,
+	})
+	if err != nil {
+		return Composition{}, err
+	}
+	email, err := b.emails.render(parties.recipient.Language, text, parties.recipient.Email, parties.name, parties.actionURL, cancelled)
 	if err != nil {
 		return Composition{}, err
 	}
