@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
   chmodSync,
@@ -20,7 +21,21 @@ export interface RunLockHolder {
   readonly pid: number;
   readonly startedAt: string;
   readonly checkout: string;
+  readonly kind?: 'merge-gate';
 }
+
+interface RunLockEntry {
+  readonly holder: RunLockHolder;
+  readonly device: number;
+  readonly inode: number;
+}
+
+export const gateRunLockDescriptorVariable = 'E2E_HARNESS_GATE_RUN_LOCK_FD';
+
+const descriptorPattern = /^[1-9][0-9]{0,3}$/;
+const firstInheritedDescriptor = 3;
+const processIdPattern = /^[0-9]+$/;
+const ancestorLimit = 256;
 
 const lockDirectoryMode = 0o700;
 const lockFileMode = 0o600;
@@ -41,7 +56,9 @@ export class RunLockRefusedError extends Error {
 
   constructor(path: string, holder: RunLockHolder) {
     super(
-      `another end-to-end run from ${holder.checkout} holds ${path} (pid ${String(holder.pid)}, started ${holder.startedAt}); wait for it to finish or stop it before starting another run, and if pid ${String(holder.pid)} is not an end-to-end run, remove ${path}`,
+      holder.kind === 'merge-gate'
+        ? `the merge gate from ${holder.checkout} holds ${path} for its whole run (pid ${String(holder.pid)}, started ${holder.startedAt}); wait for the gate to finish before starting an end-to-end run`
+        : `another end-to-end run from ${holder.checkout} holds ${path} (pid ${String(holder.pid)}, started ${holder.startedAt}); wait for it to finish or stop it before starting another run, and if pid ${String(holder.pid)} is not an end-to-end run, remove ${path}`,
     );
     this.name = 'RunLockRefusedError';
     this.holder = holder;
@@ -89,17 +106,19 @@ function parseHolder(path: string, text: string): RunLockHolder {
     throw malformed;
   }
   const { pid, startedAt, checkout } = parsed;
+  const kind = 'kind' in parsed ? parsed.kind : undefined;
   if (
     typeof pid !== 'number' ||
     !Number.isSafeInteger(pid) ||
     pid <= 0 ||
     typeof startedAt !== 'string' ||
     typeof checkout !== 'string' ||
-    !isSafeCheckoutPath(checkout)
+    !isSafeCheckoutPath(checkout) ||
+    (kind !== undefined && kind !== 'merge-gate')
   ) {
     throw malformed;
   }
-  return { pid, startedAt, checkout };
+  return kind === undefined ? { pid, startedAt, checkout } : { pid, startedAt, checkout, kind };
 }
 
 function isControlCharacter(character: string): boolean {
@@ -128,7 +147,7 @@ function openLockFile(path: string): number | undefined {
   }
 }
 
-function readHolder(path: string): RunLockHolder | undefined {
+function readEntry(path: string): RunLockEntry | undefined {
   const descriptor = openLockFile(path);
   if (descriptor === undefined) {
     return undefined;
@@ -140,14 +159,23 @@ function readHolder(path: string): RunLockHolder | undefined {
         `${path} must be a regular file owned by this user to be an end-to-end run lock; remove it by hand once no run is active`,
       );
     }
-    return parseHolder(path, readFileSync(descriptor, 'utf8'));
+    return { holder: parseHolder(path, readFileSync(descriptor, 'utf8')), device: entry.dev, inode: entry.ino };
   } finally {
     closeSync(descriptor);
   }
 }
 
+function readHolder(path: string): RunLockHolder | undefined {
+  return readEntry(path)?.holder;
+}
+
 function sameHolder(left: RunLockHolder, right: RunLockHolder): boolean {
-  return left.pid === right.pid && left.startedAt === right.startedAt && left.checkout === right.checkout;
+  return (
+    left.pid === right.pid &&
+    left.startedAt === right.startedAt &&
+    left.checkout === right.checkout &&
+    left.kind === right.kind
+  );
 }
 
 function linkIfAbsent(source: string, target: string): boolean {
@@ -248,4 +276,85 @@ export function releaseRunLock(path: string, holder: RunLockHolder): boolean {
   }
   unlinkSync(path);
   return true;
+}
+
+export function parseGateRunLockDescriptor(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const descriptor = Number(value);
+  if (!descriptorPattern.test(value) || descriptor < firstInheritedDescriptor) {
+    throw new Error(
+      `${gateRunLockDescriptorVariable} must name an inherited descriptor number of ${String(firstInheritedDescriptor)} or more; the merge gate sets it for its own end-to-end entry, and it is not a setting`,
+    );
+  }
+  return descriptor;
+}
+
+function parentProcessId(pid: number): number {
+  const output = execFileSync('ps', ['-o', 'ppid=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+  if (!processIdPattern.test(output)) {
+    throw new Error(`ps reported no parent process id for pid ${String(pid)}`);
+  }
+  return Number(output);
+}
+
+export function processAncestors(pid: number): readonly number[] {
+  const ancestors: number[] = [];
+  let current = parentProcessId(pid);
+  while (current > 0) {
+    if (ancestors.length === ancestorLimit) {
+      throw new Error(`pid ${String(pid)} has more than ${String(ancestorLimit)} ancestor processes`);
+    }
+    ancestors.push(current);
+    if (current === 1) {
+      break;
+    }
+    current = parentProcessId(current);
+  }
+  return ancestors;
+}
+
+function inheritedIdentity(descriptor: number): { readonly device: number; readonly inode: number } {
+  try {
+    const entry = fstatSync(descriptor);
+    return { device: entry.dev, inode: entry.ino };
+  } catch (error) {
+    throw new Error(
+      `${gateRunLockDescriptorVariable} names descriptor ${String(descriptor)}, which this run did not inherit open from the merge gate`,
+      { cause: error },
+    );
+  }
+}
+
+export function adoptGateRunLock(
+  path: string,
+  descriptor: number,
+  ancestors: readonly number[],
+  checkout: string,
+): RunLockHolder {
+  const entry = readEntry(path);
+  if (entry?.holder.kind !== 'merge-gate') {
+    throw new Error(
+      `${gateRunLockDescriptorVariable} is set, but no merge gate holds ${path}; only the merge gate's own end-to-end entry runs under the gate's lock`,
+    );
+  }
+  const { holder } = entry;
+  if (holder.checkout !== checkout) {
+    throw new Error(
+      `the merge gate that holds ${path} tests ${holder.checkout}, not this run's checkout ${checkout}; only the merge gate's own end-to-end entry runs under the gate's lock`,
+    );
+  }
+  if (!ancestors.includes(holder.pid)) {
+    throw new Error(
+      `the merge gate pid ${String(holder.pid)} that holds ${path} is not an ancestor of this run; only the merge gate's own end-to-end entry runs under the gate's lock`,
+    );
+  }
+  const inherited = inheritedIdentity(descriptor);
+  if (inherited.device !== entry.device || inherited.inode !== entry.inode) {
+    throw new Error(
+      `descriptor ${String(descriptor)} is not the lock file ${path} that the merge gate holds; only the merge gate's own end-to-end entry runs under the gate's lock`,
+    );
+  }
+  return holder;
 }

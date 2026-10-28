@@ -4,6 +4,12 @@ set -euo pipefail
 main_branch=main
 lock_name=merge-gate.lock
 log_name=merge-gate.log
+run_lock_name=run.lock
+run_lock_descriptor=7
+run_lock_descriptor_variable=E2E_HARNESS_GATE_RUN_LOCK_FD
+run_lock_held=no
+run_lock_path=""
+run_lock_candidate=""
 
 full_checks=(
   "pre|.|tools/check-tool-binaries.sh"
@@ -11,10 +17,10 @@ full_checks=(
   "C|.|tools/docs/check-docs.sh"
   "B|.|bin/gitleaks git --redact --no-banner --config .gitleaks.toml ."
   "B|.|bin/gitleaks git --staged --redact --no-banner --config .gitleaks.toml ."
-  "B|.|bin/osv-scanner scan source --no-call-analysis=go --lockfile=tools/go.mod"
-  "B|.|bin/osv-scanner scan source --no-call-analysis=go --lockfile=backend/go.mod"
-  "B|.|bin/osv-scanner scan source --lockfile=frontend/pnpm-lock.yaml"
-  "B|.|bin/osv-scanner scan source --lockfile=tools/docs/pnpm-lock.yaml"
+  "C|.|bin/osv-scanner scan source --no-call-analysis=go --lockfile=tools/go.mod"
+  "C|.|bin/osv-scanner scan source --no-call-analysis=go --lockfile=backend/go.mod"
+  "C|.|bin/osv-scanner scan source --lockfile=frontend/pnpm-lock.yaml"
+  "C|.|bin/osv-scanner scan source --lockfile=tools/docs/pnpm-lock.yaml"
   "B|backend|go mod tidy -diff"
   'B|backend|unformatted="$(gofmt -l .)" && test -z "$unformatted"'
   "B|backend|go vet ./..."
@@ -73,6 +79,34 @@ self_test_checks=(
   ".|if test -f gate-self-test.sh; then sh gate-self-test.sh; fi"
 )
 
+refused_environment_variables=(
+  GOFLAGS
+  GOWORK
+  GOTOOLCHAIN
+  GOPACKAGESDRIVER
+  NODE_OPTIONS
+  E2E_HARNESS_GATE_RUN_LOCK_FD
+  BASH_ENV
+  ENV
+  SHELLOPTS
+  BASHOPTS
+  GIT_DIR
+  GIT_WORK_TREE
+  GIT_INDEX_FILE
+  GIT_COMMON_DIR
+  GIT_OBJECT_DIRECTORY
+  GIT_ALTERNATE_OBJECT_DIRECTORIES
+  GIT_NAMESPACE
+  GIT_SHALLOW_FILE
+  GIT_REPLACE_REF_BASE
+  GIT_NO_REPLACE_OBJECTS
+)
+
+allowed_changed_go_settings=" GOPATH GOMODCACHE GOCACHE GOTMPDIR GOBIN GOTELEMETRY GOPROXY GOAMD64 GOARM64 "
+tool_probes=yes
+go_setting_folders=(. backend tools)
+reported_go_settings=(GOVERSION GOTOOLCHAIN GOFLAGS GOWORK GOENV)
+
 influential_ignored_files=(
   docker-compose.override.yml
   docker-compose.override.yaml
@@ -91,8 +125,8 @@ influential_ignored_files=(
 
 usage() {
   printf '%s\n' \
-    'usage: merge-gate.sh gate --ff-only [--change BRANCH] [--repo PATH] [--lock-dir PATH] [--checks full|self-test|self-test-lanes] [--lane-grace SECONDS]' \
-    '       merge-gate.sh gate --squash --change BRANCH [--repo PATH] [--lock-dir PATH] [--checks full|self-test|self-test-lanes] [--lane-grace SECONDS]' \
+    'usage: merge-gate.sh gate --ff-only [--change BRANCH] [--repo PATH] [--lock-dir PATH] [--checks full|self-test|self-test-lanes] [--lane-grace SECONDS] [--skip-tool-probes]' \
+    '       merge-gate.sh gate --squash --change BRANCH [--repo PATH] [--lock-dir PATH] [--checks full|self-test|self-test-lanes] [--lane-grace SECONDS] [--skip-tool-probes]' \
     '       merge-gate.sh finish [--repo PATH] [--lock-dir PATH]' \
     '       merge-gate.sh release [--repo PATH] [--lock-dir PATH]' >&2
   exit 2
@@ -392,6 +426,287 @@ refuse_influential_ignored_files() {
   done
 }
 
+refused_go_settings() {
+  local setting refused=""
+  while IFS= read -r setting; do
+    [[ -n "$setting" ]] || continue
+    [[ "$setting" =~ ^([A-Z][A-Z0-9_]*)= ]] || fail "go env -changed printed a line the gate cannot read"
+    case "$allowed_changed_go_settings" in
+      *" ${BASH_REMATCH[1]} "*) ;;
+      *) refused="$refused${refused:+ }${BASH_REMATCH[1]}" ;;
+    esac
+  done <<<"$1"
+  printf '%s' "$refused"
+}
+
+changed_go_setting_names() {
+  local setting names=""
+  while IFS= read -r setting; do
+    [[ -n "$setting" ]] || continue
+    names="$names${names:+ }${setting%%=*}"
+  done <<<"$1"
+  printf '%s' "${names:-none}"
+}
+
+go_environment_line() {
+  local folder="$1" changed refused values name value line
+  changed="$(go -C "$root/$folder" env -changed)" || fail "go env -changed failed in $folder"
+  refused="$(refused_go_settings "$changed")" || exit 1
+  [[ -z "$refused" ]] ||
+    fail "go env -changed in $folder reports $refused, set in the environment or with go env -w, which would change what the checks run; run the gate with GOENV=off to ignore the user-level Go configuration, or unset the variables for the gate only with env -u"
+  values="$(go -C "$root/$folder" env "${reported_go_settings[@]}")" || fail "go env failed in $folder"
+  line="go environment in $folder:"
+  for name in "${reported_go_settings[@]}"; do
+    IFS= read -r value
+    line="$line $name=$value"
+  done <<<"$values"
+  if [[ "${GOENV:-}" == off ]]; then
+    line="$line (GOENV=off, so the user-level Go configuration is ignored)"
+  fi
+  printf '%s changed: %s' "$line" "$(changed_go_setting_names "$changed")"
+}
+
+exported_names() {
+  python3 -I -c '
+import os
+
+for name in sorted(os.environ):
+    print(name.replace("\n", " "))
+'
+}
+
+exported() {
+  case $'\n'"$1"$'\n' in
+    *$'\n'"$2"$'\n'*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+refuse_shell_environment() {
+  local functions names name refused="" prefixed="" unset_forms=""
+  functions="$(declare -Fx)"
+  functions="${functions//declare -fx /}"
+  if [[ -n "$functions" ]]; then
+    for name in $functions; do
+      unset_forms="$unset_forms -u 'BASH_FUNC_$name%%'"
+    done
+    fail "the exported shell functions ${functions//$'\n'/ } would shadow commands in every check; unset them for the gate only, for example with env$unset_forms bash merge-gate.sh …, or start the gate from a shell that exports no function"
+  fi
+  names="$(exported_names)" || fail "could not list the names of the gate's environment"
+  for name in "${refused_environment_variables[@]}"; do
+    if exported "$names" "$name"; then
+      refused="$refused${refused:+ }$name"
+    fi
+  done
+  if exported "$names" GOENV && [[ "${GOENV:-}" != off ]]; then
+    refused="$refused${refused:+ }GOENV"
+  fi
+  [[ -z "$refused" ]] ||
+    fail "$refused set in the gate's environment would change what the checks run; unset it for the gate only, for example with env -u $refused, or start the gate from a clean shell"
+  prefixed="$(printf '%s\n' "$names" | awk '
+    tolower($0) ~ /^(npm|pnpm)_config_/ || $0 ~ /^GIT_CONFIG/ || $0 ~ /BASH_FUNC/ || $0 ~ /[%()]/ { printf "%s ", $0 }
+  ')"
+  [[ -z "$prefixed" ]] ||
+    fail "${prefixed% } set in the gate's environment would change what the checks run; unset them for the gate only, for example with env -u, or start the gate from a clean shell"
+}
+
+pnpm_settings_problem() {
+  python3 -I -c '
+import json
+import sys
+
+try:
+    settings = json.load(sys.stdin)
+except ValueError:
+    print("unreadable")
+    sys.exit(0)
+if not isinstance(settings, dict):
+    print("unreadable")
+    sys.exit(0)
+problems = [name for name, key in (("node-options", "nodeOptions"), ("script-shell", "scriptShell")) if settings.get(key) not in (None, "")]
+if settings.get("shellEmulator") not in (None, False, "false"):
+    problems.append("shell-emulator")
+print(" ".join(problems))
+'
+}
+
+refuse_influential_tool_settings() {
+  local folder line node_version pnpm_version pnpm_settings problem
+  environment_lines=()
+  if [[ "$tool_probes" == no ]]; then
+    environment_lines+=("tool settings: not probed by the self-test check list")
+    return 0
+  fi
+  for folder in "${go_setting_folders[@]}"; do
+    [[ -d "$root/$folder" ]] || continue
+    line="$(go_environment_line "$folder")" || exit 1
+    environment_lines+=("$line")
+  done
+  node_version="$(node --version)" || fail "node --version failed"
+  pnpm_version="$(pnpm --dir "$root" --version)" || fail "pnpm --version failed"
+  pnpm_settings="$(pnpm --dir "$root" config list --json)" || fail "pnpm config list failed"
+  problem="$(printf '%s' "$pnpm_settings" | pnpm_settings_problem)" || fail "could not read pnpm's settings"
+  [[ -z "$problem" ]] ||
+    fail "pnpm's effective settings $problem, from its user, global or project configuration, would change what the checks run; remove them before the gate"
+  environment_lines+=("node environment: node $node_version, pnpm $pnpm_version, pnpm node-options, script-shell and shell-emulator: defaults")
+}
+
+process_alive() {
+  ps -p "$1" >/dev/null 2>&1
+}
+
+run_lock_holder_of() {
+  local file="$1"
+  [[ -L "$file" ]] && fail "$file is a link, not an end-to-end run lock; remove it by hand once no run is active"
+  [[ -e "$file" ]] || return 3
+  [[ -f "$file" && -O "$file" ]] ||
+    fail "$file must be a regular file owned by this user to be an end-to-end run lock; remove it by hand once no run is active"
+  python3 -I -c '
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as lock:
+        holder = json.load(lock)
+except (OSError, ValueError):
+    sys.exit(1)
+if not isinstance(holder, dict):
+    sys.exit(1)
+pid = holder.get("pid")
+started = holder.get("startedAt")
+checkout = holder.get("checkout")
+kind = holder.get("kind", "end-to-end")
+if "kind" in holder and kind != "merge-gate":
+    sys.exit(1)
+if type(pid) is not int or pid <= 0 or not isinstance(started, str) or not isinstance(checkout, str):
+    sys.exit(1)
+if not checkout.startswith("/") or "|" in started or any(ord(character) < 32 or ord(character) == 127 for character in started + checkout):
+    sys.exit(1)
+print(f"{pid}|{kind}|{started}|{checkout}")
+' "$file" || fail "$file is not an end-to-end run lock; remove it by hand once no run is active"
+}
+
+run_lock_record() {
+  python3 -I -c '
+import json
+import sys
+
+print(json.dumps({"pid": int(sys.argv[1]), "startedAt": sys.argv[2], "checkout": sys.argv[3], "kind": "merge-gate"}))
+' "$$" "$started_at" "$root"
+}
+
+run_lock_holder_description() {
+  local kind="$2"
+  case "$kind" in
+    merge-gate) kind="another merge gate" ;;
+    *) kind="an end-to-end run" ;;
+  esac
+  printf '%s from %s (pid %s, started %s)' "$kind" "$4" "$1" "$3"
+}
+
+fail_run_lock_busy() {
+  attempt_logged=yes
+  append_log e2e-run-lock-busy
+  fail "the end-to-end run lock $run_lock_path is busy: $(run_lock_holder_description "$@") holds it; the gate ran no check; wait for it to end, then start the gate again"
+}
+
+reclaim_stale_run_lock() {
+  local stale_pid="$1" stale_started="$2" moved line status=0 pid kind started checkout
+  moved="$lock_dir/.run-lock.stale.$$.$RANDOM$RANDOM"
+  if ! mv "$run_lock_path" "$moved" 2>/dev/null; then
+    [[ ! -e "$run_lock_path" && ! -L "$run_lock_path" ]] || fail "could not move the stale end-to-end run lock $run_lock_path aside"
+    return 0
+  fi
+  line="$(run_lock_holder_of "$moved")" || status=$?
+  [[ "$status" == 0 ]] ||
+    fail "$run_lock_path changed while the gate reclaimed it; the moved lock is $moved, remove it by hand once no run is active"
+  IFS='|' read -r pid kind started checkout <<<"$line"
+  if [[ "$pid" == "$stale_pid" && "$started" == "$stale_started" ]] && ! process_alive "$pid"; then
+    rm -f "$moved"
+    printf 'merge gate: reclaimed the stale end-to-end run lock %s of pid %s from %s, which is no longer running\n' \
+      "$run_lock_path" "$pid" "$checkout" >&2
+    return 0
+  fi
+  if ln "$moved" "$run_lock_path" 2>/dev/null; then
+    rm -f "$moved"
+    fail_run_lock_busy "$pid" "$kind" "$started" "$checkout"
+  fi
+  rm -f "$moved"
+  fail "$run_lock_path changed hands while the gate reclaimed a stale end-to-end run lock; start the gate again"
+}
+
+link_run_lock() {
+  local candidate="$1"
+  [[ -e "$run_lock_path" || -L "$run_lock_path" ]] && return 1
+  ln "$candidate" "$run_lock_path" 2>/dev/null || return 1
+  [[ ! -L "$run_lock_path" && "$run_lock_path" -ef "$candidate" ]] ||
+    fail "$run_lock_path changed while the gate took it; remove it by hand once no run is active"
+}
+
+take_run_lock() {
+  local attempt=0 line status pid kind started checkout
+  run_lock_path="$lock_dir/$run_lock_name"
+  run_lock_candidate="$(umask 077 && mktemp "$lock_dir/.run-lock.XXXXXX")"
+  run_lock_record >"$run_lock_candidate"
+  chmod 600 "$run_lock_candidate"
+  while [[ "$attempt" -lt 3 ]]; do
+    attempt=$((attempt + 1))
+    if link_run_lock "$run_lock_candidate"; then
+      remove_run_lock_candidate
+      run_lock_held=yes
+      exec 7<"$run_lock_path"
+      return 0
+    fi
+    status=0
+    line="$(run_lock_holder_of "$run_lock_path")" || status=$?
+    case "$status" in
+      0) ;;
+      3) continue ;;
+      *) exit 1 ;;
+    esac
+    IFS='|' read -r pid kind started checkout <<<"$line"
+    if process_alive "$pid"; then
+      fail_run_lock_busy "$pid" "$kind" "$started" "$checkout"
+    fi
+    reclaim_stale_run_lock "$pid" "$started"
+  done
+  fail "$run_lock_path could not be taken; start the gate again"
+}
+
+remove_run_lock_candidate() {
+  if [[ -n "$run_lock_candidate" ]]; then
+    rm -f "$run_lock_candidate"
+    run_lock_candidate=""
+  fi
+}
+
+run_lock_is_ours() {
+  local line status=0 pid kind started checkout
+  line="$(run_lock_holder_of "$run_lock_path")" || status=$?
+  [[ "$status" == 0 ]] || return 1
+  IFS='|' read -r pid kind started checkout <<<"$line"
+  [[ "$pid" == "$$" && "$kind" == merge-gate && "$started" == "$started_at" && "$checkout" == "$root" ]]
+}
+
+release_run_lock() {
+  [[ "$run_lock_held" == yes ]] || return 0
+  run_lock_held=no
+  exec 7<&-
+  if run_lock_is_ours; then
+    rm -f "$run_lock_path"
+    return 0
+  fi
+  printf 'merge gate: %s no longer holds this gate and was left alone\n' "$run_lock_path" >&2
+  return 1
+}
+
+refuse_other_lock_dir_for_full_run() {
+  [[ "$subcommand" == gate && "$requested_checks" == full && "$lock_dir_given" == yes ]] || return 0
+  [[ "$lock_dir" == /* ]] || fail "the lock folder $lock_dir is not an absolute path"
+  [[ "$(canonical_folder "$lock_dir")" == "$(canonical_folder "$(default_lock_dir)")" ]] ||
+    fail "the full check list runs only with the default lock folder $(default_lock_dir), which holds the end-to-end run lock the harness takes"
+}
+
 record_ff_state() {
   local current
   current="$(in_repo symbolic-ref --quiet --short HEAD)" || fail "HEAD is detached; run the gate on the change's branch"
@@ -519,9 +834,20 @@ prepare_log_folder() {
   chmod 700 "$log_folder"
 }
 
+run_entry() {
+  cd "$root/${entry_directories[$1]}"
+  if [[ "${entry_tags[$1]}" == e2e ]]; then
+    export "$run_lock_descriptor_variable=$run_lock_descriptor"
+  fi
+  exec bash -c "${entry_commands[$1]}"
+}
+
 run_lane() {
   local slot="$1" token="" index=0 status started finished log
   trap - EXIT INT TERM
+  if [[ "$slot" != e2e ]]; then
+    exec 7<&-
+  fi
   read -r -n 1 -t "$lane_start_timeout" -u 8 token || exit 1
   exec 8<&-
   [[ "$token" == g ]] || exit 1
@@ -531,8 +857,7 @@ run_lane() {
       log="$log_folder/$index.log"
       (umask 077 && : >"$log") 9>&-
       status=0
-      (cd "$root/${entry_directories[index]}" && exec bash -c "${entry_commands[index]}") </dev/null >>"$log" 2>&1 9>&- ||
-        status=$?
+      (run_entry "$index") </dev/null >>"$log" 2>&1 9>&- || status=$?
       finished="$(now_seconds 9>&-)"
       printf '%s|%s|%s|%s\n' "$slot" "$index" "$status" "$(elapsed_seconds "$started" "$finished" 9>&-)" >&9
       started="$finished"
@@ -679,6 +1004,7 @@ stop_lanes() {
 
 on_exit() {
   local exit_status=$? stopped=yes
+  remove_run_lock_candidate
   stop_lanes || stopped=no
   if [[ "$holding" == yes && "$attempt_logged" == no ]]; then
     attempt_logged=yes
@@ -691,6 +1017,7 @@ on_exit() {
   fi
   if [[ "$stopped" == yes ]]; then
     release_if_running
+    release_run_lock || true
   fi
 }
 
@@ -795,6 +1122,10 @@ run_laned_checks() {
   fi
   if changed="$(state_change_during_gate)"; then
     laned_failure="the checkout changed during the gate: $changed"
+    return 0
+  fi
+  if ! run_lock_is_ours; then
+    laned_failure="the end-to-end run lock $run_lock_path no longer holds this gate"
     return 0
   fi
   run_phase e2e
@@ -903,6 +1234,14 @@ print_report() {
   printf 'tested tree: %s\n' "$tree"
   printf 'scope: %s\n' "$scope"
   printf 'check list: %s\n' "$check_list"
+  for line in ${environment_lines[@]+"${environment_lines[@]}"}; do
+    printf '%s\n' "$line"
+  done
+  if [[ -n "$run_lock_path" ]]; then
+    printf 'end-to-end run lock: %s, taken by this gate (pid %s) before its first check and released after its last\n' "$run_lock_path" "$$"
+  else
+    printf 'end-to-end run lock: not taken by the %s check list\n' "$check_list"
+  fi
   if [[ -n "$attempts" ]]; then
     printf 'earlier attempts for this tree:\n%s\n' "$attempts"
   else
@@ -950,8 +1289,13 @@ gate() {
   phase_times=""
   phase_started=""
   attempt_logged=no
+  environment_lines=()
+  run_lock_held=no
+  run_lock_path=""
+  run_lock_candidate=""
   trap on_exit EXIT
   trap 'exit 130' INT TERM
+  refuse_influential_tool_settings
   record_state
   if docs_only_change; then
     scope=docs-only
@@ -977,6 +1321,7 @@ gate() {
   prepare_log
   attempts="$(earlier_attempts)"
   if laned_list; then
+    take_run_lock
     run_laned_checks
     [[ -z "$laned_failure" ]] || gate_failed "$laned_failure"
   else
@@ -985,6 +1330,7 @@ gate() {
   if changed="$(state_change_during_gate)"; then
     gate_failed "the checkout changed during the gate: $changed"
   fi
+  release_run_lock || gate_failed "the end-to-end run lock $run_lock_path no longer held this gate at its end"
   attempt_logged=yes
   append_log passed
   mark_passed
@@ -1065,6 +1411,7 @@ release() {
 }
 
 main() {
+  refuse_shell_environment
   [[ $# -ge 1 ]] || usage
   subcommand="$1"
   shift
@@ -1103,6 +1450,7 @@ main() {
         esac
         shift
         ;;
+      --skip-tool-probes) tool_probes=no ;;
       --lane-grace)
         [[ $# -ge 2 && "$2" =~ ^[1-9][0-9]?$ ]] || usage
         lane_grace="$2"
@@ -1116,6 +1464,10 @@ main() {
   resolve_repo
   [[ -n "$lock_dir" ]] || lock_dir="$(default_lock_dir)"
   refuse_unsafe_self_test
+  if [[ "$tool_probes" == no ]]; then
+    [[ "$subcommand" == gate && ( "$requested_checks" == self-test || "$requested_checks" == self-test-lanes ) ]] ||
+      fail "--skip-tool-probes is accepted only by a gate with --checks self-test or self-test-lanes"
+  fi
   if [[ -n "$lane_grace" ]]; then
     [[ "$subcommand" == gate && ( "$requested_checks" == self-test || "$requested_checks" == self-test-lanes ) ]] ||
       fail "--lane-grace is accepted only by a gate with --checks self-test or self-test-lanes"
@@ -1123,6 +1475,7 @@ main() {
     lane_stop_grace="$lane_grace"
     lane_kill_grace="$lane_grace"
   fi
+  refuse_other_lock_dir_for_full_run
   prepare_lock_dir
 
   case "$subcommand" in

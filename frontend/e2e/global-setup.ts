@@ -4,7 +4,7 @@ import { prepareRun, readE2ESettings, removeEarlierRunOutputs, takeRunLock } fro
 
 export default function globalSetup(config: FullConfig): void {
   readE2ESettings(process.env);
-  takeRunLock();
+  takeRunLock(process.env);
   removeEarlierRunOutputs(config.projects.map((project) => project.outputDir));
   prepareRun();
 }

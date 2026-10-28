@@ -11,6 +11,7 @@ repo="$work/repo"
 lock_dir="$work/lock"
 lock="$lock_dir/merge-gate.lock"
 log="$lock_dir/merge-gate.log"
+run_lock="$lock_dir/run.lock"
 
 check() {
   if [[ "$1" != "$2" ]]; then
@@ -40,8 +41,12 @@ commit_file() {
 }
 
 run_gate() {
+  local probes=()
+  if [[ "$1" == gate ]]; then
+    probes=(--skip-tool-probes)
+  fi
   set +e
-  output="$(bash "$gate_script" "$@" --repo "$repo" --lock-dir "$lock_dir" 2>&1)"
+  output="$(bash "$gate_script" "$@" ${probes[@]+"${probes[@]}"} --repo "$repo" --lock-dir "$lock_dir" 2>&1)"
   status=$?
   set -e
 }
@@ -55,6 +60,14 @@ run_unchecked() {
 
 lock_state() {
   if [[ -e "$lock" ]]; then
+    echo held
+  else
+    echo released
+  fi
+}
+
+run_lock_state() {
+  if [[ -e "$run_lock" || -L "$run_lock" ]]; then
     echo held
   else
     echo released
@@ -333,10 +346,10 @@ C|.|pnpm --dir tools/docs install --frozen-lockfile
 C|.|tools/docs/check-docs.sh
 B|.|bin/gitleaks git --redact --no-banner --config .gitleaks.toml .
 B|.|bin/gitleaks git --staged --redact --no-banner --config .gitleaks.toml .
-B|.|bin/osv-scanner scan source --no-call-analysis=go --lockfile=tools/go.mod
-B|.|bin/osv-scanner scan source --no-call-analysis=go --lockfile=backend/go.mod
-B|.|bin/osv-scanner scan source --lockfile=frontend/pnpm-lock.yaml
-B|.|bin/osv-scanner scan source --lockfile=tools/docs/pnpm-lock.yaml
+C|.|bin/osv-scanner scan source --no-call-analysis=go --lockfile=tools/go.mod
+C|.|bin/osv-scanner scan source --no-call-analysis=go --lockfile=backend/go.mod
+C|.|bin/osv-scanner scan source --lockfile=frontend/pnpm-lock.yaml
+C|.|bin/osv-scanner scan source --lockfile=tools/docs/pnpm-lock.yaml
 B|backend|go mod tidy -diff
 B|backend|unformatted="$(gofmt -l .)" && test -z "$unformatted"
 B|backend|go vet ./...
@@ -365,7 +378,7 @@ tagged_full_list="$(awk '/^full_checks=\(/ { inside = 1; next } inside && /^\)/ 
 check "$tagged_full_list" "$expected_full_list" "the tagged list holds every command of the full run in order, each with its slot"
 check "$(printf '%s\n' "$tagged_full_list" | cut -d'|' -f2- | LC_ALL=C sort | uniq -d)" "" "no command of the full run appears twice"
 check "$(printf '%s\n' "$tagged_full_list" | cut -d'|' -f1 | LC_ALL=C sort | uniq -c | awk '{ printf "%s=%s ", $2, $1 }')" \
-  "A=1 B=13 C=14 e2e=1 pre=1 " "the slots pre, A, B, C and e2e together hold the 30 commands of the full run"
+  "A=1 B=9 C=18 e2e=1 pre=1 " "the slots pre, A, B, C and e2e together hold the 30 commands of the full run"
 check "$(printf '%s\n' "$tagged_full_list" | head -n 1)" "pre|.|tools/check-tool-binaries.sh" "the tool-binary check runs alone before every lane"
 
 validate_records() {
@@ -516,6 +529,7 @@ for lane in a b c; do
   contains "$output" "${lane}1 failed on purpose" "the report prints the end of the failed command's log in lane $slot"
   contains "$output" "result: failed: a check failed" "the result names the failed check of lane $slot"
   check "$(lock_state)" "released" "the gate releases its lock after lane $slot failed"
+  check "$(run_lock_state)" "released" "the gate releases the end-to-end run lock after lane $slot failed"
 done
 
 mkfifo "$work/fifo-A" "$work/fifo-B" "$work/fifo-C"
@@ -574,7 +588,7 @@ read_until() {
 
 start_background_gate() {
   exec 7<>"$work/fifo-gate-errors"
-  bash "$gate_script" gate --ff-only --checks self-test-lanes "$@" --repo "$repo" --lock-dir "$lock_dir" \
+  bash "$gate_script" gate --ff-only --checks self-test-lanes --skip-tool-probes "$@" --repo "$repo" --lock-dir "$lock_dir" \
     >"$work/background.out" 2>"$work/fifo-gate-errors" &
   gate_pid=$!
 }
@@ -650,6 +664,7 @@ check "$gate_status" "130" "a gate interrupted while a lane ignores TERM exits w
 check "$(kill -0 "$(cat "$work/stubborn-pid")" 2>/dev/null && echo alive || echo dead)" "dead" \
   "a lane process that ignores TERM is killed before the interrupted gate exits"
 check "$(lock_state)" "released" "the interrupted gate releases its lock after KILL ended the lane"
+check "$(run_lock_state)" "released" "the interrupted gate releases the end-to-end run lock after KILL ended the lane"
 contains "$(tail -n 1 "$log")" "result=interrupted" "an interrupted gate appends its attempt to the attempt log"
 
 lane_change fix/lane-interrupted a1 "$(
@@ -672,12 +687,14 @@ check "$trapped_line" "trapped" "TERM sent to the gate reaches the lane's proces
 check "$(read_until "seconds for the processes of lane:process-group A:$step_group")" "seen" \
   "the interrupted gate has reaped its lane processes and waits for the rest of the lane's process group"
 check "$(lock_state)" "held" "the lock stays held while a lane process still runs after TERM"
+check "$(run_lock_state)" "held" "the end-to-end run lock stays held while a lane process still runs after TERM"
 printf 'go\n' >&5
 finish_background_gate
 exec 3<&- 4<&- 5<&- 6<&-
 check "$gate_status" "130" "an interrupted gate exits with the interruption status"
 check "$(cat "$work/observed")" "held" "the lane's last process saw the lock still held"
 check "$(lock_state)" "released" "the interrupted gate releases its lock once its lanes ended"
+check "$(run_lock_state)" "released" "the interrupted gate releases the end-to-end run lock once its lanes ended"
 check "$(live_groups "$recorded_groups")" "" "no lane process of the interrupted gate is left alive"
 in_repo status --porcelain --untracked-files=all >"$work/status-after-interrupt"
 check "$(cat "$work/status-after-interrupt")" "" "the interrupted gate leaves the checkout clean"
@@ -738,3 +755,234 @@ else
   check "$(test -e "$case_variant" && echo exists || echo absent)" "absent" \
     "on a case-sensitive file system a case variant of the checkout path names no folder of the checkout"
 fi
+
+run_lock_module="$own_repo/frontend/e2e/run-lock.ts"
+probe="$work/run-lock-probe.mjs"
+cat >"$probe" <<'PROBE'
+import { writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+
+const [mode, lockPath, modulePath, outputPath, checkout] = process.argv.slice(2);
+const runLock = await import(pathToFileURL(modulePath).href);
+
+function attempt() {
+  if (mode === 'adopt') {
+    const descriptor = runLock.parseGateRunLockDescriptor(process.env[runLock.gateRunLockDescriptorVariable]);
+    if (descriptor === undefined) {
+      return 'refused: no descriptor';
+    }
+    const holder = runLock.adoptGateRunLock(lockPath, descriptor, runLock.processAncestors(process.pid), checkout);
+    return `adopted ${holder.kind} ${String(holder.pid)}`;
+  }
+  const holder = { pid: process.pid, startedAt: new Date().toISOString(), checkout: '/probe' };
+  runLock.acquireRunLock(lockPath, holder, () => {});
+  runLock.releaseRunLock(lockPath, holder);
+  return 'acquired';
+}
+
+let result;
+try {
+  result = attempt();
+} catch (error) {
+  result = `refused: ${error instanceof Error ? error.message : 'unknown'}`;
+}
+writeFileSync(outputPath, `${result}\n`);
+PROBE
+
+probe_command() {
+  printf "node '%s' %s '%s' '%s' '%s' '%s'" "$probe" "$1" "$run_lock" "$run_lock_module" "$2" "$repo"
+}
+
+run_gate_in_environment() {
+  local assignments=()
+  while [[ "$1" != -- ]]; do
+    assignments+=("$1")
+    shift
+  done
+  shift
+  set +e
+  output="$(env -u XDG_CONFIG_HOME "${assignments[@]}" bash "$gate_script" "$@" --repo "$repo" --lock-dir "$lock_dir" 2>&1)"
+  status=$?
+  set -e
+}
+
+lane_change fix/run-lock-adopted \
+  c1 "$(probe_command adopt "$work/c1-adopt"); $(probe_command acquire "$work/c1-acquire")" \
+  c2 "E2E_HARNESS_GATE_RUN_LOCK_FD=7 $(probe_command adopt "$work/c2-adopt")" \
+  e2e "$(probe_command adopt "$work/e2e-adopt")"
+run_lanes
+check "$status" "0" "a gate whose end-to-end entry adopts the gate's run lock passes"
+contains "$(cat "$work/e2e-adopt")" "adopted merge-gate " "the gate's end-to-end entry adopts the run lock the gate holds"
+check "$(cat "$work/c1-adopt")" "refused: no descriptor" "a lane command receives no run lock descriptor setting"
+contains "$(cat "$work/c2-adopt")" "only the merge gate's own end-to-end entry runs under the gate's lock" \
+  "a lane command that names the descriptor itself cannot adopt the run lock"
+contains "$(cat "$work/c1-acquire")" "the merge gate from $repo holds $run_lock for its whole run" \
+  "an end-to-end run started during the lanes is refused while the gate holds the run lock"
+check "$(run_lock_state)" "released" "the gate releases the end-to-end run lock after its last check"
+contains "$output" "end-to-end run lock: $run_lock, taken by this gate" "the report names the end-to-end run lock"
+contains "$output" "tool settings: not probed by the self-test check list" "a self-test gate that skips the tool probes says so"
+run_gate release
+
+mkfifo "$work/fifo-run-ready" "$work/fifo-run-release"
+exec 3<>"$work/fifo-run-ready" 5<>"$work/fifo-run-release"
+lane_change fix/run-lock-stray \
+  e2e "printf 'ready\\n' >\"$work/fifo-run-ready\"; read -r -t 30 go <\"$work/fifo-run-release\""
+start_background_gate
+read -r -t 30 ready_line <&3 || ready_line="no line within 30 seconds"
+check "$ready_line" "ready" "the end-to-end entry of the background gate started"
+check "$(run_lock_state)" "held" "the gate holds the end-to-end run lock while its end-to-end entry runs"
+(
+  exec 4<"$run_lock"
+  E2E_HARNESS_GATE_RUN_LOCK_FD=4 node "$probe" adopt "$run_lock" "$run_lock_module" "$work/stray-adopt" "$repo"
+)
+node "$probe" acquire "$run_lock" "$run_lock_module" "$work/stray-acquire"
+printf 'go\n' >&5
+finish_background_gate
+exec 3<&- 5<&-
+check "$gate_status" "0" "the background gate passes after its end-to-end entry ends"
+contains "$(cat "$work/stray-adopt")" "is not an ancestor of this run" \
+  "a process outside the gate that opens the run lock itself cannot adopt it"
+contains "$(cat "$work/stray-acquire")" "the merge gate from $repo holds $run_lock for its whole run" \
+  "an end-to-end run outside the gate is refused while the gate holds the run lock"
+run_gate release
+
+mkfifo "$work/fifo-run-holder"
+exec 6<>"$work/fifo-run-holder"
+cat <"$work/fifo-run-holder" &
+run_holder=$!
+printf '{"pid":%s,"startedAt":"2026-10-28T10:00:00.000Z","checkout":"/elsewhere"}' "$run_holder" >"$run_lock"
+chmod 600 "$run_lock"
+held_run_lock="$(cat "$run_lock")"
+lane_change fix/run-lock-busy pre "printf 'ran\\n' >\"$work/busy-pre\""
+run_lanes
+check "$status" "1" "a gate whose end-to-end run lock is busy fails"
+contains "$output" "the end-to-end run lock $run_lock is busy: an end-to-end run from /elsewhere (pid $run_holder" \
+  "the busy run lock is named with its holder"
+contains "$output" "the gate ran no check" "the busy run lock fails the gate before any check"
+check "$(test -e "$work/busy-pre" && echo ran || echo not-run)" "not-run" "no lane runs while the run lock is busy"
+check "$(cat "$run_lock")" "$held_run_lock" "the busy run lock is left alone"
+check "$(find "$lock_dir" -name '.run-lock.*' | wc -l | tr -d ' ')" "0" "a gate refused by a busy run lock leaves no candidate lock behind"
+check "$(lock_state)" "released" "a gate refused by a busy run lock releases its lock"
+contains "$(tail -n 1 "$log")" "result=e2e-run-lock-busy" "the attempt log records the busy run lock"
+kill -TERM "$run_holder"
+run_holder_status=0
+wait "$run_holder" 2>/dev/null || run_holder_status=$?
+exec 6<&-
+check "$run_holder_status" "143" "the process that held the run lock ended"
+
+bash -c 'exit 0' &
+dead_pid=$!
+wait "$dead_pid"
+printf '{"pid":%s,"startedAt":"2026-10-28T10:00:00.000Z","checkout":"/elsewhere"}' "$dead_pid" >"$run_lock"
+chmod 600 "$run_lock"
+run_lanes
+check "$status" "0" "a gate reclaims an end-to-end run lock whose holder is no longer running"
+contains "$output" "reclaimed the stale end-to-end run lock $run_lock of pid $dead_pid" "the reclaim of the run lock is reported"
+check "$(run_lock_state)" "released" "the gate releases the reclaimed run lock after its last check"
+check "$(find "$lock_dir" -name '.run-lock.*' | wc -l | tr -d ' ')" "0" "the run lock reclaim leaves no moved or candidate lock behind"
+run_gate release
+
+ln -s "$work/elsewhere" "$run_lock"
+run_lanes
+check "$status" "1" "a run lock that is a link fails the gate"
+contains "$output" "is a link, not an end-to-end run lock" "the refusal names the linked run lock"
+check "$(lock_state)" "released" "a gate refused by a linked run lock releases its lock"
+rm "$run_lock"
+
+run_unchecked bash "$gate_script" gate --ff-only --repo "$repo" --lock-dir "$lock_dir"
+check "$status" "1" "the full check list is refused with a lock folder other than the default"
+contains "$output" "runs only with the default lock folder" "the refusal names the default lock folder"
+check "$(lock_state)" "released" "the refused full check list takes no lock"
+run_unchecked bash "$gate_script" gate --ff-only --skip-tool-probes --repo "$repo" --lock-dir "$lock_dir"
+check "$status" "1" "the full check list refuses to skip the tool probes"
+contains "$output" "--skip-tool-probes is accepted only by a gate with --checks self-test or self-test-lanes" \
+  "the refusal names the self-test lists"
+
+start_change docs/environment
+commit_file docs/environment.md "environment" "Add a document for the environment checks"
+printf ':\n' >"$work/bash-env.sh"
+environment_value() {
+  case "$1" in
+    BASH_ENV | ENV) printf '%s' "$work/bash-env.sh" ;;
+    SHELLOPTS) printf 'braceexpand:hashall:interactive-comments' ;;
+    GIT_DIR | GIT_COMMON_DIR) printf '%s' "$repo/.git" ;;
+    *) printf '%s' '-run=^$' ;;
+  esac
+}
+for name in GOFLAGS GOWORK GOENV GOTOOLCHAIN GOPACKAGESDRIVER NODE_OPTIONS E2E_HARNESS_GATE_RUN_LOCK_FD BASH_ENV ENV SHELLOPTS \
+  BASHOPTS GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE \
+  GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE GIT_NO_REPLACE_OBJECTS; do
+  run_gate_in_environment "$name=$(environment_value "$name")" -- gate --ff-only --checks self-test --skip-tool-probes
+  check "$status" "1" "a gate started with $name exported is refused"
+  contains "$output" "$name set in the gate's environment" "the refusal names $name"
+  check "$(placement "$output" "*-run=^*")" "outside" "the refusal for $name never prints its value"
+  check "$(lock_state)" "released" "a gate refused for $name takes no lock"
+done
+run_gate_in_environment GOFLAGS= -- gate --ff-only --checks self-test --skip-tool-probes
+check "$status" "1" "a gate started with an empty GOFLAGS exported is refused"
+contains "$output" "env -u GOFLAGS" "the refusal says how to unset the variable for the gate only"
+for name in npm_config_ignore_scripts pnpm_config_node_options NPM_CONFIG_REGISTRY GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS BASH_FUNC_x; do
+  run_gate_in_environment "$name=x" -- gate --ff-only --checks self-test --skip-tool-probes
+  check "$status" "1" "a gate started with $name exported is refused"
+  contains "$output" "$name set in the gate's environment" "the refusal names $name"
+done
+run_unchecked bash -c 'go() { :; }; export -f go; exec bash "$0" gate --ff-only --checks self-test --skip-tool-probes --repo "$1" --lock-dir "$2"' \
+  "$gate_script" "$repo" "$lock_dir"
+check "$status" "1" "a gate started with an exported shell function is refused"
+contains "$output" "the exported shell functions go would shadow commands" "the refusal names the exported function"
+contains "$output" "env -u 'BASH_FUNC_go%%'" "the refusal says how to unset the exported function for the gate only"
+run_gate_in_environment 'BASH_FUNC_which%%=() { :; }' 'BASH_FUNC_module%%=() { :; }' -- gate --ff-only --checks self-test --skip-tool-probes
+check "$status" "1" "a gate started with exported functions in the environment is refused"
+contains "$output" "-u 'BASH_FUNC_module%%'" "the refusal gives the unset form of the first function from the environment"
+contains "$output" "-u 'BASH_FUNC_which%%'" "the refusal gives the unset form of the second function from the environment"
+check "$(placement "$output" "*{ :; }*")" "outside" "the refusal never prints a function's body"
+check "$(lock_state)" "released" "a gate refused for an exported function takes no lock"
+
+fake_home="$work/home"
+mkdir -p "$fake_home"
+in_fake_home() {
+  env -u XDG_CONFIG_HOME HOME="$fake_home" "$@"
+}
+in_fake_home go env -w 'GOFLAGS=-run=^$'
+run_gate_in_environment HOME="$fake_home" -- gate --ff-only --checks self-test
+check "$status" "1" "a gate is refused when go env -w set GOFLAGS"
+contains "$output" "go env -changed in . reports GOFLAGS" "the refusal names the setting go env -w changed"
+contains "$output" "run the gate with GOENV=off" "the refusal says how to ignore the user-level Go configuration for the gate only"
+run_gate_in_environment HOME="$fake_home" GOENV=off -- gate --ff-only --checks self-test
+check "$status" "0" "a gate with GOENV=off ignores the user-level Go configuration"
+contains "$output" "(GOENV=off, so the user-level Go configuration is ignored) changed: none" "the report shows the ignored user-level Go configuration"
+run_gate release
+run_gate_in_environment HOME="$fake_home" GOENV="$work/go-env" -- gate --ff-only --checks self-test
+check "$status" "1" "a gate with GOENV naming a file is refused"
+contains "$output" "GOENV set in the gate's environment" "the refusal names GOENV"
+in_fake_home go env -u GOFLAGS
+for setting in CGO_ENABLED=0 GOPRIVATE=example.invalid GONOSUMDB=example.invalid; do
+  in_fake_home go env -w "$setting"
+  run_gate_in_environment HOME="$fake_home" -- gate --ff-only --checks self-test
+  check "$status" "1" "a gate is refused for ${setting%%=*} changed with go env -w"
+  contains "$output" "reports ${setting%%=*}" "the refusal names ${setting%%=*}"
+  in_fake_home go env -u "${setting%%=*}"
+done
+in_fake_home go env -w GOPROXY=https://proxy.example.invalid
+run_gate_in_environment HOME="$fake_home" -- gate --ff-only --checks self-test
+check "$status" "0" "a gate passes with an allowlisted Go setting changed"
+contains "$output" "changed: GOPROXY" "the report names the allowlisted Go setting that changed"
+check "$(placement "$output" "*proxy.example.invalid*")" "outside" "the report never prints a changed setting's value"
+run_gate release
+in_fake_home go env -u GOPROXY
+for setting in node-options=--require=/nonexistent script-shell=/nonexistent/shell shell-emulator=true; do
+  in_fake_home pnpm config set --global "$setting" >/dev/null
+  run_gate_in_environment HOME="$fake_home" -- gate --ff-only --checks self-test
+  check "$status" "1" "a gate is refused when pnpm's ${setting%%=*} is set"
+  contains "$output" "pnpm's effective settings ${setting%%=*}, from its user, global or project configuration" \
+    "the refusal names pnpm's ${setting%%=*}"
+  check "$(placement "$output" "*nonexistent*")" "outside" "the refusal never prints the value of pnpm's ${setting%%=*}"
+  in_fake_home pnpm config delete --global "${setting%%=*}" >/dev/null
+done
+run_gate_in_environment HOME="$fake_home" -- gate --ff-only --checks self-test
+check "$status" "0" "a gate passes once the user-level settings are back to their defaults"
+check "$(count_matching '^go environment in [.]: GOVERSION=go[0-9.]+ GOTOOLCHAIN=[^ ]+ GOFLAGS= GOWORK= GOENV=.* changed: none$')" "1" \
+  "the report prints the effective Go settings"
+check "$(count_matching '^node environment: node v[0-9.]+, pnpm [0-9.]+, pnpm node-options, script-shell and shell-emulator: defaults$')" "1" \
+  "the report prints the effective Node and pnpm settings"
+run_gate release

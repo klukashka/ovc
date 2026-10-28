@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -438,13 +439,6 @@ func TestMigrationStatementMarkersOnlyWrapFunctionBodies(t *testing.T) {
 
 const repositoryRoot = "../../.."
 
-var skippedRepositoryDirectoryNames = map[string]bool{".git": true, "node_modules": true}
-
-var skippedRepositoryPaths = map[string]bool{
-	"bin": true, "backend/bin": true, "backend/tmp": true,
-	"frontend/dist": true, "frontend/test-results": true, "frontend/playwright-report": true,
-}
-
 var generatedRepositoryFiles = map[string]bool{"pnpm-lock.yaml": true}
 
 var hashCommentExtensions = map[string]bool{".sh": true, ".bash": true, ".yml": true, ".yaml": true, ".toml": true, ".py": true}
@@ -453,30 +447,37 @@ var hashCommentNames = map[string]bool{
 	".gitignore": true, ".prettierignore": true, ".markdownlintignore": true, ".editorconfig": true, ".env.example": true,
 }
 
+func repositoryFileList(t *testing.T, arguments ...string) []string {
+	t.Helper()
+	command := exec.CommandContext(t.Context(), "git", append([]string{"-C", repositoryRoot, "ls-files", "-z"}, arguments...)...)
+	output, err := command.Output()
+	if err != nil {
+		t.Fatalf("git ls-files %s: %v", strings.Join(arguments, " "), err)
+	}
+	var files []string
+	for file := range strings.SplitSeq(string(output), "\x00") {
+		if file != "" {
+			files = append(files, file)
+		}
+	}
+	return files
+}
+
 func hashCommentFiles(t *testing.T) []string {
 	t.Helper()
+	deleted := map[string]bool{}
+	for _, file := range repositoryFileList(t, "--deleted") {
+		deleted[file] = true
+	}
 	var files []string
-	err := filepath.WalkDir(repositoryRoot, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	for _, file := range repositoryFileList(t, "--cached", "--others", "--exclude-standard") {
+		name := filepath.Base(file)
+		if deleted[file] || generatedRepositoryFiles[name] {
+			continue
 		}
-		relative, err := filepath.Rel(repositoryRoot, path)
-		if err != nil {
-			return err
+		if hashCommentNames[name] || hashCommentExtensions[filepath.Ext(file)] {
+			files = append(files, filepath.Join(repositoryRoot, filepath.FromSlash(file)))
 		}
-		if entry.IsDir() && (skippedRepositoryDirectoryNames[entry.Name()] || skippedRepositoryPaths[relative]) {
-			return filepath.SkipDir
-		}
-		if entry.IsDir() || generatedRepositoryFiles[entry.Name()] {
-			return nil
-		}
-		if hashCommentNames[entry.Name()] || hashCommentExtensions[filepath.Ext(path)] {
-			files = append(files, path)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 	if len(files) == 0 {
 		t.Fatal("no shell, YAML, TOML, Python or ignore files found")

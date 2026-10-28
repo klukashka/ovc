@@ -5,7 +5,17 @@ import { createConnection } from 'node:net';
 import { userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { type RunLockHolder, acquireRunLock, holdsRunLock, machineRunLockPath, releaseRunLock } from './run-lock.ts';
+import {
+  type RunLockHolder,
+  acquireRunLock,
+  adoptGateRunLock,
+  gateRunLockDescriptorVariable,
+  holdsRunLock,
+  machineRunLockPath,
+  parseGateRunLockDescriptor,
+  processAncestors,
+  releaseRunLock,
+} from './run-lock.ts';
 import { assertOutputRootIsReal, playwrightOutputRoot } from './run-output.ts';
 
 const frontendRoot = resolve(import.meta.dirname, '..');
@@ -180,7 +190,7 @@ function createPreviewCertificate(): void {
   chmodSync(previewPrivateKey, 0o600);
 }
 
-const runLock: { holder: RunLockHolder | undefined } = { holder: undefined };
+const runLock: { holder: RunLockHolder | undefined; owned: boolean } = { holder: undefined, owned: false };
 
 function assertStillHeld(holder: RunLockHolder): void {
   if (!holdsRunLock(runLockPath, holder)) {
@@ -190,12 +200,24 @@ function assertStillHeld(holder: RunLockHolder): void {
   }
 }
 
-export function takeRunLock(): void {
+export function takeRunLock(environment: NodeJS.ProcessEnv): void {
+  const descriptor = parseGateRunLockDescriptor(environment[gateRunLockDescriptorVariable]);
+  if (descriptor !== undefined) {
+    const gateHolder = adoptGateRunLock(runLockPath, descriptor, processAncestors(process.pid), repositoryRoot);
+    process.stderr.write(
+      `running under the end-to-end run lock ${runLockPath} of the merge gate pid ${String(gateHolder.pid)}, which releases it\n`,
+    );
+    runLock.holder = gateHolder;
+    runLock.owned = false;
+    assertStillHeld(gateHolder);
+    return;
+  }
   const holder = { pid: process.pid, startedAt: new Date().toISOString(), checkout: repositoryRoot };
   acquireRunLock(runLockPath, holder, (message) => {
     process.stderr.write(`${message}\n`);
   });
   runLock.holder = holder;
+  runLock.owned = true;
   process.once('exit', () => {
     releaseRunLock(runLockPath, holder);
   });
@@ -228,7 +250,9 @@ export function finishRun(): void {
   try {
     deleteStorageBucket();
   } finally {
-    releaseRunLock(runLockPath, holder);
+    if (runLock.owned) {
+      releaseRunLock(runLockPath, holder);
+    }
     runLock.holder = undefined;
   }
 }

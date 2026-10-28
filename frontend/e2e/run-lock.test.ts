@@ -1,9 +1,11 @@
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  closeSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -17,8 +19,11 @@ import {
   type RunLockHolder,
   RunLockRefusedError,
   acquireRunLock,
+  adoptGateRunLock,
   holdsRunLock,
   machineRunLockPath,
+  parseGateRunLockDescriptor,
+  processAncestors,
   reclaimStale,
   releaseRunLock,
 } from './run-lock.ts';
@@ -329,5 +334,177 @@ describe('end-to-end run lock', () => {
       `${lockPath} is not an end-to-end run lock; remove it by hand once no run is active`,
       `${lockPath} is not an end-to-end run lock; remove it by hand once no run is active`,
     ]);
+  });
+});
+
+describe('end-to-end run lock held by the merge gate', () => {
+  let openDescriptors: number[] = [];
+
+  afterEach(() => {
+    for (const descriptor of openDescriptors) {
+      closeSync(descriptor);
+    }
+    openDescriptors = [];
+  });
+
+  function openForReading(path: string): number {
+    const descriptor = openSync(path, 'r');
+    openDescriptors.push(descriptor);
+    return descriptor;
+  }
+
+  function gateHolder(pid: number): RunLockHolder {
+    return { pid, startedAt: '2026-10-28T10:00:00Z', checkout: mainCheckout, kind: 'merge-gate' };
+  }
+
+  function nearestAncestor(): number {
+    const [parent] = processAncestors(process.pid);
+    if (parent === undefined) {
+      throw new Error('this process has no parent process');
+    }
+    return parent;
+  }
+
+  test('lets a run adopt the lock of a merge gate that is its ancestor and whose lock file it inherited open', () => {
+    const holder = gateHolder(nearestAncestor());
+    writeLock(holder);
+    const descriptor = openForReading(lockPath);
+
+    const adopted = adoptGateRunLock(lockPath, descriptor, processAncestors(process.pid), mainCheckout);
+
+    expect(adopted).toEqual(holder);
+    expect(holdsRunLock(lockPath, adopted)).toBe(true);
+  });
+
+  test('refuses to adopt the lock of a merge gate that is not an ancestor of the run', () => {
+    const holder = gateHolder(liveProcessId());
+    writeLock(holder);
+    const descriptor = openForReading(lockPath);
+
+    const adoption = (): void => {
+      adoptGateRunLock(lockPath, descriptor, processAncestors(process.pid), mainCheckout);
+    };
+
+    expect(adoption).toThrow(
+      `the merge gate pid ${String(holder.pid)} that holds ${lockPath} is not an ancestor of this run`,
+    );
+    expect(lockedHolder()).toEqual(holder);
+  });
+
+  test('refuses to adopt the lock through a descriptor of another file or one that is not open', () => {
+    writeLock(gateHolder(nearestAncestor()));
+    const otherFile = join(directory, 'other');
+    writeFileSync(otherFile, '{}');
+    const otherDescriptor = openForReading(otherFile);
+    const neverOpenDescriptor = 2_147_483_647;
+    const ancestors = processAncestors(process.pid);
+
+    const throughOtherFile = (): void => {
+      adoptGateRunLock(lockPath, otherDescriptor, ancestors, mainCheckout);
+    };
+    const throughClosedDescriptor = (): void => {
+      adoptGateRunLock(lockPath, neverOpenDescriptor, ancestors, mainCheckout);
+    };
+
+    expect(throughOtherFile).toThrow(`descriptor ${String(otherDescriptor)} is not the lock file ${lockPath}`);
+    expect(throughClosedDescriptor).toThrow('which this run did not inherit open from the merge gate');
+  });
+
+  test('refuses to adopt the lock of a merge gate that tests another checkout', () => {
+    writeLock(gateHolder(nearestAncestor()));
+    const descriptor = openForReading(lockPath);
+
+    const adoption = (): void => {
+      adoptGateRunLock(lockPath, descriptor, processAncestors(process.pid), otherWorktree);
+    };
+
+    expect(adoption).toThrow(
+      `the merge gate that holds ${lockPath} tests ${mainCheckout}, not this run's checkout ${otherWorktree}`,
+    );
+  });
+
+  test('refuses to adopt a lock that an end-to-end run holds', () => {
+    writeLock({ pid: nearestAncestor(), startedAt: '2026-10-28T10:00:00Z', checkout: mainCheckout });
+    const descriptor = openForReading(lockPath);
+
+    const adoption = (): void => {
+      adoptGateRunLock(lockPath, descriptor, processAncestors(process.pid), mainCheckout);
+    };
+
+    expect(adoption).toThrow(`E2E_HARNESS_GATE_RUN_LOCK_FD is set, but no merge gate holds ${lockPath}`);
+  });
+
+  test('refuses an ordinary run while a merge gate holds the lock, naming the gate', () => {
+    const holder = gateHolder(liveProcessId());
+    writeLock(holder);
+    const { notices, notice } = collectNotices();
+
+    const acquisition = (): void => {
+      acquireRunLock(
+        lockPath,
+        { pid: process.pid, startedAt: '2026-10-28T10:01:00.000Z', checkout: otherWorktree },
+        notice,
+      );
+    };
+
+    expect(acquisition).toThrow(RunLockRefusedError);
+    expect(acquisition).toThrow(`the merge gate from ${mainCheckout} holds ${lockPath} for its whole run`);
+    expect(lockedHolder()).toEqual(holder);
+    expect(notices).toEqual([]);
+  });
+
+  test('reclaims the lock of a merge gate that is no longer running', () => {
+    writeLock(gateHolder(exitedProcessId()));
+    const holder = { pid: process.pid, startedAt: '2026-10-28T10:01:00.000Z', checkout: otherWorktree };
+    const { notices, notice } = collectNotices();
+
+    acquireRunLock(lockPath, holder, notice);
+
+    expect(lockedHolder()).toEqual(holder);
+    expect(notices).toHaveLength(1);
+  });
+
+  test('refuses a lock record of an unknown kind', () => {
+    writeLockText(
+      JSON.stringify({ pid: process.pid, startedAt: '2026-10-28T10:00:00Z', checkout: mainCheckout, kind: 'other' }),
+    );
+    const { notice } = collectNotices();
+
+    const acquisition = (): void => {
+      acquireRunLock(
+        lockPath,
+        { pid: process.pid, startedAt: '2026-10-28T10:01:00.000Z', checkout: mainCheckout },
+        notice,
+      );
+    };
+
+    expect(acquisition).toThrow(`${lockPath} is not an end-to-end run lock`);
+  });
+
+  test('reads the descriptor the merge gate names and refuses any other value', () => {
+    const accepted = ['3', '7', '1024'];
+    const refused = ['', '0', '2', '07', '7a', '-7', '10000'];
+
+    const parsed = accepted.map((value) => parseGateRunLockDescriptor(value));
+    const unset = parseGateRunLockDescriptor(undefined);
+    const refusals = refused.map((value) => {
+      try {
+        parseGateRunLockDescriptor(value);
+        return 'accepted';
+      } catch {
+        return 'refused';
+      }
+    });
+
+    expect(unset).toBeUndefined();
+    expect(parsed).toEqual([3, 7, 1024]);
+    expect(refusals).toEqual(refused.map(() => 'refused'));
+  });
+
+  test('lists the parent process first among the ancestors of the current process', () => {
+    const ancestors = processAncestors(process.pid);
+
+    expect(ancestors[0]).toBe(process.ppid);
+    expect(ancestors).not.toContain(process.pid);
   });
 });
