@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 
 import { MediaQueriesContext, PreferencesContext, fixedMediaQueries, wideLayoutQuery } from '../../app/context.ts';
 import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
-import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
+import { type FakeAccountSeed, FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { type Me, Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import type { Language } from '../../lib/i18n/resources.ts';
@@ -15,39 +15,43 @@ import { sharedPages, studentPages } from '../../routes/router.tsx';
 import { RouteFocus } from './RouteFocus.tsx';
 import { SignedInFrame } from './SignedInFrame.tsx';
 
-function account(role: Me['role'], state: Me['state'] = 'active'): Me {
+function account(role: Me['role'], state: Me['state'] = 'active'): FakeAccountSeed {
   return {
     id: '00000000-0000-4000-8000-000000000002',
     name: 'A student of languages',
     email: 'student@example.org',
-    email_verified: state === 'active',
-    timezone: 'Europe/Moscow',
-    avatar_id: null,
-    reclaim_pending: false,
+    password: 'a long password',
     role,
     state,
-    language: 'ru',
-    theme: 'system',
   };
 }
 
-function unusedSession(): Session {
-  return new Session({
+async function signedInSession(seed: FakeAccountSeed): Promise<{ session: Session; me: Me }> {
+  const server = new FakeAuthServer();
+  server.addAccount(seed);
+  const session = new Session({
     origin: 'https://ovc.example',
-    transport: new FakeAuthServer().transport(),
+    transport: server.transport(),
     locks: memoryLocks(),
     scheduler: manualScheduler(),
   });
+  await session.signIn(seed.email, seed.password);
+  const state = session.snapshot();
+  if (state.kind !== 'signedIn') {
+    throw new Error('the frame test account did not sign in');
+  }
+  return { session, me: state.me };
 }
 
 async function renderFrame(
-  me: Me,
+  seed: FakeAccountSeed,
   address: string,
   wide: boolean,
   language: Language = 'ru',
   title?: 'page.notFound',
 ): Promise<void> {
   const i18n = await createI18n(language);
+  const { session, me } = await signedInSession(seed);
   const router = createMemoryRouter(
     [
       {
@@ -62,7 +66,6 @@ async function renderFrame(
     ],
     { initialEntries: [address] },
   );
-  const session = unusedSession();
   render(
     <MediaQueriesContext value={fixedMediaQueries(wide ? [wideLayoutQuery] : [])}>
       <PreferencesContext value={memoryPreferenceStore()}>

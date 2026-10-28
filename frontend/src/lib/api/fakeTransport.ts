@@ -101,6 +101,7 @@ export interface FakeAccountSeed {
   readonly email: string;
   readonly password: string;
   readonly role?: Me['role'];
+  readonly state?: Me['state'];
 }
 
 function json(status: number, body: unknown): Response {
@@ -170,12 +171,12 @@ export class FakeAuthServer {
         id: seed.id,
         name: seed.name,
         email: seed.email,
-        email_verified: true,
+        email_verified: (seed.state ?? 'active') === 'active',
         timezone: 'Europe/Moscow',
         avatar_id: null,
         reclaim_pending: false,
         role: seed.role ?? 'tutor',
-        state: 'active',
+        state: seed.state ?? 'active',
         language: 'ru',
         theme: 'system',
       },
