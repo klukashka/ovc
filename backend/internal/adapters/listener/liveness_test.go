@@ -1,8 +1,12 @@
 package listener_test
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/adapters/listener"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
@@ -81,6 +86,21 @@ func TestListenerReconnectsAfterItsConnectionIsTerminated(t *testing.T) {
 	}
 }
 
+type heartbeatOutcome string
+
+const (
+	heartbeatSkippedWhilePaused heartbeatOutcome = "skipped while paused"
+	heartbeatRefusedOnPurpose   heartbeatOutcome = "refused on purpose"
+	heartbeatSendFailed         heartbeatOutcome = "send failed"
+	heartbeatDelivered          heartbeatOutcome = "sent"
+)
+
+type heartbeatAttempt struct {
+	started  time.Time
+	finished time.Time
+	outcome  heartbeatOutcome
+}
+
 type pausableHeartbeats struct {
 	sends     listener.ConnectionHeartbeats
 	mu        sync.Mutex
@@ -90,34 +110,82 @@ type pausableHeartbeats struct {
 	calls     int
 	sent      int
 	changed   chan struct{}
+	origin    time.Time
+	attempts  []heartbeatAttempt
 }
 
 var errHeartbeatRefused = errors.New("the heartbeat write is refused on purpose")
 
 func newPausableHeartbeats() *pausableHeartbeats {
-	return &pausableHeartbeats{changed: make(chan struct{})}
+	return &pausableHeartbeats{changed: make(chan struct{}), origin: clock.System{}.Now()}
 }
 
 func (h *pausableHeartbeats) Heartbeat(ctx context.Context, connection *pgx.Conn, instance domain.InstanceID) error {
+	started := clock.System{}.Now()
 	h.mu.Lock()
 	h.calls++
 	paused, refused := h.paused, h.failing || (h.alternate && h.calls%2 == 0)
 	h.mu.Unlock()
 	if paused {
+		h.record(started, heartbeatSkippedWhilePaused)
 		return nil
 	}
 	if refused {
+		h.record(started, heartbeatRefusedOnPurpose)
 		return errHeartbeatRefused
 	}
 	if err := h.sends.Heartbeat(ctx, connection, instance); err != nil {
+		h.record(started, heartbeatSendFailed)
 		return err
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.attempts = append(h.attempts, heartbeatAttempt{started: started, finished: clock.System{}.Now(), outcome: heartbeatDelivered})
 	h.sent++
 	close(h.changed)
 	h.changed = make(chan struct{})
 	return nil
+}
+
+func (h *pausableHeartbeats) record(started time.Time, outcome heartbeatOutcome) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.attempts = append(h.attempts, heartbeatAttempt{started: started, finished: clock.System{}.Now(), outcome: outcome})
+}
+
+type timelineEntry struct {
+	instant     time.Duration
+	description string
+}
+
+func (h *pausableHeartbeats) timeline(events []event) string {
+	h.mu.Lock()
+	attempts := append([]heartbeatAttempt(nil), h.attempts...)
+	h.mu.Unlock()
+	var entries []timelineEntry
+	previousDelivery := h.origin
+	for _, attempt := range attempts {
+		description := fmt.Sprintf("heartbeat %s, the call took %s", attempt.outcome, attempt.finished.Sub(attempt.started))
+		if attempt.outcome == heartbeatDelivered {
+			description += fmt.Sprintf(", %s after the previous delivery", attempt.finished.Sub(previousDelivery))
+			previousDelivery = attempt.finished
+		}
+		entries = append(entries, timelineEntry{instant: attempt.finished.Sub(h.origin), description: description})
+	}
+	for _, entry := range events {
+		switch {
+		case entry.isConnect:
+			entries = append(entries, timelineEntry{instant: entry.at.Sub(h.origin), description: fmt.Sprintf("generation %d connected", entry.connected)})
+		case entry.isLoss:
+			entries = append(entries, timelineEntry{instant: entry.at.Sub(h.origin), description: fmt.Sprintf("generation %d lost by %s", entry.lost, entry.lossKind)})
+		}
+	}
+	slices.SortStableFunc(entries, func(a, b timelineEntry) int { return cmp.Compare(a.instant, b.instant) })
+	lines := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		lines = append(lines, fmt.Sprintf("%12s  %s", entry.instant, entry.description))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (h *pausableHeartbeats) pause() {
@@ -267,6 +335,12 @@ func TestFailingHeartbeatWritesLoseTheListenerOnlyBySilence(t *testing.T) {
 	heartbeats.failEverySecondWrite()
 	timing := fastTiming()
 	f := startOn(t, database, database.URL, heartbeats, timing)
+	t.Cleanup(func() {
+		if t.Failed() {
+			events, _ := f.recorder.snapshot()
+			t.Logf("heartbeat timeline since the fake was created (loss after %s of silence):\n%s", timing.LossAfter, heartbeats.timeline(events))
+		}
+	})
 	heartbeats.waitSent(t, int(timing.LossAfter/timing.HeartbeatInterval)+3)
 	aliveWhileSomeWritesFail, _ := f.recorder.snapshot()
 

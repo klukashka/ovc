@@ -80,9 +80,9 @@ func TestMain(m *testing.M) {
 const (
 	childPoolSize                     = 5
 	childListenerConnections          = 1
-	testPoolConnectionsPerProcessTest = 2
+	testPoolConnectionsPerProcessTest = testdb.DefaultPoolConnections
 	connectionsPerProcessTest         = childPoolSize + childListenerConnections + testPoolConnectionsPerProcessTest
-	processTestConnectionBudget       = 24
+	processTestConnectionBudget       = 30
 	processTestSlots                  = processTestConnectionBudget / connectionsPerProcessTest
 )
 

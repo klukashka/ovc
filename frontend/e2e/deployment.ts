@@ -30,6 +30,7 @@ const previewCertificate = join(tlsRoot, 'preview-certificate.pem');
 const previewPrivateKey = join(tlsRoot, 'preview-private-key.pem');
 const readinessDeadlineMilliseconds = 30_000;
 const stopDeadlineMilliseconds = 20_000;
+const killDeadlineMilliseconds = 5_000;
 const pollIntervalMilliseconds = 100;
 const pollTimeoutMilliseconds = 2_000;
 const firstApiPort = 18_800;
@@ -438,7 +439,15 @@ async function stop(managed: ManagedProcess): Promise<void> {
   const outcome = await Promise.race([managed.exit, delay(stopDeadlineMilliseconds).then(() => 'late')]);
   if (outcome === 'late') {
     managed.child.kill('SIGKILL');
-    throw new Error(`${managed.name} did not stop within ${String(stopDeadlineMilliseconds)} ms`);
+    const killed = await Promise.race([managed.exit, delay(killDeadlineMilliseconds).then(() => 'late')]);
+    if (killed === 'late') {
+      throw new Error(
+        `the ${managed.name} process (pid ${String(managed.child.pid)}) did not stop within ${String(stopDeadlineMilliseconds)} ms of SIGTERM and did not exit within ${String(killDeadlineMilliseconds)} ms of SIGKILL, so its address may still be held`,
+      );
+    }
+    throw new Error(
+      `the ${managed.name} process did not stop within ${String(stopDeadlineMilliseconds)} ms of SIGTERM and exited with ${killed} after SIGKILL`,
+    );
   }
   if (!managed.cleanExits.has(outcome)) {
     throw new Error(`${managed.name} stopped with ${outcome} after SIGTERM`);

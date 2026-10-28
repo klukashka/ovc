@@ -3,6 +3,7 @@ version: "2"
 run:
   tests: true
   allow-serial-runners: true
+  timeout: 5m
 
 linters:
   default: standard

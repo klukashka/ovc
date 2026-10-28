@@ -32,8 +32,10 @@ type Database struct {
 
 type poolSize int32
 
+const DefaultPoolConnections = 4
+
 const (
-	defaultPoolSize           poolSize = 4
+	defaultPoolSize           poolSize = DefaultPoolConnections
 	lockContentionPoolSize    poolSize = 6
 	templateMigrationPoolSize poolSize = 2
 )

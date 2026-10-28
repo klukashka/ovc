@@ -24,3 +24,7 @@ The Schedule page, its grids, the New lesson dialog and the calendar helpers loa
 | Full `pnpm e2e`, after the review fixes | 729 | 1.8 min | passed |
 
 F1 adds 20 Playwright tests per engine in `schedule.spec.ts` (the schedule tests, pilot 1 steps 6 and 7, and pilot 3's seed and steps 3 and 4) and extends the pilot 4 seed; that file ran in about 8 s for one engine and about 16 s for three, so on a loaded machine they add a few seconds to the end-to-end lane.
+
+## Merge gate
+
+Added on 2026-10-29. The merge gate's run of this change on 2026-10-28 (tested tree `3184b1a`, merged as `9ac434a`) passed in 230 s in total, above the slice plan's 178 s target and the 180 s threshold; its end-to-end lane took 174 s with 743 tests. The [slice 5 gates record](check-budget-2026-10-29-slice-5-gates.md) gives it beside the other slice 5 gates.

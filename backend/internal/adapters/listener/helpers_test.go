@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/adapters/listener"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
@@ -34,6 +35,7 @@ type event struct {
 	isSignal  bool
 	isLoss    bool
 	isConnect bool
+	at        time.Time
 }
 
 type recorder struct {
@@ -50,6 +52,7 @@ func newRecorder() *recorder {
 }
 
 func (r *recorder) add(entry event) {
+	entry.at = clock.System{}.Now()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.events = append(r.events, entry)

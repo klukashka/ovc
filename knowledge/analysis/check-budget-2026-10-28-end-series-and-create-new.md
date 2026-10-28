@@ -40,3 +40,7 @@ The fixes add 3 frontend unit tests of `localInstant` (a skipped and a repeated 
 |---|---|---|---|
 | `lesson` spec in three engines | 81 | 19.2 s | passed |
 | Full `pnpm e2e` | 881 | 1.9 min (114 s with the harness start, load average about 18) | passed |
+
+## Merge gate
+
+Added on 2026-10-29 from the merge report. The merge gate's run of this change on 2026-10-28 (tested tree `0782555`, merged as `afd6d48`) passed in 173.3 s in total, under the slice plan's 178 s target and the 180 s threshold and above D46's 165 s target. Its lanes took 48.4 s (A), 39.9 s (B) and 49.8 s (C), and the end-to-end lane 122.4 s with 881 tests. The gates of slice 5 and of its follow-up changes are collected in the [slice 5 gates record](check-budget-2026-10-29-slice-5-gates.md).
