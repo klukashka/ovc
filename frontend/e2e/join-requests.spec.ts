@@ -131,7 +131,7 @@ test.describe('Boris in English', () => {
     await expect(borisRows).toHaveCount(1);
     await expect(borisRows.first()).toContainText('Мария');
     await expect(borisRows.first()).toContainText('Your request was accepted');
-    await mariaContext.close();
+    await diagnostics.closeContext(mariaContext);
   });
 
   test('confirmation › a held request whose tutor is no longer active answers that the code is not valid and continues to code entry', async ({

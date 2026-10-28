@@ -120,7 +120,7 @@ export function WeekGrid({
           </li>
         ))}
       </ol>
-      <div ref={scroller} className="max-h-[36rem] overflow-y-auto">
+      <div ref={scroller} data-part="hours" className="max-h-[36rem] overflow-y-auto">
         <div className="grid grid-cols-[3rem_repeat(7,minmax(0,1fr))]">
           <div aria-hidden="true" className="flex flex-col">
             {hours.map((hour) => (

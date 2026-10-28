@@ -9,12 +9,23 @@ export interface FailedRequest {
 export interface PageActivity {
   readonly navigations: readonly number[];
   readonly requests: readonly number[];
+  readonly closes: readonly number[];
 }
 
-const cancelledRequest = /abort|cancel/i;
+const cancellationTexts: readonly string[] = [
+  'net::ERR_ABORTED',
+  'NS_BINDING_ABORTED',
+  'cancelled',
+  'Load request cancelled',
+  'Provisiolal navigation canceled.',
+];
 
-function navigationDuring(failed: FailedRequest, activity: PageActivity): boolean {
-  return activity.navigations.some((step) => step > failed.started && step < failed.failed);
+function isCancellation(failed: FailedRequest): boolean {
+  return cancellationTexts.includes(failed.reason);
+}
+
+function stepDuring(steps: readonly number[], failed: FailedRequest): boolean {
+  return steps.some((step) => step > failed.started && step < failed.failed);
 }
 
 function navigationRightAfter(failed: FailedRequest, activity: PageActivity): boolean {
@@ -27,14 +38,19 @@ function navigationRightAfter(failed: FailedRequest, activity: PageActivity): bo
 }
 
 function leftByNavigation(failed: FailedRequest, activity: PageActivity): boolean {
-  return (
-    cancelledRequest.test(failed.reason) &&
-    (navigationDuring(failed, activity) || navigationRightAfter(failed, activity))
-  );
+  return stepDuring(activity.navigations, failed) || navigationRightAfter(failed, activity);
+}
+
+function leftByClose(failed: FailedRequest, activity: PageActivity): boolean {
+  return stepDuring(activity.closes, failed);
 }
 
 export function unexpectedFailures(failures: readonly FailedRequest[], activity: PageActivity): string[] {
   return failures
-    .filter((failed) => !failed.answered && !leftByNavigation(failed, activity))
+    .filter(
+      (failed) =>
+        !failed.answered &&
+        !(isCancellation(failed) && (leftByNavigation(failed, activity) || leftByClose(failed, activity))),
+    )
     .map((failed) => `request failed: ${failed.description} ${failed.reason}`);
 }

@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'vitest';
 
 import { FakeAuthServer } from './fakeTransport.ts';
-import { type ContractSubject, authTransportContract } from './transportContract.ts';
+import type { components } from './schema.ts';
+import { type ContractSubject, type SeededLessons, authTransportContract } from './transportContract.ts';
+
+type CalendarItem = components['schemas']['CalendarItem'];
 
 const origin = 'https://ovc.example';
 
@@ -38,6 +41,27 @@ function fakeSubject(): ContractSubject {
     unsubscribeToken: async (): Promise<string> => {
       await Promise.resolve();
       return server.unsubscribeToken('a@example.org', 'lesson_reminders');
+    },
+    seedTwoLessons: async (): Promise<SeededLessons> => {
+      await Promise.resolve();
+      const lesson = (startsAt: string, endsAt: string): CalendarItem => ({
+        id: `00000000-0000-4000-8000-${String(Date.parse(startsAt)).slice(-12)}`,
+        title: 'Lesson',
+        starts_at: startsAt,
+        ends_at: endsAt,
+        status: 'scheduled',
+        timezone: 'Europe/Moscow',
+        audience: { kind: 'one_to_one', label: 'A student', label_kind: null, colour: 'moss' },
+        tutor: null,
+      });
+      server.addCalendarItem('a@example.org', lesson('2026-11-03T09:00:00Z', '2026-11-03T10:00:00Z'));
+      server.addCalendarItem('a@example.org', lesson('2026-11-03T06:00:00Z', '2026-11-03T07:00:00Z'));
+      return {
+        from: '2026-11-03T05:00:00Z',
+        to: '2026-11-03T12:00:00Z',
+        laterStart: '2026-11-03T09:00:00Z',
+        earlierStart: '2026-11-03T06:00:00Z',
+      };
     },
   };
 }

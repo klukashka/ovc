@@ -223,7 +223,7 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
 
     await expect(borisPage.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
     await expect(borisPage.getByRole('main').getByText('Урок B1 evening')).toHaveCount(0);
-    await borisContext.close();
+    await diagnostics.closeContext(borisContext);
   });
 
   test('pilot-4 › step 6 the copied link from the seed is no longer valid for Boris', async ({
@@ -248,7 +248,7 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
       borisPage.getByText('This invitation is no longer valid — ask your tutor for a new link.'),
     ).toBeVisible();
     await expect(borisPage.getByRole('button', { name: 'Accept' })).toHaveCount(0);
-    await borisContext.close();
+    await diagnostics.closeContext(borisContext);
   });
 
   test('pilot-4 › step 7 Invite again makes Boris active with his history, but not back in B1 evening', async ({
@@ -293,7 +293,7 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
     await expect(page.getByRole('button', { name: 'Завершить занятия' })).toBeVisible();
     expect(await cardState(deployment, maria, borisCard)).toEqual({ state: 'active', groups: [] });
     expect(await groupMemberNames(deployment, maria, groupId)).toEqual(['Анна']);
-    await borisContext.close();
+    await diagnostics.closeContext(borisContext);
   });
 });
 

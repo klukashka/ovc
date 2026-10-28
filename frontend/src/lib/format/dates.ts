@@ -6,10 +6,23 @@ export function localeOf(language: Language): string {
   return locales[language];
 }
 
+const dateTimeFormats = new Map<string, Intl.DateTimeFormat>();
+
+export function dateTimeFormat(language: Language, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${language} ${JSON.stringify(options)}`;
+  const existing = dateTimeFormats.get(key);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const format = new Intl.DateTimeFormat(locales[language], options);
+  dateTimeFormats.set(key, format);
+  return format;
+}
+
 export function formatDateTime(instant: string, language: Language, timeZone: string): string {
   const moment = new Date(instant);
-  const day = new Intl.DateTimeFormat(locales[language], { day: 'numeric', month: 'short', timeZone }).format(moment);
-  const time = new Intl.DateTimeFormat(locales[language], {
+  const day = dateTimeFormat(language, { day: 'numeric', month: 'short', timeZone }).format(moment);
+  const time = dateTimeFormat(language, {
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
@@ -19,7 +32,7 @@ export function formatDateTime(instant: string, language: Language, timeZone: st
 }
 
 export function formatDate(instant: string, language: Language, timeZone: string): string {
-  return new Intl.DateTimeFormat(locales[language], {
+  return dateTimeFormat(language, {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -47,5 +60,17 @@ export function formatAgo(instant: string, language: Language, timeZone: string,
     return formatDateTime(instant, language, timeZone);
   }
   const amount = step.unit === 'second' ? 0 : Math.floor(elapsedSeconds / step.size);
-  return new Intl.RelativeTimeFormat(locales[language], { numeric: 'auto' }).format(-amount, step.unit);
+  return relativeTimeFormat(language).format(-amount, step.unit);
+}
+
+const relativeTimeFormats = new Map<Language, Intl.RelativeTimeFormat>();
+
+function relativeTimeFormat(language: Language): Intl.RelativeTimeFormat {
+  const existing = relativeTimeFormats.get(language);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const format = new Intl.RelativeTimeFormat(locales[language], { numeric: 'auto' });
+  relativeTimeFormats.set(language, format);
+  return format;
 }

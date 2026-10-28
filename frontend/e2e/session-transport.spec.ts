@@ -1,8 +1,9 @@
-import { authTransportContract } from '../src/lib/api/transportContract.ts';
+import { type SeededLessons, authTransportContract } from '../src/lib/api/transportContract.ts';
 import { httpAuthTransport } from '../src/lib/api/transport.ts';
 import { testNetAddress } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { expect, seedVerifiedUser, test } from './fixtures.ts';
+import { addDays, localDate, scheduleLessons } from './schedule.ts';
 import { seedActiveStudent } from './tutoring.ts';
 import { unsubscribeTokenFromAReminder } from './unsubscribe.ts';
 
@@ -57,6 +58,23 @@ test.describe('the HTTP authentication transport against the real backend', () =
           return Promise.resolve();
         },
         unsubscribeToken: (): Promise<string> => unsubscribeTokenFromAReminder(deployment, control, account),
+        seedTwoLessons: async (): Promise<SeededLessons> => {
+          const { cardId } = await seedActiveStudent(deployment, account, 'Contract student');
+          const date = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
+          const lesson = { relationship_id: cardId, title: 'Lesson', date, duration_minutes: 60 };
+          const [laterStart] = await scheduleLessons(deployment, account, { ...lesson, start: '12:00' });
+          const [earlierStart] = await scheduleLessons(deployment, account, { ...lesson, start: '09:00' });
+          if (laterStart === undefined || earlierStart === undefined) {
+            throw new Error('a seeded lesson has no start');
+          }
+          const hour = 60 * 60 * 1_000;
+          return {
+            from: new Date(Date.parse(earlierStart) - hour).toISOString(),
+            to: new Date(Date.parse(laterStart) + 2 * hour).toISOString(),
+            laterStart,
+            earlierStart,
+          };
+        },
       };
 
       const run = scenario(subject);

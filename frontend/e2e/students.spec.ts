@@ -385,6 +385,25 @@ test.describe('in English with the dark theme', () => {
     await expect(page.getByRole('form', { name: 'Notes' }).getByLabel('Notes')).toHaveValue('Prefers evening lessons.');
   });
 
+  for (const { chosen, from } of [
+    { chosen: 'Lessons', from: '' },
+    { chosen: 'Overview', from: '?tab=lessons' },
+  ] as const) {
+    test(`student card › choosing ${chosen} keeps focus on it`, async ({ page, deployment }) => {
+      const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+      const { cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
+      await signInThroughTheApi(page, pavel);
+      await page.goto(`/students/${cardId}${from}`);
+      const tab = page.getByRole('navigation', { name: 'Card sections' }).getByRole('link', { name: chosen });
+      await tab.focus();
+
+      await page.keyboard.press('Enter');
+
+      await expect(tab).toHaveAttribute('aria-current', 'page');
+      await expect(tab).toBeFocused();
+    });
+  }
+
   test('student card › Lessons lists the history and Schedule a lesson preselects the card', async ({
     page,
     deployment,

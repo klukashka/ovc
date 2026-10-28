@@ -11,6 +11,14 @@ export interface ContractSubject {
   readonly expireAccessTokens: () => Promise<void>;
   readonly blockAccount: () => Promise<void>;
   readonly unsubscribeToken: () => Promise<string>;
+  readonly seedTwoLessons: () => Promise<SeededLessons>;
+}
+
+export interface SeededLessons {
+  readonly from: string;
+  readonly to: string;
+  readonly laterStart: string;
+  readonly earlierStart: string;
 }
 
 export type ContractScenario = (subject: ContractSubject) => Promise<void>;
@@ -83,6 +91,48 @@ function joinRequestsRequest(subject: ContractSubject, token: string): Request {
 function notificationsRequest(subject: ContractSubject, token: string): Request {
   return new Request(`${subject.origin}/api/v1/notifications`, { headers: { Authorization: `Bearer ${token}` } });
 }
+
+const emptyWeek = { from: '2026-11-01T21:00:00.000Z', to: '2026-11-08T21:00:00.000Z' };
+
+function calendarRequest(subject: ContractSubject, token: string, query: Record<string, string> = emptyWeek): Request {
+  return new Request(`${subject.origin}/api/v1/calendar?${new URLSearchParams(query).toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+async function fieldProblems(response: Response): Promise<string> {
+  const body: unknown = await response.json();
+  if (typeof body !== 'object' || body === null || !('error' in body)) {
+    return '';
+  }
+  const error = body.error;
+  if (typeof error !== 'object' || error === null || !('code' in error) || !('fields' in error)) {
+    return '';
+  }
+  const fields: unknown = error.fields;
+  const described = Array.isArray(fields)
+    ? fields.map((field: unknown) =>
+        typeof field === 'object' && field !== null && 'path' in field && 'code' in field
+          ? `${String(field.path)}:${String(field.code)}`
+          : '?',
+      )
+    : [];
+  return `${String(error.code)} ${described.join(',')}`;
+}
+
+function startsOf(body: unknown): number[] {
+  if (typeof body !== 'object' || body === null || !('items' in body) || !Array.isArray(body.items)) {
+    return [];
+  }
+  const items: unknown[] = body.items;
+  return items.map((item) =>
+    typeof item === 'object' && item !== null && 'starts_at' in item && typeof item.starts_at === 'string'
+      ? Date.parse(item.starts_at)
+      : Number.NaN,
+  );
+}
+
+const dayMilliseconds = 24 * 60 * 60 * 1_000;
 
 function emailPreferencesRequest(subject: ContractSubject, token: string, body?: unknown): Request {
   return new Request(`${subject.origin}/api/v1/users/me/email-preferences`, {
@@ -248,6 +298,93 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
         `expected exactly {items: [], next_cursor: null}, got ${JSON.stringify(body)}`,
       );
     },
+
+  'a tutor without lessons reads an empty calendar week that is not truncated': async (subject) => {
+    const token = await accessToken(await subject.transport.login(subject.otherTutorEmail, subject.otherTutorPassword));
+
+    const read = await subject.transport.send(calendarRequest(subject, token));
+
+    check(read.status === 200, `expected 200, got ${String(read.status)}`);
+    const body: unknown = await read.json();
+    check(
+      typeof body === 'object' &&
+        body !== null &&
+        Object.keys(body).sort().join(',') === 'items,truncated' &&
+        'items' in body &&
+        Array.isArray(body.items) &&
+        body.items.length === 0 &&
+        'truncated' in body &&
+        body.truncated === false,
+      `expected exactly {items: [], truncated: false}, got ${JSON.stringify(body)}`,
+    );
+  },
+
+  'a tutor reads the calendar lessons of a range ordered by start, whatever order they were scheduled in': async (
+    subject,
+  ) => {
+    const seeded = await subject.seedTwoLessons();
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+
+    const read = await subject.transport.send(calendarRequest(subject, token, { from: seeded.from, to: seeded.to }));
+
+    check(read.status === 200, `expected 200, got ${String(read.status)}`);
+    const starts = startsOf(await read.json());
+    check(
+      starts.length === 2 &&
+        starts[0] === Date.parse(seeded.earlierStart) &&
+        starts[1] === Date.parse(seeded.laterStart),
+      `expected the two seeded lessons earliest first, got starts ${JSON.stringify(starts)}`,
+    );
+  },
+
+  'a calendar range that ends at or before its start, or spans more than 64 days, is refused at query.to': async (
+    subject,
+  ) => {
+    const token = await accessToken(await subject.transport.login(subject.otherTutorEmail, subject.otherTutorPassword));
+    const from = Date.parse(emptyWeek.from);
+
+    const reversed = await subject.transport.send(
+      calendarRequest(subject, token, { from: emptyWeek.to, to: emptyWeek.from }),
+    );
+    const empty = await subject.transport.send(
+      calendarRequest(subject, token, { from: emptyWeek.from, to: emptyWeek.from }),
+    );
+    const longest = await subject.transport.send(
+      calendarRequest(subject, token, {
+        from: emptyWeek.from,
+        to: new Date(from + 64 * dayMilliseconds).toISOString(),
+      }),
+    );
+    const overlong = await subject.transport.send(
+      calendarRequest(subject, token, {
+        from: emptyWeek.from,
+        to: new Date(from + 64 * dayMilliseconds + 1_000).toISOString(),
+      }),
+    );
+
+    check(reversed.status === 422, `expected 422 for a reversed range, got ${String(reversed.status)}`);
+    check((await fieldProblems(reversed)) === 'validation_failed query.to:invalid', 'expected query.to invalid');
+    check(empty.status === 422, `expected 422 for an empty range, got ${String(empty.status)}`);
+    check((await fieldProblems(empty)) === 'validation_failed query.to:invalid', 'expected query.to invalid');
+    check(longest.status === 200, `expected 200 for a 64-day range, got ${String(longest.status)}`);
+    check(overlong.status === 422, `expected 422 for an overlong range, got ${String(overlong.status)}`);
+    check((await fieldProblems(overlong)) === 'validation_failed query.to:too_long', 'expected query.to too_long');
+  },
+
+  'a tutor filter on a tutor’s calendar is refused as not allowed': async (subject) => {
+    const token = await accessToken(await subject.transport.login(subject.otherTutorEmail, subject.otherTutorPassword));
+
+    const read = await subject.transport.send(
+      calendarRequest(subject, token, { ...emptyWeek, tutor: '00000000-0000-4000-8000-000000000099' }),
+    );
+
+    check(read.status === 422, `expected 422, got ${String(read.status)}`);
+    const problems = await fieldProblems(read);
+    check(
+      problems === 'validation_failed query.tutor:not_allowed',
+      `expected query.tutor not_allowed, got ${problems}`,
+    );
+  },
 
   'a tutor without notifications reads an empty page with no unread rows': async (subject) => {
     const token = await accessToken(await subject.transport.login(subject.otherTutorEmail, subject.otherTutorPassword));

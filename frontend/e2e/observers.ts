@@ -8,7 +8,47 @@ declare global {
     ovcFirstOffsets?: Map<string, number>;
     ovcFirstBodyTheme?: string;
     ovcSchemeChanges?: number;
+    ovcShownRegion?: ShownRegion;
   }
+}
+
+export interface ShownRegion {
+  busy: boolean;
+  replaced: boolean;
+}
+
+export async function recordShownRegion(page: Page, selector: string): Promise<void> {
+  await page.evaluate(
+    ({ watched }) => {
+      const region = document.querySelector(watched);
+      const holder = region?.closest('[aria-busy]');
+      if (region === null || holder === null || holder === undefined) {
+        throw new Error(`no ${watched} inside an element with aria-busy is shown`);
+      }
+      const shown: ShownRegion = { busy: false, replaced: false };
+      window.ovcShownRegion = shown;
+      new MutationObserver(() => {
+        shown.replaced ||= !region.isConnected;
+        shown.busy ||= holder.getAttribute('aria-busy') === 'true';
+      }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-busy'] });
+    },
+    { watched: selector },
+  );
+}
+
+export async function shownRegion(page: Page): Promise<ShownRegion> {
+  const recorded: unknown = await page.evaluate((): unknown => window.ovcShownRegion);
+  if (
+    typeof recorded !== 'object' ||
+    recorded === null ||
+    !('busy' in recorded) ||
+    typeof recorded.busy !== 'boolean' ||
+    !('replaced' in recorded) ||
+    typeof recorded.replaced !== 'boolean'
+  ) {
+    throw new Error('no shown region was recorded on this page');
+  }
+  return { busy: recorded.busy, replaced: recorded.replaced };
 }
 
 export async function recordBusyControls(page: Page): Promise<void> {

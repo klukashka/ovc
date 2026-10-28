@@ -1,10 +1,10 @@
-import { localeOf } from '../../lib/format/dates.ts';
+import { dateTimeFormat } from '../../lib/format/dates.ts';
 import type { Language } from '../../lib/i18n/resources.ts';
 import { type LocalDate, utcNoon as noonOf } from '../../lib/time/localDates.ts';
 import type { CalendarRange } from './calendarTime.ts';
 
 export function formatClock(instant: string, language: Language, timeZone: string): string {
-  return new Intl.DateTimeFormat(localeOf(language), {
+  return dateTimeFormat(language, {
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
@@ -13,7 +13,7 @@ export function formatClock(instant: string, language: Language, timeZone: strin
 }
 
 export function formatDay(date: LocalDate, language: Language): string {
-  return new Intl.DateTimeFormat(localeOf(language), {
+  return dateTimeFormat(language, {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
@@ -22,7 +22,7 @@ export function formatDay(date: LocalDate, language: Language): string {
 }
 
 export function formatLongDay(date: LocalDate, language: Language): string {
-  return new Intl.DateTimeFormat(localeOf(language), {
+  return dateTimeFormat(language, {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -31,7 +31,7 @@ export function formatLongDay(date: LocalDate, language: Language): string {
 }
 
 export function formatFullDate(date: LocalDate, language: Language): string {
-  return new Intl.DateTimeFormat(localeOf(language), {
+  return dateTimeFormat(language, {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -41,27 +41,25 @@ export function formatFullDate(date: LocalDate, language: Language): string {
 
 export function formatWeekdayName(isoWeekday: number, language: Language, width: 'short' | 'long'): string {
   const monday = Date.UTC(2024, 0, 1, 12);
-  return new Intl.DateTimeFormat(localeOf(language), { weekday: width, timeZone: 'UTC' }).format(
+  return dateTimeFormat(language, { weekday: width, timeZone: 'UTC' }).format(
     new Date(monday + (isoWeekday - 1) * 86_400_000),
   );
 }
 
 export function formatDayNumber(date: LocalDate, language: Language): string {
-  return new Intl.DateTimeFormat(localeOf(language), { day: 'numeric', timeZone: 'UTC' }).format(noonOf(date));
+  return dateTimeFormat(language, { day: 'numeric', timeZone: 'UTC' }).format(noonOf(date));
 }
 
 export function formatRangeTitle(range: CalendarRange, language: Language): string {
   if (range.view === 'month') {
-    return new Intl.DateTimeFormat(localeOf(language), { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
-      noonOf(range.anchor),
-    );
+    return dateTimeFormat(language, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(noonOf(range.anchor));
   }
   const first = range.days[0];
   const last = range.days.at(-1);
   if (first === undefined || last === undefined) {
     throw new Error('a week range has no days');
   }
-  return new Intl.DateTimeFormat(localeOf(language), {
+  return dateTimeFormat(language, {
     day: 'numeric',
     month: 'short',
     year: 'numeric',

@@ -30,8 +30,10 @@ interface RefreshCookie {
 type StudentCard = components['schemas']['StudentCard'];
 type EmailGroup = components['schemas']['EmailPreference']['group'];
 type EmailPreference = components['schemas']['EmailPreference'];
+type CalendarItem = components['schemas']['CalendarItem'];
 
 const cardPathPrefix = '/api/v1/students/';
+const calendarPath = '/api/v1/calendar';
 const joinRequestsPath = '/api/v1/join-requests';
 const notificationsPath = '/api/v1/notifications';
 const invitationPathPrefix = '/api/v1/invitations/';
@@ -112,6 +114,19 @@ function refusal(status: number, code: string): Response {
   return json(status, { error: { code, message: code, request_id: 'fake-request' } });
 }
 
+function fieldRefusal(path: string, code: string): Response {
+  return json(422, {
+    error: {
+      code: 'validation_failed',
+      message: 'validation_failed',
+      request_id: 'fake-request',
+      fields: [{ path, code }],
+    },
+  });
+}
+
+const calendarMaxRangeMilliseconds = (62 + 2) * 24 * 60 * 60 * 1_000;
+
 async function nextTurn(): Promise<void> {
   await Promise.resolve();
 }
@@ -140,6 +155,10 @@ export class FakeAuthServer {
   private refreshCount = 0;
   private reuse = false;
   private readonly sent: string[] = [];
+  private readonly addresses: URL[] = [];
+  private readonly calendarItems = new Map<string, CalendarItem[]>();
+  private calendarReadGate: Promise<void> | null = null;
+  private calendarReadReceived: () => void = () => undefined;
   private readonly cards = new Map<string, FakeCard>();
   private failingInvitationReads = 0;
   private failingPreferenceSaves = 0;
@@ -161,6 +180,10 @@ export class FakeAuthServer {
 
   get sentTokens(): readonly string[] {
     return this.sent;
+  }
+
+  get sentAddresses(): readonly URL[] {
+    return this.addresses;
   }
 
   addAccount(seed: FakeAccountSeed): void {
@@ -233,6 +256,28 @@ export class FakeAuthServer {
     });
     this.joinRequestReadReceived = received;
     return { resume, answered };
+  }
+
+  addCalendarItem(email: string, item: CalendarItem): void {
+    const accountId = this.account(email).me.id;
+    this.calendarItems.set(accountId, [...(this.calendarItems.get(accountId) ?? []), item]);
+  }
+
+  pauseCalendarReads(): PausedReads {
+    let resume = (): void => undefined;
+    let notifyReceived = (): void => undefined;
+    this.calendarReadGate = new Promise((resolve) => {
+      resume = (): void => {
+        this.calendarReadGate = null;
+        this.calendarReadReceived = (): void => undefined;
+        resolve();
+      };
+    });
+    const received = new Promise<void>((resolve) => {
+      notifyReceived = resolve;
+    });
+    this.calendarReadReceived = notifyReceived;
+    return { resume, received };
   }
 
   failJoinRequestReads(count: number): void {
@@ -418,7 +463,9 @@ export class FakeAuthServer {
     await nextTurn();
     const token = request.headers.get('Authorization')?.replace(/^Bearer /, '') ?? '';
     this.sent.push(token);
-    const path = new URL(request.url).pathname;
+    const address = new URL(request.url);
+    this.addresses.push(address);
+    const path = address.pathname;
     if (path === '/api/v1/users/me') {
       return this.readAccount(token);
     }
@@ -433,6 +480,9 @@ export class FakeAuthServer {
     }
     if (request.method === 'GET' && path === notificationsPath) {
       return this.readNotifications(token);
+    }
+    if (request.method === 'GET' && path === calendarPath) {
+      return this.readCalendar(token, address.searchParams);
     }
     if (path === emailPreferencesPath) {
       return this.answerPreferences(request, token);
@@ -523,6 +573,35 @@ export class FakeAuthServer {
       return refusal(500, 'internal');
     }
     return json(200, { items: [], next_cursor: null });
+  }
+
+  private async readCalendar(token: string, query: URLSearchParams): Promise<Response> {
+    const refused = this.refusedToken(token);
+    this.calendarReadReceived();
+    await this.calendarReadGate;
+    if (refused !== null) {
+      return refused;
+    }
+    const accountId = this.sessionOf(token)?.accountId ?? '';
+    const caller = [...this.accounts.values()].find((account) => account.me.id === accountId);
+    if (caller?.me.role === 'tutor' && query.has('tutor')) {
+      return fieldRefusal('query.tutor', 'not_allowed');
+    }
+    const from = Date.parse(query.get('from') ?? '');
+    const to = Date.parse(query.get('to') ?? '');
+    if (Number.isNaN(from) || Number.isNaN(to)) {
+      return refusal(422, 'validation_failed');
+    }
+    if (to <= from) {
+      return fieldRefusal('query.to', 'invalid');
+    }
+    if (to - from > calendarMaxRangeMilliseconds) {
+      return fieldRefusal('query.to', 'too_long');
+    }
+    const items = (this.calendarItems.get(accountId) ?? [])
+      .filter((item) => Date.parse(item.ends_at) > from && Date.parse(item.starts_at) < to)
+      .sort((left, right) => Date.parse(left.starts_at) - Date.parse(right.starts_at));
+    return json(200, { items, truncated: false });
   }
 
   private readNotifications(token: string): Response {
@@ -646,6 +725,11 @@ export class FakeAuthServer {
 export interface PausedAnswers {
   readonly resume: () => void;
   readonly answered: Promise<void>;
+}
+
+export interface PausedReads {
+  readonly resume: () => void;
+  readonly received: Promise<void>;
 }
 
 export function memoryLocks(): LockManagerLike {

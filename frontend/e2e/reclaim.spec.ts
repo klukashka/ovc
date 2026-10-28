@@ -70,7 +70,7 @@ async function openTheCardAsMaria(
   await diagnostics.watch(mariaPage);
   await signInThroughTheApi(mariaPage, maria);
   await mariaPage.goto(`/students/${cardId}`);
-  return { mariaPage, close: (): Promise<void> => mariaContext.close() };
+  return { mariaPage, close: (): Promise<void> => diagnostics.closeContext(mariaContext) };
 }
 
 async function resetThroughTheApi(

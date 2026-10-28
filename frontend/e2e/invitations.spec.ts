@@ -202,7 +202,7 @@ test.describe('Anna in Russian on a phone', () => {
     expect(addresses.at(-1)).not.toContain(token);
     expect(addressesAfterRemoval(addresses, token).filter((address) => address.includes(token))).toEqual([]);
     await expectTokenNowhere(page, token);
-    await mariaContext.close();
+    await diagnostics.closeContext(mariaContext);
   });
 
   test('pilot-3 › steps 1–2 Pavel invites Anna, who accepts signed in and sees both tutors with their colours', async ({

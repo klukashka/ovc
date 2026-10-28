@@ -66,16 +66,17 @@ function lessonRefusal(t: TFunction, state: ActionState): string | null {
 
 function SeriesFields({
   error,
-  firstDate,
+  readFirstDate,
   chosenWeekdays,
 }: {
   readonly error: ApiError | null;
-  readonly firstDate: string;
+  readonly readFirstDate: () => string;
   readonly chosenWeekdays: readonly number[];
 }): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
   const [end, setEnd] = useState<SeriesEnd>('count');
+  const [endDefault, setEndDefault] = useState('');
   const weekdaysId = useId();
   const endsId = useId();
   const weekdaysError = error?.fieldCode('weekdays');
@@ -130,6 +131,7 @@ function SeriesFields({
             value="date"
             checked={end === 'date'}
             onChange={() => {
+              setEndDefault(readFirstDate());
               setEnd('date');
             }}
             className="size-4 accent-accent"
@@ -138,6 +140,7 @@ function SeriesFields({
         </label>
         {end === 'count' ? (
           <InputField
+            key="count"
             label={t('newLesson.count')}
             name="count"
             type="number"
@@ -149,10 +152,11 @@ function SeriesFields({
           />
         ) : (
           <InputField
+            key="end_date"
             label={t('newLesson.endDate')}
             name="end_date"
             type="date"
-            defaultValue={firstDate}
+            defaultValue={endDefault}
             error={fieldMessage(t, error, 'end_date')}
           />
         )}
@@ -359,7 +363,16 @@ function NewLessonForm({
           {t('newLesson.repeat')}
         </label>
         {repeat ? (
-          <SeriesFields error={error} firstDate={prefill.date} chosenWeekdays={prefill.weekdays ?? []} />
+          <SeriesFields
+            error={error}
+            readFirstDate={() => {
+              if (form.current === null) {
+                throw new Error('the series fields are shown outside the lesson form');
+              }
+              return stringField(new FormData(form.current), 'date');
+            }}
+            chosenWeekdays={prefill.weekdays ?? []}
+          />
         ) : null}
         {missing === 'weekdays' ? <FormAlert key={missingAttempts}>{t('newLesson.weekdaysRequired')}</FormAlert> : null}
         <div className="flex flex-col gap-1">

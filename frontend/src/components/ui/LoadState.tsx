@@ -5,7 +5,7 @@ import type { ApiError } from '../../lib/api/client.ts';
 import { quietButtonClass } from './Form.tsx';
 import { LiveNotice } from './LiveNotice.tsx';
 
-const loadingDelayMilliseconds = 300;
+export const loadingDelayMilliseconds = 300;
 
 export function DelayedLoading(): ReactElement {
   const { t } = useTranslation();

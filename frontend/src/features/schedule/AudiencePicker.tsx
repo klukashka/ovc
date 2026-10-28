@@ -1,7 +1,8 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { type ReactElement, type RefObject, useDeferredValue, useId, useState } from 'react';
+import { type ReactElement, type RefObject, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useDebouncedValue } from '../../app/clock.ts';
 import { fieldClass, quietButtonClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
@@ -13,6 +14,8 @@ import { type StudentCardPage, type StudentCardSummary, studentsKey } from '../s
 export type Audience =
   | { readonly kind: 'one_to_one'; readonly id: string; readonly name: string }
   | { readonly kind: 'group'; readonly id: string; readonly name: string };
+
+export const searchDelayMilliseconds = 300;
 
 function schedulableStudentsKey(search: string): readonly unknown[] {
   return [...studentsKey, 'schedulable', search];
@@ -228,7 +231,7 @@ export function AudiencePicker({
   const inputId = useId();
   const errorId = useId();
   const [search, setSearch] = useState('');
-  const deferredSearch = useDeferredValue(search.trim());
+  const settledSearch = useDebouncedValue(search.trim(), searchDelayMilliseconds);
   return (
     <fieldset aria-labelledby={legendId} className="flex flex-col gap-2">
       <legend id={legendId} className="text-label">
@@ -256,7 +259,7 @@ export function AudiencePicker({
         </p>
       )}
       <Choices
-        search={deferredSearch}
+        search={settledSearch}
         chosen={chosen}
         preselected={preselected}
         searchField={searchField}

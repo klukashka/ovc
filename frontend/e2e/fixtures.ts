@@ -1,4 +1,4 @@
-import { type Locator, type Page, type Request, expect, test as base } from '@playwright/test';
+import { type BrowserContext, type Locator, type Page, type Request, expect, test as base } from '@playwright/test';
 
 import {
   type TestAccount,
@@ -219,10 +219,13 @@ export interface PageDiagnostics {
 
 export interface Diagnostics extends PageDiagnostics {
   readonly watch: (page: Page) => Promise<PageDiagnostics>;
+  readonly closeContext: (context: BrowserContext) => Promise<void>;
 }
 
 interface WatchedPage extends PageDiagnostics {
-  readonly verify: () => Promise<void>;
+  readonly page: Page;
+  readonly markClose: () => void;
+  readonly verify: () => void;
 }
 
 function describeFailure(failure: ExpectedFailure): string {
@@ -304,7 +307,9 @@ async function watchPage(page: Page, deployment: Deployment): Promise<WatchedPag
   let step = 0;
   const navigations: number[] = [];
   const requests: number[] = [];
+  const closes: number[] = [];
   const startOf = new Map<Request, number>();
+  const answeredRequests = new Set<Request>();
   page.on('request', (request) => {
     step += 1;
     if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
@@ -314,31 +319,33 @@ async function watchPage(page: Page, deployment: Deployment): Promise<WatchedPag
     }
     startOf.set(request, step);
   });
-  const failureChecks: Promise<FailedAt>[] = [];
+  const failedRequests: FailedAt[] = [];
   page.on('requestfailed', (request) => {
     step += 1;
-    const started = startOf.get(request) ?? Number.POSITIVE_INFINITY;
-    const failed = step;
-    failureChecks.push(
-      request.response().then((response) => ({
-        failed: {
-          description: `${request.method()} ${request.url()}`,
-          reason: request.failure()?.errorText ?? '',
-          answered: response !== null,
-          started,
-          failed,
-        },
-        path: pathOf(request.url()),
-      })),
-    );
+    failedRequests.push({
+      failed: {
+        description: `${request.method()} ${request.url()}`,
+        reason: request.failure()?.errorText ?? '',
+        answered: answeredRequests.has(request),
+        started: startOf.get(request) ?? Number.POSITIVE_INFINITY,
+        failed: step,
+      },
+      path: pathOf(request.url()),
+    });
   });
   page.on('response', (response) => {
+    answeredRequests.add(response.request());
     const url = new URL(response.url());
     if (response.status() >= 400 && url.origin === deployment.origin) {
       failures.push(`${response.request().method()} ${url.pathname}${url.search} ${String(response.status())}`);
     }
   });
   return {
+    page,
+    markClose: (): void => {
+      step += 1;
+      closes.push(step);
+    },
     expectFailure: (failure): void => {
       expected.push(describeFailure(failure));
     },
@@ -348,12 +355,11 @@ async function watchPage(page: Page, deployment: Deployment): Promise<WatchedPag
     expectConsoleError: (text): void => {
       expectedConsoleErrors.push(text);
     },
-    verify: async (): Promise<void> => {
-      const failedRequests = await Promise.all(failureChecks);
+    verify: (): void => {
       expect([
         ...unexpectedConsoleErrors(consoleErrors, expectedConsoleErrors, abortedPaths),
         ...problems,
-        ...unexpectedFailures(unexpectedAborts(failedRequests, abortedPaths), { navigations, requests }),
+        ...unexpectedFailures(unexpectedAborts(failedRequests, abortedPaths), { navigations, requests, closes }),
         ...unseenAborts(failedRequests, abortedPaths),
       ]).toEqual([]);
       expect([...failures].sort()).toEqual([...expected].sort());
@@ -375,10 +381,18 @@ export const diagnosedTest = test.extend<{ diagnostics: Diagnostics }>({
           others.push(watched);
           return watched;
         },
+        closeContext: async (context): Promise<void> => {
+          for (const watched of [main, ...others]) {
+            if (watched.page.context() === context) {
+              watched.markClose();
+            }
+          }
+          await context.close();
+        },
       });
-      await main.verify();
+      main.verify();
       for (const watched of others) {
-        await watched.verify();
+        watched.verify();
       }
     },
     { auto: true },

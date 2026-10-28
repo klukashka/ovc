@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { useScheduler, watchPageReturns } from '../../app/clock.ts';
 import type { LessonDetail } from './api.ts';
 
 export type LessonPhase = 'before' | 'window' | 'past' | 'live' | 'ended' | 'cancelled';
@@ -46,7 +47,8 @@ export function dialogOutdated(
 }
 
 export function useLessonClock(lesson: LessonTimes | undefined): number {
-  const [now, setNow] = useState(() => Date.now());
+  const scheduler = useScheduler();
+  const [now, setNow] = useState(() => scheduler.wallClock());
   const status = lesson?.status;
   const startsAt = lesson?.starts_at;
   const endsAt = lesson?.ends_at;
@@ -56,20 +58,23 @@ export function useLessonClock(lesson: LessonTimes | undefined): number {
       status === 'scheduled' && startsAt !== undefined && endsAt !== undefined
         ? boundaries({ status, starts_at: startsAt, ends_at: endsAt })
         : [];
-    let handle = 0;
+    let cancel = (): void => undefined;
     const refresh = (): void => {
-      const current = Date.now();
+      cancel();
+      const current = scheduler.wallClock();
       setNow(current);
       const next = upcoming.find((moment) => moment > current);
       if (next !== undefined) {
-        handle = window.setTimeout(refresh, Math.min(next - current, longestTimer));
+        cancel = scheduler.schedule(Math.min(next - current, longestTimer), refresh);
       }
     };
-    handle = window.setTimeout(refresh, 0);
+    cancel = scheduler.schedule(0, refresh);
+    const stopWatching = watchPageReturns(refresh);
     return (): void => {
-      window.clearTimeout(handle);
+      cancel();
+      stopWatching();
     };
-  }, [status, startsAt, endsAt]);
+  }, [scheduler, status, startsAt, endsAt]);
 
   return now;
 }

@@ -3,6 +3,7 @@ import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
+import { recordShownRegion, shownRegion } from './observers.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import {
   type LocalDate,
@@ -205,6 +206,47 @@ test.describe('schedule for a tutor in Russian', () => {
       await expect(page).not.toHaveURL(new RegExp(`date=${date}`));
     });
   }
+
+  test('schedule › next week keeps the shown week and its scroll position while the next week loads', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { maria, cardId } = await tutorWithStudent(deployment);
+    const date = await moscowTomorrow(control.now);
+    await scheduleConversation(deployment, maria, cardId, addDays(date, 7));
+    await signInThroughTheApi(page, maria);
+    await page.goto(weekAddress(date));
+    const weekGrid = 'section[aria-label="Уроки недели"]';
+    const hours = page.locator(`${weekGrid} [data-part="hours"]`);
+    const scrolledTo = await hours.evaluate((element) => {
+      element.scrollTop = element.scrollHeight / 2;
+      return element.scrollTop;
+    });
+    await recordShownRegion(page, weekGrid);
+
+    await page.getByRole('button', { name: 'Следующая неделя' }).click();
+
+    await expect(lessonLinks(page).filter({ hasText: conversationTitle })).toBeVisible();
+    await expect(page.locator(`[aria-busy]:has(${weekGrid})`)).toHaveAttribute('aria-busy', 'false');
+    expect(await hours.evaluate((element) => element.scrollTop)).toBe(scrolledTo);
+    expect(await shownRegion(page)).toEqual({ busy: true, replaced: false });
+  });
+
+  test('schedule › Ends on starts from the first date the tutor chose', async ({ page, deployment, control }) => {
+    const { maria } = await tutorWithStudent(deployment);
+    const date = await moscowTomorrow(control.now);
+    const laterDate = addDays(date, 10);
+    await signInThroughTheApi(page, maria);
+    await page.goto(weekAddress(date));
+    const dialog = await openNewLesson(page);
+    await dialog.getByLabel('Дата', { exact: true }).fill(laterDate);
+    await dialog.getByLabel('Повторять каждую неделю').check();
+
+    await dialog.getByLabel('В дату').check();
+
+    await expect(dialog.getByLabel('Дата окончания')).toHaveValue(laterDate);
+  });
 
   test('schedule › a free slot prefills the dialog', async ({ page, deployment, control }) => {
     const { maria } = await tutorWithStudent(deployment);
@@ -441,7 +483,7 @@ test.describe('schedule for a tutor in Russian', () => {
       expect(media).toEqual({ coarse: true, wide: true });
       await expectWeekListedByDay(touchPage);
     } finally {
-      await context.close();
+      await diagnostics.closeContext(context);
     }
   });
 
@@ -713,7 +755,7 @@ test.describe('pilot 1, the first lessons of Maria and Anna', () => {
         .getByText(`18:00 по времени Москвы (${localClock(firstLesson, berlin)} по вашему)`)
         .first(),
     ).toBeVisible();
-    await annaContext.close();
+    await diagnostics.closeContext(annaContext);
     pilotOneSeed = { maria, anna, firstLesson };
   });
 
@@ -814,7 +856,7 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
 
     await expect(dialog).toBeHidden();
     await expect(lessonLinks(page).filter({ hasText: '10:00–11:00' })).toContainText('Lesson');
-    await context.close();
+    await diagnostics.closeContext(context);
     pavelOfPilotThree = pavel;
     pavelCardOfPilotThree = card.id;
   });
@@ -847,7 +889,7 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
     await expect(lessons).toHaveCount(1);
     await expect(lessons).toContainText('Pavel');
     await expect(lessons).toContainText('Индивидуальный урок');
-    await context.close();
+    await diagnostics.closeContext(context);
   });
 
   test('pilot-3 › step 5 Pavel’s card for Anna lists only his lesson with her, none of Maria’s', async ({
@@ -873,7 +915,7 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
     const next = page.getByRole('list', { name: 'Next lessons', exact: true }).getByRole('listitem');
     await expect(next).toHaveCount(1);
     await expect(next).toContainText('10:00–11:00');
-    await context.close();
+    await diagnostics.closeContext(context);
   });
 
   test('pilot-3 › step 12 Maria moves the next Wednesday lesson to 20:00, and Anna’s email says 18:00 her time', async ({
@@ -915,7 +957,7 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
     await expect.poll(async () => (await movedEmails()).length).toBe(1);
     const [movedText] = await movedEmails();
     expect(movedText).toContain(localClock(moved, berlin));
-    await context.close();
+    await diagnostics.closeContext(context);
     movedLessonOfPilotThree = moved;
   });
 
