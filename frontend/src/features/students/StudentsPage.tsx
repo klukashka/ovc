@@ -23,6 +23,7 @@ import { useAddressValue } from '../../components/ui/serverValue.ts';
 import { type ApiError, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { fetchGroups, groupsKey } from '../groups/api.ts';
+import { NextLessonLine } from '../schedule/LessonList.tsx';
 import { fetchTutorCode, tutorCodeKey } from '../settings/tutorCode.ts';
 import { AddStudentDialog } from './AddStudentDialog.tsx';
 import {
@@ -172,8 +173,13 @@ function SearchForm({ view }: { readonly view: ListView }): ReactElement {
   );
 }
 
+function lessonShown(card: StudentCardSummary): boolean {
+  return card.next_lesson !== null || card.state === 'active' || card.state === 'provisional';
+}
+
 function StudentRow({ card }: { readonly card: StudentCardSummary }): ReactElement {
   const { t } = useTranslation();
+  const me = useSignedInAccount();
   const email = card.email ?? card.account?.email ?? null;
   return (
     <li data-row={card.id} className="border-t border-border">
@@ -192,6 +198,7 @@ function StudentRow({ card }: { readonly card: StudentCardSummary }): ReactEleme
         <span className="col-start-2 flex flex-col gap-1 tablet:col-start-auto">
           <StateBadge state={card.state} />
           <GroupDots groups={card.groups} />
+          {lessonShown(card) ? <NextLessonLine item={card.next_lesson} me={me} /> : null}
         </span>
       </Link>
     </li>

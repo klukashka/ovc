@@ -293,7 +293,7 @@ describe('the student card page', () => {
       </SessionContext>,
     );
     await screen.findByRole('heading', { level: 1, name: 'Борис' });
-    expect(queryClient.getQueryData(studentCardKey(card.id))).toEqual(card);
+    expect(queryClient.getQueryData(studentCardKey(card.id))).toEqual({ ...card, next_lessons: [] });
 
     await act(async () => {
       await router.navigate('/students');

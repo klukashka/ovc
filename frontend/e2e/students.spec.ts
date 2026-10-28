@@ -1,19 +1,38 @@
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 
-import { newTestAccount, registerTutor, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, newTestAccount, registerTutor, signInThroughTheApi } from './accounts.ts';
+import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
-import { busyControls, recordBusyControls } from './observers.ts';
+import { apiRequestsInFlight, busyControls, recordBusyControls } from './observers.ts';
+import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
+import { addDays, cancelThisLesson, localDate, scheduleLessons, scheduleLessonsWithIds } from './schedule.ts';
 import {
   accessToken,
   callApi,
   createCard,
   invitationIsUsable,
+  removeStudent,
   seedActiveStudent,
   seedInvitedCards,
   signUpOnInvitation,
 } from './tutoring.ts';
 
 const knownPreferenceKeys = ['ovc.language', 'ovc.sidebar', 'ovc.theme'];
+
+async function secondPageCursor(deployment: Deployment, tutor: TestAccount, cardId: string): Promise<string> {
+  const firstPage = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'GET',
+    `/students/${cardId}/lessons`,
+  );
+  const body = firstPage.body;
+  const cursor = typeof body === 'object' && body !== null && 'next_cursor' in body ? body.next_cursor : null;
+  if (typeof cursor !== 'string') {
+    throw new Error('the card has a single page of lessons');
+  }
+  return cursor;
+}
 
 function invitationLinks(links: readonly string[]): string[] {
   return links.filter((link) => new URL(link).pathname.startsWith('/invite/'));
@@ -338,6 +357,7 @@ test.describe('in English with the dark theme', () => {
   }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
     const { student, cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
+    const inFlight = apiRequestsInFlight(page);
     await signInThroughTheApi(page, pavel);
     await page.goto('/students');
     const row = page.getByRole('link', { name: /Boris/ });
@@ -350,13 +370,172 @@ test.describe('in English with the dark theme', () => {
     await expect(page.getByRole('button', { name: 'Withdraw invitation' })).toHaveCount(0);
     const notes = page.getByRole('form', { name: 'Notes' });
     await notes.getByLabel('Notes').fill('Prefers evening lessons.');
+    const cardRefetched = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/v1/students/${cardId}`,
+    );
     await notes.getByRole('button', { name: 'Save' }).click();
     await expect(notes.getByRole('status')).toHaveText('Saved.');
     await expect(notes.getByRole('status')).toBeFocused();
+    await cardRefetched;
+    await expect.poll(inFlight).toBe(0);
 
     await page.reload();
 
     await expect(page.getByRole('form', { name: 'Notes' }).getByLabel('Notes')).toHaveValue('Prefers evening lessons.');
+  });
+
+  test('student card › Lessons lists the history and Schedule a lesson preselects the card', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
+    const tomorrow = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
+    const oneOff = { relationship_id: cardId, title: 'Lesson', date: tomorrow, duration_minutes: 60 };
+    await scheduleLessons(deployment, pavel, { ...oneOff, start: '10:00' });
+    const [later] = await scheduleLessonsWithIds(deployment, pavel, { ...oneOff, start: '12:00' });
+    if (later === undefined) {
+      throw new Error('no lesson was scheduled');
+    }
+    await cancelThisLesson(deployment, pavel, later.id);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${cardId}?tab=lessons`);
+    const opener = page.getByRole('button', { name: 'Schedule a lesson' });
+    await opener.click();
+    const dialog = page.getByRole('dialog', { name: 'New lesson' });
+    await dialog.getByLabel('Date', { exact: true }).fill(addDays(tomorrow, 1));
+    await dialog.getByLabel('Start time').fill('09:00');
+
+    await dialog.getByRole('button', { name: 'Schedule', exact: true }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+    const history = page.getByRole('list', { name: 'Lessons', exact: true }).getByRole('listitem');
+    await expect(history).toHaveText([
+      /09:00–10:00.*Lesson.*Boris.*Scheduled/,
+      /12:00–13:00.*Lesson.*Boris.*Cancelled/,
+      /10:00–11:00.*Lesson.*Boris.*Scheduled/,
+    ]);
+  });
+
+  test('student card › Show more in Lessons moves focus to the first new lesson', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
+    const tomorrow = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
+    await scheduleLessons(deployment, pavel, {
+      relationship_id: cardId,
+      title: 'Lesson',
+      date: tomorrow,
+      start: '10:00',
+      duration_minutes: 60,
+      weekdays: [1, 2, 3, 4, 5, 6, 7],
+      count: 31,
+    });
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${cardId}?tab=lessons`);
+
+    await page.getByRole('button', { name: 'Show more' }).click();
+
+    const history = page.getByRole('list', { name: 'Lessons', exact: true }).getByRole('listitem');
+    await expect(history).toHaveCount(31);
+    await expect(history.nth(30).getByRole('link')).toBeFocused();
+  });
+
+  test('student card › Show more for a card removed meanwhile shows that the student is no longer on the list', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+    socketSlots,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const boris = newTestAccount('Boris', 'student');
+    const card = await createCard(deployment, pavel, 'Boris', boris.email);
+    await signUpOnInvitation(deployment, card.link, boris, 'en');
+    const tomorrow = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
+    await scheduleLessons(deployment, pavel, {
+      relationship_id: card.id,
+      title: 'Lesson',
+      date: tomorrow,
+      start: '10:00',
+      duration_minutes: 60,
+      weekdays: [1, 2, 3, 4, 5, 6, 7],
+      count: 31,
+    });
+    const cursor = await secondPageCursor(deployment, pavel, card.id);
+    diagnostics.expectFailure({
+      method: 'GET',
+      path: `/api/v1/students/${card.id}/lessons?cursor=${encodeURIComponent(cursor)}`,
+      status: 404,
+    });
+    diagnostics.expectFailure({ method: 'GET', path: `/api/v1/students/${card.id}`, status: 404 });
+    await socketSlots.keepPageSocketsOff(pavel);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${card.id}?tab=lessons`);
+    const showMore = page.getByRole('button', { name: 'Show more' });
+    await showMore.waitFor();
+    await removeStudent(deployment, pavel, card.id);
+
+    await showMore.press('Enter');
+
+    await expect(page.getByRole('status').filter({ hasText: 'This student is no longer on your list.' })).toBeFocused();
+    await expect(page.getByRole('main').getByRole('link', { name: 'All students' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+    await expect(page.getByRole('list', { name: 'Lessons', exact: true })).toHaveCount(0);
+  });
+
+  test('student card › the only next lesson cancelled elsewhere while focused moves focus to the page heading', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
+    const tomorrow = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
+    const [lesson] = await scheduleLessonsWithIds(deployment, pavel, {
+      relationship_id: cardId,
+      title: 'Lesson',
+      date: tomorrow,
+      start: '10:00',
+      duration_minutes: 60,
+    });
+    if (lesson === undefined) {
+      throw new Error('no lesson was scheduled');
+    }
+    await signInThroughTheApi(page, pavel);
+    const traffic = trafficAfterReady(page, [`/api/v1/students/${cardId}`]);
+    await page.goto(`/students/${cardId}`);
+    await expectRefetchedAfterTheSocketIsReady(traffic);
+    await page.getByRole('list', { name: 'Next lessons', exact: true }).getByRole('link').focus();
+
+    await cancelThisLesson(deployment, pavel, lesson.id);
+
+    await expect(page.getByRole('main').getByText('No lessons scheduled.')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Boris' })).toBeFocused();
+  });
+
+  test('students › a row shows the student’s next lesson', async ({ page, deployment, control }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
+    const tomorrow = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
+    await scheduleLessons(deployment, pavel, {
+      relationship_id: cardId,
+      title: 'Lesson',
+      date: tomorrow,
+      start: '10:00',
+      duration_minutes: 60,
+    });
+    await signInThroughTheApi(page, pavel);
+
+    await page.goto('/students');
+
+    await expect(page.getByRole('link', { name: /Boris/ })).toContainText(/Next lesson.*10:00–11:00/);
   });
 
   test('students › a new student with the email of an active student is refused with a link to that card', async ({

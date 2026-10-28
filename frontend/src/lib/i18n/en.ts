@@ -448,6 +448,9 @@ export const en: Resources = {
     revoked: 'Link revoked after repeated wrong emails',
   },
   studentCard: {
+    sections: 'Card sections',
+    overview: 'Overview',
+    lessons: 'Lessons',
     back: 'All students',
     account: 'Student account',
     details: 'Name and email',
@@ -481,6 +484,9 @@ export const en: Resources = {
     gone: 'This student is no longer on your list.',
   },
   groups: {
+    archiveTitle: 'Archive the group?',
+    archiveConsequence:
+      '{count, plural, one {# future lesson will be cancelled.} other {# future lessons will be cancelled.}} Unarchiving the group restores neither lessons nor series.',
     list: 'Groups',
     new: 'New group',
     newTitle: 'New group',
@@ -587,6 +593,17 @@ export const en: Resources = {
       groupArchived: 'The group was archived',
     },
   },
+  lessons: {
+    nextLesson: 'Next lesson',
+    noNextLesson: 'No lesson scheduled',
+    next: 'Next lessons',
+    noNext: 'No lessons scheduled.',
+    history: 'Lessons',
+    historyEmpty: 'No lessons yet.',
+    showMore: 'Show more',
+    schedule: 'Schedule a lesson',
+    openSchedule: 'Open the schedule',
+  },
   lesson: {
     individual: 'Individual lesson',
     group: 'Group lesson',
@@ -669,6 +686,7 @@ export const en: Resources = {
     scheduled: 'Lesson scheduled',
   },
   newLesson: {
+    preselected: 'Chosen',
     title: 'New lesson',
     audience: 'Student or group',
     search: 'Search for a student or group',

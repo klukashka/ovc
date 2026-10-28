@@ -56,6 +56,12 @@ While the window is open and the lesson is not yet live, students see "The room 
 | Cancel dialog consequence for this and following lessons (proposal of 2026-10-28) | This lesson and every following lesson of the series are cancelled, and the series ends. | Этот и все следующие уроки серии будут отменены, а серия завершится. |
 | Cancel dialog confirmation, one lesson or this and following (proposal of 2026-10-28) | Cancel lesson / Cancel lessons | Отменить урок / Отменить уроки |
 | Notice after a cancellation, which takes focus because the cancelled lesson's actions are gone (proposal of 2026-10-28) | Lesson cancelled | Урок отменён |
+| A Students or group row's next lesson, and a row without one (proposal of 2026-10-28) | Next lesson / No lesson scheduled | Следующий урок / Урок не запланирован |
+| The next lessons of the student card and the group page, and their empty state (proposal of 2026-10-28) | Next lessons / No lessons scheduled. | Ближайшие уроки / Уроков не запланировано. |
+| The student card's sections and its empty Lessons tab (proposal of 2026-10-28) | Card sections: Overview, Lessons / No lessons yet. | Разделы карточки: Обзор, Уроки / Уроков пока нет. |
+| The card's and the group's actions (proposal of 2026-10-28) | Schedule a lesson / Open the schedule | Запланировать урок / Открыть расписание |
+| The New lesson dialog's preselected card or group when the loaded choices do not list it (proposal of 2026-10-28) | Chosen | Выбрано |
+| Archive confirmation heading (proposal of 2026-10-28) | Archive the group? | Отправить группу в архив? |
 
 The API sends the fixed labels above as codes: `label` is `null` and `label_kind` names the fixed label, and the interface renders its key in the viewer's language, as it renders "Deleted account" for `label_deleted` on notification rows ([labels per role](../../specs/schedule.md#labels-per-role)). Lesson titles are shown as text in their own element isolated with `dir="auto"` ([titles and descriptions](../../specs/schedule.md#titles-and-descriptions)).
 

@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Page, Request } from '@playwright/test';
 
 import { languageChunkPattern } from '../scripts/bundle-budget.ts';
 
@@ -108,4 +108,19 @@ export async function recordLazyChunkAddresses(page: Page, origin: string): Prom
     await route.continue();
   });
   return addresses;
+}
+
+export function apiRequestsInFlight(page: Page): () => number {
+  const pending = new Set<Request>();
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/')) {
+      pending.add(request);
+    }
+  });
+  const settled = (request: Request): void => {
+    pending.delete(request);
+  };
+  page.on('requestfinished', settled);
+  page.on('requestfailed', settled);
+  return () => pending.size;
 }

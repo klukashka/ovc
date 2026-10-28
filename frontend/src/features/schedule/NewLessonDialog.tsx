@@ -20,7 +20,7 @@ import { useSignedInAccount } from '../../lib/api/session.ts';
 import { type NewLesson, lessonDurationLimits, seriesCountLimit } from './api.ts';
 import { type Audience, AudiencePicker } from './AudiencePicker.tsx';
 import { formatWeekdayName } from './calendarFormat.ts';
-import type { LocalDate } from '../../lib/time/localDates.ts';
+import { type LocalDate, addDays, localDateOf, localMinutesOf, localTimeOf } from '../../lib/time/localDates.ts';
 import { calendarKey } from './keys.ts';
 import { InputField, descriptionLimit, titleLimit } from './LessonFields.tsx';
 import { OverlapWarning } from './OverlapWarning.tsx';
@@ -28,6 +28,13 @@ import { OverlapWarning } from './OverlapWarning.tsx';
 export interface LessonPrefill {
   readonly date: LocalDate;
   readonly start: string;
+  readonly audience?: Audience;
+}
+
+export function nextFullHour(now: number, timeZone: string): LessonPrefill {
+  const today = localDateOf(now, timeZone);
+  const hour = Math.floor(localMinutesOf(now, timeZone) / 60) + 1;
+  return hour >= 24 ? { date: addDays(today, 1), start: '00:00' } : { date: today, start: localTimeOf(hour * 60) };
 }
 
 const defaultDurationMinutes = 60;
@@ -190,8 +197,9 @@ function NewLessonForm({
   const descriptionId = useId();
   const form = useRef<HTMLFormElement>(null);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
-  const [audience, setAudience] = useState<Audience | null>(null);
-  const [title, setTitle] = useState(() => defaultTitle(t, null));
+  const preselected = prefill.audience ?? null;
+  const [audience, setAudience] = useState<Audience | null>(preselected);
+  const [title, setTitle] = useState(() => defaultTitle(t, preselected));
   const [titleEdited, setTitleEdited] = useState(false);
   const [repeat, setRepeat] = useState(false);
   const [missing, setMissing] = useState<'audience' | 'weekdays' | null>(null);
@@ -261,6 +269,7 @@ function NewLessonForm({
       <form ref={form} id={formId} onSubmit={submit} noValidate className="flex flex-col gap-4">
         <AudiencePicker
           chosen={audience}
+          preselected={preselected}
           searchField={searchField}
           error={missing === 'audience' ? t('newLesson.audienceRequired') : undefined}
           onChoose={(chosen) => {

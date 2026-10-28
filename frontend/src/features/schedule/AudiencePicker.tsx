@@ -82,14 +82,22 @@ function Choice({
   );
 }
 
+function isListed(audience: Audience, cards: readonly StudentCardSummary[], groups: readonly GroupSummary[]): boolean {
+  return audience.kind === 'one_to_one'
+    ? cards.some((card) => card.id === audience.id)
+    : groups.some((group) => group.id === audience.id);
+}
+
 function Choices({
   search,
   chosen,
+  preselected,
   searchField,
   onChoose,
 }: {
   readonly search: string;
   readonly chosen: Audience | null;
+  readonly preselected: Audience | null;
   readonly searchField: RefObject<HTMLInputElement | null>;
   readonly onChoose: (audience: Audience) => void;
 }): ReactElement {
@@ -126,11 +134,26 @@ function Choices({
     );
   }
   const shownGroups = groups.data.filter((group) => matches(group, search));
-  if (cards.length === 0 && shownGroups.length === 0 && !students.hasNextPage) {
+  const pinned = preselected !== null && !isListed(preselected, cards, shownGroups) ? preselected : null;
+  if (pinned === null && cards.length === 0 && shownGroups.length === 0 && !students.hasNextPage) {
     return <p className="text-small text-text-muted">{t('newLesson.nothingFound')}</p>;
   }
   return (
     <div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+      {pinned === null ? null : (
+        <ul aria-label={t('newLesson.preselected')} className="flex flex-col">
+          <Choice
+            value={`${pinned.kind}:${pinned.id}`}
+            label={pinned.name}
+            hint={null}
+            dot={null}
+            checked={chosen?.kind === pinned.kind && chosen.id === pinned.id}
+            onChoose={() => {
+              onChoose(pinned);
+            }}
+          />
+        </ul>
+      )}
       {cards.length === 0 ? null : (
         <ul ref={listRef} aria-label={t('newLesson.students')} className="flex flex-col">
           {cards.map((card) => (
@@ -189,11 +212,13 @@ function Choices({
 
 export function AudiencePicker({
   chosen,
+  preselected,
   searchField,
   error,
   onChoose,
 }: {
   readonly chosen: Audience | null;
+  readonly preselected: Audience | null;
   readonly searchField: RefObject<HTMLInputElement | null>;
   readonly error: string | undefined;
   readonly onChoose: (audience: Audience) => void;
@@ -230,7 +255,13 @@ export function AudiencePicker({
           {error}
         </p>
       )}
-      <Choices search={deferredSearch} chosen={chosen} searchField={searchField} onChoose={onChoose} />
+      <Choices
+        search={deferredSearch}
+        chosen={chosen}
+        preselected={preselected}
+        searchField={searchField}
+        onChoose={onChoose}
+      />
     </fieldset>
   );
 }

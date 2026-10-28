@@ -6,18 +6,37 @@ import { SessionPending, SessionUnavailable } from '../components/frame/SessionS
 import { SignedInFrame } from '../components/frame/SignedInFrame.tsx';
 import { focusHeadingIfLost } from '../components/ui/LoadState.tsx';
 import { useSession, useSessionState } from '../lib/api/session.ts';
-import { type Access, type Audience, routeAccess } from './access.ts';
+import { type Access, type Audience, needsProvisionalLink, routeAccess } from './access.ts';
 import { NotFoundPage } from './NotFoundPage.tsx';
+import { type ProvisionalLink, provisionallyLinked, useProvisionalLink } from './provisionalLink.ts';
 
-function sessionSettled(access: Access): boolean {
-  return access.kind !== 'pending' && access.kind !== 'unavailable';
+type GateAccess = Access | { readonly kind: 'linkUnavailable'; readonly retry: () => void };
+
+function sessionSettled(access: GateAccess): boolean {
+  return access.kind !== 'pending' && access.kind !== 'unavailable' && access.kind !== 'linkUnavailable';
+}
+
+function accessWithLink(access: Access, link: ProvisionalLink): GateAccess {
+  if (access.kind !== 'redirect' && access.kind !== 'signedIn') {
+    return access;
+  }
+  if (link.kind === 'pending') {
+    return { kind: 'pending' };
+  }
+  if (link.kind === 'failed') {
+    return { kind: 'linkUnavailable', retry: link.retry };
+  }
+  return access;
 }
 
 export function Gate({ audience }: { readonly audience: Audience }): ReactElement {
   const session = useSession();
   const state = useSessionState();
   const { pathname, search } = useLocation();
-  const access = routeAccess(state, audience, { pathname, search }, window.location.origin);
+  const me = state.kind === 'signedIn' ? state.me : null;
+  const link = useProvisionalLink(me);
+  const routed = routeAccess(state, audience, { pathname, search }, window.location.origin, provisionallyLinked(link));
+  const access = me !== null && needsProvisionalLink(me, pathname) ? accessWithLink(routed, link) : routed;
   const retried = useRef(false);
   const settled = sessionSettled(access);
 
@@ -38,6 +57,15 @@ export function Gate({ audience }: { readonly audience: Audience }): ReactElemen
           onRetry={() => {
             retried.current = true;
             void session.start();
+          }}
+        />
+      );
+    case 'linkUnavailable':
+      return (
+        <SessionUnavailable
+          onRetry={() => {
+            retried.current = true;
+            access.retry();
           }}
         />
       );

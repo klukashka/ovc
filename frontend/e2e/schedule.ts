@@ -15,6 +15,7 @@ export interface LessonRequest {
   readonly duration_minutes: number;
   readonly weekdays?: readonly number[];
   readonly count?: number;
+  readonly end_date?: LocalDate;
 }
 
 const dayMilliseconds = 86_400_000;
@@ -174,4 +175,42 @@ export async function editThisLesson(
   if (answer.status !== 200) {
     throw new Error(`editing the lesson answered ${String(answer.status)}`);
   }
+}
+
+export async function cancelThisLesson(deployment: Deployment, tutor: TestAccount, id: string): Promise<void> {
+  const { version } = await readLesson(deployment, tutor, id);
+  const answer = await callApi(deployment, await accessToken(deployment, tutor), 'POST', `/lessons/${id}/cancel`, {
+    scope: 'this',
+    version,
+  });
+  if (answer.status !== 200) {
+    throw new Error(`cancelling the lesson answered ${String(answer.status)}`);
+  }
+}
+
+export async function cardLessonStatuses(
+  deployment: Deployment,
+  tutor: TestAccount,
+  cardId: string,
+): Promise<readonly string[]> {
+  const answer = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'GET',
+    `/students/${cardId}/lessons?limit=100`,
+  );
+  if (answer.status !== 200) {
+    throw new Error(`reading the card's lessons answered ${String(answer.status)}`);
+  }
+  const items = field(answer.body, 'items');
+  if (!Array.isArray(items)) {
+    throw new Error("the card's lessons are not a list");
+  }
+  return items.map((item: unknown) => {
+    const status = field(item, 'status');
+    if (typeof status !== 'string') {
+      throw new Error('a lesson has no status');
+    }
+    return status;
+  });
 }

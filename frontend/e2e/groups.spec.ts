@@ -4,6 +4,15 @@ import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, expectRowsNamed, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
 import { busyControls, recordBusyControls } from './observers.ts';
+import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
+import {
+  addDays,
+  cancelThisLesson,
+  isoWeekday,
+  localDate,
+  scheduleLessons,
+  scheduleLessonsWithIds,
+} from './schedule.ts';
 import {
   accessToken,
   addToGroup,
@@ -55,6 +64,58 @@ async function cardBeyondTheFirstPage(
 
 function studentName(cardIds: readonly string[], cardId: string): string {
   return `Student ${String(cardIds.indexOf(cardId) + 1).padStart(2, '0')}`;
+}
+
+async function groupWithTwoFutureLessons(
+  deployment: Deployment,
+  now: () => Promise<number>,
+): Promise<{ readonly pavel: TestAccount; readonly annaCard: string; readonly groupId: string }> {
+  const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+  const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+  const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+  const tomorrow = addDays(localDate(await now(), 'Europe/Moscow'), 1);
+  await scheduleLessons(deployment, pavel, {
+    group_id: groupId,
+    title: 'Lesson Evening algebra',
+    date: tomorrow,
+    start: '18:00',
+    duration_minutes: 60,
+    weekdays: [isoWeekday(tomorrow)],
+    count: 2,
+  });
+  return { pavel, annaCard: anna.cardId, groupId };
+}
+
+async function groupPageWithLessons(
+  page: Page,
+  deployment: Deployment,
+  now: () => Promise<number>,
+  starts: readonly string[],
+): Promise<{ readonly pavel: TestAccount; readonly lessonIds: readonly string[]; readonly lessons: Locator }> {
+  const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+  const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+  const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+  const tomorrow = addDays(localDate(await now(), 'Europe/Moscow'), 1);
+  const lessonIds: string[] = [];
+  for (const start of starts) {
+    const [lesson] = await scheduleLessonsWithIds(deployment, pavel, {
+      group_id: groupId,
+      title: `Lesson at ${start}`,
+      date: tomorrow,
+      start,
+      duration_minutes: 60,
+    });
+    if (lesson === undefined) {
+      throw new Error('no lesson was scheduled');
+    }
+    lessonIds.push(lesson.id);
+  }
+  await signInThroughTheApi(page, pavel);
+  const traffic = trafficAfterReady(page, [`/api/v1/groups/${groupId}`]);
+  await page.goto(`/groups/${groupId}`);
+  await expectRefetchedAfterTheSocketIsReady(traffic);
+  const lessons = page.getByRole('list', { name: 'Next lessons', exact: true }).getByRole('link');
+  return { pavel, lessonIds, lessons };
 }
 
 function members(page: Page, name: string): Locator {
@@ -143,6 +204,131 @@ test.describe('in English', () => {
     await expect(page.getByRole('button', { name: 'Add students' })).toHaveCount(0);
     await expect(page.getByText('An archived group takes no new students.')).toBeVisible();
     expect(await cardState(deployment, pavel, anna.cardId)).toEqual({ state: 'active', groups: [] });
+  });
+
+  test('groups › archiving with future lessons asks first, with Cancel focused and the count of lessons it cancels', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, groupId } = await groupWithTwoFutureLessons(deployment, control.now);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+
+    await page.getByRole('button', { name: 'Archive group' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Archive the group?' });
+    await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await expect(dialog).toContainText(
+      '2 future lessons will be cancelled. Unarchiving the group restores neither lessons nor series.',
+    );
+  });
+
+  test('groups › dismissing the archive confirmation returns focus to Archive group and archives nothing', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, annaCard, groupId } = await groupWithTwoFutureLessons(deployment, control.now);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    const archive = page.getByRole('button', { name: 'Archive group' });
+    await archive.click();
+    const dialog = page.getByRole('dialog', { name: 'Archive the group?' });
+
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(archive).toBeFocused();
+    expect(await cardState(deployment, pavel, annaCard)).toEqual({ state: 'active', groups: ['Evening algebra'] });
+  });
+
+  test('groups › confirming the archive cancels the future lessons and moves focus to the notice', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, groupId } = await groupWithTwoFutureLessons(deployment, control.now);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await page.getByRole('button', { name: 'Archive group' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Archive the group?' });
+
+    await dialog.getByRole('button', { name: 'Archive group' }).click();
+
+    await expect(page.getByRole('status').filter({ hasText: 'The group is archived.' })).toBeFocused();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole('main').getByText('No lessons scheduled.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Schedule a lesson' })).toHaveCount(0);
+  });
+
+  test('groups › a next lesson cancelled elsewhere while focused moves focus to the lesson that took its place', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, lessonIds, lessons } = await groupPageWithLessons(page, deployment, control.now, ['10:00', '12:00']);
+    await lessons.filter({ hasText: 'Lesson at 10:00' }).focus();
+
+    await cancelThisLesson(deployment, pavel, lessonIds[0] ?? '');
+
+    await expect(lessons).toHaveCount(1);
+    await expect(lessons.filter({ hasText: 'Lesson at 12:00' })).toBeFocused();
+  });
+
+  test('groups › the last next lesson cancelled elsewhere while focused moves focus to the previous lesson', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, lessonIds, lessons } = await groupPageWithLessons(page, deployment, control.now, ['10:00', '12:00']);
+    await lessons.filter({ hasText: 'Lesson at 12:00' }).focus();
+
+    await cancelThisLesson(deployment, pavel, lessonIds[1] ?? '');
+
+    await expect(lessons).toHaveCount(1);
+    await expect(lessons.filter({ hasText: 'Lesson at 10:00' })).toBeFocused();
+  });
+
+  test('groups › the only next lesson cancelled elsewhere while focused moves focus to the page heading', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, lessonIds, lessons } = await groupPageWithLessons(page, deployment, control.now, ['10:00']);
+    await lessons.first().focus();
+
+    await cancelThisLesson(deployment, pavel, lessonIds[0] ?? '');
+
+    await expect(page.getByRole('main').getByText('No lessons scheduled.')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Evening algebra' })).toBeFocused();
+  });
+
+  test('groups › Schedule a lesson on the group page preselects the group and lists the new lesson', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    const tomorrow = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    const opener = page.getByRole('button', { name: 'Schedule a lesson' });
+    await opener.click();
+    const dialog = page.getByRole('dialog', { name: 'New lesson' });
+    await dialog.getByLabel('Date', { exact: true }).fill(tomorrow);
+    await dialog.getByLabel('Start time').fill('18:00');
+
+    await dialog.getByRole('button', { name: 'Schedule', exact: true }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+    const next = page.getByRole('list', { name: 'Next lessons', exact: true }).getByRole('listitem');
+    await expect(next).toHaveCount(1);
+    await expect(next).toContainText('18:00–19:00');
+    await expect(next).toContainText('Lesson Evening algebra');
   });
 
   test('groups › unarchiving a group moves focus to the notice and lists the group on its cards again', async ({

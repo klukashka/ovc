@@ -454,6 +454,9 @@ export const ru = {
     revoked: 'Ссылка отозвана после нескольких попыток с другим email',
   },
   studentCard: {
+    sections: 'Разделы карточки',
+    overview: 'Обзор',
+    lessons: 'Уроки',
     back: 'Все ученики',
     account: 'Аккаунт ученика',
     details: 'Имя и email',
@@ -487,6 +490,9 @@ export const ru = {
     gone: 'Этого ученика больше нет в вашем списке.',
   },
   groups: {
+    archiveTitle: 'Отправить группу в архив?',
+    archiveConsequence:
+      '{count, plural, one {# будущий урок будет отменён.} few {# будущих урока будут отменены.} many {# будущих уроков будут отменены.} other {# будущего урока будут отменены.}} Возврат группы из архива не восстановит ни уроки, ни серии.',
     list: 'Группы',
     new: 'Новая группа',
     newTitle: 'Новая группа',
@@ -595,6 +601,17 @@ export const ru = {
       groupArchived: 'Группа перенесена в архив',
     },
   },
+  lessons: {
+    nextLesson: 'Следующий урок',
+    noNextLesson: 'Урок не запланирован',
+    next: 'Ближайшие уроки',
+    noNext: 'Уроков не запланировано.',
+    history: 'Уроки',
+    historyEmpty: 'Уроков пока нет.',
+    showMore: 'Показать ещё',
+    schedule: 'Запланировать урок',
+    openSchedule: 'Открыть расписание',
+  },
   lesson: {
     individual: 'Индивидуальный урок',
     group: 'Групповой урок',
@@ -678,6 +695,7 @@ export const ru = {
     scheduled: 'Урок запланирован',
   },
   newLesson: {
+    preselected: 'Выбрано',
     title: 'Новый урок',
     audience: 'Ученик или группа',
     search: 'Поиск ученика или группы',

@@ -1,7 +1,7 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactElement, type SyntheticEvent, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useLocation, useNavigate, useParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 
 import { type ActionState, done, refusedBy, showsStaleData, useAction } from '../../components/ui/action.ts';
 import { Avatar } from '../../components/ui/Avatar.tsx';
@@ -22,16 +22,24 @@ import {
 } from '../../components/ui/Form.tsx';
 import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
+import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
 import { useStoredValue, valueAccess } from '../../components/ui/serverValue.ts';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
+import { useSignedInAccount } from '../../lib/api/session.ts';
 import type { components } from '../../lib/api/schema.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import { groupsKey } from '../groups/api.ts';
+import type { CalendarItem } from '../schedule/api.ts';
+import { LessonList } from '../schedule/LessonList.tsx';
+import { ScheduleLessonAction } from '../schedule/ScheduleLessonAction.tsx';
 import {
   type CardInvitation,
   type StudentCard,
+  type StudentCardDetail,
+  cardLessonsKey,
+  fetchCardLessons,
   fetchStudentCard,
   hasNotice,
   removedNotice,
@@ -44,6 +52,10 @@ import { InvitationLink } from './InvitationLink.tsx';
 import { StateBadge } from './StateBadge.tsx';
 
 type StudentCardPatch = components['schemas']['StudentCardPatch'];
+
+const tabClass = 'inline-flex min-h-11 items-center border-b-2 px-1 text-small';
+const currentTabClass = `${tabClass} border-accent font-medium text-text`;
+const otherTabClass = `${tabClass} border-transparent text-text-muted hover:text-text`;
 
 export interface CardHandlers {
   readonly onChanged: (card: StudentCard) => void;
@@ -534,19 +546,9 @@ function AccountDetails({ account }: { readonly account: NonNullable<StudentCard
   );
 }
 
-export function StudentCardView({
-  card,
-  reloads = 0,
-  handlers,
-}: {
-  readonly card: StudentCard;
-  readonly reloads?: number;
-  readonly handlers: CardHandlers;
-}): ReactElement {
+function CardSummary({ card }: { readonly card: StudentCard }): ReactElement {
   const { t } = useTranslation();
-  const [invitedAgain, setInvitedAgain] = useState<string | null>(null);
   const email = card.email ?? card.account?.email ?? null;
-  const linkState = card.state === 'invited' || card.state === 'ended';
   return (
     <>
       <p>
@@ -564,6 +566,23 @@ export function StudentCardView({
       </div>
       {card.account === null ? null : <AccountDetails account={card.account} />}
       {card.state === 'reclaim_pending' ? <p className="text-text-muted">{t('studentCard.waitingForOwner')}</p> : null}
+    </>
+  );
+}
+
+function CardOverview({
+  card,
+  reloads,
+  handlers,
+}: {
+  readonly card: StudentCard;
+  readonly reloads: number;
+  readonly handlers: CardHandlers;
+}): ReactElement {
+  const [invitedAgain, setInvitedAgain] = useState<string | null>(null);
+  const linkState = card.state === 'invited' || card.state === 'ended';
+  return (
+    <>
       {linkState && card.invitation !== null ? (
         <InvitationLink
           cardId={card.id}
@@ -598,12 +617,198 @@ export function StudentCardView({
   );
 }
 
+export function StudentCardView({
+  card,
+  reloads = 0,
+  handlers,
+}: {
+  readonly card: StudentCard;
+  readonly reloads?: number;
+  readonly handlers: CardHandlers;
+}): ReactElement {
+  return (
+    <>
+      <CardSummary card={card} />
+      <CardOverview card={card} reloads={reloads} handlers={handlers} />
+    </>
+  );
+}
+
+type CardTab = 'overview' | 'lessons';
+
+function cardTabOf(value: string | null): CardTab {
+  return value === 'lessons' ? 'lessons' : 'overview';
+}
+
+function CardTabs({ cardId, tab }: { readonly cardId: string; readonly tab: CardTab }): ReactElement {
+  const { t } = useTranslation();
+  const tabs: readonly { readonly key: CardTab; readonly to: string }[] = [
+    { key: 'overview', to: `/students/${encodeURIComponent(cardId)}` },
+    { key: 'lessons', to: `/students/${encodeURIComponent(cardId)}?tab=lessons` },
+  ];
+  return (
+    <nav aria-label={t('studentCard.sections')} className="border-b border-border">
+      <ul className="flex flex-wrap gap-6">
+        {tabs.map((entry) => (
+          <li key={entry.key}>
+            <Link
+              to={entry.to}
+              aria-current={entry.key === tab ? 'page' : undefined}
+              className={entry.key === tab ? currentTabClass : otherTabClass}
+            >
+              {t(`studentCard.${entry.key}`)}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+function NextLessons({ items }: { readonly items: readonly CalendarItem[] }): ReactElement {
+  const { t } = useTranslation();
+  const me = useSignedInAccount();
+  const headingId = useId();
+  return (
+    <section aria-labelledby={headingId} className="flex flex-col gap-3">
+      <h2 id={headingId} className="text-heading">
+        {t('lessons.next')}
+      </h2>
+      {items.length === 0 ? (
+        <p className="text-text-muted">{t('lessons.noNext')}</p>
+      ) : (
+        <LessonList items={items} label={t('lessons.next')} me={me} showAudience />
+      )}
+    </section>
+  );
+}
+
+function CardLessonHistory({ cardId }: { readonly cardId: string }): ReactElement {
+  const { t } = useTranslation();
+  const client = useApiClient();
+  const queryClient = useQueryClient();
+  const me = useSignedInAccount();
+  const query = useInfiniteQuery({
+    queryKey: cardLessonsKey(cardId),
+    queryFn: ({ pageParam }) => fetchCardLessons(client, cardId, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor,
+    retry: false,
+  });
+  const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
+    items.length,
+    ':scope > li > a',
+    query.isFetchingNextPage,
+  );
+  const cardGone = query.isError && asApiError(query.error).code === 'not_found';
+
+  useEffect(() => {
+    if (cardGone) {
+      void queryClient.invalidateQueries({ queryKey: studentCardKey(cardId), exact: true });
+    }
+  }, [cardGone, cardId, queryClient]);
+  if (query.data === undefined) {
+    return query.isError ? (
+      <LoadFailed
+        error={asApiError(query.error)}
+        onRetry={() => {
+          void query.refetch();
+        }}
+      />
+    ) : (
+      <DelayedLoading />
+    );
+  }
+  const failure =
+    query.isError && !cardGone ? (
+      <RefetchFailed
+        error={asApiError(query.error)}
+        onRetry={() => {
+          void (query.isFetchNextPageError ? query.fetchNextPage() : query.refetch());
+        }}
+      />
+    ) : null;
+  if (items.length === 0) {
+    return (
+      <div className="flex flex-col items-start gap-4">
+        {failure}
+        <p className="text-text-muted">{t('lessons.historyEmpty')}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col items-start gap-4">
+      {failure}
+      <LessonList items={items} label={t('lessons.history')} me={me} showAudience listRef={listRef} />
+      {query.hasNextPage ? (
+        <button
+          type="button"
+          aria-disabled={query.isFetchingNextPage}
+          aria-busy={query.isFetchingNextPage}
+          onClick={() => {
+            if (!query.isFetchingNextPage) {
+              loadingMore();
+              void query.fetchNextPage();
+            }
+          }}
+          className={quietButtonClass}
+        >
+          {t('lessons.showMore')}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function schedulable(card: StudentCard): boolean {
+  return card.state === 'active' || card.state === 'provisional';
+}
+
+function CardWithLessons({
+  card,
+  tab,
+  reloads,
+  handlers,
+  onScheduled,
+}: {
+  readonly card: StudentCardDetail;
+  readonly tab: CardTab;
+  readonly reloads: number;
+  readonly handlers: CardHandlers;
+  readonly onScheduled: () => void;
+}): ReactElement {
+  const me = useSignedInAccount();
+  return (
+    <>
+      <CardSummary card={card} />
+      {me.state === 'active' && schedulable(card) ? (
+        <ScheduleLessonAction
+          audience={{ kind: 'one_to_one', id: card.id, name: card.display_name }}
+          onScheduled={onScheduled}
+        />
+      ) : null}
+      <CardTabs cardId={card.id} tab={tab} />
+      {tab === 'lessons' ? (
+        <CardLessonHistory cardId={card.id} />
+      ) : (
+        <>
+          <NextLessons items={card.next_lessons} />
+          <CardOverview card={card} reloads={reloads} handlers={handlers} />
+        </>
+      )}
+    </>
+  );
+}
+
 export function StudentCardPage(): ReactElement {
   const { studentId = '' } = useParams();
   const client = useApiClient();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const tab = cardTabOf(searchParams.get('tab'));
   const { t } = useTranslation();
   const [removedCard, setRemovedCard] = useState<string | null>(null);
   const removalNoticed = hasNotice(location.state, removedNotice);
@@ -622,6 +827,12 @@ export function StudentCardPage(): ReactElement {
   }
   const key = studentCardKey(studentId);
   const [reloads, setReloads] = useState(0);
+
+  function keepLessons(card: StudentCard): void {
+    queryClient.setQueryData<StudentCardDetail>(key, (previous) =>
+      previous === undefined ? previous : { ...card, next_lessons: previous.next_lessons },
+    );
+  }
 
   function reloadAfterStaleEdit(): void {
     void queryClient.invalidateQueries({ queryKey: key }).then(() => {
@@ -692,13 +903,20 @@ export function StudentCardPage(): ReactElement {
     if (query.data === undefined) {
       return <DelayedLoading />;
     }
+    const shown = query.data;
     return (
-      <StudentCardView
-        card={query.data}
+      <CardWithLessons
+        card={shown}
+        tab={tab}
         reloads={reloads}
+        onScheduled={() => {
+          void queryClient.invalidateQueries({ queryKey: key });
+          void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
+        }}
         handlers={{
           onChanged: (card) => {
-            queryClient.setQueryData(key, card);
+            keepLessons(card);
+            void queryClient.invalidateQueries({ queryKey: key });
             void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
           },
           onStale: reloadAfterStaleEdit,
@@ -713,7 +931,8 @@ export function StudentCardPage(): ReactElement {
             setDialogSubject(null);
             setChangedCard(null);
             setEndedCard(studentId);
-            queryClient.setQueryData(key, card);
+            keepLessons(card);
+            void queryClient.invalidateQueries({ queryKey: key });
             void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
             void queryClient.invalidateQueries({ queryKey: groupsKey, refetchType: 'none' });
           },
@@ -727,7 +946,7 @@ export function StudentCardPage(): ReactElement {
             setLeavingCard(leaving ? studentId : null);
           },
           onDialog: (open) => {
-            setDialogSubject(open ? { id: studentId, state: query.data.state } : null);
+            setDialogSubject(open ? { id: studentId, state: shown.state } : null);
           },
           onRemoved: (newCard) => {
             void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });

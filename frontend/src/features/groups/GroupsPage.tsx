@@ -14,9 +14,11 @@ import { useSignedInAccount } from '../../lib/api/session.ts';
 import { type GroupSummary, fetchGroups, firstUnusedColour, groupsKey } from './api.ts';
 import { GroupDot } from './ColourField.tsx';
 import { NewGroupDialog } from './NewGroupDialog.tsx';
+import { NextLessonLine } from '../schedule/LessonList.tsx';
 
 function GroupRow({ group }: { readonly group: GroupSummary }): ReactElement {
   const { t } = useTranslation();
+  const me = useSignedInAccount();
   const hidden = group.member_count - group.members.length;
   return (
     <li className="border-t border-border">
@@ -36,7 +38,11 @@ function GroupRow({ group }: { readonly group: GroupSummary }): ReactElement {
         </span>
         <span className="flex flex-col items-start gap-1 tablet:items-end">
           <span className="text-small text-text-muted">{t('groups.memberCount', { count: group.member_count })}</span>
-          {group.archived_at === null ? null : <StatusWord tone="muted">{t('groups.archived')}</StatusWord>}
+          {group.archived_at === null ? (
+            <NextLessonLine item={group.next_lesson} me={me} />
+          ) : (
+            <StatusWord tone="muted">{t('groups.archived')}</StatusWord>
+          )}
         </span>
       </Link>
     </li>

@@ -5,6 +5,7 @@ import { Link, useLocation, useNavigate } from 'react-router';
 import { type Section, type SectionCounts, isCurrent, roleSections, trailingSections } from '../../app/sections.ts';
 import { type Me, useSession } from '../../lib/api/session.ts';
 import { reachable } from '../../routes/access.ts';
+import { provisionallyLinked, useProvisionalLink } from '../../routes/provisionalLink.ts';
 
 interface SidebarProps {
   readonly me: Me;
@@ -179,6 +180,7 @@ function AccountMenu({ me }: { readonly me: Me }): ReactElement {
 export function Sidebar({ me, counts, bell, headerAction, onNavigate }: SidebarProps): ReactElement {
   const { t } = useTranslation();
   const { pathname } = useLocation();
+  const linked = provisionallyLinked(useProvisionalLink(me));
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto bg-sidebar px-3 py-3">
       <div className="flex items-center gap-1">
@@ -188,7 +190,7 @@ export function Sidebar({ me, counts, bell, headerAction, onNavigate }: SidebarP
       <nav aria-label={t('frame.navigation')}>
         <ul className="flex flex-col gap-0.5">
           {roleSections[me.role]
-            .filter((section) => reachable(me, section.to))
+            .filter((section) => reachable(me, section.to, linked))
             .map((section) => (
               <SidebarItem
                 key={section.key}

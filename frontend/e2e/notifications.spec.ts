@@ -4,6 +4,7 @@ import { newTestAccount, signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { notificationRows } from './notifications.ts';
 import { accountId, waitForSockets } from './realtime.ts';
+import { addDays, editThisLesson, localDate, scheduleLessonsWithIds } from './schedule.ts';
 import {
   registerStudentWithCode,
   seedActiveStudent,
@@ -130,6 +131,39 @@ test.describe('notifications in Russian on a computer', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Анна' })).toBeFocused();
     await expect(panel(page)).toHaveCount(0);
     await expect(sidebarBell(page)).toHaveAccessibleName('Уведомления');
+  });
+
+  test('notifications › a lesson change row links to the lesson', async ({ page, deployment, control }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
+    const tomorrow = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
+    const [lesson] = await scheduleLessonsWithIds(deployment, maria, {
+      relationship_id: cardId,
+      title: 'Разговорная практика',
+      date: tomorrow,
+      start: '10:00',
+      duration_minutes: 60,
+    });
+    if (lesson === undefined) {
+      throw new Error('no lesson was scheduled');
+    }
+    await editThisLesson(deployment, maria, lesson.id, { start: '11:00' });
+    await expect
+      .poll(async () => {
+        await control.tick();
+        return (await notificationRows(deployment, anna)).map((row) => row.event);
+      })
+      .toContain('lesson.moved');
+    await signInThroughTheApi(page, anna);
+    await page.goto('/home');
+    const row = rowsOf(await openPanel(page)).filter({ hasText: 'Урок перенесён' });
+    await expect(row).toContainText('Разговорная практика');
+
+    await row.getByRole('link').click();
+
+    await expect(page).toHaveURL(`/lessons/${lesson.id}`);
+    await expect(page.getByRole('heading', { level: 1, name: 'Разговорная практика' })).toBeFocused();
+    await expect(page.getByRole('main').getByText('11:00–12:00').first()).toBeVisible();
   });
 
   test('notifications › mark all as read leaves a row that arrived meanwhile unread', async ({

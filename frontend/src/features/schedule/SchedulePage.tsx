@@ -16,18 +16,11 @@ import { fetchMyTutors, myTutorsKey } from '../tutors/api.ts';
 import { Agenda } from './Agenda.tsx';
 import { type Calendar, calendarRangeKey, fetchCalendar } from './api.ts';
 import { formatRangeTitle } from './calendarFormat.ts';
-import {
-  type LocalDate,
-  addDays,
-  isLocalDate,
-  localDateOf,
-  localMinutesOf,
-  localTimeOf,
-} from '../../lib/time/localDates.ts';
+import { type LocalDate, isLocalDate, localDateOf } from '../../lib/time/localDates.ts';
 import { type CalendarRange, type CalendarView, calendarViews, rangeOf, shifted } from './calendarTime.ts';
 import { LessonFocusContext } from './LessonParts.tsx';
 import { MonthGrid } from './MonthGrid.tsx';
-import { type LessonPrefill, NewLessonDialog } from './NewLessonDialog.tsx';
+import { type LessonPrefill, NewLessonDialog, nextFullHour } from './NewLessonDialog.tsx';
 import { type SlotChosen, WeekGrid } from './WeekGrid.tsx';
 
 const tabletQuery = '(min-width: 768px)';
@@ -35,12 +28,6 @@ const timeGridQuery = '(min-width: 1024px) and (pointer: fine)';
 
 const segmentClass =
   'inline-flex min-h-11 items-center px-4 text-small text-text-muted aria-pressed:rounded-md aria-pressed:border aria-pressed:border-border-strong aria-pressed:bg-field aria-pressed:text-strong aria-pressed:text-text';
-
-function nextFullHour(now: number, timeZone: string): LessonPrefill {
-  const today = localDateOf(now, timeZone);
-  const hour = Math.floor(localMinutesOf(now, timeZone) / 60) + 1;
-  return hour >= 24 ? { date: addDays(today, 1), start: '00:00' } : { date: today, start: localTimeOf(hour * 60) };
-}
 
 function TutorFilter({
   tutor,

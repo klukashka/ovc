@@ -3,9 +3,11 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { notificationRows, bellIn, panelRowsIn } from './notifications.ts';
-import { addDays, isoWeekday, localDate, scheduleLessons } from './schedule.ts';
+import { addDays, cardLessonStatuses, isoWeekday, localDate, scheduleLessonsWithIds } from './schedule.ts';
 import { diagnosedTest as test, expect, expectRowsNamed, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
 import {
+  accessToken,
+  callApi,
   cardState,
   cardStatesNamed,
   confirmInTheOwnBrowser,
@@ -60,6 +62,25 @@ interface PilotFourSeed {
   readonly borisCard: string;
   readonly seedLink: string;
   readonly groupId: string;
+  readonly seriesLessonId: string;
+  readonly groupLessonId: string;
+  readonly seriesLessonCount: number;
+}
+
+const emailListLimit = 20;
+
+function allCancelled(count: number): string[] {
+  return Array.from({ length: count }, () => 'cancelled');
+}
+
+async function seriesEndDate(deployment: Deployment, tutor: TestAccount, lessonId: string): Promise<unknown> {
+  const answer = await callApi(deployment, await accessToken(deployment, tutor), 'GET', `/lessons/${lessonId}`);
+  const body = answer.body;
+  if (answer.status !== 200 || typeof body !== 'object' || body === null || !('series' in body)) {
+    throw new Error(`reading the lesson answered ${String(answer.status)}`);
+  }
+  const series: unknown = body.series;
+  return typeof series === 'object' && series !== null && 'end_date' in series ? series.end_date : null;
 }
 
 let seeded: PilotFourSeed | null = null;
@@ -99,32 +120,47 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
     await expectRowsNamed(rowsOf(page, 'Ученики'), ['Анна', 'Boris']);
     expect(await cardState(deployment, maria, card.id)).toEqual({ state: 'active', groups: ['B1 evening'] });
     const tomorrow = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
-    const series = await scheduleLessons(deployment, maria, {
+    const series = await scheduleLessonsWithIds(deployment, maria, {
       relationship_id: card.id,
       title: 'Урок',
       date: tomorrow,
       start: '17:00',
       duration_minutes: 60,
-      weekdays: [isoWeekday(tomorrow)],
-      count: 4,
+      weekdays: [isoWeekday(tomorrow), isoWeekday(addDays(tomorrow, 1))],
+      end_date: addDays(tomorrow, 365),
     });
-    const groupLesson = await scheduleLessons(deployment, maria, {
+    const groupLesson = await scheduleLessonsWithIds(deployment, maria, {
       group_id: groupId,
       title: 'Урок B1 evening',
       date: addDays(tomorrow, 7),
       start: '19:00',
       duration_minutes: 90,
     });
-    expect([series.length, groupLesson.length]).toEqual([4, 1]);
-    seeded = { maria, boris, borisCard: card.id, seedLink: card.link, groupId };
+    expect(series.length).toBeGreaterThan(emailListLimit);
+    expect(groupLesson).toHaveLength(1);
+    const [firstOfSeries] = series;
+    const [theGroupLesson] = groupLesson;
+    if (firstOfSeries === undefined || theGroupLesson === undefined) {
+      throw new Error('the seed scheduled no lessons');
+    }
+    seeded = {
+      maria,
+      boris,
+      borisCard: card.id,
+      seedLink: card.link,
+      groupId,
+      seriesLessonId: firstOfSeries.id,
+      seriesLessonCount: series.length,
+      groupLessonId: theGroupLesson.id,
+    };
   });
 
-  test('pilot-4 › step 1 Maria ends working with Boris, who gets one email and leaves B1 evening', async ({
+  test('pilot-4 › step 1 Maria ends working with Boris, which cancels his lessons and ends his series, and he gets one email and leaves B1 evening', async ({
     page,
     deployment,
     control,
   }) => {
-    const { maria, boris, borisCard, groupId } = pilotFour();
+    const { maria, boris, borisCard, groupId, seriesLessonId, seriesLessonCount } = pilotFour();
     await signInThroughTheApi(page, maria);
     await page.goto(`/students/${borisCard}`);
     await page.getByRole('button', { name: 'Завершить занятия' }).click();
@@ -139,9 +175,17 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
     ).toBeFocused();
     await expect(page.getByRole('main').getByText('Занятия завершены', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Пригласить снова' })).toBeVisible();
+    const endedOn = localDate(await control.now(), 'Europe/Moscow');
     await control.tick();
-    const ended = (await control.mail(boris.email)).filter((mail) => mail.subject === endedForStudent);
+    const borisMail = await control.mail(boris.email);
+    const ended = borisMail.filter((mail) => mail.subject === endedForStudent);
     expect(ended).toHaveLength(1);
+    expect(ended[0]?.text).toContain('These lessons were cancelled:');
+    expect(ended[0]?.text.match(/Урок, /g)).toHaveLength(emailListLimit);
+    expect(ended[0]?.text).toContain(`and ${String(seriesLessonCount - emailListLimit)} more`);
+    expect(borisMail.filter((mail) => mail.subject.startsWith('Lesson'))).toEqual([]);
+    expect(await cardLessonStatuses(deployment, maria, borisCard)).toEqual(allCancelled(seriesLessonCount));
+    expect(await seriesEndDate(deployment, maria, seriesLessonId)).toBe(endedOn);
     expect(await groupMemberNames(deployment, maria, groupId)).toEqual(['Анна']);
     expect(await cardState(deployment, maria, borisCard)).toEqual({ state: 'ended', groups: [] });
     expect((await notificationRows(deployment, boris)).at(0)).toEqual({
@@ -149,6 +193,37 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
       label: 'Мария',
       unread: true,
     });
+  });
+
+  test('pilot-4 › step 2 two days later horizon extension creates no lessons for the ended series', async ({
+    deployment,
+    control,
+  }) => {
+    const { maria, borisCard, seriesLessonCount } = pilotFour();
+
+    await control.advance(2 * 86_400);
+    await control.tick();
+
+    expect(await cardLessonStatuses(deployment, maria, borisCard)).toEqual(allCancelled(seriesLessonCount));
+  });
+
+  test('pilot-4 › step 4 Boris opens the group lesson’s address and it is not found', async ({
+    browser,
+    deployment,
+    diagnostics,
+  }) => {
+    const { boris, groupLessonId } = pilotFour();
+    const borisContext = await englishContext(browser, deployment);
+    const borisPage = await borisContext.newPage();
+    const watched = await diagnostics.watch(borisPage);
+    watched.expectFailure({ method: 'GET', path: `/api/v1/lessons/${groupLessonId}`, status: 404 });
+    await signInThroughTheApi(borisPage, boris);
+
+    await borisPage.goto(`/lessons/${groupLessonId}`);
+
+    await expect(borisPage.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
+    await expect(borisPage.getByRole('main').getByText('Урок B1 evening')).toHaveCount(0);
+    await borisContext.close();
   });
 
   test('pilot-4 › step 6 the copied link from the seed is no longer valid for Boris', async ({

@@ -2,6 +2,7 @@ import { type ApiClient, type ApiError, apiErrorFrom } from '../../lib/api/clien
 import { type components, groupColourValues } from '../../lib/api/schema.ts';
 
 export type Group = components['schemas']['Group'];
+export type GroupDetail = components['schemas']['GroupDetail'];
 export type GroupSummary = components['schemas']['GroupSummary'];
 export type GroupMember = components['schemas']['GroupMember'];
 export type GroupColour = Group['colour'];
@@ -52,7 +53,7 @@ export async function fetchGroups(client: ApiClient): Promise<readonly GroupSumm
   return data.groups;
 }
 
-export async function fetchGroup(client: ApiClient, id: string): Promise<Group> {
+export async function fetchGroup(client: ApiClient, id: string): Promise<GroupDetail> {
   const { data, error, response } = await client.GET('/api/v1/groups/{id}', { params: { path: { id } } });
   if (data === undefined) {
     throw apiErrorFrom(response.status, error);

@@ -12,6 +12,7 @@ import {
   FormNotice,
   SubmitButton,
   TextField,
+  dangerButtonClass,
   fieldMessage,
   linkClass,
   primaryButtonClass,
@@ -26,11 +27,15 @@ import { Page } from '../../components/ui/Page.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
 import { StatusWord } from '../../components/ui/StatusWord.tsx';
 import { type ApiClient, asApiError, useApiClient } from '../../lib/api/client.ts';
+import { useSignedInAccount } from '../../lib/api/session.ts';
 import type { components } from '../../lib/api/schema.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
+import { LessonList } from '../schedule/LessonList.tsx';
+import { ScheduleLessonAction } from '../schedule/ScheduleLessonAction.tsx';
 import { studentsKey } from '../students/api.ts';
 import {
   type Group,
+  type GroupDetail,
   fetchGroup,
   groupKey,
   groupMemberLimit,
@@ -358,20 +363,31 @@ function Members({ group, handlers }: { readonly group: Group; readonly handlers
   );
 }
 
+function needsArchiveConfirmation(group: GroupDetail): boolean {
+  return group.archived_at === null && (group.future_lesson_count > 0 || group.has_open_series);
+}
+
 function ArchiveSection({
   group,
   handlers,
 }: {
-  readonly group: Group;
+  readonly group: GroupDetail;
   readonly handlers: GroupHandlers;
 }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const headingId = useId();
+  const dialogHeadingId = useId();
+  const consequenceId = useId();
+  const opener = useRef<HTMLButtonElement>(null);
+  const dismissButton = useRef<HTMLButtonElement>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const action = useAction();
   const archived = group.archived_at !== null;
 
-  function toggle(): void {
+  function toggle(viaDialog: boolean): void {
+    setConfirmed(viaDialog);
     action.run(async (): Promise<ActionState> => {
       const params = { params: { path: { id: group.id } } };
       const { data, error, response } = archived
@@ -380,28 +396,123 @@ function ArchiveSection({
       if (data === undefined) {
         const refused = refusedBy(response, error);
         if (showsStaleData(refused)) {
+          setConfirming(false);
           handlers.onChangedElsewhere();
         }
         return refused;
       }
+      setConfirming(false);
       handlers.onChanged(data);
       return done;
     });
   }
 
+  const doneNotice = t(archived ? 'groups.archivedNotice' : 'groups.unarchivedNotice');
   return (
     <section aria-labelledby={headingId} className="flex flex-col items-start gap-3">
       <h2 id={headingId} className="text-heading">
         {t('groups.archive')}
       </h2>
       <p className="text-small text-text-muted">{t(archived ? 'groups.unarchiveHint' : 'groups.archiveHint')}</p>
-      <Refusal state={action.state} />
+      {confirming ? null : <Refusal state={action.state} />}
       {action.state.kind === 'done' ? (
-        <FormNotice takeFocus>{t(archived ? 'groups.archivedNotice' : 'groups.unarchivedNotice')}</FormNotice>
+        confirmed ? (
+          <FocusedNotice message={doneNotice} />
+        ) : (
+          <FormNotice takeFocus>{doneNotice}</FormNotice>
+        )
       ) : null}
-      <ActionButton busy={action.busy} onClick={toggle} className={quietButtonClass}>
+      <ActionButton
+        ref={opener}
+        busy={action.busy && !confirming}
+        unavailable={action.busy}
+        onClick={() => {
+          if (needsArchiveConfirmation(group)) {
+            action.reset();
+            setConfirming(true);
+            return;
+          }
+          toggle(false);
+        }}
+        className={quietButtonClass}
+      >
         {t(archived ? 'groups.unarchiveSubmit' : 'groups.archiveSubmit')}
       </ActionButton>
+      <ModalDialog
+        open={confirming}
+        busy={action.busy}
+        labelledBy={dialogHeadingId}
+        describedBy={consequenceId}
+        returnFocus={opener}
+        initialFocus={dismissButton}
+        onClose={() => {
+          setConfirming(false);
+        }}
+      >
+        <div className="flex flex-col gap-4">
+          <h2 id={dialogHeadingId} className="text-heading">
+            {t('groups.archiveTitle')}
+          </h2>
+          <p id={consequenceId}>{t('groups.archiveConsequence', { count: group.future_lesson_count })}</p>
+          <Refusal state={action.state} />
+          <div className="flex flex-wrap gap-3">
+            <ActionButton
+              busy={action.busy}
+              onClick={() => {
+                toggle(true);
+              }}
+              className={dangerButtonClass}
+            >
+              {t('groups.archiveSubmit')}
+            </ActionButton>
+            <ActionButton
+              ref={dismissButton}
+              busy={false}
+              unavailable={action.busy}
+              onClick={() => {
+                setConfirming(false);
+              }}
+              className={textButtonClass}
+            >
+              {t('groups.cancel')}
+            </ActionButton>
+          </div>
+        </div>
+      </ModalDialog>
+    </section>
+  );
+}
+
+function GroupLessons({
+  group,
+  onScheduled,
+}: {
+  readonly group: GroupDetail;
+  readonly onScheduled: () => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const me = useSignedInAccount();
+  const headingId = useId();
+  return (
+    <section aria-labelledby={headingId} className="flex flex-col items-start gap-3">
+      <h2 id={headingId} className="text-heading">
+        {t('lessons.next')}
+      </h2>
+      {group.next_lessons.length === 0 ? (
+        <p className="text-text-muted">{t('lessons.noNext')}</p>
+      ) : (
+        <div className="w-full">
+          <LessonList items={group.next_lessons} label={t('lessons.next')} me={me} showAudience={false} />
+        </div>
+      )}
+      <p>
+        <Link to="/schedule" className={linkClass}>
+          {t('lessons.openSchedule')}
+        </Link>
+      </p>
+      {group.archived_at === null && me.state === 'active' ? (
+        <ScheduleLessonAction audience={{ kind: 'group', id: group.id, name: group.name }} onScheduled={onScheduled} />
+      ) : null}
     </section>
   );
 }
@@ -410,10 +521,12 @@ export function GroupView({
   group,
   reloads = 0,
   handlers,
+  onScheduled,
 }: {
-  readonly group: Group;
+  readonly group: GroupDetail;
   readonly reloads?: number;
   readonly handlers: GroupHandlers;
+  readonly onScheduled: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   return (
@@ -429,6 +542,7 @@ export function GroupView({
         {group.archived_at === null ? null : <StatusWord tone="muted">{t('groups.archived')}</StatusWord>}
       </p>
       <Members group={group} handlers={handlers} />
+      <GroupLessons group={group} onScheduled={onScheduled} />
       <DetailsForm group={group} reloads={reloads} handlers={handlers} />
       <ArchiveSection group={group} handlers={handlers} />
     </>
@@ -477,9 +591,23 @@ export function GroupPage(): ReactElement {
       <GroupView
         group={query.data}
         reloads={reloads}
+        onScheduled={() => {
+          void queryClient.invalidateQueries({ queryKey: key });
+          void queryClient.invalidateQueries({ queryKey: groupsKey, refetchType: 'none' });
+        }}
         handlers={{
           onChanged: (group) => {
-            queryClient.setQueryData(key, group);
+            queryClient.setQueryData<GroupDetail>(key, (previous) =>
+              previous === undefined
+                ? previous
+                : {
+                    ...group,
+                    next_lessons: previous.next_lessons,
+                    future_lesson_count: previous.future_lesson_count,
+                    has_open_series: previous.has_open_series,
+                  },
+            );
+            void queryClient.invalidateQueries({ queryKey: key });
             void queryClient.invalidateQueries({ queryKey: groupsKey, refetchType: 'none' });
             void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
           },

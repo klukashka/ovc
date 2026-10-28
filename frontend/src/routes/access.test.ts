@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { Me, SessionState } from '../lib/api/session.ts';
-import { type Address, type Audience, reachable, routeAccess } from './access.ts';
+import { type Access, type Address, type Audience, reachable, routeAccess } from './access.ts';
 
 const origin = 'https://ovc.example';
 
@@ -156,6 +156,37 @@ describe('route access for signed-in accounts', () => {
     const access = routeAccess(signedIn('student', 'unverified'), audience, at(pathname), origin);
 
     expect(access.kind).toBe('signedIn');
+  });
+
+  test.each<[string, boolean, Access['kind']]>([
+    ['/schedule', true, 'signedIn'],
+    ['/lessons/00000000-0000-4000-8000-000000000004', true, 'signedIn'],
+    ['/messages', true, 'redirect'],
+    ['/notifications', true, 'redirect'],
+    ['/schedule', false, 'redirect'],
+    ['/lessons/00000000-0000-4000-8000-000000000004', false, 'redirect'],
+  ])(
+    'an unverified student opening the shared address %s with a provisional link %s gets %s',
+    (pathname, provisionalLink, expected) => {
+      const state = signedIn('student', 'unverified');
+
+      const access = routeAccess(state, 'shared', at(pathname), origin, provisionalLink);
+
+      expect(access.kind).toBe(expected);
+    },
+  );
+
+  test.each<[Me['role'], Me['state'], string, boolean]>([
+    ['student', 'unverified', '/schedule', true],
+    ['student', 'unverified', '/lessons', true],
+    ['student', 'unverified', '/homework', false],
+    ['student', 'unverified', '/messages', false],
+  ])('with a provisional link, for a %s (%s) the address %s is reachable: %s', (role, state, pathname, expected) => {
+    const me = account(role, state);
+
+    const result = reachable(me, pathname, true);
+
+    expect(result).toBe(expected);
   });
 
   test('an unverified student opening a tutor settings section sees not found, not the confirmation page', () => {

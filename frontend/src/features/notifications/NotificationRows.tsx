@@ -60,7 +60,9 @@ function Label({ item }: { readonly item: Notification }): ReactElement | null {
       {item.colour === null ? null : (
         <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${paletteDotClass[item.colour]}`} />
       )}
-      <span className="min-w-0 break-words">{label}</span>
+      <span dir="auto" className="min-w-0 break-words">
+        {label}
+      </span>
     </span>
   );
 }

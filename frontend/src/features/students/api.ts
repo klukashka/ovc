@@ -2,6 +2,8 @@ import { type ApiClient, apiErrorFrom } from '../../lib/api/client.ts';
 import { type components, pathsApiV1StudentsGetParametersQueryStateValues } from '../../lib/api/schema.ts';
 
 export type StudentCard = components['schemas']['StudentCard'];
+export type StudentCardDetail = components['schemas']['StudentCardDetail'];
+export type CardLessonPage = components['schemas']['CardLessonPage'];
 export type StudentCardSummary = components['schemas']['StudentCardSummary'];
 export type StudentCardPage = components['schemas']['StudentCardPage'];
 export type CardInvitation = components['schemas']['CardInvitation'];
@@ -28,8 +30,14 @@ export function studentListKey(state: StudentListState, search: string, group: s
   return [...studentListsKey, state, search, group];
 }
 
+export const studentCardsKey = [...studentsKey, 'card'] as const;
+
 export function studentCardKey(id: string): readonly unknown[] {
-  return [...studentsKey, 'card', id];
+  return [...studentCardsKey, id];
+}
+
+export function cardLessonsKey(id: string): readonly unknown[] {
+  return [...studentCardKey(id), 'lessons'];
 }
 
 export function isStudentListState(value: string | null): value is StudentListState {
@@ -61,9 +69,19 @@ export async function fetchStudentsPage(
   return data;
 }
 
-export async function fetchStudentCard(client: ApiClient, id: string): Promise<StudentCard> {
+export async function fetchStudentCard(client: ApiClient, id: string): Promise<StudentCardDetail> {
   const { data, error, response } = await client.GET('/api/v1/students/{id}', {
     params: { path: { id } },
+  });
+  if (data === undefined) {
+    throw apiErrorFrom(response.status, error);
+  }
+  return data;
+}
+
+export async function fetchCardLessons(client: ApiClient, id: string, cursor: string | null): Promise<CardLessonPage> {
+  const { data, error, response } = await client.GET('/api/v1/students/{id}/lessons', {
+    params: { path: { id }, query: cursor === null ? {} : { cursor } },
   });
   if (data === undefined) {
     throw apiErrorFrom(response.status, error);

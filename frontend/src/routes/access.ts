@@ -19,6 +19,7 @@ export type Access =
 const confirmationAddress = '/verify-email';
 export const reclaimAddress = '/reclaim';
 const unconfirmedStudentSections: readonly string[] = ['/home', '/tutors', '/settings'];
+const provisionalLessonSections: readonly string[] = ['/schedule', '/lessons'];
 
 export function homeOf(me: Me): string {
   return me.role === 'tutor' ? '/today' : '/home';
@@ -32,8 +33,18 @@ function withinSection(pathname: string, section: string): boolean {
   return pathname === section || pathname.startsWith(`${section}/`);
 }
 
-export function reachable(me: Me, pathname: string): boolean {
-  return !confinedToConfirmation(me) || unconfirmedStudentSections.some((section) => withinSection(pathname, section));
+export function needsProvisionalLink(me: Me, pathname: string): boolean {
+  return confinedToConfirmation(me) && provisionalLessonSections.some((section) => withinSection(pathname, section));
+}
+
+export function reachable(me: Me, pathname: string, provisionalLink = false): boolean {
+  if (!confinedToConfirmation(me)) {
+    return true;
+  }
+  const sections = provisionalLink
+    ? [...unconfirmedStudentSections, ...provisionalLessonSections]
+    : unconfirmedStudentSections;
+  return sections.some((section) => withinSection(pathname, section));
 }
 
 function anonymousRedirect(address: Address): string {
@@ -48,7 +59,13 @@ function afterSignIn(me: Me, address: Address, origin: string): string {
   return requested ?? homeOf(me);
 }
 
-function signedInAccess(me: Me, audience: Audience, address: Address, origin: string): Access {
+function signedInAccess(
+  me: Me,
+  audience: Audience,
+  address: Address,
+  origin: string,
+  provisionalLink: boolean,
+): Access {
   switch (audience) {
     case 'guest':
       return { kind: 'redirect', to: afterSignIn(me, address, origin) };
@@ -64,7 +81,7 @@ function signedInAccess(me: Me, audience: Audience, address: Address, origin: st
     case 'tutor':
     case 'student':
     case 'shared':
-      if (!reachable(me, address.pathname)) {
+      if (!reachable(me, address.pathname, provisionalLink)) {
         return { kind: 'redirect', to: confirmationAddress };
       }
       if (audience !== 'shared' && audience !== me.role) {
@@ -74,7 +91,13 @@ function signedInAccess(me: Me, audience: Audience, address: Address, origin: st
   }
 }
 
-export function routeAccess(state: SessionState, audience: Audience, address: Address, origin: string): Access {
+export function routeAccess(
+  state: SessionState,
+  audience: Audience,
+  address: Address,
+  origin: string,
+  provisionalLink = false,
+): Access {
   switch (state.kind) {
     case 'unknown':
       return { kind: 'pending' };
@@ -89,6 +112,6 @@ export function routeAccess(state: SessionState, audience: Audience, address: Ad
       }
       return { kind: 'redirect', to: state.reason === 'anonymous' ? anonymousRedirect(address) : '/' };
     case 'signedIn':
-      return signedInAccess(state.me, audience, address, origin);
+      return signedInAccess(state.me, audience, address, origin, provisionalLink);
   }
 }

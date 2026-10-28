@@ -91,9 +91,11 @@ async function pageLoadsAfterStart(failRefresh: boolean): Promise<{ loads: numbe
     render(
       <SessionContext value={session}>
         <ApiClientContext value={createApiClient(origin, session.authorizedFetch)}>
-          <I18nextProvider i18n={i18n}>
-            <RouterProvider router={router} />
-          </I18nextProvider>
+          <QueryClientProvider client={new QueryClient()}>
+            <I18nextProvider i18n={i18n}>
+              <RouterProvider router={router} />
+            </I18nextProvider>
+          </QueryClientProvider>
         </ApiClientContext>
       </SessionContext>,
     );

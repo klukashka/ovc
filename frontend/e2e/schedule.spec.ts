@@ -1,6 +1,6 @@
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 
-import { type TestAccount, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
@@ -23,6 +23,7 @@ import {
   createGroup,
   seedActiveStudent,
   signUpActiveStudentOnInvitation,
+  signUpOnInvitation,
 } from './tutoring.ts';
 
 const moscow = 'Europe/Moscow';
@@ -615,6 +616,36 @@ function pilotOne(): PilotOneSeed {
   return pilotOneSeed;
 }
 
+test.describe('schedule for an unconfirmed student in English', () => {
+  test.use({ locale: 'en-GB', timezoneId: moscow, viewport: { width: 1280, height: 800 } });
+
+  test('unconfirmed student › Schedule shows the provisional link’s lessons', async ({ page, deployment, control }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const boris = newTestAccount('Boris', 'student');
+    const card = await createCard(deployment, pavel, 'Boris', boris.email);
+    await signUpOnInvitation(deployment, card.link, boris, 'en');
+    const tomorrow = await moscowTomorrow(control.now);
+    await scheduleLessons(deployment, pavel, {
+      relationship_id: card.id,
+      title: 'Lesson',
+      date: tomorrow,
+      start: '10:00',
+      duration_minutes: 60,
+    });
+    await signInThroughTheApi(page, boris);
+
+    await page.goto(weekAddress(tomorrow));
+
+    await expect(page).toHaveURL(weekAddress(tomorrow));
+    await expect(page.getByRole('navigation').getByRole('link', { name: 'Schedule' })).toBeVisible();
+    const lessons = lessonLinks(page);
+    await expect(lessons).toHaveCount(1);
+    await expect(lessons).toContainText('10:00–11:00');
+    await expect(lessons).toContainText('Individual lesson');
+    await expect(lessons).toContainText('Pavel');
+  });
+});
+
 test.describe('pilot 1, the first lessons of Maria and Anna', () => {
   test.describe.configure({ mode: 'serial' });
   test.use({ locale: 'ru-RU', timezoneId: moscow, viewport: { width: 1280, height: 800 } });
@@ -711,6 +742,7 @@ interface PilotThreeSeed {
 
 let pilotThreeSeed: PilotThreeSeed | null = null;
 let pavelOfPilotThree: TestAccount | null = null;
+let pavelCardOfPilotThree: string | null = null;
 let movedLessonOfPilotThree: number | null = null;
 
 function pilotThree(): PilotThreeSeed {
@@ -778,6 +810,7 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
     await expect(lessonLinks(page).filter({ hasText: '10:00–11:00' })).toContainText('Lesson');
     await context.close();
     pavelOfPilotThree = pavel;
+    pavelCardOfPilotThree = card.id;
   });
 
   test('pilot-3 › step 4 Anna’s Schedule shows both tutors with their labels, and the filter leaves Pavel’s', async ({
@@ -808,6 +841,32 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
     await expect(lessons).toHaveCount(1);
     await expect(lessons).toContainText('Pavel');
     await expect(lessons).toContainText('Индивидуальный урок');
+    await context.close();
+  });
+
+  test('pilot-3 › step 5 Pavel’s card for Anna lists only his lesson with her, none of Maria’s', async ({
+    browser,
+    deployment,
+    diagnostics,
+  }) => {
+    if (pavelOfPilotThree === null || pavelCardOfPilotThree === null) {
+      throw new Error('pilot 3 step 3 has not run');
+    }
+    const context = await englishContext(browser, deployment, yekaterinburg);
+    const page = await context.newPage();
+    await diagnostics.watch(page);
+    await signInThroughTheApi(page, pavelOfPilotThree);
+
+    await page.goto(`/students/${pavelCardOfPilotThree}?tab=lessons`);
+
+    const history = page.getByRole('list', { name: 'Lessons', exact: true }).getByRole('listitem');
+    await expect(history).toHaveCount(1);
+    await expect(history).toContainText('10:00–11:00');
+    await expect(history).toContainText('Lesson');
+    await page.getByRole('link', { name: 'Overview' }).click();
+    const next = page.getByRole('list', { name: 'Next lessons', exact: true }).getByRole('listitem');
+    await expect(next).toHaveCount(1);
+    await expect(next).toContainText('10:00–11:00');
     await context.close();
   });
 

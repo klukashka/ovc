@@ -488,7 +488,7 @@ export class FakeAuthServer {
       this.failingCardReads -= 1;
       return refusal(503, 'service_unavailable');
     }
-    return json(200, found.card);
+    return json(200, { ...found.card, next_lessons: [] });
   }
 
   private answerInvitation(invitationToken: string): Response {
