@@ -8,6 +8,10 @@
 <p>{{.Intro}}</p>
 <p style="font-weight: bold;">{{.Title}}</p>
 {{range .Details}}<p><span style="color: #52606d;">{{.Label}}:</span> {{.Value}}</p>
+{{end}}{{if .Lessons}}<ul>
+{{range .Lessons}}<li>{{.}}</li>
+{{end}}</ul>
+{{end}}{{if .More}}<p>{{.More}}</p>
 {{end}}<p><a href="{{.ActionURL}}" style="color: #c2410c; font-weight: bold;">{{.Action}}</a></p>
 <p style="color: #52606d; font-size: 14px;">{{.Note}}</p>
 <p style="color: #52606d; font-size: 14px;">{{.UnsubscribeNote}} <a href="{{.UnsubscribeURL}}" style="color: #52606d;">{{.Unsubscribe}}</a></p>

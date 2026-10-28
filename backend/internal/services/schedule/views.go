@@ -3,6 +3,7 @@ package schedule
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"ovc/backend/internal/domain"
@@ -36,6 +37,7 @@ type Lesson struct {
 	Status          domain.LessonStatus
 	Timezone        string
 	SeriesID        *domain.SeriesID
+	Series          *SeriesView
 	Version         int32
 	CancelledAt     *time.Time
 	OtherTimezone   *string
@@ -146,6 +148,29 @@ func (s *Service) tutorViews(ctx context.Context, repos repositories.Repositorie
 		}
 		lessons = append(lessons, lesson)
 	}
+	return withSeries(ctx, repos, lessons)
+}
+
+func withSeries(ctx context.Context, repos repositories.Repositories, lessons []Lesson) ([]Lesson, error) {
+	var ids []domain.SeriesID
+	for _, lesson := range lessons {
+		if lesson.SeriesID != nil && !slices.Contains(ids, *lesson.SeriesID) {
+			ids = append(ids, *lesson.SeriesID)
+		}
+	}
+	rows, err := repos.Lessons.SeriesViews(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	byID := map[domain.SeriesID]*SeriesView{}
+	for _, row := range rows {
+		byID[row.ID] = seriesView(row)
+	}
+	for index := range lessons {
+		if lessons[index].SeriesID != nil {
+			lessons[index].Series = byID[*lessons[index].SeriesID]
+		}
+	}
 	return lessons, nil
 }
 
@@ -216,6 +241,11 @@ func (s *Service) Lesson(ctx context.Context, viewer domain.UserID, role domain.
 			other := row.Timezone
 			lesson.OtherTimezone = &other
 		}
+		withSeriesView, err := withSeries(ctx, repos, []Lesson{lesson})
+		if err != nil {
+			return err
+		}
+		lesson = withSeriesView[0]
 		return nil
 	})
 	return lesson, err

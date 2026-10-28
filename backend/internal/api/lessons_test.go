@@ -424,23 +424,47 @@ func TestTheOpenSeriesCapCountsOnlySeriesThatHaveNotEnded(t *testing.T) {
 	}
 }
 
+type racingLessonWrite struct {
+	prepare func(t *testing.T, h *authHarness, token string, card string) (string, string, string)
+	lessons int64
+}
+
+func racingLessonWrites() map[string]racingLessonWrite {
+	scheduledSeries := func(t *testing.T, h *authHarness, token string, card string) string {
+		t.Helper()
+		return h.scheduled(t, token, oneOffFor(card, "2030-03-11", "18:00").weekly([]int{1}, 3)).Lessons[1].ID
+	}
+	return map[string]racingLessonWrite{
+		"creating a one-off lesson": {prepare: func(t *testing.T, _ *authHarness, _ string, card string) (string, string, string) {
+			return http.MethodPost, lessonsRoute, oneOffFor(card, "2030-03-12", "18:00").body(t)
+		}},
+		"creating a series": {prepare: func(t *testing.T, _ *authHarness, _ string, card string) (string, string, string) {
+			return http.MethodPost, lessonsRoute, oneOffFor(card, "2030-03-11", "18:00").weekly([]int{2}, 3).body(t)
+		}},
+		"editing following lessons": {lessons: 3, prepare: func(t *testing.T, h *authHarness, token string, card string) (string, string, string) {
+			return http.MethodPatch, editPath(scheduledSeries(t, h, token, card)), following(1).startingAt("19:00").body(t)
+		}},
+		"cancelling a lesson": {lessons: 3, prepare: func(t *testing.T, h *authHarness, token string, card string) (string, string, string) {
+			return http.MethodPost, cancelPath(scheduledSeries(t, h, token, card)), cancelBody("this", 1)
+		}},
+	}
+}
+
 func TestLessonWritesRacingATutorDeletionOrBlockAnswer401(t *testing.T) {
 	t.Parallel()
-	writes := map[string]func(card string) lessonRequest{
-		"creating a one-off lesson": func(card string) lessonRequest { return oneOffFor(card, "2030-03-12", "18:00") },
-		"creating a series":         func(card string) lessonRequest { return oneOffFor(card, "2030-03-11", "18:00").weekly([]int{2}, 3) },
-	}
-	for writeName, write := range writes {
+	for writeName, write := range racingLessonWrites() {
 		for changeName, change := range racingStateChanges() {
 			t.Run(changeName+" before "+writeName, func(t *testing.T) {
 				t.Parallel()
 				h := newFlowHarness(t)
 				tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 				card := h.linkedCard(t, tutor, 10, domain.RelationshipActive)
+				method, path, body := write.prepare(t, h, token, card)
+				series := h.countRows(t, "SELECT count(id) FROM lesson_series WHERE tutor_id = $1::uuid", tutor.String())
 				release := h.holdTutorProfile(t, tutor)
 				changed := change.start(t, h, token)
 				h.waitForLockWaiters(t, 1)
-				answer := h.sendInBackground(http.MethodPost, lessonsRoute, write(card).body(t), jsonCall(token))
+				answer := h.sendInBackground(method, path, body, jsonCall(token))
 				h.waitForLockWaiters(t, 2)
 
 				release()
@@ -450,8 +474,11 @@ func TestLessonWritesRacingATutorDeletionOrBlockAnswer401(t *testing.T) {
 				if refused.status != http.StatusUnauthorized || code(t, refused) != "unauthenticated" {
 					t.Fatalf("the write answered %d %s", refused.status, refused.body)
 				}
-				if h.lessonRows(t, tutor) != 0 || h.countRows(t, "SELECT count(id) FROM lesson_series WHERE tutor_id = $1::uuid", tutor.String()) != 0 {
+				if h.lessonRows(t, tutor) != write.lessons || h.countRows(t, "SELECT count(id) FROM lesson_series WHERE tutor_id = $1::uuid", tutor.String()) != series {
 					t.Fatal("the refused write stored a lesson or a series")
+				}
+				if changedRows := h.countRows(t, "SELECT count(id) FROM lessons WHERE tutor_id = $1::uuid AND (schedule_revision > 1 OR cancel_cause = 'tutor')", tutor.String()); changedRows != 0 {
+					t.Fatalf("the refused write changed %d lessons", changedRows)
 				}
 			})
 		}

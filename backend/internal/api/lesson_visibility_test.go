@@ -382,3 +382,19 @@ func anotherTutorsLessonAudience(t *testing.T, h *authHarness) (response, respon
 	}
 	return outOfScope, random
 }
+
+func anotherTutorsLessonWrite(method string, suffix string, body string) denialCase {
+	return func(t *testing.T, h *authHarness) (response, response) {
+		t.Helper()
+		parties := h.visibilityParties(t)
+		second, secondToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
+		h.shareStudentWith(t, second, parties.student)
+		lesson := h.scheduled(t, parties.tutorToken, oneOffFor(parties.card, "2030-03-12", "18:00")).Lessons[0]
+		outOfScope := h.send(t, method, lessonsRoute+"/"+lesson.ID+suffix, body, jsonCall(secondToken))
+		random := h.send(t, method, lessonsRoute+"/"+randomCardID+suffix, body, jsonCall(secondToken))
+		if stored := h.storedLesson(t, lesson.ID); stored.Version != 1 || stored.Status != "scheduled" {
+			t.Fatalf("another tutor changed the lesson to %+v", stored)
+		}
+		return outOfScope, random
+	}
+}

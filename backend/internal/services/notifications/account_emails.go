@@ -213,7 +213,7 @@ func (a *AccountEmails) render(user repositories.User, event domain.OutboxKind, 
 	return Email{To: user.Email, Subject: text.Subject, Text: plain.String(), HTML: html.String()}, nil
 }
 
-func decodePayload[Payload domain.EmailRequestPayload | domain.AccountPayload | domain.InvitationEmailPayload | domain.RelationshipEndedPayload | domain.TutorDeletedPayload | domain.LessonReminderPayload](encoded []byte, target *Payload) error {
+func decodePayload[Payload domain.EmailRequestPayload | domain.AccountPayload | domain.InvitationEmailPayload | domain.RelationshipEndedPayload | domain.TutorDeletedPayload | domain.LessonReminderPayload | domain.LessonCancelledPayload | domain.SeriesChangedPayload](encoded []byte, target *Payload) error {
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {

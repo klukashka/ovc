@@ -121,7 +121,7 @@ func (j *Jobs) missingOccurrences(locked repositories.LockedSeries, now time.Tim
 	return occurrences, through, nil
 }
 
-func encodeJSON(payload domain.LessonReminderPayload) ([]byte, error) {
+func encodeJSON[Payload any](payload Payload) ([]byte, error) {
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("encode a lesson email payload: %w", err)

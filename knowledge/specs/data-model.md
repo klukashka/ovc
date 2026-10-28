@@ -204,7 +204,7 @@ Slice 5 adds the `lesson_series`, `lesson` and `lesson_roster` tables. Series an
 | `duration_minutes` | |
 | `timezone` | |
 | `first_date` | |
-| `end_date` xor `count` | |
+| `end_date` xor `count` | the end date is on or after the first date unless the series has ended: a split or "cancel following" at its first occurrence leaves an end date of the day before (pending owner review) |
 | `title`, `description` | title 1–120 characters, description at most 2,000, both plain text as entered |
 | `materialised_until` | partial index where `ended_at` is null |
 | `split_from_series_id` | references the series, `ON DELETE SET NULL`, indexed |

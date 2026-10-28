@@ -41,14 +41,14 @@ WHERE series.tutor_id = @tutor_id AND series.ended_at IS NULL AND (
 SELECT count(id) FROM lessons WHERE tutor_id = @tutor_id AND status = 'scheduled' AND starts_at > sqlc.arg(now)::timestamptz;
 
 -- name: ListTutorLessonsForOverlap :many
-SELECT title, starts_at, duration_minutes FROM lessons
+SELECT id, title, starts_at, duration_minutes FROM lessons
 WHERE tutor_id = @tutor_id AND status <> 'cancelled'
     AND starts_at < sqlc.arg(range_end)::timestamptz
     AND starts_at > sqlc.arg(range_start)::timestamptz - interval '240 minutes'
 ORDER BY starts_at, id;
 
 -- name: ListTutorSeriesBeyondHorizon :many
-SELECT title, weekdays, local_start, duration_minutes, timezone, first_date, end_date, materialised_until FROM lesson_series
+SELECT id, title, weekdays, local_start, duration_minutes, timezone, first_date, end_date, materialised_until FROM lesson_series
 WHERE tutor_id = @tutor_id AND ended_at IS NULL AND end_date IS NOT NULL AND end_date > materialised_until
     AND end_date >= sqlc.arg(from_date)::date AND materialised_until < sqlc.arg(through_date)::date
 ORDER BY id;

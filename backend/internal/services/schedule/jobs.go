@@ -63,40 +63,53 @@ func (a jobAudience) students() []domain.UserID {
 func lockJobAudience(
 	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, relationship *domain.RelationshipID, group *domain.GroupID,
 ) (jobAudience, error) {
+	audience, moved, err := lockAudienceOf(ctx, repos, tutor, relationship, group)
+	if err != nil {
+		return jobAudience{}, err
+	}
+	if moved {
+		return jobAudience{}, errAudienceMoved
+	}
+	return audience, nil
+}
+
+func lockAudienceOf(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, relationship *domain.RelationshipID, group *domain.GroupID,
+) (jobAudience, bool, error) {
 	if relationship != nil {
 		locked, err := repos.Lessons.LockRelationship(ctx, tutor, *relationship)
 		if errors.Is(err, repositories.ErrNotFound) {
-			return jobAudience{}, nil
+			return jobAudience{}, false, nil
 		}
 		if err != nil {
-			return jobAudience{}, err
+			return jobAudience{}, false, err
 		}
 		if locked.StudentID == nil || (locked.State != domain.RelationshipActive && locked.State != domain.RelationshipProvisional) {
-			return jobAudience{}, nil
+			return jobAudience{}, false, nil
 		}
-		return jobAudience{members: []audienceMember{{student: *locked.StudentID, relationship: locked.ID}}, active: true}, nil
+		return jobAudience{members: []audienceMember{{student: *locked.StudentID, relationship: locked.ID}}, active: true}, false, nil
 	}
 	if group == nil {
-		return jobAudience{}, nil
+		return jobAudience{}, false, nil
 	}
 	read, err := repos.Groups.MemberIDs(ctx, tutor, *group)
 	if err != nil {
-		return jobAudience{}, err
+		return jobAudience{}, false, err
 	}
 	locked, err := repos.Lessons.LockRelationships(ctx, tutor, sortedRelationships(read))
 	if err != nil {
-		return jobAudience{}, err
+		return jobAudience{}, false, err
 	}
 	archivedAt, err := repos.Lessons.LockGroup(ctx, tutor, *group)
 	if errors.Is(err, repositories.ErrNotFound) {
-		return jobAudience{}, nil
+		return jobAudience{}, false, nil
 	}
 	if err != nil {
-		return jobAudience{}, err
+		return jobAudience{}, false, err
 	}
 	members, err := repos.Groups.MemberIDs(ctx, tutor, *group)
 	if err != nil {
-		return jobAudience{}, err
+		return jobAudience{}, false, err
 	}
 	audience := jobAudience{active: archivedAt == nil}
 	lockedIDs := make([]domain.RelationshipID, 0, len(locked))
@@ -106,10 +119,7 @@ func lockJobAudience(
 			audience.members = append(audience.members, audienceMember{student: *row.StudentID, relationship: row.ID})
 		}
 	}
-	if !slices.Equal(sortedRelationships(members), lockedIDs) {
-		return jobAudience{}, errAudienceMoved
-	}
-	return audience, nil
+	return audience, !slices.Equal(sortedRelationships(members), lockedIDs), nil
 }
 
 func (j *Jobs) withAudienceRetry(ctx context.Context, work func(repos repositories.Repositories) error) (bool, error) {
@@ -208,6 +218,7 @@ type reminderTally struct {
 type queuedNotification struct {
 	id        domain.NotificationID
 	recipient domain.UserID
+	event     domain.NotificationEvent
 }
 
 func (j *Jobs) QueueReminders(ctx context.Context, now time.Time) (int64, error) {
@@ -370,14 +381,28 @@ func (s *Service) queueReminderEmail(ctx context.Context, repos repositories.Rep
 	if err != nil {
 		return err
 	}
+	return s.queueLessonEmail(ctx, repos, lessonEmail{
+		kind: reminder.kind.Event, priority: domain.PriorityHigh, payload: payload,
+		key: domain.LessonReminderKey(reminder.kind.Event, reminder.lesson.ID, recipient, reminder.revision), now: reminder.now,
+	})
+}
+
+type lessonEmail struct {
+	kind     domain.OutboxKind
+	priority domain.OutboxPriority
+	payload  []byte
+	key      string
+	now      time.Time
+}
+
+func (s *Service) queueLessonEmail(ctx context.Context, repos repositories.Repositories, email lessonEmail) error {
 	id, err := core.NewID[domain.OutboxID](s.deps.Random)
 	if err != nil {
 		return err
 	}
 	_, err = repos.Outbox.Insert(ctx, repositories.NewOutboxRow{
-		ID: id, Lane: domain.LaneEmail, Priority: domain.PriorityHigh, Kind: reminder.kind.Event, Payload: payload,
-		IdempotencyKey: domain.LessonReminderKey(reminder.kind.Event, reminder.lesson.ID, recipient, reminder.revision),
-		NextAttemptAt:  reminder.now, CreatedAt: reminder.now,
+		ID: id, Lane: domain.LaneEmail, Priority: email.priority, Kind: email.kind, Payload: email.payload,
+		IdempotencyKey: email.key, NextAttemptAt: email.now, CreatedAt: email.now,
 	})
 	return err
 }
@@ -385,20 +410,35 @@ func (s *Service) queueReminderEmail(ctx context.Context, repos repositories.Rep
 func (s *Service) insertReminderRow(
 	ctx context.Context, repos repositories.Repositories, reminder reminderRows, target notificationTarget,
 ) (*queuedNotification, error) {
+	return s.insertLessonRow(ctx, repos, lessonRow{
+		event: domain.NotificationLessonReminder1h, tutor: reminder.lesson.TutorID, subject: reminder.lesson.ID, target: target,
+		key: domain.LessonReminderKey(reminder.kind.Event, reminder.lesson.ID, target.user, reminder.revision), now: reminder.now,
+	})
+}
+
+type lessonRow struct {
+	event   domain.NotificationEvent
+	tutor   domain.UserID
+	subject domain.LessonID
+	target  notificationTarget
+	key     string
+	now     time.Time
+}
+
+func (s *Service) insertLessonRow(ctx context.Context, repos repositories.Repositories, row lessonRow) (*queuedNotification, error) {
 	id, err := core.NewID[domain.NotificationID](s.deps.Random)
 	if err != nil {
 		return nil, err
 	}
 	inserted, err := repos.Notifications.Insert(ctx, repositories.NewNotification{
-		ID: id, UserID: target.user, TutorID: reminder.lesson.TutorID, StudentID: target.student, Event: domain.NotificationLessonReminder1h,
-		SubjectID: domain.EntityID(reminder.lesson.ID), RelationshipID: target.relationship,
-		IdempotencyKey: domain.LessonReminderKey(reminder.kind.Event, reminder.lesson.ID, target.user, reminder.revision), CreatedAt: reminder.now,
+		ID: id, UserID: row.target.user, TutorID: row.tutor, StudentID: row.target.student, Event: row.event,
+		SubjectID: domain.EntityID(row.subject), RelationshipID: row.target.relationship, IdempotencyKey: row.key, CreatedAt: row.now,
 	})
 	if err != nil || !inserted {
 		return nil, err
 	}
-	if err := repos.Signals.Notification(ctx, target.user, id); err != nil {
+	if err := repos.Signals.Notification(ctx, row.target.user, id); err != nil {
 		return nil, err
 	}
-	return &queuedNotification{id: id, recipient: target.user}, nil
+	return &queuedNotification{id: id, recipient: row.target.user, event: row.event}, nil
 }

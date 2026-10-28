@@ -41,6 +41,8 @@ type lessonView struct {
 	Intro           string
 	Title           string
 	Details         []lessonDetail
+	Lessons         []string
+	More            string
 	Action          string
 	ActionURL       string
 	Note            string
@@ -81,6 +83,9 @@ func (l *LessonEmails) Builders() map[domain.OutboxKind]Builder {
 	for _, kind := range domain.ReminderKinds() {
 		builders[kind.Event] = lessonReminderEmail{emails: l, kind: kind}
 	}
+	builders[domain.EventLessonMoved] = lessonMovedEmail{emails: l}
+	builders[domain.EventLessonCancelled] = lessonCancelledEmail{emails: l}
+	builders[domain.EventLessonSeriesChanged] = seriesChangedEmail{emails: l}
 	return builders
 }
 
@@ -156,6 +161,9 @@ type lessonRender struct {
 	text      core.LessonEmailText
 	toTutor   bool
 	group     domain.EmailGroup
+	lines     []string
+	more      string
+	former    bool
 }
 
 func (l *LessonEmails) render(source lessonRender, now time.Time) (Email, error) {
@@ -163,15 +171,19 @@ func (l *LessonEmails) render(source lessonRender, now time.Time) (Email, error)
 	if err != nil {
 		return Email{}, err
 	}
-	when, err := l.when(source)
+	when, err := l.when(source.recipient, source.lesson.StartsAt, source.lesson.Timezone)
 	if err != nil {
 		return Email{}, err
 	}
 	title := core.EmailSafeText(source.lesson.Title)
+	details := append([]lessonDetail{{Label: source.text.When, Value: when}}, l.audienceDetails(source)...)
+	if source.lines != nil {
+		details = l.audienceDetails(source)
+	}
 	view := lessonView{
 		Language: source.recipient.Language, Subject: source.text.SubjectPrefix + ": " + title, Intro: source.text.Intro, Title: title,
-		Details: append([]lessonDetail{{Label: source.text.When, Value: when}}, l.audienceDetails(source)...),
-		Action:  source.text.Action, ActionURL: l.publicURL + lessonPagePath + source.lesson.ID.String(), Note: source.text.Note,
+		Details: details, Lessons: source.lines, More: source.more,
+		Action: source.text.Action, ActionURL: l.publicURL + lessonPagePath + source.lesson.ID.String(), Note: source.text.Note,
 		Unsubscribe: source.text.Unsubscribe, UnsubscribeNote: source.text.UnsubscribeNote,
 		UnsubscribeURL: l.publicURL + unsubscribePagePath + "?token=" + url.QueryEscape(token),
 	}
@@ -188,23 +200,23 @@ func (l *LessonEmails) render(source lessonRender, now time.Time) (Email, error)
 	}, nil
 }
 
-func (l *LessonEmails) when(source lessonRender) (string, error) {
-	zone, err := time.LoadLocation(source.recipient.Timezone)
+func (l *LessonEmails) when(recipient repositories.User, startsAt time.Time, lessonTimezone string) (string, error) {
+	zone, err := time.LoadLocation(recipient.Timezone)
 	if err != nil {
 		return "", fmt.Errorf("load the recipient's timezone: %w", err)
 	}
 	var label *core.ZoneLabel
-	if source.recipient.Timezone != source.lesson.Timezone {
-		place := l.cities.Describe(zone, source.lesson.StartsAt)
+	if recipient.Timezone != lessonTimezone {
+		place := l.cities.Describe(zone, startsAt)
 		label = &core.ZoneLabel{Offset: place.Offset}
 		if place.City != nil {
 			label.City = place.City.English
-			if source.recipient.Language == domain.LanguageRussian {
+			if recipient.Language == domain.LanguageRussian {
 				label.City = place.City.Russian
 			}
 		}
 	}
-	return core.LessonStartText(source.recipient.Language, source.lesson.StartsAt, zone, label), nil
+	return core.LessonStartText(recipient.Language, startsAt, zone, label), nil
 }
 
 func (l *LessonEmails) audienceDetails(source lessonRender) []lessonDetail {
@@ -218,6 +230,9 @@ func (l *LessonEmails) audienceDetails(source lessonRender) []lessonDetail {
 	audience := lessonDetail{Label: text.Lesson, Value: text.Individual}
 	if lesson.RelationshipID == nil {
 		audience = lessonDetail{Label: text.Group, Value: safeName(lesson.GroupName)}
+	}
+	if lesson.RelationshipID == nil && source.former {
+		audience = lessonDetail{Label: text.Lesson, Value: text.GroupLesson}
 	}
 	return []lessonDetail{audience, {Label: text.Tutor, Value: core.EmailSafeText(lesson.TutorName)}}
 }

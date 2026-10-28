@@ -3,6 +3,8 @@
 {{.Title}}
 
 {{range .Details}}{{.Label}}: {{.Value}}
+{{end}}{{range .Lessons}}- {{.}}
+{{end}}{{if .More}}{{.More}}
 {{end}}
 {{.Action}}: {{.ActionURL}}
 

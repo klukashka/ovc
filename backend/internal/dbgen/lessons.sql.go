@@ -1267,7 +1267,7 @@ func (q *Queries) ListTutorLessonViews(ctx context.Context, arg ListTutorLessonV
 }
 
 const listTutorLessonsForOverlap = `-- name: ListTutorLessonsForOverlap :many
-SELECT title, starts_at, duration_minutes FROM lessons
+SELECT id, title, starts_at, duration_minutes FROM lessons
 WHERE tutor_id = $1 AND status <> 'cancelled'
     AND starts_at < $2::timestamptz
     AND starts_at > $3::timestamptz - interval '240 minutes'
@@ -1281,6 +1281,7 @@ type ListTutorLessonsForOverlapParams struct {
 }
 
 type ListTutorLessonsForOverlapRow struct {
+	ID              domain.LessonID
 	Title           string
 	StartsAt        time.Time
 	DurationMinutes int16
@@ -1295,7 +1296,12 @@ func (q *Queries) ListTutorLessonsForOverlap(ctx context.Context, arg ListTutorL
 	var items []ListTutorLessonsForOverlapRow
 	for rows.Next() {
 		var i ListTutorLessonsForOverlapRow
-		if err := rows.Scan(&i.Title, &i.StartsAt, &i.DurationMinutes); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.StartsAt,
+			&i.DurationMinutes,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1307,7 +1313,7 @@ func (q *Queries) ListTutorLessonsForOverlap(ctx context.Context, arg ListTutorL
 }
 
 const listTutorSeriesBeyondHorizon = `-- name: ListTutorSeriesBeyondHorizon :many
-SELECT title, weekdays, local_start, duration_minutes, timezone, first_date, end_date, materialised_until FROM lesson_series
+SELECT id, title, weekdays, local_start, duration_minutes, timezone, first_date, end_date, materialised_until FROM lesson_series
 WHERE tutor_id = $1 AND ended_at IS NULL AND end_date IS NOT NULL AND end_date > materialised_until
     AND end_date >= $2::date AND materialised_until < $3::date
 ORDER BY id
@@ -1320,6 +1326,7 @@ type ListTutorSeriesBeyondHorizonParams struct {
 }
 
 type ListTutorSeriesBeyondHorizonRow struct {
+	ID                domain.SeriesID
 	Title             string
 	Weekdays          []int16
 	LocalStart        pgtype.Time
@@ -1340,6 +1347,7 @@ func (q *Queries) ListTutorSeriesBeyondHorizon(ctx context.Context, arg ListTuto
 	for rows.Next() {
 		var i ListTutorSeriesBeyondHorizonRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.Title,
 			&i.Weekdays,
 			&i.LocalStart,

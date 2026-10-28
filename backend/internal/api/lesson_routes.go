@@ -45,6 +45,18 @@ type lessonInput struct {
 	ID string `path:"id"`
 }
 
+type editLessonInput struct {
+	ID          string `path:"id"`
+	ContentType string `header:"Content-Type"`
+	Body        schemas.LessonPatch
+}
+
+type cancelLessonInput struct {
+	ID          string `path:"id"`
+	ContentType string `header:"Content-Type"`
+	Body        schemas.LessonCancellation
+}
+
 type lessonOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         schemas.LessonDetail
@@ -63,6 +75,14 @@ func (r *router) registerSchedule() {
 	get := operation("lessons-get", http.MethodGet, lessonsPath+"/{id}")
 	get.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound)
 	register(r, get, AudienceUnverifiedOK, r.lesson)
+
+	edit := operation("lessons-update", http.MethodPatch, lessonsPath+"/{id}")
+	edit.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests)
+	register(r, edit, AudienceTutor, r.editLesson)
+
+	cancel := operation("lessons-cancel", http.MethodPost, lessonsPath+"/{id}/cancel")
+	cancel.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests)
+	register(r, cancel, AudienceTutor, r.cancelLesson)
 }
 
 var errQueryUnparsed = errors.New("a calendar bound passed the schema but is not an RFC 3339 instant")
@@ -138,14 +158,7 @@ func (r *router) createLessons(ctx context.Context, input *createLessonsInput) (
 	if err != nil {
 		return nil, r.scheduleError(ctx, "lessons.create.failed", err)
 	}
-	body := schemas.CreatedLessons{Lessons: make([]schemas.LessonDetail, 0, len(created.Lessons))}
-	if created.Series != nil {
-		body.Series = seriesBody(*created.Series)
-	}
-	for _, lesson := range created.Lessons {
-		body.Lessons = append(body.Lessons, lessonBody(lesson))
-	}
-	return &createdLessonsOutput{CacheControl: noStore, Body: body}, nil
+	return &createdLessonsOutput{CacheControl: noStore, Body: createdBody(created)}, nil
 }
 
 func (r *router) lesson(ctx context.Context, input *lessonInput) (*lessonOutput, error) {
@@ -159,6 +172,54 @@ func (r *router) lesson(ctx context.Context, input *lessonInput) (*lessonOutput,
 		return nil, r.scheduleError(ctx, "lessons.get.failed", err)
 	}
 	return &lessonOutput{CacheControl: noStore, Body: lessonBody(lesson)}, nil
+}
+
+func (r *router) editLesson(ctx context.Context, input *editLessonInput) (*createdLessonsOutput, error) {
+	if err := requireJSON(ctx, input.ContentType); err != nil {
+		return nil, err
+	}
+	id, valid := domain.ParseUUID[domain.LessonID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	edit := schedule.LessonEdit{
+		Scope: input.Body.Scope, Version: input.Body.Version, Date: input.Body.Date, Start: input.Body.Start,
+		DurationMinutes: input.Body.DurationMinutes, Title: input.Body.Title, DescriptionSet: input.Body.Description.Set,
+		Description:  input.Body.Description.Value,
+		AllowOverlap: input.Body.AllowOverlap,
+	}
+	changed, err := r.schedule.EditLesson(ctx, principalFrom(ctx).UserID, id, edit)
+	if err != nil {
+		return nil, r.scheduleError(ctx, "lessons.update.failed", err)
+	}
+	return &createdLessonsOutput{CacheControl: noStore, Body: createdBody(changed)}, nil
+}
+
+func (r *router) cancelLesson(ctx context.Context, input *cancelLessonInput) (*createdLessonsOutput, error) {
+	if err := requireJSON(ctx, input.ContentType); err != nil {
+		return nil, err
+	}
+	id, valid := domain.ParseUUID[domain.LessonID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	cancellation := schedule.LessonCancellation{Scope: input.Body.Scope, Version: input.Body.Version}
+	cancelled, err := r.schedule.CancelLesson(ctx, principalFrom(ctx).UserID, id, cancellation)
+	if err != nil {
+		return nil, r.scheduleError(ctx, "lessons.cancel.failed", err)
+	}
+	return &createdLessonsOutput{CacheControl: noStore, Body: createdBody(cancelled)}, nil
+}
+
+func createdBody(created schedule.Created) schemas.CreatedLessons {
+	body := schemas.CreatedLessons{Lessons: make([]schemas.LessonDetail, 0, len(created.Lessons))}
+	if created.Series != nil {
+		body.Series = seriesBody(*created.Series)
+	}
+	for _, lesson := range created.Lessons {
+		body.Lessons = append(body.Lessons, lessonBody(lesson))
+	}
+	return body
 }
 
 func seriesBody(series schedule.SeriesView) *schemas.LessonSeries {
@@ -202,6 +263,9 @@ func lessonBody(lesson schedule.Lesson) schemas.LessonDetail {
 		series := lesson.SeriesID.String()
 		body.SeriesID = &series
 	}
+	if lesson.Series != nil {
+		body.Series = seriesBody(*lesson.Series)
+	}
 	return body
 }
 
@@ -216,8 +280,10 @@ func (r *router) scheduleError(ctx context.Context, event string, err error) err
 		return NewError(ctx, domain.ErrorUnauthenticated)
 	case errors.Is(err, schedule.ErrAudienceNotActive):
 		return NewError(ctx, domain.ErrorAudienceNotActive)
-	case errors.Is(err, schedule.ErrConflict):
+	case errors.Is(err, schedule.ErrConflict), errors.Is(err, schedule.ErrStale):
 		return NewError(ctx, domain.ErrorConflict)
+	case errors.Is(err, schedule.ErrNotEditable):
+		return NewError(ctx, domain.ErrorNotEditable)
 	case errors.Is(err, schedule.ErrLessonInPast):
 		return NewError(ctx, domain.ErrorLessonInPast)
 	case errors.As(err, &overlap):

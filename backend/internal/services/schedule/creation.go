@@ -82,7 +82,15 @@ type creationOutcome struct {
 	skipped  int
 }
 
+func normalisedDescription(description *string) *string {
+	if description == nil || *description == "" {
+		return nil
+	}
+	return description
+}
+
 func (s *Service) CreateLessons(ctx context.Context, tutor domain.UserID, request NewLesson) (Created, error) {
+	request.Description = normalisedDescription(request.Description)
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return Created{}, err

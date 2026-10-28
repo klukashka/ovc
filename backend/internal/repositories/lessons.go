@@ -75,12 +75,14 @@ type NewLessons struct {
 }
 
 type TimedLesson struct {
+	ID              domain.LessonID
 	Title           string
 	StartsAt        time.Time
 	DurationMinutes int16
 }
 
 type SeriesBeyondHorizon struct {
+	ID                domain.SeriesID
 	Title             string
 	Weekdays          []domain.Weekday
 	Start             domain.LocalTime
@@ -211,7 +213,7 @@ func (r Lessons) ForOverlap(ctx context.Context, tutor domain.UserID, from time.
 	}
 	lessons := make([]TimedLesson, 0, len(rows))
 	for _, row := range rows {
-		lessons = append(lessons, TimedLesson{Title: row.Title, StartsAt: row.StartsAt, DurationMinutes: row.DurationMinutes})
+		lessons = append(lessons, TimedLesson{ID: row.ID, Title: row.Title, StartsAt: row.StartsAt, DurationMinutes: row.DurationMinutes})
 	}
 	return lessons, nil
 }
@@ -226,7 +228,7 @@ func (r Lessons) SeriesBeyondHorizon(ctx context.Context, tutor domain.UserID, f
 	series := make([]SeriesBeyondHorizon, 0, len(rows))
 	for _, row := range rows {
 		series = append(series, SeriesBeyondHorizon{
-			Title: row.Title, Weekdays: weekdays(row.Weekdays), Start: localTime(row.LocalStart), DurationMinutes: row.DurationMinutes,
+			ID: row.ID, Title: row.Title, Weekdays: weekdays(row.Weekdays), Start: localTime(row.LocalStart), DurationMinutes: row.DurationMinutes,
 			Timezone: row.Timezone, First: localDate(row.FirstDate), EndDate: localDate(row.EndDate), MaterialisedUntil: localDate(row.MaterialisedUntil),
 		})
 	}

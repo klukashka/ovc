@@ -85,7 +85,9 @@ type lessonView struct {
 	Status        string         `json:"status"`
 	Timezone      string         `json:"timezone"`
 	SeriesID      *string        `json:"series_id"`
+	Series        *lessonSeries  `json:"series"`
 	Version       int            `json:"version"`
+	CancelledAt   *time.Time     `json:"cancelled_at"`
 	OtherTimezone *string        `json:"other_timezone"`
 	Audience      lessonAudience `json:"audience"`
 	Tutor         *lessonTutor   `json:"tutor"`
@@ -93,6 +95,7 @@ type lessonView struct {
 
 type lessonSeries struct {
 	ID        string  `json:"id"`
+	Duration  int     `json:"duration_minutes"`
 	Weekdays  []int   `json:"weekdays"`
 	Start     string  `json:"start"`
 	Timezone  string  `json:"timezone"`

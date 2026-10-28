@@ -1,6 +1,9 @@
 package schemas
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -65,6 +68,7 @@ type LessonDetail struct {
 	Status          domain.LessonStatus `json:"status" enum:"scheduled,live,ended,cancelled"`
 	Timezone        string              `json:"timezone"`
 	SeriesID        *string             `json:"series_id" format:"uuid" nullable:"true"`
+	Series          *LessonSeries       `json:"series"`
 	Version         int32               `json:"version"`
 	CancelledAt     *time.Time          `json:"cancelled_at" nullable:"true"`
 	OtherTimezone   *string             `json:"other_timezone" nullable:"true"`
@@ -73,7 +77,7 @@ type LessonDetail struct {
 }
 
 func (LessonDetail) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	return nullableReferences(schema, "tutor")
+	return nullableReferences(schema, "tutor", "series")
 }
 
 type LessonSeries struct {
@@ -120,4 +124,44 @@ type OverlappingLesson struct {
 	Title    string    `json:"title"`
 	StartsAt time.Time `json:"starts_at"`
 	EndsAt   time.Time `json:"ends_at"`
+}
+
+type LessonPatch struct {
+	Scope           domain.EditScope    `json:"scope" enum:"this,following"`
+	Version         int32               `json:"version" minimum:"1"`
+	Date            *string             `json:"date,omitempty" pattern:"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
+	Start           *string             `json:"start,omitempty" pattern:"^([01][0-9]|2[0-3]):[0-5][0-9]$"`
+	DurationMinutes *int16              `json:"duration_minutes,omitempty" minimum:"15" maximum:"240" multipleOf:"5"`
+	Title           *string             `json:"title,omitempty" minLength:"1" maxLength:"120"`
+	Description     NullableDescription `json:"description,omitempty"`
+	AllowOverlap    bool                `json:"allow_overlap,omitempty"`
+}
+
+type NullableDescription struct {
+	Set   bool
+	Value *string
+}
+
+func (n *NullableDescription) UnmarshalJSON(data []byte) error {
+	n.Set = true
+	if bytes.Equal(data, []byte("null")) {
+		n.Value = nil
+		return nil
+	}
+	var value string
+	if err := json.Unmarshal(data, &value); err != nil {
+		return fmt.Errorf("decode a description: %w", err)
+	}
+	n.Value = &value
+	return nil
+}
+
+func (NullableDescription) Schema(huma.Registry) *huma.Schema {
+	maxLength := domain.LessonDescriptionMaxRunes
+	return &huma.Schema{Type: huma.TypeString, MaxLength: &maxLength, Nullable: true}
+}
+
+type LessonCancellation struct {
+	Scope   domain.EditScope `json:"scope" enum:"this,following"`
+	Version int32            `json:"version" minimum:"1"`
 }

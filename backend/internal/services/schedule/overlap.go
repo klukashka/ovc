@@ -13,19 +13,28 @@ func minutes(count int) time.Duration {
 	return time.Duration(count) * time.Minute
 }
 
+type overlapExclusions struct {
+	lessons map[domain.LessonID]bool
+	series  map[domain.SeriesID]bool
+}
+
 func checkOverlap(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, durationMinutes int, occurrences []schedule.Occurrence) error {
-	if len(occurrences) == 0 {
-		return nil
-	}
 	candidates := make([]schedule.Interval, 0, len(occurrences))
 	for _, occurrence := range occurrences {
 		candidates = append(candidates, schedule.Interval{Start: occurrence.StartsAt, End: occurrence.StartsAt.Add(minutes(durationMinutes))})
+	}
+	return checkIntervals(ctx, repos, tutor, candidates, overlapExclusions{})
+}
+
+func checkIntervals(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, candidates []schedule.Interval, excluded overlapExclusions) error {
+	if len(candidates) == 0 {
+		return nil
 	}
 	from, to := candidates[0].Start, candidates[0].End
 	for _, candidate := range candidates {
 		from, to = minTime(from, candidate.Start), maxTime(to, candidate.End)
 	}
-	existing, err := existingIntervals(ctx, repos, tutor, from, to)
+	existing, err := existingIntervals(ctx, repos, tutor, from, to, excluded)
 	if err != nil {
 		return err
 	}
@@ -58,13 +67,18 @@ func maxTime(a time.Time, b time.Time) time.Time {
 	return a
 }
 
-func existingIntervals(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, from time.Time, to time.Time) ([]schedule.Interval, error) {
+func existingIntervals(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, from time.Time, to time.Time, excluded overlapExclusions,
+) ([]schedule.Interval, error) {
 	lessons, err := repos.Lessons.ForOverlap(ctx, tutor, from, to)
 	if err != nil {
 		return nil, err
 	}
 	intervals := make([]schedule.Interval, 0, len(lessons))
 	for _, lesson := range lessons {
+		if excluded.lessons[lesson.ID] {
+			continue
+		}
 		start := lesson.StartsAt.UTC()
 		intervals = append(intervals, schedule.Interval{Start: start, End: start.Add(minutes(int(lesson.DurationMinutes))), Title: lesson.Title})
 	}
@@ -75,6 +89,9 @@ func existingIntervals(ctx context.Context, repos repositories.Repositories, tut
 		return nil, err
 	}
 	for _, series := range beyond {
+		if excluded.series[series.ID] {
+			continue
+		}
 		zone, err := loadZone(series.Timezone)
 		if err != nil {
 			return nil, err

@@ -271,7 +271,7 @@ The configuration of the first deployment and of every later one lives in a `dep
 | Embedded client works on all supported browsers | "Open in new tab" always available | Slice 7 probe |
 | Which Russian providers for hosting, storage and SMTP; compared in [hosting research](../research/hosting-2026-10-22.md) | All in Russia | Before first deployment |
 | How downloads get `X-Content-Type-Options: nosniff` when the S3-compatible provider cannot add response headers (for example a proxy in front of signed downloads) | Never serve an upload without `nosniff` ([T-35](../../docs/threat-model.md#threats-and-controls)) | Before first deployment, with the provider probe |
-| Which field of `GET /lessons/{id}` carries the series rule that the lesson page's side column shows ([pages](../design/web/pages.md#lesson)) | One schema for both roles ([lesson detail](../specs/schedule.md#lesson-detail)) | Slice 5, before the lesson edits and cancellation change merges, because that change carries the backend field |
+| Which field of `GET /lessons/{id}` carries the series rule that the lesson page's side column shows ([pages](../design/web/pages.md#lesson)) | Decided by the owner on 2026-10-28: `series`, the object `POST /lessons` returns, for both roles, describing the series the lesson currently belongs to, or `null`; `series_id` stays ([lesson detail](../specs/schedule.md#lesson-detail)) | Resolved |
 | Thumbnails for image previews | Originals constrained by the client in the MVP | After MVP |
 | Malware scanning of uploads | Content-type allowlist and size limits are mandatory regardless | After MVP |
 | Offline queue for assignment answers beyond retrying | Autosave with versions | Slice 9 |

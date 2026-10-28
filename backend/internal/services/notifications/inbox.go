@@ -231,7 +231,7 @@ func loadSubjects(ctx context.Context, repos repositories.Repositories, principa
 		if subjectIsRequest(row.Event) {
 			requestIDs = append(requestIDs, domain.JoinRequestID(row.SubjectID))
 		}
-		if row.Event == domain.NotificationLessonReminder1h {
+		if subjectIsLesson(row.Event) {
 			lessonIDs = append(lessonIDs, domain.LessonID(row.SubjectID))
 		}
 	}
@@ -288,7 +288,19 @@ func subjectIsRequest(event domain.NotificationEvent) bool {
 	switch event {
 	case domain.NotificationJoinRequestCreated, domain.NotificationJoinRequestAccepted, domain.NotificationJoinRequestDeclined:
 		return true
-	case domain.NotificationInvitationAccepted, domain.NotificationRelationshipEnded, domain.NotificationLessonReminder1h:
+	case domain.NotificationInvitationAccepted, domain.NotificationRelationshipEnded, domain.NotificationLessonReminder1h,
+		domain.NotificationLessonMoved, domain.NotificationLessonCancelled, domain.NotificationSeriesChanged:
+		return false
+	}
+	return false
+}
+
+func subjectIsLesson(event domain.NotificationEvent) bool {
+	switch event {
+	case domain.NotificationLessonReminder1h, domain.NotificationLessonMoved, domain.NotificationLessonCancelled, domain.NotificationSeriesChanged:
+		return true
+	case domain.NotificationInvitationAccepted, domain.NotificationJoinRequestCreated, domain.NotificationJoinRequestAccepted,
+		domain.NotificationJoinRequestDeclined, domain.NotificationRelationshipEnded:
 		return false
 	}
 	return false
@@ -311,7 +323,7 @@ func (s subjects) item(principal accounts.Principal, row repositories.Notificati
 		if request, found := s.requests[domain.JoinRequestID(row.SubjectID)]; found && request.StudentID == principal.UserID {
 			item.Link = &Link{Kind: domain.LinkMyTutors, ID: domain.EntityID(request.ID)}
 		}
-	case domain.NotificationLessonReminder1h:
+	case domain.NotificationLessonReminder1h, domain.NotificationLessonMoved, domain.NotificationLessonCancelled, domain.NotificationSeriesChanged:
 		s.lessonRow(principal, row, &item)
 	}
 	return item
