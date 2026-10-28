@@ -2,7 +2,7 @@ import type { Page, Response } from '@playwright/test';
 
 import { newTestAccount, registerTutor, signInThroughTheApi } from './accounts.ts';
 import { expect, seedVerifiedUser, test } from './fixtures.ts';
-import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
+import { expectRefetchedAfterTheSocketIsReady, todayQueryPaths, trafficAfterReady } from './realtime.ts';
 
 test.use({ locale: 'ru-RU' });
 
@@ -188,8 +188,6 @@ test('two tabs refreshing at once keep the session', async ({ signedInPage: page
   expect(refreshes.length).toBeGreaterThanOrEqual(2);
   expect(new Set(refreshes)).toEqual(new Set(['/api/v1/auth/refresh 200']));
 });
-
-const todayQueryPaths = ['/api/v1/notifications', '/api/v1/tutor/code', '/api/v1/join-requests'];
 
 test('an expired access token is refreshed once and the request is retried', async ({ page, tutor, control }) => {
   await signInThroughTheApi(page, tutor);

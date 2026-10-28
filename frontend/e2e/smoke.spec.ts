@@ -2,6 +2,7 @@ import { type Locator, type Page } from '@playwright/test';
 
 import { signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect } from './fixtures.ts';
+import { expectSettledAfterTheSocketIsReady, todayQueryPaths, trafficAfterReady } from './realtime.ts';
 
 import { contentSecurityPolicy } from '../security-headers.ts';
 
@@ -86,8 +87,14 @@ test('the tutor frame shows the tutor sections and server readiness', async ({ s
   await expect(page).toHaveTitle('Сегодня · OVC');
 });
 
-test('hiding the sidebar moves focus to the show button and is remembered', async ({ signedInPage: page }) => {
+async function openSettledToday(page: Page): Promise<void> {
+  const traffic = trafficAfterReady(page, todayQueryPaths);
   await page.goto('/today');
+  await expectSettledAfterTheSocketIsReady(page, traffic);
+}
+
+test('hiding the sidebar moves focus to the show button and is remembered', async ({ signedInPage: page }) => {
+  await openSettledToday(page);
 
   await page.getByRole('button', { name: 'Скрыть боковую панель' }).click();
   const focusedAfterHiding = await page
@@ -106,7 +113,7 @@ test('hiding the sidebar moves focus to the show button and is remembered', asyn
 });
 
 test('showing the sidebar again is remembered', async ({ signedInPage: page }) => {
-  await page.goto('/today');
+  await openSettledToday(page);
   await page.getByRole('button', { name: 'Скрыть боковую панель' }).click();
 
   await page.getByRole('button', { name: 'Показать боковую панель' }).click();

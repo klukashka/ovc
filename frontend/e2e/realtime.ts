@@ -9,7 +9,7 @@ import {
   realtimePath,
   webSocketFactory,
 } from '../src/lib/realtime/socket.ts';
-import { type TestAccount, testNetAddress } from './accounts.ts';
+import { type TestAccount, pageSettled, testNetAddress } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { accessToken, callApi } from './tutoring.ts';
 
@@ -122,6 +122,18 @@ export function trafficAfterReady(page: Page, queryPaths: readonly string[]): Tr
 export async function expectRefetchedAfterTheSocketIsReady(traffic: TrafficAfterReady): Promise<void> {
   await expect.poll(() => traffic.readyReceived()).toBe(true);
   await expect.poll(() => traffic.unsettled()).toEqual([]);
+}
+
+export const todayQueryPaths: readonly string[] = [
+  '/api/v1/notifications',
+  '/api/v1/tutor/code',
+  '/api/v1/join-requests',
+  '/api/v1/health/ready',
+];
+
+export async function expectSettledAfterTheSocketIsReady(page: Page, traffic: TrafficAfterReady): Promise<void> {
+  await expectRefetchedAfterTheSocketIsReady(traffic);
+  await pageSettled(page);
 }
 
 export async function closeSockets(deployment: Deployment, user: string, code: 4429 | 1012): Promise<number> {
