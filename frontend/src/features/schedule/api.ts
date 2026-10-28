@@ -29,6 +29,20 @@ export async function fetchCalendar(client: ApiClient, range: CalendarRange, tut
   return data;
 }
 
+export type LessonDetail = components['schemas']['LessonDetail'];
+export type LessonSeries = components['schemas']['LessonSeries'];
+export type LessonPatch = components['schemas']['LessonPatch'];
+export type LessonScope = LessonPatch['scope'];
+export type ChangedLessons = components['schemas']['CreatedLessons'];
+
+export async function fetchLesson(client: ApiClient, id: string): Promise<LessonDetail> {
+  const { data, error, response } = await client.GET('/api/v1/lessons/{id}', { params: { path: { id } } });
+  if (data === undefined) {
+    throw apiErrorFrom(response.status, error);
+  }
+  return data;
+}
+
 export const lessonDurationLimits = { minimum: 15, maximum: 240, step: 5 } as const;
 
 export const seriesCountLimit = 100;

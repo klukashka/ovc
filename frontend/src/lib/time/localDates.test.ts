@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { localMidnight } from './localDates.ts';
+import { localMidnight, utcOffsetText } from './localDates.ts';
 
 function midnightsAround(dates: readonly `${number}-${number}-${number}`[], timeZone: string): string[] {
   return dates.map((date) => new Date(localMidnight(date, timeZone)).toISOString());
@@ -19,5 +19,22 @@ describe('range helper', () => {
     expect(berlinSpring).toEqual(['2026-03-27T23:00:00.000Z', '2026-03-28T23:00:00.000Z', '2026-03-29T22:00:00.000Z']);
     expect(berlinAutumn).toEqual(['2026-10-23T22:00:00.000Z', '2026-10-24T22:00:00.000Z', '2026-10-25T23:00:00.000Z']);
     expect(havana).toEqual(['2026-03-07T05:00:00.000Z', '2026-03-08T05:00:00.000Z', '2026-03-09T04:00:00.000Z']);
+  });
+});
+
+describe('offset text', () => {
+  test('a zone without a city reads as its offset at the instant, half hours and daylight saving included', () => {
+    const winter = Date.parse('2026-01-15T12:00:00Z');
+    const summer = Date.parse('2026-07-15T12:00:00Z');
+
+    const offsets = [
+      utcOffsetText(winter, 'UTC'),
+      utcOffsetText(winter, 'Asia/Kolkata'),
+      utcOffsetText(winter, 'America/St_Johns'),
+      utcOffsetText(summer, 'America/St_Johns'),
+      utcOffsetText(summer, 'Pacific/Chatham'),
+    ];
+
+    expect(offsets).toEqual(['UTC+00:00', 'UTC+05:30', 'UTC-03:30', 'UTC-02:30', 'UTC+12:45']);
   });
 });

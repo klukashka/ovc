@@ -1,7 +1,17 @@
 import { type ReactElement, type ReactNode, type RefObject, useEffect, useRef } from 'react';
 
+import { focusHeadingIfLost } from './LoadState.tsx';
+
 export const dialogClass =
   'm-auto w-full max-w-md rounded-lg border border-border bg-surface p-6 text-text shadow-raised backdrop:bg-scrim dark:border-border-strong dark:shadow-none';
+
+export function returnFocusTo(target: HTMLElement | null): void {
+  if (target?.isConnected === true) {
+    target.focus();
+    return;
+  }
+  focusHeadingIfLost();
+}
 
 export function ModalDialog({
   open,
@@ -38,7 +48,7 @@ export function ModalDialog({
     if (!open && element.open) {
       focusReturnedOnClose.current = true;
       element.close();
-      returnFocus.current?.focus();
+      returnFocusTo(returnFocus.current);
     }
   }, [open, returnFocus, initialFocus]);
 
@@ -65,7 +75,7 @@ export function ModalDialog({
           focusReturnedOnClose.current = false;
           return;
         }
-        returnFocus.current?.focus();
+        returnFocusTo(returnFocus.current);
       }}
       className={dialogClass}
     >

@@ -7,12 +7,14 @@ import { useRouteTitle } from '../../app/handles.ts';
 export function Page({
   title: titleKey,
   headingText,
+  headingDir,
   wide = false,
   focusTitle = false,
   children,
 }: {
   readonly title?: ParseKeys;
   readonly headingText?: string;
+  readonly headingDir?: 'auto';
   readonly wide?: boolean;
   readonly focusTitle?: boolean;
   readonly children?: ReactNode;
@@ -34,7 +36,16 @@ export function Page({
 
   return (
     <article className={wide ? 'flex flex-col gap-6' : 'flex max-w-reading flex-col gap-6'}>
-      <h1 ref={heading} tabIndex={-1} className="font-serif text-title outline-none desktop:text-display">
+      <h1
+        ref={heading}
+        tabIndex={-1}
+        dir={headingDir}
+        className={
+          headingDir === undefined
+            ? 'font-serif text-title outline-none desktop:text-display'
+            : 'font-serif text-title break-words outline-none desktop:text-display'
+        }
+      >
         {title}
       </h1>
       {children}

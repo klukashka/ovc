@@ -26,6 +26,7 @@ const teachingSettingsPage = lazyPage(
   async () => (await import('../features/settings/TeachingSettingsPage.tsx')).TeachingSettingsPage,
 );
 const schedulePage = lazyPage(async () => (await import('../features/schedule/SchedulePage.tsx')).SchedulePage);
+const lessonPage = lazyPage(async () => (await import('../features/schedule/LessonPage.tsx')).LessonPage);
 const homePage = lazyPage(async () => (await import('../features/home/HomePage.tsx')).HomePage);
 const myTutorsPage = lazyPage(async () => (await import('../features/tutors/MyTutorsPage.tsx')).MyTutorsPage);
 const profileSettingsPage = lazyPage(
@@ -80,7 +81,7 @@ export const studentPages: RouteObject[] = [
 
 export const sharedPages: RouteObject[] = [
   page('/schedule', 'page.schedule', schedulePage),
-  page('/lessons/:lessonId', 'page.lesson'),
+  page('/lessons/:lessonId', 'page.lesson', lessonPage),
   page('/messages', 'page.messages'),
   page('/messages/:channelId', 'page.messages'),
   page('/notifications', 'page.notifications', notificationsPage),

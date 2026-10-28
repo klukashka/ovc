@@ -169,3 +169,12 @@ export function CrossIcon(props: IconProps): ReactElement {
     </Outline>
   );
 }
+
+export function DoorIcon(props: IconProps): ReactElement {
+  return (
+    <Outline {...props}>
+      <path d="M4 14V2.5h8V14M2.5 14h11" />
+      <path d="M9.5 8.5v-1" />
+    </Outline>
+  );
+}

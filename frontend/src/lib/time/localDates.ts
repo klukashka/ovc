@@ -95,6 +95,12 @@ function offsetAt(instant: number, timeZone: string): number {
   return wallClock - Math.floor(instant / millisecondsPerMinute) * millisecondsPerMinute;
 }
 
+export function utcOffsetText(instant: number, timeZone: string): string {
+  const minutes = Math.round(offsetAt(instant, timeZone) / millisecondsPerMinute);
+  const magnitude = Math.abs(minutes);
+  return `UTC${minutes < 0 ? '-' : '+'}${twoDigits(Math.floor(magnitude / 60))}:${twoDigits(magnitude % 60)}`;
+}
+
 export function localMidnight(date: LocalDate, timeZone: string): number {
   const wallMidnight = utcNoon(date).getTime() - 12 * millisecondsPerHour;
   const candidates = offsetProbes.map((probe) => {

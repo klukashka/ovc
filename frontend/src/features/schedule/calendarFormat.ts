@@ -30,6 +30,15 @@ export function formatLongDay(date: LocalDate, language: Language): string {
   }).format(noonOf(date));
 }
 
+export function formatFullDate(date: LocalDate, language: Language): string {
+  return new Intl.DateTimeFormat(localeOf(language), {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(noonOf(date));
+}
+
 export function formatWeekdayName(isoWeekday: number, language: Language, width: 'short' | 'long'): string {
   const monday = Date.UTC(2024, 0, 1, 12);
   return new Intl.DateTimeFormat(localeOf(language), { weekday: width, timeZone: 'UTC' }).format(

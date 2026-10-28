@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
-import { type ReactElement, type RefObject, type SyntheticEvent, useEffect, useId, useRef, useState } from 'react';
+import { type ReactElement, type RefObject, type SyntheticEvent, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { type Action, type ActionState, done, refusedBy, useAction } from '../../components/ui/action.ts';
@@ -11,20 +11,19 @@ import {
   fieldClass,
   fieldMessage,
   primaryButtonClass,
-  quietButtonClass,
   stringField,
   textButtonClass,
 } from '../../components/ui/Form.tsx';
 import { Refusal, refusalText } from '../../components/ui/Refusal.tsx';
-import { type ApiError, type OverlappingLesson, useApiClient } from '../../lib/api/client.ts';
+import { type ApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
-import type { Language } from '../../lib/i18n/resources.ts';
 import { type NewLesson, lessonDurationLimits, seriesCountLimit } from './api.ts';
 import { type Audience, AudiencePicker } from './AudiencePicker.tsx';
-import { formatClock, formatDay, formatWeekdayName } from './calendarFormat.ts';
-import { type LocalDate, localDateOf } from '../../lib/time/localDates.ts';
+import { formatWeekdayName } from './calendarFormat.ts';
+import type { LocalDate } from '../../lib/time/localDates.ts';
 import { calendarKey } from './keys.ts';
-import { LessonTitle } from './LessonParts.tsx';
+import { InputField, descriptionLimit, titleLimit } from './LessonFields.tsx';
+import { OverlapWarning } from './OverlapWarning.tsx';
 
 export interface LessonPrefill {
   readonly date: LocalDate;
@@ -32,8 +31,6 @@ export interface LessonPrefill {
 }
 
 const defaultDurationMinutes = 60;
-const titleLimit = 120;
-const descriptionLimit = 2000;
 const weekdays = [1, 2, 3, 4, 5, 6, 7];
 
 type SeriesEnd = 'date' | 'count';
@@ -56,114 +53,6 @@ function lessonRefusal(t: TFunction, state: ActionState): string | null {
     return t('newLesson.audienceChanged');
   }
   return refusalText(t, error, state.retryAfter, undefined);
-}
-
-function InputField({
-  label,
-  name,
-  type,
-  defaultValue,
-  error,
-  min,
-  max,
-  step,
-}: {
-  readonly label: string;
-  readonly name: string;
-  readonly type: 'date' | 'time' | 'number';
-  readonly defaultValue: string;
-  readonly error: string | undefined;
-  readonly min?: number;
-  readonly max?: number;
-  readonly step?: number;
-}): ReactElement {
-  const inputId = useId();
-  const errorId = useId();
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={inputId} className="text-label">
-        {label}
-      </label>
-      <input
-        id={inputId}
-        name={name}
-        type={type}
-        required
-        defaultValue={defaultValue}
-        min={min}
-        max={max}
-        step={step}
-        aria-invalid={error === undefined ? undefined : true}
-        aria-describedby={error === undefined ? undefined : errorId}
-        className={fieldClass}
-      />
-      {error === undefined ? null : (
-        <p id={errorId} className="text-small text-danger">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function OverlapWarning({
-  error,
-  language,
-  timeZone,
-  busy,
-  unavailable,
-  onConfirm,
-}: {
-  readonly error: ApiError;
-  readonly language: Language;
-  readonly timeZone: string;
-  readonly busy: boolean;
-  readonly unavailable: boolean;
-  readonly onConfirm: () => void;
-}): ReactElement {
-  const { t } = useTranslation();
-  const warning = useRef<HTMLDivElement>(null);
-  const introId = useId();
-
-  useEffect(() => {
-    warning.current?.focus();
-  }, [error]);
-
-  return (
-    <div
-      ref={warning}
-      role="alert"
-      tabIndex={-1}
-      aria-labelledby={introId}
-      className="flex flex-col gap-2 rounded-md border border-warning p-3 outline-none"
-    >
-      <p id={introId} className="text-strong">
-        {t('newLesson.overlapIntro')}
-      </p>
-      <ul className="flex flex-col gap-1 text-small">
-        {error.overlappingLessons.map((lesson: OverlappingLesson, index) => (
-          <li key={`${lesson.starts_at}-${String(index)}`} className="flex flex-col">
-            <span className="text-text-muted">
-              {formatDay(localDateOf(Date.parse(lesson.starts_at), timeZone), language)},{' '}
-              {t('lesson.timeRange', {
-                start: formatClock(lesson.starts_at, language, timeZone),
-                end: formatClock(lesson.ends_at, language, timeZone),
-              })}
-            </span>
-            <LessonTitle title={lesson.title} cancelled={false} />
-          </li>
-        ))}
-      </ul>
-      {error.moreOverlapping > 0 ? (
-        <p className="text-small text-text-muted">{t('newLesson.overlapMore', { count: error.moreOverlapping })}</p>
-      ) : null}
-      <div>
-        <ActionButton busy={busy} unavailable={unavailable} onClick={onConfirm} className={quietButtonClass}>
-          {t('newLesson.scheduleAnyway')}
-        </ActionButton>
-      </div>
-    </div>
-  );
 }
 
 function SeriesFields({

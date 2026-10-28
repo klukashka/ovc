@@ -111,3 +111,67 @@ export function lessonLinks(page: Page): Locator {
 export async function lessonAddresses(page: Page): Promise<string[]> {
   return lessonLinks(page).evaluateAll((links) => links.map((link) => link.getAttribute('href') ?? ''));
 }
+
+export interface ScheduledLesson {
+  readonly id: string;
+  readonly startsAt: string;
+  readonly title: string;
+  readonly status: string;
+  readonly version: number;
+}
+
+function scheduledLessonOf(value: unknown): ScheduledLesson {
+  const id = field(value, 'id');
+  const startsAt = field(value, 'starts_at');
+  const title = field(value, 'title');
+  const status = field(value, 'status');
+  const version = field(value, 'version');
+  if (typeof id !== 'string' || typeof startsAt !== 'string' || typeof title !== 'string') {
+    throw new Error('a lesson has no identifier, start or title');
+  }
+  if (typeof status !== 'string' || typeof version !== 'number') {
+    throw new Error('a lesson has no status or version');
+  }
+  return { id, startsAt, title, status, version };
+}
+
+export async function scheduleLessonsWithIds(
+  deployment: Deployment,
+  tutor: TestAccount,
+  request: LessonRequest,
+): Promise<readonly ScheduledLesson[]> {
+  const answer = await callApi(deployment, await accessToken(deployment, tutor), 'POST', '/lessons', request);
+  if (answer.status !== 201) {
+    throw new Error(`scheduling answered ${String(answer.status)}`);
+  }
+  const lessons = field(answer.body, 'lessons');
+  if (!Array.isArray(lessons)) {
+    throw new Error('the created lessons are not a list');
+  }
+  return lessons.map(scheduledLessonOf);
+}
+
+export async function readLesson(deployment: Deployment, account: TestAccount, id: string): Promise<ScheduledLesson> {
+  const answer = await callApi(deployment, await accessToken(deployment, account), 'GET', `/lessons/${id}`);
+  if (answer.status !== 200) {
+    throw new Error(`reading the lesson answered ${String(answer.status)}`);
+  }
+  return scheduledLessonOf(answer.body);
+}
+
+export async function editThisLesson(
+  deployment: Deployment,
+  tutor: TestAccount,
+  id: string,
+  changes: Readonly<Record<string, string | number>>,
+): Promise<void> {
+  const { version } = await readLesson(deployment, tutor, id);
+  const answer = await callApi(deployment, await accessToken(deployment, tutor), 'PATCH', `/lessons/${id}`, {
+    scope: 'this',
+    version,
+    ...changes,
+  });
+  if (answer.status !== 200) {
+    throw new Error(`editing the lesson answered ${String(answer.status)}`);
+  }
+}

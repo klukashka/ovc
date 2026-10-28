@@ -669,6 +669,13 @@ test.describe('pilot 1, the first lessons of Maria and Anna', () => {
     await expect(annaLessons.first()).toContainText('Индивидуальный урок');
     await expect(annaLessons.first()).toContainText('Мария');
     await expect(annaLessons.filter({ hasText: 'Анна' })).toHaveCount(0);
+    await annaLessons.first().click();
+    await expect(
+      annaPage
+        .getByRole('main')
+        .getByText(`18:00 по времени Москвы (${localClock(firstLesson, berlin)} по вашему)`)
+        .first(),
+    ).toBeVisible();
     await annaContext.close();
     pilotOneSeed = { maria, anna, firstLesson };
   });
@@ -704,6 +711,7 @@ interface PilotThreeSeed {
 
 let pilotThreeSeed: PilotThreeSeed | null = null;
 let pavelOfPilotThree: TestAccount | null = null;
+let movedLessonOfPilotThree: number | null = null;
 
 function pilotThree(): PilotThreeSeed {
   if (pilotThreeSeed === null) {
@@ -801,5 +809,71 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
     await expect(lessons).toContainText('Pavel');
     await expect(lessons).toContainText('Индивидуальный урок');
     await context.close();
+  });
+
+  test('pilot-3 › step 12 Maria moves the next Wednesday lesson to 20:00, and Anna’s email says 18:00 her time', async ({
+    browser,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const seed = pilotThree();
+    const context = await browser.newContext({
+      baseURL: deployment.origin,
+      ignoreHTTPSErrors: true,
+      locale: 'ru-RU',
+      timezoneId: moscow,
+      viewport: { width: 1280, height: 800 },
+      colorScheme: 'light',
+    });
+    const page = await context.newPage();
+    await diagnostics.watch(page);
+    await signInThroughTheApi(page, seed.maria);
+    await page.goto(weekAddress(seed.firstWednesday));
+    await lessonLinks(page).filter({ hasText: '19:00–20:00' }).first().click();
+    await page.getByRole('button', { name: 'Изменить урок' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Изменение урока' });
+    await expect(dialog.getByRole('radio', { name: 'Этот урок' })).toBeChecked();
+    await dialog.getByLabel('Время начала').fill('20:00');
+
+    await dialog.getByRole('button', { name: 'Сохранить' }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole('main').getByText('20:00–21:00').first()).toBeVisible();
+    const moved = moscowInstant(seed.firstWednesday, '20:00');
+    const movedEmails = async (): Promise<string[]> => {
+      await control.tick();
+      return (await control.mail(seed.anna.email))
+        .filter((mail) => mail.subject.startsWith('Урок перенесён'))
+        .map((mail) => mail.text);
+    };
+    await expect.poll(async () => (await movedEmails()).length).toBe(1);
+    const [movedText] = await movedEmails();
+    expect(movedText).toContain(localClock(moved, berlin));
+    await context.close();
+    movedLessonOfPilotThree = moved;
+  });
+
+  test('pilot-3 › step 13 the reminder uses the new time, and none is sent for the old one', async ({ control }) => {
+    const seed = pilotThree();
+    if (movedLessonOfPilotThree === null) {
+      throw new Error('pilot 3 step 12 has not run');
+    }
+    const moved = movedLessonOfPilotThree;
+    const oldStart = moscowInstant(seed.firstWednesday, '19:00');
+    const now = await control.now();
+    await control.advance(Math.ceil((moved - 3_600_000 - now) / 1000));
+
+    const reminders = async (): Promise<string[]> => {
+      await control.tick();
+      return (await control.mail(seed.anna.email))
+        .filter((mail) => mail.subject.startsWith('Урок через 1 час'))
+        .map((mail) => mail.text);
+    };
+
+    await expect.poll(async () => (await reminders()).length).toBe(1);
+    const [reminder] = await reminders();
+    expect(reminder).toContain(localClock(moved, berlin));
+    expect(reminder).not.toContain(localClock(oldStart, berlin));
   });
 });

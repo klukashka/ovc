@@ -1,0 +1,230 @@
+import { act, cleanup, render, screen } from '@testing-library/react';
+import { type ReactElement, type ReactNode, useSyncExternalStore } from 'react';
+import { I18nextProvider } from 'react-i18next';
+import { RouterProvider, createMemoryRouter } from 'react-router';
+import { afterEach, describe, expect, test } from 'vitest';
+
+import { Page } from '../../components/ui/Page.tsx';
+import type { Me } from '../../lib/api/session.ts';
+import { createI18n } from '../../lib/i18n/i18n.ts';
+import type { LessonDetail } from './api.ts';
+import { LessonView, MemberLabel, headingOf } from './LessonPage.tsx';
+
+afterEach(() => {
+  cleanup();
+});
+
+const minute = 60_000;
+
+const student: Me = {
+  id: '00000000-0000-4000-8000-000000000003',
+  role: 'student',
+  state: 'active',
+  name: 'Анна',
+  email: 'anna@example.org',
+  email_verified: true,
+  language: 'ru',
+  timezone: 'Europe/Berlin',
+  theme: 'light',
+  avatar_id: null,
+  reclaim_pending: false,
+};
+
+const tutor: Me = {
+  ...student,
+  id: '00000000-0000-4000-8000-000000000001',
+  role: 'tutor',
+  name: 'Мария',
+  email: 'maria@example.org',
+  timezone: 'Europe/Moscow',
+};
+
+const title = 'שיעור <b>1</b>';
+const description = 'Первая строка <img src=x>\nשורה שנייה';
+
+const lesson: LessonDetail = {
+  id: '00000000-0000-4000-8000-000000000004',
+  title,
+  description,
+  starts_at: '2026-11-03T15:00:00Z',
+  ends_at: '2026-11-03T16:00:00Z',
+  duration_minutes: 60,
+  status: 'scheduled',
+  timezone: 'Europe/Moscow',
+  series_id: null,
+  series: null,
+  version: 1,
+  cancelled_at: null,
+  other_timezone: 'Europe/Moscow',
+  audience: { kind: 'one_to_one', label: null, label_kind: 'individual', colour: 'moss', members: null },
+  tutor: { name: 'Мария', colour: 'moss' },
+};
+
+const start = Date.parse(lesson.starts_at);
+const dayBefore = start - 24 * 60 * minute;
+
+interface Shown {
+  readonly lesson: LessonDetail;
+  readonly me: Me;
+  readonly now: number;
+  readonly controls: ReactNode;
+}
+
+class ShownStore {
+  private value: Shown;
+  private readonly listeners = new Set<() => void>();
+
+  constructor(initial: Shown) {
+    this.value = initial;
+  }
+
+  readonly get = (): Shown => this.value;
+
+  readonly subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return (): void => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  set(next: Partial<Shown>): void {
+    this.value = { ...this.value, ...next };
+    for (const listener of this.listeners) {
+      listener();
+    }
+  }
+}
+
+function Shown({ store }: { readonly store: ShownStore }): ReactElement {
+  const shown = useSyncExternalStore(store.subscribe, store.get);
+  return (
+    <Page {...headingOf(shown.lesson, false)}>
+      <LessonView lesson={shown.lesson} me={shown.me} now={shown.now} controls={shown.controls} />
+    </Page>
+  );
+}
+
+async function show(initial: Partial<Shown> = {}): Promise<ShownStore> {
+  const store = new ShownStore({ lesson, me: student, now: dayBefore, controls: null, ...initial });
+  const i18n = await createI18n('ru');
+  const router = createMemoryRouter(
+    [
+      {
+        path: '*',
+        handle: { title: 'page.lesson' },
+        element: (
+          <main>
+            <Shown store={store} />
+          </main>
+        ),
+      },
+    ],
+    { initialEntries: [`/lessons/${lesson.id}`] },
+  );
+  await act(async () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <RouterProvider router={router} />
+      </I18nextProvider>,
+    );
+    await Promise.resolve();
+  });
+  return store;
+}
+
+const editControl = (
+  <button type="button" data-control="edit">
+    Изменить урок
+  </button>
+);
+
+function focusedEditControl(): HTMLElement {
+  const control = document.querySelector<HTMLElement>('[data-control="edit"]');
+  if (control === null) {
+    throw new Error('the edit control is not shown');
+  }
+  control.focus();
+  return control;
+}
+
+describe('lesson page', () => {
+  test('the title and description render in elements isolated with dir="auto"', async () => {
+    await show();
+
+    const heading = screen.getByRole('heading', { level: 1 });
+    const shownDescription = document.querySelector<HTMLElement>('[data-part="description"]');
+
+    expect(heading.textContent).toBe(title);
+    expect(heading.getAttribute('dir')).toBe('auto');
+    expect(shownDescription?.getAttribute('dir')).toBe('auto');
+    expect(shownDescription?.textContent).toBe(description);
+    expect(shownDescription?.className).toContain('whitespace-pre-line');
+    expect(document.querySelector('article')?.querySelector('b, img')).toBeNull();
+    expect(screen.getAllByText('18:00 по времени Москвы (16:00 по вашему)').length).toBeGreaterThan(0);
+  });
+
+  test('inside the join window a student sees Starting soon and waits for the tutor', async () => {
+    await show({ now: start - 5 * minute });
+
+    const status = screen.getByRole('status');
+
+    expect(status.textContent).toBe('Скоро начало');
+    expect(screen.getByText('Комната откроется, когда подключится преподаватель')).toBeTruthy();
+  });
+
+  test('inside the join window the tutor sees Starting soon without a join area', async () => {
+    await show({ me: tutor, now: start - 5 * minute, lesson: { ...lesson, tutor: null, other_timezone: null } });
+
+    const status = screen.getByRole('status');
+
+    expect(status.textContent).toBe('Скоро начало');
+    expect(screen.queryByText(/^Комната откроется/)).toBeNull();
+  });
+
+  test('a scheduled lesson whose end has passed shows Did not take place', async () => {
+    await show({ now: Date.parse(lesson.ends_at) + minute });
+
+    const status = screen.getByRole('status');
+
+    expect(status.textContent).toBe('Не состоялся');
+    expect(screen.queryByText(/^Комната откроется/)).toBeNull();
+  });
+
+  test('focused controls that leave when the start passes move focus to the heading', async () => {
+    const store = await show({ me: tutor, now: start - minute, controls: editControl });
+    const control = focusedEditControl();
+
+    act(() => {
+      store.set({ now: start });
+    });
+
+    expect(control.isConnected).toBe(false);
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
+  });
+
+  test('focused controls that leave when a refetch shows the lesson cancelled move focus to the heading', async () => {
+    const store = await show({ me: tutor, controls: editControl });
+    const control = focusedEditControl();
+
+    act(() => {
+      store.set({ lesson: { ...lesson, status: 'cancelled', cancelled_at: '2026-11-01T10:00:00Z', version: 2 } });
+    });
+
+    expect(control.isConnected).toBe(false);
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
+  });
+
+  test('a member without a name shows its fixed label alone', async () => {
+    const i18n = await createI18n('ru');
+
+    render(
+      <I18nextProvider i18n={i18n}>
+        <p data-part="member">
+          <MemberLabel label={null} kind="deleted_account" />
+        </p>
+      </I18nextProvider>,
+    );
+
+    expect(document.querySelector('[data-part="member"]')?.textContent).toBe('Удалённый аккаунт');
+  });
+});

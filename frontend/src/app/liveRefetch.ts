@@ -2,7 +2,7 @@ import type { QueryClient, QueryKey } from '@tanstack/react-query';
 
 import { groupsKey, memberChoiceKey } from '../features/groups/api.ts';
 import { notificationsKey } from '../features/notifications/api.ts';
-import { calendarKey } from '../features/schedule/keys.ts';
+import { calendarKey, lessonKey } from '../features/schedule/keys.ts';
 import { joinRequestsKey, studentCardKey, studentListsKey } from '../features/students/api.ts';
 import { myTutorsKey, sentRequestsKey } from '../features/tutors/api.ts';
 import type { RealtimeEvent } from '../lib/realtime/client.ts';
@@ -18,7 +18,7 @@ function queriesOf(entity: EntityKind, id: string): readonly QueryKey[] {
     case 'notification':
       return [notificationsKey];
     case 'lesson':
-      return [calendarKey];
+      return [calendarKey, lessonKey(id)];
   }
 }
 

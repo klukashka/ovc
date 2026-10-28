@@ -42,6 +42,20 @@ While the window is open and the lesson is not yet live, students see "The room 
 | Changed-meanwhile notice | This lesson changed in the meantime. Its current state is shown below. | Этот урок тем временем изменился. Ниже показано его текущее состояние. |
 | Cancelled, with its date | Cancelled {date} | Отменён {date} |
 | Archive confirmation | {count, plural, one {# future lesson will be cancelled.} other {# future lessons will be cancelled.}} Unarchiving the group restores neither lessons nor series. | {count, plural, one {# будущий урок будет отменён.} few {# будущих урока будут отменены.} many {# будущих уроков будут отменены.} other {# будущего урока будут отменены.}} Возврат группы из архива не восстановит ни уроки, ни серии. |
+| Back link on the lesson page (proposal of 2026-10-28) | Back to the schedule | К расписанию |
+| Side column of the lesson page and its terms (proposal of 2026-10-28) | About the lesson: Date and time, Format, Student, Group, Members, Tutor, Series | Об уроке: Дата и время, Формат, Ученик, Группа, Участники, Репетитор, Серия |
+| Lesson formats (proposal of 2026-10-28) | Individual / Group | Индивидуальный / Групповой |
+| Series rule with a count (proposal of 2026-10-28; `{weekdays}` is the list of weekday names) | Every week: {weekdays} at {time}, {count, plural, one {# lesson in all} other {# lessons in all}} | Каждую неделю: {weekdays} в {time}, {count, plural, one {всего # урок} few {всего # урока} many {всего # уроков} other {всего # урока}} |
+| Series rule with an end date, or with neither (proposal of 2026-10-28) | Every week: {weekdays} at {time}, until {date} / Every week: {weekdays} at {time} | Каждую неделю: {weekdays} в {time}, до {date} / Каждую неделю: {weekdays} в {time} |
+| Series rule of a series whose timezone is not the viewer's (proposal of 2026-10-28) | {rule} ({city} time) / {rule} ({offset}) | {rule} (по времени {city}) / {rule} (по {offset}) |
+| The tutor's lesson actions (proposal of 2026-10-28) | Edit lesson / Cancel lesson | Изменить урок / Отменить урок |
+| Edit dialog: heading, scope legend and save (proposal of 2026-10-28) | Edit lesson / Lessons to change / Save | Изменение урока / Какие уроки изменить / Сохранить |
+| Edit dialog hint when the lesson's tutor-side timezone is not the viewer's (proposal of 2026-10-28) | Date and time are in {city} time. / Date and time are in {offset}. | Дата и время указаны по времени {city}. / Дата и время указаны по {offset}. |
+| Cancel dialog: heading and scope legend (proposal of 2026-10-28) | Cancel the lesson / Lessons to cancel | Отмена урока / Какие уроки отменить |
+| Cancel dialog consequence for this lesson (proposal of 2026-10-28) | The lesson is cancelled for everyone and stays in the history as cancelled. | Урок будет отменён для всех и останется в истории как отменённый. |
+| Cancel dialog consequence for this and following lessons (proposal of 2026-10-28) | This lesson and every following lesson of the series are cancelled, and the series ends. | Этот и все следующие уроки серии будут отменены, а серия завершится. |
+| Cancel dialog confirmation, one lesson or this and following (proposal of 2026-10-28) | Cancel lesson / Cancel lessons | Отменить урок / Отменить уроки |
+| Notice after a cancellation, which takes focus because the cancelled lesson's actions are gone (proposal of 2026-10-28) | Lesson cancelled | Урок отменён |
 
 The API sends the fixed labels above as codes: `label` is `null` and `label_kind` names the fixed label, and the interface renders its key in the viewer's language, as it renders "Deleted account" for `label_deleted` on notification rows ([labels per role](../../specs/schedule.md#labels-per-role)). Lesson titles are shown as text in their own element isolated with `dir="auto"` ([titles and descriptions](../../specs/schedule.md#titles-and-descriptions)).
 

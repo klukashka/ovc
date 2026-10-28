@@ -426,3 +426,13 @@ Revision 13 (2026-10-28): the owner answered four questions raised by the lesson
 - **A `reclaim_pending` link's lessons:** while a link waits for the owner's choice, every lesson of that link, past and cancelled ones included, is hidden from the account in the calendar, on the lesson page and in notification labels, because the student visibility queries check the relationship's state; keeping the link shows them again, and dropping it deletes the account's roster rows of them, as a removal does.
 
 S5 also settles the instant of a tutor deletion's cancellations (D17): the deletion passes its own instant, which the same transaction has just stored as the tutor's `deleted_at` through the same driver encoding, so `cancelled_at` equals `deleted_at` at microsecond precision without a read back; the ending and the archiving read their instants back with `RETURNING` as D17 says.
+
+Revision 14 (2026-10-28): the owner answered the questions raised while F2 was implemented, each with the recommended option, and F2 records them in the [pages](../design/web/pages.md#lesson) design file and the [known-limitations file](../reviews/slice-5-known-limitations.md), pending owner review:
+
+- **An edit that changes nothing:** Save with no changed field closes the edit dialog like a dismissal and sends no request.
+- **The edit dialog's timezone:** the date and start time are the lesson's tutor-side local values, and a hint, linked to both fields, names that timezone when it is not the viewer's.
+- **After a confirmed cancellation:** the dialog closes onto the notice "Lesson cancelled", which takes focus because the lesson's Edit and Cancel buttons are gone.
+- **Weekday changes:** "End this series and create a new one" lands in F3: it cancels this and the following lessons and then opens the New lesson dialog prefilled with the same audience, time and weekdays, with no backend change.
+- **Accepted as built:** the side column's "Before the lesson" hint waits for slice 7 and its chat link for slice 6; the states the lesson page derives from the browser's clock, recorded as a minor known limitation; the button labels "Edit lesson" and "Cancel lesson".
+
+After the review of F2, the lesson page also moves focus to its heading when Edit and Cancel disappear while holding focus, and closes an open dialog onto the changed-meanwhile notice once its lesson is no longer editable.
