@@ -7,6 +7,7 @@ import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realt
 import {
   type LocalDate,
   addDays,
+  isoWeekday,
   lessonAddresses,
   lessonLinks,
   localClock,
@@ -33,6 +34,11 @@ const lessonQueryPaths = ['/api/v1/calendar'];
 
 async function moscowTomorrow(now: () => Promise<number>): Promise<LocalDate> {
   return addDays(localDate(await now(), moscow), 1);
+}
+
+async function moscowDayWhoseNextDayIsInTheSameWeek(now: () => Promise<number>): Promise<LocalDate> {
+  const tomorrow = await moscowTomorrow(now);
+  return isoWeekday(tomorrow) === 7 ? addDays(tomorrow, 1) : tomorrow;
 }
 
 function weekAddress(date: LocalDate): string {
@@ -393,7 +399,7 @@ test.describe('schedule for a tutor in Russian', () => {
     control,
   }) => {
     const { maria, cardId } = await tutorWithStudent(deployment);
-    const date = await moscowTomorrow(control.now);
+    const date = await moscowDayWhoseNextDayIsInTheSameWeek(control.now);
     await scheduleShortLessons(deployment, maria, cardId, date);
     await page.setViewportSize({ width: 800, height: 1000 });
     await signInThroughTheApi(page, maria);
@@ -410,7 +416,7 @@ test.describe('schedule for a tutor in Russian', () => {
     diagnostics,
   }) => {
     const { maria, cardId } = await tutorWithStudent(deployment);
-    const date = await moscowTomorrow(control.now);
+    const date = await moscowDayWhoseNextDayIsInTheSameWeek(control.now);
     await scheduleShortLessons(deployment, maria, cardId, date);
     const context = await browser.newContext({
       baseURL: deployment.origin,
@@ -445,7 +451,7 @@ test.describe('schedule for a tutor in Russian', () => {
     control,
   }) => {
     const { maria, cardId } = await tutorWithStudent(deployment);
-    const date = await moscowTomorrow(control.now);
+    const date = await moscowDayWhoseNextDayIsInTheSameWeek(control.now);
     await scheduleShortLessons(deployment, maria, cardId, date);
     await page.setViewportSize({ width: 1024, height: 800 });
     await signInThroughTheApi(page, maria);
