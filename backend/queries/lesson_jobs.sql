@@ -1,8 +1,10 @@
 -- name: ListLessonsDueToEnd :many
-SELECT id FROM lessons
+SELECT id, timezone('UTC', timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int))::timestamptz AS ends_at FROM lessons
 WHERE status = 'scheduled' AND starts_at <= sqlc.arg(latest_start)::timestamptz
-    AND starts_at + make_interval(mins => duration_minutes) <= sqlc.arg(ended_before)::timestamptz
-ORDER BY starts_at + make_interval(mins => duration_minutes), id
+    AND timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int) <= timezone('UTC', sqlc.arg(ended_before)::timestamptz)
+    AND (timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int), id)
+        > (timezone('UTC', sqlc.arg(after_ends_at)::timestamptz), sqlc.arg(after_id)::uuid)
+ORDER BY timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int), id
 LIMIT sqlc.arg(row_limit)::int;
 
 -- name: GetLessonAudience :one
@@ -52,7 +54,12 @@ LEFT JOIN relationships AS card ON card.id = series.relationship_id
 LEFT JOIN groups AS series_group ON series_group.id = series.group_id
 WHERE series.ended_at IS NULL AND series.end_date IS NOT NULL AND series.end_date > series.materialised_until
     AND series.end_date >= (sqlc.arg(now)::timestamptz AT TIME ZONE series.timezone)::date
-    AND series.materialised_until < (sqlc.arg(horizon)::timestamptz AT TIME ZONE series.timezone)::date
+    AND EXISTS (
+        SELECT 1 FROM generate_series(0, 6) AS step(days)
+        WHERE extract(isodow FROM greatest(series.materialised_until + 1, series.first_date) + step.days)::smallint = ANY (series.weekdays)
+            AND greatest(series.materialised_until + 1, series.first_date) + step.days
+                <= least(series.end_date, (sqlc.arg(horizon)::timestamptz AT TIME ZONE series.timezone)::date)
+    )
     AND tutor.state = 'active'
     AND (card.state IN ('active', 'provisional') OR (series_group.id IS NOT NULL AND series_group.archived_at IS NULL))
     AND (series.materialised_until, series.id) > (sqlc.arg(after_until)::date, sqlc.arg(after_id)::uuid)

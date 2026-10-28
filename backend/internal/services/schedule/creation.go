@@ -91,14 +91,10 @@ func normalisedDescription(description *string) *string {
 
 func (s *Service) CreateLessons(ctx context.Context, tutor domain.UserID, request NewLesson) (Created, error) {
 	request.Description = normalisedDescription(request.Description)
-	now, err := s.deps.Clock.Instant(ctx)
-	if err != nil {
-		return Created{}, err
-	}
 	var outcome creationOutcome
-	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+	err := s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		var err error
-		outcome, err = s.admit(ctx, repos, tutor, request, now)
+		outcome, err = s.admit(ctx, repos, tutor, request)
 		return err
 	})
 	if err != nil || outcome.replayed {
@@ -107,7 +103,7 @@ func (s *Service) CreateLessons(ctx context.Context, tutor domain.UserID, reques
 	for attempt := 1; ; attempt++ {
 		err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 			var err error
-			outcome, err = s.create(ctx, repos, tutor, request, now)
+			outcome, err = s.create(ctx, repos, tutor, request)
 			return err
 		})
 		if !errors.Is(err, errMembersChanged) {
@@ -152,20 +148,28 @@ func (s *Service) replayUnderLock(
 	return account, creationOutcome{created: replayed, replayed: found}, err
 }
 
-func (s *Service) admit(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, request NewLesson, now time.Time) (creationOutcome, error) {
+func (s *Service) admit(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, request NewLesson) (creationOutcome, error) {
 	_, outcome, err := s.replayUnderLock(ctx, repos, tutor, request)
 	if err != nil || outcome.replayed {
 		return outcome, err
 	}
+	now, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
+	if err != nil {
+		return creationOutcome{}, err
+	}
 	return creationOutcome{}, s.reserveWrite(ctx, repos, tutor, now)
 }
 
-func (s *Service) create(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, request NewLesson, now time.Time) (creationOutcome, error) {
+func (s *Service) create(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, request NewLesson) (creationOutcome, error) {
 	account, outcome, err := s.replayUnderLock(ctx, repos, tutor, request)
 	if err != nil || outcome.replayed {
 		return outcome, err
 	}
 	target, err := lockAudience(ctx, repos, tutor, request)
+	if err != nil {
+		return creationOutcome{}, err
+	}
+	now, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
 	if err != nil {
 		return creationOutcome{}, err
 	}

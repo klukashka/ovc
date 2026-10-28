@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -278,5 +279,65 @@ func TestAFailingJobDoesNotStopDispatch(t *testing.T) {
 	}
 	if record := jobRunRecord(t, h.logs.String()); record.Level != "ERROR" || record.Result != "failed" || record.Kind != core.ErrorKind(h.jobErr) {
 		t.Fatalf("the failed job was not reported at ERROR with its kind: %+v", record)
+	}
+}
+
+func newJobLoopWorker(t *testing.T, jobs []worker.Job) *worker.Worker {
+	t.Helper()
+	store := repositories.NewStore(testdb.New(t).Pool)
+	logger := slog.New(slog.DiscardHandler)
+	perform := func(context.Context, repositories.ClaimedOutboxRow, time.Time) (domain.OutboxDoneReason, error) {
+		return domain.DoneSent, nil
+	}
+	lanes := []worker.Lane{{Name: domain.LaneEmail, Concurrency: 1, Perform: perform}}
+	return worker.New(logger, clock.System{}, outbox.New(store, zeroRandom{}, logger), lanes, jobs, worker.DefaultTiming())
+}
+
+func signalOnce(signal chan struct{}, once *sync.Once) {
+	once.Do(func() { close(signal) })
+}
+
+func TestAJobOnItsOwnLoopDoesNotDelayTheOtherJobs(t *testing.T) {
+	slowStarted, releaseSlow, minuteRan := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var slowOnce, minuteOnce sync.Once
+	jobs := []worker.Job{
+		{Name: "test.slow", Every: time.Hour, OwnLoop: true, Run: func(ctx context.Context, _ time.Time) (int64, error) {
+			signalOnce(slowStarted, &slowOnce)
+			select {
+			case <-releaseSlow:
+			case <-ctx.Done():
+			}
+			return 0, nil
+		}},
+		{Name: "test.minute", Every: time.Minute, Run: func(context.Context, time.Time) (int64, error) {
+			signalOnce(minuteRan, &minuteOnce)
+			return 0, nil
+		}},
+	}
+	running := newJobLoopWorker(t, jobs)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stopped := core.Run(ctx, slog.New(slog.DiscardHandler), "worker-under-test", func() error { return running.Run(ctx) })
+	waitFor(t, slowStarted)
+
+	ranWhileTheSlowJobRuns := false
+	select {
+	case <-minuteRan:
+		ranWhileTheSlowJobRuns = true
+	case <-time.After(10 * time.Second):
+	}
+	close(releaseSlow)
+	cancel()
+
+	if !ranWhileTheSlowJobRuns {
+		t.Fatal("the per-minute job waited for the job on its own loop")
+	}
+	select {
+	case err := <-stopped:
+		if err != nil {
+			t.Fatalf("the worker stopped with %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the worker did not stop")
 	}
 }

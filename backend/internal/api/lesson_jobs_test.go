@@ -90,20 +90,26 @@ func TestTheStatusJobHandlesEachLessonInItsOwnTransaction(t *testing.T) {
 
 func (h *authHarness) refuseEndingOf(t *testing.T, lesson string) {
 	t.Helper()
+	h.raiseOnUpdate(t, "lessons", lesson, "NEW.status = 'ended'")
+}
+
+func (h *authHarness) raiseOnUpdate(t *testing.T, table string, row string, condition string) {
+	t.Helper()
+	function := "refuse_" + table + "_update"
 	_, err := h.database.Pool.Exec(context.Background(), fmt.Sprintf(`
-CREATE FUNCTION refuse_lesson_ending() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-    IF NEW.id = '%s'::uuid AND NEW.status = 'ended' THEN
-        RAISE EXCEPTION 'the test refuses to end this lesson';
+    IF NEW.id = '%s'::uuid AND %s THEN
+        RAISE EXCEPTION 'the test refuses this update';
     END IF;
     RETURN NEW;
 END
-$$`, lesson))
+$$`, function, row, condition))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.database.Pool.Exec(context.Background(),
-		"CREATE TRIGGER refuse_lesson_ending BEFORE UPDATE ON lessons FOR EACH ROW EXECUTE FUNCTION refuse_lesson_ending()"); err != nil {
+		fmt.Sprintf("CREATE TRIGGER %s BEFORE UPDATE ON %s FOR EACH ROW EXECUTE FUNCTION %s()", function, table, function)); err != nil {
 		t.Fatal(err)
 	}
 }

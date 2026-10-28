@@ -206,7 +206,7 @@ Slice 5 adds the `lesson_series`, `lesson` and `lesson_roster` tables. Series an
 | `first_date` | |
 | `end_date` xor `count` | the end date is on or after the first date unless the series has ended: a split or "cancel following" at its first occurrence leaves an end date of the day before (pending owner review) |
 | `title`, `description` | title 1–120 characters, description at most 2,000, both plain text as entered |
-| `materialised_until` | partial index where `ended_at` is null |
+| `materialised_until` | partial index on `(materialised_until, id)` where `ended_at` is null, the order in which horizon extension pages its candidates (pending owner review) |
 | `split_from_series_id` | references the series, `ON DELETE SET NULL`, indexed |
 | `create_key` | the `Idempotency-Key` of the creating request, nullable; unique `(tutor_id, create_key)` where not null |
 | `ended_at` | |
@@ -241,6 +241,7 @@ Indexes:
 - partial `(group_id, starts_at)` where `status = 'scheduled'`, for the group page;
 - partial `(starts_at)` where `status = 'scheduled'`;
 - partial `(starts_at)` where `status = 'live'`;
+- partial on the end instant computed in UTC, `(timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int)), id`, where `status = 'scheduled'`, the order in which the status job pages due lessons; the expression is immutable, as an index requires, because `timezone(text, timestamptz)` is immutable and yields a timestamp without a time zone, `make_interval` is immutable, and adding an interval to a timestamp without a time zone is immutable, whereas adding an interval to a `timestamptz` is only stable (pending owner review);
 - partial `(cancel_cause, cancelled_at)` where `cancelled_at` is not null, for the aggregated emails that list cancelled lessons ([notifications](notifications.md#events)).
 
 ### Lesson roster

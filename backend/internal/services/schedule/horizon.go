@@ -54,7 +54,8 @@ func (j *Jobs) ExtendHorizons(ctx context.Context, now time.Time) (int64, error)
 
 func (j *Jobs) extend(ctx context.Context, id domain.SeriesID, now time.Time) (int64, error) {
 	var inserted int64
-	_, err := j.withAudienceRetry(ctx, func(repos repositories.Repositories) error {
+	item := jobItem{job: domain.JobSeriesExtension, subject: slog.String("series_id", id.String())}
+	err := j.withAudienceRetry(ctx, item, func(repos repositories.Repositories) error {
 		inserted = 0
 		series, err := repos.Lessons.SeriesJobAudience(ctx, id)
 		if errors.Is(err, repositories.ErrNotFound) {

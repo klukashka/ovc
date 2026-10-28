@@ -10,17 +10,13 @@ import (
 )
 
 func (s *Service) CancelLesson(ctx context.Context, tutor domain.UserID, id domain.LessonID, cancellation LessonCancellation) (Created, error) {
-	now, err := s.deps.Clock.Instant(ctx)
-	if err != nil {
-		return Created{}, err
-	}
-	if err := s.admitLessonWrite(ctx, tutor, id, now); err != nil {
+	if err := s.admitLessonWrite(ctx, tutor, id); err != nil {
 		return Created{}, err
 	}
 	var outcome writeOutcome
-	err = s.writeWithAudienceRetry(ctx, func(repos repositories.Repositories) error {
+	err := s.writeWithAudienceRetry(ctx, func(repos repositories.Repositories) error {
 		var err error
-		outcome, err = s.cancel(ctx, repos, tutor, id, cancellation, now)
+		outcome, err = s.cancel(ctx, repos, tutor, id, cancellation)
 		return err
 	})
 	if err != nil {
@@ -50,9 +46,13 @@ func endsBefore(series *repositories.LockedSeriesForEdit, occurrence domain.Loca
 }
 
 func (s *Service) cancel(
-	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.LessonID, cancellation LessonCancellation, now time.Time,
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.LessonID, cancellation LessonCancellation,
 ) (writeOutcome, error) {
 	write, err := s.lockWrite(ctx, repos, tutor, id, cancellation.Scope)
+	if err != nil {
+		return writeOutcome{}, err
+	}
+	now, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
 	if err != nil {
 		return writeOutcome{}, err
 	}

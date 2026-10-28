@@ -180,6 +180,14 @@ func (h *authHarness) holdRow(t *testing.T, lockQuery string, key string) func()
 
 func (h *authHarness) holdRowThen(t *testing.T, lockQuery string, key string, beforeCommit string) func() {
 	t.Helper()
+	if beforeCommit == "" {
+		return h.holdRowThenEach(t, lockQuery, key, nil)
+	}
+	return h.holdRowThenEach(t, lockQuery, key, []string{beforeCommit})
+}
+
+func (h *authHarness) holdRowThenEach(t *testing.T, lockQuery string, key string, beforeCommit []string) func() {
+	t.Helper()
 	holder, err := h.database.Pool.Begin(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -202,8 +210,8 @@ func (h *authHarness) holdRowThen(t *testing.T, lockQuery string, key string, be
 	}
 	h.contested = &row
 	return func() {
-		if beforeCommit != "" {
-			if _, err := holder.Exec(context.Background(), beforeCommit, key); err != nil {
+		for _, statement := range beforeCommit {
+			if _, err := holder.Exec(context.Background(), statement, key); err != nil {
 				t.Fatal(err)
 			}
 		}

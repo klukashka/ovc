@@ -61,23 +61,29 @@ func TestABurstOfLessonsIsWorkedThroughWithinTheBudget(t *testing.T) {
 	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
-	h.burstOf(t, h.lessonAt(t, token, h.linkedCard(t, tutor, 10, domain.RelationshipActive), firstLessonDate, firstLessonLocal), 120)
+	card := h.linkedCard(t, tutor, 10, domain.RelationshipActive)
+	h.burstOf(t, h.lessonAt(t, token, card, firstLessonDate, firstLessonLocal), 120)
+	dayAhead := h.lessonAt(t, token, card, "2030-03-12", "17:00")
 	h.withJobSettings(oneReminderBatchSettings())
 
 	h.tickAt(t, hourBeforeFirst)
 	withinOneBatch := h.countRows(t, "SELECT count(id) FROM lessons WHERE tutor_id = $1::uuid AND reminded_1h_revision = 1", tutor.String())
+	dayAheadInTheFirstRun := h.countRows(t, "SELECT count(id) FROM lessons WHERE id = $1::uuid AND reminded_24h_revision = 1", dayAhead)
 	h.withJobSettings(scheduleDefaults())
 	h.tickAt(t, hourBeforeFirst.Add(time.Minute))
 	h.tickAt(t, hourBeforeFirst.Add(2*time.Minute))
 
-	if withinOneBatch != 50 {
-		t.Fatalf("one batch reminded %d lessons", withinOneBatch)
+	if withinOneBatch != 50 || dayAheadInTheFirstRun != 0 {
+		t.Fatalf("the budget's one batch reminded %d one-hour lessons and %d day-ahead lessons", withinOneBatch, dayAheadInTheFirstRun)
 	}
 	if reminded := h.countRows(t, "SELECT count(id) FROM lessons WHERE tutor_id = $1::uuid AND reminded_1h_revision = 1", tutor.String()); reminded != 121 {
 		t.Fatalf("%d of 121 lessons were reminded", reminded)
 	}
 	if queued := h.countRows(t, "SELECT count(id) FROM outbox WHERE kind = $1", string(domain.EventLessonReminder1h)); queued != 242 {
 		t.Fatalf("%d one-hour reminders were queued for 121 lessons", queued)
+	}
+	if dayAheadLater := h.countRows(t, "SELECT count(id) FROM lessons WHERE id = $1::uuid AND reminded_24h_revision = 1", dayAhead); dayAheadLater != 1 {
+		t.Fatal("the day-ahead lesson was never reminded after the burst")
 	}
 	if h.countLogs(`"msg":"lesson.reminders_queued"`, `"lessons":71`) != 1 {
 		t.Fatalf("the second run reported:\n%s", h.logs.String())

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
@@ -30,6 +31,10 @@ type fixedClock struct {
 }
 
 func (c fixedClock) Instant(context.Context) (time.Time, error) {
+	return c.instant, nil
+}
+
+func (c fixedClock) InstantWithin(context.Context, clock.TestClockReader) (time.Time, error) {
 	return c.instant, nil
 }
 

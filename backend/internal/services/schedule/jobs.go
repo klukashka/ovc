@@ -19,7 +19,8 @@ var errAudienceMoved = errors.New("the audience changed between reading and lock
 
 type JobSettings struct {
 	Wall            func() time.Time
-	StatusLimit     int32
+	StatusBatch     int32
+	StatusBudget    time.Duration
 	ReminderBatch   int32
 	ReminderBudget  time.Duration
 	ExtensionBatch  int32
@@ -28,7 +29,7 @@ type JobSettings struct {
 
 func DefaultJobSettings() JobSettings {
 	return JobSettings{
-		Wall: clock.System{}.Now, StatusLimit: 500, ReminderBatch: 50, ReminderBudget: 20 * time.Second,
+		Wall: clock.System{}.Now, StatusBatch: 100, StatusBudget: 20 * time.Second, ReminderBatch: 50, ReminderBudget: 20 * time.Second,
 		ExtensionBatch: 200, ExtensionBudget: 2 * time.Minute,
 	}
 }
@@ -122,16 +123,33 @@ func lockAudienceOf(
 	return audience, !slices.Equal(sortedRelationships(members), lockedIDs), nil
 }
 
-func (j *Jobs) withAudienceRetry(ctx context.Context, work func(repos repositories.Repositories) error) (bool, error) {
+type jobItem struct {
+	job     domain.JobName
+	subject slog.Attr
+}
+
+func (j *Jobs) withAudienceRetry(ctx context.Context, item jobItem, work func(repos repositories.Repositories) error) error {
 	for attempt := 1; ; attempt++ {
 		err := j.service.deps.Store.WithTx(ctx, work)
 		if !errors.Is(err, errAudienceMoved) {
-			return true, err
+			return err
 		}
 		if attempt == jobAudienceAttempts {
-			return false, nil
+			j.service.deps.Logger.LogAttrs(ctx, slog.LevelDebug, "lesson.job_deferred", slog.String("job", string(item.job)), item.subject)
+			return nil
 		}
 	}
+}
+
+func lockSeriesOfLesson(ctx context.Context, repos repositories.Repositories, series *domain.SeriesID) (bool, error) {
+	if series == nil {
+		return true, nil
+	}
+	err := repos.Lessons.LockSeriesShared(ctx, *series)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func lessonAttributes(lesson domain.LessonID) slog.Attr {
@@ -140,22 +158,33 @@ func lessonAttributes(lesson domain.LessonID) slog.Attr {
 
 func (j *Jobs) EndUnjoined(ctx context.Context, now time.Time) (int64, error) {
 	endedBefore := now.Add(-domain.LessonEndGrace)
-	due, err := j.service.deps.Store.Repositories().Lessons.DueToEnd(ctx, endedBefore, j.settings.StatusLimit)
-	if err != nil {
-		return 0, err
-	}
+	deadline := j.settings.Wall().Add(j.settings.StatusBudget)
+	var after repositories.LessonDueToEnd
 	var ended int64
 	var failures []error
-	for _, lesson := range due {
-		applied, err := j.endLesson(ctx, lesson, endedBefore, now)
+	for j.settings.Wall().Before(deadline) {
+		batch, err := j.service.deps.Store.Repositories().Lessons.DueToEnd(ctx, repositories.DueToEndQuery{
+			EndedBefore: endedBefore, After: after, Limit: j.settings.StatusBatch,
+		})
 		if err != nil {
 			failures = append(failures, err)
-			j.service.deps.Logger.LogAttrs(ctx, slog.LevelError, "lesson.end_failed", lessonAttributes(lesson), slog.String("kind", core.ErrorKind(err)))
-			continue
+			break
 		}
-		if applied {
-			ended++
+		for _, lesson := range batch {
+			applied, err := j.endLesson(ctx, lesson.ID, endedBefore, now)
+			if err != nil {
+				failures = append(failures, err)
+				j.service.deps.Logger.LogAttrs(ctx, slog.LevelError, "lesson.end_failed", lessonAttributes(lesson.ID), slog.String("kind", core.ErrorKind(err)))
+				continue
+			}
+			if applied {
+				ended++
+			}
 		}
+		if len(batch) < int(j.settings.StatusBatch) {
+			break
+		}
+		after = batch[len(batch)-1]
 	}
 	j.service.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "lesson.ended_unjoined", slog.Int64("count", ended))
 	return ended, errors.Join(failures...)
@@ -164,7 +193,7 @@ func (j *Jobs) EndUnjoined(ctx context.Context, now time.Time) (int64, error) {
 func (j *Jobs) endLesson(ctx context.Context, id domain.LessonID, endedBefore time.Time, now time.Time) (bool, error) {
 	ended := false
 	var tutor domain.UserID
-	_, err := j.withAudienceRetry(ctx, func(repos repositories.Repositories) error {
+	err := j.withAudienceRetry(ctx, jobItem{job: domain.JobLessonStatus, subject: lessonAttributes(id)}, func(repos repositories.Repositories) error {
 		ended = false
 		lesson, err := repos.Lessons.JobAudience(ctx, id)
 		if errors.Is(err, repositories.ErrNotFound) {
@@ -178,10 +207,9 @@ func (j *Jobs) endLesson(ctx context.Context, id domain.LessonID, endedBefore ti
 		if err != nil {
 			return err
 		}
-		if lesson.SeriesID != nil {
-			if err := repos.Lessons.LockSeriesShared(ctx, *lesson.SeriesID); err != nil {
-				return err
-			}
+		present, err := lockSeriesOfLesson(ctx, repos, lesson.SeriesID)
+		if err != nil || !present {
+			return err
 		}
 		locked, err := repos.Lessons.LockForJob(ctx, id)
 		if errors.Is(err, repositories.ErrNotFound) {
@@ -273,7 +301,7 @@ func (j *Jobs) remind(
 	ctx context.Context, kind domain.ReminderKind, id domain.LessonID, windowStart time.Time, windowEnd time.Time, now time.Time, tally *reminderTally,
 ) error {
 	var queued reminderTally
-	_, err := j.withAudienceRetry(ctx, func(repos repositories.Repositories) error {
+	err := j.withAudienceRetry(ctx, jobItem{job: domain.JobLessonReminders, subject: lessonAttributes(id)}, func(repos repositories.Repositories) error {
 		queued = reminderTally{}
 		lesson, err := repos.Lessons.JobAudience(ctx, id)
 		if errors.Is(err, repositories.ErrNotFound) {
@@ -286,10 +314,9 @@ func (j *Jobs) remind(
 		if err != nil {
 			return err
 		}
-		if lesson.SeriesID != nil {
-			if err := repos.Lessons.LockSeriesShared(ctx, *lesson.SeriesID); err != nil {
-				return err
-			}
+		present, err := lockSeriesOfLesson(ctx, repos, lesson.SeriesID)
+		if err != nil || !present {
+			return err
 		}
 		locked, err := repos.Lessons.LockForJob(ctx, id)
 		if errors.Is(err, repositories.ErrNotFound) {

@@ -192,7 +192,7 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 		{Name: domain.JobNotificationsCleanup, Every: time.Hour, Run: inbox.Cleanup},
 		{Name: domain.JobLessonStatus, Every: time.Minute, Run: lessonJobs.EndUnjoined},
 		{Name: domain.JobLessonReminders, Every: time.Minute, Run: lessonJobs.QueueReminders},
-		{Name: domain.JobSeriesExtension, Every: time.Hour, Run: lessonJobs.ExtendHorizons},
+		{Name: domain.JobSeriesExtension, Every: time.Hour, OwnLoop: true, Run: lessonJobs.ExtendHorizons},
 	}
 	return worker.New(logger, source, queue, lanes, jobs, worker.DefaultTiming()), nil
 }

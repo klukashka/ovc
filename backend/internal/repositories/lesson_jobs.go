@@ -16,6 +16,7 @@ type (
 	JobSeriesAudience  = dbgen.GetSeriesAudienceRow
 	LockedJobLesson    = dbgen.LockLessonForJobRow
 	ReminderCandidate  = dbgen.ListReminderCandidatesRow
+	LessonDueToEnd     = dbgen.ListLessonsDueToEndRow
 	LessonForEmail     = dbgen.GetLessonForEmailRow
 	NotificationLesson = dbgen.ListTutorNotificationLessonsRow
 )
@@ -25,6 +26,12 @@ type ReminderQuery struct {
 	WindowStart time.Time
 	WindowEnd   time.Time
 	After       ReminderCandidate
+	Limit       int32
+}
+
+type DueToEndQuery struct {
+	EndedBefore time.Time
+	After       LessonDueToEnd
 	Limit       int32
 }
 
@@ -64,11 +71,12 @@ type DailySlot struct {
 	Below       int32
 }
 
-func (r Lessons) DueToEnd(ctx context.Context, endedBefore time.Time, limit int32) ([]domain.LessonID, error) {
-	ids, err := r.queries.ListLessonsDueToEnd(ctx, dbgen.ListLessonsDueToEndParams{
-		LatestStart: endedBefore.Add(-domain.LessonMinDuration * time.Minute), EndedBefore: endedBefore, RowLimit: limit,
+func (r Lessons) DueToEnd(ctx context.Context, query DueToEndQuery) ([]LessonDueToEnd, error) {
+	rows, err := r.queries.ListLessonsDueToEnd(ctx, dbgen.ListLessonsDueToEndParams{
+		LatestStart: query.EndedBefore.Add(-domain.LessonMinDuration * time.Minute), EndedBefore: query.EndedBefore,
+		AfterEndsAt: query.After.EndsAt, AfterID: pgtype.UUID{Bytes: query.After.ID, Valid: true}, RowLimit: query.Limit,
 	})
-	return one(ids, err, "lessons due to end")
+	return one(rows, err, "lessons due to end")
 }
 
 func (r Lessons) JobAudience(ctx context.Context, id domain.LessonID) (JobLessonAudience, error) {

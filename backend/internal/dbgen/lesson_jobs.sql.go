@@ -234,32 +234,47 @@ func (q *Queries) IsCurrentGroupMember(ctx context.Context, arg IsCurrentGroupMe
 }
 
 const listLessonsDueToEnd = `-- name: ListLessonsDueToEnd :many
-SELECT id FROM lessons
+SELECT id, timezone('UTC', timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int))::timestamptz AS ends_at FROM lessons
 WHERE status = 'scheduled' AND starts_at <= $1::timestamptz
-    AND starts_at + make_interval(mins => duration_minutes) <= $2::timestamptz
-ORDER BY starts_at + make_interval(mins => duration_minutes), id
-LIMIT $3::int
+    AND timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int) <= timezone('UTC', $2::timestamptz)
+    AND (timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int), id)
+        > (timezone('UTC', $3::timestamptz), $4::uuid)
+ORDER BY timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int), id
+LIMIT $5::int
 `
 
 type ListLessonsDueToEndParams struct {
 	LatestStart time.Time
 	EndedBefore time.Time
+	AfterEndsAt time.Time
+	AfterID     pgtype.UUID
 	RowLimit    int32
 }
 
-func (q *Queries) ListLessonsDueToEnd(ctx context.Context, arg ListLessonsDueToEndParams) ([]domain.LessonID, error) {
-	rows, err := q.db.Query(ctx, listLessonsDueToEnd, arg.LatestStart, arg.EndedBefore, arg.RowLimit)
+type ListLessonsDueToEndRow struct {
+	ID     domain.LessonID
+	EndsAt time.Time
+}
+
+func (q *Queries) ListLessonsDueToEnd(ctx context.Context, arg ListLessonsDueToEndParams) ([]ListLessonsDueToEndRow, error) {
+	rows, err := q.db.Query(ctx, listLessonsDueToEnd,
+		arg.LatestStart,
+		arg.EndedBefore,
+		arg.AfterEndsAt,
+		arg.AfterID,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []domain.LessonID
+	var items []ListLessonsDueToEndRow
 	for rows.Next() {
-		var id domain.LessonID
-		if err := rows.Scan(&id); err != nil {
+		var i ListLessonsDueToEndRow
+		if err := rows.Scan(&i.ID, &i.EndsAt); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -326,7 +341,12 @@ LEFT JOIN relationships AS card ON card.id = series.relationship_id
 LEFT JOIN groups AS series_group ON series_group.id = series.group_id
 WHERE series.ended_at IS NULL AND series.end_date IS NOT NULL AND series.end_date > series.materialised_until
     AND series.end_date >= ($1::timestamptz AT TIME ZONE series.timezone)::date
-    AND series.materialised_until < ($2::timestamptz AT TIME ZONE series.timezone)::date
+    AND EXISTS (
+        SELECT 1 FROM generate_series(0, 6) AS step(days)
+        WHERE extract(isodow FROM greatest(series.materialised_until + 1, series.first_date) + step.days)::smallint = ANY (series.weekdays)
+            AND greatest(series.materialised_until + 1, series.first_date) + step.days
+                <= least(series.end_date, ($2::timestamptz AT TIME ZONE series.timezone)::date)
+    )
     AND tutor.state = 'active'
     AND (card.state IN ('active', 'provisional') OR (series_group.id IS NOT NULL AND series_group.archived_at IS NULL))
     AND (series.materialised_until, series.id) > ($3::date, $4::uuid)

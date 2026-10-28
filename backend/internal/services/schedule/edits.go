@@ -79,7 +79,7 @@ func editable(lesson repositories.LockedLesson, now time.Time) bool {
 	return lesson.Status == domain.LessonScheduled && lesson.StartsAt.After(now)
 }
 
-func (s *Service) admitLessonWrite(ctx context.Context, tutor domain.UserID, id domain.LessonID, now time.Time) error {
+func (s *Service) admitLessonWrite(ctx context.Context, tutor domain.UserID, id domain.LessonID) error {
 	return s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		if _, err := s.lockActingTutor(ctx, repos, tutor); err != nil {
 			return err
@@ -87,6 +87,10 @@ func (s *Service) admitLessonWrite(ctx context.Context, tutor domain.UserID, id 
 		if _, err := repos.Lessons.TutorTarget(ctx, tutor, id); errors.Is(err, repositories.ErrNotFound) {
 			return ErrNotFound
 		} else if err != nil {
+			return err
+		}
+		now, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
+		if err != nil {
 			return err
 		}
 		return s.reserveWrite(ctx, repos, tutor, now)
@@ -300,17 +304,13 @@ func (r editRule) plan(lesson repositories.LockedLesson) plannedEdit {
 }
 
 func (s *Service) EditLesson(ctx context.Context, tutor domain.UserID, id domain.LessonID, edit LessonEdit) (Created, error) {
-	now, err := s.deps.Clock.Instant(ctx)
-	if err != nil {
-		return Created{}, err
-	}
-	if err := s.admitLessonWrite(ctx, tutor, id, now); err != nil {
+	if err := s.admitLessonWrite(ctx, tutor, id); err != nil {
 		return Created{}, err
 	}
 	var outcome writeOutcome
-	err = s.writeWithAudienceRetry(ctx, func(repos repositories.Repositories) error {
+	err := s.writeWithAudienceRetry(ctx, func(repos repositories.Repositories) error {
 		var err error
-		outcome, err = s.edit(ctx, repos, tutor, id, edit, now)
+		outcome, err = s.edit(ctx, repos, tutor, id, edit)
 		return err
 	})
 	var overlap *OverlapError
@@ -348,12 +348,16 @@ func (s *Service) logRows(ctx context.Context, rows []queuedNotification) {
 }
 
 func (s *Service) edit(
-	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.LessonID, edit LessonEdit, now time.Time,
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.LessonID, edit LessonEdit,
 ) (writeOutcome, error) {
 	if err := shapeProblem(edit); err != nil {
 		return writeOutcome{}, err
 	}
 	write, err := s.lockWrite(ctx, repos, tutor, id, edit.Scope)
+	if err != nil {
+		return writeOutcome{}, err
+	}
+	now, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
 	if err != nil {
 		return writeOutcome{}, err
 	}

@@ -264,6 +264,25 @@ func TestCalendarReturnsLessonsIntersectingTheRange(t *testing.T) {
 	}
 }
 
+func TestCalendarLeavesOutALessonEndingExactlyAtTheRangeStart(t *testing.T) {
+	t.Parallel()
+	h := newAuthHarness(t)
+	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	card := h.linkedCard(t, tutor, 10, domain.RelationshipActive)
+	from := time.Date(2030, time.March, 12, 15, 0, 0, 0, time.UTC)
+	h.lessonAt(t, token, card, "2030-03-12", "17:00")
+	endingJustAfter := h.lessonAt(t, token, card, "2030-03-12", "17:05")
+
+	tutorPage := h.calendarOf(t, token, from, from.Add(24*time.Hour))
+	studentPage := h.calendarOf(t, h.studentToken(t, 10), from, from.Add(24*time.Hour))
+
+	for name, page := range map[string]calendarPage{"the tutor": tutorPage, "the student": studentPage} {
+		if !slices.Equal(calendarIDs(page), []string{endingJustAfter}) {
+			t.Errorf("the calendar of %s lists %v", name, calendarIDs(page))
+		}
+	}
+}
+
 func TestStudentCalendarShowsCurrentAudienceAndRosterOnly(t *testing.T) {
 	t.Parallel()
 	h := newAuthHarness(t)

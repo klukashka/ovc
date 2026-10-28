@@ -72,7 +72,7 @@ func oneExtensionBatchSettings() schedule.JobSettings {
 func oneReminderBatchSettings() schedule.JobSettings {
 	settings := schedule.DefaultJobSettings()
 	settings.Wall = minuteStepWall()
-	settings.ReminderBudget = 150 * time.Second
+	settings.ReminderBudget = 90 * time.Second
 	return settings
 }
 

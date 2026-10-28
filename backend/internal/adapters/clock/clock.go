@@ -10,8 +10,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+type TestClockReader interface {
+	ReadTestClock(ctx context.Context) (time.Time, bool, error)
+}
+
 type Source interface {
 	Instant(ctx context.Context) (time.Time, error)
+	InstantWithin(ctx context.Context, reader TestClockReader) (time.Time, error)
 }
 
 type System struct{}
@@ -21,6 +26,10 @@ func (System) Now() time.Time {
 }
 
 func (s System) Instant(_ context.Context) (time.Time, error) {
+	return s.Now().UTC(), nil
+}
+
+func (s System) InstantWithin(_ context.Context, _ TestClockReader) (time.Time, error) {
 	return s.Now().UTC(), nil
 }
 
@@ -48,6 +57,17 @@ func (s *Shared) Instant(ctx context.Context) (time.Time, error) {
 	}
 	if err != nil {
 		return time.Time{}, fmt.Errorf("read the shared test clock: %w", err)
+	}
+	return instant.UTC(), nil
+}
+
+func (s *Shared) InstantWithin(ctx context.Context, reader TestClockReader) (time.Time, error) {
+	instant, found, err := reader.ReadTestClock(ctx)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("read the shared test clock in a transaction: %w", err)
+	}
+	if !found {
+		return time.Time{}, ErrTestClockNotSet
 	}
 	return instant.UTC(), nil
 }

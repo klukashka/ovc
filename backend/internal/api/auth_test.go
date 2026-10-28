@@ -257,7 +257,7 @@ func newAuthHarnessStoring(
 		{Name: domain.JobNotificationsCleanup, Every: time.Hour, Run: inbox.Cleanup},
 		{Name: domain.JobLessonStatus, Every: time.Minute, Run: jobs.run((*schedule.Jobs).EndUnjoined)},
 		{Name: domain.JobLessonReminders, Every: time.Minute, Run: jobs.run((*schedule.Jobs).QueueReminders)},
-		{Name: domain.JobSeriesExtension, Every: time.Hour, Run: jobs.run((*schedule.Jobs).ExtendHorizons)},
+		{Name: domain.JobSeriesExtension, Every: time.Hour, OwnLoop: true, Run: jobs.run((*schedule.Jobs).ExtendHorizons)},
 	}
 	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, scheduled, worker.DefaultTiming())
 	return &authHarness{

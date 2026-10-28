@@ -37,9 +37,10 @@ type Lane struct {
 }
 
 type Job struct {
-	Name  domain.JobName
-	Every time.Duration
-	Run   func(ctx context.Context, now time.Time) (int64, error)
+	Name    domain.JobName
+	Every   time.Duration
+	OwnLoop bool
+	Run     func(ctx context.Context, now time.Time) (int64, error)
 }
 
 type Worker struct {
@@ -66,7 +67,7 @@ type dispatch struct {
 func (w *Worker) Tick(ctx context.Context, now time.Time) error {
 	w.logger.LogAttrs(ctx, slog.LevelDebug, "worker.tick", slog.Time("now", now))
 	stopClaiming := w.timing.Wall().Add(w.timing.ClaimBudget)
-	if err := w.schedule(ctx, now); err != nil {
+	if err := w.schedule(ctx, now, w.jobs); err != nil {
 		return err
 	}
 	stop, abort := context.WithCancel(ctx)
@@ -83,7 +84,15 @@ func (w *Worker) Tick(ctx context.Context, now time.Time) error {
 func (w *Worker) Run(ctx context.Context) error {
 	stop, abort := context.WithCancel(ctx)
 	defer abort()
-	scheduler := core.Run(stop, w.logger, "worker-scheduler", abortOnFailure(abort, func() error { return w.scheduleEverySecond(stop) }))
+	shared, alone := w.jobLoops()
+	schedulers := []<-chan error{core.Run(stop, w.logger, "worker-scheduler", abortOnFailure(abort, func() error {
+		return w.scheduleEverySecond(stop, func(ctx context.Context, now time.Time) error { return w.schedule(ctx, now, shared) })
+	}))}
+	for _, job := range alone {
+		schedulers = append(schedulers, core.Run(stop, w.logger, "worker-job-loop", abortOnFailure(abort, func() error {
+			return w.scheduleEverySecond(stop, func(ctx context.Context, now time.Time) error { return w.runJob(ctx, job, now) })
+		})))
+	}
 	lanesErr := w.runLanes(dispatch{
 		instant:  w.clock.Instant,
 		mayClaim: func() bool { return true },
@@ -91,7 +100,23 @@ func (w *Worker) Run(ctx context.Context) error {
 		abort:    abort,
 	})
 	abort()
-	return errors.Join(lanesErr, <-scheduler)
+	failures := []error{lanesErr}
+	for _, scheduler := range schedulers {
+		failures = append(failures, <-scheduler)
+	}
+	return errors.Join(failures...)
+}
+
+func (w *Worker) jobLoops() ([]Job, []Job) {
+	var shared, alone []Job
+	for _, job := range w.jobs {
+		if job.OwnLoop {
+			alone = append(alone, job)
+			continue
+		}
+		shared = append(shared, job)
+	}
+	return shared, alone
 }
 
 func abortOnFailure(abort context.CancelFunc, run func() error) func() error {
@@ -108,7 +133,7 @@ func abortOnFailure(abort context.CancelFunc, run func() error) func() error {
 	}
 }
 
-func (w *Worker) scheduleEverySecond(stop context.Context) error {
+func (w *Worker) scheduleEverySecond(stop context.Context, pass func(ctx context.Context, now time.Time) error) error {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	for {
@@ -120,15 +145,15 @@ func (w *Worker) scheduleEverySecond(stop context.Context) error {
 			if err != nil {
 				return fmt.Errorf("read the clock: %w", err)
 			}
-			if err := w.schedule(stop, now); err != nil && stop.Err() == nil {
+			if err := pass(stop, now); err != nil && stop.Err() == nil {
 				return fmt.Errorf("schedule at %s: %w", now.Format(time.RFC3339), err)
 			}
 		}
 	}
 }
 
-func (w *Worker) schedule(ctx context.Context, now time.Time) error {
-	for _, job := range w.jobs {
+func (w *Worker) schedule(ctx context.Context, now time.Time, jobs []Job) error {
+	for _, job := range jobs {
 		if err := w.runJob(ctx, job, now); err != nil {
 			return err
 		}

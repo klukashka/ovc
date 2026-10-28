@@ -35,8 +35,8 @@ type ReminderKind struct {
 
 func ReminderKinds() []ReminderKind {
 	return []ReminderKind{
-		{Event: EventLessonReminder24h, Offset: 24 * time.Hour, DayBefore: true},
 		{Event: EventLessonReminder1h, Offset: time.Hour, InApp: true},
+		{Event: EventLessonReminder24h, Offset: 24 * time.Hour, DayBefore: true},
 	}
 }
 

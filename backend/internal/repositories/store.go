@@ -31,6 +31,7 @@ type Repositories struct {
 	Signals       Signals
 	Notifications Notifications
 	Lessons       Lessons
+	TestClock     TestClock
 }
 
 type Store struct {
@@ -85,6 +86,7 @@ func newRepositories(queries *dbgen.Queries) Repositories {
 		Signals:       Signals{queries: queries},
 		Notifications: Notifications{queries: queries},
 		Lessons:       Lessons{queries: queries},
+		TestClock:     TestClock{queries: queries},
 	}
 }
 
