@@ -125,8 +125,8 @@ func (b groupArchivedEmail) Build(ctx context.Context, row repositories.ClaimedO
 	}
 	view := lessonView{
 		Language: recipient.Language, Subject: text.SubjectPrefix + ": " + label, Intro: text.Intro, Title: label,
-		Details: []lessonDetail{{Label: text.Tutor, Value: core.EmailSafeText(group.TutorName)}},
-		Lessons: list.lines, More: list.more, Action: text.Action, ActionURL: b.emails.publicURL + schedulePagePath, Note: text.Note,
+		Details:        []lessonDetail{{Label: text.Tutor, Value: core.EmailSafeText(group.TutorName)}},
+		LessonsHeading: list.heading, Lessons: list.lines, More: list.more, Action: text.Action, ActionURL: b.emails.publicURL + schedulePagePath, Note: text.Note,
 		Unsubscribe: text.Unsubscribe, UnsubscribeNote: text.UnsubscribeNote,
 	}
 	composition.Email, err = b.emails.execute(view, recipient, composition.Optional.Group, now)

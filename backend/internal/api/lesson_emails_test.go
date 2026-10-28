@@ -167,12 +167,15 @@ func TestLessonEmailsUseTheRecipientsLanguageAndTimezone(t *testing.T) {
 	}
 }
 
+const hiddenCharacters = "\u2061\u2062\u2063\u2064\u180e\u00ad\u034f\U000E0041\u115f\u1160\u3164\uffa0" +
+	"\u2800\ufe00\ufe0e\U000E0100\U000E01EF\u180b\u180c\u180d\u180f\u17b4\u17b5"
+
 func TestTitlesInSubjectsAndBodiesAreStrippedAndEncoded(t *testing.T) {
 	t.Parallel()
 	h := newAuthHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	request := oneOffFor(h.linkedCard(t, tutor, 10, domain.RelationshipActive), firstLessonDate, firstLessonLocal)
-	request.Title = "Grammar\u202e <b>club</b>\u200b  \u2014 \u2066practice\u2069"
+	request.Title = "Grammar\u202e <b>club</b>\u200b" + hiddenCharacters + "  \u2014 \u2066practice\u2069"
 	h.scheduled(t, token, request)
 	encodedWord := oneOffFor(h.linkedCard(t, tutor, 11, domain.RelationshipActive), firstLessonDate, firstLessonLocal)
 	encodedWord.Title = "=?utf-8?b?4oCuZXZpbA==?="
@@ -190,7 +193,7 @@ func TestTitlesInSubjectsAndBodiesAreStrippedAndEncoded(t *testing.T) {
 		t.Fatalf("the bodies are %q and %q", reminder.HTML, reminder.Text)
 	}
 	for _, part := range []string{reminder.Subject, reminder.Text, reminder.HTML, reminder.Headers["Subject"]} {
-		if strings.ContainsAny(part, "\u202e\u200b\u2066\u2069") {
+		if strings.ContainsAny(part, "\u202e\u200b\u2066\u2069"+hiddenCharacters) {
 			t.Fatalf("an invisible formatting character reached %q", part)
 		}
 	}

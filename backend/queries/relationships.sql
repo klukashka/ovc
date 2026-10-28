@@ -186,8 +186,9 @@ SET state = 'ended', ended_by = sqlc.arg(ended_by)::text, ended_at = sqlc.arg(no
 WHERE id = @id AND tutor_id = @tutor_id AND state = 'active'
 RETURNING *;
 
--- name: DeleteRelationshipMemberships :execrows
-DELETE FROM group_members WHERE relationship_id = @relationship_id AND tutor_id = @tutor_id;
+-- name: DeleteRelationshipMemberships :many
+DELETE FROM group_members WHERE relationship_id = @relationship_id AND tutor_id = @tutor_id
+RETURNING group_id;
 
 -- name: LockStudentRelationship :one
 SELECT * FROM relationships WHERE id = @id AND student_id = @student_id AND state <> 'discarded' FOR UPDATE;

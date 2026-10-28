@@ -126,8 +126,9 @@ func (q *Queries) CreateRelationship(ctx context.Context, arg CreateRelationship
 	return err
 }
 
-const deleteRelationshipMemberships = `-- name: DeleteRelationshipMemberships :execrows
+const deleteRelationshipMemberships = `-- name: DeleteRelationshipMemberships :many
 DELETE FROM group_members WHERE relationship_id = $1 AND tutor_id = $2
+RETURNING group_id
 `
 
 type DeleteRelationshipMembershipsParams struct {
@@ -135,12 +136,24 @@ type DeleteRelationshipMembershipsParams struct {
 	TutorID        domain.UserID
 }
 
-func (q *Queries) DeleteRelationshipMemberships(ctx context.Context, arg DeleteRelationshipMembershipsParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteRelationshipMemberships, arg.RelationshipID, arg.TutorID)
+func (q *Queries) DeleteRelationshipMemberships(ctx context.Context, arg DeleteRelationshipMembershipsParams) ([]domain.GroupID, error) {
+	rows, err := q.db.Query(ctx, deleteRelationshipMemberships, arg.RelationshipID, arg.TutorID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected(), nil
+	defer rows.Close()
+	var items []domain.GroupID
+	for rows.Next() {
+		var group_id domain.GroupID
+		if err := rows.Scan(&group_id); err != nil {
+			return nil, err
+		}
+		items = append(items, group_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteStudentMemberships = `-- name: DeleteStudentMemberships :execrows

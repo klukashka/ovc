@@ -140,6 +140,9 @@ func (s *Service) archiveEffects(
 		return err
 	}
 	outcome.lessons.series = series
+	if outcome.lessons.cancelled == 0 {
+		return nil
+	}
 	for _, member := range members {
 		if member.StudentID == nil {
 			continue

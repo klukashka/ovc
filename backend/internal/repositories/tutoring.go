@@ -234,9 +234,9 @@ func (r Relationships) End(ctx context.Context, link Relationship, by domain.End
 	return one(ended, err, "end relationship")
 }
 
-func (r Relationships) DeleteMemberships(ctx context.Context, link Relationship) (int64, error) {
-	rows, err := r.queries.DeleteRelationshipMemberships(ctx, dbgen.DeleteRelationshipMembershipsParams{RelationshipID: link.ID, TutorID: link.TutorID})
-	return counted(rows, err, "delete memberships of a relationship")
+func (r Relationships) DeleteMemberships(ctx context.Context, link Relationship) ([]domain.GroupID, error) {
+	groups, err := r.queries.DeleteRelationshipMemberships(ctx, dbgen.DeleteRelationshipMembershipsParams{RelationshipID: link.ID, TutorID: link.TutorID})
+	return one(groups, err, "delete memberships of a relationship")
 }
 
 func (r Relationships) LockOfStudentByID(ctx context.Context, student domain.UserID, id domain.RelationshipID) (Relationship, error) {

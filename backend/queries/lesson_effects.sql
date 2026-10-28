@@ -1,4 +1,4 @@
--- name: EndLessonSeriesForEffect :many
+-- name: EndLessonSeriesOfTutorForEffect :many
 UPDATE lesson_series SET
     end_date = (sqlc.arg(now)::timestamptz AT TIME ZONE lesson_series.timezone)::date, count = NULL,
     ended_at = CASE
@@ -11,35 +11,99 @@ UPDATE lesson_series SET
     updated_at = sqlc.arg(now)::timestamptz
 FROM (
     SELECT locked.id FROM lesson_series AS locked
-    WHERE locked.tutor_id = sqlc.arg(tutor_id)::uuid AND locked.ended_at IS NULL AND (
-        sqlc.arg(whole_tutor)::boolean
-        OR locked.relationship_id = ANY (sqlc.arg(relationship_ids)::uuid[])
-        OR locked.group_id = ANY (sqlc.arg(group_ids)::uuid[])
-    )
+    WHERE locked.tutor_id = sqlc.arg(tutor_id)::uuid AND locked.ended_at IS NULL
+        AND (locked.end_date IS NULL OR locked.end_date > (sqlc.arg(now)::timestamptz AT TIME ZONE locked.timezone)::date)
     ORDER BY locked.id
     FOR UPDATE
 ) AS ending
 WHERE lesson_series.id = ending.id
-    AND (lesson_series.end_date IS NULL OR lesson_series.end_date > (sqlc.arg(now)::timestamptz AT TIME ZONE lesson_series.timezone)::date)
 RETURNING lesson_series.id;
 
--- name: CancelLessonsForEffect :many
+-- name: EndLessonSeriesOfRelationshipsForEffect :many
+UPDATE lesson_series SET
+    end_date = (sqlc.arg(now)::timestamptz AT TIME ZONE lesson_series.timezone)::date, count = NULL,
+    ended_at = CASE
+        WHEN NOT EXISTS (
+            SELECT 1 FROM lessons
+            WHERE lessons.series_id = lesson_series.id
+                AND lessons.occurrence_date <= (sqlc.arg(now)::timestamptz AT TIME ZONE lesson_series.timezone)::date
+        ) THEN sqlc.arg(now)::timestamptz
+    END,
+    updated_at = sqlc.arg(now)::timestamptz
+FROM (
+    SELECT locked.id FROM lesson_series AS locked
+    WHERE locked.relationship_id = ANY (sqlc.arg(relationship_ids)::uuid[]) AND locked.tutor_id = sqlc.arg(tutor_id)::uuid AND locked.ended_at IS NULL
+        AND (locked.end_date IS NULL OR locked.end_date > (sqlc.arg(now)::timestamptz AT TIME ZONE locked.timezone)::date)
+    ORDER BY locked.id
+    FOR UPDATE
+) AS ending
+WHERE lesson_series.id = ending.id
+RETURNING lesson_series.id;
+
+-- name: EndLessonSeriesOfGroupsForEffect :many
+UPDATE lesson_series SET
+    end_date = (sqlc.arg(now)::timestamptz AT TIME ZONE lesson_series.timezone)::date, count = NULL,
+    ended_at = CASE
+        WHEN NOT EXISTS (
+            SELECT 1 FROM lessons
+            WHERE lessons.series_id = lesson_series.id
+                AND lessons.occurrence_date <= (sqlc.arg(now)::timestamptz AT TIME ZONE lesson_series.timezone)::date
+        ) THEN sqlc.arg(now)::timestamptz
+    END,
+    updated_at = sqlc.arg(now)::timestamptz
+FROM (
+    SELECT locked.id FROM lesson_series AS locked
+    WHERE locked.group_id = ANY (sqlc.arg(group_ids)::uuid[]) AND locked.tutor_id = sqlc.arg(tutor_id)::uuid AND locked.ended_at IS NULL
+        AND (locked.end_date IS NULL OR locked.end_date > (sqlc.arg(now)::timestamptz AT TIME ZONE locked.timezone)::date)
+    ORDER BY locked.id
+    FOR UPDATE
+) AS ending
+WHERE lesson_series.id = ending.id
+RETURNING lesson_series.id;
+
+-- name: CancelLessonsOfTutorForEffect :many
 UPDATE lessons SET
     status = 'cancelled', cancelled_at = sqlc.arg(cancelled_at)::timestamptz, cancel_cause = sqlc.arg(cancel_cause)::text,
     version = version + 1, updated_at = sqlc.arg(cancelled_at)::timestamptz
 FROM (
     SELECT locked.id FROM lessons AS locked
-    WHERE locked.tutor_id = sqlc.arg(tutor_id)::uuid AND locked.status = 'scheduled'
-        AND locked.starts_at > sqlc.arg(cancelled_at)::timestamptz AND (
-            sqlc.arg(whole_tutor)::boolean
-            OR locked.relationship_id = ANY (sqlc.arg(relationship_ids)::uuid[])
-            OR locked.group_id = ANY (sqlc.arg(group_ids)::uuid[])
-        )
+    WHERE locked.tutor_id = sqlc.arg(tutor_id)::uuid AND locked.status = 'scheduled' AND locked.starts_at > sqlc.arg(cancelled_at)::timestamptz
     ORDER BY locked.id
     FOR UPDATE
 ) AS cancelling
 WHERE lessons.id = cancelling.id
 RETURNING lessons.id, lessons.relationship_id, lessons.group_id;
+
+-- name: CancelLessonsOfRelationshipsForEffect :many
+UPDATE lessons SET
+    status = 'cancelled', cancelled_at = sqlc.arg(cancelled_at)::timestamptz, cancel_cause = sqlc.arg(cancel_cause)::text,
+    version = version + 1, updated_at = sqlc.arg(cancelled_at)::timestamptz
+FROM (
+    SELECT locked.id FROM lessons AS locked
+    WHERE locked.relationship_id = ANY (sqlc.arg(relationship_ids)::uuid[]) AND locked.tutor_id = sqlc.arg(tutor_id)::uuid AND locked.status = 'scheduled' AND locked.starts_at > sqlc.arg(cancelled_at)::timestamptz
+    ORDER BY locked.id
+    FOR UPDATE
+) AS cancelling
+WHERE lessons.id = cancelling.id
+RETURNING lessons.id, lessons.relationship_id, lessons.group_id;
+
+-- name: CancelLessonsOfGroupsForEffect :many
+UPDATE lessons SET
+    status = 'cancelled', cancelled_at = sqlc.arg(cancelled_at)::timestamptz, cancel_cause = sqlc.arg(cancel_cause)::text,
+    version = version + 1, updated_at = sqlc.arg(cancelled_at)::timestamptz
+FROM (
+    SELECT locked.id FROM lessons AS locked
+    WHERE locked.group_id = ANY (sqlc.arg(group_ids)::uuid[]) AND locked.tutor_id = sqlc.arg(tutor_id)::uuid AND locked.status = 'scheduled' AND locked.starts_at > sqlc.arg(cancelled_at)::timestamptz
+    ORDER BY locked.id
+    FOR UPDATE
+) AS cancelling
+WHERE lessons.id = cancelling.id
+RETURNING lessons.id, lessons.relationship_id, lessons.group_id;
+
+-- name: ListUnderWayLessonsOfTutor :many
+SELECT id, relationship_id, group_id FROM lessons
+WHERE tutor_id = @tutor_id AND status = 'scheduled' AND starts_at <= sqlc.arg(at)::timestamptz
+ORDER BY id;
 
 -- name: FreezeEffectRosters :execrows
 INSERT INTO lesson_roster (lesson_id, student_id, lesson_starts_at, added_at)
@@ -65,23 +129,45 @@ ORDER BY id;
 
 -- name: ListGroupMemberStudentsOfTutor :many
 SELECT group_members.group_id, relationships.student_id
-FROM group_members
-JOIN relationships ON relationships.id = group_members.relationship_id AND relationships.tutor_id = group_members.tutor_id
-WHERE group_members.tutor_id = @tutor_id AND relationships.student_id IS NOT NULL
+FROM groups
+JOIN group_members ON group_members.group_id = groups.id AND group_members.tutor_id = groups.tutor_id
+JOIN relationships ON relationships.id = group_members.relationship_id AND relationships.tutor_id = groups.tutor_id
+WHERE groups.tutor_id = @tutor_id AND relationships.student_id IS NOT NULL
 ORDER BY group_members.group_id, relationships.student_id;
 
--- name: ListLessonsCancelledByEffect :many
+-- name: ListLessonsCancelledOfLink :many
 SELECT lessons.id, lessons.title, lessons.starts_at, lessons.timezone, count(lessons.id) OVER () AS total
 FROM lessons
-WHERE lessons.cancel_cause = sqlc.arg(cancel_cause)::text AND lessons.cancelled_at = sqlc.arg(cancelled_at)::timestamptz
-    AND lessons.tutor_id = sqlc.arg(tutor_id)::uuid
-    AND (sqlc.narg(relationship_id)::uuid IS NULL OR lessons.relationship_id = sqlc.narg(relationship_id)::uuid)
-    AND (sqlc.narg(group_id)::uuid IS NULL OR lessons.group_id = sqlc.narg(group_id)::uuid)
-    AND (sqlc.narg(roster_student_id)::uuid IS NULL OR EXISTS (
-        SELECT 1 FROM lesson_roster
-        WHERE lesson_roster.lesson_id = lessons.id AND lesson_roster.student_id = sqlc.narg(roster_student_id)::uuid
-    ))
+WHERE lessons.relationship_id = sqlc.arg(relationship_id)::uuid AND lessons.starts_at > sqlc.arg(cancelled_at)::timestamptz
+    AND lessons.tutor_id = sqlc.arg(tutor_id)::uuid AND lessons.cancel_cause = sqlc.arg(cancel_cause)::text
+    AND lessons.cancelled_at = sqlc.arg(cancelled_at)::timestamptz
 ORDER BY lessons.starts_at, lessons.id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ListLessonsCancelledOnRoster :many
+SELECT cancelled.id, cancelled.title, cancelled.starts_at, cancelled.timezone, count(cancelled.id) OVER () AS total
+FROM lesson_roster
+CROSS JOIN LATERAL (
+    SELECT lessons.id, lessons.title, lessons.starts_at, lessons.timezone FROM lessons
+    WHERE lessons.id = lesson_roster.lesson_id AND lessons.tutor_id = sqlc.arg(tutor_id)::uuid
+        AND lessons.cancel_cause = sqlc.arg(cancel_cause)::text AND lessons.cancelled_at = sqlc.arg(cancelled_at)::timestamptz
+    LIMIT 1
+) AS cancelled
+WHERE lesson_roster.student_id = sqlc.arg(student_id)::uuid AND lesson_roster.lesson_starts_at > sqlc.arg(cancelled_at)::timestamptz
+ORDER BY cancelled.starts_at, cancelled.id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ListGroupLessonsCancelledOnRoster :many
+SELECT cancelled.id, cancelled.title, cancelled.starts_at, cancelled.timezone, count(cancelled.id) OVER () AS total
+FROM lesson_roster
+CROSS JOIN LATERAL (
+    SELECT lessons.id, lessons.title, lessons.starts_at, lessons.timezone FROM lessons
+    WHERE lessons.id = lesson_roster.lesson_id AND lessons.group_id = sqlc.arg(group_id)::uuid AND lessons.tutor_id = sqlc.arg(tutor_id)::uuid
+        AND lessons.cancel_cause = sqlc.arg(cancel_cause)::text AND lessons.cancelled_at = sqlc.arg(cancelled_at)::timestamptz
+    LIMIT 1
+) AS cancelled
+WHERE lesson_roster.student_id = sqlc.arg(student_id)::uuid AND lesson_roster.lesson_starts_at > sqlc.arg(cancelled_at)::timestamptz
+ORDER BY cancelled.starts_at, cancelled.id
 LIMIT sqlc.arg(row_limit)::int;
 
 -- name: GetGroupForArchivedEmail :one

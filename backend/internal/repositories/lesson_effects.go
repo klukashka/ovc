@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -11,10 +12,15 @@ import (
 )
 
 type (
-	EffectCancelledLesson   = dbgen.CancelLessonsForEffectRow
+	EffectLesson            = dbgen.CancelLessonsOfTutorForEffectRow
 	ArchivedEmailGroup      = dbgen.GetGroupForArchivedEmailRow
 	NotificationGroup       = dbgen.ListNotificationGroupsRow
-	LessonCancelledByEffect = dbgen.ListLessonsCancelledByEffectRow
+	LessonCancelledByEffect = dbgen.ListLessonsCancelledOnRosterRow
+)
+
+var (
+	errMixedEffectScope         = errors.New("an effect scope names more than one kind of audience")
+	errUnsupportedCancellations = errors.New("a listing of cancelled lessons names an unsupported combination of filters")
 )
 
 type EffectScope struct {
@@ -49,32 +55,79 @@ type EffectCancellations struct {
 	Limit       int32
 }
 
-func (s EffectScope) empty() bool {
-	return !s.WholeTutor && len(s.Relationships) == 0 && len(s.Groups) == 0
+func (s EffectScope) kinds() int {
+	kinds := 0
+	for _, named := range []bool{s.WholeTutor, len(s.Relationships) > 0, len(s.Groups) > 0} {
+		if named {
+			kinds++
+		}
+	}
+	return kinds
 }
 
 func (r Lessons) EndSeriesForEffect(ctx context.Context, scope EffectScope, now time.Time) ([]domain.SeriesID, error) {
-	if scope.empty() {
+	tutor := pgtype.UUID{Bytes: scope.Tutor, Valid: true}
+	var ended []domain.SeriesID
+	var err error
+	switch {
+	case scope.kinds() == 0:
 		return nil, nil
+	case scope.kinds() > 1:
+		return nil, errMixedEffectScope
+	case scope.WholeTutor:
+		ended, err = r.queries.EndLessonSeriesOfTutorForEffect(ctx, dbgen.EndLessonSeriesOfTutorForEffectParams{Now: now, TutorID: tutor})
+	case len(scope.Relationships) > 0:
+		ended, err = r.queries.EndLessonSeriesOfRelationshipsForEffect(ctx, dbgen.EndLessonSeriesOfRelationshipsForEffectParams{
+			Now: now, TutorID: tutor, RelationshipIds: uuids(scope.Relationships),
+		})
+	default:
+		ended, err = r.queries.EndLessonSeriesOfGroupsForEffect(ctx, dbgen.EndLessonSeriesOfGroupsForEffectParams{
+			Now: now, TutorID: tutor, GroupIds: uuids(scope.Groups),
+		})
 	}
-	ended, err := r.queries.EndLessonSeriesForEffect(ctx, dbgen.EndLessonSeriesForEffectParams{
-		Now: now, TutorID: pgtype.UUID{Bytes: scope.Tutor, Valid: true}, WholeTutor: scope.WholeTutor,
-		RelationshipIds: uuids(scope.Relationships), GroupIds: uuids(scope.Groups),
-	})
 	return one(ended, err, "end the series of an audience change")
 }
 
-func (r Lessons) CancelForEffect(
-	ctx context.Context, scope EffectScope, cause domain.CancelCause, cancelledAt time.Time,
-) ([]EffectCancelledLesson, error) {
-	if scope.empty() {
+func (r Lessons) CancelForEffect(ctx context.Context, scope EffectScope, cause domain.CancelCause, cancelledAt time.Time) ([]EffectLesson, error) {
+	tutor := pgtype.UUID{Bytes: scope.Tutor, Valid: true}
+	switch {
+	case scope.kinds() == 0:
 		return nil, nil
+	case scope.kinds() > 1:
+		return nil, errMixedEffectScope
+	case scope.WholeTutor:
+		cancelled, err := r.queries.CancelLessonsOfTutorForEffect(ctx, dbgen.CancelLessonsOfTutorForEffectParams{
+			CancelledAt: cancelledAt, CancelCause: string(cause), TutorID: tutor,
+		})
+		return one(cancelled, err, "cancel the lessons of a tutor's deletion")
+	case len(scope.Relationships) > 0:
+		cancelled, err := r.queries.CancelLessonsOfRelationshipsForEffect(ctx, dbgen.CancelLessonsOfRelationshipsForEffectParams{
+			CancelledAt: cancelledAt, CancelCause: string(cause), TutorID: tutor, RelationshipIds: uuids(scope.Relationships),
+		})
+		return effectLessons(cancelled, err, "cancel the lessons of relationships")
 	}
-	cancelled, err := r.queries.CancelLessonsForEffect(ctx, dbgen.CancelLessonsForEffectParams{
-		CancelledAt: cancelledAt, CancelCause: string(cause), TutorID: pgtype.UUID{Bytes: scope.Tutor, Valid: true},
-		WholeTutor: scope.WholeTutor, RelationshipIds: uuids(scope.Relationships), GroupIds: uuids(scope.Groups),
+	cancelled, err := r.queries.CancelLessonsOfGroupsForEffect(ctx, dbgen.CancelLessonsOfGroupsForEffectParams{
+		CancelledAt: cancelledAt, CancelCause: string(cause), TutorID: tutor, GroupIds: uuids(scope.Groups),
 	})
-	return one(cancelled, err, "cancel the lessons of an audience change")
+	return effectLessons(cancelled, err, "cancel the lessons of groups")
+}
+
+func (r Lessons) UnderWayOfTutor(ctx context.Context, tutor domain.UserID, at time.Time) ([]EffectLesson, error) {
+	lessons, err := r.queries.ListUnderWayLessonsOfTutor(ctx, dbgen.ListUnderWayLessonsOfTutorParams{TutorID: tutor, At: at})
+	return effectLessons(lessons, err, "the lessons of a tutor under way")
+}
+
+func effectLessons[Row dbgen.CancelLessonsOfRelationshipsForEffectRow | dbgen.CancelLessonsOfGroupsForEffectRow | dbgen.ListUnderWayLessonsOfTutorRow](
+	rows []Row, err error, what string,
+) ([]EffectLesson, error) {
+	if _, err := one(rows, err, what); err != nil {
+		return nil, err
+	}
+	lessons := make([]EffectLesson, 0, len(rows))
+	for _, row := range rows {
+		lessons = append(lessons, EffectLesson(row))
+	}
+	return lessons, nil
 }
 
 func (r Lessons) FreezeRosters(ctx context.Context, entries []RosterEntry, now time.Time) (int64, error) {
@@ -134,12 +187,42 @@ func (r Lessons) GroupMembersOfTutor(ctx context.Context, tutor domain.UserID) (
 }
 
 func (r Lessons) CancelledByEffect(ctx context.Context, query EffectCancellations) ([]LessonCancelledByEffect, error) {
-	rows, err := r.queries.ListLessonsCancelledByEffect(ctx, dbgen.ListLessonsCancelledByEffectParams{
-		CancelCause: string(query.Cause), CancelledAt: query.CancelledAt, TutorID: pgtype.UUID{Bytes: query.Tutor, Valid: true},
-		RelationshipID: optionalUUID(query.Link), GroupID: optionalUUID(query.Group), RosterStudentID: optionalUUID(query.OnRosterOf),
-		RowLimit: query.Limit,
-	})
-	return one(rows, err, "lessons cancelled by an audience change")
+	tutor := pgtype.UUID{Bytes: query.Tutor, Valid: true}
+	cause := string(query.Cause)
+	switch {
+	case query.Link != nil && query.OnRosterOf == nil && query.Group == nil:
+		rows, err := r.queries.ListLessonsCancelledOfLink(ctx, dbgen.ListLessonsCancelledOfLinkParams{
+			RelationshipID: pgtype.UUID{Bytes: *query.Link, Valid: true}, CancelledAt: query.CancelledAt, TutorID: tutor, CancelCause: cause,
+			RowLimit: query.Limit,
+		})
+		return cancelledLessons(rows, err, "lessons cancelled by the ending of a relationship")
+	case query.OnRosterOf != nil && query.Link == nil && query.Group != nil:
+		rows, err := r.queries.ListGroupLessonsCancelledOnRoster(ctx, dbgen.ListGroupLessonsCancelledOnRosterParams{
+			StudentID: pgtype.UUID{Bytes: *query.OnRosterOf, Valid: true}, CancelledAt: query.CancelledAt,
+			GroupID: pgtype.UUID{Bytes: *query.Group, Valid: true}, TutorID: tutor, CancelCause: cause, RowLimit: query.Limit,
+		})
+		return cancelledLessons(rows, err, "group lessons cancelled from a student's roster")
+	case query.OnRosterOf != nil && query.Link == nil && query.Group == nil:
+		rows, err := r.queries.ListLessonsCancelledOnRoster(ctx, dbgen.ListLessonsCancelledOnRosterParams{
+			StudentID: pgtype.UUID{Bytes: *query.OnRosterOf, Valid: true}, CancelledAt: query.CancelledAt, TutorID: tutor, CancelCause: cause,
+			RowLimit: query.Limit,
+		})
+		return one(rows, err, "lessons cancelled from a student's roster")
+	}
+	return nil, errUnsupportedCancellations
+}
+
+func cancelledLessons[Row dbgen.ListLessonsCancelledOfLinkRow | dbgen.ListGroupLessonsCancelledOnRosterRow](
+	rows []Row, err error, what string,
+) ([]LessonCancelledByEffect, error) {
+	if _, err := one(rows, err, what); err != nil {
+		return nil, err
+	}
+	lessons := make([]LessonCancelledByEffect, 0, len(rows))
+	for _, row := range rows {
+		lessons = append(lessons, LessonCancelledByEffect(row))
+	}
+	return lessons, nil
 }
 
 func (r Groups) ForArchivedEmail(ctx context.Context, id domain.GroupID) (ArchivedEmailGroup, error) {

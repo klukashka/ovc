@@ -197,7 +197,7 @@ Slice 5 adds the `lesson_series`, `lesson` and `lesson_roster` tables. Series an
 | Column | Notes |
 |---|---|
 | `id` | |
-| `tutor_id` | references the tutor profile, `ON DELETE RESTRICT`; indexed as `(tutor_id, created_at DESC, id)`, which orders the tutor purge's series batches |
+| `tutor_id` | references the tutor profile, `ON DELETE RESTRICT`; indexed as `(tutor_id, created_at DESC, id)`, which orders the tutor purge's series batches, and partially as `(tutor_id, id)` where `ended_at` is null, through which a tutor deletion locks the series it ends without walking the ended ones (pending owner review) |
 | `relationship_id` xor `group_id` | each with the tutor in its key, `ON DELETE RESTRICT` |
 | `weekdays` | set of 1–7 |
 | `local_start` | time |
@@ -239,6 +239,7 @@ Indexes:
 - unique `(series_id, occurrence_date)`;
 - `(tutor_id, starts_at, id)`, which also orders the tutor purge's lesson batches, `(relationship_id, starts_at)` and `(group_id, starts_at)`;
 - partial `(group_id, starts_at)` where `status = 'scheduled'`, for the group page;
+- partial `(tutor_id, starts_at)` where `status = 'scheduled'`, through which a tutor deletion cancels the tutor's future lessons and an ending or a tutor deletion finds the tutor's lessons under way without reading past or cancelled ones (pending owner review);
 - partial `(starts_at)` where `status = 'scheduled'`;
 - partial `(starts_at)` where `status = 'live'`;
 - partial on the end instant computed in UTC, `(timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int)), id`, where `status = 'scheduled'`, the order in which the status job pages due lessons; the expression is immutable, as an index requires, because `timezone(text, timestamptz)` is immutable and yields a timestamp without a time zone, `make_interval` is immutable, and adding an interval to a timestamp without a time zone is immutable, whereas adding an interval to a `timestamptz` is only stable (pending owner review);
@@ -246,7 +247,7 @@ Indexes:
 
 ### Lesson roster
 
-`lesson_id` (references the lesson, `ON DELETE CASCADE`), `student_id`, `lesson_starts_at` (copied from the lesson for calendar queries), `added_at`. Primary key on the pair, and an index on `(student_id, lesson_starts_at)`.
+`lesson_id` (references the lesson, `ON DELETE CASCADE`), `student_id`, `lesson_starts_at` (copied from the lesson for calendar queries), `added_at`. Primary key on the pair, and an index on `(student_id, lesson_starts_at)`, which also drives the lesson listings of the `group.archived` and `tutor.deleted` emails ([notifications](notifications.md#events), pending owner review).
 
 - **No foreign key to the user:** inserting a roster row with a key to the student would take `FOR KEY SHARE` on the student's user row, and tutor deletion, which freezes rosters, must lock no student's user row ([accounts](accounts.md#locks-and-the-session-re-check)). A roster row is inserted only while its transaction holds the student's relationship row with at least `FOR SHARE` and has re-checked its state; a student's purge discards those relationships before it deletes the account's roster rows through the `student_id` index and then the user row, so an inserter waiting behind the purge finds the relationship discarded and inserts nothing.
 

@@ -143,6 +143,24 @@ func russianZoneSuffix(label *ZoneLabel) string {
 	return " по " + label.Offset
 }
 
+var invisibleCharacters = &unicode.RangeTable{
+	R16: []unicode.Range16{
+		{Lo: 0x034f, Hi: 0x034f, Stride: 1},
+		{Lo: 0x115f, Hi: 0x1160, Stride: 1},
+		{Lo: 0x17b4, Hi: 0x17b5, Stride: 1},
+		{Lo: 0x180b, Hi: 0x180f, Stride: 1},
+		{Lo: 0x2060, Hi: 0x206f, Stride: 1},
+		{Lo: 0x2800, Hi: 0x2800, Stride: 1},
+		{Lo: 0x3164, Hi: 0x3164, Stride: 1},
+		{Lo: 0xfe00, Hi: 0xfe0e, Stride: 1},
+		{Lo: 0xffa0, Hi: 0xffa0, Stride: 1},
+		{Lo: 0xfff0, Hi: 0xfff8, Stride: 1},
+	},
+	R32: []unicode.Range32{
+		{Lo: 0xe0000, Hi: 0xe0fff, Stride: 1},
+	},
+}
+
 func EmailSafeText(text string) string {
 	kept := strings.Map(func(character rune) rune {
 		if invisibleFormatting(character) {
@@ -154,9 +172,5 @@ func EmailSafeText(text string) string {
 }
 
 func invisibleFormatting(character rune) bool {
-	switch character {
-	case 0x061c, 0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0x2060, 0xfeff:
-		return true
-	}
-	return (character >= 0x202a && character <= 0x202e) || (character >= 0x2066 && character <= 0x2069) || unicode.IsControl(character)
+	return unicode.Is(unicode.Cf, character) || unicode.IsControl(character) || unicode.Is(invisibleCharacters, character)
 }

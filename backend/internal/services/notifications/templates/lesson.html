@@ -8,7 +8,8 @@
 <p>{{.Intro}}</p>
 <p style="font-weight: bold;">{{.Title}}</p>
 {{range .Details}}<p><span style="color: #52606d;">{{.Label}}:</span> {{.Value}}</p>
-{{end}}{{if .Lessons}}<ul>
+{{end}}{{if .Lessons}}{{if .LessonsHeading}}<p>{{.LessonsHeading}}</p>
+{{end}}<ul>
 {{range .Lessons}}<li>{{.}}</li>
 {{end}}</ul>
 {{end}}{{if .More}}<p>{{.More}}</p>

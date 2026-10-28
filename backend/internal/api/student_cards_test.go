@@ -904,3 +904,28 @@ func TestConcurrentCardCreationsStopAtTheLimit(t *testing.T) {
 		t.Fatalf("10 concurrent creations with one key answered %v with %d cards", sameKey.statuses, len(sameKey.ids))
 	}
 }
+
+func TestCardNotesRefuseControlCharactersOtherThanLineFeedAndTab(t *testing.T) {
+	t.Parallel()
+	h := newAuthHarness(t)
+	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	card := h.newCard(t, token, cardName, cardEmail)
+
+	refused := map[string]response{}
+	for name, notes := range map[string]string{"a NUL byte": "before\u0000after", "a bell": "ring\u0007", "a carriage return": "one\r\ntwo", "a C1 control": "next\u0085line"} {
+		refused[name] = h.cardCall(t, token, http.MethodPatch, card.ID, "", fmt.Sprintf(`{"notes":%s}`, jsonText(notes)))
+	}
+	kept := h.cardCall(t, token, http.MethodPatch, card.ID, "", fmt.Sprintf(`{"notes":%s}`, jsonText("first line\n\tindented")))
+
+	for name, result := range refused {
+		if result.status != http.StatusUnprocessableEntity || code(t, result) != "validation_failed" || !slices.Equal(fields(t, result), []string{"body.notes:invalid"}) {
+			t.Fatalf("notes with %s answered %d %s", name, result.status, result.body)
+		}
+	}
+	if notes := decodeCard(t, kept).Notes; kept.status != http.StatusOK || notes == nil || *notes != "first line\n\tindented" {
+		t.Fatalf("notes with a line feed and a tab answered %d %s", kept.status, kept.body)
+	}
+	if strings.Contains(h.logs.String(), `"level":"ERROR"`) {
+		t.Fatalf("a refused note was logged as an error:\n%s", h.logs.String())
+	}
+}

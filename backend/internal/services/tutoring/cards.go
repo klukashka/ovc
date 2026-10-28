@@ -25,6 +25,7 @@ const (
 
 	fieldDisplayName = "body.display_name"
 	fieldEmail       = "body.email"
+	fieldNotes       = "body.notes"
 	fieldCursor      = "query.cursor"
 )
 
@@ -333,6 +334,10 @@ func cardProblems(name string, email *string) []FieldProblem {
 	return problems
 }
 
+func controlOtherThanLineFeedOrTab(character rune) bool {
+	return unicode.IsControl(character) && character != '\n' && character != '\t'
+}
+
 func validDisplayName(name string) bool {
 	return name != "" && utf8.RuneCountInString(name) <= displayNameMaxRunes && !strings.ContainsFunc(name, unicode.IsControl)
 }
@@ -422,7 +427,11 @@ func (s *Service) applyChange(
 		updated.Notes = *change.Notes
 		changed = append(changed, "notes")
 	}
-	if problems := cardProblems(updated.DisplayName, changedEmail(emailChanged, updated.Email)); len(problems) > 0 {
+	problems := cardProblems(updated.DisplayName, changedEmail(emailChanged, updated.Email))
+	if change.Notes != nil && strings.ContainsFunc(*change.Notes, controlOtherThanLineFeedOrTab) {
+		problems = append(problems, FieldProblem{Path: fieldNotes, Code: domain.FieldInvalid})
+	}
+	if len(problems) > 0 {
 		return row, nil, &ValidationError{Fields: problems}
 	}
 	if len(changed) == 0 {

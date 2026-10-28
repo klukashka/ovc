@@ -13,18 +13,13 @@ import (
 	"ovc/backend/internal/domain"
 )
 
-const cancelLessonsForEffect = `-- name: CancelLessonsForEffect :many
+const cancelLessonsOfGroupsForEffect = `-- name: CancelLessonsOfGroupsForEffect :many
 UPDATE lessons SET
     status = 'cancelled', cancelled_at = $1::timestamptz, cancel_cause = $2::text,
     version = version + 1, updated_at = $1::timestamptz
 FROM (
     SELECT locked.id FROM lessons AS locked
-    WHERE locked.tutor_id = $3::uuid AND locked.status = 'scheduled'
-        AND locked.starts_at > $1::timestamptz AND (
-            $4::boolean
-            OR locked.relationship_id = ANY ($5::uuid[])
-            OR locked.group_id = ANY ($6::uuid[])
-        )
+    WHERE locked.group_id = ANY ($3::uuid[]) AND locked.tutor_id = $4::uuid AND locked.status = 'scheduled' AND locked.starts_at > $1::timestamptz
     ORDER BY locked.id
     FOR UPDATE
 ) AS cancelling
@@ -32,37 +27,131 @@ WHERE lessons.id = cancelling.id
 RETURNING lessons.id, lessons.relationship_id, lessons.group_id
 `
 
-type CancelLessonsForEffectParams struct {
-	CancelledAt     time.Time
-	CancelCause     string
-	TutorID         pgtype.UUID
-	WholeTutor      bool
-	RelationshipIds []pgtype.UUID
-	GroupIds        []pgtype.UUID
+type CancelLessonsOfGroupsForEffectParams struct {
+	CancelledAt time.Time
+	CancelCause string
+	GroupIds    []pgtype.UUID
+	TutorID     pgtype.UUID
 }
 
-type CancelLessonsForEffectRow struct {
+type CancelLessonsOfGroupsForEffectRow struct {
 	ID             domain.LessonID
 	RelationshipID *domain.RelationshipID
 	GroupID        *domain.GroupID
 }
 
-func (q *Queries) CancelLessonsForEffect(ctx context.Context, arg CancelLessonsForEffectParams) ([]CancelLessonsForEffectRow, error) {
-	rows, err := q.db.Query(ctx, cancelLessonsForEffect,
+func (q *Queries) CancelLessonsOfGroupsForEffect(ctx context.Context, arg CancelLessonsOfGroupsForEffectParams) ([]CancelLessonsOfGroupsForEffectRow, error) {
+	rows, err := q.db.Query(ctx, cancelLessonsOfGroupsForEffect,
 		arg.CancelledAt,
 		arg.CancelCause,
-		arg.TutorID,
-		arg.WholeTutor,
-		arg.RelationshipIds,
 		arg.GroupIds,
+		arg.TutorID,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CancelLessonsForEffectRow
+	var items []CancelLessonsOfGroupsForEffectRow
 	for rows.Next() {
-		var i CancelLessonsForEffectRow
+		var i CancelLessonsOfGroupsForEffectRow
+		if err := rows.Scan(&i.ID, &i.RelationshipID, &i.GroupID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const cancelLessonsOfRelationshipsForEffect = `-- name: CancelLessonsOfRelationshipsForEffect :many
+UPDATE lessons SET
+    status = 'cancelled', cancelled_at = $1::timestamptz, cancel_cause = $2::text,
+    version = version + 1, updated_at = $1::timestamptz
+FROM (
+    SELECT locked.id FROM lessons AS locked
+    WHERE locked.relationship_id = ANY ($3::uuid[]) AND locked.tutor_id = $4::uuid AND locked.status = 'scheduled' AND locked.starts_at > $1::timestamptz
+    ORDER BY locked.id
+    FOR UPDATE
+) AS cancelling
+WHERE lessons.id = cancelling.id
+RETURNING lessons.id, lessons.relationship_id, lessons.group_id
+`
+
+type CancelLessonsOfRelationshipsForEffectParams struct {
+	CancelledAt     time.Time
+	CancelCause     string
+	RelationshipIds []pgtype.UUID
+	TutorID         pgtype.UUID
+}
+
+type CancelLessonsOfRelationshipsForEffectRow struct {
+	ID             domain.LessonID
+	RelationshipID *domain.RelationshipID
+	GroupID        *domain.GroupID
+}
+
+func (q *Queries) CancelLessonsOfRelationshipsForEffect(ctx context.Context, arg CancelLessonsOfRelationshipsForEffectParams) ([]CancelLessonsOfRelationshipsForEffectRow, error) {
+	rows, err := q.db.Query(ctx, cancelLessonsOfRelationshipsForEffect,
+		arg.CancelledAt,
+		arg.CancelCause,
+		arg.RelationshipIds,
+		arg.TutorID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CancelLessonsOfRelationshipsForEffectRow
+	for rows.Next() {
+		var i CancelLessonsOfRelationshipsForEffectRow
+		if err := rows.Scan(&i.ID, &i.RelationshipID, &i.GroupID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const cancelLessonsOfTutorForEffect = `-- name: CancelLessonsOfTutorForEffect :many
+UPDATE lessons SET
+    status = 'cancelled', cancelled_at = $1::timestamptz, cancel_cause = $2::text,
+    version = version + 1, updated_at = $1::timestamptz
+FROM (
+    SELECT locked.id FROM lessons AS locked
+    WHERE locked.tutor_id = $3::uuid AND locked.status = 'scheduled' AND locked.starts_at > $1::timestamptz
+    ORDER BY locked.id
+    FOR UPDATE
+) AS cancelling
+WHERE lessons.id = cancelling.id
+RETURNING lessons.id, lessons.relationship_id, lessons.group_id
+`
+
+type CancelLessonsOfTutorForEffectParams struct {
+	CancelledAt time.Time
+	CancelCause string
+	TutorID     pgtype.UUID
+}
+
+type CancelLessonsOfTutorForEffectRow struct {
+	ID             domain.LessonID
+	RelationshipID *domain.RelationshipID
+	GroupID        *domain.GroupID
+}
+
+func (q *Queries) CancelLessonsOfTutorForEffect(ctx context.Context, arg CancelLessonsOfTutorForEffectParams) ([]CancelLessonsOfTutorForEffectRow, error) {
+	rows, err := q.db.Query(ctx, cancelLessonsOfTutorForEffect, arg.CancelledAt, arg.CancelCause, arg.TutorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CancelLessonsOfTutorForEffectRow
+	for rows.Next() {
+		var i CancelLessonsOfTutorForEffectRow
 		if err := rows.Scan(&i.ID, &i.RelationshipID, &i.GroupID); err != nil {
 			return nil, err
 		}
@@ -96,7 +185,7 @@ func (q *Queries) DeleteRosterRowsOfLinks(ctx context.Context, arg DeleteRosterR
 	return result.RowsAffected(), nil
 }
 
-const endLessonSeriesForEffect = `-- name: EndLessonSeriesForEffect :many
+const endLessonSeriesOfGroupsForEffect = `-- name: EndLessonSeriesOfGroupsForEffect :many
 UPDATE lesson_series SET
     end_date = ($1::timestamptz AT TIME ZONE lesson_series.timezone)::date, count = NULL,
     ended_at = CASE
@@ -109,35 +198,118 @@ UPDATE lesson_series SET
     updated_at = $1::timestamptz
 FROM (
     SELECT locked.id FROM lesson_series AS locked
-    WHERE locked.tutor_id = $2::uuid AND locked.ended_at IS NULL AND (
-        $3::boolean
-        OR locked.relationship_id = ANY ($4::uuid[])
-        OR locked.group_id = ANY ($5::uuid[])
-    )
+    WHERE locked.group_id = ANY ($2::uuid[]) AND locked.tutor_id = $3::uuid AND locked.ended_at IS NULL
+        AND (locked.end_date IS NULL OR locked.end_date > ($1::timestamptz AT TIME ZONE locked.timezone)::date)
     ORDER BY locked.id
     FOR UPDATE
 ) AS ending
 WHERE lesson_series.id = ending.id
-    AND (lesson_series.end_date IS NULL OR lesson_series.end_date > ($1::timestamptz AT TIME ZONE lesson_series.timezone)::date)
 RETURNING lesson_series.id
 `
 
-type EndLessonSeriesForEffectParams struct {
-	Now             time.Time
-	TutorID         pgtype.UUID
-	WholeTutor      bool
-	RelationshipIds []pgtype.UUID
-	GroupIds        []pgtype.UUID
+type EndLessonSeriesOfGroupsForEffectParams struct {
+	Now      time.Time
+	GroupIds []pgtype.UUID
+	TutorID  pgtype.UUID
 }
 
-func (q *Queries) EndLessonSeriesForEffect(ctx context.Context, arg EndLessonSeriesForEffectParams) ([]domain.SeriesID, error) {
-	rows, err := q.db.Query(ctx, endLessonSeriesForEffect,
-		arg.Now,
-		arg.TutorID,
-		arg.WholeTutor,
-		arg.RelationshipIds,
-		arg.GroupIds,
-	)
+func (q *Queries) EndLessonSeriesOfGroupsForEffect(ctx context.Context, arg EndLessonSeriesOfGroupsForEffectParams) ([]domain.SeriesID, error) {
+	rows, err := q.db.Query(ctx, endLessonSeriesOfGroupsForEffect, arg.Now, arg.GroupIds, arg.TutorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.SeriesID
+	for rows.Next() {
+		var id domain.SeriesID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const endLessonSeriesOfRelationshipsForEffect = `-- name: EndLessonSeriesOfRelationshipsForEffect :many
+UPDATE lesson_series SET
+    end_date = ($1::timestamptz AT TIME ZONE lesson_series.timezone)::date, count = NULL,
+    ended_at = CASE
+        WHEN NOT EXISTS (
+            SELECT 1 FROM lessons
+            WHERE lessons.series_id = lesson_series.id
+                AND lessons.occurrence_date <= ($1::timestamptz AT TIME ZONE lesson_series.timezone)::date
+        ) THEN $1::timestamptz
+    END,
+    updated_at = $1::timestamptz
+FROM (
+    SELECT locked.id FROM lesson_series AS locked
+    WHERE locked.relationship_id = ANY ($2::uuid[]) AND locked.tutor_id = $3::uuid AND locked.ended_at IS NULL
+        AND (locked.end_date IS NULL OR locked.end_date > ($1::timestamptz AT TIME ZONE locked.timezone)::date)
+    ORDER BY locked.id
+    FOR UPDATE
+) AS ending
+WHERE lesson_series.id = ending.id
+RETURNING lesson_series.id
+`
+
+type EndLessonSeriesOfRelationshipsForEffectParams struct {
+	Now             time.Time
+	RelationshipIds []pgtype.UUID
+	TutorID         pgtype.UUID
+}
+
+func (q *Queries) EndLessonSeriesOfRelationshipsForEffect(ctx context.Context, arg EndLessonSeriesOfRelationshipsForEffectParams) ([]domain.SeriesID, error) {
+	rows, err := q.db.Query(ctx, endLessonSeriesOfRelationshipsForEffect, arg.Now, arg.RelationshipIds, arg.TutorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.SeriesID
+	for rows.Next() {
+		var id domain.SeriesID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const endLessonSeriesOfTutorForEffect = `-- name: EndLessonSeriesOfTutorForEffect :many
+UPDATE lesson_series SET
+    end_date = ($1::timestamptz AT TIME ZONE lesson_series.timezone)::date, count = NULL,
+    ended_at = CASE
+        WHEN NOT EXISTS (
+            SELECT 1 FROM lessons
+            WHERE lessons.series_id = lesson_series.id
+                AND lessons.occurrence_date <= ($1::timestamptz AT TIME ZONE lesson_series.timezone)::date
+        ) THEN $1::timestamptz
+    END,
+    updated_at = $1::timestamptz
+FROM (
+    SELECT locked.id FROM lesson_series AS locked
+    WHERE locked.tutor_id = $2::uuid AND locked.ended_at IS NULL
+        AND (locked.end_date IS NULL OR locked.end_date > ($1::timestamptz AT TIME ZONE locked.timezone)::date)
+    ORDER BY locked.id
+    FOR UPDATE
+) AS ending
+WHERE lesson_series.id = ending.id
+RETURNING lesson_series.id
+`
+
+type EndLessonSeriesOfTutorForEffectParams struct {
+	Now     time.Time
+	TutorID pgtype.UUID
+}
+
+func (q *Queries) EndLessonSeriesOfTutorForEffect(ctx context.Context, arg EndLessonSeriesOfTutorForEffectParams) ([]domain.SeriesID, error) {
+	rows, err := q.db.Query(ctx, endLessonSeriesOfTutorForEffect, arg.Now, arg.TutorID)
 	if err != nil {
 		return nil, err
 	}
@@ -241,11 +413,76 @@ func (q *Queries) ListActiveAudienceOfTutor(ctx context.Context, tutorID domain.
 	return items, nil
 }
 
+const listGroupLessonsCancelledOnRoster = `-- name: ListGroupLessonsCancelledOnRoster :many
+SELECT cancelled.id, cancelled.title, cancelled.starts_at, cancelled.timezone, count(cancelled.id) OVER () AS total
+FROM lesson_roster
+CROSS JOIN LATERAL (
+    SELECT lessons.id, lessons.title, lessons.starts_at, lessons.timezone FROM lessons
+    WHERE lessons.id = lesson_roster.lesson_id AND lessons.group_id = $1::uuid AND lessons.tutor_id = $2::uuid
+        AND lessons.cancel_cause = $3::text AND lessons.cancelled_at = $4::timestamptz
+    LIMIT 1
+) AS cancelled
+WHERE lesson_roster.student_id = $5::uuid AND lesson_roster.lesson_starts_at > $4::timestamptz
+ORDER BY cancelled.starts_at, cancelled.id
+LIMIT $6::int
+`
+
+type ListGroupLessonsCancelledOnRosterParams struct {
+	GroupID     pgtype.UUID
+	TutorID     pgtype.UUID
+	CancelCause string
+	CancelledAt time.Time
+	StudentID   pgtype.UUID
+	RowLimit    int32
+}
+
+type ListGroupLessonsCancelledOnRosterRow struct {
+	ID       domain.LessonID
+	Title    string
+	StartsAt time.Time
+	Timezone string
+	Total    int64
+}
+
+func (q *Queries) ListGroupLessonsCancelledOnRoster(ctx context.Context, arg ListGroupLessonsCancelledOnRosterParams) ([]ListGroupLessonsCancelledOnRosterRow, error) {
+	rows, err := q.db.Query(ctx, listGroupLessonsCancelledOnRoster,
+		arg.GroupID,
+		arg.TutorID,
+		arg.CancelCause,
+		arg.CancelledAt,
+		arg.StudentID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGroupLessonsCancelledOnRosterRow
+	for rows.Next() {
+		var i ListGroupLessonsCancelledOnRosterRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.StartsAt,
+			&i.Timezone,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGroupMemberStudentsOfTutor = `-- name: ListGroupMemberStudentsOfTutor :many
 SELECT group_members.group_id, relationships.student_id
-FROM group_members
-JOIN relationships ON relationships.id = group_members.relationship_id AND relationships.tutor_id = group_members.tutor_id
-WHERE group_members.tutor_id = $1 AND relationships.student_id IS NOT NULL
+FROM groups
+JOIN group_members ON group_members.group_id = groups.id AND group_members.tutor_id = groups.tutor_id
+JOIN relationships ON relationships.id = group_members.relationship_id AND relationships.tutor_id = groups.tutor_id
+WHERE groups.tutor_id = $1 AND relationships.student_id IS NOT NULL
 ORDER BY group_members.group_id, relationships.student_id
 `
 
@@ -274,32 +511,25 @@ func (q *Queries) ListGroupMemberStudentsOfTutor(ctx context.Context, tutorID do
 	return items, nil
 }
 
-const listLessonsCancelledByEffect = `-- name: ListLessonsCancelledByEffect :many
+const listLessonsCancelledOfLink = `-- name: ListLessonsCancelledOfLink :many
 SELECT lessons.id, lessons.title, lessons.starts_at, lessons.timezone, count(lessons.id) OVER () AS total
 FROM lessons
-WHERE lessons.cancel_cause = $1::text AND lessons.cancelled_at = $2::timestamptz
-    AND lessons.tutor_id = $3::uuid
-    AND ($4::uuid IS NULL OR lessons.relationship_id = $4::uuid)
-    AND ($5::uuid IS NULL OR lessons.group_id = $5::uuid)
-    AND ($6::uuid IS NULL OR EXISTS (
-        SELECT 1 FROM lesson_roster
-        WHERE lesson_roster.lesson_id = lessons.id AND lesson_roster.student_id = $6::uuid
-    ))
+WHERE lessons.relationship_id = $1::uuid AND lessons.starts_at > $2::timestamptz
+    AND lessons.tutor_id = $3::uuid AND lessons.cancel_cause = $4::text
+    AND lessons.cancelled_at = $2::timestamptz
 ORDER BY lessons.starts_at, lessons.id
-LIMIT $7::int
+LIMIT $5::int
 `
 
-type ListLessonsCancelledByEffectParams struct {
-	CancelCause     string
-	CancelledAt     time.Time
-	TutorID         pgtype.UUID
-	RelationshipID  pgtype.UUID
-	GroupID         pgtype.UUID
-	RosterStudentID pgtype.UUID
-	RowLimit        int32
+type ListLessonsCancelledOfLinkParams struct {
+	RelationshipID pgtype.UUID
+	CancelledAt    time.Time
+	TutorID        pgtype.UUID
+	CancelCause    string
+	RowLimit       int32
 }
 
-type ListLessonsCancelledByEffectRow struct {
+type ListLessonsCancelledOfLinkRow struct {
 	ID       domain.LessonID
 	Title    string
 	StartsAt time.Time
@@ -307,23 +537,83 @@ type ListLessonsCancelledByEffectRow struct {
 	Total    int64
 }
 
-func (q *Queries) ListLessonsCancelledByEffect(ctx context.Context, arg ListLessonsCancelledByEffectParams) ([]ListLessonsCancelledByEffectRow, error) {
-	rows, err := q.db.Query(ctx, listLessonsCancelledByEffect,
-		arg.CancelCause,
+func (q *Queries) ListLessonsCancelledOfLink(ctx context.Context, arg ListLessonsCancelledOfLinkParams) ([]ListLessonsCancelledOfLinkRow, error) {
+	rows, err := q.db.Query(ctx, listLessonsCancelledOfLink,
+		arg.RelationshipID,
 		arg.CancelledAt,
 		arg.TutorID,
-		arg.RelationshipID,
-		arg.GroupID,
-		arg.RosterStudentID,
+		arg.CancelCause,
 		arg.RowLimit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListLessonsCancelledByEffectRow
+	var items []ListLessonsCancelledOfLinkRow
 	for rows.Next() {
-		var i ListLessonsCancelledByEffectRow
+		var i ListLessonsCancelledOfLinkRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.StartsAt,
+			&i.Timezone,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLessonsCancelledOnRoster = `-- name: ListLessonsCancelledOnRoster :many
+SELECT cancelled.id, cancelled.title, cancelled.starts_at, cancelled.timezone, count(cancelled.id) OVER () AS total
+FROM lesson_roster
+CROSS JOIN LATERAL (
+    SELECT lessons.id, lessons.title, lessons.starts_at, lessons.timezone FROM lessons
+    WHERE lessons.id = lesson_roster.lesson_id AND lessons.tutor_id = $1::uuid
+        AND lessons.cancel_cause = $2::text AND lessons.cancelled_at = $3::timestamptz
+    LIMIT 1
+) AS cancelled
+WHERE lesson_roster.student_id = $4::uuid AND lesson_roster.lesson_starts_at > $3::timestamptz
+ORDER BY cancelled.starts_at, cancelled.id
+LIMIT $5::int
+`
+
+type ListLessonsCancelledOnRosterParams struct {
+	TutorID     pgtype.UUID
+	CancelCause string
+	CancelledAt time.Time
+	StudentID   pgtype.UUID
+	RowLimit    int32
+}
+
+type ListLessonsCancelledOnRosterRow struct {
+	ID       domain.LessonID
+	Title    string
+	StartsAt time.Time
+	Timezone string
+	Total    int64
+}
+
+func (q *Queries) ListLessonsCancelledOnRoster(ctx context.Context, arg ListLessonsCancelledOnRosterParams) ([]ListLessonsCancelledOnRosterRow, error) {
+	rows, err := q.db.Query(ctx, listLessonsCancelledOnRoster,
+		arg.TutorID,
+		arg.CancelCause,
+		arg.CancelledAt,
+		arg.StudentID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLessonsCancelledOnRosterRow
+	for rows.Next() {
+		var i ListLessonsCancelledOnRosterRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
@@ -378,6 +668,43 @@ func (q *Queries) ListNotificationGroups(ctx context.Context, arg ListNotificati
 			&i.Name,
 			&i.Member,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUnderWayLessonsOfTutor = `-- name: ListUnderWayLessonsOfTutor :many
+SELECT id, relationship_id, group_id FROM lessons
+WHERE tutor_id = $1 AND status = 'scheduled' AND starts_at <= $2::timestamptz
+ORDER BY id
+`
+
+type ListUnderWayLessonsOfTutorParams struct {
+	TutorID domain.UserID
+	At      time.Time
+}
+
+type ListUnderWayLessonsOfTutorRow struct {
+	ID             domain.LessonID
+	RelationshipID *domain.RelationshipID
+	GroupID        *domain.GroupID
+}
+
+func (q *Queries) ListUnderWayLessonsOfTutor(ctx context.Context, arg ListUnderWayLessonsOfTutorParams) ([]ListUnderWayLessonsOfTutorRow, error) {
+	rows, err := q.db.Query(ctx, listUnderWayLessonsOfTutor, arg.TutorID, arg.At)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUnderWayLessonsOfTutorRow
+	for rows.Next() {
+		var i ListUnderWayLessonsOfTutorRow
+		if err := rows.Scan(&i.ID, &i.RelationshipID, &i.GroupID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

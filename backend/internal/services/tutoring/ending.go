@@ -139,18 +139,18 @@ func (s *Service) endLink(
 	if err != nil {
 		return ending{}, err
 	}
-	memberships, err := repos.Relationships.DeleteMemberships(ctx, ended)
+	groups, err := repos.Relationships.DeleteMemberships(ctx, ended)
 	if err != nil {
 		return ending{}, err
 	}
-	lessons, err := s.endLinkLessons(ctx, repos, ended, student)
+	lessons, err := s.endLinkLessons(ctx, repos, ended, student, groups)
 	if err != nil {
 		return ending{}, err
 	}
 	if err := relationshipChanged(ctx, repos, ended, true); err != nil {
 		return ending{}, err
 	}
-	done := ending{link: ended, by: transition.EndedBy, memberships: memberships, lessons: lessons}
+	done := ending{link: ended, by: transition.EndedBy, memberships: int64(len(groups)), lessons: lessons}
 	if transition.EndedBy.EmailsTheOtherParty() {
 		if err := s.queueEndedEmail(ctx, repos, ended, now); err != nil {
 			return ending{}, err

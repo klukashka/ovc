@@ -28,21 +28,18 @@ func CancelledLessonsEmailText(language domain.Language) (CancelledLessonsText, 
 type GroupArchivedText struct {
 	SubjectPrefix   string
 	Intro           string
-	Group           string
 	Tutor           string
 	GroupLesson     string
 	Action          string
 	Note            string
 	Unsubscribe     string
 	UnsubscribeNote string
-	Cancelled       CancelledLessonsText
 }
 
 var groupArchivedTexts = map[domain.Language]GroupArchivedText{
 	domain.LanguageEnglish: {
 		SubjectPrefix:   "Group archived",
 		Intro:           "Your tutor has archived a group you belong to. Its future lessons are cancelled.",
-		Group:           "Group",
 		Tutor:           "Tutor",
 		GroupLesson:     "Group lesson",
 		Action:          "Open your schedule",
@@ -53,7 +50,6 @@ var groupArchivedTexts = map[domain.Language]GroupArchivedText{
 	domain.LanguageRussian: {
 		SubjectPrefix:   "Группа в архиве",
 		Intro:           "Преподаватель перенёс в архив группу, в которой вы занимаетесь. Её будущие уроки отменены.",
-		Group:           "Группа",
 		Tutor:           "Преподаватель",
 		GroupLesson:     "Групповой урок",
 		Action:          "Открыть расписание",
@@ -65,9 +61,5 @@ var groupArchivedTexts = map[domain.Language]GroupArchivedText{
 
 func GroupArchivedEmailText(language domain.Language) (GroupArchivedText, bool) {
 	text, found := groupArchivedTexts[language]
-	if !found {
-		return GroupArchivedText{}, false
-	}
-	text.Cancelled = cancelledLessonsTexts[language]
-	return text, true
+	return text, found
 }

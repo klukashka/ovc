@@ -41,6 +41,7 @@ type lessonView struct {
 	Intro           string
 	Title           string
 	Details         []lessonDetail
+	LessonsHeading  string
 	Lessons         []string
 	More            string
 	Action          string

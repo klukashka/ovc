@@ -179,3 +179,35 @@ func TestAReclaimPendingLinksLessonsAreHiddenUntilTheOwnerKeepsIt(t *testing.T) 
 		})
 	}
 }
+
+func TestRepeatedArchivingNotifiesOnlyWhenItCancelsLessons(t *testing.T) {
+	t.Parallel()
+	h := newAuthHarness(t)
+	parties := h.visibilityParties(t)
+	h.scheduled(t, parties.tutorToken, groupLessonFor(parties.group, "2030-03-12", "18:00"))
+	empty := h.newGroup(t, parties.tutorToken, archivedGroupName, []string{parties.card}).ID
+
+	for range 3 {
+		for _, group := range []string{parties.group, empty} {
+			if archived := h.archive(t, parties.tutorToken, group); archived.status != http.StatusOK {
+				t.Fatalf("archiving answered %d %s", archived.status, archived.body)
+			}
+			if unarchived := h.groupCall(t, parties.tutorToken, http.MethodPost, group, "/unarchive", ""); unarchived.status != http.StatusOK {
+				t.Fatalf("unarchiving answered %d %s", unarchived.status, unarchived.body)
+			}
+		}
+	}
+	h.tick(t)
+
+	for _, member := range []byte{10, 11} {
+		if emails := h.emailsWithSubject(t, memberEmail(member), "Group archived: "+groupName); len(emails) != 1 || len(h.mailTo(t, memberEmail(member))) != 1 {
+			t.Fatalf("member %d got %v", member, subjects(h.mailTo(t, memberEmail(member))))
+		}
+	}
+	if keys, rows := h.outboxKeysOf(t, domain.EventGroupArchived), h.countRows(t, "SELECT count(id) FROM notifications WHERE event = $1", "group.archived"); keys != 2 || rows != 2 {
+		t.Fatalf("the archivings queued %d emails and wrote %d rows", keys, rows)
+	}
+	if h.countLogs(`"msg":"group.archived"`, `"emails_queued":0`) != 5 || h.countLogs(`"msg":"group.archived"`, `"emails_queued":2`) != 1 {
+		t.Fatalf("the archivings were reported as:\n%s", h.logs.String())
+	}
+}

@@ -239,6 +239,10 @@ func TestArchivingCancelsAndEndsAndSendsOneEmailPerMember(t *testing.T) {
 		if len(emails) != 1 || len(listedLessons(emails[0])) != 4 || emails[0].Headers["List-Unsubscribe"] == "" {
 			t.Fatalf("member %d got %v", member, subjects(h.mailTo(t, memberEmail(member))))
 		}
+		if !strings.Contains(emails[0].Text, "\nThese lessons were cancelled:\n- ") || !strings.Contains(emails[0].HTML, "<p>These lessons were cancelled:</p>\n<ul>") ||
+			!strings.Contains(emails[0].Text, "Its future lessons are cancelled.") {
+			t.Fatalf("member %d's email reads:\n%s\n%s", member, emails[0].Text, emails[0].HTML)
+		}
 		var rows []notificationItem
 		for _, row := range h.notificationsOf(t, h.studentToken(t, member)) {
 			if row.Event == "group.archived" {
@@ -443,6 +447,7 @@ func TestPurgeDeletesLessonNotificationRows(t *testing.T) {
 	parties := h.visibilityParties(t)
 	lesson := h.lessonAt(t, parties.tutorToken, parties.card, "2030-03-12", "18:00")
 	h.cancelCall(t, parties.tutorToken, lesson, "this", 1)
+	h.scheduled(t, parties.tutorToken, groupLessonFor(parties.group, "2030-03-13", "18:00"))
 	h.archive(t, parties.tutorToken, parties.group)
 	seeded := [2]int64{h.rowsNaming(t, parties.student), h.rowsNaming(t, parties.otherStudent)}
 	h.deleteMe(t, parties.studentToken, accountPassword)
@@ -459,5 +464,80 @@ func TestPurgeDeletesLessonNotificationRows(t *testing.T) {
 	}
 	if h.userExists(t, tutorEmail) || h.rowsNaming(t, parties.tutor) != 0 || h.rowsNaming(t, parties.otherStudent) != 0 {
 		t.Fatalf("the purged tutor is still named by %d rows", h.rowsNaming(t, parties.tutor))
+	}
+}
+
+func TestALessonUnderWayAtAnEndingOrATutorDeletionKeepsItsAudience(t *testing.T) {
+	t.Parallel()
+	effects := map[string]func(t *testing.T, h *authHarness, parties visibilityParties, token string){
+		"an ending": func(t *testing.T, h *authHarness, parties visibilityParties, token string) {
+			t.Helper()
+			if ended := h.endAsTutor(t, token, parties.card); ended.status != http.StatusOK {
+				t.Fatalf("the ending answered %d %s", ended.status, ended.body)
+			}
+		},
+		"a tutor deletion": func(t *testing.T, h *authHarness, _ visibilityParties, token string) {
+			t.Helper()
+			if deleted := h.deleteMe(t, token, accountPassword); deleted.status != http.StatusNoContent {
+				t.Fatalf("the deletion answered %d %s", deleted.status, deleted.body)
+			}
+		},
+	}
+	for name, effect := range effects {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			h := newAuthHarness(t)
+			parties := h.visibilityParties(t)
+			second := h.newGroup(t, parties.tutorToken, archivedGroupName, []string{parties.card, parties.other}).ID
+			oneToOne := h.lessonAt(t, parties.tutorToken, parties.card, firstLessonDate, "12:00")
+			groupLessons := make([]string, 0, 2)
+			for _, group := range []string{parties.group, second} {
+				inGroup := groupLessonFor(group, firstLessonDate, "12:00")
+				inGroup.AllowOverlap = true
+				groupLessons = append(groupLessons, h.scheduled(t, parties.tutorToken, inGroup).Lessons[0].ID)
+			}
+			lessons := append([]string{oneToOne}, groupLessons...)
+			h.at(t, time.Date(2030, time.March, 11, 9, 30, 0, 0, time.UTC))
+			fresh := accessToken(t, h.login(t, tutorEmail, accountPassword))
+
+			effect(t, h, parties, fresh)
+			hidden := make(map[string]int, len(lessons))
+			frozen := make(map[string][]domain.UserID, len(lessons))
+			for _, lesson := range lessons {
+				hidden[lesson] = h.lessonPage(t, h.studentToken(t, 10), lesson).status
+				frozen[lesson] = h.rosterOf(t, lesson)
+			}
+			h.tickAt(t, time.Date(2030, time.March, 11, 10, 31, 0, 0, time.UTC))
+
+			for _, lesson := range lessons {
+				if h.lessonState(t, lesson) != "ended" || hidden[lesson] != http.StatusNotFound {
+					t.Fatalf("lesson %s is %s and answered the removed student %d before it ended", lesson, h.lessonState(t, lesson), hidden[lesson])
+				}
+			}
+			if !slices.Equal(frozen[oneToOne], []domain.UserID{parties.student}) {
+				t.Fatalf("the effect froze the one-to-one roster %v", frozen[oneToOne])
+			}
+			for _, lesson := range groupLessons {
+				if !slices.Contains(frozen[lesson], parties.student) || !slices.Equal(h.rosterOf(t, lesson), []domain.UserID{parties.student, parties.otherStudent}) {
+					t.Fatalf("group lesson %s was frozen as %v and ended with %v", lesson, frozen[lesson], h.rosterOf(t, lesson))
+				}
+			}
+			if ended := h.rosterOf(t, oneToOne); !slices.Equal(ended, frozen[oneToOne]) {
+				t.Fatalf("the ended one-to-one lesson holds the roster %v", ended)
+			}
+			for lesson, kind := range map[string]string{oneToOne: "individual", groupLessons[0]: "group", groupLessons[1]: "group"} {
+				page := h.lessonPage(t, h.studentToken(t, 10), lesson)
+				if page.status != http.StatusOK {
+					t.Fatalf("the student's lesson %s answered %d %s", lesson, page.status, page.body)
+				}
+				shown := decodeLesson(t, page)
+				if shown.Status != "ended" || shown.Audience.Label != nil || shown.Audience.LabelKind == nil || *shown.Audience.LabelKind != kind || shown.Audience.Members != nil {
+					t.Fatalf("the student's lesson %s reads %s", lesson, page.body)
+				}
+			}
+			if h.countLogs(`"msg":"lessons.cancelled_by_effect"`, `"under_way":3`) != 1 {
+				t.Fatalf("the frozen lessons were reported as:\n%s", h.logs.String())
+			}
+		})
 	}
 }
