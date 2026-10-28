@@ -24,6 +24,7 @@ export interface TestControl {
   readonly mail: (to: string) => Promise<SentMail[]>;
   readonly tick: () => Promise<void>;
   readonly advance: (seconds: number) => Promise<void>;
+  readonly now: () => Promise<number>;
 }
 
 async function post(apiUrl: string, path: string, body: unknown): Promise<unknown> {
@@ -67,6 +68,13 @@ export function testControl(deployment: Deployment): TestControl {
     },
     advance: async (seconds: number): Promise<void> => {
       await post(deployment.apiUrl, '/__test__/clock', { advance_seconds: seconds });
+    },
+    now: async (): Promise<number> => {
+      const answer = await post(deployment.apiUrl, '/__test__/clock', { advance_seconds: 1 });
+      if (typeof answer !== 'object' || answer === null || !('now' in answer) || typeof answer.now !== 'string') {
+        throw new Error('the clock route answered an unexpected shape');
+      }
+      return Date.parse(answer.now);
     },
   };
 }

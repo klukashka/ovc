@@ -9,6 +9,8 @@ export type ReadyStatus = components['schemas']['ReadyStatus'];
 
 export type ApiErrorBody = components['schemas']['ErrorBody'];
 
+export type OverlappingLesson = components['schemas']['OverlappingLesson'];
+
 export type ErrorCode = ApiErrorBody['code'];
 
 const knownErrorCodes: ReadonlySet<string> = new Set(errorBodyCodeValues);
@@ -17,7 +19,15 @@ export function isErrorCode(value: string): value is ErrorCode {
   return knownErrorCodes.has(value);
 }
 
-export const fieldCodes = ['invalid', 'required', 'not_allowed', 'too_short', 'too_long', 'incorrect'] as const;
+export const fieldCodes = [
+  'invalid',
+  'required',
+  'not_allowed',
+  'too_short',
+  'too_long',
+  'incorrect',
+  'too_many',
+] as const;
 
 export type FieldCode = (typeof fieldCodes)[number];
 
@@ -73,6 +83,39 @@ function relationshipsOf(details: unknown): readonly string[] {
   return details.relationship_ids.filter((id: unknown): id is string => typeof id === 'string');
 }
 
+function isOverlappingLesson(value: unknown): value is OverlappingLesson {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'title' in value &&
+    typeof value.title === 'string' &&
+    'starts_at' in value &&
+    typeof value.starts_at === 'string' &&
+    Number.isFinite(Date.parse(value.starts_at)) &&
+    'ends_at' in value &&
+    typeof value.ends_at === 'string' &&
+    Number.isFinite(Date.parse(value.ends_at))
+  );
+}
+
+function overlappingLessonsOf(details: unknown): readonly OverlappingLesson[] {
+  if (typeof details !== 'object' || details === null || !('lessons' in details) || !Array.isArray(details.lessons)) {
+    return [];
+  }
+  return details.lessons.filter(isOverlappingLesson);
+}
+
+function moreOverlappingOf(details: unknown): number {
+  return typeof details === 'object' &&
+    details !== null &&
+    'more' in details &&
+    typeof details.more === 'number' &&
+    Number.isInteger(details.more) &&
+    details.more > 0
+    ? details.more
+    : 0;
+}
+
 function isReceivedFieldError(value: unknown): value is ReceivedFieldError {
   return (
     typeof value === 'object' &&
@@ -91,6 +134,8 @@ export class ApiError extends Error {
   readonly fields: readonly FieldProblem[];
   readonly existingStudentId: string | undefined;
   readonly relationshipIds: readonly string[];
+  readonly overlappingLessons: readonly OverlappingLesson[];
+  readonly moreOverlapping: number;
 
   constructor(status: number, body: ReceivedErrorBody | undefined) {
     super(body === undefined ? `API request failed with status ${String(status)}` : `API error ${body.code}`);
@@ -101,6 +146,8 @@ export class ApiError extends Error {
     this.fields = fieldProblems(body?.fields);
     this.existingStudentId = existingStudentOf(body?.details);
     this.relationshipIds = relationshipsOf(body?.details);
+    this.overlappingLessons = overlappingLessonsOf(body?.details);
+    this.moreOverlapping = moreOverlappingOf(body?.details);
   }
 
   fieldCode(field: string): FieldCode | undefined {

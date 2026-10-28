@@ -137,3 +137,35 @@ export function SidebarIcon(props: IconProps): ReactElement {
     </Outline>
   );
 }
+
+export function ChevronLeftIcon(props: IconProps): ReactElement {
+  return (
+    <Outline {...props}>
+      <path d="M10 4l-4 4 4 4" />
+    </Outline>
+  );
+}
+
+export function ChevronRightIcon(props: IconProps): ReactElement {
+  return (
+    <Outline {...props}>
+      <path d="M6 4l4 4-4 4" />
+    </Outline>
+  );
+}
+
+export function DashIcon(props: IconProps): ReactElement {
+  return (
+    <Outline {...props}>
+      <path d="M4 8h8" />
+    </Outline>
+  );
+}
+
+export function CrossIcon(props: IconProps): ReactElement {
+  return (
+    <Outline {...props}>
+      <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
+    </Outline>
+  );
+}

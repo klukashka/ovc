@@ -2,6 +2,10 @@ import type { Language } from '../i18n/resources.ts';
 
 const locales: Readonly<Record<Language, string>> = { ru: 'ru-RU', en: 'en-GB' };
 
+export function localeOf(language: Language): string {
+  return locales[language];
+}
+
 export function formatDateTime(instant: string, language: Language, timeZone: string): string {
   const moment = new Date(instant);
   const day = new Intl.DateTimeFormat(locales[language], { day: 'numeric', month: 'short', timeZone }).format(moment);

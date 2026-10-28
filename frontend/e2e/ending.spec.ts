@@ -3,6 +3,7 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { notificationRows, bellIn, panelRowsIn } from './notifications.ts';
+import { addDays, isoWeekday, localDate, scheduleLessons } from './schedule.ts';
 import { diagnosedTest as test, expect, expectRowsNamed, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
 import {
   cardState,
@@ -74,7 +75,7 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
   test.describe.configure({ mode: 'serial' });
   test.use({ locale: 'ru-RU', timezoneId: 'Europe/Moscow', viewport: { width: 1280, height: 800 } });
 
-  test('pilot-4 › seed Boris joins through the copied link, confirms, and Maria adds him to B1 evening with Anna', async ({
+  test('pilot-4 › seed Boris joins through the copied link, confirms, Maria adds him to B1 evening with Anna and schedules his series and a group lesson', async ({
     page,
     deployment,
     control,
@@ -97,6 +98,24 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
     await expect(page.getByRole('status').filter({ hasText: 'Ученики добавлены в группу.' })).toBeFocused();
     await expectRowsNamed(rowsOf(page, 'Ученики'), ['Анна', 'Boris']);
     expect(await cardState(deployment, maria, card.id)).toEqual({ state: 'active', groups: ['B1 evening'] });
+    const tomorrow = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
+    const series = await scheduleLessons(deployment, maria, {
+      relationship_id: card.id,
+      title: 'Урок',
+      date: tomorrow,
+      start: '17:00',
+      duration_minutes: 60,
+      weekdays: [isoWeekday(tomorrow)],
+      count: 4,
+    });
+    const groupLesson = await scheduleLessons(deployment, maria, {
+      group_id: groupId,
+      title: 'Урок B1 evening',
+      date: addDays(tomorrow, 7),
+      start: '19:00',
+      duration_minutes: 90,
+    });
+    expect([series.length, groupLesson.length]).toEqual([4, 1]);
     seeded = { maria, boris, borisCard: card.id, seedLink: card.link, groupId };
   });
 

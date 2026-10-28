@@ -22,7 +22,12 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testIgnore: browserlessSuites },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+      testIgnore: browserlessSuites,
+      grepInvert: /@coarse-pointer/,
+    },
     { name: 'webkit', use: { ...devices['Desktop Safari'] }, testIgnore: browserlessSuites },
   ],
 });

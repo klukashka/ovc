@@ -59,7 +59,7 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 | Address | Page |
 |---|---|
 | `/home?tutor=` | Home |
-| `/schedule?tutor=` | Schedule (agenda on phones, week or month wider) |
+| `/schedule?view=week\|month&date=&tutor=` | Schedule (agenda on phones, week or month wider; `view` and `date` as for tutors, owner's decision of 2026-10-28, pending owner review) |
 | `/lessons/{id}` | Lesson |
 | `/homework?status=todo\|submitted\|checked&tutor=` | Homework |
 | `/homework/{submissionId}` | Assignment: take it, or see results |

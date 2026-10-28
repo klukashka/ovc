@@ -32,6 +32,11 @@ While the window is open and the lesson is not yet live, students see "The room 
 | Overlapping lessons left out of the list | {count, plural, one {and # more lesson} other {and # more lessons}} | {count, plural, one {и ещё # урок} few {и ещё # урока} many {и ещё # уроков} other {и ещё # урока}} |
 | Scope choice | This lesson / This and following lessons | Этот урок / Этот и следующие уроки |
 | Weekday change | End this series and create a new one | Завершить серию и создать новую |
+| Before the overlapping lessons (proposal of 2026-10-28) | This lesson overlaps your other lessons: | Этот урок пересекается с другими вашими уроками: |
+| Refusal beyond the per-tutor caps, `too_many` at `body` (proposal of 2026-10-28) | You have reached the limit of 100 open series or 3,000 future lessons. | Достигнут предел: 100 действующих серий или 3 000 будущих уроков. |
+| The field code `too_many` elsewhere (proposal of 2026-10-28) | Limit reached. | Достигнут предел. |
+| A period of the agenda without lessons (proposal of 2026-10-28) | No lessons in this period | В этом периоде нет уроков |
+| A calendar response with `truncated: true` (proposal of 2026-10-28) | Only the first 1,000 lessons of this period are shown. Open a week to see the rest. | Показаны только первые 1 000 уроков этого периода. Откройте неделю, чтобы увидеть остальные. |
 | Polite announcement after creating | Lesson scheduled | Урок запланирован |
 | Polite announcement after editing | Lesson changed | Урок изменён |
 | Changed-meanwhile notice | This lesson changed in the meantime. Its current state is shown below. | Этот урок тем временем изменился. Ниже показано его текущее состояние. |
