@@ -990,12 +990,16 @@ export interface components {
         LessonAudience: {
             /** @enum {string|null} */
             colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink" | null;
+            /** Format: uuid */
+            group_id?: string;
             /** @enum {string} */
             kind: "one_to_one" | "group";
             label: string | null;
             /** @enum {string|null} */
             label_kind: "individual" | "group" | "removed_student" | null;
             members: components["schemas"]["LessonMember"][] | null;
+            /** Format: uuid */
+            relationship_id?: string;
         };
         LessonCancellation: {
             /** @enum {string} */

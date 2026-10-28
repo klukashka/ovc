@@ -248,6 +248,14 @@ func lessonBody(lesson schedule.Lesson) schemas.LessonDetail {
 	audience := schemas.LessonAudience{
 		Kind: lesson.Audience.Kind, Label: lesson.Audience.Label, LabelKind: lesson.Audience.LabelKind, Colour: lesson.Audience.Colour,
 	}
+	if lesson.Audience.RelationshipID != nil {
+		relationship := lesson.Audience.RelationshipID.String()
+		audience.RelationshipID = &relationship
+	}
+	if lesson.Audience.GroupID != nil {
+		group := lesson.Audience.GroupID.String()
+		audience.GroupID = &group
+	}
 	if lesson.Audience.Members != nil {
 		audience.Members = make([]schemas.LessonMember, 0, len(lesson.Audience.Members))
 		for _, member := range lesson.Audience.Members {

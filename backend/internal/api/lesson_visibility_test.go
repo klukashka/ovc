@@ -50,11 +50,14 @@ func TestStudentLessonResponsesCarryNoCardNamesOrMembers(t *testing.T) {
 
 	for _, result := range append(pages, calendar) {
 		if result.status != http.StatusOK || strings.Contains(result.body, privateCardName) || strings.Contains(result.body, seededCardName) ||
-			strings.Contains(result.body, `"members":[`) {
-			t.Fatalf("a student response carries a card name or members: %d %s", result.status, result.body)
+			strings.Contains(result.body, `"members":[`) || carriesAudienceIdentifiers(result.body) {
+			t.Fatalf("a student response carries a card name, members or an audience identifier: %d %s", result.status, result.body)
 		}
 	}
 	individual, inGroup := decodeLesson(t, pages[0]), decodeLesson(t, pages[1])
+	if identifiersOf(individual.Audience) != noIdentifiers || identifiersOf(inGroup.Audience) != noIdentifiers {
+		t.Fatalf("the student's lessons carry the audience identifiers %+v and %+v", individual.Audience, inGroup.Audience)
+	}
 	if individual.Audience.Label != nil || individual.Audience.LabelKind == nil || *individual.Audience.LabelKind != "individual" ||
 		individual.Audience.Members != nil || individual.Tutor == nil || individual.Tutor.Name != "A language tutor" || individual.Tutor.Colour == nil {
 		t.Fatalf("the student's one-to-one lesson is %+v", individual)
@@ -66,6 +69,142 @@ func TestStudentLessonResponsesCarryNoCardNamesOrMembers(t *testing.T) {
 	tutorView := decodeLesson(t, h.lessonPage(t, parties.tutorToken, group.ID))
 	if tutorView.Audience.Colour == nil || *tutorView.Audience.Colour != "moss" || tutorView.Audience.Members == nil || len(*tutorView.Audience.Members) != 2 {
 		t.Fatalf("the tutor's group lesson is %+v", tutorView.Audience)
+	}
+}
+
+func TestStudentLessonResponsesCarryNoAudienceIdentifiers(t *testing.T) {
+	t.Parallel()
+	h := newAuthHarness(t)
+	parties := h.visibilityParties(t)
+	second, secondToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
+	h.shareStudentWith(t, second, parties.otherStudent)
+	secondCard := domain.RelationshipID{0xc0, sharedStudentCard}.String()
+	provisional := h.linkedCard(t, parties.tutor, 30, domain.RelationshipProvisional)
+	endedRoster := h.scheduled(t, parties.tutorToken, oneOffFor(parties.card, "2030-03-12", "18:00")).Lessons[0]
+	formerGroup := h.scheduled(t, parties.tutorToken, groupLessonFor(parties.group, "2030-03-13", "18:00")).Lessons[0]
+	firstTutorLesson := h.scheduled(t, parties.tutorToken, oneOffFor(parties.other, "2030-03-14", "10:00")).Lessons[0]
+	provisionalLesson := h.scheduled(t, parties.tutorToken, oneOffFor(provisional, "2030-03-14", "18:00")).Lessons[0]
+	secondTutorLesson := h.scheduled(t, secondToken, oneOffFor(secondCard, "2030-03-15", "18:00")).Lessons[0]
+	h.cancelWithRoster(t, endedRoster.ID, parties.student)
+	h.cancelWithRoster(t, formerGroup.ID, parties.student, parties.otherStudent)
+	h.endRelationship(t, parties.card)
+	if removed := h.groupCall(t, parties.tutorToken, http.MethodPatch, parties.group, "", `{"remove":["`+parties.other+`"]}`); removed.status != http.StatusOK {
+		t.Fatalf("removing the member answered %d %s", removed.status, removed.body)
+	}
+	otherToken, provisionalToken := h.studentToken(t, 11), h.studentToken(t, 30)
+
+	pages := map[string]response{
+		"a roster lesson of an ended relationship": h.lessonPage(t, parties.studentToken, endedRoster.ID),
+		"a group lesson of a former member":        h.lessonPage(t, otherToken, formerGroup.ID),
+		"the unconfirmed provisional student's":    h.lessonPage(t, provisionalToken, provisionalLesson.ID),
+		"the first tutor's lesson of two tutors":   h.lessonPage(t, otherToken, firstTutorLesson.ID),
+		"the second tutor's lesson of two tutors":  h.lessonPage(t, otherToken, secondTutorLesson.ID),
+	}
+	calendars := map[string]response{
+		"the ended student's calendar":      h.calendarCall(t, parties.studentToken, calendarFrom, calendarTo, ""),
+		"the two tutors' student calendar":  h.calendarCall(t, otherToken, calendarFrom, calendarTo, ""),
+		"the provisional student's":         h.calendarCall(t, provisionalToken, calendarFrom, calendarTo, ""),
+		"the first tutor's calendar items":  h.calendarCall(t, parties.tutorToken, calendarFrom, calendarTo, ""),
+		"the second tutor's calendar items": h.calendarCall(t, secondToken, calendarFrom, calendarTo, ""),
+	}
+
+	for name, page := range pages {
+		if page.status != http.StatusOK || carriesAudienceIdentifiers(page.body) {
+			t.Errorf("%s answered %d %s", name, page.status, page.body)
+			continue
+		}
+		if identifiers := identifiersOf(decodeLesson(t, page).Audience); identifiers != noIdentifiers {
+			t.Errorf("%s decodes the audience identifiers %+v", name, identifiers)
+		}
+	}
+	for name, calendar := range calendars {
+		var decoded calendarPage
+		if err := json.Unmarshal([]byte(calendar.body), &decoded); err != nil || calendar.status != http.StatusOK || len(decoded.Items) == 0 ||
+			carriesAudienceIdentifiers(calendar.body) {
+			t.Errorf("%s answered %d %s", name, calendar.status, calendar.body)
+		}
+	}
+}
+
+func TestTutorLessonDetailCarriesTheAudienceIdentifier(t *testing.T) {
+	t.Parallel()
+	h := newAuthHarness(t)
+	parties := h.visibilityParties(t)
+	oneToOne := h.scheduled(t, parties.tutorToken, oneOffFor(parties.card, "2030-03-12", "18:00")).Lessons[0]
+	group := h.scheduled(t, parties.tutorToken, groupLessonFor(parties.group, "2030-03-13", "18:00")).Lessons[0]
+
+	individual := decodeLesson(t, h.lessonPage(t, parties.tutorToken, oneToOne.ID))
+	inGroup := decodeLesson(t, h.lessonPage(t, parties.tutorToken, group.ID))
+
+	if identifiers := identifiersOf(individual.Audience); identifiers != cardIdentifiers(parties.card) {
+		t.Fatalf("the tutor's one-to-one lesson carries %+v, want the card %s", identifiers, parties.card)
+	}
+	if identifiers := identifiersOf(inGroup.Audience); identifiers != groupIdentifiers(parties.group) {
+		t.Fatalf("the tutor's group lesson carries %+v, want the group %s", identifiers, parties.group)
+	}
+}
+
+type storedAudienceCase struct {
+	lesson      string
+	identifiers audienceIdentifiers
+	request     lessonRequest
+	status      int
+	code        string
+}
+
+func TestTutorLessonDetailKeepsTheStoredAudienceAfterItsStateChanges(t *testing.T) {
+	t.Parallel()
+	h := newAuthHarness(t)
+	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	ended := h.linkedCard(t, tutor, 10, domain.RelationshipActive)
+	pending := h.linkedCard(t, tutor, 11, domain.RelationshipActive)
+	removed := h.linkedCard(t, tutor, 12, domain.RelationshipProvisional)
+	purged := h.linkedCard(t, tutor, 13, domain.RelationshipActive)
+	archived := h.newGroup(t, token, groupName, []string{ended}).ID
+	lessonOf := func(request lessonRequest) string { return h.scheduled(t, token, request).Lessons[0].ID }
+	cases := map[string]storedAudienceCase{
+		"an ended relationship": {
+			lesson: lessonOf(oneOffFor(ended, "2030-03-12", "10:00")), identifiers: cardIdentifiers(ended),
+			request: oneOffFor(ended, "2030-04-02", "10:00"), status: http.StatusConflict, code: "audience_not_active",
+		},
+		"a reclaim-pending link": {
+			lesson: lessonOf(oneOffFor(pending, "2030-03-12", "12:00")), identifiers: cardIdentifiers(pending),
+			request: oneOffFor(pending, "2030-04-02", "12:00"), status: http.StatusConflict, code: "audience_not_active",
+		},
+		"an archived group": {
+			lesson: lessonOf(groupLessonFor(archived, "2030-03-12", "14:00")), identifiers: groupIdentifiers(archived),
+			request: groupLessonFor(archived, "2030-04-02", "14:00"), status: http.StatusConflict, code: "audience_not_active",
+		},
+		"a removed provisional link": {
+			lesson: lessonOf(oneOffFor(removed, "2030-03-12", "16:00")), identifiers: noIdentifiers,
+			request: oneOffFor(removed, "2030-04-02", "16:00"), status: http.StatusNotFound, code: "not_found",
+		},
+		"a purged student's link": {
+			lesson: lessonOf(oneOffFor(purged, "2030-03-12", "18:00")), identifiers: noIdentifiers,
+			request: oneOffFor(purged, "2030-04-02", "18:00"), status: http.StatusNotFound, code: "not_found",
+		},
+	}
+	h.endRelationship(t, ended)
+	h.exec(t, "UPDATE relationships SET state = 'reclaim_pending' WHERE id = $1::uuid", pending)
+	if result := h.archive(t, token, archived); result.status != http.StatusOK {
+		t.Fatalf("archiving answered %d %s", result.status, result.body)
+	}
+	if result := h.removeStudent(t, token, removed); result.status != http.StatusOK {
+		t.Fatalf("the removal answered %d %s", result.status, result.body)
+	}
+	h.exec2(t, `UPDATE relationships SET state = 'discarded', discard_reason = 'student_purged', discarded_at = $2::timestamptz,
+ended_at = $2::timestamptz, ended_by = 'deletion', student_id = NULL, email = NULL WHERE id = $1::uuid`, purged, rfc3339(authStart))
+
+	for name, testCase := range cases {
+		view := decodeLesson(t, h.lessonPage(t, token, testCase.lesson))
+		creation := h.createLessons(t, token, testCase.request, "")
+
+		if identifiers := identifiersOf(view.Audience); identifiers != testCase.identifiers {
+			t.Errorf("the lesson of %s carries %+v, want %+v", name, identifiers, testCase.identifiers)
+		}
+		if creation.status != testCase.status || code(t, creation) != testCase.code {
+			t.Errorf("scheduling for %s answered %d %s", name, creation.status, creation.body)
+		}
 	}
 }
 
@@ -252,9 +391,12 @@ func TestLessonRoutesDenyASecondTutorSharingTheStudent(t *testing.T) {
 	second, secondToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
 	h.shareStudentWith(t, second, parties.student)
 	lesson := h.scheduled(t, parties.tutorToken, oneOffFor(parties.card, "2030-03-12", "18:00")).Lessons[0]
+	secondCard := domain.RelationshipID{0xc0, sharedStudentCard}.String()
+	ownLesson := h.scheduled(t, secondToken, oneOffFor(secondCard, "2030-03-14", "18:00")).Lessons[0]
 
 	page := h.lessonPage(t, secondToken, lesson.ID)
 	randomPage := h.lessonPage(t, secondToken, randomCardID)
+	own := h.lessonPage(t, secondToken, ownLesson.ID)
 	creation := h.createLessons(t, secondToken, oneOffFor(parties.card, "2030-03-13", "18:00"), "")
 	groupCreation := h.createLessons(t, secondToken, groupLessonFor(parties.group, "2030-03-13", "18:00"), "")
 	randomCreation := h.createLessons(t, secondToken, oneOffFor(randomCardID, "2030-03-13", "18:00"), "")
@@ -268,8 +410,11 @@ func TestLessonRoutesDenyASecondTutorSharingTheStudent(t *testing.T) {
 			t.Errorf("the second tutor scheduling %s for the first tutor's audience answered %d %s", name, refused.status, refused.body)
 		}
 	}
-	if len(calendar.Items) != 0 {
+	if !slices.Equal(calendarIDs(calendar), []string{ownLesson.ID}) {
 		t.Fatalf("the second tutor's calendar lists %v", calendarIDs(calendar))
+	}
+	if identifiers := identifiersOf(decodeLesson(t, own).Audience); identifiers != cardIdentifiers(secondCard) || strings.Contains(own.body, parties.card) {
+		t.Fatalf("the second tutor's own lesson carries %+v: %s", identifiers, own.body)
 	}
 }
 

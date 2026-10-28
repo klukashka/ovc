@@ -39,11 +39,13 @@ type LessonMember struct {
 }
 
 type LessonAudience struct {
-	Kind      domain.AudienceKind `json:"kind" enum:"one_to_one,group"`
-	Label     *string             `json:"label" nullable:"true"`
-	LabelKind *domain.LabelKind   `json:"label_kind" enum:"individual,group,removed_student" nullable:"true"`
-	Colour    *domain.Colour      `json:"colour" enum:"clay,slate,moss,plum,ochre,teal,rust,ink" nullable:"true"`
-	Members   []LessonMember      `json:"members" nullable:"true"`
+	Kind           domain.AudienceKind `json:"kind" enum:"one_to_one,group"`
+	RelationshipID *string             `json:"relationship_id,omitempty" format:"uuid"`
+	GroupID        *string             `json:"group_id,omitempty" format:"uuid"`
+	Label          *string             `json:"label" nullable:"true"`
+	LabelKind      *domain.LabelKind   `json:"label_kind" enum:"individual,group,removed_student" nullable:"true"`
+	Colour         *domain.Colour      `json:"colour" enum:"clay,slate,moss,plum,ochre,teal,rust,ink" nullable:"true"`
+	Members        []LessonMember      `json:"members" nullable:"true"`
 }
 
 type CalendarAudience struct {

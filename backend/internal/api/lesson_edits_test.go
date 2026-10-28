@@ -762,3 +762,42 @@ func TestASplitSignalsLessonsThatLeftScheduledToTheTutorOnly(t *testing.T) {
 		}
 	}
 }
+
+type audienceAnswer struct {
+	lessons []lessonView
+	want    audienceIdentifiers
+}
+
+func TestLessonWritesAnswerTheAudienceIdentifier(t *testing.T) {
+	t.Parallel()
+	h := newAuthHarness(t)
+	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	card := h.linkedCard(t, tutor, 10, domain.RelationshipActive)
+	group := h.newGroup(t, token, groupName, []string{card}).ID
+	request := oneOffFor(card, mondaySeriesStart, "18:00").weekly([]int{1}, 3)
+	request.AllowOverlap = true
+
+	created := decodeCreated(t, h.createLessons(t, token, request, "audience-series-key"))
+	replayed := decodeCreated(t, h.createLessons(t, token, request, "audience-series-key"))
+	groupSeries := h.groupMondays(t, token, group, 3)
+	edited := decodeChanged(t, h.editLesson(t, token, created.Lessons[1].ID, following(1).titled(newLessonTitle)))
+	cancelled := decodeChanged(t, h.cancelCall(t, token, groupSeries.Lessons[1].ID, "following", 1))
+
+	answers := map[string]audienceAnswer{
+		"the created series":            {lessons: created.Lessons, want: cardIdentifiers(card)},
+		"the replayed series":           {lessons: replayed.Lessons, want: cardIdentifiers(card)},
+		"the created group series":      {lessons: groupSeries.Lessons, want: groupIdentifiers(group)},
+		"the edit of following":         {lessons: edited.Lessons, want: cardIdentifiers(card)},
+		"the cancellation of following": {lessons: cancelled.Lessons, want: groupIdentifiers(group)},
+	}
+	for name, answer := range answers {
+		if len(answer.lessons) == 0 {
+			t.Errorf("%s answered no lessons", name)
+		}
+		for _, lesson := range answer.lessons {
+			if identifiers := identifiersOf(lesson.Audience); identifiers != answer.want {
+				t.Errorf("%s answered the lesson %s with %+v, want %+v", name, lesson.ID, identifiers, answer.want)
+			}
+		}
+	}
+}

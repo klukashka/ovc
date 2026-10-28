@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,11 +66,45 @@ type lessonMember struct {
 }
 
 type lessonAudience struct {
-	Kind      string          `json:"kind"`
-	Label     *string         `json:"label"`
-	LabelKind *string         `json:"label_kind"`
-	Colour    *string         `json:"colour"`
-	Members   *[]lessonMember `json:"members"`
+	Kind           string          `json:"kind"`
+	RelationshipID *string         `json:"relationship_id"`
+	GroupID        *string         `json:"group_id"`
+	Label          *string         `json:"label"`
+	LabelKind      *string         `json:"label_kind"`
+	Colour         *string         `json:"colour"`
+	Members        *[]lessonMember `json:"members"`
+}
+
+const absentIdentifier = "absent"
+
+type audienceIdentifiers struct {
+	relationship string
+	group        string
+}
+
+func presentOrAbsent(value *string) string {
+	if value == nil {
+		return absentIdentifier
+	}
+	return *value
+}
+
+func identifiersOf(audience lessonAudience) audienceIdentifiers {
+	return audienceIdentifiers{relationship: presentOrAbsent(audience.RelationshipID), group: presentOrAbsent(audience.GroupID)}
+}
+
+func cardIdentifiers(card string) audienceIdentifiers {
+	return audienceIdentifiers{relationship: card, group: absentIdentifier}
+}
+
+func groupIdentifiers(group string) audienceIdentifiers {
+	return audienceIdentifiers{relationship: absentIdentifier, group: group}
+}
+
+var noIdentifiers = audienceIdentifiers{relationship: absentIdentifier, group: absentIdentifier}
+
+func carriesAudienceIdentifiers(body string) bool {
+	return strings.Contains(body, `"relationship_id"`) || strings.Contains(body, `"group_id"`)
 }
 
 type lessonTutor struct {

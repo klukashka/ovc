@@ -16,11 +16,13 @@ type Member struct {
 }
 
 type Audience struct {
-	Kind      domain.AudienceKind
-	Label     *string
-	LabelKind *domain.LabelKind
-	Colour    *domain.Colour
-	Members   []Member
+	Kind           domain.AudienceKind
+	RelationshipID *domain.RelationshipID
+	GroupID        *domain.GroupID
+	Label          *string
+	LabelKind      *domain.LabelKind
+	Colour         *domain.Colour
+	Members        []Member
 }
 
 type TutorLabel struct {
@@ -63,6 +65,7 @@ func colourOf(text string) *domain.Colour {
 
 type tutorLabelSource struct {
 	relationship      *domain.RelationshipID
+	group             *domain.GroupID
 	cardName          *string
 	cardState         string
 	cardDiscardReason *domain.DiscardReason
@@ -73,11 +76,17 @@ type tutorLabelSource struct {
 
 func (source tutorLabelSource) audience() Audience {
 	if source.relationship == nil {
-		return Audience{Kind: domain.AudienceGroup, Label: source.groupName, Colour: colourOf(source.groupColour), Members: []Member{}}
+		return Audience{
+			Kind: domain.AudienceGroup, GroupID: source.group, Label: source.groupName, Colour: colourOf(source.groupColour), Members: []Member{},
+		}
 	}
 	audience := Audience{Kind: domain.AudienceOneToOne, Label: source.cardName, Colour: source.cardColour, Members: []Member{}}
+	discarded := domain.RelationshipState(source.cardState) == domain.RelationshipDiscarded
+	if !discarded {
+		audience.RelationshipID = source.relationship
+	}
 	removed := source.cardDiscardReason != nil && (*source.cardDiscardReason == domain.DiscardRemoved || *source.cardDiscardReason == domain.DiscardTutorDeleted)
-	if domain.RelationshipState(source.cardState) == domain.RelationshipDiscarded && removed {
+	if discarded && removed {
 		audience.Label, audience.LabelKind = nil, fixed(domain.LabelRemovedStudent)
 	}
 	return audience
@@ -126,7 +135,7 @@ func (s *Service) tutorViews(ctx context.Context, repos repositories.Repositorie
 	lessons := make([]Lesson, 0, len(rows))
 	for _, row := range rows {
 		source := tutorLabelSource{
-			relationship: row.RelationshipID, cardName: row.CardName, cardState: row.CardState, cardDiscardReason: row.CardDiscardReason,
+			relationship: row.RelationshipID, group: row.GroupID, cardName: row.CardName, cardState: row.CardState, cardDiscardReason: row.CardDiscardReason,
 			cardColour: row.CardColour, groupName: row.GroupName, groupColour: row.GroupColour,
 		}
 		lesson := Lesson{

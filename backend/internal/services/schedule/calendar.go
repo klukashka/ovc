@@ -93,7 +93,7 @@ func tutorCalendar(ctx context.Context, repos repositories.Repositories, tutor d
 
 func tutorItem(row repositories.TutorCalendarItem) CalendarItem {
 	source := tutorLabelSource{
-		relationship: row.RelationshipID, cardName: row.CardName, cardState: row.CardState, cardDiscardReason: row.CardDiscardReason,
+		relationship: row.RelationshipID, group: row.GroupID, cardName: row.CardName, cardState: row.CardState, cardDiscardReason: row.CardDiscardReason,
 		cardColour: row.CardColour, groupName: row.GroupName, groupColour: row.GroupColour,
 	}
 	audience := source.audience()
