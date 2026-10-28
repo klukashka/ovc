@@ -62,6 +62,7 @@ func TestRealtimeTestRoutesAreAbsentWithoutTestControl(t *testing.T) {
 	for name, testCase := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			holdProcessSlotAfterParallel(t)
 			database := testdb.New(t)
 			seedTutor(t, database, "correct horse battery")
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -98,6 +99,9 @@ func TestRealtimeTestRoutesAreAbsentWithoutTestControl(t *testing.T) {
 
 			if present.status != testCase.status || closed.status != testCase.status || signalErr != nil || waitErr != nil {
 				t.Fatalf("presence %d %s, close %d %s, signal %v, exit %v", present.status, present.body, closed.status, closed.body, signalErr, waitErr)
+			}
+			if unanswered := answeredElsewhere(output.String(), signedIn, present, closed, refusedCode); len(unanswered) != 0 {
+				t.Fatalf("another process answered the requests %v", unanswered)
 			}
 			if testCase.flag == "1" {
 				if strings.TrimSpace(present.body) != `{"online":true,"sockets":2}` || strings.TrimSpace(closed.body) != `{"closed":2}` ||

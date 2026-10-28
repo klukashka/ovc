@@ -29,6 +29,8 @@ VALUES ($1, 1, 1, $2, $2)`
 )
 
 func TestMigrateGivesExistingTutorsAValidCode(t *testing.T) {
+	t.Parallel()
+	holdProcessSlotAfterParallel(t)
 	database := testdb.NewMigratedTo(t, lastSlice2Migration)
 	created := time.Date(2026, time.October, 21, 9, 0, 0, 0, time.UTC)
 	tutors := []domain.UserID{{1}, {2}, {3}, {4}, {5}}
@@ -178,6 +180,8 @@ func reclaimUntil(t *testing.T, database *testdb.Database, user domain.UserID) *
 }
 
 func TestInterimMigrationMovesProvisionalLinksOfConfirmedAccounts(t *testing.T) {
+	t.Parallel()
+	holdProcessSlotAfterParallel(t)
 	database := testdb.NewMigratedTo(t, lastSlice3SchemaMigration)
 	seed := seedInterimLinks(t, database)
 
@@ -201,6 +205,8 @@ func TestInterimMigrationMovesProvisionalLinksOfConfirmedAccounts(t *testing.T) 
 }
 
 func TestInterimProvisionalLinkOfAConfirmedAccountShowsNoAccount(t *testing.T) {
+	t.Parallel()
+	holdProcessSlotAfterParallel(t)
 	database := testdb.NewMigratedTo(t, lastSlice3SchemaMigration)
 	seed := seedInterimLinks(t, database)
 	migrateInterim(t, database)

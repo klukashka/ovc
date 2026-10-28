@@ -7,8 +7,8 @@ log_name=merge-gate.log
 
 full_checks=(
   "pre|.|tools/check-tool-binaries.sh"
-  "B|.|pnpm --dir tools/docs install --frozen-lockfile"
-  "B|.|tools/docs/check-docs.sh"
+  "C|.|pnpm --dir tools/docs install --frozen-lockfile"
+  "C|.|tools/docs/check-docs.sh"
   "B|.|bin/gitleaks git --redact --no-banner --config .gitleaks.toml ."
   "B|.|bin/gitleaks git --staged --redact --no-banner --config .gitleaks.toml ."
   "B|.|bin/osv-scanner scan source --no-call-analysis=go --lockfile=tools/go.mod"
@@ -35,7 +35,7 @@ full_checks=(
   "e2e|frontend|../tools/dev-env.sh pnpm e2e"
   "C|.|python3 .claude/hooks/check_guard_secrets.py"
   "C|.|tools/check-dev-env.sh"
-  "C|.|tools/check-merge-gate.sh"
+  "B|.|tools/check-merge-gate.sh"
 )
 
 lane_self_test_checks=(

@@ -25,6 +25,7 @@ type adminFixture struct {
 
 func newAdminFixture(t *testing.T) *adminFixture {
 	t.Helper()
+	holdProcessSlotAfterParallel(t)
 	database := testdb.New(t)
 	hasher, err := core.NewPasswordHasher(core.Argon2Params{MemoryKiB: 64, Iterations: 1, Parallelism: 1}, core.CryptoRandom(), 1, time.Second)
 	if err != nil {
@@ -77,6 +78,7 @@ func (f *adminFixture) user(t *testing.T, id domain.UserID) repositories.User {
 }
 
 func TestOvcAdminList(t *testing.T) {
+	t.Parallel()
 	f := newAdminFixture(t)
 	f.seed(t, 1, domain.RoleTutor, domain.AccountActive, "a_b@example.org")
 	f.seed(t, 2, domain.RoleTutor, domain.AccountActive, "axb@example.org")
@@ -108,6 +110,7 @@ func TestOvcAdminList(t *testing.T) {
 }
 
 func TestOvcAdminBlock(t *testing.T) {
+	t.Parallel()
 	f := newAdminFixture(t)
 	tutor := f.seed(t, 1, domain.RoleTutor, domain.AccountActive, "tutor@example.org")
 	deleted := f.seed(t, 2, domain.RoleTutor, domain.AccountActive, "gone@example.org")
@@ -158,6 +161,7 @@ func TestOvcAdminBlock(t *testing.T) {
 }
 
 func TestOvcAdminUnblock(t *testing.T) {
+	t.Parallel()
 	f := newAdminFixture(t)
 	unverified := f.seed(t, 1, domain.RoleTutor, domain.AccountUnverified, "new@example.org")
 	active := f.seed(t, 2, domain.RoleStudent, domain.AccountActive, "student@example.org")
@@ -182,6 +186,7 @@ func TestOvcAdminUnblock(t *testing.T) {
 }
 
 func TestOvcAdminRestore(t *testing.T) {
+	t.Parallel()
 	f := newAdminFixture(t)
 	deleted := f.seed(t, 1, domain.RoleTutor, domain.AccountActive, "tutor@example.org")
 	neverConfirmed := f.seed(t, 2, domain.RoleTutor, domain.AccountUnverified, "new@example.org")
@@ -205,6 +210,7 @@ func TestOvcAdminRestore(t *testing.T) {
 }
 
 func TestOvcAdminSetQuota(t *testing.T) {
+	t.Parallel()
 	f := newAdminFixture(t)
 	tutor := f.seed(t, 1, domain.RoleTutor, domain.AccountActive, "tutor@example.org")
 	f.seed(t, 2, domain.RoleStudent, domain.AccountActive, "student@example.org")
@@ -223,6 +229,7 @@ func TestOvcAdminSetQuota(t *testing.T) {
 }
 
 func TestOvcAdminUnknownEmail(t *testing.T) {
+	t.Parallel()
 	f := newAdminFixture(t)
 
 	unknown := f.admin(t, "users", "block", "nobody@example.org")
@@ -237,6 +244,7 @@ func TestOvcAdminUnknownEmail(t *testing.T) {
 }
 
 func TestOvcAdminAuditsAFailureBeforeTheCommandRuns(t *testing.T) {
+	t.Parallel()
 	f := newAdminFixture(t)
 	pending := strings.Replace(f.database.URL.Reveal(), f.database.Name, "ovc_missing_"+core.NewRandomID()[:8]+"_test", 1)
 

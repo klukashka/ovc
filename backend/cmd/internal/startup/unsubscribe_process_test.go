@@ -13,6 +13,7 @@ import (
 
 func TestUnsubscribeTokenRouteIsGone(t *testing.T) {
 	t.Parallel()
+	holdProcessSlotAfterParallel(t)
 	database := testdb.New(t)
 	seedTutor(t, database, "correct horse battery")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -38,5 +39,8 @@ func TestUnsubscribeTokenRouteIsGone(t *testing.T) {
 	}
 	if mail.status != http.StatusOK {
 		t.Fatalf("the test control surface is not mounted: the mail route answered %d %s", mail.status, mail.body)
+	}
+	if unanswered := answeredElsewhere(output.String(), minted, mail); len(unanswered) != 0 {
+		t.Fatalf("another process answered the requests %v", unanswered)
 	}
 }

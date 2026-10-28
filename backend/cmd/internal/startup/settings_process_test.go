@@ -42,8 +42,10 @@ func revealsAValue(result outcome) bool {
 }
 
 func TestCheckSettingsPrintsOnlyOkOrTheSettingsError(t *testing.T) {
+	t.Parallel()
 	for _, binary := range storageProcesses {
 		t.Run(binary, func(t *testing.T) {
+			t.Parallel()
 			accepted := runBinary(t, binary, []string{unreachableDatabase}, "check-settings")
 			refused := map[string]outcome{}
 			variables := map[string]string{}
@@ -72,6 +74,7 @@ func TestCheckSettingsPrintsOnlyOkOrTheSettingsError(t *testing.T) {
 }
 
 func TestCommandsRefuseUnknownArguments(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		binary string
 		args   []string
@@ -84,6 +87,8 @@ func TestCommandsRefuseUnknownArguments(t *testing.T) {
 	}
 	for name, testCase := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			result := runBinary(t, testCase.binary, []string{unreachableDatabase}, testCase.args...)
 
 			if result.exitCode != 2 || result.stdout != "" || !strings.HasPrefix(result.stderr, testCase.usage) {
@@ -94,10 +99,12 @@ func TestCommandsRefuseUnknownArguments(t *testing.T) {
 }
 
 func TestProcessesRefuseToStartWithoutAValidFieldEncryptionKey(t *testing.T) {
+	t.Parallel()
 	commands := map[string][]string{"api": nil, "api migrate": {"migrate"}, "worker": nil}
 	for name, variable := range fieldKeyRefusals() {
 		for command, args := range commands {
 			t.Run(name+"/"+command, func(t *testing.T) {
+				t.Parallel()
 				binary, _, _ := strings.Cut(command, " ")
 
 				result := runBinary(t, binary, []string{unreachableDatabase, variable}, args...)

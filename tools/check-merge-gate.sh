@@ -329,8 +329,8 @@ rmdir "$lock"
 expected_full_list="$(
   cat <<'LIST'
 pre|.|tools/check-tool-binaries.sh
-B|.|pnpm --dir tools/docs install --frozen-lockfile
-B|.|tools/docs/check-docs.sh
+C|.|pnpm --dir tools/docs install --frozen-lockfile
+C|.|tools/docs/check-docs.sh
 B|.|bin/gitleaks git --redact --no-banner --config .gitleaks.toml .
 B|.|bin/gitleaks git --staged --redact --no-banner --config .gitleaks.toml .
 B|.|bin/osv-scanner scan source --no-call-analysis=go --lockfile=tools/go.mod
@@ -357,7 +357,7 @@ C|frontend|pnpm audit --audit-level high
 e2e|frontend|../tools/dev-env.sh pnpm e2e
 C|.|python3 .claude/hooks/check_guard_secrets.py
 C|.|tools/check-dev-env.sh
-C|.|tools/check-merge-gate.sh
+B|.|tools/check-merge-gate.sh
 LIST
 )"
 tagged_full_list="$(awk '/^full_checks=\(/ { inside = 1; next } inside && /^\)/ { exit } inside' "$source_gate" |
@@ -365,7 +365,7 @@ tagged_full_list="$(awk '/^full_checks=\(/ { inside = 1; next } inside && /^\)/ 
 check "$tagged_full_list" "$expected_full_list" "the tagged list holds every command of the full run in order, each with its slot"
 check "$(printf '%s\n' "$tagged_full_list" | cut -d'|' -f2- | LC_ALL=C sort | uniq -d)" "" "no command of the full run appears twice"
 check "$(printf '%s\n' "$tagged_full_list" | cut -d'|' -f1 | LC_ALL=C sort | uniq -c | awk '{ printf "%s=%s ", $2, $1 }')" \
-  "A=1 B=14 C=13 e2e=1 pre=1 " "the slots pre, A, B, C and e2e together hold the 30 commands of the full run"
+  "A=1 B=13 C=14 e2e=1 pre=1 " "the slots pre, A, B, C and e2e together hold the 30 commands of the full run"
 check "$(printf '%s\n' "$tagged_full_list" | head -n 1)" "pre|.|tools/check-tool-binaries.sh" "the tool-binary check runs alone before every lane"
 
 validate_records() {

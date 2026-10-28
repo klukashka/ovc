@@ -55,7 +55,7 @@ func seedingCalls(t *testing.T, ctx context.Context, base string) seedingExchang
 	return exchanges
 }
 
-func startSeedingServer(t *testing.T, ctx context.Context, database *testdb.Database, flag string) (string, func() error) {
+func startSeedingServer(t *testing.T, ctx context.Context, database *testdb.Database, flag string) (string, func() (string, error)) {
 	t.Helper()
 	address := freeAddress(t)
 	env := []string{"OVC_DATABASE_URL=" + database.URL.Reveal(), "OVC_HTTP_ADDR=" + address, "OVC_TEST_CONTROL=" + flag}
@@ -66,14 +66,16 @@ func startSeedingServer(t *testing.T, ctx context.Context, database *testdb.Data
 		}
 	})
 	waitForStatus(t, ctx, "http://"+address+"/api/v1/health/ready")
-	stop := func() error {
-		return errors.Join(server.Process.Signal(syscall.SIGTERM), server.Wait())
+	stop := func() (string, error) {
+		stopErr := errors.Join(server.Process.Signal(syscall.SIGTERM), server.Wait())
+		return output.String(), stopErr
 	}
 	return "http://" + address, stop
 }
 
 func TestSeedingRoutesCreateConfirmedAccountsWithRealSessions(t *testing.T) {
 	t.Parallel()
+	holdProcessSlotAfterParallel(t)
 	database := testdb.New(t)
 	seedTutor(t, database, "correct horse battery")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -81,7 +83,7 @@ func TestSeedingRoutesCreateConfirmedAccountsWithRealSessions(t *testing.T) {
 	base, stop := startSeedingServer(t, ctx, database, "1")
 
 	exchanges := seedingCalls(t, ctx, base)
-	stopErr := stop()
+	serverOutput, stopErr := stop()
 
 	if exchanges.created.status != http.StatusOK || exchanges.created.header.Get("Cache-Control") != "no-store" {
 		t.Fatalf("seeding answered %d %s", exchanges.created.status, exchanges.created.body)
@@ -110,10 +112,16 @@ func TestSeedingRoutesCreateConfirmedAccountsWithRealSessions(t *testing.T) {
 	if stopErr != nil {
 		t.Fatalf("stopping the server: %v", stopErr)
 	}
+	unanswered := answeredElsewhere(serverOutput, exchanges.created, exchanges.me, exchanges.refreshed, exchanges.signedIn, exchanges.session,
+		exchanges.duplicate, exchanges.realAccount, exchanges.invalidInput)
+	if len(unanswered) != 0 {
+		t.Fatalf("another process answered the requests %v", unanswered)
+	}
 }
 
 func TestSeedingRoutesAreAbsentWithoutTestControl(t *testing.T) {
 	t.Parallel()
+	holdProcessSlotAfterParallel(t)
 	database := testdb.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -123,13 +131,16 @@ func TestSeedingRoutesAreAbsentWithoutTestControl(t *testing.T) {
 	created := call(t, ctx, http.MethodPost, base+"/__test__/accounts",
 		`{"role":"tutor","name":"A seeded tutor","email":"seeded@example.org","language":"en","timezone":"UTC"}`, jsonHeaders)
 	session := call(t, ctx, http.MethodPost, base+"/__test__/session", `{"email":"seeded@example.org"}`, jsonHeaders)
-	stopErr := stop()
+	serverOutput, stopErr := stop()
 
 	if created.status != http.StatusNotFound || session.status != http.StatusNotFound || created.header.Get("Set-Cookie") != "" {
 		t.Fatalf("without the flag seeding answered %d %s and the session %d %s", created.status, created.body, session.status, session.body)
 	}
 	if stopErr != nil {
 		t.Fatalf("stopping the server: %v", stopErr)
+	}
+	if unanswered := answeredElsewhere(serverOutput, created, session); len(unanswered) != 0 {
+		t.Fatalf("another process answered the requests %v", unanswered)
 	}
 }
 
@@ -150,6 +161,7 @@ func seedThroughTheRoute(t *testing.T, ctx context.Context, base string, email s
 
 func TestSeedingHashesOnceWithProductionParametersAndRefusesChangedAccounts(t *testing.T) {
 	t.Parallel()
+	holdProcessSlotAfterParallel(t)
 	database := testdb.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -178,7 +190,7 @@ func TestSeedingHashesOnceWithProductionParametersAndRefusesChangedAccounts(t *t
 	changedSession := call(t, ctx, http.MethodPost, base+"/__test__/session", `{"email":"changed@example.org"}`, jsonHeaders)
 	kept, keptErr := users.ByEmail(ctx, "kept@example.org")
 	other, otherErr := users.ByEmail(ctx, "blocked@example.org")
-	stopErr := stop()
+	serverOutput, stopErr := stop()
 
 	if signedIn.status != http.StatusOK || blockedSession.status != http.StatusForbidden || !strings.Contains(blockedSession.body, "account_blocked") {
 		t.Fatalf("real sign-in %d %s, blocked session %d %s", signedIn.status, signedIn.body, blockedSession.status, blockedSession.body)
@@ -193,6 +205,9 @@ func TestSeedingHashesOnceWithProductionParametersAndRefusesChangedAccounts(t *t
 	}
 	if stopErr != nil {
 		t.Fatalf("stopping the server: %v", stopErr)
+	}
+	if unanswered := answeredElsewhere(serverOutput, signedIn, blockedSession, deletedSession, changedSession); len(unanswered) != 0 {
+		t.Fatalf("another process answered the requests %v", unanswered)
 	}
 }
 

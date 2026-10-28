@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -56,12 +57,11 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	binaries = directory
-	for _, name := range []string{"api", "worker", "ovc-admin"} {
-		build := exec.CommandContext(context.Background(), "go", "build", "-o", filepath.Join(binaries, name), "ovc/backend/cmd/"+name)
-		build.Stderr = os.Stderr
-		if err := build.Run(); err != nil {
-			panic(err)
-		}
+	build := exec.CommandContext(context.Background(), "go", "build", "-o", binaries+string(filepath.Separator),
+		"ovc/backend/cmd/api", "ovc/backend/cmd/worker", "ovc/backend/cmd/ovc-admin")
+	build.Stderr = os.Stderr
+	if err := build.Run(); err != nil {
+		panic(err)
 	}
 	settings, err := core.TestStorageFromEnvironment(teststorage.Bucket)
 	if err != nil {
@@ -75,6 +75,23 @@ func TestMain(m *testing.M) {
 		code = 1
 	}
 	os.Exit(code)
+}
+
+const (
+	childPoolSize                     = 5
+	childListenerConnections          = 1
+	testPoolConnectionsPerProcessTest = 2
+	connectionsPerProcessTest         = childPoolSize + childListenerConnections + testPoolConnectionsPerProcessTest
+	processTestConnectionBudget       = 24
+	processTestSlots                  = processTestConnectionBudget / connectionsPerProcessTest
+)
+
+var processSlots = make(chan struct{}, processTestSlots)
+
+func holdProcessSlotAfterParallel(t *testing.T) {
+	t.Helper()
+	processSlots <- struct{}{}
+	t.Cleanup(func() { <-processSlots })
 }
 
 type outcome struct {
@@ -100,6 +117,7 @@ func withPublicURL(env []string) []string {
 	defaults["OVC_JWT_SECRET"] = jwtSecretForTheRun
 	defaults["OVC_FIELD_ENCRYPTION_KEY"] = fieldKeyForTheRun
 	defaults["OVC_UNSUBSCRIBE_SIGNING_SECRET"] = unsubscribeSecretForTheRun
+	defaults["OVC_DB_POOL_SIZE"] = strconv.Itoa(childPoolSize)
 	var result []string
 	for _, variable := range env {
 		if strings.Contains(variable, "=") {
@@ -146,6 +164,7 @@ func runBinary(t *testing.T, name string, env []string, args ...string) outcome 
 }
 
 func TestOpenAPICommandNeedsNoSettingsAndIgnoresFlags(t *testing.T) {
+	t.Parallel()
 	bare := runBinary(t, "api", []string{}, "openapi")
 	flagged := runBinary(t, "api", []string{"OVC_TEST_CONTROL=1", "OVC_API_DOCS_ENABLED=true", "OVC_CLOCK=test"}, "openapi")
 
@@ -158,6 +177,8 @@ func TestOpenAPICommandNeedsNoSettingsAndIgnoresFlags(t *testing.T) {
 }
 
 func TestProcessesRefuseUnsafeTestControl(t *testing.T) {
+	t.Parallel()
+	holdProcessSlotAfterParallel(t)
 	production := testdb.NewNamed(t, "ovc_"+core.NewRandomID()[:8]+"_prod", true)
 	cases := map[string]struct {
 		env       []string
@@ -217,6 +238,8 @@ func TestProcessesRefuseUnsafeTestControl(t *testing.T) {
 		}
 		for _, binary := range processes {
 			t.Run(name+"/"+binary, func(t *testing.T) {
+				t.Parallel()
+
 				result := runBinary(t, binary, testCase.env, argumentsFor[binary]...)
 
 				if result.exitCode == 0 || !strings.Contains(result.stderr, testCase.message) {
@@ -257,6 +280,8 @@ func secretsIn(env []string) []string {
 }
 
 func TestProcessesRefusePendingMigrations(t *testing.T) {
+	t.Parallel()
+	holdProcessSlotAfterParallel(t)
 	unmigrated := testdb.NewNamed(t, "ovc_"+core.NewRandomID()[:8]+"_test", false)
 	env := []string{"OVC_DATABASE_URL=" + unmigrated.URL.Reveal()}
 
@@ -284,6 +309,8 @@ func freeAddress(t *testing.T) string {
 }
 
 func TestMigrateServeAndShutDown(t *testing.T) {
+	t.Parallel()
+	holdProcessSlotAfterParallel(t)
 	database := testdb.NewNamed(t, "ovc_"+core.NewRandomID()[:8]+"_test", false)
 	address := freeAddress(t)
 	env := []string{"OVC_DATABASE_URL=" + database.URL.Reveal(), "OVC_HTTP_ADDR=" + address, "OVC_TEST_CONTROL=1"}
@@ -294,21 +321,25 @@ func TestMigrateServeAndShutDown(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	server := exec.CommandContext(ctx, filepath.Join(binaries, "api"))
-	server.Env = withPublicURL(env)
+	server.Env = withPublicURL(withRequestLogs(env))
 	var stdout bytes.Buffer
 	server.Stdout = &stdout
 	if err := server.Start(); err != nil {
 		t.Fatal(err)
 	}
 
-	status := waitForStatus(t, ctx, "http://"+address+"/api/v1/health/ready")
+	waitForStatus(t, ctx, "http://"+address+"/api/v1/health/ready")
+	ready := call(t, ctx, http.MethodGet, "http://"+address+"/api/v1/health/ready", "", nil)
 	signalErr := server.Process.Signal(syscall.SIGTERM)
 	waitErr := server.Wait()
 
-	if status != http.StatusOK || signalErr != nil || waitErr != nil {
-		t.Fatalf("ready %d, signal %v, exit %v", status, signalErr, waitErr)
+	if ready.status != http.StatusOK || signalErr != nil || waitErr != nil {
+		t.Fatalf("ready %d, signal %v, exit %v", ready.status, signalErr, waitErr)
 	}
 	logs := stdout.String()
+	if unanswered := answeredElsewhere(logs, ready); len(unanswered) != 0 {
+		t.Fatalf("another process answered the requests %v", unanswered)
+	}
 	for _, event := range []string{"process.started", "process.stopped", `"reason":"shutdown"`} {
 		if !strings.Contains(logs, event) {
 			t.Fatalf("missing %s in %s", event, logs)
@@ -351,6 +382,8 @@ func waitForStatus(t *testing.T, ctx context.Context, address string) int {
 }
 
 func TestWorkerRunsAndShutsDown(t *testing.T) {
+	t.Parallel()
+	holdProcessSlotAfterParallel(t)
 	database := testdb.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -412,28 +445,8 @@ func startServer(t *testing.T, ctx context.Context, env []string) (*exec.Cmd, *b
 	return server, &stdout
 }
 
-func postJSON(t *testing.T, ctx context.Context, address string, path string, body string) int {
-	t.Helper()
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+address+path, strings.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.Header.Set("Content-Type", "application/json")
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.Copy(io.Discard, response.Body); err != nil {
-		t.Fatal(err)
-	}
-	if err := response.Body.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return response.StatusCode
-}
-
 func TestTestControlRoutesExistOnlyWithTheFlag(t *testing.T) {
-	database := testdb.New(t)
+	t.Parallel()
 	cases := map[string]struct {
 		flag        string
 		clock       string
@@ -447,6 +460,9 @@ func TestTestControlRoutesExistOnlyWithTheFlag(t *testing.T) {
 	}
 	for name, testCase := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			holdProcessSlotAfterParallel(t)
+			database := testdb.New(t)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			address := freeAddress(t)
@@ -458,16 +474,20 @@ func TestTestControlRoutesExistOnlyWithTheFlag(t *testing.T) {
 				}
 			})
 			waitForStatus(t, ctx, "http://"+address+"/api/v1/health/ready")
+			jsonHeaders := map[string]string{"Content-Type": "application/json"}
 
-			mailStatus := postJSON(t, ctx, address, "/__test__/mail", `{"to":"tutor@example.org"}`)
-			clockStatus := postJSON(t, ctx, address, "/__test__/clock", `{"set":"2030-01-01T00:00:00Z"}`)
-			tickStatus := postJSON(t, ctx, address, "/__test__/tick", `{}`)
+			mail := call(t, ctx, http.MethodPost, "http://"+address+"/__test__/mail", `{"to":"tutor@example.org"}`, jsonHeaders)
+			clock := call(t, ctx, http.MethodPost, "http://"+address+"/__test__/clock", `{"set":"2030-01-01T00:00:00Z"}`, jsonHeaders)
+			tick := call(t, ctx, http.MethodPost, "http://"+address+"/__test__/tick", `{}`, jsonHeaders)
 			signalErr := server.Process.Signal(syscall.SIGTERM)
 			waitErr := server.Wait()
 
-			if mailStatus != testCase.mailStatus || clockStatus != testCase.clockStatus || tickStatus != testCase.tickStatus || signalErr != nil || waitErr != nil {
+			if mail.status != testCase.mailStatus || clock.status != testCase.clockStatus || tick.status != testCase.tickStatus || signalErr != nil || waitErr != nil {
 				t.Fatalf("mail %d (want %d), clock %d (want %d), tick %d (want %d), signal %v, exit %v",
-					mailStatus, testCase.mailStatus, clockStatus, testCase.clockStatus, tickStatus, testCase.tickStatus, signalErr, waitErr)
+					mail.status, testCase.mailStatus, clock.status, testCase.clockStatus, tick.status, testCase.tickStatus, signalErr, waitErr)
+			}
+			if unanswered := answeredElsewhere(output.String(), mail, clock, tick); len(unanswered) != 0 {
+				t.Fatalf("another process answered the requests %v", unanswered)
 			}
 		})
 	}
@@ -496,6 +516,8 @@ func nextLine(t *testing.T, ctx context.Context, lines <-chan string, event stri
 }
 
 func TestSinkRefusedForProductionDatabaseName(t *testing.T) {
+	t.Parallel()
+	holdProcessSlotAfterParallel(t)
 	production := testdb.NewNamed(t, "ovc_"+core.NewRandomID()[:8]+"_prod", true)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -503,16 +525,20 @@ func TestSinkRefusedForProductionDatabaseName(t *testing.T) {
 	env := []string{"OVC_DATABASE_URL=" + production.URL.Reveal(), "OVC_HTTP_ADDR=" + address}
 
 	worker := runBinary(t, "worker", env)
-	server, output := startServer(t, ctx, env)
+	server, output := startServer(t, ctx, withRequestLogs(env))
 	waitForStatus(t, ctx, "http://"+address+"/api/v1/health/ready")
+	ready := call(t, ctx, http.MethodGet, "http://"+address+"/api/v1/health/ready", "", nil)
 	signalErr := server.Process.Signal(syscall.SIGTERM)
 	waitErr := server.Wait()
 
 	if worker.exitCode == 0 || !strings.Contains(worker.stderr, "_test or _dev") {
 		t.Fatalf("the worker with the default sink accepted %s: %d %s", production.Name, worker.exitCode, worker.stderr)
 	}
-	if signalErr != nil || waitErr != nil {
-		t.Fatalf("the api, which writes no mail, refused the database: signal %v, exit %v\n%s", signalErr, waitErr, output.String())
+	if ready.status != http.StatusOK || signalErr != nil || waitErr != nil {
+		t.Fatalf("the api, which writes no mail, refused the database: ready %d, signal %v, exit %v\n%s", ready.status, signalErr, waitErr, output.String())
+	}
+	if unanswered := answeredElsewhere(output.String(), ready); len(unanswered) != 0 {
+		t.Fatalf("another process answered the requests %v", unanswered)
 	}
 	for _, secret := range secretsIn(env) {
 		if strings.Contains(worker.stdout+worker.stderr+output.String(), secret) {
@@ -522,9 +548,26 @@ func TestSinkRefusedForProductionDatabaseName(t *testing.T) {
 }
 
 type exchange struct {
-	status int
-	body   string
-	header http.Header
+	requestID string
+	status    int
+	body      string
+	header    http.Header
+}
+
+const requestIDHeader = "X-Request-ID"
+
+func withRequestLogs(env []string) []string {
+	return append(append([]string{}, env...), "OVC_LOG_LEVEL=debug")
+}
+
+func answeredElsewhere(serverOutput string, exchanges ...exchange) []string {
+	var unanswered []string
+	for _, answered := range exchanges {
+		if answered.header.Get(requestIDHeader) != answered.requestID || !strings.Contains(serverOutput, `"request_id":"`+answered.requestID+`"`) {
+			unanswered = append(unanswered, answered.requestID)
+		}
+	}
+	return unanswered
 }
 
 func call(t *testing.T, ctx context.Context, method string, url string, body string, headers map[string]string) exchange {
@@ -533,6 +576,8 @@ func call(t *testing.T, ctx context.Context, method string, url string, body str
 	if err != nil {
 		t.Fatal(err)
 	}
+	requestID := core.NewRandomID()
+	request.Header.Set(requestIDHeader, requestID)
 	for name, value := range headers {
 		request.Header.Set(name, value)
 	}
@@ -547,7 +592,7 @@ func call(t *testing.T, ctx context.Context, method string, url string, body str
 	if err := response.Body.Close(); err != nil {
 		t.Fatal(err)
 	}
-	return exchange{status: response.StatusCode, body: string(read), header: response.Header}
+	return exchange{requestID: requestID, status: response.StatusCode, body: string(read), header: response.Header}
 }
 
 func seedTutor(t *testing.T, database *testdb.Database, password string) {
@@ -578,6 +623,8 @@ func seedTutor(t *testing.T, database *testdb.Database, password string) {
 }
 
 func TestTransportDeadlinesIgnoreTheSharedClock(t *testing.T) {
+	t.Parallel()
+	holdProcessSlotAfterParallel(t)
 	database := testdb.New(t)
 	seedTutor(t, database, "correct horse battery")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -608,10 +655,10 @@ func TestTransportDeadlinesIgnoreTheSharedClock(t *testing.T) {
 		return call(t, ctx, http.MethodGet, base+"/api/v1/users/me", "", map[string]string{"Authorization": "Bearer " + token})
 	}
 
-	var statuses []int
+	var shifted []exchange
 	for _, instant := range []string{"2000-01-01T00:00:00Z", "2100-01-01T00:00:00Z"} {
-		statuses = append(statuses, call(t, ctx, http.MethodPost, base+"/__test__/clock", `{"set":"`+instant+`"}`, jsonHeaders).status)
-		statuses = append(statuses, me(signIn()).status)
+		shifted = append(shifted, call(t, ctx, http.MethodPost, base+"/__test__/clock", `{"set":"`+instant+`"}`, jsonHeaders))
+		shifted = append(shifted, me(signIn()))
 	}
 	token := signIn()
 	before := me(token)
@@ -620,9 +667,9 @@ func TestTransportDeadlinesIgnoreTheSharedClock(t *testing.T) {
 	signalErr := server.Process.Signal(syscall.SIGTERM)
 	waitErr := server.Wait()
 
-	for _, status := range statuses {
-		if status != http.StatusOK {
-			t.Fatalf("with the shared clock in 2000 and 2100: %v", statuses)
+	for _, answered := range shifted {
+		if answered.status != http.StatusOK {
+			t.Fatalf("with the shared clock in 2000 and 2100: %d %s", answered.status, answered.body)
 		}
 	}
 	if before.status != http.StatusOK || advanced.status != http.StatusOK || after.status != http.StatusUnauthorized || !strings.Contains(after.body, "token_expired") {
@@ -630,6 +677,9 @@ func TestTransportDeadlinesIgnoreTheSharedClock(t *testing.T) {
 	}
 	if signalErr != nil || waitErr != nil {
 		t.Fatalf("signal %v, exit %v", signalErr, waitErr)
+	}
+	if unanswered := answeredElsewhere(output.String(), append(shifted, before, advanced, after)...); len(unanswered) != 0 {
+		t.Fatalf("another process answered the requests %v", unanswered)
 	}
 }
 

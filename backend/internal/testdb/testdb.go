@@ -3,6 +3,7 @@ package testdb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/url"
 	"regexp"
@@ -29,9 +30,22 @@ type Database struct {
 	Pool *pgxpool.Pool
 }
 
+type poolSize int32
+
+const (
+	defaultPoolSize           poolSize = 4
+	lockContentionPoolSize    poolSize = 6
+	templateMigrationPoolSize poolSize = 2
+)
+
 func New(tb testing.TB) *Database {
 	tb.Helper()
-	return NewNamed(tb, "ovc_"+core.NewRandomID()[:12]+"_test", true)
+	return newNamed(tb, "ovc_"+core.NewRandomID()[:12]+"_test", true, defaultPoolSize)
+}
+
+func NewForLockContention(tb testing.TB) *Database {
+	tb.Helper()
+	return newNamed(tb, "ovc_"+core.NewRandomID()[:12]+"_test", true, lockContentionPoolSize)
 }
 
 func NewMigratedTo(tb testing.TB, version int64) *Database {
@@ -48,6 +62,11 @@ func NewMigratedTo(tb testing.TB, version int64) *Database {
 
 func NewNamed(tb testing.TB, name string, migrate bool) *Database {
 	tb.Helper()
+	return newNamed(tb, name, migrate, defaultPoolSize)
+}
+
+func newNamed(tb testing.TB, name string, migrate bool, size poolSize) *Database {
+	tb.Helper()
 	ctx := context.Background()
 	admin := adminURL(tb)
 	identifier := pgx.Identifier{name}.Sanitize()
@@ -63,7 +82,7 @@ func NewNamed(tb testing.TB, name string, migrate bool) *Database {
 	if err != nil {
 		tb.Fatalf("test database URL: %v", err)
 	}
-	pool, err := pgxpool.New(ctx, databaseURL.Reveal())
+	pool, err := openBoundedPool(ctx, databaseURL, size)
 	if err != nil {
 		tb.Fatalf("open the pool for test database %s: %s", name, core.ErrorKind(err))
 	}
@@ -154,7 +173,7 @@ var errAdminURLChanged = errors.New("the administrative pool was opened for anot
 func adminPool(admin core.Secret) (*pgxpool.Pool, error) {
 	sharedAdmin.once.Do(func() {
 		sharedAdmin.admin = admin.Reveal()
-		sharedAdmin.pool, sharedAdmin.err = pgxpool.New(context.Background(), admin.Reveal())
+		sharedAdmin.pool, sharedAdmin.err = openAdministrativePool(context.Background(), admin)
 	})
 	if sharedAdmin.err == nil && sharedAdmin.admin != admin.Reveal() {
 		return nil, errAdminURLChanged
@@ -242,7 +261,7 @@ func migrateTemplate(ctx context.Context, server testServer, created template) e
 	if err != nil {
 		return err
 	}
-	pool, err := pgxpool.New(ctx, templateURL.Reveal())
+	pool, err := openBoundedPool(ctx, templateURL, templateMigrationPoolSize)
 	if err != nil {
 		return &stepError{step: "open the pool for the template database", err: err}
 	}
@@ -404,9 +423,41 @@ func describe(err error) string {
 	return core.ErrorKind(err)
 }
 
+func openBoundedPool(ctx context.Context, databaseURL core.Secret, connections poolSize) (*pgxpool.Pool, error) {
+	config, err := pgxpool.ParseConfig(databaseURL.Reveal())
+	if err != nil {
+		return nil, fmt.Errorf("parse the test database URL: %w", err)
+	}
+	config.MaxConns = int32(connections)
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("open the test database pool: %w", err)
+	}
+	return pool, nil
+}
+
+const (
+	administrativeIdleLifetime = time.Second
+	administrativeIdleCheck    = 500 * time.Millisecond
+)
+
+func openAdministrativePool(ctx context.Context, admin core.Secret) (*pgxpool.Pool, error) {
+	config, err := pgxpool.ParseConfig(admin.Reveal())
+	if err != nil {
+		return nil, fmt.Errorf("parse the administrative URL: %w", err)
+	}
+	config.MaxConnIdleTime = administrativeIdleLifetime
+	config.HealthCheckPeriod = administrativeIdleCheck
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("open the administrative pool: %w", err)
+	}
+	return pool, nil
+}
+
 func OpenPool(tb testing.TB, databaseURL core.Secret) *pgxpool.Pool {
 	tb.Helper()
-	pool, err := pgxpool.New(context.Background(), databaseURL.Reveal())
+	pool, err := openBoundedPool(context.Background(), databaseURL, defaultPoolSize)
 	if err != nil {
 		tb.Fatalf("open pool: %s", core.ErrorKind(err))
 	}

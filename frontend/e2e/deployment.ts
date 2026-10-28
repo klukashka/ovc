@@ -237,12 +237,7 @@ export function prepareRun(): void {
   mkdirSync(binariesRoot, { recursive: true });
   createPreviewCertificate();
   ensureStorageBucket();
-  execFileSync('go', ['build', '-o', join(binariesRoot, 'api'), './cmd/api'], { cwd: backendRoot, stdio: 'inherit' });
-  execFileSync('go', ['build', '-o', join(binariesRoot, 'worker'), './cmd/worker'], {
-    cwd: backendRoot,
-    stdio: 'inherit',
-  });
-  execFileSync('go', ['build', '-o', join(binariesRoot, 'ovc-admin'), './cmd/ovc-admin'], {
+  execFileSync('go', ['build', '-o', `${binariesRoot}/`, './cmd/api', './cmd/worker', './cmd/ovc-admin'], {
     cwd: backendRoot,
     stdio: 'inherit',
   });

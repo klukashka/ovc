@@ -156,7 +156,7 @@ func newAuthHarnessStoring(
 	hooks ...optionsHook,
 ) *authHarness {
 	t.Helper()
-	database := testdb.New(t)
+	database := testdb.NewForLockContention(t)
 	random := randomPerTest(t)
 	logs := &safeBuffer{}
 	logger := slog.New(core.NewContextHandler(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
