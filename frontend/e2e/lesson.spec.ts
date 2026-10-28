@@ -18,6 +18,7 @@ import {
   readLesson,
   scheduleLessonsWithIds,
   scheduledCardLessonStarts,
+  seriesDates,
   setTimezone,
 } from './schedule.ts';
 import { acceptSignedIn, createCard, createGroup, endRelationship } from './tutoring.ts';
@@ -133,7 +134,37 @@ async function weeklySeries(
   return { lessons, weekdays, secondDate };
 }
 
-function secondLessonOf(series: WeeklySeries): ScheduledLesson {
+interface SeriesUntilItsEndDate {
+  readonly lessons: readonly ScheduledLesson[];
+  readonly endDate: LocalDate;
+}
+
+async function weeklySeriesUntilItsEndDate(
+  deployment: Deployment,
+  seed: TutorAndStudent,
+  first: LocalDate,
+): Promise<SeriesUntilItsEndDate> {
+  const weekdays = [isoWeekday(first), isoWeekday(addDays(first, 2))].sort((left, right) => left - right);
+  const endDate = seriesDates(first, weekdays, 4).at(-1);
+  if (endDate === undefined) {
+    throw new Error('the series has no dates');
+  }
+  const lessons = await scheduleLessonsWithIds(deployment, seed.maria, {
+    relationship_id: seed.cardId,
+    title: 'Серия',
+    date: first,
+    start: '18:00',
+    duration_minutes: 90,
+    weekdays,
+    end_date: endDate,
+  });
+  if (lessons.length !== 4) {
+    throw new Error('the series does not hold four lessons');
+  }
+  return { lessons, endDate };
+}
+
+function secondLessonOf(series: Pick<WeeklySeries, 'lessons'>): ScheduledLesson {
   const [, second] = series.lessons;
   if (second === undefined) {
     throw new Error('the series has fewer than two lessons');
@@ -391,21 +422,25 @@ test.describe('lesson page for a tutor in Russian', () => {
     );
   });
 
-  test('lesson › ending a series cancels this and the following lessons and opens New lesson with the same student, time and weekdays', async ({
+  test('lesson › ending a series from an occurrence moved to an earlier date cancels this and the following lessons and opens New lesson with the same student, time and weekdays on its original date', async ({
     page,
     deployment,
     control,
   }) => {
     const seed = await tutorAndStudent(deployment);
-    const series = await weeklySeries(deployment, seed, { relationship_id: seed.cardId }, await tomorrow(control.now));
+    const first = await tomorrow(control.now);
+    const series = await weeklySeries(deployment, seed, { relationship_id: seed.cardId }, first);
+    const selected = secondLessonOf(series);
+    await editThisLesson(deployment, seed.maria, selected.id, { date: addDays(first, 1) });
     await signInThroughTheApi(page, seed.maria);
-    await page.goto(lessonAddress(secondLessonOf(series)));
+    await page.goto(lessonAddress(selected));
     await endSeriesButton(page).click();
 
     await endSeriesDialog(page).getByRole('button', { name: 'Завершить серию' }).click();
 
     const dialog = newLessonDialog(page);
     await expect(dialog.getByLabel('Поиск ученика или группы')).toBeFocused();
+    await expect(page.getByText(changedMeanwhile)).toHaveCount(0);
     await expect(dialog.getByRole('radio', { name: 'Анна', exact: true })).toBeChecked();
     await expect(dialog.getByLabel('Дата', { exact: true })).toHaveValue(series.secondDate);
     await expect(dialog.getByLabel('Время начала')).toHaveValue('18:00');
@@ -492,15 +527,16 @@ test.describe('lesson page for a tutor in Russian', () => {
     expect(starts).toEqual(expect.arrayContaining(cancelledStarts));
   });
 
-  test('lesson › ending a series whose lesson was cancelled meanwhile closes onto the changed notice and keeps the series', async ({
+  test('lesson › ending a series from an occurrence moved beyond its end and cancelled meanwhile closes onto the changed notice and keeps the series', async ({
     page,
     deployment,
     control,
     socketSlots,
   }) => {
     const seed = await tutorAndStudent(deployment);
-    const series = await weeklySeries(deployment, seed, { relationship_id: seed.cardId }, await tomorrow(control.now));
+    const series = await weeklySeriesUntilItsEndDate(deployment, seed, await tomorrow(control.now));
     const selected = secondLessonOf(series);
+    await editThisLesson(deployment, seed.maria, selected.id, { date: addDays(series.endDate, 2) });
     await socketSlots.keepPageSocketsOff(seed.maria);
     await signInThroughTheApi(page, seed.maria);
     await page.goto(lessonAddress(selected));
@@ -511,6 +547,7 @@ test.describe('lesson page for a tutor in Russian', () => {
 
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByRole('status').filter({ hasText: changedMeanwhile })).toBeFocused();
+    await expect(newLessonDialog(page)).toHaveCount(0);
     const statuses = await Promise.all(
       series.lessons.map(async (lesson) => (await readLesson(deployment, seed.maria, lesson.id)).status),
     );

@@ -1194,7 +1194,7 @@ func (q *Queries) ListTutorCalendar(ctx context.Context, arg ListTutorCalendarPa
 const listTutorLessonViews = `-- name: ListTutorLessonViews :many
 SELECT
     lessons.id, lessons.title, lessons.description, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
-    lessons.series_id, lessons.version, lessons.cancelled_at, lessons.relationship_id, lessons.group_id,
+    lessons.series_id, lessons.occurrence_date, lessons.version, lessons.cancelled_at, lessons.relationship_id, lessons.group_id,
     card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
     card.colour AS card_colour, student.timezone AS student_timezone,
     lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
@@ -1220,6 +1220,7 @@ type ListTutorLessonViewsRow struct {
 	Status            domain.LessonStatus
 	Timezone          string
 	SeriesID          *domain.SeriesID
+	OccurrenceDate    pgtype.Date
 	Version           int32
 	CancelledAt       *time.Time
 	RelationshipID    *domain.RelationshipID
@@ -1251,6 +1252,7 @@ func (q *Queries) ListTutorLessonViews(ctx context.Context, arg ListTutorLessonV
 			&i.Status,
 			&i.Timezone,
 			&i.SeriesID,
+			&i.OccurrenceDate,
 			&i.Version,
 			&i.CancelledAt,
 			&i.RelationshipID,

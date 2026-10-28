@@ -14,7 +14,7 @@ import { type PaletteColour, paletteDotClass } from '../../components/ui/palette
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type Me, useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDate, localeOf } from '../../lib/format/dates.ts';
-import { isLocalDate, localDateOf, utcOffsetText } from '../../lib/time/localDates.ts';
+import { type LocalDate, isLocalDate, localDateOf, utcOffsetText } from '../../lib/time/localDates.ts';
 import { cityOf } from '../../lib/time/timezoneCities.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import { type ChangedLessons, type LessonDetail, type LessonSeries, fetchLesson } from './api.ts';
@@ -331,9 +331,24 @@ function sameAudience(t: TFunction, audience: LessonDetail['audience']): Audienc
   return null;
 }
 
-function nextSeriesPrefill(t: TFunction, lesson: LessonDetail, series: LessonSeries, timeZone: string): LessonPrefill {
+interface EndedOccurrence {
+  readonly lesson: LessonDetail;
+  readonly series: LessonSeries;
+  readonly date: LocalDate;
+}
+
+function endedOccurrenceOf(lesson: LessonDetail): EndedOccurrence | null {
+  const date = lesson.occurrence_date ?? null;
+  if (lesson.series === null || !isLocalDate(date)) {
+    return null;
+  }
+  return { lesson, series: lesson.series, date };
+}
+
+function nextSeriesPrefill(t: TFunction, ended: EndedOccurrence, timeZone: string): LessonPrefill {
+  const { lesson, series } = ended;
   const audience = sameAudience(t, lesson.audience);
-  const timing = seriesTimingIn(series, localDateOf(Date.parse(lesson.starts_at), series.timezone), timeZone);
+  const timing = seriesTimingIn(series, ended.date, timeZone);
   return {
     date: timing.date,
     start: timing.start,
@@ -343,10 +358,22 @@ function nextSeriesPrefill(t: TFunction, lesson: LessonDetail, series: LessonSer
   };
 }
 
-function seriesEndsBefore(changed: ChangedLessons, lesson: LessonDetail, series: LessonSeries): boolean {
+function seriesEndsBefore(changed: ChangedLessons, occurrenceDate: LocalDate): boolean {
   const ended = changed.series;
-  const occurrenceDate = localDateOf(Date.parse(lesson.starts_at), series.timezone);
   return ended !== null && ended.count === null && ended.end_date !== null && ended.end_date < occurrenceDate;
+}
+
+export function nextSeriesAfterEnding(
+  t: TFunction,
+  lesson: LessonDetail,
+  changed: ChangedLessons,
+  timeZone: string,
+): LessonPrefill | null {
+  const ended = endedOccurrenceOf(lesson);
+  if (ended === null || !seriesEndsBefore(changed, ended.date)) {
+    return null;
+  }
+  return nextSeriesPrefill(t, ended, timeZone);
 }
 
 function TutorControls({
@@ -467,13 +494,14 @@ export function LessonPage(): ReactElement {
     }
   }
 
-  function seriesEnded(ended: LessonDetail, changed: ChangedLessons): void {
-    if (ended.series === null || !seriesEndsBefore(changed, ended, ended.series)) {
+  function seriesEnded(lesson: LessonDetail, changed: ChangedLessons): void {
+    const prefill = nextSeriesAfterEnding(t, lesson, changed, me.timezone);
+    if (prefill === null) {
       stale();
       return;
     }
     saved('endSeries', changed);
-    setNextSeries(nextSeriesPrefill(t, ended, ended.series, me.timezone));
+    setNextSeries(prefill);
   }
 
   function nextSeriesClosed(): void {

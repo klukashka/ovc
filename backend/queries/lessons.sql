@@ -74,7 +74,7 @@ WHERE id = @id AND student_id = @student_id AND state IN ('active', 'provisional
 -- name: ListTutorLessonViews :many
 SELECT
     lessons.id, lessons.title, lessons.description, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
-    lessons.series_id, lessons.version, lessons.cancelled_at, lessons.relationship_id, lessons.group_id,
+    lessons.series_id, lessons.occurrence_date, lessons.version, lessons.cancelled_at, lessons.relationship_id, lessons.group_id,
     card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
     card.colour AS card_colour, student.timezone AS student_timezone,
     lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour

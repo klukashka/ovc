@@ -7,8 +7,8 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { Page } from '../../components/ui/Page.tsx';
 import type { Me } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
-import type { LessonDetail } from './api.ts';
-import { LessonView, MemberLabel, headingOf } from './LessonPage.tsx';
+import type { ChangedLessons, LessonDetail, LessonSeries } from './api.ts';
+import { LessonView, MemberLabel, headingOf, nextSeriesAfterEnding } from './LessonPage.tsx';
 
 afterEach(() => {
   cleanup();
@@ -62,6 +62,41 @@ const lesson: LessonDetail = {
 
 const start = Date.parse(lesson.starts_at);
 const dayBefore = start - 24 * 60 * minute;
+
+const relationshipId = '00000000-0000-4000-8000-000000000010';
+
+const occurrenceSeries: LessonSeries = {
+  id: '00000000-0000-4000-8000-000000000005',
+  weekdays: [2],
+  start: '18:00',
+  duration_minutes: 60,
+  timezone: 'Europe/Moscow',
+  first_date: '2026-10-27',
+  end_date: '2026-11-04',
+  count: null,
+};
+
+const occurrenceWithoutItsDate: LessonDetail = {
+  ...lesson,
+  series_id: occurrenceSeries.id,
+  series: occurrenceSeries,
+  other_timezone: null,
+  audience: {
+    kind: 'one_to_one',
+    relationship_id: relationshipId,
+    label: 'Анна',
+    label_kind: null,
+    colour: 'moss',
+    members: [],
+  },
+  tutor: null,
+};
+
+const seriesOccurrence: LessonDetail = { ...occurrenceWithoutItsDate, occurrence_date: '2026-11-03' };
+
+function seriesEndingOn(endDate: string): ChangedLessons {
+  return { series: { ...occurrenceSeries, end_date: endDate }, lessons: [] };
+}
 
 interface Shown {
   readonly lesson: LessonDetail;
@@ -212,6 +247,46 @@ describe('lesson page', () => {
 
     expect(control.isConnected).toBe(false);
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
+  });
+
+  test('a lesson detail without its occurrence date treats a series ending as changed meanwhile', async () => {
+    const { t } = await createI18n('ru');
+    const prefill = nextSeriesAfterEnding(t, occurrenceWithoutItsDate, seriesEndingOn('2026-11-02'), tutor.timezone);
+
+    expect(prefill).toBeNull();
+  });
+
+  test('an occurrence moved to an earlier date prefills the new series on its original date', async () => {
+    const { t } = await createI18n('ru');
+    const movedEarlier = { ...seriesOccurrence, starts_at: '2026-11-02T15:00:00Z', ends_at: '2026-11-02T16:00:00Z' };
+
+    const prefill = nextSeriesAfterEnding(t, movedEarlier, seriesEndingOn('2026-11-02'), tutor.timezone);
+
+    expect(prefill).toEqual({
+      date: '2026-11-03',
+      start: '18:00',
+      durationMinutes: 60,
+      weekdays: [2],
+      audience: { kind: 'one_to_one', id: relationshipId, name: 'Анна' },
+    });
+  });
+
+  test('an occurrence moved beyond the series end whose series did not end opens no new series', async () => {
+    const { t } = await createI18n('ru');
+    const movedBeyond = { ...seriesOccurrence, starts_at: '2026-11-12T15:00:00Z', ends_at: '2026-11-12T16:00:00Z' };
+
+    const prefill = nextSeriesAfterEnding(t, movedBeyond, seriesEndingOn('2026-11-04'), tutor.timezone);
+
+    expect(prefill).toBeNull();
+  });
+
+  test('an answer whose series still has a count opens no new series', async () => {
+    const { t } = await createI18n('ru');
+    const counted: ChangedLessons = { series: { ...occurrenceSeries, end_date: null, count: 4 }, lessons: [] };
+
+    const prefill = nextSeriesAfterEnding(t, seriesOccurrence, counted, tutor.timezone);
+
+    expect(prefill).toBeNull();
   });
 
   test('a member without a name shows its fixed label alone', async () => {

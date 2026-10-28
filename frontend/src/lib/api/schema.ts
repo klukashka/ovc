@@ -1018,6 +1018,8 @@ export interface components {
             ends_at: string;
             /** Format: uuid */
             id: string;
+            /** Format: date */
+            occurrence_date?: string;
             other_timezone: string | null;
             series: components["schemas"]["LessonSeries"] | null;
             /** Format: uuid */

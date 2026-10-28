@@ -271,6 +271,10 @@ func lessonBody(lesson schedule.Lesson) schemas.LessonDetail {
 		series := lesson.SeriesID.String()
 		body.SeriesID = &series
 	}
+	if lesson.OccurrenceDate != nil {
+		occurrence := lesson.OccurrenceDate.String()
+		body.OccurrenceDate = &occurrence
+	}
 	if lesson.Series != nil {
 		body.Series = seriesBody(*lesson.Series)
 	}

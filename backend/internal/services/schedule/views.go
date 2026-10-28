@@ -39,6 +39,7 @@ type Lesson struct {
 	Status          domain.LessonStatus
 	Timezone        string
 	SeriesID        *domain.SeriesID
+	OccurrenceDate  *domain.LocalDate
 	Series          *SeriesView
 	Version         int32
 	CancelledAt     *time.Time
@@ -142,6 +143,10 @@ func (s *Service) tutorViews(ctx context.Context, repos repositories.Repositorie
 			ID: row.ID, Title: row.Title, Description: row.Description, StartsAt: row.StartsAt.UTC(), DurationMinutes: int(row.DurationMinutes),
 			Status: row.Status, Timezone: row.Timezone, SeriesID: row.SeriesID, Version: row.Version, CancelledAt: row.CancelledAt,
 			Audience: source.audience(),
+		}
+		if row.OccurrenceDate.Valid {
+			occurrence := domain.DateOf(row.OccurrenceDate.Time)
+			lesson.OccurrenceDate = &occurrence
 		}
 		if row.GroupID != nil {
 			members := byLesson[row.ID]

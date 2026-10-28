@@ -120,6 +120,7 @@ type lessonView struct {
 	Status        string         `json:"status"`
 	Timezone      string         `json:"timezone"`
 	SeriesID      *string        `json:"series_id"`
+	Occurrence    *string        `json:"occurrence_date"`
 	Series        *lessonSeries  `json:"series"`
 	Version       int            `json:"version"`
 	CancelledAt   *time.Time     `json:"cancelled_at"`

@@ -70,6 +70,7 @@ type LessonDetail struct {
 	Status          domain.LessonStatus `json:"status" enum:"scheduled,live,ended,cancelled"`
 	Timezone        string              `json:"timezone"`
 	SeriesID        *string             `json:"series_id" format:"uuid" nullable:"true"`
+	OccurrenceDate  *string             `json:"occurrence_date,omitempty" format:"date"`
 	Series          *LessonSeries       `json:"series"`
 	Version         int32               `json:"version"`
 	CancelledAt     *time.Time          `json:"cancelled_at" nullable:"true"`
