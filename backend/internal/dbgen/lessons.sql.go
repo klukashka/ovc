@@ -265,6 +265,11 @@ SELECT
         JOIN relationships AS membership ON membership.id = group_members.relationship_id
         WHERE group_members.group_id = lessons.group_id AND membership.student_id = $1::uuid
     ) AS current_member,
+    EXISTS (
+        SELECT 1 FROM relationships AS own_link
+        WHERE own_link.id = lessons.relationship_id AND own_link.student_id = $1::uuid
+            AND own_link.state IN ('active', 'provisional')
+    ) AS current_link,
     teacher.name AS tutor_name, coalesce(mine.state, '')::text AS my_state, mine.colour AS my_colour
 FROM lessons
 JOIN users AS teacher ON teacher.id = lessons.tutor_id
@@ -315,6 +320,7 @@ type GetStudentLessonViewRow struct {
 	GroupID         *domain.GroupID
 	GroupName       *string
 	CurrentMember   bool
+	CurrentLink     bool
 	TutorName       string
 	MyState         string
 	MyColour        *domain.Colour
@@ -337,6 +343,7 @@ func (q *Queries) GetStudentLessonView(ctx context.Context, arg GetStudentLesson
 		&i.GroupID,
 		&i.GroupName,
 		&i.CurrentMember,
+		&i.CurrentLink,
 		&i.TutorName,
 		&i.MyState,
 		&i.MyColour,

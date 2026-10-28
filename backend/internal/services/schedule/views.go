@@ -255,6 +255,11 @@ func (s *Service) Lesson(ctx context.Context, viewer domain.UserID, role domain.
 			other := row.Timezone
 			lesson.OtherTimezone = &other
 		}
+		seenOnlyThroughRoster := !row.CurrentMember && !row.CurrentLink
+		if seenOnlyThroughRoster {
+			lesson.SeriesID = nil
+			return nil
+		}
 		withSeriesView, err := withSeries(ctx, repos, []Lesson{lesson})
 		if err != nil {
 			return err
