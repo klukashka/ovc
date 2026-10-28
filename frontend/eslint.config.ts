@@ -212,6 +212,36 @@ const languageTextsSyntax = [
   'ClassDeclaration',
 ].map((selector) => ({ selector, message: languageTextsMessage }));
 
+const routeMessage =
+  'AGENTS.md, no mocks, and ADR-0009 item 9: an end-to-end route may only hold a request and pass it on unchanged with route.continue() or route.fallback(), and abort it only in the language-chunk load failure test.';
+
+const passingRouteMethods = '/^(continue|fallback)$/';
+const replacingRouteMethods = '/^(fulfill|routeFromHAR|routeWebSocket)$/';
+const routeMethodNames = '/^(continue|fallback|fulfill|fetch|abort|routeFromHAR|routeWebSocket)$/';
+
+const forbiddenRouteHandling = [
+  `MemberExpression[property.name=${passingRouteMethods}]:not(CallExpression[arguments.length=0] > MemberExpression.callee)`,
+  `MemberExpression[property.value=${passingRouteMethods}]:not(CallExpression[arguments.length=0] > MemberExpression.callee)`,
+  `MemberExpression[property.name=${replacingRouteMethods}]`,
+  `MemberExpression[property.value=${replacingRouteMethods}]`,
+  `MemberExpression[property.name='fetch']:not([object.name='request']):not([object.property.name='request'])`,
+  `MemberExpression[property.value='fetch']`,
+  `MemberExpression > TemplateLiteral.property[quasis.0.value.raw=${routeMethodNames}]`,
+  `ObjectPattern > Property[key.name=${routeMethodNames}]`,
+  `ObjectPattern > Property[key.value=${routeMethodNames}]`,
+].map((selector) => ({ selector, message: routeMessage }));
+
+const forbiddenRouteAbort = ["MemberExpression[property.name='abort']", "MemberExpression[property.value='abort']"].map(
+  (selector) => ({ selector, message: routeMessage }),
+);
+
+const forbiddenRouteAbortWithArguments = [
+  "MemberExpression[property.name='abort']:not(CallExpression[arguments.length=0] > MemberExpression.callee)",
+  "MemberExpression[property.value='abort']",
+].map((selector) => ({ selector, message: routeMessage }));
+
+const languageChunkFailureSpec = 'e2e/language.spec.ts';
+
 export default defineConfig(
   { ignores: ['dist', 'node_modules', 'playwright-report', 'test-results', 'src/lib/api/schema.ts'] },
   js.configs.recommended,
@@ -257,6 +287,33 @@ export default defineConfig(
       ],
       'no-restricted-globals': ['error', ...forbiddenReflectGlobals],
       'no-restricted-imports': ['error', forbiddenTestDoubleImports],
+    },
+  },
+  {
+    files: ['e2e/**/*.ts'],
+    ignores: [languageChunkFailureSpec],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...forbiddenFetchReplacement,
+        ...forbiddenDynamicImports,
+        ...forbiddenReflectSyntax,
+        ...forbiddenRouteHandling,
+        ...forbiddenRouteAbort,
+      ],
+    },
+  },
+  {
+    files: [languageChunkFailureSpec],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...forbiddenFetchReplacement,
+        ...forbiddenDynamicImports,
+        ...forbiddenReflectSyntax,
+        ...forbiddenRouteHandling,
+        ...forbiddenRouteAbortWithArguments,
+      ],
     },
   },
   {

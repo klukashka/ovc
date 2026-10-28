@@ -320,3 +320,85 @@ describe('frontend lint configuration', () => {
     expect(found).not.toContain('no-restricted-syntax');
   });
 });
+
+describe('end-to-end request interception', () => {
+  const specPath = resolve(frontendRoot, 'e2e/schedule.spec.ts');
+  const languageSpecPath = resolve(frontendRoot, 'e2e/language.spec.ts');
+
+  function routed(handler: string): string {
+    return `import type { Page } from '@playwright/test';\n\nexport async function hold(page: Page): Promise<void> {\n  await page.route('**/api/v1/lessons', async (route) => {\n    ${handler}\n  });\n}\n`;
+  }
+
+  function onPage(body: string): string {
+    return `import type { Page } from '@playwright/test';\n\nexport async function replace(page: Page): Promise<void> {\n  ${body}\n}\n`;
+  }
+
+  test.each([
+    ['route.fulfill', "await route.fulfill({ status: 200, body: '{}' });"],
+    ['route.fulfill by computed key', "await route['fulfill']({ status: 200 });"],
+    ['route.fulfill by template key', 'await route[`fulfill`]({ status: 200 });'],
+    ['route.continue with a changed URL', "await route.continue({ url: 'http://127.0.0.1/other' });"],
+    ['route.continue with changed headers', 'await route.continue({ headers: {} });'],
+    ['route.continue by computed key with a changed method', "await route['continue']({ method: 'GET' });"],
+    ['route.continue called through call', "await route.continue.call(route, { postData: '' });"],
+    ['route.continue held in a variable', 'const pass = route.continue;\n    await pass.call(route);'],
+    ['route.fallback with a changed body', "await route.fallback({ postData: '' });"],
+    ['route.fetch with a changed URL', "await route.fetch({ url: 'http://127.0.0.1/other' });"],
+    ['route.fetch without arguments', 'await route.fetch();'],
+    ['route.fetch by computed key', "await route['fetch']({ method: 'GET' });"],
+    ['destructured route methods', 'const { fulfill } = route;\n    await fulfill.call(route, {});'],
+    ['route.abort outside the language spec', 'await route.abort();'],
+  ])('refuses %s in an end-to-end spec', async (_name, handler) => {
+    const found = await ruleIds(routed(handler), specPath);
+
+    expect(found).toContain('no-restricted-syntax');
+  });
+
+  test.each([
+    ['page.routeFromHAR', "await page.routeFromHAR('recorded.har');"],
+    ['page.routeWebSocket', "await page.routeWebSocket('**', () => undefined);"],
+  ])('refuses %s in an end-to-end spec', async (_name, body) => {
+    const found = await ruleIds(onPage(body), specPath);
+
+    expect(found).toContain('no-restricted-syntax');
+  });
+
+  test('accepts a direct API request through request.fetch and page.request.fetch', async () => {
+    const source = onPage(
+      "await page.request.fetch('/api/v1/health/live', { method: 'OPTIONS' });\n  const request = page.request;\n  await request.fetch('/api/v1/health/live');",
+    );
+
+    const found = await ruleIds(source, specPath);
+
+    expect(found).not.toContain('no-restricted-syntax');
+  });
+
+  test.each([
+    ['route.continue without arguments', 'await route.continue();'],
+    ['route.fallback without arguments', 'await route.fallback();'],
+  ])('accepts %s in an end-to-end spec', async (_name, handler) => {
+    const found = await ruleIds(routed(handler), specPath);
+
+    expect(found).not.toContain('no-restricted-syntax');
+  });
+
+  test('accepts route.abort without arguments only in the language spec', async () => {
+    const source = routed('await route.abort();');
+
+    const inLanguageSpec = await ruleIds(source, languageSpecPath);
+    const inOtherSpec = await ruleIds(source, specPath);
+
+    expect(inLanguageSpec).not.toContain('no-restricted-syntax');
+    expect(inOtherSpec).toContain('no-restricted-syntax');
+  });
+
+  test.each([
+    ['route.abort with an error code', "await route.abort('failed');"],
+    ['route.fulfill', 'await route.fulfill({ status: 500 });'],
+    ['route.continue with a changed URL', "await route.continue({ url: 'http://127.0.0.1/other' });"],
+  ])('refuses %s in the language spec', async (_name, handler) => {
+    const found = await ruleIds(routed(handler), languageSpecPath);
+
+    expect(found).toContain('no-restricted-syntax');
+  });
+});
