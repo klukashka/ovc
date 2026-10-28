@@ -1,73 +1,141 @@
 # Plan: shorten the end-to-end suites on the merge gate's critical path
 
-Status: approved by the owner on 2026-10-28 with items A and B; item C is not done; item D is limited to the migrated template, built only if items A and B leave a gate above 165 seconds. Revision 2, against `main` at `9935cb6`, after a security-profile review of revision 1: item B keeps the harness's failure checks with a self-test, the batched seeding route needs its own plan amendment, and the template, connection and check criteria are stated as commands. The owner decided on 2026-10-28 that this plan covers more Playwright workers with smaller database pools and the removal of Firefox's per-test overhead, and that the other items below are options for the owner to choose.
+Status: revision 3, written on 2026-10-29 against `main` at `3150810`, and closed by the owner's decision of 2026-10-29 (section 9): items D(a), E' and F are not done now. The suites' CPU cost is worked out in [proposal 0004](../../docs/proposals/0004-end-to-end-suite-cost.md), and D46's threshold is 260 s until the end of slice 6, with the 165 s target kept ([slice 5 plan](slice-5.md), D46, pending owner review). No harness or gate change follows from this plan. Revision 2 was approved by the owner on 2026-10-28 with items A and B (section 9). Its profile and measurements, recorded in the [end-to-end profile record](../analysis/check-budget-2026-10-29-e2e-profile.md), showed that neither item shortens the suites, so neither was adopted and no harness change was made. The owner then chose to reduce the work of the suites rather than add parallelism. This revision records A and B as measured and not adopted, and proposes the migrated template (item D(a)), builds off the critical path (item E') and an optional investigation of a Firefox stall (item F), with the gains the measurements predict for each.
 
 ## 1. Problem
 
-The merge gate holds the end-to-end run lock for its whole run and runs `pnpm e2e` alone after lanes A, B and C, so the suites set the gate's critical path. Recent gates took 190 to 252 s, of which `pnpm e2e` took 136 to 150 s, against D46's 165 s target and 180 s threshold ([slice 5 plan](slice-5.md), [critical path record](../analysis/check-budget-2026-10-28-gate-critical-path.md), [slice 5 review](../reviews/slice-5-review.md)). The suites hold 881 tests in three engines on 6 workers (Playwright's default, half of 12 cores). Summed test time per engine was chromium 174 s for 318 tests, firefox 270 s for 281 and webkit 210 s for 282 in a passing run of 2026-10-28, and 164 / 339 / 221 s in another. Playwright dispatches the three projects from one queue, so the phases are packed: wall time is about the summed time over 6 plus about 3 s. On the 281 tests that run in every engine, Firefox's median test is 0.2 to 0.33 s slower than Chromium's and its tenth percentile 0.42 to 0.54 s against 0.27 to 0.29 s: Firefox costs 98 to 178 s of summed time beyond Chromium, a fixed per-test overhead rather than slow tests. Each worker owns a deployment against PostgreSQL's `max_connections` of 100, which bounds the worker count.
+The merge gate runs `pnpm e2e` alone after lanes A, B and C, so the suites set the gate's critical path. The gates since the end of slice 5's planned changes took 187 to 252 s, with the end-to-end step at 2.1 to 2.5 minutes, against D46's 165 s target and 180 s threshold ([slice 5 gates record](../analysis/check-budget-2026-10-29-slice-5-gates.md), [slice 5 plan](slice-5.md)). Those gates ran with warm Go caches on a loaded machine; cold gates on an idle machine are still to be measured.
 
-## 2. Outcome
+The suites now hold 897 tests: 326 in Chromium, 285 in Firefox and 286 in WebKit. On an otherwise idle machine at `3150810`, three runs with Playwright's default of 6 workers and database pools of 5 took 133, 124 and 119 s (mean 125 s, spread 14 s). Of that:
 
-The gate's wall time is at most 165 s in three cold runs, with every test, engine and assertion kept and no timeout raised. Items A and B are in scope; C and D are options the owner chooses; E is listed as not recommended.
+- from the command's start to the first test, global setup with its builds included, took at most 3.8 s, and at most 1.5 s once the worktree's first build had run;
+- the tests ran for 117 to 128 s;
+- teardown after the last test took 0.6 s or less.
 
-**A. More workers with smaller per-deployment pools.** `frontend/e2e/deployment.ts` sets `OVC_DB_POOL_SIZE` to 3 instead of 5 for the API and the worker, and `frontend/playwright.config.ts` sets `workers` to a fixed number, so the connection count does not grow with the machine's cores. 8 and 9 workers are each measured; the lower count is chosen unless 9 gains more than the spread of the runs. A pool of 4 is the fallback if pools of 3 slow the suites down. Production defaults (API 20, worker 10) do not change.
+The machine averaged about 850 % of its 1200 % CPU during the tests: Firefox about 30 %, Docker's virtual machine (PostgreSQL and storage) about 15 %, Playwright's runner and test workers about 13 %, WebKit about 11 %, Chromium about 8 %, `vite preview` about 6 % and the API processes about 4 %. Wall time is set by CPU-bound test execution, not by setup.
 
-- Connections: a deployment holds API 5 + worker 5 + 1 listener = 11 today, 66 at 6 workers; with pools of 3 it holds 7, 63 at 9 workers and 56 at 8. Transients come on top: `createdb`, `migrate` and `dropdb` of starting and stopping deployments (a deployment of the next engine can start while the previous engine's stops, briefly doubling a slot) and each `ovc-admin` call, whose pool keeps its default of 20. The computed upper bound at 9 workers, every slot doubled at once and one `ovc-admin` per slot, is 9 × (2 × 7 + 20) = 306, far above 100; the sampled peak decides, and its limit is in section 6.
-- Pool starvation: the worker's lanes run up to 10 email and 4 deletion jobs at once, and `/__test__/tick` runs a worker in-process on the API's pool, so pools of 3 queue them. Starvation shows as failures, not as hidden waits: the claim and effect timeouts are 30 s and the connect timeout 5 s, and none changes. The hidden-bug risk is `session.spec.ts` "two tabs refreshing at once keep the session", whose concurrent refreshes may serialise on a pool of 3 and stop exercising the race; `TestConcurrentRefreshesWithOneCookieRotateOnceAndRevokeAsReuse` remains the coverage of the rotation race.
-- Expected gain: 6 to 9 workers would cut the packed wall time by a third, about 45 s at today's figures, with perfect scaling; with the CPU contention of 9 browsers, 9 deployments and their preview servers on 12 cores, 15 to 35 s (8 workers: 10 to 25 s).
+## 2. Measured and not adopted
 
-**B. Firefox's per-test overhead profiled and removed.** First a profile, without any committed change: the slowest common specs (`schedule`, `signup`, `account-edge-cases`, `students`, `smoke`) run with `--workers=1 --trace=on` in Chromium and Firefox, and the traces' fixture timings split each test's time into context and page creation, the `diagnostics` auto fixture, `signedInPage` and seeding, and socket-ready waits. Traces add their own cost, so the profile only ranks causes. Candidate fixes, each kept only when it removes measured time:
+**A. More workers with smaller pools.** Measured at `ba042d8` with `workers` fixed in `frontend/playwright.config.ts` and `OVC_DB_POOL_SIZE` set to 3 in `frontend/e2e/deployment.ts`, two runs per configuration, all passing:
 
-- socket-ready and presence waits (`expectRefetchedAfterTheSocketIsReady`, `waitForSockets` in `frontend/e2e/realtime.ts`) poll at `expect.poll`'s default intervals of 100, 250, 500 and 1000 ms, so a condition met at 110 ms is seen at 350 ms; explicit short intervals keep every deadline, matcher and message;
-- context options that cost Firefox time at creation and that no test relies on, found by the profile;
-- the `diagnostics` fixture is rewired only if the profile names it as a main cost. It carries T-37's control that the smoke fails on any CSP violation, console error, page error or unexpected failed response, so any rewiring comes with the harness self-test of section 6. Moving its init script from each page to each context likely saves nothing, since each test opens one page.
-- Expected gain: half of Firefox's excess is 50 to 90 s of summed time, 6 to 15 s of wall time; fixes that also help WebKit (35 to 56 s over Chromium) add to it.
+| Configuration | Wall time | Mean | Peak connections |
+|---|---|---|---|
+| 6 workers, pools of 5 (`main`) | 147 s, 141 s | 144 s | 51 |
+| 8 workers, pools of 3 | 144 s, 128 s | 136 s | 41 |
+| 9 workers, pools of 3 | 144 s, 136 s | 140 s | 46 |
 
-**C. Option: engine phases concurrent.** Playwright already interleaves projects without dependencies from one queue, so the only idle time is at the phase boundaries. Expected gain: at most about 3 s.
+Summed test time grows in step with the worker count, because the machine is already saturated at 6 workers. The 8-worker gain does not exceed the spread of its runs, so the rule of section 4 drops it. Pools of 3 are safe: no failure, no `too many clients`, and a lower peak. They save no time, so they are not adopted either. Production pool defaults are untouched.
 
-**D. Option: duplicated setup consolidated.** (a) Every deployment runs `api migrate` on a fresh database, and at least 18 deployments start per run (6 workers × 3 engines); a database migrated once in the global setup and cloned with `createdb -T` removes 17 of those migrations. Expected gain: a few seconds, measured from the migrate logs first. Constraints: its name ends in `_test` and can never match the Go fixture's cleanup pattern `ovc_template_<secs>_<rand>_test`; it is created only after `readE2ESettings`' loopback checks, migrated by `api migrate` with the deployment's test-control environment, and every connection to it is closed before it is cloned; the global teardown drops it under `assertStillHeld`, and stale templates of crashed runs are removed only by the run-lock holder. It adds no route and no setting, so T-36 needs no change. (b) The specs call `seedVerifiedUser` 150 times and `seedActiveStudent` 50 times per engine; a batched seeding route would save round trips but adds to the test control surface. It needs its own plan amendment and security-profile review before implementation: the route exists only under `settings.TestControl` with the seeder and behind the test-control guard, with a body limit and a bounded batch; the absence tests (`backend/internal/api/api_test.go` near line 171, `backend/cmd/internal/startup/process_test.go` near line 174) cover it; T-36 and the harness's route table in `docs/development.md` are updated.
+**B. Firefox's per-test overhead.** The one-worker profile without traces split each test's time:
 
-**E. Not recommended: Chromium-only specs.** Running some specs in Chromium alone would save up to 480 s of summed time, but it drops engine coverage of the supported browsers, which the owner excluded and the definition of done forbids.
+- **Polls:** `expect.poll` waits took at most 4.5 s summed per engine, so shorter intervals could gain at most a fraction of that.
+- **Fixtures:** the `diagnostics` fixture took about 2 ms per test, and context creation 13 to 24 ms in Firefox.
+- **Firefox's excess:** Firefox creates a page in about 0.10 s, as WebKit does, and its test bodies run about 0.13 s slower per test than Chromium's. These are engine CPU costs that no harness option removes.
 
-## 3. Measurement
+No poll interval, context option or fixture was changed. Item F below covers the one removable Firefox cost the profile found.
 
-A baseline of three cold gate runs at `main` first, then three after the change, all on an idle machine with no other agent running, cold as in the [critical path record](../analysis/check-budget-2026-10-28-gate-critical-path.md). A new record `knowledge/analysis/check-budget-<date>-e2e-shortening.md` states, for every run: gate wall time, each lane, the `pnpm e2e` step, summed command seconds, summed test seconds and test count per engine, Firefox's excess over Chromium on the common tests, the core count, load averages, what the cold run emptied, and the peak of client connections in `pg_stat_activity` sampled every 0.2 to 0.3 s. The sampler runs through `tools/dev-env.sh` and writes only counts and times, never a connection string. Each item's own gain comes from three `pnpm e2e` runs with and three without it; an item whose mean gain does not exceed the spread of its runs is dropped, as in the [critical path plan](merge-gate-critical-path.md).
+## 3. Proposed items
 
-## 4. Tier and security trigger
+**D(a). Migrated template database.** Every deployment runs `api migrate` on a fresh database, 18 times per run. The template is migrated once in the global setup and every deployment's database is cloned from it with `createdb -T`. The constraints of revision 2 stay:
 
-- **Tier: standard.** One fresh standard reviewer over the complete diff.
-- **Security trigger: met.** T-36: the change alters the end-to-end deployments that run with the test control surface, and item D(b) would add a route to it. T-37: item B touches the harness's failure checks, which the smoke's CSP and console control relies on. T-41: the gate's critical path and its evidence change. T-20 examined and not affected: production pool defaults are unchanged. A security-profile reviewer reviewed revision 1 of this plan, and one reviews the diff before readiness. No threat-model entry changes unless item D(b) is approved.
+- its name ends in `_test` and can never match the Go fixture's cleanup pattern `ovc_template_<secs>_<rand>_test`;
+- it is created only after `readE2ESettings`' loopback checks, migrated by `api migrate` with the deployment's test-control environment, and closed to every connection before it is cloned;
+- the global teardown drops it under `assertStillHeld`, and only the run-lock holder removes stale templates of crashed runs;
+- it adds no route and no setting.
 
-## 5. Files
+Measured basis: the 18 migrations of one run took 2.72 s summed (median 0.15 s), spread over 6 workers. Expected gain: about 0.5 s of wall time, less the cost of each clone.
 
-- `frontend/playwright.config.ts` (`workers`); `frontend/e2e/deployment.ts` (pool size; item D(a)'s template); `frontend/e2e/global-setup.ts` and `global-teardown.ts` (item D(a) only).
-- `frontend/e2e/realtime.ts`, `frontend/e2e/accounts.ts`, and `frontend/e2e/fixtures.ts` with a harness self-test spec if the fixture is rewired (item B, as the profile decides).
-- `docs/development.md`, the parallelism bullet of the end-to-end harness: worker count and pool size, pending owner review.
-- `knowledge/analysis/check-budget-<date>-e2e-shortening.md`; this plan's outcome line.
-- `knowledge/plans/merge-gate-critical-path.md` already says that its pool of 5 matched the end-to-end deployment when it was written.
+**E'. Builds off the critical path.** The global setup builds the `api`, `worker` and `ovc-admin` binaries with `go build` and the frontend with `pnpm build` before any test starts. Measured alone, `go build` takes 6.3 to 6.8 s from an empty Go build cache and 0.2 s warm; `pnpm build` takes 0.3 s, and 2.5 s on a worktree's first build. In every option the artefacts the suites test must be built from the tested tree, and no option may make it possible to test anything else.
 
-## 6. Acceptance criteria
+- **Option 1, warm the cache in a lane (recommended if E' goes ahead).** The gate adds one lane B command, run from `backend/`: `go build -o <a folder of the gate's own>/ ./cmd/api ./cmd/worker ./cmd/ovc-admin`. The end-to-end global setup keeps building both from the tree exactly as now, so it still produces every artefact it runs, from the tree under test. The lane only fills Go's build cache, whose entries are keyed by content, so a cache hit cannot yield a binary of other sources. Expected gain: up to about 6.5 s in a cold gate, if lanes A and B do not already leave a non-race build of the three commands in the cache; nothing in a warm gate. Lane B grows by up to 6.8 s, which stays off the critical path while lane B ends before the end-to-end step would start.
+- **Option 2, reuse artefacts by content hash.** The harness skips its builds when a recorded hash of their inputs matches. Expected gain: at most about 1.5 s, which Go's own cache already gives. Not recommended: a stale or wrong record would make the suites test artefacts not built from the tested tree, and the harness would need a new file it trusts.
+- **Option 3, build in a lane and hand the artefacts over.** The gate builds into a folder of its own and passes it to the end-to-end step through a harness-internal variable, as it passes the run lock. Expected gain: the same as option 1. Not recommended: it adds an input to the end-to-end step that the step must verify against the tested tree (T-41), for no gain over option 1.
 
-- `pnpm e2e` passes with 881 tests, 318 in chromium, 281 in firefox and 282 in webkit, plus exactly the tests of a harness self-test if item B rewires the fixture (counted per engine in the record); `pnpm exec playwright test --list` before and after differs only by those self-test lines.
-- If item B changes `frontend/e2e/fixtures.ts`, the self-test proves in all three engines that the fixture still fails a test on each of: a CSP violation, a `console.error`, a page error, an unexpected 4xx or 5xx response from the deployment's origin, and an expected abort that does not happen.
-- `git diff main -- frontend/ | grep -E '^[-+][^-+].*(timeout|retries|grep|testIgnore|grepInvert|workers)'` prints only the added `workers` line and, for item B, `intervals` lines that keep their poll's `timeout` value unchanged; no `timeout` is added. `readinessDeadlineMilliseconds`, `stopDeadlineMilliseconds`, `pollTimeoutMilliseconds` and the deployment fixture's `timeout: 150_000` are unchanged.
-- `grep -o 'expect(' frontend/e2e/*.ts | wc -l` and `grep -o 'expect.poll(' frontend/e2e/*.ts | wc -l` print the same numbers before and after, or more by the self-test only.
-- Shorter `expect.poll` intervals with the same deadline, matcher and message are not a weakened check. A changed poll's condition must be monotone: `waitForSockets(...).toBe(n)` could pass on a transient count during a reconnect, so it changes only with a condition that cannot pass transiently. A test that fails with shorter intervals is a bug fixed at its cause.
-- No run shows `too many clients`; the sampled peak of a `pnpm e2e` run is no higher than the baseline's peak and at most 80. An end-to-end run beside another session's full `go test` (sampled peak 75) can exceed 100 regardless; the gate's run lock prevents that during a gate, and outside it the record states the combined peak.
-- `pnpm e2e` passes three times in a row at the chosen worker count with no failed test, WebKit's page errors from cancelled fetches included.
-- In three cold gate runs every run passes and its wall time is at most 165 s, and the `pnpm e2e` step's median is at most 95 s.
-- `tools/docs/check-docs.sh` passes; the merge goes through the gate.
+**F. Optional: Firefox's growing context-close stall.** Playwright's Firefox build runs `minimizeMemoryUsage` on every tenth context close. In the suites the stall grows with the number of contexts a browser has opened: from 0.5 s to 7.2 s within 111 tests at one worker. A bare page or the production build without an API shows a flat 0.3 s. The item is an investigation first, with no committed change: find what the tests leave in the browser that makes each stall longer. Then propose a change only if a removable trigger is found, through a test that makes the trigger visible rather than through a weaker check. At 6 workers each Firefox worker has about four stalls. Expected gain: up to about 4 to 5 s of wall time, and only if the growth can be removed; the base 0.3 s per stall belongs to Firefox and stays.
 
-## 7. Order, risks and checks
+**Combined.** The three items together promise at most about 12 s. Each item alone stays below the 14 s spread of the baseline runs, so a single item may be impossible to prove with three runs. Together they cannot bring gates of 187 to 252 s under 165 s. Section 10 asks the owner how to proceed.
 
-- Order: after the gate's run-lock change, which has merged; baseline gate runs and item B's profile; item A (pool, then 8 and 9 workers); item B's fixes one at a time; if the target is still missed, the owner decides on C and D with the measurements; three cold gate runs; reviews; the gate.
-- **Connection exhaustion and pool starvation:** item A's arithmetic and the peak criterion above.
-- **CPU saturation and flakiness.** More workers lengthen each test; past saturation the wall time rises and timing-sensitive tests flake. A flake is a bug fixed at its cause, never retried; the three consecutive passes guard it.
-- **WebKit page errors from cancelled fetches** grow more likely under load; they keep failing tests as now.
-- **A weakened harness check** (item B): the self-test and the counts above.
-- Not changed: NFR-6.2, D46's target and threshold, ADR-0018, the gate's command list, the retries of 0, production pool defaults.
+## 4. Measurement
 
-## 8. Owner decisions (2026-10-28)
+- **Before and after:** three cold gate runs at `main` and three after the change, on an idle machine with no other agent running, cold as in the [critical path record](../analysis/check-budget-2026-10-28-gate-critical-path.md). A new check-budget record states the measures that revision 2 named for every run: gate wall time, each lane, the `pnpm e2e` step, summed command and test seconds per engine, the core count, load averages, what the cold run emptied, and the peak of client connections. The sampler runs through `tools/dev-env.sh` and writes only counts and times.
+- **Each item's own gain:** three `pnpm e2e` runs with the item and three without it. An item whose mean gain does not exceed the spread of its runs is dropped, as in the [critical path plan](merge-gate-critical-path.md).
+- **E':** its gain shows only in a cold gate, so it is measured from the gates' `pnpm e2e` steps.
 
-- Item C: not done, because the phases are already packed (the recommended option).
-- Item D: the migrated template only, and only if items A and B miss 165 s (the recommended option); no batched seeding route.
+## 5. Tier and security trigger
+
+- **Tier:** standard. One fresh standard reviewer over the complete diff of each implementing change.
+- **Security trigger:** met.
+  - T-36: item D(a) changes the end-to-end deployments that run with the test control surface.
+  - T-41: item E' changes the gate's command list, and every item changes the evidence of the gate's critical path. E' option 1 adds no input to any check and no new trust boundary; options 2 and 3 would add one.
+  - T-20 examined and not affected: production pool defaults are unchanged.
+- **Reviews:** a security-profile reviewer reviews this revision before approval and each implementing diff before readiness. No threat-model entry changes unless E' option 2 or 3 is chosen, in which case the change adds a T-41 mitigation for the trusted artefact record or folder.
+
+## 6. Files
+
+- **This revision:** this plan and the [end-to-end profile record](../analysis/check-budget-2026-10-29-e2e-profile.md).
+- **D(a):** `frontend/e2e/deployment.ts`, `frontend/e2e/global-setup.ts` and `frontend/e2e/global-teardown.ts`; `docs/development.md`, the end-to-end harness section (pending owner review).
+- **E' option 1:** `tools/merge-gate.sh` (its check list); `tools/check-merge-gate.sh`, only if its self-tests name the list; `docs/development.md`, the lane B list under tool setup and the gate's description (pending owner review).
+- **F:** a record in `knowledge/analysis/` first; any change it leads to needs its own plan amendment.
+- **Each implementing change:** its check-budget record in `knowledge/analysis/`.
+
+## 7. Acceptance criteria
+
+For every implementing change:
+
+- `cd frontend && pnpm exec playwright test --list` prints the same lines before and after, ending in `Total: 897 tests in 23 files`, or the count `main` holds when the change starts.
+- `git diff main -- frontend/ | grep -E '^[-+][^-+].*(timeout|retries|grep|testIgnore|grepInvert|workers)'` prints nothing.
+- `grep -o 'expect(' frontend/e2e/*.ts | wc -l` and `grep -o 'expect.poll(' frontend/e2e/*.ts | wc -l` print the same numbers before and after.
+- Three consecutive `tools/dev-env.sh pnpm e2e` runs pass with no failed test and no `too many clients`. Their sampled connection peak is no higher than the baseline's 43 and at most 80.
+- The item's mean gain over three runs with and three without it exceeds the spread of those runs (section 4); otherwise the item is dropped and its branch is not merged.
+- `tools/docs/check-docs.sh` passes, and the merge goes through the gate.
+
+For D(a):
+
+- After a full run, `ls frontend/test-results/deployment/migrate-*.log` lists exactly one file newer than the run's start, against 18 today.
+- After the global teardown, through `tools/dev-env.sh`, `psql -X -At -c "select count(*) from pg_database where datname like 'ovc\_e2e\_template\_%'"` against `OVC_TEST_DATABASE_ADMIN_URL` prints `0`.
+- The template's name matches `^ovc_e2e_template_[a-z0-9]+_test$`, and the Go fixture's cleanup pattern `^ovc_template_[0-9]+_[a-z0-9]+_test$` does not match it. A unit test in `frontend/e2e/` proves both.
+
+For E' option 1:
+
+- `git diff main -- frontend/` prints nothing, and `grep -c "execFileSync('go', \['build'" frontend/e2e/deployment.ts` prints `1` before and after: the end-to-end step still builds what it runs.
+- `git diff main -- tools/merge-gate.sh` adds exactly one check-list line, tagged `B` and running `go build -o` with the three commands into a folder under the gate's own temporary folder, and removes none.
+- `tools/check-merge-gate.sh` passes.
+- In three cold gates, lane B still ends before lane A or C, as the gate's lane wall times show.
+
+For F: a record in `knowledge/analysis/` names the trigger of the growth with a reproduction script, or states that none was found. No file outside `knowledge/` changes.
+
+## 8. Order, risks and checks
+
+- **Order:** owner decisions (section 10); then E' option 1 and D(a) as separate changes, each with its reviews, gain measurement and gate; F only if chosen, starting with its record; then three cold gates and the record.
+- **Testing artefacts not built from the tested tree:** excluded by choosing option 1, where the end-to-end step keeps its own builds from the tree, and by the E' criteria above.
+- **Template drift (D(a)):** a template migrated by an earlier run's binary. It is created by the run's own `api migrate` after the run lock is taken, and dropped by its teardown.
+- **Gains below the noise:** the rule of section 4 drops an item that cannot be shown. The owner question in section 10 addresses that every item is small.
+- **Not changed:** NFR-6.2, D46's target (its threshold changes only through the owner's decision recorded in section 9), ADR-0018, the retries of 0, production pool defaults, the worker count and the per-deployment pools.
+
+## 9. Owner decisions
+
+- 2026-10-28: items A and B approved. Item C (concurrent engine phases) not done, because the phases are already packed. Item D limited to the migrated template, and only if A and B miss 165 s. No batched seeding route.
+- 2026-10-29: after A and B were measured without a gain, the owner chose to reduce the work of the suites. This revision follows from that.
+- 2026-10-29, on this revision's questions:
+  - none of D(a), E' and F is done now (question 1, option (d));
+  - the suites' CPU cost goes to a proposal, [proposal 0004](../../docs/proposals/0004-end-to-end-suite-cost.md), which takes item F as one of its inputs (question 2, option (a));
+  - D46's threshold is 260 s of the gate's wall time until the end of slice 6, and the 165 s target stays;
+  - question 3 is moot.
+
+## 10. Questions for the owner
+
+Answered on 2026-10-29; section 9 records the answers.
+
+1. Which items of section 3 go ahead?
+   - (a) E' option 1 only.
+   - (b) E' option 1 and D(a).
+   - (c) D(a), E' option 1 and the investigation F.
+   - (d) None for now; the suites are CPU-bound, and the next step is question 2. **Recommended:** each item is below the spread of the runs, and all three together cannot reach 165 s.
+2. How is D46's target met for suites that are CPU-bound and growing with every slice?
+   - (a) Keep the target and have a proposal in `docs/proposals/` examine the suites' CPU cost per process family, using the CPU table of the [end-to-end profile record](../analysis/check-budget-2026-10-29-e2e-profile.md), with item F as one of its inputs. **Recommended:** it addresses where the time goes, and drops no test, engine or assertion.
+   - (b) Revisit D46's target and threshold with the owner, using the cold gate figures once measured.
+   - (c) Both (a) and (b).
+3. If item E' goes ahead, which option?
+   - (a) Option 1, warm the cache in a lane. **Recommended:** no new input to the end-to-end step, and the artefacts are always built from the tested tree.
+   - (b) Option 2, reuse by content hash.
+   - (c) Option 3, hand over artefacts built in a lane.
