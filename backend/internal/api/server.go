@@ -82,6 +82,7 @@ type Options struct {
 	Inbox         *notifications.Inbox
 	Chat          *chat.Service
 	Realtime      *realtime.Gateway
+	Uploads       UploadTiming
 }
 
 func NewHandler(options Options) (http.Handler, error) {
@@ -94,7 +95,7 @@ func newHandler(options Options, registerExtra func(*router)) (http.Handler, err
 	readiness := &sharedReadiness{check: options.Readiness, now: options.Now, logger: options.Logger}
 	routes := &router{
 		api: api, auth: options.Auth, files: options.Files, tutoring: options.Tutoring, schedule: options.Schedule, preferences: options.Preferences,
-		inbox: options.Inbox, chat: options.Chat,
+		inbox: options.Inbox, chat: options.Chat, uploads: options.Uploads.withDefaults(),
 		now: options.Now, logger: options.Logger,
 	}
 	routes.registerAll(readiness.run)
@@ -186,6 +187,7 @@ func (r *router) registerAll(readiness ReadinessFunc) {
 	r.registerTutoring()
 	r.registerSchedule()
 	r.registerChat()
+	r.registerFileRoutes()
 	r.registerRealtimeAudience()
 }
 

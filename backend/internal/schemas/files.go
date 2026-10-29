@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -48,4 +49,9 @@ type UploadedFile struct {
 	Filename  string `json:"filename"`
 	MediaType string `json:"media_type"`
 	SizeBytes int64  `json:"size_bytes"`
+}
+
+type DownloadAddress struct {
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expires_at"`
 }

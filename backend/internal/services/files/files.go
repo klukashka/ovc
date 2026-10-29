@@ -55,7 +55,7 @@ var (
 	ErrDecodeBusy         = errors.New("the instance is decoding as many images as its memory budget allows")
 	ErrAvatarReadsBusy    = errors.New("the instance is serving as many avatars as it allows at once")
 	ErrPurgedDuringUpload = errors.New("the account was purged while its upload was stored")
-	ErrNotFound           = errors.New("the avatar does not exist")
+	ErrNotFound           = errors.New("the file does not exist")
 
 	errMalformedPayload = errors.New("the storage deletion payload is malformed")
 )
@@ -80,21 +80,21 @@ const avatarReadSlots = 32
 type Avatar struct {
 	MediaType string
 	SizeBytes int64
-	Body      AvatarBody
+	Body      ObjectBody
 }
 
-type avatarBody struct {
+type objectBody struct {
 	io.Reader
 	object  io.ReadCloser
 	release func()
 }
 
-func (b *avatarBody) Close() error {
+func (b *objectBody) Close() error {
 	b.release()
 	return b.object.Close()
 }
 
-func (b *avatarBody) Overruns() (bool, error) {
+func (b *objectBody) Overruns() (bool, error) {
 	extra, err := io.ReadFull(b.object, make([]byte, 1))
 	if extra > 0 {
 		return true, nil
@@ -105,7 +105,7 @@ func (b *avatarBody) Overruns() (bool, error) {
 	return false, err
 }
 
-type AvatarBody interface {
+type ObjectBody interface {
 	io.ReadCloser
 	Overruns() (bool, error)
 }
@@ -124,12 +124,16 @@ type Service struct {
 	gate        *gate
 	decodes     *decodeBudget
 	avatarReads chan struct{}
+	downloads   chan struct{}
+	hourly      *hourlyUploads
+	tokens      downloadTokens
 }
 
 func New(dependencies Dependencies) *Service {
 	return &Service{
 		deps: dependencies, gate: newGate(), decodes: newDecodeBudget(decodeBudgetBytes),
-		avatarReads: make(chan struct{}, avatarReadSlots),
+		avatarReads: make(chan struct{}, avatarReadSlots), downloads: make(chan struct{}, downloadSlots),
+		hourly: newHourlyUploads(), tokens: downloadTokens{keys: dependencies.Keys},
 	}
 }
 
@@ -373,7 +377,7 @@ func (s *Service) settle(ctx context.Context, principal accounts.Principal, id d
 		}
 		if errors.Is(err, repositories.ErrNotFound) {
 			purged = true
-			return s.queueDeletionAs(ctx, repos, id, key, string(domain.KindStorageDelete)+":"+id.String()+":after-purge", now)
+			return s.queueDeletionAs(ctx, repos, objectDeletion{id: id, key: key}, string(domain.KindStorageDelete)+":"+id.String()+":after-purge", now)
 		}
 		return err
 	})
@@ -464,7 +468,7 @@ func (s *Service) Avatar(ctx context.Context, id domain.AttachmentID) (Avatar, e
 	return Avatar{
 		MediaType: servable.MediaType,
 		SizeBytes: servable.SizeBytes,
-		Body:      &avatarBody{Reader: io.LimitReader(body, servable.SizeBytes), object: body, release: release},
+		Body:      &objectBody{Reader: io.LimitReader(body, servable.SizeBytes), object: body, release: release},
 	}, nil
 }
 
@@ -477,15 +481,29 @@ func (s *Service) discard(ctx context.Context, repos repositories.Repositories, 
 	if err != nil || !marked {
 		return err
 	}
-	return s.queueDeletion(ctx, repos, id, attachment.StorageKey, now)
+	return s.queueDeletion(ctx, repos, objectDeletion{id: id, key: attachment.StorageKey, upload: attachment.MultipartUploadID}, now)
 }
 
-func (s *Service) queueDeletion(ctx context.Context, repos repositories.Repositories, id domain.AttachmentID, key string, now time.Time) error {
-	return s.queueDeletionAs(ctx, repos, id, key, string(domain.KindStorageDelete)+":"+id.String(), now)
+type objectDeletion struct {
+	id     domain.AttachmentID
+	key    string
+	upload *string
 }
 
-func (s *Service) queueDeletionAs(ctx context.Context, repos repositories.Repositories, id domain.AttachmentID, key string, idempotencyKey string, now time.Time) error {
-	payload, err := json.Marshal(domain.AttachmentPayload{Attachment: id.String(), Key: key})
+func (d objectDeletion) payload() domain.AttachmentPayload {
+	payload := domain.AttachmentPayload{Attachment: d.id.String(), Key: d.key}
+	if d.upload != nil {
+		payload.Upload = *d.upload
+	}
+	return payload
+}
+
+func (s *Service) queueDeletion(ctx context.Context, repos repositories.Repositories, deletion objectDeletion, now time.Time) error {
+	return s.queueDeletionAs(ctx, repos, deletion, string(domain.KindStorageDelete)+":"+deletion.id.String(), now)
+}
+
+func (s *Service) queueDeletionAs(ctx context.Context, repos repositories.Repositories, deletion objectDeletion, idempotencyKey string, now time.Time) error {
+	payload, err := json.Marshal(deletion.payload())
 	if err != nil {
 		return fmt.Errorf("encode the storage deletion payload: %w", err)
 	}
@@ -507,7 +525,8 @@ func (s *Service) PurgeUploadsOf(ctx context.Context, repos repositories.Reposit
 	}
 	for _, upload := range uploads {
 		idempotencyKey := string(domain.KindStorageDelete) + ":" + upload.ID.String() + ":purge"
-		if err := s.queueDeletionAs(ctx, repos, upload.ID, upload.StorageKey, idempotencyKey, now); err != nil {
+		deletion := objectDeletion{id: upload.ID, key: upload.StorageKey, upload: upload.MultipartUploadID}
+		if err := s.queueDeletionAs(ctx, repos, deletion, idempotencyKey, now); err != nil {
 			return err
 		}
 	}
@@ -523,7 +542,7 @@ func (s *Service) DeleteObject(ctx context.Context, row repositories.ClaimedOutb
 		return "", domain.PermanentEffect(fmt.Errorf("%w: %w", errMalformedPayload, err))
 	}
 	id, ok := domain.ParseUUID[domain.AttachmentID](payload.Attachment)
-	if !ok || !strings.HasPrefix(payload.Key, domain.AvatarKeyPrefix) {
+	if !ok || (!strings.HasPrefix(payload.Key, domain.AvatarKeyPrefix) && !strings.HasPrefix(payload.Key, domain.ChatKeyPrefix)) {
 		return "", domain.PermanentEffect(errMalformedPayload)
 	}
 	repos := s.deps.Store.Repositories()
@@ -534,6 +553,11 @@ func (s *Service) DeleteObject(ctx context.Context, row repositories.ClaimedOutb
 	}
 	if found && (attachment.State != domain.AttachmentDeleted || attachment.StorageKey != payload.Key) {
 		return domain.DoneObsolete, nil
+	}
+	if payload.Upload != "" {
+		if err := s.deps.Objects.AbortMultipartUpload(ctx, payload.Key, storage.MultipartUploadID(payload.Upload)); err != nil {
+			return "", err
+		}
 	}
 	if err := s.deps.Objects.Delete(ctx, payload.Key); err != nil {
 		return "", err
@@ -549,30 +573,64 @@ func (s *Service) DeleteObject(ctx context.Context, row repositories.ClaimedOutb
 
 func (s *Service) ExpirePending(ctx context.Context, now time.Time) (int64, error) {
 	var expired int64
-	for range expireRounds {
-		var claimed int
-		err := s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-			ids, err := repos.Attachments.ClaimExpired(ctx, now, expireBatch)
-			if err != nil {
+	sweeps := []func(context.Context, repositories.Repositories, time.Time) (int, error){
+		s.expireBatch, s.expireAgedUploadingBatch, s.expireUnbindableBatch,
+	}
+	for _, sweep := range sweeps {
+		for range expireRounds {
+			var claimed int
+			err := s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+				var err error
+				claimed, err = sweep(ctx, repos, now)
 				return err
+			})
+			if err != nil {
+				return expired, err
 			}
-			claimed = len(ids)
-			for _, id := range ids {
-				if err := s.discard(ctx, repos, id, now); err != nil {
-					return err
-				}
+			expired += int64(claimed)
+			if claimed < expireBatch {
+				break
 			}
-			return nil
-		})
-		if err != nil {
-			return expired, err
-		}
-		expired += int64(claimed)
-		if claimed < expireBatch {
-			break
 		}
 	}
 	return expired, nil
+}
+
+func (s *Service) expireBatch(ctx context.Context, repos repositories.Repositories, now time.Time) (int, error) {
+	ids, err := repos.Attachments.ClaimExpired(ctx, now, expireBatch)
+	if err != nil {
+		return 0, err
+	}
+	return len(ids), s.discardAll(ctx, repos, ids, now)
+}
+
+func (s *Service) expireUnbindableBatch(ctx context.Context, repos repositories.Repositories, now time.Time) (int, error) {
+	ids, err := repos.Attachments.ClaimUnbindableChat(ctx, expireBatch)
+	if err != nil {
+		return 0, err
+	}
+	return len(ids), s.discardAll(ctx, repos, ids, now)
+}
+
+func (s *Service) expireAgedUploadingBatch(ctx context.Context, repos repositories.Repositories, now time.Time) (int, error) {
+	aged, err := repos.Attachments.ClaimAged(ctx, uploadingSince(now), expireBatch)
+	if err != nil {
+		return 0, err
+	}
+	ids := make([]domain.AttachmentID, 0, len(aged))
+	for _, upload := range aged {
+		ids = append(ids, upload.ID)
+	}
+	return len(aged), s.discardAll(ctx, repos, ids, now)
+}
+
+func (s *Service) discardAll(ctx context.Context, repos repositories.Repositories, ids []domain.AttachmentID, now time.Time) error {
+	for _, id := range ids {
+		if err := s.discard(ctx, repos, id, now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) rejected(ctx context.Context, uploader domain.UserID, reason string) {

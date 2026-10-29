@@ -435,11 +435,11 @@ Constraints and indexes:
 | `quota_tutor_id` | slice 6: a partial index `(uploader_id, quota_tutor_id, created_at)` where `context = 'chat'` serves the daily cap of [chat limits](files.md#upload-flow) |
 | `storage_key` | random, never returned |
 | `filename` | |
-| `media_type` | |
-| `size_bytes`, `sha256` | |
+| `media_type` | null only while `uploading` and on a `deleted` row that never completed (slice 6); a check requires it on every `pending` and `bound` row |
+| `size_bytes`, `sha256` | null under the same rule as `media_type`, enforced by the same check (`attachments_stored_rows_described`) |
 | `state` | `uploading` (slice 6: the row exists while its object streams and is inspected; a partial index on `created_at` where `uploading` serves the age rule of `uploads.expire`), `pending`, `bound`, `deleted` |
 | `expires_at` | pending only; partial index |
-| `reserved_bytes` | slice 6; the bytes an `uploading` row counts against the quota: the request's `Content-Length` capped at the context limit, or the context limit without one |
+| `reserved_bytes` | slice 6; the bytes an `uploading` row counts against the quota: the request's `Content-Length` capped at the context limit, or the context limit without one; a check requires it on every `uploading` row, and a partial index on `quota_tutor_id` where `context = 'chat'` and the state is `uploading` or `pending` serves the quota checks' sum of open uploads |
 | `multipart_upload_id` | slice 6; the storage multipart upload's identifier, recorded in a short transaction of its own right after it is created, so every cleanup aborts it after a crash; an upload created but not yet recorded when the process crashes is aborted only by the bucket lifecycle rule after a day ([upload flow](files.md#upload-flow)) |
 | `width`, `height` | slice 6; a picture's dimensions read from its header, null for other kinds and above 50 megapixels |
 

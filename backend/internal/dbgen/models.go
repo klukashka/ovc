@@ -28,22 +28,26 @@ type ActiveChannelMember struct {
 }
 
 type Attachment struct {
-	ID              domain.AttachmentID
-	UploaderID      domain.UserID
-	Context         domain.AttachmentContext
-	ScopeKind       *domain.ScopeKind
-	ScopeID         *domain.EntityID
-	ScopeQuestionID *domain.EntityID
-	QuotaTutorID    *domain.UserID
-	StorageKey      string
-	Filename        string
-	MediaType       string
-	SizeBytes       int64
-	Sha256          []byte
-	State           domain.AttachmentState
-	ExpiresAt       *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                domain.AttachmentID
+	UploaderID        domain.UserID
+	Context           domain.AttachmentContext
+	ScopeKind         *domain.ScopeKind
+	ScopeID           *domain.EntityID
+	ScopeQuestionID   *domain.EntityID
+	QuotaTutorID      *domain.UserID
+	StorageKey        string
+	Filename          string
+	MediaType         *string
+	SizeBytes         *int64
+	Sha256            []byte
+	State             domain.AttachmentState
+	ExpiresAt         *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	ReservedBytes     *int64
+	MultipartUploadID *string
+	Width             *int32
+	Height            *int32
 }
 
 type AttachmentReference struct {

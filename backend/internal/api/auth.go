@@ -88,6 +88,7 @@ type router struct {
 	preferences *notifications.Preferences
 	inbox       *notifications.Inbox
 	chat        *chat.Service
+	uploads     UploadTiming
 	now         func() time.Time
 	logger      *slog.Logger
 	operations  []OperationAudience

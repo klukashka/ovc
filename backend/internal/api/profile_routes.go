@@ -23,14 +23,19 @@ import (
 )
 
 const (
-	uploadBodyBytes     = domain.AvatarMaxBytes + 64<<10
-	uploadReadDeadline  = 60 * time.Second
+	avatarBodyBytes     = domain.AvatarMaxBytes + domain.UploadOverheadBytes
+	avatarReadDeadline  = 60 * time.Second
+	uploadBodyBytes     = domain.ChatMaxBytes + domain.UploadOverheadBytes
+	uploadReadDeadline  = domain.UploadDeadlineCeiling
 	uploadWriteDeadline = 65 * time.Second
 	avatarCacheControl  = "private, max-age=86400"
 	avatarPolicy        = "default-src 'none'; sandbox"
 )
 
-type rawRequestKey struct{}
+type (
+	rawRequestKey    struct{}
+	rawControllerKey struct{}
+)
 
 var (
 	errExtraUploadPart = errors.New("the upload has more than one part")
@@ -48,7 +53,8 @@ type deleteAccountInput struct {
 }
 
 type uploadInput struct {
-	Context string `query:"context" enum:"avatar" required:"true"`
+	Context string `query:"context" enum:"avatar,chat" required:"true"`
+	Scope   string `query:"scope" maxLength:"100"`
 }
 
 type uploadOutput struct {
@@ -61,8 +67,6 @@ type avatarInput struct {
 }
 
 const avatarReadTimeout = 30 * time.Second
-
-var errAvatarSizeMismatch = errors.New("the stored avatar object is longer than its recorded size")
 
 type avatarOutput struct {
 	ContentType        string `header:"Content-Type"`
@@ -89,7 +93,10 @@ func (r *router) registerProfileRoutes() {
 	upload.MaxBodyBytes = uploadBodyBytes
 	upload.BodyReadTimeout = uploadReadDeadline
 	upload.Middlewares = append(upload.Middlewares, r.keepRawRequest)
-	upload.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests)
+	upload.Errors = errorsOf(
+		http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusRequestEntityTooLarge,
+		http.StatusUnsupportedMediaType, http.StatusTooManyRequests, http.StatusInsufficientStorage,
+	)
 	register(r, upload, AudienceUnverifiedOK, r.upload)
 	r.api.OpenAPI().Paths[upload.Path].Post.RequestBody = &huma.RequestBody{
 		Required: true,
@@ -115,14 +122,32 @@ func (r *router) keepRawRequest(ctx huma.Context, next func(huma.Context)) {
 	request, writer := humago.Unwrap(ctx)
 	controller := http.NewResponseController(writer)
 	now := r.now()
-	if err := controller.SetReadDeadline(now.Add(uploadReadDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+	readDeadline, writeDeadline, bodyBytes := avatarReadDeadline, uploadWriteDeadline, int64(avatarBodyBytes)
+	if domain.AttachmentContext(ctx.Query("context")) == domain.ContextChat {
+		principal := principalFrom(ctx.Context())
+		if principal.State != domain.AccountActive {
+			ctx.SetHeader("Connection", "close")
+			r.writeError(ctx, domain.ErrorEmailNotVerified)
+			return
+		}
+		if request.ContentLength > uploadBodyBytes {
+			r.files.RecordRejection(ctx.Context(), principal.UserID, domain.RejectedTooLarge)
+			ctx.SetHeader("Connection", "close")
+			r.writeError(ctx, domain.ErrorPayloadTooLarge)
+			return
+		}
+		readDeadline = r.uploads.deadline(domain.ChatMaxBytes)
+		writeDeadline = readDeadline + chatWriteDeadline
+		bodyBytes = uploadBodyBytes
+	}
+	if err := controller.SetReadDeadline(now.Add(readDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
 		r.logger.LogAttrs(ctx.Context(), slog.LevelWarn, "http.deadline.failed", slog.String("kind", "read"))
 	}
-	if err := controller.SetWriteDeadline(now.Add(uploadWriteDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+	if err := controller.SetWriteDeadline(now.Add(writeDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
 		r.logger.LogAttrs(ctx.Context(), slog.LevelWarn, "http.deadline.failed", slog.String("kind", "write"))
 	}
-	request.Body = http.MaxBytesReader(writer, request.Body, uploadBodyBytes)
-	next(huma.WithValue(ctx, rawRequestKey{}, request))
+	request.Body = http.MaxBytesReader(writer, request.Body, bodyBytes)
+	next(huma.WithValue(huma.WithValue(ctx, rawRequestKey{}, request), rawControllerKey{}, controller))
 }
 
 func (r *router) updateMe(ctx context.Context, input *profilePatchInput) (*meOutput, error) {
@@ -162,10 +187,13 @@ func (r *router) deleteMe(ctx context.Context, input *deleteAccountInput) (*sign
 	return &signOutOutput{SetCookie: clearedCookie(), CacheControl: noStore}, nil
 }
 
-func (r *router) upload(ctx context.Context, _ *uploadInput) (*uploadOutput, error) {
+func (r *router) upload(ctx context.Context, input *uploadInput) (*uploadOutput, error) {
 	request, found := ctx.Value(rawRequestKey{}).(*http.Request)
 	if !found {
 		panic("an upload ran without its raw request")
+	}
+	if domain.AttachmentContext(input.Context) == domain.ContextChat {
+		return r.uploadChat(ctx, input, request)
 	}
 	mediaType, parameters, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
 	if err != nil || mediaType != "multipart/form-data" || parameters["boundary"] == "" {
@@ -257,7 +285,7 @@ func (r *router) avatar(ctx context.Context, input *avatarInput) (*avatarOutput,
 		Policy: avatarPolicy, ResourcePolicy: "same-origin", ContentLength: strconv.FormatInt(avatar.SizeBytes, 10),
 		Body: func(response huma.Context) {
 			defer cancel()
-			r.streamAvatar(ctx, response, avatar)
+			r.streamObject(ctx, response, avatar.Body, avatar.SizeBytes, avatarEventsPrefix)
 		},
 	}, nil
 }
@@ -270,60 +298,6 @@ func (r *router) avatarRefusal(ctx context.Context, err error) error {
 		return NewError(ctx, domain.ErrorServiceUnavailable).withHeader("Retry-After", "1")
 	}
 	return r.internal(ctx, "avatars.get.failed", err)
-}
-
-type trackedWriter struct {
-	io.Writer
-	failed error
-}
-
-func (w *trackedWriter) Write(data []byte) (int, error) {
-	written, err := w.Writer.Write(data)
-	if err != nil {
-		w.failed = err
-	}
-	return written, err
-}
-
-func (r *router) streamAvatar(ctx context.Context, response huma.Context, avatar files.Avatar) {
-	defer func() {
-		if err := avatar.Body.Close(); err != nil {
-			r.logger.LogAttrs(ctx, slog.LevelWarn, "avatars.get.close_failed", slog.String("kind", core.ErrorKind(err)))
-		}
-	}()
-	response.SetStatus(http.StatusOK)
-	writer := &trackedWriter{Writer: response.BodyWriter()}
-	if _, err := io.CopyN(writer, avatar.Body, avatar.SizeBytes-1); err != nil {
-		r.abortAvatar(ctx, writer, err)
-	}
-	last := make([]byte, 1)
-	if _, err := io.ReadFull(avatar.Body, last); err != nil {
-		r.abortAvatar(ctx, writer, err)
-	}
-	overruns, err := avatar.Body.Overruns()
-	if err != nil {
-		r.abortAvatar(ctx, writer, err)
-	}
-	if overruns {
-		r.abortAvatar(ctx, writer, errAvatarSizeMismatch)
-	}
-	if _, err := writer.Write(last); err != nil {
-		r.abortAvatar(ctx, writer, err)
-	}
-}
-
-func (r *router) abortAvatar(ctx context.Context, writer *trackedWriter, err error) {
-	switch {
-	case writer.failed != nil || ctx.Err() != nil:
-		r.logger.LogAttrs(ctx, slog.LevelDebug, "avatars.get.abandoned", slog.String("kind", core.ErrorKind(err)))
-	case errors.Is(err, context.DeadlineExceeded):
-		r.logger.LogAttrs(ctx, slog.LevelWarn, "avatars.get.timed_out")
-	case errors.Is(err, errAvatarSizeMismatch) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF):
-		r.logger.LogAttrs(ctx, slog.LevelError, "avatars.get.failed", slog.String("kind", "size_mismatch"))
-	default:
-		r.logger.LogAttrs(ctx, slog.LevelError, "avatars.get.failed", slog.String("kind", core.ErrorKind(err)))
-	}
-	panic(http.ErrAbortHandler)
 }
 
 func meBody(profile accounts.Profile) schemas.Me {

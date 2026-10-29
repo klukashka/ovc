@@ -43,10 +43,14 @@ func run(args []string) int {
 		}
 	case "migrate":
 		return withProcess(migrate)
+	case "ensure-bucket":
+		if len(args) == 1 {
+			return ensureBucket()
+		}
 	case "":
 		return withProcess(serve)
 	}
-	return startup.Usage(os.Stderr, "usage: api [migrate|openapi|check-settings]")
+	return startup.Usage(os.Stderr, "usage: api [migrate|openapi|check-settings|ensure-bucket]")
 }
 
 func writeOpenAPI() int {
@@ -56,6 +60,26 @@ func writeOpenAPI() int {
 		return 1
 	}
 	if _, err := os.Stdout.Write(document); err != nil {
+		return 1
+	}
+	return 0
+}
+
+const ensureBucketTimeout = 30 * time.Second
+
+func ensureBucket() int {
+	settings, err := core.StorageFromEnvironment()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "configuration:", err)
+		return 1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), ensureBucketTimeout)
+	defer cancel()
+	if err := storage.NewS3(settings).EnsureBucket(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "ensure-bucket:", core.ErrorKind(err))
+		return 1
+	}
+	if _, err := fmt.Fprintln(os.Stdout, "ok"); err != nil {
 		return 1
 	}
 	return 0

@@ -165,6 +165,14 @@ func TestDatabaseTLSChosenInEnvironment() bool {
 	return false
 }
 
+func StorageFromEnvironment() (StorageSettings, error) {
+	var settings Settings
+	if problems := settings.loadStorageSettings(os.LookupEnv); len(problems) > 0 {
+		return StorageSettings{}, errors.Join(problems...)
+	}
+	return settings.Storage, nil
+}
+
 func TestStorageFromEnvironment(bucket string) (StorageSettings, error) {
 	return testStorageFrom(os.LookupEnv, bucket)
 }

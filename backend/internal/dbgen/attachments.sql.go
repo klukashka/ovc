@@ -9,6 +9,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"ovc/backend/internal/domain"
 )
 
@@ -28,6 +29,45 @@ func (q *Queries) BindAttachment(ctx context.Context, arg BindAttachmentParams) 
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const claimAgedUploads = `-- name: ClaimAgedUploads :many
+SELECT id, storage_key, multipart_upload_id FROM attachments
+WHERE state = 'uploading' AND created_at <= $1::timestamptz
+ORDER BY created_at, id
+LIMIT $2
+FOR UPDATE SKIP LOCKED
+`
+
+type ClaimAgedUploadsParams struct {
+	Cutoff    time.Time
+	BatchSize int32
+}
+
+type ClaimAgedUploadsRow struct {
+	ID                domain.AttachmentID
+	StorageKey        string
+	MultipartUploadID *string
+}
+
+func (q *Queries) ClaimAgedUploads(ctx context.Context, arg ClaimAgedUploadsParams) ([]ClaimAgedUploadsRow, error) {
+	rows, err := q.db.Query(ctx, claimAgedUploads, arg.Cutoff, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ClaimAgedUploadsRow
+	for rows.Next() {
+		var i ClaimAgedUploadsRow
+		if err := rows.Scan(&i.ID, &i.StorageKey, &i.MultipartUploadID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const claimExpiredUploads = `-- name: ClaimExpiredUploads :many
@@ -63,6 +103,96 @@ func (q *Queries) ClaimExpiredUploads(ctx context.Context, arg ClaimExpiredUploa
 	return items, nil
 }
 
+const claimUnbindableChatUploads = `-- name: ClaimUnbindableChatUploads :many
+SELECT attachments.id FROM attachments
+WHERE attachments.state = 'pending' AND attachments.context = 'chat' AND attachments.scope_kind = 'channel'
+    AND NOT EXISTS (
+        SELECT 1 FROM channels
+        JOIN channel_members ON channel_members.channel_id = channels.id
+        WHERE channels.id = attachments.scope_id AND channels.discarded_at IS NULL AND channels.erase_pending_since IS NULL
+            AND channel_members.user_id = attachments.uploader_id
+    )
+ORDER BY attachments.id
+LIMIT $1
+FOR UPDATE OF attachments SKIP LOCKED
+`
+
+func (q *Queries) ClaimUnbindableChatUploads(ctx context.Context, batchSize int32) ([]domain.AttachmentID, error) {
+	rows, err := q.db.Query(ctx, claimUnbindableChatUploads, batchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.AttachmentID
+	for rows.Next() {
+		var id domain.AttachmentID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const completeUpload = `-- name: CompleteUpload :execrows
+UPDATE attachments
+SET state = 'pending', media_type = $1::text, size_bytes = $2::bigint,
+    sha256 = $3::bytea, width = $4::integer, height = $5::integer,
+    expires_at = $6::timestamptz, updated_at = $7::timestamptz
+WHERE id = $8 AND state = 'uploading'
+`
+
+type CompleteUploadParams struct {
+	MediaType string
+	SizeBytes int64
+	Sha256    []byte
+	Width     *int32
+	Height    *int32
+	ExpiresAt time.Time
+	Now       time.Time
+	ID        domain.AttachmentID
+}
+
+func (q *Queries) CompleteUpload(ctx context.Context, arg CompleteUploadParams) (int64, error) {
+	result, err := q.db.Exec(ctx, completeUpload,
+		arg.MediaType,
+		arg.SizeBytes,
+		arg.Sha256,
+		arg.Width,
+		arg.Height,
+		arg.ExpiresAt,
+		arg.Now,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const countOpenChatUploads = `-- name: CountOpenChatUploads :one
+SELECT count(id) FROM attachments
+WHERE uploader_id = $1 AND context = 'chat'
+    AND ((state = 'pending' AND expires_at > $2::timestamptz)
+        OR (state = 'uploading' AND created_at > $3::timestamptz))
+`
+
+type CountOpenChatUploadsParams struct {
+	UploaderID     domain.UserID
+	Now            time.Time
+	UploadingSince time.Time
+}
+
+func (q *Queries) CountOpenChatUploads(ctx context.Context, arg CountOpenChatUploadsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countOpenChatUploads, arg.UploaderID, arg.Now, arg.UploadingSince)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPendingUploads = `-- name: CountPendingUploads :one
 SELECT count(id) FROM attachments
 WHERE uploader_id = $1 AND context = $2 AND state = 'pending' AND expires_at > $3::timestamptz
@@ -86,8 +216,8 @@ INSERT INTO attachments (
     id, uploader_id, context, quota_tutor_id, storage_key, filename, media_type,
     size_bytes, sha256, state, expires_at, created_at, updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, 'pending', $10, $11, $11
+    $1, $2, $3, $4, $5, $6, $7::text,
+    $8::bigint, $9::bytea, 'pending', $10, $11, $11
 )
 `
 
@@ -146,6 +276,44 @@ func (q *Queries) CreateAttachmentReference(ctx context.Context, arg CreateAttac
 	return err
 }
 
+const createUploadingAttachment = `-- name: CreateUploadingAttachment :exec
+INSERT INTO attachments (
+    id, uploader_id, context, scope_kind, scope_id, quota_tutor_id, storage_key, filename, state, reserved_bytes, created_at, updated_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, 'uploading',
+    $9::bigint, $10, $10
+)
+`
+
+type CreateUploadingAttachmentParams struct {
+	ID            domain.AttachmentID
+	UploaderID    domain.UserID
+	Context       domain.AttachmentContext
+	ScopeKind     *domain.ScopeKind
+	ScopeID       *domain.EntityID
+	QuotaTutorID  *domain.UserID
+	StorageKey    string
+	Filename      string
+	ReservedBytes int64
+	CreatedAt     time.Time
+}
+
+func (q *Queries) CreateUploadingAttachment(ctx context.Context, arg CreateUploadingAttachmentParams) error {
+	_, err := q.db.Exec(ctx, createUploadingAttachment,
+		arg.ID,
+		arg.UploaderID,
+		arg.Context,
+		arg.ScopeKind,
+		arg.ScopeID,
+		arg.QuotaTutorID,
+		arg.StorageKey,
+		arg.Filename,
+		arg.ReservedBytes,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const deleteAttachmentRow = `-- name: DeleteAttachmentRow :execrows
 DELETE FROM attachments WHERE id = $1 AND state = 'deleted'
 `
@@ -159,11 +327,11 @@ func (q *Queries) DeleteAttachmentRow(ctx context.Context, id domain.AttachmentI
 }
 
 const deleteUploadsOf = `-- name: DeleteUploadsOf :execrows
-DELETE FROM attachments WHERE uploader_id = $1
+DELETE FROM attachments WHERE uploader_id = $1 OR (quota_tutor_id = $1 AND state <> 'bound')
 `
 
-func (q *Queries) DeleteUploadsOf(ctx context.Context, uploaderID domain.UserID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteUploadsOf, uploaderID)
+func (q *Queries) DeleteUploadsOf(ctx context.Context, userID domain.UserID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUploadsOf, userID)
 	if err != nil {
 		return 0, err
 	}
@@ -171,7 +339,7 @@ func (q *Queries) DeleteUploadsOf(ctx context.Context, uploaderID domain.UserID)
 }
 
 const getAttachment = `-- name: GetAttachment :one
-SELECT id, uploader_id, context, scope_kind, scope_id, scope_question_id, quota_tutor_id, storage_key, filename, media_type, size_bytes, sha256, state, expires_at, created_at, updated_at FROM attachments WHERE id = $1
+SELECT id, uploader_id, context, scope_kind, scope_id, scope_question_id, quota_tutor_id, storage_key, filename, media_type, size_bytes, sha256, state, expires_at, created_at, updated_at, reserved_bytes, multipart_upload_id, width, height FROM attachments WHERE id = $1
 `
 
 func (q *Queries) GetAttachment(ctx context.Context, id domain.AttachmentID) (Attachment, error) {
@@ -194,6 +362,10 @@ func (q *Queries) GetAttachment(ctx context.Context, id domain.AttachmentID) (At
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ReservedBytes,
+		&i.MultipartUploadID,
+		&i.Width,
+		&i.Height,
 	)
 	return i, err
 }
@@ -212,6 +384,79 @@ func (q *Queries) GetAvatarOf(ctx context.Context, refID domain.EntityID) (domai
 	return id, err
 }
 
+const getChatQuotaUse = `-- name: GetChatQuotaUse :one
+SELECT tutor_profiles.file_quota_bytes, tutor_profiles.file_usage_bytes,
+    COALESCE((
+        SELECT sum(CASE WHEN open.state = 'pending' THEN open.size_bytes ELSE open.reserved_bytes END)
+        FROM attachments AS open
+        WHERE open.quota_tutor_id = tutor_profiles.user_id AND open.context = 'chat'
+            AND ($1::uuid IS NULL OR open.id <> $1::uuid)
+            AND ((open.state = 'pending' AND open.expires_at > $2::timestamptz)
+                OR (open.state = 'uploading' AND open.created_at > $3::timestamptz))
+    ), 0)::bigint AS pending_bytes
+FROM tutor_profiles
+WHERE tutor_profiles.user_id = $4
+`
+
+type GetChatQuotaUseParams struct {
+	Excluded       pgtype.UUID
+	Now            time.Time
+	UploadingSince time.Time
+	TutorID        domain.UserID
+}
+
+type GetChatQuotaUseRow struct {
+	FileQuotaBytes int64
+	FileUsageBytes int64
+	PendingBytes   int64
+}
+
+func (q *Queries) GetChatQuotaUse(ctx context.Context, arg GetChatQuotaUseParams) (GetChatQuotaUseRow, error) {
+	row := q.db.QueryRow(ctx, getChatQuotaUse,
+		arg.Excluded,
+		arg.Now,
+		arg.UploadingSince,
+		arg.TutorID,
+	)
+	var i GetChatQuotaUseRow
+	err := row.Scan(&i.FileQuotaBytes, &i.FileUsageBytes, &i.PendingBytes)
+	return i, err
+}
+
+const getDownloadableChatAttachment = `-- name: GetDownloadableChatAttachment :one
+SELECT attachments.id, attachment_references.ref_id AS message_id, attachments.width, attachments.height
+FROM attachments
+JOIN attachment_references ON attachment_references.attachment_id = attachments.id AND attachment_references.ref_kind = 'message'
+JOIN active_channel_members AS members ON members.channel_id = attachments.scope_id AND members.user_id = $1::uuid
+WHERE attachments.id = $2 AND attachments.context = 'chat' AND attachments.state = 'bound' AND attachments.scope_kind = 'channel'
+ORDER BY attachment_references.ref_id
+LIMIT 1
+`
+
+type GetDownloadableChatAttachmentParams struct {
+	Viewer pgtype.UUID
+	ID     domain.AttachmentID
+}
+
+type GetDownloadableChatAttachmentRow struct {
+	ID        domain.AttachmentID
+	MessageID domain.EntityID
+	Width     *int32
+	Height    *int32
+}
+
+func (q *Queries) GetDownloadableChatAttachment(ctx context.Context, arg GetDownloadableChatAttachmentParams) (GetDownloadableChatAttachmentRow, error) {
+	row := q.db.QueryRow(ctx, getDownloadableChatAttachment, arg.Viewer, arg.ID)
+	var i GetDownloadableChatAttachmentRow
+	err := row.Scan(
+		&i.ID,
+		&i.MessageID,
+		&i.Width,
+		&i.Height,
+	)
+	return i, err
+}
+
 const getServableAvatar = `-- name: GetServableAvatar :one
 SELECT attachments.storage_key, attachments.media_type, attachments.size_bytes
 FROM attachments
@@ -222,8 +467,8 @@ WHERE attachments.id = $1 AND attachments.state = 'bound' AND users.state IN ('u
 
 type GetServableAvatarRow struct {
 	StorageKey string
-	MediaType  string
-	SizeBytes  int64
+	MediaType  *string
+	SizeBytes  *int64
 }
 
 func (q *Queries) GetServableAvatar(ctx context.Context, id domain.AttachmentID) (GetServableAvatarRow, error) {
@@ -233,17 +478,56 @@ func (q *Queries) GetServableAvatar(ctx context.Context, id domain.AttachmentID)
 	return i, err
 }
 
+const getServableChatAttachment = `-- name: GetServableChatAttachment :one
+SELECT attachments.storage_key, attachments.media_type::text AS media_type, attachments.size_bytes::bigint AS size_bytes,
+    attachments.filename, attachments.width
+FROM attachments
+JOIN attachment_references
+    ON attachment_references.attachment_id = attachments.id AND attachment_references.ref_kind = 'message'
+        AND attachment_references.ref_id = $1
+JOIN channels ON channels.id = attachments.scope_id
+WHERE attachments.id = $2 AND attachments.context = 'chat' AND attachments.state = 'bound' AND attachments.scope_kind = 'channel'
+    AND channels.discarded_at IS NULL AND channels.erase_pending_since IS NULL
+`
+
+type GetServableChatAttachmentParams struct {
+	MessageID domain.EntityID
+	ID        domain.AttachmentID
+}
+
+type GetServableChatAttachmentRow struct {
+	StorageKey string
+	MediaType  string
+	SizeBytes  int64
+	Filename   string
+	Width      *int32
+}
+
+func (q *Queries) GetServableChatAttachment(ctx context.Context, arg GetServableChatAttachmentParams) (GetServableChatAttachmentRow, error) {
+	row := q.db.QueryRow(ctx, getServableChatAttachment, arg.MessageID, arg.ID)
+	var i GetServableChatAttachmentRow
+	err := row.Scan(
+		&i.StorageKey,
+		&i.MediaType,
+		&i.SizeBytes,
+		&i.Filename,
+		&i.Width,
+	)
+	return i, err
+}
+
 const listUploadsOf = `-- name: ListUploadsOf :many
-SELECT id, storage_key FROM attachments WHERE uploader_id = $1
+SELECT id, storage_key, multipart_upload_id FROM attachments WHERE uploader_id = $1 OR (quota_tutor_id = $1 AND state <> 'bound')
 `
 
 type ListUploadsOfRow struct {
-	ID         domain.AttachmentID
-	StorageKey string
+	ID                domain.AttachmentID
+	StorageKey        string
+	MultipartUploadID *string
 }
 
-func (q *Queries) ListUploadsOf(ctx context.Context, uploaderID domain.UserID) ([]ListUploadsOfRow, error) {
-	rows, err := q.db.Query(ctx, listUploadsOf, uploaderID)
+func (q *Queries) ListUploadsOf(ctx context.Context, userID domain.UserID) ([]ListUploadsOfRow, error) {
+	rows, err := q.db.Query(ctx, listUploadsOf, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +535,7 @@ func (q *Queries) ListUploadsOf(ctx context.Context, uploaderID domain.UserID) (
 	var items []ListUploadsOfRow
 	for rows.Next() {
 		var i ListUploadsOfRow
-		if err := rows.Scan(&i.ID, &i.StorageKey); err != nil {
+		if err := rows.Scan(&i.ID, &i.StorageKey, &i.MultipartUploadID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -263,7 +547,7 @@ func (q *Queries) ListUploadsOf(ctx context.Context, uploaderID domain.UserID) (
 }
 
 const lockAttachment = `-- name: LockAttachment :one
-SELECT id, uploader_id, context, scope_kind, scope_id, scope_question_id, quota_tutor_id, storage_key, filename, media_type, size_bytes, sha256, state, expires_at, created_at, updated_at FROM attachments WHERE id = $1 FOR UPDATE
+SELECT id, uploader_id, context, scope_kind, scope_id, scope_question_id, quota_tutor_id, storage_key, filename, media_type, size_bytes, sha256, state, expires_at, created_at, updated_at, reserved_bytes, multipart_upload_id, width, height FROM attachments WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) LockAttachment(ctx context.Context, id domain.AttachmentID) (Attachment, error) {
@@ -286,6 +570,10 @@ func (q *Queries) LockAttachment(ctx context.Context, id domain.AttachmentID) (A
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ReservedBytes,
+		&i.MultipartUploadID,
+		&i.Width,
+		&i.Height,
 	)
 	return i, err
 }
@@ -302,6 +590,25 @@ type MarkAttachmentDeletedParams struct {
 
 func (q *Queries) MarkAttachmentDeleted(ctx context.Context, arg MarkAttachmentDeletedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markAttachmentDeleted, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const recordMultipartUpload = `-- name: RecordMultipartUpload :execrows
+UPDATE attachments SET multipart_upload_id = $1::text, updated_at = $2::timestamptz
+WHERE id = $3 AND state = 'uploading'
+`
+
+type RecordMultipartUploadParams struct {
+	MultipartUploadID string
+	Now               time.Time
+	ID                domain.AttachmentID
+}
+
+func (q *Queries) RecordMultipartUpload(ctx context.Context, arg RecordMultipartUploadParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recordMultipartUpload, arg.MultipartUploadID, arg.Now, arg.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -332,4 +639,29 @@ func (q *Queries) RemoveAvatarReference(ctx context.Context, refID domain.Entity
 		return nil, err
 	}
 	return items, nil
+}
+
+const sumDailyChatBytes = `-- name: SumDailyChatBytes :one
+SELECT COALESCE(sum(size_bytes), 0)::bigint FROM attachments
+WHERE uploader_id = $1 AND quota_tutor_id = $2::uuid AND context = 'chat'
+    AND created_at >= $3::timestamptz AND created_at < $4::timestamptz AND size_bytes IS NOT NULL
+`
+
+type SumDailyChatBytesParams struct {
+	UploaderID domain.UserID
+	TutorID    pgtype.UUID
+	DayStart   time.Time
+	DayEnd     time.Time
+}
+
+func (q *Queries) SumDailyChatBytes(ctx context.Context, arg SumDailyChatBytesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, sumDailyChatBytes,
+		arg.UploaderID,
+		arg.TutorID,
+		arg.DayStart,
+		arg.DayEnd,
+	)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }

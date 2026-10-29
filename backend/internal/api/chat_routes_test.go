@@ -352,17 +352,39 @@ func TestChatRoutesDenyEveryOutOfScopeCaller(t *testing.T) {
 		"a removed provisional account":                         {removedSquatter, world.squatChat.ID},
 		"an ended relationship's student, on the group it left": {world.parties.studentToken, world.group.ID},
 	}
+	randomUpload := h.chatUpload(t, world.secondToken, randomChannelID, "notes.txt", plainText(16))
+	randomAddress, _ := h.addressOf(t, world.secondToken, fixtureID(10, 99), "")
+	index := byte(0)
 	for name, denied := range cases {
+		index++
+		attachment := fixtureID(10, index)
+		h.boundFixture(t, attachment, denied.channel, messageID(index))
 		refused, _ := h.channelCall(t, denied.token, denied.channel)
 		_, page := h.channelList(t, denied.token, "")
+		upload := h.chatUpload(t, denied.token, denied.channel, "notes.txt", plainText(16))
+		address, _ := h.addressOf(t, denied.token, attachment, "")
 
 		if refused.status != http.StatusNotFound || refusal(t, refused) != refusal(t, random) || slices.Contains(listedChannelIDs(page), denied.channel) {
 			t.Fatalf("%s answered %d %s and lists %v", name, refused.status, refused.body, listedChannelIDs(page))
 		}
+		if name == "a removed provisional account" {
+			if upload.status != http.StatusForbidden || code(t, upload) != "email_not_verified" {
+				t.Fatalf("%s uploaded with %s", name, describe(upload))
+			}
+		} else if upload.status != http.StatusNotFound || refusal(t, upload) != refusal(t, randomUpload) {
+			t.Fatalf("%s uploaded with %s", name, describe(upload))
+		}
+		if address.status != http.StatusNotFound || refusal(t, address) != refusal(t, randomAddress) {
+			t.Fatalf("%s got a download address: %s", name, describe(address))
+		}
 	}
 	endedRead, ended := h.channelCall(t, world.parties.studentToken, world.direct.ID)
+	endedUpload := h.chatUpload(t, world.parties.studentToken, world.direct.ID, "notes.txt", plainText(16))
 	if endedRead.status != http.StatusOK || ended.Writable {
 		t.Fatalf("the ended relationship's student reads the private chat as %d %+v", endedRead.status, ended)
+	}
+	if endedUpload.status != http.StatusConflict || code(t, endedUpload) != "channel_read_only" {
+		t.Fatalf("the ended relationship's student uploads to the private chat with %s", describe(endedUpload))
 	}
 }
 

@@ -252,3 +252,10 @@ WHERE id IN (
     LIMIT sqlc.arg(batch_size)::int
     FOR UPDATE
 );
+
+-- name: LockChannelForShare :one
+SELECT id FROM channels WHERE id = @id FOR SHARE;
+
+-- name: GetChannelOfActiveMember :one
+SELECT channel_id, tutor_id, read_only_since FROM active_channel_members
+WHERE channel_id = @channel_id AND user_id = @user_id;

@@ -133,18 +133,22 @@ function runInPostgresContainer(program: 'createdb' | 'dropdb', connection: Admi
   );
 }
 
-function ensureStorageBucket(): void {
-  const result = spawnSync('docker', ['compose', 'exec', '-T', 'storage', 'weed', 'shell'], {
-    cwd: repositoryRoot,
-    input: `s3.bucket.create -name ${storageBucket}\n`,
+function ensureStorageBucket(storage: StorageSettings): void {
+  const result = spawnSync(join(binariesRoot, 'api'), ['ensure-bucket'], {
+    cwd: backendRoot,
+    env: {
+      PATH: process.env.PATH ?? '',
+      OVC_STORAGE_BACKEND: 's3',
+      OVC_STORAGE_ENDPOINT: storage.endpoint,
+      OVC_STORAGE_REGION: 'us-east-1',
+      OVC_STORAGE_BUCKET: storageBucket,
+      OVC_STORAGE_ACCESS_KEY: storage.accessKey,
+      OVC_STORAGE_SECRET_KEY: storage.secretKey,
+    },
     encoding: 'utf8',
   });
-  const output = `${result.stdout}${result.stderr}`;
-  if (
-    !output.includes(`created bucket ${storageBucket}`) &&
-    !output.includes(`bucket ${storageBucket} already exists`)
-  ) {
-    throw new Error(`the storage bucket ${storageBucket} could not be created`);
+  if (result.status !== 0 || result.stdout !== 'ok\n') {
+    throw new Error(`the storage bucket ${storageBucket} could not be created with its lifecycle rule`);
   }
 }
 
@@ -261,11 +265,11 @@ export function finishRun(): void {
 export function prepareRun(): void {
   mkdirSync(binariesRoot, { recursive: true });
   createPreviewCertificate();
-  ensureStorageBucket();
   execFileSync('go', ['build', '-o', `${binariesRoot}/`, './cmd/api', './cmd/worker', './cmd/ovc-admin'], {
     cwd: backendRoot,
     stdio: 'inherit',
   });
+  ensureStorageBucket(readStorageSettings(process.env));
   execFileSync('pnpm', ['build'], { cwd: frontendRoot, stdio: 'inherit' });
 }
 

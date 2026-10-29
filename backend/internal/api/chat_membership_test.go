@@ -367,15 +367,17 @@ func TestDiscardingAProvisionalLinkQueuesItsChannelsErasure(t *testing.T) {
 		t.Run(path.name, func(t *testing.T) {
 			t.Parallel()
 			h := newFlowHarness(t)
-			_, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+			tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 			card, squatter := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
 			channel := h.directChannel(t, card.ID)
-			upload := "0b3c7a52-3f7e-4e21-9a3d-0000000000aa"
+			upload, streaming := "0b3c7a52-3f7e-4e21-9a3d-0000000000aa", fixtureID(9, 1)
 			h.pendingChatUpload(t, upload, squatter, channel.ID)
+			h.insertUploading(t, streaming, tutor, channel.ID, tutor, 1<<10, "", authStart.Add(30*24*time.Hour))
 
 			path.discard(t, h, tutorToken, card)
 			queued := h.directChannel(t, card.ID)
 			members := h.channelMembers(t, channel.ID)
+			streamingState := h.uploadState(t, streaming)
 			hidden := response{status: http.StatusNotFound}
 			if path.name != "the tutor's deletion" {
 				hidden, _ = h.channelCall(t, h.relogin(t, tutorEmail), channel.ID)
@@ -389,6 +391,10 @@ func TestDiscardingAProvisionalLinkQueuesItsChannelsErasure(t *testing.T) {
 			}
 			if state := h.uploadState(t, upload); (state != "deleted" && state != "gone") || !h.deletionQueued(t, upload) {
 				t.Fatalf("the channel's pending upload is %s after its discard", state)
+			}
+			if streamingState != string(domain.AttachmentUploading) || h.uploadState(t, streaming) != string(domain.AttachmentUploading) ||
+				h.deletionQueued(t, streaming) {
+				t.Fatalf("the channel's uploading row was not left to its request: %s", streamingState)
 			}
 			if hidden.status != http.StatusNotFound {
 				t.Fatalf("the tutor still reaches the discarded channel: %d %s", hidden.status, hidden.body)
@@ -406,6 +412,7 @@ func TestASuspendedMemberReachesNothingAndIsShownToNoOne(t *testing.T) {
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, owner := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
 	channel := h.directChannel(t, card.ID)
+	attachment := h.boundUpload(t, tutorToken, channel.ID, "welcome.txt", plainText(32), 1)
 	ownerToken := h.reclaimed(t, newcomerEmail)
 	h.setChannelSeq(t, channel.ID, 3)
 	log := h.recordFrames(t)
@@ -419,7 +426,18 @@ func TestASuspendedMemberReachesNothingAndIsShownToNoOne(t *testing.T) {
 	unread := h.send(t, http.MethodGet, channelsRoute+"/unread", "", jsonCall(ownerToken))
 	_, forTutor := h.channelCall(t, tutorToken, channel.ID)
 	_, tutorList := h.channelList(t, tutorToken, "")
+	ownerUpload := h.chatUpload(t, ownerToken, channel.ID, "notes.txt", plainText(32))
+	randomUpload := h.chatUpload(t, ownerToken, randomChannelID, "notes.txt", plainText(32))
+	ownerAddress, _ := h.addressOf(t, ownerToken, attachment, "")
+	randomAddress, _ := h.addressOf(t, ownerToken, fixtureID(9, 2), "")
+	tutorAddress, _ := h.addressOf(t, tutorToken, attachment, "")
 
+	if ownerUpload.status != http.StatusNotFound || refusal(t, ownerUpload) != refusal(t, randomUpload) || len(h.uploadsBy(t, owner)) != 0 {
+		t.Fatalf("the suspended account uploads to its channel: %s", describe(ownerUpload))
+	}
+	if ownerAddress.status != http.StatusNotFound || refusal(t, ownerAddress) != refusal(t, randomAddress) || tutorAddress.status != http.StatusOK {
+		t.Fatalf("the suspended account's download address answered %s, the tutor's %s", describe(ownerAddress), describe(tutorAddress))
+	}
 	if listedResult.status != http.StatusOK || len(listed.Items) != 0 || listed.UnreadChannels != 0 {
 		t.Fatalf("the suspended account lists %d %+v", listedResult.status, listed)
 	}

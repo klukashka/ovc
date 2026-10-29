@@ -324,10 +324,43 @@ func (s *S3) EnsureBucket(ctx context.Context) error {
 	_, err := s.client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(s.bucket)})
 	var owned *types.BucketAlreadyOwnedByYou
 	var exists *types.BucketAlreadyExists
-	if err == nil || errors.As(err, &owned) || errors.As(err, &exists) {
-		return nil
+	if err != nil && !errors.As(err, &owned) && !errors.As(err, &exists) {
+		return fmt.Errorf("create the storage bucket: %w", err)
 	}
-	return fmt.Errorf("create the storage bucket: %w", err)
+	_, err = s.client.PutBucketLifecycleConfiguration(ctx, &s3.PutBucketLifecycleConfigurationInput{
+		Bucket: aws.String(s.bucket),
+		LifecycleConfiguration: &types.BucketLifecycleConfiguration{Rules: []types.LifecycleRule{{
+			ID: aws.String(incompleteUploadsRule), Status: types.ExpirationStatusEnabled, Filter: &types.LifecycleRuleFilter{Prefix: aws.String("")},
+			AbortIncompleteMultipartUpload: &types.AbortIncompleteMultipartUpload{DaysAfterInitiation: aws.Int32(incompleteUploadDays)},
+		}}},
+	})
+	return wrapped("set the storage bucket lifecycle", err)
+}
+
+const (
+	incompleteUploadsRule = "abort-incomplete-multipart-uploads"
+	incompleteUploadDays  = 1
+)
+
+func (s *S3) DeleteEmptyBucket(ctx context.Context) error {
+	if _, err := s.client.DeleteBucketLifecycle(ctx, &s3.DeleteBucketLifecycleInput{Bucket: aws.String(s.bucket)}); err != nil {
+		return fmt.Errorf("delete the storage bucket lifecycle: %w", err)
+	}
+	_, err := s.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(s.bucket)})
+	return wrapped("delete the storage bucket", err)
+}
+
+func (s *S3) IncompleteUploadDays(ctx context.Context) (int32, bool, error) {
+	output, err := s.client.GetBucketLifecycleConfiguration(ctx, &s3.GetBucketLifecycleConfigurationInput{Bucket: aws.String(s.bucket)})
+	if err != nil {
+		return 0, false, fmt.Errorf("read the storage bucket lifecycle: %w", err)
+	}
+	for _, rule := range output.Rules {
+		if aws.ToString(rule.ID) == incompleteUploadsRule && rule.Status == types.ExpirationStatusEnabled && rule.AbortIncompleteMultipartUpload != nil {
+			return aws.ToInt32(rule.AbortIncompleteMultipartUpload.DaysAfterInitiation), true, nil
+		}
+	}
+	return 0, false, nil
 }
 
 type memoryUpload struct {

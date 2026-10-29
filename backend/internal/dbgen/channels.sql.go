@@ -299,6 +299,29 @@ func (q *Queries) EnsureGroupChannels(ctx context.Context, arg EnsureGroupChanne
 	return result.RowsAffected(), nil
 }
 
+const getChannelOfActiveMember = `-- name: GetChannelOfActiveMember :one
+SELECT channel_id, tutor_id, read_only_since FROM active_channel_members
+WHERE channel_id = $1 AND user_id = $2
+`
+
+type GetChannelOfActiveMemberParams struct {
+	ChannelID domain.ChannelID
+	UserID    domain.UserID
+}
+
+type GetChannelOfActiveMemberRow struct {
+	ChannelID     domain.ChannelID
+	TutorID       domain.UserID
+	ReadOnlySince *time.Time
+}
+
+func (q *Queries) GetChannelOfActiveMember(ctx context.Context, arg GetChannelOfActiveMemberParams) (GetChannelOfActiveMemberRow, error) {
+	row := q.db.QueryRow(ctx, getChannelOfActiveMember, arg.ChannelID, arg.UserID)
+	var i GetChannelOfActiveMemberRow
+	err := row.Scan(&i.ChannelID, &i.TutorID, &i.ReadOnlySince)
+	return i, err
+}
+
 const getGroupChannelOf = `-- name: GetGroupChannelOf :one
 SELECT channel_id FROM active_channel_members WHERE user_id = $1 AND group_id = $2
 `
@@ -595,6 +618,17 @@ func (q *Queries) ListRelationshipChannelsOf(ctx context.Context, arg ListRelati
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockChannelForShare = `-- name: LockChannelForShare :one
+SELECT id FROM channels WHERE id = $1 FOR SHARE
+`
+
+func (q *Queries) LockChannelForShare(ctx context.Context, id domain.ChannelID) (domain.ChannelID, error) {
+	row := q.db.QueryRow(ctx, lockChannelForShare, id)
+	var id_2 domain.ChannelID
+	err := row.Scan(&id_2)
+	return id_2, err
 }
 
 const lockChannelOfRelationshipForShare = `-- name: LockChannelOfRelationshipForShare :one

@@ -35,6 +35,7 @@ VALUES ($1, 'group', $2, $3, 1, $4, $4, $4)`
 var mirrorAndPurgeQueries = []string{
 	"AddDirectChannelMembers", "SuspendReclaimedMembers", "RestoreKeptMembers", "RemoveFormerGroupMembers", "AddGroupChannelMembers",
 	"DeleteMembersOfChannels", "DeleteMembershipsOfUser", "LockChannelsOfMember", "DeleteTutorChannelMembersBatch",
+	"ClaimUnbindableChatUploads",
 }
 
 var namedQuery = regexp.MustCompile(`(?m)^-- name: (\w+) :\w+$`)

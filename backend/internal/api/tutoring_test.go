@@ -381,6 +381,8 @@ var denialCases = map[string]denialCase{
 	"POST /api/v1/groups/{id}/unarchive":                  anotherTutorsGroup(http.MethodPost, "/unarchive", ""),
 	"GET /api/v1/lessons/{id}":                            anotherTutorsLesson,
 	"GET /api/v1/channels/{id}":                           anotherTutorsChannel,
+	"GET /api/v1/attachments/{id}":                        anotherTutorsAttachment,
+	"GET /api/v1/files/{id}":                              anotherAttachmentsAddress,
 	"PATCH /api/v1/lessons/{id}":                          anotherTutorsLessonWrite(http.MethodPatch, "", `{"scope":"this","version":1,"title":"Taken over"}`),
 	"POST /api/v1/lessons/{id}/cancel":                    anotherTutorsLessonWrite(http.MethodPost, "/cancel", `{"scope":"this","version":1}`),
 }

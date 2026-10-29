@@ -16,6 +16,7 @@ type Keys struct {
 	access   func() []byte
 	throttle func() []byte
 	refresh  func() []byte
+	download func() []byte
 }
 
 func DeriveKeys(secret Secret) (Keys, error) {
@@ -38,7 +39,11 @@ func DeriveKeys(secret Secret) (Keys, error) {
 	if err != nil {
 		return Keys{}, err
 	}
-	return Keys{access: access, throttle: throttle, refresh: refresh}, nil
+	download, err := derive("download-url")
+	if err != nil {
+		return Keys{}, err
+	}
+	return Keys{access: access, throttle: throttle, refresh: refresh, download: download}, nil
 }
 
 func (k Keys) ThrottleSubject(purpose string, value string) []byte {
@@ -54,6 +59,12 @@ func (k Keys) RefreshMAC(session [16]byte, generation int64) []byte {
 	mac.Write(session[:])
 	mac.Write([]byte{0})
 	mac.Write([]byte(strconv.FormatInt(generation, 10)))
+	return mac.Sum(nil)
+}
+
+func (k Keys) DownloadMAC(payload []byte) []byte {
+	mac := hmac.New(sha256.New, k.download())
+	mac.Write(payload)
 	return mac.Sum(nil)
 }
 

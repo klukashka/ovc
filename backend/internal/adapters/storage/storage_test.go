@@ -275,6 +275,17 @@ func TestStorageContract(t *testing.T) {
 	}
 }
 
+func TestTheLocalBucketAbortsIncompleteMultipartUploadsAfterADay(t *testing.T) {
+	t.Parallel()
+	local := teststorage.New(t)
+
+	days, found, err := local.Store.IncompleteUploadDays(context.Background())
+
+	if err != nil || !found || days != 1 {
+		t.Fatalf("the bucket lifecycle rule is %d days, found %t: %v", days, found, err)
+	}
+}
+
 func TestS3PingFailsForAMissingBucket(t *testing.T) {
 	settings := teststorage.New(t).Settings
 	settings.Bucket = "ovc-missing-" + core.NewRandomID()[:12]

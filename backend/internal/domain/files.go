@@ -1,6 +1,9 @@
 package domain
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 type AttachmentID [16]byte
 
@@ -27,9 +30,10 @@ const (
 type AttachmentState string
 
 const (
-	AttachmentPending AttachmentState = "pending"
-	AttachmentBound   AttachmentState = "bound"
-	AttachmentDeleted AttachmentState = "deleted"
+	AttachmentUploading AttachmentState = "uploading"
+	AttachmentPending   AttachmentState = "pending"
+	AttachmentBound     AttachmentState = "bound"
+	AttachmentDeleted   AttachmentState = "deleted"
 )
 
 type ReferenceKind string
@@ -50,6 +54,7 @@ var ErrInvalidAvatar = errors.New("the attachment cannot become this account's a
 type AttachmentPayload struct {
 	Attachment string `json:"attachment"`
 	Key        string `json:"key"`
+	Upload     string `json:"upload,omitempty"`
 }
 
 const (
@@ -58,3 +63,65 @@ const (
 	AvatarMaxSide        = 4096
 	AvatarKeyPrefix      = "avatars/"
 )
+
+const (
+	ChatMaxBytes            = 25_000_000
+	ChatWebPMaxBytes        = 8 << 20
+	ChatDailyBytesPerTutor  = 200_000_000
+	ChatOpenUploadsPerUser  = 20
+	ChatUploadsPerHour      = 60
+	ChatKeyPrefix           = "chat/"
+	UploadPartBytes         = 8 << 20
+	UploadOverheadBytes     = 64 << 10
+	UploadPartHeaderBytes   = 8 << 10
+	PreviewMaxPixels        = 50_000_000
+	PendingUploadLifetime   = 24 * time.Hour
+	UploadDeadlineCeiling   = 10 * time.Minute
+	UploadAgeAfterDeadline  = 10 * time.Minute
+	DownloadAddressWindow   = 5 * time.Minute
+	DownloadAddressMaxAhead = 10*time.Minute + 30*time.Second
+)
+
+type Disposition string
+
+const (
+	DispositionAttachment Disposition = "attachment"
+	DispositionInline     Disposition = "inline"
+)
+
+type UploadRejection string
+
+const (
+	RejectedBusy           UploadRejection = "busy"
+	RejectedTooLarge       UploadRejection = "too_large"
+	RejectedUnsupported    UploadRejection = "unsupported"
+	RejectedSessionRevoked UploadRejection = "session_revoked"
+	RejectedScope          UploadRejection = "scope"
+	RejectedReadOnly       UploadRejection = "read_only"
+	RejectedQuota          UploadRejection = "quota"
+	RejectedDailyCap       UploadRejection = "daily_cap"
+	RejectedPendingCap     UploadRejection = "pending_cap"
+	RejectedHourlyCap      UploadRejection = "hourly_cap"
+	RejectedContainer      UploadRejection = "container"
+	RejectedFilename       UploadRejection = "filename"
+	RejectedParts          UploadRejection = "parts"
+	RejectedStalled        UploadRejection = "stalled"
+)
+
+type ChatLimit string
+
+const (
+	LimitAttachmentBytes ChatLimit = "attachment_bytes"
+	LimitPendingUploads  ChatLimit = "pending_uploads"
+	LimitHourlyUploads   ChatLimit = "hourly_uploads"
+)
+
+type DownloadRefusal string
+
+const (
+	RefusedToken        DownloadRefusal = "token"
+	RefusedExpired      DownloadRefusal = "expired"
+	RefusedUnreferenced DownloadRefusal = "unreferenced"
+)
+
+const FieldWebPTooLarge FieldCode = "webp_too_large"

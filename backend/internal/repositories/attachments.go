@@ -2,17 +2,103 @@ package repositories
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"ovc/backend/internal/dbgen"
 	"ovc/backend/internal/domain"
 )
 
+var ErrUndescribedAttachment = errors.New("a stored attachment has no recorded media type or size")
+
+type ServableAvatar struct {
+	StorageKey string
+	MediaType  string
+	SizeBytes  int64
+}
+
 type (
-	ServableAvatar = dbgen.GetServableAvatarRow
-	ProfileUpdate  = dbgen.UpdateUserProfileParams
-	TutorText      = dbgen.UpdateTutorProfileTextParams
+	ProfileUpdate      = dbgen.UpdateUserProfileParams
+	TutorText          = dbgen.UpdateTutorProfileTextParams
+	NewUploading       = dbgen.CreateUploadingAttachmentParams
+	CompletedUpload    = dbgen.CompleteUploadParams
+	AgedUpload         = dbgen.ClaimAgedUploadsRow
+	DownloadableFile   = dbgen.GetDownloadableChatAttachmentRow
+	ServableFile       = dbgen.GetServableChatAttachmentRow
+	ChatQuotaUse       = dbgen.GetChatQuotaUseRow
+	MemberChannelShare = dbgen.GetChannelOfActiveMemberRow
 )
+
+func (r Attachments) CreateUploading(ctx context.Context, upload NewUploading) error {
+	return done(r.queries.CreateUploadingAttachment(ctx, upload), "create uploading attachment")
+}
+
+func (r Attachments) RecordMultipartUpload(ctx context.Context, id domain.AttachmentID, upload string, now time.Time) (bool, error) {
+	rows, err := r.queries.RecordMultipartUpload(ctx, dbgen.RecordMultipartUploadParams{MultipartUploadID: upload, Now: now, ID: id})
+	return applied(rows, err, "record multipart upload")
+}
+
+func (r Attachments) CompleteUpload(ctx context.Context, upload CompletedUpload) (bool, error) {
+	rows, err := r.queries.CompleteUpload(ctx, upload)
+	return applied(rows, err, "complete upload")
+}
+
+func (r Attachments) CountOpenChatUploads(ctx context.Context, uploader domain.UserID, now time.Time, uploadingSince time.Time) (int64, error) {
+	count, err := r.queries.CountOpenChatUploads(ctx, dbgen.CountOpenChatUploadsParams{UploaderID: uploader, Now: now, UploadingSince: uploadingSince})
+	return one(count, err, "count open chat uploads")
+}
+
+func (r Attachments) ChatQuotaUse(
+	ctx context.Context, tutor domain.UserID, excluded *domain.AttachmentID, now time.Time, uploadingSince time.Time,
+) (ChatQuotaUse, error) {
+	params := dbgen.GetChatQuotaUseParams{TutorID: tutor, Now: now, UploadingSince: uploadingSince}
+	if excluded != nil {
+		params.Excluded = pgtype.UUID{Bytes: *excluded, Valid: true}
+	}
+	use, err := r.queries.GetChatQuotaUse(ctx, params)
+	return one(use, err, "chat quota use")
+}
+
+func (r Attachments) DailyChatBytes(ctx context.Context, uploader domain.UserID, tutor domain.UserID, dayStart time.Time) (int64, error) {
+	total, err := r.queries.SumDailyChatBytes(ctx, dbgen.SumDailyChatBytesParams{
+		UploaderID: uploader, TutorID: pgtype.UUID{Bytes: tutor, Valid: true}, DayStart: dayStart, DayEnd: dayStart.Add(24 * time.Hour),
+	})
+	return one(total, err, "daily chat bytes")
+}
+
+func (r Attachments) ClaimAged(ctx context.Context, cutoff time.Time, batch int32) ([]AgedUpload, error) {
+	rows, err := r.queries.ClaimAgedUploads(ctx, dbgen.ClaimAgedUploadsParams{Cutoff: cutoff, BatchSize: batch})
+	return one(rows, err, "claim aged uploads")
+}
+
+func (r Attachments) ClaimUnbindableChat(ctx context.Context, batch int32) ([]domain.AttachmentID, error) {
+	ids, err := r.queries.ClaimUnbindableChatUploads(ctx, batch)
+	return one(ids, err, "claim unbindable chat uploads")
+}
+
+func (r Attachments) DownloadableChat(ctx context.Context, viewer domain.UserID, id domain.AttachmentID) (DownloadableFile, error) {
+	file, err := r.queries.GetDownloadableChatAttachment(ctx, dbgen.GetDownloadableChatAttachmentParams{
+		Viewer: pgtype.UUID{Bytes: viewer, Valid: true}, ID: id,
+	})
+	return one(file, err, "downloadable chat attachment")
+}
+
+func (r Attachments) ServableChat(ctx context.Context, id domain.AttachmentID, message domain.EntityID) (ServableFile, error) {
+	file, err := r.queries.GetServableChatAttachment(ctx, dbgen.GetServableChatAttachmentParams{MessageID: message, ID: id})
+	return one(file, err, "servable chat attachment")
+}
+
+func (r Channels) LockOfMemberForShare(ctx context.Context, id domain.ChannelID, member domain.UserID) (MemberChannelShare, error) {
+	locked, err := r.queries.LockChannelForShare(ctx, id)
+	if _, err := one(locked, err, "lock channel for share"); err != nil {
+		return MemberChannelShare{}, err
+	}
+	channel, err := r.queries.GetChannelOfActiveMember(ctx, dbgen.GetChannelOfActiveMemberParams{ChannelID: id, UserID: member})
+	return one(channel, err, "channel of active member")
+}
 
 func (r Attachments) CountPending(ctx context.Context, uploader domain.UserID, context domain.AttachmentContext, now time.Time) (int64, error) {
 	count, err := r.queries.CountPendingUploads(ctx, dbgen.CountPendingUploadsParams{UploaderID: uploader, Context: context, Now: now})
@@ -41,7 +127,13 @@ func (r Attachments) AvatarOf(ctx context.Context, user domain.UserID) (domain.A
 
 func (r Attachments) ServableAvatar(ctx context.Context, id domain.AttachmentID) (ServableAvatar, error) {
 	avatar, err := r.queries.GetServableAvatar(ctx, id)
-	return one(avatar, err, "servable avatar")
+	if _, err := one(avatar, err, "servable avatar"); err != nil {
+		return ServableAvatar{}, err
+	}
+	if avatar.MediaType == nil || avatar.SizeBytes == nil {
+		return ServableAvatar{}, fmt.Errorf("servable avatar: %w", ErrUndescribedAttachment)
+	}
+	return ServableAvatar{StorageKey: avatar.StorageKey, MediaType: *avatar.MediaType, SizeBytes: *avatar.SizeBytes}, nil
 }
 
 func (r Attachments) MarkDeleted(ctx context.Context, id domain.AttachmentID, now time.Time) (bool, error) {
