@@ -23,7 +23,7 @@ graph TD
 
   SPA -->|HTTPS JSON, bearer token| API
   SPA <-->|WSS typed frames| API
-  SPA -->|signed URLs| S3
+  SPA -->|downloads with OVC-signed addresses| API
   ROOM <-->|media| BBB
   API --> DB
   API --> S3
@@ -115,6 +115,10 @@ Frames never carry state; `lib/realtime` turns each into TanStack Query invalida
 | `entity.changed relationship` | the Students list and its tabs, the student card with that identifier, group pages (members), My tutors, the tutor list on student Home |
 | `entity.changed join_request` | the tutor's join requests (Students and Today), the student's sent requests (My tutors and Home) |
 | `entity.changed notification`, `notification.new` | the notification list, the panel and the badge |
+| `entity.changed channel` (from slice 6) | the channel list's first page, the channel with that identifier and its conversation header, and the sidebar's unread count |
+| `message.new`, `message.updated`, `message.deleted` (from slice 6) | the open conversation's messages after its newest `seq` (`after_seq`) or the changed message's page, the channel list's first page and the sidebar's unread count, coalesced to at most one request a second |
+| `read.updated` (from slice 6) | the sidebar's unread count and the channel list's first page |
+| `typing`, `presence` (from slice 6) | nothing: they update the typing indicator and the presence dot directly, as the one exception, and presence is refetched with the channel list on every `ready` |
 | `entity.changed lesson` (from slice 5) | the Schedule's calendar ranges, the lesson page with that identifier, the student card's next lessons and Lessons tab, the group page's next lessons, and the next lesson on the Students and Groups lists |
 | the first `ready` of a socket (the first connection or a reconnect) | every active query that holds an answer or is being fetched, and after a reconnect (a `ready` that follows an earlier `ready` or a failed or refused attempt of the same client, or the first `ready` of a client resumed after `beforeunload` or restored from the back-forward cache) also every active query whose last fetch ended in an error |
 
@@ -166,7 +170,8 @@ Exact versions are pinned in the lockfiles and recorded with check dates in `kno
 | Logging | Standard library `log/slog`, JSON | Structured, leveled diagnostics without a dependency |
 | Password hashing | Argon2id from `golang.org/x/crypto/argon2` 0.57.0, with OVC's own PHC encoding ([versions](../research/backend-libraries-2026-10-21.md)) | Current recommended password hash; the Go team's package, no third-party wrapper |
 | Tokens | HS256 JWT access tokens with `github.com/golang-jwt/jwt/v5` 5.3.1; opaque hashed refresh, email and invitation tokens | Stateless requests with revocable sessions; the signature is checked explicitly before the claims are validated |
-| Object storage | S3-compatible service in Russia through the AWS SDK for Go v2 S3 client 1.114.1, built from settings without the shared AWS configuration ([versions](../research/backend-libraries-2026-10-21.md)); SeaweedFS as the local S3-compatible server in development and tests | Quotas, recordings, signed URLs ([ADR-0008](../../docs/decisions/0008-hosting-and-data-residency.md)) |
+| Object storage | S3-compatible service in Russia through the AWS SDK for Go v2 S3 client 1.114.1, built from settings without the shared AWS configuration ([versions](../research/backend-libraries-2026-10-21.md)); SeaweedFS as the local S3-compatible server in development and tests | Quotas, recordings, signed URLs ([ADR-0008](../../docs/decisions/0008-hosting-and-data-residency.md)); from slice 6 the same client carries multipart uploads with abort and ranged reads |
+| Upload inspection and download tokens | No new dependency (slice 6): type detection, ZIP inspection (`archive/zip`), multipart parsing, the picture metadata filter, HMAC and HKDF use the standard library and `golang.org/x/crypto`, already present; the frontend adds none (link detection uses `URL`) | The allowlists are short and intricate, and a sniffing or image library would need a row of its own |
 | Image decoding | Standard library `image/jpeg` and `image/png`, plus `golang.org/x/image` 0.46.0 for the WebP decoder ([versions](../research/backend-libraries-2026-10-21.md)) | Avatars are decoded and encoded again to remove metadata; the Go team's package, used only in `internal/services/files` |
 | Email | SMTP through a Russian provider with `github.com/emersion/go-smtp` 0.25.0 and `github.com/emersion/go-sasl` for PLAIN authentication ([versions](../research/backend-libraries-2026-10-21.md)); OVC composes the MIME message itself | Transactional email from the worker; OVC keeps control of `Message-ID`, header encoding and CR/LF stripping |
 | Conferencing | BigBlueButton 4.0, self-hosted | Whiteboard and recordings ([ADR-0004](../../docs/decisions/0004-bigbluebutton-primary-provider.md)) |
@@ -270,11 +275,11 @@ The configuration of the first deployment and of every later one lives in a `dep
 | How bounces and complaints arrive from the chosen SMTP provider (webhook or polling); for the pilot, Yandex Postbox events read from Yandex Data Streams ([ADR-0013](../../docs/decisions/0013-pilot-deployment.md)) | Undeliverable addresses stop optional emails | Slice 10, before the first deployment |
 | Embedded client works on all supported browsers | "Open in new tab" always available | Slice 7 probe |
 | Which Russian providers for hosting, storage and SMTP; compared in [hosting research](../research/hosting-2026-10-22.md) | All in Russia | Before first deployment |
-| How downloads get `X-Content-Type-Options: nosniff` when the S3-compatible provider cannot add response headers (for example a proxy in front of signed downloads) | Never serve an upload without `nosniff` ([T-35](../../docs/threat-model.md#threats-and-controls)) | Before first deployment, with the provider probe |
+| How downloads get `X-Content-Type-Options: nosniff` when the S3-compatible provider cannot add response headers (for example a proxy in front of signed downloads) | Resolved by the owner's decision of 2026-10-29: chat attachments are served by the API's own download route `GET /api/v1/files/{id}` with OVC-signed addresses, which sets `nosniff` and every other header itself ([downloads](../specs/files.md#downloads), [T-35](../../docs/threat-model.md#threats-and-controls)); recordings, after the MVP, decide their own route | Resolved (slice 6 plan) |
 | Which field of `GET /lessons/{id}` carries the series rule that the lesson page's side column shows ([pages](../design/web/pages.md#lesson)) | Decided by the owner on 2026-10-28: `series`, the object `POST /lessons` returns, for both roles, describing the series the lesson currently belongs to, or `null`; `series_id` stays ([lesson detail](../specs/schedule.md#lesson-detail)) | Resolved |
 | Thumbnails for image previews | Originals constrained by the client in the MVP | After MVP |
 | Malware scanning of uploads | Content-type allowlist and size limits are mandatory regardless | After MVP |
 | Offline queue for assignment answers beyond retrying | Autosave with versions | Slice 9 |
-| The read deadline for upload routes (a per-MiB rate with a ceiling) | per-request read deadline of 30 s and write deadline of 35 s, structured errors for every refusal ([API conventions](../specs/api.md#conventions)) | Slice 6 |
+| The read deadline for upload routes (a per-MiB rate with a ceiling) | Resolved: the context's per-file limit at 128 KiB per second, at least 60 s and at most 10 minutes, a stall rule of 16 KiB per 30 s, and the 35-second write deadline after the body ([upload flow](../specs/files.md#upload-flow)) | Resolved (slice 6 plan) |
 | How the student's Home knows that checked feedback is new (a per-submission seen marker in the data model, or dropping the marker) | Home shows recently checked work without points | Slice 10 |
 | Phone navigation frame (a bottom bar or the interim top bar with an overlay sidebar) and phone layouts | Computer-first design; every page works from 360 px in one column meanwhile ([ADR-0010](../../docs/decisions/0010-quiet-visual-language.md)) | Slice 10 |

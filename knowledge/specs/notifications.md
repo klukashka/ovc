@@ -28,7 +28,7 @@ Behavior for FR-13 and the worker that delivers it. Decisions: [ADR-0006](../../
 | `recording.available` (after the MVP; the recording jobs below also wait for recordings) | tutor and roster | yes | no | — |
 | `recording.held_quota` (after the MVP) | tutor | yes | yes | required |
 | `recording.failed` (after the MVP) | tutor | yes | no | — |
-| `messages.digest` | a member with unread messages | — | yes | `message_digest` |
+| `messages.digest` (slice 6) | a member with unread messages who has been offline for 10 minutes, at most every 30 minutes | — | yes | `message_digest` |
 
 - A lesson is "moved" when its start or duration changes; other edits notify no one.
 - **Audience of homework events:** the recipient of `issue.*` and `submission.*` events is the student who owns the submission, even after leaving the group. Fully automatic work becomes checked on submission and sends `submission.checked` with review revision 0.
@@ -167,7 +167,7 @@ Each **email** is decided again when the worker sends it, not only when it is qu
   | Password reset | A newer reset request exists |
   | `issue.created` | The issue is withdrawn |
   | `recording.held_quota` | The recording is no longer `held_quota` |
-  | Message digest | The member read the messages it would list |
+  | Message digest | No listed channel still has a message within its bounds that the recipient, still an active member, has not read and that is neither deleted nor erased |
   | Invitation | The invitation is used, revoked or expired, its send count has moved on, or the tutor is no longer `active` |
   | `relationship.ended` | The relationship is no longer `ended` at the `ended_at` the email was queued for: it was reactivated, or reactivated and ended again, which queues its own email |
   | `tutor.deleted` | The tutor is no longer `deleted` |
@@ -187,18 +187,17 @@ Each **email** is decided again when the worker sends it, not only when it is qu
 
 ## Message digest
 
-- **Flag:** when a message is committed, each member whose `online_until` has passed gets `digest_pending_since` set, if it is not already set. Reading the member's channels up to their latest messages clears the flag, checked with one aggregate query over the member's channels.
-- **Sending:** a scheduler job runs every minute. It selects members, through a partial index, who:
-  - have `digest_pending_since` at least 10 minutes old;
-  - have `online_until` at least 10 minutes in the past;
-  - got their last digest at least 30 minutes ago.
+Slice 6. The bookkeeping lives in `digest_pending`, `digest_state` and the member rows' `digested_through_seq` ([data model](data-model.md#presence-and-digest-bookkeeping)), never on the user row; the [slice 6 plan](../plans/slice-6.md#3-decisions-the-plan-proposes) records the alternatives.
+
+- **Flag:** a send inserts a `digest_pending` row, `ON CONFLICT DO NOTHING`, for each active member of the channel whose `online_until` has passed, in the send transaction under the channel lock, without locking a user row. Reading the member's channels up to their latest messages clears the flag, checked with one query over the member's channels.
+- **Sending:** the `messages.digest` job runs every minute on the injected clock. It takes members through the `(pending_since)` index whose flag is at least 10 minutes old, whose `online_until` is at least 10 minutes past and whose last digest is at least 30 minutes old, 200 per batch within a 20-second budget, each member in its own transaction that locks the member's channels `FOR SHARE` in identifier order, which serialises it with sends.
+- **Selecting by sequence:** per channel the member is an active member of at that moment, the digest counts the messages whose `seq` is above both the member's `last_read_seq` and `digested_through_seq`, that were created after the member's `last_seen_at`, and that are neither deleted nor erased; it then sets `digested_through_seq` to the channel's `last_seq` read under the lock. A send holds the channel `FOR UPDATE`, so it either committed before the digest read the channel, and is counted, or waits for the digest to commit and then inserts a new flag; the flag the digest clears never hides a message it did not count, and the same message never appears in two digests.
 - **Building the digest:**
-  - the window runs from the later of the member's `last_seen_at` and the previous window's end, to the job's `now`;
-  - it covers unread messages created within the window;
-  - if there are none, the job clears the flag and sends nothing;
-  - otherwise, in one transaction, the job writes the outbox row with key `(digest, member, window start)` and both window bounds in its payload, records the window end as the last digest time, and clears the flag;
-  - the email renders exactly the messages in its window, and the next window starts at its end, so the same messages never appear in two digests.
-- **Content:** channel names, tutor labels and counts.
+  - with no message counted, the job clears the flag and sends nothing;
+  - otherwise, in the member's transaction, the job writes one outbox row keyed `(messages.digest, member, digest time)`, where the digest time is the job's `now`, which it records as `digest_state.last_digest_at` (at least 30 minutes after the previous one, so keys never repeat), with the per-channel sequence bounds in its payload, records the channels' `digested_through_seq`, and clears the flag.
+- **Content:** each channel by the recipient's own label from the [label table](realtime-and-video.md#labels-per-role) and its count of messages within its bounds that are still unread and neither deleted nor erased, at most 20 channels and then "and {count} more"; never message text, previews, senders or file names. Labels are escaped and stripped as lesson titles are. At dispatch the worker re-checks for each listed channel that the recipient is still an active member, and drops the email (`obsolete`, recorded as `email.dropped` with `reason` `obsolete_digest`) when no listed channel has such a message left.
+- **Optional and bounded:** the digest belongs to the `message_digest` group, so it carries the one-click unsubscribe headers and the visible link, with a token minted at render time; it counts against no daily cap, and the 30-minute rule bounds it to 48 a day. A digest to an account whose email is not confirmed is dropped like every optional email.
+- **Counts:** unread counts include deleted and erased messages, which stay in the list as placeholders; digests count only messages that still have a body.
 
 ## Preferences and unsubscribe
 
@@ -248,7 +247,7 @@ Slice 4 stores preferences, mints and verifies tokens, and serves the routes and
   | Confirmation and reset | `(event, email token request)`, a row recorded when the request is accepted |
   | Invitations | `(invitation.created, invitation, send count)`; each send of the same open link increments the count, so a resend is a new key |
   | `tutor.deleted` | `(event, tutor, deleted_at, recipient)`; the payload holds the tutor, `deleted_at` in microseconds and the recipient |
-  | Digests | `(digest, member, window start)` |
+  | Digests | `(messages.digest, member, digest time)`, the digest time being the job's `now` recorded as `last_digest_at` |
   | Recording copies | `(recording, attempt generation)` |
   | Everything else | `(event, subject, recipient)` |
 
@@ -268,7 +267,7 @@ Slice 4 stores preferences, mints and verifies tokens, and serves the routes and
   - **One pass:** `Tick(now)` runs the due scheduler jobs and reclaims expired leases, then runs every lane's loop side by side until no row is due at `now` and none is in flight, so a second tick at the same instant has no further effect. A pass stops claiming after 4 minutes of wall time, below the 5-minute lease, so a row claimed late in a long pass never starts with an expired lease; this claim budget applies to `Tick` only, because the continuous loops claim only into free slots. A panic in an effect frees its slot and counts as a failed attempt. With `OVC_CLOCK=system` the worker process runs the continuous loops; with `OVC_CLOCK=test` only `POST /__test__/tick` runs `Tick`, at the shared clock's instant, and the clock and tick routes exist only in that mode. On shutdown the worker claims nothing new and lets effects already started finish within their timeout.
   - **Message identifiers:** an email's `Message-ID` is derived from its outbox idempotency key and the host of `OVC_PUBLIC_URL`, so a retried send keeps the same identifier.
   - **Scheduler:** runs jobs whose due time has passed, recording each run in a job-run table, so hourly and daily jobs catch up once after downtime. The jobs registered on the shared scheduler loop run one after another, so a job that uses its whole time budget delays the jobs after it in that pass by at most that budget; a job registered to run on its own loop (horizon extension) runs on a scheduler loop of its own, started through the recovering goroutine helper, so its budget delays no other job. `Tick` runs every due job, both kinds, one after another in registration order (pending owner review). A job that fails is recorded as `failed` and reported as `job.run` at ERROR with an error kind, and the pass continues with the other jobs and the lanes (an owner decision): only a failure of the worker's own infrastructure, such as recording a job run or claiming rows, ends the pass. A purge that cannot remove one account skips past it within the run, so the accounts behind it are still purged.
-    - **Every minute:** reminders, digests, the lesson status job (its bounds are in the [schedule](schedule.md#lesson-status-and-join-window)).
+    - **Every minute:** reminders, digests (`messages.digest`, from slice 6, 200 members per batch within 20 seconds), the lesson status job (its bounds are in the [schedule](schedule.md#lesson-status-and-join-window)), and from slice 6 `chat.erase_channels` while any channel is pending erasure (hourly otherwise, within 20 seconds, [channels](realtime-and-video.md#channels)).
     - **Every 30 minutes:** recording reconciliation.
     - **Hourly:**
       - recording and upload expiry; `invitations.expire` (500 per run; clears the ciphertext of expired invitations), `join_requests.expire` (batches of 200, at most 5 per run; a failing request is skipped, and a run that stops at its bound is resumed where it stopped by the next run) and `reclaim.expire` (batches of 100 accounts, at most 1,000 per run; drops reclaim items left unchosen for 7 days);

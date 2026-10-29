@@ -9,7 +9,7 @@ Behavior for FR-14 and every upload in OVC. Storage is S3-compatible object stor
 | `avatar` | any user | — | JPEG, PNG, WebP | 5 MB | 1 |
 | `prompt_image` | tutor | — (own library) | JPEG, PNG, WebP, GIF | 5 MB | 3 per prompt |
 | `library` | tutor | — (own library) | images, PDF, office documents, audio, MP4 video | 100 MB | 1 per material |
-| `chat` | channel members | the channel | images, PDF, office documents, audio, plain text | 25 MB | 10 per message |
+| `chat` | active members of a writable channel whose email is confirmed (slice 6) | the channel | images, PDF, office documents, audio, plain text | 25 MB; a WebP picture at most 8 MiB | 10 per message |
 | `answer` | student | the submission and question | the kinds allowed by the question | 25 MB | up to the question's maximum |
 | `corrected` | tutor | the submission and question | images, PDF, office documents, audio | 25 MB | 5 per answer |
 
@@ -20,35 +20,91 @@ Behavior for FR-14 and every upload in OVC. Storage is S3-compatible object stor
   - audio: MP3, M4A, OGG, WAV;
   - video: MP4;
   - plain text.
-- **Type detection** reads the content, not the client's claim:
-  - ordinary types by magic bytes;
-  - office documents by inspecting the container entries that identify each format; a generic ZIP is refused, and so are documents that contain macros (`vbaProject.bin`) or external relationships.
+- **Type detection** reads the content, not the client's claim, with the standard library only (no sniffing dependency):
+  - ordinary kinds by magic bytes from the first part: JPEG, PNG, WebP, GIF, PDF; MP3 by an ID3 tag or, without one, at least three consecutive valid MPEG audio frame headers; M4A by its `ftyp` brand; OGG by a Vorbis or Opus first page; WAV (MP4 video, for the library context, is detected with slice 8);
+  - plain text as valid UTF-8 without NUL or control characters other than tab, line feed and carriage return, checked over the whole stream, served as `text/plain; charset=utf-8`;
+  - office documents by [inspecting the container](#office-containers); a generic ZIP is refused.
 
-  The detected type must agree with the extension; a mismatch is refused with `unsupported_media_type`.
+  The extension, compared case-insensitively, must be one accepted for the detected kind; anything else is refused with `415 unsupported_media_type`. The accepted extensions (slice 6):
+
+  | Detected kind | Extensions |
+  |---|---|
+  | JPEG | `.jpg`, `.jpeg` |
+  | PNG | `.png` |
+  | WebP | `.webp` |
+  | GIF | `.gif` |
+  | PDF | `.pdf` |
+  | DOCX, XLSX, PPTX | `.docx`, `.xlsx`, `.pptx`, each only for its own main part |
+  | ODT, ODS, ODP | `.odt`, `.ods`, `.odp`, each only for its own `mimetype` |
+  | MP3 | `.mp3` |
+  | M4A | `.m4a` |
+  | OGG | `.ogg`, `.oga`, `.opus` |
+  | WAV | `.wav` |
+  | Plain text | `.txt` only |
+
+  Unit tests cover each kind, each disguise and each boundary, and include that a script or markup extension (`.html`, `.htm`, `.svg`, `.xml`, `.js`, `.mjs`, `.sh`, `.bat`, `.cmd`, `.ps1`, `.vbs`, `.hta`) carrying valid UTF-8 text is refused, as is a file without an extension.
 - **No archives and no executables.** Malware scanning is not in the MVP and is recorded as a threat-model limitation.
+
+### Office containers
+
+From slice 6. DOCX, XLSX, PPTX, ODT, ODS and ODP are stored first, while the attachment row is `uploading`, and then inspected over an `io.ReaderAt` that reads the stored object by ranges, before the row becomes `pending`; a refused container answers `415 unsupported_media_type`, its row is marked `deleted` and its object's deletion is queued:
+
+- **Bounds:** one ranged read of the last 64 KiB plus 22 bytes finds the end-of-central-directory record and, when present, the zip64 locator and record; a container that declares more than 10,000 entries or a central directory larger than 4 MiB, or whose directory does not lie inside the object, is refused before anything is parsed. The directory is fetched in one bounded read and parsed by the standard library's `archive/zip` over it; duplicate entry names, compared case-insensitively, are refused. OOXML's `[Content_Types].xml` is read inflated up to 1 MiB; ODF's `mimetype` must be the first entry, stored uncompressed and at most 256 bytes, and `META-INF/manifest.xml` is read up to 1 MiB; every `.rels` entry is read inflated and parsed as a stream, all of them together at most 8 MiB, at most 2,000 `.rels` entries; a container that exceeds any bound is refused, never partly skipped. An ordinary presentation has two or three relationship files per slide, so these bounds refuse only abnormal containers.
+- **Storage requests:** the tail read is kept in memory, and so is the directory when it lies inside the tail; otherwise the directory is one more bounded read; each inspected entry is one ranged request covering its local header and compressed data, with a read-ahead of at most 1 MiB.
+- **Content rules** (the owner's decision of 2026-10-29, pending owner review): refused are macros by part name (`vbaProject`), by content type and by relationship type, and a macro-enabled main content type; a main part whose content type disagrees with the extension (a `.docx` whose main part is a spreadsheet); ActiveX parts and their relationships; OLE embeddings (`embeddings/oleObject*.bin` and the OLE relationship types); every relationship with `TargetMode="External"` whose type is not the hyperlink type, for example an external `attachedTemplate`. The `package` relationship type of a native chart's embedded workbook is not an OLE type and is accepted. In ODF, refused are `Basic/` and `Scripts/` folders, manifest entries with script or OLE media types, and manifest entries that point outside the container. The OOXML main parts and ODF `content.xml` and `styles.xml` are not parsed, so their contents are accepted, a residual of [T-13](../../docs/threat-model.md#threats-and-controls): links and linked objects (`xlink:href`), OOXML field codes such as `DDE`, `DDEAUTO`, `INCLUDETEXT` and `INCLUDEPICTURE`, and ODF event listeners; the supported office applications warn before updating fields or links from outside the document, and a document link opens nothing by itself without the user's action.
+
+### Pictures
+
+From slice 6, for chat pictures:
+
+- **Dimensions:** JPEG, PNG, WebP and GIF get `width` and `height` read from their headers at upload, without decoding, so the conversation reserves their space; a picture above 50 megapixels is stored as a file without a preview.
+- **Metadata** is removed by a streaming allowlist filter that keeps only the structures a picture needs and drops everything else, without decoding (the owner's decision of 2026-10-29, pending owner review); the stored size and checksum are those of the filtered bytes:
+  - JPEG: SOI, DQT, DHT, DRI, the SOF markers, SOS with its entropy-coded data through EOI, APP0 JFIF rebuilt with a zero-size thumbnail (so no embedded thumbnail survives), APP2 `ICC_PROFILE` and APP14 Adobe, plus a rebuilt APP1 holding only the EXIF orientation when the original had one; every other segment (other APP1, APP2 MPF, APP13, comments) and everything after EOI is dropped;
+  - PNG: the critical chunks and `tRNS`, `gAMA`, `cHRM`, `sRGB`, `iCCP`, `sBIT`, `pHYs`, `bKGD` and the animation chunks `acTL`, `fcTL`, `fdAT`; nothing after `IEND`;
+  - WebP: `VP8` (the lossy chunk, whose four-character code ends in a space), `VP8L`, `VP8X`, `ALPH`, `ANIM`, `ANMF` and `ICCP`, with the RIFF size and the `VP8X` flags corrected. Because the RIFF size and the flags sit at the start, the first part is held in memory, filtered and rewritten before it is sent, so a WebP picture larger than one 8 MiB part is refused with `413 payload_too_large` and the field code `webp_too_large`; the inline refusal reads "WebP pictures can be at most 8 MB", the 8 MiB limit rounded for display;
+  - GIF: the header, screen and image descriptors, colour tables, image data, graphic control extensions and the `NETSCAPE2.0` loop extension; comments, plain-text extensions, other application extensions and everything after the trailer are dropped.
+- **Previews** are the original (filtered) picture constrained by CSS and loaded lazily.
+
+### File names
+
+From slice 6: the client's name from the part's `filename` parameter, with every path component before the last `/` or `\` removed, then at most 255 bytes of UTF-8; control characters and every Unicode format character (category `Cf`, which includes the bidirectional overrides) are refused with `422 validation_failed`; the name is stored as given and rendered as text in an element isolated with `dir="auto"`.
 
 ## Upload flow
 
+The general pipeline below is built in slice 6 for the `chat` context; the library, prompt-image, answer and corrected contexts adopt it in slices 8 and 9. Avatars keep the [buffered flow](#avatars).
+
 1. **Request:** `POST /api/v1/uploads?context=<context>&scope=<scope>`.
    - The scope is required where the table names one: `channel:<channel id>` for chat, and `submission:<submission id>:<question id>` for answer and corrected uploads.
-   - The caller must be allowed to write to it, and the scope decides which tutor's quota is charged.
-   - The scope is stored on the attachment and checked again at binding.
-2. **Streaming:**
+   - The caller must be allowed to write to it, and the scope decides which tutor's quota is charged. A chat upload needs an active member of a writable channel whose email is confirmed: an unconfirmed account gets `403 email_not_verified` from the audience rule before the body is read, a channel outside the caller's scope `404`, and a read-only channel `409 channel_read_only`.
+   - The scope is stored on the attachment and checked again at completion and at binding.
+   - **Request bounds:** the body holds exactly one part, named `file`, and nothing else (any other part or field answers `422 validation_failed` at `body.file`); part headers total at most 8 KiB; the whole body may exceed the context limit by at most 64 KiB of multipart overhead, enforced while reading; a malformed body answers `400 bad_request`; the [file name](#file-names) comes from the part's `filename` parameter.
+2. **First session**, before any byte is streamed: for a student, the user row is locked and the session re-checked; for a tutor, the profile is locked and the tutor's state checked ([locks and the session re-check](accounts.md#locks-and-the-session-re-check)); the scope and its writability, the caps and the quota pre-check below; then the attachment row is created as `uploading` with its 32-byte random storage key, uploader, context, scope, the client's file name and `reserved_bytes`, and the transaction commits. Outside any transaction the storage multipart upload is then created, and its identifier is recorded on the row as `multipart_upload_id` in a short transaction of its own, before the first part is sent. Residual: a crash between creating the multipart upload and recording its identifier leaves an incomplete upload that no cleanup can name; its row is cleaned by the age rule, and the bucket lifecycle rule aborts the incomplete upload after a day.
+3. **Streaming:**
    - the server parses the multipart body as a stream without spooling to disk, and writes it to storage as an S3 multipart upload with 8 MiB parts;
    - it counts bytes and computes SHA-256 as it goes, and aborts with `payload_too_large` the moment the limit is passed;
-   - **type detection:** ordinary types are detected from the first bytes. For office formats the server keeps the last 1 MiB of the stream in a ring buffer and reads the container's central directory from it before completing the upload; a document whose central directory does not fit is refused;
-   - **database sessions:** the request uses one short session before streaming (authorization, scope and quota pre-check) and another after it (creating the attachment row); none is held during the transfer;
-   - **memory** is bounded by (part size + tail buffer) × concurrent uploads: at most 288 MiB per instance.
-3. **Failure:** on rejection, error or client disconnect, the server aborts the multipart upload. A bucket lifecycle rule also aborts incomplete multipart uploads after one day.
-4. **Concurrency:** at most 4 concurrent uploads per user and 32 per API instance; beyond that the server refuses with `rate_limited`.
-5. **Response:** `{id, filename, media_type, size_bytes}`. The storage key is never returned.
-6. **Pending state:** the attachment is `pending`, owned by the uploader and invisible to others, until a create or update request binds it to an item: a message, an answer, a review, a material, a prompt or an avatar.
-7. **Binding** checks that:
-   - the uploader is the caller;
-   - the context and scope match the item;
-   - the item's count limit holds;
-   - the quota still holds.
-8. **Unbound pending attachments** are deleted after 24 hours.
+   - ordinary kinds are detected from the first part, plain text over the whole stream, pictures pass the [metadata filter](#pictures), and office documents are [inspected](#office-containers) after the object is stored;
+   - no database session is held during the transfer;
+   - **deadlines:** the read deadline is the context's per-file limit at 128 KiB per second, at least 60 seconds and at most 10 minutes (25 MB: about 195 seconds), with the 35-second write deadline after the body ends; a body that delivers less than 16 KiB in any 30-second window is aborted as stalled; the floor, the rate and the stall window are constructor settings, so tests use a short floor; deadlines run on the system clock, as every transport deadline does; an upload still running when shutdown's 40-second drain ends is aborted and the client retries;
+   - **memory** is at most 32 uploads × one 8 MiB part = 256 MiB per instance, separate from the avatar decoding budget, plus the bounded inspection reads (at most the 64 KiB tail, 4 MiB of directory and 1 MiB per entry read, one entry at a time per upload) and the picture filter's look-ahead of at most 64 KiB per upload; the held WebP part is the one 8 MiB part counted above; memory does not grow with file size.
+4. **Second session**, after the object is stored: the user row is locked again and the session re-checked (the tutor's profile for a tutor), then the channel `FOR SHARE`, under which the scope's membership and writability and the exact quota and daily cap are checked with the final size, and the row becomes `pending` with its detected type, size, checksum and picture dimensions. Whenever this session finds its row no longer `uploading`, or gone, it queues the `storage_delete` of the object it has just completed.
+5. **Failure:** any failure after the row exists (a refusal, a stall, a disconnect, a refused container, a revoked session, a lost membership, a refusal at completion) aborts the multipart upload and marks the row `deleted` with a `storage_delete` queued, in one transaction. A bucket lifecycle rule also aborts incomplete multipart uploads after one day: the local storage server's start-up configuration carries it where the server supports it, and the deployment's storage gets it in slice 10. So a crash between the row and the object leaves no object without a row and no row without its cleanup.
+6. **Limits** (chat; the concurrency and hourly limits are in-memory counters per API instance through an injected clock and counter, the pending and daily limits are counted from rows):
+   - at most 4 concurrent uploads per user and 32 per API instance;
+   - at most 20 chat uploads per user that are `uploading` or `pending` and not expired, counted from the rows;
+   - at most 60 chat uploads started per user per hour;
+   - at most 200 MB of chat attachment bytes per student per tutor per UTC day, on the injected business clock, counted from the rows (the sizes of the student's completed chat uploads to that tutor's channels whose rows were created that day, deleted ones included; the day of an upload is the UTC day of its row's `created_at`): an upload starts only while the day's total is below the cap, and its bytes count when it completes;
+   - beyond any of them, `429 rate_limited` with `Retry-After`; a restart resets the in-memory counters (the concurrency and hourly counts) ([T-20](../../docs/threat-model.md#threats-and-controls)).
+7. **Size-dependent checks** before the size is known: before streaming, the route refuses a `Content-Length` above the context limit plus the 64 KiB overhead, a quota with no room left (used + pending ≥ quota) and a daily total already at its cap; the exact checks with the final size run in the second session, where an upload that no longer fits is refused with `507 quota_exceeded` or `429 rate_limited` and its object deleted. A request without `Content-Length` is streamed under the same per-file limit.
+8. **Response:** `{id, filename, media_type, size_bytes}`. The storage key is never returned.
+9. **Pending state:** the attachment is `pending`, owned by the uploader and invisible to others, until a create or update request binds it to an item: a message, an answer, a review, a material, a prompt or an avatar.
+10. **Binding** checks that:
+    - the uploader is the caller;
+    - the context and scope match the item;
+    - the item's count limit holds;
+    - the quota still holds.
+
+    A message send binds only the caller's own `pending` chat uploads scoped to the same channel whose 24-hour expiry has not passed, at most ten, in the send transaction; any other identifier answers `404 not_found` like a random one, before `422 validation_failed` for an eleventh attachment; an attachment bound to one message is never bound again. A channel that is discarded, pending erasure or gone is never bindable.
+11. **Expiry:** the hourly `uploads.expire` job marks `pending` uploads older than 24 hours `deleted` and queues their deletion; from slice 6 it also marks `deleted` every `uploading` row older than the longest upload read deadline plus 10 minutes, aborting its multipart upload by its stored identifier, and every `pending` row that is no longer bindable (its channel missing, discarded or pending erasure, or left by its uploader), each with its deletion queued, so later runs never find it again.
 
 ## Avatars
 
@@ -72,12 +128,19 @@ Slice 2 implements only the `avatar` context, and it departs from the general fl
 
 ## Downloads
 
-- **Private files:** `GET /api/v1/attachments/{id}` authorizes the caller through the attachment's references; an unauthorized caller gets `not_found`.
-- **On success** it returns `{url, expires_at}` with a signed storage URL valid for 5 minutes, which the client puts in `src` or `href`. Media elements cannot send an `Authorization` header, so the API never redirects. The storage object is served with:
-  - `Content-Type` set from the detected type;
+- **Private files:** `GET /api/v1/attachments/{id}` authorizes the caller through the attachment's references; an unauthorized caller gets `not_found`. For a chat attachment, the caller must be an active member of a channel that holds a referencing message that is not deleted.
+- **On success** it returns `{url, expires_at}`, which the client puts in `src` or `href`. Media elements cannot send an `Authorization` header, so the API never redirects. From slice 6 (the owner's decision of 2026-10-29, pending owner review) `url` is an OVC download address served by the API itself, `/api/v1/files/{id}?t=<token>`, so the content security policy stays `'self'`, OVC sets every response header, and a deleted message stops its files at once. Message responses carry each attachment's address minted per response, so a page of history needs no request per picture; the client fetches the page again before `expires_at` and once when a picture fails to load. Which addresses library materials use is decided with slice 8, and recordings keep their own playback route.
+- **Minting:** `GET /api/v1/attachments/{id}?disposition=` mints an address for the attachment's one referencing message (a chat attachment is bound to exactly one), with `disposition` `attachment` by default or `inline`, which only a picture with recorded dimensions (one that has a preview) accepts; any other value, a repeated `disposition`, or `inline` for anything else answers `422 validation_failed` at `disposition`, after the scope check. Message responses mint `inline` for pictures with recorded dimensions and `attachment` for every other kind, a picture above 50 megapixels included.
+- **The download token** `t` is strict unpadded base64url (any other alphabet, padding or length is refused) of a fixed layout: a version byte `1`, the attachment identifier (16 bytes), the referencing message's identifier (16 bytes), the expiry in Unix seconds (8 bytes, big-endian), the disposition (1 byte: `inline` or `attachment`), and an untruncated HMAC-SHA-256 over all the preceding bytes, keyed with a key derived by HKDF-SHA-256 from `OVC_JWT_SECRET` with the info string `download-url`; no new secret is needed, and rotating the secret invalidates every address. The expiry is the next 5-minute boundary after now plus 5 minutes, so an address is valid for 5 to 10 minutes and identical for every response within a 5-minute window, which keeps image elements stable across refetches; a token whose expiry lies more than 10 minutes and 30 seconds ahead is refused, and so is `inline` for anything but a picture with recorded dimensions. The token is a credential in a URL allowed by [ADR-0009](../../docs/decisions/0009-owner-approved-exceptions-and-visibility.md) item 1: it is never logged, its query never reaches an access record, and the reverse proxy of slice 10 drops query strings of `/api/v1/files/*` from its records.
+- **`GET /api/v1/files/{id}?t=`** checks the token's MAC in constant time and its expiry, checks that the path's identifier equals the token's attachment, and re-checks that the attachment is `bound` and still referenced by the message the token names, whose channel is neither discarded nor pending erasure; every refusal is the same `404`. It streams the object, never holding it in memory, at most 64 downloads at once per instance (`503 service_unavailable` with `Retry-After: 1` beyond), with a write deadline of the file's size at 128 KiB per second, at least 60 seconds and at most 10 minutes, and these headers:
+  - `Content-Type` from detection (plain text as `text/plain; charset=utf-8`);
   - `X-Content-Type-Options: nosniff`;
-  - `Content-Disposition: attachment` with the file name in RFC 6266 form: an ASCII fallback with CR, LF and quotes removed, plus `filename*` in UTF-8 encoding;
-  - for images used as previews, `inline` instead of `attachment`.
+  - `Content-Disposition` from the token: `attachment` with the file name in RFC 6266 form (an ASCII fallback with CR, LF, quotes and backslashes removed, plus `filename*` in UTF-8), or `inline` for a picture shown as a preview;
+  - `Content-Security-Policy: default-src 'none'; sandbox; frame-ancestors 'none'`, `Cross-Origin-Resource-Policy: same-origin` and `Referrer-Policy: no-referrer`;
+  - `Cache-Control: private, no-store`, so no browser keeps a file after its message is deleted or its channel erased; a cache lifetime is adopted only if the slice review measures a need;
+  - `Content-Length` from the stored size, with the last byte sent only after the object is confirmed to end at that size, as for avatars.
+
+  It ignores `Range` and always answers the whole file: in slice 6 only pictures are shown inline, and audio and every other kind is a download.
 - **Avatars** are public by design: `GET /api/v1/avatars/{id}` serves them without authentication, so the invitation page can show the tutor.
 - **Previews** use the original image, constrained in size by the client. Generated thumbnails are a later optimisation.
 
@@ -89,12 +152,15 @@ Slice 2 implements only the `avatar` context, and it departs from the general fl
   - the tutor's direct and group channels, whoever sent the file;
   - student answer files and corrected files in the tutor's issues.
 - **Charging is incremental:** a charge row per tutor and attachment is created with the first reference and removed with the last one. Usage changes by the attachment's size only then, so no reference change rescans the tutor's files.
+- **Chat charges** (slice 6): binding an attachment to a message creates its reference and, when the channel's tutor has no charge for it, a charge row and the size added to `file_usage_bytes`, in the send transaction; removing the last reference that charges the tutor removes the charge and subtracts the size in the same transaction. Every path that creates or removes a charge takes the charge locks of the [lock order](accounts.md#locks-and-the-session-re-check): the charged tutors' profiles up front, then the channel, then the message. Binding refuses with `507 quota_exceeded` when the usage would pass the quota, which is the exact bound.
+- **Pending uploads count, but are not charged:** the quota pre-check before streaming and the check at completion count, from database rows only, the tutor's charged usage plus the chat uploads scoped to that tutor's channels that are `uploading` or `pending` and not expired, plus the new upload (used + pending + new ≤ quota); a `pending` row counts with its size, an `uploading` row with its `reserved_bytes` (the request's `Content-Length` capped at the context limit, or the context limit without one); the completion check excludes the completing row itself and uses its final size. These checks refuse early; binding under the charge locks is the exact bound, which two racing completions cannot pass.
 - **Avatars** count against no quota.
 - **Over the file quota:** an upload or binding is refused with `quota_exceeded`, and a student sees "your tutor's storage is full".
 - **Recording quota:** recording usage changes when a recording becomes available, expires or is deleted ([recordings](realtime-and-video.md#recordings)).
-- **Usage** is shown in the tutor's settings and updated in the same transaction as each charge change.
+- **Usage** is shown in the tutor's settings and updated in the same transaction as each charge change; from slice 6 `GET /tutor/settings` answers `{file_quota_bytes, file_usage_bytes}` and Teaching settings show a usage bar for files only.
 
 ## Deletion
 
-- **Account purge** removes every reference the account's items held, which deletes files that are no longer referenced ([account deletion](accounts.md#account-deletion)).
+- **Deleting a message** removes its attachment references in the same transaction, which releases their charges and queues each object's `storage_delete` ([messages](realtime-and-video.md#messages)); an erased channel's messages lose theirs through the erasure job.
+- **Account purge** removes every reference the account's items held, which deletes files that are no longer referenced ([account deletion](accounts.md#account-deletion)); a tutor's purge also deletes the attachments that students uploaded to the tutor's channels, which are charged to the tutor, so no student-uploaded object outlives the channel.
 - **Library materials** referenced by issued snapshots or lessons stay in storage until those references are gone ([library](homework.md#library)).

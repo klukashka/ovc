@@ -1,6 +1,6 @@
 # Functional requirements
 
-Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after design review and for the student Home content (FR-15.3); FR-5.4 to FR-5.6, FR-11.2 to FR-11.4 and the recording storage email of FR-13.2 moved after the MVP on 2026-10-22 by the owner's decision; FR-1.1 to FR-1.3, FR-1.7, FR-2.2, FR-2.3, FR-2.7 and FR-13.2 amended and FR-2.8 added on 2026-10-22 by ADR-0014; FR-2.6 amended on 2026-10-25 with an exception for notifications about join requests that never formed a relationship, pending owner review; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after design review and for the student Home content (FR-15.3); FR-5.4 to FR-5.6, FR-11.2 to FR-11.4 and the recording storage email of FR-13.2 moved after the MVP on 2026-10-22 by the owner's decision; FR-1.1 to FR-1.3, FR-1.7, FR-2.2, FR-2.3, FR-2.7 and FR-13.2 amended and FR-2.8 added on 2026-10-22 by ADR-0014; FR-2.6 amended on 2026-10-25 with an exception for notifications about join requests that never formed a relationship, pending owner review; FR-12.3 and FR-12.4 amended on 2026-10-29 with the owner's decisions on the slice 6 plan (deletes in read-only chats, students' view of other students), pending owner review; pending line-by-line owner review.
 
 What OVC must do, numbered so that specifications, tests, pages and plans can cite them. Each section links the specification that defines the exact behavior. Roles are **tutor**, **student** and **operator** (command line only). The [product overview](../product.md) explains the intent; this file is normative.
 
@@ -120,8 +120,8 @@ Specified in [analytics](../../knowledge/specs/homework.md#analytics).
 
 - **FR-12.1** Each tutor–student relationship has a private chat; each group has a group chat for the tutor and the members. Students cannot chat privately with each other.
 - **FR-12.2** Messages appear live and stay as history. Members can send files and pictures; pictures show a preview.
-- **FR-12.3** An author edits or deletes their own message; the tutor deletes any message in their group chat.
-- **FR-12.4** Users see unread counts, who is online and who is typing.
+- **FR-12.3** An author edits their own message within 24 hours and deletes it at any time; the tutor deletes any message in their private and group chats. Deleting stays possible in read-only chats, editing does not (amended 2026-10-29 by the owner's decision on the slice 6 plan, pending owner review).
+- **FR-12.4** Users see unread counts, who is online and who is typing. A student sees only their tutor's presence, never another student's, and sees that another student is typing without the student's name (amended 2026-10-29 by the owner's decision on the slice 6 plan, pending owner review).
 - **FR-12.5** Chats of ended relationships and archived groups are read-only.
 
 Specified in [chat](../../knowledge/specs/realtime-and-video.md#chat).

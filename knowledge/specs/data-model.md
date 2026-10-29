@@ -37,7 +37,11 @@ erDiagram
   LESSON ||--o{ LESSON_ROSTER : "froze"
   LESSON ||--o{ MEETING : "has rooms"
   MEETING ||--o{ RECORDING : produces
+  RELATIONSHIP ||--o| CHANNEL : "talks in"
+  GROUP ||--o| CHANNEL : "talks in"
+  CHANNEL ||--o{ CHANNEL_MEMBER : has
   CHANNEL ||--o{ MESSAGE : contains
+  USER ||--o| USER_PRESENCE : "is online"
   TUTOR_PROFILE ||--o{ FOLDER : organises
   TUTOR_PROFILE ||--o{ TEMPLATE : authors
   TUTOR_PROFILE ||--o{ MATERIAL : uploads
@@ -72,12 +76,8 @@ erDiagram
 | `deleted_at` | set exactly when `state = 'deleted'`; partial index where `state = 'deleted'` |
 | `reclaim_until` | slice 3; the deadline of a [reclaim](accounts.md#provisional-links-and-reclaim), set once by the reclaim to 7 days after it and cleared by the owner's choice, by a signed-in acceptance that keeps the last waiting link, by the account's deletion, or by `reclaim.expire`; written only by the account's own transactions and only a hint for the job, since whether a choice is due is derived from the waiting rows; partial index where not null |
 | `email_undeliverable_at` | added with the email provider choice |
-| `online_until` | persisted presence; slice 6, with presence frames and the message digest, its only consumers |
-| `last_seen_at` | slice 6 |
-| `digest_pending_since` | partial index where not null; slice 6 |
-| `last_digest_at` | slice 6 |
 
-Slice 2 creates the table with every column above that names no later slice. `state_before_block` is set exactly when `state = 'blocked'`, an `active` account always has `email_verified_at`, and `password_hash` must be an Argon2id string. A user's avatar is the attachment referenced with `ref_kind = avatar` and `ref_id` the user's identifier; the user row holds no attachment column, so no foreign key runs in both directions.
+Slice 2 creates the table with every column above that names no later slice. Persisted presence and the digest bookkeeping are not user columns: they live in [their own tables](#presence-and-digest-bookkeeping) (slice 6), because writing a column on many recipients' user rows inside a send would lock user rows after relationships and channels, against the lock order. `state_before_block` is set exactly when `state = 'blocked'`, an `active` account always has `email_verified_at`, and `password_hash` must be an Argon2id string. A user's avatar is the attachment referenced with `ref_kind = avatar` and `ref_id` the user's identifier; the user row holds no attachment column, so no foreign key runs in both directions.
 
 ### Tutor profile
 
@@ -296,16 +296,58 @@ Indexes:
 
 ## Chat
 
-### Channel and channel member
+Slice 6 adds these tables; behavior is in [chat](realtime-and-video.md#chat). Migrations take the next free number when they merge.
 
-- **Channel:** `id`, `kind` (`direct`, `group`), `relationship_id` xor `group_id`, `last_message_id`, `read_only_since`.
-- **Channel member:** `channel_id`, `user_id`, `last_read_message_id`, `last_read_at`. Primary key on the pair, and an index on `user_id`.
+### Channel
 
-Membership rows mirror the relationship or group and are updated in the same transaction.
+| Column | Notes |
+|---|---|
+| `id` | |
+| `kind` | `direct`, `group` |
+| `tutor_id` | references the tutor profile, `ON DELETE RESTRICT` |
+| `relationship_id` xor `group_id` | each unique, each with the tutor in its key as lessons have (`(relationship_id, tutor_id)` against the relationship's `(id, tutor_id)`, `(group_id, tutor_id)` against the group's), `ON DELETE RESTRICT`, so the tutor purge deletes channels before group members and relationships |
+| `last_seq` | the sequence of the channel's latest message, 0 without messages; assigned under the channel's `FOR UPDATE` lock |
+| `last_activity_at` | not null: the creation time, moved by every message; the channel list's keyset order `(last_activity_at DESC, id)` |
+| `read_only_since` | set to `ended_at` when the relationship ends and to `archived_at` when the group is archived, cleared on reactivation and unarchiving |
+| `provisional_through_seq` | set by a reclaim to `last_seq`: every message up to it was written during the provisional period |
+| `discarded_at` | set by a discarding transaction and never cleared |
+| `erase_pending_since` | set with `discarded_at`, cleared by the erasure job when no message is left; partial index where not null, for `chat.erase_channels` |
+
+### Channel member
+
+| Column | Notes |
+|---|---|
+| `channel_id` | references the channel, `ON DELETE RESTRICT`, so the purges delete member rows first |
+| `user_id` | no foreign key to the user: inserting a row with one would take `FOR KEY SHARE` on a user row late in the transaction, and tutor deletion locks no student's user row; every purge path deletes the account's rows through the index on `user_id` under the channel locks |
+| `last_read_seq` | the member's read marker; a new or re-added group member's row starts at the channel's `last_seq` |
+| `last_read_at` | |
+| `digested_through_seq` | the highest sequence a digest has counted for this member; starts at the channel's `last_seq` |
+| `suspended_since` | set while the student's link is `reclaim_pending`; a suspended row grants nothing |
+
+Primary key `(channel_id, user_id)`, and an index on `user_id`. Membership rows mirror the relationship or group and are updated in the same transaction.
 
 ### Message
 
-`id`, `channel_id`, `sender_id` (nullable after the sender's purge), `body` (null after erasure), `created_at`, `edited_at`, `deleted_at`, `erased_at`. Index `(channel_id, created_at, id)`.
+| Column | Notes |
+|---|---|
+| `id` | |
+| `channel_id` | references the channel, `ON DELETE RESTRICT` |
+| `seq` | unique with `channel_id`; the history's keyset order |
+| `sender_id` | nullable, without a foreign key to the user; set to null by the sender's purge; indexed for the student purge |
+| `client_key` | the `Idempotency-Key` of the send; unique `(sender_id, channel_id, client_key)` where all three are not null |
+| `body` | 0 to 4,000 code points of plain text as entered; erased (null) on deletion and on the sender's purge |
+| `version` | incremented on every edit; edits are conditional on it |
+| `created_at`, `edited_at`, `deleted_at`, `erased_at` | |
+
+A message's attachments are references with `ref_kind = message` and `ref_id` the message's identifier.
+
+### Presence and digest bookkeeping
+
+- **User presence** (slice 6): `user_id` (primary key, references the user `ON DELETE CASCADE`), `online_until`, `last_seen_at`. The gateway's batched upsert takes only `FOR KEY SHARE` on the user rows, which conflicts with no lock of the lock order except the user row's deletion. An account without a row has never connected: it is offline, with no last-seen time.
+- **Digest pending** (slice 6): `user_id` (primary key, no foreign key), `pending_since`, with an index on `pending_since`. Its only producer is a send, which holds the channel lock and inserts `ON CONFLICT DO NOTHING`.
+- **Digest state** (slice 6): `user_id` (primary key, no foreign key), `last_digest_at`.
+
+Rows keyed by an account without a foreign key are deleted by every purge path, through their keys, in the final transaction that locks the account's channels `FOR UPDATE` before it deletes the account's member rows and digest rows, so no row names a purged account once the purge commits.
 
 ## Homework
 
@@ -388,13 +430,16 @@ Constraints and indexes:
 | `uploader_id` | |
 | `context` | `avatar`, `prompt_image`, `library`, `chat`, `answer`, `corrected` |
 | `scope_kind`, `scope_id`, `scope_question_id` | the upload scope: `channel` or `submission`; both kind and identifier or neither; a question only within a submission |
-| `quota_tutor_id` | |
+| `quota_tutor_id` | slice 6: a partial index `(uploader_id, quota_tutor_id, created_at)` where `context = 'chat'` serves the daily cap of [chat limits](files.md#upload-flow) |
 | `storage_key` | random, never returned |
 | `filename` | |
 | `media_type` | |
 | `size_bytes`, `sha256` | |
-| `state` | `pending`, `bound`, `deleted` |
+| `state` | `uploading` (slice 6: the row exists while its object streams and is inspected; a partial index on `created_at` where `uploading` serves the age rule of `uploads.expire`), `pending`, `bound`, `deleted` |
 | `expires_at` | pending only; partial index |
+| `reserved_bytes` | slice 6; the bytes an `uploading` row counts against the quota: the request's `Content-Length` capped at the context limit, or the context limit without one |
+| `multipart_upload_id` | slice 6; the storage multipart upload's identifier, recorded in a short transaction of its own right after it is created, so every cleanup aborts it after a crash; an upload created but not yet recorded when the process crashes is aborted only by the bucket lifecycle rule after a day ([upload flow](files.md#upload-flow)) |
+| `width`, `height` | slice 6; a picture's dimensions read from its header, null for other kinds and above 50 megapixels |
 
 ### Attachment reference and quota charge
 
@@ -467,6 +512,12 @@ What the purge job does 30 days after an account is deleted. Slice 2 implements 
 - **lesson batches:** the tutor purge's batch kinds gain lesson rosters, lessons and series (newest series first, so a series is deleted before the series it was split from), each 500 rows at a time in key order, before group members, because lessons and series restrict the deletion of the profile, the relationships and the groups; the student purge deletes the account's roster rows in one statement of the transaction that deletes the user row, after its relationships are discarded;
 - **a share per account:** a run of `accounts.purge` (and of `accounts.cleanup_unverified`) gives the due accounts its 100 batch transactions round-robin: each round gives every account still due one batch, oldest deletion first, until the budget is spent or no account is due, so one large tutor purge no longer delays the purge of other accounts by whole runs; `account.purge_paused` reports the batches each account spent.
 
+Slice 6 adds, on every purge path:
+
+- **the student purge's message batches:** the bodies of the student's messages are erased (`erased_at`), `sender_id` is set to null and their attachment references are removed, in batches of 500 messages per transaction through the `sender_id` index inside the purge's round-robin budget, each batch locking the profiles of the tutors charged for the batch's attachments and then their channels, before the transaction that deletes the user row; that final transaction locks the account's channels `FOR UPDATE` and then deletes its member rows (suspended ones included), its `digest_pending` and `digest_state` rows, and the user row, whose deletion cascades to `user_presence`;
+- **the tutor purge's chat batches:** the attachment references and quota charges of the tutor's channels, queueing a `storage_delete` for every attachment that loses its last reference, whoever uploaded it (students' uploads included), then messages, member rows and channels, each 500 rows per batch in key order, before group members, because channels reference the relationships and groups; the final transaction therefore finds no charge left, so `attachments.quota_tutor_id`'s `ON DELETE RESTRICT` never fails the purge, and it also deletes the tutor's `digest_pending` and `digest_state` rows;
+- **a discarded link's channel** is erased whole by the deferred erasure job, not by the purge ([channels](realtime-and-video.md#channels)).
+
 | Table | Student purge | Tutor purge |
 |---|---|---|
 | User | Row deleted | Row deleted |
@@ -477,8 +528,9 @@ What the purge job does 30 days after an account is deleted. Slice 2 implements 
 | Group, group member | Memberships deleted | Groups and memberships deleted |
 | Lesson series, lesson, roster | Roster rows of the student deleted through the `student_id` index in one statement of the transaction that deletes the user row, after the student's relationships are discarded | Deleted in batches: rosters, then lessons, then series, before group members |
 | Meeting, recording | Kept until each recording's expiry | Media and rows deleted |
-| Channel, channel member | Memberships deleted | Channels deleted |
-| Message | Body erased, `sender_id` null, its attachment references removed | Messages of the tutor's channels deleted |
+| Channel, channel member | Memberships deleted, suspended ones included, under the channel locks in the final transaction | Channels and memberships deleted in batches |
+| Message | Body erased, `sender_id` null, its attachment references removed, in batches | Messages of the tutor's channels deleted in batches, after their references and charges |
+| User presence, digest pending, digest state | Removed: presence with the user row (`ON DELETE CASCADE`), the digest rows in the final transaction | Same |
 | Folder, material, template | — | Deleted |
 | Issue | — | Deleted |
 | Submission, answer, review revision | Deleted; analytics no longer count them | Deleted |
@@ -488,7 +540,7 @@ What the purge job does 30 days after an account is deleted. Slice 2 implements 
 
 ## Indexes and integrity notes
 
-- `attachments.quota_tutor_id` refers to the tutor's profile with `ON DELETE RESTRICT`, so a tutor purge first removes or re-charges every attachment charged to that tutor's quota; otherwise the purge fails on every run, reported as `account.purge_failed`. Slice 2 has no charged contexts (avatars count against no quota); the slice that adds the first one adds this step and its test.
+- `attachments.quota_tutor_id` refers to the tutor's profile with `ON DELETE RESTRICT`, so a tutor purge first removes or re-charges every attachment charged to that tutor's quota; otherwise the purge fails on every run, reported as `account.purge_failed`. Slice 2 has no charged contexts (avatars count against no quota); slice 6 adds the first, chat, and with it the tutor purge's charge batches and their test.
 - Every foreign key used in authorization filters is indexed:
   - `relationship.tutor_id`, `relationship.student_id`;
   - `invitation.relationship_id`, `invitation.bound_student_id`, `invitation.used_by`;
@@ -498,7 +550,7 @@ What the purge job does 30 days after an account is deleted. Slice 2 implements 
   - `issue.tutor_id`, `issue.relationship_id`, `issue.group_id`;
   - `submission.student_id`;
   - `lesson_roster.student_id`;
-  - `channel_member.user_id`.
+  - `channel.tutor_id`, `channel.relationship_id`, `channel.group_id`, `channel_member.user_id`, `message.channel_id` (through its unique key with `seq`) and `message.sender_id`.
 - Every foreign key that cascades, restricts or sets null on delete is indexed, so a purge never scans a table for referencing rows.
 - Notification rows have no foreign keys, so the purge's deletion of the rows that name an account goes through the `user_id`, `tutor_id` and `student_id` indexes; every purge path (the 30-day purge, the 7-day cleanup and the immediate purge) applies it, and once it commits no row names the account, because every producer of such a row holds a lock that the purge also takes ([channels](notifications.md#channels)).
 - Message pagination, notification lists, the student list, join-request lists and the review queue use keyset ordering on indexed columns, never `OFFSET`.

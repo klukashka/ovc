@@ -126,10 +126,21 @@ The API sends the fixed labels above as codes: `label` is `null` and `label_kind
 |---|---|---|---|
 | online | `success` dot on the avatar plus "online" in the header | online | в сети |
 | typing | animated dots plus text | {name} is typing… | {name} печатает… |
+| typing, another student (a student's view, slice 6) | animated dots plus text | Someone is typing… | Кто-то печатает… |
 | edited | caption after the time | edited | изменено |
 | deleted | muted italic placeholder | Message deleted | Сообщение удалено |
+| erased by a purge (slice 6) | muted italic placeholder | Message removed | Сообщение стёрто |
+| deleted or purged sender (slice 6) | sender label in `text-muted` | Deleted user | Удалённый пользователь |
+| own message (slice 6) | sender label | You | Вы |
+| sent before a reclaim (slice 6) | caption under the message | Sent before the account was reclaimed | Отправлено до восстановления аккаунта |
+| unconfirmed link (slice 6, tutor only) | caption beside the label in the list and the header | Email not confirmed | Email не подтверждён |
 | read-only channel | banner above the composer, composer disabled | This chat is read-only | Чат доступен только для чтения |
-| unread | count badge beside Messages, and a bold channel name in the channel list | — | — |
+| chat no longer available (slice 6) | notice in place of the conversation, takes focus | This chat is no longer available. | Этот чат больше недоступен. |
+| attaching while unconfirmed (slice 6) | text in place of the attach button | Confirm your email to send files | Подтвердите email, чтобы отправлять файлы |
+| unread | count badge beside Messages, and a bold channel name in the channel list; counts above 99 show "99+" | — | — |
+| offline (slice 6) | banner in the signed-in frame; the reason on disabled chat writes | No connection — reconnecting… / No connection | Нет соединения — переподключаемся… / Нет соединения |
+
+The slice 6 texts are a proposal to confirm when the Messages pages are built (pending owner review).
 
 ## Notifications
 

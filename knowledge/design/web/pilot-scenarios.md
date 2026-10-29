@@ -95,14 +95,14 @@ Seed:
 | 4 | Anna | Schedule, Home | `GET /calendar`, `GET /home` (the Schedule part from slice 5; the Home part `pending implementation` until slice 10) | Schedule shows lessons from both tutors, each with its tutor label; Home lists work and the next seven days' lessons from both, and both tutors in My tutors; filtering by Pavel shows only his items in every section except My tutors |
 | 5 | Pavel | Student card | `GET /students/{id}`, `GET /students/{id}/lessons` (the lesson part from slice 5; the work part `pending implementation` until slice 9) | Only Pavel's lesson and work with Anna; none of Maria's |
 | 6 | Anna | Messages | `POST /uploads?context=chat&scope=channel:…`, `POST /channels/{id}/messages` with a picture | Maria sees the message live with a preview; the unread badge on Maria's Messages; Anna shows as online in Maria's chat header |
-| 7 | Boris | Messages | Types in the group chat composer and sends (`message.send`) | Anna and Maria see the typing indicator while he types, then the message live |
+| 7 | Boris | Messages | Types in the group chat composer (`typing.start` frames) and sends through the composer: `POST /channels/{id}/messages` | While he types, Maria sees "Boris is typing…" under the card's name and Anna sees the anonymous "Someone is typing…"; then both see the message live |
 | 8 | Anna | — | Closes all her tabs; the test waits until `harness: POST /presence` reports her offline | — |
 | 9 | Boris | Messages | Another group message | — |
 | 10 | Clock, Worker | — | `harness: POST /clock` +11 minutes, `harness: POST /tick` | One digest email to Anna, naming the group chat with 1 unread message |
 | 11 | Clock, Worker | — | `harness: POST /clock` +31 minutes, `harness: POST /tick` | No second digest for the same message |
 | 12 | Maria | Lesson | `PATCH /lessons/{id}` with scope `this` (the next Wednesday lesson moves to 20:00) | A "lesson moved" email to Anna in Russian, with 18:00 her time |
 | 13 | Clock, Worker | — | `harness: POST /clock` to 60 minutes before the moved lesson, `harness: POST /tick` | The reminder uses the new time; none for the old time |
-| 14 | Anna | Unsubscribe | (`pending implementation` until the digest of slice 6 carries the link) Opens the unsubscribe link from the digest, presses the button: `POST /unsubscribe?token=`, then closes the tab; the test waits until `harness: POST /presence` reports her offline | The preference is off |
+| 14 | Anna | Unsubscribe | Opens the unsubscribe link from the digest, presses the button: `POST /unsubscribe?token=`, then closes the tab; the test waits until `harness: POST /presence` reports her offline | The preference is off |
 | 15 | Boris, Clock, Worker | — | Another group message, `harness: POST /clock` +11 minutes, `harness: POST /tick` | No digest to Anna, under the same conditions in which step 10 produced one |
 
 ## Scenario 4: ending a relationship and refusals
@@ -138,9 +138,9 @@ Smaller Playwright or integration suites cover what the pilots do not walk throu
 | Video embed | Playwright | FR-5.3 with `harness: POST /settings/embed` on: embedded room, the 15-second hint, switching to a new tab, focus mode, disposal on leave |
 | Recordings | integration | FR-5.6 retention and deletion, quota hold and retry, reconciliation without callbacks, callback replays |
 | Homework policies | integration + Playwright | FR-6.3 template edits after issue, FR-8.4 withdrawal and its races, FR-10.3 return blocked under "after submission", overrides, updated reviews, draft corrected files refused, the answer-key contract test, number-parsing and normalisation units |
-| Chat edits and presence | Playwright | FR-12.3 edit and delete, FR-12.4 presence, FR-12.5 read-only channels |
-| Files | integration | FR-14.1 size and type refusals, FR-14.2 quota refusal |
-| Notifications | integration | FR-13.1 list and unread count, every email event, obsolete-at-dispatch rules, idempotency of in-app rows and emails, RFC 8058 unsubscribe; active from slice 4 for FR-13.1, the idempotency of in-app rows and RFC 8058 unsubscribe, and from slice 5 for the lesson emails, their obsolete-at-dispatch rules and one-click unsubscribe from a real email, with the email events of later slices pending |
+| Chat edits and presence | Playwright | FR-12.3 edit and delete (the tutor's deletes also in read-only chats), FR-12.4 presence and typing (students see only their tutor's presence and anonymous typing of other students), FR-12.5 read-only channels; active from slice 6 |
+| Files | integration + Playwright | FR-14.1 size and type refusals, FR-14.2 quota refusal, FR-14.3 downloads authorized through references; active from slice 6 for the `chat` context |
+| Notifications | integration | FR-13.1 list and unread count, every email event, obsolete-at-dispatch rules, idempotency of in-app rows and emails, RFC 8058 unsubscribe; active from slice 4 for FR-13.1, the idempotency of in-app rows and RFC 8058 unsubscribe, and from slice 5 for the lesson emails, their obsolete-at-dispatch rules and one-click unsubscribe from a real email, and from slice 6 for the message digest, with the email events of later slices pending |
 | Progress and onboarding | Playwright | FR-11.3 student progress, FR-15.2 checklist dismissal, FR-17 language switch across every page |
 | Realtime resilience | Playwright | WebSocket disconnect and reconnect with refetch, `4401` after sign-out everywhere, `4429` handling; active from slice 4, with the server-side closes driven by `harness: POST /realtime/close` and socket closes awaited through `harness: POST /presence` |
 | Operator command | integration | FR-16.1 list, block, unblock, restore, set quota |
