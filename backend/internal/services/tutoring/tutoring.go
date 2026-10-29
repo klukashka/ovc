@@ -52,6 +52,11 @@ type TutorCode struct {
 	Active bool
 }
 
+type TutorSettings struct {
+	FileQuotaBytes int64
+	FileUsageBytes int64
+}
+
 type Dependencies struct {
 	Store     *repositories.Store
 	Clock     clock.Source
@@ -93,6 +98,14 @@ func (s *Service) Code(ctx context.Context, tutor domain.UserID) (TutorCode, err
 		return TutorCode{}, err
 	}
 	return TutorCode{Code: current.Code, Active: current.State == domain.AccountActive}, nil
+}
+
+func (s *Service) Settings(ctx context.Context, tutor domain.UserID) (TutorSettings, error) {
+	profile, err := s.deps.Store.Repositories().TutorProfiles.ByUser(ctx, tutor)
+	if err != nil {
+		return TutorSettings{}, err
+	}
+	return TutorSettings{FileQuotaBytes: profile.FileQuotaBytes, FileUsageBytes: profile.FileUsageBytes}, nil
 }
 
 func (s *Service) RegenerateCode(ctx context.Context, tutor domain.UserID) (TutorCode, error) {

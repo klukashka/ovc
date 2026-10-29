@@ -16,6 +16,11 @@ type TutorCode struct {
 	Active bool   `json:"active"`
 }
 
+type TutorSettings struct {
+	FileQuotaBytes int64 `json:"file_quota_bytes" minimum:"0"`
+	FileUsageBytes int64 `json:"file_usage_bytes" minimum:"0"`
+}
+
 type CardAccount struct {
 	Name           string  `json:"name"`
 	Email          string  `json:"email"`

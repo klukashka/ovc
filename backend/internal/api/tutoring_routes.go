@@ -26,6 +26,11 @@ type tutorCodeOutput struct {
 	Body         schemas.TutorCode
 }
 
+type tutorSettingsOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         schemas.TutorSettings
+}
+
 type studentListInput struct {
 	State  string `query:"state" enum:"active,invited,ended"`
 	Group  string `query:"group" format:"uuid"`
@@ -133,6 +138,10 @@ func (r *router) registerTutoring() {
 	regenerate := operation("tutor-code-regenerate", http.MethodPost, "/api/v1/tutor/code/regenerate")
 	regenerate.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusTooManyRequests)
 	register(r, regenerate, AudienceTutor, r.regenerateTutorCode)
+
+	settings := operation("tutor-settings", http.MethodGet, "/api/v1/tutor/settings")
+	settings.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
+	register(r, settings, AudienceTutorUnverifiedOK, r.tutorSettings)
 
 	r.registerStudentCards()
 
@@ -250,6 +259,16 @@ func (r *router) regenerateTutorCode(ctx context.Context, _ *struct{}) (*tutorCo
 		return nil, NewError(ctx, domain.ErrorUnauthenticated)
 	}
 	return nil, r.internal(ctx, "tutor.code.regenerate.failed", err)
+}
+
+func (r *router) tutorSettings(ctx context.Context, _ *struct{}) (*tutorSettingsOutput, error) {
+	settings, err := r.tutoring.Settings(ctx, principalFrom(ctx).UserID)
+	if err != nil {
+		return nil, r.tutoringError(ctx, "tutor.settings.failed", err)
+	}
+	return &tutorSettingsOutput{CacheControl: noStore, Body: schemas.TutorSettings{
+		FileQuotaBytes: settings.FileQuotaBytes, FileUsageBytes: settings.FileUsageBytes,
+	}}, nil
 }
 
 func tutorCodeBody(code tutoring.TutorCode) *tutorCodeOutput {
