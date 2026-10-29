@@ -1,6 +1,6 @@
 # Slice 6 implementation plan: chat and files
 
-**Status: approved by the owner on 2026-10-29 (revision 5).** Revision 5, first written on 2026-10-29 against `main` at `e2d04c1` ("Record the slice 5 review closure and close the slice"), the commit that closes slice 5 and the base of the slice 6 review. Revision 2 records the changes made after the standard and the security-profile planning reviews, revision 3 the owner's answers of 2026-10-29 to every open question and the changes made after the scoped re-review, revision 4 the wording fixes of the next re-review, and revision 5 the changes after a narrow security re-review and the owner's decision on what keeping a reclaimed link restores (changelog at the end). This plan lands as `knowledge/plans/slice-6.md` in the first change. Identifiers D1 to D83 (decisions; D78 records the owner's answers to the former questions Q1 to Q13), K1 to K48 (conflicts and silences), Q1 to Q13 (the former owner questions, all answered) and the changes S0 to F3 are defined in this file. No open owner question remains. Every figure that depends on the suites' size (the gate's wall time, the first load) is measured again at the commit that starts each change.
+**Status: approved by the owner on 2026-10-29 (revision 5); revision 6 records the owner's decision of 2026-10-29 on the end-to-end changes, its wording pending owner review.** Revision 5, first written on 2026-10-29 against `main` at `e2d04c1` ("Record the slice 5 review closure and close the slice"), the commit that closes slice 5 and the base of the slice 6 review. Revision 2 records the changes made after the standard and the security-profile planning reviews, revision 3 the owner's answers of 2026-10-29 to every open question and the changes made after the scoped re-review, revision 4 the wording fixes of the next re-review, revision 5 the changes after a narrow security re-review and the owner's decision on what keeping a reclaimed link restores, and revision 6 the owner's decision after the E1 measurement on which end-to-end changes run (changelog at the end). This plan lands as `knowledge/plans/slice-6.md` in the first change. Identifiers D1 to D83 (decisions; D78 records the owner's answers to the former questions Q1 to Q13), K1 to K48 (conflicts and silences), Q1 to Q13 (the former owner questions, all answered) and the changes S0 to F3 are defined in this file. No open owner question remains. Every figure that depends on the suites' size (the gate's wall time, the first load) is measured again at the commit that starts each change.
 
 ## 1. Problem, outcome and scope
 
@@ -162,7 +162,7 @@ Each names the alternative and the reason. S1 lands them in the specifications; 
 - **D49. Unconfirmed accounts send text only** (Q7 A). Chat uploads are for confirmed accounts only: unlike the other chat routes of D34, `POST /uploads?context=chat` is not `unverified ok`, so an unconfirmed account gets `403 email_not_verified` from the audience rule, before the body is read, and the composer shows "Confirm your email to send files" in place of the attach button.
 - **D50. The picture allowlist filter** (Q8 C), as Q8's option C lists per format, streaming and without decoding; its memory is part of D28.
 - **D51. Students see other students only on their messages** (Q9 B). D7's label table, D20 and D21 apply it: no member list, no presence of another student, and anonymous typing (`user_id: null` in the `typing` frame a student receives about another student; the tutor's frames carry the account).
-- **D52. Proposal 0004's steps run in slice 6** (Q1 A): E1 to E8 as section 7 sequences them; techniques 1 and 2 on slice 6's own tests apply as well (D45).
+- **D52. Proposal 0004's steps run in slice 6** (Q1 A, narrowed by the owner on 2026-10-29 after E1, pending owner review): E1 has measured ([E1 record](../analysis/check-budget-2026-10-29-e2e-cost-measurement.md)); of E2 to E8 only E5 (`lesson`) and E8 (Firefox's context-close stall) run now; E2, E3, E4 and E6 run only when a change's own gate approaches the temporary 260 s threshold; E7 runs as planned; the decision on D46's target stays at the end of slice 6. E5's candidates are extensions of technique 1 (prefix and navigation-only prefix merges), which E5's own plan asks the owner to agree to. Techniques 1 and 2 on slice 6's own tests apply as well (D45).
 
 ### Decisions added in revision 2
 
@@ -212,7 +212,7 @@ Each names the alternative and the reason. S1 lands them in the specifications; 
 
 | Question | Decision |
 |---|---|
-| Q1 | A: proposal 0004's steps run in slice 6 as the proposal sequences them (E1 to E8) |
+| Q1 | A: proposal 0004's steps run in slice 6 as the proposal sequences them (E1 to E8); narrowed on 2026-10-29 after E1 (pending owner review): only E5 and E8 run now, E2 to E4 and E6 only when a change's own gate approaches 260 s, E7 as planned (D52) |
 | Q2 | C: OVC-signed download addresses served by the API (D31, D59, D70); S1 amends ADR-0009 item 1, NFR-1.2, AGENTS.md, api.md and the threat model, pending owner review |
 | Q3 | A: sending and read markers through REST only; the client sends only typing frames |
 | Q4 | A: no membership cache; recipients read under the channel lock |
@@ -404,8 +404,8 @@ One branch and one commit each. Every change runs its change checks from the [de
 | # | Branch | Content | Security trigger | Depends |
 |---|---|---|---|---|
 | S0 | `docs/slice-6-plan` | This plan | met: it decides trust-boundary behaviour; standard and security plan reviews | — |
-| E1 | `chore/e2e-cost-measurement` | (Q1 A or B) proposal 0004 step 1: the measurement record, no suite change | not met: a record only, changing no suite, check or budget | S0 approved |
-| E2–E6 | `chore/e2e-consolidate-schedule`, `chore/e2e-consolidate-students`, `chore/e2e-consolidate-groups`, `chore/e2e-consolidate-lesson`, `chore/e2e-consolidate-join-requests` | (Q1 A) technique 1, one spec per change, each with its mapping table and three runs with and without it | met: the specs hold authorization and relationship-scope refusals whose preservation is the risk | E1; one after another |
+| E1 | `chore/e2e-cost-measurement` | (Q1 A or B) proposal 0004 step 1: the measurement record, no suite change ([E1 record](../analysis/check-budget-2026-10-29-e2e-cost-measurement.md)) | not met: a record only, changing no suite, check or budget | S0 approved |
+| E2–E6 | `chore/e2e-consolidate-schedule`, `chore/e2e-consolidate-students`, `chore/e2e-consolidate-groups`, `chore/e2e-consolidate-lesson`, `chore/e2e-consolidate-join-requests` | (Q1 A, D52) technique 1 and its extensions as the E1 record lists them, one spec per change, each with its mapping table and three runs with and without it; E5 runs now, its prefix and navigation-only prefix merges agreed by the owner in its own plan; E2, E3, E4 and E6 run only when a change's own gate approaches 260 s (pending owner review) | met: the specs hold authorization and relationship-scope refusals whose preservation is the risk | E1; one after another |
 | E7 | `chore/e2e-database-cost` | (Q1 A) technique 3, measured first; committed only on a gain beyond the spread | met: the deployments that run the test control surface (T-36) | E1 |
 | E8 | `chore/e2e-firefox-context-stall` | (Q1 A) technique 4: investigation record, and a fix only if what the tests leave behind is found | met when it changes the harness; not met for a record alone | E1 |
 | S1 | `docs/chat-and-files-contract` | Every decision above at contract level: realtime-and-video.md (D3–D9, D13, D18–D22, D57, D61), files.md (D23–D32, D54–D56, D59, D66, D70, Q13), data-model.md (6.2, D17), api.md (6.1, Q5, the content-security-policy sentence under Q2 C), accounts.md (lock order D5 and D53, effects D3, D4, D16, D62, Q6, Q12), notifications.md (D36, D63, D64), observability.md (6.3), detailed.md (package layers for `internal/services/chat`, the stack notes of D44, the open questions of D27 and, under Q2 C, of `nosniff`), pages.md, navigation.md and states.md (D7, D34, D35, D37–D40, D67, Q11), pilot-scenarios.md (section 8), the threat model (6.4), FR-12.3 (Q5) and FR-12.4 (Q9 B: students see only their tutor's presence and anonymous typing of other students), pending owner review, and under Q2 C ADR-0009 item 1, NFR-1.2 and AGENTS.md; the roadmap (section 1) | met: threat model, trust-boundary contracts, agent configuration under Q2 C | S0 |
@@ -416,7 +416,7 @@ One branch and one commit each. Every change runs its change checks from the [de
 | S7 | `feat/tutor-settings-usage` | `GET /tutor/settings` (D33) and its audience and denial rows | met: a new tutor route over quota data | S4 (shares the OpenAPI document, the generated client and the audience tables) |
 | S5 | `feat/chat-presence-and-typing` | The gateway's scheduler seam and the move of its existing timers onto it (D58), persisted presence (D17, D19, D57), presence frames (D20), typing (D21, D72), the `typing` and `presence` signals (D61), the gateway's frame enums and inbound typing rules, the injected scheduler's new uses (D58), the frontend parser entries (D68), the clock route's presence step | met: authorization of WebSocket frames, presence as personal data, the test control surface | S4 |
 | S6 | `feat/message-digest` | The digest job and email (D36, D63, D64) with unsubscribe, its templates in both languages, the dispatch-time checks, `job.run` reporting | met: email content, tokens in emails | S5 |
-| F1 | `feat/frontend-offline-banner` | The offline banner and the disabled actions of Q11 (D39), in the shared components; component tests through the injected socket factory and scheduler | met: realtime client behaviour across every page | S5 (shares `frontend/src/lib/realtime`); E2–E6 under Q1 A |
+| F1 | `feat/frontend-offline-banner` | The offline banner and the disabled actions of Q11 (D39), in the shared components; component tests through the injected socket factory and scheduler | met: realtime client behaviour across every page | S5 (shares `frontend/src/lib/realtime`) |
 | F2 | `feat/frontend-messages` | The Messages page (D35, D37, D38, D60, D67) with text messages, edit and delete, read markers, unread badge, read-only banner, live refetch for the message frames and `channel`, the Message links, unconfirmed provisional access (D34), the fake transport's gating (D41), chat texts per Q10, the component tests of D74 that concern text chat | met: rendering of untrusted text and links, navigation for unconfirmed accounts | S4, S5, F1 |
 | F3 | `feat/frontend-chat-attachments-and-presence` | Attachments in the composer (pick, drop, paste, progress, four at a time, inline refusals), previews and downloads with refetch on expiry and on a failed picture, presence in the list and header, typing indicators (Q9), Teaching settings usage, the remaining tests of D74, the digest pilot steps, the final check-budget record | met: rendering of untrusted files and names, download addresses | F2, S6, S7 |
 
@@ -425,15 +425,15 @@ One branch and one commit each. Every change runs its change checks from the [de
 | Wave | Sessions (at most three) | Starts when |
 |---|---|---|
 | 1 | S1, E1 | S0 approved and merged |
-| 2 | B1, S3, E2 | S1 merged; E1 merged for E2 |
-| 3 | S2, E3, then E4 | B1 and S3 merged |
-| 4 | S4, E5, then E6 | S2 merged |
+| 2 | B1, S3 | S1 merged |
+| 3 | S2 | B1 and S3 merged |
+| 4 | S4, E5 | S2 merged; E1 merged for E5 |
 | 5 | S5, S7, E7 | S4 merged |
-| 6 | S6, F1, E8 | S5 merged (F1 also after E2–E6 under Q1 A) |
+| 6 | S6, F1, E8 | S5 merged |
 | 7 | F2 | F1 merged |
 | 8 | F3 | F2, S6 and S7 merged |
 
-S2, S4, S7 and S3 all touch the OpenAPI document and the audience tables, so none of them overlaps another: S3 runs in wave 2 beside B1 (storage adapter only) and E2 (end-to-end specs only); S7 runs in wave 5 beside S5, which adds no route. Critical path: S0 → S1 → S3 → S2 → S4 → S5 → F1 → F2 → F3, with S6 beside F1 and F2. The slice review starts after F3.
+S2, S4, S7 and S3 all touch the OpenAPI document and the audience tables, so none of them overlaps another: S3 runs in wave 2 beside B1 (storage adapter only); S7 runs in wave 5 beside S5, which adds no route. E2, E3, E4 and E6 have no wave (D52, pending owner review): one of them runs only when a change's own gate approaches 260 s, as a session of the wave that change is in, within the limit of three sessions. Critical path: S0 → S1 → S3 → S2 → S4 → S5 → F1 → F2 → F3, with S6 beside F1 and F2. The slice review starts after F3.
 
 ## 8. Acceptance criteria
 
@@ -441,7 +441,7 @@ Go tests run under `go test -race -count=1 ./...` through `tools/dev-env.sh`; Pl
 
 - **S0.** `tools/docs/check-docs.sh` exits 0; the plan records D1–D83, K1–K48 and the owner's answers to Q1–Q13 (D78), and is marked proposed until the owner approves revision 5.
 - **E1.** A record in `knowledge/analysis/` with, per spec and engine, the summed time, the tests sharing each arrangement, the measured fixed cost of a test (context, page, sign-in, first navigation, close) under the gate's load, and the server-only candidates; `playwright test --list` unchanged.
-- **E2–E6.** Each: the mapping table of removed titles to merged assertions; `grep -o 'expect(' frontend/e2e/*.ts | wc -l` and the `expect.poll(` count unchanged; every `toBeFocused` kept; three runs with and three without the change, and its gate at most 260 s.
+- **E2–E6.** Each that runs (E5 now; E2, E3, E4 and E6 only when triggered, D52): the owner's agreement in its plan to each extension of technique 1 it uses; the mapping table of removed titles to merged assertions; `grep -o 'expect(' frontend/e2e/*.ts | wc -l` and the `expect.poll(` count unchanged; every `toBeFocused` kept; three runs with and three without the change, and its gate at most 260 s.
 - **E7, E8.** As proposal 0004's plan states, including, for E7, the harness test that refuses a database name outside `^ovc_e2e_[a-z0-9]+_test$` and `SHOW synchronous_commit` printing `off` only on end-to-end databases.
 - **S1.** Documentation checks pass; every route of 6.1 is in api.md with its refusals; data-model.md has the tables of 6.2; accounts.md's lock order names channels and messages and the charge locks of D53; the threat model has the amendments of 6.4; every changed `docs/` file records "pending owner review".
 - **B1.** `TestStorageContract` gains: "a multipart upload of three parts reads back whole", "an aborted multipart upload leaves no object and no incomplete upload", "a ranged read returns exactly the range", "a range past the end is refused"; both the local server and the memory fake pass.
@@ -492,9 +492,9 @@ Expected growth, from the named tests:
 - **Go:** about 135 new tests (about 4 in B1, 15 in S3, 32 in S2, 2 in S7, 28 in S4, 9 in S5, 13 in S6, and about 30 rows of the denial, audience and logging tables), mostly parallel integration tests with cloned template databases; lane A grows by an estimated 9 to 13 s and may become the longest lane, which adds to the gate only if it outlasts the other lanes.
 - **Playwright:** 12 new tests per engine (5 in F2: pilot 4 step 3 and four `messages` tests; 7 in F3: four pilot 3 step tests and three attachment and settings tests) and 2 pilot steps extended in place; at about 0.75 to 1.5 s of summed time per test (the pilot steps have several actors) and six workers, about +5 to 10 s of wall time.
 - **Frontend checks:** a larger build and about 20 new component tests, +1 to 2 s.
-- **Total:** about +6 to 13 s on the gate's critical path. Under Q1 A, E2 to E6 are expected to remove more than that before F1 (proposal 0004 estimates 10 to 25 s for 100 tests per engine).
+- **Total:** about +6 to 13 s on the gate's critical path. The [E1 record](../analysis/check-budget-2026-10-29-e2e-cost-measurement.md) replaces proposal 0004's estimate of 10 to 25 s for 100 tests per engine: E2 to E6 together hold 24 candidates per engine worth about 47.9 s of summed time, about 8.7 s of wall time, every one an extension of technique 1; E5 alone is worth about 15.2 s summed, about 2.8 s of wall time; E8 could return up to 8 to 11 s only if Firefox's stall growth is removable. Under D52 as narrowed (pending owner review), only E5 and E8 run before the slice's own additions, so those additions are not expected to be offset in full.
 
-If E2 to E6 remove less than expected, the slice's own additions may still cross 260 s on a loaded machine. Then the change whose gate crosses it consolidates in the same change, in this order: its own new tests further (in F2, the editing test into the exchange test and Not found into the unconfirmed-access test; in F3, the download test into the refused-files test and the settings test into an existing `teaching-settings` test), then the existing specs nearest the change (`groups` and `students` for F2, `teaching-settings` and `notifications` for F3), with proposal 0004's mapping table as the proof of unchanged coverage.
+If the slice's own additions still bring a change's gate close to 260 s on a loaded machine, the matching consolidation among E2, E3, E4 and E6 runs first (D52). A change whose gate still crosses 260 s consolidates in the same change, in this order: its own new tests further (in F2, the editing test into the exchange test and Not found into the unconfirmed-access test; in F3, the download test into the refused-files test and the settings test into an existing `teaching-settings` test), then the existing specs nearest the change (`groups` and `students` for F2, `teaching-settings` and `notifications` for F3), with proposal 0004's mapping table as the proof of unchanged coverage.
 
 Every change that adds tests records its gate in `knowledge/analysis/`, with the summed command seconds, the wall time per lane, the core count and what "cold" covered, as D46's amendment requires.
 
@@ -541,3 +541,10 @@ Revision 5 (2026-10-29), after a narrow security re-review and the owner's decis
 - **Suspended members:** one active-member predicate serves every access path and is tested against a `reclaim_pending` channel; deletion and purge lookups do not apply it, and the purge and discard tests include a suspended row (D81).
 - **Keeping a reclaimed link** (the owner's decision of 2026-10-29): the provisional period's messages that the account did not send count as unread, and the account's own messages of that period carry a derived, fixed cue shown to both sides that reveals nothing about the account (D80); T-44 in section 6.4 records the suspended row, the tutor's writing, what keeping restores and what dropping erases.
 - **Container bounds tests:** a `META-INF/manifest.xml` over 1 MiB and a compressed ODF `mimetype` are refused, and a single relationship file close to 8 MiB is accepted.
+
+Revision 6 (2026-10-29), the owner's decision after the E1 measurement ([E1 record](../analysis/check-budget-2026-10-29-e2e-cost-measurement.md)), its wording pending owner review:
+
+- **End-to-end changes:** of E2 to E8, only E5 (`lesson`) and E8 (Firefox's context-close stall) run now; E2, E3, E4 and E6 run only when a change's own gate approaches the temporary 260 s threshold; E7 runs as planned; the decision on D46's target stays at the end of slice 6 (D52, Q1, section 7).
+- **Extensions of technique 1:** the E1 record finds no merge of the same arrangement and action in the five largest specs; E5's eight candidates are prefix and navigation-only prefix merges, which E5's own plan asks the owner to agree to (section 7, section 8).
+- **Waves:** E2 leaves wave 2, E3 and E4 leave wave 3 and E6 leaves wave 4; E5 stays in wave 4 and E8 in wave 6; F1 no longer waits for E2 to E6.
+- **Check budget:** the measured gains replace proposal 0004's estimate (section 9).
