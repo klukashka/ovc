@@ -266,6 +266,7 @@ func lessonBody(lesson schedule.Lesson) schemas.LessonDetail {
 		ID: lesson.ID.String(), Title: lesson.Title, Description: lesson.Description, StartsAt: lesson.StartsAt, EndsAt: lesson.EndsAt(),
 		DurationMinutes: lesson.DurationMinutes, Status: lesson.Status, Timezone: lesson.Timezone, Version: lesson.Version,
 		CancelledAt: utc(lesson.CancelledAt), OtherTimezone: lesson.OtherTimezone, Audience: audience, Tutor: tutorLabelBody(lesson.Tutor),
+		ChannelID: optionalChannel(lesson.ChannelID),
 	}
 	if lesson.SeriesID != nil {
 		series := lesson.SeriesID.String()

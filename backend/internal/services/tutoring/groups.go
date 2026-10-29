@@ -14,6 +14,7 @@ import (
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
+	"ovc/backend/internal/services/chat"
 )
 
 const (
@@ -52,6 +53,7 @@ type Group struct {
 	Colour     domain.Colour
 	ArchivedAt *time.Time
 	Members    []GroupMember
+	ChannelID  *domain.ChannelID
 }
 
 type GroupSummary struct {
@@ -181,7 +183,8 @@ func (s *Service) groupView(ctx context.Context, repos repositories.Repositories
 	for _, member := range members {
 		group.Members = append(group.Members, memberView(member.RelationshipID, member.DisplayName, member.Name, member.StudentID, member.AddedAt, avatars))
 	}
-	return group, nil
+	group.ChannelID, err = repos.Channels.OfGroupFor(ctx, row.TutorID, row.ID)
+	return group, err
 }
 
 func (s *Service) CreateGroup(ctx context.Context, tutor domain.UserID, request NewGroup) (Group, error) {
@@ -265,6 +268,9 @@ func (s *Service) insertGroup(
 	if _, err := repos.Groups.AddMembers(ctx, tutor, id, members, now); err != nil {
 		return repositories.Group{}, err
 	}
+	if err := s.mirror(ctx, repos, domain.PathGroupCreation, chat.Audiences{Groups: []domain.GroupID{id}}, now); err != nil {
+		return repositories.Group{}, err
+	}
 	return repos.Groups.ForTutor(ctx, tutor, id)
 }
 
@@ -338,6 +344,9 @@ func (s *Service) UpdateGroup(ctx context.Context, tutor domain.UserID, id domai
 		}
 		fields, membership, err = applyGroupChange(ctx, repos, row, change, now)
 		if err != nil {
+			return err
+		}
+		if err := s.mirror(ctx, repos, domain.PathGroupChange, groupChangeAudience(row.ID, fields, membership), now); err != nil {
 			return err
 		}
 		updated, err := repos.Groups.ForTutor(ctx, tutor, id)
@@ -434,6 +443,17 @@ func applyGroupChange(
 	return fields, membershipChange{added: added, removed: removed}, nil
 }
 
+func groupChangeAudience(id domain.GroupID, fields []string, membership membershipChange) chat.Audiences {
+	var audiences chat.Audiences
+	if membership.added > 0 || membership.removed > 0 {
+		audiences.Groups = []domain.GroupID{id}
+	}
+	if len(fields) > 0 {
+		audiences.Relabelled = []domain.GroupID{id}
+	}
+	return audiences
+}
+
 func resultingMembers(current []domain.RelationshipID, change GroupChange) int {
 	members := make(map[domain.RelationshipID]bool, len(current)+len(change.Add))
 	for _, id := range current {
@@ -488,6 +508,11 @@ func (s *Service) UnarchiveGroup(ctx context.Context, tutor domain.UserID, id do
 		}
 		if changed, err = repos.Groups.Unarchive(ctx, tutor, id, now); err != nil {
 			return err
+		}
+		if changed {
+			if err := s.mirror(ctx, repos, domain.PathUnarchiving, chat.Audiences{Groups: []domain.GroupID{id}}, now); err != nil {
+				return err
+			}
 		}
 		group, err = s.currentGroup(ctx, repos, tutor, id)
 		return err

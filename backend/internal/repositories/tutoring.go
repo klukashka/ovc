@@ -626,3 +626,8 @@ func (r JoinRequests) Reopen(ctx context.Context, id domain.JoinRequestID, suppr
 	rows, err := r.queries.ReopenJoinRequest(ctx, dbgen.ReopenJoinRequestParams{Suppressed: string(suppressed), ID: id, Now: now})
 	return applied(rows, err, "reopen join request")
 }
+
+func (r JoinRequests) DeleteOfStudent(ctx context.Context, student domain.UserID) (int64, error) {
+	deleted, err := r.queries.DeleteJoinRequestsOfStudent(ctx, student)
+	return counted(deleted, err, "delete join requests of student")
+}

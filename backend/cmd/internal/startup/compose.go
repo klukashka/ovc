@@ -15,6 +15,7 @@ import (
 	"ovc/backend/internal/realtime"
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
+	"ovc/backend/internal/services/chat"
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/outbox"
@@ -53,6 +54,10 @@ func NewTutoring(logger *slog.Logger, settings core.Settings, database *core.Dat
 		Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Cipher: cipher,
 		PublicURL: settings.PublicURL, Logger: logger,
 	}), nil
+}
+
+func NewChat(logger *slog.Logger, database *core.Database) *chat.Service {
+	return chat.New(chat.Dependencies{Store: repositories.NewStore(database.Pool), Logger: logger})
 }
 
 func NewSchedule(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource) (*schedule.Service, error) {
@@ -142,6 +147,7 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 	tutoringService := tutoring.New(tutoring.Dependencies{Store: store, Clock: source, Random: random, Cipher: cipher, Logger: logger})
 	purger := accounts.NewPurger(store, fileService, tutoringService, logger)
 	inbox := notifications.NewInbox(notifications.InboxDependencies{Store: store, Clock: source, Logger: logger})
+	chatService := chat.New(chat.Dependencies{Store: store, Logger: logger})
 	queue := outbox.New(store, random, logger)
 	accountEmails, err := notifications.NewAccountEmails(store, random, settings.PublicURL)
 	if err != nil {
@@ -190,6 +196,7 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 		{Name: domain.JobReclaimExpire, Every: time.Hour, Run: tutoringService.ExpireReclaims},
 		{Name: domain.JobJoinRequestsExpire, Every: time.Hour, Run: tutoringService.ExpireJoinRequests},
 		{Name: domain.JobNotificationsCleanup, Every: time.Hour, Run: inbox.Cleanup},
+		{Name: domain.JobEraseChannels, Every: time.Minute, Run: chatService.EraseChannels},
 		{Name: domain.JobLessonStatus, Every: time.Minute, Run: lessonJobs.EndUnjoined},
 		{Name: domain.JobLessonReminders, Every: time.Minute, Run: lessonJobs.QueueReminders},
 		{Name: domain.JobSeriesExtension, Every: time.Hour, OwnLoop: true, Run: lessonJobs.ExtendHorizons},

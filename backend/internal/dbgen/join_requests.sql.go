@@ -149,6 +149,18 @@ func (q *Queries) DecideJoinRequest(ctx context.Context, arg DecideJoinRequestPa
 	return result.RowsAffected(), nil
 }
 
+const deleteJoinRequestsOfStudent = `-- name: DeleteJoinRequestsOfStudent :execrows
+DELETE FROM join_requests WHERE student_id = $1
+`
+
+func (q *Queries) DeleteJoinRequestsOfStudent(ctx context.Context, studentID domain.UserID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteJoinRequestsOfStudent, studentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteTutorJoinRequestsBatch = `-- name: DeleteTutorJoinRequestsBatch :execrows
 DELETE FROM join_requests
 WHERE id IN (

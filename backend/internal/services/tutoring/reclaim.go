@@ -1,10 +1,12 @@
 package tutoring
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"ovc/backend/internal/core"
@@ -77,6 +79,13 @@ type reclaimDecision struct {
 	lessons      []lessonEffects
 	released     []releasedRequest
 	unsuppressed []unsuppressedRequest
+	channels     []domain.RelationshipID
+	discarded    []droppedLink
+}
+
+type droppedLink struct {
+	tutor domain.UserID
+	link  repositories.LinkStudent
 }
 
 type waitingItems struct {
@@ -121,6 +130,15 @@ func (s *Service) reclaim(ctx context.Context, repos repositories.Repositories, 
 	held, err := repos.JoinRequests.MarkHeldForOwnerChoice(ctx, user)
 	if err != nil {
 		return "", nil, err
+	}
+	if len(moved) > 0 {
+		ids := make([]domain.RelationshipID, 0, len(moved))
+		for _, link := range moved {
+			ids = append(ids, link.ID)
+		}
+		if err := s.mirror(ctx, repos, domain.PathReclaim, directAudience(ids...), now); err != nil {
+			return "", nil, err
+		}
 	}
 	if len(moved) == 0 && held == 0 {
 		return "", accounts.Silent, nil
@@ -210,6 +228,9 @@ func (s *Service) DecideReclaim(ctx context.Context, principal accounts.Principa
 		}
 		decision, err = s.apply(ctx, repos, principal.UserID, plan, domain.CauseOwnerDropped, now)
 		if err != nil {
+			return err
+		}
+		if err := s.settleDecided(ctx, repos, domain.PathOwnerChoice, &decision, now); err != nil {
 			return err
 		}
 		_, err = repos.Users.ClearReclaimDeadline(ctx, principal.UserID, now)
@@ -395,6 +416,33 @@ func (s *Service) apply(
 	return decision, nil
 }
 
+func (s *Service) settleDecided(
+	ctx context.Context, repos repositories.Repositories, path domain.MembershipPath, decision *reclaimDecision, now time.Time,
+) error {
+	if len(decision.channels) > 0 {
+		if err := s.mirror(ctx, repos, path, directAudience(decision.channels...), now); err != nil {
+			return err
+		}
+	}
+	var tutors []domain.UserID
+	byTutor := map[domain.UserID][]repositories.LinkStudent{}
+	for _, dropped := range decision.discarded {
+		if _, seen := byTutor[dropped.tutor]; !seen {
+			tutors = append(tutors, dropped.tutor)
+		}
+		byTutor[dropped.tutor] = append(byTutor[dropped.tutor], dropped.link)
+	}
+	slices.SortFunc(tutors, func(a, b domain.UserID) int { return bytes.Compare(a[:], b[:]) })
+	for _, tutor := range tutors {
+		effects, err := s.discardLinkLessons(ctx, repos, byTutor[tutor], tutor, now)
+		if err != nil {
+			return err
+		}
+		decision.lessons = append(decision.lessons, effects)
+	}
+	return nil
+}
+
 func lockPlannedRequests(
 	ctx context.Context, repos repositories.Repositories, student domain.UserID, plan reclaimPlan,
 ) (map[domain.JoinRequestID]repositories.JoinRequest, error) {
@@ -436,6 +484,7 @@ func (s *Service) keepLink(
 	if _, err := repos.Invitations.RevokeOpen(ctx, link.TutorID, link.ID, domain.RevokeLinked, now); err != nil {
 		return false, err
 	}
+	decision.channels = append(decision.channels, link.ID)
 	if err := relationshipChanged(ctx, repos, link, true); err != nil {
 		return false, err
 	}
@@ -451,13 +500,15 @@ func (s *Service) dropLink(
 	if !allowed || !transition.NewCard {
 		return fmt.Errorf("drop relationship %s: %w", link.ID, errReclaimTransition)
 	}
-	_, lessons, err := s.removeLink(ctx, repos, link, now)
-	if err != nil {
+	if _, _, err := s.removeLink(ctx, repos, link, settleEffectsLater, now); err != nil {
 		return err
+	}
+	decision.channels = append(decision.channels, link.ID)
+	if link.StudentID != nil {
+		decision.discarded = append(decision.discarded, droppedLink{tutor: link.TutorID, link: repositories.LinkStudent{Relationship: link.ID, Student: *link.StudentID}})
 	}
 	decision.dropped++
 	decision.removed = append(decision.removed, link)
-	decision.lessons = append(decision.lessons, lessons)
 	return nil
 }
 
@@ -573,6 +624,9 @@ func (s *Service) expireReclaim(ctx context.Context, student domain.UserID, now 
 		}
 		decision, err = s.apply(ctx, repos, student, reclaimPlan{dropLinks: waiting.links, dropRequests: waiting.requests}, domain.CauseReclaimExpired, now)
 		if err != nil {
+			return err
+		}
+		if err := s.settleDecided(ctx, repos, domain.PathRemoval, &decision, now); err != nil {
 			return err
 		}
 		cleared = true

@@ -400,3 +400,59 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: UserID
+          - column: channels.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ChannelID
+          - column: channels.kind
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ChannelKind
+          - column: channels.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: channels.relationship_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: RelationshipID
+              pointer: true
+          - column: channels.group_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: GroupID
+              pointer: true
+          - column: channel_members.channel_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ChannelID
+          - column: channel_members.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: active_channel_members.channel_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ChannelID
+          - column: active_channel_members.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: active_channel_members.kind
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ChannelKind
+          - column: active_channel_members.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: active_channel_members.relationship_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: RelationshipID
+              pointer: true
+          - column: active_channel_members.group_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: GroupID
+              pointer: true

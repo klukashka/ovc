@@ -830,7 +830,9 @@ export function StudentCardPage(): ReactElement {
 
   function keepLessons(card: StudentCard): void {
     queryClient.setQueryData<StudentCardDetail>(key, (previous) =>
-      previous === undefined ? previous : { ...card, next_lessons: previous.next_lessons },
+      previous === undefined
+        ? previous
+        : { ...card, next_lessons: previous.next_lessons, channel_id: previous.channel_id },
     );
   }
 

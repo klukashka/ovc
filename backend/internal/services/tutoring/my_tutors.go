@@ -28,6 +28,7 @@ type MyTutor struct {
 	EndedAt            *time.Time
 	EndedBy            *domain.EndedBy
 	AccountClosedUntil *time.Time
+	ChannelID          *domain.ChannelID
 }
 
 func (s *Service) MyTutors(ctx context.Context, principal accounts.Principal) ([]MyTutor, error) {
@@ -60,6 +61,14 @@ func (s *Service) tutorsOf(
 	if err != nil {
 		return nil, err
 	}
+	links := make([]domain.RelationshipID, 0, len(rows))
+	for _, row := range rows {
+		links = append(links, row.ID)
+	}
+	channels, err := repos.Channels.OfRelationshipsFor(ctx, student, links)
+	if err != nil {
+		return nil, err
+	}
 	tutors := make([]MyTutor, 0, len(rows))
 	for _, row := range rows {
 		if row.Colour == nil {
@@ -71,6 +80,9 @@ func (s *Service) tutorsOf(
 		}
 		if avatar, has := avatars[row.TutorID]; has {
 			tutor.Tutor.AvatarID = &avatar
+		}
+		if channel, has := channels[row.ID]; has {
+			tutor.ChannelID = &channel
 		}
 		if row.TutorState == domain.AccountDeleted && row.DeletedAt != nil {
 			closed := row.DeletedAt.Add(domain.DeletedAccountRetention)

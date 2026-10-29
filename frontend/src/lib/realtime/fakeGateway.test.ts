@@ -38,6 +38,10 @@ function fakeSubject(): RealtimeContractSubject {
       gateway.changed(tutor.id, 'relationship', 'relationship-1');
       await Promise.resolve();
     },
+    changeChannel: async (): Promise<void> => {
+      gateway.changed(tutor.id, 'channel', 'channel-1');
+      await Promise.resolve();
+    },
     notify: async (): Promise<void> => {
       gateway.changed(tutor.id, 'join_request', 'request-1');
       gateway.notify(tutor.id, 'notification-1');

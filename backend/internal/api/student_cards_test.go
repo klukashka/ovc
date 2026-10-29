@@ -825,8 +825,10 @@ func TestCreatedCardReadsBackUnchanged(t *testing.T) {
 
 	createdFields, readFields := rawFields(t, created), rawFields(t, read)
 	nextLessons, carried := readFields["next_lessons"]
+	channel, channelCarried := readFields["channel_id"]
 	delete(readFields, "next_lessons")
-	if !carried || string(nextLessons) != "[]" || !maps.EqualFunc(createdFields, readFields, slices.Equal) {
+	delete(readFields, "channel_id")
+	if !carried || string(nextLessons) != "[]" || !channelCarried || string(channel) != "null" || !maps.EqualFunc(createdFields, readFields, slices.Equal) {
 		t.Fatalf("the created card\n%s\nreads back as\n%s", created.body, read.body)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
+	"ovc/backend/internal/services/chat"
 )
 
 const archiveAttempts = 2
@@ -94,6 +95,9 @@ func (s *Service) archive(ctx context.Context, repos repositories.Repositories, 
 		return archiving{}, err
 	}
 	if outcome.archivedAt != nil {
+		if err := s.mirror(ctx, repos, domain.PathArchiving, chat.Audiences{Groups: []domain.GroupID{id}}, now); err != nil {
+			return archiving{}, err
+		}
 		if err := s.archiveEffects(ctx, repos, tutor, id, members, *outcome.archivedAt, &outcome); err != nil {
 			return archiving{}, err
 		}

@@ -11,6 +11,22 @@ import (
 	"ovc/backend/internal/domain"
 )
 
+type ActiveChannelMember struct {
+	ChannelID             domain.ChannelID
+	UserID                domain.UserID
+	LastReadSeq           int64
+	DigestedThroughSeq    int64
+	Kind                  domain.ChannelKind
+	TutorID               domain.UserID
+	RelationshipID        *domain.RelationshipID
+	GroupID               *domain.GroupID
+	LastSeq               int64
+	LastActivityAt        time.Time
+	ReadOnlySince         *time.Time
+	ProvisionalThroughSeq *int64
+	CreatedAt             time.Time
+}
+
 type Attachment struct {
 	ID              domain.AttachmentID
 	UploaderID      domain.UserID
@@ -42,6 +58,33 @@ type BlockedRequester struct {
 	TutorID   domain.UserID
 	StudentID domain.UserID
 	CreatedAt time.Time
+}
+
+type Channel struct {
+	ID                    domain.ChannelID
+	Kind                  domain.ChannelKind
+	TutorID               domain.UserID
+	RelationshipID        *domain.RelationshipID
+	GroupID               *domain.GroupID
+	LastSeq               int64
+	LastActivityAt        time.Time
+	ReadOnlySince         *time.Time
+	ProvisionalThroughSeq *int64
+	DiscardedAt           *time.Time
+	ErasePendingSince     *time.Time
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+}
+
+type ChannelMember struct {
+	ChannelID          domain.ChannelID
+	UserID             domain.UserID
+	LastReadSeq        int64
+	LastReadAt         *time.Time
+	DigestedThroughSeq int64
+	SuspendedSince     *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type EmailPreference struct {

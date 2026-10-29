@@ -31,7 +31,28 @@ type Repositories struct {
 	Signals       Signals
 	Notifications Notifications
 	Lessons       Lessons
+	Channels      Channels
 	TestClock     TestClock
+
+	commit *commitHooks
+}
+
+type commitHooks struct {
+	hooks []func(context.Context)
+}
+
+func (r Repositories) AfterCommit(ctx context.Context, hook func(context.Context)) {
+	if r.commit == nil {
+		hook(ctx)
+		return
+	}
+	r.commit.hooks = append(r.commit.hooks, hook)
+}
+
+func (h *commitHooks) run(ctx context.Context) {
+	for _, hook := range h.hooks {
+		hook(ctx)
+	}
 }
 
 type Store struct {
@@ -47,12 +68,16 @@ func (s *Store) Repositories() Repositories {
 }
 
 func (s *Store) WithTx(ctx context.Context, work func(Repositories) error) error {
+	hooks := &commitHooks{}
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		return work(newRepositories(dbgen.New(tx)))
+		repos := newRepositories(dbgen.New(tx))
+		repos.commit = hooks
+		return work(repos)
 	})
 	if err != nil {
 		return fmt.Errorf("transaction: %w", err)
 	}
+	hooks.run(ctx)
 	return nil
 }
 
@@ -86,6 +111,7 @@ func newRepositories(queries *dbgen.Queries) Repositories {
 		Signals:       Signals{queries: queries},
 		Notifications: Notifications{queries: queries},
 		Lessons:       Lessons{queries: queries},
+		Channels:      Channels{queries: queries},
 		TestClock:     TestClock{queries: queries},
 	}
 }

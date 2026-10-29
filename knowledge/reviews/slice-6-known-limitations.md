@@ -1,0 +1,7 @@
+# Slice 6 known limitations
+
+Minor findings accepted during slice 6 instead of starting another review round ([ADR-0011](../../docs/decisions/0011-tiered-verification.md)). The slice review re-verifies each entry; each is fixed, accepted by the owner or carried into a named later slice.
+
+| Finding | Severity | Change | Why it was accepted |
+|---|---|---|---|
+| Student deletion and the student purge lock some rows after lessons, against the letter of the lock order in [accounts](../specs/accounts.md#locks-and-the-session-re-check): they settle the dropped links' series and lessons per tutor in tutor-id order, then end the active links (group memberships, channels, then lessons) and, in the purge, forget the relationships and lock the account's channels; channels are locked in two statements rather than one ordered statement | minor | Chat channels and membership | Every transaction that could take both sets of rows is serialised by the student's user row and the tutor profiles these paths hold first; chat producers never lock lessons, and lesson writers either wait at a held profile or are single-lesson jobs that wait at the relationship, so no cycle can form. The order inside these two paths can be made literal by ending the active links before settling the dropped ones and mirroring every channel in one call; the slice review decides whether that change or a recorded exception in accounts.md closes it. |

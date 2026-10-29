@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -89,6 +90,7 @@ type Card struct {
 	EndedAt     *time.Time
 	EndedBy     *domain.EndedBy
 	CreatedAt   time.Time
+	ChannelID   *domain.ChannelID
 }
 
 type CardQuery struct {
@@ -451,6 +453,11 @@ func (s *Service) applyChange(
 	if !applied {
 		return row, nil, ErrCardNotFound
 	}
+	if slices.Contains(changed, "display_name") {
+		if err := s.channels().CardRenamed(ctx, repos, row.TutorID, row.ID); err != nil {
+			return row, nil, err
+		}
+	}
 	updated.UpdatedAt = now
 	if emailChanged {
 		if err := s.replaceInvitation(ctx, repos, updated, domain.RevokeEmailChanged, now); err != nil {
@@ -601,6 +608,13 @@ func (s *Service) fullCard(ctx context.Context, repos repositories.Repositories,
 	}
 	card := cards[0]
 	card.Notes = row.Notes
+	channels, err := repos.Channels.OfRelationshipsFor(ctx, tutor, []domain.RelationshipID{row.ID})
+	if err != nil {
+		return Card{}, err
+	}
+	if channel, has := channels[row.ID]; has {
+		card.ChannelID = &channel
+	}
 	card.Invitation, err = s.invitationView(ctx, repos, row, now)
 	return card, err
 }

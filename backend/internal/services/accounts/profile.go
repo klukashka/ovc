@@ -12,6 +12,7 @@ import (
 
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
+	"ovc/backend/internal/services/chat"
 )
 
 const (
@@ -62,7 +63,8 @@ func (s *Service) UpdateProfile(ctx context.Context, principal Principal, change
 		if err != nil {
 			return err
 		}
-		if _, err := repos.Users.UpdateProfile(ctx, mergeProfile(user, change, now)); err != nil {
+		merged := mergeProfile(user, change, now)
+		if _, err := repos.Users.UpdateProfile(ctx, merged); err != nil {
 			return err
 		}
 		if change.Bio != nil || change.Subjects != nil {
@@ -71,7 +73,12 @@ func (s *Service) UpdateProfile(ctx context.Context, principal Principal, change
 			}
 		}
 		if change.Avatar.Set {
-			return s.bindAvatar(ctx, repos, principal.UserID, change.Avatar.ID, now)
+			if err := s.bindAvatar(ctx, repos, principal.UserID, change.Avatar.ID, now); err != nil {
+				return err
+			}
+		}
+		if user.Role == domain.RoleTutor && merged.Name != user.Name {
+			return (chat.Mirror{Random: s.deps.Random, Logger: s.deps.Logger}).TutorRenamed(ctx, repos, user.ID)
 		}
 		return nil
 	})

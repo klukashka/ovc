@@ -44,6 +44,7 @@ const moscowLesson: LessonDetail = {
   other_timezone: null,
   audience: { kind: 'one_to_one', label: 'Анна', label_kind: null, colour: 'moss', members: [] },
   tutor: null,
+  channel_id: null,
 };
 
 function Form(): ReactElement {

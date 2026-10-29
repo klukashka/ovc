@@ -286,7 +286,7 @@ func TestMalformedSignalsAreRejectedAndLogged(t *testing.T) {
 		"repeated recipients":          `{"v":1,"k":"recheck","u":["` + user + `","` + user + `"]}`,
 		"a recheck with an entity":     `{"v":1,"k":"recheck","u":["` + user + `"],"e":"relationship"}`,
 		"a notification for two":       `{"v":1,"k":"notification","u":["` + user + `","aaaaaaaa-2222-4333-8444-55555555555c"],"i":"` + user + `"}`,
-		"an entity of an unknown kind": `{"v":1,"k":"entity","u":["` + user + `"],"e":"channel","i":"` + user + `"}`,
+		"an entity of an unknown kind": `{"v":1,"k":"entity","u":["` + user + `"],"e":"no_such_kind","i":"` + user + `"}`,
 		"a heartbeat with recipients":  `{"v":1,"k":"heartbeat","u":["` + user + `"],"i":"` + user + `"}`,
 		"an oversized payload":         `{"v":1,"k":"recheck","u":["` + user + `"],"pad":"` + strings.Repeat("x", domain.MaxSignalBytes) + `"}`,
 	}

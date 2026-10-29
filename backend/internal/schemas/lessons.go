@@ -77,6 +77,7 @@ type LessonDetail struct {
 	OtherTimezone   *string             `json:"other_timezone" nullable:"true"`
 	Audience        LessonAudience      `json:"audience"`
 	Tutor           *LessonTutor        `json:"tutor"`
+	ChannelID       *string             `json:"channel_id" format:"uuid" nullable:"true"`
 }
 
 func (LessonDetail) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {

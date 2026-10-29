@@ -191,6 +191,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["channels-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/channels/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["channels-unread"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/channels/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["channels-get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/groups": {
         parameters: {
             query?: never;
@@ -845,6 +893,81 @@ export interface components {
             current_password: string;
             new_password: string;
         };
+        ChannelDetail: {
+            /** @enum {string|null} */
+            colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink" | null;
+            /** Format: uuid */
+            group_id?: string;
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "direct" | "group";
+            label: string | null;
+            /** @enum {string|null} */
+            label_kind: "deleted_user" | null;
+            last_message: components["schemas"]["ChannelLastMessage"] | null;
+            members?: components["schemas"]["ChannelMember"][];
+            online: boolean | null;
+            /** Format: uuid */
+            relationship_id?: string;
+            tutor: components["schemas"]["ChannelTutor"] | null;
+            unconfirmed: boolean;
+            /** Format: int64 */
+            unread_count: number;
+            /** Format: uuid */
+            user_id: string | null;
+            writable: boolean;
+        };
+        ChannelItem: {
+            /** @enum {string|null} */
+            colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink" | null;
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "direct" | "group";
+            label: string | null;
+            /** @enum {string|null} */
+            label_kind: "deleted_user" | null;
+            last_message: components["schemas"]["ChannelLastMessage"] | null;
+            online: boolean | null;
+            tutor: components["schemas"]["ChannelTutor"] | null;
+            unconfirmed: boolean;
+            /** Format: int64 */
+            unread_count: number;
+            /** Format: uuid */
+            user_id: string | null;
+            writable: boolean;
+        };
+        ChannelLastMessage: {
+            /** Format: int64 */
+            attachment_count: number;
+            /** Format: date-time */
+            created_at: string;
+            own: boolean;
+            preview: string | null;
+            sender_label: string | null;
+            /** @enum {string|null} */
+            sender_label_kind: "deleted_user" | null;
+            /** Format: int64 */
+            seq: number;
+        };
+        ChannelMember: {
+            label: string;
+            online: boolean | null;
+            /** Format: uuid */
+            user_id: string;
+        };
+        ChannelPage: {
+            items: components["schemas"]["ChannelItem"][];
+            next_cursor: string | null;
+            /** Format: int64 */
+            unread_channels: number;
+        };
+        ChannelTutor: {
+            /** @enum {string|null} */
+            colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink" | null;
+            name: string;
+        };
         CreatedLessons: {
             lessons: components["schemas"]["LessonDetail"][];
             series: components["schemas"]["LessonSeries"] | null;
@@ -906,6 +1029,8 @@ export interface components {
         GroupDetail: {
             /** Format: date-time */
             archived_at: string | null;
+            /** Format: uuid */
+            channel_id: string | null;
             /** @enum {string} */
             colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink";
             /** Format: int64 */
@@ -1011,6 +1136,8 @@ export interface components {
             audience: components["schemas"]["LessonAudience"];
             /** Format: date-time */
             cancelled_at: string | null;
+            /** Format: uuid */
+            channel_id: string | null;
             description: string | null;
             /** Format: int64 */
             duration_minutes: number;
@@ -1102,6 +1229,8 @@ export interface components {
         MyTutor: {
             /** Format: date-time */
             account_closed_until: string | null;
+            /** Format: uuid */
+            channel_id: string | null;
             /** @enum {string} */
             colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink";
             /** Format: date-time */
@@ -1330,6 +1459,8 @@ export interface components {
         };
         StudentCardDetail: {
             account: components["schemas"]["CardAccount"] | null;
+            /** Format: uuid */
+            channel_id: string | null;
             /** Format: date-time */
             created_at: string;
             display_name: string;
@@ -1393,6 +1524,10 @@ export interface components {
         TutorJoinRequestPage: {
             items: components["schemas"]["TutorJoinRequest"][];
             next_cursor: string | null;
+        };
+        UnreadChannels: {
+            /** Format: int64 */
+            unread_channels: number;
         };
         UnsubscribePreview: {
             /** @enum {string} */
@@ -2317,6 +2452,273 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Calendar"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "channels-list": {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "channels-unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnreadChannels"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "channels-get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelDetail"];
                 };
             };
             /** @description Bad Request */
@@ -7263,6 +7665,14 @@ export const calendarAudienceLabel_kindValues: ReadonlyArray<FlattenedDeepRequir
 export const calendarItemStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CalendarItem"]["status"]> = ["scheduled", "live", "ended", "cancelled"];
 export const cardGroupColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CardGroup"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const cardInvitationStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CardInvitation"]["status"]> = ["open", "expired", "revoked_after_mismatches"];
+export const channelDetailColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelDetail"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
+export const channelDetailKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelDetail"]["kind"]> = ["direct", "group"];
+export const channelDetailLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelDetail"]["label_kind"]> = ["deleted_user"];
+export const channelItemColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelItem"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
+export const channelItemKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelItem"]["kind"]> = ["direct", "group"];
+export const channelItemLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelItem"]["label_kind"]> = ["deleted_user"];
+export const channelLastMessageSender_label_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelLastMessage"]["sender_label_kind"]> = ["deleted_user"];
+export const channelTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelTutor"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const emailConfirmedOutcomeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EmailConfirmed"]["outcome"]> = ["choice_required", "linked", "request_sent", "code_invalid"];
 export const emailPreferenceGroupValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EmailPreference"]["group"]> = ["lesson_reminders", "lesson_changes", "homework", "results", "submissions", "message_digest"];
 export const errorBodyCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorBody"]["code"]> = ["bad_request", "unauthenticated", "token_expired", "invalid_signature", "invalid_credentials", "email_not_verified", "account_blocked", "forbidden", "not_found", "method_not_allowed", "conflict", "lesson_overlap", "lesson_not_live", "outside_join_window", "not_editable", "answer_frozen", "already_linked", "student_exists", "relationship_not_active", "audience_not_active", "role_mismatch", "invitation_invalid", "invitation_email_mismatch", "relationship_not_provisional", "return_not_allowed", "issue_has_submissions", "channel_read_only", "edit_window_passed", "gone", "payload_too_large", "unsupported_media_type", "validation_failed", "lesson_in_past", "tutor_code_invalid", "token_invalid", "rate_limited", "tutor_unavailable", "internal", "provider_unavailable", "service_unavailable", "quota_exceeded"];

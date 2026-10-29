@@ -83,6 +83,9 @@ func (s *Service) AcceptSignedIn(ctx context.Context, principal accounts.Princip
 		if err != nil {
 			return err
 		}
+		if err := s.mirror(ctx, repos, domain.PathLinking, directAudience(link.kept.ID), now); err != nil {
+			return err
+		}
 		if link.keptReclaim {
 			if err := clearSettledDeadline(ctx, repos, principal.UserID, now); err != nil {
 				return err

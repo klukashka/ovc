@@ -3,7 +3,7 @@ import type { TestAccount } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { expect, seedVerifiedUser, test } from './fixtures.ts';
 import { accountId, closeSockets, nodeSocketFactory } from './realtime.ts';
-import { accessToken, callApi, createCard, seedJoinRequests } from './tutoring.ts';
+import { accessToken, callApi, createCard, createGroup, seedJoinRequests } from './tutoring.ts';
 
 function realSubject(deployment: Deployment, tutor: TestAccount): RealtimeContractSubject {
   return {
@@ -20,6 +20,9 @@ function realSubject(deployment: Deployment, tutor: TestAccount): RealtimeContra
     },
     changeRelationship: async (): Promise<void> => {
       await createCard(deployment, tutor, 'Карточка для контракта', null);
+    },
+    changeChannel: async (): Promise<void> => {
+      await createGroup(deployment, tutor, 'Группа для контракта', []);
     },
     notify: async (): Promise<void> => {
       await seedJoinRequests(deployment, tutor, 1);

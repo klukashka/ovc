@@ -76,6 +76,7 @@ func (StudentCard) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.S
 type StudentCardDetail struct {
 	StudentCard
 	NextLessons []CalendarItem `json:"next_lessons" nullable:"false"`
+	ChannelID   *string        `json:"channel_id" format:"uuid" nullable:"true"`
 }
 
 func (StudentCardDetail) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
@@ -176,6 +177,7 @@ type MyTutor struct {
 	EndedAt            *time.Time               `json:"ended_at" nullable:"true"`
 	EndedBy            *domain.EndedBy          `json:"ended_by" enum:"tutor,student,deletion" nullable:"true"`
 	AccountClosedUntil *time.Time               `json:"account_closed_until" nullable:"true"`
+	ChannelID          *string                  `json:"channel_id" format:"uuid" nullable:"true"`
 }
 
 type MyTutors struct {

@@ -9,6 +9,7 @@ import (
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
+	"ovc/backend/internal/services/chat"
 )
 
 const (
@@ -70,6 +71,20 @@ type Service struct {
 
 func New(dependencies Dependencies) *Service {
 	return &Service{deps: dependencies, expiry: &expiryResume{}}
+}
+
+func (s *Service) mirror(
+	ctx context.Context, repos repositories.Repositories, path domain.MembershipPath, audiences chat.Audiences, now time.Time,
+) error {
+	return s.channels().Apply(ctx, repos, path, audiences, now)
+}
+
+func (s *Service) channels() chat.Mirror {
+	return chat.Mirror{Random: s.deps.Random, Logger: s.deps.Logger}
+}
+
+func directAudience(links ...domain.RelationshipID) chat.Audiences {
+	return chat.Audiences{Relationships: links}
 }
 
 func (s *Service) Code(ctx context.Context, tutor domain.UserID) (TutorCode, error) {

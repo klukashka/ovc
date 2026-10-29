@@ -154,6 +154,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		Schedule:    scheduleService,
 		Preferences: preferences,
 		Inbox:       startup.NewInbox(logging.Logger, database, source),
+		Chat:        startup.NewChat(logging.Logger, database),
 		Realtime:    live.Gateway,
 		DocsEnabled: settings.APIDocsEnabled,
 		Auth:        api.Auth{Accounts: accountService, PublicOrigin: settings.PublicURL, TrustedProxies: settings.TrustedProxies},

@@ -594,6 +594,9 @@ func (s *Service) AcceptRequest(ctx context.Context, tutor domain.UserID, id dom
 			if err != nil {
 				return err
 			}
+			if err := s.mirror(ctx, repos, domain.PathJoinAcceptance, directAudience(linked.ID), now); err != nil {
+				return err
+			}
 			if err := relationshipChanged(ctx, repos, linked, true); err != nil {
 				return err
 			}

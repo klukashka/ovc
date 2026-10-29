@@ -46,6 +46,7 @@ type Lesson struct {
 	OtherTimezone   *string
 	Audience        Audience
 	Tutor           *TutorLabel
+	ChannelID       *domain.ChannelID
 }
 
 func (l Lesson) EndsAt() time.Time {
@@ -162,7 +163,27 @@ func (s *Service) tutorViews(ctx context.Context, repos repositories.Repositorie
 		}
 		lessons = append(lessons, lesson)
 	}
+	if err := withChannels(ctx, repos, tutor.ID, lessons); err != nil {
+		return nil, err
+	}
 	return withSeries(ctx, repos, lessons)
+}
+
+func withChannels(ctx context.Context, repos repositories.Repositories, viewer domain.UserID, lessons []Lesson) error {
+	ids := make([]domain.LessonID, 0, len(lessons))
+	for _, lesson := range lessons {
+		ids = append(ids, lesson.ID)
+	}
+	channels, err := repos.Channels.OfLessonsFor(ctx, viewer, ids)
+	if err != nil {
+		return err
+	}
+	for index := range lessons {
+		if channel, found := channels[lessons[index].ID]; found {
+			lessons[index].ChannelID = &channel
+		}
+	}
+	return nil
 }
 
 func withSeries(ctx context.Context, repos repositories.Repositories, lessons []Lesson) ([]Lesson, error) {
@@ -255,6 +276,11 @@ func (s *Service) Lesson(ctx context.Context, viewer domain.UserID, role domain.
 			other := row.Timezone
 			lesson.OtherTimezone = &other
 		}
+		withChannel := []Lesson{lesson}
+		if err := withChannels(ctx, repos, viewer, withChannel); err != nil {
+			return err
+		}
+		lesson = withChannel[0]
 		seenOnlyThroughRoster := !row.CurrentMember && !row.CurrentLink
 		if seenOnlyThroughRoster {
 			lesson.SeriesID = nil

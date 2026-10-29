@@ -8,6 +8,7 @@ export interface RealtimeContractSubject {
   readonly revoke: (token: string) => Promise<void>;
   readonly closeSockets: (code: typeof closeCodes.tooMany | typeof closeCodes.reconnect) => Promise<void>;
   readonly changeRelationship: () => Promise<void>;
+  readonly changeChannel: () => Promise<void>;
   readonly notify: () => Promise<void>;
   readonly readNotifications: () => Promise<void>;
 }
@@ -279,6 +280,15 @@ export const realtimeContract: Readonly<Record<string, RealtimeContractScenario>
 
       const frame = await connection.frameOfType('entity.changed');
       check(frame.type === 'entity.changed' && frame.kind === 'relationship', 'expected a relationship change');
+    }),
+  'a changed channel arrives as entity.changed of kind channel': (subject) =>
+    withConnection(subject, async (connection) => {
+      await connection.authenticated(await subject.token());
+
+      await subject.changeChannel();
+
+      const frame = await connection.frameOfType('entity.changed');
+      check(frame.type === 'entity.changed' && frame.kind === 'channel', 'expected a channel change');
     }),
   'an inserted notification arrives as notification.new': (subject) =>
     withConnection(subject, async (connection) => {

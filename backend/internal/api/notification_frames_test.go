@@ -231,6 +231,7 @@ func TestARemovedOrDroppedStudentReceivesNothingMoreAboutTheRelationship(t *test
 			t.Parallel()
 			h := newFlowHarness(t)
 			tutor, tutorToken, card, student := provisionalLink(t, h)
+			channel := h.directChannel(t, card.ID)
 			loss := lose(t, h, tutorToken, card)
 			log := h.recordFrames(t)
 
@@ -241,8 +242,12 @@ func TestARemovedOrDroppedStudentReceivesNothingMoreAboutTheRelationship(t *test
 			h.regeneratedLink(t, tutorToken, fresh)
 			later := log.settle(t, h)
 
-			if got := framesTo(lost, student); !slices.Equal(got, []sentFrame{{kind: string(domain.EntityRelationship), id: card.ID}}) {
-				t.Fatalf("the loss sent the student %v instead of one last frame", got)
+			lastFrames := []sentFrame{{kind: string(domain.EntityChannel), id: channel.ID}, {kind: string(domain.EntityRelationship), id: card.ID}}
+			if name == "a dropped reclaim link" {
+				lastFrames = lastFrames[1:]
+			}
+			if got := framesTo(lost, student); !slices.Equal(got, lastFrames) {
+				t.Fatalf("the loss sent the student %v instead of one last frame of each kind it still saw", got)
 			}
 			if got := framesTo(later, student); len(got) != 0 {
 				t.Fatalf("after the loss the student received %v", got)
@@ -258,6 +263,7 @@ func TestFrameRecipientsAreReadUnderTheRelationshipLock(t *testing.T) {
 	t.Parallel()
 	h := newFlowHarness(t)
 	_, tutorToken, card, student := provisionalLink(t, h)
+	channel := h.directChannel(t, card.ID)
 	studentToken := accessToken(t, h.login(t, newcomerEmail, newcomerPassword))
 	log := h.recordFrames(t)
 	release := h.holdRow(t, "SELECT "+lockedRowPosition+" FROM relationships WHERE id = $1::uuid FOR UPDATE", card.ID)
@@ -275,7 +281,8 @@ func TestFrameRecipientsAreReadUnderTheRelationshipLock(t *testing.T) {
 		t.Fatalf("the removal answered %d, the waiting edit %d %s and the waiting stop %d %s",
 			removed.status, edited.status, edited.body, stopped.status, stopped.body)
 	}
-	if got := framesTo(frames, student); !slices.Equal(got, []sentFrame{{kind: string(domain.EntityRelationship), id: card.ID}}) {
+	lastFrames := []sentFrame{{kind: string(domain.EntityChannel), id: channel.ID}, {kind: string(domain.EntityRelationship), id: card.ID}}
+	if got := framesTo(frames, student); !slices.Equal(got, lastFrames) {
 		t.Fatalf("the removed student received %v", got)
 	}
 }
@@ -357,7 +364,8 @@ func TestTutorDeletionSplitsItsSignalsAndLocksNoStudentRow(t *testing.T) {
 		t.Fatalf("the tutor's deletion answered %d %s while a student's row was held", deleted.status, deleted.body)
 	}
 	for student, relationship := range students {
-		if got := framesTo(frames, student); !slices.Equal(got, []sentFrame{{kind: string(domain.EntityRelationship), id: relationship}}) {
+		readOnly := sentFrame{kind: string(domain.EntityChannel), id: h.directChannel(t, relationship).ID}
+		if got := framesTo(frames, student); !slices.Equal(got, []sentFrame{readOnly, {kind: string(domain.EntityRelationship), id: relationship}}) {
 			t.Fatalf("the student received %v", got)
 		}
 	}

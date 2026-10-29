@@ -326,6 +326,8 @@ Slice 6 adds these tables; behavior is in [chat](realtime-and-video.md#chat). Mi
 
 Primary key `(channel_id, user_id)`, and an index on `user_id`. Membership rows mirror the relationship or group and are updated in the same transaction.
 
+The one active-member predicate ([channels](realtime-and-video.md#channels)) is the view `active_channel_members`: the member rows that are not suspended, joined to their channels that are neither discarded nor pending erasure, with the channel's columns beside each row. Every access query reads members through the view; only the mirror's own statements, the purges' deletions and the lock of an account's channels in the student purge read `channel_members` directly, and `TestEveryPathReadsMembersThroughTheActivePredicate` holds the list. A partial index on `attachments (scope_kind, scope_id)` for `pending` rows lets a discard or a group member's removal find the channel's pending chat uploads.
+
 ### Message
 
 | Column | Notes |

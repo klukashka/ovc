@@ -99,6 +99,9 @@ func (s *Service) applyTutorDeletion(ctx context.Context, repos repositories.Rep
 	if deletion.archived, err = repos.Groups.ArchiveAllOfTutor(ctx, tutor, now); err != nil {
 		return tutorDeletion{}, err
 	}
+	if err := s.channels().ApplyTutorDeletion(ctx, repos, tutor, now); err != nil {
+		return tutorDeletion{}, err
+	}
 	if deletion.lessons, err = s.cancelTutorLessons(ctx, repos, tutor, discardedLinks, audience, now); err != nil {
 		return tutorDeletion{}, err
 	}
@@ -276,6 +279,9 @@ func (s *Service) applyStudentDeletion(ctx context.Context, repos repositories.R
 	if err != nil {
 		return nil, err
 	}
+	if err := s.settleDecided(ctx, repos, domain.PathRemoval, &decision, now); err != nil {
+		return nil, err
+	}
 	var ended []ending
 	for _, link := range links {
 		if link.State != domain.RelationshipActive {
@@ -356,15 +362,11 @@ func (s *Service) OnAccountPurged(
 		return nil, err
 	}
 	var removed []repositories.Relationship
-	var lessons []lessonEffects
-	var ended []ending
+	var active []repositories.Relationship
+	removals := reclaimDecision{}
 	for _, link := range links {
 		if link.State == domain.RelationshipActive {
-			done, err := s.endLink(ctx, repos, link, domain.CauseStudentDeleted, now)
-			if err != nil {
-				return nil, err
-			}
-			ended = append(ended, done)
+			active = append(active, link)
 			continue
 		}
 		transition, allowed := domain.NextRelationshipState(link.State, domain.CauseStudentPurged)
@@ -374,13 +376,34 @@ func (s *Service) OnAccountPurged(
 			}
 			continue
 		}
-		_, effects, err := s.removeLink(ctx, repos, link, now)
+		if _, _, err := s.removeLink(ctx, repos, link, settleEffectsLater, now); err != nil {
+			return nil, err
+		}
+		removed = append(removed, link)
+		removals.channels = append(removals.channels, link.ID)
+		if link.StudentID != nil {
+			removals.discarded = append(removals.discarded, droppedLink{tutor: link.TutorID, link: repositories.LinkStudent{Relationship: link.ID, Student: *link.StudentID}})
+		}
+	}
+	if _, err := repos.JoinRequests.DeleteOfStudent(ctx, user); err != nil {
+		return nil, err
+	}
+	if err := s.settleDecided(ctx, repos, domain.PathRemoval, &removals, now); err != nil {
+		return nil, err
+	}
+	lessons := removals.lessons
+	var ended []ending
+	for _, link := range active {
+		done, err := s.endLink(ctx, repos, link, domain.CauseStudentDeleted, now)
 		if err != nil {
 			return nil, err
 		}
-		removed, lessons = append(removed, link), append(lessons, effects)
+		ended = append(ended, done)
 	}
 	if err := repos.Relationships.ForgetPurgedStudent(ctx, user, now); err != nil {
+		return nil, err
+	}
+	if err := s.channels().ForgetMember(ctx, repos, user); err != nil {
 		return nil, err
 	}
 	return func(ctx context.Context) {
@@ -425,6 +448,8 @@ func (s *Service) PurgeTutorBatch(ctx context.Context, repos repositories.Reposi
 		repos.Lessons.DeleteRosterBatchOfTutor,
 		repos.Lessons.DeleteBatchOfTutor,
 		repos.Lessons.DeleteSeriesBatchOfTutor,
+		repos.Channels.DeleteMembersBatchOfTutor,
+		repos.Channels.DeleteBatchOfTutor,
 		repos.Groups.DeleteMembersBatchOfTutor,
 		repos.Groups.DeleteBatchOfTutor,
 		repos.Invitations.DeleteBatchOfTutor,

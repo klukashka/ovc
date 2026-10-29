@@ -605,6 +605,7 @@ export function GroupPage(): ReactElement {
                     next_lessons: previous.next_lessons,
                     future_lesson_count: previous.future_lesson_count,
                     has_open_series: previous.has_open_series,
+                    channel_id: previous.channel_id,
                   },
             );
             void queryClient.invalidateQueries({ queryKey: key });

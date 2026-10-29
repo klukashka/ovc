@@ -374,8 +374,9 @@ func TestTutorOnlyCardEditsSendTheStudentNothing(t *testing.T) {
 	if got := framesTo(frames, parties.student); len(got) != 0 {
 		t.Fatalf("tutor-only edits sent the student %v", got)
 	}
-	if got := entityKinds(frames, parties.tutor); len(got) != 2 {
-		t.Fatalf("the tutor's other tabs received %v for two committed edits", got)
+	want := []string{string(domain.EntityRelationship), string(domain.EntityChannel), string(domain.EntityRelationship)}
+	if got := entityKinds(frames, parties.tutor); !slices.Equal(got, want) {
+		t.Fatalf("the tutor's other tabs received %v for two committed edits, one of them renaming the private chat", got)
 	}
 }
 

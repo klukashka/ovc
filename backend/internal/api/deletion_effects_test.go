@@ -29,6 +29,8 @@ const (
 	tutorDecidedRequests  = "SELECT count(id) FROM join_requests WHERE tutor_id = $1::uuid AND state IN ('accepted', 'declined')"
 	tutorGroups           = "SELECT count(id) FROM groups WHERE tutor_id = $1::uuid"
 	tutorGroupMembers     = "SELECT count(group_id) FROM group_members WHERE tutor_id = $1::uuid"
+	tutorChannels         = "SELECT count(id) FROM channels WHERE tutor_id = $1::uuid"
+	tutorChannelMembers   = "SELECT count(channel_members.user_id) FROM channel_members JOIN channels ON channels.id = channel_members.channel_id WHERE channels.tutor_id = $1::uuid"
 	tutorProfiles         = "SELECT count(user_id) FROM tutor_profiles WHERE user_id = $1::uuid"
 	tutorNotifications    = "SELECT count(id) FROM notifications WHERE user_id = $1::uuid OR tutor_id = $1::uuid OR student_id = $1::uuid"
 	tutorDeletedQueued    = "SELECT count(id) FROM outbox WHERE kind = $1"
@@ -104,7 +106,7 @@ func (h *authHarness) tutorRows(t *testing.T, tutor domain.UserID) map[string]in
 	queries := map[string]string{
 		"relationships": tutorRelationships, "invitations": tutorInvitations, "join requests": tutorJoinRequests,
 		"blocked students": tutorBlockedStudents, "groups": tutorGroups, "group members": tutorGroupMembers, "profile": tutorProfiles,
-		"notifications": tutorNotifications,
+		"notifications": tutorNotifications, "channels": tutorChannels, "channel members": tutorChannelMembers,
 	}
 	left := map[string]int64{}
 	for table, query := range queries {
@@ -400,7 +402,7 @@ func TestPurgeOfTutorDeletesCardsNotesInvitationsRequestsAndGroupsInBatches(t *t
 	if before["notifications"] == 0 {
 		t.Fatalf("the seed holds no notification naming the tutor: %v", before)
 	}
-	if !strings.Contains(h.logs.String(), `"batches":10`) {
+	if !strings.Contains(h.logs.String(), `"batches":12`) {
 		t.Fatal("the tutor's purge did not run in batches of 500 rows")
 	}
 }

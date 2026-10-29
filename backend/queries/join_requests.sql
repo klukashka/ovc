@@ -184,3 +184,6 @@ WHERE id IN (
     LIMIT sqlc.arg(batch_size)::int
     FOR UPDATE
 );
+
+-- name: DeleteJoinRequestsOfStudent :execrows
+DELETE FROM join_requests WHERE student_id = @student_id;

@@ -133,7 +133,7 @@ func (r *router) group(ctx context.Context, input *groupInput) (*groupDetailOutp
 	}
 	body := schemas.GroupDetail{
 		Group: groupBody(group), NextLessons: calendarItemsBody(lessons.Next), FutureLessonCount: lessons.FutureLessonCount,
-		HasOpenSeries: lessons.HasOpenSeries,
+		HasOpenSeries: lessons.HasOpenSeries, ChannelID: optionalChannel(group.ChannelID),
 	}
 	return &groupDetailOutput{CacheControl: noStore, Body: body}, nil
 }

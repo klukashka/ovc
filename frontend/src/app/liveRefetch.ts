@@ -19,6 +19,8 @@ function queriesOf(entity: EntityKind, id: string): readonly QueryKey[] {
       return [notificationsKey];
     case 'lesson':
       return [calendarKey, lessonKey(id), studentListsKey, studentCardsKey, groupsKey];
+    case 'channel':
+      return [];
   }
 }
 

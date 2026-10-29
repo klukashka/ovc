@@ -320,7 +320,9 @@ func (r *router) card(ctx context.Context, input *cardInput) (*cardDetailOutput,
 	if err != nil {
 		return nil, r.scheduleError(ctx, "students.get.failed", err)
 	}
-	return &cardDetailOutput{CacheControl: noStore, Body: schemas.StudentCardDetail{StudentCard: cardBody(card), NextLessons: calendarItemsBody(next)}}, nil
+	return &cardDetailOutput{CacheControl: noStore, Body: schemas.StudentCardDetail{
+		StudentCard: cardBody(card), NextLessons: calendarItemsBody(next), ChannelID: optionalChannel(card.ChannelID),
+	}}, nil
 }
 
 func (r *router) cardLessons(ctx context.Context, input *cardLessonsInput) (*cardLessonsOutput, error) {
@@ -528,7 +530,16 @@ func myTutorBody(tutor tutoring.MyTutor) schemas.MyTutor {
 			Name: tutor.Tutor.Name, AvatarID: optionalID(tutor.Tutor.AvatarID), Subjects: append([]string{}, tutor.Tutor.Subjects...), Bio: tutor.Tutor.Bio,
 		},
 		EndedAt: utc(tutor.EndedAt), EndedBy: tutor.EndedBy, AccountClosedUntil: utc(tutor.AccountClosedUntil),
+		ChannelID: optionalChannel(tutor.ChannelID),
 	}
+}
+
+func optionalChannel(id *domain.ChannelID) *string {
+	if id == nil {
+		return nil
+	}
+	text := id.String()
+	return &text
 }
 
 func (r *router) tutoringError(ctx context.Context, event string, err error) error {

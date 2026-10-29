@@ -25,6 +25,7 @@ import (
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
+	"ovc/backend/internal/services/chat"
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/outbox"
@@ -198,6 +199,7 @@ func newAuthHarnessStoring(
 	}
 	preferences := notifications.NewPreferences(notifications.PreferenceDependencies{Store: store, Clock: shared, Tokens: links, Keys: keys, Logger: logger})
 	inbox := notifications.NewInbox(notifications.InboxDependencies{Store: store, Clock: shared, Logger: logger})
+	chatService := chat.New(chat.Dependencies{Store: store, Logger: logger})
 	options := api.Options{
 		Logger: logger, Now: clock.System{}.Now, NewRequestID: core.NewRandomID,
 		Readiness:   func(context.Context) error { return nil },
@@ -207,6 +209,7 @@ func newAuthHarnessStoring(
 		Schedule:    scheduleService,
 		Preferences: preferences,
 		Inbox:       inbox,
+		Chat:        chatService,
 	}
 	for _, hook := range hooks {
 		hook(&options, shared, logger, database)
@@ -255,6 +258,7 @@ func newAuthHarnessStoring(
 		{Name: domain.JobReclaimExpire, Every: time.Hour, Run: tutoringService.ExpireReclaims},
 		{Name: domain.JobJoinRequestsExpire, Every: time.Hour, Run: tutoringService.ExpireJoinRequests},
 		{Name: domain.JobNotificationsCleanup, Every: time.Hour, Run: inbox.Cleanup},
+		{Name: domain.JobEraseChannels, Every: time.Minute, Run: chatService.EraseChannels},
 		{Name: domain.JobLessonStatus, Every: time.Minute, Run: jobs.run((*schedule.Jobs).EndUnjoined)},
 		{Name: domain.JobLessonReminders, Every: time.Minute, Run: jobs.run((*schedule.Jobs).QueueReminders)},
 		{Name: domain.JobSeriesExtension, Every: time.Hour, OwnLoop: true, Run: jobs.run((*schedule.Jobs).ExtendHorizons)},

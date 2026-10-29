@@ -13,6 +13,7 @@ import (
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
+	"ovc/backend/internal/services/chat"
 )
 
 var errEndedWithoutTime = errors.New("an ended relationship has no ending time")
@@ -92,7 +93,7 @@ func (s *Service) StopStudying(ctx context.Context, principal accounts.Principal
 		}
 		switch link.State {
 		case domain.RelationshipProvisional:
-			_, effects, err := s.removeLink(ctx, repos, link, now)
+			_, effects, err := s.removeLink(ctx, repos, link, settleEffectsNow, now)
 			if err != nil {
 				return err
 			}
@@ -141,6 +142,10 @@ func (s *Service) endLink(
 	}
 	groups, err := repos.Relationships.DeleteMemberships(ctx, ended)
 	if err != nil {
+		return ending{}, err
+	}
+	audiences := chat.Audiences{Relationships: []domain.RelationshipID{ended.ID}, Groups: groups}
+	if err := s.mirror(ctx, repos, domain.PathEnding, audiences, now); err != nil {
 		return ending{}, err
 	}
 	lessons, err := s.endLinkLessons(ctx, repos, ended, student, groups)

@@ -1,4 +1,4 @@
-export const entityKinds = ['relationship', 'join_request', 'notification', 'lesson'] as const;
+export const entityKinds = ['relationship', 'join_request', 'notification', 'lesson', 'channel'] as const;
 
 export type EntityKind = (typeof entityKinds)[number];
 

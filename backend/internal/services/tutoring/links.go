@@ -11,6 +11,7 @@ import (
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
+	"ovc/backend/internal/services/chat"
 )
 
 var (
@@ -158,6 +159,9 @@ func (s *Service) LinkAtSignUp(
 	if !linked {
 		return nil, s.refused(ctx, refusalInvalid, &check)
 	}
+	if err := s.mirror(ctx, repos, domain.PathLinking, directAudience(card.ID), now); err != nil {
+		return nil, err
+	}
 	card.StudentID = &user
 	if err := relationshipChanged(ctx, repos, card, true); err != nil {
 		return nil, err
@@ -217,6 +221,15 @@ func (s *Service) OnEmailConfirmed(
 	if err != nil {
 		return "", nil, err
 	}
+	if len(confirmed) > 0 {
+		ids := make([]domain.RelationshipID, 0, len(confirmed))
+		for _, link := range confirmed {
+			ids = append(ids, link.ID)
+		}
+		if err := s.mirror(ctx, repos, domain.PathConfirmation, chat.Audiences{Relationships: ids, Confirmed: ids}, now); err != nil {
+			return "", nil, err
+		}
+	}
 	outcome, set := domain.CombineOutcomes(append(outcomes, released...)...)
 	if !set {
 		return "", accounts.Silent, nil
@@ -271,7 +284,7 @@ func (s *Service) RemoveStudent(ctx context.Context, tutor domain.UserID, id dom
 		if !removable(locked) || *locked.StudentID != *seen.StudentID {
 			return ErrRelationshipNotProvisional
 		}
-		fresh, effects, err := s.removeLink(ctx, repos, locked, now)
+		fresh, effects, err := s.removeLink(ctx, repos, locked, settleEffectsNow, now)
 		if err != nil {
 			return err
 		}
@@ -292,8 +305,15 @@ func removable(card repositories.Relationship) bool {
 	return allowed && transition.NewCard && card.StudentID != nil
 }
 
+type effectTiming bool
+
+const (
+	settleEffectsNow   effectTiming = true
+	settleEffectsLater effectTiming = false
+)
+
 func (s *Service) removeLink(
-	ctx context.Context, repos repositories.Repositories, link repositories.Relationship, now time.Time,
+	ctx context.Context, repos repositories.Repositories, link repositories.Relationship, timing effectTiming, now time.Time,
 ) (repositories.Relationship, lessonEffects, error) {
 	discarded, err := repos.Relationships.Remove(ctx, link.TutorID, link.ID, now)
 	if errors.Is(err, repositories.ErrNotFound) {
@@ -305,8 +325,13 @@ func (s *Service) removeLink(
 	if _, err := repos.Invitations.RevokeOpen(ctx, link.TutorID, link.ID, domain.RevokeRemoved, now); err != nil {
 		return repositories.Relationship{}, lessonEffects{}, err
 	}
+	if timing == settleEffectsNow {
+		if err := s.mirror(ctx, repos, domain.PathRemoval, directAudience(link.ID), now); err != nil {
+			return repositories.Relationship{}, lessonEffects{}, err
+		}
+	}
 	var lessons lessonEffects
-	if discarded.StudentID != nil {
+	if discarded.StudentID != nil && timing == settleEffectsNow {
 		discardedLink := []repositories.LinkStudent{{Relationship: link.ID, Student: *discarded.StudentID}}
 		if lessons, err = s.discardLinkLessons(ctx, repos, discardedLink, link.TutorID, now); err != nil {
 			return repositories.Relationship{}, lessonEffects{}, err

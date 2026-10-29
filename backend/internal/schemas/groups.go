@@ -29,6 +29,7 @@ type GroupDetail struct {
 	NextLessons       []CalendarItem `json:"next_lessons" nullable:"false"`
 	FutureLessonCount int64          `json:"future_lesson_count"`
 	HasOpenSeries     bool           `json:"has_open_series"`
+	ChannelID         *string        `json:"channel_id" format:"uuid" nullable:"true"`
 }
 
 type GroupSummary struct {

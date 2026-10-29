@@ -58,6 +58,7 @@ const lesson: LessonDetail = {
   other_timezone: 'Europe/Moscow',
   audience: { kind: 'one_to_one', label: null, label_kind: 'individual', colour: 'moss', members: null },
   tutor: { name: 'Мария', colour: 'moss' },
+  channel_id: null,
 };
 
 const start = Date.parse(lesson.starts_at);
