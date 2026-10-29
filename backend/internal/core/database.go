@@ -55,7 +55,7 @@ func Connect(ctx context.Context, settings Settings, logger *slog.Logger, now No
 	if err != nil {
 		return nil, err
 	}
-	if err := Ping(ctx, pool); err != nil {
+	if err := connectAndPing(ctx, pool); err != nil {
 		pool.Close()
 		return nil, err
 	}
@@ -104,6 +104,22 @@ func Ping(ctx context.Context, pool *pgxpool.Pool) error {
 	pingContext, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
 	if err := pool.Ping(pingContext); err != nil {
+		return fmt.Errorf("ping database: %w", err)
+	}
+	return nil
+}
+
+func connectAndPing(ctx context.Context, pool *pgxpool.Pool) error {
+	connecting, cancel := context.WithTimeout(ctx, pool.Config().ConnConfig.ConnectTimeout)
+	defer cancel()
+	conn, err := pool.Acquire(connecting)
+	if err != nil {
+		return fmt.Errorf("connect to the database: %w", err)
+	}
+	defer conn.Release()
+	pingContext, cancelPing := context.WithTimeout(ctx, pingTimeout)
+	defer cancelPing()
+	if err := conn.Ping(pingContext); err != nil {
 		return fmt.Errorf("ping database: %w", err)
 	}
 	return nil
