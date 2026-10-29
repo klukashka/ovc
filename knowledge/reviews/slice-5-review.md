@@ -2,7 +2,7 @@
 
 The slice review of [roadmap slice 5](../../docs/roadmap.md#slice-5-schedule-and-reminders), run on 2026-10-28 over everything merged after the commit "Record the slice 4 review and close the slice" (`f5b80fa`) up to "End a series on the lesson page and open New lesson prefilled with the same audience, time and weekdays" (`afd6d48`), against the approved [slice 5 plan](../plans/slice-5.md).
 
-**Status: open.** The slice review is resolved only when each follow-up change below has merged and its reviewer has confirmed that the finding it names is closed.
+**Status: closed on 2026-10-29 (pending owner review).** Every finding below is closed by a commit on `main` or by an owner's decision, as the [closure](#closure) table records; each follow-up change merged only after its change checks passed, its readiness reviews were resolved and the merge gate passed, as `AGENTS.md` requires. This record does not repeat the follow-up reviewers' verdicts, which were reported to the owner with each merge.
 
 ## Reviewed range
 
@@ -105,6 +105,50 @@ Severity is the reviewer's. Each finding names the follow-up change that resolve
 - **First load** is 172.8 KB of the 180 KB entry budget, 3.2 KB more than at the slice 4 review; the timezone city table, about 7.9 KB in the lesson page's chunk, could be split per language.
 - **Unsubscribe link parsing** accepts `http` in the mail package; production requires `https` through the public URL setting, so no change is needed.
 
+## Closure
+
+Recorded on 2026-10-29 (pending owner review). Each row names the commit on `main` that resolved the finding, by its identifier and the start of its subject, or the decision that closed it.
+
+| Finding | Closed by |
+|---|---|
+| Major 1: live refetch bursts | Closed as not confirmed by the owner's decision of 2026-10-28; recorded by `e337bc7` ("Close the slice 5 live refetch bursts finding as not confirmed") |
+| Major 2: the merge gate and the end-to-end run lock | `9935cb6` ("Hold the end-to-end run lock for the whole merge gate") |
+| Schedule core 1: extension blocks the per-minute jobs | `84d26db` ("Harden the lesson jobs"); confirmed by the reminder bursts beside extension in the [slice 5 performance measurements](../analysis/slice-5-performance-2026-10-29.md) |
+| Schedule core 2: the series-to-extend index | `84d26db` (migration `00013_series_extension_index.sql`) |
+| Schedule core 3: one-hour reminders behind the 24-hour kind | `84d26db` |
+| Schedule core 4: a purged series as a job failure | `84d26db` |
+| Schedule core 5: the write clock before the lock wait | `84d26db` |
+| Schedule core 6: untested job paths | `84d26db` |
+| Lesson effects 1: repeated archiving and the daily email cap | `4b246f6` ("Notify group archiving only when it cancels lessons") |
+| Lesson effects 2: the `group.archived` email | `4b246f6` |
+| Lesson effects 3: a lesson under way loses its audience | `4b246f6`, by the owner's decision of 2026-10-28; the `live` and materials parts are carried into slices 7 and 8 in the [known limitations](slice-5-known-limitations.md) |
+| Lesson effects 4: effect queries and their indexes | `4b246f6` (migration `00014_lesson_effect_indexes.sql`, [query plans](../analysis/lesson-effect-query-plans-2026-10-28.md)) |
+| Lesson effects 5: tutor deletion at the caps | Closed by measurement without a fix: 2.0 s at worst against the 5 s budget ([slice 5 performance measurements](../analysis/slice-5-performance-2026-10-29.md)) |
+| Frontend 1 to 4 and 6 to 8: formatters, paging, today, card tab focus, search debounce, end date default, lesson clock | `ba042d8` ("Keep the shown week while the next loads") |
+| Frontend 5: end-to-end specs holding requests | `3150810` ("Allow end-to-end tests to hold a browser request"), by the owner's decision of 2026-10-28 |
+| Frontend 9: the weekday-dependent Schedule test | `f8d6717` ("Schedule the short lessons of the by-day week tests on two days of one week"), recorded by `e337bc7` |
+| Security 1 and 2: series on roster-only lessons, copies of the visibility rule | `206dae1` ("Withhold the series from a student's roster-only lessons") |
+| Security 3: failing lessons block the status job | `84d26db` |
+| Security 4: invisible characters in email text | `4b246f6` |
+| Security 5: a deferred job item leaves no event | `84d26db` |
+| Security 6: the caller's Go environment in the merge gate | `9935cb6` |
+| Security 7 and 8: T-37 and T-36 | `6ec12cd` ("Bound the lint lock wait") |
+| Tooling 1: the hash-comment walk enters other worktrees | `9935cb6` (the walk reads only the files Git lists) |
+| Tooling 2: the rerunnable error rule | `9935cb6` (the skill, ADR-0018 and the development guide aligned, the run-lock refusal named) |
+| Tooling 3: the process test's pool constant | `6ec12cd` |
+| Tooling 4: the deployment's stop after SIGKILL | `6ec12cd` |
+| Tooling 5: Playwright browsers in their own process groups | `6ec12cd` (documented as a residual in the development guide) |
+| Tooling 6: missing check-budget records, the shortening plan, the ADR-0018 review | `6ec12cd` (the [slice 5 gates record](../analysis/check-budget-2026-10-29-slice-5-gates.md) and the [`tools/check-changed.sh` revisit](../analysis/check-changed-revisit-2026-10-29.md)), `3f1cb3d` (the [end-to-end shortening plan](../plans/e2e-shortening.md)) and `dc32b48` (its profile and closure) |
+| Tooling 7: lane C the longest | `9935cb6` (the static checks rebalanced across the lanes) |
+| Information: `golang.org/x/net` advisories | Not part of the slice's closure: the upgrade lands as its own dependency change after 2026-10-30 19:00 UTC and before the ignores expire on 2026-10-31 00:00 UTC |
+| Information: golangci-lint's serial-runner wait | `6ec12cd` (a five-minute timeout) |
+| Information: the listener heartbeat flake | `6ec12cd` (the test logs its delivery timeline on failure); by the owner's decision of 2026-10-29 only timelines are collected |
+| Information: the end-to-end budget | `3f1cb3d` and `dc32b48`; by the owner's decision of 2026-10-29 a temporary 260 s threshold and [proposal 0004](../../docs/proposals/0004-end-to-end-suite-cost.md) |
+| Information: first load and unsubscribe link parsing | Observations, no change |
+| Known limitation without a verdict: the NUL byte in card notes | `4b246f6`, by the owner's decision of 2026-10-28 |
+| Known limitation fixed now: the `tutor.deleted` email query | `4b246f6`; confirmed by the tutor deletion measurement (at most 32.6 ms per email at the caps) |
+| Known limitations fixed now: the two end-series occurrence-date rows | `1f22c3b` ("Carry the occurrence date on the tutor's lesson detail") |
+
 ## Measurements
 
 The coordinator runs each measurement one at a time on an otherwise idle machine and records it in `knowledge/analysis/` before the follow-up it informs is planned:
@@ -115,7 +159,13 @@ The coordinator runs each measurement one at a time on an otherwise idle machine
 - A split of a 100-lesson series, which decides whether the split's per-row statements are batched.
 - The cold full local check run through the merge gate on an idle machine.
 
-All five are pending at the time of this record.
+All five were pending when the review was recorded. Results (amended 2026-10-29, pending owner review), from the [slice 5 performance measurements](../analysis/slice-5-performance-2026-10-29.md):
+
+- **NFR-4.5 with a burst of reminders:** 100 lessons starting in one minute (780 recipients) had every one-hour reminder sent within 17 s of the reminder run with a simulated 200 ms provider, so within about 78 s of its due time when the run starts up to 61 s late; passed. A burst of 500 lessons (3,900 recipients) needs 80 to 87 s and misses the 2 minutes at a late run phase, a new known limitation carried into slice 10. The dispatcher's per-row reads cost 2 to 3 ms per email, so they are not batched.
+- **Tutor deletion at the caps:** 1.10 s with half group lessons and 1.98 s with all group lessons of 30 (342,000 roster rows), the lock hold equal to the transaction, against the 5 s budget; the `tutor.deleted` listing takes at most 32.6 ms per email; passed.
+- **The first horizon extension after local midnight:** 10.7 s for 5,000 daily series and 110 s for 50,000 (the series cap of every tutor) against the 2-minute budget; on its own loop it delayed the one-hour reminder run by at most 15 ms; passed.
+- **A split of a 100-lesson series:** at most 80 ms, and a "cancel following" at most 88 ms, against NFR-2.1's 500 ms; the per-row statements are not batched.
+- **The cold full local check run through the merge gate on an idle machine:** not run at the close. The gates of the slice's changes are recorded warm in the [slice 5 gates record](../analysis/check-budget-2026-10-29-slice-5-gates.md); a cold idle-machine figure is unverified.
 
 ## Threats
 
@@ -145,9 +195,18 @@ The reviewers re-verified the [slice 5 known limitations](slice-5-known-limitati
 - The roster of a lesson under way at a relationship ending or a tutor deletion is frozen now, by `fix/lesson-effects-follow-ups`.
 - The end-to-end shortening plan is written now and executed after `fix/merge-gate-heavy-checks-lock`, before slice 6.
 
+## Owner decisions of 2026-10-29
+
+Pending owner review.
+
+- `tools/check-changed.sh` stays deferred, to be revisited when a gate failure is traced to a change-check set chosen wrongly from the table or when a hosted CI service is adopted ([revisit record](../analysis/check-changed-revisit-2026-10-29.md)).
+- The listener heartbeat flake: the test only collects its delivery timelines on failure; the loss margin is not widened.
+- A temporary merge gate threshold of 260 s of wall time, judged on each change's own gate, in force until the end of slice 6, with the 165 s target kept; the suites' cost is worked out in [proposal 0004](../../docs/proposals/0004-end-to-end-suite-cost.md).
+- The 500-lesson reminder burst that misses NFR-4.5 is carried into slice 10 as a minor known limitation ([known limitations](slice-5-known-limitations.md)).
+
 ## Unverified
 
 - The student series visibility finding at runtime.
-- Every measurement listed above, until it is recorded.
+- The cold full local check run on an idle machine at the slice's close.
 - Behaviour behind a production reverse proxy and on the pilot deployment, which do not exist yet.
 - Live conferencing, which slice 5 does not touch.

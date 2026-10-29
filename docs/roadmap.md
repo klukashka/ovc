@@ -77,6 +77,8 @@ Also from the [slice 4 plan](../knowledge/plans/slice-4.md#1-problem-outcome-and
 
 Built as the [slice 5 plan](../knowledge/plans/slice-5.md#1-problem-outcome-and-scope): lessons without joining, so every past lesson of the slice ends as "did not take place", and without materials, with its deferred items placed in slices 7, 8, 9 and 10 and after the MVP (pending owner review).
 
+Closed at the commit "Record the slice 5 review closure and close the slice", after the [slice 5 review](../knowledge/reviews/slice-5-review.md), its follow-up changes and its [performance measurements](../knowledge/analysis/slice-5-performance-2026-10-29.md); a 500-lesson reminder burst that misses NFR-4.5 is carried into slice 10 as a [known limitation](../knowledge/reviews/slice-5-known-limitations.md) (pending owner review).
+
 ## Slice 6: chat and files
 
 FR-12, FR-14, the message digest. Direct and group channels, messages with attachments and previews, edit and delete, read markers and unread counts, presence and typing, upload contexts, quotas and usage, authorized downloads.
