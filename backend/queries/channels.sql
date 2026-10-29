@@ -104,7 +104,15 @@ RETURNING suspended.channel_id, suspended.user_id;
 
 -- name: RestoreKeptMembers :many
 UPDATE channel_members
-SET suspended_since = NULL, last_read_seq = COALESCE(channels.provisional_through_seq, channel_members.last_read_seq),
+SET suspended_since = NULL,
+    last_read_seq = CASE
+        WHEN channels.provisional_through_seq IS NULL THEN channel_members.last_read_seq
+        ELSE COALESCE((
+            SELECT min(messages.seq) - 1 FROM messages
+            WHERE messages.channel_id = channels.id AND messages.seq <= channels.provisional_through_seq
+                AND messages.sender_id IS DISTINCT FROM channel_members.user_id
+        ), channels.provisional_through_seq)
+    END,
     digested_through_seq = channels.last_seq, updated_at = sqlc.arg(now)::timestamptz
 FROM channels
 JOIN relationships ON relationships.id = channels.relationship_id

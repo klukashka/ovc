@@ -91,6 +91,11 @@ type ChannelMember struct {
 	UpdatedAt          time.Time
 }
 
+type DigestPending struct {
+	UserID       domain.UserID
+	PendingSince time.Time
+}
+
 type EmailPreference struct {
 	UserID     domain.UserID
 	EmailGroup domain.EmailGroup
@@ -236,6 +241,21 @@ type MailSink struct {
 	Headers   []byte
 }
 
+type Message struct {
+	ID        domain.MessageID
+	ChannelID domain.ChannelID
+	Seq       int64
+	SenderID  *domain.UserID
+	ClientKey *string
+	Body      *string
+	Version   int32
+	CreatedAt time.Time
+	EditedAt  *time.Time
+	DeletedAt *time.Time
+	ErasedAt  *time.Time
+	UpdatedAt time.Time
+}
+
 type Notification struct {
 	ID             domain.NotificationID
 	UserID         domain.UserID
@@ -265,6 +285,13 @@ type Outbox struct {
 	DoneReason     *domain.OutboxDoneReason
 	DoneAt         *time.Time
 	CreatedAt      time.Time
+}
+
+type QuotaCharge struct {
+	TutorID      domain.UserID
+	AttachmentID domain.AttachmentID
+	SizeBytes    int64
+	CreatedAt    time.Time
 }
 
 type RateLimitCounter struct {

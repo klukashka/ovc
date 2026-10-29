@@ -134,6 +134,9 @@ func (p *Purger) purge(ctx context.Context, repos repositories.Repositories, use
 	if err != nil {
 		return nil, err
 	}
+	if err := repos.Messages.ForgetDigestOf(ctx, user); err != nil {
+		return nil, err
+	}
 	if err := p.uploads.PurgeUploadsOf(ctx, repos, user, now); err != nil {
 		return nil, err
 	}
@@ -237,11 +240,9 @@ func (p *Purger) purgeStep(ctx context.Context, account duePurge, now time.Time,
 			finished = true
 			return nil
 		}
-		if state.Role == domain.RoleTutor {
-			deleted, err := p.tutoring.PurgeTutorBatch(ctx, repos, account.id)
-			if err != nil || deleted > 0 {
-				return err
-			}
+		deleted, err := p.tutoring.PurgeBatch(ctx, repos, account.id, state.Role, now)
+		if err != nil || deleted > 0 {
+			return err
 		}
 		finished, purged = true, true
 		announce, err = p.purge(ctx, repos, account.id, now, account.batches)

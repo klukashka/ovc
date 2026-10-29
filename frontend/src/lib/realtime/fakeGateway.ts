@@ -164,6 +164,16 @@ export class FakeGateway {
     this.deliver(accountId, { type: 'entity.changed', payload: { kind, id } });
   }
 
+  messageExchanged(accountId: string, channelId: string, messageId: string, seq: number): void {
+    this.deliver(accountId, { type: 'message.new', payload: { channel_id: channelId, message_id: messageId, seq } });
+    this.deliver(accountId, { type: 'message.updated', payload: { channel_id: channelId, message_id: messageId } });
+    this.deliver(accountId, { type: 'message.deleted', payload: { channel_id: channelId, message_id: messageId } });
+  }
+
+  channelRead(accountId: string, channelId: string): void {
+    this.deliver(accountId, { type: 'read.updated', payload: { channel_id: channelId } });
+  }
+
   stopAnsweringPings(accountId: string): void {
     for (const connection of this.connections) {
       if (connection.account === accountId) {

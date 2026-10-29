@@ -180,7 +180,7 @@ func TestEveryRelationshipAndGroupPathMirrorsChannelMembership(t *testing.T) {
 		}
 		h.assertMirrored(t)
 	})
-	t.Run("keeping a reclaimed link restores the row at the provisional boundary", func(t *testing.T) {
+	t.Run("keeping a reclaimed link without messages restores the row at the provisional boundary", func(t *testing.T) {
 		t.Parallel()
 		h := newFlowHarness(t)
 		_, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
@@ -413,6 +413,8 @@ func TestASuspendedMemberReachesNothingAndIsShownToNoOne(t *testing.T) {
 	card, owner := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
 	channel := h.directChannel(t, card.ID)
 	attachment := h.boundUpload(t, tutorToken, channel.ID, "welcome.txt", plainText(32), 1)
+	provisional := h.sendMessage(t, accessToken(t, h.login(t, newcomerEmail, newcomerPassword)), channel.ID, "Before the reclaim", nil, firstReplay)
+	h.mustAnswer(t, provisional, http.StatusCreated)
 	ownerToken := h.reclaimed(t, newcomerEmail)
 	h.setChannelSeq(t, channel.ID, 3)
 	log := h.recordFrames(t)
@@ -431,6 +433,13 @@ func TestASuspendedMemberReachesNothingAndIsShownToNoOne(t *testing.T) {
 	ownerAddress, _ := h.addressOf(t, ownerToken, attachment, "")
 	randomAddress, _ := h.addressOf(t, ownerToken, fixtureID(9, 2), "")
 	tutorAddress, _ := h.addressOf(t, tutorToken, attachment, "")
+	replayed := h.sendMessage(t, ownerToken, channel.ID, "Before the reclaim", nil, firstReplay)
+	randomReplay := h.sendMessage(t, ownerToken, randomChannelID, "Before the reclaim", nil, firstReplay)
+	ownerHistory, _ := h.history(t, ownerToken, channel.ID, "")
+	ownerRead, _ := h.readChannel(t, ownerToken, channel.ID, 1)
+	ownerEdit := h.editMessage(t, ownerToken, messageOf(t, provisional).ID, "Edited while suspended", 1)
+	tutorSend := h.sendMessage(t, tutorToken, channel.ID, "While the link waits", nil, "")
+	laterFrames := log.settle(t, h)
 
 	if ownerUpload.status != http.StatusNotFound || refusal(t, ownerUpload) != refusal(t, randomUpload) || len(h.uploadsBy(t, owner)) != 0 {
 		t.Fatalf("the suspended account uploads to its channel: %s", describe(ownerUpload))
@@ -453,8 +462,20 @@ func TestASuspendedMemberReachesNothingAndIsShownToNoOne(t *testing.T) {
 	if len(tutorList.Items) != 1 || tutorList.Items[0].UserID != nil || tutorList.Items[0].Online != nil || tutorList.UnreadChannels != 1 {
 		t.Fatalf("the tutor's list shows %+v", tutorList)
 	}
-	if got := framesTo(frames, owner); len(got) != 0 {
+	if got := append(framesTo(frames, owner), framesTo(laterFrames, owner)...); len(got) != 0 {
 		t.Fatalf("the suspended account was sent %v", got)
+	}
+	if replayed.status != http.StatusNotFound || refusal(t, replayed) != refusal(t, randomReplay) || h.messageCount(t, channel.ID) != 3 {
+		t.Fatalf("the suspended account replayed its key: %s", describe(replayed))
+	}
+	for name, refused := range map[string]response{"history": ownerHistory, "read marker": ownerRead, "edit": ownerEdit} {
+		if refused.status != http.StatusNotFound {
+			t.Fatalf("the suspended account's %s answered %s", name, describe(refused))
+		}
+	}
+	h.mustAnswer(t, tutorSend, http.StatusCreated)
+	if h.digestPending(t, owner) {
+		t.Fatal("the tutor's send flagged the suspended account for a digest")
 	}
 	if got := framesTo(frames, tutor); !slices.Equal(got, []sentFrame{{kind: string(domain.EntityChannel), id: channel.ID}, {kind: string(domain.EntityRelationship), id: card.ID}}) {
 		t.Fatalf("the tutor received %v, which must hold nothing for the account's own name edit", got)

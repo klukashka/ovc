@@ -9,6 +9,8 @@ export interface RealtimeContractSubject {
   readonly closeSockets: (code: typeof closeCodes.tooMany | typeof closeCodes.reconnect) => Promise<void>;
   readonly changeRelationship: () => Promise<void>;
   readonly changeChannel: () => Promise<void>;
+  readonly exchangeMessage: () => Promise<void>;
+  readonly readChannel: () => Promise<void>;
   readonly notify: () => Promise<void>;
   readonly readNotifications: () => Promise<void>;
 }
@@ -289,6 +291,35 @@ export const realtimeContract: Readonly<Record<string, RealtimeContractScenario>
 
       const frame = await connection.frameOfType('entity.changed');
       check(frame.type === 'entity.changed' && frame.kind === 'channel', 'expected a channel change');
+    }),
+  'a message, its edit and its deletion arrive as message.new, message.updated and message.deleted': (subject) =>
+    withConnection(subject, async (connection) => {
+      await connection.authenticated(await subject.token());
+
+      await subject.exchangeMessage();
+
+      const created = await connection.frameOfType('message.new');
+      const updated = await connection.frameOfType('message.updated');
+      const deleted = await connection.frameOfType('message.deleted');
+      check(created.type === 'message.new' && created.seq > 0, 'expected a new message with its sequence');
+      check(
+        created.type === 'message.new' &&
+          updated.type === 'message.updated' &&
+          deleted.type === 'message.deleted' &&
+          created.messageId === updated.messageId &&
+          updated.messageId === deleted.messageId &&
+          created.channelId === deleted.channelId,
+        'expected the same message to be updated and then deleted',
+      );
+    }),
+  'reading a channel arrives as read.updated': (subject) =>
+    withConnection(subject, async (connection) => {
+      await connection.authenticated(await subject.token());
+
+      await subject.readChannel();
+
+      const frame = await connection.frameOfType('read.updated');
+      check(frame.type === 'read.updated' && frame.channelId !== '', 'expected the read channel');
     }),
   'an inserted notification arrives as notification.new': (subject) =>
     withConnection(subject, async (connection) => {

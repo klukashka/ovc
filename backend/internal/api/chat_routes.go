@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
+	"strconv"
 
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
@@ -11,7 +13,10 @@ import (
 	"ovc/backend/internal/services/chat"
 )
 
-const channelsPath = "/api/v1/channels"
+const (
+	channelsPath = "/api/v1/channels"
+	messagesPath = "/api/v1/messages"
+)
 
 type channelListInput struct {
 	Q      string `query:"q" maxLength:"254"`
@@ -38,6 +43,55 @@ type channelOutput struct {
 	Body         schemas.ChannelDetail
 }
 
+type messageListInput struct {
+	ID       string `path:"id"`
+	Cursor   string `query:"cursor" maxLength:"64"`
+	AfterSeq string `query:"after_seq" pattern:"^[0-9]{1,18}$"`
+	Limit    int32  `query:"limit" default:"50" minimum:"1" maximum:"100"`
+}
+
+type messageListOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         schemas.MessagePage
+}
+
+type sendMessageInput struct {
+	ID             string `path:"id"`
+	ContentType    string `header:"Content-Type"`
+	IdempotencyKey string `header:"Idempotency-Key" maxLength:"64" pattern:"^[A-Za-z0-9._-]{1,64}$"`
+	Body           schemas.NewMessage
+}
+
+type messageOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         schemas.Message
+}
+
+type editMessageInput struct {
+	ID          string `path:"id"`
+	ContentType string `header:"Content-Type"`
+	Body        schemas.MessagePatch
+}
+
+type messageInput struct {
+	ID string `path:"id"`
+}
+
+type deletedMessageOutput struct {
+	CacheControl string `header:"Cache-Control"`
+}
+
+type readMarkerInput struct {
+	ID          string `path:"id"`
+	ContentType string `header:"Content-Type"`
+	Body        schemas.ReadMarker
+}
+
+type readStateOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         schemas.ReadState
+}
+
 func (r *router) registerChat() {
 	list := operation("channels-list", http.MethodGet, channelsPath)
 	list.Errors = errorsOf(http.StatusUnauthorized)
@@ -50,6 +104,141 @@ func (r *router) registerChat() {
 	get := operation("channels-get", http.MethodGet, channelsPath+"/{id}")
 	get.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound)
 	register(r, get, AudienceUnverifiedOK, r.channel)
+
+	messages := operation("channels-messages-list", http.MethodGet, channelsPath+"/{id}/messages")
+	messages.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound)
+	register(r, messages, AudienceUnverifiedOK, r.listMessages)
+
+	send := operation("channels-messages-create", http.MethodPost, channelsPath+"/{id}/messages")
+	send.DefaultStatus = http.StatusCreated
+	send.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests,
+		http.StatusInsufficientStorage)
+	register(r, send, AudienceUnverifiedOK, r.sendMessage)
+
+	edit := operation("messages-update", http.MethodPatch, messagesPath+"/{id}")
+	edit.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests)
+	register(r, edit, AudienceUnverifiedOK, r.editMessage)
+
+	remove := operation("messages-delete", http.MethodDelete, messagesPath+"/{id}")
+	remove.DefaultStatus = http.StatusNoContent
+	remove.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound, http.StatusTooManyRequests)
+	register(r, remove, AudienceUnverifiedOK, r.deleteMessage)
+
+	read := operation("channels-read", http.MethodPost, channelsPath+"/{id}/read")
+	read.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound)
+	register(r, read, AudienceUnverifiedOK, r.markRead)
+}
+
+func authorOf(ctx context.Context) chat.Author {
+	principal := principalFrom(ctx)
+	return chat.Author{UserID: principal.UserID, SessionID: principal.SessionID, Role: principal.Role}
+}
+
+func (r *router) listMessages(ctx context.Context, input *messageListInput) (*messageListOutput, error) {
+	id, valid := domain.ParseUUID[domain.ChannelID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	query := chat.HistoryQuery{Cursor: input.Cursor, Limit: input.Limit}
+	if input.AfterSeq != "" {
+		after, err := strconv.ParseInt(input.AfterSeq, 10, 64)
+		if err != nil {
+			return nil, r.chatError(ctx, "channels.messages.list.failed", &chat.ValidationError{Path: "query.after_seq", Code: domain.FieldInvalid})
+		}
+		query.AfterSeq = &after
+	}
+	page, err := r.chat.History(ctx, principalFrom(ctx).UserID, id, query)
+	if err != nil {
+		return nil, r.chatError(ctx, "channels.messages.list.failed", err)
+	}
+	body := schemas.MessagePage{Items: make([]schemas.Message, 0, len(page.Items)), NextCursor: page.NextCursor}
+	for _, message := range page.Items {
+		body.Items = append(body.Items, messageBody(message))
+	}
+	return &messageListOutput{CacheControl: noStore, Body: body}, nil
+}
+
+func (r *router) sendMessage(ctx context.Context, input *sendMessageInput) (*messageOutput, error) {
+	if err := requireJSON(ctx, input.ContentType); err != nil {
+		return nil, err
+	}
+	id, valid := domain.ParseUUID[domain.ChannelID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	draft := chat.Draft{Body: input.Body.Body, Attachments: make([]domain.AttachmentID, 0, len(input.Body.AttachmentIDs))}
+	for _, text := range input.Body.AttachmentIDs {
+		attachment, valid := domain.ParseUUID[domain.AttachmentID](text)
+		if !valid {
+			return nil, r.chatError(ctx, "channels.messages.create.failed", &chat.ValidationError{Path: "body.attachment_ids", Code: domain.FieldInvalid})
+		}
+		draft.Attachments = append(draft.Attachments, attachment)
+	}
+	if input.IdempotencyKey != "" {
+		draft.ClientKey = &input.IdempotencyKey
+	}
+	message, err := r.chat.Send(ctx, authorOf(ctx), id, draft)
+	if err != nil {
+		return nil, r.chatError(ctx, "channels.messages.create.failed", err)
+	}
+	return &messageOutput{CacheControl: noStore, Body: messageBody(message)}, nil
+}
+
+func (r *router) editMessage(ctx context.Context, input *editMessageInput) (*messageOutput, error) {
+	if err := requireJSON(ctx, input.ContentType); err != nil {
+		return nil, err
+	}
+	id, valid := domain.ParseUUID[domain.MessageID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	message, err := r.chat.Edit(ctx, authorOf(ctx), id, input.Body.Body, input.Body.Version)
+	if err != nil {
+		return nil, r.chatError(ctx, "messages.update.failed", err)
+	}
+	return &messageOutput{CacheControl: noStore, Body: messageBody(message)}, nil
+}
+
+func (r *router) deleteMessage(ctx context.Context, input *messageInput) (*deletedMessageOutput, error) {
+	id, valid := domain.ParseUUID[domain.MessageID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	if err := r.chat.Delete(ctx, authorOf(ctx), id); err != nil {
+		return nil, r.chatError(ctx, "messages.delete.failed", err)
+	}
+	return &deletedMessageOutput{CacheControl: noStore}, nil
+}
+
+func (r *router) markRead(ctx context.Context, input *readMarkerInput) (*readStateOutput, error) {
+	if err := requireJSON(ctx, input.ContentType); err != nil {
+		return nil, err
+	}
+	id, valid := domain.ParseUUID[domain.ChannelID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	state, err := r.chat.MarkRead(ctx, authorOf(ctx), id, input.Body.Seq)
+	if err != nil {
+		return nil, r.chatError(ctx, "channels.read.failed", err)
+	}
+	return &readStateOutput{CacheControl: noStore, Body: schemas.ReadState{UnreadCount: state.UnreadCount, UnreadChannels: state.UnreadChannels}}, nil
+}
+
+func messageBody(message chat.Message) schemas.Message {
+	body := schemas.Message{
+		ID: message.ID.String(), Seq: message.Seq, SenderLabel: message.SenderLabel, SenderLabelKind: message.SenderLabelKind, Own: message.Own,
+		Body: message.Body, CreatedAt: message.CreatedAt.UTC(), EditedAt: utc(message.EditedAt), Deleted: message.Deleted, Erased: message.Erased,
+		Version: message.Version, SentBeforeReclaim: message.SentBeforeReclaim,
+		Attachments: make([]schemas.MessageAttachment, 0, len(message.Attachments)),
+	}
+	for _, attachment := range message.Attachments {
+		body.Attachments = append(body.Attachments, schemas.MessageAttachment{
+			ID: attachment.ID.String(), Filename: attachment.Filename, MediaType: attachment.MediaType, SizeBytes: attachment.SizeBytes,
+			Width: attachment.Width, Height: attachment.Height, URL: attachment.URL, ExpiresAt: attachment.ExpiresAt.UTC(),
+		})
+	}
+	return body
 }
 
 func (r *router) listChannels(ctx context.Context, input *channelListInput) (*channelListOutput, error) {
@@ -113,14 +302,34 @@ func channelItemBody(channel chat.Channel) schemas.ChannelItem {
 		user := channel.UserID.String()
 		body.UserID = &user
 	}
+	if last := channel.LastMessage; last != nil {
+		body.LastMessage = &schemas.ChannelLastMessage{
+			Seq: last.Seq, CreatedAt: last.CreatedAt.UTC(), Own: last.Own, SenderLabel: last.SenderLabel, SenderLabelKind: last.SenderLabelKind,
+			Preview: last.Preview, AttachmentCount: last.AttachmentCount,
+		}
+	}
 	return body
 }
 
 func (r *router) chatError(ctx context.Context, event string, err error) error {
 	var invalid *chat.ValidationError
+	var throttled *chat.ThrottledError
 	switch {
 	case errors.Is(err, chat.ErrNotFound):
 		return NewError(ctx, domain.ErrorNotFound)
+	case errors.Is(err, chat.ErrUnauthenticated):
+		return NewError(ctx, domain.ErrorUnauthenticated)
+	case errors.Is(err, chat.ErrReadOnly):
+		return NewError(ctx, domain.ErrorChannelReadOnly)
+	case errors.Is(err, chat.ErrEditWindowPassed):
+		return NewError(ctx, domain.ErrorEditWindowPassed)
+	case errors.Is(err, chat.ErrConflict):
+		return NewError(ctx, domain.ErrorConflict)
+	case errors.Is(err, chat.ErrQuotaExceeded):
+		return NewError(ctx, domain.ErrorQuotaExceeded)
+	case errors.As(err, &throttled):
+		seconds := int64(math.Ceil(throttled.RetryAfter.Seconds()))
+		return NewError(ctx, domain.ErrorRateLimited).withHeader("Retry-After", strconv.FormatInt(max(seconds, 1), 10))
 	case errors.As(err, &invalid):
 		fields := []schemas.FieldError{{Path: invalid.Path, Code: string(invalid.Code)}}
 		return &Error{status: http.StatusUnprocessableEntity, ErrorEnvelope: schemas.NewErrorEnvelope(domain.ErrorValidationFailed, core.RequestID(ctx), fields)}

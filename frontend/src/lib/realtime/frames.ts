@@ -6,6 +6,9 @@ export type ServerFrame =
   | { readonly type: 'ready' }
   | { readonly type: 'notification.new'; readonly id: string }
   | { readonly type: 'entity.changed'; readonly kind: EntityKind; readonly id: string }
+  | { readonly type: 'message.new'; readonly channelId: string; readonly messageId: string; readonly seq: number }
+  | { readonly type: 'message.updated' | 'message.deleted'; readonly channelId: string; readonly messageId: string }
+  | { readonly type: 'read.updated'; readonly channelId: string }
   | { readonly type: 'pong'; readonly ref: string | null }
   | {
       readonly type: 'error';
@@ -70,6 +73,21 @@ function idFrame(frame: Fields): string | null {
   return payload === null || !hasOnly(frame, ['type', 'payload']) ? null : textOf(payload, 'id');
 }
 
+function seqOf(value: Fields, key: string): number | null {
+  const field = value[key];
+  return typeof field === 'number' && Number.isSafeInteger(field) && field > 0 ? field : null;
+}
+
+function messageFrame(frame: Fields, type: 'message.updated' | 'message.deleted'): ServerFrame | null {
+  const payload = payloadOf(frame, ['channel_id', 'message_id']);
+  if (payload === null || !hasOnly(frame, ['type', 'payload'])) {
+    return null;
+  }
+  const channelId = textOf(payload, 'channel_id');
+  const messageId = textOf(payload, 'message_id');
+  return channelId === null || messageId === null ? null : { type, channelId, messageId };
+}
+
 function parseFields(frame: Fields): ServerFrame | null {
   switch (frame.type) {
     case 'ready': {
@@ -87,6 +105,27 @@ function parseFields(frame: Fields): ServerFrame | null {
         return null;
       }
       return { type: 'entity.changed', kind: payload.kind, id };
+    }
+    case 'message.new': {
+      const payload = payloadOf(frame, ['channel_id', 'message_id', 'seq']);
+      if (payload === null || !hasOnly(frame, ['type', 'payload'])) {
+        return null;
+      }
+      const channelId = textOf(payload, 'channel_id');
+      const messageId = textOf(payload, 'message_id');
+      const seq = seqOf(payload, 'seq');
+      return channelId === null || messageId === null || seq === null
+        ? null
+        : { type: 'message.new', channelId, messageId, seq };
+    }
+    case 'message.updated':
+      return messageFrame(frame, 'message.updated');
+    case 'message.deleted':
+      return messageFrame(frame, 'message.deleted');
+    case 'read.updated': {
+      const payload = payloadOf(frame, ['channel_id']);
+      const channelId = payload === null ? null : textOf(payload, 'channel_id');
+      return channelId === null || !hasOnly(frame, ['type', 'payload']) ? null : { type: 'read.updated', channelId };
     }
     case 'pong': {
       const ref = refOf(frame, 'ref', false);

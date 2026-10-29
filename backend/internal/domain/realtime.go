@@ -10,6 +10,10 @@ const (
 	FrameEntityChanged   FrameType = "entity.changed"
 	FramePong            FrameType = "pong"
 	FrameError           FrameType = "error"
+	FrameMessageNew      FrameType = "message.new"
+	FrameMessageUpdated  FrameType = "message.updated"
+	FrameMessageDeleted  FrameType = "message.deleted"
+	FrameReadUpdated     FrameType = "read.updated"
 )
 
 func ClientFrameTypes() []FrameType {
@@ -17,11 +21,14 @@ func ClientFrameTypes() []FrameType {
 }
 
 func ServerFrameTypes() []FrameType {
-	return []FrameType{FrameReady, FrameNotificationNew, FrameEntityChanged, FramePong, FrameError}
+	return []FrameType{
+		FrameReady, FrameNotificationNew, FrameEntityChanged, FramePong, FrameError, FrameMessageNew, FrameMessageUpdated, FrameMessageDeleted,
+		FrameReadUpdated,
+	}
 }
 
 func ReservedClientFrameTypes() []FrameType {
-	return []FrameType{"message.send", "message.read", "typing.start", "typing.stop"}
+	return []FrameType{"typing.start", "typing.stop"}
 }
 
 type CloseCode int

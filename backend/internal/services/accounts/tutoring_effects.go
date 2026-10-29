@@ -42,6 +42,6 @@ type TutoringEffects interface {
 	OnEmailConfirmed(ctx context.Context, repos repositories.Repositories, user domain.UserID, reclaim bool, now time.Time) (domain.LinkOutcome, Announce, error)
 	OnAccountDeleted(ctx context.Context, repos repositories.Repositories, user domain.UserID, role domain.Role, now time.Time) (Announce, error)
 	OnAccountPurged(ctx context.Context, repos repositories.Repositories, user domain.UserID, role domain.Role, now time.Time) (Announce, error)
-	PurgeTutorBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) (int64, error)
+	PurgeBatch(ctx context.Context, repos repositories.Repositories, user domain.UserID, role domain.Role, now time.Time) (int64, error)
 	ReclaimPending(ctx context.Context, repos repositories.Repositories, user domain.UserID) (bool, error)
 }

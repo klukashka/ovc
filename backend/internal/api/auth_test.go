@@ -200,7 +200,9 @@ func newAuthHarnessStoring(
 	}
 	preferences := notifications.NewPreferences(notifications.PreferenceDependencies{Store: store, Clock: shared, Tokens: links, Keys: keys, Logger: logger})
 	inbox := notifications.NewInbox(notifications.InboxDependencies{Store: store, Clock: shared, Logger: logger})
-	chatService := chat.New(chat.Dependencies{Store: store, Logger: logger})
+	chatService := chat.New(chat.Dependencies{
+		Store: store, Clock: shared, Random: random, Addresses: fileService, Erasure: chat.DefaultErasureSettings(), Logger: logger,
+	})
 	options := api.Options{
 		Logger: logger, Now: clock.System{}.Now, NewRequestID: core.NewRandomID,
 		Readiness:   func(context.Context) error { return nil },

@@ -130,6 +130,9 @@ FOR UPDATE OF attachments SKIP LOCKED;
 SELECT attachments.id, attachment_references.ref_id AS message_id, attachments.width, attachments.height
 FROM attachments
 JOIN attachment_references ON attachment_references.attachment_id = attachments.id AND attachment_references.ref_kind = 'message'
+JOIN messages
+    ON messages.id = attachment_references.ref_id AND messages.channel_id = attachments.scope_id AND messages.deleted_at IS NULL
+        AND messages.erased_at IS NULL
 JOIN active_channel_members AS members ON members.channel_id = attachments.scope_id AND members.user_id = sqlc.arg(viewer)::uuid
 WHERE attachments.id = @id AND attachments.context = 'chat' AND attachments.state = 'bound' AND attachments.scope_kind = 'channel'
 ORDER BY attachment_references.ref_id
@@ -142,6 +145,9 @@ FROM attachments
 JOIN attachment_references
     ON attachment_references.attachment_id = attachments.id AND attachment_references.ref_kind = 'message'
         AND attachment_references.ref_id = @message_id
+JOIN messages
+    ON messages.id = attachment_references.ref_id AND messages.channel_id = attachments.scope_id AND messages.deleted_at IS NULL
+        AND messages.erased_at IS NULL
 JOIN channels ON channels.id = attachments.scope_id
 WHERE attachments.id = @id AND attachments.context = 'chat' AND attachments.state = 'bound' AND attachments.scope_kind = 'channel'
     AND channels.discarded_at IS NULL AND channels.erase_pending_since IS NULL;

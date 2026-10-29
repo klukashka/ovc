@@ -354,6 +354,11 @@ func TestChatRoutesDenyEveryOutOfScopeCaller(t *testing.T) {
 	}
 	randomUpload := h.chatUpload(t, world.secondToken, randomChannelID, "notes.txt", plainText(16))
 	randomAddress, _ := h.addressOf(t, world.secondToken, fixtureID(10, 99), "")
+	randomHistory, _ := h.history(t, world.secondToken, randomChannelID, "")
+	randomSend := h.sendMessage(t, world.secondToken, randomChannelID, "Hello", nil, "")
+	randomRead, _ := h.readChannel(t, world.secondToken, randomChannelID, 1)
+	randomEdit := h.editMessage(t, world.secondToken, messageID(99), "Edited", 1)
+	randomDelete := h.deleteMessage(t, world.secondToken, messageID(99))
 	index := byte(0)
 	for name, denied := range cases {
 		index++
@@ -363,6 +368,14 @@ func TestChatRoutesDenyEveryOutOfScopeCaller(t *testing.T) {
 		_, page := h.channelList(t, denied.token, "")
 		upload := h.chatUpload(t, denied.token, denied.channel, "notes.txt", plainText(16))
 		address, _ := h.addressOf(t, denied.token, attachment, "")
+		messageRoutes := map[string][2]response{}
+		messages, _ := h.history(t, denied.token, denied.channel, "")
+		messageRoutes["history"] = [2]response{messages, randomHistory}
+		messageRoutes["send"] = [2]response{h.sendMessage(t, denied.token, denied.channel, "Hello", nil, ""), randomSend}
+		read, _ := h.readChannel(t, denied.token, denied.channel, 1)
+		messageRoutes["read marker"] = [2]response{read, randomRead}
+		messageRoutes["edit"] = [2]response{h.editMessage(t, denied.token, messageID(index), "Edited", 1), randomEdit}
+		messageRoutes["delete"] = [2]response{h.deleteMessage(t, denied.token, messageID(index)), randomDelete}
 
 		if refused.status != http.StatusNotFound || refusal(t, refused) != refusal(t, random) || slices.Contains(listedChannelIDs(page), denied.channel) {
 			t.Fatalf("%s answered %d %s and lists %v", name, refused.status, refused.body, listedChannelIDs(page))
@@ -377,6 +390,23 @@ func TestChatRoutesDenyEveryOutOfScopeCaller(t *testing.T) {
 		if address.status != http.StatusNotFound || refusal(t, address) != refusal(t, randomAddress) {
 			t.Fatalf("%s got a download address: %s", name, describe(address))
 		}
+		for route, answers := range messageRoutes {
+			if answers[0].status != http.StatusNotFound || refusal(t, answers[0]) != refusal(t, answers[1]) {
+				t.Fatalf("%s reached the %s route: %s", name, route, describe(answers[0]))
+			}
+		}
+		if stored := h.storedMessage(t, messageID(index)); stored.Deleted || stored.Version != 1 {
+			t.Fatalf("%s changed the channel's message: %+v", name, stored)
+		}
+	}
+	endedHistory, _ := h.history(t, world.parties.studentToken, world.direct.ID, "")
+	endedSend := h.sendMessage(t, world.parties.studentToken, world.direct.ID, "After the ending", nil, "")
+	endedMarker, _ := h.readChannel(t, world.parties.studentToken, world.direct.ID, 0)
+	if endedHistory.status != http.StatusOK || endedMarker.status != http.StatusOK {
+		t.Fatalf("the ended relationship's student reads %s and moves the marker %s", describe(endedHistory), describe(endedMarker))
+	}
+	if endedSend.status != http.StatusConflict || code(t, endedSend) != "channel_read_only" {
+		t.Fatalf("the ended relationship's student sends with %s", describe(endedSend))
 	}
 	endedRead, ended := h.channelCall(t, world.parties.studentToken, world.direct.ID)
 	endedUpload := h.chatUpload(t, world.parties.studentToken, world.direct.ID, "notes.txt", plainText(16))
@@ -407,6 +437,24 @@ func anotherTutorsChannel(t *testing.T, h *authHarness) (response, response) {
 	outOfScope, _ := h.channelCall(t, intruderToken, h.directChannel(t, card.ID).ID)
 	random, _ := h.channelCall(t, intruderToken, randomChannelID)
 	return outOfScope, random
+}
+
+func anotherTutorsMessages(
+	call func(h *authHarness, t *testing.T, bearerToken string, channel string, message string) response,
+) func(t *testing.T, h *authHarness) (response, response) {
+	return func(t *testing.T, h *authHarness) (response, response) {
+		t.Helper()
+		_, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+		intruder, intruderToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "another-tutor@example.org")
+		student, studentToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 3, studentEmail)
+		card := h.linkedSignedIn(t, tutorToken, studentToken, cardName, studentEmail)
+		h.shareStudentWith(t, intruder, student)
+		channel := h.directChannel(t, card.ID).ID
+		message := h.sent(t, studentToken, channel, "Only for the first tutor")
+		outOfScope := call(h, t, intruderToken, channel, message.ID)
+		random := call(h, t, intruderToken, randomChannelID, messageID(99))
+		return outOfScope, random
+	}
 }
 
 func TestEntityChangedChannelReachesMembersUnderTheChannelLock(t *testing.T) {

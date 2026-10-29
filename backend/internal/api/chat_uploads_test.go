@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -522,6 +523,42 @@ func TestPendingUploadsCountTowardTheQuota(t *testing.T) {
 			}
 		})
 	}
+	t.Run("two racing completions are bounded at binding", func(t *testing.T) {
+		t.Parallel()
+		h := newUploadHarness(t)
+		parties := h.activeStudentInAGroup(t)
+		channel := h.directChannel(t, parties.card.ID).ID
+		h.setQuota(t, parties.tutor, 100*quota, 0)
+		studentUpload := h.startChatUpload(t, parties.studentToken, channel)
+		tutorUpload := h.startChatUpload(t, parties.tutorToken, channel)
+		studentUpload.begin(t, "student.txt", plainText(400_000))
+		tutorUpload.begin(t, "tutor.txt", plainText(400_000))
+		studentDone, tutorDone := studentUpload.completeInBackground(nil), tutorUpload.completeInBackground(nil)
+		for _, done := range []<-chan error{studentDone, tutorDone} {
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+		}
+		completed := []response{studentUpload.answer(t), tutorUpload.answer(t)}
+		h.setQuota(t, parties.tutor, quota, 300_000)
+		release := h.holdTutorProfile(t, parties.tutor)
+
+		studentSend := h.sendMessageInBackground(parties.studentToken, channel, "Mine", []string{uploadedID(t, completed[0])})
+		h.waitForLockWaiters(t, 1)
+		tutorSend := h.sendMessageInBackground(parties.tutorToken, channel, "Mine too", []string{uploadedID(t, completed[1])})
+		h.waitForLockWaiters(t, 2)
+		release()
+		answers := []response{awaitAnswer(t, studentSend), awaitAnswer(t, tutorSend)}
+
+		for _, upload := range completed {
+			h.mustAnswer(t, upload, http.StatusCreated)
+		}
+		statuses := []int{answers[0].status, answers[1].status}
+		slices.Sort(statuses)
+		if !slices.Equal(statuses, []int{http.StatusCreated, http.StatusInsufficientStorage}) || h.usage(t, parties.tutor) != 700_000 {
+			t.Fatalf("the racing bindings answered %v and charged %d bytes", statuses, h.usage(t, parties.tutor))
+		}
+	})
 }
 
 func TestTheDailyAttachmentCapRefusesWithRateLimited(t *testing.T) {

@@ -381,10 +381,27 @@ var denialCases = map[string]denialCase{
 	"POST /api/v1/groups/{id}/unarchive":                  anotherTutorsGroup(http.MethodPost, "/unarchive", ""),
 	"GET /api/v1/lessons/{id}":                            anotherTutorsLesson,
 	"GET /api/v1/channels/{id}":                           anotherTutorsChannel,
-	"GET /api/v1/attachments/{id}":                        anotherTutorsAttachment,
-	"GET /api/v1/files/{id}":                              anotherAttachmentsAddress,
-	"PATCH /api/v1/lessons/{id}":                          anotherTutorsLessonWrite(http.MethodPatch, "", `{"scope":"this","version":1,"title":"Taken over"}`),
-	"POST /api/v1/lessons/{id}/cancel":                    anotherTutorsLessonWrite(http.MethodPost, "/cancel", `{"scope":"this","version":1}`),
+	"GET /api/v1/channels/{id}/messages": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, channel string, _ string) response {
+		result, _ := h.history(t, bearerToken, channel, "")
+		return result
+	}),
+	"POST /api/v1/channels/{id}/messages": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, channel string, _ string) response {
+		return h.sendMessage(t, bearerToken, channel, "Hello", nil, "")
+	}),
+	"POST /api/v1/channels/{id}/read": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, channel string, _ string) response {
+		result, _ := h.readChannel(t, bearerToken, channel, 1)
+		return result
+	}),
+	"PATCH /api/v1/messages/{id}": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, _ string, message string) response {
+		return h.editMessage(t, bearerToken, message, "Edited", 1)
+	}),
+	"DELETE /api/v1/messages/{id}": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, _ string, message string) response {
+		return h.deleteMessage(t, bearerToken, message)
+	}),
+	"GET /api/v1/attachments/{id}":     anotherTutorsAttachment,
+	"GET /api/v1/files/{id}":           anotherAttachmentsAddress,
+	"PATCH /api/v1/lessons/{id}":       anotherTutorsLessonWrite(http.MethodPatch, "", `{"scope":"this","version":1,"title":"Taken over"}`),
+	"POST /api/v1/lessons/{id}/cancel": anotherTutorsLessonWrite(http.MethodPost, "/cancel", `{"scope":"this","version":1}`),
 }
 
 var bodyIdentifierDenialCases = map[string]denialCase{

@@ -31,6 +31,7 @@ const (
 	SignalNotification SignalKind = "notification"
 	SignalEntity       SignalKind = "entity"
 	SignalHeartbeat    SignalKind = "heartbeat"
+	SignalChat         SignalKind = "chat"
 )
 
 type EntityKind string
@@ -82,10 +83,26 @@ type HeartbeatSignal struct {
 	Instance InstanceID
 }
 
+type ChatSignal struct {
+	Users   []UserID
+	Event   FrameType
+	Channel ChannelID
+	Message *MessageID
+	Seq     *int64
+}
+
+func (s ChatSignal) wellFormed() bool {
+	newMessage := s.Event == FrameMessageNew && s.Message != nil && s.Seq != nil && *s.Seq > 0
+	changedMessage := (s.Event == FrameMessageUpdated || s.Event == FrameMessageDeleted) && s.Message != nil && s.Seq == nil
+	read := s.Event == FrameReadUpdated && s.Message == nil && s.Seq == nil
+	return newMessage || changedMessage || read
+}
+
 func (RecheckSignal) Kind() SignalKind      { return SignalRecheck }
 func (NotificationSignal) Kind() SignalKind { return SignalNotification }
 func (EntitySignal) Kind() SignalKind       { return SignalEntity }
 func (HeartbeatSignal) Kind() SignalKind    { return SignalHeartbeat }
+func (ChatSignal) Kind() SignalKind         { return SignalChat }
 
 type SignalProblem string
 
@@ -100,6 +117,7 @@ const (
 	SignalBadRecipients    SignalProblem = "recipients"
 	SignalBadIdentifier    SignalProblem = "identifier"
 	SignalUnknownEntity    SignalProblem = "entity"
+	SignalUnknownEvent     SignalProblem = "event"
 	SignalNotEncodableKind SignalProblem = "not_encodable"
 )
 
@@ -135,7 +153,20 @@ type signalWire struct {
 	ID      string     `json:"i,omitempty"`
 }
 
+type chatSignalWire struct {
+	Version int        `json:"v"`
+	Kind    SignalKind `json:"k"`
+	Users   []string   `json:"u"`
+	Event   FrameType  `json:"e"`
+	Channel string     `json:"c"`
+	Message *string    `json:"i"`
+	Seq     *int64     `json:"s"`
+}
+
 func EncodeSignal(signal Signal) ([]byte, error) {
+	if chat, isChat := signal.(ChatSignal); isChat {
+		return encodeChat(chat)
+	}
 	wire := signalWire{Version: SignalVersion, Kind: signal.Kind()}
 	switch typed := signal.(type) {
 	case RecheckSignal:
@@ -171,6 +202,29 @@ func EncodeSignal(signal Signal) ([]byte, error) {
 	return encoded, nil
 }
 
+func encodeChat(signal ChatSignal) ([]byte, error) {
+	users, err := recipientTexts(signal.Users)
+	if err != nil {
+		return nil, err
+	}
+	if !signal.wellFormed() {
+		return nil, signalError(SignalUnknownEvent)
+	}
+	wire := chatSignalWire{Version: SignalVersion, Kind: SignalChat, Users: users, Event: signal.Event, Channel: signal.Channel.String(), Seq: signal.Seq}
+	if signal.Message != nil {
+		message := signal.Message.String()
+		wire.Message = &message
+	}
+	encoded, err := json.Marshal(wire)
+	if err != nil {
+		return nil, signalError(SignalSyntax)
+	}
+	if len(encoded) > MaxSignalBytes {
+		return nil, signalError(SignalTooLarge)
+	}
+	return encoded, nil
+}
+
 func recipientTexts(users []UserID) ([]string, error) {
 	if len(users) == 0 || len(users) > MaxSignalRecipients {
 		return nil, signalError(SignalBadRecipients)
@@ -192,9 +246,11 @@ const (
 	signalFieldUsers   = "u"
 	signalFieldEntity  = "e"
 	signalFieldID      = "i"
+	signalFieldChannel = "c"
+	signalFieldSeq     = "s"
 )
 
-var signalFields = []string{signalFieldVersion, signalFieldKind, signalFieldUsers, signalFieldEntity, signalFieldID}
+var signalFields = []string{signalFieldVersion, signalFieldKind, signalFieldUsers, signalFieldEntity, signalFieldID, signalFieldChannel, signalFieldSeq}
 
 var errSignalSyntax = errors.New("signal syntax")
 
@@ -222,6 +278,8 @@ func ParseSignal(payload string) (Signal, error) {
 		return parseEntity(fields)
 	case SignalHeartbeat:
 		return parseHeartbeat(fields)
+	case SignalChat:
+		return parseChat(fields)
 	}
 	return nil, signalError(SignalUnknownKind)
 }
@@ -342,6 +400,43 @@ func parseHeartbeat(fields map[string]json.RawMessage) (Signal, error) {
 		return nil, err
 	}
 	return HeartbeatSignal{Instance: instance}, nil
+}
+
+func parseChat(fields map[string]json.RawMessage) (Signal, error) {
+	if err := requireFields(fields, signalFieldUsers, signalFieldEntity, signalFieldChannel, signalFieldID, signalFieldSeq); err != nil {
+		return nil, err
+	}
+	users, err := parseRecipients(fields[signalFieldUsers])
+	if err != nil {
+		return nil, err
+	}
+	var event FrameType
+	if err := json.Unmarshal(fields[signalFieldEntity], &event); err != nil {
+		return nil, signalError(SignalUnknownEvent)
+	}
+	channel, err := parseIdentifier[ChannelID](fields[signalFieldChannel])
+	if err != nil {
+		return nil, err
+	}
+	signal := ChatSignal{Users: users, Event: event, Channel: channel}
+	if string(fields[signalFieldID]) != "null" {
+		message, err := parseIdentifier[MessageID](fields[signalFieldID])
+		if err != nil {
+			return nil, err
+		}
+		signal.Message = &message
+	}
+	if string(fields[signalFieldSeq]) != "null" {
+		var seq int64
+		if err := json.Unmarshal(fields[signalFieldSeq], &seq); err != nil {
+			return nil, signalError(SignalFieldsForKind)
+		}
+		signal.Seq = &seq
+	}
+	if !signal.wellFormed() {
+		return nil, signalError(SignalUnknownEvent)
+	}
+	return signal, nil
 }
 
 func parseRecipients(raw json.RawMessage) ([]UserID, error) {

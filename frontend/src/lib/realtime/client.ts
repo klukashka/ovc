@@ -156,6 +156,11 @@ export class RealtimeClient {
       case 'entity.changed':
         this.deps.onEvent({ kind: 'entity', entity: frame.kind, id: frame.id });
         return;
+      case 'message.new':
+      case 'message.updated':
+      case 'message.deleted':
+      case 'read.updated':
+        return;
     }
   }
 

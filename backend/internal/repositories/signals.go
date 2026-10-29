@@ -40,6 +40,23 @@ func (r Signals) Entities(ctx context.Context, signals []domain.EntitySignal) er
 	return nil
 }
 
+func (r Signals) Chat(ctx context.Context, signal domain.ChatSignal) error {
+	var payloads []string
+	for _, recipients := range domain.SplitRecipients(signal.Users) {
+		chunk := signal
+		chunk.Users = recipients
+		payload, err := domain.EncodeSignal(chunk)
+		if err != nil {
+			return fmt.Errorf("chat signal: %w", err)
+		}
+		payloads = append(payloads, string(payload))
+	}
+	if len(payloads) == 0 {
+		return nil
+	}
+	return done(r.queries.NotifySignals(ctx, dbgen.NotifySignalsParams{Channel: domain.SignalChannel, Payloads: payloads}), "chat signals")
+}
+
 func (r Signals) send(ctx context.Context, signal domain.Signal, what string) error {
 	payload, err := domain.EncodeSignal(signal)
 	if err != nil {

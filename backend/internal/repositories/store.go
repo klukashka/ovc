@@ -32,6 +32,7 @@ type Repositories struct {
 	Notifications Notifications
 	Lessons       Lessons
 	Channels      Channels
+	Messages      Messages
 	TestClock     TestClock
 
 	commit *commitHooks
@@ -112,6 +113,7 @@ func newRepositories(queries *dbgen.Queries) Repositories {
 		Notifications: Notifications{queries: queries},
 		Lessons:       Lessons{queries: queries},
 		Channels:      Channels{queries: queries},
+		Messages:      Messages{queries: queries},
 		TestClock:     TestClock{queries: queries},
 	}
 }

@@ -68,3 +68,54 @@ type ChannelDetail struct {
 func (ChannelDetail) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
 	return nullableReferences(schema, "tutor", "last_message")
 }
+
+type MessageAttachment struct {
+	ID        string    `json:"id" format:"uuid"`
+	Filename  string    `json:"filename"`
+	MediaType string    `json:"media_type"`
+	SizeBytes int64     `json:"size_bytes"`
+	Width     *int32    `json:"width" nullable:"true"`
+	Height    *int32    `json:"height" nullable:"true"`
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type Message struct {
+	ID                string              `json:"id" format:"uuid"`
+	Seq               int64               `json:"seq"`
+	SenderLabel       *string             `json:"sender_label" nullable:"true"`
+	SenderLabelKind   *domain.LabelKind   `json:"sender_label_kind" enum:"deleted_user" nullable:"true"`
+	Own               bool                `json:"own"`
+	Body              *string             `json:"body" nullable:"true"`
+	CreatedAt         time.Time           `json:"created_at"`
+	EditedAt          *time.Time          `json:"edited_at" nullable:"true"`
+	Deleted           bool                `json:"deleted"`
+	Erased            bool                `json:"erased"`
+	Version           int32               `json:"version"`
+	SentBeforeReclaim bool                `json:"sent_before_reclaim"`
+	Attachments       []MessageAttachment `json:"attachments" nullable:"false"`
+}
+
+type MessagePage struct {
+	Items      []Message `json:"items" nullable:"false"`
+	NextCursor *string   `json:"next_cursor" nullable:"true"`
+}
+
+type NewMessage struct {
+	Body          string   `json:"body"`
+	AttachmentIDs []string `json:"attachment_ids" format:"uuid" maxItems:"10" nullable:"false"`
+}
+
+type MessagePatch struct {
+	Body    string `json:"body"`
+	Version int32  `json:"version" minimum:"1"`
+}
+
+type ReadMarker struct {
+	Seq int64 `json:"seq" minimum:"0"`
+}
+
+type ReadState struct {
+	UnreadCount    int64 `json:"unread_count"`
+	UnreadChannels int64 `json:"unread_channels"`
+}

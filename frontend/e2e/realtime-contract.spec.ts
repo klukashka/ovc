@@ -3,7 +3,17 @@ import type { TestAccount } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { expect, seedVerifiedUser, test } from './fixtures.ts';
 import { accountId, closeSockets, nodeSocketFactory } from './realtime.ts';
-import { accessToken, callApi, createCard, createGroup, seedJoinRequests } from './tutoring.ts';
+import { accessToken, callApi, createCard, createGroup, seedActiveStudent, seedJoinRequests } from './tutoring.ts';
+
+function textField(answer: { readonly body: unknown }, name: string): string {
+  const body = answer.body;
+  const value =
+    typeof body === 'object' && body !== null && name in body ? (body as Record<string, unknown>)[name] : undefined;
+  if (typeof value !== 'string') {
+    throw new Error(`the answer has no ${name}`);
+  }
+  return value;
+}
 
 function realSubject(deployment: Deployment, tutor: TestAccount): RealtimeContractSubject {
   return {
@@ -23,6 +33,42 @@ function realSubject(deployment: Deployment, tutor: TestAccount): RealtimeContra
     },
     changeChannel: async (): Promise<void> => {
       await createGroup(deployment, tutor, 'Группа для контракта', []);
+    },
+    exchangeMessage: async (): Promise<void> => {
+      const token = await accessToken(deployment, tutor);
+      const group = await createGroup(deployment, tutor, 'Группа для сообщений', []);
+      const channel = textField(await callApi(deployment, token, 'GET', `/groups/${group}`), 'channel_id');
+      const sent = await callApi(deployment, token, 'POST', `/channels/${channel}/messages`, {
+        body: 'Привет',
+        attachment_ids: [],
+      });
+      expect(sent.status).toBe(201);
+      const message = textField(sent, 'id');
+      const edited = await callApi(deployment, token, 'PATCH', `/messages/${message}`, {
+        body: 'Привет всем',
+        version: 1,
+      });
+      expect(edited.status).toBe(200);
+      const deleted = await callApi(deployment, token, 'DELETE', `/messages/${message}`);
+      expect(deleted.status).toBe(204);
+    },
+    readChannel: async (): Promise<void> => {
+      const token = await accessToken(deployment, tutor);
+      const { student, cardId } = await seedActiveStudent(deployment, tutor, 'Ученица для контракта');
+      const channel = textField(await callApi(deployment, token, 'GET', `/students/${cardId}`), 'channel_id');
+      const sent = await callApi(
+        deployment,
+        await accessToken(deployment, student),
+        'POST',
+        `/channels/${channel}/messages`,
+        {
+          body: 'Здравствуйте',
+          attachment_ids: [],
+        },
+      );
+      expect(sent.status).toBe(201);
+      const read = await callApi(deployment, token, 'POST', `/channels/${channel}/read`, { seq: 1 });
+      expect(read.status).toBe(200);
     },
     notify: async (): Promise<void> => {
       await seedJoinRequests(deployment, tutor, 1);

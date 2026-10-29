@@ -13,6 +13,7 @@ import (
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
+	"ovc/backend/internal/services/chat"
 )
 
 const DefaultPurgeBatchRows int32 = 500
@@ -443,11 +444,24 @@ func (s *Service) tutorActive(ctx context.Context, repos repositories.Repositori
 	return account.State == domain.AccountActive, nil
 }
 
-func (s *Service) PurgeTutorBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) (int64, error) {
+func (s *Service) PurgeBatch(ctx context.Context, repos repositories.Repositories, user domain.UserID, role domain.Role, now time.Time) (int64, error) {
+	if role == domain.RoleStudent {
+		return chat.Release{Random: s.deps.Random, Logger: s.deps.Logger}.PurgeSenderBatch(ctx, repos, user, s.purgeBatchRows(), now)
+	}
+	return s.PurgeTutorBatch(ctx, repos, user, now)
+}
+
+func (s *Service) PurgeTutorBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, now time.Time) (int64, error) {
 	steps := []func(context.Context, domain.UserID, int32) (int64, error){
 		repos.Lessons.DeleteRosterBatchOfTutor,
 		repos.Lessons.DeleteBatchOfTutor,
 		repos.Lessons.DeleteSeriesBatchOfTutor,
+		func(ctx context.Context, tutor domain.UserID, batch int32) (int64, error) {
+			return chat.Release{Random: s.deps.Random, Logger: s.deps.Logger}.PurgeTutorReferencesBatch(ctx, repos, tutor, batch, now)
+		},
+		func(ctx context.Context, tutor domain.UserID, batch int32) (int64, error) {
+			return chat.PurgeTutorMessagesBatch(ctx, repos, tutor, batch)
+		},
 		repos.Channels.DeleteMembersBatchOfTutor,
 		repos.Channels.DeleteBatchOfTutor,
 		repos.Groups.DeleteMembersBatchOfTutor,

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"ovc/backend/internal/adapters/clock"
+	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 )
@@ -19,7 +21,22 @@ const (
 	erasureBatch    int32 = 100
 )
 
-var ErrNotFound = errors.New("the channel is outside the caller's channels")
+var (
+	ErrNotFound         = errors.New("the channel is outside the caller's channels")
+	ErrUnauthenticated  = errors.New("the session or the account no longer allows the write")
+	ErrReadOnly         = errors.New("the channel is read-only")
+	ErrEditWindowPassed = errors.New("the message can no longer be edited")
+	ErrConflict         = errors.New("the message changed since the caller read it")
+	ErrQuotaExceeded    = errors.New("the tutor's file quota has no room")
+)
+
+type ThrottledError struct {
+	RetryAfter time.Duration
+}
+
+func (e *ThrottledError) Error() string {
+	return "too many message writes"
+}
 
 type ValidationError struct {
 	Path string
@@ -30,17 +47,39 @@ func (e *ValidationError) Error() string {
 	return "the request is invalid at " + e.Path
 }
 
+type Addresses interface {
+	ChatAddress(attachment domain.AttachmentID, message domain.MessageID, disposition domain.Disposition, now time.Time) (string, time.Time)
+}
+
+type ErasureSettings struct {
+	Wall         func() time.Time
+	Budget       time.Duration
+	MessageBatch int32
+}
+
+func DefaultErasureSettings() ErasureSettings {
+	return ErasureSettings{Wall: clock.System{}.Now, Budget: 20 * time.Second, MessageBatch: 500}
+}
+
 type Dependencies struct {
-	Store  *repositories.Store
-	Logger *slog.Logger
+	Store     *repositories.Store
+	Clock     clock.Source
+	Random    core.RandomSource
+	Addresses Addresses
+	Erasure   ErasureSettings
+	Logger    *slog.Logger
 }
 
 type Service struct {
-	deps Dependencies
+	deps   Dependencies
+	writes *writeLimit
 }
 
 func New(dependencies Dependencies) *Service {
-	return &Service{deps: dependencies}
+	if dependencies.Erasure.Wall == nil {
+		dependencies.Erasure = DefaultErasureSettings()
+	}
+	return &Service{deps: dependencies, writes: newWriteLimit()}
 }
 
 type TutorLabel struct {
@@ -70,6 +109,7 @@ type Channel struct {
 	GroupID        *domain.GroupID
 	Members        []Member
 	TutorView      bool
+	LastMessage    *LastMessage
 }
 
 type Query struct {
@@ -108,9 +148,19 @@ func (s *Service) List(ctx context.Context, viewer domain.UserID, query Query) (
 			next := encodeCursor(repositories.ChannelCursor{ActivityAt: last.LastActivityAt, ID: last.ChannelID})
 			page.NextCursor = &next
 		}
+		ids := make([]domain.ChannelID, 0, len(rows))
+		for _, row := range rows {
+			ids = append(ids, row.ChannelID)
+		}
+		last, err := lastMessages(ctx, repos, viewer, ids)
+		if err != nil {
+			return err
+		}
 		page.Items = make([]Channel, 0, len(rows))
 		for _, row := range rows {
-			page.Items = append(page.Items, channelView(viewer, row))
+			channel := channelView(viewer, row)
+			channel.LastMessage = last[row.ChannelID]
+			page.Items = append(page.Items, channel)
 		}
 		page.UnreadChannels, err = repos.Channels.CountUnread(ctx, viewer, domain.UnreadChannelsCap)
 		return err
@@ -129,6 +179,11 @@ func (s *Service) Channel(ctx context.Context, viewer domain.UserID, id domain.C
 			return ErrNotFound
 		}
 		channel = channelView(viewer, rows[0])
+		last, err := lastMessages(ctx, repos, viewer, []domain.ChannelID{id})
+		if err != nil {
+			return err
+		}
+		channel.LastMessage = last[id]
 		if rows[0].TutorID != viewer {
 			return nil
 		}

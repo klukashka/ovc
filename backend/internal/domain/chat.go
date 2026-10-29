@@ -1,10 +1,40 @@
 package domain
 
+import "time"
+
 type ChannelID [16]byte
 
 func (id ChannelID) String() string {
 	return formatUUID(id)
 }
+
+type MessageID [16]byte
+
+func (id MessageID) String() string {
+	return formatUUID(id)
+}
+
+const (
+	MessageBodyMaxCodePoints = 4000
+	MessageAttachmentsMax    = 10
+	MessageEditWindow        = 24 * time.Hour
+	MessageWritesPerMinute   = 30
+	MessageWriteWindow       = time.Minute
+	MessagePageDefault       = 50
+	MessagePageMax           = 100
+	MessagePreviewCodePoints = 120
+	MessageClientKeyMax      = 64
+	MessageClientKeyPattern  = `^[A-Za-z0-9._-]{1,64}$`
+
+	LimitWrites ChatLimit = "writes"
+)
+
+type MessageDeleter string
+
+const (
+	DeletedByAuthor MessageDeleter = "author"
+	DeletedByTutor  MessageDeleter = "tutor"
+)
 
 type ChannelKind string
 

@@ -73,7 +73,7 @@ func TestTutorPurgeDeletesChannelsInBatches(t *testing.T) {
 	var after []purgedCounts
 	for range 6 {
 		err := f.store.WithTx(context.Background(), func(repos repositories.Repositories) error {
-			_, err := service.PurgeTutorBatch(context.Background(), repos, f.tutor)
+			_, err := service.PurgeTutorBatch(context.Background(), repos, f.tutor, subMicrosecond)
 			return err
 		})
 		if err != nil {

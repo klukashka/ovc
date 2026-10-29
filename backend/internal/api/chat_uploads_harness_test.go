@@ -37,8 +37,18 @@ const (
 	uploadsRoute     = "/api/v1/uploads"
 	attachmentsRoute = "/api/v1/attachments/"
 	wordMain         = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
-	bindToMessage    = `WITH bound AS (
-    UPDATE attachments SET state = 'bound', expires_at = NULL WHERE id = $1::uuid AND state = 'pending' RETURNING id
+	bindToMessage    = `WITH attachment AS (
+    SELECT id, scope_id, uploader_id FROM attachments WHERE id = $1::uuid AND state = 'pending'
+), advanced AS (
+    UPDATE channels SET last_seq = channels.last_seq + 1
+    FROM attachment
+    WHERE channels.id = attachment.scope_id AND NOT EXISTS (SELECT 1 FROM messages WHERE messages.id = $2::uuid)
+    RETURNING channels.id, channels.last_seq
+), sent AS (
+    INSERT INTO messages (id, channel_id, seq, sender_id, body, version, created_at, updated_at)
+    SELECT $2::uuid, advanced.id, advanced.last_seq, attachment.uploader_id, '', 1, now(), now() FROM advanced, attachment
+), bound AS (
+    UPDATE attachments SET state = 'bound', expires_at = NULL FROM attachment WHERE attachments.id = attachment.id RETURNING attachments.id
 )
 INSERT INTO attachment_references (attachment_id, ref_kind, ref_id, created_at) SELECT id, 'message', $2::uuid, now() FROM bound`
 	insertUploadingChatRow = `INSERT INTO attachments (id, uploader_id, context, scope_kind, scope_id, quota_tutor_id, storage_key, filename, state,

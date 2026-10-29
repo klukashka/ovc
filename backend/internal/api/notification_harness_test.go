@@ -61,6 +61,16 @@ func (l *frameLog) Signal(signal domain.Signal) {
 		l.record(func() {
 			l.frames = append(l.frames, sentFrame{to: typed.User, kind: string(domain.FrameNotificationNew), id: typed.Notification.String()})
 		})
+	case domain.ChatSignal:
+		l.record(func() {
+			id := typed.Channel.String()
+			if typed.Message != nil {
+				id = typed.Message.String()
+			}
+			for _, user := range typed.Users {
+				l.frames = append(l.frames, sentFrame{to: user, kind: string(typed.Event), id: id})
+			}
+		})
 	case domain.EntitySignal:
 		l.record(func() {
 			if slices.Equal(typed.Users, []domain.UserID{sentinelUser}) {

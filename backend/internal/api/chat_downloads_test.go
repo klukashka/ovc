@@ -289,3 +289,45 @@ func TestAMemberRemovedMidStreamLeavesNoObject(t *testing.T) {
 		h.assertLeftNothing(t, started)
 	})
 }
+
+func TestADownloadNeedsALiveMessageOfItsOwnChannel(t *testing.T) {
+	t.Parallel()
+	h := newUploadHarness(t)
+	parties := h.activeStudentInAGroup(t)
+	direct := h.directChannel(t, parties.card.ID)
+	group := h.groupChannel(t, parties.group.ID)
+	elsewhere := h.sent(t, parties.tutorToken, group.ID, "A message of another channel")
+	crossed := h.pendingUpload(t, parties.tutorToken, direct.ID, "crossed.txt", 16)
+	h.exec(t, "UPDATE attachments SET state = 'bound', expires_at = NULL WHERE id = $1::uuid", crossed)
+	h.exec2(t, "INSERT INTO attachment_references (attachment_id, ref_kind, ref_id, created_at) VALUES ($1::uuid, 'message', $2::uuid, now())",
+		crossed, elsewhere.ID)
+	stale := h.pendingUpload(t, parties.tutorToken, direct.ID, "stale.txt", 16)
+	staleMessage := h.sent(t, parties.tutorToken, direct.ID, "Soon marked deleted", stale)
+	live := h.pendingUpload(t, parties.tutorToken, direct.ID, "live.txt", 16)
+	liveMessage := h.sent(t, parties.tutorToken, direct.ID, "Still here", live)
+	crossedMessage, valid := domain.ParseUUID[domain.MessageID](elsewhere.ID)
+	crossedID, crossedValid := domain.ParseUUID[domain.AttachmentID](crossed)
+	if !valid || !crossedValid {
+		t.Fatal("the fixture identifiers do not parse")
+	}
+	crossedURL, _ := h.files.ChatAddress(crossedID, crossedMessage, domain.DispositionAttachment, h.now(t))
+	h.exec(t, "UPDATE messages SET deleted_at = now(), body = NULL WHERE id = $1::uuid", staleMessage.ID)
+
+	crossedAddress, _ := h.addressOf(t, parties.tutorToken, crossed, "")
+	crossedFile := h.fetch(t, crossedURL, nil)
+	staleAddress, _ := h.addressOf(t, parties.tutorToken, stale, "")
+	staleFile := h.fetch(t, staleMessage.Attachments[0].URL, nil)
+	liveAddress, _ := h.addressOf(t, parties.tutorToken, live, "")
+	liveFile := h.fetch(t, liveMessage.Attachments[0].URL, nil)
+
+	for name, refused := range map[string]response{
+		"an address for a message of another channel": crossedAddress, "a file named with a message of another channel": crossedFile,
+		"an address for a deleted message": staleAddress, "a file of a deleted message": staleFile,
+	} {
+		if refused.status != http.StatusNotFound {
+			t.Fatalf("%s answered %s", name, describe(refused))
+		}
+	}
+	h.mustAnswer(t, liveAddress, http.StatusOK)
+	h.mustAnswer(t, liveFile, http.StatusOK)
+}

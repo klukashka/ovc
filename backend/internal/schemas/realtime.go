@@ -33,6 +33,21 @@ type EntityChangedPayload struct {
 	ID   string            `json:"id"`
 }
 
+type MessageNewPayload struct {
+	ChannelID string `json:"channel_id"`
+	MessageID string `json:"message_id"`
+	Seq       int64  `json:"seq"`
+}
+
+type MessageChangedPayload struct {
+	ChannelID string `json:"channel_id"`
+	MessageID string `json:"message_id"`
+}
+
+type ReadUpdatedPayload struct {
+	ChannelID string `json:"channel_id"`
+}
+
 type FrameErrorPayload struct {
 	Code      domain.ErrorCode `json:"code"`
 	Message   string           `json:"message"`

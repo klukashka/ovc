@@ -76,6 +76,11 @@ func (s *Service) MintAddress(id domain.AttachmentID, message domain.EntityID, d
 	return DownloadAddress{URL: downloadRoute + id.String() + downloadQuery + token, ExpiresAt: expires}
 }
 
+func (s *Service) ChatAddress(id domain.AttachmentID, message domain.MessageID, disposition domain.Disposition, now time.Time) (string, time.Time) {
+	address := s.MintAddress(id, domain.EntityID(message), disposition, now)
+	return address.URL, address.ExpiresAt
+}
+
 type Download struct {
 	MediaType          string
 	SizeBytes          int64

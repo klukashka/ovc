@@ -42,6 +42,14 @@ function fakeSubject(): RealtimeContractSubject {
       gateway.changed(tutor.id, 'channel', 'channel-1');
       await Promise.resolve();
     },
+    exchangeMessage: async (): Promise<void> => {
+      gateway.messageExchanged(tutor.id, 'channel-1', 'message-1', 1);
+      await Promise.resolve();
+    },
+    readChannel: async (): Promise<void> => {
+      gateway.channelRead(tutor.id, 'channel-1');
+      await Promise.resolve();
+    },
     notify: async (): Promise<void> => {
       gateway.changed(tutor.id, 'join_request', 'request-1');
       gateway.notify(tutor.id, 'notification-1');

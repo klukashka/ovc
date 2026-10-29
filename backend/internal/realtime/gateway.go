@@ -361,7 +361,24 @@ func (g *Gateway) Signal(signal domain.Signal) {
 		frame := encode(domain.FrameEntityChanged, nil, &schemas.EntityChangedPayload{Kind: typed.Entity, ID: typed.ID.String()})
 		sockets := g.deliver(typed.Users, frame)
 		g.logDelivery(domain.SignalEntity, len(typed.Users), sockets, started)
+	case domain.ChatSignal:
+		sockets := g.deliver(typed.Users, chatFrame(typed))
+		g.logDelivery(domain.SignalChat, len(typed.Users), sockets, started)
+		g.deps.Logger.LogAttrs(context.Background(), slog.LevelDebug, "chat.fanout.completed",
+			slog.String("channel_id", typed.Channel.String()), slog.Int("recipients", len(typed.Users)), slog.Int("sockets", sockets),
+			slog.Int64("duration_ms", g.deps.Now().Sub(started).Milliseconds()))
 	}
+}
+
+func chatFrame(signal domain.ChatSignal) []byte {
+	channel := signal.Channel.String()
+	switch {
+	case signal.Event == domain.FrameMessageNew && signal.Message != nil && signal.Seq != nil:
+		return encode(signal.Event, nil, &schemas.MessageNewPayload{ChannelID: channel, MessageID: signal.Message.String(), Seq: *signal.Seq})
+	case signal.Message != nil:
+		return encode(signal.Event, nil, &schemas.MessageChangedPayload{ChannelID: channel, MessageID: signal.Message.String()})
+	}
+	return encode(signal.Event, nil, &schemas.ReadUpdatedPayload{ChannelID: channel})
 }
 
 func (g *Gateway) logDelivery(kind domain.SignalKind, recipients int, sockets int, started time.Time) {

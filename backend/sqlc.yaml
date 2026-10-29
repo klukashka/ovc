@@ -456,3 +456,28 @@ sql:
               import: ovc/backend/internal/domain
               type: GroupID
               pointer: true
+          - column: messages.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MessageID
+          - column: messages.channel_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ChannelID
+          - column: messages.sender_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+              pointer: true
+          - column: quota_charges.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: quota_charges.attachment_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: AttachmentID
+          - column: digest_pending.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
