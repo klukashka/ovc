@@ -7,6 +7,7 @@ import { I18nextProvider } from 'react-i18next';
 import { RouterProvider } from 'react-router';
 
 import { applyAccountPreferences, darkSchemeQuery, followSystemTheme } from './app/accountPreferences.ts';
+import { ConnectionContext, ConnectionState } from './app/connectionState.ts';
 import { PreferencesContext } from './app/context.ts';
 import { FollowingQueryClient } from './app/queryClient.ts';
 import { ApiClientContext, createApiClient } from './lib/api/client.ts';
@@ -37,6 +38,8 @@ const session = new Session({
 });
 const apiClient = createApiClient(origin, session.authorizedFetch);
 const queryClient = new FollowingQueryClient();
+const connection = new ConnectionState(browserScheduler);
+connection.follow(session);
 
 let appliedAccount: Me | null = null;
 let realtimeRequested = false;
@@ -47,7 +50,7 @@ session.subscribe(() => {
     realtimeRequested = true;
     import('./app/realtime.ts')
       .then(({ startRealtime }) => {
-        startRealtime(session, queryClient, origin);
+        startRealtime(session, queryClient, origin, connection);
       })
       .catch(reportError);
   }
@@ -72,16 +75,18 @@ void session.start();
 
 createRoot(rootElement).render(
   <StrictMode>
-    <PreferencesContext value={preferences}>
-      <SessionContext value={session}>
-        <ApiClientContext value={apiClient}>
-          <QueryClientProvider client={queryClient}>
-            <I18nextProvider i18n={i18n}>
-              <RouterProvider router={createRouter()} />
-            </I18nextProvider>
-          </QueryClientProvider>
-        </ApiClientContext>
-      </SessionContext>
-    </PreferencesContext>
+    <ConnectionContext value={connection}>
+      <PreferencesContext value={preferences}>
+        <SessionContext value={session}>
+          <ApiClientContext value={apiClient}>
+            <QueryClientProvider client={queryClient}>
+              <I18nextProvider i18n={i18n}>
+                <RouterProvider router={createRouter()} />
+              </I18nextProvider>
+            </QueryClientProvider>
+          </ApiClientContext>
+        </SessionContext>
+      </PreferencesContext>
+    </ConnectionContext>
   </StrictMode>,
 );

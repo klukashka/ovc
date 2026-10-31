@@ -14,6 +14,11 @@ export const ru = {
     tutor: 'Репетитор',
     student: 'Ученик',
   },
+  connection: {
+    offline: 'Нет соединения — переподключаемся…',
+    recovered: 'Соединение восстановлено',
+    reason: 'Нет соединения',
+  },
   frame: {
     navigation: 'Основная навигация',
     sidebar: 'Боковая панель',

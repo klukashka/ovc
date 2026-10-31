@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { type Scheduler, type Session, browserScheduler } from '../lib/api/session.ts';
 import { RealtimeClient, connectWhileSignedIn } from '../lib/realtime/client.ts';
 import { type SocketFactory, browserSocketFactory } from '../lib/realtime/socket.ts';
+import type { ConnectionState } from './connectionState.ts';
 import { liveRefetch } from './liveRefetch.ts';
 import { notificationArrivals } from './notificationArrivals.ts';
 
@@ -15,6 +16,7 @@ export interface RealtimePage {
 
 export interface RealtimeWiring {
   readonly session: Session;
+  readonly connection: ConnectionState;
   readonly queryClient: QueryClient;
   readonly sockets: SocketFactory;
   readonly scheduler: Scheduler;
@@ -22,7 +24,15 @@ export interface RealtimeWiring {
   readonly onFailure: (error: Error) => void;
 }
 
-export function wireRealtime({ session, queryClient, sockets, scheduler, page, onFailure }: RealtimeWiring): void {
+export function wireRealtime({
+  session,
+  connection,
+  queryClient,
+  sockets,
+  scheduler,
+  page,
+  onFailure,
+}: RealtimeWiring): void {
   const onEvent = liveRefetch(queryClient, notificationArrivals);
   const connect = (connectedBefore: boolean): (() => void) =>
     connectWhileSignedIn(
@@ -37,6 +47,9 @@ export function wireRealtime({ session, queryClient, sockets, scheduler, page, o
           onEvent,
           onFailure,
           connectedBefore,
+          onReadiness: (ready): void => {
+            connection.readiness(epoch, ready);
+          },
         }),
     );
   let disconnect = (): void => undefined;
@@ -45,6 +58,7 @@ export function wireRealtime({ session, queryClient, sockets, scheduler, page, o
   const start = (): void => {
     cancelResume();
     disconnect();
+    connection.resume();
     disconnect = connect(started);
     started = true;
   };
@@ -60,6 +74,7 @@ export function wireRealtime({ session, queryClient, sockets, scheduler, page, o
     cancelResume = scheduler.schedule(resumeAfterBeforeUnloadMilliseconds, start);
   });
   page.events.addEventListener('pagehide', () => {
+    connection.suspend();
     cancelResume();
     page.events.removeEventListener('load', start);
     disconnect();
@@ -71,9 +86,15 @@ export function wireRealtime({ session, queryClient, sockets, scheduler, page, o
   });
 }
 
-export function startRealtime(session: Session, queryClient: QueryClient, origin: string): void {
+export function startRealtime(
+  session: Session,
+  queryClient: QueryClient,
+  origin: string,
+  connection: ConnectionState,
+): void {
   wireRealtime({
     session,
+    connection,
     queryClient,
     sockets: browserSocketFactory(origin),
     scheduler: browserScheduler,

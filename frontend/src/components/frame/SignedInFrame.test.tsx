@@ -4,6 +4,7 @@ import { I18nextProvider } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { afterEach, describe, expect, test } from 'vitest';
 
+import { ConnectionContext, ConnectionState } from '../../app/connectionState.ts';
 import { MediaQueriesContext, PreferencesContext, fixedMediaQueries, wideLayoutQuery } from '../../app/context.ts';
 import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
 import { type FakeAccountSeed, FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
@@ -49,6 +50,7 @@ async function renderFrame(
   wide: boolean,
   language: Language = 'ru',
   title?: 'page.notFound',
+  connection = new ConnectionState(manualScheduler()),
 ): Promise<void> {
   const i18n = await createI18n(language);
   const { session, me } = await signedInSession(seed);
@@ -67,19 +69,21 @@ async function renderFrame(
     { initialEntries: [address] },
   );
   render(
-    <MediaQueriesContext value={fixedMediaQueries(wide ? [wideLayoutQuery] : [])}>
-      <PreferencesContext value={memoryPreferenceStore()}>
-        <SessionContext value={session}>
-          <ApiClientContext value={createApiClient('https://ovc.example', session.authorizedFetch)}>
-            <QueryClientProvider client={new QueryClient()}>
-              <I18nextProvider i18n={i18n}>
-                <RouterProvider router={router} />
-              </I18nextProvider>
-            </QueryClientProvider>
-          </ApiClientContext>
-        </SessionContext>
-      </PreferencesContext>
-    </MediaQueriesContext>,
+    <ConnectionContext value={connection}>
+      <MediaQueriesContext value={fixedMediaQueries(wide ? [wideLayoutQuery] : [])}>
+        <PreferencesContext value={memoryPreferenceStore()}>
+          <SessionContext value={session}>
+            <ApiClientContext value={createApiClient('https://ovc.example', session.authorizedFetch)}>
+              <QueryClientProvider client={new QueryClient()}>
+                <I18nextProvider i18n={i18n}>
+                  <RouterProvider router={router} />
+                </I18nextProvider>
+              </QueryClientProvider>
+            </ApiClientContext>
+          </SessionContext>
+        </PreferencesContext>
+      </MediaQueriesContext>
+    </ConnectionContext>,
   );
 }
 
@@ -237,4 +241,28 @@ describe('the notifications bell', () => {
     expect(screen.queryByRole('region', { name: 'Уведомления' })).toBeNull();
     expect(document.activeElement).toBe(bell);
   });
+});
+
+test('navigation retains the offline live region without repeating its announcement', async () => {
+  const clock = manualScheduler();
+  const connection = new ConnectionState(clock);
+  connection.account(1);
+  await renderFrame(account('student'), '/homework', true, 'en', undefined, connection);
+  act(() => {
+    clock.pass(5000);
+  });
+  const banner = screen.getByText('No connection — reconnecting…');
+  let changes = 0;
+  const observer = new MutationObserver((records) => {
+    changes += records.length;
+  });
+  observer.observe(banner, { childList: true, characterData: true, subtree: true });
+
+  await click(within(screen.getByRole('navigation')).getByRole('link', { name: 'Schedule' }));
+  observer.disconnect();
+
+  expect(screen.getByText('No connection — reconnecting…')).toBe(banner);
+  expect(changes).toBe(0);
+  expect(banner.closest('main')).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Schedule' }));
 });

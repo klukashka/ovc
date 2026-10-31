@@ -14,6 +14,7 @@ export const en: Resources = {
     tutor: 'Tutor',
     student: 'Student',
   },
+  connection: { offline: 'No connection — reconnecting…', recovered: 'Connection restored', reason: 'No connection' },
   frame: {
     navigation: 'Main navigation',
     sidebar: 'Sidebar',

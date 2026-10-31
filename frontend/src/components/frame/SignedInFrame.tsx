@@ -12,6 +12,7 @@ import { type SectionCounts, hasNews } from '../../app/sections.ts';
 import type { Me } from '../../lib/api/session.ts';
 import { reachable } from '../../routes/access.ts';
 import { SidebarIcon } from '../ui/icons.tsx';
+import { OfflineBanner } from './OfflineBanner.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { StudentConfirmation } from './StudentConfirmation.tsx';
 import { SkipLink, mainContentId } from './SkipLink.tsx';
@@ -300,6 +301,7 @@ export function SignedInFrame({
         </>
       )}
       <div className={wide && sidebarShown ? 'pl-(--container-sidebar)' : ''}>
+        <OfflineBanner />
         {me.state === 'unverified' ? <ConfirmationBanner me={me} /> : null}
         <main
           id={mainContentId}

@@ -31,6 +31,7 @@ export interface ClientDependencies {
   readonly onEvent: (event: RealtimeEvent) => void;
   readonly onFailure: (error: Error) => void;
   readonly connectedBefore: boolean;
+  readonly onReadiness?: (ready: boolean) => void;
 }
 
 interface Connection {
@@ -172,6 +173,7 @@ export class RealtimeClient {
       return;
     }
     connection.ready = true;
+    this.deps.onReadiness?.(true);
     this.schedulePing();
     if (this.latestToken !== null && this.latestToken !== connection.sentToken) {
       this.renewed(this.latestToken);
@@ -261,6 +263,7 @@ export class RealtimeClient {
   }
 
   private forget(): void {
+    const wasReady = this.connection?.ready === true;
     this.connection = null;
     this.generation += 1;
     this.awaitedPong = null;
@@ -268,6 +271,9 @@ export class RealtimeClient {
     this.cancelPing = null;
     this.cancelPong?.();
     this.cancelPong = null;
+    if (wasReady) {
+      this.deps.onReadiness?.(false);
+    }
   }
 }
 

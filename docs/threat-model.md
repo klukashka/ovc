@@ -100,3 +100,7 @@ The assets OVC protects, the actors who might threaten them, the trust boundarie
 - What the browser vendors' push services do with web push metadata beyond delivery, which OVC cannot control; it is bounded by the payload rules and the gate of T-46 (pending owner review).
 - Compromise of hosts or the database by an operator.
 - Academic integrity: students sharing answers with each other outside OVC.
+
+### Offline interface implementation coverage
+
+Added 2026-10-31; pending owner review. F1's [shared connection state](../knowledge/plans/slice-6-offline-banner.md) follows the signed-in account epoch, ignores stale readiness callbacks and clears state on sign-out. It cancels the grace timer on pagehide and resumes tracking on BFCache restore (T-29/T-20). The banner and chat-write guard change only interface availability; server-side authorization remains authoritative and other REST actions stay enabled. A single bounded timer controls the grace, without additional polling or requests. No account identifier, token or message text is logged by the new state or UI. Execution evidence is recorded separately.

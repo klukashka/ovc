@@ -158,6 +158,7 @@ export function FormNotice({
 export function ActionButton({
   busy,
   unavailable = false,
+  unavailableReason,
   type = 'button',
   form,
   label,
@@ -169,6 +170,7 @@ export function ActionButton({
 }: {
   readonly busy: boolean;
   readonly unavailable?: boolean;
+  readonly unavailableReason?: string | undefined;
   readonly type?: 'button' | 'submit';
   readonly form?: string;
   readonly label?: string;
@@ -179,26 +181,36 @@ export function ActionButton({
   readonly children: ReactNode;
 }): ReactElement {
   const refused = busy || unavailable;
+  const reasonId = useId();
   return (
-    <button
-      ref={ref}
-      type={type}
-      form={form}
-      aria-disabled={refused}
-      aria-busy={busy}
-      aria-label={label}
-      data-first-in-row={firstInRow ? '' : undefined}
-      onClick={(event) => {
-        if (refused) {
-          event.preventDefault();
-          return;
-        }
-        onClick?.();
-      }}
-      className={className}
-    >
-      {children}
-    </button>
+    <>
+      <button
+        ref={ref}
+        type={type}
+        form={form}
+        aria-disabled={refused}
+        aria-busy={busy}
+        title={unavailableReason}
+        aria-describedby={unavailableReason === undefined ? undefined : reasonId}
+        aria-label={label}
+        data-first-in-row={firstInRow ? '' : undefined}
+        onClick={(event) => {
+          if (refused) {
+            event.preventDefault();
+            return;
+          }
+          onClick?.();
+        }}
+        className={className}
+      >
+        {children}
+      </button>
+      {unavailableReason === undefined ? null : (
+        <span id={reasonId} className="sr-only">
+          {unavailableReason}
+        </span>
+      )}
+    </>
   );
 }
 

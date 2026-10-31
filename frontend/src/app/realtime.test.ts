@@ -5,7 +5,9 @@ import { latestNotificationsKey } from '../features/notifications/api.ts';
 import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../lib/api/fakeTransport.ts';
 import { Session } from '../lib/api/session.ts';
 import { eventually } from '../lib/eventually.ts';
+import { closeCodes } from '../lib/realtime/frames.ts';
 import { FakeGateway } from '../lib/realtime/fakeGateway.ts';
+import { ConnectionState } from './connectionState.ts';
 import { resumeAfterBeforeUnloadMilliseconds, wireRealtime } from './realtime.ts';
 
 const origin = 'https://ovc.example';
@@ -20,6 +22,8 @@ interface WiredPage {
   readonly events: EventTarget;
   readonly clock: ManualScheduler;
   readonly failures: readonly Error[];
+  readonly connection: ConnectionState;
+  readonly statusClock: ManualScheduler;
 }
 
 async function wiredPage(loaded: boolean): Promise<WiredPage> {
@@ -38,8 +42,12 @@ async function wiredPage(loaded: boolean): Promise<WiredPage> {
   const events = new EventTarget();
   const clock = manualScheduler();
   const failures: Error[] = [];
+  const statusClock = manualScheduler();
+  const connection = new ConnectionState(statusClock);
+  connection.follow(session);
   wireRealtime({
     session,
+    connection,
     queryClient,
     sockets: gateway.sockets,
     scheduler: clock,
@@ -48,7 +56,7 @@ async function wiredPage(loaded: boolean): Promise<WiredPage> {
       failures.push(error);
     },
   });
-  return { server, gateway, session, queryClient, events, clock, failures };
+  return { server, gateway, session, queryClient, events, clock, failures, connection, statusClock };
 }
 
 async function connectedPage(): Promise<WiredPage> {
@@ -220,5 +228,68 @@ describe('the realtime wiring of a page', () => {
 
     expect(gateway.openSockets).toBe(1);
     expect(gateway.socketsOpened).toBe(1);
+  });
+});
+
+describe('wired offline state', () => {
+  test('includes the load wait and clears only after the gateway is ready', async () => {
+    const page = await wiredPage(false);
+
+    page.statusClock.pass(5000);
+    const waiting = page.connection.snapshot();
+    page.events.dispatchEvent(new Event('load'));
+    await eventually(() => {
+      expect(page.gateway.readySockets(tutor.id)).toBe(1);
+    });
+
+    expect(waiting).toBe('offline');
+    expect(page.connection.snapshot()).toBe('recovered');
+    expect(page.statusClock.pendingDelays()).toEqual([]);
+  });
+
+  test('a close starts the grace and refused reconnects do not reset it', async () => {
+    const page = await connectedPage();
+    page.gateway.refuseConnections(2);
+
+    page.gateway.closeAccount(tutor.id, closeCodes.reconnect);
+    await eventually(() => {
+      expect(page.statusClock.pendingDelays()).toEqual([5000]);
+    });
+    page.statusClock.pass(4000);
+    page.clock.pass(2000);
+    await eventually(() => {
+      expect(page.gateway.socketsOpened).toBe(2);
+    });
+    page.statusClock.pass(1000);
+
+    expect(page.connection.snapshot()).toBe('offline');
+    expect(page.statusClock.pendingDelays()).toEqual([]);
+  });
+
+  test('pagehide cancels the grace and BFCache restore reconnects', async () => {
+    const page = await connectedPage();
+    page.gateway.closeAccount(tutor.id, closeCodes.reconnect);
+
+    page.events.dispatchEvent(new Event('pagehide'));
+    const pendingWhileHidden = page.statusClock.pendingDelays();
+    page.events.dispatchEvent(restoredFromTheBackForwardCache());
+    await eventually(() => {
+      expect(page.gateway.readySockets(tutor.id)).toBe(1);
+    });
+
+    expect(pendingWhileHidden).toEqual([]);
+    expect(page.connection.snapshot()).toBe('waiting');
+    expect(page.statusClock.pendingDelays()).toEqual([]);
+  });
+
+  test('sign-out clears visible offline state and leaves no status timer', async () => {
+    const page = await wiredPage(false);
+    page.statusClock.pass(5000);
+
+    await page.session.signOut();
+    page.statusClock.pass(10000);
+
+    expect(page.connection.snapshot()).toBe('waiting');
+    expect(page.statusClock.pendingDelays()).toEqual([]);
   });
 });
