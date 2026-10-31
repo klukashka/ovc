@@ -190,8 +190,9 @@ func TestOvcAdminRestore(t *testing.T) {
 	f := newAdminFixture(t)
 	deleted := f.seed(t, 1, domain.RoleTutor, domain.AccountActive, "tutor@example.org")
 	neverConfirmed := f.seed(t, 2, domain.RoleTutor, domain.AccountUnverified, "new@example.org")
+	deletedAt := clock.System{}.Now().Add(-24 * time.Hour)
 	for _, id := range []domain.UserID{deleted, neverConfirmed} {
-		if _, err := f.store.Repositories().Users.MarkDeleted(context.Background(), id, adminStart); err != nil {
+		if _, err := f.store.Repositories().Users.MarkDeleted(context.Background(), id, deletedAt); err != nil {
 			t.Fatal(err)
 		}
 	}

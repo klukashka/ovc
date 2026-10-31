@@ -7,13 +7,3 @@ reason = "rardecode is reached only through Gitleaks archive scanning, which the
 id = "GO-2026-5932"
 ignoreUntil = 2027-01-21T00:00:00Z
 reason = "The advisory covers golang.org/x/crypto/openpgp, which no tool imports (go list -deps). Triage: knowledge/research/local-s3-2026-10-21.md"
-
-[[IgnoredVulns]]
-id = "GO-2026-6860"
-ignoreUntil = 2026-10-31T00:00:00Z
-reason = "golang.org/x/net/html Parse is called by no tool (govulncheck symbol analysis); the fix in x/net 0.62.0 waits for ADR-0017's 3-day release age, reached after 2026-10-30T19:00Z. Triage: knowledge/research/tools-x-net-advisories-2026-10-28.md"
-
-[[IgnoredVulns]]
-id = "GO-2026-6866"
-ignoreUntil = 2026-10-31T00:00:00Z
-reason = "golang.org/x/net/html Render is called by no tool (govulncheck symbol analysis); the fix in x/net 0.62.0 waits for ADR-0017's 3-day release age, reached after 2026-10-30T19:00Z. Triage: knowledge/research/tools-x-net-advisories-2026-10-28.md"

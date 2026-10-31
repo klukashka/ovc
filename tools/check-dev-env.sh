@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+for dev_env_check_key in "${!OVC_@}"; do
+  unset "$dev_env_check_key"
+done
 work="$(mktemp -d "${TMPDIR:-/tmp}/dev-env-check.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/tools" "$work/backend"
