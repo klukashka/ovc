@@ -33,7 +33,15 @@ export function wireRealtime({
   page,
   onFailure,
 }: RealtimeWiring): void {
-  const onEvent = liveRefetch(queryClient, notificationArrivals);
+  const onEvent = liveRefetch(queryClient, notificationArrivals, scheduler);
+  let epoch = session.currentEpoch();
+  session.subscribe(() => {
+    const nextEpoch = session.currentEpoch();
+    if (nextEpoch !== epoch) {
+      onEvent.cancel();
+      epoch = nextEpoch;
+    }
+  });
   const connect = (connectedBefore: boolean): (() => void) =>
     connectWhileSignedIn(
       session,
@@ -58,6 +66,8 @@ export function wireRealtime({
   const start = (): void => {
     cancelResume();
     disconnect();
+    onEvent.cancel();
+    onEvent.resume();
     connection.resume();
     disconnect = connect(started);
     started = true;
@@ -68,16 +78,20 @@ export function wireRealtime({
     page.events.addEventListener('load', start, { once: true });
   }
   page.events.addEventListener('beforeunload', () => {
+    onEvent.suspend();
     cancelResume();
     page.events.removeEventListener('load', start);
     disconnect();
+    onEvent.cancel();
     cancelResume = scheduler.schedule(resumeAfterBeforeUnloadMilliseconds, start);
   });
   page.events.addEventListener('pagehide', () => {
+    onEvent.suspend();
     connection.suspend();
     cancelResume();
     page.events.removeEventListener('load', start);
     disconnect();
+    onEvent.cancel();
   });
   page.events.addEventListener('pageshow', (event) => {
     if ('persisted' in event && event.persisted === true) {

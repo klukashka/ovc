@@ -1,6 +1,10 @@
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { describe, expect, test } from 'vitest';
 
+import { createApiClient } from '../lib/api/client.ts';
+import { markRead } from '../features/messages/api.ts';
+import { scheduleChatReads } from '../features/messages/refetch.ts';
+import { unreadChannelsKey } from '../features/messages/keys.ts';
 import { latestNotificationsKey } from '../features/notifications/api.ts';
 import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../lib/api/fakeTransport.ts';
 import { Session } from '../lib/api/session.ts';
@@ -292,4 +296,69 @@ describe('wired offline state', () => {
     expect(page.connection.snapshot()).toBe('waiting');
     expect(page.statusClock.pendingDelays()).toEqual([]);
   });
+});
+
+test.each(['pagehide', 'signout'] as const)('pending chat invalidation is cancelled on %s', async (ending) => {
+  const page = await connectedPage();
+  const key = ['channels-unread'] as const;
+  page.queryClient.setQueryData(key, 0);
+  page.gateway.channelRead(tutor.id, 'channel-a');
+  await eventually(() => {
+    expect(page.clock.pendingDelays()).toContain(1000);
+  });
+
+  if (ending === 'pagehide') {
+    page.events.dispatchEvent(new Event('pagehide'));
+  } else {
+    await page.session.signOut();
+  }
+  page.clock.pass(1000);
+
+  expect(page.queryClient.getQueryState(key)?.isInvalidated).toBe(false);
+  expect(page.clock.pendingDelays()).not.toContain(1000);
+});
+
+test('a read reply after pagehide cannot restart refetch work and pageshow restores it', async () => {
+  const page = await connectedPage();
+  page.server.chat.addChannel({
+    channel: {
+      id: 'chat-a',
+      kind: 'direct',
+      label: 'A student',
+      label_kind: null,
+      colour: null,
+      tutor: null,
+      last_message: null,
+      unread_count: 0,
+      writable: true,
+      online: null,
+      unconfirmed: false,
+      user_id: null,
+    },
+    members: [{ accountId: tutor.id }],
+  });
+  const paused = page.server.chat.pauseNextReadResponse();
+  const client = createApiClient(origin, page.session.authorizedFetch);
+  const read = markRead(client, 'chat-a', 0, new AbortController().signal).then(() => {
+    scheduleChatReads(page.queryClient, page.clock);
+  });
+  await paused.answered;
+  page.queryClient.setQueryData(unreadChannelsKey, 0);
+
+  page.events.dispatchEvent(new Event('pagehide'));
+  paused.resume();
+  await read;
+  page.clock.pass(1000);
+  const invalidatedWhileHidden = page.queryClient.getQueryState(unreadChannelsKey)?.isInvalidated;
+  const pendingWhileHidden = page.clock.pendingDelays();
+  page.events.dispatchEvent(restoredFromTheBackForwardCache());
+  await eventually(() => {
+    expect(page.gateway.readySockets(tutor.id)).toBe(1);
+  });
+  scheduleChatReads(page.queryClient, page.clock);
+
+  expect(invalidatedWhileHidden).toBe(false);
+  expect(pendingWhileHidden).not.toContain(1000);
+  expect(page.clock.pendingDelays()).toContain(1000);
+  page.events.dispatchEvent(new Event('pagehide'));
 });

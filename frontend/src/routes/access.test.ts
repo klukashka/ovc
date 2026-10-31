@@ -161,7 +161,9 @@ describe('route access for signed-in accounts', () => {
   test.each<[string, boolean, Access['kind']]>([
     ['/schedule', true, 'signedIn'],
     ['/lessons/00000000-0000-4000-8000-000000000004', true, 'signedIn'],
-    ['/messages', true, 'redirect'],
+    ['/messages', true, 'signedIn'],
+    ['/messages/channel-1', true, 'signedIn'],
+    ['/messages/channel-1', false, 'redirect'],
     ['/notifications', true, 'redirect'],
     ['/schedule', false, 'redirect'],
     ['/lessons/00000000-0000-4000-8000-000000000004', false, 'redirect'],
@@ -180,7 +182,7 @@ describe('route access for signed-in accounts', () => {
     ['student', 'unverified', '/schedule', true],
     ['student', 'unverified', '/lessons', true],
     ['student', 'unverified', '/homework', false],
-    ['student', 'unverified', '/messages', false],
+    ['student', 'unverified', '/messages', true],
   ])('with a provisional link, for a %s (%s) the address %s is reachable: %s', (role, state, pathname, expected) => {
     const me = account(role, state);
 

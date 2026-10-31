@@ -1,6 +1,7 @@
 import { type UseQueryResult, useQuery } from '@tanstack/react-query';
 import { type ReactElement, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 
 import { ActionMenu } from '../../components/ui/ActionMenu.tsx';
 import { Avatar } from '../../components/ui/Avatar.tsx';
@@ -77,6 +78,11 @@ function TutorRow({
         )}
         {withBio && profile.bio !== '' ? <p className="text-small whitespace-pre-line">{profile.bio}</p> : null}
         <EndedLine tutor={tutor} />
+        {tutor.channel_id === null ? null : (
+          <Link to={`/messages/${encodeURIComponent(tutor.channel_id)}`} className="text-accent-text underline">
+            {t('section.messages')}
+          </Link>
+        )}
       </div>
       {onStopStudying === undefined || tutor.state === 'ended' ? null : (
         <ActionMenu

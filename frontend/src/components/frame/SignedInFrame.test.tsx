@@ -27,7 +27,7 @@ function account(role: Me['role'], state: Me['state'] = 'active'): FakeAccountSe
   };
 }
 
-async function signedInSession(seed: FakeAccountSeed): Promise<{ session: Session; me: Me }> {
+async function signedInSession(seed: FakeAccountSeed): Promise<{ session: Session; me: Me; server: FakeAuthServer }> {
   const server = new FakeAuthServer();
   server.addAccount(seed);
   const session = new Session({
@@ -41,7 +41,7 @@ async function signedInSession(seed: FakeAccountSeed): Promise<{ session: Sessio
   if (state.kind !== 'signedIn') {
     throw new Error('the frame test account did not sign in');
   }
-  return { session, me: state.me };
+  return { session, me: state.me, server };
 }
 
 async function renderFrame(
@@ -51,9 +51,45 @@ async function renderFrame(
   language: Language = 'ru',
   title?: 'page.notFound',
   connection = new ConnectionState(manualScheduler()),
+  chatUnread = false,
 ): Promise<void> {
   const i18n = await createI18n(language);
-  const { session, me } = await signedInSession(seed);
+  const { session, me, server } = await signedInSession(seed);
+  if (chatUnread) {
+    server.chat.addChannel({
+      channel: {
+        id: 'chat-a',
+        kind: 'direct',
+        label: 'A tutor',
+        label_kind: null,
+        colour: null,
+        tutor: null,
+        last_message: null,
+        unread_count: 0,
+        writable: true,
+        online: null,
+        unconfirmed: false,
+        user_id: null,
+      },
+      members: [{ accountId: me.id }],
+    });
+    server.chat.addMessage('chat-a', {
+      id: 'message-a',
+      seq: 1,
+      body: 'A new message',
+      attachments: [],
+      created_at: '2026-10-31T10:00:00Z',
+      deleted: false,
+      erased: false,
+      edited_at: null,
+      own: false,
+      sender_label: 'A tutor',
+      sender_label_kind: null,
+      sent_before_reclaim: false,
+      version: 1,
+      senderId: 'tutor-a',
+    });
+  }
   const router = createMemoryRouter(
     [
       {
@@ -265,4 +301,23 @@ test('navigation retains the offline live region without repeating its announcem
   expect(changes).toBe(0);
   expect(banner.closest('main')).toBeNull();
   expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Schedule' }));
+});
+
+test('the Messages unread channel count also marks the hidden sidebar', async () => {
+  await renderFrame(
+    account('student'),
+    '/homework',
+    false,
+    'en',
+    undefined,
+    new ConnectionState(manualScheduler()),
+    true,
+  );
+
+  const showSidebar = await screen.findByRole('button', { name: /Show sidebar.*new items/i });
+
+  expect(showSidebar.querySelector('[aria-hidden="true"]')).not.toBeNull();
+  const messages = screen.getByRole('link', { name: /Messages.*1/i, hidden: true });
+  expect(messages.getAttribute('href')).toBe('/messages');
+  expect(within(messages).getByText('1')).toBeDefined();
 });

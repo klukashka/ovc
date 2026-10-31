@@ -1,5 +1,9 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 
+import { type Scheduler, browserScheduler } from '../lib/api/session.ts';
+import { evictChannel } from '../features/messages/cache.ts';
+import { chatRefetch } from '../features/messages/refetch.ts';
+
 import { groupsKey, memberChoiceKey } from '../features/groups/api.ts';
 import { notificationsKey } from '../features/notifications/api.ts';
 import { calendarKey, lessonKey } from '../features/schedule/keys.ts';
@@ -27,10 +31,18 @@ function queriesOf(entity: EntityKind, id: string): readonly QueryKey[] {
 export function liveRefetch(
   queryClient: QueryClient,
   arrivals: Pick<NotificationArrivals, 'arrived'>,
-): (event: RealtimeEvent) => void {
-  return (event) => {
+  scheduler: Scheduler = browserScheduler,
+): ((event: RealtimeEvent) => void) & {
+  readonly cancel: () => void;
+  readonly suspend: () => void;
+  readonly resume: () => void;
+} {
+  const coalescer = chatRefetch(queryClient, scheduler);
+  const cancel = coalescer.cancel;
+  const onEvent = (event: RealtimeEvent): void => {
     switch (event.kind) {
       case 'connected':
+        cancel();
         void queryClient.invalidateQueries({
           predicate: (query) =>
             query.state.status === 'success' ||
@@ -42,10 +54,19 @@ export function liveRefetch(
         arrivals.arrived();
         void queryClient.invalidateQueries({ queryKey: notificationsKey });
         return;
+      case 'message':
+      case 'read':
+        coalescer.changed(event.channelId);
+        return;
       case 'entity':
+        if (event.entity === 'channel') {
+          evictChannel(queryClient, event.id, true);
+          coalescer.changed(event.id);
+        }
         for (const queryKey of queriesOf(event.entity, event.id)) {
           void queryClient.invalidateQueries({ queryKey });
         }
     }
   };
+  return Object.assign(onEvent, { cancel, suspend: coalescer.suspend, resume: coalescer.resume });
 }

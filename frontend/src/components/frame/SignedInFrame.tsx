@@ -3,6 +3,9 @@ import { type ReactElement, type ReactNode, type RefObject, useCallback, useEffe
 import { useTranslation } from 'react-i18next';
 import { Link, Outlet } from 'react-router';
 
+import { useUnreadChannels } from '../../features/messages/unread.ts';
+import { provisionallyLinked, useProvisionalLink } from '../../routes/provisionalLink.ts';
+
 import { NotificationAnnouncer, NotificationsBell, useUnreadCount } from '../../features/notifications/Bell.tsx';
 
 import { useMediaQuery, usePreferences, wideLayoutQuery } from '../../app/context.ts';
@@ -221,7 +224,9 @@ export function SignedInFrame({
   const hideButtonRef = useRef<HTMLButtonElement>(null);
   const withBell = reachable(me, '/notifications');
   const unread = useUnreadCount(withBell);
-  const counts: SectionCounts = withBell ? { notifications: unread } : {};
+  const linked = provisionallyLinked(useProvisionalLink(me));
+  const chatUnread = useUnreadChannels(reachable(me, '/messages', linked));
+  const counts: SectionCounts = { notifications: withBell ? unread : 0, messages: chatUnread };
   const news = hasNews(counts);
 
   const rememberSidebar = useCallback(

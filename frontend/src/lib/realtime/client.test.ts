@@ -306,3 +306,23 @@ describe('realtime client', () => {
     expect(rig.failures).toEqual([]);
   });
 });
+
+test('chat frames emit refetch hints without making their payload authoritative', async () => {
+  const events: RealtimeEvent[] = [];
+  const rig = await connectedRig((event) => {
+    events.push(event);
+  });
+
+  rig.gateway.messageExchanged(tutor.id, 'channel-a', 'message-a', 5);
+  rig.gateway.channelRead(tutor.id, 'channel-a');
+
+  await eventually(() => {
+    expect(events.filter((event) => event.kind !== 'connected')).toEqual([
+      { kind: 'message', change: 'new', channelId: 'channel-a', messageId: 'message-a' },
+      { kind: 'message', change: 'updated', channelId: 'channel-a', messageId: 'message-a' },
+      { kind: 'message', change: 'deleted', channelId: 'channel-a', messageId: 'message-a' },
+      { kind: 'read', channelId: 'channel-a' },
+    ]);
+  });
+  rig.disconnect();
+});

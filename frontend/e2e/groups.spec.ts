@@ -159,6 +159,10 @@ test.describe('Maria in Russian', () => {
     expect(await cardState(deployment, maria, boris.cardId)).toEqual({ state: 'active', groups: ['B1 evening'] });
     await page.getByRole('link', { name: 'Все группы' }).click();
     await expect(members(page, 'Группы')).toHaveText([/B1 evening.*2 ученика/]);
+    await page.goto('/messages');
+    await expect(
+      page.getByRole('region', { name: 'Чаты', exact: true }).getByRole('link').filter({ hasText: 'B1 evening' }),
+    ).toBeVisible();
   });
 });
 

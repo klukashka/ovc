@@ -981,6 +981,11 @@ export function StudentCardPage(): ReactElement {
           }}
         />
       )}
+      {error === null && query.data?.channel_id != null ? (
+        <Link to={`/messages/${encodeURIComponent(query.data.channel_id)}`} className="text-accent-text underline">
+          {t('section.messages')}
+        </Link>
+      ) : null}
       {body()}
     </Page>
   );

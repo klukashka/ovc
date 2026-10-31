@@ -576,6 +576,11 @@ export function LessonPage(): ReactElement {
           }}
         />
       )}
+      {lesson?.channel_id != null ? (
+        <Link to={`/messages/${encodeURIComponent(lesson.channel_id)}`} className="text-accent-text underline">
+          {t('section.messages')}
+        </Link>
+      ) : null}
       <LiveNotice message={announcement} />
       {body()}
       {tutor ? (

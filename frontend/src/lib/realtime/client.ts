@@ -12,6 +12,13 @@ export const listenerReconnectMilliseconds = 1_000;
 
 export type RealtimeEvent =
   | { readonly kind: 'notification'; readonly id: string }
+  | {
+      readonly kind: 'message';
+      readonly channelId: string;
+      readonly messageId: string;
+      readonly change: 'new' | 'updated' | 'deleted';
+    }
+  | { readonly kind: 'read'; readonly channelId: string }
   | { readonly kind: 'entity'; readonly entity: EntityKind; readonly id: string }
   | { readonly kind: 'connected'; readonly reconnect: boolean };
 
@@ -158,9 +165,20 @@ export class RealtimeClient {
         this.deps.onEvent({ kind: 'entity', entity: frame.kind, id: frame.id });
         return;
       case 'message.new':
+        this.deps.onEvent({ kind: 'message', channelId: frame.channelId, messageId: frame.messageId, change: 'new' });
+        return;
       case 'message.updated':
       case 'message.deleted':
+        this.deps.onEvent({
+          kind: 'message',
+          channelId: frame.channelId,
+          messageId: frame.messageId,
+          change: frame.type === 'message.updated' ? 'updated' : 'deleted',
+        });
+        return;
       case 'read.updated':
+        this.deps.onEvent({ kind: 'read', channelId: frame.channelId });
+        return;
       case 'typing':
       case 'presence':
         return;

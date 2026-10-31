@@ -1,3 +1,5 @@
+import { FakeChatServer } from './fakeChat.ts';
+
 import type { components } from './schema.ts';
 import type { LockManagerLike, Me, Scheduler } from './session.ts';
 import type { AuthTransport } from './transport.ts';
@@ -125,6 +127,29 @@ function fieldRefusal(path: string, code: string): Response {
   });
 }
 
+function fakeAudienceRefusal(method: string, path: string, caller: Me): Response | null {
+  const tutorOnly =
+    path === '/api/v1/students' ||
+    path.startsWith(cardPathPrefix) ||
+    path === joinRequestsPath ||
+    path.startsWith('/api/v1/groups');
+  if ((tutorOnly && caller.role !== 'tutor') || (path === '/api/v1/tutors' && caller.role !== 'student')) {
+    return refusal(404, 'not_found');
+  }
+  const unverifiedOK =
+    path === '/api/v1/users/me' ||
+    path === '/api/v1/auth/logout' ||
+    path === emailPreferencesPath ||
+    (method === 'GET' && (path === notificationsPath || path === calendarPath || path === '/api/v1/tutors')) ||
+    (method === 'GET' &&
+      (path === '/api/v1/channels' ||
+        path === '/api/v1/channels/unread' ||
+        /^\/api\/v1\/channels\/[^/]+(?:\/messages)?$/.test(path))) ||
+    (method === 'POST' && /^\/api\/v1\/channels\/[^/]+\/(?:messages|read)$/.test(path)) ||
+    ((method === 'PATCH' || method === 'DELETE') && /^\/api\/v1\/messages\/[^/]+$/.test(path));
+  return caller.state === 'unverified' && !unverifiedOK ? refusal(403, 'email_not_verified') : null;
+}
+
 const calendarMaxRangeMilliseconds = (62 + 2) * 24 * 60 * 60 * 1_000;
 
 async function nextTurn(): Promise<void> {
@@ -132,6 +157,8 @@ async function nextTurn(): Promise<void> {
 }
 
 export class FakeAuthServer {
+  readonly chat = new FakeChatServer();
+  private readonly tutors = new Map<string, components['schemas']['MyTutor'][]>();
   private readonly accounts = new Map<string, FakeAccount>();
   private readonly sessions = new Map<number, FakeSession>();
   private readonly tokens = new Map<string, FakeAccessToken>();
@@ -204,6 +231,10 @@ export class FakeAuthServer {
         theme: 'system',
       },
     });
+  }
+
+  seedTutors(email: string, tutors: components['schemas']['MyTutor'][]): void {
+    this.tutors.set(this.account(email).me.id, tutors);
   }
 
   advance(seconds: number): void {
@@ -468,6 +499,39 @@ export class FakeAuthServer {
     const path = address.pathname;
     if (path === '/api/v1/users/me') {
       return this.readAccount(token);
+    }
+    const accountId = this.sessionOf(token)?.accountId;
+    const caller = [...this.accounts.values()].find((account) => account.me.id === accountId)?.me;
+    const publicRead = request.method === 'GET' && path.startsWith(invitationPathPrefix);
+    const publicUnsubscribe = path === unsubscribePreviewPath || path === unsubscribePath;
+    if (!publicRead && !publicUnsubscribe) {
+      const invalid = this.refusedToken(token);
+      if (invalid !== null) {
+        return invalid;
+      }
+    }
+    if (!publicRead && !publicUnsubscribe && caller !== undefined) {
+      const audienceRefusal = fakeAudienceRefusal(request.method, path, caller);
+      if (audienceRefusal !== null) {
+        return audienceRefusal;
+      }
+    }
+    if (path === '/api/v1/channels' || path.startsWith('/api/v1/channels/') || path.startsWith('/api/v1/messages/')) {
+      const invalid = this.refusedToken(token);
+      if (invalid !== null) {
+        return invalid;
+      }
+      if (caller === undefined) {
+        return refusal(401, 'unauthenticated');
+      }
+      return this.chat.handle(request, caller, Date.UTC(2026, 10, 1) + this.nowSeconds * 1_000);
+    }
+    if (path === '/api/v1/tutors' && request.method === 'GET') {
+      const invalid = this.refusedToken(token);
+      if (invalid !== null) {
+        return invalid;
+      }
+      return json(200, { tutors: this.tutors.get(accountId ?? '') ?? [] });
     }
     if (path === '/api/v1/students' || path.startsWith(cardPathPrefix)) {
       return this.answerCards(request, token, path);

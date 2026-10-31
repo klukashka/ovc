@@ -20,6 +20,8 @@ export const ru = {
     reason: 'Нет соединения',
   },
   frame: {
+    messagesWithCount: 'Сообщения, непрочитанных чатов: {count}',
+    messagesOverCap: 'Сообщения, более 99 непрочитанных чатов',
     navigation: 'Основная навигация',
     sidebar: 'Боковая панель',
     showSidebar: 'Показать боковую панель',

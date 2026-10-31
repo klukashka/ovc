@@ -2,6 +2,7 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
+import { channelOf } from './messages.ts';
 import { notificationRows, bellIn, panelRowsIn } from './notifications.ts';
 import { addDays, cardLessonStatuses, isoWeekday, localDate, scheduleLessonsWithIds } from './schedule.ts';
 import { diagnosedTest as test, expect, expectRowsNamed, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
@@ -207,6 +208,29 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
     expect(await cardLessonStatuses(deployment, maria, borisCard)).toEqual(allCancelled(seriesLessonCount));
   });
 
+  test('pilot-4 › step 3 Boris keeps the read-only private chat and no longer sees the group chat', async ({
+    browser,
+    deployment,
+    diagnostics,
+  }) => {
+    const { maria, boris, borisCard } = pilotFour();
+    const channel = await channelOf(deployment, maria, `/students/${borisCard}`);
+    const context = await englishContext(browser, deployment);
+    const page = await context.newPage();
+    await diagnostics.watch(page);
+    await signInThroughTheApi(page, boris);
+
+    await page.goto(`/messages/${channel}`);
+
+    await expect(page.getByRole('heading', { level: 2, name: 'Мария', exact: true })).toBeFocused();
+    await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toHaveAttribute('readonly', '');
+    await expect(page.getByRole('button', { name: 'Send', exact: true })).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.getByRole('main').getByText('This chat is read-only', { exact: true })).toHaveCount(2);
+    await expect(page.getByRole('region', { name: 'Chats', exact: true }).getByRole('link')).toHaveCount(1);
+    await expect(page.getByRole('region', { name: 'Chats', exact: true })).not.toContainText('B1 evening');
+    await diagnostics.closeContext(context);
+  });
+
   test('pilot-4 › step 4 Boris opens the group lesson’s address and it is not found', async ({
     browser,
     deployment,
@@ -293,6 +317,14 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
     await expect(page.getByRole('button', { name: 'Завершить занятия' })).toBeVisible();
     expect(await cardState(deployment, maria, borisCard)).toEqual({ state: 'active', groups: [] });
     expect(await groupMemberNames(deployment, maria, groupId)).toEqual(['Анна']);
+    const channel = await channelOf(deployment, maria, `/students/${borisCard}`);
+    await borisPage.goto(`/messages/${channel}`);
+    await expect(borisPage.getByRole('textbox', { name: 'Message', exact: true })).not.toHaveAttribute('readonly', '');
+    await expect(borisPage.getByRole('button', { name: 'Send', exact: true })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
+    await expect(borisPage.getByRole('main').getByText('This chat is read-only', { exact: true })).toHaveCount(0);
     await diagnostics.closeContext(borisContext);
   });
 });

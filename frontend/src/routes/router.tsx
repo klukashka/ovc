@@ -15,6 +15,7 @@ function page(path: string, title: RouteHandle['title'], element: ReactElement =
   return { path, element, handle };
 }
 
+const messagesPage = lazyPage(async () => (await import('../features/messages/MessagesPage.tsx')).MessagesPage);
 const todayPage = lazyPage(async () => (await import('../features/home/TodayPage.tsx')).TodayPage);
 const studentsPage = lazyPage(async () => (await import('../features/students/StudentsPage.tsx')).StudentsPage);
 const studentCardPage = lazyPage(
@@ -82,8 +83,8 @@ export const studentPages: RouteObject[] = [
 export const sharedPages: RouteObject[] = [
   page('/schedule', 'page.schedule', schedulePage),
   page('/lessons/:lessonId', 'page.lesson', lessonPage),
-  page('/messages', 'page.messages'),
-  page('/messages/:channelId', 'page.messages'),
+  page('/messages', 'page.messages', messagesPage),
+  page('/messages/:channelId', 'page.messages', messagesPage),
   page('/notifications', 'page.notifications', notificationsPage),
   page('/settings/profile', 'page.settingsProfile', profileSettingsPage),
   page('/settings/account', 'page.settingsAccount', accountSettingsPage),
