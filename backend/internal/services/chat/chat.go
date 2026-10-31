@@ -72,6 +72,7 @@ func DefaultPresenceCleanupSettings() PresenceCleanupSettings {
 }
 
 type Dependencies struct {
+	Digest          DigestSettings
 	PresenceCleanup PresenceCleanupSettings
 	Store           *repositories.Store
 	Clock           clock.Source
@@ -87,6 +88,9 @@ type Service struct {
 }
 
 func New(dependencies Dependencies) *Service {
+	if dependencies.Digest.Wall == nil {
+		dependencies.Digest = DefaultDigestSettings()
+	}
 	if dependencies.PresenceCleanup.Wall == nil {
 		dependencies.PresenceCleanup = DefaultPresenceCleanupSettings()
 	}

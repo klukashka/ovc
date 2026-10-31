@@ -210,7 +210,7 @@ sequenceDiagram
 ```
 
 - The web client sends only through REST; the WebSocket carries `typing.start` and `typing.stop` from the client and nothing else of chat (the owner's decision of 2026-10-29, pending owner review).
-- **The digest flag:** the send inserts a `digest_pending` row, `ON CONFLICT DO NOTHING`, for each active member whose `online_until` has passed, in the same transaction, without locking any user row ([message digest](notifications.md#message-digest)).
+- **The digest flag:** the send inserts a `digest_pending` row, assigning a fresh sequence-backed revision on conflict and preserving the earliest pending time, for each active member whose `online_until` has passed, in the same transaction, without locking any user row ([message digest](notifications.md#message-digest)).
 
 ### Presence and typing
 

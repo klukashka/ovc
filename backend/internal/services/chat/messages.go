@@ -412,6 +412,10 @@ func (s *Service) MarkRead(ctx context.Context, author Author, channel domain.Ch
 		if _, err := lockMembership(ctx, repos, channel, author.UserID, false); err != nil {
 			return err
 		}
+		revision, err := repos.Digests.Revision(ctx, author.UserID)
+		if err != nil {
+			return err
+		}
 		moved, err = repos.Messages.MoveReadMarker(ctx, channel, author.UserID, seq, now)
 		if err != nil {
 			return err
@@ -428,7 +432,10 @@ func (s *Service) MarkRead(ctx context.Context, author Author, channel domain.Ch
 		}
 		state.UnreadCount = min(membership.LastSeq-membership.LastReadSeq, domain.UnreadCountCap)
 		state.UnreadChannels, err = repos.Channels.CountUnread(ctx, author.UserID, domain.UnreadChannelsCap)
-		return err
+		if err != nil {
+			return err
+		}
+		return repos.Digests.ClearRead(ctx, author.UserID, revision)
 	})
 	if err != nil {
 		return ReadState{}, err

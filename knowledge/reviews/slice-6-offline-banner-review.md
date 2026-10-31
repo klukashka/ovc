@@ -1,7 +1,7 @@
 # Shared offline banner readiness
 
 Base: `6670bf3fe444c03b889035e1fca7eefb2409d170`.
-Status: change checks and readiness reviews passed; full merge gate pending.
+Status: merged as `41bb7957dd0ffaf3c17c0ed6094b9a405c2814e5`; [full gate and finish evidence](slice-6-offline-banner-merge-2026-10-31.md) records all command results and tree equality.
 
 ## Scope and independent reviews
 
@@ -22,10 +22,10 @@ A separate fresh security reviewer examined the complete diff: passed, no blocke
 - Entry plus largest language chunk: 173.4 KB gzip, below the 176 KB owner checkpoint and 180 KB hard limit. Student Home 188.5 KB; tutor Today 189.1 KB. Twenty-one page modules remain lazy.
 - The first browser series passed 71 tests and failed one WebKit sign-out test: the new empty status role made the existing status locator ambiguous before routing finished. The banner now uses an explicit polite/atomic live region without an additional status role, preserving its announcements and existing status semantics. The first attempted edit did not match the formatter-compressed JSX, so another browser run repeated the same failure (71 passed, one failed); the source was then inspected and the exact attribute removed and verified before rebuilding. Both failures are retained. Assertions and browser timeouts are unchanged. Five consecutive three-engine series after the verified fix passed: 72 tests each, 360 executions total, in 19.3, 20.4, 19.1, 17.7 and 17.9 seconds. Raw logs are retained at /private/tmp/ovc-f1-e2e-final-1.log through -5.log.
 - Final lint and format check passed. Tool-binary verification, full documentation checks (Markdown, links and diagrams), staged diff check and staged Gitleaks passed.
-- Other full-run checks: deferred to the merge gate; no result is claimed yet.
+- All remaining full-run checks subsequently passed in the full merge gate, including 594 component tests and 902 E2E tests; see the merge evidence.
 
 The initial local offline install selected an empty temporary pnpm store and failed on a missing tarball. Installation from the existing user store with frozen lockfiles succeeded offline; no dependency files changed.
 
 ## Limits
 
-F1 fixtures exercise the shared guard and composer draft behavior. Real Messages Send/Edit/Delete/Attach paths belong to F2/F3 and remain pending there. Actual assistive-technology speech is unverified; DOM live-region and focus contracts are tested. This change does not close slice 6. Gate and finish evidence must identify the exact tested tree before reporting completion.
+F1 fixtures exercise the shared guard and composer draft behavior. Real Messages Send/Edit/Delete/Attach paths belong to F2/F3 and remain pending there. Actual assistive-technology speech is unverified; DOM live-region and focus contracts are tested. This change does not close slice 6. Gate and finish confirmed the exact tested tree as recorded in the merge evidence.

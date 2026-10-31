@@ -237,7 +237,11 @@ func newAuthHarnessStoring(
 	if err != nil {
 		t.Fatal(err)
 	}
-	builders, err := notifications.Combine(accountEmails.Builders(), relationshipEmails.Builders(), lessonEmails.Builders())
+	digestEmails, err := notifications.NewDigestEmails(store, links, publicOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	builders, err := notifications.Combine(accountEmails.Builders(), relationshipEmails.Builders(), lessonEmails.Builders(), digestEmails.Builders())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,6 +265,7 @@ func newAuthHarnessStoring(
 		{Name: domain.JobReclaimExpire, Every: time.Hour, Run: tutoringService.ExpireReclaims},
 		{Name: domain.JobJoinRequestsExpire, Every: time.Hour, Run: tutoringService.ExpireJoinRequests},
 		{Name: domain.JobNotificationsCleanup, Every: time.Hour, Run: inbox.Cleanup},
+		{Name: domain.JobMessagesDigest, Every: time.Minute, Run: chatService.QueueDigests},
 		{Name: domain.JobEraseChannels, Every: time.Minute, Run: chatService.EraseChannels},
 		{Name: domain.JobLessonStatus, Every: time.Minute, Run: jobs.run((*schedule.Jobs).EndUnjoined)},
 		{Name: domain.JobLessonReminders, Every: time.Minute, Run: jobs.run((*schedule.Jobs).QueueReminders)},

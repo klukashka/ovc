@@ -35,7 +35,7 @@ func TestPresenceMigrationCanBeRolledBackAndReapplied(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	if _, err := provider.Up(ctx); err != nil {
+	if _, err := provider.UpTo(ctx, 18); err != nil {
 		t.Fatal(err)
 	}
 	var first bool
@@ -49,7 +49,7 @@ func TestPresenceMigrationCanBeRolledBackAndReapplied(t *testing.T) {
 	if err := database.QueryRowContext(ctx, "SELECT to_regclass('user_presence') IS NULL AND to_regclass('user_presence_instances') IS NULL").Scan(&removed); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := provider.Up(ctx); err != nil {
+	if _, err := provider.UpTo(ctx, 18); err != nil {
 		t.Fatal(err)
 	}
 	var restored bool

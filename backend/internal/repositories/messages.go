@@ -319,5 +319,8 @@ func (r Messages) DeleteBatchOfTutor(ctx context.Context, tutor domain.UserID, b
 
 func (r Messages) ForgetDigestOf(ctx context.Context, user domain.UserID) error {
 	_, err := r.queries.DeleteDigestPendingOf(ctx, user)
-	return done(err, "forget the digest flag")
+	if err != nil {
+		return done(err, "forget the digest flag")
+	}
+	return done(r.queries.DeleteDigestStateOf(ctx, user), "forget digest state")
 }

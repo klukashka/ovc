@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="{{.Language}}">
+  <body>
+    <h1>{{.Subject}}</h1>
+    <p>{{.Intro}}</p>
+    <ul>{{range .Channels}}<li>{{.Label}}: {{.Count}}</li>{{end}}</ul>
+    {{if .More}}<p>{{.More}}</p>{{end}}
+    <p><a href="{{.ActionURL}}">{{.Action}}</a></p>
+    <p><a href="{{.UnsubscribeURL}}">{{.Unsubscribe}}</a></p>
+  </body>
+</html>

@@ -35,7 +35,7 @@ VALUES ($1, 'group', $2, $3, 1, $4, $4, $4)`
 var mirrorAndPurgeQueries = []string{
 	"AddDirectChannelMembers", "SuspendReclaimedMembers", "RestoreKeptMembers", "RemoveFormerGroupMembers", "AddGroupChannelMembers",
 	"DeleteMembersOfChannels", "DeleteMembershipsOfUser", "LockChannelsOfMember", "DeleteTutorChannelMembersBatch",
-	"ClaimUnbindableChatUploads", "MoveSenderReadMarker", "MoveReadMarker",
+	"ClaimUnbindableChatUploads", "MoveSenderReadMarker", "MoveReadMarker", "LockDigestMembers", "AdvanceDigestedMarker",
 }
 
 var namedQuery = regexp.MustCompile(`(?m)^-- name: (\w+) :\w+$`)
@@ -200,6 +200,48 @@ func TestEveryPathReadsMembersThroughTheActivePredicate(t *testing.T) {
 		}
 		if tutorLists != channelLive || tutorReaches != channelLive {
 			t.Errorf("%s: the tutor lists it %t and reaches it %t", testCase.name, tutorLists, tutorReaches)
+		}
+	}
+}
+
+func TestDigestMemberWritesUseTheActivePredicate(t *testing.T) {
+	t.Parallel()
+	database := testdb.New(t)
+	store := repositories.NewStore(database.Pool)
+	_, _, cases := seedPredicateCases(t, database)
+	ctx := context.Background()
+	reached := make(map[domain.UserID]bool)
+	markers := make(map[domain.UserID]int64)
+
+	for _, testCase := range cases {
+		err := store.WithTx(ctx, func(repos repositories.Repositories) error {
+			channels, err := repos.Digests.Channels(ctx, testCase.student)
+			if err != nil {
+				return err
+			}
+			reached[testCase.student] = slices.Contains(channels, testCase.channel)
+			if err := repos.Digests.LockMembers(ctx, testCase.student, []domain.ChannelID{testCase.channel}); err != nil {
+				return err
+			}
+			return repos.Digests.Advance(ctx, testCase.student, repositories.DigestBounds{ChannelID: testCase.channel, ThroughSeq: 1})
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var marker int64
+		if err := database.Pool.QueryRow(ctx, "SELECT digested_through_seq FROM channel_members WHERE user_id = $1 AND channel_id = $2", testCase.student, testCase.channel).Scan(&marker); err != nil {
+			t.Fatal(err)
+		}
+		markers[testCase.student] = marker
+	}
+
+	for _, testCase := range cases {
+		expected := int64(0)
+		if testCase.active {
+			expected = 1
+		}
+		if reached[testCase.student] != testCase.active || markers[testCase.student] != expected {
+			t.Errorf("%s: reachable %t, marker %d", testCase.name, reached[testCase.student], markers[testCase.student])
 		}
 	}
 }

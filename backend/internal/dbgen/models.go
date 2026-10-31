@@ -94,6 +94,12 @@ type ChannelMember struct {
 type DigestPending struct {
 	UserID       domain.UserID
 	PendingSince time.Time
+	Revision     domain.DigestRevision
+}
+
+type DigestState struct {
+	UserID       domain.UserID
+	LastDigestAt *time.Time
 }
 
 type EmailPreference struct {

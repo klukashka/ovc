@@ -41,7 +41,7 @@ WHERE members.channel_id = @channel_id AND members.user_id <> sqlc.arg(sender_id
         SELECT 1 FROM user_presence WHERE user_presence.user_id = members.user_id AND user_presence.online_until > sqlc.arg(now)::timestamptz
     )
 ORDER BY members.user_id
-ON CONFLICT (user_id) DO NOTHING;
+ON CONFLICT (user_id) DO UPDATE SET revision = nextval('digest_pending_revision_seq');
 
 -- name: LockBindableUploads :many
 SELECT id, size_bytes::bigint AS size_bytes FROM attachments

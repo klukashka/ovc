@@ -170,7 +170,11 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 	if err != nil {
 		return nil, err
 	}
-	builders, err := notifications.Combine(accountEmails.Builders(), relationshipEmails.Builders(), lessonEmails.Builders())
+	digestEmails, err := notifications.NewDigestEmails(store, unsubscribeTokens, settings.PublicURL)
+	if err != nil {
+		return nil, err
+	}
+	builders, err := notifications.Combine(accountEmails.Builders(), relationshipEmails.Builders(), lessonEmails.Builders(), digestEmails.Builders())
 	if err != nil {
 		return nil, err
 	}
@@ -201,6 +205,7 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 		{Name: domain.JobReclaimExpire, Every: time.Hour, Run: tutoringService.ExpireReclaims},
 		{Name: domain.JobJoinRequestsExpire, Every: time.Hour, Run: tutoringService.ExpireJoinRequests},
 		{Name: domain.JobNotificationsCleanup, Every: time.Hour, Run: inbox.Cleanup},
+		{Name: domain.JobMessagesDigest, Every: time.Minute, Run: chatService.QueueDigests},
 		{Name: domain.JobEraseChannels, Every: time.Minute, Run: chatService.EraseChannels},
 		{Name: domain.JobExpirePresence, Every: time.Minute, Run: chatService.ExpirePresence},
 		{Name: domain.JobLessonStatus, Every: time.Minute, Run: lessonJobs.EndUnjoined},

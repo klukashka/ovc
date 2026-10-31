@@ -1,0 +1,11 @@
+{{.Subject}}
+
+{{.Intro}}
+{{range .Channels}}
+{{.Label}}: {{.Count}}{{end}}
+{{if .More}}
+{{.More}}
+{{end}}
+{{.Action}}: {{.ActionURL}}
+
+{{.Unsubscribe}}: {{.UnsubscribeURL}}

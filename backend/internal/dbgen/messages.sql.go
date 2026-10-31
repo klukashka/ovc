@@ -203,7 +203,7 @@ WHERE members.channel_id = $2 AND members.user_id <> $3::uuid
         SELECT 1 FROM user_presence WHERE user_presence.user_id = members.user_id AND user_presence.online_until > $1::timestamptz
     )
 ORDER BY members.user_id
-ON CONFLICT (user_id) DO NOTHING
+ON CONFLICT (user_id) DO UPDATE SET revision = nextval('digest_pending_revision_seq')
 `
 
 type FlagDigestPendingParams struct {

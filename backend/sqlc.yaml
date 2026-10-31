@@ -493,3 +493,11 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: PresenceInstanceID
+          - column: digest_state.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: digest_pending.revision
+            go_type:
+              import: ovc/backend/internal/domain
+              type: DigestRevision
