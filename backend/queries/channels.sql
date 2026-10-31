@@ -174,7 +174,13 @@ SELECT members.channel_id, members.kind, members.tutor_id, members.relationship_
     EXISTS (
         SELECT 1 FROM active_channel_members AS other
         WHERE other.channel_id = members.channel_id AND other.user_id <> members.user_id
-    ) AS other_party_active
+    ) AS other_party_active,
+    EXISTS (
+        SELECT 1 FROM active_channel_members AS other
+        JOIN user_presence ON user_presence.user_id = other.user_id
+        WHERE other.channel_id = members.channel_id AND other.user_id <> members.user_id
+            AND user_presence.online_until > sqlc.arg(now)::timestamptz
+    ) AS other_party_online
 FROM active_channel_members AS members
 JOIN users AS tutors ON tutors.id = members.tutor_id
 LEFT JOIN relationships ON relationships.id = members.relationship_id
@@ -204,10 +210,12 @@ SELECT count(*) FROM (
 ) AS unread;
 
 -- name: ListChannelMemberLabels :many
-SELECT members.user_id, relationships.display_name
+SELECT members.user_id, relationships.display_name,
+    COALESCE(user_presence.online_until > sqlc.arg(now)::timestamptz, false)::boolean AS online
 FROM active_channel_members AS members
 JOIN relationships
     ON relationships.tutor_id = members.tutor_id AND relationships.student_id = members.user_id AND relationships.state <> 'discarded'
+LEFT JOIN user_presence ON user_presence.user_id = members.user_id
 WHERE members.channel_id = @channel_id AND members.user_id <> members.tutor_id
 ORDER BY relationships.display_name, members.user_id;
 

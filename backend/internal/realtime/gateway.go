@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -34,6 +35,13 @@ type Clock interface {
 	Instant(ctx context.Context) (time.Time, error)
 }
 
+type Chat interface {
+	PersistPresence(ctx context.Context, instance domain.PresenceInstanceID, users []domain.UserID, online bool) ([]domain.UserID, error)
+	AnnouncePresence(ctx context.Context, account domain.UserID, online bool) error
+	Typing(ctx context.Context, typist domain.UserID, channel domain.ChannelID) error
+	CheckTyping(ctx context.Context, typist domain.UserID, channel domain.ChannelID) error
+}
+
 type Timing struct {
 	AuthWithin      time.Duration
 	TokenGrace      time.Duration
@@ -47,6 +55,10 @@ type Timing struct {
 	RateWindow      time.Duration
 	ViolationWindow time.Duration
 	ShutdownWait    time.Duration
+	PresenceEvery   time.Duration
+	PresenceTimeout time.Duration
+	PresenceSettle  time.Duration
+	TypingCoalesce  time.Duration
 }
 
 func DefaultTiming() Timing {
@@ -63,6 +75,10 @@ func DefaultTiming() Timing {
 		RateWindow:      time.Second,
 		ViolationWindow: 10 * time.Second,
 		ShutdownWait:    10 * time.Second,
+		PresenceEvery:   time.Minute,
+		PresenceTimeout: 5 * time.Second,
+		PresenceSettle:  5 * time.Second,
+		TypingCoalesce:  2 * time.Second,
 	}
 }
 
@@ -72,14 +88,17 @@ type Limits struct {
 	PerAccount      int
 	FramesPerWindow int
 	Violations      int
+	Accounts        int
 }
 
 func DefaultLimits() Limits {
-	return Limits{Unauthenticated: 500, PerAddress: 20, PerAccount: 20, FramesPerWindow: 20, Violations: 5}
+	return Limits{Unauthenticated: 500, PerAddress: 20, PerAccount: 20, FramesPerWindow: 20, Violations: 5, Accounts: 4096}
 }
 
 type Dependencies struct {
 	Sessions         Sessions
+	Chat             Chat
+	Scheduler        Scheduler
 	Clock            Clock
 	Now              func() time.Time
 	NewID            func() string
@@ -92,7 +111,7 @@ type Dependencies struct {
 
 var (
 	ErrInvalidOrigin       = errors.New("the gateway needs the public origin as an absolute URL")
-	ErrMissingDependencies = errors.New("the gateway needs its sessions, clocks, identifier source and logger")
+	ErrMissingDependencies = errors.New("the gateway needs its sessions, chat service, scheduler, clocks, identifier source and logger")
 	ErrInvalidTiming       = errors.New("the gateway's timing and limits must be positive")
 )
 
@@ -111,26 +130,32 @@ type account struct {
 	rechecks   uint64
 	rechecking bool
 	again      bool
+	presence
 }
 
 type Gateway struct {
-	deps        Dependencies
-	originHosts []string
-	mu          sync.Mutex
-	listener    ListenerState
-	closing     bool
-	pending     int
-	byAddress   map[netip.Addr]int
-	accounts    map[domain.UserID]*account
-	open        map[*socket]struct{}
-	served      sync.WaitGroup
-	stop        context.CancelFunc
-	loops       sync.WaitGroup
-	rechecks    sync.WaitGroup
+	deps          Dependencies
+	originHosts   []string
+	mu            sync.Mutex
+	listener      ListenerState
+	closing       bool
+	pending       int
+	byAddress     map[netip.Addr]int
+	accounts      map[domain.UserID]*account
+	open          map[*socket]struct{}
+	served        sync.WaitGroup
+	stop          context.CancelFunc
+	loops         sync.WaitGroup
+	rechecks      sync.WaitGroup
+	presenceRun   sync.WaitGroup
+	instance      domain.PresenceInstanceID
+	presenceQueue chan domain.UserID
+	stopPresence  context.CancelFunc
 }
 
 func New(deps Dependencies) (*Gateway, error) {
-	if deps.Sessions == nil || deps.Clock == nil || deps.Now == nil || deps.NewID == nil || deps.Logger == nil {
+	if deps.Sessions == nil || deps.Chat == nil || deps.Scheduler == nil || deps.Clock == nil || deps.Now == nil || deps.NewID == nil ||
+		deps.Logger == nil {
 		return nil, ErrMissingDependencies
 	}
 	parsed, err := url.Parse(deps.PublicOrigin)
@@ -138,16 +163,25 @@ func New(deps Dependencies) (*Gateway, error) {
 		return nil, ErrInvalidOrigin
 	}
 	if !positive(deps.Timing) || deps.Limits.Unauthenticated <= 0 || deps.Limits.PerAddress <= 0 || deps.Limits.PerAccount <= 0 ||
-		deps.Limits.FramesPerWindow <= 0 || deps.Limits.Violations <= 0 {
+		deps.Limits.FramesPerWindow <= 0 || deps.Limits.Violations <= 0 || deps.Limits.Accounts <= 0 {
 		return nil, ErrInvalidTiming
 	}
+	encoded, err := hex.DecodeString(deps.NewID())
+	if err != nil || len(encoded) != 16 {
+		return nil, ErrMissingDependencies
+	}
+	var instance domain.PresenceInstanceID
+	copy(instance[:], encoded)
 	return &Gateway{
-		deps:        deps,
-		originHosts: []string{escapePattern(parsed.Host)},
-		byAddress:   map[netip.Addr]int{},
-		accounts:    map[domain.UserID]*account{},
-		open:        map[*socket]struct{}{},
-		stop:        func() {},
+		deps:          deps,
+		instance:      instance,
+		presenceQueue: make(chan domain.UserID, deps.Limits.Accounts),
+		stopPresence:  func() {},
+		originHosts:   []string{escapePattern(parsed.Host)},
+		byAddress:     map[netip.Addr]int{},
+		accounts:      map[domain.UserID]*account{},
+		open:          map[*socket]struct{}{},
+		stop:          func() {},
 	}, nil
 }
 
@@ -155,6 +189,7 @@ func positive(timing Timing) bool {
 	for _, duration := range []time.Duration{
 		timing.AuthWithin, timing.TokenGrace, timing.LapseCheckEvery, timing.SweepEvery, timing.LookupTimeout, timing.LookupEvery,
 		timing.WriteTimeout, timing.PingEvery, timing.PongWithin, timing.RateWindow, timing.ViolationWindow, timing.ShutdownWait,
+		timing.PresenceEvery, timing.PresenceTimeout, timing.PresenceSettle, timing.TypingCoalesce,
 	} {
 		if duration <= 0 {
 			return false
@@ -180,7 +215,13 @@ func (g *Gateway) Start(ctx context.Context, state ListenerState) {
 	g.listener = state
 	g.stop = cancel
 	g.mu.Unlock()
-	g.loops.Add(2)
+	presenceContext, stopPresence := context.WithCancel(context.Background())
+	g.stopPresence = stopPresence
+	g.presenceRun.Add(4)
+	for range 4 {
+		core.Go(presenceContext, g.deps.Logger, "realtime.presence.writer", func(ctx context.Context) { defer g.presenceRun.Done(); g.presenceWorker(ctx) })
+	}
+	g.loops.Add(3)
 	core.Go(loopContext, g.deps.Logger, "realtime.lapse", func(ctx context.Context) {
 		defer g.loops.Done()
 		g.every(ctx, g.deps.Timing.LapseCheckEvery, g.closeLapsed)
@@ -189,42 +230,59 @@ func (g *Gateway) Start(ctx context.Context, state ListenerState) {
 		defer g.loops.Done()
 		g.every(ctx, g.deps.Timing.SweepEvery, g.sweep)
 	})
+	core.Go(loopContext, g.deps.Logger, "realtime.presence", func(ctx context.Context) {
+		defer g.loops.Done()
+		g.every(ctx, g.deps.Timing.PresenceEvery, g.extendOnSchedule)
+	})
 }
 
 func (g *Gateway) every(ctx context.Context, interval time.Duration, run func(context.Context)) {
-	ticker := time.NewTicker(interval)
+	ticker := g.deps.Scheduler.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-ticker.Ticks():
 			run(ctx)
 		}
 	}
 }
 
 func (g *Gateway) Shutdown(ctx context.Context) {
+	wait, cancel := context.WithTimeout(ctx, g.deps.Timing.ShutdownWait)
+	defer cancel()
 	g.mu.Lock()
 	g.closing = true
 	for s := range g.open {
 		g.closeLocked(s, domain.CloseShutdown, "shutdown")
 	}
+	for _, found := range g.accounts {
+		if found.settle != nil {
+			found.settle.Stop()
+			found.settling = false
+		}
+	}
 	stop := g.stop
 	g.mu.Unlock()
 	stop()
 	finished := make(chan struct{})
-	core.Go(ctx, g.deps.Logger, "realtime.shutdown", func(context.Context) {
+	core.Go(wait, g.deps.Logger, "realtime.shutdown", func(ctx context.Context) {
 		g.served.Wait()
 		g.loops.Wait()
 		g.rechecks.Wait()
+		if err := g.ExtendPresence(ctx); err != nil {
+			g.deps.Logger.LogAttrs(ctx, slog.LevelError, "presence.shutdown.incomplete", slog.String("kind", core.ErrorKind(err)), slog.Int("unreleased_accounts", g.pendingPresence()))
+		}
+		g.stopPresence()
+		g.presenceRun.Wait()
 		close(finished)
 	})
-	wait, cancel := context.WithTimeout(ctx, g.deps.Timing.ShutdownWait)
-	defer cancel()
 	select {
 	case <-finished:
 	case <-wait.Done():
+		g.stopPresence()
+		g.presenceRun.Wait()
 		g.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "realtime.shutdown.incomplete", slog.String("kind", core.ErrorKind(wait.Err())))
 	}
 }
@@ -291,14 +349,14 @@ func (g *Gateway) state() (listener.Generation, bool) {
 func (g *Gateway) accountLocked(user domain.UserID) *account {
 	found, ok := g.accounts[user]
 	if !ok {
-		found = &account{sockets: map[*socket]struct{}{}}
+		found = &account{sockets: map[*socket]struct{}{}, presence: presence{changed: make(chan struct{})}}
 		g.accounts[user] = found
 	}
 	return found
 }
 
 func (g *Gateway) forgetLocked(user domain.UserID, found *account) {
-	if len(found.sockets) == 0 && !found.rechecking && g.accounts[user] == found {
+	if len(found.sockets) == 0 && !found.rechecking && !found.persisting && !found.queued && found.revision == found.persisted && !found.announcePending && !found.settling && g.accounts[user] == found {
 		delete(g.accounts, user)
 	}
 }
@@ -308,6 +366,10 @@ func (g *Gateway) closeLocked(s *socket, code domain.CloseCode, reason string) {
 		return
 	}
 	s.closed = true
+	for _, timer := range s.typing {
+		timer.Stop()
+	}
+	s.typing = nil
 	s.code, s.reason = code, reason
 	close(s.done)
 	if s.reserved {
@@ -315,8 +377,7 @@ func (g *Gateway) closeLocked(s *socket, code domain.CloseCode, reason string) {
 		g.releaseLocked(s.reservation.bucket)
 	}
 	if found, ok := g.accounts[s.user]; ok && s.phase != phaseAwaiting {
-		delete(found.sockets, s)
-		g.forgetLocked(s.user, found)
+		g.leaveLocked(s, found)
 	}
 	conn, finished, logger := s.conn, s.finished, s.log()
 	core.Go(context.Background(), logger, "realtime.close", func(ctx context.Context) {
@@ -361,6 +422,16 @@ func (g *Gateway) Signal(signal domain.Signal) {
 		frame := encode(domain.FrameEntityChanged, nil, &schemas.EntityChangedPayload{Kind: typed.Entity, ID: typed.ID.String()})
 		sockets := g.deliver(typed.Users, frame)
 		g.logDelivery(domain.SignalEntity, len(typed.Users), sockets, started)
+	case domain.TypingSignal:
+		account := typed.Account.String()
+		channel := typed.Channel.String()
+		shown := g.deliver(typed.Shown, encode(domain.FrameTyping, nil, &schemas.TypingPayload{ChannelID: channel, UserID: &account}))
+		anonymous := g.deliver(typed.Anonymous, encode(domain.FrameTyping, nil, &schemas.TypingPayload{ChannelID: channel}))
+		g.logDelivery(domain.SignalTyping, len(typed.Shown)+len(typed.Anonymous), shown+anonymous, started)
+	case domain.PresenceSignal:
+		frame := encode(domain.FramePresence, nil, &schemas.PresencePayload{UserID: typed.Account.String(), Online: typed.Online})
+		sockets := g.deliver(typed.Users, frame)
+		g.logDelivery(domain.SignalPresence, len(typed.Users), sockets, started)
 	case domain.ChatSignal:
 		sockets := g.deliver(typed.Users, chatFrame(typed))
 		g.logDelivery(domain.SignalChat, len(typed.Users), sockets, started)
@@ -553,7 +624,7 @@ func (g *Gateway) readySockets() []*socket {
 	var ready []*socket
 	for _, found := range g.accounts {
 		for s := range found.sockets {
-			if s.phase == phaseReady {
+			if s.phase == phaseReady && !s.closed {
 				ready = append(ready, s)
 			}
 		}
@@ -574,7 +645,7 @@ func (g *Gateway) closeLapsed(ctx context.Context) {
 	checked, closed := 0, 0
 	for _, found := range g.accounts {
 		for s := range found.sockets {
-			if s.phase != phaseReady {
+			if s.phase != phaseReady || s.closed {
 				continue
 			}
 			checked++
@@ -615,6 +686,7 @@ func (g *Gateway) sweep(ctx context.Context) {
 type Presence struct {
 	Online  bool
 	Sockets int
+	Pending bool
 }
 
 func (g *Gateway) Presence(user domain.UserID) Presence {
@@ -623,12 +695,14 @@ func (g *Gateway) Presence(user domain.UserID) Presence {
 	sockets := 0
 	if found, ok := g.accounts[user]; ok {
 		for s := range found.sockets {
-			if s.phase == phaseReady {
+			if s.phase == phaseReady && !s.closed {
 				sockets++
 			}
 		}
 	}
-	return Presence{Online: sockets > 0, Sockets: sockets}
+	found := g.accounts[user]
+	pending := found != nil && found.revision != found.persisted
+	return Presence{Online: sockets > 0, Sockets: sockets, Pending: pending}
 }
 
 var ErrCloseCodeNotAllowed = errors.New("only 4429 and 1012 can be requested")
@@ -645,7 +719,7 @@ func (g *Gateway) CloseAccount(user domain.UserID, code domain.CloseCode) (int, 
 	}
 	closed := 0
 	for s := range found.sockets {
-		if s.phase == phaseReady {
+		if s.phase == phaseReady && !s.closed {
 			g.closeLocked(s, code, "test_control")
 			closed++
 		}

@@ -32,6 +32,8 @@ const (
 	SignalEntity       SignalKind = "entity"
 	SignalHeartbeat    SignalKind = "heartbeat"
 	SignalChat         SignalKind = "chat"
+	SignalTyping       SignalKind = "typing"
+	SignalPresence     SignalKind = "presence"
 )
 
 type EntityKind string
@@ -98,11 +100,26 @@ func (s ChatSignal) wellFormed() bool {
 	return newMessage || changedMessage || read
 }
 
+type TypingSignal struct {
+	Shown     []UserID
+	Anonymous []UserID
+	Channel   ChannelID
+	Account   UserID
+}
+
+type PresenceSignal struct {
+	Users   []UserID
+	Account UserID
+	Online  bool
+}
+
 func (RecheckSignal) Kind() SignalKind      { return SignalRecheck }
 func (NotificationSignal) Kind() SignalKind { return SignalNotification }
 func (EntitySignal) Kind() SignalKind       { return SignalEntity }
 func (HeartbeatSignal) Kind() SignalKind    { return SignalHeartbeat }
 func (ChatSignal) Kind() SignalKind         { return SignalChat }
+func (TypingSignal) Kind() SignalKind       { return SignalTyping }
+func (PresenceSignal) Kind() SignalKind     { return SignalPresence }
 
 type SignalProblem string
 
@@ -163,9 +180,31 @@ type chatSignalWire struct {
 	Seq     *int64     `json:"s"`
 }
 
+type typingSignalWire struct {
+	Version   int        `json:"v"`
+	Kind      SignalKind `json:"k"`
+	Shown     []string   `json:"u"`
+	Anonymous []string   `json:"n"`
+	Channel   string     `json:"c"`
+	Account   string     `json:"a"`
+}
+
+type presenceSignalWire struct {
+	Version int        `json:"v"`
+	Kind    SignalKind `json:"k"`
+	Users   []string   `json:"u"`
+	Account string     `json:"a"`
+	Online  bool       `json:"o"`
+}
+
 func EncodeSignal(signal Signal) ([]byte, error) {
-	if chat, isChat := signal.(ChatSignal); isChat {
-		return encodeChat(chat)
+	switch typed := signal.(type) {
+	case ChatSignal:
+		return encodeChat(typed)
+	case TypingSignal:
+		return encodeTyping(typed)
+	case PresenceSignal:
+		return encodePresence(typed)
 	}
 	wire := signalWire{Version: SignalVersion, Kind: signal.Kind()}
 	switch typed := signal.(type) {
@@ -225,6 +264,40 @@ func encodeChat(signal ChatSignal) ([]byte, error) {
 	return encoded, nil
 }
 
+func encodeTyping(signal TypingSignal) ([]byte, error) {
+	if len(signal.Shown)+len(signal.Anonymous) == 0 {
+		return nil, signalError(SignalBadRecipients)
+	}
+	all, err := recipientTexts(append(slices.Clone(signal.Shown), signal.Anonymous...))
+	if err != nil {
+		return nil, err
+	}
+	wire := typingSignalWire{
+		Version: SignalVersion, Kind: SignalTyping, Shown: all[:len(signal.Shown)], Anonymous: all[len(signal.Shown):],
+		Channel: signal.Channel.String(), Account: signal.Account.String(),
+	}
+	return marshalSignal(wire)
+}
+
+func encodePresence(signal PresenceSignal) ([]byte, error) {
+	users, err := recipientTexts(signal.Users)
+	if err != nil {
+		return nil, err
+	}
+	return marshalSignal(presenceSignalWire{Version: SignalVersion, Kind: SignalPresence, Users: users, Account: signal.Account.String(), Online: signal.Online})
+}
+
+func marshalSignal[Wire typingSignalWire | presenceSignalWire](wire Wire) ([]byte, error) {
+	encoded, err := json.Marshal(wire)
+	if err != nil {
+		return nil, signalError(SignalSyntax)
+	}
+	if len(encoded) > MaxSignalBytes {
+		return nil, signalError(SignalTooLarge)
+	}
+	return encoded, nil
+}
+
 func recipientTexts(users []UserID) ([]string, error) {
 	if len(users) == 0 || len(users) > MaxSignalRecipients {
 		return nil, signalError(SignalBadRecipients)
@@ -248,9 +321,15 @@ const (
 	signalFieldID      = "i"
 	signalFieldChannel = "c"
 	signalFieldSeq     = "s"
+	signalFieldHidden  = "n"
+	signalFieldAccount = "a"
+	signalFieldOnline  = "o"
 )
 
-var signalFields = []string{signalFieldVersion, signalFieldKind, signalFieldUsers, signalFieldEntity, signalFieldID, signalFieldChannel, signalFieldSeq}
+var signalFields = []string{
+	signalFieldVersion, signalFieldKind, signalFieldUsers, signalFieldEntity, signalFieldID, signalFieldChannel, signalFieldSeq, signalFieldHidden,
+	signalFieldAccount, signalFieldOnline,
+}
 
 var errSignalSyntax = errors.New("signal syntax")
 
@@ -280,6 +359,10 @@ func ParseSignal(payload string) (Signal, error) {
 		return parseHeartbeat(fields)
 	case SignalChat:
 		return parseChat(fields)
+	case SignalTyping:
+		return parseTyping(fields)
+	case SignalPresence:
+		return parsePresence(fields)
 	}
 	return nil, signalError(SignalUnknownKind)
 }
@@ -437,6 +520,77 @@ func parseChat(fields map[string]json.RawMessage) (Signal, error) {
 		return nil, signalError(SignalUnknownEvent)
 	}
 	return signal, nil
+}
+
+func parseTyping(fields map[string]json.RawMessage) (Signal, error) {
+	if err := requireFields(fields, signalFieldUsers, signalFieldHidden, signalFieldChannel, signalFieldAccount); err != nil {
+		return nil, err
+	}
+	shown, err := parseRecipientList(fields[signalFieldUsers])
+	if err != nil {
+		return nil, err
+	}
+	anonymous, err := parseRecipientList(fields[signalFieldHidden])
+	if err != nil {
+		return nil, err
+	}
+	total := len(shown) + len(anonymous)
+	if total == 0 || total > MaxSignalRecipients {
+		return nil, signalError(SignalBadRecipients)
+	}
+	for _, user := range anonymous {
+		if slices.Contains(shown, user) {
+			return nil, signalError(SignalBadRecipients)
+		}
+	}
+	channel, err := parseIdentifier[ChannelID](fields[signalFieldChannel])
+	if err != nil {
+		return nil, err
+	}
+	account, err := parseIdentifier[UserID](fields[signalFieldAccount])
+	if err != nil {
+		return nil, err
+	}
+	return TypingSignal{Shown: shown, Anonymous: anonymous, Channel: channel, Account: account}, nil
+}
+
+func parsePresence(fields map[string]json.RawMessage) (Signal, error) {
+	if err := requireFields(fields, signalFieldUsers, signalFieldAccount, signalFieldOnline); err != nil {
+		return nil, err
+	}
+	users, err := parseRecipients(fields[signalFieldUsers])
+	if err != nil {
+		return nil, err
+	}
+	account, err := parseIdentifier[UserID](fields[signalFieldAccount])
+	if err != nil {
+		return nil, err
+	}
+	var online bool
+	switch string(fields[signalFieldOnline]) {
+	case "true":
+		online = true
+	case "false":
+	default:
+		return nil, signalError(SignalFieldsForKind)
+	}
+	return PresenceSignal{Users: users, Account: account, Online: online}, nil
+}
+
+func parseRecipientList(raw json.RawMessage) ([]UserID, error) {
+	var texts []string
+	if err := json.Unmarshal(raw, &texts); err != nil || texts == nil || len(texts) > MaxSignalRecipients {
+		return nil, signalError(SignalBadRecipients)
+	}
+	users := make([]UserID, 0, len(texts))
+	for _, text := range texts {
+		user, ok := canonicalUUID[UserID](text)
+		if !ok || slices.Contains(users, user) {
+			return nil, signalError(SignalBadRecipients)
+		}
+		users = append(users, user)
+	}
+	return users, nil
 }
 
 func parseRecipients(raw json.RawMessage) ([]UserID, error) {

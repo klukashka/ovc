@@ -48,6 +48,20 @@ type ReadUpdatedPayload struct {
 	ChannelID string `json:"channel_id"`
 }
 
+type TypingPayload struct {
+	ChannelID string  `json:"channel_id"`
+	UserID    *string `json:"user_id"`
+}
+
+type PresencePayload struct {
+	UserID string `json:"user_id"`
+	Online bool   `json:"online"`
+}
+
+type TypingRequestPayload struct {
+	ChannelID string `json:"channel_id"`
+}
+
 type FrameErrorPayload struct {
 	Code      domain.ErrorCode `json:"code"`
 	Message   string           `json:"message"`

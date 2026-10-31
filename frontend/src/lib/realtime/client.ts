@@ -160,6 +160,8 @@ export class RealtimeClient {
       case 'message.updated':
       case 'message.deleted':
       case 'read.updated':
+      case 'typing':
+      case 'presence':
         return;
     }
   }

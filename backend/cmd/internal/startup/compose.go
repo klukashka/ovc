@@ -202,6 +202,7 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 		{Name: domain.JobJoinRequestsExpire, Every: time.Hour, Run: tutoringService.ExpireJoinRequests},
 		{Name: domain.JobNotificationsCleanup, Every: time.Hour, Run: inbox.Cleanup},
 		{Name: domain.JobEraseChannels, Every: time.Minute, Run: chatService.EraseChannels},
+		{Name: domain.JobExpirePresence, Every: time.Minute, Run: chatService.ExpirePresence},
 		{Name: domain.JobLessonStatus, Every: time.Minute, Run: lessonJobs.EndUnjoined},
 		{Name: domain.JobLessonReminders, Every: time.Minute, Run: lessonJobs.QueueReminders},
 		{Name: domain.JobSeriesExtension, Every: time.Hour, OwnLoop: true, Run: lessonJobs.ExtendHorizons},
@@ -216,9 +217,11 @@ type Realtime struct {
 
 func NewRealtime(
 	logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, sessions realtime.Sessions,
+	chatService realtime.Chat,
 ) (Realtime, error) {
 	gateway, err := realtime.New(realtime.Dependencies{
-		Sessions: sessions, Clock: source, Now: clock.System{}.Now, NewID: core.NewRandomID, Logger: logger,
+		Sessions: sessions, Chat: chatService, Scheduler: realtime.SystemScheduler{}, Clock: source, Now: clock.System{}.Now, NewID: core.NewRandomID,
+		Logger:       logger,
 		PublicOrigin: settings.PublicURL, Timing: realtime.DefaultTiming(), Limits: realtime.DefaultLimits(),
 	})
 	if err != nil {

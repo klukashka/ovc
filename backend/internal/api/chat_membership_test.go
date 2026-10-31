@@ -408,7 +408,8 @@ func TestDiscardingAProvisionalLinkQueuesItsChannelsErasure(t *testing.T) {
 
 func TestASuspendedMemberReachesNothingAndIsShownToNoOne(t *testing.T) {
 	t.Parallel()
-	h := newFlowHarness(t)
+	live := newLiveHarness(t, liveTuning{})
+	h := live.authHarness
 	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	card, owner := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
 	channel := h.directChannel(t, card.ID)
@@ -418,6 +419,10 @@ func TestASuspendedMemberReachesNothingAndIsShownToNoOne(t *testing.T) {
 	ownerToken := h.reclaimed(t, newcomerEmail)
 	h.setChannelSeq(t, channel.ID, 3)
 	log := h.recordFrames(t)
+	tutorSocket := live.connect(t, tutorToken)
+	ownerSocket := live.connect(t, ownerToken)
+	h.awaitAnnounced(t, 1, tutor, true)
+	h.awaitAnnounced(t, 1, owner, true)
 
 	h.mustAnswer(t, h.patchMe(t, ownerToken, `{"name":"A chosen name"}`), http.StatusOK)
 	h.mustAnswer(t, h.cardCall(t, tutorToken, http.MethodPatch, card.ID, "", `{"display_name":"A renamed card"}`), http.StatusOK)
@@ -439,6 +444,12 @@ func TestASuspendedMemberReachesNothingAndIsShownToNoOne(t *testing.T) {
 	ownerRead, _ := h.readChannel(t, ownerToken, channel.ID, 1)
 	ownerEdit := h.editMessage(t, ownerToken, messageOf(t, provisional).ID, "Edited while suspended", 1)
 	tutorSend := h.sendMessage(t, tutorToken, channel.ID, "While the link waits", nil, "")
+	ownerSocket.typing(t, domain.FrameTypingStart, channel.ID, "suspended")
+	ownerSocket.typing(t, domain.FrameTypingStart, randomChannelID, "random")
+	ownerTyping, _, _ := errorPayload(t, ownerSocket.expect(t, domain.FrameError))
+	randomTyping, _, _ := errorPayload(t, ownerSocket.expect(t, domain.FrameError))
+	tutorSocket.typing(t, domain.FrameTypingStart, channel.ID, "tutor")
+	tutorSkipped := tutorSocket.pongAfter(t, "after-typing")
 	laterFrames := log.settle(t, h)
 
 	if ownerUpload.status != http.StatusNotFound || refusal(t, ownerUpload) != refusal(t, randomUpload) || len(h.uploadsBy(t, owner)) != 0 {
@@ -464,6 +475,14 @@ func TestASuspendedMemberReachesNothingAndIsShownToNoOne(t *testing.T) {
 	}
 	if got := append(framesTo(frames, owner), framesTo(laterFrames, owner)...); len(got) != 0 {
 		t.Fatalf("the suspended account was sent %v", got)
+	}
+	if ownerTyping != domain.ErrorNotFound || randomTyping != domain.ErrorNotFound || len(typingFrames(laterFrames)) != 0 {
+		t.Fatalf("the suspended account's typing answered %s against %s, and typing was relayed as %v", ownerTyping, randomTyping, laterFrames)
+	}
+	for _, frame := range append(tutorSkipped, tutorSocket.presence...) {
+		if frame.Type == domain.FrameTyping || frame.Type == domain.FramePresence || frame.Type == domain.FrameError {
+			t.Fatalf("the tutor was sent %s %s about the suspended account", frame.Type, frame.Payload)
+		}
 	}
 	if replayed.status != http.StatusNotFound || refusal(t, replayed) != refusal(t, randomReplay) || h.messageCount(t, channel.ID) != 3 {
 		t.Fatalf("the suspended account replayed its key: %s", describe(replayed))

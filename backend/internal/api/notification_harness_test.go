@@ -71,6 +71,21 @@ func (l *frameLog) Signal(signal domain.Signal) {
 				l.frames = append(l.frames, sentFrame{to: user, kind: string(typed.Event), id: id})
 			}
 		})
+	case domain.TypingSignal:
+		l.record(func() {
+			for _, user := range typed.Shown {
+				l.frames = append(l.frames, sentFrame{to: user, kind: string(domain.FrameTyping), id: typed.Account.String()})
+			}
+			for _, user := range typed.Anonymous {
+				l.frames = append(l.frames, sentFrame{to: user, kind: string(domain.FrameTyping)})
+			}
+		})
+	case domain.PresenceSignal:
+		l.record(func() {
+			for _, user := range typed.Users {
+				l.frames = append(l.frames, sentFrame{to: user, kind: presenceKind(typed.Online), id: typed.Account.String()})
+			}
+		})
 	case domain.EntitySignal:
 		l.record(func() {
 			if slices.Equal(typed.Users, []domain.UserID{sentinelUser}) {
@@ -146,6 +161,13 @@ func (l *frameLog) settle(t *testing.T, h *authHarness) []sentFrame {
 	settled := l.frames
 	l.frames = nil
 	return settled
+}
+
+func presenceKind(online bool) string {
+	if online {
+		return "presence.online"
+	}
+	return "presence.offline"
 }
 
 func framesTo(frames []sentFrame, user domain.UserID) []sentFrame {

@@ -1,6 +1,6 @@
 # Restore the local verification baseline
 
-Status: approved on 2026-10-31; full exact-tree gate pending. Base: `e95d27281587699df8286dac335927dd13488631`.
+Status: merged on 2026-10-31 as `d23c7fd`; the full exact-tree gate and finish passed. The [merge evidence](local-verification-recovery-merge-2026-10-31.md) records the complete results. Earlier sections below retain their pre-gate evidence states. Base: `e95d27281587699df8286dac335927dd13488631`.
 
 The local check run was blocked by two independently dated fixtures: the successful operator-restore process test deleted accounts at the fixed instant 2026-10-01, outside its 30-day restore window on the check date; and the tools module's temporary x/net advisory exceptions expired on 2026-10-31. Gating either separate fix on the original baseline would retain the other failure. The owner approved one coherent verification-baseline recovery change, one commit and one full gate, with S5 kept separate. Original preparation branches are preserved.
 

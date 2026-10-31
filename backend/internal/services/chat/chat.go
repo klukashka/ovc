@@ -61,13 +61,24 @@ func DefaultErasureSettings() ErasureSettings {
 	return ErasureSettings{Wall: clock.System{}.Now, Budget: 20 * time.Second, MessageBatch: 500}
 }
 
+type PresenceCleanupSettings struct {
+	Wall   func() time.Time
+	Budget time.Duration
+	Batch  int32
+}
+
+func DefaultPresenceCleanupSettings() PresenceCleanupSettings {
+	return PresenceCleanupSettings{Wall: clock.System{}.Now, Budget: 20 * time.Second, Batch: 500}
+}
+
 type Dependencies struct {
-	Store     *repositories.Store
-	Clock     clock.Source
-	Random    core.RandomSource
-	Addresses Addresses
-	Erasure   ErasureSettings
-	Logger    *slog.Logger
+	PresenceCleanup PresenceCleanupSettings
+	Store           *repositories.Store
+	Clock           clock.Source
+	Random          core.RandomSource
+	Addresses       Addresses
+	Erasure         ErasureSettings
+	Logger          *slog.Logger
 }
 
 type Service struct {
@@ -76,6 +87,9 @@ type Service struct {
 }
 
 func New(dependencies Dependencies) *Service {
+	if dependencies.PresenceCleanup.Wall == nil {
+		dependencies.PresenceCleanup = DefaultPresenceCleanupSettings()
+	}
 	if dependencies.Erasure.Wall == nil {
 		dependencies.Erasure = DefaultErasureSettings()
 	}
@@ -125,7 +139,11 @@ type Page struct {
 }
 
 func (s *Service) List(ctx context.Context, viewer domain.UserID, query Query) (Page, error) {
-	listing := repositories.ChannelQuery{Member: viewer, Limit: query.Limit + 1}
+	now, err := s.now(ctx)
+	if err != nil {
+		return Page{}, err
+	}
+	listing := repositories.ChannelQuery{Now: now, Member: viewer, Limit: query.Limit + 1}
 	if query.Search != "" {
 		listing.Search = &query.Search
 	}
@@ -137,7 +155,7 @@ func (s *Service) List(ctx context.Context, viewer domain.UserID, query Query) (
 		listing.After = &after
 	}
 	var page Page
-	err := s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
+	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
 		rows, err := repos.Channels.List(ctx, listing)
 		if err != nil {
 			return err
@@ -169,9 +187,13 @@ func (s *Service) List(ctx context.Context, viewer domain.UserID, query Query) (
 }
 
 func (s *Service) Channel(ctx context.Context, viewer domain.UserID, id domain.ChannelID) (Channel, error) {
+	now, err := s.now(ctx)
+	if err != nil {
+		return Channel{}, err
+	}
 	var channel Channel
-	err := s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
-		rows, err := repos.Channels.List(ctx, repositories.ChannelQuery{Member: viewer, Channel: &id, Limit: 1})
+	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
+		rows, err := repos.Channels.List(ctx, repositories.ChannelQuery{Now: now, Member: viewer, Channel: &id, Limit: 1})
 		if err != nil {
 			return err
 		}
@@ -189,13 +211,13 @@ func (s *Service) Channel(ctx context.Context, viewer domain.UserID, id domain.C
 		}
 		channel.TutorView = true
 		channel.RelationshipID, channel.GroupID = rows[0].RelationshipID, rows[0].GroupID
-		labels, err := repos.Channels.MemberLabels(ctx, id)
+		labels, err := repos.Channels.MemberLabels(ctx, id, now)
 		if err != nil {
 			return err
 		}
 		channel.Members = make([]Member, 0, len(labels))
 		for _, label := range labels {
-			channel.Members = append(channel.Members, Member{UserID: label.UserID, Label: label.DisplayName, Online: presenceOf(channel.Writable)})
+			channel.Members = append(channel.Members, Member{UserID: label.UserID, Label: label.DisplayName, Online: presenceOf(channel.Writable, label.Online)})
 		}
 		return nil
 	})
@@ -236,17 +258,16 @@ func channelView(viewer domain.UserID, row repositories.ChannelRow) Channel {
 		}
 	}
 	if row.Kind == domain.ChannelDirect && channel.UserID != nil {
-		channel.Online = presenceOf(channel.Writable)
+		channel.Online = presenceOf(channel.Writable, row.OtherPartyOnline)
 	}
 	return channel
 }
 
-func presenceOf(writable bool) *bool {
+func presenceOf(writable bool, online bool) *bool {
 	if !writable {
 		return nil
 	}
-	offline := false
-	return &offline
+	return &online
 }
 
 func encodeCursor(cursor repositories.ChannelCursor) string {

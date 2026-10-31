@@ -9,6 +9,8 @@ export type ServerFrame =
   | { readonly type: 'message.new'; readonly channelId: string; readonly messageId: string; readonly seq: number }
   | { readonly type: 'message.updated' | 'message.deleted'; readonly channelId: string; readonly messageId: string }
   | { readonly type: 'read.updated'; readonly channelId: string }
+  | { readonly type: 'typing'; readonly channelId: string; readonly userId: string | null }
+  | { readonly type: 'presence'; readonly userId: string; readonly online: boolean }
   | { readonly type: 'pong'; readonly ref: string | null }
   | {
       readonly type: 'error';
@@ -88,6 +90,29 @@ function messageFrame(frame: Fields, type: 'message.updated' | 'message.deleted'
   return channelId === null || messageId === null ? null : { type, channelId, messageId };
 }
 
+function typingFrame(frame: Fields): ServerFrame | null {
+  const payload = payloadOf(frame, ['channel_id', 'user_id']);
+  if (payload === null || !hasOnly(frame, ['type', 'payload']) || !('user_id' in payload)) {
+    return null;
+  }
+  const channelId = textOf(payload, 'channel_id');
+  const userId = payload.user_id === null ? null : textOf(payload, 'user_id');
+  if (channelId === null || (payload.user_id !== null && userId === null)) {
+    return null;
+  }
+  return { type: 'typing', channelId, userId };
+}
+
+function presenceFrame(frame: Fields): ServerFrame | null {
+  const payload = payloadOf(frame, ['user_id', 'online']);
+  if (payload === null || !hasOnly(frame, ['type', 'payload'])) {
+    return null;
+  }
+  const userId = textOf(payload, 'user_id');
+  const online = payload.online;
+  return userId === null || typeof online !== 'boolean' ? null : { type: 'presence', userId, online };
+}
+
 function parseFields(frame: Fields): ServerFrame | null {
   switch (frame.type) {
     case 'ready': {
@@ -127,6 +152,10 @@ function parseFields(frame: Fields): ServerFrame | null {
       const channelId = payload === null ? null : textOf(payload, 'channel_id');
       return channelId === null || !hasOnly(frame, ['type', 'payload']) ? null : { type: 'read.updated', channelId };
     }
+    case 'typing':
+      return typingFrame(frame);
+    case 'presence':
+      return presenceFrame(frame);
     case 'pong': {
       const ref = refOf(frame, 'ref', false);
       return ref === undefined || !hasOnly(frame, ['type', 'ref']) ? null : { type: 'pong', ref };

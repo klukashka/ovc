@@ -148,7 +148,7 @@ func TestEveryPathReadsMembersThroughTheActivePredicate(t *testing.T) {
 	direct := queriesNaming(t, "channel_members")
 	viewers := queriesNaming(t, "active_channel_members")
 	links, linksErr := repos.Channels.OfRelationshipsFor(ctx, tutor, []domain.RelationshipID{cases[0].link, cases[1].link, cases[2].link, cases[3].link})
-	labels, labelsErr := repos.Channels.MemberLabels(ctx, domain.ChannelID{0x65})
+	labels, labelsErr := repos.Channels.MemberLabels(ctx, domain.ChannelID{0x65}, instant)
 	members, membersErr := repos.Channels.ActiveMembers(ctx, []domain.ChannelID{cases[0].channel, cases[1].channel, cases[2].channel, cases[3].channel})
 	tutorRows, tutorErr := repos.Channels.List(ctx, repositories.ChannelQuery{Member: tutor, Limit: 100})
 

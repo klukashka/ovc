@@ -50,6 +50,11 @@ function fakeSubject(): RealtimeContractSubject {
       gateway.channelRead(tutor.id, 'channel-1');
       await Promise.resolve();
     },
+    memberConnectsAndTypes: async (): Promise<() => void> => {
+      gateway.memberTyped(tutor.id, 'student-1', 'channel-1');
+      await Promise.resolve();
+      return (): void => undefined;
+    },
     notify: async (): Promise<void> => {
       gateway.changed(tutor.id, 'join_request', 'request-1');
       gateway.notify(tutor.id, 'notification-1');

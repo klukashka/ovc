@@ -36,6 +36,7 @@ type ChannelCursor struct {
 }
 
 type ChannelQuery struct {
+	Now     time.Time
 	Member  domain.UserID
 	Channel *domain.ChannelID
 	Search  *string
@@ -223,7 +224,7 @@ func (r Channels) DeleteMembershipsOf(ctx context.Context, user domain.UserID) (
 }
 
 func (r Channels) List(ctx context.Context, query ChannelQuery) ([]ChannelRow, error) {
-	params := dbgen.ListChannelsOfMemberParams{UserID: query.Member, RowLimit: query.Limit}
+	params := dbgen.ListChannelsOfMemberParams{Now: query.Now, UserID: query.Member, RowLimit: query.Limit}
 	if query.Search != nil {
 		pattern := "%" + escapeLikePattern(*query.Search) + "%"
 		params.Pattern = &pattern
@@ -245,8 +246,8 @@ func (r Channels) CountUnread(ctx context.Context, user domain.UserID, limit int
 	return one(count, err, "count unread channels")
 }
 
-func (r Channels) MemberLabels(ctx context.Context, channel domain.ChannelID) ([]MemberLabel, error) {
-	labels, err := r.queries.ListChannelMemberLabels(ctx, channel)
+func (r Channels) MemberLabels(ctx context.Context, channel domain.ChannelID, now time.Time) ([]MemberLabel, error) {
+	labels, err := r.queries.ListChannelMemberLabels(ctx, dbgen.ListChannelMemberLabelsParams{Now: now, ChannelID: channel})
 	return one(labels, err, "channel member labels")
 }
 

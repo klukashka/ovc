@@ -11,6 +11,7 @@ export interface RealtimeContractSubject {
   readonly changeChannel: () => Promise<void>;
   readonly exchangeMessage: () => Promise<void>;
   readonly readChannel: () => Promise<void>;
+  readonly memberConnectsAndTypes: () => Promise<() => void>;
   readonly notify: () => Promise<void>;
   readonly readNotifications: () => Promise<void>;
 }
@@ -100,6 +101,17 @@ class ContractConnection {
         return frame;
       }
     }
+  }
+
+  async framesOfTypes(types: readonly ServerFrame['type'][]): Promise<ReadonlyMap<ServerFrame['type'], ServerFrame>> {
+    const seen = new Map<ServerFrame['type'], ServerFrame>();
+    while (types.some((type) => !seen.has(type))) {
+      const frame = await this.frame();
+      if (types.includes(frame.type) && !seen.has(frame.type)) {
+        seen.set(frame.type, frame);
+      }
+    }
+    return seen;
   }
 
   async closedWith(code: number): Promise<void> {
@@ -204,10 +216,51 @@ export const realtimeContract: Readonly<Record<string, RealtimeContractScenario>
     withConnection(subject, async (connection) => {
       await connection.authenticated(await subject.token());
 
-      connection.socket.send(JSON.stringify({ type: 'typing.start' }));
+      connection.socket.send(JSON.stringify({ type: 'message.read' }));
 
       const refused = await connection.frame();
       check(refused.type === 'error' && refused.ref === null, 'expected an error frame with a null ref');
+    }),
+  'typing into a channel outside the account is answered with not_found and the socket stays open': (subject) =>
+    withConnection(subject, async (connection) => {
+      await connection.authenticated(await subject.token());
+
+      connection.socket.send(
+        JSON.stringify({ type: 'typing.start', ref: 'ref-5', payload: { channel_id: crypto.randomUUID() } }),
+      );
+      const refused = await connection.frameOfType('error');
+      connection.socket.send(pingFrame('ref-6'));
+      const after = await connection.frameOfType('pong');
+
+      check(
+        refused.type === 'error' && refused.code === 'not_found' && refused.ref === 'ref-5',
+        'expected a not_found error frame echoing ref-5',
+      );
+      check(after.type === 'pong' && after.ref === 'ref-6', 'expected the socket to stay open');
+    }),
+  'another member connecting arrives as presence, and their typing as typing': (subject) =>
+    withConnection(subject, async (connection) => {
+      await connection.authenticated(await subject.token());
+
+      const leave = await subject.memberConnectsAndTypes();
+      try {
+        const seen = await connection.framesOfTypes(['presence', 'typing']);
+        const presence = seen.get('presence');
+        const typing = seen.get('typing');
+        check(
+          presence?.type === 'presence' && presence.online && presence.userId !== '',
+          'expected the member to come online',
+        );
+        check(
+          typing?.type === 'typing' &&
+            presence?.type === 'presence' &&
+            typing.userId === presence.userId &&
+            typing.channelId !== '',
+          'expected the member typing in a shared channel',
+        );
+      } finally {
+        leave();
+      }
     }),
   'a frame before auth closes with 4401': (subject) =>
     withConnection(subject, async (connection) => {

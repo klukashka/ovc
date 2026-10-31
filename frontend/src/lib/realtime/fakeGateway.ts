@@ -17,6 +17,7 @@ interface FakeConnection {
 type ClientFrame =
   | { readonly kind: 'auth'; readonly token: string }
   | { readonly kind: 'ping'; readonly ref: string | null }
+  | { readonly kind: 'typing'; readonly ref: string | null }
   | { readonly kind: 'refused'; readonly ref: string | null };
 
 function isFields(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -44,6 +45,14 @@ function clientFrame(text: string): ClientFrame {
   const payload = parsed.payload;
   if (parsed.type === 'ping' && payload === undefined) {
     return { kind: 'ping', ref: echoed };
+  }
+  if (
+    (parsed.type === 'typing.start' || parsed.type === 'typing.stop') &&
+    isFields(payload) &&
+    Object.keys(payload).every((key) => key === 'channel_id') &&
+    typeof payload.channel_id === 'string'
+  ) {
+    return { kind: 'typing', ref: echoed };
   }
   if (
     parsed.type === 'auth' &&
@@ -174,6 +183,11 @@ export class FakeGateway {
     this.deliver(accountId, { type: 'read.updated', payload: { channel_id: channelId } });
   }
 
+  memberTyped(accountId: string, memberId: string, channelId: string): void {
+    this.deliver(accountId, { type: 'presence', payload: { user_id: memberId, online: true } });
+    this.deliver(accountId, { type: 'typing', payload: { channel_id: channelId, user_id: memberId } });
+  }
+
   stopAnsweringPings(accountId: string): void {
     for (const connection of this.connections) {
       if (connection.account === accountId) {
@@ -219,18 +233,20 @@ export class FakeGateway {
           this.send(connection, frame.ref === null ? { type: 'pong' } : { type: 'pong', ref: frame.ref });
         }
         return;
+      case 'typing':
+        this.refuse(connection, 'not_found', 'The requested resource does not exist.', frame.ref);
+        return;
       case 'refused':
-        this.frameIds += 1;
-        this.send(connection, {
-          type: 'error',
-          payload: {
-            code: 'bad_request',
-            message: 'The request is malformed.',
-            request_id: `fake-frame-${String(this.frameIds)}`,
-            ref: frame.ref,
-          },
-        });
+        this.refuse(connection, 'bad_request', 'The request is malformed.', frame.ref);
     }
+  }
+
+  private refuse(connection: FakeConnection, code: string, message: string, ref: string | null): void {
+    this.frameIds += 1;
+    this.send(connection, {
+      type: 'error',
+      payload: { code, message, request_id: `fake-frame-${String(this.frameIds)}`, ref },
+    });
   }
 
   private authenticate(connection: FakeConnection, frame: ClientFrame): void {

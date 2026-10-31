@@ -57,6 +57,25 @@ func (r Signals) Chat(ctx context.Context, signal domain.ChatSignal) error {
 	return done(r.queries.NotifySignals(ctx, dbgen.NotifySignalsParams{Channel: domain.SignalChannel, Payloads: payloads}), "chat signals")
 }
 
+func (r Signals) Typing(ctx context.Context, signal domain.TypingSignal) error {
+	return r.send(ctx, signal, "typing signal")
+}
+
+func (r Signals) Presence(ctx context.Context, users []domain.UserID, account domain.UserID, online bool) error {
+	var payloads []string
+	for _, recipients := range domain.SplitRecipients(users) {
+		payload, err := domain.EncodeSignal(domain.PresenceSignal{Users: recipients, Account: account, Online: online})
+		if err != nil {
+			return fmt.Errorf("presence signal: %w", err)
+		}
+		payloads = append(payloads, string(payload))
+	}
+	if len(payloads) == 0 {
+		return nil
+	}
+	return done(r.queries.NotifySignals(ctx, dbgen.NotifySignalsParams{Channel: domain.SignalChannel, Payloads: payloads}), "presence signals")
+}
+
 func (r Signals) send(ctx context.Context, signal domain.Signal, what string) error {
 	payload, err := domain.EncodeSignal(signal)
 	if err != nil {

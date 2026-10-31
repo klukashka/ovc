@@ -481,3 +481,15 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: UserID
+          - column: user_presence.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: user_presence_instances.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: user_presence_instances.instance_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: PresenceInstanceID

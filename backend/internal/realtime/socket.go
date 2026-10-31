@@ -47,17 +47,18 @@ type socket struct {
 	finished    chan struct{}
 	wake        chan struct{}
 
-	reserved   bool
-	phase      phase
-	closed     bool
-	code       domain.CloseCode
-	reason     string
-	user       domain.UserID
-	session    domain.SessionID
-	expiresAt  time.Time
-	generation listener.Generation
-	suspended  bool
-	queue      outbound
+	presenceWanted bool
+	reserved       bool
+	phase          phase
+	closed         bool
+	code           domain.CloseCode
+	reason         string
+	user           domain.UserID
+	session        domain.SessionID
+	expiresAt      time.Time
+	generation     listener.Generation
+	suspended      bool
+	queue          outbound
 
 	framesIn    int
 	framesOut   int
@@ -65,6 +66,7 @@ type socket struct {
 	windowStart time.Time
 	windowCount int
 	violations  []time.Time
+	typing      map[domain.ChannelID]Timer
 }
 
 func (g *Gateway) newSocket(conn *websocket.Conn, reservation Reservation) *socket {
@@ -103,7 +105,7 @@ func (s *socket) isClosed() bool {
 func (s *socket) run() {
 	ctx := context.Background()
 	s.log().LogAttrs(ctx, slog.LevelDebug, "ws.connection.opened")
-	authTimer := time.AfterFunc(s.g.deps.Timing.AuthWithin, func() {
+	authTimer := s.g.deps.Scheduler.AfterFunc(s.g.deps.Timing.AuthWithin, func() {
 		core.Go(ctx, s.log(), "realtime.auth_timeout", s.closeUnauthenticated)
 	})
 	defer authTimer.Stop()
@@ -211,6 +213,8 @@ func (s *socket) handle(ctx context.Context, data []byte) bool {
 		s.send(encode[struct{}](domain.FramePong, ref, nil))
 	case frame.Type == domain.FrameAuth:
 		return s.authenticateAgain(ctx, frame)
+	case frame.Type == domain.FrameTypingStart || frame.Type == domain.FrameTypingStop:
+		s.typed(ctx, frame, ref)
 	default:
 		s.reject(ctx, "unknown_type", domain.ErrorBadRequest, ref)
 	}
@@ -237,7 +241,7 @@ func parseFrame(data []byte) (schemas.ClientFrame, *string, bool) {
 
 var errTrailingData = errors.New("trailing data after the frame")
 
-func decodeStrict[T schemas.ClientFrame | schemas.AuthPayload](data []byte, target *T) error {
+func decodeStrict[T schemas.ClientFrame | schemas.AuthPayload | schemas.TypingRequestPayload](data []byte, target *T) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
@@ -251,6 +255,10 @@ func decodeStrict[T schemas.ClientFrame | schemas.AuthPayload](data []byte, targ
 
 func (s *socket) reject(ctx context.Context, reason string, code domain.ErrorCode, ref *string) {
 	s.log().LogAttrs(ctx, slog.LevelInfo, "ws.frame.rejected", slog.String("reason", reason))
+	s.sendError(ctx, code, ref)
+}
+
+func (s *socket) sendError(ctx context.Context, code domain.ErrorCode, ref *string) {
 	listed := code.Listed()
 	s.send(encode(domain.FrameError, nil, &schemas.FrameErrorPayload{
 		Code: listed, Message: listed.Message(), RequestID: core.RequestID(ctx), Ref: ref,
@@ -352,6 +360,7 @@ func (s *socket) authenticateFirst(ctx context.Context, frame schemas.ClientFram
 		return s.refuseAuth(ctx, refusal, code)
 	}
 	round := registered
+	prepared := false
 	for {
 		standings, err := s.g.lookup(ctx, []domain.SessionID{access.SessionID})
 		if err != nil {
@@ -364,6 +373,15 @@ func (s *socket) authenticateFirst(ctx context.Context, frame schemas.ClientFram
 				return s.refuseAuth(ctx, "revoked_during_auth", domain.CloseUnauthenticated)
 			}
 			return s.refuseAuth(ctx, string(refusal), domain.CloseUnauthenticated)
+		}
+		if !prepared {
+			if err := s.preparePresence(ctx); err != nil {
+				s.log().LogAttrs(ctx, slog.LevelError, "presence.batch.failed", slog.String("kind", core.ErrorKind(err)))
+				s.closeWith(domain.CloseReconnect, "presence_failed")
+				return false
+			}
+			prepared = true
+			continue
 		}
 		if s.g.deps.AuthLookupPassed != nil {
 			s.g.deps.AuthLookupPassed(ctx)
@@ -402,8 +420,11 @@ func (s *socket) register(access accounts.Access) (uint64, string, domain.CloseC
 	if !live {
 		return 0, "listener_down", domain.CloseTryLater
 	}
+	if _, exists := s.g.accounts[access.UserID]; !exists && len(s.g.accounts) >= s.g.deps.Limits.Accounts {
+		return 0, "too_many_accounts", domain.CloseTooMany
+	}
 	found := s.g.accountLocked(access.UserID)
-	if len(found.sockets) >= s.g.deps.Limits.PerAccount {
+	if s.g.openSocketsLocked(found) >= s.g.deps.Limits.PerAccount {
 		s.g.forgetLocked(access.UserID, found)
 		return 0, "too_many_sockets", domain.CloseTooMany
 	}
@@ -437,6 +458,7 @@ func (s *socket) becomeReady(round uint64) (uint64, readyOutcome) {
 	if found.rechecks != round {
 		return found.rechecks, readyRecheckArrived
 	}
+	wasLive := s.g.liveLocked(found)
 	s.phase = phaseReady
 	s.suspended = false
 	if s.reserved {
@@ -444,6 +466,7 @@ func (s *socket) becomeReady(round uint64) (uint64, readyOutcome) {
 		s.g.releaseLocked(s.reservation.bucket)
 	}
 	s.g.enqueueLocked(s, encode(domain.FrameReady, nil, &schemas.ReadyPayload{}))
+	s.g.arrivedLocked(s, found, wasLive)
 	return round, readyGranted
 }
 
@@ -523,13 +546,13 @@ func (s *socket) writeFailed(ctx context.Context, err error) {
 }
 
 func (s *socket) ping() {
-	ticker := time.NewTicker(s.g.deps.Timing.PingEvery)
+	ticker := s.g.deps.Scheduler.NewTicker(s.g.deps.Timing.PingEvery)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-s.done:
 			return
-		case <-ticker.C:
+		case <-ticker.Ticks():
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), s.g.deps.Timing.PongWithin)
 		err := s.conn.Ping(ctx)

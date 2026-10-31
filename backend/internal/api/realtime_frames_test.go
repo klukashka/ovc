@@ -125,7 +125,7 @@ func TestUnknownOrReservedFrameTypesGetAnErrorAndKeepTheSocket(t *testing.T) {
 	frames := []string{
 		`{"type":"nonsense","ref":"r1"}`,
 		`{"type":"message.send","ref":"r2","payload":{"body":"hello"}}`,
-		`{"type":"typing.start","ref":"r3"}`,
+		`{"type":"message.read","ref":"r3"}`,
 		`{"type":"ping","ref":"r4","extra":true}`,
 		`{"type":"ping","ref":"r5","payload":{}}`,
 		`{"type":"ping"} {"type":"ping"}`,

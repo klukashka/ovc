@@ -20,6 +20,20 @@ export interface Presence {
 
 const presenceDeadlineMilliseconds = 10_000;
 
+class PresencePendingError extends Error {}
+
+function isPendingPresenceError(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'error' in value &&
+    typeof value.error === 'object' &&
+    value.error !== null &&
+    'code' in value.error &&
+    value.error.code === 'service_unavailable'
+  );
+}
+
 async function control(deployment: Deployment, path: string, body: unknown): Promise<unknown> {
   const response = await fetch(`${deployment.apiUrl}/__test__/${path}`, {
     signal: AbortSignal.timeout(10_000),
@@ -27,6 +41,13 @@ async function control(deployment: Deployment, path: string, body: unknown): Pro
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+  if (path === 'presence' && response.status === 503) {
+    const body: unknown = await response.json();
+    if (isPendingPresenceError(body)) {
+      throw new PresencePendingError('The local presence write is pending.');
+    }
+    throw new Error('The presence route returned an unexpected unavailable response.');
+  }
   if (!response.ok) {
     throw new Error(`/__test__/${path} answered ${String(response.status)}`);
   }
@@ -67,7 +88,19 @@ export async function presence(deployment: Deployment, user: string): Promise<Pr
 
 export async function waitForSockets(deployment: Deployment, user: string, sockets: number): Promise<void> {
   await expect
-    .poll(async () => (await presence(deployment, user)).sockets, { timeout: presenceDeadlineMilliseconds })
+    .poll(
+      async () => {
+        try {
+          return (await presence(deployment, user)).sockets;
+        } catch (error) {
+          if (error instanceof PresencePendingError) {
+            return 'presence-pending';
+          }
+          throw error;
+        }
+      },
+      { timeout: presenceDeadlineMilliseconds },
+    )
     .toBe(sockets);
 }
 

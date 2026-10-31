@@ -140,6 +140,10 @@ func (routes *Routes) presence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	presence := routes.realtime.Presence(user)
+	if presence.Pending {
+		writeError(ctx, routes.logger, w, domain.ErrorServiceUnavailable, nil)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(ctx, routes.logger, w, presenceResponse{Online: presence.Online, Sockets: presence.Sockets})
 }
@@ -280,6 +284,12 @@ func (routes *Routes) setClock(w http.ResponseWriter, r *http.Request) {
 			routes.fail(ctx, w, err)
 			return
 		}
+		if routes.realtime != nil {
+			if err := routes.realtime.ExtendPresence(ctx); err != nil {
+				routes.fail(ctx, w, err)
+				return
+			}
+		}
 		writeJSON(ctx, routes.logger, w, clockResponse{Now: stored})
 	case request.Set == nil && request.AdvanceSeconds != nil && (*request.AdvanceSeconds < 1 || *request.AdvanceSeconds > maxAdvanceSeconds):
 		writeError(ctx, routes.logger, w, domain.ErrorValidationFailed, []schemas.FieldError{{Path: "advance_seconds", Code: "out_of_range"}})
@@ -288,6 +298,12 @@ func (routes *Routes) setClock(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			routes.fail(ctx, w, err)
 			return
+		}
+		if routes.realtime != nil {
+			if err := routes.realtime.ExtendPresence(ctx); err != nil {
+				routes.fail(ctx, w, err)
+				return
+			}
 		}
 		writeJSON(ctx, routes.logger, w, clockResponse{Now: now})
 	default:

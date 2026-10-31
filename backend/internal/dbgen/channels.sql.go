@@ -371,21 +371,29 @@ func (q *Queries) ListActiveMembersOfChannels(ctx context.Context, channelIds []
 }
 
 const listChannelMemberLabels = `-- name: ListChannelMemberLabels :many
-SELECT members.user_id, relationships.display_name
+SELECT members.user_id, relationships.display_name,
+    COALESCE(user_presence.online_until > $1::timestamptz, false)::boolean AS online
 FROM active_channel_members AS members
 JOIN relationships
     ON relationships.tutor_id = members.tutor_id AND relationships.student_id = members.user_id AND relationships.state <> 'discarded'
-WHERE members.channel_id = $1 AND members.user_id <> members.tutor_id
+LEFT JOIN user_presence ON user_presence.user_id = members.user_id
+WHERE members.channel_id = $2 AND members.user_id <> members.tutor_id
 ORDER BY relationships.display_name, members.user_id
 `
+
+type ListChannelMemberLabelsParams struct {
+	Now       time.Time
+	ChannelID domain.ChannelID
+}
 
 type ListChannelMemberLabelsRow struct {
 	UserID      domain.UserID
 	DisplayName string
+	Online      bool
 }
 
-func (q *Queries) ListChannelMemberLabels(ctx context.Context, channelID domain.ChannelID) ([]ListChannelMemberLabelsRow, error) {
-	rows, err := q.db.Query(ctx, listChannelMemberLabels, channelID)
+func (q *Queries) ListChannelMemberLabels(ctx context.Context, arg ListChannelMemberLabelsParams) ([]ListChannelMemberLabelsRow, error) {
+	rows, err := q.db.Query(ctx, listChannelMemberLabels, arg.Now, arg.ChannelID)
 	if err != nil {
 		return nil, err
 	}
@@ -393,7 +401,7 @@ func (q *Queries) ListChannelMemberLabels(ctx context.Context, channelID domain.
 	var items []ListChannelMemberLabelsRow
 	for rows.Next() {
 		var i ListChannelMemberLabelsRow
-		if err := rows.Scan(&i.UserID, &i.DisplayName); err != nil {
+		if err := rows.Scan(&i.UserID, &i.DisplayName, &i.Online); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -415,30 +423,37 @@ SELECT members.channel_id, members.kind, members.tutor_id, members.relationship_
     EXISTS (
         SELECT 1 FROM active_channel_members AS other
         WHERE other.channel_id = members.channel_id AND other.user_id <> members.user_id
-    ) AS other_party_active
+    ) AS other_party_active,
+    EXISTS (
+        SELECT 1 FROM active_channel_members AS other
+        JOIN user_presence ON user_presence.user_id = other.user_id
+        WHERE other.channel_id = members.channel_id AND other.user_id <> members.user_id
+            AND user_presence.online_until > $1::timestamptz
+    ) AS other_party_online
 FROM active_channel_members AS members
 JOIN users AS tutors ON tutors.id = members.tutor_id
 LEFT JOIN relationships ON relationships.id = members.relationship_id
 LEFT JOIN groups ON groups.id = members.group_id
 LEFT JOIN relationships AS own_link
     ON own_link.tutor_id = members.tutor_id AND own_link.student_id = members.user_id AND own_link.state <> 'discarded'
-WHERE members.user_id = $1
-    AND ($2::uuid IS NULL OR members.channel_id = $2::uuid)
+WHERE members.user_id = $2
+    AND ($3::uuid IS NULL OR members.channel_id = $3::uuid)
     AND (
-        $3::text IS NULL
-        OR (members.tutor_id = members.user_id AND COALESCE(relationships.display_name, groups.name) ILIKE $3::text ESCAPE '\')
-        OR (members.tutor_id <> members.user_id AND members.kind = 'direct' AND tutors.name ILIKE $3::text ESCAPE '\')
-        OR (members.tutor_id <> members.user_id AND members.kind = 'group' AND groups.name ILIKE $3::text ESCAPE '\')
+        $4::text IS NULL
+        OR (members.tutor_id = members.user_id AND COALESCE(relationships.display_name, groups.name) ILIKE $4::text ESCAPE '\')
+        OR (members.tutor_id <> members.user_id AND members.kind = 'direct' AND tutors.name ILIKE $4::text ESCAPE '\')
+        OR (members.tutor_id <> members.user_id AND members.kind = 'group' AND groups.name ILIKE $4::text ESCAPE '\')
     )
     AND (
-        $4::timestamptz IS NULL
-        OR (members.last_activity_at, members.channel_id) < ($4::timestamptz, $5::uuid)
+        $5::timestamptz IS NULL
+        OR (members.last_activity_at, members.channel_id) < ($5::timestamptz, $6::uuid)
     )
 ORDER BY members.last_activity_at DESC, members.channel_id DESC
-LIMIT $6
+LIMIT $7
 `
 
 type ListChannelsOfMemberParams struct {
+	Now             time.Time
 	UserID          domain.UserID
 	ChannelID       pgtype.UUID
 	Pattern         *string
@@ -465,10 +480,12 @@ type ListChannelsOfMemberRow struct {
 	TutorName        string
 	OwnColour        *domain.Colour
 	OtherPartyActive bool
+	OtherPartyOnline bool
 }
 
 func (q *Queries) ListChannelsOfMember(ctx context.Context, arg ListChannelsOfMemberParams) ([]ListChannelsOfMemberRow, error) {
 	rows, err := q.db.Query(ctx, listChannelsOfMember,
+		arg.Now,
 		arg.UserID,
 		arg.ChannelID,
 		arg.Pattern,
@@ -501,6 +518,7 @@ func (q *Queries) ListChannelsOfMember(ctx context.Context, arg ListChannelsOfMe
 			&i.TutorName,
 			&i.OwnColour,
 			&i.OtherPartyActive,
+			&i.OtherPartyOnline,
 		); err != nil {
 			return nil, err
 		}

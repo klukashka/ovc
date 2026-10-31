@@ -199,6 +199,9 @@ const flagDigestPending = `-- name: FlagDigestPending :execrows
 INSERT INTO digest_pending (user_id, pending_since)
 SELECT members.user_id, $1::timestamptz FROM active_channel_members AS members
 WHERE members.channel_id = $2 AND members.user_id <> $3::uuid
+    AND NOT EXISTS (
+        SELECT 1 FROM user_presence WHERE user_presence.user_id = members.user_id AND user_presence.online_until > $1::timestamptz
+    )
 ORDER BY members.user_id
 ON CONFLICT (user_id) DO NOTHING
 `

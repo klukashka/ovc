@@ -37,6 +37,9 @@ WHERE channel_members.channel_id = active.channel_id AND channel_members.user_id
 INSERT INTO digest_pending (user_id, pending_since)
 SELECT members.user_id, sqlc.arg(now)::timestamptz FROM active_channel_members AS members
 WHERE members.channel_id = @channel_id AND members.user_id <> sqlc.arg(sender_id)::uuid
+    AND NOT EXISTS (
+        SELECT 1 FROM user_presence WHERE user_presence.user_id = members.user_id AND user_presence.online_until > sqlc.arg(now)::timestamptz
+    )
 ORDER BY members.user_id
 ON CONFLICT (user_id) DO NOTHING;
 

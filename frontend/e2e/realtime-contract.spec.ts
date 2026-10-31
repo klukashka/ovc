@@ -1,3 +1,4 @@
+import { authFrame, closeCodes, parseServerFrame } from '../src/lib/realtime/frames.ts';
 import { type RealtimeContractSubject, realtimeContract } from '../src/lib/realtime/realtimeContract.ts';
 import type { TestAccount } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
@@ -13,6 +14,34 @@ function textField(answer: { readonly body: unknown }, name: string): string {
     throw new Error(`the answer has no ${name}`);
   }
   return value;
+}
+
+async function connectAndType(deployment: Deployment, token: string, channel: string): Promise<() => void> {
+  const sockets = nodeSocketFactory(deployment);
+  return new Promise((resolve, reject) => {
+    let ready = false;
+    const socket = sockets({
+      onOpen: () => {
+        socket.send(authFrame(token));
+      },
+      onText: (text) => {
+        if (ready || parseServerFrame(text)?.type !== 'ready') {
+          return;
+        }
+        ready = true;
+        socket.send(JSON.stringify({ type: 'typing.start', payload: { channel_id: channel } }));
+        resolve(() => {
+          socket.close(closeCodes.client);
+        });
+      },
+      onBinary: () => undefined,
+      onClose: (code) => {
+        if (!ready) {
+          reject(new Error(`the member's socket closed with ${String(code)}`));
+        }
+      },
+    });
+  });
 }
 
 function realSubject(deployment: Deployment, tutor: TestAccount): RealtimeContractSubject {
@@ -69,6 +98,12 @@ function realSubject(deployment: Deployment, tutor: TestAccount): RealtimeContra
       expect(sent.status).toBe(201);
       const read = await callApi(deployment, token, 'POST', `/channels/${channel}/read`, { seq: 1 });
       expect(read.status).toBe(200);
+    },
+    memberConnectsAndTypes: async (): Promise<() => void> => {
+      const token = await accessToken(deployment, tutor);
+      const { student, cardId } = await seedActiveStudent(deployment, tutor, 'Ученик для присутствия');
+      const channel = textField(await callApi(deployment, token, 'GET', `/students/${cardId}`), 'channel_id');
+      return connectAndType(deployment, await accessToken(deployment, student), channel);
     },
     notify: async (): Promise<void> => {
       await seedJoinRequests(deployment, tutor, 1);

@@ -25,6 +25,7 @@ import (
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/realtime"
 	"ovc/backend/internal/repositories"
+	"ovc/backend/internal/testcontrol"
 	"ovc/backend/internal/testdb"
 	"ovc/backend/internal/teststorage"
 )
@@ -52,14 +53,16 @@ func (m *manualNow) advance(by time.Duration) {
 }
 
 type liveTuning struct {
-	gateway  func(*realtime.Dependencies)
-	listener func(*listener.Timing)
+	gateway     func(*realtime.Dependencies)
+	listener    func(*listener.Timing)
+	testControl bool
 }
 
 type liveHarness struct {
 	*authHarness
-	gateway *realtime.Gateway
-	adapter *listener.Listener
+	gateway      *realtime.Gateway
+	adapter      *listener.Listener
+	realtimeDeps realtime.Dependencies
 }
 
 func quietTiming() realtime.Timing {
@@ -72,22 +75,27 @@ func quietTiming() realtime.Timing {
 func newLiveHarness(t *testing.T, tuning liveTuning) *liveHarness {
 	t.Helper()
 	var gateway *realtime.Gateway
+	var captured realtime.Dependencies
 	trusted := []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}
 	h := newAuthHarnessStoring(t, trusted, api.NewHandler, func(local *teststorage.Storage) storage.Store { return local.Store },
 		func(options *api.Options, shared *clock.Shared, logger *slog.Logger, _ *testdb.Database) {
 			deps := realtime.Dependencies{
-				Sessions: options.Auth.Accounts, Clock: shared, Now: clock.System{}.Now, NewID: core.NewRandomID, Logger: logger,
-				PublicOrigin: publicOrigin, Timing: quietTiming(), Limits: realtime.DefaultLimits(),
+				Sessions: options.Auth.Accounts, Chat: options.Chat, Scheduler: realtime.SystemScheduler{}, Clock: shared, Now: clock.System{}.Now,
+				NewID: core.NewRandomID, Logger: logger, PublicOrigin: publicOrigin, Timing: quietTiming(), Limits: realtime.DefaultLimits(),
 			}
 			if tuning.gateway != nil {
 				tuning.gateway(&deps)
 			}
+			captured = deps
 			created, err := realtime.New(deps)
 			if err != nil {
 				t.Fatal(err)
 			}
 			gateway = created
 			options.Realtime = created
+			if tuning.testControl {
+				options.Mount = testcontrol.New(testcontrol.Dependencies{Logger: logger, Clock: shared, Realtime: created}).Mount
+			}
 		})
 	instance, err := core.NewID[domain.InstanceID](core.CryptoRandom())
 	if err != nil {
@@ -118,7 +126,7 @@ func newLiveHarness(t *testing.T, tuning liveTuning) *liveHarness {
 		cancel()
 		<-stopped
 	})
-	live := &liveHarness{authHarness: h, gateway: gateway, adapter: adapter}
+	live := &liveHarness{authHarness: h, gateway: gateway, adapter: adapter, realtimeDeps: captured}
 	live.awaitListener(t, func(_ listener.Generation, connected bool) bool { return connected })
 	return live
 }
@@ -206,9 +214,10 @@ type readResult struct {
 }
 
 type socketClient struct {
-	conn    *websocket.Conn
-	once    sync.Once
-	results chan readResult
+	conn     *websocket.Conn
+	once     sync.Once
+	results  chan readResult
+	presence []serverFrame
 }
 
 func newSocketClient(conn *websocket.Conn) *socketClient {
@@ -309,6 +318,10 @@ func (c *socketClient) next(t *testing.T) (serverFrame, websocket.StatusCode) {
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&frame); err != nil {
 		t.Fatalf("the server frame %s does not parse: %v", result.data, err)
+	}
+	if frame.Type == domain.FramePresence {
+		c.presence = append(c.presence, frame)
+		return c.next(t)
 	}
 	return frame, 0
 }

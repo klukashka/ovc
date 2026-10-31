@@ -156,7 +156,8 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	if err != nil {
 		return err
 	}
-	live, err := startup.NewRealtime(logging.Logger, settings, database, source, random, accountService)
+	chatService := startup.NewChat(logging.Logger, database, source, random, fileService)
+	live, err := startup.NewRealtime(logging.Logger, settings, database, source, random, accountService, chatService)
 	if err != nil {
 		return err
 	}
@@ -178,7 +179,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		Schedule:    scheduleService,
 		Preferences: preferences,
 		Inbox:       startup.NewInbox(logging.Logger, database, source),
-		Chat:        startup.NewChat(logging.Logger, database, source, random, fileService),
+		Chat:        chatService,
 		Realtime:    live.Gateway,
 		DocsEnabled: settings.APIDocsEnabled,
 		Auth:        api.Auth{Accounts: accountService, PublicOrigin: settings.PublicURL, TrustedProxies: settings.TrustedProxies},

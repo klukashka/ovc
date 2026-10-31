@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 type FrameType string
 
 const (
@@ -14,21 +16,23 @@ const (
 	FrameMessageUpdated  FrameType = "message.updated"
 	FrameMessageDeleted  FrameType = "message.deleted"
 	FrameReadUpdated     FrameType = "read.updated"
+	FrameTypingStart     FrameType = "typing.start"
+	FrameTypingStop      FrameType = "typing.stop"
+	FrameTyping          FrameType = "typing"
+	FramePresence        FrameType = "presence"
 )
 
+const PresenceWindow = 90 * time.Second
+
 func ClientFrameTypes() []FrameType {
-	return []FrameType{FrameAuth, FramePing}
+	return []FrameType{FrameAuth, FramePing, FrameTypingStart, FrameTypingStop}
 }
 
 func ServerFrameTypes() []FrameType {
 	return []FrameType{
 		FrameReady, FrameNotificationNew, FrameEntityChanged, FramePong, FrameError, FrameMessageNew, FrameMessageUpdated, FrameMessageDeleted,
-		FrameReadUpdated,
+		FrameReadUpdated, FrameTyping, FramePresence,
 	}
-}
-
-func ReservedClientFrameTypes() []FrameType {
-	return []FrameType{"typing.start", "typing.stop"}
 }
 
 type CloseCode int

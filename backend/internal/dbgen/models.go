@@ -371,3 +371,16 @@ type User struct {
 	UpdatedAt        time.Time
 	ReclaimUntil     *time.Time
 }
+
+type UserPresence struct {
+	UserID      domain.UserID
+	OnlineUntil time.Time
+	LastSeenAt  time.Time
+}
+
+type UserPresenceInstance struct {
+	UserID      domain.UserID
+	InstanceID  domain.PresenceInstanceID
+	OnlineUntil time.Time
+	LastSeenAt  time.Time
+}

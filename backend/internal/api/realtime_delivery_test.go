@@ -233,31 +233,34 @@ func TestRealtimeRecordsCarryNoTokenOrPersonalData(t *testing.T) {
 func TestEveryFrameTypeHasAGatewayTest(t *testing.T) {
 	t.Parallel()
 	producedBy := map[string]string{
-		string(domain.FrameAuth):                     "TestUnverifiedAccountMayConnect",
-		string(domain.FramePing):                     "TestPingAnswersPongAndRechecksTheSession",
-		string(domain.FrameReady):                    "TestUnverifiedAccountMayConnect",
-		string(domain.FrameNotificationNew):          "TestNoFrameIsDeliveredWhileARecheckIsPending",
-		string(domain.FrameEntityChanged):            "TestNoFrameIsDeliveredWhileARecheckIsPending",
-		string(domain.FramePong):                     "TestPingAnswersPongAndRechecksTheSession",
-		string(domain.FrameError):                    "TestUnknownOrReservedFrameTypesGetAnErrorAndKeepTheSocket",
-		string(domain.FrameMessageNew):               "TestMessageFramesCarryIdentifiersOnly",
-		string(domain.FrameMessageUpdated):           "TestMessageFramesCarryIdentifiersOnly",
-		string(domain.FrameMessageDeleted):           "TestMessageFramesCarryIdentifiersOnly",
-		string(domain.FrameReadUpdated):              "TestMessageFramesCarryIdentifiersOnly",
-		closeKey(domain.CloseClient):                 "TestTheWebSocketRouteHasTheOuterHandlers",
-		closeKey(domain.CloseShutdown):               "TestShutdownClosesSocketsWith1001",
-		closeKey(domain.CloseBinaryFrame):            "TestBinaryFrameClosesWith1003",
-		closeKey(domain.CloseFrameTooLarge):          "TestOversizedFrameClosesWith1009",
-		closeKey(domain.CloseReconnect):              "TestListenerLossClosesSocketsWith1012AndRefusesAuthUntilRestored",
-		closeKey(domain.CloseTryLater):               "TestListenerGenerationChangeDuringAuthCloses1013",
-		closeKey(domain.CloseUnauthenticated):        "TestSocketWithoutAnAuthFrameClosesWith4401",
-		closeKey(domain.CloseTooMany):                "TestTheTwentyFirstSocketOfAnAccountClosesWith4429",
-		string(domain.ReservedClientFrameTypes()[0]): "TestUnknownOrReservedFrameTypesGetAnErrorAndKeepTheSocket",
+		string(domain.FrameAuth):              "TestUnverifiedAccountMayConnect",
+		string(domain.FramePing):              "TestPingAnswersPongAndRechecksTheSession",
+		string(domain.FrameReady):             "TestUnverifiedAccountMayConnect",
+		string(domain.FrameNotificationNew):   "TestNoFrameIsDeliveredWhileARecheckIsPending",
+		string(domain.FrameEntityChanged):     "TestNoFrameIsDeliveredWhileARecheckIsPending",
+		string(domain.FramePong):              "TestPingAnswersPongAndRechecksTheSession",
+		string(domain.FrameError):             "TestUnknownOrReservedFrameTypesGetAnErrorAndKeepTheSocket",
+		string(domain.FrameMessageNew):        "TestMessageFramesCarryIdentifiersOnly",
+		string(domain.FrameMessageUpdated):    "TestMessageFramesCarryIdentifiersOnly",
+		string(domain.FrameMessageDeleted):    "TestMessageFramesCarryIdentifiersOnly",
+		string(domain.FrameReadUpdated):       "TestMessageFramesCarryIdentifiersOnly",
+		string(domain.FrameTypingStart):       "TestTypingIsCoalescedBeforeTheDatabaseAndRelayedToOtherConnectedMembers",
+		string(domain.FrameTypingStop):        "TestTypingFromANonMemberOrIntoAReadOnlyChannelIsRefused",
+		string(domain.FrameTyping):            "TestStudentsReceiveAnonymousTypingAboutOtherStudents",
+		string(domain.FramePresence):          "TestPresenceFramesReachOnlyUsersSharingAWritableChannel",
+		closeKey(domain.CloseClient):          "TestTheWebSocketRouteHasTheOuterHandlers",
+		closeKey(domain.CloseShutdown):        "TestShutdownClosesSocketsWith1001",
+		closeKey(domain.CloseBinaryFrame):     "TestBinaryFrameClosesWith1003",
+		closeKey(domain.CloseFrameTooLarge):   "TestOversizedFrameClosesWith1009",
+		closeKey(domain.CloseReconnect):       "TestListenerLossClosesSocketsWith1012AndRefusesAuthUntilRestored",
+		closeKey(domain.CloseTryLater):        "TestListenerGenerationChangeDuringAuthCloses1013",
+		closeKey(domain.CloseUnauthenticated): "TestSocketWithoutAnAuthFrameClosesWith4401",
+		closeKey(domain.CloseTooMany):         "TestTheTwentyFirstSocketOfAnAccountClosesWith4429",
 	}
 	defined := testFunctionNames(t)
 
 	var missing []string
-	for _, kind := range append(append(domain.ClientFrameTypes(), domain.ServerFrameTypes()...), domain.ReservedClientFrameTypes()[0]) {
+	for _, kind := range append(domain.ClientFrameTypes(), domain.ServerFrameTypes()...) {
 		if !defined[producedBy[string(kind)]] {
 			missing = append(missing, string(kind))
 		}
