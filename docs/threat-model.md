@@ -140,3 +140,7 @@ Local audited operator retry uses a caller-supplied UUID with retained idempoten
 ## Attachment caption editing
 
 Added 2026-11-01; approved behavior, wording pending owner review. Empty or whitespace-only text is allowed when editing a live message that already has an attachment. Existing author, membership, writability, edit-window and version checks precede body validation; the 4,000-code-point limit and forbidden-control refusal remain enforced (T-5/T-14/T-20/T-21). Message attachments are immutable during editing; channel/message locking and deleted/erased-state refusal prevent an old attachment-presence observation from restoring removed content (T-34). Editing neither rebinds files nor changes quota charges, download authorization or text-only rendering. Existing safe edit diagnostics contain no message body or filename (T-18).
+
+## Preliminary chat-upload quota checks
+
+Added 2026-11-01; approved clarification, wording pending owner review. Admission refuses when existing charged usage plus pending reservations already reaches the tutor's quota; it does not promise that the new, not-yet-inspected body fits. Completion checks the actual size while excluding its own reservation, and binding enforces the exact charged quota atomically under the existing locks (T-20/T-34). The clarification changes no application behavior, upload limits, intent capacity, ownership or cleanup obligation.

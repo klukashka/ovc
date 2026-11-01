@@ -1,0 +1,13 @@
+# Consistent preliminary chat-upload quota wording
+
+Status: approved by the owner on 2026-11-01 after independent security planning review. Implementation is authorized within this documentation-only plan. Baseline inspected: `ecd74d8e165b54f5cde41f45884a48cb122ea8b2`, 2026-11-01. Resolves the minor S6-DOC-01 finding in the cumulative files security review.
+
+The files specification states two different admission rules. Upload flow item 7 and the current `admitChatUpload` implementation refuse when charged usage plus pending reservations is already at or above quota. The later quotas section instead includes the new upload size in that preliminary inequality. Completion checks the actual resulting size; message binding under the profile lock enforces the exact charged quota, including competing completions.
+
+The recommended decision is to preserve the implemented three-stage behavior and correct the quotas section to match it: preliminary refusal at `used + pending >= quota`, actual-size recheck at completion and authoritative atomic charging at binding. This avoids claiming that a not-yet-inspected body has already passed an exact size check. Per-user/instance upload limits, global intent capacity, pending reservations and body limits remain unchanged. This decision requires explicit owner approval because current normative statements disagree; the finding is not evidence of a final-quota bypass.
+
+Tier: standard; security trigger met through resource admission and quota enforcement (T-20/T-34). Change `knowledge/specs/files.md`, a narrow pending-owner-review sentence in `docs/threat-model.md`, and the verification/finding record. No application source, generated schema, dependency or test-policy change is proposed. Independent standard and security readiness reviews confirm the wording against actual admission/completion/binding code and existing real racing-binding coverage. Run Markdown/link/Mermaid checks and secret checks; perform the exact Markdown-only gate if eligible under ADR-0018, followed by finish. Do not label existing test source as a new runtime pass.
+
+Acceptance: both specification sections describe the same preliminary inequality and distinguish completion from charged binding; the threat model claims no stronger pre-streaming guarantee. Existing unchanged implementation and verified racing-binding evidence remain referenced with their actual revision. If inspection reveals a behavior change is necessary, return to planning instead of silently implementing stricter admission.
+
+The independent reviewer confirmed admission, completion and binding directly against the implementation and found no planning findings. Existing racing-binding test source was inspected, not rerun during planning.
