@@ -34,6 +34,7 @@ VALUES ($1, 'group', $2, $3, 1, $4, $4, $4)`
 
 var mirrorAndPurgeQueries = []string{
 	"AddDirectChannelMembers", "SuspendReclaimedMembers", "RestoreKeptMembers", "RemoveFormerGroupMembers", "AddGroupChannelMembers",
+	"ListStudentDeletionTutors", "LockStudentDeletionGroups", "LockStudentDeletionChannels",
 	"DeleteMembersOfChannels", "DeleteMembershipsOfUser", "LockChannelsOfMember", "DeleteTutorChannelMembersBatch",
 	"ClaimUnbindableChatUploads", "MoveSenderReadMarker", "MoveReadMarker", "LockDigestMembers", "AdvanceDigestedMarker",
 }

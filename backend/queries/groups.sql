@@ -94,3 +94,15 @@ WHERE id IN (
     LIMIT sqlc.arg(batch_size)::int
     FOR UPDATE
 );
+
+-- name: LockStudentDeletionGroups :many
+SELECT groups.id FROM groups
+WHERE groups.id IN (
+    SELECT group_members.group_id FROM group_members JOIN relationships ON relationships.id = group_members.relationship_id
+    WHERE relationships.student_id = @student_id
+) OR groups.id IN (
+    SELECT channels.group_id FROM channels JOIN channel_members ON channel_members.channel_id = channels.id
+    WHERE channel_members.user_id = @student_id
+)
+ORDER BY groups.id
+FOR UPDATE;

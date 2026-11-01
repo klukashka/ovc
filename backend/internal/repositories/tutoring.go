@@ -631,3 +631,8 @@ func (r JoinRequests) DeleteOfStudent(ctx context.Context, student domain.UserID
 	deleted, err := r.queries.DeleteJoinRequestsOfStudent(ctx, student)
 	return counted(deleted, err, "delete join requests of student")
 }
+
+func (r Relationships) LockForStudentDeletion(ctx context.Context, student domain.UserID) ([]Relationship, error) {
+	relationships, err := r.queries.LockStudentDeletionRelationships(ctx, &student)
+	return one(relationships, err, "lock all relationships for student deletion")
+}

@@ -993,6 +993,47 @@ func (q *Queries) LockRelationshipsForLink(ctx context.Context, arg LockRelation
 	return items, nil
 }
 
+const lockStudentDeletionRelationships = `-- name: LockStudentDeletionRelationships :many
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE student_id = $1 ORDER BY id FOR UPDATE
+`
+
+func (q *Queries) LockStudentDeletionRelationships(ctx context.Context, studentID *domain.UserID) ([]Relationship, error) {
+	rows, err := q.db.Query(ctx, lockStudentDeletionRelationships, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Relationship
+	for rows.Next() {
+		var i Relationship
+		if err := rows.Scan(
+			&i.ID,
+			&i.TutorID,
+			&i.StudentID,
+			&i.State,
+			&i.DiscardReason,
+			&i.EndedBy,
+			&i.DisplayName,
+			&i.Email,
+			&i.Colour,
+			&i.Notes,
+			&i.CreateKey,
+			&i.LinkedAt,
+			&i.EndedAt,
+			&i.DiscardedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockStudentReclaimPendingRelationships = `-- name: LockStudentReclaimPendingRelationships :many
 SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE student_id = $1 AND state = 'reclaim_pending' ORDER BY id FOR UPDATE
 `

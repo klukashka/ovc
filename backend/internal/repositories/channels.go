@@ -320,3 +320,15 @@ func (r Channels) DeleteBatchOfTutor(ctx context.Context, tutor domain.UserID, b
 	deleted, err := r.queries.DeleteTutorChannelsBatch(ctx, dbgen.DeleteTutorChannelsBatchParams{TutorID: tutor, BatchSize: batchSize})
 	return counted(deleted, err, "delete channels batch of tutor")
 }
+
+func (r Channels) StudentDeletionTutors(ctx context.Context, student domain.UserID) ([]domain.UserID, error) {
+	tutors, err := r.queries.ListStudentDeletionTutors(ctx, &student)
+	return one(tutors, err, "tutors for student deletion")
+}
+
+func (r Channels) LockForStudentDeletion(ctx context.Context, student domain.UserID, relationships []domain.RelationshipID, groups []domain.GroupID) error {
+	_, err := r.queries.LockStudentDeletionChannels(ctx, dbgen.LockStudentDeletionChannelsParams{
+		UserID: student, RelationshipIds: uuids(relationships), GroupIds: uuids(groups),
+	})
+	return done(err, "lock all channels for student deletion")
+}

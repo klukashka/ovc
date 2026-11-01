@@ -638,6 +638,35 @@ func (q *Queries) ListRelationshipChannelsOf(ctx context.Context, arg ListRelati
 	return items, nil
 }
 
+const listStudentDeletionTutors = `-- name: ListStudentDeletionTutors :many
+SELECT tutor_id FROM relationships WHERE student_id = $1
+UNION
+SELECT channels.tutor_id FROM channels
+JOIN channel_members ON channel_members.channel_id = channels.id
+WHERE channel_members.user_id = $1
+ORDER BY tutor_id
+`
+
+func (q *Queries) ListStudentDeletionTutors(ctx context.Context, studentID *domain.UserID) ([]domain.UserID, error) {
+	rows, err := q.db.Query(ctx, listStudentDeletionTutors, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.UserID
+	for rows.Next() {
+		var tutor_id domain.UserID
+		if err := rows.Scan(&tutor_id); err != nil {
+			return nil, err
+		}
+		items = append(items, tutor_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockChannelForShare = `-- name: LockChannelForShare :one
 SELECT id FROM channels WHERE id = $1 FOR SHARE
 `
@@ -803,6 +832,41 @@ SELECT id FROM channels WHERE tutor_id = $1 ORDER BY id FOR SHARE
 
 func (q *Queries) LockChannelsOfTutorForShare(ctx context.Context, tutorID domain.UserID) ([]domain.ChannelID, error) {
 	rows, err := q.db.Query(ctx, lockChannelsOfTutorForShare, tutorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.ChannelID
+	for rows.Next() {
+		var id domain.ChannelID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockStudentDeletionChannels = `-- name: LockStudentDeletionChannels :many
+SELECT channels.id FROM channels
+WHERE channels.relationship_id = ANY ($1::uuid[])
+    OR channels.group_id = ANY ($2::uuid[])
+    OR channels.id IN (SELECT channel_id FROM channel_members WHERE channel_members.user_id = $3)
+ORDER BY channels.id
+FOR UPDATE
+`
+
+type LockStudentDeletionChannelsParams struct {
+	RelationshipIds []pgtype.UUID
+	GroupIds        []pgtype.UUID
+	UserID          domain.UserID
+}
+
+func (q *Queries) LockStudentDeletionChannels(ctx context.Context, arg LockStudentDeletionChannelsParams) ([]domain.ChannelID, error) {
+	rows, err := q.db.Query(ctx, lockStudentDeletionChannels, arg.RelationshipIds, arg.GroupIds, arg.UserID)
 	if err != nil {
 		return nil, err
 	}

@@ -138,3 +138,8 @@ func (r Groups) DeleteBatchOfTutor(ctx context.Context, tutor domain.UserID, bat
 	rows, err := r.queries.DeleteTutorGroupsBatch(ctx, dbgen.DeleteTutorGroupsBatchParams{TutorID: tutor, BatchSize: batchSize})
 	return counted(rows, err, "delete a batch of a tutor's groups")
 }
+
+func (r Groups) LockForStudentDeletion(ctx context.Context, student domain.UserID) ([]domain.GroupID, error) {
+	groups, err := r.queries.LockStudentDeletionGroups(ctx, &student)
+	return one(groups, err, "lock groups for student deletion")
+}

@@ -313,3 +313,10 @@ func (m Mirror) log(ctx context.Context, outcome reconciled) {
 			slog.String("tutor_id", erasure.tutor.String()), slog.String("cause", string(erasure.cause)), slog.Int64("messages", erasure.messages))
 	}
 }
+
+func (m Mirror) LockForStudentDeletion(ctx context.Context, repos repositories.Repositories, student domain.UserID, audiences Audiences, now time.Time) error {
+	if err := m.ensure(ctx, repos, audiences, now); err != nil {
+		return err
+	}
+	return repos.Channels.LockForStudentDeletion(ctx, student, audiences.Relationships, audiences.Groups)
+}

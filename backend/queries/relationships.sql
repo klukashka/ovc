@@ -238,3 +238,6 @@ WHERE id IN (
     LIMIT sqlc.arg(batch_size)::int
     FOR UPDATE
 );
+
+-- name: LockStudentDeletionRelationships :many
+SELECT * FROM relationships WHERE student_id = @student_id ORDER BY id FOR UPDATE;

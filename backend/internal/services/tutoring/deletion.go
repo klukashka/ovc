@@ -280,6 +280,9 @@ func (s *Service) applyStudentDeletion(ctx context.Context, repos repositories.R
 	if err != nil {
 		return nil, err
 	}
+	if err := s.lockStudentChannels(ctx, repos, student, links, now); err != nil {
+		return nil, err
+	}
 	if err := s.settleDecided(ctx, repos, domain.PathRemoval, &decision, now); err != nil {
 		return nil, err
 	}
@@ -312,7 +315,7 @@ func (s *Service) applyStudentDeletion(ctx context.Context, repos repositories.R
 func (s *Service) lockStudentForDeletion(
 	ctx context.Context, repos repositories.Repositories, student domain.UserID, also []domain.UserID,
 ) (waitingItems, []repositories.Relationship, error) {
-	pending, err := repos.Relationships.LinkedTutorsOfStudent(ctx, student)
+	pending, err := repos.Channels.StudentDeletionTutors(ctx, student)
 	if err != nil {
 		return waitingItems{}, nil, err
 	}
@@ -329,7 +332,7 @@ func (s *Service) lockStudentForDeletion(
 			return waitingItems{}, nil, err
 		}
 	}
-	links, err := repos.Relationships.LockOfStudent(ctx, student)
+	links, err := repos.Relationships.LockForStudentDeletion(ctx, student)
 	if err != nil {
 		return waitingItems{}, nil, err
 	}
@@ -349,7 +352,7 @@ func (s *Service) OnAccountPurged(
 	if role != domain.RoleStudent {
 		return accounts.Silent, nil
 	}
-	tutors, err := repos.Relationships.LinkedTutorsOfStudent(ctx, user)
+	tutors, err := repos.Channels.StudentDeletionTutors(ctx, user)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +361,7 @@ func (s *Service) OnAccountPurged(
 			return nil, err
 		}
 	}
-	links, err := repos.Relationships.LockOfStudent(ctx, user)
+	links, err := repos.Relationships.LockForStudentDeletion(ctx, user)
 	if err != nil {
 		return nil, err
 	}
@@ -366,6 +369,9 @@ func (s *Service) OnAccountPurged(
 	var active []repositories.Relationship
 	removals := reclaimDecision{}
 	for _, link := range links {
+		if link.State == domain.RelationshipDiscarded {
+			continue
+		}
 		if link.State == domain.RelationshipActive {
 			active = append(active, link)
 			continue
@@ -387,6 +393,9 @@ func (s *Service) OnAccountPurged(
 		}
 	}
 	if _, err := repos.JoinRequests.DeleteOfStudent(ctx, user); err != nil {
+		return nil, err
+	}
+	if err := s.lockStudentChannels(ctx, repos, user, links, now); err != nil {
 		return nil, err
 	}
 	if err := s.settleDecided(ctx, repos, domain.PathRemoval, &removals, now); err != nil {
@@ -486,4 +495,16 @@ func (s *Service) purgeBatchRows() int32 {
 		return s.deps.PurgeBatchRows
 	}
 	return DefaultPurgeBatchRows
+}
+
+func (s *Service) lockStudentChannels(ctx context.Context, repos repositories.Repositories, student domain.UserID, links []repositories.Relationship, now time.Time) error {
+	groups, err := repos.Groups.LockForStudentDeletion(ctx, student)
+	if err != nil {
+		return err
+	}
+	audiences := chat.Audiences{Groups: groups}
+	for _, link := range links {
+		audiences.Relationships = append(audiences.Relationships, link.ID)
+	}
+	return s.channels().LockForStudentDeletion(ctx, repos, student, audiences, now)
 }

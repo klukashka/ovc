@@ -275,3 +275,19 @@ SELECT id FROM channels WHERE id = @id FOR SHARE;
 -- name: GetChannelOfActiveMember :one
 SELECT channel_id, tutor_id, read_only_since FROM active_channel_members
 WHERE channel_id = @channel_id AND user_id = @user_id;
+
+-- name: ListStudentDeletionTutors :many
+SELECT tutor_id FROM relationships WHERE student_id = @student_id
+UNION
+SELECT channels.tutor_id FROM channels
+JOIN channel_members ON channel_members.channel_id = channels.id
+WHERE channel_members.user_id = @student_id
+ORDER BY tutor_id;
+
+-- name: LockStudentDeletionChannels :many
+SELECT channels.id FROM channels
+WHERE channels.relationship_id = ANY (sqlc.arg(relationship_ids)::uuid[])
+    OR channels.group_id = ANY (sqlc.arg(group_ids)::uuid[])
+    OR channels.id IN (SELECT channel_id FROM channel_members WHERE channel_members.user_id = @user_id)
+ORDER BY channels.id
+FOR UPDATE;

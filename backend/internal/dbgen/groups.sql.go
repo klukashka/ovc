@@ -399,6 +399,39 @@ func (q *Queries) ListTutorGroups(ctx context.Context, tutorID domain.UserID) ([
 	return items, nil
 }
 
+const lockStudentDeletionGroups = `-- name: LockStudentDeletionGroups :many
+SELECT groups.id FROM groups
+WHERE groups.id IN (
+    SELECT group_members.group_id FROM group_members JOIN relationships ON relationships.id = group_members.relationship_id
+    WHERE relationships.student_id = $1
+) OR groups.id IN (
+    SELECT channels.group_id FROM channels JOIN channel_members ON channel_members.channel_id = channels.id
+    WHERE channel_members.user_id = $1
+)
+ORDER BY groups.id
+FOR UPDATE
+`
+
+func (q *Queries) LockStudentDeletionGroups(ctx context.Context, studentID *domain.UserID) ([]domain.GroupID, error) {
+	rows, err := q.db.Query(ctx, lockStudentDeletionGroups, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.GroupID
+	for rows.Next() {
+		var id domain.GroupID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockTutorGroup = `-- name: LockTutorGroup :one
 SELECT id, tutor_id, name, colour, archived_at, create_key, created_at, updated_at FROM groups WHERE id = $1 AND tutor_id = $2 FOR UPDATE
 `
