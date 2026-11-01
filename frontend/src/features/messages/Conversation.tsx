@@ -31,6 +31,12 @@ import {
   fetchMessages,
   sendMessage,
 } from './api.ts';
+import { Attachments, useAttachmentExpiry } from './Attachments.tsx';
+import { UploadComposer } from './UploadComposer.tsx';
+import { useUploads } from './uploads.ts';
+import { useChatSignals } from './presence.ts';
+import { PresenceSummary } from './PresenceSummary.tsx';
+import { TypingIndicator } from './TypingIndicator.tsx';
 import { channelKey, messagesKey } from './keys.ts';
 import { MessageBody } from './MessageBody.tsx';
 import { MessageMenu } from './MessageMenu.tsx';
@@ -44,7 +50,9 @@ export function Conversation({
   channel,
   texts,
   onUnavailable,
+  revision = 0,
 }: {
+  readonly revision?: number;
   readonly channel: Channel;
   readonly texts: ChatTexts;
   readonly onUnavailable: () => void;
@@ -55,6 +63,7 @@ export function Conversation({
   const newKey = useContext(MessageKeyContext);
   const me = useSignedInAccount();
   const session = useSession();
+  const presence = useChatSignals(channel, me.id, me.role, revision);
   const [ownership] = useState(() => ({
     epoch: session.currentEpoch(),
     query: cache.getQueryCache().find({ queryKey: channelKey(channel.id), exact: true }),
@@ -69,8 +78,16 @@ export function Conversation({
   const savedDraft = useRef('');
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<ApiError | null>(null);
-  const [validation, setValidation] = useState<'emptyBody' | 'tooLong' | null>(null);
-  const submission = useRef<{ readonly body: string; readonly key: string } | null>(null);
+  const [validation, setValidation] = useState<'emptyBody' | 'tooLong' | 'tooManyFiles' | 'waitingUploads' | null>(
+    null,
+  );
+  const submission = useRef<{ readonly body: string; readonly attachments: string; readonly key: string } | null>(null);
+  const uploads = useUploads(channel.id, channel.writable, isAlive);
+  const attachmentGuard = useChatWrite(busy, !channel.writable || !me.email_verified || editing !== null);
+  const uploadError = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (validation === 'tooManyFiles' || validation === 'waitingUploads') uploadError.current?.focus();
+  }, [validation]);
   const guard = useChatWrite(busy, !channel.writable);
   const deletion = useChatWrite(busy);
   const id = useId();
@@ -79,6 +96,8 @@ export function Conversation({
   const [announcement, setAnnouncement] = useState('');
   const oldestShown = useRef<number | null>(null);
   const olderRequest = useRef<AbortController | null>(null);
+  const fileRefreshPaused = useRef(false);
+  const fileRefresh = useRef<{ readonly promise: Promise<boolean>; readonly cancel: () => void } | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const query = useQuery({
     queryKey: messagesKey(channel.id),
@@ -99,6 +118,7 @@ export function Conversation({
     retry: false,
   });
   const messages = useMemo(() => [...(query.data?.items ?? [])].sort((a, b) => a.seq - b.seq), [query.data]);
+  useAttachmentExpiry(messages, refreshAttachments, isAlive);
   useEffect(() => {
     const first = messages[0];
     if (first !== undefined) oldestShown.current = first.seq;
@@ -116,11 +136,35 @@ export function Conversation({
   );
 
   useEffect(() => {
+    const pause = (): void => {
+      fileRefreshPaused.current = true;
+      fileRefresh.current?.cancel();
+      fileRefresh.current = null;
+    };
+    const resume = (): void => {
+      fileRefreshPaused.current = document.visibilityState === 'hidden';
+    };
+    const visibility = (): void => {
+      if (document.visibilityState === 'hidden') pause();
+      else resume();
+    };
+    window.addEventListener('pagehide', pause);
+    window.addEventListener('pageshow', resume);
+    document.addEventListener('visibilitychange', visibility);
+    return (): void => {
+      window.removeEventListener('pagehide', pause);
+      window.removeEventListener('pageshow', resume);
+      document.removeEventListener('visibilitychange', visibility);
+    };
+  }, []);
+  useEffect(() => {
     alive.current = true;
     heading.current?.focus();
     return (): void => {
       alive.current = false;
       olderRequest.current?.abort();
+      fileRefresh.current?.cancel();
+      fileRefresh.current = null;
     };
   }, []);
   useEffect(() => {
@@ -195,6 +239,37 @@ export function Conversation({
       if (isAlive()) setLoadingOlder(false);
     }
   }
+  function refreshAttachments(): Promise<boolean> {
+    if (!isAlive() || fileRefreshPaused.current || document.visibilityState === 'hidden') return Promise.resolve(false);
+    if (fileRefresh.current !== null) return fileRefresh.current.promise;
+    let cancel = (): void => undefined;
+    const promise = new Promise<boolean>((resolve) => {
+      const cancelStart = scheduler.schedule(1000, () => {
+        if (!isAlive() || fileRefreshPaused.current || document.visibilityState === 'hidden') {
+          fileRefresh.current = null;
+          resolve(false);
+          return;
+        }
+        void cache.invalidateQueries({ queryKey: messagesKey(channel.id) }, { cancelRefetch: false }).then(() => {
+          fileRefresh.current = null;
+          resolve(isAlive() && !fileRefreshPaused.current && document.visibilityState !== 'hidden');
+        });
+      });
+      cancel = (): void => {
+        cancelStart();
+        resolve(false);
+      };
+    });
+    fileRefresh.current = { promise, cancel };
+    return promise;
+  }
+  function chooseFiles(files: readonly File[]): void {
+    attachmentGuard.run(() => {
+      if (!isAlive()) return;
+      if (!uploads.queue.add(files)) setValidation('tooManyFiles');
+      else setValidation(null);
+    });
+  }
   async function reload(): Promise<void> {
     scheduleChatReads(cache, scheduler);
     await Promise.all([
@@ -204,6 +279,7 @@ export function Conversation({
   }
   function cancelEdit(): void {
     if (editing === null) return;
+    presence.stopTyping();
     focusMessage(editing.id);
     setEditing(null);
     setDraft(savedDraft.current);
@@ -212,7 +288,15 @@ export function Conversation({
   async function submit(): Promise<void> {
     if (!isAlive()) return;
     const body = draft;
-    if (body.trim() === '') {
+    const attachments =
+      editing === null
+        ? uploads.items.flatMap((item) => (item.uploaded === null ? [] : [item.uploaded.id]))
+        : editing.attachments.map((item) => item.id);
+    if (editing === null && uploads.items.some((item) => item.state !== 'ready')) {
+      setValidation('waitingUploads');
+      return;
+    }
+    if (body.trim() === '' && attachments.length === 0) {
       setValidation('emptyBody');
       return;
     }
@@ -220,19 +304,23 @@ export function Conversation({
       setValidation('tooLong');
       return;
     }
+    presence.stopTyping();
     setValidation(null);
     setFailure(null);
     setBusy(true);
     const original = editing;
     try {
       if (original === null) {
-        if (submission.current?.body !== body) submission.current = { body, key: newKey() };
-        await sendMessage(client, channel.id, body, submission.current.key);
+        const attachmentKey = JSON.stringify(attachments);
+        if (submission.current?.body !== body || submission.current.attachments !== attachmentKey)
+          submission.current = { body, attachments: attachmentKey, key: newKey() };
+        await sendMessage(client, channel.id, body, submission.current.key, attachments);
       } else {
         await editMessage(client, original, body);
       }
       if (!isAlive()) return;
       submission.current = null;
+      if (original === null) uploads.queue.clear();
       setDraft(original === null ? '' : savedDraft.current);
       setEditing(null);
       await reload();
@@ -276,6 +364,13 @@ export function Conversation({
       <h2 ref={heading} tabIndex={-1} dir="auto" className="text-heading outline-none">
         {channel.label ?? texts.deletedUser}
       </h2>
+      <PresenceSummary
+        presence={presence}
+        group={channel.kind === 'group'}
+        viewerRole={me.role}
+        onlineLabel={texts.online}
+        membersLabel={texts.members}
+      />
       {channel.tutor === null ? null : <p dir="auto">{channel.tutor.name}</p>}
       {channel.unconfirmed ? <p>{texts.unconfirmed}</p> : null}
       {channel.relationship_id === undefined ? null : (
@@ -371,6 +466,7 @@ export function Conversation({
               ) : (
                 <MessageBody body={message.body ?? ''} />
               )}
+              <Attachments message={message} texts={texts} refresh={refreshAttachments} />
               {message.edited_at === null || message.deleted || message.erased ? null : (
                 <span className="text-small text-text-muted">{texts.edited}</span>
               )}
@@ -379,6 +475,11 @@ export function Conversation({
           );
         })}
       </ol>
+      <TypingIndicator
+        presence={presence}
+        someoneTyping={texts.someoneTyping}
+        namedTyping={(name) => texts.namedTyping.replace('{name}', name)}
+      />
       {read.failed ? (
         <button type="button" className={quietButtonClass} onClick={read.retry}>
           {texts.retryRead}
@@ -396,6 +497,20 @@ export function Conversation({
       >
         <label htmlFor={id}>{texts.composer}</label>
         <textarea
+          onDragOver={(event) => {
+            if (event.dataTransfer.types.includes('Files')) event.preventDefault();
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            chooseFiles(Array.from(event.dataTransfer.files));
+          }}
+          onPaste={(event) => {
+            const pictures = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'));
+            if (pictures.length > 0) {
+              event.preventDefault();
+              chooseFiles(pictures);
+            }
+          }}
           ref={composer}
           id={id}
           value={draft}
@@ -406,7 +521,10 @@ export function Conversation({
           className="min-h-11 rounded-md border border-border-strong bg-surface px-3 py-2"
           onChange={(event) => {
             setDraft(event.target.value);
+            if (event.target.value.trim() === '') presence.stopTyping();
+            else presence.startTyping();
           }}
+          onBlur={presence.stopTyping}
           onKeyDown={(event) => {
             if (event.key === 'Escape' && editing !== null) {
               event.preventDefault();
@@ -415,10 +533,25 @@ export function Conversation({
           }}
         />
         {validation === null ? null : (
-          <p role="alert" id={`${id}-error`}>
+          <p ref={uploadError} role="alert" tabIndex={-1} id={`${id}-error`}>
             {texts[validation]}
           </p>
         )}
+        {editing === null ? (
+          <UploadComposer
+            focusFallback={composer}
+            items={uploads.items}
+            texts={texts}
+            confirmed={me.email_verified}
+            busy={busy}
+            unavailable={attachmentGuard.unavailable}
+            reason={attachmentGuard.reason}
+            choose={chooseFiles}
+            remove={(key) => {
+              uploads.queue.remove(key);
+            }}
+          />
+        ) : null}
         <div className="flex gap-2">
           <ActionButton
             type="submit"

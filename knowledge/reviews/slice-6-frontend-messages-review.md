@@ -1,6 +1,6 @@
 # Text messages verification
 
-Base: `e5ef1a188fc52a3a0afa0d95f4974ee97df4b2e2`. Scope: [approved F2 plan](../plans/slice-6-frontend-messages.md). Status: implementation, change checks and readiness reviews passed; exact-tree merge gate and finish remain pending.
+Base: `e5ef1a188fc52a3a0afa0d95f4974ee97df4b2e2`. Scope: [approved F2 plan](../plans/slice-6-frontend-messages.md). Status: merged as `29fc9090ea3c9ff92b0be15fc45e2289a04d09b8`. The exact-tree gate passed in 224.0 seconds and finish confirmed tree `98bfff8dd8b942adc56b3586df09f6fcbda80294`; all 30 gate commands exited zero. The local gate/finish transcript is retained in `.git/ovc-merge-reports/29fc909-frontend-messages.log`. Earlier pending statements below describe their recorded checkpoints.
 
 ## Planning review
 

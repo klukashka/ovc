@@ -198,7 +198,7 @@ describe('Messages', () => {
     expect(document.activeElement).toBe(screen.getByText('Message 1').closest('li'));
   });
 
-  test('offline blocks Send, Edit and Delete and preserves the composer', async () => {
+  test('offline blocks Send, Edit, Delete and every attach path and preserves the composer', async () => {
     const { connection, clock, server } = await fixture();
     const field = await screen.findByRole('textbox', { name: 'Message' });
     fireEvent.change(field, { target: { value: 'Unsent draft' } });
@@ -209,6 +209,12 @@ describe('Messages', () => {
       clock.pass(5000);
     });
     const preservedFocus = document.activeElement;
+    const file = new File(['image'], 'picture.png', { type: 'image/png' });
+    const attach = screen.getByRole('button', { name: 'Attach files' });
+    fireEvent.click(attach);
+    fireEvent.change(screen.getByLabelText('Attach files', { selector: 'input' }), { target: { files: [file] } });
+    fireEvent.drop(field, { dataTransfer: { files: [file] } });
+    fireEvent.paste(field, { clipboardData: { files: [file] } });
     fireEvent.submit(field.closest('form') ?? field);
     fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
     const edit = screen.getByRole('button', { name: 'Edit' });
@@ -218,10 +224,11 @@ describe('Messages', () => {
 
     expect(preservedFocus).toBe(field);
     expect((field as HTMLTextAreaElement).value).toBe('Unsent draft');
-    for (const button of [screen.getByRole('button', { name: 'Send' }), edit, remove]) {
+    for (const button of [screen.getByRole('button', { name: 'Send' }), edit, remove, attach]) {
       expect(button.getAttribute('aria-disabled')).toBe('true');
       expect(button.getAttribute('title')).toBe('No connection');
     }
+    expect(within(screen.getByRole('list', { name: 'Attachments' })).queryAllByRole('listitem')).toHaveLength(0);
     expect(server.chat.history(channel.id).length).toBe(1);
   });
 
@@ -605,5 +612,129 @@ describe('Messages', () => {
     expect(after).toBe(before);
     expect(draftBeforeRemount).toBe('Old account send');
     expect(historyBeforeRemount?.items.map((item) => item.body)).toEqual(['Message 1']);
+  });
+});
+
+describe('attachment sending and lifecycle', () => {
+  test.each(['', 'A message with a file'])(
+    'replays the same body and attachment IDs after an uncertain send: %j',
+    async (body) => {
+      const { server } = await fixture(0);
+      const field = await screen.findByRole('textbox', { name: 'Message' });
+      fireEvent.change(screen.getByLabelText('Attach files', { selector: 'input' }), {
+        target: { files: [new File(['lesson notes'], 'notes.txt', { type: 'text/plain' })] },
+      });
+      await screen.findByText('Uploaded');
+      fireEvent.change(field, { target: { value: body } });
+      server.chat.loseNextSendResponse();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+      await screen.findByRole('alert');
+      const retainedBody = (field as HTMLTextAreaElement).value;
+      const retainedAttachment = within(screen.getByRole('list', { name: 'Attachments' })).getByText(
+        'notes.txt',
+      ).textContent;
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => {
+        expect(within(screen.getByRole('list', { name: 'Attachments' })).queryAllByRole('listitem')).toHaveLength(0);
+      });
+
+      expect(retainedBody).toBe(body);
+      expect(retainedAttachment).toBe('notes.txt');
+      expect(server.chat.sends).toHaveLength(2);
+      expect(server.chat.sends[0]).toEqual(server.chat.sends[1]);
+      expect(server.chat.sends[0]?.ids).toHaveLength(1);
+      expect(server.chat.history(channel.id)).toHaveLength(1);
+      expect(server.chat.history(channel.id)[0]?.attachments).toHaveLength(1);
+      expect(server.chat.history(channel.id)[0]?.body).toBe(body);
+      expect(document.activeElement).toBe(field);
+    },
+  );
+
+  test('removing the last uploaded file restores focus to the composer', async () => {
+    await fixture();
+    const field = await screen.findByRole('textbox', { name: 'Message' });
+    fireEvent.change(screen.getByLabelText('Attach files', { selector: 'input' }), {
+      target: { files: [new File(['lesson notes'], 'notes.txt', { type: 'text/plain' })] },
+    });
+    await screen.findByText('Uploaded');
+    const remove = screen.getByRole('button', { name: 'Remove file' });
+    remove.focus();
+
+    fireEvent.click(remove);
+
+    expect(document.activeElement).toBe(field);
+    expect(screen.queryByText('notes.txt')).toBeNull();
+  });
+
+  test('a read-only transition clears a focused refused upload onto the retained composer', async () => {
+    const { server, cache } = await fixture();
+    const field = await screen.findByRole('textbox', { name: 'Message' });
+    fireEvent.change(field, { target: { value: 'Retained draft' } });
+    fireEvent.change(screen.getByLabelText('Attach files', { selector: 'input' }), {
+      target: { files: [new File(['bad image'], 'image.png', { type: 'image/png' })] },
+    });
+    const refusal = await screen.findByRole('alert');
+    await waitFor(() => {
+      expect(document.activeElement).toBe(refusal);
+    });
+
+    server.chat.setWritable(channel.id, false);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelKey(channel.id) });
+    });
+
+    await waitFor(() => {
+      expect((field as HTMLTextAreaElement).readOnly).toBe(true);
+    });
+    expect(document.activeElement).toBe(field);
+    expect((field as HTMLTextAreaElement).value).toBe('Retained draft');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('pagehide cancels an image recovery waiting to refresh history and pageshow restores expiry refresh', async () => {
+    const { server, cache, clock } = await fixture();
+    server.chat.addMessage(channel.id, {
+      ...message(2),
+      attachments: [
+        {
+          id: 'picture',
+          filename: 'picture.png',
+          media_type: 'image/png',
+          width: 2,
+          height: 2,
+          size_bytes: 24,
+          url: '/api/v1/files/picture?t=test',
+          expires_at: new Date(60_000).toISOString(),
+        },
+      ],
+    });
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: messagesKey(channel.id) });
+    });
+    const picture = await screen.findByRole('img', { name: 'picture.png' });
+    const reads = (): number =>
+      server.sentAddresses.filter((address) => address.pathname === `/api/v1/channels/${channel.id}/messages`).length;
+    const before = reads();
+
+    fireEvent.error(picture);
+    fireEvent.pageHide(window);
+    await act(async () => {
+      clock.pass(1000);
+      await Promise.resolve();
+    });
+    const hiddenReads = reads();
+    fireEvent.pageShow(window);
+    await act(async () => {
+      clock.pass(30_000);
+      clock.pass(1000);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(reads()).toBe(before + 1);
+    });
+
+    expect(hiddenReads).toBe(before);
+    expect(reads()).toBe(before + 1);
   });
 });

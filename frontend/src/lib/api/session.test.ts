@@ -385,3 +385,50 @@ describe('session', () => {
     expect(session.snapshot()).toEqual({ kind: 'signedOut', reason: 'signedOut' });
   });
 });
+
+describe('authenticated upload lifetime', () => {
+  test('cancelling while token refresh is pending prevents the upload replay', async () => {
+    const shared = browser();
+    const session = await signedInTab(shared);
+    shared.server.advance(16 * 60);
+    const paused = shared.server.pauseRefreshes();
+    const controller = new AbortController();
+    const body = new FormData();
+    body.append('file', new File(['text'], 'notes.txt', { type: 'text/plain' }));
+    const before = shared.server.sentTokens.length;
+    const upload = session.authorizedUpload(
+      new Request(`${origin}/api/v1/uploads?context=chat&scope=channel:one`, {
+        method: 'POST',
+        signal: controller.signal,
+      }),
+      { body, progress: (): void => undefined },
+    );
+    const settled = upload.catch((error: unknown): unknown => error);
+    await paused.answered;
+
+    controller.abort();
+    paused.resume();
+    const outcome = await settled;
+
+    expect(outcome).toBeInstanceOf(DOMException);
+    expect(shared.server.sentTokens).toHaveLength(before + 1);
+    expect(signedInAs(session)).toBe(first.id);
+  });
+
+  test('an upload never sends credentials or a file to a foreign origin', async () => {
+    const shared = browser();
+    const session = await signedInTab(shared);
+    const before = shared.server.sentTokens.length;
+    const body = new FormData();
+    body.append('file', new File(['text'], 'notes.txt'));
+
+    const attempt = (): Promise<Response> =>
+      session.authorizedUpload(new Request('https://outside.example/api/v1/uploads', { method: 'POST' }), {
+        body,
+        progress: (): void => undefined,
+      });
+
+    expect(attempt).toThrow('uploads require the own API');
+    expect(shared.server.sentTokens).toHaveLength(before);
+  });
+});

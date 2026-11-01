@@ -16,6 +16,8 @@
     "e2e",
     "src/lib/api/schema.ts",
     "src/lib/api/transport.ts",
+    "src/lib/api/uploadTransport.ts",
+    "src/lib/api/uploadContract.ts",
     "src/lib/api/transportContract.ts",
     "src/lib/i18n/languages.ts",
     "src/lib/realtime/frames.ts",

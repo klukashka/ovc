@@ -55,6 +55,51 @@ export class FakeChatServer {
   private readonly channels = new Map<string, StoredChannel>();
   private sequence = 0;
   private issued = 0;
+  private uploaded = 0;
+  private readonly uploads = new Map<
+    string,
+    {
+      readonly caller: string;
+      readonly channel: string;
+      readonly file: components['schemas']['MessageAttachment'];
+      bound: boolean;
+    }
+  >();
+  readonly sends: { readonly body: string; readonly ids: readonly string[]; readonly key: string }[] = [];
+
+  async upload(request: Request, caller: Me, body: FormData, now: number): Promise<Response> {
+    request.signal.throwIfAborted();
+    const address = new URL(request.url);
+    if (address.searchParams.get('context') !== 'chat') return refused(422, 'validation_failed');
+    if (!caller.email_verified) return refused(403, 'email_not_verified');
+    const scope = address.searchParams.get('scope') ?? '';
+    const channel = scope.startsWith('channel:') ? this.channels.get(scope.slice(8)) : undefined;
+    if (channel === undefined || !this.visible(channel, caller)) return refused(404, 'not_found');
+    if (!channel.channel.writable) return refused(409, 'channel_read_only');
+    const parts = [...body.entries()];
+    const file = body.get('file');
+    if (parts.length !== 1 || file === null || typeof file === 'string') return refused(422, 'validation_failed');
+    if (file.size > 25_000_000) return refused(413, 'payload_too_large');
+    if (file.type !== 'text/plain' || !file.name.endsWith('.txt')) return refused(415, 'unsupported_media_type');
+    this.uploaded += 1;
+    const id = `00000000-0000-4000-8000-${String(this.uploaded).padStart(12, '0')}`;
+    const uploaded = { id, filename: file.name, size_bytes: file.size, media_type: file.type };
+    this.uploads.set(id, {
+      caller: caller.id,
+      channel: channel.channel.id,
+      bound: false,
+      file: {
+        ...uploaded,
+        width: null,
+        height: null,
+        url: `/api/v1/files/${id}?t=fake-download`,
+        expires_at: new Date(now + 600_000).toISOString(),
+      },
+    });
+    await Promise.resolve();
+    request.signal.throwIfAborted();
+    return answer(201, uploaded);
+  }
   private loseSendResponse = false;
   private failDelete = false;
   private channelPause: { readonly answered: () => void; readonly resumed: Promise<void> } | null = null;
@@ -363,6 +408,16 @@ export class FakeChatServer {
 
   private async sendMessage(channel: StoredChannel, caller: Me, request: Request, now: number): Promise<Response> {
     const key = request.headers.get('Idempotency-Key') ?? '';
+    const body: unknown = await request.json();
+    if (
+      !validBody(body) ||
+      !('attachment_ids' in body) ||
+      !Array.isArray(body.attachment_ids) ||
+      !body.attachment_ids.every((id: unknown): id is string => typeof id === 'string')
+    )
+      return refused(422, 'validation_failed');
+    const ids = body.attachment_ids;
+    this.sends.push({ body: body.body, ids: [...ids], key });
     if (!/^[A-Za-z0-9._-]{1,64}$/.test(key)) {
       return refused(422, 'validation_failed');
     }
@@ -373,15 +428,23 @@ export class FakeChatServer {
     if (!channel.channel.writable) {
       return refused(409, 'channel_read_only');
     }
-    const body: unknown = await request.json();
     if (
-      !validBody(body) ||
-      !acceptableText(body.body) ||
-      !('attachment_ids' in body) ||
-      !Array.isArray(body.attachment_ids) ||
-      body.attachment_ids.length !== 0
-    ) {
+      (!acceptableText(body.body) && !(body.body === '' && ids.length > 0)) ||
+      ids.length > 10 ||
+      new Set(ids).size !== ids.length
+    )
       return refused(422, 'validation_failed');
+    const attachments: components['schemas']['MessageAttachment'][] = [];
+    for (const id of ids) {
+      const upload = this.uploads.get(id);
+      if (upload?.caller !== caller.id || upload.channel !== channel.channel.id || upload.bound)
+        return refused(404, 'not_found');
+      attachments.push(upload.file);
+    }
+    for (const id of ids) {
+      const upload = this.uploads.get(id);
+      if (upload === undefined) throw new Error('resolved upload disappeared');
+      upload.bound = true;
     }
     this.issued += 1;
     const stored: StoredMessage = {
@@ -390,7 +453,7 @@ export class FakeChatServer {
       message: {
         id: `00000000-0000-4000-9000-${String(this.issued).padStart(12, '0')}`,
         body: body.body,
-        attachments: [],
+        attachments,
         created_at: new Date(now).toISOString(),
         edited_at: null,
         deleted: false,

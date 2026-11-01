@@ -1,5 +1,13 @@
 import type { RefreshResult, Scheduler, SessionState } from '../api/session.ts';
-import { type EntityKind, type ServerFrame, authFrame, closeCodes, parseServerFrame, pingFrame } from './frames.ts';
+import {
+  type EntityKind,
+  type ServerFrame,
+  authFrame,
+  closeCodes,
+  parseServerFrame,
+  pingFrame,
+  outgoingTypingFrame,
+} from './frames.ts';
 import type { RealtimeSocket, SocketFactory } from './socket.ts';
 
 export const tokenMarginMilliseconds = 30_000;
@@ -22,6 +30,8 @@ export type RealtimeEvent =
   | { readonly kind: 'entity'; readonly entity: EntityKind; readonly id: string }
   | { readonly kind: 'connected'; readonly reconnect: boolean };
 
+export type ChatSignal = Extract<ServerFrame, { readonly type: 'presence' | 'typing' }>;
+
 export interface TokenSource {
   readonly freshToken: (minimumValidityMilliseconds: number, epoch: number) => Promise<string | null>;
   readonly subscribeTokens: (listener: (token: string, epoch: number) => void) => () => void;
@@ -38,6 +48,7 @@ export interface ClientDependencies {
   readonly onEvent: (event: RealtimeEvent) => void;
   readonly onFailure: (error: Error) => void;
   readonly connectedBefore: boolean;
+  readonly onChatSignal?: (signal: ChatSignal) => void;
   readonly onReadiness?: (ready: boolean) => void;
 }
 
@@ -57,6 +68,7 @@ export class RealtimeClient {
   private connectedBefore: boolean;
   private latestToken: string | null = null;
   private pings = 0;
+  private lastTypingAt = -Infinity;
   private awaitedPong: string | null = null;
   private cancelReconnect: (() => void) | null = null;
   private cancelPing: (() => void) | null = null;
@@ -79,6 +91,17 @@ export class RealtimeClient {
       }
     });
     void this.connect();
+  }
+
+  sendTyping(channelId: string, typing: boolean): boolean {
+    if (this.stopped || this.connection?.ready !== true || this.deps.tokens.currentEpoch() !== this.deps.epoch) {
+      return false;
+    }
+    const now = this.deps.scheduler.wallClock();
+    if (now - this.lastTypingAt < 2_000) return false;
+    this.lastTypingAt = now;
+    this.connection.socket.send(outgoingTypingFrame(channelId, typing));
+    return true;
   }
 
   stop(): void {
@@ -181,6 +204,9 @@ export class RealtimeClient {
         return;
       case 'typing':
       case 'presence':
+        if (this.connection?.ready === true && this.deps.tokens.currentEpoch() === this.deps.epoch) {
+          this.deps.onChatSignal?.(frame);
+        }
         return;
     }
   }

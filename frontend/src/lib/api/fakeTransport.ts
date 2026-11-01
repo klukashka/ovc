@@ -2,7 +2,7 @@ import { FakeChatServer } from './fakeChat.ts';
 
 import type { components } from './schema.ts';
 import type { LockManagerLike, Me, Scheduler } from './session.ts';
-import type { AuthTransport } from './transport.ts';
+import type { AuthTransport, UploadTransfer } from './transport.ts';
 
 const accessTokenSeconds = 900;
 
@@ -412,7 +412,7 @@ export class FakeAuthServer {
       login: (email, password) => this.login(email, password),
       refresh: () => this.refresh(),
       me: (token) => this.checkAccount(token),
-      send: (request) => this.send(request),
+      send: (request, upload) => this.send(request, upload),
     };
   }
 
@@ -490,7 +490,7 @@ export class FakeAuthServer {
     return this.answerMe(token);
   }
 
-  private async send(request: Request): Promise<Response> {
+  private async send(request: Request, upload?: UploadTransfer): Promise<Response> {
     await nextTurn();
     const token = request.headers.get('Authorization')?.replace(/^Bearer /, '') ?? '';
     this.sent.push(token);
@@ -515,6 +515,13 @@ export class FakeAuthServer {
       if (audienceRefusal !== null) {
         return audienceRefusal;
       }
+    }
+    if (path === '/api/v1/uploads' && request.method === 'POST' && caller !== undefined) {
+      request.signal.throwIfAborted();
+      const body = upload?.body ?? (await request.formData());
+      const file = body.get('file');
+      if (upload !== undefined && file !== null && typeof file !== 'string') upload.progress(file.size, file.size);
+      return this.chat.upload(request, caller, body, Date.UTC(2026, 10, 1) + this.nowSeconds * 1_000);
     }
     if (path === '/api/v1/channels' || path.startsWith('/api/v1/channels/') || path.startsWith('/api/v1/messages/')) {
       const invalid = this.refusedToken(token);

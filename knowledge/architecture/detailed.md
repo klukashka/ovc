@@ -91,8 +91,7 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `features/library` | Library browser, materials, folders |
 | `features/builder` | Assignment builder and preview |
 | `features/homework` | Issue dialog, issued work, analytics, review queue and review screen, student assignment page and results |
-| `features/chat` | Channel list, conversation, composer, presence, typing |
-| `features/messages` | Lazy text conversations, scoped channel search and history, REST writes and visible read markers, safe links and message focus; the small unread query and keys are shared with the signed-in frame |
+| `features/messages` | Lazy conversations, scoped history and read markers, bounded chat upload queue, signed-file previews, presence and anonymous typing; the unread query and keys are shared with the signed-in frame |
 | `features/notifications` | The Notifications item ("bell") with the unread count in the sidebar and the narrow top bar, the panel with the latest 10, the `/notifications` page, marking rows read, polite announcements of new rows |
 | `features/settings` | Profile, account, notifications (email switches per group), teaching settings (tutor code, blocked students), and the `/unsubscribe` token page |
 | `lib/api` | Typed API client generated from OpenAPI, error type, token handling; the session reaches the network only through the `AuthTransport` adapter (HTTP, and an in-memory fake for unit tests checked by the same contract against the real backend); from slice 4 the session's refresh reports its result (renewed, ended with a reason, or superseded by another epoch), and the session hands the realtime client fresh access tokens tagged with their epoch |

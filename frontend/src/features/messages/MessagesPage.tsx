@@ -56,7 +56,7 @@ function ChannelConversation({ id, texts }: { readonly id: string; readonly text
             }}
           />
         ) : null}
-        <Conversation channel={query.data} texts={texts} onUnavailable={unavailable} />
+        <Conversation revision={query.dataUpdatedAt} channel={query.data} texts={texts} onUnavailable={unavailable} />
       </>
     );
   if (query.isError)

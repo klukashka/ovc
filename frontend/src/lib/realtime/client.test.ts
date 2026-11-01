@@ -7,7 +7,7 @@ import { studentsKey } from '../../features/students/api.ts';
 import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../api/fakeTransport.ts';
 import { Session } from '../api/session.ts';
 import { eventually } from '../eventually.ts';
-import { type RealtimeEvent, RealtimeClient, connectWhileSignedIn } from './client.ts';
+import { type ChatSignal, type RealtimeEvent, RealtimeClient, connectWhileSignedIn } from './client.ts';
 import { closeCodes } from './frames.ts';
 import { FakeGateway } from './fakeGateway.ts';
 
@@ -325,4 +325,72 @@ test('chat frames emit refetch hints without making their payload authoritative'
     ]);
   });
   rig.disconnect();
+});
+
+test('chat signals use the existing ready socket and typing starts and stops share a two-second window', async () => {
+  const server = new FakeAuthServer();
+  server.addAccount(tutor);
+  const gateway = new FakeGateway(server);
+  const clock = manualScheduler();
+  const session = new Session({
+    origin,
+    transport: server.transport(),
+    locks: memoryLocks(),
+    scheduler: manualScheduler(),
+  });
+  await session.signIn(tutor.email, tutor.password);
+  const signals: ChatSignal[] = [];
+  const failures: string[] = [];
+  const client = new RealtimeClient({
+    sockets: gateway.sockets,
+    tokens: session,
+    epoch: session.currentEpoch(),
+    scheduler: clock,
+    random: (): number => 0.5,
+    connectedBefore: false,
+    onEvent: (): void => undefined,
+    onChatSignal: (signal): void => {
+      signals.push(signal);
+    },
+    onFailure: (error): void => {
+      failures.push(error.message);
+    },
+  });
+  const beforeReady = client.sendTyping('channel', true);
+  client.start();
+  await eventually(() => {
+    expect(gateway.readySockets(tutor.id)).toBe(1);
+  });
+
+  const first = client.sendTyping('channel', true);
+  const immediateStop = client.sendTyping('channel', false);
+  clock.pass(1_999);
+  const early = client.sendTyping('channel', true);
+  clock.pass(1);
+  const stop = client.sendTyping('channel', false);
+  gateway.memberTyped(tutor.id, 'student', 'channel');
+  await eventually(() => {
+    expect(signals).toHaveLength(2);
+  });
+  await eventually(() => {
+    expect(failures).toHaveLength(2);
+  });
+  client.stop();
+  const afterClose = client.sendTyping('channel', true);
+
+  expect([beforeReady, first, immediateStop, early, stop, afterClose]).toEqual([
+    false,
+    true,
+    false,
+    false,
+    true,
+    false,
+  ]);
+  expect(gateway.socketsOpened).toBe(1);
+  expect(signals).toEqual([
+    { type: 'presence', userId: 'student', online: true },
+    { type: 'typing', channelId: 'channel', userId: 'student' },
+  ]);
+  expect(failures.every((failure) => failure.endsWith('not_found'))).toBe(true);
+  expect(clock.pendingDelays()).toEqual([]);
 });

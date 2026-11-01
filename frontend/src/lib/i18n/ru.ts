@@ -274,6 +274,7 @@ export const ru = {
     placeholder: 'Текст политики конфиденциальности появится до запуска.',
   },
   fieldErrors: {
+    webp_too_large: 'Изображения WebP могут быть не больше 8 МБ',
     invalid: 'Проверьте значение.',
     required: 'Заполните это поле.',
     not_allowed: 'Это значение недоступно.',
@@ -562,6 +563,9 @@ export const ru = {
     ink: 'Чернила',
   },
   teaching: {
+    storage: 'Использование хранилища',
+    files: 'Файлы',
+    storageBytes: '{used, number} из {quota, number} байт',
     code: 'Код репетитора',
     codeHint: 'Ученик вводит этот код, чтобы отправить вам заявку.',
     copy: 'Скопировать код',

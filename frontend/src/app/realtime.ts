@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 
 import { type Scheduler, type Session, browserScheduler } from '../lib/api/session.ts';
+import { ChatSignals, chatSignals } from '../lib/realtime/chatSignals.ts';
 import { RealtimeClient, connectWhileSignedIn } from '../lib/realtime/client.ts';
 import { type SocketFactory, browserSocketFactory } from '../lib/realtime/socket.ts';
 import type { ConnectionState } from './connectionState.ts';
@@ -21,6 +22,7 @@ export interface RealtimeWiring {
   readonly sockets: SocketFactory;
   readonly scheduler: Scheduler;
   readonly page: RealtimePage;
+  readonly signals?: ChatSignals;
   readonly onFailure: (error: Error) => void;
 }
 
@@ -32,6 +34,7 @@ export function wireRealtime({
   scheduler,
   page,
   onFailure,
+  signals = chatSignals,
 }: RealtimeWiring): void {
   const onEvent = liveRefetch(queryClient, notificationArrivals, scheduler);
   let epoch = session.currentEpoch();
@@ -39,33 +42,42 @@ export function wireRealtime({
     const nextEpoch = session.currentEpoch();
     if (nextEpoch !== epoch) {
       onEvent.cancel();
+      signals.disconnect();
       epoch = nextEpoch;
     }
   });
   const connect = (connectedBefore: boolean): (() => void) =>
-    connectWhileSignedIn(
-      session,
-      (epoch) =>
-        new RealtimeClient({
-          sockets,
-          tokens: session,
-          epoch,
-          scheduler,
-          random: Math.random,
-          onEvent,
-          onFailure,
-          connectedBefore,
-          onReadiness: (ready): void => {
-            connection.readiness(epoch, ready);
-          },
-        }),
-    );
+    connectWhileSignedIn(session, (epoch) => {
+      const client = new RealtimeClient({
+        sockets,
+        tokens: session,
+        epoch,
+        scheduler,
+        random: Math.random,
+        onEvent: (event): void => {
+          if (event.kind === 'entity' && event.entity === 'channel') signals.clear(event.id);
+          onEvent(event);
+        },
+        onChatSignal: (signal): void => {
+          signals.publish(signal);
+        },
+        onFailure,
+        connectedBefore,
+        onReadiness: (ready): void => {
+          if (ready) signals.connect((channelId, typing) => client.sendTyping(channelId, typing));
+          else signals.disconnect();
+          connection.readiness(epoch, ready);
+        },
+      });
+      return client;
+    });
   let disconnect = (): void => undefined;
   let cancelResume = (): void => undefined;
   let started = false;
   const start = (): void => {
     cancelResume();
     disconnect();
+    signals.disconnect();
     onEvent.cancel();
     onEvent.resume();
     connection.resume();
@@ -82,6 +94,7 @@ export function wireRealtime({
     cancelResume();
     page.events.removeEventListener('load', start);
     disconnect();
+    signals.disconnect();
     onEvent.cancel();
     cancelResume = scheduler.schedule(resumeAfterBeforeUnloadMilliseconds, start);
   });
@@ -91,6 +104,7 @@ export function wireRealtime({
     cancelResume();
     page.events.removeEventListener('load', start);
     disconnect();
+    signals.disconnect();
     onEvent.cancel();
   });
   page.events.addEventListener('pageshow', (event) => {

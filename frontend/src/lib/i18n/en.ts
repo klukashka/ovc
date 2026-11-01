@@ -265,6 +265,7 @@ export const en: Resources = {
     placeholder: 'The privacy policy text will be published before launch.',
   },
   fieldErrors: {
+    webp_too_large: 'WebP pictures can be at most 8 MB',
     invalid: 'Check this value.',
     required: 'Fill in this field.',
     not_allowed: 'This value is not available.',
@@ -550,6 +551,9 @@ export const en: Resources = {
     ink: 'Ink',
   },
   teaching: {
+    storage: 'Storage usage',
+    files: 'Files',
+    storageBytes: '{used, number} of {quota, number} bytes',
     code: 'Tutor code',
     codeHint: 'Students enter this code to send you a join request.',
     copy: 'Copy code',

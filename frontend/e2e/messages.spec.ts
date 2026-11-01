@@ -6,6 +6,52 @@ import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { channelOf, channelUnread } from './messages.ts';
 import { accessToken, callApi, createCard, createGroup, seedActiveStudent, signUpOnInvitation } from './tutoring.ts';
 
+async function holdListUntilChannelDenial(page: Page, channel: string): Promise<() => Promise<void>> {
+  let reached = (): void => {
+    throw new Error('list barrier is not initialized');
+  };
+  let release = (): void => {
+    throw new Error('list release is not initialized');
+  };
+  let complete = (): void => {
+    throw new Error('list completion is not initialized');
+  };
+  let fail: (error: unknown) => void = (): void => {
+    throw new Error('list failure is not initialized');
+  };
+  const started = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  const resumed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const completed = new Promise<void>((resolve, reject) => {
+    complete = resolve;
+    fail = reject;
+  });
+  await page.route(/\/api\/v1\/channels\?/, async (route) => {
+    reached();
+    await resumed;
+    try {
+      await route.continue();
+      complete();
+    } catch (error) {
+      fail(error);
+      throw error;
+    }
+  });
+  await page.route(`**/api/v1/channels/${channel}`, async (route) => {
+    await started;
+    await route.continue();
+  });
+  return async (): Promise<void> => {
+    release();
+    await completed;
+    await page.unroute(/\/api\/v1\/channels\?/);
+    await page.unroute(`**/api/v1/channels/${channel}`);
+  };
+}
+
 async function studentContext(browser: Browser, deployment: Deployment): Promise<BrowserContext> {
   return browser.newContext({
     baseURL: deployment.origin,
@@ -171,16 +217,27 @@ test.describe('text messages', () => {
     const watched = await diagnostics.watch(studentPage);
     watched.expectFailure({ method: 'GET', path: `/api/v1/channels/${channel}`, status: 404 });
     diagnostics.expectFailure({ method: 'GET', path: `/api/v1/channels/${channel}`, status: 404 });
+    diagnostics.expectAbortedRequest(/^\/api\/v1\/channels$/);
     await signInThroughTheApi(page, other);
     await signInThroughTheApi(studentPage, student);
+    const releaseList = await holdListUntilChannelDenial(page, channel);
+    const listCancelled = page.waitForEvent('requestfailed', {
+      predicate: (request) => new URL(request.url()).pathname === '/api/v1/channels',
+    });
 
     await page.goto(`/messages/${channel}`);
     await studentPage.goto(`/messages/${channel}`);
 
     await expect(page.getByRole('main').getByText('Not found', { exact: true })).toBeVisible();
     await expect(studentPage.getByRole('main').getByText('Not found', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByText('Not found', { exact: true })).toBeFocused();
+    await expect(studentPage.getByRole('main').getByText('Not found', { exact: true })).toBeFocused();
     await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toHaveCount(0);
     await expect(studentPage.getByRole('textbox', { name: 'Message', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('main')).not.toContainText('Private group');
+    await expect(studentPage.getByRole('main')).not.toContainText('Private group');
+    await releaseList();
+    await listCancelled;
     await diagnostics.closeContext(context);
   });
 

@@ -1,6 +1,7 @@
 import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
+import { trafficAfterReady, expectRefetchedAfterTheSocketIsReady } from './realtime.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 
@@ -95,7 +96,9 @@ test.describe('account edge cases', () => {
     const elsewhere = await freshContext(browser, deployment);
     const otherPage = await elsewhere.newPage();
     await signedInAt(otherPage, account, '/today');
+    const traffic = trafficAfterReady(page, ['/api/v1/channels/unread']);
     await signedInAt(page, account, '/settings/account');
+    await expectRefetchedAfterTheSocketIsReady(traffic);
     await page.getByRole('main').getByRole('button', { name: 'Выйти на всех устройствах' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
 

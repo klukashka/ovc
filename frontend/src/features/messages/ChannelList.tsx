@@ -12,6 +12,7 @@ import { formatDateTime } from '../../lib/format/dates.ts';
 import { type ChannelItem, type ChannelPage, fetchChannels } from './api.ts';
 import { channelScopeRevision, channelsScopeRevisionKey } from './cache.ts';
 import { channelsKey } from './keys.ts';
+import { ChannelPresence } from './PresenceSummary.tsx';
 import type { ChatTexts } from './translations.ts';
 
 export function ChannelList({ texts }: { readonly texts: ChatTexts }): ReactElement {
@@ -110,6 +111,14 @@ function ChannelPages({ texts, q }: { readonly texts: ChatTexts; readonly q: str
               <span dir="auto" className={channel.unread_count > 0 ? 'font-semibold' : ''}>
                 {channel.label ?? texts.deletedUser}
               </span>
+              <ChannelPresence
+                channel={channel}
+                me={me}
+                revision={
+                  queries.find((query) => query.data?.items.some((item) => item.id === channel.id))?.dataUpdatedAt ?? 0
+                }
+                onlineLabel={texts.online}
+              />
               {channel.tutor === null ? null : (
                 <span dir="auto" className="block text-small">
                   {channel.tutor.name}

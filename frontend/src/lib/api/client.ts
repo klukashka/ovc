@@ -27,6 +27,7 @@ export const fieldCodes = [
   'too_long',
   'incorrect',
   'too_many',
+  'webp_too_large',
 ] as const;
 
 export type FieldCode = (typeof fieldCodes)[number];

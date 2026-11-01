@@ -41,10 +41,16 @@ export async function fetchMessages(
   return data;
 }
 
-export async function sendMessage(client: ApiClient, id: string, body: string, key: string): Promise<Message> {
+export async function sendMessage(
+  client: ApiClient,
+  id: string,
+  body: string,
+  key: string,
+  attachments: readonly string[] = [],
+): Promise<Message> {
   const { data, error, response } = await client.POST('/api/v1/channels/{id}/messages', {
     params: { path: { id }, header: { 'Idempotency-Key': key } },
-    body: { body, attachment_ids: [] },
+    body: { body, attachment_ids: [...attachments] },
   });
   if (data === undefined) throw apiErrorFrom(response.status, error);
   return data;

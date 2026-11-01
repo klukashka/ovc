@@ -2,7 +2,7 @@ import { createContext, useContext, useSyncExternalStore } from 'react';
 
 import { type ApiError, apiErrorFrom } from './client.ts';
 import { type components, meLanguageValues, meRoleValues, meStateValues, meThemeValues } from './schema.ts';
-import type { AuthTransport } from './transport.ts';
+import type { AuthTransport, UploadTransfer } from './transport.ts';
 
 export type Me = components['schemas']['Me'];
 
@@ -174,11 +174,22 @@ export class Session {
   };
 
   readonly authorizedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const request = new Request(input, init);
+    return this.authorizedRequest(new Request(input, init));
+  };
+
+  readonly authorizedUpload = (request: Request, upload: UploadTransfer): Promise<Response> => {
+    if (!this.isOwnApi(request.url)) throw new Error('uploads require the own API');
+    const headers = new Headers(request.headers);
+    headers.delete('Content-Type');
+    return this.authorizedRequest(new Request(request, { headers }), upload);
+  };
+
+  private async authorizedRequest(request: Request, upload?: UploadTransfer): Promise<Response> {
+    request.signal.throwIfAborted();
     const retry = request.clone();
     const sentToken = this.token;
     const epoch = this.epoch;
-    const response = await this.deps.transport.send(this.withToken(request));
+    const response = await this.deps.transport.send(this.withToken(request), upload);
     if (epoch !== this.epoch) {
       return response;
     }
@@ -188,12 +199,13 @@ export class Session {
       }
       const replaced = this.token !== null && this.token !== sentToken;
       if ((replaced || (await this.refresh()).kind === 'renewed') && epoch === this.epoch) {
-        const retried = await this.deps.transport.send(this.withToken(retry));
+        retry.signal.throwIfAborted();
+        const retried = await this.deps.transport.send(this.withToken(retry), upload);
         return epoch === this.epoch ? this.watch(retried, epoch) : retried;
       }
     }
     return epoch === this.epoch ? this.watch(response, epoch) : response;
-  };
+  }
 
   readonly start = async (): Promise<void> => {
     this.set({ kind: 'unknown' });

@@ -196,3 +196,7 @@ export function authFrame(accessToken: string): string {
 export function pingFrame(ref: string): string {
   return JSON.stringify({ type: 'ping', ref });
 }
+
+export function outgoingTypingFrame(channelId: string, typing: boolean): string {
+  return JSON.stringify({ type: typing ? 'typing.start' : 'typing.stop', payload: { channel_id: channelId } });
+}

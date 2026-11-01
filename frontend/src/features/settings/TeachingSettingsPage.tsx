@@ -15,6 +15,7 @@ import type { components } from '../../lib/api/schema.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { type CopyResult, copyText } from '../../lib/clipboard.ts';
 import { formatDate } from '../../lib/format/dates.ts';
+import { StorageUsage } from './StorageUsage.tsx';
 import { SettingsNav } from './SettingsNav.tsx';
 import { fetchTutorCode, tutorCodeKey } from './tutorCode.ts';
 
@@ -305,6 +306,7 @@ export function TeachingSettingsPage(): ReactElement {
   return (
     <Page>
       <SettingsNav />
+      <StorageUsage />
       <TutorCodeSection />
       <BlockedStudentsSection />
     </Page>
