@@ -19,7 +19,9 @@ type erasureStep struct {
 func (s *Service) EraseChannels(ctx context.Context, now time.Time) (int64, error) {
 	settings := s.deps.Erasure
 	deadline := settings.Wall().Add(settings.Budget)
-	pending, err := s.deps.Store.Repositories().Channels.PendingErasure(ctx, erasureBatch)
+	bounded, cancel := context.WithTimeout(ctx, settings.Budget)
+	defer cancel()
+	pending, err := s.deps.Store.Repositories().Channels.PendingErasure(bounded, erasureBatch)
 	if err != nil {
 		return 0, err
 	}
@@ -31,9 +33,12 @@ func (s *Service) EraseChannels(ctx context.Context, now time.Time) (int64, erro
 		}
 		var messages int64
 		for settings.Wall().Before(deadline) {
-			step, err := s.eraseBatch(ctx, channel, now)
+			step, err := s.eraseBatch(bounded, channel, now)
 			if err != nil {
 				failures = append(failures, err)
+				if bounded.Err() != nil {
+					return erased, errors.Join(append(failures, bounded.Err())...)
+				}
 				break
 			}
 			messages += step.erased
