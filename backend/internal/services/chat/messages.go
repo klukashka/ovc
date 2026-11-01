@@ -310,7 +310,11 @@ func (s *Service) Edit(ctx context.Context, author Author, id domain.MessageID, 
 		case locked.Version != version:
 			return ErrConflict
 		}
-		if invalid := validBody(body, 0); invalid != nil {
+		attachmentCount := 0
+		if scope.HasAttachments {
+			attachmentCount = 1
+		}
+		if invalid := validBody(body, attachmentCount); invalid != nil {
 			return invalid
 		}
 		if _, err := repos.Messages.Edit(ctx, id, body, now); err != nil {

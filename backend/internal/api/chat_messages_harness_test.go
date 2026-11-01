@@ -144,7 +144,14 @@ func (h *authHarness) messagesOf(t *testing.T, bearerToken string, channel strin
 }
 
 func editRequest(body string, version int32) string {
-	return fmt.Sprintf(`{"body":%q,"version":%d}`, body, version)
+	encoded, err := json.Marshal(struct {
+		Body    string `json:"body"`
+		Version int32  `json:"version"`
+	}{Body: body, Version: version})
+	if err != nil {
+		panic("a message edit request could not be encoded")
+	}
+	return string(encoded)
 }
 
 func (h *authHarness) editMessage(t *testing.T, bearerToken string, message string, body string, version int32) response {
