@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/adapters/storage"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
@@ -82,6 +83,7 @@ func (s *Service) ChatAddress(id domain.AttachmentID, message domain.MessageID, 
 }
 
 type Download struct {
+	Deadline           time.Time
 	MediaType          string
 	SizeBytes          int64
 	ContentDisposition string
@@ -100,18 +102,88 @@ func (s *Service) Download(ctx context.Context, id domain.AttachmentID, token st
 	if err != nil || claims.Attachment != id {
 		return Download{}, s.refusedDownload(ctx, id, domain.RefusedToken)
 	}
-	opening, cancel := context.WithCancel(ctx)
-	deadline := time.AfterFunc(downloadOpenTimeout, cancel)
+	opening, cancelCause := context.WithCancelCause(ctx)
+	cancel := func() { cancelCause(context.Canceled) }
+	deadline := time.AfterFunc(s.deps.Downloads.Open, func() { cancelCause(context.DeadlineExceeded) })
 	download, err := s.openDownload(opening, id, claims, cancel)
 	if err != nil {
 		deadline.Stop()
+		cause := context.Cause(opening)
 		cancel()
+		if errors.Is(cause, context.DeadlineExceeded) {
+			return Download{}, errors.Join(err, cause)
+		}
 		return Download{}, err
 	}
 	if !deadline.Stop() {
 		return Download{}, errors.Join(context.DeadlineExceeded, download.Body.Close())
 	}
+	download.Deadline = clock.System{}.Now().Add(s.deps.Downloads.duration(download.SizeBytes))
+	stream := time.AfterFunc(time.Until(download.Deadline), func() { cancelCause(context.DeadlineExceeded) })
+	body := download.Body
+	download.Body = &timedDownloadBody{
+		ObjectBody: body, ctx: opening,
+		close: sync.OnceValue(func() error {
+			stream.Stop()
+			return body.Close()
+		}),
+	}
 	return download, nil
+}
+
+type DownloadTiming struct {
+	Open           time.Duration
+	Floor          time.Duration
+	BytesPerSecond int64
+}
+
+func (t DownloadTiming) withDefaults() DownloadTiming {
+	if t.Open <= 0 {
+		t.Open = downloadOpenTimeout
+	}
+	if t.Floor <= 0 {
+		t.Floor = 60 * time.Second
+	}
+	if t.BytesPerSecond <= 0 {
+		t.BytesPerSecond = 128 << 10
+	}
+	return t
+}
+
+func (t DownloadTiming) duration(size int64) time.Duration {
+	return min(max(time.Duration(size/t.BytesPerSecond)*time.Second, t.Floor), domain.UploadDeadlineCeiling)
+}
+
+type timedDownloadBody struct {
+	ObjectBody
+	ctx   context.Context
+	close func() error
+}
+
+func (b *timedDownloadBody) Read(data []byte) (int, error) {
+	if b.ctx.Err() != nil {
+		return 0, context.Cause(b.ctx)
+	}
+	n, err := b.ObjectBody.Read(data)
+	if err != nil && b.ctx.Err() != nil {
+		return n, context.Cause(b.ctx)
+	}
+	return n, err
+}
+
+func (b *timedDownloadBody) Overruns() (bool, error) {
+	if b.ctx.Err() != nil {
+		return false, context.Cause(b.ctx)
+	}
+	overruns, err := b.ObjectBody.Overruns()
+	if err != nil && b.ctx.Err() != nil {
+		return overruns, context.Cause(b.ctx)
+	}
+	return overruns, err
+}
+
+func (b *timedDownloadBody) Close() error {
+	return b.close()
 }
 
 func (s *Service) openDownload(ctx context.Context, id domain.AttachmentID, claims downloadClaims, cancel context.CancelFunc) (Download, error) {

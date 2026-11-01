@@ -111,12 +111,13 @@ type ObjectBody interface {
 }
 
 type Dependencies struct {
-	Store   *repositories.Store
-	Objects storage.Store
-	Clock   clock.Source
-	Random  core.RandomSource
-	Keys    core.Keys
-	Logger  *slog.Logger
+	Downloads DownloadTiming
+	Store     *repositories.Store
+	Objects   storage.Store
+	Clock     clock.Source
+	Random    core.RandomSource
+	Keys      core.Keys
+	Logger    *slog.Logger
 }
 
 type Service struct {
@@ -130,6 +131,7 @@ type Service struct {
 }
 
 func New(dependencies Dependencies) *Service {
+	dependencies.Downloads = dependencies.Downloads.withDefaults()
 	return &Service{
 		deps: dependencies, gate: newGate(), decodes: newDecodeBudget(decodeBudgetBytes),
 		avatarReads: make(chan struct{}, avatarReadSlots), downloads: make(chan struct{}, downloadSlots),

@@ -114,8 +114,7 @@ func (r *router) file(ctx context.Context, input *fileInput) (*fileOutput, error
 		Policy: filePolicy, ResourcePolicy: "same-origin", ContentLength: strconv.FormatInt(download.SizeBytes, 10),
 		Body: func(response huma.Context) {
 			_, writer := humago.Unwrap(response)
-			deadline := r.uploads.deadline(download.SizeBytes)
-			if err := http.NewResponseController(writer).SetWriteDeadline(r.now().Add(deadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			if err := http.NewResponseController(writer).SetWriteDeadline(download.Deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
 				r.logger.LogAttrs(ctx, slog.LevelWarn, "http.deadline.failed", slog.String("kind", "write"))
 			}
 			r.streamObject(ctx, response, download.Body, download.SizeBytes, fileEventsPrefix)

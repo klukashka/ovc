@@ -41,6 +41,8 @@ The project owner approved, on 2026-10-20 (items 1 to 6), 2026-10-21 (item 7), 2
 
 10. **The local-settings wrapper self-test isolates inherited configuration** (decided 2026-10-31, pending owner review): only `tools/check-dev-env.sh` may unset inherited `OVC_*` variables in its own process before creating its synthetic environment-file fixtures. It enumerates names without reading or printing values, then exercises the real wrapper and every existing assertion, including explicit caller-variable precedence. The parent gate retains the development configuration required by Compose. This does not authorize replacing environment variables in application tests or opening the owner's environment files. The exception ends with the local wrapper under item 7.
 
+11. **Download lifecycle tests may hold a real storage response body** (decided 2026-11-01, wording pending owner review). A transparent HTTP forwarder in chat download lifecycle integration tests may hold body forwarding at an explicit barrier, including the stream end where the real transport permits it. It targets only the fixture-validated local S3 endpoint and listens on loopback at an ephemeral port. Real status, headers and bytes are preserved. Cancellation closes upstream and ends forwarding; cleanup releases all resources. No fabricated response, altered data, external endpoint or owner service is permitted. This proves cancellation of a real blocked storage read, which the existing write-request hold cannot reproduce.
+
 ## Alternatives considered
 
 - **Keeping the absolute rules:** emails could carry no working links, files and recordings would need an authenticated streaming proxy, and live delivery would need unbounded per-socket buffers.
