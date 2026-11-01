@@ -55,10 +55,28 @@ export interface E2ESettings {
   readonly storage: StorageSettings;
 }
 
+export interface MeasurementDeploymentOptions {
+  readonly synchronousCommit: 'on' | 'off';
+}
+
+export interface MeasurementPeerStopOptions {
+  readonly shutdownWindow: 'upload_drain';
+}
+
+export interface MeasurementPeer {
+  readonly apiUrl: string;
+  readonly pid: number;
+  readonly stop: (options?: MeasurementPeerStopOptions) => Promise<void>;
+}
+
 export interface Deployment {
   readonly origin: string;
   readonly apiUrl: string;
   readonly administer: (args: readonly string[]) => void;
+  readonly startMeasurementPeer?: () => Promise<MeasurementPeer>;
+  readonly measurementProcessIds?: () => readonly number[];
+  readonly measurementQuery?: (sql: string) => string;
+  readonly holdMeasurementPresence?: (user: string) => Promise<() => Promise<void>>;
   readonly stop: () => Promise<void>;
 }
 
@@ -440,27 +458,40 @@ async function waitUntilListening(managed: ManagedProcess, address: string): Pro
   throw new Error(`${managed.name} did not listen within ${String(readinessDeadlineMilliseconds)} ms`);
 }
 
-async function stop(managed: ManagedProcess): Promise<void> {
+type StopWindow = 'default' | 'measurement_upload_drain';
+type StopOutcome = 'already_exited' | 'clean_exit' | 'unexpected_exit' | 'forced_exit' | 'kill_unconfirmed';
+
+async function stop(
+  managed: ManagedProcess,
+  window: StopWindow = 'default',
+  observe?: (outcome: StopOutcome) => void,
+): Promise<void> {
+  const deadline = window === 'measurement_upload_drain' ? 45_000 : stopDeadlineMilliseconds;
   if (hasExited(managed.child)) {
+    observe?.('already_exited');
     throw new Error(`${managed.name} stopped unexpectedly with ${await managed.exit}`);
   }
   managed.child.kill('SIGTERM');
-  const outcome = await Promise.race([managed.exit, delay(stopDeadlineMilliseconds).then(() => 'late')]);
+  const outcome = await Promise.race([managed.exit, delay(deadline).then(() => 'late')]);
   if (outcome === 'late') {
     managed.child.kill('SIGKILL');
     const killed = await Promise.race([managed.exit, delay(killDeadlineMilliseconds).then(() => 'late')]);
     if (killed === 'late') {
+      observe?.('kill_unconfirmed');
       throw new Error(
-        `the ${managed.name} process (pid ${String(managed.child.pid)}) did not stop within ${String(stopDeadlineMilliseconds)} ms of SIGTERM and did not exit within ${String(killDeadlineMilliseconds)} ms of SIGKILL, so its address may still be held`,
+        `the ${managed.name} process (pid ${String(managed.child.pid)}) did not stop within ${String(deadline)} ms of SIGTERM and did not exit within ${String(killDeadlineMilliseconds)} ms of SIGKILL, so its address may still be held`,
       );
     }
+    observe?.('forced_exit');
     throw new Error(
-      `the ${managed.name} process did not stop within ${String(stopDeadlineMilliseconds)} ms of SIGTERM and exited with ${killed} after SIGKILL`,
+      `the ${managed.name} process did not stop within ${String(deadline)} ms of SIGTERM and exited with ${killed} after SIGKILL`,
     );
   }
   if (!managed.cleanExits.has(outcome)) {
+    observe?.('unexpected_exit');
     throw new Error(`${managed.name} stopped with ${outcome} after SIGTERM`);
   }
+  observe?.('clean_exit');
 }
 
 function failures(results: readonly PromiseSettledResult<void>[]): unknown[] {
@@ -486,7 +517,12 @@ async function setSharedClock(apiUrl: string, instant: string): Promise<void> {
   }
 }
 
-export async function startDeployment(settings: E2ESettings, slot: number, label: string): Promise<Deployment> {
+export async function startDeployment(
+  settings: E2ESettings,
+  slot: number,
+  label: string,
+  measurement?: MeasurementDeploymentOptions,
+): Promise<Deployment> {
   mkdirSync(outputRoot, { recursive: true });
   const apiAddress = `127.0.0.1:${String(firstApiPort + slot)}`;
   const previewPort = firstPreviewPort + slot;
@@ -499,9 +535,11 @@ export async function startDeployment(settings: E2ESettings, slot: number, label
   runInPostgresContainer('createdb', connection, [database]);
   const environment = backendEnvironment(database, settings, apiAddress, origin);
   const processes: ManagedProcess[] = [];
+  const heldMeasurements = new Set<() => Promise<void>>();
   const teardown = async (): Promise<void> => {
+    const released = await Promise.allSettled([...heldMeasurements].map((release) => release()));
     const stopped = await Promise.allSettled(processes.map((managed) => stop(managed)));
-    const problems = failures(stopped);
+    const problems = [...failures(released), ...failures(stopped)];
     try {
       runInPostgresContainer('dropdb', connection, ['--force', database]);
     } catch (error) {
@@ -512,6 +550,9 @@ export async function startDeployment(settings: E2ESettings, slot: number, label
     }
   };
   try {
+    if (measurement !== undefined) {
+      configureMeasurementDatabase(settings, database, measurement.synchronousCommit);
+    }
     runToCompletion(join(binariesRoot, 'api'), ['migrate'], environment, `migrate-${label}-${String(slot)}.log`);
     const activation = Number(
       runInPostgresContainer('psql', connection, [
@@ -571,5 +612,259 @@ export async function startDeployment(settings: E2ESettings, slot: number, label
       `admin-${label}-${String(slot)}-${randomBytes(4).toString('hex')}.log`,
     );
   };
-  return { origin, apiUrl, administer, stop: teardown };
+  let measurementPeerOrdinal = 0;
+  const startMeasurementPeer = async (): Promise<MeasurementPeer> => {
+    if (measurement === undefined) {
+      throw new Error('peer processes require an opt-in measurement deployment');
+    }
+    const peerAddress = `127.0.0.1:${String(firstApiPort + 1000 + slot)}`;
+    await assertAddressFree(peerAddress);
+    measurementPeerOrdinal += 1;
+    const peerOrdinal = measurementPeerOrdinal;
+    const peer = start(
+      'measurement-api-peer',
+      join(binariesRoot, 'api'),
+      [],
+      { ...environment, OVC_HTTP_ADDR: peerAddress },
+      `peer-${label}-${String(slot)}-${String(measurementPeerOrdinal)}.log`,
+    );
+    processes.push(peer);
+    const peerUrl = `http://${peerAddress}`;
+    await waitUntilOk(peer, `${peerUrl}/api/v1/health/ready`);
+    const pid = peer.child.pid;
+    if (pid === undefined) {
+      throw new Error('measurement peer has no process identifier');
+    }
+    return {
+      apiUrl: peerUrl,
+      pid,
+      stop: async (options?: MeasurementPeerStopOptions): Promise<void> => {
+        const window: StopWindow = options?.shutdownWindow === 'upload_drain' ? 'measurement_upload_drain' : 'default';
+        try {
+          await stop(peer, window, (outcome) => {
+            process.stdout.write(
+              `${JSON.stringify({ event: 'measurement.peer_stop', ordinal: peerOrdinal, outcome, window, exitCode: peer.child.exitCode ?? 'unavailable', signal: peer.child.signalCode ?? 'none' })}\n`,
+            );
+          });
+        } finally {
+          if (hasExited(peer.child)) processes.splice(processes.indexOf(peer), 1);
+        }
+      },
+    };
+  };
+  return {
+    origin,
+    apiUrl,
+    administer,
+    stop: teardown,
+    ...(measurement === undefined
+      ? {}
+      : {
+          startMeasurementPeer,
+          holdMeasurementPresence: async (user: string): Promise<() => Promise<void>> => {
+            const release = await holdMeasurementPresence(settings, database, user);
+            const tracked = async (): Promise<void> => {
+              try {
+                await release();
+              } finally {
+                heldMeasurements.delete(tracked);
+              }
+            };
+            heldMeasurements.add(tracked);
+            return tracked;
+          },
+          measurementQuery: (sql: string): string => {
+            assertMeasurementDatabase(database);
+            return measurementQuery(settings, database, sql);
+          },
+          measurementProcessIds: (): readonly number[] =>
+            processes.flatMap((managed) => (managed.child.pid === undefined ? [] : [managed.child.pid])),
+        }),
+  };
+}
+
+export function assertMeasurementDatabase(database: string): void {
+  if (!/^ovc_e2e_[a-z0-9]+_test$/.test(database)) {
+    throw new Error('measurement settings require a newly owned end-to-end database');
+  }
+}
+
+function configureMeasurementDatabase(settings: E2ESettings, database: string, mode: 'on' | 'off'): void {
+  assertMeasurementDatabase(database);
+  if (!loopbackHosts.has(settings.adminUrl.hostname)) {
+    throw new Error('measurement databases must be on loopback');
+  }
+  const query = (target: string, sql: string): string => measurementQuery(settings, target, sql);
+  const adminDatabase = decodeURIComponent(settings.adminUrl.pathname.slice(1));
+  const before = query(adminDatabase, 'SHOW synchronous_commit');
+  const owned = query(
+    adminDatabase,
+    `SELECT pg_get_userbyid(datdba) = current_user FROM pg_database WHERE datname = '${database}'`,
+  );
+  if (owned !== 't') {
+    throw new Error('measurement database is not owned by the fixture administrator');
+  }
+  query(adminDatabase, `ALTER DATABASE "${database}" SET synchronous_commit = '${mode}'`);
+  const observed = query(database, 'SHOW synchronous_commit');
+  const after = query(adminDatabase, 'SHOW synchronous_commit');
+  if (observed !== mode || before !== after) {
+    throw new Error('measurement database setting escaped confinement or was not applied');
+  }
+  process.stdout.write(
+    `${JSON.stringify({ event: 'measurement.database', mode, observed, adminBefore: before, adminAfter: after })}\n`,
+  );
+}
+
+function measurementQuery(settings: E2ESettings, target: string, sql: string): string {
+  if (!loopbackHosts.has(settings.adminUrl.hostname)) {
+    throw new Error('measurement queries require loopback');
+  }
+  const connection = adminConnection(settings.adminUrl);
+  const result = spawnSync(
+    'docker',
+    [
+      'compose',
+      'exec',
+      '-T',
+      '-e',
+      'PGPASSWORD',
+      'postgres',
+      'psql',
+      '-X',
+      '-At',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-h',
+      '127.0.0.1',
+      '-U',
+      connection.user,
+      '-d',
+      target,
+    ],
+    { cwd: repositoryRoot, env: { ...process.env, PGPASSWORD: connection.password }, input: sql, encoding: 'utf8' },
+  );
+  if (result.error !== undefined || result.status !== 0) {
+    throw new Error('measurement database operation failed');
+  }
+  return result.stdout.trim();
+}
+
+async function holdMeasurementPresence(
+  settings: E2ESettings,
+  database: string,
+  user: string,
+): Promise<() => Promise<void>> {
+  assertMeasurementDatabase(database);
+  if (
+    !loopbackHosts.has(settings.adminUrl.hostname) ||
+    !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(user)
+  )
+    throw new Error('measurement lock target invalid');
+  const connection = adminConnection(settings.adminUrl);
+  const child = spawn(
+    'docker',
+    [
+      'compose',
+      'exec',
+      '-T',
+      '-e',
+      'PGPASSWORD',
+      'postgres',
+      'psql',
+      '-X',
+      '-At',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-h',
+      '127.0.0.1',
+      '-U',
+      connection.user,
+      '-d',
+      database,
+    ],
+    {
+      cwd: repositoryRoot,
+      env: { ...process.env, PGPASSWORD: connection.password },
+      stdio: ['pipe', 'pipe', 'ignore'],
+    },
+  );
+  let inputFailed = false;
+  child.stdin.on('error', () => {
+    inputFailed = true;
+  });
+  const exited = new Promise<number | null>((resolveExit) => {
+    child.once('exit', resolveExit);
+    child.once('error', () => {
+      resolveExit(null);
+    });
+  });
+  const awaitExit = async (milliseconds: number): Promise<number | null | 'late'> => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        exited,
+        new Promise<'late'>((resolveLate) => {
+          timeout = setTimeout(() => {
+            resolveLate('late');
+          }, milliseconds);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+  let releasePromise: Promise<void> | undefined;
+  const release = (): Promise<void> => {
+    releasePromise ??= (async (): Promise<void> => {
+      if (!child.stdin.destroyed) child.stdin.end('COMMIT;\n\\q\n');
+      const code = await awaitExit(15_000);
+      if (code === 'late') {
+        child.kill('SIGTERM');
+        if ((await awaitExit(5_000)) === 'late') {
+          child.kill('SIGKILL');
+          if ((await awaitExit(5_000)) === 'late')
+            throw new Error('measurement lock child retained after forced cleanup');
+        }
+        throw new Error('measurement row lock cleanup required process termination');
+      }
+      if (code !== 0 || inputFailed) throw new Error('measurement row lock did not release cleanly');
+    })();
+    return releasePromise;
+  };
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const ready = new Promise<void>((resolveReady, rejectReady) => {
+    timeout = setTimeout(() => {
+      rejectReady(new Error('measurement row lock deadline'));
+    }, 10_000);
+    let output = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      output += chunk.toString('utf8');
+      if (output.includes('measurement-locked')) resolveReady();
+    });
+    child.once('error', () => {
+      rejectReady(new Error('measurement row lock process failed'));
+    });
+    child.stdin.once('error', () => {
+      rejectReady(new Error('measurement row lock input failed'));
+    });
+    child.once('exit', () => {
+      rejectReady(new Error('measurement row lock exited before readiness'));
+    });
+  });
+  child.stdin.write(
+    `SET statement_timeout='10s';\nSET idle_in_transaction_session_timeout='30s';\nBEGIN;\nSELECT 1 FROM user_presence WHERE user_id='${user}'::uuid FOR UPDATE;\n\\echo measurement-locked\n`,
+  );
+  try {
+    await ready;
+  } catch (error) {
+    try {
+      await release();
+    } catch {
+      throw new Error('measurement lock setup and cleanup failed');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+  return release;
 }

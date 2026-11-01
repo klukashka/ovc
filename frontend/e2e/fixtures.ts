@@ -128,16 +128,22 @@ interface SharedActors {
   readonly mariaWithJoinRequests: MariaWithJoinRequests;
 }
 
+export interface MeasurementWorkerOptions {
+  readonly measurementDatabaseMode: 'on' | 'off' | undefined;
+}
+
 export const test = base.extend<
   { control: TestControl; signedInPage: Page; socketSlots: SocketSlotHolder },
-  { deployment: Deployment } & SharedActors
+  { deployment: Deployment } & SharedActors & MeasurementWorkerOptions
 >({
+  measurementDatabaseMode: [undefined, { scope: 'worker', option: true }],
   deployment: [
-    async ({ browserName }, use, workerInfo): Promise<void> => {
+    async ({ browserName, measurementDatabaseMode }, use, workerInfo): Promise<void> => {
       const deployment = await startDeployment(
         readE2ESettings(process.env),
         workerInfo.parallelIndex,
         `${browserName}-worker${String(workerInfo.workerIndex)}`,
+        measurementDatabaseMode === undefined ? undefined : { synchronousCommit: measurementDatabaseMode },
       );
       try {
         await use(deployment);

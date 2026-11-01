@@ -162,7 +162,14 @@ func newAuthHarnessStoring(
 	hooks ...optionsHook,
 ) *authHarness {
 	t.Helper()
-	database := testdb.NewForLockContention(t)
+	return newAuthHarnessWithDatabase(t, testdb.NewForLockContention(t), trusted, newHandler, objectsFor, hooks...)
+}
+
+func newAuthHarnessWithDatabase(
+	t *testing.T, database *testdb.Database, trusted []netip.Prefix, newHandler func(api.Options) (http.Handler, error),
+	objectsFor func(*teststorage.Storage) storage.Store, hooks ...optionsHook,
+) *authHarness {
+	t.Helper()
 	random := randomPerTest(t)
 	logs := &safeBuffer{}
 	logger := slog.New(core.NewContextHandler(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
