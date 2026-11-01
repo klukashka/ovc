@@ -91,6 +91,18 @@ type ChannelMember struct {
 	UpdatedAt          time.Time
 }
 
+type ChatUploadAccountingActivation struct {
+	Singleton bool
+	ActiveAt  time.Time
+}
+
+type DailyChatUploadByte struct {
+	StudentID      domain.UserID
+	TutorID        domain.UserID
+	UploadDay      time.Time
+	CompletedBytes int64
+}
+
 type DigestPending struct {
 	UserID       domain.UserID
 	PendingSince time.Time

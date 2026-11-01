@@ -99,11 +99,6 @@ SELECT tutor_profiles.file_quota_bytes, tutor_profiles.file_usage_bytes,
 FROM tutor_profiles
 WHERE tutor_profiles.user_id = @tutor_id;
 
--- name: SumDailyChatBytes :one
-SELECT COALESCE(sum(size_bytes), 0)::bigint FROM attachments
-WHERE uploader_id = @uploader_id AND quota_tutor_id = sqlc.arg(tutor_id)::uuid AND context = 'chat'
-    AND created_at >= sqlc.arg(day_start)::timestamptz AND created_at < sqlc.arg(day_end)::timestamptz AND size_bytes IS NOT NULL;
-
 -- name: ClaimAgedUploads :many
 SELECT id, storage_key, multipart_upload_id FROM attachments
 WHERE id IN (SELECT candidate.id FROM attachments AS candidate WHERE candidate.state = 'uploading' AND candidate.created_at <= sqlc.arg(cutoff)::timestamptz ORDER BY candidate.created_at, candidate.id LIMIT sqlc.arg(batch_size))

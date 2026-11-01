@@ -18,6 +18,13 @@ func TestProductionWorkerRecoversAnUploadWithoutAnAttachment(t *testing.T) {
 	database := testdb.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	student := domain.UserID{0x66}
+	if _, err := database.Pool.Exec(ctx, insertInterimUser, student, "student", "active", "daily-worker@example.org", &adminStart, adminStart); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Pool.Exec(ctx, "INSERT INTO daily_chat_upload_bytes (student_id, tutor_id, upload_day, completed_bytes) VALUES ($1, $2, $3, 7)", student, domain.UserID{0x67}, adminStart.UTC().Truncate(24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
 	id := domain.AttachmentID{0x65}
 	_, err := database.Pool.Exec(ctx, `INSERT INTO upload_intents
  (attachment_id, storage_key, multipart_upload_id, phase, completion_started, cleanup_requested, created_at, updated_at)
@@ -50,7 +57,9 @@ func TestProductionWorkerRecoversAnUploadWithoutAnAttachment(t *testing.T) {
  AND phase = 'uncertain' AND completion_started AND NOT completion_confirmed
  AND (SELECT used = 1 FROM upload_intent_capacity)
  AND EXISTS (SELECT 1 FROM outbox WHERE id = upload_intents.cleanup_outbox_id AND status = 'done')
- AND EXISTS (SELECT 1 FROM job_runs WHERE job = 'uploads.recover' AND last_result = 'ok'), false)
+ AND EXISTS (SELECT 1 FROM job_runs WHERE job = 'uploads.recover' AND last_result = 'ok')
+ AND EXISTS (SELECT 1 FROM job_runs WHERE job = 'uploads.daily_cleanup' AND last_result = 'ok')
+ AND NOT EXISTS (SELECT 1 FROM daily_chat_upload_bytes), false)
  FROM upload_intents WHERE attachment_id = $1`, id).Scan(&recovered)
 	if err != nil {
 		t.Fatal(err)

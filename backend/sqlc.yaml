@@ -539,3 +539,11 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: OutboxStatus
+          - column: daily_chat_upload_bytes.student_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: daily_chat_upload_bytes.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID

@@ -36,7 +36,11 @@ type uploadProtocolFixture struct {
 
 func newUploadProtocolFixture(t *testing.T, objectsFor ...func(*teststorage.Storage) storage.Store) uploadProtocolFixture {
 	t.Helper()
-	database := testdb.NewForLockContention(t)
+	return uploadProtocolFixtureWithDatabase(t, testdb.NewForLockContention(t), objectsFor...)
+}
+
+func uploadProtocolFixtureWithDatabase(t *testing.T, database *testdb.Database, objectsFor ...func(*teststorage.Storage) storage.Store) uploadProtocolFixture {
+	t.Helper()
 	local := teststorage.New(t)
 	store := repositories.NewStore(database.Pool)
 	logger := slog.New(slog.DiscardHandler)

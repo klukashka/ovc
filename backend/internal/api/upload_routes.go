@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -293,6 +295,7 @@ func fieldError(ctx context.Context, path string, code domain.FieldCode) error {
 func (r *router) chatUploadError(ctx context.Context, err error) error {
 	var tooLarge *http.MaxBytesError
 	var throttled *files.ThrottledError
+	var accountingUnavailable *files.AccountingUnavailableError
 	switch {
 	case errors.Is(err, files.ErrInvalidName), errors.Is(err, files.ErrUnexpectedPart):
 		return fieldError(ctx, fieldFile, domain.FieldInvalid)
@@ -312,6 +315,8 @@ func (r *router) chatUploadError(ctx context.Context, err error) error {
 		return NewError(ctx, domain.ErrorUnsupportedMediaType)
 	case errors.Is(err, files.ErrPurgedDuringUpload), errors.Is(err, accounts.ErrUnauthenticated):
 		return NewError(ctx, domain.ErrorUnauthenticated)
+	case errors.As(err, &accountingUnavailable):
+		return NewError(ctx, domain.ErrorServiceUnavailable).withHeader("Connection", "close").withHeader("Retry-After", strconv.Itoa(max(1, int(math.Ceil(accountingUnavailable.RetryAfter.Seconds())))))
 	case errors.Is(err, files.ErrUploadCapacity):
 		return NewError(ctx, domain.ErrorServiceUnavailable).withHeader("Connection", "close")
 	case errors.Is(err, files.ErrBusy):

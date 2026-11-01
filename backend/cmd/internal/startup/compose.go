@@ -200,6 +200,7 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 		{Name: domain.JobSessionsCleanup, Every: time.Hour, Run: accounts.CleanupSessions(store)},
 		{Name: domain.JobEmailRequestsCleanup, Every: time.Hour, Run: accounts.CleanupEmailRequests(store)},
 		{Name: domain.JobUploadsExpire, Every: time.Hour, Run: fileService.ExpirePending},
+		{Name: domain.JobDailyUploadsCleanup, Every: time.Minute, Run: fileService.CleanupDailyUploads},
 		{Name: domain.JobUploadsRecover, Every: time.Minute, Run: fileService.RecoverUploads},
 		{Name: domain.JobAccountsPurge, Every: time.Hour, Run: purger.PurgeDeleted},
 		{Name: domain.JobAccountsCleanupUnverified, Every: time.Hour, Run: purger.CleanupUnverified},

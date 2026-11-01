@@ -660,28 +660,3 @@ func (q *Queries) RemoveAvatarReference(ctx context.Context, refID domain.Entity
 	}
 	return items, nil
 }
-
-const sumDailyChatBytes = `-- name: SumDailyChatBytes :one
-SELECT COALESCE(sum(size_bytes), 0)::bigint FROM attachments
-WHERE uploader_id = $1 AND quota_tutor_id = $2::uuid AND context = 'chat'
-    AND created_at >= $3::timestamptz AND created_at < $4::timestamptz AND size_bytes IS NOT NULL
-`
-
-type SumDailyChatBytesParams struct {
-	UploaderID domain.UserID
-	TutorID    pgtype.UUID
-	DayStart   time.Time
-	DayEnd     time.Time
-}
-
-func (q *Queries) SumDailyChatBytes(ctx context.Context, arg SumDailyChatBytesParams) (int64, error) {
-	row := q.db.QueryRow(ctx, sumDailyChatBytes,
-		arg.UploaderID,
-		arg.TutorID,
-		arg.DayStart,
-		arg.DayEnd,
-	)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
-}

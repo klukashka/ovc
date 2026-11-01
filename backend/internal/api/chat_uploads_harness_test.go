@@ -491,6 +491,14 @@ func (h *authHarness) insertCompleted(t *testing.T, id string, uploader domain.U
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, err = h.database.Pool.Exec(context.Background(), `INSERT INTO daily_chat_upload_bytes (student_id, tutor_id, upload_day, completed_bytes)
+SELECT $1, $2, date_trunc('day', $3::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC', $4
+WHERE EXISTS (SELECT 1 FROM users WHERE id = $1 AND role = 'student')
+ON CONFLICT (student_id, tutor_id, upload_day) DO UPDATE SET completed_bytes = daily_chat_upload_bytes.completed_bytes + EXCLUDED.completed_bytes`,
+		uploader, tutor, created, size)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func fixtureID(group byte, n byte) string {

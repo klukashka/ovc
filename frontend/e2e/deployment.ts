@@ -108,8 +108,12 @@ function databaseUrl(adminUrl: URL, database: string): string {
   return url.toString();
 }
 
-function runInPostgresContainer(program: 'createdb' | 'dropdb', connection: AdminConnection, args: string[]): void {
-  execFileSync(
+function runInPostgresContainer(
+  program: 'createdb' | 'dropdb' | 'psql',
+  connection: AdminConnection,
+  args: string[],
+): string {
+  return execFileSync(
     'docker',
     [
       'compose',
@@ -128,7 +132,8 @@ function runInPostgresContainer(program: 'createdb' | 'dropdb', connection: Admi
     {
       cwd: repositoryRoot,
       env: { ...process.env, PGPASSWORD: connection.password },
-      stdio: ['ignore', 'ignore', 'inherit'],
+      stdio: ['ignore', 'pipe', 'inherit'],
+      encoding: 'utf8',
     },
   );
 }
@@ -469,12 +474,12 @@ function failures(results: readonly PromiseSettledResult<void>[]): unknown[] {
   return reasons;
 }
 
-async function setSharedClock(apiUrl: string): Promise<void> {
+async function setSharedClock(apiUrl: string, instant: string): Promise<void> {
   const response = await fetch(`${apiUrl}/__test__/clock`, {
     signal: AbortSignal.timeout(pollTimeoutMilliseconds),
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ set: new Date().toISOString() }),
+    body: JSON.stringify({ set: instant }),
   });
   if (!response.ok) {
     throw new Error(`setting the shared clock answered ${String(response.status)}`);
@@ -508,13 +513,30 @@ export async function startDeployment(settings: E2ESettings, slot: number, label
   };
   try {
     runToCompletion(join(binariesRoot, 'api'), ['migrate'], environment, `migrate-${label}-${String(slot)}.log`);
+    const activation = Number(
+      runInPostgresContainer('psql', connection, [
+        '--dbname',
+        database,
+        '--no-psqlrc',
+        '--tuples-only',
+        '--no-align',
+        '--set',
+        'ON_ERROR_STOP=1',
+        '--command',
+        'SELECT (extract(epoch FROM active_at) * 1000)::bigint FROM chat_upload_accounting_activation',
+      ]).trim(),
+    );
+    if (!Number.isFinite(activation) || activation <= 0) {
+      throw new Error('the migrated database has no valid daily upload activation');
+    }
+    const initialClock = new Date(Math.max(Date.now(), activation)).toISOString();
     const api = start('api', join(binariesRoot, 'api'), [], environment, `api-${label}-${String(slot)}.log`);
     processes.push(
       api,
       start('worker', join(binariesRoot, 'worker'), [], environment, `worker-${label}-${String(slot)}.log`),
     );
     await waitUntilOk(api, `${apiUrl}/api/v1/health/live`);
-    await setSharedClock(apiUrl);
+    await setSharedClock(apiUrl, initialClock);
     await waitUntilOk(api, `${apiUrl}/api/v1/health/ready`);
     const preview = start(
       'preview',

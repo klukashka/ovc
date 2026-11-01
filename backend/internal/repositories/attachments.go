@@ -62,13 +62,6 @@ func (r Attachments) ChatQuotaUse(
 	return one(use, err, "chat quota use")
 }
 
-func (r Attachments) DailyChatBytes(ctx context.Context, uploader domain.UserID, tutor domain.UserID, dayStart time.Time) (int64, error) {
-	total, err := r.queries.SumDailyChatBytes(ctx, dbgen.SumDailyChatBytesParams{
-		UploaderID: uploader, TutorID: pgtype.UUID{Bytes: tutor, Valid: true}, DayStart: dayStart, DayEnd: dayStart.Add(24 * time.Hour),
-	})
-	return one(total, err, "daily chat bytes")
-}
-
 func (r Attachments) ClaimAged(ctx context.Context, cutoff time.Time, batch int32) ([]AgedUpload, error) {
 	rows, err := r.queries.ClaimAgedUploads(ctx, dbgen.ClaimAgedUploadsParams{Cutoff: cutoff, BatchSize: batch})
 	return one(rows, err, "claim aged uploads")

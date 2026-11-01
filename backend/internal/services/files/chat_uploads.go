@@ -141,6 +141,11 @@ func (s *Service) openChatUpload(ctx context.Context, request ChatUpload, name s
 		if err := s.lockUploader(ctx, repos, request.Principal, now); err != nil {
 			return err
 		}
+		checkedAt, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
+		if err != nil {
+			return err
+		}
+		now, opened.created = checkedAt, checkedAt
 		channel, err := repos.Channels.LockOfMemberForShare(ctx, request.Channel, uploader)
 		if errors.Is(err, repositories.ErrNotFound) {
 			return s.refuse(ctx, opened, domain.RejectedScope, ErrOutOfScope)
@@ -177,6 +182,9 @@ func (s *Service) openChatUpload(ctx context.Context, request ChatUpload, name s
 
 func (s *Service) admitChatUpload(ctx context.Context, repos repositories.Repositories, opened openUpload, now time.Time) error {
 	uploader := opened.uploader.UserID
+	if err := s.checkDailyActivation(ctx, repos, opened, now); err != nil {
+		return err
+	}
 	open, err := repos.Attachments.CountOpenChatUploads(ctx, uploader, now, uploadingSince(now))
 	if err != nil {
 		return err
@@ -191,7 +199,7 @@ func (s *Service) admitChatUpload(ctx context.Context, repos repositories.Reposi
 	}
 	if opened.uploader.Role == domain.RoleStudent {
 		day := utcDay(now)
-		total, err := repos.Attachments.DailyChatBytes(ctx, uploader, opened.tutor, day)
+		total, err := repos.DailyUploads.Bytes(ctx, uploader, opened.tutor, day)
 		if err != nil {
 			return err
 		}
@@ -473,12 +481,22 @@ func (s *Service) settleChatUpload(ctx context.Context, opened openUpload, conte
 		if err != nil {
 			return err
 		}
+		opened.created = row.CreatedAt
 		if row.State != domain.AttachmentUploading {
 			refusal = s.refuse(ctx, opened, domain.RejectedScope, ErrOutOfScope)
 			return s.discardLocked(ctx, repos, opened, true, now)
 		}
 		if channel.ReadOnlySince != nil {
 			refusal = s.refuse(ctx, opened, domain.RejectedReadOnly, ErrReadOnly)
+			return s.discardLocked(ctx, repos, opened, true, now)
+		}
+		checkedAt, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
+		if err != nil {
+			return err
+		}
+		now = checkedAt
+		if err := s.checkDailyActivation(ctx, repos, opened, now); err != nil {
+			refusal = err
 			return s.discardLocked(ctx, repos, opened, true, now)
 		}
 		if err := s.exactChecks(ctx, repos, opened, content.size, now); err != nil {
@@ -496,6 +514,11 @@ func (s *Service) settleChatUpload(ctx context.Context, opened openUpload, conte
 		height, heightFits := int32Of(content.pixels.height)
 		if content.pixels.previewable() && widthFits && heightFits {
 			completed.Width, completed.Height = &width, &height
+		}
+		if opened.uploader.Role == domain.RoleStudent {
+			if err := repos.DailyUploads.Add(ctx, opened.uploader.UserID, opened.tutor, utcDay(opened.created), content.size); err != nil {
+				return err
+			}
 		}
 		intent, err := repos.UploadIntents.Lock(ctx, opened.id)
 		if err != nil {
@@ -526,7 +549,7 @@ func (s *Service) settleChatUpload(ctx context.Context, opened openUpload, conte
 func (s *Service) exactChecks(ctx context.Context, repos repositories.Repositories, opened openUpload, size int64, now time.Time) error {
 	if opened.uploader.Role == domain.RoleStudent {
 		day := utcDay(opened.created)
-		total, err := repos.Attachments.DailyChatBytes(ctx, opened.uploader.UserID, opened.tutor, day)
+		total, err := repos.DailyUploads.Bytes(ctx, opened.uploader.UserID, opened.tutor, day)
 		if err != nil {
 			return err
 		}

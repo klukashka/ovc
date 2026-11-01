@@ -21,6 +21,7 @@ type Repositories struct {
 	RateLimits    RateLimits
 	Attachments   Attachments
 	UploadIntents UploadIntents
+	DailyUploads  DailyUploads
 	Outbox        Outbox
 	JobRuns       JobRuns
 	Relationships Relationships
@@ -105,6 +106,7 @@ func newRepositories(queries *dbgen.Queries) Repositories {
 		RateLimits:    RateLimits{queries: queries},
 		Attachments:   Attachments{queries: queries},
 		UploadIntents: UploadIntents{queries: queries},
+		DailyUploads:  DailyUploads{queries: queries},
 		Outbox:        Outbox{queries: queries},
 		JobRuns:       JobRuns{queries: queries},
 		Relationships: Relationships{queries: queries},

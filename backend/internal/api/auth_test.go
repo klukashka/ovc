@@ -261,6 +261,7 @@ func newAuthHarnessStoring(
 	purger := accounts.NewPurger(store, fileService, tutoringService, logger)
 	scheduled := []worker.Job{
 		{Name: domain.JobUploadsExpire, Every: time.Hour, Run: fileService.ExpirePending},
+		{Name: domain.JobDailyUploadsCleanup, Every: time.Minute, Run: fileService.CleanupDailyUploads},
 		{Name: domain.JobAccountsPurge, Every: time.Hour, Run: purger.PurgeDeleted},
 		{Name: domain.JobAccountsCleanupUnverified, Every: time.Hour, Run: purger.CleanupUnverified},
 		{Name: domain.JobSessionsCleanup, Every: time.Hour, Run: accounts.CleanupSessions(store)},

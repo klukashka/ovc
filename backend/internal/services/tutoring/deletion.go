@@ -489,6 +489,7 @@ func (s *Service) PurgeTutorBatch(ctx context.Context, repos repositories.Reposi
 		},
 		repos.Channels.DeleteMembersBatchOfTutor,
 		repos.Channels.DeleteBatchOfTutor,
+		repos.DailyUploads.DeleteBatchOfTutor,
 		repos.Groups.DeleteMembersBatchOfTutor,
 		repos.Groups.DeleteBatchOfTutor,
 		repos.Invitations.DeleteBatchOfTutor,

@@ -41,6 +41,7 @@ const (
 	JobSessionsCleanup           JobName = "sessions.cleanup"
 	JobEmailRequestsCleanup      JobName = "email_requests.cleanup"
 	JobUploadsExpire             JobName = "uploads.expire"
+	JobDailyUploadsCleanup       JobName = "uploads.daily_cleanup"
 	JobAccountsPurge             JobName = "accounts.purge"
 	JobAccountsCleanupUnverified JobName = "accounts.cleanup_unverified"
 	JobInvitationsExpire         JobName = "invitations.expire"

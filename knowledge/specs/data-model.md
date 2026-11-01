@@ -434,7 +434,7 @@ Constraints and indexes:
 | `uploader_id` | |
 | `context` | `avatar`, `prompt_image`, `library`, `chat`, `answer`, `corrected` |
 | `scope_kind`, `scope_id`, `scope_question_id` | the upload scope: `channel` or `submission`; both kind and identifier or neither; a question only within a submission |
-| `quota_tutor_id` | slice 6: a partial index `(uploader_id, quota_tutor_id, created_at)` where `context = 'chat'` serves the daily cap of [chat limits](files.md#upload-flow) |
+| `quota_tutor_id` | slice 6: a partial index `(uploader_id, quota_tutor_id, created_at)` where `context = 'chat'` serves retained-upload backfill and the uploading-row check of [daily accounting cleanup](files.md#durable-daily-upload-accounting) |
 | `storage_key` | random, never returned |
 | `filename` | |
 | `media_type` | null only while `uploading` and on a `deleted` row that never completed (slice 6); a check requires it on every `pending` and `bound` row |
@@ -444,6 +444,14 @@ Constraints and indexes:
 | `reserved_bytes` | slice 6; the bytes an `uploading` row counts against the quota: the request's `Content-Length` capped at the context limit, or the context limit without one; a check requires it on every `uploading` row, and a partial index on `quota_tutor_id` where `context = 'chat'` and the state is `uploading` or `pending` serves the quota checks' sum of open uploads |
 | `multipart_upload_id` | slice 6; the storage multipart upload's identifier, recorded with the independent intent in a short transaction after Create and before parts; cleanup reads the latest intent ID even after the attachment is purged. An unknown incomplete MPU remains subject to the configured one-day lifecycle eligibility, not a guaranteed physical-erasure instant ([upload flow](files.md#upload-flow)) |
 | `width`, `height` | slice 6; a picture's dimensions read from its header, null for other kinds and above 50 megapixels |
+
+### Daily chat upload accounting
+
+`daily_chat_upload_bytes` has primary key `(student_id, tutor_id, upload_day)` and non-negative `completed_bytes`. `upload_day` is a finite `timestamptz` constrained to midnight UTC; day bounds use elapsed 24 hours and do not depend on the database session timezone. Separate indexes on `(upload_day, student_id)` and `(tutor_id, student_id, upload_day)` support historical cleanup and final tutor purge. It stores no attachment, message, key, filename or credential. Attachment/object lifetime and quota release never subtract from this table.
+
+`student_id` references the already serialized user row with final-delete cascade. `tutor_id` deliberately has no foreign key: acquiring an implicit tutor-user/profile KEY SHARE lock after channel or attachment locks would invert the established order. Tutor purge removes aggregates in bounded batches only after its channels and member rows are removed, while existing account/profile serialization prevents new channel membership; uploads either settle before the relevant channel is removed or find it absent. The last purge transaction cannot leave an aggregate naming that tutor. Student purge serializes uploads on its user row and cascades its aggregates. Soft deletion, blocking and restoration do not remove them.
+
+`chat_upload_accounting_activation` is a singleton with a finite midnight-UTC instant. Migration installs it after retained-row backfill at the next UTC-day boundary. Row updates/deletion and table truncation are rejected; repeated migration-runner execution preserves it. Application reads require exactly one valid record and fail closed otherwise. Its initial one-day cutover and cleanup-only legacy intents are specified under [daily upload accounting](files.md#durable-daily-upload-accounting).
 
 ### Upload cleanup intent
 
@@ -535,6 +543,7 @@ Slice 6 adds, on every purge path:
 | Table | Student purge | Tutor purge |
 |---|---|---|
 | User | Row deleted | Row deleted |
+| Daily chat upload bytes | Cascaded with final user deletion | Deleted in batches after channel removal; no tutor foreign key |
 | Session, email request, email token | Deleted | Deleted |
 | Tutor profile | — | Deleted |
 | Relationship | On every row of the student, discarded ones included, `student_id` and the card `email` set to null; non-discarded rows become `discarded` (`student_purged`), keeping `ended_at` and `ended_by`, for the tutor's history under the card's display name; a provisional or reclaim-pending link gets the removal effects first, so its tutor gets a new card (also while the tutor is blocked; its link is invalid until the tutor is `active` again); an `active` row is first ended (`deletion`) | Deleted |
