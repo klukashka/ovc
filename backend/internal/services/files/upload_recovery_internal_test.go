@@ -10,18 +10,16 @@ import (
 	"ovc/backend/internal/repositories"
 )
 
-func TestUploadRecoveryRetainsCursorAcrossBudgetAndWraps(t *testing.T) {
+func TestUploadRecoveryRetainsCursorAfterCancellationAndWraps(t *testing.T) {
 	h := newUploadProtocolFixture(t)
-	h.service.deps.Uploads.Candidate = 50 * time.Millisecond
-	h.service.deps.Uploads.Recovery = 75 * time.Millisecond
 	first := h.intent(t, domain.AttachmentID{1}, false)
 	second := h.intent(t, domain.AttachmentID{2}, false)
 	later := h.intent(t, domain.AttachmentID{3}, false)
+	beforeFirst := h.intentSnapshot(t, first.id)
+	beforeSecond := h.intentSnapshot(t, second.id)
+	beforeLater := h.intentSnapshot(t, later.id)
 	held, err := h.database.Pool.Begin(context.Background())
 	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := held.Exec(context.Background(), "SELECT attachment_id FROM upload_intents WHERE attachment_id IN ($1,$2) ORDER BY attachment_id FOR UPDATE", first.id, second.id); err != nil {
 		t.Fatal(err)
 	}
 	released := false
@@ -32,24 +30,73 @@ func TestUploadRecoveryRetainsCursorAcrossBudgetAndWraps(t *testing.T) {
 			}
 		}
 	}()
+	if _, err := held.Exec(context.Background(), "SELECT attachment_id FROM upload_intents WHERE attachment_id = $1 FOR UPDATE", first.id); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	type recoveryResult struct {
+		count int64
+		err   error
+	}
+	finished := make(chan recoveryResult, 1)
+	joined := false
+	defer func() {
+		cancel()
+		if !joined {
+			<-finished
+		}
+	}()
+	observing, stopObserving := context.WithTimeout(context.Background(), domain.UploadRecoveryCandidateBudget/2)
+	defer stopObserving()
 
-	firstCount, firstErr := h.service.RecoverUploads(context.Background(), h.now.Add(time.Hour))
+	go func() {
+		count, err := h.service.RecoverUploads(ctx, h.now.Add(time.Hour))
+		finished <- recoveryResult{count: count, err: err}
+	}()
+	h.awaitDatabaseLock(t, observing)
+	cancel()
+	firstResult := <-finished
+	joined = true
 	retained := h.service.recoveryCursor
-	nextCount, nextErr := h.service.RecoverUploads(context.Background(), h.now.Add(time.Hour))
-	laterRow := h.read(t, later.id)
-	wrapped := h.service.recoveryCursor
+	afterFirst := h.intentSnapshot(t, first.id)
+	afterSecond := h.intentSnapshot(t, second.id)
+	afterLater := h.intentSnapshot(t, later.id)
+	canceledOutbox := h.outboxCount(t)
 	if err := held.Rollback(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	released = true
-	h.service.deps.Uploads.Recovery = domain.UploadRecoveryBudget
-	h.service.deps.Uploads.Candidate = domain.UploadRecoveryCandidateBudget
+	nextCount, nextErr := h.service.RecoverUploads(context.Background(), h.now.Add(time.Hour))
+	skippedFirst := h.intentSnapshot(t, first.id)
+	secondRow := h.read(t, second.id)
+	laterRow := h.read(t, later.id)
+	nextSecond := h.intentSnapshot(t, second.id)
+	nextLater := h.intentSnapshot(t, later.id)
+	nextOutbox := h.outboxCount(t)
+	wrapped := h.service.recoveryCursor
 	wrappedCount, wrappedErr := h.service.RecoverUploads(context.Background(), h.now.Add(time.Hour))
 	firstRow := h.read(t, first.id)
-	secondRow := h.read(t, second.id)
+	finalSecond := h.intentSnapshot(t, second.id)
+	finalLater := h.intentSnapshot(t, later.id)
 
-	if firstCount != 0 || firstErr == nil || retained != second.id || nextCount != 1 || nextErr != nil || laterRow.CleanupOutboxID == nil || wrapped != (domain.AttachmentID{}) || wrappedCount != 3 || wrappedErr != nil || firstRow.CleanupOutboxID == nil || secondRow.CleanupOutboxID == nil {
-		t.Fatalf("recovery lost cursor or wrap: first %d %v cursor %s next %d %v wrap %s final %d %v", firstCount, firstErr, retained, nextCount, nextErr, wrapped, wrappedCount, wrappedErr)
+	if firstResult.count != 0 || !errors.Is(firstResult.err, context.Canceled) || retained != first.id {
+		t.Fatalf("cancellation lost cursor: count %d error %v cursor %s", firstResult.count, firstResult.err, retained)
+	}
+	if beforeFirst != afterFirst || beforeSecond != afterSecond || beforeLater != afterLater || canceledOutbox != 0 {
+		t.Fatal("canceled pass changed durable state")
+	}
+	if nextCount != 2 || nextErr != nil || skippedFirst != beforeFirst || nextOutbox != 2 || wrapped != (domain.AttachmentID{}) {
+		t.Fatalf("continuation did not process exactly the remaining two candidates and wrap: count %d error %v cursor %s", nextCount, nextErr, wrapped)
+	}
+	if secondRow.CleanupOutboxID == nil || laterRow.CleanupOutboxID == nil ||
+		!secondRow.CleanupRequested || !laterRow.CleanupRequested ||
+		secondRow.CleanupResult != domain.UploadCleanupQueued || laterRow.CleanupResult != domain.UploadCleanupQueued {
+		t.Fatal("continuation lost durable cleanup ownership")
+	}
+	if wrappedCount != 3 || wrappedErr != nil || h.service.recoveryCursor != (domain.AttachmentID{}) ||
+		firstRow.CleanupOutboxID == nil || !firstRow.CleanupRequested || firstRow.CleanupResult != domain.UploadCleanupQueued ||
+		h.outboxCount(t) != 3 || finalSecond != nextSecond || finalLater != nextLater {
+		t.Fatalf("wrapped pass lost cleanup ownership: count %d error %v", wrappedCount, wrappedErr)
 	}
 }
 

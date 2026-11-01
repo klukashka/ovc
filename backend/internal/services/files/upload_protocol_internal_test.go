@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -18,6 +19,11 @@ import (
 	"ovc/backend/internal/teststorage"
 	"ovc/backend/internal/worker"
 )
+
+type recoveryDatabaseError interface {
+	error
+	SQLState() string
+}
 
 type uploadProtocolFixture struct {
 	service  *Service
@@ -239,12 +245,32 @@ func TestUploadIntentSurvivesDeadOutboxRetention(t *testing.T) {
 	}
 }
 
-func TestUploadRecoveryAdvancesPastLockedCandidate(t *testing.T) {
+func (h uploadProtocolFixture) intentSnapshot(t *testing.T, id domain.AttachmentID) string {
+	t.Helper()
+	encoded, err := json.Marshal(h.read(t, id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
+
+func (h uploadProtocolFixture) outboxCount(t *testing.T) int {
+	t.Helper()
+	var count int
+	if err := h.database.Pool.QueryRow(context.Background(), "SELECT count(*) FROM outbox").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+func TestUploadRecoveryBoundsCandidateAndPassDeadlines(t *testing.T) {
 	h := newUploadProtocolFixture(t)
 	h.service.deps.Uploads.Candidate = 50 * time.Millisecond
 	h.service.deps.Uploads.Recovery = 200 * time.Millisecond
 	first := h.intent(t, domain.AttachmentID{1}, false)
 	later := h.intent(t, domain.AttachmentID{2}, false)
+	beforeFirst := h.intentSnapshot(t, first.id)
+	beforeLater := h.intentSnapshot(t, later.id)
 	held, err := h.database.Pool.Begin(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -254,17 +280,75 @@ func TestUploadRecoveryAdvancesPastLockedCandidate(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	if _, err := held.Exec(context.Background(), "SELECT attachment_id FROM upload_intents WHERE attachment_id = $1 FOR UPDATE", first.id); err != nil {
+	if _, err := held.Exec(context.Background(), "SELECT attachment_id FROM upload_intents ORDER BY attachment_id FOR UPDATE"); err != nil {
 		t.Fatal(err)
 	}
 
-	started := clock.System{}.Now()
+	candidateStarted := clock.System{}.Now()
+	candidateCount, candidateErr := h.service.RecoverUploads(context.Background(), h.now.Add(time.Hour))
+	candidateElapsed := time.Since(candidateStarted)
+	candidateCursor := h.service.recoveryCursor
+	candidateFirst := h.intentSnapshot(t, first.id)
+	candidateLater := h.intentSnapshot(t, later.id)
+	candidateOutbox := h.outboxCount(t)
+	h.service.deps.Uploads.Candidate = domain.UploadRecoveryCandidateBudget
+	h.service.deps.Uploads.Recovery = 75 * time.Millisecond
+	passStarted := clock.System{}.Now()
+	passCount, passErr := h.service.RecoverUploads(context.Background(), h.now.Add(time.Hour))
+	passElapsed := time.Since(passStarted)
+	passCursor := h.service.recoveryCursor
+	passFirst := h.intentSnapshot(t, first.id)
+	passLater := h.intentSnapshot(t, later.id)
+	passOutbox := h.outboxCount(t)
+
+	if !errors.Is(candidateErr, context.DeadlineExceeded) || candidateCount != 0 || candidateElapsed > time.Second {
+		t.Fatalf("candidate deadlines failed: count %d elapsed %s error %v", candidateCount, candidateElapsed, candidateErr)
+	}
+	if candidateCursor != (domain.AttachmentID{}) {
+		t.Fatal("candidate deadlines did not allow the whole locked batch to be examined")
+	}
+	if beforeFirst != candidateFirst || beforeLater != candidateLater || candidateOutbox != 0 {
+		t.Fatal("timed-out candidates changed durable state")
+	}
+	if !errors.Is(passErr, context.DeadlineExceeded) || passCount != 0 || passElapsed > time.Second {
+		t.Fatalf("pass deadline failed: count %d elapsed %s error %v", passCount, passElapsed, passErr)
+	}
+	if passCursor != (domain.AttachmentID{}) && passCursor != first.id {
+		t.Fatalf("pass retained an unvisited cursor: %s", passCursor)
+	}
+	if beforeFirst != passFirst || beforeLater != passLater || passOutbox != 0 {
+		t.Fatal("expired pass changed durable state")
+	}
+}
+
+func TestUploadRecoveryContinuesAfterOneCandidateFails(t *testing.T) {
+	h := newUploadProtocolFixture(t)
+	first := h.intent(t, domain.AttachmentID{1}, false)
+	later := h.intent(t, domain.AttachmentID{2}, false)
+	beforeFirst := h.intentSnapshot(t, first.id)
+	statement := fmt.Sprintf(`CREATE FUNCTION fail_one_upload_recovery() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN RAISE EXCEPTION 'test upload recovery failure'; END $$;
+CREATE TRIGGER fail_one_upload_recovery BEFORE UPDATE OF cleanup_requested ON upload_intents
+FOR EACH ROW WHEN (OLD.attachment_id = '%s'::uuid AND NEW.cleanup_requested)
+EXECUTE FUNCTION fail_one_upload_recovery()`, first.id)
+	if _, err := h.database.Pool.Exec(context.Background(), statement); err != nil {
+		t.Fatal(err)
+	}
+
 	processed, recoveryErr := h.service.RecoverUploads(context.Background(), h.now.Add(time.Hour))
-	elapsed := time.Since(started)
+	afterFirst := h.intentSnapshot(t, first.id)
 	row := h.read(t, later.id)
 
-	if recoveryErr == nil || processed != 1 || row.CleanupOutboxID == nil || elapsed > time.Second {
-		t.Fatalf("locked prefix stopped recovery: count %d elapsed %s error %v", processed, elapsed, recoveryErr)
+	var databaseError recoveryDatabaseError
+	if !errors.As(recoveryErr, &databaseError) || databaseError.SQLState() != "P0001" {
+		t.Fatalf("expected the first candidate's database error, got %v", recoveryErr)
+	}
+	if processed != 1 || beforeFirst != afterFirst || row.CleanupOutboxID == nil ||
+		row.CleanupResult != domain.UploadCleanupQueued || !row.CleanupRequested || h.outboxCount(t) != 1 {
+		t.Fatal("one candidate failure prevented later durable cleanup or changed the failed candidate")
+	}
+	if h.service.recoveryCursor != (domain.AttachmentID{}) {
+		t.Fatal("recovery did not wrap after its final candidate")
 	}
 }
 
