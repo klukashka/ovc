@@ -428,7 +428,9 @@ test.describe('in English', () => {
     const anna = await seedActiveStudent(deployment, pavel, 'Anna');
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
     await signInThroughTheApi(page, pavel);
+    const traffic = trafficAfterReady(page, [`/api/v1/groups/${groupId}`]);
     await page.goto(`/groups/${groupId}`);
+    await expectRefetchedAfterTheSocketIsReady(traffic);
     const details = page.getByRole('form', { name: 'Name and colour' });
     await details.getByLabel('Name', { exact: true }).fill('Typed name');
     await details.getByRole('radio', { name: 'Plum' }).check();

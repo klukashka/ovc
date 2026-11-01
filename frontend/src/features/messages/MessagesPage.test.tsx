@@ -509,6 +509,49 @@ describe('Messages', () => {
     }
   });
 
+  test('a denied channel aborts a held authorized list and its late response cannot restore private data', async () => {
+    const { server, cache } = await fixture();
+    await screen.findByText('Message 1');
+    await waitFor(() => {
+      expect(cache.isFetching()).toBe(0);
+    });
+    const pause = server.chat.pauseNextChannelListResponse(false);
+    const fetching = cache.invalidateQueries({ queryKey: channelsKey });
+    const signal = await pause.answered;
+
+    server.chat.removeMember(channel.id, tutor.id);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelKey(channel.id), exact: true });
+    });
+    await screen.findByText('This chat is no longer available.');
+    const abortedBeforeRelease = signal.aborted;
+    const bodyBeforeRelease = screen.queryByText('Message 1');
+    const labelBeforeRelease = screen.queryAllByText('Student');
+    const detailBeforeRelease = cache.getQueryData(channelKey(channel.id));
+    const historyBeforeRelease = cache.getQueryData(messagesKey(channel.id));
+    const listsBeforeRelease = cache.getQueriesData<import('./api.ts').ChannelPage>({ queryKey: channelsKey });
+    await act(async () => {
+      pause.resume();
+      await fetching;
+    });
+
+    expect(abortedBeforeRelease).toBe(true);
+    expect(bodyBeforeRelease).toBeNull();
+    expect(labelBeforeRelease).toHaveLength(0);
+    expect(detailBeforeRelease).toBeUndefined();
+    expect(historyBeforeRelease).toBeUndefined();
+    expect(screen.queryByText('Message 1')).toBeNull();
+    expect(screen.queryAllByText('Student')).toHaveLength(0);
+    expect(cache.getQueryData(channelKey(channel.id))).toBeUndefined();
+    expect(cache.getQueryData(messagesKey(channel.id))).toBeUndefined();
+    for (const [, page] of [
+      ...listsBeforeRelease,
+      ...cache.getQueriesData<import('./api.ts').ChannelPage>({ queryKey: channelsKey }),
+    ]) {
+      expect(page?.items.some((item) => item.id === channel.id) ?? false).toBe(false);
+    }
+  });
+
   test('a failed deletion returns focus to its surviving message', async () => {
     const { server } = await fixture();
     const row = (await screen.findByText('Message 1')).closest('li');

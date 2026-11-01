@@ -125,20 +125,23 @@ export class FakeChatServer {
     return { answered, resume };
   }
   private listPause: {
-    readonly answered: () => void;
+    readonly answered: (signal: AbortSignal) => void;
     readonly resumed: Promise<void>;
     readonly cursorOnly: boolean;
   } | null = null;
   private sendPause: { readonly answered: () => void; readonly resumed: Promise<void> } | null = null;
 
-  pauseNextChannelListResponse(cursorOnly = true): { readonly answered: Promise<void>; readonly resume: () => void } {
-    let answer = (): void => {
+  pauseNextChannelListResponse(cursorOnly = true): {
+    readonly answered: Promise<AbortSignal>;
+    readonly resume: () => void;
+  } {
+    let answer: (signal: AbortSignal) => void = (): void => {
       throw new Error('The list pause is not initialized');
     };
     let resume = (): void => {
       throw new Error('The list pause is not initialized');
     };
-    const answered = new Promise<void>((resolve) => {
+    const answered = new Promise<AbortSignal>((resolve) => {
       answer = resolve;
     });
     const resumed = new Promise<void>((resolve) => {
@@ -319,7 +322,7 @@ export class FakeChatServer {
       const pause = this.listPause;
       if (pause !== null && (!pause.cursorOnly || cursor !== null)) {
         this.listPause = null;
-        pause.answered();
+        pause.answered(request.signal);
         await pause.resumed;
       }
       return response;

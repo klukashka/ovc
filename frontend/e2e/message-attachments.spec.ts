@@ -1,4 +1,4 @@
-import type { Browser, BrowserContext, Page } from '@playwright/test';
+import type { Browser, BrowserContext, Page, Request, Response } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
@@ -76,6 +76,49 @@ async function send(page: Page, body: string): Promise<void> {
   const response = await saved;
   if (response.status() !== 201) throw new Error(`sending a message answered ${String(response.status())}`);
   await page.waitForFunction(() => document.querySelector('textarea')?.readOnly === false);
+}
+
+function settledReadRefresh(page: Page, channel: string): () => Promise<void> {
+  const pending = new Set<Request>();
+  const afterRead = new Set<Request>();
+  let sent = false;
+  let read = false;
+  let refreshed = false;
+  const channelPath = `/api/v1/channels/${channel}`;
+  const started = (request: Request): void => {
+    const path = new URL(request.url()).pathname;
+    if (path === '/api/v1/channels' || path.startsWith(channelPath)) {
+      pending.add(request);
+      if (read && request.method() === 'GET') afterRead.add(request);
+    }
+  };
+  const answered = (response: Response): void => {
+    if (
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname === `${channelPath}/messages` &&
+      response.status() === 201
+    )
+      sent = true;
+  };
+  const finished = (request: Request): void => {
+    pending.delete(request);
+    const path = new URL(request.url()).pathname;
+    if (sent && request.method() === 'POST' && path === `${channelPath}/read`) {
+      read = true;
+      refreshed = false;
+      afterRead.clear();
+    }
+    if (path === '/api/v1/channels' && afterRead.has(request)) refreshed = true;
+  };
+  page.on('request', started);
+  page.on('response', answered);
+  page.on('requestfinished', finished);
+  return async (): Promise<void> => {
+    await expect.poll(() => read && refreshed && pending.size === 0).toBe(true);
+    page.off('request', started);
+    page.off('response', answered);
+    page.off('requestfinished', finished);
+  };
 }
 
 async function digestMail(control: TestControl, email: string): Promise<SentMail[]> {
@@ -198,6 +241,7 @@ test('pilot-3 › steps 14–15 Anna unsubscribes through the digest and receive
   control,
 }) => {
   const actors = await groupActors(deployment);
+  const settled = settledReadRefresh(page, actors.channel);
   await offlineMessage(page, deployment, actors);
   await control.advance(11 * 60);
   await control.tick();
@@ -214,6 +258,7 @@ test('pilot-3 › steps 14–15 Anna unsubscribes through the digest and receive
   await expect(unsubscribe.getByRole('status')).toBeFocused();
   await diagnostics.closeContext(context);
   await waitForSockets(deployment, await accountId(deployment, actors.anna), 0);
+  await settled();
   await page.getByRole('button', { name: 'Boris, Account menu', exact: true }).click();
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
