@@ -47,17 +47,14 @@ function ChannelConversation({ id, texts }: { readonly id: string; readonly text
   if (notFound || gone) return seen ? <FocusedNotice message={texts.unavailable} /> : <MissingChannel />;
   if (seen && query.data !== undefined)
     return (
-      <>
-        {query.isError ? (
-          <LoadFailed
-            error={asApiError(query.error)}
-            onRetry={() => {
-              void query.refetch();
-            }}
-          />
-        ) : null}
-        <Conversation revision={query.dataUpdatedAt} channel={query.data} texts={texts} onUnavailable={unavailable} />
-      </>
+      <Conversation
+        revision={query.dataUpdatedAt}
+        channel={query.data}
+        texts={texts}
+        onUnavailable={unavailable}
+        channelError={query.isError ? asApiError(query.error) : null}
+        refreshChannel={() => query.refetch()}
+      />
     );
   if (query.isError)
     return (

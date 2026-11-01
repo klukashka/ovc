@@ -102,10 +102,38 @@ export class FakeChatServer {
   }
   private loseSendResponse = false;
   private failDelete = false;
+  private failHistoryRead = false;
+  private failChannelRead = false;
+  private messagePause: { readonly answered: () => void; readonly resumed: Promise<void> } | null = null;
+
+  failNextHistoryRead(): void {
+    this.failHistoryRead = true;
+  }
   private channelPause: { readonly answered: () => void; readonly resumed: Promise<void> } | null = null;
 
   failNextDelete(): void {
     this.failDelete = true;
+  }
+
+  failNextChannelRead(): void {
+    this.failChannelRead = true;
+  }
+
+  pauseNextMessageResponse(): { readonly answered: Promise<void>; readonly resume: () => void } {
+    let answer = (): void => {
+      throw new Error('The message pause is not initialized');
+    };
+    let resume = (): void => {
+      throw new Error('The message pause is not initialized');
+    };
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const resumed = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    this.messagePause = { answered: answer, resumed };
+    return { answered, resume };
   }
 
   pauseNextChannelResponse(): { readonly answered: Promise<void>; readonly resume: () => void } {
@@ -298,7 +326,14 @@ export class FakeChatServer {
     const parts = address.pathname.split('/').filter(Boolean);
     const id = parts[3] ?? '';
     if (parts[2] === 'messages') {
-      return this.changeMessage(request, caller, id, now);
+      const response = await this.changeMessage(request, caller, id, now);
+      const pause = this.messagePause;
+      this.messagePause = null;
+      if (pause !== null) {
+        pause.answered();
+        await pause.resumed;
+      }
+      return response;
     }
     if (request.method === 'GET' && (id === '' || id === 'unread')) {
       const visible = [...this.channels.values()].filter((channel) => this.visible(channel, caller));
@@ -329,6 +364,10 @@ export class FakeChatServer {
     }
     const channel = this.channels.get(id);
     if (parts.length === 4 && request.method === 'GET') {
+      if (this.failChannelRead) {
+        this.failChannelRead = false;
+        return refused(503, 'service_unavailable');
+      }
       const response =
         channel === undefined || !this.visible(channel, caller)
           ? refused(404, 'not_found')
@@ -345,6 +384,10 @@ export class FakeChatServer {
       return refused(404, 'not_found');
     }
     if (parts[4] === 'messages' && request.method === 'GET') {
+      if (this.failHistoryRead) {
+        this.failHistoryRead = false;
+        return refused(503, 'service_unavailable');
+      }
       return this.listMessages(channel, caller, address.searchParams);
     }
     if (parts[4] === 'messages' && request.method === 'POST') {

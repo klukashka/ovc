@@ -12,7 +12,7 @@ import { type ApiClient, ApiClientContext, createApiClient } from '../../lib/api
 import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
-import { type Channel, type Message, editMessage } from './api.ts';
+import { type Channel, type Message, deleteMessage, editMessage } from './api.ts';
 import { channelKey, channelsKey, messagesKey } from './keys.ts';
 import { MessageKeyContext } from './Conversation.tsx';
 import { MessagesPage } from './MessagesPage.tsx';
@@ -364,21 +364,300 @@ describe('Messages', () => {
     expect(document.activeElement).toBe(field);
   });
 
-  test('a stale edit refreshes history and preserves the unsaved text', async () => {
-    const { server, api } = await fixture();
+  test.each(['Keep my text', 'Use latest text'] as const)(
+    'a stale edit adopts a fresh version only after %s and saves explicitly',
+    async (choice) => {
+      const { server, api } = await fixture();
+      const field = await screen.findByRole('textbox', { name: 'Message' });
+      fireEvent.change(field, { target: { value: 'Original draft' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+      fireEvent.change(field, { target: { value: 'My unsaved edit' } });
+      await editMessage(api, message(1), 'Changed elsewhere');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      const choose = await screen.findByRole('button', { name: choice });
+      const retained = (field as HTMLTextAreaElement).value;
+      fireEvent.submit(field.closest('form') ?? field);
+      const beforeChoice = server.chat.history(channel.id)[0];
+      fireEvent.click(choose);
+      const chosenFocus = document.activeElement;
+      const chosenText = (field as HTMLTextAreaElement).value;
+      const beforeSave = server.chat.history(channel.id)[0];
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await screen.findByRole('button', { name: 'Send' });
+      await waitFor(() => {
+        expect(document.activeElement?.getAttribute('data-row')).toBe('message-1');
+      });
+
+      expect(retained).toBe('My unsaved edit');
+      expect(beforeChoice?.version).toBe(2);
+      expect(beforeSave?.version).toBe(2);
+      expect(chosenFocus).toBe(field);
+      expect(chosenText).toBe(choice === 'Keep my text' ? 'My unsaved edit' : 'Changed elsewhere');
+      expect(server.chat.history(channel.id)[0]?.body).toBe(chosenText);
+      expect(server.chat.history(channel.id)[0]?.version).toBe(3);
+      expect((field as HTMLTextAreaElement).value).toBe('Original draft');
+    },
+  );
+
+  test('another concurrent edit after the choice requires a new explicit choice', async () => {
+    const { api, server } = await fixture();
     const field = await screen.findByRole('textbox', { name: 'Message' });
     fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    fireEvent.change(field, { target: { value: 'My unsaved edit' } });
-    await editMessage(api, message(1), 'Changed elsewhere');
+    fireEvent.change(field, { target: { value: 'Local edit' } });
+    const second = await editMessage(api, message(1), 'Second version');
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await screen.findByRole('alert');
-    await screen.findByText('Changed elsewhere');
+    fireEvent.click(await screen.findByRole('button', { name: 'Keep my text' }));
+    await editMessage(api, second, 'Third version');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByRole('button', { name: 'Use latest text' });
 
-    expect((field as HTMLTextAreaElement).value).toBe('My unsaved edit');
-    expect(server.chat.history(channel.id)[0]?.body).toBe('Changed elsewhere');
+    expect(
+      within(screen.getByRole('region', { name: 'Current saved text' })).getByText('Third version'),
+    ).not.toBeNull();
+    expect((field as HTMLTextAreaElement).value).toBe('Local edit');
+    expect(server.chat.history(channel.id)[0]?.version).toBe(3);
+    expect(screen.getByRole('button', { name: 'Save' }).getAttribute('aria-disabled')).toBe('true');
   });
+
+  test.each([1, 2])('a late conflict refresh cannot replace a reopened editor for message %s', async (next) => {
+    const { api, server, cache } = await fixture(2);
+    const field = await screen.findByRole('textbox', { name: 'Message' });
+    const first = (await screen.findByText('Message 1')).closest('li');
+    if (first === null) throw new Error('Missing message');
+    fireEvent.click(within(first).getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    await editMessage(api, message(1), 'Changed elsewhere');
+    const pause = server.chat.pauseNextChannelResponse();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await pause.answered;
+    await screen.findByText('Changed elsewhere');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    const row = screen.getByText(next === 1 ? 'Changed elsewhere' : 'Message 2').closest('li');
+    if (row === null) throw new Error('Missing next message');
+    fireEvent.click(within(row).getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(field, { target: { value: 'New editing lifetime' } });
+    act(() => {
+      pause.resume();
+    });
+    await waitFor(() => {
+      expect(cache.isFetching()).toBe(0);
+    });
+
+    expect((field as HTMLTextAreaElement).value).toBe('New editing lifetime');
+    expect(document.activeElement).toBe(field);
+    expect(screen.queryByRole('button', { name: 'Keep my text' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save' }).getAttribute('aria-disabled')).toBe('false');
+  });
+  test('a failed conflict read offers retry without adopting stale cached content', async () => {
+    const { api, server } = await fixture();
+    const field = await screen.findByRole('textbox', { name: 'Message' });
+    fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(field, { target: { value: 'Local edit' } });
+    await editMessage(api, message(1), 'Latest server text');
+    server.chat.failNextHistoryRead();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    const staleChoice = screen.queryByRole('button', { name: 'Keep my text' });
+    const blockedSave = screen.getByRole('button', { name: 'Save' }).getAttribute('aria-disabled');
+    fireEvent.click(retry);
+    fireEvent.click(await screen.findByRole('button', { name: 'Use latest text' }));
+    const resolvedFocus = document.activeElement;
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(staleChoice).toBeNull();
+    expect(blockedSave).toBe('true');
+    expect(resolvedFocus).toBe(field);
+    expect(server.chat.history(channel.id)[0]?.version).toBe(2);
+    expect((field as HTMLTextAreaElement).value).toBe('');
+    expect(document.activeElement?.getAttribute('data-row')).toBe('message-1');
+  });
+
+  test('a paused conflict recovery waits for both new reads after reconnect', async () => {
+    const { api, server, cache } = await fixture();
+    const field = await screen.findByRole('textbox', { name: 'Message' });
+    fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(field, { target: { value: 'Local edit' } });
+    await editMessage(api, message(1), 'Latest server text');
+    await waitFor(() => {
+      expect(cache.isFetching()).toBe(0);
+    });
+    const historyUpdates = cache.getQueryState(messagesKey(channel.id))?.dataUpdateCount;
+    const channelUpdates = cache.getQueryState(channelKey(channel.id))?.dataUpdateCount;
+    const patch = server.chat.pauseNextMessageResponse();
+    const channelRead = server.chat.pauseNextChannelResponse();
+
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await patch.answered;
+      act(() => {
+        window.dispatchEvent(new Event('offline'));
+        patch.resume();
+      });
+      await waitFor(() => {
+        expect(cache.getQueryState(messagesKey(channel.id))?.fetchStatus).toBe('paused');
+        expect(cache.getQueryState(channelKey(channel.id))?.fetchStatus).toBe('paused');
+      });
+      const pausedChoice = screen.queryByRole('button', { name: 'Keep my text' });
+      const pausedSave = screen.getByRole('button', { name: 'Save' }).getAttribute('aria-disabled');
+      const pausedHistoryUpdates = cache.getQueryState(messagesKey(channel.id))?.dataUpdateCount;
+      const pausedChannelUpdates = cache.getQueryState(channelKey(channel.id))?.dataUpdateCount;
+      act(() => {
+        window.dispatchEvent(new Event('online'));
+      });
+      await channelRead.answered;
+      await waitFor(() => {
+        expect(cache.getQueryState(messagesKey(channel.id))?.dataUpdateCount).toBeGreaterThan(historyUpdates ?? 0);
+      });
+      const oneReadChoice = screen.queryByRole('button', { name: 'Keep my text' });
+      act(() => {
+        channelRead.resume();
+      });
+      fireEvent.click(await screen.findByRole('button', { name: 'Keep my text' }));
+      const resolvedFocus = document.activeElement;
+      const versionBeforeSave = server.chat.history(channel.id)[0]?.version;
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await screen.findByRole('button', { name: 'Send' });
+
+      expect(pausedChoice).toBeNull();
+      expect(pausedSave).toBe('true');
+      expect(pausedHistoryUpdates).toBe(historyUpdates);
+      expect(pausedChannelUpdates).toBe(channelUpdates);
+      expect(oneReadChoice).toBeNull();
+      expect(resolvedFocus).toBe(field);
+      expect(versionBeforeSave).toBe(2);
+      expect(server.chat.history(channel.id)[0]).toMatchObject({ body: 'Local edit', version: 3 });
+    } finally {
+      act(() => {
+        patch.resume();
+        channelRead.resume();
+        window.dispatchEvent(new Event('online'));
+      });
+    }
+  });
+
+  test.each([1, 2])('cancel while offline releases the old recovery before editing message %s', async (next) => {
+    const { api, server, cache } = await fixture(2);
+    const field = await screen.findByRole('textbox', { name: 'Message' });
+    const first = (await screen.findByText('Message 1')).closest('li');
+    if (first === null) throw new Error('Missing first message');
+    fireEvent.click(within(first).getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    await editMessage(api, message(1), 'Changed elsewhere');
+    const patch = server.chat.pauseNextMessageResponse();
+
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await patch.answered;
+      act(() => {
+        window.dispatchEvent(new Event('offline'));
+        patch.resume();
+      });
+      await waitFor(() => {
+        expect(cache.getQueryState(messagesKey(channel.id))?.fetchStatus).toBe('paused');
+        expect(cache.getQueryState(channelKey(channel.id))?.fetchStatus).toBe('paused');
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      const cancelledFocus = document.activeElement;
+      const row = screen.getByText(`Message ${String(next)}`).closest('li');
+      if (row === null) throw new Error('Missing next message');
+      fireEvent.click(within(row).getByRole('button', { name: 'Message actions' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+      fireEvent.change(field, { target: { value: 'New editing lifetime' } });
+      const preservedHistory = cache.getQueryState(messagesKey(channel.id))?.fetchStatus;
+      const preservedChannel = cache.getQueryState(channelKey(channel.id))?.fetchStatus;
+      act(() => {
+        window.dispatchEvent(new Event('online'));
+      });
+      await waitFor(() => {
+        expect(cache.isFetching()).toBe(0);
+      });
+      await screen.findByText('Changed elsewhere');
+
+      expect(cancelledFocus).toBe(first);
+      expect(preservedHistory).toBe('paused');
+      expect(preservedChannel).toBe('paused');
+      expect((field as HTMLTextAreaElement).value).toBe('New editing lifetime');
+      expect(document.activeElement).toBe(field);
+      expect(screen.queryByRole('button', { name: 'Keep my text' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Save' }).getAttribute('aria-disabled')).toBe('false');
+      expect(server.chat.history(channel.id).find((item) => item.id === 'message-1')?.version).toBe(2);
+    } finally {
+      act(() => {
+        patch.resume();
+        window.dispatchEvent(new Event('online'));
+      });
+    }
+  });
+
+  test('a failed channel conflict read has one retry that completes the whole recovery', async () => {
+    const { api, server } = await fixture();
+    const field = await screen.findByRole('textbox', { name: 'Message' });
+    fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(field, { target: { value: 'Local edit' } });
+    await editMessage(api, message(1), 'Latest server text');
+    server.chat.failNextChannelRead();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    const retryCount = screen.getAllByRole('button', { name: 'Try again' }).length;
+    const choiceBeforeRetry = screen.queryByRole('button', { name: 'Keep my text' });
+    fireEvent.click(retry);
+    fireEvent.click(await screen.findByRole('button', { name: 'Keep my text' }));
+    const resolvedFocus = document.activeElement;
+    const resolvedSave = screen.getByRole('button', { name: 'Save' }).getAttribute('aria-disabled');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByRole('button', { name: 'Send' });
+
+    expect(retryCount).toBe(1);
+    expect(choiceBeforeRetry).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    expect(resolvedFocus).toBe(field);
+    expect(resolvedSave).toBe('false');
+    expect(server.chat.history(channel.id)[0]).toMatchObject({ body: 'Local edit', version: 3 });
+  });
+
+  test.each(['read-only', 'deleted', 'revoked'] as const)(
+    'a conflict cannot restore resolution after the message becomes %s',
+    async (change) => {
+      const { api, server, cache } = await fixture();
+      const field = await screen.findByRole('textbox', { name: 'Message' });
+      fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+      await editMessage(api, message(1), 'Latest server text');
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      (await screen.findByRole('button', { name: 'Keep my text' })).focus();
+
+      if (change === 'read-only') server.chat.setWritable(channel.id, false);
+      else if (change === 'revoked') server.chat.removeMember(channel.id, tutor.id);
+      else await deleteMessage(api, 'message-1');
+      await act(async () => {
+        await cache.invalidateQueries({
+          queryKey: change === 'deleted' ? messagesKey(channel.id) : channelKey(channel.id),
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: 'Keep my text' })).toBeNull();
+      });
+      expect(screen.queryByRole('region', { name: 'Current saved text' })).toBeNull();
+      if (change === 'revoked') expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull();
+      else {
+        expect((field as HTMLTextAreaElement).value).toBe('Message 1');
+        expect(document.activeElement).toBe(field);
+      }
+    },
+  );
+
   test('reconnect retains older loaded history and fills more than one hundred missed messages', async () => {
     const { server, cache } = await fixture(60);
     fireEvent.click(await screen.findByRole('button', { name: 'Show older' }));

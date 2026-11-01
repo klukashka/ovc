@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryObserverResult, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   type ReactElement,
   createContext,
@@ -46,16 +46,31 @@ import type { ChatTexts } from './translations.ts';
 
 export const MessageKeyContext = createContext<() => string>(() => crypto.randomUUID());
 
+function messageIsEditable(message: Message | undefined, writable: boolean, now: number): boolean {
+  return (
+    message !== undefined &&
+    writable &&
+    message.own &&
+    !message.deleted &&
+    !message.erased &&
+    now - Date.parse(message.created_at) <= 24 * 60 * 60 * 1000
+  );
+}
+
 export function Conversation({
   channel,
   texts,
   onUnavailable,
+  channelError,
+  refreshChannel,
   revision = 0,
 }: {
   readonly revision?: number;
   readonly channel: Channel;
   readonly texts: ChatTexts;
   readonly onUnavailable: () => void;
+  readonly channelError: ApiError | null;
+  readonly refreshChannel: () => Promise<QueryObserverResult<Channel>>;
 }): ReactElement {
   const client = useApiClient();
   const cache = useQueryClient();
@@ -72,10 +87,18 @@ export function Conversation({
   const heading = useRef<HTMLHeadingElement>(null);
   const list = useRef<HTMLOListElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const conflictContainer = useRef<HTMLDivElement>(null);
   const alive = useRef(true);
   const [draft, setDraft] = useState('');
   const [editing, setEditing] = useState<Message | null>(null);
   const savedDraft = useRef('');
+  const editGeneration = useRef(0);
+  const conflictRefresh = useRef<{ readonly cancel: () => void } | null>(null);
+  const [conflict, setConflict] = useState<{
+    readonly generation: number;
+    readonly latest: Message | null;
+    readonly error: ApiError | null;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<ApiError | null>(null);
   const [validation, setValidation] = useState<'emptyBody' | 'tooLong' | 'tooManyFiles' | 'waitingUploads' | null>(
@@ -162,6 +185,8 @@ export function Conversation({
     heading.current?.focus();
     return (): void => {
       alive.current = false;
+      conflictRefresh.current?.cancel();
+      conflictRefresh.current = null;
       olderRequest.current?.abort();
       fileRefresh.current?.cancel();
       fileRefresh.current = null;
@@ -188,6 +213,16 @@ export function Conversation({
     if (previous !== null && messages.some((message) => message.seq > previous && !message.own))
       setAnnouncement(`${texts.newMessages} (${String(last)})`);
   }, [messages, texts.newMessages]);
+
+  const resolutionAvailable =
+    conflict?.latest != null &&
+    messageIsEditable(
+      messages.find((message) => message.id === conflict.latest?.id),
+      channel.writable,
+      scheduler.wallClock(),
+    );
+  useFocusAfterRemovedRow(conflictContainer, resolutionAvailable ? ['conflict'] : [], null, composer);
+  if (conflict?.latest != null && !resolutionAvailable) setConflict({ ...conflict, latest: null });
 
   function isAlive(): boolean {
     const current = cache.getQueryCache().find({ queryKey: channelKey(channel.id), exact: true });
@@ -277,8 +312,65 @@ export function Conversation({
       cache.invalidateQueries({ queryKey: channelKey(channel.id) }),
     ]);
   }
+  function canResolve(message: Message): boolean {
+    const currentChannel = cache.getQueryData<Channel>(channelKey(channel.id));
+    const currentMessage = cache
+      .getQueryData<MessagePage>(messagesKey(channel.id))
+      ?.items.find((item) => item.id === message.id);
+    return isAlive() && messageIsEditable(currentMessage, currentChannel?.writable === true, scheduler.wallClock());
+  }
+  async function refreshConflict(messageId: string, generation: number): Promise<void> {
+    if (!isAlive() || editGeneration.current !== generation) return;
+    setConflict({ generation, latest: null, error: null });
+    const historyUpdates = cache.getQueryState(messagesKey(channel.id))?.dataUpdateCount ?? 0;
+    const channelUpdates = cache.getQueryState(channelKey(channel.id))?.dataUpdateCount ?? 0;
+    scheduleChatReads(cache, scheduler);
+    conflictRefresh.current?.cancel();
+    let cancel = (): void => undefined;
+    const cancelled = new Promise<null>((resolve) => {
+      cancel = (): void => {
+        resolve(null);
+      };
+    });
+    const request = { cancel };
+    conflictRefresh.current = request;
+    const results = await Promise.race([Promise.all([query.refetch(), refreshChannel()]), cancelled]).finally(() => {
+      request.cancel();
+      if (conflictRefresh.current === request) conflictRefresh.current = null;
+    });
+    if (results === null || !isAlive() || editGeneration.current !== generation) return;
+    const [historyResult, channelResult] = results;
+    const history = cache.getQueryState<MessagePage>(messagesKey(channel.id));
+    const detail = cache.getQueryState<Channel>(channelKey(channel.id));
+    const fresh =
+      historyResult.isSuccess &&
+      channelResult.isSuccess &&
+      history !== undefined &&
+      history.dataUpdateCount > historyUpdates &&
+      detail !== undefined &&
+      detail.dataUpdateCount > channelUpdates;
+    if (!fresh) {
+      setConflict({ generation, latest: null, error: asApiError(historyResult.error ?? channelResult.error) });
+      return;
+    }
+    const latest = historyResult.data.items.find((item) => item.id === messageId);
+    if (latest !== undefined && canResolve(latest)) setConflict({ generation, latest, error: null });
+  }
+  function resolveConflict(useLatest: boolean): void {
+    const latest = conflict?.latest;
+    if (latest == null || conflict?.generation !== editGeneration.current || !canResolve(latest)) return;
+    setEditing(latest);
+    if (useLatest) setDraft(latest.body ?? '');
+    setConflict(null);
+    setFailure(null);
+    composer.current?.focus();
+  }
   function cancelEdit(): void {
     if (editing === null) return;
+    editGeneration.current += 1;
+    conflictRefresh.current?.cancel();
+    conflictRefresh.current = null;
+    setConflict(null);
     presence.stopTyping();
     focusMessage(editing.id);
     setEditing(null);
@@ -286,7 +378,8 @@ export function Conversation({
     setFailure(null);
   }
   async function submit(): Promise<void> {
-    if (!isAlive()) return;
+    if (!isAlive() || conflict !== null) return;
+    const generation = editGeneration.current;
     const body = draft;
     const attachments =
       editing === null
@@ -318,22 +411,25 @@ export function Conversation({
       } else {
         await editMessage(client, original, body);
       }
-      if (!isAlive()) return;
+      if (!isAlive() || editGeneration.current !== generation) return;
       submission.current = null;
       if (original === null) uploads.queue.clear();
       setDraft(original === null ? '' : savedDraft.current);
       setEditing(null);
       await reload();
-      if (isAlive()) {
+      if (isAlive() && editGeneration.current === generation) {
         if (original === null) composer.current?.focus();
         else focusMessage(original.id);
       }
     } catch (error: unknown) {
-      if (isAlive()) {
+      if (isAlive() && editGeneration.current === generation) {
         const refusal = asApiError(error);
         setFailure(refusal);
         if (refusal.status === 404) void reload();
-        if (refusal.code === 'conflict' || refusal.code === 'channel_read_only') void reload();
+        if (refusal.code === 'conflict' && original !== null) {
+          setConflict({ generation, latest: null, error: null });
+          void refreshConflict(original.id, generation);
+        } else if (refusal.code === 'channel_read_only') void reload();
       }
     } finally {
       if (isAlive()) setBusy(false);
@@ -390,11 +486,15 @@ export function Conversation({
         {channel.writable ? '' : texts.readonly}
       </p>
       {query.isPending ? <DelayedLoading /> : null}
-      {query.isError && asApiError(query.error).status !== 404 ? (
+      {conflict?.error != null ||
+      channelError !== null ||
+      (conflict === null && query.isError && asApiError(query.error).status !== 404) ? (
         <LoadFailed
-          error={asApiError(query.error)}
+          error={conflict?.error ?? channelError ?? asApiError(query.error)}
           onRetry={() => {
-            void query.refetch();
+            if (conflict !== null && editing !== null) void refreshConflict(editing.id, conflict.generation);
+            else if (channelError !== null) void refreshChannel();
+            else void query.refetch();
           }}
         />
       ) : null}
@@ -444,6 +544,10 @@ export function Conversation({
                     busy={busy}
                     onEdit={() => {
                       guard.run(() => {
+                        editGeneration.current += 1;
+                        conflictRefresh.current?.cancel();
+                        conflictRefresh.current = null;
+                        setConflict(null);
                         if (editing === null) savedDraft.current = draft;
                         setEditing(message);
                         setDraft(message.body ?? '');
@@ -486,6 +590,32 @@ export function Conversation({
         </button>
       ) : null}
       {failure === null ? null : <p role="alert">{errorMessage(t, failure, null)}</p>}
+      <div ref={conflictContainer}>
+        {conflict?.latest != null && resolutionAvailable ? (
+          <section data-row="conflict" aria-label={texts.latestText} className="rounded-md border border-border p-3">
+            <p>{texts.latestText}</p>
+            <MessageBody body={conflict.latest.body ?? ''} />
+            <button
+              type="button"
+              className={quietButtonClass}
+              onClick={() => {
+                resolveConflict(true);
+              }}
+            >
+              {texts.useLatest}
+            </button>
+            <button
+              type="button"
+              className={quietButtonClass}
+              onClick={() => {
+                resolveConflict(false);
+              }}
+            >
+              {texts.keepMine}
+            </button>
+          </section>
+        ) : null}
+      </div>
       <form
         className="flex flex-col gap-2"
         onSubmit={(event) => {
@@ -556,8 +686,8 @@ export function Conversation({
           <ActionButton
             type="submit"
             busy={busy}
-            unavailable={guard.unavailable}
-            unavailableReason={guard.reason}
+            unavailable={guard.unavailable || conflict !== null}
+            unavailableReason={conflict !== null ? texts.resolveConflict : guard.reason}
             className={quietButtonClass}
           >
             {editing === null ? texts.send : texts.save}

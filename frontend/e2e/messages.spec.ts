@@ -4,6 +4,7 @@ import { newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { channelOf, channelUnread } from './messages.ts';
+import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { accessToken, callApi, createCard, createGroup, seedActiveStudent, signUpOnInvitation } from './tutoring.ts';
 
 async function holdListUntilChannelDenial(page: Page, channel: string): Promise<() => Promise<boolean>> {
@@ -118,8 +119,10 @@ test.describe('text messages', () => {
     await signInThroughTheApi(page, tutor);
     await signInThroughTheApi(studentPage, student);
     await page.goto('/today');
+    const studentTraffic = trafficAfterReady(studentPage, ['/api/v1/channels']);
     await studentPage.goto('/messages');
 
+    await expectRefetchedAfterTheSocketIsReady(studentTraffic);
     await studentPage.getByRole('region', { name: 'Chats', exact: true }).getByRole('link').click();
     await studentPage.getByRole('heading', { level: 2, name: 'Pavel', exact: true }).waitFor();
     const listHidden = await studentPage.getByRole('searchbox', { name: 'Search chats' }).isHidden();
@@ -209,6 +212,65 @@ test.describe('text messages', () => {
     await expect(messages(page).filter({ hasText: 'Message deleted' })).toHaveCount(2);
     await expect(messages(studentPage).filter({ hasText: 'Message deleted' })).toHaveCount(2);
     await diagnostics.closeContext(context);
+  });
+
+  test('messages › a stale edit explicitly keeps local text before a separate save', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+    const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+    const otherClient = await accessToken(deployment, tutor);
+    await signInThroughTheApi(page, tutor);
+    await page.goto(`/messages/${channel}`);
+    await send(page, 'Original version');
+    const row = messages(page).filter({ hasText: 'Original version' });
+    const id = await row.getAttribute('data-row');
+    if (id === null) throw new Error('The message identifier is missing');
+    await row.getByRole('button', { name: 'Message actions', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    const composer = page.getByRole('textbox', { name: 'Message', exact: true });
+    await composer.fill('Retained local text');
+    const concurrent = await callApi(deployment, otherClient, 'PATCH', `/messages/${id}`, {
+      body: 'Text saved by another client',
+      version: 1,
+    });
+    if (concurrent.status !== 200) throw new Error('The concurrent edit failed');
+    diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/messages/${id}`, status: 409 });
+    let patches = 0;
+    const countPatch = (request: Request): void => {
+      if (request.method() === 'PATCH' && new URL(request.url()).pathname === `/api/v1/messages/${id}`) patches += 1;
+    };
+    page.on('request', countPatch);
+
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    const keep = page.getByRole('button', { name: 'Keep my text', exact: true });
+    await keep.waitFor();
+    const retained = await composer.inputValue();
+    const currentText = await page.getByRole('region', { name: 'Current saved text' }).textContent();
+    await keep.click();
+    const choiceFocus = await composer.evaluate((element) => element === document.activeElement);
+    const patchesBeforeSave = patches;
+    const beforeSave = await callApi(deployment, otherClient, 'GET', `/channels/${channel}/messages`);
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await messages(page).filter({ hasText: 'Retained local text' }).waitFor();
+    await settledComposer(page);
+    const afterSave = await callApi(deployment, otherClient, 'GET', `/channels/${channel}/messages`);
+    page.off('request', countPatch);
+
+    expect(retained).toBe('Retained local text');
+    expect(currentText).toContain('Text saved by another client');
+    expect(choiceFocus).toBe(true);
+    expect(patchesBeforeSave).toBe(1);
+    expect(patches).toBe(2);
+    expect(beforeSave.status).toBe(200);
+    expect(beforeSave.body).toMatchObject({ items: [{ id, version: 2, body: 'Text saved by another client' }] });
+    expect(afterSave.status).toBe(200);
+    expect(afterSave.body).toMatchObject({ items: [{ id, version: 3, body: 'Retained local text' }] });
+    await expect(page.locator(`[data-row="${id}"]`)).toBeFocused();
+    await expect(composer).toHaveValue('');
   });
 
   test('messages › a channel outside the caller’s chats shows Not found for another tutor and a removed member', async ({
