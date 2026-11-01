@@ -49,16 +49,14 @@ WHERE id = @id AND state <> 'deleted';
 
 -- name: ClaimExpiredUploads :many
 SELECT id FROM attachments
-WHERE state = 'pending' AND expires_at <= sqlc.arg(now)::timestamptz
-ORDER BY expires_at
-LIMIT sqlc.arg(batch_size)
-FOR UPDATE SKIP LOCKED;
+WHERE id IN (SELECT candidate.id FROM attachments AS candidate WHERE candidate.state = 'pending' AND candidate.expires_at <= sqlc.arg(now)::timestamptz ORDER BY candidate.expires_at LIMIT sqlc.arg(batch_size))
+ORDER BY id FOR UPDATE SKIP LOCKED;
 
 -- name: DeleteAttachmentRow :execrows
 DELETE FROM attachments WHERE id = @id AND state = 'deleted';
 
 -- name: ListUploadsOf :many
-SELECT id, storage_key, multipart_upload_id FROM attachments WHERE uploader_id = @user_id OR (quota_tutor_id = @user_id AND state <> 'bound');
+SELECT id, storage_key, multipart_upload_id FROM attachments WHERE uploader_id = @user_id OR (quota_tutor_id = @user_id AND state <> 'bound') ORDER BY id;
 
 -- name: DeleteUploadsOf :execrows
 DELETE FROM attachments WHERE uploader_id = @user_id OR (quota_tutor_id = @user_id AND state <> 'bound');
@@ -108,10 +106,8 @@ WHERE uploader_id = @uploader_id AND quota_tutor_id = sqlc.arg(tutor_id)::uuid A
 
 -- name: ClaimAgedUploads :many
 SELECT id, storage_key, multipart_upload_id FROM attachments
-WHERE state = 'uploading' AND created_at <= sqlc.arg(cutoff)::timestamptz
-ORDER BY created_at, id
-LIMIT sqlc.arg(batch_size)
-FOR UPDATE SKIP LOCKED;
+WHERE id IN (SELECT candidate.id FROM attachments AS candidate WHERE candidate.state = 'uploading' AND candidate.created_at <= sqlc.arg(cutoff)::timestamptz ORDER BY candidate.created_at, candidate.id LIMIT sqlc.arg(batch_size))
+ORDER BY id FOR UPDATE SKIP LOCKED;
 
 -- name: ClaimUnbindableChatUploads :many
 SELECT attachments.id FROM attachments
@@ -151,3 +147,6 @@ JOIN messages
 JOIN channels ON channels.id = attachments.scope_id
 WHERE attachments.id = @id AND attachments.context = 'chat' AND attachments.state = 'bound' AND attachments.scope_kind = 'channel'
     AND channels.discarded_at IS NULL AND channels.erase_pending_since IS NULL;
+
+-- name: NameUploadingAttachment :execrows
+UPDATE attachments SET filename = @filename, updated_at = @now WHERE id = @id AND state = 'uploading';

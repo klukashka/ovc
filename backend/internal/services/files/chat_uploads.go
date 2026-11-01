@@ -20,10 +20,9 @@ import (
 )
 
 const (
-	detectionBytes        = 64 << 10
-	objectContentType     = "application/octet-stream"
-	completedDeletionMark = ":completed"
-	inspectionDeadline    = 30 * time.Second
+	detectionBytes     = 64 << 10
+	objectContentType  = "application/octet-stream"
+	inspectionDeadline = 30 * time.Second
 )
 
 var (
@@ -64,36 +63,12 @@ type storedContent struct {
 }
 
 func (s *Service) UploadChat(ctx context.Context, request ChatUpload) (Upload, error) {
-	uploader := request.Principal.UserID
-	name, valid := cleanFileName(request.Filename)
-	if !valid {
-		s.rejectedFor(ctx, uploader, domain.RejectedFilename)
-		return Upload{}, ErrInvalidName
-	}
-	release, err := s.gate.enter(uploader)
-	if err != nil {
-		s.rejectedFor(ctx, uploader, domain.RejectedBusy)
-		return Upload{}, err
-	}
-	defer release()
-	opened, err := s.openChatUpload(ctx, request, name)
+	admission, err := s.BeginChatUpload(ctx, request.Principal, request.Channel, request.Declared)
 	if err != nil {
 		return Upload{}, err
 	}
-	content, completed, err := s.streamChatUpload(ctx, opened, request, name)
-	if err != nil {
-		s.reportStreamFailure(ctx, opened, err)
-		s.discardOrReport(context.WithoutCancel(ctx), opened, completed)
-		return Upload{}, err
-	}
-	if err := s.settleChatUpload(context.WithoutCancel(ctx), opened, content); err != nil {
-		return Upload{}, err
-	}
-	mediaType := content.kind.mediaType()
-	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.accepted", userAttribute(uploader), attachmentAttribute(opened.id),
-		channelAttribute(opened.channel), slog.String("context", string(domain.ContextChat)), slog.String("media_type", mediaType),
-		slog.Int64("size_bytes", content.size))
-	return Upload{ID: opened.id, Filename: name, MediaType: mediaType, SizeBytes: content.size}, nil
+	defer admission.Close(ctx)
+	return admission.Upload(ctx, request.Filename, request.Body, request.Finish)
 }
 
 func uploadingSince(now time.Time) time.Time {
@@ -167,10 +142,13 @@ func (s *Service) openChatUpload(ctx context.Context, request ChatUpload, name s
 		}
 		scope := domain.ScopeChannel
 		scopeID := domain.EntityID(request.Channel)
-		return repos.Attachments.CreateUploading(ctx, repositories.NewUploading{
+		if err := repos.Attachments.CreateUploading(ctx, repositories.NewUploading{
 			ID: id, UploaderID: uploader, Context: domain.ContextChat, ScopeKind: &scope, ScopeID: &scopeID, QuotaTutorID: &opened.tutor,
 			StorageKey: opened.key, Filename: name, ReservedBytes: reservedBytes(request.Declared), CreatedAt: now,
-		})
+		}); err != nil {
+			return err
+		}
+		return repos.UploadIntents.Create(ctx, id, opened.key, now)
 	})
 	if errors.Is(err, accounts.ErrUnauthenticated) {
 		s.rejectedFor(ctx, uploader, domain.RejectedSessionRevoked)
@@ -178,25 +156,7 @@ func (s *Service) openChatUpload(ctx context.Context, request ChatUpload, name s
 	if err != nil {
 		return openUpload{}, err
 	}
-	upload, err := s.deps.Objects.CreateMultipartUpload(ctx, opened.key, objectContentType)
-	if err != nil {
-		s.discardOrReport(context.WithoutCancel(ctx), opened, false)
-		return openUpload{}, err
-	}
-	opened.upload = upload
-	recorded := false
-	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		recorded, err = repos.Attachments.RecordMultipartUpload(ctx, id, string(upload), now)
-		return err
-	})
-	if err != nil {
-		s.discardOrReport(context.WithoutCancel(ctx), opened, false)
-		return openUpload{}, err
-	}
-	if !recorded {
-		s.discardOrReport(context.WithoutCancel(ctx), opened, false)
-		return openUpload{}, ErrOutOfScope
-	}
+
 	return opened, nil
 }
 
@@ -379,6 +339,12 @@ func (s *Service) streamChatUpload(ctx context.Context, opened openUpload, reque
 	if sink.size == 0 {
 		return storedContent{}, false, ErrUnsupported
 	}
+	if err := sink.flush(); err != nil {
+		return storedContent{}, false, err
+	}
+	if err := s.authorizeComplete(ctx, opened); err != nil {
+		return storedContent{}, false, err
+	}
 	if err := sink.complete(); err != nil {
 		return storedContent{}, false, err
 	}
@@ -448,41 +414,17 @@ func (s *Service) discardOrReport(ctx context.Context, opened openUpload, comple
 }
 
 func (s *Service) discardChatUpload(ctx context.Context, opened openUpload, completed bool) error {
-	var aborted error
-	if opened.upload != "" {
-		aborted = s.deps.Objects.AbortMultipartUpload(ctx, opened.key, opened.upload)
-	}
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
-		return errors.Join(aborted, err)
+		return err
 	}
-	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+	return s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		return s.discardLocked(ctx, repos, opened, completed, now)
 	})
-	return errors.Join(aborted, err)
 }
 
 func (s *Service) discardLocked(ctx context.Context, repos repositories.Repositories, opened openUpload, completed bool, now time.Time) error {
-	row, err := repos.Attachments.Lock(ctx, opened.id)
-	found := err == nil
-	if err != nil && !errors.Is(err, repositories.ErrNotFound) {
-		return err
-	}
-	deletion := objectDeletion{id: opened.id, key: opened.key}
-	if opened.upload != "" {
-		upload := string(opened.upload)
-		deletion.upload = &upload
-	}
-	if found && row.State != domain.AttachmentDeleted {
-		if _, err := repos.Attachments.MarkDeleted(ctx, opened.id, now); err != nil {
-			return err
-		}
-		return s.queueDeletion(ctx, repos, deletion, now)
-	}
-	if !completed {
-		return nil
-	}
-	return s.queueDeletionAs(ctx, repos, deletion, string(domain.KindStorageDelete)+":"+opened.id.String()+completedDeletionMark, now)
+	return s.reconcileUpload(ctx, repos, opened, completed, now)
 }
 
 func (s *Service) settleChatUpload(ctx context.Context, opened openUpload, content storedContent) error {
@@ -540,8 +482,24 @@ func (s *Service) settleChatUpload(ctx context.Context, opened openUpload, conte
 		if content.pixels.previewable() && widthFits && heightFits {
 			completed.Width, completed.Height = &width, &height
 		}
-		_, err = repos.Attachments.CompleteUpload(ctx, completed)
-		return err
+		intent, err := repos.UploadIntents.Lock(ctx, opened.id)
+		if err != nil {
+			return err
+		}
+		if intent.StorageKey != opened.key || intent.CleanupRequested || !intent.CompletionStarted {
+			return ErrOutOfScope
+		}
+		if err := repos.UploadIntents.ConfirmComplete(ctx, opened.id, opened.key, now); err != nil {
+			return err
+		}
+		changed, err := repos.Attachments.CompleteUpload(ctx, completed)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return repositories.ErrUploadTransition
+		}
+		return repos.UploadIntents.Remove(ctx, opened.id, opened.key, now)
 	})
 	if err != nil {
 		s.discardOrReport(ctx, opened, true)

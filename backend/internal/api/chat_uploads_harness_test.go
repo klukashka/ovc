@@ -28,7 +28,10 @@ import (
 	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/adapters/storage"
 	"ovc/backend/internal/api"
+	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
+	"ovc/backend/internal/repositories"
+	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/testdb"
 	"ovc/backend/internal/teststorage"
 )
@@ -81,11 +84,13 @@ func newStallHarness(t *testing.T) *authHarness {
 }
 
 type heldStorage struct {
-	mutex   sync.Mutex
-	matches func(*http.Request) bool
-	reached chan struct{}
-	release chan struct{}
-	once    sync.Once
+	parts     int
+	completes int
+	mutex     sync.Mutex
+	matches   func(*http.Request) bool
+	reached   chan struct{}
+	release   chan struct{}
+	once      sync.Once
 }
 
 func (s *heldStorage) holdNext(matches func(*http.Request) bool) {
@@ -97,6 +102,12 @@ func (s *heldStorage) holdNext(matches func(*http.Request) bool) {
 func (s *heldStorage) take(request *http.Request) bool {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+	if request.Method == http.MethodPut && request.URL.Query().Has("partNumber") {
+		s.parts++
+	}
+	if request.Method == http.MethodPost && request.URL.Query().Has("uploadId") {
+		s.completes++
+	}
 	if s.matches == nil || !s.matches(request) {
 		return false
 	}
@@ -117,9 +128,11 @@ func (s *heldStorage) awaitReached(t *testing.T) {
 	}
 }
 
-func newHeldStorageHarness(t *testing.T) (*authHarness, *heldStorage) {
+func newHeldStorageHarness(t *testing.T, timing ...files.UploadTiming) (*authHarness, *heldStorage) {
 	t.Helper()
 	held := &heldStorage{reached: make(chan struct{}), release: make(chan struct{})}
+	var objects storage.Store
+	var configured *files.Service
 	h := newAuthHarnessStoring(t, flowProxies(), api.NewHandler, func(local *teststorage.Storage) storage.Store {
 		target, err := url.Parse(local.Settings.Endpoint)
 		if err != nil {
@@ -137,8 +150,22 @@ func newHeldStorageHarness(t *testing.T) (*authHarness, *heldStorage) {
 		t.Cleanup(held.resume)
 		settings := local.Settings
 		settings.Endpoint = proxy.URL
-		return storage.NewS3(settings)
+		objects = storage.NewS3(settings)
+		return objects
+	}, func(options *api.Options, shared *clock.Shared, logger *slog.Logger, database *testdb.Database) {
+		if len(timing) == 0 {
+			return
+		}
+		keys, err := core.DeriveKeys(core.NewSecret("test-signing-material-0123456789abcdef"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		configured = files.New(files.Dependencies{Store: repositories.NewStore(database.Pool), Objects: objects, Clock: shared, Random: randomPerTest(t), Keys: keys, Logger: logger, Uploads: timing[0]})
+		options.Files = configured
 	})
+	if configured != nil {
+		h.files = configured
+	}
 	return h, held
 }
 
@@ -608,4 +635,10 @@ func (h *authHarness) awaitLockWaiters(t *testing.T, count int64) {
 	h.waitFor(t, "a transaction waiting for a row lock", func() bool {
 		return h.countRows(t, "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = $1", "Lock") >= count
 	})
+}
+
+func (s *heldStorage) multipartWrites() (int, int) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.parts, s.completes
 }

@@ -357,6 +357,39 @@ type TutorProfile struct {
 	Code                   domain.TutorCode
 }
 
+type UploadCleanupReceipt struct {
+	AttachmentID domain.AttachmentID
+	AttemptID    domain.UploadAttemptID
+	OutboxID     domain.OutboxID
+	Status       domain.OutboxStatus
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+type UploadIntent struct {
+	AttachmentID         domain.AttachmentID
+	StorageKey           string
+	MultipartUploadID    *string
+	Phase                domain.UploadPhase
+	CompletionStarted    bool
+	CompletionConfirmed  bool
+	CleanupRequested     bool
+	FinalCleanupRequired bool
+	CleanupGeneration    *domain.UploadCleanupGeneration
+	CleanupOutboxID      *domain.OutboxID
+	CleanupResult        domain.UploadCleanupResult
+	ErrorCode            *string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+type UploadIntentCapacity struct {
+	Singleton bool
+	Used      int32
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type User struct {
 	ID               domain.UserID
 	Role             domain.Role

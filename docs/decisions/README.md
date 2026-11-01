@@ -24,6 +24,7 @@ One record per significant decision, in the MADR shape: context, decision, alter
 | [ADR-0016](0016-modular-monolith.md) | A modular monolith: the API and the worker from one codebase and one database, enforced layers, the outbox and `LISTEN/NOTIFY` in PostgreSQL, one VM for the pilot, and the signals that justify extracting a service (pending owner review) | accepted |
 | [ADR-0017](0017-dependency-release-age.md) | A three-day release age for dependencies until the first deployment, enforced by `pnpm lint`; 14 days, a review of the three-day window and updates only for a recorded reason from then on | accepted (pending owner review) |
 | [ADR-0018](0018-targeted-checks-and-merge-gate.md) | Change checks per change from a table in the development guide, and the full local check run once per merge in a locked merge gate bound to the base commit and the tested tree; Markdown-only changes gate on the documentation and secret checks (pending owner review) | accepted |
+| [ADR-0019](0019-durable-upload-cleanup.md) | Durable chat upload cleanup ownership, bounded automatic attempts, retained uncertainty and local operator recovery (pending wording review) | accepted, 2026-11-01 |
 
 ## Writing a new record
 

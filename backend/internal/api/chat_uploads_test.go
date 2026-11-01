@@ -63,6 +63,9 @@ func (h *authHarness) rawRequest(t *testing.T, text string) response {
 	if err := errors.Join(readErr, answer.Body.Close()); err != nil {
 		t.Fatal(err)
 	}
+	if answer.Close {
+		answer.Header.Set("Connection", "close")
+	}
 	return response{status: answer.StatusCode, body: string(data), headers: answer.Header}
 }
 

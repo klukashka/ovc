@@ -164,3 +164,8 @@ func (r Outbox) DeleteFinished(ctx context.Context, purge FinishedOutboxPurge) (
 	}
 	return done + dead, nil
 }
+
+func (r Outbox) ByKey(ctx context.Context, key string) (OutboxRow, error) {
+	row, err := r.queries.GetOutboxByKey(ctx, key)
+	return one(row, err, "outbox row by key")
+}

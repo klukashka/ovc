@@ -14,6 +14,7 @@ import (
 	"io"
 	"log/slog"
 	"path"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +50,7 @@ const (
 )
 
 var (
+	ErrUploadCapacity     = repositories.ErrUploadCapacity
 	ErrTooLarge           = errors.New("the upload is larger than its limit")
 	ErrUnsupported        = errors.New("the upload is not an allowed kind of file")
 	ErrBusy               = errors.New("too many uploads are in progress")
@@ -112,6 +114,8 @@ type ObjectBody interface {
 
 type Dependencies struct {
 	Downloads DownloadTiming
+	Uploads   UploadTiming
+	Lifetime  context.Context
 	Store     *repositories.Store
 	Objects   storage.Store
 	Clock     clock.Source
@@ -121,17 +125,23 @@ type Dependencies struct {
 }
 
 type Service struct {
-	deps        Dependencies
-	gate        *gate
-	decodes     *decodeBudget
-	avatarReads chan struct{}
-	downloads   chan struct{}
-	hourly      *hourlyUploads
-	tokens      downloadTokens
+	deps           Dependencies
+	gate           *gate
+	decodes        *decodeBudget
+	avatarReads    chan struct{}
+	downloads      chan struct{}
+	hourly         *hourlyUploads
+	tokens         downloadTokens
+	recoveryMutex  sync.Mutex
+	recoveryCursor domain.AttachmentID
 }
 
 func New(dependencies Dependencies) *Service {
 	dependencies.Downloads = dependencies.Downloads.withDefaults()
+	dependencies.Uploads = dependencies.Uploads.withDefaults()
+	if dependencies.Lifetime == nil {
+		dependencies.Lifetime = context.Background()
+	}
 	return &Service{
 		deps: dependencies, gate: newGate(), decodes: newDecodeBudget(decodeBudgetBytes),
 		avatarReads: make(chan struct{}, avatarReadSlots), downloads: make(chan struct{}, downloadSlots),
@@ -501,7 +511,25 @@ func (d objectDeletion) payload() domain.AttachmentPayload {
 }
 
 func (s *Service) queueDeletion(ctx context.Context, repos repositories.Repositories, deletion objectDeletion, now time.Time) error {
-	return s.queueDeletionAs(ctx, repos, deletion, string(domain.KindStorageDelete)+":"+deletion.id.String(), now)
+	return s.queueDeletionWithKey(ctx, repos, deletion, string(domain.KindStorageDelete)+":"+deletion.id.String(), now)
+}
+
+func (s *Service) queueDeletionWithKey(ctx context.Context, repos repositories.Repositories, deletion objectDeletion, idempotencyKey string, now time.Time) error {
+	intent, err := repos.UploadIntents.Lock(ctx, deletion.id)
+	if err == nil {
+		if intent.StorageKey != deletion.key {
+			return repositories.ErrUploadTransition
+		}
+		if err := repos.UploadIntents.Revoke(ctx, deletion.id, now); err != nil {
+			return err
+		}
+		intent.CleanupRequested = true
+		return s.queueIntentCleanup(ctx, repos, intent, now)
+	}
+	if !errors.Is(err, repositories.ErrNotFound) {
+		return err
+	}
+	return s.queueDeletionAs(ctx, repos, deletion, idempotencyKey, now)
 }
 
 func (s *Service) queueDeletionAs(ctx context.Context, repos repositories.Repositories, deletion objectDeletion, idempotencyKey string, now time.Time) error {
@@ -526,9 +554,18 @@ func (s *Service) PurgeUploadsOf(ctx context.Context, repos repositories.Reposit
 		return err
 	}
 	for _, upload := range uploads {
-		idempotencyKey := string(domain.KindStorageDelete) + ":" + upload.ID.String() + ":purge"
+		if _, err := repos.Attachments.Lock(ctx, upload.ID); err != nil {
+			return err
+		}
+	}
+	for _, upload := range uploads {
+		if _, err := repos.UploadIntents.Lock(ctx, upload.ID); err != nil && !errors.Is(err, repositories.ErrNotFound) {
+			return err
+		}
+	}
+	for _, upload := range uploads {
 		deletion := objectDeletion{id: upload.ID, key: upload.StorageKey, upload: upload.MultipartUploadID}
-		if err := s.queueDeletionAs(ctx, repos, deletion, idempotencyKey, now); err != nil {
+		if err := s.queueDeletionWithKey(ctx, repos, deletion, string(domain.KindStorageDelete)+":"+upload.ID.String()+":purge", now); err != nil {
 			return err
 		}
 	}
@@ -536,7 +573,7 @@ func (s *Service) PurgeUploadsOf(ctx context.Context, repos repositories.Reposit
 	return err
 }
 
-func (s *Service) DeleteObject(ctx context.Context, row repositories.ClaimedOutboxRow, _ time.Time) (domain.OutboxDoneReason, error) {
+func (s *Service) DeleteObject(ctx context.Context, row repositories.ClaimedOutboxRow, now time.Time) (domain.OutboxDoneReason, error) {
 	var payload domain.AttachmentPayload
 	decoder := json.NewDecoder(bytes.NewReader(row.Payload))
 	decoder.DisallowUnknownFields()
@@ -547,7 +584,15 @@ func (s *Service) DeleteObject(ctx context.Context, row repositories.ClaimedOutb
 	if !ok || (!strings.HasPrefix(payload.Key, domain.AvatarKeyPrefix) && !strings.HasPrefix(payload.Key, domain.ChatKeyPrefix)) {
 		return "", domain.PermanentEffect(errMalformedPayload)
 	}
+	if payload.Generation != nil || payload.Attempt != nil {
+		return s.deleteUploadIntent(ctx, row, payload, id, now)
+	}
 	repos := s.deps.Store.Repositories()
+	if _, err := repos.UploadIntents.ByID(ctx, id); err == nil {
+		return domain.DoneObsolete, nil
+	} else if !errors.Is(err, repositories.ErrNotFound) {
+		return "", err
+	}
 	attachment, err := repos.Attachments.ByID(ctx, id)
 	found := err == nil
 	if err != nil && !errors.Is(err, repositories.ErrNotFound) {
@@ -627,6 +672,17 @@ func (s *Service) expireAgedUploadingBatch(ctx context.Context, repos repositori
 }
 
 func (s *Service) discardAll(ctx context.Context, repos repositories.Repositories, ids []domain.AttachmentID, now time.Time) error {
+	slices.SortFunc(ids, func(a, b domain.AttachmentID) int { return bytes.Compare(a[:], b[:]) })
+	for _, id := range ids {
+		if _, err := repos.Attachments.Lock(ctx, id); err != nil {
+			return err
+		}
+	}
+	for _, id := range ids {
+		if _, err := repos.UploadIntents.Lock(ctx, id); err != nil && !errors.Is(err, repositories.ErrNotFound) {
+			return err
+		}
+	}
 	for _, id := range ids {
 		if err := s.discard(ctx, repos, id, now); err != nil {
 			return err

@@ -115,6 +115,8 @@ DELETE FROM outbox
 WHERE id IN (
     SELECT finished.id FROM outbox AS finished
     WHERE finished.status = 'dead' AND finished.done_at < $1::timestamptz
+      AND NOT EXISTS (SELECT 1 FROM upload_intents WHERE cleanup_outbox_id = finished.id AND cleanup_result = 'queued')
+      AND NOT EXISTS (SELECT 1 FROM upload_cleanup_receipts WHERE outbox_id = finished.id AND status IN ('pending', 'in_progress'))
     LIMIT $2
 )
 `
@@ -137,6 +139,8 @@ DELETE FROM outbox
 WHERE id IN (
     SELECT finished.id FROM outbox AS finished
     WHERE finished.status = 'done' AND finished.done_at < $1::timestamptz
+      AND NOT EXISTS (SELECT 1 FROM upload_intents WHERE cleanup_outbox_id = finished.id AND cleanup_result = 'queued')
+      AND NOT EXISTS (SELECT 1 FROM upload_cleanup_receipts WHERE outbox_id = finished.id AND status IN ('pending', 'in_progress'))
     LIMIT $2
 )
 `
@@ -152,6 +156,33 @@ func (q *Queries) DeleteDoneOutbox(ctx context.Context, arg DeleteDoneOutboxPara
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const getOutboxByKey = `-- name: GetOutboxByKey :one
+SELECT id, lane, priority, kind, payload, idempotency_key, status, attempts, next_attempt_at, lease_token, lease_expires_at, last_error_code, done_reason, done_at, created_at FROM outbox WHERE idempotency_key = $1
+`
+
+func (q *Queries) GetOutboxByKey(ctx context.Context, idempotencyKey string) (Outbox, error) {
+	row := q.db.QueryRow(ctx, getOutboxByKey, idempotencyKey)
+	var i Outbox
+	err := row.Scan(
+		&i.ID,
+		&i.Lane,
+		&i.Priority,
+		&i.Kind,
+		&i.Payload,
+		&i.IdempotencyKey,
+		&i.Status,
+		&i.Attempts,
+		&i.NextAttemptAt,
+		&i.LeaseToken,
+		&i.LeaseExpiresAt,
+		&i.LastErrorCode,
+		&i.DoneReason,
+		&i.DoneAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getOutboxRow = `-- name: GetOutboxRow :one

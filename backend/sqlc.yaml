@@ -501,3 +501,41 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: DigestRevision
+          - column: upload_intents.attachment_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: AttachmentID
+          - column: upload_intents.phase
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UploadPhase
+          - column: upload_intents.cleanup_generation
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UploadCleanupGeneration
+              pointer: true
+          - column: upload_intents.cleanup_outbox_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: OutboxID
+              pointer: true
+          - column: upload_intents.cleanup_result
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UploadCleanupResult
+          - column: upload_cleanup_receipts.attachment_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: AttachmentID
+          - column: upload_cleanup_receipts.attempt_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UploadAttemptID
+          - column: upload_cleanup_receipts.outbox_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: OutboxID
+          - column: upload_cleanup_receipts.status
+            go_type:
+              import: ovc/backend/internal/domain
+              type: OutboxStatus

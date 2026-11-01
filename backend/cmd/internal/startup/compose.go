@@ -1,6 +1,7 @@
 package startup
 
 import (
+	"context"
 	"log/slog"
 	"runtime"
 	"time"
@@ -31,13 +32,13 @@ const (
 	smtpTimeout           = 30 * time.Second
 )
 
-func NewFiles(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, objects storage.Store) (*files.Service, error) {
+func NewFiles(lifetime context.Context, logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, objects storage.Store) (*files.Service, error) {
 	keys, err := core.DeriveKeys(settings.JWTSecret)
 	if err != nil {
 		return nil, err
 	}
 	return files.New(files.Dependencies{
-		Store: repositories.NewStore(database.Pool), Objects: objects, Clock: source, Random: random, Keys: keys, Logger: logger,
+		Store: repositories.NewStore(database.Pool), Objects: objects, Clock: source, Random: random, Keys: keys, Logger: logger, Lifetime: lifetime,
 	}), nil
 }
 
@@ -199,6 +200,7 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 		{Name: domain.JobSessionsCleanup, Every: time.Hour, Run: accounts.CleanupSessions(store)},
 		{Name: domain.JobEmailRequestsCleanup, Every: time.Hour, Run: accounts.CleanupEmailRequests(store)},
 		{Name: domain.JobUploadsExpire, Every: time.Hour, Run: fileService.ExpirePending},
+		{Name: domain.JobUploadsRecover, Every: time.Minute, Run: fileService.RecoverUploads},
 		{Name: domain.JobAccountsPurge, Every: time.Hour, Run: purger.PurgeDeleted},
 		{Name: domain.JobAccountsCleanupUnverified, Every: time.Hour, Run: purger.CleanupUnverified},
 		{Name: domain.JobInvitationsExpire, Every: time.Hour, Run: tutoringService.ExpireInvitations},

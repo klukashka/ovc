@@ -236,6 +236,11 @@ func (r *router) uploadChat(ctx context.Context, input *uploadInput, request *ht
 	if !found {
 		panic("a chat upload ran without its response controller")
 	}
+	admission, err := r.files.BeginChatUpload(ctx, principal, channel, request.ContentLength)
+	if err != nil {
+		return nil, r.chatUploadError(ctx, err)
+	}
+	defer admission.Close(ctx)
 	guard := r.guardAgainstStalls(ctx, request.Body, controller)
 	defer guard.stop()
 	headers := &headerSection{body: guard, remaining: int64(headerSectionAllowance + len(parameters["boundary"]))}
@@ -267,9 +272,7 @@ func (r *router) uploadChat(ctx context.Context, input *uploadInput, request *ht
 		}
 		return fmt.Errorf("%w: %w", files.ErrBodyRead, errors.Join(errMalformedUpload, err))
 	}
-	upload, err := r.files.UploadChat(ctx, files.ChatUpload{
-		Principal: principal, Channel: channel, Filename: rawFileName(part), Declared: request.ContentLength, Body: part, Finish: finish,
-	})
+	upload, err := admission.Upload(ctx, rawFileName(part), part, finish)
 	if deadlineErr := controller.SetWriteDeadline(r.now().Add(chatWriteDeadline)); deadlineErr != nil && !errors.Is(deadlineErr, http.ErrNotSupported) {
 		r.logger.LogAttrs(ctx, slog.LevelWarn, "http.deadline.failed", slog.String("kind", "write"))
 	}
@@ -309,6 +312,8 @@ func (r *router) chatUploadError(ctx context.Context, err error) error {
 		return NewError(ctx, domain.ErrorUnsupportedMediaType)
 	case errors.Is(err, files.ErrPurgedDuringUpload), errors.Is(err, accounts.ErrUnauthenticated):
 		return NewError(ctx, domain.ErrorUnauthenticated)
+	case errors.Is(err, files.ErrUploadCapacity):
+		return NewError(ctx, domain.ErrorServiceUnavailable).withHeader("Connection", "close")
 	case errors.Is(err, files.ErrBusy):
 		return NewError(ctx, domain.ErrorRateLimited).withHeader("Retry-After", retryAfterBusyUploads)
 	case errors.As(err, &throttled):

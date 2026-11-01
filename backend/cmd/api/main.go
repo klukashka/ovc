@@ -136,7 +136,9 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		source = shared
 	}
 	objects := storage.NewS3(settings.Storage)
-	fileService, err := startup.NewFiles(logging.Logger, settings, database, source, random, objects)
+	uploadLifetime, stopUploads := context.WithCancel(context.Background())
+	defer stopUploads()
+	fileService, err := startup.NewFiles(uploadLifetime, logging.Logger, settings, database, source, random, objects)
 	if err != nil {
 		return err
 	}
@@ -224,6 +226,8 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	}
 	shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
+	stopUploadDeadline := context.AfterFunc(shutdownContext, stopUploads)
+	defer stopUploadDeadline()
 	live.Gateway.Shutdown(shutdownContext)
 	if err := server.Shutdown(shutdownContext); err != nil {
 		return fmt.Errorf("shut down http: %w", err)

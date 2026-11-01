@@ -195,3 +195,8 @@ func (r Users) Delete(ctx context.Context, id domain.UserID) (bool, error) {
 	rows, err := r.queries.DeleteUser(ctx, id)
 	return applied(rows, err, "delete user")
 }
+
+func (r Attachments) NameUploading(ctx context.Context, id domain.AttachmentID, name string, now time.Time) error {
+	rows, err := r.queries.NameUploadingAttachment(ctx, dbgen.NameUploadingAttachmentParams{ID: id, Filename: name, Now: now})
+	return intentApplied(rows, err)
+}

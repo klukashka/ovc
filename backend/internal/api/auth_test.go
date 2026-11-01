@@ -114,6 +114,7 @@ type authHarness struct {
 	schedule  *schedule.Service
 	jobs      *lessonJobs
 	files     *files.Service
+	purger    *accounts.Purger
 }
 
 type lessonJobs struct {
@@ -275,7 +276,7 @@ func newAuthHarnessStoring(
 	return &authHarness{
 		server: server, store: store, clock: shared, hasher: hasher, logs: logs,
 		database: database, sink: sink, worker: background, objects: objects, links: links,
-		keys: keys, mailer: mailer, schedule: scheduleService, jobs: jobs, files: fileService,
+		keys: keys, mailer: mailer, schedule: scheduleService, jobs: jobs, files: fileService, purger: purger,
 	}
 }
 

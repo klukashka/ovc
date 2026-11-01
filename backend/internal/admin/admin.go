@@ -12,6 +12,7 @@ import (
 
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
+	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/operators"
 )
 
@@ -25,7 +26,9 @@ const (
   ovc-admin users block <email>
   ovc-admin users unblock <email>
   ovc-admin users restore <email>
-  ovc-admin tutors set-quota <email> --files <bytes> --recordings <bytes>`
+  ovc-admin tutors set-quota <email> --files <bytes> --recordings <bytes>
+  ovc-admin uploads inspect <attachment-id> [--after <attempt-uuid>]
+  ovc-admin uploads retry-cleanup <attachment-id> --attempt <uuid>`
 )
 
 var errUsage = errors.New("the command line is not a known command")
@@ -37,6 +40,7 @@ type Operator struct {
 
 type Command struct {
 	Service  *operators.Service
+	Uploads  *files.Service
 	Operator Operator
 	Logger   *slog.Logger
 	Stdout   io.Writer
@@ -46,6 +50,7 @@ type Command struct {
 type outcome struct {
 	subcommand string
 	user       *domain.UserID
+	attachment *domain.AttachmentID
 	err        error
 }
 
@@ -80,7 +85,7 @@ func subcommandOf(args []string) string {
 		return "unknown"
 	}
 	switch subcommand := args[0] + " " + args[1]; subcommand {
-	case "users list", "users block", "users unblock", "users restore", "tutors set-quota":
+	case "users list", "users block", "users unblock", "users restore", "tutors set-quota", "uploads inspect", "uploads retry-cleanup":
 		return subcommand
 	}
 	return "unknown"
@@ -94,6 +99,9 @@ func (c Command) Run(ctx context.Context, args []string) int {
 	}
 	if result.user != nil {
 		attributes = append(attributes, slog.String("user_id", result.user.String()))
+	}
+	if result.attachment != nil {
+		attributes = append(attributes, slog.String("attachment_id", result.attachment.String()))
 	}
 	if result.err != nil && !refused(result.err) && !errors.Is(result.err, errUsage) {
 		attributes = append(attributes, slog.String("kind", core.ErrorKind(result.err)))
@@ -128,6 +136,8 @@ func (c Command) dispatch(ctx context.Context, args []string) outcome {
 		return c.change(ctx, subcommand, rest, c.Service.Unblock)
 	case "users restore":
 		return c.change(ctx, subcommand, rest, c.Service.Restore)
+	case "uploads inspect", "uploads retry-cleanup":
+		return c.upload(ctx, subcommand, rest)
 	case "tutors set-quota":
 		return c.setQuota(ctx, subcommand, rest)
 	}
@@ -217,7 +227,7 @@ func (c Command) write(target io.Writer, line string) {
 	}
 }
 
-var refusals = []error{operators.ErrUnknownAccount, operators.ErrImpossibleState, operators.ErrWrongRole, operators.ErrInvalidQuota}
+var refusals = []error{operators.ErrUnknownAccount, operators.ErrImpossibleState, operators.ErrWrongRole, operators.ErrInvalidQuota, files.ErrNotFound, files.ErrUploadCleanupActive}
 
 func refusal(err error) error {
 	for _, candidate := range refusals {

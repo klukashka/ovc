@@ -52,9 +52,11 @@ const (
 var ErrInvalidAvatar = errors.New("the attachment cannot become this account's avatar")
 
 type AttachmentPayload struct {
-	Attachment string `json:"attachment"`
-	Key        string `json:"key"`
-	Upload     string `json:"upload,omitempty"`
+	Attachment string                   `json:"attachment"`
+	Key        string                   `json:"key"`
+	Upload     string                   `json:"upload,omitempty"`
+	Generation *UploadCleanupGeneration `json:"generation,omitempty"`
+	Attempt    *UploadAttemptID         `json:"attempt,omitempty"`
 }
 
 const (

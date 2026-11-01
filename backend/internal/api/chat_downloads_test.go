@@ -283,10 +283,14 @@ func TestAMemberRemovedMidStreamLeavesNoObject(t *testing.T) {
 			t.Fatalf("the age rule removed %d rows, the row is %s and the object stored %t", expired, deletedByAge, storedWhileHeld)
 		}
 		if result.status != http.StatusNotFound || h.countRows(t, "SELECT count(id) FROM outbox WHERE idempotency_key = $1",
-			string(domain.KindStorageDelete)+":"+started.ID+":completed") != 1 {
+			string(domain.KindStorageDelete)+":"+started.ID+":intent:1") != 1 {
 			t.Fatalf("the second session answered %s without queueing the completed object's deletion", describe(result))
 		}
 		h.assertLeftNothing(t, started)
+		if h.countRows(t, "SELECT count(*) FROM upload_intents WHERE attachment_id = $1::uuid", started.ID) != 0 ||
+			h.countRows(t, "SELECT used FROM upload_intent_capacity WHERE singleton = $1::boolean", "true") != 0 {
+			t.Fatal("confirmed final cleanup retained its intent or capacity reservation")
+		}
 	})
 }
 

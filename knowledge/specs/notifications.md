@@ -249,6 +249,8 @@ Slice 4 stores preferences, mints and verifies tokens, and serves the routes and
   | Invitations | `(invitation.created, invitation, send count)`; each send of the same open link increments the count, so a resend is a new key |
   | `tutor.deleted` | `(event, tutor, deleted_at, recipient)`; the payload holds the tutor, `deleted_at` in microseconds and the recipient |
   | Digests | `(messages.digest, member, digest time)`, the digest time being the job's `now` recorded as `last_digest_at` |
+  | Chat intent cleanup | `storage_delete:<attachment>:intent:0` and, once required by definite acknowledgement, `storage_delete:<attachment>:intent:1`; fixed identities survive in the journal |
+  | Explicit upload cleanup retry | One immutable outbox identity per caller-supplied attempt UUID; replay never grants fresh attempts |
   | Recording copies | `(recording, attempt generation)` |
   | Everything else | `(event, subject, recipient)` |
 
@@ -269,6 +271,7 @@ Slice 4 stores preferences, mints and verifies tokens, and serves the routes and
   - **Message identifiers:** an email's `Message-ID` is derived from its outbox idempotency key and the host of `OVC_PUBLIC_URL`, so a retried send keeps the same identifier.
   - **Scheduler:** runs jobs whose due time has passed, recording each run in a job-run table, so hourly and daily jobs catch up once after downtime. The jobs registered on the shared scheduler loop run one after another, so a job that uses its whole time budget delays the jobs after it in that pass by at most that budget; a job registered to run on its own loop (horizon extension) runs on a scheduler loop of its own, started through the recovering goroutine helper, so its budget delays no other job. `Tick` runs every due job, both kinds, one after another in registration order (pending owner review). A job that fails is recorded as `failed` and reported as `job.run` at ERROR with an error kind, and the pass continues with the other jobs and the lanes (an owner decision): only a failure of the worker's own infrastructure, such as recording a job run or claiming rows, ends the pass. A purge that cannot remove one account skips past it within the run, so the accounts behind it are still purged.
     - **Every minute:** reminders, digests (`messages.digest`, from slice 6, 200 members per batch within 20 seconds), the lesson status job (its bounds are in the [schedule](schedule.md#lesson-status-and-join-window)), and from slice 6 `chat.erase_channels` (within 20 seconds; an empty run is one partial-index probe, the owner's decision of 2026-10-29, pending owner review, [channels](realtime-and-video.md#channels)).
+    - **Every minute, upload recovery:** `uploads.recover`, one 30-second monotonic pass, at most twenty batches of 200 candidates, each with a one-second budget capped by the remaining pass. Its retained keyset cursor advances after failed candidate transactions and wraps after keyspace exhaustion. Partial failures are recorded while later work proceeds; no storage call runs in the scan transaction ([durable cleanup](files.md#durable-chat-upload-cleanup)).
     - **Every 30 minutes:** recording reconciliation.
     - **Hourly:**
       - recording and upload expiry; `invitations.expire` (500 per run; clears the ciphertext of expired invitations), `join_requests.expire` (batches of 200, at most 5 per run; a failing request is skipped, and a run that stops at its bound is resumed where it stopped by the next run) and `reclaim.expire` (batches of 100 accounts, at most 1,000 per run; drops reclaim items left unchosen for 7 days);
@@ -284,3 +287,9 @@ Slice 4 stores preferences, mints and verifies tokens, and serves the routes and
   - with `OVC_CLOCK=test` the scheduler and lane loops are paused, and only the harness runs the worker;
   - `Tick(now)` runs one scheduler pass at `now` and then dispatches every due row until none remain;
   - running it twice with the same `now` has no extra effect.
+
+### Intent-aware storage deletion
+
+Chat uploads with a durable intent use immutable attachment/key/generation identity, or an explicit operator attempt UUID, rather than a snapshot of the MPU identifier. Effects read the current journal identifier under attachment-then-intent locks, perform storage outside transactions, and recheck identity and the late NULL-to-ID transition before finalization. Each effect has one 30-second monotonic budget. Generation 0 cannot overwrite generation 1 or erase its required flag; pending/bound ownership transferred by publication is protected from stale work.
+
+Eight attempts and existing backoff apply per fixed cycle. Lease expiry consumes the same budget. The intent owns its result independently of outbox retention: dead or missing expired outbox rows do not authorize a new automatic cycle. Recovery reconciles safe results without inventing identities. At most two automatic generations are possible. A manual cycle requires an explicit idempotent local operator request, and active manual/automatic cycles exclude another admission; a required final generation waits durably. Uncertain completion remains uncertain after successful Delete, without an automatic retry loop. See [ADR-0019](../../docs/decisions/0019-durable-upload-cleanup.md).

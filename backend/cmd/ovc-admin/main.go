@@ -9,6 +9,7 @@ import (
 	"ovc/backend/internal/admin"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/repositories"
+	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/operators"
 )
 
@@ -41,6 +42,7 @@ func run() int {
 		return admin.Failed(ctx, logging.Logger, os.Stderr, operator, os.Args[1:], err)
 	}
 	command := admin.Command{
+		Uploads:  files.New(files.Dependencies{Store: repositories.NewStore(database.Pool), Clock: source(settings, database), Random: core.CryptoRandom(), Logger: logging.Logger, Lifetime: ctx}),
 		Service:  operators.New(repositories.NewStore(database.Pool), source(settings, database), logging.Logger),
 		Operator: operator,
 		Logger:   logging.Logger,

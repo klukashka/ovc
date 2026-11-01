@@ -67,6 +67,8 @@ DELETE FROM outbox
 WHERE id IN (
     SELECT finished.id FROM outbox AS finished
     WHERE finished.status = 'done' AND finished.done_at < sqlc.arg(before)::timestamptz
+      AND NOT EXISTS (SELECT 1 FROM upload_intents WHERE cleanup_outbox_id = finished.id AND cleanup_result = 'queued')
+      AND NOT EXISTS (SELECT 1 FROM upload_cleanup_receipts WHERE outbox_id = finished.id AND status IN ('pending', 'in_progress'))
     LIMIT sqlc.arg(batch_size)
 );
 
@@ -75,5 +77,10 @@ DELETE FROM outbox
 WHERE id IN (
     SELECT finished.id FROM outbox AS finished
     WHERE finished.status = 'dead' AND finished.done_at < sqlc.arg(before)::timestamptz
+      AND NOT EXISTS (SELECT 1 FROM upload_intents WHERE cleanup_outbox_id = finished.id AND cleanup_result = 'queued')
+      AND NOT EXISTS (SELECT 1 FROM upload_cleanup_receipts WHERE outbox_id = finished.id AND status IN ('pending', 'in_progress'))
     LIMIT sqlc.arg(batch_size)
 );
+
+-- name: GetOutboxByKey :one
+SELECT * FROM outbox WHERE idempotency_key = @idempotency_key;

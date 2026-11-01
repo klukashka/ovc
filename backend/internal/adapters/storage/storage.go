@@ -213,7 +213,7 @@ func servedLength(contentRange *string, offset int64, requested int) (int, error
 func (s *S3) CreateMultipartUpload(ctx context.Context, key string, contentType string) (MultipartUploadID, error) {
 	output, err := s.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
 		Bucket: aws.String(s.bucket), Key: aws.String(key), ContentType: aws.String(contentType),
-	})
+	}, singleAttempt)
 	if err != nil {
 		return "", fmt.Errorf("create a multipart upload: %w", err)
 	}
@@ -253,7 +253,7 @@ func (s *S3) CompleteMultipartUpload(ctx context.Context, key string, upload Mul
 	_, err := s.client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
 		Bucket: aws.String(s.bucket), Key: aws.String(key), UploadId: aws.String(string(upload)),
 		MultipartUpload: &types.CompletedMultipartUpload{Parts: completed},
-	})
+	}, singleAttempt)
 	if hasCode(err, codeNoSuchUpload) {
 		return ErrUploadNotFound
 	}
@@ -510,4 +510,8 @@ func (m *Memory) Delete(_ context.Context, key string) error {
 
 func (m *Memory) Ping(context.Context) error {
 	return nil
+}
+
+func singleAttempt(options *s3.Options) {
+	options.RetryMaxAttempts = 1
 }

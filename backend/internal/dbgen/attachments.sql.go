@@ -33,10 +33,8 @@ func (q *Queries) BindAttachment(ctx context.Context, arg BindAttachmentParams) 
 
 const claimAgedUploads = `-- name: ClaimAgedUploads :many
 SELECT id, storage_key, multipart_upload_id FROM attachments
-WHERE state = 'uploading' AND created_at <= $1::timestamptz
-ORDER BY created_at, id
-LIMIT $2
-FOR UPDATE SKIP LOCKED
+WHERE id IN (SELECT candidate.id FROM attachments AS candidate WHERE candidate.state = 'uploading' AND candidate.created_at <= $1::timestamptz ORDER BY candidate.created_at, candidate.id LIMIT $2)
+ORDER BY id FOR UPDATE SKIP LOCKED
 `
 
 type ClaimAgedUploadsParams struct {
@@ -72,10 +70,8 @@ func (q *Queries) ClaimAgedUploads(ctx context.Context, arg ClaimAgedUploadsPara
 
 const claimExpiredUploads = `-- name: ClaimExpiredUploads :many
 SELECT id FROM attachments
-WHERE state = 'pending' AND expires_at <= $1::timestamptz
-ORDER BY expires_at
-LIMIT $2
-FOR UPDATE SKIP LOCKED
+WHERE id IN (SELECT candidate.id FROM attachments AS candidate WHERE candidate.state = 'pending' AND candidate.expires_at <= $1::timestamptz ORDER BY candidate.expires_at LIMIT $2)
+ORDER BY id FOR UPDATE SKIP LOCKED
 `
 
 type ClaimExpiredUploadsParams struct {
@@ -523,7 +519,7 @@ func (q *Queries) GetServableChatAttachment(ctx context.Context, arg GetServable
 }
 
 const listUploadsOf = `-- name: ListUploadsOf :many
-SELECT id, storage_key, multipart_upload_id FROM attachments WHERE uploader_id = $1 OR (quota_tutor_id = $1 AND state <> 'bound')
+SELECT id, storage_key, multipart_upload_id FROM attachments WHERE uploader_id = $1 OR (quota_tutor_id = $1 AND state <> 'bound') ORDER BY id
 `
 
 type ListUploadsOfRow struct {
@@ -596,6 +592,24 @@ type MarkAttachmentDeletedParams struct {
 
 func (q *Queries) MarkAttachmentDeleted(ctx context.Context, arg MarkAttachmentDeletedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markAttachmentDeleted, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const nameUploadingAttachment = `-- name: NameUploadingAttachment :execrows
+UPDATE attachments SET filename = $1, updated_at = $2 WHERE id = $3 AND state = 'uploading'
+`
+
+type NameUploadingAttachmentParams struct {
+	Filename string
+	Now      time.Time
+	ID       domain.AttachmentID
+}
+
+func (q *Queries) NameUploadingAttachment(ctx context.Context, arg NameUploadingAttachmentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, nameUploadingAttachment, arg.Filename, arg.Now, arg.ID)
 	if err != nil {
 		return 0, err
 	}

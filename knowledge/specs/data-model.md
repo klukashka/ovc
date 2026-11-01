@@ -442,8 +442,18 @@ Constraints and indexes:
 | `state` | `uploading` (slice 6: the row exists while its object streams and is inspected; a partial index on `created_at` where `uploading` serves the age rule of `uploads.expire`), `pending`, `bound`, `deleted` |
 | `expires_at` | pending only; partial index |
 | `reserved_bytes` | slice 6; the bytes an `uploading` row counts against the quota: the request's `Content-Length` capped at the context limit, or the context limit without one; a check requires it on every `uploading` row, and a partial index on `quota_tutor_id` where `context = 'chat'` and the state is `uploading` or `pending` serves the quota checks' sum of open uploads |
-| `multipart_upload_id` | slice 6; the storage multipart upload's identifier, recorded in a short transaction of its own right after it is created, so every cleanup aborts it after a crash; an upload created but not yet recorded when the process crashes is aborted only by the bucket lifecycle rule after a day ([upload flow](files.md#upload-flow)) |
+| `multipart_upload_id` | slice 6; the storage multipart upload's identifier, recorded with the independent intent in a short transaction after Create and before parts; cleanup reads the latest intent ID even after the attachment is purged. An unknown incomplete MPU remains subject to the configured one-day lifecycle eligibility, not a guaranteed physical-erasure instant ([upload flow](files.md#upload-flow)) |
 | `width`, `height` | slice 6; a picture's dimensions read from its header, null for other kinds and above 50 megapixels |
+
+### Upload cleanup intent
+
+The chat journal of [ADR-0019](../../docs/decisions/0019-durable-upload-cleanup.md) is independent of attachment/account lifetime. `upload_intents` has an immutable `attachment_id` primary key and unique random `storage_key`, with no foreign key to an attachment, account or channel. It stores no filename, content or session credential. `multipart_upload_id` permits exactly one NULL-to-ID transition; a different non-NULL ID is refused.
+
+Named phases are `opening`, `streaming`, `completing`, `cleanup` and `uncertain`. Monotonic `completion_started`, `completion_confirmed` and `cleanup_requested` flags separate authorization, definite acknowledgement and irrevocable publication revocation. `final_cleanup_required` preserves the final generation obligation while another cycle is active. Automatic generation is absent, 0 or 1; each has a fixed outbox identity and a safe result (`none`, `queued`, `deleted`, `failed`). Business timestamps support scheduling and diagnostics, never remote-operation fencing. Error fields contain finite safe codes, not raw text. SQL checks and conditional transitions enforce valid state combinations.
+
+A capacity row holds `used`, bounded from zero to 4,096. Intent creation reserves and terminal removal releases capacity atomically, with that row locked last. A confirmed pending publication removes the intent in the same transaction. An uncertain started Complete retains the journal even after successful Delete; failed/dead results survive ordinary outbox retention. Indexed candidate state and attachment-ID keyset ordering support bounded recovery without taking intent locks before attachment locks.
+
+Operator receipts have an immutable `(attachment_id, attempt_id UUID)` identity, fixed outbox identity and cycle state. They survive outbox retention until safe intent removal; no total receipt count limit is imposed. Only explicit privileged commands create them. UUID lookup and active-cycle lookup are indexed; paginated inspection returns at most 100 history rows, with no full-history scan under the intent lock. The 4,096-intent capacity does not bound all receipt bytes. See [cleanup rules](files.md#durable-chat-upload-cleanup) for generation and removal evidence.
 
 ### Attachment reference and quota charge
 
@@ -539,6 +549,7 @@ Slice 6 adds, on every purge path:
 | Issue | — | Deleted |
 | Submission, answer, review revision | Deleted; analytics no longer count them | Deleted |
 | Attachment, reference, quota charge | References from deleted rows removed; unreferenced files deleted | Same |
+| Upload cleanup intent and operator receipt | Minimal unresolved technical records survive purge independently until safe terminal cleanup; no account/channel identifier is retained | Same |
 | Notification | Every row whose `user_id`, `tutor_id` or `student_id` is the student deleted, through their indexes, inside the purge's batches | Every row whose `user_id`, `tutor_id` or `student_id` is the tutor deleted, likewise |
 | Email preference | Removed with the user row (`ON DELETE CASCADE`) | Same |
 
