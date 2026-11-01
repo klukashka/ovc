@@ -245,7 +245,8 @@ func (s *Service) OnEmailConfirmed(
 	}, nil
 }
 
-func (s *Service) RemoveStudent(ctx context.Context, tutor domain.UserID, id domain.RelationshipID) (Card, error) {
+func (s *Service) RemoveStudent(ctx context.Context, actor domain.TutorActor, id domain.RelationshipID) (Card, error) {
+	tutor := actor.UserID
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return Card{}, err
@@ -271,7 +272,7 @@ func (s *Service) RemoveStudent(ctx context.Context, tutor domain.UserID, id dom
 		if err != nil {
 			return err
 		}
-		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 			return err
 		}
 		locked, err := lockCard(ctx, repos, tutor, id)

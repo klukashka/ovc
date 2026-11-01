@@ -31,7 +31,8 @@ type ending struct {
 	notified    *createdNotification
 }
 
-func (s *Service) EndByTutor(ctx context.Context, tutor domain.UserID, id domain.RelationshipID) (Card, error) {
+func (s *Service) EndByTutor(ctx context.Context, actor domain.TutorActor, id domain.RelationshipID) (Card, error) {
+	tutor := actor.UserID
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return Card{}, err
@@ -39,7 +40,7 @@ func (s *Service) EndByTutor(ctx context.Context, tutor domain.UserID, id domain
 	var card Card
 	var ended *ending
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 			return err
 		}
 		row, err := lockCard(ctx, repos, tutor, id)

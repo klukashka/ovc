@@ -120,7 +120,7 @@ func (s *Service) send(ctx context.Context, author Author, channel domain.Channe
 	}
 	var message Message
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := lockAuthor(ctx, repos, author, now); err != nil {
+		if err := s.lockAuthor(ctx, repos, author, now); err != nil {
 			return err
 		}
 		if len(attachments) > 0 && author.Role == domain.RoleStudent {
@@ -245,7 +245,16 @@ func signalMessage(
 func (s *Service) replay(ctx context.Context, author Author, channel domain.ChannelID, key string, now time.Time) (Message, bool, error) {
 	var message Message
 	found := false
-	err := s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
+	transaction := s.deps.Store.WithReadTx
+	if author.Role == domain.RoleTutor {
+		transaction = s.deps.Store.WithTx
+	}
+	err := transaction(ctx, func(repos repositories.Repositories) error {
+		if author.Role == domain.RoleTutor {
+			if err := s.lockAuthor(ctx, repos, author, now); err != nil {
+				return err
+			}
+		}
 		replayed, err := repos.Messages.ByClientKey(ctx, author.UserID, channel, key)
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil
@@ -277,7 +286,7 @@ func (s *Service) Edit(ctx context.Context, author Author, id domain.MessageID, 
 	var message Message
 	var channel domain.ChannelID
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := lockAuthor(ctx, repos, author, now); err != nil {
+		if err := s.lockAuthor(ctx, repos, author, now); err != nil {
 			return err
 		}
 		scope, err := repos.Messages.Scope(ctx, id)
@@ -355,7 +364,7 @@ func (s *Service) Delete(ctx context.Context, author Author, id domain.MessageID
 	by := domain.DeletedByAuthor
 	deleted := false
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := lockAuthor(ctx, repos, author, now); err != nil {
+		if err := s.lockAuthor(ctx, repos, author, now); err != nil {
 			return err
 		}
 		if scope.HasAttachments && author.Role == domain.RoleStudent {

@@ -110,7 +110,7 @@ func (r *router) createGroup(ctx context.Context, input *createGroupInput) (*gro
 	if input.IdempotencyKey != "" {
 		request.CreateKey = &input.IdempotencyKey
 	}
-	group, err := r.tutoring.CreateGroup(ctx, principalFrom(ctx).UserID, request)
+	group, err := r.tutoring.CreateGroup(ctx, tutorActorFrom(ctx), request)
 	if err != nil {
 		return nil, r.groupError(ctx, "groups.create.failed", err)
 	}
@@ -155,7 +155,7 @@ func (r *router) updateGroup(ctx context.Context, input *updateGroupInput) (*gro
 		return nil, r.internal(ctx, "groups.update.failed", err)
 	}
 	change := tutoring.GroupChange{Name: input.Body.Name, Colour: input.Body.Colour, Add: add, Remove: remove}
-	group, err := r.tutoring.UpdateGroup(ctx, principalFrom(ctx).UserID, id, change)
+	group, err := r.tutoring.UpdateGroup(ctx, tutorActorFrom(ctx), id, change)
 	if err != nil {
 		return nil, r.groupError(ctx, "groups.update.failed", err)
 	}
@@ -171,13 +171,13 @@ func (r *router) unarchiveGroup(ctx context.Context, input *groupInput) (*groupO
 }
 
 func (r *router) changeArchive(
-	ctx context.Context, input *groupInput, event string, change func(context.Context, domain.UserID, domain.GroupID) (tutoring.Group, error),
+	ctx context.Context, input *groupInput, event string, change func(context.Context, domain.TutorActor, domain.GroupID) (tutoring.Group, error),
 ) (*groupOutput, error) {
 	id, valid := domain.ParseUUID[domain.GroupID](input.ID)
 	if !valid {
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
-	group, err := change(ctx, principalFrom(ctx).UserID, id)
+	group, err := change(ctx, tutorActorFrom(ctx), id)
 	if err != nil {
 		return nil, r.groupError(ctx, event, err)
 	}

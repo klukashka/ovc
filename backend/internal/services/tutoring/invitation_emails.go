@@ -37,14 +37,15 @@ const (
 	sendDroppedUnavailable  sendOutcome = "recipient_unavailable"
 )
 
-func (s *Service) SendInvitation(ctx context.Context, tutor domain.UserID, id domain.RelationshipID) error {
+func (s *Service) SendInvitation(ctx context.Context, actor domain.TutorActor, id domain.RelationshipID) error {
+	tutor := actor.UserID
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return err
 	}
 	var outcome sendOutcome
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		sent, err := s.sendInvitation(ctx, repos, tutor, id, now)
+		sent, err := s.sendInvitation(ctx, repos, actor, id, now)
 		outcome = sent
 		return err
 	})
@@ -66,8 +67,9 @@ func (s *Service) SendInvitation(ctx context.Context, tutor domain.UserID, id do
 	return nil
 }
 
-func (s *Service) sendInvitation(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.RelationshipID, now time.Time) (sendOutcome, error) {
-	if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+func (s *Service) sendInvitation(ctx context.Context, repos repositories.Repositories, actor domain.TutorActor, id domain.RelationshipID, now time.Time) (sendOutcome, error) {
+	tutor := actor.UserID
+	if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 		return "", err
 	}
 	card, err := lockCard(ctx, repos, tutor, id)

@@ -19,7 +19,7 @@ type Author struct {
 	Role      domain.Role
 }
 
-func lockAuthor(ctx context.Context, repos repositories.Repositories, author Author, now time.Time) error {
+func (s *Service) lockAuthor(ctx context.Context, repos repositories.Repositories, author Author, now time.Time) error {
 	if author.Role == domain.RoleStudent {
 		return lockStudent(ctx, repos, author, now)
 	}
@@ -29,6 +29,21 @@ func lockAuthor(ctx context.Context, repos repositories.Repositories, author Aut
 	}
 	if err != nil {
 		return err
+	}
+
+	checkedAt, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
+	if err != nil {
+		return err
+	}
+	session, err := repos.Sessions.ByID(ctx, author.SessionID)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return ErrUnauthenticated
+	}
+	if err != nil {
+		return err
+	}
+	if session.UserID != author.UserID || session.RevokedAt != nil || !checkedAt.Before(session.ExpiresAt) {
+		return ErrUnauthenticated
 	}
 	account, err := repos.Users.ByID(ctx, author.UserID)
 	if err != nil {

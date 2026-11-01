@@ -108,14 +108,15 @@ func (s *Service) Settings(ctx context.Context, tutor domain.UserID) (TutorSetti
 	return TutorSettings{FileQuotaBytes: profile.FileQuotaBytes, FileUsageBytes: profile.FileUsageBytes}, nil
 }
 
-func (s *Service) RegenerateCode(ctx context.Context, tutor domain.UserID) (TutorCode, error) {
+func (s *Service) RegenerateCode(ctx context.Context, actor domain.TutorActor) (TutorCode, error) {
+	tutor := actor.UserID
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return TutorCode{}, err
 	}
 	var regenerated domain.TutorCode
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 			return err
 		}
 		if err := s.reserve(ctx, repos, codeRegenerationLimit, tutor, now); err != nil {

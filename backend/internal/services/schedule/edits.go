@@ -79,9 +79,10 @@ func editable(lesson repositories.LockedLesson, now time.Time) bool {
 	return lesson.Status == domain.LessonScheduled && lesson.StartsAt.After(now)
 }
 
-func (s *Service) admitLessonWrite(ctx context.Context, tutor domain.UserID, id domain.LessonID) error {
+func (s *Service) admitLessonWrite(ctx context.Context, actor domain.TutorActor, id domain.LessonID) error {
+	tutor := actor.UserID
 	return s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if _, err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+		if _, err := s.lockActingTutor(ctx, repos, actor); err != nil {
 			return err
 		}
 		if _, err := repos.Lessons.TutorTarget(ctx, tutor, id); errors.Is(err, repositories.ErrNotFound) {
@@ -110,9 +111,10 @@ func (s *Service) writeWithAudienceRetry(ctx context.Context, work func(repos re
 }
 
 func (s *Service) lockWrite(
-	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.LessonID, scope domain.EditScope,
+	ctx context.Context, repos repositories.Repositories, actor domain.TutorActor, id domain.LessonID, scope domain.EditScope,
 ) (lessonWrite, error) {
-	account, err := s.lockActingTutor(ctx, repos, tutor)
+	tutor := actor.UserID
+	account, err := s.lockActingTutor(ctx, repos, actor)
 	if err != nil {
 		return lessonWrite{}, err
 	}
@@ -303,14 +305,15 @@ func (r editRule) plan(lesson repositories.LockedLesson) plannedEdit {
 	return planned
 }
 
-func (s *Service) EditLesson(ctx context.Context, tutor domain.UserID, id domain.LessonID, edit LessonEdit) (Created, error) {
-	if err := s.admitLessonWrite(ctx, tutor, id); err != nil {
+func (s *Service) EditLesson(ctx context.Context, actor domain.TutorActor, id domain.LessonID, edit LessonEdit) (Created, error) {
+	tutor := actor.UserID
+	if err := s.admitLessonWrite(ctx, actor, id); err != nil {
 		return Created{}, err
 	}
 	var outcome writeOutcome
 	err := s.writeWithAudienceRetry(ctx, func(repos repositories.Repositories) error {
 		var err error
-		outcome, err = s.edit(ctx, repos, tutor, id, edit)
+		outcome, err = s.edit(ctx, repos, actor, id, edit)
 		return err
 	})
 	var overlap *OverlapError
@@ -348,12 +351,12 @@ func (s *Service) logRows(ctx context.Context, rows []queuedNotification) {
 }
 
 func (s *Service) edit(
-	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.LessonID, edit LessonEdit,
+	ctx context.Context, repos repositories.Repositories, actor domain.TutorActor, id domain.LessonID, edit LessonEdit,
 ) (writeOutcome, error) {
 	if err := shapeProblem(edit); err != nil {
 		return writeOutcome{}, err
 	}
-	write, err := s.lockWrite(ctx, repos, tutor, id, edit.Scope)
+	write, err := s.lockWrite(ctx, repos, actor, id, edit.Scope)
 	if err != nil {
 		return writeOutcome{}, err
 	}

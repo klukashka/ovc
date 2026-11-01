@@ -228,7 +228,8 @@ func (s *Service) Card(ctx context.Context, tutor domain.UserID, id domain.Relat
 	return card, err
 }
 
-func (s *Service) CreateCard(ctx context.Context, tutor domain.UserID, request NewCard) (Card, error) {
+func (s *Service) CreateCard(ctx context.Context, actor domain.TutorActor, request NewCard) (Card, error) {
+	tutor := actor.UserID
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return Card{}, err
@@ -236,7 +237,7 @@ func (s *Service) CreateCard(ctx context.Context, tutor domain.UserID, request N
 	var card Card
 	created := false
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 			return err
 		}
 		if request.CreateKey != nil {
@@ -344,7 +345,8 @@ func validDisplayName(name string) bool {
 	return name != "" && utf8.RuneCountInString(name) <= displayNameMaxRunes && !strings.ContainsFunc(name, unicode.IsControl)
 }
 
-func (s *Service) UpdateCard(ctx context.Context, tutor domain.UserID, id domain.RelationshipID, change CardChange) (Card, error) {
+func (s *Service) UpdateCard(ctx context.Context, actor domain.TutorActor, id domain.RelationshipID, change CardChange) (Card, error) {
+	tutor := actor.UserID
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return Card{}, err
@@ -352,7 +354,7 @@ func (s *Service) UpdateCard(ctx context.Context, tutor domain.UserID, id domain
 	var card Card
 	var changed []string
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 			return err
 		}
 		row, err := lockCard(ctx, repos, tutor, id)
@@ -481,14 +483,15 @@ func changedEmail(changed bool, email *string) *string {
 	return nil
 }
 
-func (s *Service) WithdrawCard(ctx context.Context, tutor domain.UserID, id domain.RelationshipID) error {
+func (s *Service) WithdrawCard(ctx context.Context, actor domain.TutorActor, id domain.RelationshipID) error {
+	tutor := actor.UserID
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return err
 	}
 	withdrawn := false
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 			return err
 		}
 		row, err := lockCard(ctx, repos, tutor, id)
@@ -527,14 +530,15 @@ func (s *Service) WithdrawCard(ctx context.Context, tutor domain.UserID, id doma
 	return nil
 }
 
-func (s *Service) RegenerateInvitation(ctx context.Context, tutor domain.UserID, id domain.RelationshipID) (CardInvitation, error) {
+func (s *Service) RegenerateInvitation(ctx context.Context, actor domain.TutorActor, id domain.RelationshipID) (CardInvitation, error) {
+	tutor := actor.UserID
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return CardInvitation{}, err
 	}
 	var issued *CardInvitation
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 			return err
 		}
 		row, err := lockCard(ctx, repos, tutor, id)

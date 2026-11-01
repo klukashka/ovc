@@ -97,6 +97,21 @@ func (s *Service) lockUploader(ctx context.Context, repos repositories.Repositor
 	if err != nil {
 		return err
 	}
+
+	checkedAt, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
+	if err != nil {
+		return err
+	}
+	session, err := repos.Sessions.ByID(ctx, principal.SessionID)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return accounts.ErrUnauthenticated
+	}
+	if err != nil {
+		return err
+	}
+	if session.UserID != principal.UserID || session.RevokedAt != nil || !checkedAt.Before(session.ExpiresAt) {
+		return accounts.ErrUnauthenticated
+	}
 	account, err := repos.Users.ByID(ctx, principal.UserID)
 	if err != nil {
 		return err

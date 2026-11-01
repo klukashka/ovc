@@ -4,6 +4,11 @@ type UserID [16]byte
 
 type SessionID [16]byte
 
+type TutorActor struct {
+	UserID    UserID
+	SessionID SessionID
+}
+
 type EmailRequestID [16]byte
 
 type EmailTokenID [16]byte

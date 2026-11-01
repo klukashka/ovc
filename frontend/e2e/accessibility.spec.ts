@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { trafficAfterReady, expectRefetchedAfterTheSocketIsReady } from './realtime.ts';
 
 test.use({ locale: 'ru-RU' });
 
@@ -55,8 +56,10 @@ test('the skip link is the first stop and moves focus to the main content', asyn
 });
 
 test('signing out from an unknown address returns to sign-in', async ({ page, tutor }) => {
+  const traffic = trafficAfterReady(page, ['/api/v1/notifications', '/api/v1/channels/unread']);
   await signedInAt(page, tutor, '/no/such/page');
   await expect(page.getByRole('heading', { level: 1, name: 'Страница не найдена' })).toBeVisible();
+  await expectRefetchedAfterTheSocketIsReady(traffic);
 
   await page.getByRole('button', { name: /Меню аккаунта/ }).click();
   await page.getByRole('button', { name: 'Выйти' }).click();

@@ -9,14 +9,15 @@ import (
 	"ovc/backend/internal/repositories"
 )
 
-func (s *Service) CancelLesson(ctx context.Context, tutor domain.UserID, id domain.LessonID, cancellation LessonCancellation) (Created, error) {
-	if err := s.admitLessonWrite(ctx, tutor, id); err != nil {
+func (s *Service) CancelLesson(ctx context.Context, actor domain.TutorActor, id domain.LessonID, cancellation LessonCancellation) (Created, error) {
+	tutor := actor.UserID
+	if err := s.admitLessonWrite(ctx, actor, id); err != nil {
 		return Created{}, err
 	}
 	var outcome writeOutcome
 	err := s.writeWithAudienceRetry(ctx, func(repos repositories.Repositories) error {
 		var err error
-		outcome, err = s.cancel(ctx, repos, tutor, id, cancellation)
+		outcome, err = s.cancel(ctx, repos, actor, id, cancellation)
 		return err
 	})
 	if err != nil {
@@ -46,9 +47,9 @@ func endsBefore(series *repositories.LockedSeriesForEdit, occurrence domain.Loca
 }
 
 func (s *Service) cancel(
-	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.LessonID, cancellation LessonCancellation,
+	ctx context.Context, repos repositories.Repositories, actor domain.TutorActor, id domain.LessonID, cancellation LessonCancellation,
 ) (writeOutcome, error) {
-	write, err := s.lockWrite(ctx, repos, tutor, id, cancellation.Scope)
+	write, err := s.lockWrite(ctx, repos, actor, id, cancellation.Scope)
 	if err != nil {
 		return writeOutcome{}, err
 	}

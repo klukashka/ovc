@@ -154,7 +154,7 @@ func (r *router) createLessons(ctx context.Context, input *createLessonsInput) (
 	if input.IdempotencyKey != "" {
 		request.CreateKey = &input.IdempotencyKey
 	}
-	created, err := r.schedule.CreateLessons(ctx, principalFrom(ctx).UserID, request)
+	created, err := r.schedule.CreateLessons(ctx, tutorActorFrom(ctx), request)
 	if err != nil {
 		return nil, r.scheduleError(ctx, "lessons.create.failed", err)
 	}
@@ -188,7 +188,7 @@ func (r *router) editLesson(ctx context.Context, input *editLessonInput) (*creat
 		Description:  input.Body.Description.Value,
 		AllowOverlap: input.Body.AllowOverlap,
 	}
-	changed, err := r.schedule.EditLesson(ctx, principalFrom(ctx).UserID, id, edit)
+	changed, err := r.schedule.EditLesson(ctx, tutorActorFrom(ctx), id, edit)
 	if err != nil {
 		return nil, r.scheduleError(ctx, "lessons.update.failed", err)
 	}
@@ -204,7 +204,7 @@ func (r *router) cancelLesson(ctx context.Context, input *cancelLessonInput) (*c
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
 	cancellation := schedule.LessonCancellation{Scope: input.Body.Scope, Version: input.Body.Version}
-	cancelled, err := r.schedule.CancelLesson(ctx, principalFrom(ctx).UserID, id, cancellation)
+	cancelled, err := r.schedule.CancelLesson(ctx, tutorActorFrom(ctx), id, cancellation)
 	if err != nil {
 		return nil, r.scheduleError(ctx, "lessons.cancel.failed", err)
 	}

@@ -545,7 +545,8 @@ type tutorDecision struct {
 	blocked      bool
 }
 
-func (s *Service) AcceptRequest(ctx context.Context, tutor domain.UserID, id domain.JoinRequestID) (Card, error) {
+func (s *Service) AcceptRequest(ctx context.Context, actor domain.TutorActor, id domain.JoinRequestID) (Card, error) {
+	tutor := actor.UserID
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return Card{}, err
@@ -553,7 +554,7 @@ func (s *Service) AcceptRequest(ctx context.Context, tutor domain.UserID, id dom
 	var card Card
 	var decision tutorDecision
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		request, err := s.lockRequestForDecision(ctx, repos, tutor, id, now)
+		request, err := s.lockRequestForDecision(ctx, repos, actor, id, now)
 		if err != nil {
 			return err
 		}
@@ -636,8 +637,9 @@ func decisionRefusal(request repositories.JoinRequest) error {
 }
 
 func (s *Service) lockRequestForDecision(
-	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.JoinRequestID, now time.Time,
+	ctx context.Context, repos repositories.Repositories, actor domain.TutorActor, id domain.JoinRequestID, now time.Time,
 ) (repositories.JoinRequest, error) {
+	tutor := actor.UserID
 	seen, err := repos.JoinRequests.ForTutor(ctx, tutor, id, now)
 	if errors.Is(err, repositories.ErrNotFound) {
 		return repositories.JoinRequest{}, ErrJoinRequestNotFound
@@ -655,7 +657,7 @@ func (s *Service) lockRequestForDecision(
 	if student.State == domain.AccountBlocked {
 		return repositories.JoinRequest{}, ErrJoinRequestNotFound
 	}
-	if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+	if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 		return repositories.JoinRequest{}, err
 	}
 	return seen, nil
@@ -742,14 +744,15 @@ func (s *Service) linkInvitedFromRequest(
 	return current, effectLinked, err
 }
 
-func (s *Service) DeclineRequest(ctx context.Context, tutor domain.UserID, id domain.JoinRequestID, block bool) (JoinRequestDecision, error) {
+func (s *Service) DeclineRequest(ctx context.Context, actor domain.TutorActor, id domain.JoinRequestID, block bool) (JoinRequestDecision, error) {
+	tutor := actor.UserID
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return JoinRequestDecision{}, err
 	}
 	var decision tutorDecision
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		request, err := s.lockRequestForDecision(ctx, repos, tutor, id, now)
+		request, err := s.lockRequestForDecision(ctx, repos, actor, id, now)
 		if err != nil {
 			return err
 		}
@@ -833,7 +836,8 @@ func (s *Service) announceTutorDecision(ctx context.Context, tutor domain.UserID
 	s.logNotified(ctx, decision.notified)
 }
 
-func (s *Service) Unblock(ctx context.Context, tutor domain.UserID, student domain.UserID) error {
+func (s *Service) Unblock(ctx context.Context, actor domain.TutorActor, student domain.UserID) error {
+	tutor := actor.UserID
 	var expired int64
 	err := s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		blocked, err := repos.Blocked.Contains(ctx, tutor, student)
@@ -848,7 +852,7 @@ func (s *Service) Unblock(ctx context.Context, tutor domain.UserID, student doma
 		} else if err != nil {
 			return err
 		}
-		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 			return err
 		}
 		removed, err := repos.Blocked.Unblock(ctx, tutor, student)

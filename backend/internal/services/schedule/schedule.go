@@ -77,13 +77,29 @@ func New(dependencies Dependencies) *Service {
 	return &Service{deps: dependencies}
 }
 
-func (s *Service) lockActingTutor(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) (repositories.User, error) {
+func (s *Service) lockActingTutor(ctx context.Context, repos repositories.Repositories, actor domain.TutorActor) (repositories.User, error) {
+	tutor := actor.UserID
 	err := repos.TutorProfiles.Lock(ctx, tutor)
 	if errors.Is(err, repositories.ErrNotFound) {
 		return repositories.User{}, ErrUnauthenticated
 	}
 	if err != nil {
 		return repositories.User{}, err
+	}
+
+	checkedAt, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
+	if err != nil {
+		return repositories.User{}, err
+	}
+	session, err := repos.Sessions.ByID(ctx, actor.SessionID)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return repositories.User{}, ErrUnauthenticated
+	}
+	if err != nil {
+		return repositories.User{}, err
+	}
+	if session.UserID != actor.UserID || session.RevokedAt != nil || !checkedAt.Before(session.ExpiresAt) {
+		return repositories.User{}, ErrUnauthenticated
 	}
 	account, err := repos.Users.ByID(ctx, tutor)
 	if err != nil {

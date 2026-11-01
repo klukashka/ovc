@@ -35,7 +35,11 @@ INSERT INTO channel_members (channel_id, user_id, created_at, updated_at) SELECT
 	if err != nil {
 		t.Fatal(err)
 	}
-	return accounts.Principal{UserID: user, Role: domain.RoleTutor, State: domain.AccountActive}, channel
+	session := domain.SessionID{20}
+	if err := h.service.deps.Store.Repositories().Sessions.Create(context.Background(), repositories.NewSession{ID: session, UserID: user, RefreshHash: make([]byte, 32), ExpiresAt: h.now.Add(24 * time.Hour), CreatedAt: h.now}); err != nil {
+		t.Fatal(err)
+	}
+	return accounts.Principal{UserID: user, SessionID: session, Role: domain.RoleTutor, State: domain.AccountActive}, channel
 }
 
 func TestUploadReconciliationPreservesTransferredOwnership(t *testing.T) {
@@ -52,7 +56,7 @@ func TestUploadReconciliationPreservesTransferredOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	messaging := chat.New(chat.Dependencies{Store: h.service.deps.Store, Clock: h.service.deps.Clock, Random: core.CryptoRandom(), Addresses: h.service, Logger: h.service.deps.Logger})
-	message, err := messaging.Send(context.Background(), chat.Author{UserID: principal.UserID, Role: principal.Role}, channel, chat.Draft{Attachments: []domain.AttachmentID{uploaded.ID}})
+	message, err := messaging.Send(context.Background(), chat.Author{UserID: principal.UserID, SessionID: principal.SessionID, Role: principal.Role}, channel, chat.Draft{Attachments: []domain.AttachmentID{uploaded.ID}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -187,7 +187,8 @@ func (s *Service) groupView(ctx context.Context, repos repositories.Repositories
 	return group, err
 }
 
-func (s *Service) CreateGroup(ctx context.Context, tutor domain.UserID, request NewGroup) (Group, error) {
+func (s *Service) CreateGroup(ctx context.Context, actor domain.TutorActor, request NewGroup) (Group, error) {
+	tutor := actor.UserID
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return Group{}, err
@@ -196,7 +197,7 @@ func (s *Service) CreateGroup(ctx context.Context, tutor domain.UserID, request 
 	var group Group
 	created := false
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 			return err
 		}
 		if request.CreateKey != nil {
@@ -325,7 +326,8 @@ func distinctRelationships(ids []domain.RelationshipID) []domain.RelationshipID 
 	return slices.Compact(distinct)
 }
 
-func (s *Service) UpdateGroup(ctx context.Context, tutor domain.UserID, id domain.GroupID, change GroupChange) (Group, error) {
+func (s *Service) UpdateGroup(ctx context.Context, actor domain.TutorActor, id domain.GroupID, change GroupChange) (Group, error) {
+	tutor := actor.UserID
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return Group{}, err
@@ -335,7 +337,7 @@ func (s *Service) UpdateGroup(ctx context.Context, tutor domain.UserID, id domai
 	var fields []string
 	var membership membershipChange
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 			return err
 		}
 		row, err := s.lockGroupForChange(ctx, repos, tutor, id, change)
@@ -492,7 +494,8 @@ func applyGroupDetails(ctx context.Context, repos repositories.Repositories, row
 	return fields, nil
 }
 
-func (s *Service) UnarchiveGroup(ctx context.Context, tutor domain.UserID, id domain.GroupID) (Group, error) {
+func (s *Service) UnarchiveGroup(ctx context.Context, actor domain.TutorActor, id domain.GroupID) (Group, error) {
+	tutor := actor.UserID
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return Group{}, err
@@ -500,7 +503,7 @@ func (s *Service) UnarchiveGroup(ctx context.Context, tutor domain.UserID, id do
 	var group Group
 	changed := false
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+		if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 			return err
 		}
 		if _, err := repos.Groups.LockForTutor(ctx, tutor, id); err != nil {

@@ -427,13 +427,29 @@ func (s *Service) OnAccountPurged(
 	}, nil
 }
 
-func (s *Service) lockActingTutor(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) error {
+func (s *Service) lockActingTutor(ctx context.Context, repos repositories.Repositories, actor domain.TutorActor) error {
+	tutor := actor.UserID
 	err := repos.TutorProfiles.Lock(ctx, tutor)
 	if errors.Is(err, repositories.ErrNotFound) {
 		return accounts.ErrUnauthenticated
 	}
 	if err != nil {
 		return err
+	}
+
+	checkedAt, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
+	if err != nil {
+		return err
+	}
+	session, err := repos.Sessions.ByID(ctx, actor.SessionID)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return accounts.ErrUnauthenticated
+	}
+	if err != nil {
+		return err
+	}
+	if session.UserID != actor.UserID || session.RevokedAt != nil || !checkedAt.Before(session.ExpiresAt) {
+		return accounts.ErrUnauthenticated
 	}
 	active, err := s.tutorActive(ctx, repos, tutor)
 	if err != nil {

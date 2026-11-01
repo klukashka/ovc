@@ -139,7 +139,7 @@ func (r *router) acceptRequest(ctx context.Context, input *requestInput) (*cardO
 	if !valid {
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
-	card, err := r.tutoring.AcceptRequest(ctx, principalFrom(ctx).UserID, id)
+	card, err := r.tutoring.AcceptRequest(ctx, tutorActorFrom(ctx), id)
 	if err != nil {
 		return nil, r.joinRequestError(ctx, "join_requests.accept.failed", err)
 	}
@@ -155,7 +155,7 @@ func (r *router) declineRequest(ctx context.Context, input *declineInput) (*decl
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
 	block := input.Body.Block != nil && *input.Body.Block
-	decision, err := r.tutoring.DeclineRequest(ctx, principalFrom(ctx).UserID, id, block)
+	decision, err := r.tutoring.DeclineRequest(ctx, tutorActorFrom(ctx), id, block)
 	if err != nil {
 		return nil, r.joinRequestError(ctx, "join_requests.decline.failed", err)
 	}
@@ -181,7 +181,7 @@ func (r *router) unblock(ctx context.Context, input *blockedInput) (*withdrawOut
 	if !valid {
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
-	if err := r.tutoring.Unblock(ctx, principalFrom(ctx).UserID, student); err != nil {
+	if err := r.tutoring.Unblock(ctx, tutorActorFrom(ctx), student); err != nil {
 		return nil, r.joinRequestError(ctx, "tutor.blocked_requesters.delete.failed", err)
 	}
 	return &withdrawOutput{CacheControl: noStore}, nil

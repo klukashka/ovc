@@ -247,7 +247,7 @@ func (r *router) tutorCode(ctx context.Context, _ *struct{}) (*tutorCodeOutput, 
 }
 
 func (r *router) regenerateTutorCode(ctx context.Context, _ *struct{}) (*tutorCodeOutput, error) {
-	regenerated, err := r.tutoring.RegenerateCode(ctx, principalFrom(ctx).UserID)
+	regenerated, err := r.tutoring.RegenerateCode(ctx, tutorActorFrom(ctx))
 	var throttled *tutoring.ThrottledError
 	switch {
 	case err == nil:
@@ -318,7 +318,7 @@ func (r *router) createCard(ctx context.Context, input *createCardInput) (*cardO
 	if input.IdempotencyKey != "" {
 		request.CreateKey = &input.IdempotencyKey
 	}
-	card, err := r.tutoring.CreateCard(ctx, principalFrom(ctx).UserID, request)
+	card, err := r.tutoring.CreateCard(ctx, tutorActorFrom(ctx), request)
 	if err != nil {
 		return nil, r.tutoringError(ctx, "students.create.failed", err)
 	}
@@ -368,7 +368,7 @@ func (r *router) updateCard(ctx context.Context, input *updateCardInput) (*cardO
 		DisplayName: input.Body.DisplayName, Notes: input.Body.Notes,
 		Email: tutoring.EmailChange{Set: input.Body.Email.Set, Value: input.Body.Email.Value},
 	}
-	card, err := r.tutoring.UpdateCard(ctx, principalFrom(ctx).UserID, id, change)
+	card, err := r.tutoring.UpdateCard(ctx, tutorActorFrom(ctx), id, change)
 	if err != nil {
 		return nil, r.tutoringError(ctx, "students.update.failed", err)
 	}
@@ -380,7 +380,7 @@ func (r *router) withdrawCard(ctx context.Context, input *cardInput) (*withdrawO
 	if !valid {
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
-	if err := r.tutoring.WithdrawCard(ctx, principalFrom(ctx).UserID, id); err != nil {
+	if err := r.tutoring.WithdrawCard(ctx, tutorActorFrom(ctx), id); err != nil {
 		return nil, r.tutoringError(ctx, "students.withdraw.failed", err)
 	}
 	return &withdrawOutput{CacheControl: noStore}, nil
@@ -391,7 +391,7 @@ func (r *router) regenerateInvitation(ctx context.Context, input *cardInput) (*r
 	if !valid {
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
-	issued, err := r.tutoring.RegenerateInvitation(ctx, principalFrom(ctx).UserID, id)
+	issued, err := r.tutoring.RegenerateInvitation(ctx, tutorActorFrom(ctx), id)
 	if err != nil {
 		return nil, r.tutoringError(ctx, "students.invitation.regenerate.failed", err)
 	}
@@ -407,7 +407,7 @@ func (r *router) sendInvitation(ctx context.Context, input *cardInput) (*accepte
 	if !valid {
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
-	if err := r.tutoring.SendInvitation(ctx, principalFrom(ctx).UserID, id); err != nil {
+	if err := r.tutoring.SendInvitation(ctx, tutorActorFrom(ctx), id); err != nil {
 		return nil, r.tutoringError(ctx, "students.invitation.send.failed", err)
 	}
 	return &acceptedOutput{CacheControl: noStore}, nil
@@ -427,7 +427,7 @@ func (r *router) removeStudent(ctx context.Context, input *cardInput) (*removedO
 	if !valid {
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
-	card, err := r.tutoring.RemoveStudent(ctx, principalFrom(ctx).UserID, id)
+	card, err := r.tutoring.RemoveStudent(ctx, tutorActorFrom(ctx), id)
 	if err != nil {
 		return nil, r.tutoringError(ctx, "students.remove.failed", err)
 	}
@@ -439,7 +439,7 @@ func (r *router) endRelationship(ctx context.Context, input *cardInput) (*cardOu
 	if !valid {
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
-	card, err := r.tutoring.EndByTutor(ctx, principalFrom(ctx).UserID, id)
+	card, err := r.tutoring.EndByTutor(ctx, tutorActorFrom(ctx), id)
 	if err != nil {
 		return nil, r.tutoringError(ctx, "students.end.failed", err)
 	}

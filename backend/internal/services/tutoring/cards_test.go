@@ -43,6 +43,7 @@ type cardFixture struct {
 	store    *repositories.Store
 	service  *tutoring.Service
 	tutor    domain.UserID
+	actor    domain.TutorActor
 }
 
 func newCardFixture(t *testing.T, instant time.Time) cardFixture {
@@ -76,13 +77,17 @@ func newCardFixture(t *testing.T, instant time.Time) cardFixture {
 	if err := store.Repositories().TutorProfiles.Create(context.Background(), profile, bytes.NewReader([]byte{2, 3, 4, 5, 6, 7, 8, 9})); err != nil {
 		t.Fatal(err)
 	}
-	return cardFixture{database: database, store: store, service: service, tutor: tutor}
+	session := domain.SessionID{1}
+	if err := store.Repositories().Sessions.Create(context.Background(), repositories.NewSession{ID: session, UserID: tutor, RefreshHash: make([]byte, 32), ExpiresAt: instant.Add(24 * time.Hour), CreatedAt: instant}); err != nil {
+		t.Fatal(err)
+	}
+	return cardFixture{actor: domain.TutorActor{UserID: tutor, SessionID: session}, database: database, store: store, service: service, tutor: tutor}
 }
 
 func TestCreatedCardMatchesItsStoredRowAtASubMicrosecondInstant(t *testing.T) {
 	f := newCardFixture(t, subMicrosecond)
 
-	created, err := f.service.CreateCard(context.Background(), f.tutor, tutoring.NewCard{DisplayName: "A student"})
+	created, err := f.service.CreateCard(context.Background(), f.actor, tutoring.NewCard{DisplayName: "A student"})
 	if err != nil {
 		t.Fatal(err)
 	}

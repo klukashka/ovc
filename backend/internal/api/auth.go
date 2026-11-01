@@ -400,3 +400,8 @@ func refreshCookie(value string, lifetime time.Duration) string {
 func clearedCookie() string {
 	return schemas.ClearedRefreshCookie()
 }
+
+func tutorActorFrom(ctx context.Context) domain.TutorActor {
+	principal := principalFrom(ctx)
+	return domain.TutorActor{UserID: principal.UserID, SessionID: principal.SessionID}
+}

@@ -30,7 +30,8 @@ type archiving struct {
 	emails     int64
 }
 
-func (s *Service) ArchiveGroup(ctx context.Context, tutor domain.UserID, id domain.GroupID) (Group, error) {
+func (s *Service) ArchiveGroup(ctx context.Context, actor domain.TutorActor, id domain.GroupID) (Group, error) {
+	tutor := actor.UserID
 	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return Group{}, err
@@ -39,7 +40,7 @@ func (s *Service) ArchiveGroup(ctx context.Context, tutor domain.UserID, id doma
 	for attempt := 1; ; attempt++ {
 		err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 			var err error
-			outcome, err = s.archive(ctx, repos, tutor, id, now)
+			outcome, err = s.archive(ctx, repos, actor, id, now)
 			return err
 		})
 		if !errors.Is(err, errMembersChanged) {
@@ -61,8 +62,9 @@ func (s *Service) ArchiveGroup(ctx context.Context, tutor domain.UserID, id doma
 	return outcome.group, nil
 }
 
-func (s *Service) archive(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.GroupID, now time.Time) (archiving, error) {
-	if err := s.lockActingTutor(ctx, repos, tutor); err != nil {
+func (s *Service) archive(ctx context.Context, repos repositories.Repositories, actor domain.TutorActor, id domain.GroupID, now time.Time) (archiving, error) {
+	tutor := actor.UserID
+	if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 		return archiving{}, err
 	}
 	if _, err := repos.Groups.ForTutor(ctx, tutor, id); err != nil {
