@@ -55,8 +55,10 @@ export function liveRefetch(
         void queryClient.invalidateQueries({ queryKey: notificationsKey });
         return;
       case 'message':
+        coalescer.changed(event.channelId, event);
+        return;
       case 'read':
-        coalescer.changed(event.channelId);
+        coalescer.read();
         return;
       case 'entity':
         if (event.entity === 'channel') {

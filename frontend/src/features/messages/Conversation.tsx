@@ -22,15 +22,7 @@ import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { asApiError, useApiClient, type ApiError } from '../../lib/api/client.ts';
 import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDate } from '../../lib/format/dates.ts';
-import {
-  type Channel,
-  type Message,
-  type MessagePage,
-  deleteMessage,
-  editMessage,
-  fetchMessages,
-  sendMessage,
-} from './api.ts';
+import { type Channel, type Message, type MessagePage, deleteMessage, editMessage, sendMessage } from './api.ts';
 import { Attachments, useAttachmentExpiry } from './Attachments.tsx';
 import { UploadComposer } from './UploadComposer.tsx';
 import { useUploads } from './uploads.ts';
@@ -41,7 +33,8 @@ import { channelKey, messagesKey } from './keys.ts';
 import { MessageBody } from './MessageBody.tsx';
 import { MessageMenu } from './MessageMenu.tsx';
 import { useReadMarkers } from './readMarkers.ts';
-import { scheduleChatReads } from './refetch.ts';
+import { chatRefetch, scheduleChatReads } from './refetch.ts';
+import { HistoryRefresh } from './historyRefresh.ts';
 import type { ChatTexts } from './translations.ts';
 
 export const MessageKeyContext = createContext<() => string>(() => crypto.randomUUID());
@@ -122,22 +115,16 @@ export function Conversation({
   const fileRefreshPaused = useRef(false);
   const fileRefresh = useRef<{ readonly promise: Promise<boolean>; readonly cancel: () => void } | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [history] = useState(
+    () =>
+      new HistoryRefresh(cache, client, channel.id, isAlive, onUnavailable, () => {
+        chatRefetch(cache, scheduler).changed(channel.id);
+      }),
+  );
+  useEffect(() => chatRefetch(cache, scheduler).mount(channel.id, history), [cache, scheduler, channel.id, history]);
   const query = useQuery({
     queryKey: messagesKey(channel.id),
-    queryFn: async ({ signal }): Promise<MessagePage> => {
-      const cached = cache.getQueryData<MessagePage>(messagesKey(channel.id));
-      const floor = cached?.items.at(-1)?.seq ?? oldestShown.current;
-      const items: Message[] = [];
-      let cursor: string | null = null;
-      do {
-        const page = await fetchMessages(client, channel.id, cursor, signal);
-        items.push(...page.items);
-        cursor = page.next_cursor;
-        const target = Math.min(floor ?? Infinity, oldestShown.current ?? Infinity);
-        if ((items.at(-1)?.seq ?? 0) <= target) break;
-      } while (cursor !== null);
-      return { items, next_cursor: cursor };
-    },
+    queryFn: ({ signal }): Promise<MessagePage> => history.full(signal, () => oldestShown.current),
     retry: false,
   });
   const messages = useMemo(() => [...(query.data?.items ?? [])].sort((a, b) => a.seq - b.seq), [query.data]);
@@ -251,18 +238,10 @@ export function Conversation({
     const request = new AbortController();
     olderRequest.current = request;
     try {
-      const page = await fetchMessages(client, channel.id, cursor, request.signal);
-      if (!isAlive() || request.signal.aborted) return;
+      const page = await history.older(request.signal);
+      if (page === null || !isAlive() || request.signal.aborted) return;
       const first = page.items.at(-1);
       if (first !== undefined) oldestShown.current = Math.min(oldestShown.current ?? first.seq, first.seq);
-      cache.setQueryData<MessagePage>(messagesKey(channel.id), (previous) => {
-        const retained = previous?.items ?? [];
-        const ids = new Set(retained.map((item) => item.id));
-        return {
-          items: [...retained, ...page.items.filter((item) => !ids.has(item.id))],
-          next_cursor: page.next_cursor,
-        };
-      });
     } catch (error: unknown) {
       if (isAlive() && !request.signal.aborted) {
         olderThan.current = null;

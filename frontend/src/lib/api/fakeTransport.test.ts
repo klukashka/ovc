@@ -268,3 +268,41 @@ describe('fake chat audience and state', () => {
     expect(await unread.json()).toEqual({ unread_channels: 0 });
   });
 });
+
+test('a held fake history response retains the authorized REST snapshot and no-store contract', async () => {
+  const server = chatFixture();
+  const token = await chatToken(server, 'tutor@example.org');
+  const pause = server.chat.pauseNextHistoryResponse();
+  const reading = server.transport().send(chatRequest(`channels/${chatId}/messages?after_seq=0&limit=1`, token));
+  await pause.answered;
+
+  const current = await server.transport().send(chatRequest(`channels/${chatId}/messages?after_seq=0&limit=1`, token));
+  pause.resume();
+  const held = await reading;
+  const heldBody: unknown = await held.json();
+  const currentBody: unknown = await current.json();
+
+  expect(held.status).toBe(200);
+  expect(held.headers.get('Cache-Control')).toBe('no-store');
+  expect(heldBody).toEqual(currentBody);
+});
+
+test('a held fake history refusal keeps its real no-store response after membership is restored', async () => {
+  const server = chatFixture();
+  const token = await chatToken(server, 'tutor@example.org');
+  server.chat.suspendMember(chatId, 'tutor', true);
+  const pause = server.chat.pauseNextHistoryResponse();
+  const reading = server.transport().send(chatRequest(`channels/${chatId}/messages?after_seq=0&limit=1`, token));
+  await pause.answered;
+
+  server.chat.suspendMember(chatId, 'tutor', false);
+  const current = await server.transport().send(chatRequest(`channels/${chatId}/messages?after_seq=0&limit=1`, token));
+  pause.resume();
+  const held = await reading;
+  const body: unknown = await held.json();
+
+  expect(current.status).toBe(200);
+  expect(held.status).toBe(404);
+  expect(held.headers.get('Cache-Control')).toBe('no-store');
+  expect(body).toMatchObject({ error: { code: 'not_found' } });
+});

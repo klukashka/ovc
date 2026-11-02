@@ -1229,3 +1229,92 @@ describe('attachment sending and lifecycle', () => {
     expect(reads()).toBe(before + 1);
   });
 });
+
+test('history reconciliation retains draft read marker and focus', async () => {
+  const { server, cache, clock } = await fixture(3);
+  const field = await screen.findByRole('textbox', { name: 'Message' });
+  fireEvent.change(field, { target: { value: 'An unsent draft' } });
+  field.focus();
+  const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+  server.chat.addMessage(channel.id, { ...message(4), senderId: 'student-1' });
+
+  act(() => {
+    receive({ kind: 'message', change: 'new', channelId: channel.id, messageId: 'message-4', seq: 4 });
+    clock.pass(1000);
+  });
+  await screen.findByText('Message 4');
+
+  expect((field as HTMLTextAreaElement).value).toBe('An unsent draft');
+  expect(document.activeElement).toBe(field);
+  expect(server.chat.readSeq(channel.id, tutor.id)).toBe(0);
+  expect(screen.getByRole('list', { name: 'Messages' }).querySelectorAll('[data-seq]')).toHaveLength(4);
+  receive.cancel();
+});
+
+test('reopening the same channel rejects a withheld old-generation incremental response', async () => {
+  const { server, api, cache, clock, router } = await fixture();
+  await screen.findByText('Message 1');
+  const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+  server.chat.addMessage(channel.id, message(2));
+  const pause = server.chat.pauseNextHistoryResponse();
+  act(() => {
+    receive({ kind: 'message', change: 'new', channelId: channel.id, messageId: 'message-2', seq: 2 });
+    clock.pass(1000);
+  });
+  await pause.answered;
+  await editMessage(api, message(2), 'Fresh reopened text');
+
+  await act(async () => {
+    await router.navigate('/elsewhere');
+  });
+  await screen.findByRole('heading', { name: 'Elsewhere' });
+  await act(async () => {
+    await router.navigate('/messages/channel-1');
+  });
+  await screen.findByText('Fresh reopened text');
+  act(() => {
+    pause.resume();
+  });
+
+  expect(screen.queryByText('Message 2')).toBeNull();
+  expect(
+    cache
+      .getQueryData<import('./api.ts').MessagePage>(messagesKey(channel.id))
+      ?.items.find((item) => item.id === 'message-2'),
+  ).toMatchObject({ body: 'Fresh reopened text', version: 2 });
+  expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2 }));
+  receive.cancel();
+});
+
+test('conflict adoption requires fresh authoritative history after incremental work', async () => {
+  const { server, api, cache, clock } = await fixture();
+  const field = await screen.findByRole('textbox', { name: 'Message' });
+  fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+  fireEvent.change(field, { target: { value: 'Retained conflict draft' } });
+  await editMessage(api, message(1), 'Incrementally observed text');
+  const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+  act(() => {
+    receive({ kind: 'message', change: 'updated', channelId: channel.id, messageId: 'message-1' });
+    clock.pass(1000);
+  });
+  await screen.findByText('Incrementally observed text');
+  const before = server.sentAddresses.filter(
+    (url) => url.pathname.endsWith('/messages') && !url.searchParams.has('after_seq'),
+  ).length;
+
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  const choose = await screen.findByRole('button', { name: 'Keep my text' });
+  const blockedSave = screen.getByRole('button', { name: 'Save' }).getAttribute('aria-disabled');
+  const after = server.sentAddresses.filter(
+    (url) => url.pathname.endsWith('/messages') && !url.searchParams.has('after_seq'),
+  ).length;
+  fireEvent.click(choose);
+
+  expect(after).toBeGreaterThan(before);
+  expect(blockedSave).toBe('true');
+  expect(server.chat.history(channel.id)[0]?.version).toBe(2);
+  expect((field as HTMLTextAreaElement).value).toBe('Retained conflict draft');
+  expect(document.activeElement).toBe(field);
+  receive.cancel();
+});

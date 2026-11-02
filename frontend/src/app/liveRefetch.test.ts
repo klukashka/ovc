@@ -101,7 +101,7 @@ describe('chat event refetches', () => {
     });
     const onEvent = liveRefetch(client, new NotificationArrivals(), scheduler);
 
-    onEvent({ kind: 'message', change: 'new', channelId: 'a', messageId: 'one' });
+    onEvent({ kind: 'message', change: 'new', channelId: 'a', messageId: 'one', seq: 1 });
     onEvent({ kind: 'message', change: 'deleted', channelId: 'a', messageId: 'two' });
     onEvent({ kind: 'read', channelId: 'a' });
     scheduler.pass(999);

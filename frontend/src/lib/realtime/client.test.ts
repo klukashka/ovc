@@ -318,7 +318,7 @@ test('chat frames emit refetch hints without making their payload authoritative'
 
   await eventually(() => {
     expect(events.filter((event) => event.kind !== 'connected')).toEqual([
-      { kind: 'message', change: 'new', channelId: 'channel-a', messageId: 'message-a' },
+      { kind: 'message', change: 'new', channelId: 'channel-a', messageId: 'message-a', seq: 5 },
       { kind: 'message', change: 'updated', channelId: 'channel-a', messageId: 'message-a' },
       { kind: 'message', change: 'deleted', channelId: 'channel-a', messageId: 'message-a' },
       { kind: 'read', channelId: 'channel-a' },

@@ -141,6 +141,25 @@ export class FakeChatServer {
     return { answered, resume };
   }
 
+  private historyPause: { readonly answered: () => void; readonly resumed: Promise<void> } | null = null;
+
+  pauseNextHistoryResponse(): { readonly answered: Promise<void>; readonly resume: () => void } {
+    let answer = (): void => {
+      throw new Error('the history pause is not initialized');
+    };
+    let resume = (): void => {
+      throw new Error('the history pause is not initialized');
+    };
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const resumed = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    this.historyPause = { answered: answer, resumed };
+    return { answered, resume };
+  }
+
   pauseNextChannelResponse(): { readonly answered: Promise<void>; readonly resume: () => void } {
     let answer = (): void => {
       throw new Error('the channel pause is not initialized');
@@ -389,15 +408,23 @@ export class FakeChatServer {
       }
       return response;
     }
+    if (parts[4] === 'messages' && request.method === 'GET') {
+      let response: Response;
+      if (channel === undefined || !this.visible(channel, caller)) response = refused(404, 'not_found');
+      else if (this.failHistoryRead) {
+        this.failHistoryRead = false;
+        response = refused(503, 'service_unavailable');
+      } else response = this.listMessages(channel, caller, address.searchParams);
+      const pause = this.historyPause;
+      this.historyPause = null;
+      if (pause !== null) {
+        pause.answered();
+        await pause.resumed;
+      }
+      return response;
+    }
     if (channel === undefined || !this.visible(channel, caller)) {
       return refused(404, 'not_found');
-    }
-    if (parts[4] === 'messages' && request.method === 'GET') {
-      if (this.failHistoryRead) {
-        this.failHistoryRead = false;
-        return refused(503, 'service_unavailable');
-      }
-      return this.listMessages(channel, caller, address.searchParams);
     }
     if (parts[4] === 'messages' && request.method === 'POST') {
       const response = await this.sendMessage(channel, caller, request, now);

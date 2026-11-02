@@ -24,7 +24,14 @@ export type RealtimeEvent =
       readonly kind: 'message';
       readonly channelId: string;
       readonly messageId: string;
-      readonly change: 'new' | 'updated' | 'deleted';
+      readonly change: 'new';
+      readonly seq: number;
+    }
+  | {
+      readonly kind: 'message';
+      readonly channelId: string;
+      readonly messageId: string;
+      readonly change: 'updated' | 'deleted';
     }
   | { readonly kind: 'read'; readonly channelId: string }
   | { readonly kind: 'entity'; readonly entity: EntityKind; readonly id: string }
@@ -188,7 +195,13 @@ export class RealtimeClient {
         this.deps.onEvent({ kind: 'entity', entity: frame.kind, id: frame.id });
         return;
       case 'message.new':
-        this.deps.onEvent({ kind: 'message', channelId: frame.channelId, messageId: frame.messageId, change: 'new' });
+        this.deps.onEvent({
+          kind: 'message',
+          channelId: frame.channelId,
+          messageId: frame.messageId,
+          change: 'new',
+          seq: frame.seq,
+        });
         return;
       case 'message.updated':
       case 'message.deleted':

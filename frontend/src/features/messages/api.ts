@@ -41,6 +41,21 @@ export async function fetchMessages(
   return data;
 }
 
+export async function fetchMessagesAfter(
+  client: ApiClient,
+  id: string,
+  after: number,
+  limit: number,
+  signal: AbortSignal,
+): Promise<MessagePage> {
+  const { data, error, response } = await client.GET('/api/v1/channels/{id}/messages', {
+    signal,
+    params: { path: { id }, query: { after_seq: String(after), limit } },
+  });
+  if (data === undefined) throw apiErrorFrom(response.status, error);
+  return data;
+}
+
 export async function sendMessage(
   client: ApiClient,
   id: string,
