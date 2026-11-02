@@ -159,6 +159,22 @@ function chatRequest(path: string, token: string, method = 'GET', body?: unknown
 }
 
 describe('fake chat audience and state', () => {
+  test('a transient channel-list refusal has the API error contract and the next read succeeds', async () => {
+    const server = chatFixture();
+    const token = await chatToken(server, 'tutor@example.org');
+    server.chat.failNextChannelListRead();
+
+    const refused = await server.transport().send(chatRequest('channels', token));
+    const recovered = await server.transport().send(chatRequest('channels', token));
+
+    expect(refused.status).toBe(503);
+    expect(await refused.json()).toEqual({
+      error: { code: 'service_unavailable', message: 'service_unavailable', request_id: 'fake-request' },
+    });
+    expect(refused.headers.get('Cache-Control')).toBe('no-store');
+    expect(recovered.status).toBe(200);
+    expect(await recovered.json()).toMatchObject({ items: [{ id: chatId }], next_cursor: null });
+  });
   test('an unverified tutor is refused on verified routes but can read their chat', async () => {
     const server = chatFixture();
     const token = await chatToken(server, 'tutor@example.org');

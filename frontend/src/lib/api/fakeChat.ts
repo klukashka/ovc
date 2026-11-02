@@ -103,6 +103,11 @@ export class FakeChatServer {
   private loseSendResponse = false;
   private failDelete = false;
   private failHistoryRead = false;
+  private failChannelListRead = false;
+
+  failNextChannelListRead(): void {
+    this.failChannelListRead = true;
+  }
   private failChannelRead = false;
   private messagePause: { readonly answered: () => void; readonly resumed: Promise<void> } | null = null;
 
@@ -340,6 +345,10 @@ export class FakeChatServer {
       const unread = Math.min(100, visible.filter((channel) => this.detail(channel, caller).unread_count > 0).length);
       if (id === 'unread') {
         return answer(200, { unread_channels: unread });
+      }
+      if (this.failChannelListRead) {
+        this.failChannelListRead = false;
+        return refused(503, 'service_unavailable');
       }
       const q = (address.searchParams.get('q') ?? '').toLocaleLowerCase();
       const sorted = visible

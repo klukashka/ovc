@@ -133,6 +133,15 @@ async function fixture(
   return { server, api, cache, clock, connection, router, session };
 }
 
+function seedChannels(server: FakeAuthServer, count: number): void {
+  for (let index = count; index >= 1; index -= 1) {
+    server.chat.addChannel({
+      channel: { ...channel, id: `pagination-${String(index)}`, label: `Chat ${String(index)}` },
+      members: [{ accountId: tutor.id }],
+    });
+  }
+}
+
 afterEach(cleanup);
 
 describe('message body', () => {
@@ -156,6 +165,166 @@ describe('message body', () => {
 });
 
 describe('Messages', () => {
+  test.each([
+    { role: 'tutor' as const, wide: true },
+    { role: 'student' as const, wide: false },
+  ])('channel show more focuses its first new link for $role', async ({ role, wide }) => {
+    const { server, cache } = await fixture(0, '/messages', wide, { role });
+    seedChannels(server, 60);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelsKey });
+    });
+    const more = await screen.findByRole('button', { name: 'Show more' });
+    more.focus();
+
+    fireEvent.click(more);
+    const firstAdded = await screen.findByRole('link', { name: 'Chat 31' });
+    const intermediateFocus = document.activeElement;
+    const lastMore = await screen.findByRole('button', { name: 'Show more' });
+    lastMore.focus();
+    fireEvent.click(lastMore);
+    const finalAdded = await screen.findByRole('link', { name: 'Student' });
+
+    expect(intermediateFocus).toBe(firstAdded);
+    expect(document.activeElement).toBe(finalAdded);
+    expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
+  });
+
+  test('final channel page without a new visible row restores focus to the last link', async () => {
+    const { server, cache } = await fixture(0, '/messages');
+    seedChannels(server, 31);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelsKey });
+    });
+    const more = await screen.findByRole('button', { name: 'Show more' });
+    for (let index = 30; index <= 31; index += 1) server.chat.removeMember(`pagination-${String(index)}`, tutor.id);
+    server.chat.removeMember(channel.id, tutor.id);
+    more.focus();
+
+    fireEvent.click(more);
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
+    });
+
+    expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Chat 30' }));
+  });
+
+  test('channel continuation retry focuses only its new rows and retains the loading control', async () => {
+    const { server, cache } = await fixture(0, '/messages');
+    seedChannels(server, 31);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelsKey });
+    });
+    const more = await screen.findByRole('button', { name: 'Show more' });
+    const pause = server.chat.pauseNextChannelListResponse();
+    more.focus();
+
+    fireEvent.click(more);
+    await pause.answered;
+    const loadingFocus = document.activeElement;
+    const loadingDisabled = more.getAttribute('aria-disabled');
+    const loadingBusy = more.getAttribute('aria-busy');
+    const loadingSpinner = more.querySelector('[aria-hidden="true"]');
+    fireEvent.click(more);
+    await act(async () => {
+      pause.resume();
+      await Promise.resolve();
+    });
+    const firstAdded = await screen.findByRole('link', { name: 'Chat 31' });
+
+    expect(loadingFocus).toBe(more);
+    expect(loadingDisabled).toBe('true');
+    expect(loadingBusy).toBe('true');
+    expect(loadingSpinner?.classList.contains('animate-spin')).toBe(true);
+    expect(document.activeElement).toBe(firstAdded);
+  });
+
+  test('channel continuation retry focuses only its new rows after a refusal', async () => {
+    const { server, cache } = await fixture(0, '/messages');
+    seedChannels(server, 31);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelsKey });
+    });
+    server.chat.failNextChannelListRead();
+    const more = await screen.findByRole('button', { name: 'Show more' });
+    more.focus();
+
+    fireEvent.click(more);
+    await screen.findByRole('alert');
+    const refusalFocus = document.activeElement;
+    const refusalBusy = more.getAttribute('aria-busy');
+    const refusalSpinner = more.querySelector('[aria-hidden="true"]');
+    const retry = screen.getByRole('button', { name: 'Try again' });
+    retry.focus();
+    fireEvent.click(retry);
+    const firstAdded = await screen.findByRole('link', { name: 'Chat 31' });
+
+    expect(refusalFocus).toBe(more);
+    expect(refusalBusy).toBe('false');
+    expect(refusalSpinner).toBeNull();
+    expect(document.activeElement).toBe(firstAdded);
+  });
+
+  test('raw search changes discard pagination focus before the query debounce', async () => {
+    const { server, cache, clock } = await fixture(0, '/messages');
+    seedChannels(server, 60);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelsKey });
+    });
+    const pause = server.chat.pauseNextChannelListResponse();
+    const more = await screen.findByRole('button', { name: 'Show more' });
+    more.focus();
+
+    fireEvent.click(more);
+    await pause.answered;
+    const search = screen.getByRole('searchbox', { name: 'Search chats' });
+    search.focus();
+    fireEvent.change(search, { target: { value: 'Chat 1' } });
+    await act(async () => {
+      pause.resume();
+      await Promise.resolve();
+    });
+    const oldRow = await screen.findByRole('link', { name: 'Chat 31' });
+    const focusBeforeDebounce = document.activeElement;
+    act(() => {
+      clock.pass(200);
+    });
+    await screen.findByRole('link', { name: 'Chat 19' });
+
+    expect(focusBeforeDebounce).toBe(search);
+    expect(focusBeforeDebounce).not.toBe(oldRow);
+    expect(document.activeElement).toBe(search);
+    expect(screen.queryByRole('link', { name: 'Chat 31' })).toBeNull();
+  });
+
+  test('a superseded channel continuation cannot steal focus', async () => {
+    const { server, cache, clock } = await fixture(0, '/messages');
+    seedChannels(server, 60);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelsKey });
+    });
+    const pause = server.chat.pauseNextChannelListResponse();
+    const more = await screen.findByRole('button', { name: 'Show more' });
+    more.focus();
+
+    fireEvent.click(more);
+    await pause.answered;
+    const search = screen.getByRole('searchbox', { name: 'Search chats' });
+    search.focus();
+    fireEvent.change(search, { target: { value: 'Chat 1' } });
+    act(() => {
+      clock.pass(200);
+    });
+    await screen.findByRole('link', { name: 'Chat 19' });
+    await act(async () => {
+      pause.resume();
+      await Promise.resolve();
+    });
+
+    expect(document.activeElement).toBe(search);
+    expect(screen.queryByRole('link', { name: 'Chat 31' })).toBeNull();
+  });
+
   test('show older focuses the first newly displayed message', async () => {
     await fixture(55);
     const older = await screen.findByRole('button', { name: 'Show older' });

@@ -1,5 +1,5 @@
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type ReactElement, useState, useRef } from 'react';
+import { type ReactElement, useState, useRef, useLayoutEffect, useCallback, useSyncExternalStore } from 'react';
 import { Link } from 'react-router';
 
 import { useDebouncedValue } from '../../app/clock.ts';
@@ -7,7 +7,7 @@ import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { quietButtonClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
-import { useSignedInAccount } from '../../lib/api/session.ts';
+import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDateTime } from '../../lib/format/dates.ts';
 import { type ChannelItem, type ChannelPage, fetchChannels } from './api.ts';
 import { channelScopeRevision, channelsScopeRevisionKey } from './cache.ts';
@@ -31,16 +31,35 @@ export function ChannelList({ texts }: { readonly texts: ChatTexts }): ReactElem
           className="min-h-11 rounded-md border border-border-strong bg-surface px-3"
         />
       </label>
-      <ChannelPages key={q} texts={texts} q={q} />
+      <ChannelPages key={q} texts={texts} q={q} rawSearch={search} />
     </div>
   );
 }
 
-function ChannelPages({ texts, q }: { readonly texts: ChatTexts; readonly q: string }): ReactElement {
+function ChannelPages({
+  texts,
+  q,
+  rawSearch,
+}: {
+  readonly texts: ChatTexts;
+  readonly q: string;
+  readonly rawSearch: string;
+}): ReactElement {
   const client = useApiClient();
   const me = useSignedInAccount();
+  const session = useSession();
   const cache = useQueryClient();
-  const scope = useQuery<number>({ queryKey: channelsScopeRevisionKey, enabled: false, initialData: 0 }).data;
+  useQuery<number>({ queryKey: channelsScopeRevisionKey, enabled: false, initialData: 0 });
+  const subscribeScope = useCallback(
+    (changed: () => void): (() => void) =>
+      cache.getQueryCache().subscribe((event) => {
+        const key: unknown = event.query.queryKey;
+        if (Array.isArray(key) && key.length === 1 && key[0] === channelsScopeRevisionKey[0]) changed();
+      }),
+    [cache],
+  );
+  const readScope = useCallback((): number => channelScopeRevision(cache), [cache]);
+  const scope = useSyncExternalStore(subscribeScope, readScope);
   const first = useQuery({
     queryKey: [...channelsKey, q, null],
     queryFn: async ({ signal }) => {
@@ -55,6 +74,15 @@ function ChannelPages({ texts, q }: { readonly texts: ChatTexts; readonly q: str
   const [boundary, setBoundary] = useState<string | null | undefined>(undefined);
   const [cursors, setCursors] = useState<readonly string[]>([]);
   const [cursorScope, setCursorScope] = useState(scope);
+  const [pagination, setPagination] = useState<{
+    readonly cursor: string;
+    readonly rawSearch: string;
+    readonly boundary: string | null | undefined;
+    readonly scope: number;
+    readonly epoch: number;
+    readonly shown: ReadonlySet<string>;
+  } | null>(null);
+  const focusedPagination = useRef<ReadonlySet<string> | null>(null);
   const freshFirst = first.data?.fetchedScopeRevision === scope;
   const activeCursors = boundary === currentBoundary && cursorScope === scope && freshFirst ? cursors : [];
   if (boundary !== currentBoundary || cursorScope !== scope) {
@@ -88,7 +116,34 @@ function ChannelPages({ texts, q }: { readonly texts: ChatTexts; readonly q: str
     'a',
   );
   const failure = queries.find((query) => query.isError);
-  const next = last?.data?.next_cursor;
+  const intent = pagination;
+  const continuation = intent === null ? undefined : tails[activeCursors.indexOf(intent.cursor)];
+  const continuationBusy = continuation?.isFetching === true;
+  const pendingContinuation = intent !== null && (continuation?.isPending === true || continuation?.isError === true);
+  const next = pendingContinuation ? intent.cursor : last?.data?.next_cursor;
+  const validIntent =
+    intent !== null &&
+    intent.boundary === currentBoundary &&
+    intent.rawSearch === rawSearch &&
+    intent.scope === scope &&
+    intent.epoch === session.currentEpoch();
+  if (intent !== null && (!validIntent || !freshFirst)) setPagination(null);
+  useLayoutEffect(() => {
+    const pending = pagination;
+    if (pending === null || focusedPagination.current === pending.shown || !validIntent || !freshFirst) return;
+    if (continuation?.isSuccess !== true || continuation.isFetching || !continuation.isFetchedAfterMount) return;
+    focusedPagination.current = pending.shown;
+    const rows = [...(list.current?.querySelectorAll<HTMLAnchorElement>(':scope > [data-row] > a') ?? [])];
+    const added = rows.find((row) => {
+      const key = row.parentElement?.getAttribute('data-row');
+      return key !== undefined && key !== null && !pending.shown.has(key);
+    });
+    if (added !== undefined) added.focus();
+    else if (next === null || next === undefined) {
+      const target = rows.at(-1) ?? document.querySelector<HTMLElement>('main h1');
+      target?.focus();
+    }
+  }, [pagination, continuation, currentBoundary, freshFirst, next, scope, validIntent]);
   return (
     <section aria-label={texts.list} className="flex min-w-0 flex-col gap-3">
       {first.isPending ? <DelayedLoading /> : null}
@@ -145,14 +200,34 @@ function ChannelPages({ texts, q }: { readonly texts: ChatTexts; readonly q: str
           </li>
         ))}
       </ul>
-      {freshFirst && !first.isFetching && next !== undefined && next !== null ? (
+      {freshFirst &&
+      (!first.isFetching || (validIntent && pendingContinuation)) &&
+      next !== undefined &&
+      next !== null ? (
         <button
           type="button"
           className={quietButtonClass}
+          aria-disabled={pendingContinuation || last?.isFetching === true}
+          aria-busy={continuationBusy}
           onClick={() => {
+            if (pendingContinuation || last?.isFetching === true) return;
+            setPagination({
+              cursor: next,
+              rawSearch,
+              boundary: currentBoundary,
+              scope,
+              epoch: session.currentEpoch(),
+              shown: new Set(channels.map((item) => item.id)),
+            });
             setCursors((previous) => (previous.includes(next) ? previous : [...previous, next]));
           }}
         >
+          {continuationBusy ? (
+            <span
+              aria-hidden="true"
+              className="mr-2 size-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+            />
+          ) : null}
           {texts.more}
         </button>
       ) : null}

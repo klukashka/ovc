@@ -1,8 +1,8 @@
 import type { Browser, BrowserContext, Locator, Page, Request } from '@playwright/test';
 
-import { newTestAccount, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { type Diagnostics, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { channelOf, channelUnread } from './messages.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { accessToken, callApi, createCard, createGroup, seedActiveStudent, signUpOnInvitation } from './tutoring.ts';
@@ -354,4 +354,63 @@ test.describe('text messages', () => {
     await expect(studentPage.getByRole('textbox', { name: 'Message', exact: true })).toBeFocused();
     await diagnostics.closeContext(context);
   });
+});
+
+const paginationTest = test.extend<
+  { diagnostics: Diagnostics },
+  { paginationActors: { readonly tutor: TestAccount; readonly student: TestAccount } }
+>({
+  paginationActors: [
+    async ({ deployment }, use): Promise<void> => {
+      const tutor = await seedVerifiedUser(deployment, 'Pagination tutor', 'en');
+      const member = await seedActiveStudent(deployment, tutor, 'Pagination student', 'en');
+      for (let index = 0; index < 60; index += 1) {
+        await createGroup(deployment, tutor, `Pagination group ${String(index)}`, [member.cardId]);
+      }
+      await use({ tutor, student: member.student });
+    },
+    { scope: 'worker' },
+  ],
+});
+
+paginationTest.describe('channel pagination', () => {
+  paginationTest.describe.configure({ mode: 'default' });
+  paginationTest.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow' });
+  for (const role of ['tutor', 'student'] as const) {
+    for (const profile of [
+      { language: 'en', theme: 'light', width: 1280, list: 'Chats', more: 'Show more' },
+      { language: 'ru', theme: 'dark', width: 375, list: 'Чаты', more: 'Показать ещё' },
+    ] as const) {
+      for (const final of [false, true]) {
+        paginationTest(
+          `${role} ${profile.language} ${profile.theme} ${String(profile.width)}px focuses its first new channel on the ${final ? 'final' : 'intermediate'} page`,
+          async ({ page, deployment, paginationActors }) => {
+            const account = paginationActors[role];
+            const saved = await callApi(deployment, await accessToken(deployment, account), 'PATCH', '/users/me', {
+              language: profile.language,
+              theme: profile.theme,
+            });
+            if (saved.status !== 200) throw new Error('pagination preferences were not saved');
+            await page.setViewportSize({ width: profile.width, height: 800 });
+            await signInThroughTheApi(page, account);
+            const traffic = trafficAfterReady(page, ['/api/v1/channels']);
+            await page.goto('/messages');
+            await expectRefetchedAfterTheSocketIsReady(traffic);
+            const links = page.getByRole('region', { name: profile.list, exact: true }).getByRole('link');
+            const more = page.getByRole('button', { name: profile.more, exact: true });
+            if (final) {
+              await more.click();
+              await links.nth(30).waitFor();
+            }
+
+            await more.focus();
+            await more.press('Enter');
+
+            await expect(links.nth(final ? 60 : 30)).toBeFocused();
+            await expect(more).toHaveCount(final ? 0 : 1);
+          },
+        );
+      }
+    }
+  }
 });
