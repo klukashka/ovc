@@ -584,4 +584,71 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
     check((await errorCode(reused)) === 'unauthenticated', 'expected unauthenticated');
     check((await subject.transport.refresh(timeout())).status === 204, 'expected no session to refresh');
   },
+  'abort after refresh headers rejects the unread response body and preserves the rotated cookie': async (subject) => {
+    await accessToken(await subject.transport.login(subject.email, subject.password));
+    const controller = new AbortController();
+
+    const response = await subject.transport.refresh(controller.signal);
+    check(response.status === 200, 'expected refresh headers before abort');
+    controller.abort();
+    let bodyFailed = false;
+    try {
+      await response.arrayBuffer();
+    } catch {
+      bodyFailed = true;
+    }
+    const next = await subject.transport.refresh(timeout());
+
+    check(bodyFailed, 'expected the aborted unread response body to fail');
+    check(next.status === 200, 'expected the already rotated cookie to remain usable');
+    await accessToken(next);
+  },
+  'account me and send retain abort ownership after headers and release cancelled readers': async (subject) => {
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+
+    for (const method of ['me', 'send'] as const) {
+      const controller = new AbortController();
+      const response =
+        method === 'me'
+          ? await subject.transport.me(token, controller.signal)
+          : await subject.transport.send(new Request(meRequest(subject, token), { signal: controller.signal }));
+      controller.abort();
+      const reader = response.body?.getReader();
+      check(reader !== undefined, 'expected an account response body');
+      let failed = false;
+      let completed = false;
+      let bytes = 0;
+      try {
+        while (!failed && !completed) {
+          const outcome = await reader?.read().then(
+            (part) => ({ kind: 'read' as const, part }),
+            () => ({ kind: 'failed' as const }),
+          );
+          check(outcome !== undefined, 'expected an account body read outcome');
+          if (outcome?.kind === 'failed') failed = true;
+          else if (outcome?.kind === 'read') {
+            completed = outcome.part.done;
+            if (!outcome.part.done) bytes += outcome.part.value.byteLength;
+            check(bytes <= 64 * 1024, 'account body exceeded the observation limit');
+          }
+        }
+      } finally {
+        reader?.releaseLock();
+      }
+      check(failed, 'expected account body abort to reject reading');
+      check(response.body?.locked === false, 'expected aborted account reader release');
+      const next =
+        method === 'me'
+          ? await subject.transport.me(token, timeout())
+          : await subject.transport.send(meRequest(subject, token));
+      const cancellationReader = next.body?.getReader();
+      check(cancellationReader !== undefined, 'expected a cancellable account response body');
+      try {
+        await cancellationReader?.cancel();
+      } finally {
+        cancellationReader?.releaseLock();
+      }
+      check(next.body?.locked === false, 'expected cancelled account reader release');
+    }
+  },
 };

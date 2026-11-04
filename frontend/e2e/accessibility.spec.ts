@@ -57,6 +57,7 @@ test('the skip link is the first stop and moves focus to the main content', asyn
 
 test('signing out from an unknown address returns to sign-in', async ({ page, tutor }) => {
   const traffic = trafficAfterReady(page, ['/api/v1/notifications', '/api/v1/channels/unread']);
+  await traffic.initialize();
   await signedInAt(page, tutor, '/no/such/page');
   await expect(page.getByRole('heading', { level: 1, name: 'Страница не найдена' })).toBeVisible();
   await expectRefetchedAfterTheSocketIsReady(traffic);

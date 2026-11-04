@@ -89,6 +89,7 @@ test('the tutor frame shows the tutor sections and server readiness', async ({ s
 
 async function openSettledToday(page: Page): Promise<void> {
   const traffic = trafficAfterReady(page, todayQueryPaths);
+  await traffic.initialize();
   await page.goto('/today');
   await expectSettledAfterTheSocketIsReady(page, traffic);
 }

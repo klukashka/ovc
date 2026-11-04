@@ -529,6 +529,7 @@ test.describe('in English with the dark theme', () => {
     }
     await signInThroughTheApi(page, pavel);
     const traffic = trafficAfterReady(page, [`/api/v1/students/${cardId}`]);
+    await traffic.initialize();
     await page.goto(`/students/${cardId}`);
     await expectRefetchedAfterTheSocketIsReady(traffic);
     await page.getByRole('list', { name: 'Next lessons', exact: true }).getByRole('link').focus();

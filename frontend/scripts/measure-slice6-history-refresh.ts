@@ -1,3 +1,4 @@
+import { observeBrowserContext, installPolicyObserver } from '../e2e/browser-diagnostics.ts';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
@@ -104,12 +105,6 @@ function observe(page: Page, channel: string): HistoryObservation {
   page.on('response', (response) => {
     if (response.status() >= 400) state.diagnostics += 1;
   });
-  page.on('pageerror', () => {
-    state.diagnostics += 1;
-  });
-  page.on('console', (message) => {
-    if (message.type() === 'error') state.diagnostics += 1;
-  });
   page.on('websocket', (socket) => {
     socket.on('close', () => {
       state.closed += 1;
@@ -176,7 +171,12 @@ UPDATE channels SET last_seq=${String(rows)}, last_activity_at=(SELECT instant F
     const browser = await chromium.launch();
     cleanup(() => browser.close());
     const context = await browser.newContext({ ignoreHTTPSErrors: true, baseURL: deployment.origin });
-    cleanup(() => context.close());
+    const browserDiagnostics = observeBrowserContext(context, 'chromium');
+    cleanup(async (): Promise<void> => {
+      await context.close();
+      await browserDiagnostics.finish();
+    });
+    await installPolicyObserver(context);
     const page = await context.newPage();
     const traffic = observe(page, channel);
     observation.current = traffic;
@@ -420,6 +420,12 @@ UPDATE channels SET last_seq=${String(rows)}, last_activity_at=(SELECT instant F
       rows,
       fullReadsTotal: lastFull.length,
       mandatoryFollowup: 'reported_in_case_request_classes',
+    });
+    browserDiagnostics.verify();
+    recordMeasurement({
+      event: 'measurement.browser_diagnostics',
+      consoleWarnings: browserDiagnostics.warnings(),
+      consoleErrors: browserDiagnostics.errors(),
     });
     if (traffic.state.diagnostics !== 0) throw new Error('history probe unexpected browser failure');
     stage = 'owned_cleanup';

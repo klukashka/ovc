@@ -119,9 +119,11 @@ test.describe('language', () => {
     });
     const failureLogged = page.waitForEvent('console', (message) => message.text().startsWith('language_load_failed'));
 
+    diagnostics.beginLanguageFailure(otherLanguage);
     await page.getByRole('button', { name: 'English' }).click();
     await languageChunks.treatedArrived;
     await failureLogged;
+    await diagnostics.finishLanguageFailure();
 
     expect(await shownTexts(page)).toEqual(shownBefore);
     expect(shownBefore.language).toBe(interfaceLanguage);

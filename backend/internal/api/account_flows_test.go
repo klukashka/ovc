@@ -248,6 +248,7 @@ func TestDuplicateSignUpSendsOneNoticePerDayAndNoneForADeletedAccount(t *testing
 
 func TestRegisterRefusesInvalidInput(t *testing.T) {
 	t.Parallel()
+	h := newFlowHarness(t)
 	cases := map[string]struct {
 		change func(*signUp)
 		field  string
@@ -264,8 +265,6 @@ func TestRegisterRefusesInvalidInput(t *testing.T) {
 	}
 	for name, testCase := range cases {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			h := newFlowHarness(t)
 			form := tutorSignUp(newcomerEmail)
 			testCase.change(&form)
 
@@ -809,6 +808,7 @@ func TestAnUnverifiedPasswordChangeKeepsAQueuedConfirmation(t *testing.T) {
 
 func TestRegisterStoresUTCForAZoneNameThatIsNotCanonical(t *testing.T) {
 	t.Parallel()
+	h := newFlowHarness(t)
 	names := map[string]string{
 		"dot segments":   "Europe/./Moscow",
 		"over 64 bytes":  "Europe/" + strings.Repeat("./", 40) + "Moscow",
@@ -819,14 +819,13 @@ func TestRegisterStoresUTCForAZoneNameThatIsNotCanonical(t *testing.T) {
 	}
 	for label, zone := range names {
 		t.Run(label, func(t *testing.T) {
-			t.Parallel()
-			h := newFlowHarness(t)
-			form := tutorSignUp(newcomerEmail)
+			email := strings.ReplaceAll(label, " ", "-") + "@example.org"
+			form := tutorSignUp(email)
 			form.Timezone = zone
 
 			result := h.register(t, form)
 
-			user, err := h.store.Repositories().Users.ByEmail(context.Background(), newcomerEmail)
+			user, err := h.store.Repositories().Users.ByEmail(context.Background(), email)
 			if result.status != http.StatusAccepted || err != nil || user.Timezone != "UTC" {
 				t.Fatalf("answered %d %s; stored %+v, %v", result.status, result.body, user.Timezone, err)
 			}

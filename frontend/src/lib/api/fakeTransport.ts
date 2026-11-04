@@ -156,7 +156,182 @@ async function nextTurn(): Promise<void> {
   await Promise.resolve();
 }
 
+export class SignalAwareRefreshBodies {
+  private lastResponse: Response | null = null;
+  private headerResume = (): void => undefined;
+  private readonly headerGate: Promise<void>;
+  private readonly cancellationFails: boolean;
+  readonly headers: Promise<void>;
+  readonly reading: Promise<void>;
+  private markHeaders = (): void => undefined;
+  private markReading = (): void => undefined;
+  private resume = (): void => undefined;
+  private readonly gate: Promise<void>;
+  private failed = false;
+  private readonly size: number | null;
+  private active = 0;
+  private completed = 0;
+  private cancelled = 0;
+  private aborted = 0;
+  private readFailures = 0;
+
+  constructor(
+    options: {
+      readonly hold?: boolean;
+      readonly bytes?: number;
+      readonly holdHeaders?: boolean;
+      readonly cancellationFails?: boolean;
+    } = {},
+  ) {
+    this.cancellationFails = options.cancellationFails ?? false;
+    this.headerGate = new Promise((resolve) => {
+      this.headerResume = resolve;
+    });
+    if (options.holdHeaders !== true) this.headerResume();
+    this.size = options.bytes ?? null;
+    if (this.size !== null && (!Number.isInteger(this.size) || this.size < 0 || this.size > 64 * 1024 + 1))
+      throw new Error('fake_refresh_body_size_invalid');
+    this.headers = new Promise((resolve) => {
+      this.markHeaders = resolve;
+    });
+    this.reading = new Promise((resolve) => {
+      this.markReading = resolve;
+    });
+    this.gate = new Promise((resolve) => {
+      this.resume = resolve;
+    });
+    if (options.hold !== true) this.resume();
+  }
+  async dispose(): Promise<void> {
+    this.releaseHeaders();
+    this.release();
+    if (this.lastResponse !== null && !this.lastResponse.bodyUsed) await this.lastResponse.body?.cancel();
+  }
+  releaseHeaders(): void {
+    this.headerResume();
+  }
+  release(): void {
+    this.resume();
+  }
+  fail(): void {
+    this.failed = true;
+    this.resume();
+  }
+  snapshot(): {
+    readonly consumed: boolean;
+    readonly active: number;
+    readonly completed: number;
+    readonly cancelled: number;
+    readonly aborted: number;
+    readonly readerLocked: boolean;
+    readonly readFailures: number;
+  } {
+    return {
+      consumed: this.lastResponse?.bodyUsed ?? false,
+      active: this.active,
+      completed: this.completed,
+      cancelled: this.cancelled,
+      aborted: this.aborted,
+      readerLocked: this.lastResponse?.body?.locked ?? false,
+      readFailures: this.readFailures,
+    };
+  }
+  async response(original: Response, signal: AbortSignal): Promise<Response> {
+    signal.throwIfAborted();
+    if (original.body === null) {
+      this.markHeaders();
+      return original;
+    }
+    const content = this.size !== null ? new Uint8Array(this.size) : new Uint8Array(await original.arrayBuffer());
+    signal.throwIfAborted();
+    let offset = 0;
+    let finished = false;
+    let abort = (): void => undefined;
+    const end = (): void => {
+      if (!finished) {
+        finished = true;
+        this.active -= 1;
+        signal.removeEventListener('abort', abort);
+      }
+    };
+    this.active += 1;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        start: (controller): void => {
+          abort = (): void => {
+            if (!finished) {
+              this.aborted += 1;
+              end();
+              this.resume();
+              controller.error(new DOMException('fake refresh body aborted', 'AbortError'));
+            }
+          };
+          signal.addEventListener('abort', abort, { once: true });
+          if (signal.aborted) abort();
+        },
+        pull: async (controller): Promise<void> => {
+          this.markReading();
+          await this.gate;
+          if (finished) return;
+          if (this.failed) {
+            this.readFailures += 1;
+            end();
+            controller.error(new Error('fake_refresh_body_read_failed'));
+            return;
+          }
+          if (offset === content.byteLength) {
+            this.completed += 1;
+            end();
+            controller.close();
+            return;
+          }
+          const next = Math.min(offset + 4096, content.byteLength);
+          controller.enqueue(content.subarray(offset, next));
+          offset = next;
+        },
+        cancel: (): void => {
+          this.cancelled += 1;
+          end();
+          this.resume();
+          if (this.cancellationFails) throw new Error('fake_body_cancellation_failed');
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const response = new Response(body, {
+      status: original.status,
+      statusText: original.statusText,
+      headers: original.headers,
+    });
+    this.lastResponse = response;
+    this.markHeaders();
+    await this.headerGate;
+    return response;
+  }
+}
+
+export class AccountResponseBodies {
+  private pending: SignalAwareRefreshBodies | null = null;
+  arm(body: SignalAwareRefreshBodies): void {
+    if (this.pending !== null) throw new Error('account_body_already_armed');
+    this.pending = body;
+  }
+  async response(original: Response, signal: AbortSignal): Promise<Response> {
+    const body = this.pending;
+    this.pending = null;
+    return (body ?? new SignalAwareRefreshBodies()).response(original, signal);
+  }
+}
+
 export class FakeAuthServer {
+  private readonly accountBodies: AccountResponseBodies | null;
+  private readonly refreshBodies: SignalAwareRefreshBodies | null;
+  constructor(
+    options: { readonly refreshBodies?: SignalAwareRefreshBodies; readonly accountBodies?: AccountResponseBodies } = {},
+  ) {
+    this.accountBodies = options.accountBodies ?? null;
+    this.refreshBodies = options.refreshBodies ?? null;
+  }
   readonly chat = new FakeChatServer();
   private readonly tutors = new Map<string, components['schemas']['MyTutor'][]>();
   private readonly accounts = new Map<string, FakeAccount>();
@@ -410,8 +585,8 @@ export class FakeAuthServer {
   transport(): AuthTransport {
     return {
       login: (email, password) => this.login(email, password),
-      refresh: () => this.refresh(),
-      me: (token) => this.checkAccount(token),
+      refresh: (signal) => this.refresh(signal),
+      me: (token, signal) => this.checkAccount(token, signal),
       send: (request, upload) => this.send(request, upload),
     };
   }
@@ -436,7 +611,8 @@ export class FakeAuthServer {
     return json(200, { access_token: this.issue(session.id), expires_in: accessTokenSeconds });
   }
 
-  private async refresh(): Promise<Response> {
+  private async refresh(signal: AbortSignal): Promise<Response> {
+    if (this.refreshBodies !== null) signal.throwIfAborted();
     const presented = this.storedRefresh;
     await nextTurn();
     const lost = this.lostRefreshes > 0;
@@ -449,7 +625,7 @@ export class FakeAuthServer {
     if (lost) {
       throw new TypeError('the connection was lost before the refresh answered');
     }
-    return answer;
+    return this.refreshBodies === null ? answer : this.refreshBodies.response(answer, signal);
   }
 
   private failRefresh(): Response {
@@ -481,16 +657,18 @@ export class FakeAuthServer {
     return json(200, { access_token: this.issue(session.id), expires_in: accessTokenSeconds });
   }
 
-  private async checkAccount(token: string): Promise<Response> {
+  private async checkAccount(token: string, signal: AbortSignal): Promise<Response> {
     await nextTurn();
     if (this.failingAccountChecks > 0) {
       this.failingAccountChecks -= 1;
       return refusal(503, 'service_unavailable');
     }
-    return this.answerMe(token);
+    const answer = this.answerMe(token);
+    return this.accountBodies === null ? answer : this.accountBodies.response(answer, signal);
   }
 
   private async send(request: Request, upload?: UploadTransfer): Promise<Response> {
+    this.chat.observeInitialReadInvocation(request.method, request.url, request.signal);
     await nextTurn();
     const token = request.headers.get('Authorization')?.replace(/^Bearer /, '') ?? '';
     this.sent.push(token);
@@ -498,7 +676,7 @@ export class FakeAuthServer {
     this.addresses.push(address);
     const path = address.pathname;
     if (path === '/api/v1/users/me') {
-      return this.readAccount(token);
+      return this.readAccount(token, request.signal);
     }
     const accountId = this.sessionOf(token)?.accountId;
     const caller = [...this.accounts.values()].find((account) => account.me.id === accountId)?.me;
@@ -746,11 +924,11 @@ export class FakeAuthServer {
     this.disabledGroups.set(accountId, disabled);
   }
 
-  private async readAccount(token: string): Promise<Response> {
+  private async readAccount(token: string, signal: AbortSignal): Promise<Response> {
     const answer = this.failingAccountReads > 0 ? this.failAccountRead() : this.answerMe(token);
     this.accountReadReceived();
     await this.accountReadGate;
-    return answer;
+    return this.accountBodies === null ? answer : this.accountBodies.response(answer, signal);
   }
 
   private failAccountRead(): Response {
@@ -765,6 +943,7 @@ export class FakeAuthServer {
     }
     const session = this.sessionOf(token);
     const account = [...this.accounts.values()].find((candidate) => candidate.me.id === session?.accountId);
+    if (account?.blocked === true) return refusal(403, 'account_blocked');
     return account === undefined ? refusal(401, 'unauthenticated') : json(200, account.me);
   }
 

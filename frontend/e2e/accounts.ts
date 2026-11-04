@@ -187,6 +187,7 @@ export async function signInThroughTheApi(page: Page, account: TestAccount): Pro
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     });
+    await response.arrayBuffer();
     return response.status;
   }, account);
   if (status !== 200) {

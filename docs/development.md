@@ -316,3 +316,347 @@ tools/dev-env.sh bash -c 'cd frontend && node scripts/measure-slice6-contexts.ts
 ```
 
 Each command records three fresh browser samples of ten warm-up and 100 measured context lifetimes in one browser per sample. Context/page creation, real sign-in, navigation, close, DOM counts, sockets, failures and residual contexts/pages are distinct observations. Context timing is not the full suite's saving, and unsupported retainers are not presumed absent.
+
+## Browser warning diagnostics and owned development smoke
+
+Status: added 2026-11-02, pending owner review.
+
+The shared browser fixture installs context-level console warning/error and uncaught-exception
+observers before creating or navigating application pages. Additional contexts use the explicit
+`observedBrowser` fixture constructor; popups and additional pages inherit their context's observer.
+Unexpected warnings always fail. Exact negative console-error expectations are limited to the
+page that declares them and do not authorize warnings. The sole explicitly declared warning
+exception is the Firefox language-load-abort negative phase documented below. Diagnosed pages retain separate exact
+HTTP failure expectations. Exported console diagnostics contain fixed categories, bounded counts,
+engine, stage and route classes, never raw console text, arguments, locations, exception messages
+or request URLs. HTTP and request-failure verification exports safe outcome markers. Private
+Playwright failure traces can still contain generated account credentials and token-bearing routes;
+these opaque artifacts are not redacted and must not be shared.
+
+The bounded development smoke is opt-in. Run it in a fresh checkout before any production
+end-to-end run in that checkout: development preparation refuses an existing preview TLS directory
+under the frontend sources, rather than deleting or trusting its contents. To repeat the development
+smoke after production tests, use another isolated checkout.
+
+```bash
+tools/dev-env.sh sh -c 'cd frontend && node scripts/check-development-warnings.ts'
+```
+
+It holds the existing machine run lock and owns the local API, worker, database and frontend
+processes. It runs Chromium, Firefox and WebKit against the real API with the fake provider and
+mail sink, exercises sign-in, secure refresh cookies, Messages and Settings, and requires zero
+unexpected warnings and errors. It is diagnostic evidence, not performance evidence.
+
+Only the owned smoke selects Vite mode `measurement-dev-tls`. That mode requires both existing
+`OVC_FRONTEND_PREVIEW_CERTIFICATE` and `OVC_FRONTEND_PREVIEW_PRIVATE_KEY` settings, pointing to
+its own generated disposable pair in a private temporary directory outside the frontend tree.
+Missing, partial, invalid or source/output-contained material fails before listening. Canonical,
+lexical and parent-directory aliases are checked. Cleanup stops owned processes before removing
+the directory. The named mode's framework logger exports only fixed categories so denied file
+requests cannot disclose the temporary key path. Default development remains HTTP with its
+existing headers and proxies; production preview retains its own TLS lifecycle and page headers.
+No cookie flags, Origin handling or file-serving permissions are relaxed.
+
+The local console canary and HTTPS/file-confinement controls run separately, without the owner
+environment, as `cd frontend && node scripts/check-browser-diagnostics.ts` and
+`cd frontend && node scripts/check-development-confinement.ts`. They are opt-in controls rather
+than additions to every production end-to-end journey.
+
+The owned failure-path control is also opt-in, in the same fresh-checkout order:
+`tools/dev-env.sh sh -c 'cd frontend && node scripts/check-development-lifecycle.ts'`.
+It reserves the fixture frontend port immediately before the real strict-port start to prove bind
+failure cleanup, and separately navigates Chromium to its own closed local port while the real
+deployment is live. It requires the owned child processes to exit, API/frontend ports to close,
+and the owned generated TLS directory to disappear after cleanup. It never removes unknown files.
+Named development readiness checks the existing API health endpoint through the HTTPS proxy;
+a listening TCP socket alone is insufficient.
+
+### Development initial-read validation
+
+Status: added 2026-11-02, pending owner review; scope approved in the
+[development findings plan](../knowledge/plans/slice-6-development-smoke-findings.md), refined by the
+[approved request-lifetime plan](../knowledge/plans/slice-6-development-cancellation-evidence.md) and
+[lazy-query enrollment plan](../knowledge/plans/slice-6-development-lazy-query-enrollment.md).
+
+The smoke seeds one real message per group before browser work, verifies visible message history,
+and changes channel and opens Profile through application links. The internal channel-scope cache
+observer uses TanStack's `skipToken`; its revision still changes only through cache updates and
+cannot issue a REST read. The smoke waits for WebSocket ready, the completed authoritative reads
+that follow it and tracked request completion before leaving each page.
+
+Only this opt-in smoke recognizes a bounded initial-mount cancellation expectation. It freezes
+three exact owned GET targets (unread, empty-search first channel page and current channel),
+including origin and all query parameters, before the authenticated document navigation. Only
+each target's first request becomes eligible, once, if its start is observed while the initial
+assembly remains unsealed and the original fixture readiness deadline has not elapsed.
+WebSocket ready and another target completion do not exclude a later initial lazy child mount.
+Each target enrolls only once; its successful first response prevents later cancellation allowance.
+The driver seals after visible composer and seeded history, validated owner, ready, complete
+authoritative after-ready reads for all three targets plus history and HTTP/async quiescence.
+Seal, deadline or ownership transition permanently closes enrollment; nothing rearms it.
+An enrolled first request may report its explicit cancellation after ready or unrelated completion,
+but before the deadline and seal, without an ownership/scope transition. Its exact second request in the same document/account
+must complete fully with status 200 before the deadline, even if its start or completion is
+reported before the first cancellation callback. No third request substitutes for a failed or
+missing second request. A successful first request never authorizes a later cancellation.
+Channel switches, retries and navigation never rearm the expectation. Warnings, console/page
+errors, HTTP failures and every other request failure remain failures; shared production
+fixtures acquire no cancellation allowance.
+
+Run the same initial-only browser control in the candidate checkout and an isolated copy whose
+retained explicit control patch removes only the StrictMode wrapper:
+`tools/dev-env.sh sh -c 'cd frontend && node scripts/check-development-warnings.ts --initial-control'`.
+The control emits separate bounded target/attempt/cancellation/replacement/completion counts,
+window and ownership status, and a fixed missing-query-function category. It is not the full
+six-journey development smoke. Combine this browser comparison with the actual SignedInFrame and
+Messages component controls under the real FollowingQueryClient, with and without StrictMode.
+The explicitly armed FakeChatServer observer captures only the three named targets and observes
+the first real AbortSignal at the exact second FakeAuthServer transport invocation, synchronously
+before its existing first await. It retains at most two signal lifetimes per target and a scalar
+total, exports only booleans/counts and changes no response, auth, routing or timing operation.
+The component proof establishes producer ordering; the browser comparison establishes the
+corresponding network pattern, not identical event timestamps. Both are required; matching
+shapes and a later HTTP 200 alone are insufficient. Production StrictMode remains unchanged. A separate isolated baseline without the `skipToken` correction must fail the console
+requirement. Keep every control patch with its evidence and never alter the implementation
+checkout to run a negative baseline.
+
+The real cancellation rejection controls are opt-in:
+`tools/dev-env.sh sh -c 'cd frontend && node scripts/check-development-read-controls.ts'`.
+They own their local API/browser data and exercise native fetch/AbortController lifetimes with
+hold-then-continue request barriers. They require composite-boundary rejection after complete real initial UI settlement and seal, on
+repeated cancellation, missing/failed/late replacement, HTTP failure, other target/query,
+replacement document/account and an ordinary application channel switch. Account replacement
+uses real native login, refresh and user lookup; only status codes and a private identity-match
+boolean are exported. State-machine contract tests supplement these real controls. A control is
+not passed until its actual browser assertions execute successfully.
+
+The development readiness barrier counts pending REST API requests, not long-lived Vite or
+WebSocket resources. All resource failures still enter the raw/unexpected failure counters.
+Diagnostics report API and non-API pending counts by fixed resource category, the state machine's
+pending/unresolved/ready/closure/deadline fields and outstanding account-body observations.
+A designated replacement that completes at or after the original initial-read deadline fails.
+Negative controls must assert the exact intended failure category, rather than succeeding merely
+because an unrelated initial replacement remains unresolved.
+
+For a bounded diagnostic run, select one native rejection case with
+`node scripts/check-development-read-controls.ts --control=outside_window` inside the same
+sanctioned-wrapper invocation. Omitting the selector still runs all nineteen controls. Fixed stages
+and request-state counters are emitted before cleanup, including setup failures, and again after
+cleanup. Pending API records contain only fixed route classes, whether the request belongs to
+the armed state machine, whether response headers arrived and bounded counts. Native login,
+GET and refresh checks consume the complete real response without exporting its body. The
+cancellation control releases its held request unchanged after native AbortError, then observes
+the browser request-failure event; this changes no cancellation eligibility or deadline.
+
+Held-request cleanup waits for its real unchanged continuation before removing the route handler.
+For native cancellation controls, a successful continuation outcome also requires the owned GET,
+proved native AbortError, explicit browser cancellation and an open page/context/browser. Thrown
+continuation errors still fail: only a fixed handled/closed/protocol/timeout/unknown category and
+safe ownership/liveness booleans are exported. Classification is not an error allowance.
+Initial settlement itself must finish before the original deadline; later ordinary verification
+may continue after a successful timely initial settlement. A changed scope with pending work
+from the frozen initial targets fails even after the initial window has closed.
+
+The two native HTTP-denial controls declare one finite exact GET/current-resource 404 expectation
+before the native action. The matching real response supplies the verified response facts. The
+expected resource message uses that response's status text, including an empty HTTP reason phrase;
+no regular-expression allowance is installed. Each control requires one complete 404 response,
+one consumed exact error and zero other errors or warnings. Fixed status-text variant and
+consumption counters diagnose a mismatch without exporting a raw phrase, message or URL.
+
+The `--control=late_replacement` case holds the exact second real GET until the original absolute
+readiness deadline, continues it unchanged and requires rejection of its complete HTTP 200.
+It uses the existing deadline, with no added grace. The failed-second case restores only its
+owned membership and proves that a third successful GET cannot resolve that failed second
+lifetime. Prior ten-case passing runs remain evidence for their tested source and do not prove
+these new lifetime controls or the changed full development smoke.
+
+### Development conversation lifecycle diagnostic
+
+Status: added 2026-11-02, pending owner review; evidence-first scope approved in the
+[conversation lifecycle plan](../knowledge/plans/slice-6-development-channel-mount-evidence.md).
+`tools/dev-env.sh sh -c 'cd frontend && node scripts/check-development-warnings.ts --diagnostic-navigation'`
+runs all six real engine/role journeys in fresh contexts. It declares the fixture-owned destination
+only for passive exact-target classification. Fixed records distinguish initial/destination/other
+scope, request category, bounded ordinal, explicit cancellation, document/account match, response
+status class and complete-body count; no address, identifier, body or raw error is exported.
+Every original assertion remains active. A failed prerequisite blocks its dependent steps; a strict
+read-verification failure after successful destination UI assertions is recorded before observational
+Settings navigation. Journey failures accumulate and the final record is diagnostic_not_acceptance;
+any original failure leaves a nonzero exit. This diagnostic grants no cancellation allowance and is
+not an acceptance rerun. Destination matching or producer extensions remain gated by its evidence.
+
+### Declared conversation navigation validation
+
+Status: added 2026-11-02, pending owner review; conditional scope approved in the
+[conversation lifecycle plan](../knowledge/plans/slice-6-development-channel-mount-evidence.md).
+The six-journey diagnostic identified only the exact destination detail GET first cancellation,
+with a complete successful second response and no other family. Real Messages, FollowingQueryClient
+and actual Link navigation separately prove the first signal already aborted at the second transport
+invocation under StrictMode, and one uncancelled lifetime without StrictMode. The named fake
+observation retains at most two signals and scalar totals for one destination; it cannot rearm,
+change responses, schedule work or inspect credentials.
+
+The default smoke can arm exactly one fixture-owned first-to-second conversation transition after
+initial seal, actual source/account/document validation and request quiescence. One exact SPA
+navigation must be observed; wrong/repeated navigation, account/document/resource invalidation
+permanently rejects it. Only the exact destination detail first request may be cancelled, once;
+its exact second full200 must complete before the existing 30-second transition deadline.
+No third request repairs it, and first success prevents later cancellation allowance. Destination
+composer, seeded history, full detail/history completion and HTTP/owner quiescence precede sealing.
+Settings gets no transition allowance. Initial enrollment remains sealed and ordinary unarmed SPA
+cancellation stays rejected. Original eleven native controls remain; eight named navigation controls
+add positive boundary, wrong destination/query, repeated cancellation/navigation and missing, failed
+(with successful third) and late second checks. These native controls and final browser acceptance
+remain pending execution on the new source. Redundant HTTP/scope guards receive exact classification
+coverage, not an independent native acceptance-sensitivity claim.
+
+### Production diagnostic ownership and native reporter checks
+
+Status: added 2026-11-03, pending owner review; implementation approved in the
+[production diagnostic follow-up plan](../knowledge/plans/slice-6-production-diagnostic-followups.md).
+Negative HTTP phases declare a finite method, exact complete address/query and status before the
+page action. They require matching real request/response identities and completed response bodies;
+undeclared failures, wrong page/method/query/status, extra occurrences and unused declarations fail.
+Native HTTP console messages are matched only transiently to one uniquely corresponding completed
+response in that page phase. Missing console location requires unambiguous attribution. Deferred
+candidates remain bounded; ambiguous or unmatched candidates fail. Explicit phase completion revokes
+all grants. Firefox may emit no native resource message. The blanket HTTP-console suppression flag
+has been removed, including from legacy diagnosed pages. Exports contain safe fixed categories and
+counts, including http_error; raw addresses, messages and response contents remain private.
+
+The sole expected warning is the existing deliberately aborted Firefox language import. Its phase
+requires the actual selected language asset request, a real request failure, the exact native module
+warning for that asset and one occurrence. The application language error and failed-request/UI/focus
+assertions remain independent. Wrong scope/language/URL, duplicate and unrelated warnings fail. Other
+engines gain no warning allowance. The owned native collector canary creates a genuine failed module
+connection, then tests an additional real warning and a duplicate without intercepting OVC traffic.
+
+The realtime production reporter delegates explicitly through Window, preserving the original Error.
+`tools/dev-env.sh sh -c 'cd frontend && node scripts/check-realtime-error-reporting.ts'` exercises
+actual wireRealtime/RealtimeClient over an owned real API/WebSocket in all three engines and recreates
+the original callback-alias defect in Firefox. The collector still rejects the intentional page error;
+this is reporter evidence, not a shared page-error exemption. The isolated `--callback-alias` mode
+applies the reporting success criterion to the original defect and must fail in Firefox. Use a fresh
+owned worktree with its own frozen dependencies and no generated preview TLS material before this
+named development-mode check; never bypass the existing certificate-confinement guard.
+
+The two twelve-minute session tests use pinned fastForward, which invokes overdue timers at most
+once, instead of replaying every heartbeat interval into a real-time frame-rate burst. They still
+observe a new real completed refresh response after readiness and retain account/session outcomes.
+Before the identified navigation/reload/close boundaries, tests require actual socket ready,
+authoritative Today reads, completed HTTP work and document.fonts.ready with no failed or loading
+FontFace. No sleep, networkidle, disabled font, server limit or production timing change is involved.
+Playwright traces remain opaque private artifacts; safe collector exports do not redact trace bodies.
+
+### Refresh refusal body lifecycle controls
+
+Status: added 2026-11-03, pending owner review; scope approved in the
+[refresh response lifecycle plan](../knowledge/plans/slice-6-refresh-refusal-body-lifecycle.md).
+The old session/token/private cache ends on refresh refusal headers before body completion. A
+64-KiB streaming maximum and the original 15-second request signal bound the drain; every reader
+is released and overflow cancels the owned body. Direct body failures reject, while startup retains
+its existing error-to-state behavior and never overwrites a newer owner. The acquired Web Lock
+callback checks epoch before a cookie-authenticated send. Holding that lock during a drain is an
+explicit resource-lifecycle consequence; it does not increase the deadline or change token policy.
+
+SignalAwareRefreshBodies is an explicitly constructor-selected fake adapter mode with separate
+headers/read/body controls and actual ReadableStream/AbortSignal ownership. Shared transport
+contracts cover post-header abort against the fake and real HTTP adapter. Real Session plus the
+production cache binding and Gate/router controls exercise immediate privacy release, replacement
+account adoption and an old queued callback without a refresh/replay. Ordinary tests cover bounded
+success/failure cases. `cd frontend && node scripts/check-refresh-response-lifetimes.ts` is the opt-in
+actual fifteen-second deadline/64-KiB/overflow/reader-release control; default test timeouts and
+selection remain unchanged. Its owned MessageChannel keeps only process liveness during the real
+AbortSignal deadline and is closed on every path; it does not provide timing or synchronization.
+
+### Readiness ownership across documents
+
+Status: added 2026-11-03, pending owner review; implementation follows the
+[document ownership plan](../knowledge/plans/slice-6-navigation-readiness-document-scope.md).
+The E2E readiness observer enrolls requests and the OVC socket in a committed main-document
+generation. A real main navigation retires old pending references and socket handlers; redirects
+keep one pending navigation. Departing requests cannot enroll before the next commit, and old
+completion or ready events cannot satisfy the new document. Current required queries still start
+after current ready and complete successfully, with no current pending API request. Current failures
+and missing terminal evidence cannot become successful readiness.
+
+For a same-document frame navigation, a public DOM Document handle is compared with the current
+main-frame Document; only the resulting boolean is used. No application state, global debug binding,
+account data or browser-private counter is exported. Ambiguous identity or failed navigation is
+failed readiness. SPA transitions keep their existing socket/query ownership. Idempotent disposal
+removes Page and WebSocket handlers and releases handles/references; the shared readiness assertion
+disposes its observer on success and failure.
+
+The named navigation-readiness state contracts cover old events without terminal notification,
+redirects, SPA, current failures and disposal. The explicit
+`node scripts/check-navigation-readiness.ts` control uses the real frontend/API in three engines,
+unchanged held requests, a hard navigation and SPA transition, a current-request deadline negative
+and repeated attach/dispose resource assertions. It is not a duplicate default E2E suite or a
+performance measurement. Existing diagnostics, assertions, retries and timeouts remain unchanged.
+
+### Document refetch lifetime verification
+
+Added 2026-11-03; wording pending owner review. The approved
+[document refetch plan](../knowledge/plans/slice-6-document-refetch-lifetime.md) uses real
+FollowingQueryClient/Session/fake-adapter integration to hold a first response across departure.
+The named regression asserts successful first completion, unchanged Query identity and exactly
+one request after invalidation settles. Old source and an isolated guard-removal mutation must
+fail that request-count assertion. Additional checks cover operations born suspended, resumed
+ownership, delayed realtime installation, BFCache, account replacement, rejection policy and
+disposal. Ordinary assertions, retries, timeouts and the merge-gate ceiling remain unchanged.
+
+Readiness request attribution additionally requires the committed document's origin and main
+frame. Only GET can satisfy a required read; other owned API requests retain their pending
+lifecycle. The observer excludes service workers and foreign frames/origins and fails on unknown
+frame attribution. Its rendered diagnostics contain fixed pending/missing categories rather than
+parameterized paths. Added 2026-11-04; wording pending owner review.
+
+### Account navigation observation (pending owner review)
+
+The browser readiness observer retains a Document reference inside an ordinary object to avoid
+DOM-node preview work. Account-switch readiness starts at the exact new confirmation request
+after its paired logout 204; origin, method, endpoint, main frame and document ownership remain
+mandatory. Old-account logout is verified separately, with diagnostics active throughout.
+The standalone Session regression proves that REST unauthenticated ends an unexpired revoked
+session without a REST-triggered refresh. A socket closed with 4401 independently requests a
+refresh. The browser reset control holds both real requests, observes the refresh refusal first,
+then the account-read refusal, and verifies that the late response cannot restore the account.
+This ordered control does not establish the initiator of a historical refresh. Separate tests
+retain token_expired refresh coverage. No general request-failure or warning exemption is introduced.
+
+### Parsed-document evidence (pending owner review)
+
+Readiness enrolls network and socket events immediately, but obtains its actual Document
+reference only after DOMContentLoaded. The public lifecycle waiter has a five-second bound and
+is joined rather than abandoned; disposal can take up to that bound when parsing is held.
+Generation checks before and after evaluation prevent a departed owner from acquiring a newer
+Document. This does not extend the readiness assertion deadline, disable DOM/network tracing,
+or allow browser warnings. Real entry-module holds prove parsing order, disposal before release
+and new-document ownership after supersession.
+
+### Coherent readiness proof (pending owner review)
+
+Browser readiness samples current capture, socket readiness and settled reads together under one
+five-second assertion. Controlled navigations join initial capture and explicitly retire prior
+capture work before subsequent hard navigation. Read-only counters describe actual waiter and
+handle ownership. Single-main-frame verification refuses child-frame attachment instead of
+attributing a page-scoped socket to a frame without evidence. Route cleanup closes admission,
+releases holds, removes only its owned handler and joins tracked callbacks; incomplete removal
+remains a failure. Negative controls must fail their named invariant, with native request-failure
+verification active and without diagnostic exemptions.
+
+### Discarded account-response ownership (pending owner review)
+
+The session consumes discarded account-response bodies in `loadMe` and `ownerOf`,
+without parsing or publishing stale account data during disposal. Existing authorized-request
+classification of refusals before disposal is unchanged. A current account refusal releases
+session and private-cache ownership before disposal. Each discard streams at most
+64 KiB; read, abort, overflow and cancellation failures remain failures and cannot
+change a replacement account. `loadMe` starts a 15-second HTTP/body signal before
+sending; `ownerOf` reuses its existing signal. This does not promise a total
+15-second operation deadline when an authorized request waits for a separate refresh.
+Reader cancellation settlement is checked separately, rather than inferred from an
+abort signal. Arbitrary API response ownership and stale refresh200 behavior are
+unchanged. These boundaries address T-20, T-21 and T-29; the bounded, content-free
+verification evidence addresses T-18, T-19 and T-41.

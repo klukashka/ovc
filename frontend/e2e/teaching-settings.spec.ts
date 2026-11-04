@@ -110,6 +110,7 @@ test('teaching settings › an unblock of a student unblocked meanwhile is refus
   await seedBlockedStudent(deployment, maria, 'Второй разблокированный ученик');
   await signInThroughTheApi(page, maria);
   const traffic = trafficAfterReady(page, blockedQueryPaths);
+  await traffic.initialize();
   await page.goto('/settings/teaching');
   const section = page.getByRole('region', { name: 'Заблокированные ученики' });
   await expect(section.getByRole('button', { name: /^Разблокировать: / })).toHaveCount(2);
@@ -134,6 +135,7 @@ test('teaching settings › a second refused unblock while the alert shows takes
   const second = await seedBlockedStudent(deployment, maria, 'Второй разблокированный ученик');
   await signInThroughTheApi(page, maria);
   const traffic = trafficAfterReady(page, blockedQueryPaths);
+  await traffic.initialize();
   await page.goto('/settings/teaching');
   const section = page.getByRole('region', { name: 'Заблокированные ученики' });
   const alert = section.getByRole('alert');

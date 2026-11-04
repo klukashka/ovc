@@ -186,31 +186,30 @@ func TestAvatarIsBoundServedAndReplaced(t *testing.T) {
 
 func TestAvatarRefusesOversizeAndDisguisedFiles(t *testing.T) {
 	t.Parallel()
+	h := newFlowHarness(t)
+	token := h.signedInTutor(t)
 	webp, err := base64.StdEncoding.DecodeString(tinyLosslessWebP)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cases := map[string]struct {
+	cases := []struct {
+		name     string
 		filename string
 		data     []byte
 		status   int
 	}{
-		"over 5 MB":             {filename: "big.png", data: append(pngBytes(t, 1, 1), make([]byte, domain.AvatarMaxBytes)...), status: http.StatusRequestEntityTooLarge},
-		"GIF":                   {filename: "anim.gif", data: []byte("GIF89a\x01\x00\x01\x00\x00\x00\x00;"), status: http.StatusUnsupportedMediaType},
-		"SVG":                   {filename: "logo.svg", data: []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`), status: http.StatusUnsupportedMediaType},
-		"text named PNG":        {filename: "note.png", data: []byte("hello"), status: http.StatusUnsupportedMediaType},
-		"PNG named JPEG":        {filename: "photo.jpg", data: pngBytes(t, 2, 2), status: http.StatusUnsupportedMediaType},
-		"WebP named PNG":        {filename: "photo.png", data: webp, status: http.StatusUnsupportedMediaType},
-		"wider than 4096 pixel": {filename: "wide.png", data: pngWithDeclaredWidth(t, 4097), status: http.StatusUnsupportedMediaType},
-		"16-bit PNG":            {filename: "deep.png", data: sixteenBitPNG(t), status: http.StatusUnsupportedMediaType},
-		"exactly 4096 pixels":   {filename: "wide.png", data: pngBytes(t, 4096, 1), status: http.StatusCreated},
+		{name: "over 5 MB", filename: "big.png", data: append(pngBytes(t, 1, 1), make([]byte, domain.AvatarMaxBytes)...), status: http.StatusRequestEntityTooLarge},
+		{name: "GIF", filename: "anim.gif", data: []byte("GIF89a\x01\x00\x01\x00\x00\x00\x00;"), status: http.StatusUnsupportedMediaType},
+		{name: "SVG", filename: "logo.svg", data: []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`), status: http.StatusUnsupportedMediaType},
+		{name: "text named PNG", filename: "note.png", data: []byte("hello"), status: http.StatusUnsupportedMediaType},
+		{name: "PNG named JPEG", filename: "photo.jpg", data: pngBytes(t, 2, 2), status: http.StatusUnsupportedMediaType},
+		{name: "WebP named PNG", filename: "photo.png", data: webp, status: http.StatusUnsupportedMediaType},
+		{name: "wider than 4096 pixel", filename: "wide.png", data: pngWithDeclaredWidth(t, 4097), status: http.StatusUnsupportedMediaType},
+		{name: "16-bit PNG", filename: "deep.png", data: sixteenBitPNG(t), status: http.StatusUnsupportedMediaType},
+		{name: "exactly 4096 pixels", filename: "wide.png", data: pngBytes(t, 4096, 1), status: http.StatusCreated},
 	}
-	for name, testCase := range cases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			h := newFlowHarness(t)
-			token := h.signedInTutor(t)
-
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
 			result := h.upload(t, token, testCase.filename, testCase.data)
 
 			if result.status != testCase.status {

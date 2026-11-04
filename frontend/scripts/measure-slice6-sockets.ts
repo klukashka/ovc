@@ -1,3 +1,4 @@
+import { observeBrowserContext, installPolicyObserver } from '../e2e/browser-diagnostics.ts';
 import { performance } from 'node:perf_hooks';
 
 import { chromium } from '@playwright/test';
@@ -216,11 +217,13 @@ async function sample(sampleNumber: number): Promise<void> {
           throw new Error('browser observer actor missing');
         }
         const context = await browser.newContext({ ignoreHTTPSErrors: true, baseURL: deployment.origin });
+        const diagnostics = observeBrowserContext(context, 'chromium');
+        await installPolicyObserver(context);
         const page = await context.newPage();
         await signInThroughTheApi(page, actor.account);
         await page.goto(`/messages/${actor.channel}`);
         await page.getByRole('textbox', { name: 'Message', exact: true }).waitFor();
-        return { context, page, actor };
+        return { context, page, actor, diagnostics };
       }),
     );
     const rendered: Promise<void>[] = [];
@@ -505,6 +508,12 @@ async function sample(sampleNumber: number): Promise<void> {
         renderLatency: 'recorded_per_observed_message',
       });
       await observer.context.close();
+      recordMeasurement({
+        event: 'measurement.browser_diagnostics',
+        consoleWarnings: observer.diagnostics.warnings(),
+        consoleErrors: observer.diagnostics.errors(),
+      });
+      observer.diagnostics.verify();
     }
     recordMeasurement({
       event: 'measurement.socket_summary',

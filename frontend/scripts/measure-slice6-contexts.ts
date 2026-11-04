@@ -5,6 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { type Browser, type BrowserType, chromium, firefox, webkit } from '@playwright/test';
 
 import { seedAccount, signInThroughTheApi } from '../e2e/accounts.ts';
+import { observeBrowserContext, installPolicyObserver } from '../e2e/browser-diagnostics.ts';
 import { finishRun, prepareRun, readE2ESettings, startDeployment, takeRunLock } from '../e2e/deployment.ts';
 
 import { measurementCount, measurementSmoke } from './slice6-measurement-support.ts';
@@ -53,12 +54,12 @@ async function measureContexts(browser: Browser, configuration: Options, sample:
     for (let cycle = 0; cycle < measurementCount(110, 3); cycle += 1) {
       const started = performance.now();
       const context = await browser.newContext({ ignoreHTTPSErrors: true, baseURL: deployment.origin });
+      const browserDiagnostics = observeBrowserContext(context, configuration.engine);
+      await installPolicyObserver(context);
       const contextMs = performance.now() - started;
       let openedSockets = 0;
       let closedSockets = 0;
       let failedRequests = 0;
-      let consoleErrors = 0;
-      let pageErrors = 0;
       try {
         const beforePage = performance.now();
         const page = await context.newPage();
@@ -71,14 +72,6 @@ async function measureContexts(browser: Browser, configuration: Options, sample:
         });
         page.on('requestfailed', () => {
           failedRequests += 1;
-        });
-        page.on('pageerror', () => {
-          pageErrors += 1;
-        });
-        page.on('console', (message) => {
-          if (message.type() === 'error') {
-            consoleErrors += 1;
-          }
         });
         const beforeSignIn = performance.now();
         if (configuration.surface === 'messages') {
@@ -109,8 +102,8 @@ async function measureContexts(browser: Browser, configuration: Options, sample:
           openedSockets,
           closedSockets,
           failedRequests,
-          consoleErrors,
-          pageErrors,
+          consoleWarnings: browserDiagnostics.warnings(),
+          consoleErrors: browserDiagnostics.errors(),
           remainingContexts: browser.contexts().length,
           remainingPages: context.pages().length,
           engine: configuration.engine,
@@ -120,8 +113,8 @@ async function measureContexts(browser: Browser, configuration: Options, sample:
         if (
           browser.contexts().length !== 0 ||
           context.pages().length !== 0 ||
-          pageErrors !== 0 ||
-          consoleErrors !== 0
+          browserDiagnostics.warnings() !== 0 ||
+          browserDiagnostics.errors() !== 0
         ) {
           throw new Error('context cleanup or page diagnostics failed');
         }

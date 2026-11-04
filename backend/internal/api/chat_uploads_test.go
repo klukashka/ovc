@@ -223,27 +223,27 @@ func TestAnUploadingRowLeftByACrashIsCleanedUp(t *testing.T) {
 
 func TestADisguisedFileIsRefused(t *testing.T) {
 	t.Parallel()
+	h := newUploadHarness(t)
 	withNul := plainText(9 << 20)
 	withNul[9<<20-10] = 0
 	genericZip := zipOf(t, map[string]string{"photos/one.jpg": "x"}, []string{"photos/one.jpg"})
 	cases := []struct {
+		id       byte
 		name     string
 		filename string
 		data     []byte
 	}{
-		{"a PNG named as a JPEG", "photo.jpg", pngBytes(t, 3, 3)},
-		{"markup named as a page", "page.html", []byte("<script>alert(1)</script>")},
-		{"markup named as a picture", "drawing.svg", []byte("<svg onload=alert(1)>")},
-		{"text without an extension", "README", []byte("plain words")},
-		{"a program", "setup.exe", []byte("MZ\x90\x00program")},
-		{"a generic ZIP named as a document", "essay.docx", genericZip},
-		{"text with a NUL beyond its first part", "notes.txt", withNul},
+		{1, "a PNG named as a JPEG", "photo.jpg", pngBytes(t, 3, 3)},
+		{2, "markup named as a page", "page.html", []byte("<script>alert(1)</script>")},
+		{3, "markup named as a picture", "drawing.svg", []byte("<svg onload=alert(1)>")},
+		{4, "text without an extension", "README", []byte("plain words")},
+		{5, "a program", "setup.exe", []byte("MZ\x90\x00program")},
+		{6, "a generic ZIP named as a document", "essay.docx", genericZip},
+		{7, "text with a NUL beyond its first part", "notes.txt", withNul},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			h := newUploadHarness(t)
-			parties := h.activeStudentInAGroup(t)
+			parties := h.uploadRefusalParties(t, testCase.id)
 			channel := h.directChannel(t, parties.card.ID).ID
 
 			result := h.chatUpload(t, parties.studentToken, channel, testCase.filename, testCase.data)
@@ -259,6 +259,7 @@ func TestADisguisedFileIsRefused(t *testing.T) {
 
 func TestUploadBodiesWithExtraPartsOrOversizedHeadersAreRefused(t *testing.T) {
 	t.Parallel()
+	h := newUploadHarness(t)
 	const boundary = "chat-boundary"
 	partOf := func(name string, filename string, extraHeaders string, body string) string {
 		disposition := `form-data; name="` + name + `"`
@@ -270,28 +271,27 @@ func TestUploadBodiesWithExtraPartsOrOversizedHeadersAreRefused(t *testing.T) {
 	end := "--" + boundary + "--\r\n"
 	contentType := "multipart/form-data; boundary=" + boundary
 	cases := []struct {
+		id     byte
 		name   string
 		body   string
 		status int
 		fields string
 		row    bool
 	}{
-		{"two file parts", partOf("file", "a.txt", "", "first") + partOf("file", "b.txt", "", "second") + end, http.StatusUnprocessableEntity, "body.file:invalid", true},
-		{"a file then a field", partOf("file", "a.txt", "", "first") + partOf("note", "", "", "hello") + end, http.StatusUnprocessableEntity, "body.file:invalid", true},
-		{"a field before the file", partOf("note", "", "", "hello") + partOf("file", "a.txt", "", "first") + end, http.StatusUnprocessableEntity, "body.file:required", false},
-		{"part headers over 8 KiB", partOf("file", "a.txt", "X-Padding: "+strings.Repeat("p", 9<<10)+"\r\n", "first") + end,
+		{1, "two file parts", partOf("file", "a.txt", "", "first") + partOf("file", "b.txt", "", "second") + end, http.StatusUnprocessableEntity, "body.file:invalid", true},
+		{2, "a file then a field", partOf("file", "a.txt", "", "first") + partOf("note", "", "", "hello") + end, http.StatusUnprocessableEntity, "body.file:invalid", true},
+		{3, "a field before the file", partOf("note", "", "", "hello") + partOf("file", "a.txt", "", "first") + end, http.StatusUnprocessableEntity, "body.file:required", false},
+		{4, "part headers over 8 KiB", partOf("file", "a.txt", "X-Padding: "+strings.Repeat("p", 9<<10)+"\r\n", "first") + end,
 			http.StatusUnprocessableEntity, "body.file:required", false},
-		{"no part at all", end, http.StatusUnprocessableEntity, "body.file:required", false},
-		{"a malformed body", "--" + boundary + "\r\nnot a header\r\n", http.StatusBadRequest, "", false},
-		{"a malformed trailing part", partOf("file", "a.txt", "", "first") + "--" + boundary + "\r\nnot a header\r\n", http.StatusBadRequest, "", true},
-		{"a second part with headers beyond the allowance", partOf("file", "a.txt", "", "first") +
+		{5, "no part at all", end, http.StatusUnprocessableEntity, "body.file:required", false},
+		{6, "a malformed body", "--" + boundary + "\r\nnot a header\r\n", http.StatusBadRequest, "", false},
+		{7, "a malformed trailing part", partOf("file", "a.txt", "", "first") + "--" + boundary + "\r\nnot a header\r\n", http.StatusBadRequest, "", true},
+		{8, "a second part with headers beyond the allowance", partOf("file", "a.txt", "", "first") +
 			partOf("note", "", "X-Padding: "+strings.Repeat("p", 64<<10)+"\r\n", "hello") + end, http.StatusUnprocessableEntity, "body.file:invalid", true},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			h := newUploadHarness(t)
-			parties := h.activeStudentInAGroup(t)
+			parties := h.uploadRefusalParties(t, testCase.id)
 			channel := h.directChannel(t, parties.card.ID).ID
 
 			result := h.rawChatUpload(t, parties.studentToken, channel, testCase.body, contentType)

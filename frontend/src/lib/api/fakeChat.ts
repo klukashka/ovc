@@ -4,6 +4,26 @@ import type { Me } from './session.ts';
 type Channel = components['schemas']['ChannelDetail'];
 type Message = components['schemas']['Message'];
 
+export type FakeInitialReadTarget = 'unread' | 'list' | 'current_channel';
+export interface FakeInitialReadSnapshot {
+  readonly target: FakeInitialReadTarget;
+  readonly totalAttempts: number;
+  readonly retainedLifetimes: number;
+  readonly firstAborted: boolean;
+  readonly secondAborted: boolean;
+  readonly firstAbortedAtSecondInvocation: boolean | null;
+}
+export interface FakeInitialReadObservation {
+  readonly snapshot: () => readonly FakeInitialReadSnapshot[];
+  readonly stop: () => void;
+}
+interface ObservedInitialRead {
+  totalAttempts: number;
+  first: AbortSignal | null;
+  second: AbortSignal | null;
+  firstAbortedAtSecondInvocation: boolean | null;
+}
+
 export interface FakeChatMember {
   readonly accountId: string;
   readonly label?: string;
@@ -52,6 +72,112 @@ function acceptableText(body: string): boolean {
 }
 
 export class FakeChatServer {
+  private destinationObservation: {
+    readonly origin: string;
+    readonly channel: string;
+    readonly state: ObservedInitialRead;
+  } | null = null;
+  private destinationObservationUsed = false;
+
+  observeDestinationDetail(origin: string, channel: string): FakeInitialReadObservation {
+    if (this.destinationObservationUsed) throw new Error('destination_observation_already_used');
+    this.destinationObservationUsed = true;
+    const state: ObservedInitialRead = {
+      totalAttempts: 0,
+      first: null,
+      second: null,
+      firstAbortedAtSecondInvocation: null,
+    };
+    const observation = { origin, channel, state };
+    this.destinationObservation = observation;
+    return {
+      snapshot: (): readonly FakeInitialReadSnapshot[] => [
+        {
+          target: 'current_channel',
+          totalAttempts: state.totalAttempts,
+          retainedLifetimes: state.second === null ? (state.first === null ? 0 : 1) : 2,
+          firstAborted: state.first?.aborted ?? false,
+          secondAborted: state.second?.aborted ?? false,
+          firstAbortedAtSecondInvocation: state.firstAbortedAtSecondInvocation,
+        },
+      ],
+      stop: (): void => {
+        if (this.destinationObservation === observation) this.destinationObservation = null;
+      },
+    };
+  }
+
+  private initialReadObservation: {
+    readonly channelId: string;
+    readonly origin: string;
+    readonly targets: Map<FakeInitialReadTarget, ObservedInitialRead>;
+  } | null = null;
+
+  observeInitialReads(origin: string, channelId: string): FakeInitialReadObservation {
+    if (this.initialReadObservation !== null) throw new Error('initial_read_observation_already_armed');
+    const targets = new Map<FakeInitialReadTarget, ObservedInitialRead>();
+    for (const target of ['unread', 'list', 'current_channel'] as const)
+      targets.set(target, { totalAttempts: 0, first: null, second: null, firstAbortedAtSecondInvocation: null });
+    const observation = { origin, channelId, targets };
+    this.initialReadObservation = observation;
+    return {
+      snapshot: (): readonly FakeInitialReadSnapshot[] =>
+        [...targets].map(([target, value]) => ({
+          target,
+          totalAttempts: value.totalAttempts,
+          retainedLifetimes: value.second === null ? (value.first === null ? 0 : 1) : 2,
+          firstAborted: value.first?.aborted ?? false,
+          secondAborted: value.second?.aborted ?? false,
+          firstAbortedAtSecondInvocation: value.firstAbortedAtSecondInvocation,
+        })),
+      stop: (): void => {
+        if (this.initialReadObservation === observation) this.initialReadObservation = null;
+      },
+    };
+  }
+
+  observeInitialReadInvocation(method: string, address: string, signal: AbortSignal): void {
+    const destination = this.destinationObservation;
+    if (destination !== null && method === 'GET') {
+      const url = new URL(address);
+      if (
+        url.origin === destination.origin &&
+        url.pathname === `/api/v1/channels/${destination.channel}` &&
+        [...url.searchParams].length === 0
+      ) {
+        const state = destination.state;
+        state.totalAttempts += 1;
+        if (state.totalAttempts === 1) state.first = signal;
+        if (state.totalAttempts === 2) {
+          state.second = signal;
+          state.firstAbortedAtSecondInvocation = state.first?.aborted ?? false;
+        }
+      }
+    }
+    const observation = this.initialReadObservation;
+    if (observation === null || method !== 'GET') return;
+    const url = new URL(address);
+    if (url.origin !== observation.origin) return;
+    const query = [...url.searchParams];
+    const target =
+      url.pathname === '/api/v1/channels/unread' && query.length === 0
+        ? 'unread'
+        : url.pathname === '/api/v1/channels' && query.length === 1 && query[0]?.[0] === 'q' && query[0][1] === ''
+          ? 'list'
+          : url.pathname === `/api/v1/channels/${observation.channelId}` && query.length === 0
+            ? 'current_channel'
+            : null;
+    if (target === null) return;
+    const state = observation.targets.get(target);
+    if (state === undefined) throw new Error('initial_read_target_missing');
+    state.totalAttempts += 1;
+    if (state.totalAttempts === 1) state.first = signal;
+    else if (state.totalAttempts === 2) {
+      state.second = signal;
+      state.firstAbortedAtSecondInvocation = state.first?.aborted ?? false;
+    }
+  }
+
   private readonly channels = new Map<string, StoredChannel>();
   private sequence = 0;
   private issued = 0;

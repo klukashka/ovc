@@ -186,6 +186,7 @@ test('upload transport › an expired multipart upload refreshes once, removal a
     '/api/v1/channels',
     '/api/v1/channels/unread',
   ]);
+  await traffic.initialize();
   await page.goto(`/messages/${channel}`);
   await expectRefetchedAfterTheSocketIsReady(traffic);
   const uploads: number[] = [];

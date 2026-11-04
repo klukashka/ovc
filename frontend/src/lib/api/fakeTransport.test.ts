@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { FakeAuthServer } from './fakeTransport.ts';
+import { AccountResponseBodies, FakeAuthServer, SignalAwareRefreshBodies } from './fakeTransport.ts';
 import type { components } from './schema.ts';
 import { type ContractSubject, type SeededLessons, authTransportContract } from './transportContract.ts';
 
@@ -9,7 +9,10 @@ type CalendarItem = components['schemas']['CalendarItem'];
 const origin = 'https://ovc.example';
 
 function fakeSubject(): ContractSubject {
-  const server = new FakeAuthServer();
+  const server = new FakeAuthServer({
+    refreshBodies: new SignalAwareRefreshBodies(),
+    accountBodies: new AccountResponseBodies(),
+  });
   server.addAccount({ id: 'account-a', name: 'A tutor', email: 'a@example.org', password: 'a long enough password' });
   server.addAccount({ id: 'account-b', name: 'B tutor', email: 'b@example.org', password: 'another long password' });
   server.addAccount({
@@ -305,4 +308,155 @@ test('a held fake history refusal keeps its real no-store response after members
   expect(held.status).toBe(404);
   expect(held.headers.get('Cache-Control')).toBe('no-store');
   expect(body).toMatchObject({ error: { code: 'not_found' } });
+});
+
+describe('the passive initial-read transport observation', () => {
+  test.each([false, true])('preserves routing and authentication responses when armed=%s', async (armed) => {
+    const server = chatFixture();
+    const token = await chatToken(server, 'tutor@example.org');
+    const observed = armed ? server.chat.observeInitialReads(origin, chatId) : null;
+
+    const own = await server.transport().send(chatRequest(`channels/${chatId}`, token));
+    const list = await server.transport().send(chatRequest('channels?q=', token));
+    const unread = await server.transport().send(chatRequest('channels/unread', token));
+    const denied = await server.transport().send(chatRequest(`channels/${chatId}`, 'invalid-token'));
+    const ownBody: unknown = await own.json();
+    const listBody: unknown = await list.json();
+    const unreadBody: unknown = await unread.json();
+    const deniedBody: unknown = await denied.json();
+    const snapshot = observed?.snapshot();
+    observed?.stop();
+
+    expect(own.status).toBe(200);
+    expect(ownBody).toMatchObject({ id: chatId, unconfirmed: true });
+    expect(list.status).toBe(200);
+    expect(listBody).toMatchObject({ items: [{ id: chatId }], next_cursor: null });
+    expect(unread.status).toBe(200);
+    expect(unreadBody).toEqual({ unread_channels: 1 });
+    expect(denied.status).toBe(401);
+    expect(deniedBody).toMatchObject({ error: { code: 'unauthenticated' } });
+    expect(own.headers.get('Cache-Control')).toBe('no-store');
+    if (armed) expect(snapshot?.map((entry) => entry.totalAttempts)).toEqual([1, 1, 2]);
+    else expect(snapshot).toBeUndefined();
+  });
+
+  test('observes producer abort before the second send synchronously without changing nextTurn or responses', async () => {
+    const server = chatFixture();
+    const token = await chatToken(server, 'tutor@example.org');
+    const observed = server.chat.observeInitialReads(origin, chatId);
+    const first = new AbortController();
+    const transport = server.transport();
+
+    const firstResponse = transport.send(
+      new Request(chatRequest(`channels/${chatId}`, token), { signal: first.signal }),
+    );
+    const atFirstEntry = observed.snapshot().find((entry) => entry.target === 'current_channel');
+    first.abort();
+    const secondResponse = transport.send(chatRequest(`channels/${chatId}`, token));
+    const atSecondEntry = observed.snapshot().find((entry) => entry.target === 'current_channel');
+    const responses = await Promise.all([firstResponse, secondResponse]);
+    observed.stop();
+
+    expect(atFirstEntry).toMatchObject({ totalAttempts: 1, firstAborted: false, retainedLifetimes: 1 });
+    expect(atSecondEntry).toMatchObject({
+      totalAttempts: 2,
+      firstAborted: true,
+      firstAbortedAtSecondInvocation: true,
+      retainedLifetimes: 2,
+    });
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+  });
+
+  test('retains only two lifetimes and ignores wrong query origin and method without altering the transport', async () => {
+    const server = chatFixture();
+    const token = await chatToken(server, 'tutor@example.org');
+    const observed = server.chat.observeInitialReads(origin, chatId);
+
+    for (let index = 0; index < 5; index += 1) await server.transport().send(chatRequest(`channels/${chatId}`, token));
+    await server.transport().send(chatRequest('channels?q=other', token));
+    await server.transport().send(
+      new Request(`https://other.example/api/v1/channels/${chatId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+    const wrongMethod = await server.transport().send(chatRequest('channels/unread', token, 'POST', {}));
+    const snapshot = observed.snapshot();
+    observed.stop();
+    await server.transport().send(chatRequest(`channels/${chatId}`, token));
+    const afterStop = observed.snapshot();
+
+    expect(snapshot.find((entry) => entry.target === 'current_channel')).toMatchObject({
+      totalAttempts: 5,
+      retainedLifetimes: 2,
+    });
+    expect(snapshot.find((entry) => entry.target === 'list')?.totalAttempts).toBe(0);
+    expect(afterStop).toEqual(snapshot);
+    expect(wrongMethod.status).toBe(403);
+    expect(await wrongMethod.json()).toMatchObject({ error: { code: 'email_not_verified' } });
+    expect(JSON.stringify(snapshot)).not.toContain('Authorization');
+    expect(JSON.stringify(snapshot)).not.toContain(origin);
+    expect(JSON.stringify(snapshot)).not.toContain(token);
+  });
+});
+
+test('armed and unarmed initial observation preserve identical complete transport responses', async () => {
+  const baseline = chatFixture();
+  const armed = chatFixture();
+  const baselineToken = await chatToken(baseline, 'tutor@example.org');
+  const armedToken = await chatToken(armed, 'tutor@example.org');
+  const observation = armed.chat.observeInitialReads(origin, chatId);
+  const paths = ['channels/unread', 'channels?q=', `channels/${chatId}`];
+
+  const baselineResults: {
+    readonly status: number;
+    readonly headers: readonly (readonly [string, string])[];
+    readonly body: unknown;
+  }[] = [];
+  const armedResults: typeof baselineResults = [];
+  for (const path of paths) {
+    const first = await baseline.transport().send(chatRequest(path, baselineToken));
+    const second = await armed.transport().send(chatRequest(path, armedToken));
+    baselineResults.push({ status: first.status, headers: [...first.headers], body: (await first.json()) as unknown });
+    armedResults.push({ status: second.status, headers: [...second.headers], body: (await second.json()) as unknown });
+  }
+  observation.stop();
+
+  expect(armedResults).toEqual(baselineResults);
+});
+
+test('destination observation preserves real responses and synchronously retains only two lifetimes', async () => {
+  const baseline = chatFixture();
+  const armed = chatFixture();
+  const firstToken = await chatToken(baseline, 'tutor@example.org');
+  const token = await chatToken(armed, 'tutor@example.org');
+  const observed = armed.chat.observeDestinationDetail(origin, chatId);
+  const controller = new AbortController();
+
+  const first = armed.transport().send(
+    new Request(`${origin}/api/v1/channels/${chatId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    }),
+  );
+  controller.abort();
+  const second = armed.transport().send(chatRequest(`channels/${chatId}`, token));
+  const entry = observed.snapshot()[0];
+  const responses = await Promise.all([first, second]);
+  const baselineResponse = await baseline.transport().send(chatRequest(`channels/${chatId}`, firstToken));
+  const actual = responses[1];
+  const expectedBody: unknown = await baselineResponse.json();
+  const actualBody: unknown = await actual.json();
+  await armed.transport().send(chatRequest(`channels/${chatId}`, token));
+  await armed.transport().send(chatRequest(`channels/${chatId}?q=wrong`, token));
+  const bounded = observed.snapshot()[0];
+  observed.stop();
+  await armed.transport().send(chatRequest(`channels/${chatId}`, token));
+
+  expect(entry).toMatchObject({ totalAttempts: 2, firstAbortedAtSecondInvocation: true, retainedLifetimes: 2 });
+  expect(actual.status).toBe(baselineResponse.status);
+  expect([...actual.headers]).toEqual([...baselineResponse.headers]);
+  expect(actualBody).toEqual(expectedBody);
+  expect(bounded).toMatchObject({ totalAttempts: 3, retainedLifetimes: 2 });
+  expect(observed.snapshot()[0]).toEqual(bounded);
+  expect(() => armed.chat.observeDestinationDetail(origin, chatId)).toThrow('destination_observation_already_used');
 });

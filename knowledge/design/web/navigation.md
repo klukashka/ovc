@@ -100,3 +100,31 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 - the address replacement runs in the entry chunk's static imports, so the token leaves the address before any lazily loaded route code is requested or runs (from slice 4 each route's page module loads on demand); the active language's chunk, which holds only interface texts, is requested before the first render and may be requested while the address still carries the token ([localisation](states.md#localisation));
 - the page loads nothing from other origins (fonts and images are self-hosted; avatars come from the OVC origin);
 - the reverse proxy logs them with the token replaced by a placeholder ([observability](../../specs/observability.md#safe-content)).
+
+### Refused refresh response ownership
+
+A recognized refresh401/204 ends the old session and releases its token/private-cache ownership
+before its response body finishes. The same existing 15-second request signal bounds a streaming
+drain with a 64-KiB maximum; overflow cancels the owned body, every reader is released, and body
+failures reject refresh/authorized-request operations. The startup error-to-state wrapper keeps its
+existing signed-out/new-owner behavior and does not reinterpret body failure as HTTP completion.
+The Web Lock covers the drain. A queued callback checks its captured session epoch after acquiring
+the lock and before sending a cookie-authenticated refresh; replacement-account adoption makes it
+superseded without an outbound request. Completion or failure of an old body cannot restore tokens,
+clear a newer account's private cache or replay the original request. The production cache-ownership
+binding remains ordered before preference updates and is shared with the real Gate/router controls.
+
+### Document-owned follow-up reads
+
+The page installs one document lifecycle owner synchronously after QueryClient creation and before
+Session startup. Query follow-ups and the lazily installed realtime consumer share this owner.
+A pending second refetch wave retains its entry activity and generation; departure, resumption or
+account cache clearing invalidates that ownership before it may issue another request. A wave
+born suspended cannot adopt a later active document. First-wave handling and explicit throwOnError
+semantics remain unchanged.
+
+The owner holds the existing load/beforeunload/pagehide/pageshow listeners and one two-second
+cancelled-navigation resume timer. Hidden or disposed documents do not connect when realtime
+loads late. Cancelled navigation and BFCache restoration establish new active ownership and perform
+normal realtime reconciliation. Disposal removes listeners, cancels the timer, unsubscribes
+realtime and closes its owned transport. Existing request and browser failures remain failures.

@@ -1,8 +1,19 @@
 import { type ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chmodSync, closeSync, createWriteStream, mkdirSync, openSync, readdirSync, rmSync } from 'node:fs';
+import {
+  chmodSync,
+  closeSync,
+  createWriteStream,
+  mkdirSync,
+  lstatSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  rmSync,
+} from 'node:fs';
 import { createConnection } from 'node:net';
-import { userInfo } from 'node:os';
+import { request as httpsRequest } from 'node:https';
+import { tmpdir, userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import {
@@ -28,7 +39,7 @@ const runLockPath = machineRunLockPath(process.platform, userInfo().homedir);
 const runOutputsRoot = playwrightOutputRoot(frontendRoot);
 const previewCertificate = join(tlsRoot, 'preview-certificate.pem');
 const previewPrivateKey = join(tlsRoot, 'preview-private-key.pem');
-const readinessDeadlineMilliseconds = 30_000;
+export const readinessDeadlineMilliseconds = 30_000;
 const stopDeadlineMilliseconds = 20_000;
 const killDeadlineMilliseconds = 5_000;
 const pollIntervalMilliseconds = 100;
@@ -53,6 +64,12 @@ interface StorageSettings {
 export interface E2ESettings {
   readonly adminUrl: URL;
   readonly storage: StorageSettings;
+}
+
+export interface DevelopmentLifecycleObserver {
+  readonly processStarted: (pid: number) => void;
+  readonly temporaryTlsCreated: (directory: string) => void;
+  readonly beforeFrontendStart?: (port: number) => Promise<void>;
 }
 
 export interface MeasurementDeploymentOptions {
@@ -190,32 +207,39 @@ function deleteStorageBucket(): void {
   }
 }
 
-function createPreviewCertificate(): void {
-  mkdirSync(tlsRoot, { recursive: true, mode: 0o700 });
-  chmodSync(tlsRoot, 0o700);
-  execFileSync(
-    'openssl',
-    [
-      'req',
-      '-x509',
-      '-newkey',
-      'rsa:2048',
-      '-nodes',
-      '-days',
-      '1',
-      '-subj',
-      '/CN=127.0.0.1',
-      '-addext',
-      'subjectAltName=IP:127.0.0.1',
-      '-keyout',
-      previewPrivateKey,
-      '-out',
-      previewCertificate,
-    ],
-    { stdio: ['ignore', 'ignore', 'inherit'] },
-  );
-  chmodSync(tlsRoot, 0o700);
-  chmodSync(previewPrivateKey, 0o600);
+export function createFixtureCertificate(root: string): { readonly certificate: string; readonly privateKey: string } {
+  const certificate = join(root, 'preview-certificate.pem');
+  const privateKey = join(root, 'preview-private-key.pem');
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  chmodSync(root, 0o700);
+  try {
+    execFileSync(
+      'openssl',
+      [
+        'req',
+        '-x509',
+        '-newkey',
+        'rsa:2048',
+        '-nodes',
+        '-days',
+        '1',
+        '-subj',
+        '/CN=127.0.0.1',
+        '-addext',
+        'subjectAltName=IP:127.0.0.1',
+        '-keyout',
+        privateKey,
+        '-out',
+        certificate,
+      ],
+      { stdio: 'ignore' },
+    );
+  } catch {
+    throw new Error('fixture_tls_generation_failed');
+  }
+  chmodSync(root, 0o700);
+  chmodSync(privateKey, 0o600);
+  return { certificate, privateKey };
 }
 
 const runLock: { holder: RunLockHolder | undefined; owned: boolean } = { holder: undefined, owned: false };
@@ -285,9 +309,19 @@ export function finishRun(): void {
   }
 }
 
-export function prepareRun(): void {
+export function assertFrontendPreparation(
+  frontendMode: 'preview' | 'measurement-dev-tls',
+  sourceTlsRoot: string,
+): void {
+  if (frontendMode === 'measurement-dev-tls' && lstatSync(sourceTlsRoot, { throwIfNoEntry: false }) !== undefined) {
+    throw new Error('development_fixture_refuses_existing_source_tls_material');
+  }
+}
+
+export function prepareRun(frontendMode: 'preview' | 'measurement-dev-tls' = 'preview'): void {
+  assertFrontendPreparation(frontendMode, tlsRoot);
   mkdirSync(binariesRoot, { recursive: true });
-  createPreviewCertificate();
+  if (frontendMode === 'preview') createFixtureCertificate(tlsRoot);
   execFileSync('go', ['build', '-o', `${binariesRoot}/`, './cmd/api', './cmd/worker', './cmd/ovc-admin'], {
     cwd: backendRoot,
     stdio: 'inherit',
@@ -458,6 +492,33 @@ async function waitUntilListening(managed: ManagedProcess, address: string): Pro
   throw new Error(`${managed.name} did not listen within ${String(readinessDeadlineMilliseconds)} ms`);
 }
 
+async function waitUntilDevelopmentReady(managed: ManagedProcess, origin: string): Promise<void> {
+  const deadline = Date.now() + readinessDeadlineMilliseconds;
+  while (Date.now() < deadline) {
+    if (hasExited(managed.child)) throw new Error('development_server_exited_before_https_readiness');
+    const ready = await new Promise<boolean>((resolveReady) => {
+      const request = httpsRequest(
+        `${origin}/api/v1/health/live`,
+        { rejectUnauthorized: false, timeout: pollTimeoutMilliseconds },
+        (response) => {
+          response.resume();
+          resolveReady(response.statusCode === 200);
+        },
+      );
+      request.once('timeout', () => {
+        request.destroy();
+      });
+      request.once('error', () => {
+        resolveReady(false);
+      });
+      request.end();
+    });
+    if (ready) return;
+    await delay(pollIntervalMilliseconds);
+  }
+  throw new Error('development_server_https_readiness_deadline');
+}
+
 type StopWindow = 'default' | 'measurement_upload_drain';
 type StopOutcome = 'already_exited' | 'clean_exit' | 'unexpected_exit' | 'forced_exit' | 'kill_unconfirmed';
 
@@ -522,7 +583,10 @@ export async function startDeployment(
   slot: number,
   label: string,
   measurement?: MeasurementDeploymentOptions,
+  frontendMode: 'preview' | 'measurement-dev-tls' = 'preview',
+  lifecycle?: DevelopmentLifecycleObserver,
 ): Promise<Deployment> {
+  assertFrontendPreparation(frontendMode, tlsRoot);
   mkdirSync(outputRoot, { recursive: true });
   const apiAddress = `127.0.0.1:${String(firstApiPort + slot)}`;
   const previewPort = firstPreviewPort + slot;
@@ -535,11 +599,19 @@ export async function startDeployment(
   runInPostgresContainer('createdb', connection, [database]);
   const environment = backendEnvironment(database, settings, apiAddress, origin);
   const processes: ManagedProcess[] = [];
+  let temporaryTls: string | undefined;
   const heldMeasurements = new Set<() => Promise<void>>();
   const teardown = async (): Promise<void> => {
     const released = await Promise.allSettled([...heldMeasurements].map((release) => release()));
     const stopped = await Promise.allSettled(processes.map((managed) => stop(managed)));
     const problems = [...failures(released), ...failures(stopped)];
+    if (temporaryTls !== undefined && processes.every((managed) => hasExited(managed.child))) {
+      try {
+        rmSync(temporaryTls, { recursive: true });
+      } catch {
+        problems.push(new Error('development_fixture_tls_cleanup_failed'));
+      }
+    }
     try {
       runInPostgresContainer('dropdb', connection, ['--force', database]);
     } catch (error) {
@@ -576,25 +648,44 @@ export async function startDeployment(
       api,
       start('worker', join(binariesRoot, 'worker'), [], environment, `worker-${label}-${String(slot)}.log`),
     );
+    for (const managed of processes) {
+      const pid = managed.child.pid;
+      if (pid !== undefined) lifecycle?.processStarted(pid);
+    }
     await waitUntilOk(api, `${apiUrl}/api/v1/health/live`);
     await setSharedClock(apiUrl, initialClock);
     await waitUntilOk(api, `${apiUrl}/api/v1/health/ready`);
+    let tls = { certificate: previewCertificate, privateKey: previewPrivateKey };
+    if (frontendMode === 'measurement-dev-tls') {
+      temporaryTls = mkdtempSync(join(tmpdir(), 'ovc-dev-tls-'));
+      lifecycle?.temporaryTlsCreated(temporaryTls);
+      chmodSync(temporaryTls, 0o700);
+      tls = createFixtureCertificate(temporaryTls);
+    }
+    await lifecycle?.beforeFrontendStart?.(previewPort);
     const preview = start(
-      'preview',
+      frontendMode === 'preview' ? 'preview' : 'development',
       join(frontendRoot, 'node_modules', '.bin', 'vite'),
-      ['preview', '--port', String(previewPort), '--strictPort'],
+      [
+        ...(frontendMode === 'preview' ? ['preview'] : ['--mode', 'measurement-dev-tls']),
+        '--port',
+        String(previewPort),
+        '--strictPort',
+      ],
       {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
         OVC_FRONTEND_API_TARGET: apiUrl,
-        OVC_FRONTEND_PREVIEW_CERTIFICATE: previewCertificate,
-        OVC_FRONTEND_PREVIEW_PRIVATE_KEY: previewPrivateKey,
+        OVC_FRONTEND_PREVIEW_CERTIFICATE: tls.certificate,
+        OVC_FRONTEND_PREVIEW_PRIVATE_KEY: tls.privateKey,
       },
       `preview-${label}-${String(slot)}.log`,
       previewExits,
     );
     processes.push(preview);
-    await waitUntilListening(preview, `127.0.0.1:${String(previewPort)}`);
+    if (preview.child.pid !== undefined) lifecycle?.processStarted(preview.child.pid);
+    if (frontendMode === 'preview') await waitUntilListening(preview, `127.0.0.1:${String(previewPort)}`);
+    else await waitUntilDevelopmentReady(preview, origin);
   } catch (error) {
     const cleanup = await teardown().then(
       (): unknown[] => [],

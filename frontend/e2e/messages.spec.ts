@@ -1,4 +1,6 @@
-import type { Browser, BrowserContext, Locator, Page, Request } from '@playwright/test';
+import type { BrowserContext, Locator, Page, Request } from '@playwright/test';
+
+import type { ObservedBrowser } from './browser-diagnostics.ts';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
@@ -69,7 +71,7 @@ async function holdListUntilChannelDenial(page: Page, channel: string): Promise<
   };
 }
 
-async function studentContext(browser: Browser, deployment: Deployment): Promise<BrowserContext> {
+async function studentContext(browser: ObservedBrowser, deployment: Deployment): Promise<BrowserContext> {
   return browser.newContext({
     baseURL: deployment.origin,
     ignoreHTTPSErrors: true,
@@ -106,7 +108,7 @@ test.describe('text messages', () => {
 
   test('messages › a tutor and a student exchange messages live, with unread state, header links and focus, also at 375 px', async ({
     page,
-    browser,
+    observedBrowser: browser,
     deployment,
     diagnostics,
   }) => {
@@ -120,6 +122,7 @@ test.describe('text messages', () => {
     await signInThroughTheApi(studentPage, student);
     await page.goto('/today');
     const studentTraffic = trafficAfterReady(studentPage, ['/api/v1/channels']);
+    await studentTraffic.initialize();
     await studentPage.goto('/messages');
 
     await expectRefetchedAfterTheSocketIsReady(studentTraffic);
@@ -160,7 +163,7 @@ test.describe('text messages', () => {
 
   test('messages › editing and deleting own messages, and the tutor deleting a member’s message', async ({
     page,
-    browser,
+    observedBrowser: browser,
     deployment,
     diagnostics,
   }) => {
@@ -275,7 +278,7 @@ test.describe('text messages', () => {
 
   test('messages › a channel outside the caller’s chats shows Not found for another tutor and a removed member', async ({
     page,
-    browser,
+    observedBrowser: browser,
     deployment,
     diagnostics,
   }) => {
@@ -322,7 +325,7 @@ test.describe('text messages', () => {
 
   test('messages › an unconfirmed provisional student reaches only the direct chat, which the tutor sees as unconfirmed', async ({
     page,
-    browser,
+    observedBrowser: browser,
     deployment,
     diagnostics,
   }) => {
@@ -394,6 +397,7 @@ paginationTest.describe('channel pagination', () => {
             await page.setViewportSize({ width: profile.width, height: 800 });
             await signInThroughTheApi(page, account);
             const traffic = trafficAfterReady(page, ['/api/v1/channels']);
+            await traffic.initialize();
             await page.goto('/messages');
             await expectRefetchedAfterTheSocketIsReady(traffic);
             const links = page.getByRole('region', { name: profile.list, exact: true }).getByRole('link');

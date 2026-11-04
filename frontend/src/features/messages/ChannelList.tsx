@@ -1,4 +1,4 @@
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { skipToken, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactElement, useState, useRef, useLayoutEffect, useCallback, useSyncExternalStore } from 'react';
 import { Link } from 'react-router';
 
@@ -49,7 +49,7 @@ function ChannelPages({
   const me = useSignedInAccount();
   const session = useSession();
   const cache = useQueryClient();
-  useQuery<number>({ queryKey: channelsScopeRevisionKey, enabled: false, initialData: 0 });
+  useQuery<number>({ queryKey: channelsScopeRevisionKey, queryFn: skipToken, enabled: false, initialData: 0 });
   const subscribeScope = useCallback(
     (changed: () => void): (() => void) =>
       cache.getQueryCache().subscribe((event) => {

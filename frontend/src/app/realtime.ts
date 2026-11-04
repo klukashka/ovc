@@ -7,13 +7,9 @@ import { type SocketFactory, browserSocketFactory } from '../lib/realtime/socket
 import type { ConnectionState } from './connectionState.ts';
 import { liveRefetch } from './liveRefetch.ts';
 import { notificationArrivals } from './notificationArrivals.ts';
+import type { DocumentLifecycle } from './documentLifecycle.ts';
 
-export const resumeAfterBeforeUnloadMilliseconds = 2_000;
-
-export interface RealtimePage {
-  readonly events: EventTarget;
-  readonly loaded: () => boolean;
-}
+export { resumeAfterBeforeUnloadMilliseconds } from './documentLifecycle.ts';
 
 export interface RealtimeWiring {
   readonly session: Session;
@@ -21,7 +17,7 @@ export interface RealtimeWiring {
   readonly queryClient: QueryClient;
   readonly sockets: SocketFactory;
   readonly scheduler: Scheduler;
-  readonly page: RealtimePage;
+  readonly lifecycle: DocumentLifecycle;
   readonly signals?: ChatSignals;
   readonly onFailure: (error: Error) => void;
 }
@@ -32,13 +28,13 @@ export function wireRealtime({
   queryClient,
   sockets,
   scheduler,
-  page,
+  lifecycle,
   onFailure,
   signals = chatSignals,
-}: RealtimeWiring): void {
+}: RealtimeWiring): () => void {
   const onEvent = liveRefetch(queryClient, notificationArrivals, scheduler);
   let epoch = session.currentEpoch();
-  session.subscribe(() => {
+  const unsubscribeSession = session.subscribe(() => {
     const nextEpoch = session.currentEpoch();
     if (nextEpoch !== epoch) {
       onEvent.cancel();
@@ -72,46 +68,40 @@ export function wireRealtime({
       return client;
     });
   let disconnect = (): void => undefined;
-  let cancelResume = (): void => undefined;
   let started = false;
-  const start = (): void => {
-    cancelResume();
+  let disposed = false;
+  let unsubscribeLifecycle = (): void => undefined;
+  const stop = (): void => {
     disconnect();
+    disconnect = (): void => undefined;
     signals.disconnect();
+    onEvent.suspend();
     onEvent.cancel();
+  };
+  const dispose = (): void => {
+    if (disposed) return;
+    disposed = true;
+    stop();
+    connection.suspend();
+    unsubscribeSession();
+    unsubscribeLifecycle();
+  };
+  unsubscribeLifecycle = lifecycle.subscribe((phase) => {
+    if (phase === 'disposed') {
+      dispose();
+      return;
+    }
+    stop();
+    if (phase !== 'active') {
+      if (phase === 'hidden') connection.suspend();
+      return;
+    }
     onEvent.resume();
     connection.resume();
     disconnect = connect(started);
     started = true;
-  };
-  if (page.loaded()) {
-    start();
-  } else {
-    page.events.addEventListener('load', start, { once: true });
-  }
-  page.events.addEventListener('beforeunload', () => {
-    onEvent.suspend();
-    cancelResume();
-    page.events.removeEventListener('load', start);
-    disconnect();
-    signals.disconnect();
-    onEvent.cancel();
-    cancelResume = scheduler.schedule(resumeAfterBeforeUnloadMilliseconds, start);
   });
-  page.events.addEventListener('pagehide', () => {
-    onEvent.suspend();
-    connection.suspend();
-    cancelResume();
-    page.events.removeEventListener('load', start);
-    disconnect();
-    signals.disconnect();
-    onEvent.cancel();
-  });
-  page.events.addEventListener('pageshow', (event) => {
-    if ('persisted' in event && event.persisted === true) {
-      start();
-    }
-  });
+  return dispose;
 }
 
 export function startRealtime(
@@ -119,14 +109,19 @@ export function startRealtime(
   queryClient: QueryClient,
   origin: string,
   connection: ConnectionState,
-): void {
-  wireRealtime({
+  lifecycle: DocumentLifecycle,
+): () => void {
+  return wireRealtime({
     session,
     connection,
     queryClient,
     sockets: browserSocketFactory(origin),
     scheduler: browserScheduler,
-    page: { events: window, loaded: () => document.readyState === 'complete' },
-    onFailure: reportError,
+    lifecycle,
+    onFailure: reportRealtimeError,
   });
+}
+
+export function reportRealtimeError(error: Error): void {
+  window.reportError(error);
 }

@@ -1,8 +1,8 @@
-import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import { QueryObserver } from '@tanstack/react-query';
 import { describe, expect, test } from 'vitest';
 
 import { createApiClient } from '../lib/api/client.ts';
-import { markRead } from '../features/messages/api.ts';
+import { fetchChannels, markRead } from '../features/messages/api.ts';
 import { scheduleChatReads } from '../features/messages/refetch.ts';
 import { unreadChannelsKey } from '../features/messages/keys.ts';
 import { latestNotificationsKey } from '../features/notifications/api.ts';
@@ -11,6 +11,8 @@ import { Session } from '../lib/api/session.ts';
 import { eventually } from '../lib/eventually.ts';
 import { closeCodes } from '../lib/realtime/frames.ts';
 import { FakeGateway } from '../lib/realtime/fakeGateway.ts';
+import { DocumentLifecycle } from './documentLifecycle.ts';
+import { FollowingQueryClient } from './queryClient.ts';
 import { ConnectionState } from './connectionState.ts';
 import { resumeAfterBeforeUnloadMilliseconds, wireRealtime } from './realtime.ts';
 
@@ -22,15 +24,18 @@ interface WiredPage {
   readonly server: FakeAuthServer;
   readonly gateway: FakeGateway;
   readonly session: Session;
-  readonly queryClient: QueryClient;
+  readonly queryClient: FollowingQueryClient;
   readonly events: EventTarget;
   readonly clock: ManualScheduler;
   readonly failures: readonly Error[];
   readonly connection: ConnectionState;
   readonly statusClock: ManualScheduler;
+  readonly lifecycle: DocumentLifecycle;
+  readonly installRealtime: () => void;
+  readonly dispose: () => void;
 }
 
-async function wiredPage(loaded: boolean): Promise<WiredPage> {
+async function wiredPage(loaded: boolean, install = true): Promise<WiredPage> {
   const server = new FakeAuthServer();
   server.addAccount(tutor);
   server.addAccount(other);
@@ -42,25 +47,51 @@ async function wiredPage(loaded: boolean): Promise<WiredPage> {
     scheduler: manualScheduler(),
   });
   await session.signIn(tutor.email, tutor.password);
-  const queryClient = new QueryClient();
+  const queryClient = new FollowingQueryClient();
   const events = new EventTarget();
   const clock = manualScheduler();
   const failures: Error[] = [];
   const statusClock = manualScheduler();
   const connection = new ConnectionState(statusClock);
   connection.follow(session);
-  wireRealtime({
+  const lifecycle = new DocumentLifecycle({ events, loaded: (): boolean => loaded }, clock, queryClient);
+  let stopRealtime = (): void => undefined;
+  let installed = false;
+  const installRealtime = (): void => {
+    if (installed) throw new Error('realtime already installed');
+    installed = true;
+    stopRealtime = wireRealtime({
+      session,
+      connection,
+      queryClient,
+      sockets: gateway.sockets,
+      scheduler: clock,
+      lifecycle,
+      onFailure: (error) => {
+        failures.push(error);
+      },
+    });
+  };
+  if (install) installRealtime();
+  const dispose = (): void => {
+    stopRealtime();
+    lifecycle.dispose();
+    queryClient.clear();
+  };
+  return {
+    server,
+    gateway,
     session,
-    connection,
     queryClient,
-    sockets: gateway.sockets,
-    scheduler: clock,
-    page: { events, loaded: () => loaded },
-    onFailure: (error) => {
-      failures.push(error);
-    },
-  });
-  return { server, gateway, session, queryClient, events, clock, failures, connection, statusClock };
+    events,
+    clock,
+    failures,
+    connection,
+    statusClock,
+    lifecycle,
+    installRealtime,
+    dispose,
+  };
 }
 
 async function connectedPage(): Promise<WiredPage> {
@@ -361,4 +392,114 @@ test('a read reply after pagehide cannot restart refetch work and pageshow resto
   expect(pendingWhileHidden).not.toContain(1000);
   expect(page.clock.pendingDelays()).toContain(1000);
   page.events.dispatchEvent(new Event('pagehide'));
+});
+
+test('departure prevents a pending invalidation from starting its second read', async () => {
+  const page = await connectedPage();
+  const client = createApiClient(origin, page.session.authorizedFetch);
+  const held = page.server.chat.pauseNextChannelListResponse(false);
+  const key = ['departure-channels'] as const;
+  const observer = new QueryObserver(page.queryClient, {
+    queryKey: key,
+    queryFn: ({ signal }): ReturnType<typeof fetchChannels> => fetchChannels(client, '', null, signal),
+    retry: false,
+  });
+  const unsubscribe = observer.subscribe(() => undefined);
+  await held.answered;
+  const query = page.queryClient.getQueryCache().find({ queryKey: key });
+  const invalidation = page.queryClient.invalidateQueries({ queryKey: key });
+
+  page.events.dispatchEvent(new Event('beforeunload'));
+  const socketsAfterDeparture = page.gateway.openSockets;
+  held.resume();
+  await invalidation;
+
+  try {
+    expect(socketsAfterDeparture).toBe(0);
+    expect(query).toBeDefined();
+    expect(page.queryClient.getQueryCache().find({ queryKey: key })).toBe(query);
+    expect(observer.getCurrentResult().status).toBe('success');
+    expect(page.server.sentAddresses.filter((address) => address.pathname === '/api/v1/channels')).toHaveLength(1);
+  } finally {
+    unsubscribe();
+    page.events.dispatchEvent(new Event('pagehide'));
+    page.queryClient.clear();
+  }
+});
+
+test.each(['resume', 'born-suspended', 'late-install'] as const)(
+  'a pending follow-up cannot acquire the resumed document in %s',
+  async (scenario) => {
+    const page = await wiredPage(true, scenario !== 'late-install');
+    if (scenario !== 'late-install')
+      await eventually(() => {
+        expect(page.gateway.readySockets(tutor.id)).toBe(1);
+      });
+    const client = createApiClient(origin, page.session.authorizedFetch);
+    const held = page.server.chat.pauseNextChannelListResponse(false);
+    const key = ['generation-channels'] as const;
+    const observer = new QueryObserver(page.queryClient, {
+      queryKey: key,
+      queryFn: ({ signal }): ReturnType<typeof fetchChannels> => fetchChannels(client, '', null, signal),
+      retry: false,
+    });
+    const unsubscribe = observer.subscribe(() => undefined);
+    await held.answered;
+    const query = page.queryClient.getQueryCache().find({ queryKey: key });
+    if (scenario === 'born-suspended') page.events.dispatchEvent(new Event('beforeunload'));
+    const invalidation = page.queryClient.invalidateQueries({ queryKey: key });
+
+    if (scenario !== 'born-suspended') page.events.dispatchEvent(new Event('beforeunload'));
+    if (scenario === 'late-install') page.installRealtime();
+    else page.queryClient.resumeFollowUps();
+    const socketsBeforeAnswer = page.gateway.openSockets;
+    held.resume();
+    await invalidation;
+
+    try {
+      expect(socketsBeforeAnswer).toBe(0);
+      expect(query).toBeDefined();
+      expect(page.queryClient.getQueryCache().find({ queryKey: key })).toBe(query);
+      expect(observer.getCurrentResult().status).toBe('success');
+      expect(page.server.sentAddresses.filter((address) => address.pathname === '/api/v1/channels')).toHaveLength(1);
+      expect(page.failures).toEqual([]);
+    } finally {
+      unsubscribe();
+      page.dispose();
+    }
+  },
+);
+
+test('a lifecycle hidden before realtime installation reconnects only on restoration', async () => {
+  const page = await wiredPage(true, false);
+  page.events.dispatchEvent(new Event('pagehide'));
+
+  page.installRealtime();
+  const socketsWhileHidden = page.gateway.openSockets;
+  page.events.dispatchEvent(restoredFromTheBackForwardCache());
+  await eventually(() => {
+    expect(page.gateway.readySockets(tutor.id)).toBe(1);
+  });
+
+  expect(socketsWhileHidden).toBe(0);
+  expect(page.gateway.socketsOpened).toBe(1);
+  expect(page.failures).toEqual([]);
+  page.dispose();
+});
+
+test('disposing the lifecycle closes realtime and removes its resume ownership', async () => {
+  const page = await connectedPage();
+  page.events.dispatchEvent(new Event('beforeunload'));
+
+  page.lifecycle.dispose();
+  page.lifecycle.dispose();
+  page.events.dispatchEvent(restoredFromTheBackForwardCache());
+  page.events.dispatchEvent(new Event('beforeunload'));
+  page.clock.pass(resumeAfterBeforeUnloadMilliseconds);
+
+  expect(page.lifecycle.snapshot()).toBe('disposed');
+  expect(page.gateway.openSockets).toBe(0);
+  expect(page.gateway.socketsOpened).toBe(1);
+  expect(page.clock.pendingDelays()).toEqual([]);
+  page.dispose();
 });

@@ -1,4 +1,6 @@
-import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
+import type { BrowserContext, Locator, Page } from '@playwright/test';
+
+import type { ObservedBrowser } from './browser-diagnostics.ts';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
@@ -28,7 +30,7 @@ import {
 const endedForStudent = 'Your lessons with a tutor on OVC have ended';
 const endedForTutor = 'Ученик прекратил занятия в OVC';
 
-async function englishContext(browser: Browser, deployment: Deployment): Promise<BrowserContext> {
+async function englishContext(browser: ObservedBrowser, deployment: Deployment): Promise<BrowserContext> {
   return browser.newContext({
     baseURL: deployment.origin,
     ignoreHTTPSErrors: true,
@@ -209,7 +211,7 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
   });
 
   test('pilot-4 › step 3 Boris keeps the read-only private chat and no longer sees the group chat', async ({
-    browser,
+    observedBrowser: browser,
     deployment,
     diagnostics,
   }) => {
@@ -232,7 +234,7 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
   });
 
   test('pilot-4 › step 4 Boris opens the group lesson’s address and it is not found', async ({
-    browser,
+    observedBrowser: browser,
     deployment,
     diagnostics,
   }) => {
@@ -251,7 +253,7 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
   });
 
   test('pilot-4 › step 6 the copied link from the seed is no longer valid for Boris', async ({
-    browser,
+    observedBrowser: browser,
     deployment,
     diagnostics,
   }) => {
@@ -277,7 +279,7 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
 
   test('pilot-4 › step 7 Invite again makes Boris active with his history, but not back in B1 evening', async ({
     page,
-    browser,
+    observedBrowser: browser,
     deployment,
     diagnostics,
   }) => {

@@ -1,18 +1,24 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, skipToken } from '@tanstack/react-query';
+import { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { afterEach, describe, expect, test } from 'vitest';
 
+import { FollowingQueryClient } from '../../app/queryClient.ts';
+import { SignedInFrame } from '../../components/frame/SignedInFrame.tsx';
+import type { FakeInitialReadObservation } from '../../lib/api/fakeChat.ts';
+import { memoryPreferenceStore } from '../../lib/preferences/store.ts';
 import { liveRefetch } from '../../app/liveRefetch.ts';
 import { SchedulerContext } from '../../app/clock.ts';
 import { ConnectionContext, ConnectionState } from '../../app/connectionState.ts';
-import { MediaQueriesContext, fixedMediaQueries } from '../../app/context.ts';
+import { MediaQueriesContext, PreferencesContext, fixedMediaQueries, wideLayoutQuery } from '../../app/context.ts';
 import { type ApiClient, ApiClientContext, createApiClient } from '../../lib/api/client.ts';
 import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import { type Channel, type Message, deleteMessage, editMessage } from './api.ts';
+import { channelsScopeRevisionKey, channelScopeRevision, evictChannel } from './cache.ts';
 import { channelKey, channelsKey, messagesKey } from './keys.ts';
 import { MessageKeyContext } from './Conversation.tsx';
 import { MessagesPage } from './MessagesPage.tsx';
@@ -58,9 +64,14 @@ async function fixture(
   count = 1,
   address = '/messages/channel-1',
   wide = true,
-  options: { readonly role?: 'tutor' | 'student'; readonly reclaimed?: boolean } = {},
+  options: {
+    readonly role?: 'tutor' | 'student';
+    readonly reclaimed?: boolean;
+    readonly initialReadMode?: 'strict' | 'single';
+  } = {},
 ): Promise<{
   readonly server: FakeAuthServer;
+  readonly initialReads: FakeInitialReadObservation | null;
   readonly api: ApiClient;
   readonly session: Session;
   readonly cache: QueryClient;
@@ -79,16 +90,27 @@ async function fixture(
   const connection = new ConnectionState(clock);
   connection.account(1);
   connection.readiness(1, true);
-  const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryOptions = { defaultOptions: { queries: { retry: false } } };
+  const cache =
+    options.initialReadMode === undefined ? new QueryClient(queryOptions) : new FollowingQueryClient(queryOptions);
+  const initialReads =
+    options.initialReadMode === undefined ? null : server.chat.observeInitialReads(origin, channel.id);
+  const state = session.snapshot();
+  if (state.kind !== 'signedIn') throw new Error('causal_component_account_not_signed_in');
   const router = createMemoryRouter(
     [
       {
         path: '/messages/:channelId?',
-        element: (
-          <main>
-            <MessagesPage />
-          </main>
-        ),
+        element:
+          options.initialReadMode === undefined ? (
+            <main>
+              <MessagesPage />
+            </main>
+          ) : (
+            <SignedInFrame me={state.me}>
+              <MessagesPage />
+            </SignedInFrame>
+          ),
         handle: { title: 'page.messages' },
       },
       {
@@ -105,32 +127,43 @@ async function fixture(
   const i18n = await createI18n('en');
   const api = createApiClient(origin, session.authorizedFetch);
   let issued = 0;
-  render(
-    <SessionContext value={session}>
-      <ApiClientContext value={api}>
-        <QueryClientProvider client={cache}>
-          <I18nextProvider i18n={i18n}>
-            <SchedulerContext value={clock}>
-              <ConnectionContext value={connection}>
-                <MediaQueriesContext value={fixedMediaQueries(wide ? ['(min-width: 768px)'] : [])}>
-                  <MessageKeyContext
-                    value={() => {
-                      issued += 1;
-                      return `send-${String(issued)}`;
-                    }}
+  const tree = (
+    <PreferencesContext value={memoryPreferenceStore()}>
+      <SessionContext value={session}>
+        <ApiClientContext value={api}>
+          <QueryClientProvider client={cache}>
+            <I18nextProvider i18n={i18n}>
+              <SchedulerContext value={clock}>
+                <ConnectionContext value={connection}>
+                  <MediaQueriesContext
+                    value={fixedMediaQueries(
+                      wide
+                        ? options.initialReadMode === undefined
+                          ? ['(min-width: 768px)']
+                          : ['(min-width: 768px)', wideLayoutQuery]
+                        : [],
+                    )}
                   >
-                    <RouterProvider router={router} />
-                  </MessageKeyContext>
-                </MediaQueriesContext>
-              </ConnectionContext>
-            </SchedulerContext>
-          </I18nextProvider>
-        </QueryClientProvider>
-      </ApiClientContext>
-    </SessionContext>,
+                    <MessageKeyContext
+                      value={() => {
+                        issued += 1;
+                        return `send-${String(issued)}`;
+                      }}
+                    >
+                      <RouterProvider router={router} />
+                    </MessageKeyContext>
+                  </MediaQueriesContext>
+                </ConnectionContext>
+              </SchedulerContext>
+            </I18nextProvider>
+          </QueryClientProvider>
+        </ApiClientContext>
+      </SessionContext>
+    </PreferencesContext>
   );
+  render(options.initialReadMode === 'strict' ? <StrictMode>{tree}</StrictMode> : tree);
   await screen.findByRole('heading', { level: address === '/messages' ? 1 : 2 });
-  return { server, api, cache, clock, connection, router, session };
+  return { server, initialReads, api, cache, clock, connection, router, session };
 }
 
 function seedChannels(server: FakeAuthServer, count: number): void {
@@ -143,6 +176,82 @@ function seedChannels(server: FakeAuthServer, count: number): void {
 }
 
 afterEach(cleanup);
+
+test.each(['strict', 'single'] as const)(
+  'the real Messages and frame query lifetimes prove all initial targets under %s mounting',
+  async (mode) => {
+    const expectedAttempts = mode === 'strict' ? 2 : 1;
+
+    const result = await fixture(1, '/messages/channel-1', true, { initialReadMode: mode });
+    const observed = result.initialReads;
+    if (observed === null) throw new Error('causal_observer_not_armed');
+    await screen.findByRole('textbox', { name: 'Message' });
+    await waitFor(() => {
+      expect(observed.snapshot().every((entry) => entry.totalAttempts >= expectedAttempts)).toBe(true);
+    });
+    const snapshot = observed.snapshot();
+    observed.stop();
+
+    expect(snapshot.map((entry) => entry.target)).toEqual(['unread', 'list', 'current_channel']);
+    for (const entry of snapshot) {
+      expect(entry.retainedLifetimes).toBe(expectedAttempts);
+      expect(entry.firstAborted).toBe(mode === 'strict');
+      expect(entry.firstAbortedAtSecondInvocation).toBe(mode === 'strict' ? true : null);
+      expect(entry.secondAborted).toBe(false);
+    }
+    for (const entry of snapshot)
+      console.info(JSON.stringify({ event: 'component.initial_read_lifetime', mount: mode, ...entry }));
+  },
+);
+
+test.each(['strict', 'single'] as const)('real Link destination query producer under %s mounting', async (mode) => {
+  const result = await fixture(1, '/messages/channel-1', true, { initialReadMode: mode });
+  const destination = { ...channel, id: 'channel-destination', label: 'Destination conversation' };
+  result.server.chat.addChannel({
+    channel: destination,
+    members: [{ accountId: tutor.id }, { accountId: 'student-1' }],
+  });
+  result.server.chat.addMessage(destination.id, message(2));
+  await result.cache.invalidateQueries({ queryKey: channelsKey });
+  const link = await screen.findByRole('link', { name: /Destination conversation/ });
+  await screen.findByRole('textbox', { name: 'Message' });
+  const observed = result.server.chat.observeDestinationDetail(origin, destination.id);
+
+  fireEvent.click(link);
+  await screen.findByRole('heading', { name: 'Destination conversation' });
+  await screen.findByText('Message 2');
+  const snapshot = observed.snapshot();
+  observed.stop();
+
+  expect(snapshot[0]).toMatchObject({
+    totalAttempts: mode === 'strict' ? 2 : 1,
+    retainedLifetimes: mode === 'strict' ? 2 : 1,
+    firstAborted: mode === 'strict',
+    secondAborted: false,
+    firstAbortedAtSecondInvocation: mode === 'strict' ? true : null,
+  });
+  console.info(JSON.stringify({ event: 'component.destination_read_lifetime', mount: mode, ...snapshot[0] }));
+});
+
+test('the internal scope observer cannot fetch and eviction still advances the observed revision', async () => {
+  const { cache } = await fixture(1);
+  const observer = cache.getQueryCache().find({ queryKey: channelsScopeRevisionKey, exact: true });
+  const before = channelScopeRevision(cache);
+
+  await act(async () => {
+    await cache.refetchQueries(
+      { queryKey: channelsScopeRevisionKey, exact: true, type: 'all' },
+      { throwOnError: true },
+    );
+    evictChannel(cache, channel.id);
+  });
+
+  expect(observer?.options.queryFn).toBe(skipToken);
+  expect(observer?.state.fetchStatus).toBe('idle');
+  expect(channelScopeRevision(cache)).toBe(before + 1);
+  expect(cache.getQueryData(channelKey(channel.id))).toBeUndefined();
+  expect(cache.getQueryData(messagesKey(channel.id))).toBeUndefined();
+});
 
 describe('message body', () => {
   test('markup and unsafe URL candidates stay text while plain http and https link safely', () => {

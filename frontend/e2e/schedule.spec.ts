@@ -1,4 +1,6 @@
-import type { Browser, BrowserContext, Page } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
+
+import type { ObservedBrowser } from './browser-diagnostics.ts';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
@@ -46,7 +48,11 @@ function weekAddress(date: LocalDate): string {
   return `/schedule?view=week&date=${date}`;
 }
 
-async function phoneContext(browser: Browser, deployment: Deployment, timezoneId: string): Promise<BrowserContext> {
+async function phoneContext(
+  browser: ObservedBrowser,
+  deployment: Deployment,
+  timezoneId: string,
+): Promise<BrowserContext> {
   return browser.newContext({
     baseURL: deployment.origin,
     ignoreHTTPSErrors: true,
@@ -57,7 +63,11 @@ async function phoneContext(browser: Browser, deployment: Deployment, timezoneId
   });
 }
 
-async function englishContext(browser: Browser, deployment: Deployment, timezoneId: string): Promise<BrowserContext> {
+async function englishContext(
+  browser: ObservedBrowser,
+  deployment: Deployment,
+  timezoneId: string,
+): Promise<BrowserContext> {
   return browser.newContext({
     baseURL: deployment.origin,
     ignoreHTTPSErrors: true,
@@ -362,7 +372,6 @@ test.describe('schedule for a tutor in Russian', () => {
     const date = await moscowTomorrow(control.now);
     await scheduleConversation(deployment, maria, cardId, date);
     diagnostics.expectFailure({ method: 'POST', path: '/api/v1/lessons', status: 409 });
-    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/lessons', status: 409 });
     let release: () => void = () => undefined;
     const released = new Promise<void>((resolve) => {
       release = resolve;
@@ -384,6 +393,8 @@ test.describe('schedule for a tutor in Russian', () => {
     const submit = dialog.getByRole('button', { name: 'Запланировать', exact: true });
     await submit.click();
     await dialog.getByRole('alert').waitFor();
+    await diagnostics.finishHttpPhase();
+    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/lessons', status: 409 });
     await submit.focus();
 
     await page.keyboard.press('Enter');
@@ -393,6 +404,7 @@ test.describe('schedule for a tutor in Russian', () => {
     await expect(dialog.getByRole('alert')).toHaveCount(0);
     release();
     await expect(dialog.getByRole('alert')).toBeFocused();
+    await diagnostics.finishHttpPhase();
   });
 
   test('schedule › a series without weekdays says so and the message takes focus', async ({
@@ -452,7 +464,7 @@ test.describe('schedule for a tutor in Russian', () => {
   });
 
   test('schedule › on a coarse pointer the week lists lessons by day with 44 px targets @coarse-pointer', async ({
-    browser,
+    observedBrowser: browser,
     deployment,
     control,
     diagnostics,
@@ -611,6 +623,7 @@ test.describe('schedule for a tutor in Russian', () => {
     const date = await moscowTomorrow(control.now);
     await signInThroughTheApi(page, maria);
     const traffic = trafficAfterReady(page, lessonQueryPaths);
+    await traffic.initialize();
     await page.goto(weekAddress(date));
     await expect(page.getByRole('region', { name: 'Уроки недели' })).toBeVisible();
     await expectRefetchedAfterTheSocketIsReady(traffic);
@@ -700,7 +713,7 @@ test.describe('pilot 1, the first lessons of Maria and Anna', () => {
 
   test('pilot-1 › step 6 Maria schedules eight lessons on Tuesdays and Thursdays, which Anna sees in Berlin time', async ({
     page,
-    browser,
+    observedBrowser: browser,
     deployment,
     control,
     diagnostics,
@@ -833,7 +846,7 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
   });
 
   test('pilot-3 › step 3 Pavel schedules a Monday lesson at 10:00 his time for Anna', async ({
-    browser,
+    observedBrowser: browser,
     deployment,
     diagnostics,
   }) => {
@@ -862,7 +875,7 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
   });
 
   test('pilot-3 › step 4 Anna’s Schedule shows both tutors with their labels, and the filter leaves Pavel’s', async ({
-    browser,
+    observedBrowser: browser,
     deployment,
     diagnostics,
   }) => {
@@ -893,7 +906,7 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
   });
 
   test('pilot-3 › step 5 Pavel’s card for Anna lists only his lesson with her, none of Maria’s', async ({
-    browser,
+    observedBrowser: browser,
     deployment,
     diagnostics,
   }) => {
@@ -919,7 +932,7 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
   });
 
   test('pilot-3 › step 12 Maria moves the next Wednesday lesson to 20:00, and Anna’s email says 18:00 her time', async ({
-    browser,
+    observedBrowser: browser,
     deployment,
     control,
     diagnostics,

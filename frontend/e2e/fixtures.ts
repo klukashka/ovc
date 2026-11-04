@@ -9,6 +9,12 @@ import {
   seedAccount,
   signInThroughTheApi,
 } from './accounts.ts';
+import {
+  type ObservedBrowser,
+  installPolicyObserver,
+  observeBrowserContext,
+  observedBrowser,
+} from './browser-diagnostics.ts';
 import { type Deployment, readE2ESettings, startDeployment } from './deployment.ts';
 import { type SocketSlotHolder, socketSlotHolder } from './realtime.ts';
 import { type FailedRequest, unexpectedFailures } from './request-failures.ts';
@@ -133,9 +139,30 @@ export interface MeasurementWorkerOptions {
 }
 
 export const test = base.extend<
-  { control: TestControl; signedInPage: Page; socketSlots: SocketSlotHolder },
+  {
+    control: TestControl;
+    signedInPage: Page;
+    socketSlots: SocketSlotHolder;
+    observedBrowser: ObservedBrowser;
+    diagnosticRegistry: DiagnosticRegistry;
+  },
   { deployment: Deployment } & SharedActors & MeasurementWorkerOptions
 >({
+  diagnosticRegistry: [
+    async ({ browserName }, use): Promise<void> => {
+      const registry = diagnosticRegistry(browserName);
+      await use(registry);
+      await registry.verify();
+    },
+    { auto: true },
+  ],
+  context: async ({ context, diagnosticRegistry }, use): Promise<void> => {
+    await diagnosticRegistry.watch(context);
+    await use(context);
+  },
+  observedBrowser: async ({ browser, diagnosticRegistry }, use): Promise<void> => {
+    await use(observedBrowser(browser, (context) => diagnosticRegistry.watch(context)));
+  },
   measurementDatabaseMode: [undefined, { scope: 'worker', option: true }],
   deployment: [
     async ({ browserName, measurementDatabaseMode }, use, workerInfo): Promise<void> => {
@@ -220,6 +247,9 @@ export interface ExpectedFailure {
 export interface PageDiagnostics {
   readonly expectFailure: (failure: ExpectedFailure) => void;
   readonly expectAbortedRequest: (path: RegExp) => void;
+  readonly finishHttpPhase: () => Promise<void>;
+  readonly beginLanguageFailure: (language: 'en' | 'ru') => void;
+  readonly finishLanguageFailure: () => Promise<void>;
   readonly expectConsoleError: (text: string) => void;
 }
 
@@ -238,35 +268,33 @@ function describeFailure(failure: ExpectedFailure): string {
   return `${failure.method} ${failure.path} ${String(failure.status)}`;
 }
 
-const failedResourceLog = /^Failed to load resource: the server responded with a status of \d{3}/;
-const abortedResourceLog = 'Failed to load resource';
+interface DiagnosticRegistry {
+  readonly watch: (context: BrowserContext) => Promise<void>;
+  readonly console: (page: Page) => ReturnType<typeof observeBrowserContext>;
+  readonly verify: () => Promise<void>;
+}
 
-interface ConsoleError {
-  readonly text: string;
-  readonly path: string;
+function diagnosticRegistry(engine: string): DiagnosticRegistry {
+  const watched = new Map<BrowserContext, ReturnType<typeof observeBrowserContext>>();
+  return {
+    watch: async (context): Promise<void> => {
+      if (watched.has(context)) return;
+      watched.set(context, observeBrowserContext(context, engine, 'journey'));
+      await installPolicyObserver(context);
+    },
+    console: (page): ReturnType<typeof observeBrowserContext> => {
+      const observer = watched.get(page.context());
+      if (observer === undefined) throw new Error('browser context was not observed before page creation');
+      return observer;
+    },
+    verify: async (): Promise<void> => {
+      for (const observer of watched.values()) await observer.finish();
+    },
+  };
 }
 
 function pathOf(address: string): string {
   return URL.canParse(address) ? new URL(address).pathname : address;
-}
-
-function unexpectedConsoleErrors(
-  errors: readonly ConsoleError[],
-  expectedTexts: readonly string[],
-  abortedPaths: readonly RegExp[],
-): string[] {
-  const awaited = [...expectedTexts];
-  const unexpected: string[] = [];
-  for (const error of errors) {
-    const declared = awaited.indexOf(error.text);
-    if (declared !== -1) {
-      awaited.splice(declared, 1);
-    } else if (!(error.text.startsWith(abortedResourceLog) && abortedPaths.some((path) => path.test(error.path)))) {
-      unexpected.push(`console: ${error.text}`);
-    }
-  }
-  const unseen = awaited.map((text) => `expected console error did not appear: ${text}`);
-  return [...unexpected, ...unseen];
 }
 
 interface FailedAt {
@@ -283,33 +311,14 @@ function unexpectedAborts(failures: readonly FailedAt[], abortedPaths: readonly 
 function unseenAborts(failures: readonly FailedAt[], abortedPaths: readonly RegExp[]): string[] {
   return abortedPaths
     .filter((path) => !failures.some((failure) => path.test(failure.path)))
-    .map((path) => `expected aborted request did not happen: ${String(path)}`);
+    .map(() => 'expected_aborted_request_missing');
 }
 
-async function reportPolicyViolations(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    document.addEventListener('securitypolicyviolation', (event) => {
-      console.error(`csp-violation ${event.violatedDirective} ${event.blockedURI}`);
-    });
-  });
-}
-
-async function watchPage(page: Page, deployment: Deployment): Promise<WatchedPage> {
-  await reportPolicyViolations(page);
-  const problems: string[] = [];
-  const consoleErrors: ConsoleError[] = [];
+function watchPage(page: Page, deployment: Deployment, registry: DiagnosticRegistry): WatchedPage {
+  const consoleExpectation = registry.console(page).expect(page);
   const failures: string[] = [];
   const expected: string[] = [];
-  const expectedConsoleErrors: string[] = [];
-  const abortedPaths: RegExp[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error' && !failedResourceLog.test(message.text())) {
-      consoleErrors.push({ text: message.text(), path: pathOf(message.location().url) });
-    }
-  });
-  page.on('pageerror', (error) => {
-    problems.push(`page error: ${error.message}`);
-  });
+  const abortedPaths = consoleExpectation.abortedPaths;
   let step = 0;
   const navigations: number[] = [];
   const requests: number[] = [];
@@ -330,7 +339,7 @@ async function watchPage(page: Page, deployment: Deployment): Promise<WatchedPag
     step += 1;
     failedRequests.push({
       failed: {
-        description: `${request.method()} ${request.url()}`,
+        description: request.method(),
         reason: request.failure()?.errorText ?? '',
         answered: answeredRequests.has(request),
         started: startOf.get(request) ?? Number.POSITIVE_INFINITY,
@@ -353,39 +362,59 @@ async function watchPage(page: Page, deployment: Deployment): Promise<WatchedPag
       closes.push(step);
     },
     expectFailure: (failure): void => {
+      registry.console(page).expectHttp(page, {
+        method: failure.method,
+        address: new URL(failure.path, deployment.origin).href,
+        status: failure.status,
+      });
       expected.push(describeFailure(failure));
     },
+    finishHttpPhase: (): Promise<void> => registry.console(page).finishHttp(page),
+    beginLanguageFailure: (language): void => {
+      registry.console(page).beginLanguageFailure(page, deployment.origin, language);
+    },
+    finishLanguageFailure: (): Promise<void> => registry.console(page).finishLanguageFailure(page),
     expectAbortedRequest: (path): void => {
       abortedPaths.push(path);
     },
     expectConsoleError: (text): void => {
-      expectedConsoleErrors.push(text);
+      consoleExpectation.expected.push(text);
     },
     verify: (): void => {
       expect([
-        ...unexpectedConsoleErrors(consoleErrors, expectedConsoleErrors, abortedPaths),
-        ...problems,
-        ...unexpectedFailures(unexpectedAborts(failedRequests, abortedPaths), { navigations, requests, closes }),
+        ...unexpectedFailures(unexpectedAborts(failedRequests, abortedPaths), { navigations, requests, closes }).map(
+          () => 'request_failure',
+        ),
         ...unseenAborts(failedRequests, abortedPaths),
       ]).toEqual([]);
-      expect([...failures].sort()).toEqual([...expected].sort());
+      expect(
+        failures.length === expected.length &&
+          [...failures].sort().every((entry, index) => entry === [...expected].sort()[index]),
+      ).toBe(true);
     },
   };
 }
 
 export const diagnosedTest = test.extend<{ diagnostics: Diagnostics }>({
   diagnostics: [
-    async ({ page, deployment }, use): Promise<void> => {
-      const main = await watchPage(page, deployment);
+    async ({ page, deployment, diagnosticRegistry }, use): Promise<void> => {
+      const main = watchPage(page, deployment, diagnosticRegistry);
       const others: WatchedPage[] = [];
+      const pages = new Map<Page, WatchedPage>([[page, main]]);
       await use({
         expectFailure: main.expectFailure,
+        finishHttpPhase: main.finishHttpPhase,
+        beginLanguageFailure: main.beginLanguageFailure,
+        finishLanguageFailure: main.finishLanguageFailure,
         expectAbortedRequest: main.expectAbortedRequest,
         expectConsoleError: main.expectConsoleError,
-        watch: async (other): Promise<PageDiagnostics> => {
-          const watched = await watchPage(other, deployment);
+        watch: (other): Promise<PageDiagnostics> => {
+          const existing = pages.get(other);
+          if (existing !== undefined) return Promise.resolve(existing);
+          const watched = watchPage(other, deployment, diagnosticRegistry);
           others.push(watched);
-          return watched;
+          pages.set(other, watched);
+          return Promise.resolve(watched);
         },
         closeContext: async (context): Promise<void> => {
           for (const watched of [main, ...others]) {

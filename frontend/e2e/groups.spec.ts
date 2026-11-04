@@ -112,6 +112,7 @@ async function groupPageWithLessons(
   }
   await signInThroughTheApi(page, pavel);
   const traffic = trafficAfterReady(page, [`/api/v1/groups/${groupId}`]);
+  await traffic.initialize();
   await page.goto(`/groups/${groupId}`);
   await expectRefetchedAfterTheSocketIsReady(traffic);
   const lessons = page.getByRole('list', { name: 'Next lessons', exact: true }).getByRole('link');
@@ -429,6 +430,7 @@ test.describe('in English', () => {
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
     await signInThroughTheApi(page, pavel);
     const traffic = trafficAfterReady(page, [`/api/v1/groups/${groupId}`]);
+    await traffic.initialize();
     await page.goto(`/groups/${groupId}`);
     await expectRefetchedAfterTheSocketIsReady(traffic);
     const details = page.getByRole('form', { name: 'Name and colour' });

@@ -1,7 +1,14 @@
-import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
+import type { BrowserContext, Locator, Page } from '@playwright/test';
+
+import type { ObservedBrowser } from './browser-diagnostics.ts';
 
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
-import { trafficAfterReady, expectRefetchedAfterTheSocketIsReady } from './realtime.ts';
+import {
+  trafficAfterReady,
+  expectRefetchedAfterTheSocketIsReady,
+  expectReadyForNavigation,
+  todayQueryPaths,
+} from './realtime.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 
@@ -12,7 +19,7 @@ const onePixelPng = Buffer.from(
   'base64',
 );
 
-async function freshContext(browser: Browser, deployment: Deployment): Promise<BrowserContext> {
+async function freshContext(browser: ObservedBrowser, deployment: Deployment): Promise<BrowserContext> {
   return browser.newContext({ baseURL: deployment.origin, ignoreHTTPSErrors: true, locale: 'ru-RU' });
 }
 
@@ -24,14 +31,15 @@ async function signedInAt(page: Page, account: TestAccount, address: string): Pr
 
 async function apiSignIn(page: Page, account: TestAccount, password: string): Promise<number> {
   return page.evaluate(
-    async ({ email, secret }) =>
-      (
-        await fetch('/api/v1/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password: secret }),
-        })
-      ).status,
+    async ({ email, secret }) => {
+      const response = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: secret }),
+      });
+      await response.arrayBuffer();
+      return response.status;
+    },
     { email: account.email, secret: password },
   );
 }
@@ -91,21 +99,36 @@ test.describe('account edge cases', () => {
     await expect(page.getByRole('form', { name: 'Tutor code' })).toHaveCount(0);
   });
 
-  test('signing out everywhere ends the sessions of other browsers', async ({ page, browser, deployment }) => {
+  test('signing out everywhere ends the sessions of other browsers', async ({
+    page,
+    observedBrowser: browser,
+    deployment,
+    diagnostics,
+  }) => {
     const account = await seedVerifiedUser(deployment, 'Tutor with two browsers');
     const elsewhere = await freshContext(browser, deployment);
     const otherPage = await elsewhere.newPage();
-    await signedInAt(otherPage, account, '/today');
+    const otherDiagnostics = await diagnostics.watch(otherPage);
+    await signInThroughTheApi(otherPage, account);
+    const otherReady = trafficAfterReady(otherPage, todayQueryPaths);
+    await otherReady.initialize();
+    await otherPage.goto('/today');
+    await expect(otherPage.getByRole('navigation', { name: 'Основная навигация' })).toBeVisible();
+    await expectReadyForNavigation(otherPage, otherReady);
     const traffic = trafficAfterReady(page, ['/api/v1/channels/unread']);
+    await traffic.initialize();
     await signedInAt(page, account, '/settings/account');
     await expectRefetchedAfterTheSocketIsReady(traffic);
+    otherDiagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/refresh', status: 401 });
     await page.getByRole('main').getByRole('button', { name: 'Выйти на всех устройствах' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
 
+    await expect(otherPage.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
+    await otherDiagnostics.finishHttpPhase();
     await otherPage.reload();
 
     await expect(otherPage.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
-    await elsewhere.close();
+    await diagnostics.closeContext(elsewhere);
   });
 
   test('changing the password keeps this browser signed in and only the new password signs in', async ({
@@ -126,6 +149,7 @@ test.describe('account edge cases', () => {
 
     await expect(page.getByRole('heading', { level: 1, name: 'Аккаунт' })).toBeVisible();
     expect(await apiSignIn(page, account, account.password)).toBe(401);
+    await diagnostics.finishHttpPhase();
     expect(await apiSignIn(page, account, newPassword)).toBe(200);
   });
 
@@ -171,23 +195,23 @@ test.describe('account edge cases', () => {
   });
 
   test('the sixth wrong deletion password says when to try again', async ({ page, deployment, diagnostics }) => {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      diagnostics.expectFailure({ method: 'DELETE', path: '/api/v1/users/me', status: 422 });
-    }
-    diagnostics.expectFailure({ method: 'DELETE', path: '/api/v1/users/me', status: 429 });
     const account = await seedVerifiedUser(deployment, 'Tutor guessing');
     await signedInAt(page, account, '/settings/account');
     await openDeletionDialog(page);
     for (let attempt = 0; attempt < 5; attempt += 1) {
+      diagnostics.expectFailure({ method: 'DELETE', path: '/api/v1/users/me', status: 422 });
       await confirmDeletion(page, `${account.password} wrong ${String(attempt)}`);
       await expect(deletionDialog(page).getByLabel('Текущий пароль')).toHaveAttribute('aria-invalid', 'true');
+      await diagnostics.finishHttpPhase();
     }
 
+    diagnostics.expectFailure({ method: 'DELETE', path: '/api/v1/users/me', status: 429 });
     await confirmDeletion(page, `${account.password} wrong again`);
 
     await expect(deletionDialog(page).getByRole('alert')).toHaveText(
       /^Слишком много попыток, попробуйте через \d+ (минуту|минуты|минут)\.$/,
     );
+    await diagnostics.finishHttpPhase();
   });
 
   test('deleting the account signs out and the account no longer signs in', async ({
@@ -205,6 +229,7 @@ test.describe('account edge cases', () => {
     await expect(page).toHaveURL('/');
     await expect(page.getByRole('status')).toHaveText('Аккаунт удалён.');
     expect(await apiSignIn(page, account, account.password)).toBe(401);
+    await diagnostics.finishHttpPhase();
   });
 
   test('email language follows the account', async ({ page, deployment, control }) => {
@@ -352,7 +377,7 @@ test.describe('Maria and her student Anna, shared by the tests below', () => {
 
   test('the deletion dialog names the consequences for a tutor and for a student', async ({
     page,
-    browser,
+    observedBrowser: browser,
     deployment,
     mariaAndAnna: { maria, anna },
   }) => {

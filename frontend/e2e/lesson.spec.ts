@@ -673,6 +673,7 @@ test.describe('lesson page for a tutor in Russian', () => {
     const lesson = await oneLesson(deployment, seed, await tomorrow(control.now));
     await signInThroughTheApi(page, seed.maria);
     const traffic = trafficAfterReady(page, [`/api/v1/lessons/${lesson.id}`]);
+    await traffic.initialize();
     await page.goto(lessonAddress(lesson));
     await expectRefetchedAfterTheSocketIsReady(traffic);
     await editButton(page).click();
@@ -745,6 +746,7 @@ test.describe('lesson page for a student in Russian', () => {
     const lesson = await oneLesson(deployment, seed, await tomorrow(control.now));
     await signInThroughTheApi(page, seed.anna);
     const traffic = trafficAfterReady(page, [`/api/v1/lessons/${lesson.id}`]);
+    await traffic.initialize();
     await page.goto(lessonAddress(lesson));
     await expect(page.getByRole('main').getByText('18:00–19:00').first()).toBeVisible();
     await expectRefetchedAfterTheSocketIsReady(traffic);

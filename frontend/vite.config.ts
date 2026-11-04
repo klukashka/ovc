@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { Agent } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { type Plugin, type ProxyOptions, loadEnv } from 'vite';
-import { defineConfig } from 'vitest/config';
+import { type ViteUserConfig, defineConfig } from 'vitest/config';
 
 import {
   buildManifestPath,
@@ -13,6 +13,7 @@ import {
   languageChunkFileName,
   languageChunks,
 } from './scripts/bundle-budget.ts';
+import { developmentLogger, developmentTls } from './scripts/development-tls.ts';
 import { realtimePath } from './src/lib/realtime/socket.ts';
 import { pageHeaders, responseHeaders } from './security-headers.ts';
 
@@ -92,10 +93,10 @@ function previewTls(
   return { https: { cert: readFileSync(certificate), key: readFileSync(privateKey) } };
 }
 
-export default defineConfig(({ mode }) => {
-  const environment = loadEnv(mode, import.meta.dirname, 'OVC_FRONTEND_');
+export function frontendConfiguration(mode: string, environment: Readonly<Record<string, string>>): ViteUserConfig {
   const apiTarget = environment.OVC_FRONTEND_API_TARGET ?? defaultApiTarget;
   return {
+    ...(mode === 'measurement-dev-tls' ? { customLogger: developmentLogger() } : {}),
     plugins: [react(), tailwindcss(), languageChunksHoldOnlyTexts(), moveBuildManifest()],
     build: {
       assetsInlineLimit: 0,
@@ -109,6 +110,12 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      ...developmentTls(
+        mode,
+        environment.OVC_FRONTEND_PREVIEW_CERTIFICATE,
+        environment.OVC_FRONTEND_PREVIEW_PRIVATE_KEY,
+        import.meta.dirname,
+      ),
       host: '127.0.0.1',
       port: 5173,
       strictPort: true,
@@ -140,4 +147,8 @@ export default defineConfig(({ mode }) => {
       ],
     },
   };
-});
+}
+
+export default defineConfig(({ mode }) =>
+  frontendConfiguration(mode, loadEnv(mode, import.meta.dirname, 'OVC_FRONTEND_')),
+);

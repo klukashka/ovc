@@ -24,6 +24,16 @@ function isCancellation(failed: FailedRequest): boolean {
   return cancellationTexts.includes(failed.reason);
 }
 
+export function cancellationAfterNavigationAction(failed: FailedRequest, action: number): boolean {
+  return (
+    !failed.answered &&
+    isCancellation(failed) &&
+    Number.isFinite(failed.started) &&
+    failed.started < action &&
+    action < failed.failed
+  );
+}
+
 function stepDuring(steps: readonly number[], failed: FailedRequest): boolean {
   return steps.some((step) => step > failed.started && step < failed.failed);
 }

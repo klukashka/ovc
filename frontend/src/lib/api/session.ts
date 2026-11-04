@@ -110,6 +110,64 @@ function retryAfter(response: Response): number | null {
   return Number(header);
 }
 
+export const ownedResponseBodyLimit = 64 * 1024;
+
+function responseBodyAborted(signal: AbortSignal): boolean {
+  return signal.aborted;
+}
+
+export async function drainOwnedResponse(
+  response: Response,
+  signal: AbortSignal,
+  owner: 'refresh_refusal' | 'account',
+): Promise<void> {
+  if (responseBodyAborted(signal)) throw new Error(`${owner}_body_aborted`);
+  if (response.body === null) return;
+  const reader = response.body.getReader();
+  let rejectAbort = (): void => undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectAbort = (): void => {
+      reject(new Error(`${owner}_body_aborted`));
+    };
+  });
+  signal.addEventListener('abort', rejectAbort, { once: true });
+  let size = 0;
+  let complete = false;
+  let failure: 'overflow' | 'aborted' | 'read_failed' | null = null;
+  let cancellationFailed = false;
+  try {
+    while (!complete) {
+      if (responseBodyAborted(signal)) throw new Error(`${owner}_body_aborted`);
+      const part = await Promise.race([reader.read(), aborted]);
+      if (responseBodyAborted(signal)) throw new Error(`${owner}_body_aborted`);
+      if (part.done) {
+        complete = true;
+        continue;
+      }
+      if (part.value.byteLength > ownedResponseBodyLimit - size) {
+        failure = 'overflow';
+        throw new Error(`${owner}_body_overflow`);
+      }
+      size += part.value.byteLength;
+    }
+  } catch {
+    failure ??= responseBodyAborted(signal) ? 'aborted' : 'read_failed';
+    try {
+      await reader.cancel();
+    } catch {
+      cancellationFailed = true;
+    }
+  } finally {
+    signal.removeEventListener('abort', rejectAbort);
+    reader.releaseLock();
+  }
+  if (failure !== null) {
+    const errors = [new Error(`${owner}_body_${failure}`)];
+    if (cancellationFailed) errors.push(new Error(`${owner}_body_cancellation_failed`));
+    throw new AggregateError(errors, `${owner}_body_failed`);
+  }
+}
+
 export class Session {
   private readonly deps: SessionDependencies;
   private current: SessionState = { kind: 'unknown' };
@@ -227,7 +285,7 @@ export class Session {
     }
     const epoch = this.epoch;
     const pending = this.deps.locks
-      .request(refreshLock, () => this.refreshNow(epoch))
+      .request(refreshLock, () => (epoch === this.epoch ? this.refreshNow(epoch) : Promise.resolve(superseded)))
       .finally(() => {
         if (this.pendingRefresh === pending) {
           this.pendingRefresh = null;
@@ -330,8 +388,11 @@ export class Session {
   }
 
   private async refreshNow(epoch: number): Promise<RefreshResult> {
-    const response = await this.deps.transport.refresh(AbortSignal.timeout(refreshTimeoutMilliseconds));
+    const signal = AbortSignal.timeout(refreshTimeoutMilliseconds);
+    const response = await this.deps.transport.refresh(signal);
     if (epoch !== this.epoch) {
+      if (response.status === 401 || response.status === 204)
+        await drainOwnedResponse(response, signal, 'refresh_refusal');
       return superseded;
     }
     if (response.status === 200) {
@@ -353,7 +414,10 @@ export class Session {
       return renewed;
     }
     if (response.status === 204 || response.status === 401) {
-      return this.endWith(this.current.kind === 'signedIn' ? 'sessionEnded' : 'anonymous');
+      const ended = this.endWith(this.current.kind === 'signedIn' ? 'sessionEnded' : 'anonymous');
+      const endedEpoch = this.epoch;
+      await drainOwnedResponse(response, signal, 'refresh_refusal');
+      return endedEpoch === this.epoch ? ended : superseded;
     }
     const error = await errorOf(response);
     if (epoch !== this.epoch) {
@@ -375,8 +439,10 @@ export class Session {
       return 'shown';
     }
     const shown = this.current.me.id;
-    const response = await this.deps.transport.me(token.access_token, AbortSignal.timeout(refreshTimeoutMilliseconds));
+    const signal = AbortSignal.timeout(refreshTimeoutMilliseconds);
+    const response = await this.deps.transport.me(token.access_token, signal);
     if (epoch !== this.epoch) {
+      await drainOwnedResponse(response, signal, 'account');
       return 'superseded';
     }
     if (!response.ok) {
@@ -422,14 +488,17 @@ export class Session {
 
   private async loadMe(): Promise<void> {
     const epoch = this.epoch;
-    const response = await this.authorizedFetch(`${this.deps.origin}/api/v1/users/me`);
+    const signal = AbortSignal.timeout(refreshTimeoutMilliseconds);
+    const response = await this.authorizedFetch(`${this.deps.origin}/api/v1/users/me`, { signal });
     if (epoch !== this.epoch) {
+      await drainOwnedResponse(response, signal, 'account');
       return;
     }
     if (response.status === 401 || response.status === 403) {
       if (this.current.kind !== 'signedOut') {
         this.end({ kind: 'signedOut', reason: 'anonymous' });
       }
+      await drainOwnedResponse(response, signal, 'account');
       return;
     }
     if (!response.ok) {

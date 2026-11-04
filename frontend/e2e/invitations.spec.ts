@@ -1,4 +1,6 @@
-import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
+import type { BrowserContext, Locator, Page } from '@playwright/test';
+
+import type { ObservedBrowser } from './browser-diagnostics.ts';
 
 import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
@@ -35,7 +37,7 @@ function recordAddresses(page: Page): string[] {
   return addresses;
 }
 
-async function tutorContext(browser: Browser, deployment: Deployment, locale: string): Promise<BrowserContext> {
+async function tutorContext(browser: ObservedBrowser, deployment: Deployment, locale: string): Promise<BrowserContext> {
   return browser.newContext({
     baseURL: deployment.origin,
     ignoreHTTPSErrors: true,
@@ -137,7 +139,7 @@ test.describe('Anna in Russian on a phone', () => {
 
   test('pilot-1 › step 5 Anna signs up on the invitation page, sees Maria on Home and confirms in the same browser', async ({
     page,
-    browser,
+    observedBrowser: browser,
     deployment,
     control,
     diagnostics,

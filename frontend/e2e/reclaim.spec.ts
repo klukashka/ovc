@@ -1,4 +1,6 @@
-import type { Browser, Locator, Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+
+import type { ObservedBrowser } from './browser-diagnostics.ts';
 
 import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
@@ -55,7 +57,7 @@ async function keepMariaAndDropPavel(page: Page): Promise<void> {
 }
 
 async function openTheCardAsMaria(
-  browser: Browser,
+  browser: ObservedBrowser,
   deployment: Deployment,
   diagnostics: Diagnostics,
   maria: TestAccount,
@@ -111,7 +113,7 @@ test('reclaim › a confirmation from another browser asks to keep or drop the l
 
 test('reclaim › the tutors see the squatter neither before nor after the choice, and the kept link becomes the student’s', async ({
   page,
-  browser,
+  observedBrowser: browser,
   deployment,
   control,
   diagnostics,

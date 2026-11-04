@@ -16,3 +16,16 @@ Findings recorded during slice 6. Minor findings may be accepted instead of star
 ## Approved upload cleanup uncertainty
 
 On 2026-11-01 the owner approved [ADR-0019](../../docs/decisions/0019-durable-upload-cleanup.md): unresolved remote Complete or persistent failures can retain technical intents indefinitely, and finite automatic cleanup does not guarantee physical removal. The 4,096-intent cap can refuse new chat uploads; explicit operator receipts have no total count cap, with indexed lookup and bounded pages. This is the approved design residual, not evidence that S6-BE-03 has been fixed. Implementation readiness and independent verification are recorded in [the upload cleanup change](slice-6-upload-cleanup.md).
+
+### Historical browser diagnostic provenance
+
+The owner approved one changed-source production acceptance attempt on 2026-11-03 while accepting
+limited historical cause uncertainty, as bounded in the
+[production diagnostic follow-up plan](../plans/slice-6-production-diagnostic-followups.md).
+The original Chromium other-account confirmation page error lacked a browser stream; original WebKit
+two-tab/proactive extra events and a pilot readiness-fetch access-control event did not recur in the
+single authorized trace-on diagnostic. The original failures remain failures. This is acceptance of
+an evidence limit for progressing to the named checks, not a waiver for new warnings/errors, a claim
+that each old producer was proven, or readiness approval. Any new unexplained event still blocks
+readiness. Current implementation/check evidence is retained in the
+[warning diagnostics record](slice-6-warning-diagnostics-followup.md).

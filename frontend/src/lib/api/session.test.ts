@@ -1,7 +1,16 @@
 import { describe, expect, test } from 'vitest';
 
-import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks, unsharedLocks } from './fakeTransport.ts';
-import { type LockManagerLike, Session } from './session.ts';
+import {
+  FakeAuthServer,
+  AccountResponseBodies,
+  SignalAwareRefreshBodies,
+  type ManualScheduler,
+  manualScheduler,
+  memoryLocks,
+  unsharedLocks,
+} from './fakeTransport.ts';
+import { type LockManagerLike, Session, drainOwnedResponse } from './session.ts';
+import { FollowingQueryClient, accountCacheOwnership } from '../../app/queryClient.ts';
 
 const origin = 'https://ovc.example';
 const first = { id: 'account-a', name: 'A tutor', email: 'a@example.org', password: 'a long enough password' };
@@ -63,6 +72,18 @@ describe('the session refresh', () => {
 
     expect(answers.map((answer) => answer.status)).toEqual([200, 200, 200]);
     expect(shared.server.refreshes).toBe(1);
+  });
+
+  test('an unexpired revoked session ends after account refusal without a refresh', async () => {
+    const shared = browser();
+    const session = await signedInTab(shared);
+    const refreshes = shared.server.refreshes;
+    shared.server.revokeSessionsOf(first.email);
+
+    await session.reloadAccount();
+
+    expect(session.snapshot().kind).toBe('signedOut');
+    expect(shared.server.refreshes).toBe(refreshes);
   });
 
   test('two tabs refreshing at once with the shared lock keep the session', async () => {
@@ -431,4 +452,347 @@ describe('authenticated upload lifetime', () => {
     expect(attempt).toThrow('uploads require the own API');
     expect(shared.server.sentTokens).toHaveLength(before);
   });
+});
+
+async function heldRefusal(): Promise<{
+  readonly shared: Browser;
+  readonly session: Session;
+  readonly body: SignalAwareRefreshBodies;
+}> {
+  const body = new SignalAwareRefreshBodies({ hold: true });
+  const server = new FakeAuthServer({ refreshBodies: body });
+  server.addAccount(first);
+  server.addAccount(second);
+  const shared = { server, locks: memoryLocks() };
+  const session = await signedInTab(shared);
+  server.revokeSessionsOf(first.email);
+  return { shared, session, body };
+}
+
+function waitSignedOut(session: Session): Promise<void> {
+  return new Promise((resolve) => {
+    const check = (): void => {
+      if (session.snapshot().kind === 'signedOut') {
+        unsubscribe();
+        resolve();
+      }
+    };
+    const unsubscribe = session.subscribe(check);
+    check();
+  });
+}
+
+test.each(['release', 'fail'] as const)(
+  'refusal immediately ends ownership and its %s cannot restore it',
+  async (outcome) => {
+    const { shared, session, body } = await heldRefusal();
+
+    const pending = session.refresh();
+    const result = pending.then(
+      (value) => ({ kind: 'resolved' as const, value }),
+      () => ({ kind: 'rejected' as const }),
+    );
+    await body.headers;
+    await waitSignedOut(session);
+    await body.reading;
+    const whileHeld = session.snapshot();
+    if (outcome === 'release') body.release();
+    else body.fail();
+    const settled = await result;
+
+    expect(whileHeld).toEqual({ kind: 'signedOut', reason: 'sessionEnded' });
+    expect(settled.kind).toBe(outcome === 'release' ? 'resolved' : 'rejected');
+    expect(session.snapshot()).toEqual(whileHeld);
+    expect(shared.server.refreshes).toBe(1);
+    expect(body.snapshot()).toMatchObject({ active: 0, readerLocked: false });
+  },
+);
+
+test.each(['release', 'fail'] as const)(
+  'queued old-epoch refresh cannot send after another account is adopted and old body %s',
+  async (outcome) => {
+    const { shared, session, body } = await heldRefusal();
+    const firstOperation = session.refresh();
+    const firstResult = firstOperation.then(
+      (value) => ({ kind: 'resolved' as const, value }),
+      () => ({ kind: 'rejected' as const }),
+    );
+    await body.headers;
+    await waitSignedOut(session);
+    await body.reading;
+
+    const queued = session.refresh();
+    await session.adopt(await tokenFor(shared, second));
+    const before = shared.server.refreshes;
+    if (outcome === 'release') body.release();
+    else body.fail();
+    const ended = await firstResult;
+    const queuedResult = await queued;
+    const owner = await readAccount(session);
+
+    expect(before).toBe(1);
+    expect(shared.server.refreshes).toBe(before);
+    expect(queuedResult.kind).toBe('superseded');
+    expect(ended.kind).toBe(outcome === 'release' ? 'resolved' : 'rejected');
+    if (ended.kind === 'resolved') expect(ended.value.kind).toBe('superseded');
+    expect(signedInAs(session)).toBe(second.id);
+    expect(await owner.json()).toMatchObject({ id: second.id });
+    expect(body.snapshot()).toMatchObject({ active: 0, readerLocked: false });
+  },
+);
+
+test.each([64 * 1024, 64 * 1024 + 1])('refresh refusal stream enforces its exact %s-byte boundary', async (bytes) => {
+  const body = new SignalAwareRefreshBodies({ bytes });
+  const shared = { server: new FakeAuthServer({ refreshBodies: body }), locks: memoryLocks() };
+  shared.server.addAccount(first);
+  const session = await signedInTab(shared);
+  shared.server.revokeSessionsOf(first.email);
+
+  const settled = await session.refresh().then(
+    (value) => ({ kind: 'resolved' as const, value }),
+    () => ({ kind: 'rejected' as const }),
+  );
+
+  expect(settled.kind).toBe(bytes === 64 * 1024 ? 'resolved' : 'rejected');
+  expect(session.snapshot()).toEqual({ kind: 'signedOut', reason: 'sessionEnded' });
+  expect(body.snapshot()).toMatchObject({ active: 0, readerLocked: false, cancelled: bytes === 64 * 1024 ? 0 : 1 });
+});
+
+test('empty refresh 204 retains anonymous semantics without a body reader', async () => {
+  const body = new SignalAwareRefreshBodies();
+  const shared = { server: new FakeAuthServer({ refreshBodies: body }), locks: memoryLocks() };
+  const session = tab(shared);
+
+  const result = await session.refresh();
+
+  expect(result).toEqual({ kind: 'ended', reason: 'anonymous' });
+  expect(session.snapshot()).toEqual({ kind: 'signedOut', reason: 'anonymous' });
+  expect(body.snapshot()).toMatchObject({ active: 0, readerLocked: false });
+});
+
+test.each(['release', 'fail'] as const)(
+  'a protected request cannot replay after an old refusal body %s and account replacement',
+  async (outcome) => {
+    const body = new SignalAwareRefreshBodies({ hold: true });
+    const shared = { server: new FakeAuthServer({ refreshBodies: body }), locks: memoryLocks() };
+    shared.server.addAccount(first);
+    shared.server.addAccount(second);
+    const session = await signedInTab(shared);
+    shared.server.advance(16 * 60);
+    const accountRead = shared.server.pauseAccountReads();
+    const mark = shared.server.sentTokens.length;
+
+    const pending = readAccount(session).then(
+      (response) => ({ kind: 'resolved' as const, response }),
+      () => ({ kind: 'rejected' as const }),
+    );
+    await accountRead.answered;
+    shared.server.revokeSessionsOf(first.email);
+    accountRead.resume();
+    await body.headers;
+    await waitSignedOut(session);
+    await body.reading;
+    const oldRequestsBeforeAdopt = shared.server.sentTokens.length - mark;
+    await session.adopt(await tokenFor(shared, second));
+    const beforeCompletion = shared.server.sentTokens.length;
+    if (outcome === 'release') body.release();
+    else body.fail();
+    const result = await pending;
+    const replayCount = shared.server.sentTokens.length - beforeCompletion;
+    const next = await readAccount(session);
+
+    expect(oldRequestsBeforeAdopt).toBe(1);
+    expect(replayCount).toBe(0);
+    expect(result.kind).toBe(outcome === 'release' ? 'resolved' : 'rejected');
+    if (result.kind === 'resolved') expect(result.response.status).toBe(401);
+    expect(await next.json()).toMatchObject({ id: second.id });
+    expect(signedInAs(session)).toBe(second.id);
+    expect(shared.server.refreshes).toBe(1);
+    expect(body.snapshot()).toMatchObject({ active: 0, readerLocked: false });
+  },
+);
+
+async function accountBodyFixture(): Promise<{
+  readonly shared: Browser;
+  readonly session: Session;
+  readonly bodies: AccountResponseBodies;
+}> {
+  const bodies = new AccountResponseBodies();
+  const shared = { server: new FakeAuthServer({ accountBodies: bodies }), locks: memoryLocks() };
+  shared.server.addAccount(first);
+  shared.server.addAccount(second);
+  return { shared, session: await signedInTab(shared), bodies };
+}
+
+test.each([
+  ['loadMe', 200],
+  ['loadMe', 401],
+  ['ownerOf', 200],
+  ['ownerOf', 401],
+] as const)('owned account lifecycle: stale %s %s completes the original body', async (owner, status) => {
+  const { shared, session, bodies } = await accountBodyFixture();
+  const body = new SignalAwareRefreshBodies({ hold: true, holdHeaders: true });
+  bodies.arm(body);
+  const refreshHold = owner === 'ownerOf' && status === 401 ? shared.server.pauseRefreshes() : null;
+  if (owner === 'loadMe' && status === 401) shared.server.advance(16 * 60);
+  const pending = owner === 'loadMe' ? session.reloadAccount() : session.refresh();
+  if (refreshHold !== null) {
+    await refreshHold.answered;
+    shared.server.revokeSessionsOf(first.email);
+    refreshHold.resume();
+  }
+  await body.headers;
+
+  session.endRevoked('signedOut');
+  await session.adopt(await tokenFor(shared, second));
+  body.releaseHeaders();
+  body.release();
+  await pending;
+  const lifecycle = body.snapshot();
+  await body.dispose();
+
+  expect(lifecycle).toMatchObject({ consumed: true, active: 0, completed: 1, readerLocked: false });
+  expect(signedInAs(session)).toBe(second.id);
+  expect(shared.server.refreshes).toBe(owner === 'ownerOf' ? 1 : 0);
+});
+
+test.each([401, 403] as const)(
+  'owned account lifecycle: current loadMe %s completes the original body',
+  async (status) => {
+    const { shared, session, bodies } = await accountBodyFixture();
+    const body = new SignalAwareRefreshBodies();
+    const cache = new FollowingQueryClient();
+    const ownership = accountCacheOwnership(cache);
+    const initial = session.snapshot();
+    if (initial.kind !== 'signedIn') throw new Error('expected signed-in fixture');
+    ownership(initial.me);
+    cache.setQueryData(['private'], 'old');
+    let disposedAtInvalidation = true;
+    const unsubscribe = session.subscribe(() => {
+      const state = session.snapshot();
+      ownership(state.kind === 'signedIn' ? state.me : null);
+      if (state.kind === 'signedOut') disposedAtInvalidation = body.snapshot().consumed;
+    });
+    bodies.arm(body);
+    if (status === 401) shared.server.revokeSessionsOf(first.email);
+    else shared.server.blockWithoutRevoking(first.email);
+
+    await session.reloadAccount();
+    const retained = cache.getQueryData(['private']);
+    unsubscribe();
+    cache.clear();
+
+    expect(disposedAtInvalidation).toBe(false);
+    expect(retained).toBeUndefined();
+    expect(body.snapshot()).toMatchObject({ consumed: true, active: 0, completed: 1, readerLocked: false });
+    expect(session.snapshot().kind).toBe('signedOut');
+    expect(shared.server.refreshes).toBe(0);
+  },
+);
+
+function settledOperation(
+  operation: Promise<unknown>,
+): Promise<{ readonly failed: boolean; readonly error?: unknown }> {
+  return operation.then(
+    () => ({ failed: false }),
+    (error: unknown) => ({ failed: true, error }),
+  );
+}
+
+test.each(['loadMe', 'ownerOf'] as const)(
+  'owned account lifecycle: %s preserves replacement cache through bounded cleanup',
+  async (owner) => {
+    for (const outcome of ['limit', 'overflow', 'readFailure', 'cancelFailure'] as const) {
+      const { shared, session, bodies } = await accountBodyFixture();
+      const body = new SignalAwareRefreshBodies({
+        hold: true,
+        holdHeaders: true,
+        bytes: outcome === 'overflow' || outcome === 'cancelFailure' ? 64 * 1024 + 1 : 64 * 1024,
+        cancellationFails: outcome === 'cancelFailure',
+      });
+      const cache = new FollowingQueryClient();
+      const ownership = accountCacheOwnership(cache);
+      const synchronize = (): void => {
+        const state = session.snapshot();
+        ownership(state.kind === 'signedIn' ? state.me : null);
+      };
+      synchronize();
+      const unsubscribe = session.subscribe(synchronize);
+      cache.setQueryData(['private'], 'old');
+      bodies.arm(body);
+      const pending = settledOperation(owner === 'loadMe' ? session.reloadAccount() : session.refresh());
+      await body.headers;
+
+      session.endRevoked('signedOut');
+      const clearedBeforeDisposal = cache.getQueryData(['private']);
+      await session.adopt(await tokenFor(shared, second));
+      cache.setQueryData(['private'], 'replacement');
+      const requestsBeforeDisposal = shared.server.sentTokens.length;
+      body.releaseHeaders();
+      await body.reading;
+      const whileReading = body.snapshot();
+      if (outcome === 'readFailure') body.fail();
+      else body.release();
+      const result = await pending;
+      const retained = cache.getQueryData(['private']);
+      unsubscribe();
+      cache.clear();
+
+      expect(clearedBeforeDisposal).toBeUndefined();
+      expect(whileReading).toMatchObject({ active: 1, readerLocked: true, consumed: true });
+      expect(result.failed).toBe(outcome !== 'limit');
+      expect(body.snapshot()).toMatchObject({ active: 0, readerLocked: false });
+      expect(retained).toBe('replacement');
+      expect(signedInAs(session)).toBe(second.id);
+      expect(shared.server.sentTokens).toHaveLength(requestsBeforeDisposal);
+      expect(shared.server.refreshes).toBe(owner === 'ownerOf' ? 1 : 0);
+      if (outcome === 'cancelFailure') {
+        expect(result.error).toBeInstanceOf(AggregateError);
+        if (!(result.error instanceof AggregateError)) throw new Error('expected aggregate cleanup failure');
+        expect(result.error.errors.map((error: unknown) => (error instanceof Error ? error.message : ''))).toEqual([
+          'account_body_overflow',
+          'account_body_cancellation_failed',
+        ]);
+        expect(body.snapshot().cancelled).toBe(1);
+      }
+      if (outcome === 'readFailure') expect(body.snapshot().readFailures).toBe(1);
+      if (outcome === 'limit') expect(body.snapshot().completed).toBe(1);
+    }
+  },
+);
+
+test('owned account lifecycle: abort settles the owned reader and retains failure evidence', async () => {
+  const body = new SignalAwareRefreshBodies({ hold: true });
+  const controller = new AbortController();
+  const response = await body.response(new Response('account data'), controller.signal);
+  const pending = settledOperation(drainOwnedResponse(response, controller.signal, 'account'));
+  await body.reading;
+
+  controller.abort();
+  const result = await pending;
+
+  expect(result.failed).toBe(true);
+  expect(result.error).toBeInstanceOf(AggregateError);
+  expect(body.snapshot()).toMatchObject({ active: 0, aborted: 1, readerLocked: false, consumed: true });
+});
+
+test('owned account lifecycle: an arbitrary API caller still owns its response', async () => {
+  const { shared, session, bodies } = await accountBodyFixture();
+  const body = new SignalAwareRefreshBodies({ hold: true, holdHeaders: true });
+  bodies.arm(body);
+  const pending = readAccount(session);
+  await body.headers;
+
+  session.endRevoked('signedOut');
+  await session.adopt(await tokenFor(shared, second));
+  body.releaseHeaders();
+  const response = await pending;
+  const beforeCallerRead = body.snapshot();
+  body.release();
+  const account: unknown = await response.json();
+
+  expect(beforeCallerRead).toMatchObject({ consumed: false, active: 1, completed: 0 });
+  expect(account).toMatchObject({ id: first.id });
+  expect(signedInAs(session)).toBe(second.id);
+  expect(body.snapshot()).toMatchObject({ active: 0, completed: 1 });
 });

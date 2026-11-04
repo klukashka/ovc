@@ -1,4 +1,6 @@
-import type { Browser, BrowserContext, Page, Request, Response } from '@playwright/test';
+import type { BrowserContext, Page, Request, Response } from '@playwright/test';
+
+import type { ObservedBrowser } from './browser-diagnostics.ts';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
@@ -35,7 +37,7 @@ async function groupActors(deployment: Deployment): Promise<GroupActors> {
   };
 }
 
-async function contextFor(browser: Browser, deployment: Deployment): Promise<BrowserContext> {
+async function contextFor(browser: ObservedBrowser, deployment: Deployment): Promise<BrowserContext> {
   return browser.newContext({
     baseURL: deployment.origin,
     ignoreHTTPSErrors: true,
@@ -47,6 +49,7 @@ async function contextFor(browser: Browser, deployment: Deployment): Promise<Bro
 async function openChat(page: Page, account: TestAccount, channel: string): Promise<void> {
   await signInThroughTheApi(page, account);
   const traffic = trafficAfterReady(page, [`/api/v1/channels/${channel}`]);
+  await traffic.initialize();
   await page.goto(`/messages/${channel}`);
   await page.getByRole('textbox', { name: 'Message', exact: true }).waitFor();
   await expectRefetchedAfterTheSocketIsReady(traffic);
@@ -135,7 +138,7 @@ test.use({ locale: 'en-GB', viewport: { width: 1280, height: 800 }, reducedMotio
 
 test('pilot-3 › step 6 Anna sends a picture and Maria sees its preview, unread badge and online presence', async ({
   page,
-  browser,
+  observedBrowser: browser,
   deployment,
   diagnostics,
 }) => {
@@ -173,7 +176,7 @@ test('pilot-3 › step 6 Anna sends a picture and Maria sees its preview, unread
 
 test('pilot-3 › step 7 tutor sees card-name typing and Anna sees anonymous group typing followed by the live message', async ({
   page,
-  browser,
+  observedBrowser: browser,
   deployment,
   diagnostics,
 }) => {
@@ -205,7 +208,7 @@ test('pilot-3 › step 7 tutor sees card-name typing and Anna sees anonymous gro
 
 test('pilot-3 › steps 8–11 Anna closes her tabs and receives one digest for one unread group message without a duplicate', async ({
   page,
-  browser,
+  observedBrowser: browser,
   deployment,
   diagnostics,
   control,
@@ -235,7 +238,7 @@ test('pilot-3 › steps 8–11 Anna closes her tabs and receives one digest for 
 
 test('pilot-3 › steps 14–15 Anna unsubscribes through the digest and receives no new digest while offline', async ({
   page,
-  browser,
+  observedBrowser: browser,
   deployment,
   diagnostics,
   control,
@@ -275,7 +278,7 @@ test('pilot-3 › steps 14–15 Anna unsubscribes through the digest and receive
 
 test('attachments › type and quota refusals take focus and an unconfirmed student cannot attach', async ({
   page,
-  browser,
+  observedBrowser: browser,
   deployment,
   diagnostics,
 }) => {

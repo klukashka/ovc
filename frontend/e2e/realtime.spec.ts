@@ -103,6 +103,7 @@ test('realtime › signing out everywhere in another browser signs this tab out 
   const user = await accountId(deployment, maria);
   await signInThroughTheApi(page, maria);
   const traffic = trafficAfterReady(page, studentsQueryPaths);
+  await traffic.initialize();
   await page.goto('/students');
   await expectRefetchedAfterTheSocketIsReady(traffic);
   await waitForSockets(deployment, user, 1);

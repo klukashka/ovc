@@ -3,6 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { type BrowserType, chromium, errors, firefox, webkit } from '@playwright/test';
 
 import { seedAccount, signInThroughTheApi } from '../e2e/accounts.ts';
+import { observeBrowserContext, installPolicyObserver } from '../e2e/browser-diagnostics.ts';
 import { finishRun, prepareRun, readE2ESettings, startDeployment, takeRunLock } from '../e2e/deployment.ts';
 import { channelOf } from '../e2e/messages.ts';
 import { accountId } from '../e2e/realtime.ts';
@@ -59,7 +60,12 @@ UPDATE channels SET last_seq=${String(measurementCount(1000, 100))}, last_activi
       otherChannel,
     );
     const context = await browser.newContext({ ignoreHTTPSErrors: true, baseURL: deployment.origin });
-    cleanup(() => context.close());
+    const browserDiagnostics = observeBrowserContext(context, engine.name());
+    cleanup(async (): Promise<void> => {
+      await context.close();
+      await browserDiagnostics.finish();
+    });
+    await installPolicyObserver(context);
     const page = await context.newPage();
     await page.addInitScript(() => {
       const target = window as Window & { slice6LayoutShift?: number | null };
@@ -142,12 +148,6 @@ UPDATE channels SET last_seq=${String(measurementCount(1000, 100))}, last_activi
     });
     page.on('requestfailed', (request) => {
       complete(request.url());
-    });
-    page.on('pageerror', () => {
-      diagnostics += 1;
-    });
-    page.on('console', (message) => {
-      if (message.type() === 'error') diagnostics += 1;
     });
     let stage = 'sign_in';
     try {
@@ -350,6 +350,8 @@ UPDATE channels SET last_seq=${String(measurementCount(1000, 100))}, last_activi
         completedRequests,
         activeDownloads,
         diagnostics,
+        consoleWarnings: browserDiagnostics.warnings(),
+        consoleErrors: browserDiagnostics.errors(),
         heapRetainers: 'unverified',
         timerRetainers: 'unverified',
         boundedQueryCaches: 'unverified',
@@ -359,6 +361,8 @@ UPDATE channels SET last_seq=${String(measurementCount(1000, 100))}, last_activi
       stage = 'browser_assertions';
       if (
         rows !== measurementCount(1000, 100) ||
+        browserDiagnostics.warnings() !== 0 ||
+        browserDiagnostics.errors() !== 0 ||
         diagnostics !== 0 ||
         activeDownloads !== 0 ||
         sampling.failed ||

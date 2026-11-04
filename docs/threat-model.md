@@ -197,3 +197,186 @@ Added 2026-11-02; approved follow-up scope, wording pending owner review. The [f
 ### Incremental live conversation history
 
 Added 2026-11-02; approved follow-up scope, wording pending owner review. Known live frames retain a bounded sequence high-water and at most 100 dirty identifiers per mounted query-client/channel owner (T-20). The lazy history owner serializes live, full-query and older-page reads; all message state and attachment metadata come from authorized REST responses, with identifier/sequence validation, account epoch, channel-query identity, operation-scoped revision and cancellation/generation guards before publication (T-21/T-29/T-44). Overflow and inconsistent coverage select full reconciliation; reconnect, scope changes, conflict recovery and signed-address renewal remain authoritative across displayed history, so an old edit or deletion cannot be treated as an append-only success. No authorization rule or route changes. The existing local fake adapter's held-history response preserves its authorized no-store snapshot for lifetime tests (T-36). The opt-in production-path request-wave probe uses only owned local fixtures and fixed counts/classes/times, without credentials, URLs, bodies or raw exception chains; its bounded acceptance cases do not authorize full performance workloads (T-18/T-19/T-41). See the [implementation verification record](../knowledge/reviews/slice-6-incremental-history.md).
+
+## Owned development TLS and browser diagnostic exports
+
+Status: added 2026-11-02, pending owner review.
+
+For T-19 and T-27, browser console and exception exports use fixed categories and route classes;
+raw console content, arguments, locations and credential-bearing URLs are not serialized. Exact
+negative expectations are compared privately in their declared page context. Unknown warnings
+remain failures. Opaque private Playwright failure artifacts remain a disclosure residual and
+are never claimed to be redacted or suitable for sharing.
+
+For T-19 and T-36, the opt-in development warning smoke keeps the existing guarded local test
+services and run lock. Its named development TLS mode requires an owned generated certificate
+and private key outside every served source/output tree, checks lexical and canonical aliases,
+and refuses invalid or partial material before listening. The temporary private material remains
+until its owned server stops. Fixed-category framework logging prevents denied file requests
+from exporting temporary key paths. Ordinary development and production preview keep their
+existing host, CORS, filesystem, proxy and distinct header policies (T-37); no new route,
+credential setting, HTTP fallback or relaxed cookie is introduced.
+
+### Development initial-read ownership
+
+Status: added 2026-11-02, pending owner review; owner-approved scope is recorded in the
+[development findings plan](../knowledge/plans/slice-6-development-smoke-findings.md) and its
+[approved request-lifetime refinement](../knowledge/plans/slice-6-development-cancellation-evidence.md).
+
+For T-21 and T-29, the channel-scope revision observer remains cache-only through `skipToken`;
+no dummy revision or new REST work replaces its scope updates. For T-18, T-19 and T-41, the
+opt-in development smoke compares complete request targets privately, binds its bounded initial
+expectation to an owned document/account. Only each exact target first request born before the original deadline and explicit initial
+assembly seal is eligible. Ready and unrelated completion do not close a later lazy child
+enrollment. The seal requires visible composer/history, validated owner, ready, authoritative
+after-ready reads and owned HTTP/async quiescence; seal, deadline or ownership loss closes
+enrollment irreversibly. A successful first response prohibits later cancellation allowance.
+An enrolled cancellation callback may follow ready or unrelated completion, but must precede
+seal and the original deadline. Its exact second lifetime must complete fully with HTTP 200
+within the same deadline and scope, regardless of callback delivery order. No third lifetime
+can substitute, and a successful first request grants no later cancellation allowance. Raw failures remain counted; no console-warning, HTTP-error or general abort
+exemption is introduced. Native user lookup validates the actual account; document changes,
+account replacement and scope loss while unresolved fail. A real StrictMode on/off comparison
+is required before interpreting the expectation as caused by initial observer teardown.
+For T-36 the controls retain the existing local fixture guards, real API and owned run lock;
+negative controls change only owned test data and use no fabricated response or new test route.
+All diagnostic exports remain fixed categories, stages, bounded counts and ownership booleans.
+The named passive fake seam retains only two real signals per target plus total attempt counts,
+observing the first signal at the second synchronous transport invocation without reading a
+header/body/credential or changing nextTurn, authorization, routing or responses. Actual component
+StrictMode controls and the isolated browser comparison are both required as causal evidence;
+neither proof alone makes a general cancellation exemption (T-36/T-41).
+
+The private development controls require the specific guard's failure category; an unrelated
+unresolved replacement cannot stand in for document, account or repeated-cancellation detection
+(T-41). Isolated source-removal controls test each guard's sensitivity. A late replacement never
+resolves the initial expectation. Readiness excludes non-API long-lived resources only from its
+pending REST barrier, retaining every resource failure and safe API/non-API state counts (T-18,
+T-19). These corrections grant no broader cancellation eligibility or product authority.
+
+For T-18/T-19/T-41, the opt-in conversation lifecycle diagnostic declares one fixture-owned
+destination solely for passive exact route/query classification. Its bounded records contain
+fixed scope/category, ordinals, cancellation/owner/document booleans, status class and body-complete
+counts. It runs fresh contexts and retains original assertion failures with a final
+diagnostic_not_acceptance result; no destination allowance or production collector change follows
+from this declaration. Added 2026-11-02; approved evidence-first scope, wording pending owner review.
+
+For T-18/T-19/T-21/T-29/T-36/T-41, the smoke's one explicitly armed conversation transition binds
+actual source, fixture-owned destination, verified account, document and original transition deadline.
+Exactly one matching SPA event is required; unrelated/repeated navigation or owner/resource changes
+invalidate it permanently. The destination detail first cancellation requires its exact second full200;
+no third substitute, history/other-route allowance, rearm or post-seal allowance exists. Complete
+visible destination UI/history and owned read quiescence precede sealing. The distinct passive fake
+observer proves producer ordering without changing transport behavior. Initial and navigation raw
+and expected counts remain separate. Added 2026-11-02; approved scope, wording pending owner review.
+
+For T-18/T-19/T-20/T-21/T-29/T-36/T-41, production diagnostic negative grants are finite and
+owned by one page/action phase: exact method/address/query/status, real request identity, full-body
+completion and unique transient console correlation. Missing location is accepted only with unique
+attribution; ambiguity, extra/missing responses and undeclared HTTP failures remain failures. The
+former blanket HTTP-console path is retired. The only new warning grant is the explicitly approved
+Firefox deliberate language-abort phase, bound to the actual failed selected asset and one exact
+native warning; all unrelated warnings/page errors remain strict. Receiver-safe realtime reporting
+preserves original Errors rather than swallowing them. Real native canaries and the original-alias
+control distinguish reporting correctness from an expected collector rejection. Readiness and bounded
+timer jumps correct test workload races without changing application timing, frame limits, sessions,
+CORS or cookies. Added 2026-11-03; approved scope, wording pending owner review.
+
+For T-2/T-18/T-19/T-20/T-21/T-23/T-29/T-41, refresh refusal ends old account/token/cache ownership
+before a bounded body drain. The same original deadline and a 64-KiB maximum bound streamed bytes;
+reader release and cancellation preserve resource ownership on success/failure/abort. Epoch is
+checked inside the acquired Web Lock before sending any cookie-authenticated refresh. A stale
+queued callback sends nothing, and an old body cannot overwrite a replacement account, recover old
+private cache or replay a request. Constructor-selected signal-aware fake and shared transport
+contracts support the actual Session/cache/Gate composition without response interception. No
+body content, credentials or raw error chain is exported. Added 2026-11-03; wording pending owner review.
+
+### Navigation-readiness evidence ownership
+
+Added 2026-11-03, pending owner review; scope approved in the
+[document ownership plan](../knowledge/plans/slice-6-navigation-readiness-document-scope.md).
+For T-18/T-19/T-20/T-21/T-29/T-41, readiness observations belong to the committed main document.
+Old sockets, requests and absent old terminal events cannot supply current readiness or retain
+current pending work. Current query failures and missing current completion remain failures.
+SPA identity uses only an owned public Document handle and boolean equality, without application
+private-state exports; ambiguous identity fails. Disposal removes owned handlers and handles.
+The change grants no native-error exemption and changes no production authorization or cancellation
+behavior. Real three-engine controls and state contracts distinguish retired old work from current
+held work; a passed earlier integration tree never substitutes for the exact final gate.
+
+### Document follow-up ownership
+
+Added 2026-11-03, pending owner review; implementation scope approved by the
+[document refetch lifetime plan](../knowledge/plans/slice-6-document-refetch-lifetime.md).
+T-20/T-21/T-29/T-41: a pending follow-up REST wave cannot acquire a departed document or replacement
+account. A single lifecycle owner is installed before Session startup and shared with late realtime
+installation. Suspension, resumption and cache clearing invalidate its pending generation.
+The first-wave response/error policy is unchanged; a new account retains only its own cache.
+T-18/T-19: control diagnostics contain bounded fixed categories and coordinates only for exact own
+JavaScript assets, never error text, URL, credentials or payloads. Historical native error wording
+remains unverified; no browser error exemption or production authorization change is introduced.
+
+For T-41, native readiness additionally checks committed-document origin, main-frame ownership
+and GET eligibility before a response can discharge a required read. Owned non-GET operations
+remain pending work, foreign frame/origin/service-worker requests cannot supply readiness, and
+unknown frame attribution fails closed. For T-18/T-19, pending/missing output uses fixed categories
+rather than paths with identifiers. Added 2026-11-04; wording pending owner review.
+
+### Targeted browser diagnostic evidence (pending owner review)
+
+T-18/T-19/T-41: an explicitly approved eight-case diagnostic may retain synthetic-credential-bearing
+Playwright traces and reporter output only in a precreated private local directory outside served
+roots. Raw output is never published. Resolved paths and exact test selection are checked before
+execution; raw evidence is retained at most seven days. Exported evidence contains bounded fixed
+categories and counts, never URLs, messages, identities or credentials. HTTP phase counts describe
+only declared observation coverage, not the absence of undeclared responses. Unknown events and
+overflow fail; diagnostics do not waive assertions or authorize acceptance or merge.
+
+### Account navigation observation (pending owner review)
+
+The browser readiness observer retains a Document reference inside an ordinary object to avoid
+DOM-node preview work. Account-switch readiness starts at the exact new confirmation request
+after its paired logout 204; origin, method, endpoint, main frame and document ownership remain
+mandatory. Old-account logout is verified separately, with diagnostics active throughout.
+The standalone Session regression proves that REST unauthenticated ends an unexpired revoked
+session without a REST-triggered refresh. A socket closed with 4401 independently requests a
+refresh. The browser reset control holds both real requests, observes the refresh refusal first,
+then the account-read refusal, and verifies that the late response cannot restore the account.
+This ordered control does not establish the initiator of a historical refresh. Separate tests
+retain token_expired refresh coverage. No general request-failure or warning exemption is introduced.
+
+### Parsed-document evidence (pending owner review)
+
+Readiness enrolls network and socket events immediately, but obtains its actual Document
+reference only after DOMContentLoaded. The public lifecycle waiter has a five-second bound and
+is joined rather than abandoned; disposal can take up to that bound when parsing is held.
+Generation checks before and after evaluation prevent a departed owner from acquiring a newer
+Document. This does not extend the readiness assertion deadline, disable DOM/network tracing,
+or allow browser warnings. Real entry-module holds prove parsing order, disposal before release
+and new-document ownership after supersession.
+
+### Coherent readiness proof (pending owner review)
+
+Browser readiness samples current capture, socket readiness and settled reads together under one
+five-second assertion. Controlled navigations join initial capture and explicitly retire prior
+capture work before subsequent hard navigation. Read-only counters describe actual waiter and
+handle ownership. Single-main-frame verification refuses child-frame attachment instead of
+attributing a page-scoped socket to a frame without evidence. Route cleanup closes admission,
+releases holds, removes only its owned handler and joins tracked callbacks; incomplete removal
+remains a failure. Negative controls must fail their named invariant, with native request-failure
+verification active and without diagnostic exemptions.
+
+### Discarded account-response ownership (pending owner review)
+
+The session consumes discarded account-response bodies in `loadMe` and `ownerOf`,
+without parsing or publishing stale account data during disposal. Existing authorized-request
+classification of refusals before disposal is unchanged. A current account refusal releases
+session and private-cache ownership before disposal. Each discard streams at most
+64 KiB; read, abort, overflow and cancellation failures remain failures and cannot
+change a replacement account. `loadMe` starts a 15-second HTTP/body signal before
+sending; `ownerOf` reuses its existing signal. This does not promise a total
+15-second operation deadline when an authorized request waits for a separate refresh.
+Reader cancellation settlement is checked separately, rather than inferred from an
+abort signal. Arbitrary API response ownership and stale refresh200 behavior are
+unchanged. These boundaries address T-20, T-21 and T-29; the bounded, content-free
+verification evidence addresses T-18, T-19 and T-41.

@@ -9,7 +9,8 @@ import { RouterProvider } from 'react-router';
 import { applyAccountPreferences, darkSchemeQuery, followSystemTheme } from './app/accountPreferences.ts';
 import { ConnectionContext, ConnectionState } from './app/connectionState.ts';
 import { PreferencesContext } from './app/context.ts';
-import { FollowingQueryClient } from './app/queryClient.ts';
+import { DocumentLifecycle } from './app/documentLifecycle.ts';
+import { FollowingQueryClient, accountCacheOwnership } from './app/queryClient.ts';
 import { ApiClientContext, createApiClient } from './lib/api/client.ts';
 import { type Me, Session, SessionContext, browserLocks, browserScheduler } from './lib/api/session.ts';
 import { httpAuthTransport } from './lib/api/transport.ts';
@@ -38,9 +39,15 @@ const session = new Session({
 });
 const apiClient = createApiClient(origin, session.authorizedFetch);
 const queryClient = new FollowingQueryClient();
+const documentLifecycle = new DocumentLifecycle(
+  { events: window, loaded: (): boolean => document.readyState === 'complete' },
+  browserScheduler,
+  queryClient,
+);
 const connection = new ConnectionState(browserScheduler);
 connection.follow(session);
 
+const ownAccountCache = accountCacheOwnership(queryClient);
 let appliedAccount: Me | null = null;
 let realtimeRequested = false;
 session.subscribe(() => {
@@ -50,13 +57,11 @@ session.subscribe(() => {
     realtimeRequested = true;
     import('./app/realtime.ts')
       .then(({ startRealtime }) => {
-        startRealtime(session, queryClient, origin, connection);
+        startRealtime(session, queryClient, origin, connection, documentLifecycle);
       })
       .catch(reportError);
   }
-  if (account?.id !== appliedAccount?.id) {
-    queryClient.clear();
-  }
+  ownAccountCache(account);
   if (account === null || account === appliedAccount) {
     appliedAccount = account;
     return;
