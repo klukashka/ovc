@@ -380,3 +380,19 @@ Reader cancellation settlement is checked separately, rather than inferred from 
 abort signal. Arbitrary API response ownership and stale refresh200 behavior are
 unchanged. These boundaries address T-20, T-21 and T-29; the bounded, content-free
 verification evidence addresses T-18, T-19 and T-41.
+
+### One-time completed-gate duration acceptance
+
+Status: added 2026-11-04; pending owner review.
+
+Trust boundary 9 and T-41: the owner accepted only the completed 263.6-second
+full gate for commit `a3b7d60d19efcba8d93acbc156fbc1f56cac1902`, tested tree
+`487083eb725fb48be26b60b8ee7289bddf403d30`, against base
+`4d9ba1e5467c84b1a09c1737c00ea2c8e4c24271`. Every command and all 979 E2E cases
+passed; the separate 260-second budget was exceeded by 3.6 seconds. The exact
+one-time exception is normative in the [slice 6 plan](../knowledge/plans/slice-6.md#one-time-gate-duration-exception-2026-11-04),
+with a [complete gate/finish record](../knowledge/analysis/check-budget-2026-11-04-browser-lifecycle-accepted-gate.md). Previous failures and the unresolved historical ERR_ABORTED cause remain
+visible; its limited uncertainty was explicitly accepted for this run. No failed
+assertion was waived. The general 260-second ceiling, assertions, timeouts,
+no-automatic-retry rule and cold-measurement protocol remain unchanged. This is
+neither a future over-budget merge permission nor evidence that slice 6 is closed.

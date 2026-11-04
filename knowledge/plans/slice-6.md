@@ -488,6 +488,32 @@ Go tests run under `go test -race -count=1 ./...` through `tools/dev-env.sh`; Pl
 
 **Check budget.** D46 of the [slice 5 plan](slice-5.md) applies until the end of slice 6: a change whose own merge gate exceeds 260 s of wall time does not merge until it consolidates tests in the same change and a new gate of that tree takes at most 260 s; one rerun is allowed when other sessions noticeably loaded the machine, and the merge report states that load; the cold idle-machine runs at the slice's close are a separate measurement; the 165 s target stays, and the threshold after slice 6 is the owner's to set at the end of the slice. The gates after slice 5's planned changes took 187 to 252 s, with 881 to 897 end-to-end tests ([gates record](../analysis/check-budget-2026-10-29-slice-5-gates.md), [profile record](../analysis/check-budget-2026-10-29-e2e-profile.md)).
 
+### One-time gate-duration exception, 2026-11-04
+
+The owner accepted the completed full gate for commit
+`a3b7d60d19efcba8d93acbc156fbc1f56cac1902`, tree
+`487083eb725fb48be26b60b8ee7289bddf403d30`, tested against base
+`4d9ba1e5467c84b1a09c1737c00ea2c8e4c24271`, at **263.6 seconds** despite the
+260-second ceiling. All 30 commands and 979 E2E cases passed. This exception
+allowed only the fast-forward merge of that exact commit and its mandatory
+finish, without repeating the gate or changing the tested tree. Finish confirmed
+that main held the tested tree and released the lock.
+
+The [complete gate and finish record](../analysis/check-budget-2026-11-04-browser-lifecycle-accepted-gate.md)
+retains every command result, the budget overrun and the earlier failures. The
+historical Chromium ERR_ABORTED remains unexplained; the owner accepted that
+limited uncertainty for this run. No failed assertion is reclassified as passed.
+
+This is not a general budget increase or permission for another over-budget
+merge. The 260-second ceiling, 165-second target, test assertions, timeouts,
+no-automatic-retry rule, three cold full samples and post-slice budget decision
+remain unchanged. This warm run is not a cold closure sample and does not close
+slice 6. This normative record and its evidence must pass separate standard and
+security reviews, documentation checks, secret scanning and a documentation-only
+gate/merge/finish before measurement integration continues.
+
+### Expected check growth
+
 Expected growth, from the named tests:
 
 - **Go:** about 135 new tests (about 4 in B1, 15 in S3, 32 in S2, 2 in S7, 28 in S4, 9 in S5, 13 in S6, and about 30 rows of the denial, audience and logging tables), mostly parallel integration tests with cloned template databases; lane A grows by an estimated 9 to 13 s and may become the longest lane, which adds to the gate only if it outlasts the other lanes.
