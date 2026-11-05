@@ -81,6 +81,8 @@ Closed at the commit "Record the slice 5 review closure and close the slice", af
 
 ## Slice 6: chat and files
 
+Accepted for progression by the owner on 2026-11-05 with [recorded unresolved checks and deferred work](../knowledge/reviews/slice-6-accepted-state.md). This is not full verification under the original closure plan; failed evidence and unmerged tooling remain distinct. Wording pending owner review.
+
 FR-12, FR-14, the message digest. Direct and group channels, messages with attachments and previews, edit and delete, read markers and unread counts, presence and typing, upload contexts, quotas and usage, authorized downloads.
 
 Also from the [slice 4 plan](../knowledge/plans/slice-4.md#1-problem-outcome-and-scope): the chat frames (`message.*`, `read.updated`, `typing`, `presence`), persisted presence (`online_until` and `last_seen_at`), the `channel` kind of `entity.changed`, and the shared offline banner with actions disabled while offline (pending owner review). The [slice 6 plan](../knowledge/plans/slice-6.md#1-problem-outcome-and-scope), approved on 2026-10-29, drops the per-instance membership cache, because producers read the members under the channel lock, disables only chat writes while offline, and adds proposal 0004's measurement and consolidation steps for the end-to-end suite (pending owner review).
@@ -88,6 +90,8 @@ Also from the [slice 4 plan](../knowledge/plans/slice-4.md#1-problem-outcome-and
 Also from slice 3 ([slice 3 plan](../knowledge/plans/slice-3.md#1-problem-outcome-and-scope)): read-only chat after a relationship ends or a group is archived, "Deleted user" senders, only the direct channel for a provisional student (T-44), erasing a provisional period's chat messages when a reclaim drops the link, and `/tutor/settings` with the rest of the Teaching settings page for quotas and usage (pending owner review).
 
 ## Slice 7: video lessons
+
+Preparation started on 2026-11-05 under the [slice 7 start plan](../knowledge/plans/slice-7.md). The remote probe host is not available; requirements and planning proceed before provisioning or implementation. Wording pending owner review.
 
 FR-5.1 to FR-5.3; recordings (FR-5.4 to FR-5.6) come after the MVP.
 

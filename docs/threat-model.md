@@ -396,3 +396,7 @@ visible; its limited uncertainty was explicitly accepted for this run. No failed
 assertion was waived. The general 260-second ceiling, assertions, timeouts,
 no-automatic-retry rule and cold-measurement protocol remain unchanged. This is
 neither a future over-budget merge permission nor evidence that slice 6 is closed.
+
+## Slice 6 progression with accepted verification gaps
+
+Added 2026-11-05; wording pending owner review. The owner accepts progression to slice 7 with the [explicit slice 6 disposition](../knowledge/reviews/slice-6-accepted-state.md). T-41 retains the distinction between passed diagnostics, failed full-suite evidence and unverified performance/cumulative review coverage. This decision does not make a failed check pass, authorize deployment, merge unverified tooling, relax a future gate or suppress a new security finding. T-18/T-19 require durable scalar summaries without private traces, credentials or response contents. Outstanding assurance work is tracked through slice 7 affected-boundary checks and slice 10 hardening.

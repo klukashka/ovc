@@ -1,5 +1,7 @@
 # Slice 6 known limitations
 
+Current progression decision: the owner accepted slice 6 as-is on 2026-11-05. See the [accepted-state record](slice-6-accepted-state.md) for unresolved verification, unmerged work and later ownership. Earlier rows below retain their historical evidence; acceptance does not turn them into new verification results.
+
 Findings recorded during slice 6. Minor findings may be accepted instead of starting another review round ([ADR-0011](../../docs/decisions/0011-tiered-verification.md)). The slice review re-verifies each entry; each is fixed, accepted by the owner or carried into a named later slice.
 
 | Finding | Severity | Change | Why it was accepted |

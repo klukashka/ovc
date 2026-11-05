@@ -1,0 +1,60 @@
+# Slice 7: video lessons — start and implementation outline
+
+Status: preparation requested by the owner on 2026-11-05; implementation plan proposed, not approved for application edits or provisioning. No remote test host is available. Baseline: main `e201e16f7dcc3382af0ebb19487f07f1a57f3048`, with [slice 6 accepted limitations](../reviews/slice-6-accepted-state.md). The owner requested requirements and a plan for the missing host. No spending or remote mutation is authorized.
+
+## Goal and scope
+
+Implement FR-5.1–FR-5.3: authorized tutor/student video-room joins, meeting lifecycle, provider-confirmed callbacks/reconciliation, and lesson UI with an always-available new-tab path. Embedding remains disabled until the required live-browser evidence passes. Recordings remain after the MVP. Lesson presentation/library integration remains slice 8. Follow [ADR-0004](../../docs/decisions/0004-bigbluebutton-primary-provider.md), [ADR-0013](../../docs/decisions/0013-pilot-deployment.md), the [video contract](../specs/realtime-and-video.md#video), schedule join rule and lesson-page design.
+
+Current source has schedule lessons and their page, a `fake` meeting-provider setting used by test-control guards, and a provider-call lane identifier. These are not a working MeetingProvider adapter, join flow or remote BBB integration. `backend/internal/core/settings.go`, `backend/internal/api/lesson_routes.go` and the adapter tree were inspected; no video adapter implementation was found. The specification describes future behavior, not delivered code.
+
+Tier: slice for the overall plan and final cumulative review; individual implementation changes use standard with separate security review. Security trigger: meeting authorization, credential-bearing join links, outbound provider calls, untrusted callbacks, framing, remote personal-data processing and secret handling. Planning needs independent standard and full-security review before approval; no live check is represented as passed.
+
+## Stage 0 — prerequisites and probe, before application implementation
+
+Prepare the server specification from the [dated official-source check](../research/bigbluebutton-probe-prerequisites-2026-11-05.md). The existing pilot decision is a dedicated Russian-region 4-vCPU/8-GB/50-GB Ubuntu host for at most two simultaneous one-to-one lessons. Compare it to the vendor production recommendation and report the accepted capacity risk. Use separate BBB and test-OVC origins under a controlled same-site domain, valid TLS, key-only operator SSH and the exact provider-required firewall rules. Do not place a real production database or students on this test host.
+
+Before provisioning obtain approval of exact host/provider/cost, domain, public exposure and secret-access method. No cloud purchase, credential handling, firewall change or installation occurs under this draft. Write a bounded probe protocol with named checks, fixed duration/sample count, cleanup, redaction and acceptance thresholds before running it; unresolved measurements remain unverified, not retries until green.
+
+The probe must cover:
+
+- Two simultaneous tutor/student lessons with webcams, audio, screen sharing and whiteboard on the pilot-size host; collect declared bandwidth/resource/audio-quality evidence and separately state hardware/network limitations.
+- Supported Chromium, Firefox, actual Safari on macOS and actual Safari on iOS, including camera/microphone permission, embedding and new-tab fallback. Playwright WebKit is not a substitute for device evidence.
+- No recording controls, no recordings created and no retained raw meeting events; confirm actual configuration names rather than relying on assumptions.
+- SHA-256-or-stronger provider signing; join create-time binding, duplicate participant identifiers, session-token alternative and provider request/redaction behavior.
+- Unsigned ended callback behavior and reconciliation; callback retry behavior recorded rather than relied upon.
+- External network destinations, especially STUN/TURN, before admitting user data; authorized Russian processing only.
+- The carried slice 4 2,000-socket reconnect test over a real network, with a distinct bounded plan and ownership of the OVC test deployment.
+
+Checks without a host are blocked. Infrastructure procurement and live participants/devices are explicit prerequisites. No code-first exception to the roadmap's probe-first rule is inferred.
+
+## Subsequent implementation sequence, subject to probe and plan approval
+
+1. **Contracts and domain:** reconcile probe findings with video/API/schedule/data-model specs; propose any discrepancy before code. Define typed meeting/participant states, migration constraints for at most one open meeting, settings and package-layer entries. Tests prove constraints, join windows and scoped membership.
+2. **Adapters:** implement BigBlueButton and configured fake behind one interface, shared contract checks and the specified local HTTP API fake. Test checksum, required recording-off flags, bounded requests/responses, deadlines, malformed/provider failures and redacted diagnostics. Remote contract tests are opt-in and unverified until executed.
+3. **Backend lifecycle:** tutor-only creation, race-safe concurrent joins, student refusal before live, end/restart, persisting first_join_at, stale creating reconciliation, provider-call worker tasks and unsigned hint confirmation. Exercise real API/PostgreSQL and clock-driven worker paths; preserve authorization/session rechecks and lock order. Do not hold business locks across provider waits unless explicitly contracted and reviewed.
+4. **Frontend:** typed join response, live/room-open state, focused error/loading states, new-tab fallback and conditionally enabled iframe. Test both roles, denied/ended/restarted rooms, offline behavior, privacy and supported browser journeys. No join credential in caches, telemetry or logs.
+5. **Acceptance:** per-change reviews/checks/gates, relevant slice 6 regression tracking, remote probe evidence, real-network reconnect and final per-layer reviews. Record all limitations and reconcile affected earlier findings; do not declare slice 7 complete on local fakes alone.
+
+## Expected affected files and boundaries
+
+Backend domain/repositories/services/API routes, migrations/queries, worker provider lane, core settings and adapter packages; frontend schedule lesson page and typed API schema; `.env.example`, package-layer map, video/schedule/API/data-model specifications, threat model and development guide. Exact files and checkable test names are finalized per small approved change after the probe. No dependency is added without a recorded reason. Every new setting is typed and documented; secrets remain backend-only.
+
+## Security coverage to refine before each implementation approval
+
+| Threats | Required boundary and negative evidence |
+| --- | --- |
+| T-10, T-21 | Join authorization and current membership; refuse foreign lessons, removed members, early joins and students before the tutor. Recheck scope after relevant waits. |
+| T-11, T-12, T-26 | Recording stays off and its callback route is absent; forged, duplicated and replayed ended hints never end a lesson without provider confirmation. Routing keys are not credentials. |
+| T-16, T-24, T-45 | Restricted iframe origin and permissions; the conferencing subdomain cannot forge OVC refresh or WebSocket access. Embedding remains opt-in after real device proof. |
+| T-18, T-19 | Only approved participant fields leave OVC; audit external media destinations and redact credentials from logs, artifacts and provider configuration. Approve a safe secret-loading mechanism before remote operations. |
+| T-25 | Join addresses are issued only after authorization, never persisted by OVC, and bound to the meeting create time. Test old-link behavior after room replacement; report the provider's residual reuse behavior. |
+| T-20 | Bound provider HTTP bodies, deadlines, concurrency and hint-triggered work; test unavailable provider, malformed responses, repeated hints and cleanup. |
+| T-36 | Isolate disposable remote probe data and control surfaces from production; do not make fake-only local test-control exceptions available with the production provider. |
+| T-41 | Separate live probe, local fake evidence and unverified outcomes; keep the accepted slice 6 gaps visible and preserve failed evidence. |
+
+Each implementation plan must name its exact threat-model amendment, negative tests and cleanup assertions before approval. This outline does not approve production boundary changes; the present transition amendment covers only acceptance reporting and artifact privacy.
+
+## Work coordination and immediate deliverable
+
+At most three working sessions total including other projects; one heavy check at a time. Start with documentation/source analysis and server prerequisites. Remote tests have explicit authority and safe load boundaries and do not consume the local computer concurrently with heavy suites. Record current slice 6 uncertainty without resuming its diagnostics automatically. Immediate acceptance is a durable slice 6 disposition and this proposed slice 7 plan with a clear missing-host prerequisite; it is not delivered video functionality.
