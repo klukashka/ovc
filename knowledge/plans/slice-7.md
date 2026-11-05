@@ -1,6 +1,6 @@
 # Slice 7: video lessons — start and implementation outline
 
-Status: preparation requested by the owner on 2026-11-05; implementation plan proposed, not approved for application edits or provisioning. No remote test host is available. Baseline: main `e201e16f7dcc3382af0ebb19487f07f1a57f3048`, with [slice 6 accepted limitations](../reviews/slice-6-accepted-state.md). The owner requested requirements and a plan for the missing host. No spending or remote mutation is authorized.
+Status: preparation requested by the owner on 2026-11-05; overall implementation outline proposed; the owner approved local-first L1 in the [foundation plan](slice-7-local-foundation.md), not later application stages or provisioning. No remote test host is available. Baseline: main `e201e16f7dcc3382af0ebb19487f07f1a57f3048`, with [slice 6 accepted limitations](../reviews/slice-6-accepted-state.md). The owner requested requirements and a plan for the missing host. No spending or remote mutation is authorized.
 
 ## Goal and scope
 
@@ -10,7 +10,7 @@ Current source has schedule lessons and their page, a `fake` meeting-provider se
 
 Tier: slice for the overall plan and final cumulative review; individual implementation changes use standard with separate security review. Security trigger: meeting authorization, credential-bearing join links, outbound provider calls, untrusted callbacks, framing, remote personal-data processing and secret handling. Planning needs independent standard and full-security review before approval; no live check is represented as passed.
 
-## Stage 0 — prerequisites and probe, before application implementation
+## Remote prerequisites and probe, before live-provider acceptance
 
 Prepare the server specification from the [dated official-source check](../research/bigbluebutton-probe-prerequisites-2026-11-05.md). The existing pilot decision is a dedicated Russian-region 4-vCPU/8-GB/50-GB Ubuntu host for at most two simultaneous one-to-one lessons. Compare it to the vendor production recommendation and report the accepted capacity risk. Use separate BBB and test-OVC origins under a controlled same-site domain, valid TLS, key-only operator SSH and the exact provider-required firewall rules. Do not place a real production database or students on this test host.
 
@@ -26,11 +26,11 @@ The probe must cover:
 - External network destinations, especially STUN/TURN, before admitting user data; authorized Russian processing only.
 - The carried slice 4 2,000-socket reconnect test over a real network, with a distinct bounded plan and ownership of the OVC test deployment.
 
-Checks without a host are blocked. Infrastructure procurement and live participants/devices are explicit prerequisites. No code-first exception to the roadmap's probe-first rule is inferred.
+Checks requiring a host remain blocked. Infrastructure procurement and live participants/devices are prerequisites for those checks. The owner explicitly approved local-first development on 2026-11-05: L1 now precedes the remote probe, while real-provider acceptance and enabling embedding remain gated by remote evidence.
 
-## Subsequent implementation sequence, subject to probe and plan approval
+## Implementation sequence, with per-change approval and later remote verification
 
-1. **Contracts and domain:** reconcile probe findings with video/API/schedule/data-model specs; propose any discrepancy before code. Define typed meeting/participant states, migration constraints for at most one open meeting, settings and package-layer entries. Tests prove constraints, join windows and scoped membership.
+1. **Contracts and domain:** start from the video/API/schedule/data-model specifications and reconcile later probe findings before remote acceptance; propose any discrepancy before the affected implementation. Define typed meeting/participant states, migration constraints for at most one open meeting, settings and package-layer entries. Tests prove constraints, join windows and scoped membership.
 2. **Adapters:** implement BigBlueButton and configured fake behind one interface, shared contract checks and the specified local HTTP API fake. Test checksum, required recording-off flags, bounded requests/responses, deadlines, malformed/provider failures and redacted diagnostics. Remote contract tests are opt-in and unverified until executed.
 3. **Backend lifecycle:** tutor-only creation, race-safe concurrent joins, student refusal before live, end/restart, persisting first_join_at, stale creating reconciliation, provider-call worker tasks and unsigned hint confirmation. Exercise real API/PostgreSQL and clock-driven worker paths; preserve authorization/session rechecks and lock order. Do not hold business locks across provider waits unless explicitly contracted and reviewed.
 4. **Frontend:** typed join response, live/room-open state, focused error/loading states, new-tab fallback and conditionally enabled iframe. Test both roles, denied/ended/restarted rooms, offline behavior, privacy and supported browser journeys. No join credential in caches, telemetry or logs.
@@ -38,7 +38,7 @@ Checks without a host are blocked. Infrastructure procurement and live participa
 
 ## Expected affected files and boundaries
 
-Backend domain/repositories/services/API routes, migrations/queries, worker provider lane, core settings and adapter packages; frontend schedule lesson page and typed API schema; `.env.example`, package-layer map, video/schedule/API/data-model specifications, threat model and development guide. Exact files and checkable test names are finalized per small approved change after the probe. No dependency is added without a recorded reason. Every new setting is typed and documented; secrets remain backend-only.
+Backend domain/repositories/services/API routes, migrations/queries, worker provider lane, core settings and adapter packages; frontend schedule lesson page and typed API schema; `.env.example`, package-layer map, video/schedule/API/data-model specifications, threat model and development guide. Exact files and checkable test names are finalized per small approved local change; remote findings may require separately approved follow-ups. No dependency is added without a recorded reason. Every new setting is typed and documented; secrets remain backend-only.
 
 ## Security coverage to refine before each implementation approval
 
@@ -57,4 +57,4 @@ Each implementation plan must name its exact threat-model amendment, negative te
 
 ## Work coordination and immediate deliverable
 
-At most three working sessions total including other projects; one heavy check at a time. Start with documentation/source analysis and server prerequisites. Remote tests have explicit authority and safe load boundaries and do not consume the local computer concurrently with heavy suites. Record current slice 6 uncertainty without resuming its diagnostics automatically. Immediate acceptance is a durable slice 6 disposition and this proposed slice 7 plan with a clear missing-host prerequisite; it is not delivered video functionality.
+At most three working sessions total including other projects; one heavy check at a time. Start with the approved local provider foundation; server prerequisites no longer block local implementation. Remote tests have explicit authority and safe load boundaries and do not consume the local computer concurrently with heavy suites. Record current slice 6 uncertainty without resuming its diagnostics automatically. Immediate acceptance is a durable slice 6 disposition and this proposed slice 7 plan with a clear missing-host prerequisite; it is not delivered video functionality.

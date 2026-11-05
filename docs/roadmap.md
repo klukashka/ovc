@@ -95,8 +95,10 @@ Preparation started on 2026-11-05 under the [slice 7 start plan](../knowledge/pl
 
 FR-5.1 to FR-5.3; recordings (FR-5.4 to FR-5.6) come after the MVP.
 
-- **Probe first:** run the BigBlueButton probe on a remote test server (embedding on every supported browser, and the pilot host's capacity on 4 vCPU / 8 GB with two simultaneous one-to-one lessons with webcams, [ADR-0013](decisions/0013-pilot-deployment.md)) and record the results in the [research file](../knowledge/research/bigbluebutton-2026-10-20.md).
-- **Then build:** the BigBlueButton and fake adapters with shared contract tests, meetings and join links, the callbacks and reconciliation that lesson status needs, and the embedded room with the new-tab fallback.
+On 2026-11-05 the owner approved [local-first development](../knowledge/plans/slice-7-local-foundation.md): local types, fake provider and subsequent local API/UI work may precede the remote probe. Actual media, provider compatibility, embedding and capacity remain unverified until the remote checks run; deployment is not approved by local success. Wording pending owner review.
+
+- **Remote verification before deployment:** run the BigBlueButton probe on a remote test server (embedding on every supported browser, and the pilot host's capacity on 4 vCPU / 8 GB with two simultaneous one-to-one lessons with webcams, [ADR-0013](decisions/0013-pilot-deployment.md)) and record the results in the [research file](../knowledge/research/bigbluebutton-2026-10-20.md).
+- **Build locally first:** the BigBlueButton and fake adapters with shared contract tests, meetings and join links, the callbacks and reconciliation that lesson status needs, and the embedded room with the new-tab fallback.
 
 Also from the [slice 4 review](../knowledge/reviews/slice-4-review.md#carried-over): the mass reconnect of 2,000 sockets after `1012` is measured again with clients reaching the remote test server over a real network (pending owner review).
 

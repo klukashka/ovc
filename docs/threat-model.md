@@ -400,3 +400,11 @@ neither a future over-budget merge permission nor evidence that slice 6 is close
 ## Slice 6 progression with accepted verification gaps
 
 Added 2026-11-05; wording pending owner review. The owner accepts progression to slice 7 with the [explicit slice 6 disposition](../knowledge/reviews/slice-6-accepted-state.md). T-41 retains the distinction between passed diagnostics, failed full-suite evidence and unverified performance/cumulative review coverage. This decision does not make a failed check pass, authorize deployment, merge unverified tooling, relax a future gate or suppress a new security finding. T-18/T-19 require durable scalar summaries without private traces, credentials or response contents. Outstanding assurance work is tracked through slice 7 affected-boundary checks and slice 10 hardening.
+
+## Slice 7 local meeting-provider foundation
+
+Added 2026-11-05; wording pending owner review. The [approved L1 plan](../knowledge/plans/slice-7-local-foundation.md) changes development order and adds a local injected fake, without new routes, database tables, production provider settings or frontend behavior. T-41 separates this local evidence from still-unverified live BBB media, embedding, external destinations and capacity.
+
+T-18/T-19/T-25 require a sensitive join-link type with redacted formatting, structured logging, JSON and text encoding; only explicit access reveals a synthetic credential. Fake redemption binds the opaque participant identifier, role and meeting generation; unknown, changed and ended-generation credentials fail without admission. This proves fake credential integrity, not application lesson authorization. Names, URLs, tokens and raw errors are absent from adapter diagnostics.
+
+T-20 bounds active meetings, links and participant state and refuses capacity or generation exhaustion explicitly; cancellation is checked before an atomic transition and end releases owned state. T-36 preserves existing test-control guards and exposes no fake HTTP room. T-10/T-21 remain for later scoped join routes; recordings and callback authentication, remote framing and conferencing-subdomain checks remain unimplemented/unverified where the earlier contracts require them.

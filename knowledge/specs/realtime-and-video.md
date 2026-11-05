@@ -275,7 +275,7 @@ BigBlueButton carries the media; OVC never relays it. OVC:
 
 ### Provider interface
 
-One interface in `internal/adapters`, with a BigBlueButton implementation and a fake:
+The eventual provider interface has a BigBlueButton implementation and a fake. Recording methods below belong to the post-MVP design and the presentation parameter belongs to the library integration; they are not part of the slice 7 L1 implementation:
 
 ```go
 type MeetingProvider interface {
@@ -288,6 +288,18 @@ type MeetingProvider interface {
     DeleteRecording(ctx context.Context, recording ProviderRecording) error
 }
 ```
+
+#### Local provider foundation (slice 7 L1)
+
+The executable MVP contract is `internal/adapters/meeting.Provider`, with `CreateMeeting`, `MeetingInfo`, `JoinLink` and `EndMeeting`. Its inputs are typed `domain.Meeting` and `domain.Participant`; provider status is distinct from lesson status. L1 has no database rows, routes, worker wiring or browser room and changes no application authorization. Later changes add those independently. The local fake is a real implementation selected by constructor injection; it does not contact BBB or establish provider compatibility.
+
+A new meeting input has a random opaque `ProviderMeetingID`, bounded display name and zero create time. The fake returns a monotonic synthetic create time, using the injected clock and advancing beyond its prior value even when the clock is unchanged. Identical active creation is idempotent; inconsistent input is refused. Information, link and end operations bind to the identifier and create time, so an old handle cannot act on a replacement meeting. Missing meetings report `not_found`; creating a link does not move `created` to `running`. Explicit fake entry and departure controls change participant state. Ending an absent meeting is idempotent; an old handle for a newly replaced meeting is refused.
+
+`meeting.JoinLink` reuses the secret redaction behavior for formatting, structured logging, JSON and text. Its `Reveal` method is an explicit consumer boundary. The fake issues synthetic addresses that are never registered as HTTP routes or sent to a browser. Redemption requires the issued typed capability from the same fake instance and binds the complete address to the immutable opaque participant identifier, role and meeting generation/create time. Revealing its address does not provide a fake capability import API: reconstructing a link from a string does not grant entry. The private issuer marker retains no meeting state. Unknown or changed credentials are refused without state mutation. A valid address is reusable within its own active meeting, without accumulating extra connections for the same participant; this is a simulation choice, not proof of BBB duplicate-user behavior. End revokes all addresses for that generation.
+
+Constructor limits bound meetings, issued links, distinct participant identifiers per meeting generation and lifetime meeting generations. Leaving keeps the participant’s role binding until the meeting ends; repeated entry does not allocate another participant. Link sequence and synthetic create-time exhaustion fail explicitly. No active state is silently evicted; ending a meeting releases its links and participants, leaving only bounded scalar generation/sequence bookkeeping. Meeting names use the lesson-title bound; participant names match the existing account-name bound. Time, randomness and logger are injected; no background goroutine or external service is created. Cancellation is checked under synchronization before the atomic transition; cancellation after a completed transition does not imply rollback. The fake can explicitly simulate provider unavailability without patching behavior behind the caller's back.
+
+The reusable provider contract initially runs against this fake only. Local lifecycle, boundary, cancellation, concurrency and redaction tests are required. The shared remote provider contract, actual media, embedding, host capacity and network destinations remain unverified until their approved remote checks run. [Local-first development](../plans/slice-7-local-foundation.md) supersedes the old probe-first implementation ordering only, not these acceptance requirements.
 
 - **`MeetingInfo`** distinguishes three cases from `getMeetingInfo`:
   - `not_found`: no meeting with that identifier exists;

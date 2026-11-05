@@ -660,3 +660,9 @@ Reader cancellation settlement is checked separately, rather than inferred from 
 abort signal. Arbitrary API response ownership and stale refresh200 behavior are
 unchanged. These boundaries address T-20, T-21 and T-29; the bounded, content-free
 verification evidence addresses T-18, T-19 and T-41.
+
+## Local meeting-provider foundation
+
+Added 2026-11-05; wording pending owner review. [Slice 7 L1](../knowledge/plans/slice-7-local-foundation.md) develops the typed meeting-provider interface and constructor-injected bounded fake before a remote BBB host exists. The new package is not wired into routes, worker jobs or the lesson page; it provides no media or fake HTTP room. Tests exercise real fake lifecycle operations, immutable link bindings, stale handles, bounded resources, cancellation, concurrent access and redacted diagnostics.
+
+Run `go test -race ./internal/adapters/meeting` from `backend/` for the provider contract and fake-specific cases. They need no database, BBB endpoint or credentials. Existing conventions and command tests keep their normal environment requirements and run only through the sanctioned root `tools/dev-env.sh` wrapper when settings are needed. Local success is not remote provider compatibility or permission to enable embedding. The ordinary merge gate and accepted slice 6 verification limitations remain visible.

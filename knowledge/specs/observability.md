@@ -118,3 +118,7 @@ Safe fields are attachment/intent and outbox identifiers, phase, generation, bou
 ## Daily upload accounting
 
 The files service owns `upload.accounting.cutover` (INFO), emitted for a student upload refused by the initial migration barrier or pre-cutover creation-day check, and `upload.accounting.unavailable` (ERROR, safe `kind` only) when activation state cannot be trusted. The scheduler owns `job.run` for `uploads.daily_cleanup`, with its existing count, duration and safe error-kind fields. No storage key, filename, body, token or raw database error is added. Admission/settlement failures never emit `upload.accepted`; ordinary cap refusals retain `chat.rate_limited` and `upload.rejected`.
+
+## Local meeting-provider foundation
+
+From slice 7 L1, `internal/adapters/meeting` owns `meeting.provider.completed` at DEBUG, with fixed `operation` and `outcome` fields, and `meeting.provider.failed` with fixed `operation` and error `kind`. Cancellation is DEBUG; other provider failures are WARNING. A successful `MeetingInfo` poll never logs at INFO. The adapter receives a bound logger and does not configure a sink. No provider identifiers, participant names, addresses, tokens, raw errors or meeting titles are included in these events. Later meeting services own business authorization, lesson-live and room lifecycle events; the fake does not emit those outcomes. Tests inspect real structured output for both event shape and absence of sensitive values.
