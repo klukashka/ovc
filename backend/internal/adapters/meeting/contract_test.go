@@ -76,6 +76,22 @@ func TestMeetingProviderContract(t *testing.T) {
 
 func runProviderContract(t *testing.T, factory func(*testing.T) Provider) {
 	t.Helper()
+	t.Run("inspection", func(t *testing.T) {
+		provider := factory(t)
+
+		missing, missingErr := provider.InspectMeeting(t.Context(), meetingInput().ID)
+		invalid, invalidErr := provider.InspectMeeting(t.Context(), domain.ProviderMeetingID{})
+		room := createdMeeting(t, provider)
+		created, createdErr := provider.InspectMeeting(t.Context(), room.ID)
+		endErr := provider.EndMeeting(t.Context(), room)
+		ended, endedErr := provider.InspectMeeting(t.Context(), room.ID)
+
+		requireNoErrors(t, missingErr, createdErr, endErr, endedErr)
+		requireFailure(t, invalidErr, FailureInvalidInput)
+		if missing != (domain.MeetingInfo{Status: domain.MeetingNotFound}) || ended != missing || invalid != (domain.MeetingInfo{}) || room.CreateTime <= 0 || created != (domain.MeetingInfo{Status: domain.MeetingCreated, CreateTime: room.CreateTime}) {
+			t.Fatal("inspection did not return the current generation or exact absence")
+		}
+	})
 	t.Run("absent meeting", func(t *testing.T) {
 		provider := factory(t)
 

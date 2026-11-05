@@ -275,13 +275,14 @@ func testProviderFailures(t *testing.T) {
 
 	_, createErr := provider.CreateMeeting(t.Context(), meetingInput())
 	_, infoErr := provider.MeetingInfo(t.Context(), meeting)
+	_, inspectErr := provider.InspectMeeting(t.Context(), meeting.ID)
 	_, joinErr := provider.JoinLink(t.Context(), meeting, testParticipant())
 	endErr := provider.EndMeeting(t.Context(), meeting)
 	after := sizeOf(provider)
 	restoreErr := provider.SimulateUnavailable(t.Context(), false)
 	info, restoredInfoErr := provider.MeetingInfo(t.Context(), meeting)
 
-	for _, err := range []error{createErr, infoErr, joinErr, endErr} {
+	for _, err := range []error{createErr, infoErr, inspectErr, joinErr, endErr} {
 		requireFailure(t, err, FailureUnavailable)
 	}
 	requireNoErrors(t, restoreErr, restoredInfoErr)
@@ -385,6 +386,10 @@ func testCancelledCalls(t *testing.T) {
 			input := meetingInput()
 			input.ID = domain.ProviderMeetingID{3}
 			_, err := provider.CreateMeeting(ctx, input)
+			return err
+		}},
+		{name: "inspect", run: func(ctx context.Context, provider *Fake, m domain.Meeting, _ JoinLink) error {
+			_, err := provider.InspectMeeting(ctx, m.ID)
 			return err
 		}},
 		{name: "info", run: func(ctx context.Context, provider *Fake, meeting domain.Meeting, _ JoinLink) error {

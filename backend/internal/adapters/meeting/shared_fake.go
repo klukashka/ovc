@@ -230,6 +230,32 @@ func (f *SharedFake) MeetingInfo(ctx context.Context, requested domain.Meeting) 
 	return info, nil
 }
 
+func (f *SharedFake) InspectMeeting(ctx context.Context, id domain.ProviderMeetingID) (domain.MeetingInfo, error) {
+	var info domain.MeetingInfo
+	err := f.transaction(ctx, operationInspect, func(tx pgx.Tx, _ sharedState) error {
+		room, err := sharedRoom(ctx, tx, domain.Meeting{ID: id})
+		if errors.Is(err, FailureNotFound) {
+			info.Status = domain.MeetingNotFound
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		info.Status, info.CreateTime = domain.MeetingCreated, room.CreateTime
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM fake_meeting_participants WHERE room_id = $1 AND present`, [16]byte(id)).Scan(&info.Participants); err != nil {
+			return err
+		}
+		if info.Participants > 0 {
+			info.Status = domain.MeetingRunning
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.MeetingInfo{}, err
+	}
+	return info, nil
+}
+
 func (f *SharedFake) EndMeeting(ctx context.Context, requested domain.Meeting) error {
 	return f.transaction(ctx, operationEnd, func(tx pgx.Tx, _ sharedState) error {
 		room, err := sharedRoom(ctx, tx, requested)

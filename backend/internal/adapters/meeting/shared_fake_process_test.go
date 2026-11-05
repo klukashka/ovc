@@ -24,11 +24,20 @@ var sharedFakeChild = flag.Bool("shared-fake-child", false, "Run the shared prov
 
 const sharedProcessBytes = 8192
 
+type sharedProcessOperation string
+
+const (
+	sharedProcessEnter   sharedProcessOperation = "enter"
+	sharedProcessInspect sharedProcessOperation = "inspect"
+)
+
 type sharedProcessRequest struct {
-	DatabaseURL string             `json:"database_url"`
-	Meeting     domain.Meeting     `json:"meeting"`
-	Participant domain.Participant `json:"participant"`
-	Address     string             `json:"address"`
+	Operation   sharedProcessOperation   `json:"operation"`
+	ID          domain.ProviderMeetingID `json:"id"`
+	DatabaseURL string                   `json:"database_url"`
+	Meeting     domain.Meeting           `json:"meeting"`
+	Participant domain.Participant       `json:"participant"`
+	Address     string                   `json:"address"`
 }
 
 type sharedProcessResponse struct {
@@ -56,15 +65,22 @@ func TestSharedFakeAcrossProcesses(t *testing.T) {
 	room := createdMeeting(t, provider)
 	participant := testParticipant()
 	link := issuedLink(t, provider, room, participant)
-	request := sharedProcessRequest{DatabaseURL: database.URL.Reveal(), Meeting: room, Participant: participant, Address: link.Reveal()}
+	request := sharedProcessRequest{Operation: sharedProcessEnter, DatabaseURL: database.URL.Reveal(), Meeting: room, Participant: participant, Address: link.Reveal()}
 
+	discovery := sharedProcessRequest{Operation: sharedProcessInspect, DatabaseURL: database.URL.Reveal(), ID: room.ID}
+	created := invokeSharedFakeChild(t, discovery)
 	entered := invokeSharedFakeChild(t, request)
+	running := invokeSharedFakeChild(t, discovery)
 	parentInfo, infoErr := provider.MeetingInfo(t.Context(), room)
 	endErr := provider.EndMeeting(t.Context(), room)
 	ended := invokeSharedFakeChild(t, request)
+	absent := invokeSharedFakeChild(t, discovery)
 	finalInfo, finalErr := provider.MeetingInfo(t.Context(), room)
 
 	requireNoErrors(t, infoErr, endErr, finalErr)
+	if created.Before != entered.Before || running.Before != entered.After || absent.Before != ended.Before || created.After != created.Before || running.After != running.Before || absent.After != absent.Before || created.Failure != "" || running.Failure != "" || absent.Failure != "" {
+		t.Fatal("identifier-only child inspection did not discover exact parent snapshots")
+	}
 	if entered.Before != (domain.MeetingInfo{Status: domain.MeetingCreated, CreateTime: room.CreateTime}) || entered.After != (domain.MeetingInfo{Status: domain.MeetingRunning, CreateTime: room.CreateTime, Participants: 1}) || entered.Failure != "" || parentInfo != entered.After {
 		t.Fatal("child did not share the exact parent generation and presence")
 	}
@@ -130,6 +146,20 @@ func runSharedFakeChild(t *testing.T) {
 	pool := testdb.OpenPool(t, databaseURL)
 	provider, providerErr := NewSharedFake(ctx, pool, sharedClock(), sharedRandom(2), testLogger(), testLimits())
 	requireNoErrors(t, providerErr)
+	if request.Operation == sharedProcessInspect {
+		if request.Meeting != (domain.Meeting{}) || request.Participant != (domain.Participant{}) || request.Address != "" {
+			t.Fatal("inspection child received more than a provider identifier")
+		}
+		info, err := provider.InspectMeeting(ctx, request.ID)
+		requireNoErrors(t, err)
+		if err := json.NewEncoder(os.Stdout).Encode(sharedProcessResponse{Before: info, After: info}); err != nil {
+			t.Fatal("child inspection response write failed")
+		}
+		return
+	}
+	if request.Operation != sharedProcessEnter {
+		t.Fatal("unsupported child operation")
+	}
 	before, beforeErr := provider.MeetingInfo(ctx, request.Meeting)
 	requireNoErrors(t, beforeErr)
 	enterErr := provider.Enter(ctx, NewJoinLink(request.Address), request.Meeting, request.Participant)

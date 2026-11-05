@@ -67,6 +67,7 @@ type operation string
 const (
 	operationCreate       operation = "create"
 	operationInfo         operation = "info"
+	operationInspect      operation = "inspect"
 	operationJoin         operation = "join_link"
 	operationEnd          operation = "end"
 	operationEnter        operation = "enter"
@@ -180,7 +181,28 @@ func (f *Fake) MeetingInfo(ctx context.Context, requested domain.Meeting) (info 
 	if err != nil {
 		return info, err
 	}
-	info = domain.MeetingInfo{Status: domain.MeetingCreated, CreateTime: room.meeting.CreateTime}
+	return fakeRoomInfo(room), nil
+}
+
+func (f *Fake) InspectMeeting(ctx context.Context, id domain.ProviderMeetingID) (info domain.MeetingInfo, err error) {
+	defer f.report(ctx, operationInspect, &err)
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	if err := f.available(ctx); err != nil {
+		return info, err
+	}
+	if id == (domain.ProviderMeetingID{}) {
+		return info, FailureInvalidInput
+	}
+	room, found := f.meetings[id]
+	if !found {
+		return domain.MeetingInfo{Status: domain.MeetingNotFound}, nil
+	}
+	return fakeRoomInfo(room), nil
+}
+
+func fakeRoomInfo(room *fakeMeeting) domain.MeetingInfo {
+	info := domain.MeetingInfo{Status: domain.MeetingCreated, CreateTime: room.meeting.CreateTime}
 	for _, participant := range room.participants {
 		if participant.present {
 			info.Participants++
@@ -189,7 +211,7 @@ func (f *Fake) MeetingInfo(ctx context.Context, requested domain.Meeting) (info 
 	if info.Participants > 0 {
 		info.Status = domain.MeetingRunning
 	}
-	return info, nil
+	return info
 }
 
 func validParticipant(participant domain.Participant) bool {

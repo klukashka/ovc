@@ -313,6 +313,12 @@ Shared-fake synthetic capabilities deliberately differ from L1's process-local i
 
 End releases room names, participant bindings and issued-link records; scalar namespace/counter bookkeeping remains. Without End, active state remains retained within the configured caps. No automatic expiry or user-facing cleanup guarantee is implied. Names, credentials, digests, opaque IDs and database error text are absent from provider diagnostics. Tests use real disposable PostgreSQL databases, independent pools and a child process; they do not establish BBB transport, media or browser behavior. See the [approved plan](../plans/slice-7-shared-fake.md).
 
+#### Provider generation discovery
+
+`InspectMeeting(ctx, ProviderMeetingID)` returns a consistent current provider snapshot without requiring a known create time. A zero identifier returns `invalid_input`; an absent valid identifier returns `MeetingNotFound`, zero create time/count and no error. An existing room returns its positive create time, created/running state and participant count. Inspection changes no room, link, participant, availability, generation or sequence state, issues no capability and accesses no business meeting rows. It uses the existing fake mutex or shared-provider transaction synchronization and preserves cancellation/unavailability behavior.
+
+Discovery is neither authorization nor completed recovery. A found generation can become stale immediately; `MeetingInfo`, `JoinLink`, `EndMeeting`, `Enter` and `Leave` retain their exact-generation requirements. An absent snapshot does not rule out a concurrent unfinished Create appearing later. The operation has no API route or process wiring. Future activation must separately implement durable create/cleanup ownership surviving purge, bounded reconciliation and handling of late or uncertain creation. See the [approved discovery plan](../plans/slice-7-provider-discovery.md). The future BBB adapter must prove the same lookup and generation semantics; local fake evidence does not establish them remotely.
+
 - **`MeetingInfo`** distinguishes three cases from `getMeetingInfo`:
   - `not_found`: no meeting with that identifier exists;
   - `created`: it exists with no participants yet;
@@ -358,7 +364,7 @@ sequenceDiagram
      - on `not_found` the meeting is closed with reason `provider_not_found`;
      - with no usable meeting, a new row is inserted in state `creating` (identifier and routing key set), and the transaction commits.
   2. Outside the transaction, `CreateMeeting` runs and returns the provider create time. The row becomes `open` with that time, the lesson becomes `live` if it was `scheduled`, and `entity.changed` is emitted.
-  3. If the provider fails, the row is closed with reason `provider_error`, the lesson status is unchanged, and the response is `503 provider_unavailable`. A `creating` row older than one minute is treated as failed and closed.
+  3. If the provider fails, the row is closed with reason `provider_error`, the lesson status is unchanged, and the response is `503 provider_unavailable`. A `creating` row older than one minute is treated as failed and closed. Before application activation, closing such a row must retain durable provider cleanup/reconciliation ownership; a failed or uncertain Create may already own a room, and one absent inspection cannot settle an unfinished creation. The local discovery operation alone does not implement this recovery protocol.
 - **On a student join:**
   - the student gets `lesson_not_live` unless the lesson is `live` and its open meeting is `created` or `running`;
   - a `not_found` answer closes the meeting with `provider_not_found` and emits `entity.changed`;

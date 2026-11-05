@@ -10,6 +10,7 @@ import (
 
 type Provider interface {
 	CreateMeeting(context.Context, domain.Meeting) (domain.ProviderCreateTime, error)
+	InspectMeeting(context.Context, domain.ProviderMeetingID) (domain.MeetingInfo, error)
 	MeetingInfo(context.Context, domain.Meeting) (domain.MeetingInfo, error)
 	JoinLink(context.Context, domain.Meeting, domain.Participant) (JoinLink, error)
 	EndMeeting(context.Context, domain.Meeting) error

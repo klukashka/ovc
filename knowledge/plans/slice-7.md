@@ -72,3 +72,7 @@ The owner approved [L2a meeting persistence](slice-7-meeting-persistence.md) on 
 L2a merged as `48c9fad7beab9867cf64765612fd46cfb2b38045` after an ordinary full gate: all 30 commands and 979 E2E cases passed, and finish confirmed the tested main tree. This result does not resolve the historical slice 6 failure cause.
 
 The owner approved [L2b shared provider](slice-7-shared-fake.md) on 2026-11-05: PostgreSQL-owned fake infrastructure, cross-process capabilities, global bounds, real migration/concurrency/process tests and ordinary independent reviews/gate. This supplies shared state for later API/worker integration without an additional server. Authorized routes, the specified HTTP fake room, process wiring, purge/reconciliation and real BBB acceptance remain later work. Runtime evidence is recorded in the [L2b verification record](../reviews/slice-7-shared-fake.md).
+
+## Provider generation discovery
+
+L2b merged as `0f14087e92f2e9e89a3efd82209733aa011e0048` with an ordinary successful gate: all 30 commands and 979 E2E cases passed, and finish confirmed the tested tree. The owner next approved the [read-only discovery plan](slice-7-provider-discovery.md) on 2026-11-05. It adds lookup of the current provider generation using only its opaque identifier, without activating application joins. Durable cleanup ownership, late-Create handling and reconciliation must still precede API/worker activation. Evidence belongs in the [discovery verification record](../reviews/slice-7-provider-discovery.md).

@@ -367,6 +367,7 @@ func TestSharedFakePrivacyAndStorage(t *testing.T) {
 	rowsErr := database.Pool.QueryRow(t.Context(), `SELECT json_agg(row_to_json(p))::text FROM fake_meeting_participants p`).Scan(&storedRows)
 	columnsErr := database.Pool.QueryRow(t.Context(), `SELECT count(*) FROM information_schema.columns WHERE table_name IN ('fake_meeting_links', 'fake_meeting_participants') AND column_name IN ('name', 'token', 'address')`).Scan(&columns)
 	_, databaseErr := broken.MeetingInfo(t.Context(), room)
+	_, inspectionErr := broken.InspectMeeting(t.Context(), room.ID)
 	container := struct{ Link JoinLink }{Link: link}
 	textValue, textErr := link.MarshalText()
 	containerJSON, containerErr := json.Marshal(container)
@@ -379,6 +380,10 @@ func TestSharedFakePrivacyAndStorage(t *testing.T) {
 	}
 	requireFailure(t, foreignErr, FailureInvalidInput)
 	requireFailure(t, databaseErr, FailureDatabase)
+	requireFailure(t, inspectionErr, FailureDatabase)
+	if !strings.Contains(logs.String(), `"operation":"inspect","kind":"database"`) {
+		t.Fatal("inspection database failure diagnostic missing")
+	}
 	if !bytes.Equal(storedDigest, digest[:]) || columns != 0 {
 		t.Fatal("stored capability schema mismatch")
 	}
