@@ -547,3 +547,37 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: UserID
+          - column: meetings.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingID
+          - column: meetings.lesson_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: LessonID
+          - column: meetings.provider
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingProvider
+          - column: meetings.provider_meeting_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ProviderMeetingID
+          - column: meetings.routing_key
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingRoutingKey
+          - column: meetings.state
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingState
+          - column: meetings.create_time
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ProviderCreateTime
+              pointer: true
+          - column: meetings.close_reason
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingCloseReason
+              pointer: true

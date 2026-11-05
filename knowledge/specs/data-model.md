@@ -257,6 +257,14 @@ Indexes:
 
 ### Meeting
 
+Slice 7 L2a implements only durable local lifecycle storage: `id`, `lesson_id`, `provider`, `provider_meeting_id`, `routing_key`, `state`, `create_time`, `first_join_at`, `ended_at`, `close_reason`, `created_at` and `updated_at`. The table below also describes later consumers: `retention_days`, `recordingmarks` and `settled_at`, and the unsettled-ended reconciliation index, remain pending with recording, callback and reconciliation work. L2a introduces no fabricated retention default or provider activation.
+
+Stored lifecycle states are distinct from provider status. One partial unique index admits at most one non-closed row per lesson; a complete lesson index supports deletion of closed history. Provider and routing identifiers are unique, nonzero opaque UUIDs. Creating rows have no provider create time or join/end data; open rows have a positive create time and no end data; closed rows have a reason and end time, and may lack create time when creation failed. First join requires a create time and is set once. Timestamp checks preserve the lifecycle order, including explicit null refusals.
+
+Repository operations bind every named row to both lesson and meeting identifiers, with expected-state/generation predicates for transitions. A stale request cannot reopen a closed row or mutate a replacement meeting. Repeat close preserves original terminal metadata. Mutation methods are named `UnderLessonLock`: the caller acquires the lesson lock after existing audience/series locks and keeps it through any post-update classification read. Outcomes distinguish applied, refused, already joined and already closed; this repository boundary is not caller authorization. No join URL, provider secret or participant name is stored.
+
+Lesson deletion cascades local meeting metadata; student purge retains the tutor-owned meeting history. Until application activation, no production path creates these rows and no provider resource is owned. Provider cleanup, reconciliation and history-retention bounds must be implemented before activation; cascade deletion alone must never be represented as remote cleanup. See the [approved persistence plan](../plans/slice-7-meeting-persistence.md).
+
 | Column | Notes |
 |---|---|
 | `id` | |

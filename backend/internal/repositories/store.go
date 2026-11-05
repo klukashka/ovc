@@ -33,6 +33,7 @@ type Repositories struct {
 	Signals       Signals
 	Notifications Notifications
 	Lessons       Lessons
+	Meetings      Meetings
 	Channels      Channels
 	Messages      Messages
 	Digests       Digests
@@ -118,6 +119,7 @@ func newRepositories(queries *dbgen.Queries) Repositories {
 		Signals:       Signals{queries: queries},
 		Notifications: Notifications{queries: queries},
 		Lessons:       Lessons{queries: queries},
+		Meetings:      Meetings{queries: queries},
 		Channels:      Channels{queries: queries},
 		Messages:      Messages{queries: queries},
 		Digests:       Digests{queries: queries},

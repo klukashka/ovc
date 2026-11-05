@@ -25,9 +25,11 @@ import (
 var errAdminURLForm = errors.New("OVC_TEST_DATABASE_ADMIN_URL must be a postgres:// URL")
 
 type Database struct {
-	Name string
-	URL  core.Secret
-	Pool *pgxpool.Pool
+	migrationPool *pgxpool.Pool
+	migrationName string
+	Name          string
+	URL           core.Secret
+	Pool          *pgxpool.Pool
 }
 
 type poolSize int32
@@ -92,7 +94,7 @@ func newNamed(tb testing.TB, name string, migrate bool, size poolSize) *Database
 	if err := verifyReachedDatabase(ctx, pool, name); err != nil {
 		tb.Fatalf("test database %s: %s", name, describe(err))
 	}
-	return &Database{Name: name, URL: databaseURL, Pool: pool}
+	return &Database{Name: name, URL: databaseURL, Pool: pool, migrationPool: pool, migrationName: name}
 }
 
 func createEmpty(tb testing.TB, ctx context.Context, admin core.Secret, name string, identifier string) testServer {
@@ -493,4 +495,33 @@ func drop(tb testing.TB, server *pgxpool.Pool, name string, identifier string) {
 	if _, err := server.Exec(context.Background(), "DROP DATABASE IF EXISTS "+identifier+" WITH (FORCE)"); err != nil {
 		tb.Errorf("drop test database %s: %s", name, core.ErrorKind(err))
 	}
+}
+
+var ErrUnownedMigrationDatabase = errors.New("migration target is not an owned disposable test database")
+
+func (d *Database) MigrateUpTo(ctx context.Context, version int64) error {
+	return d.migrateOwned(ctx, func(ctx context.Context, provider *goose.Provider) error {
+		_, err := provider.UpTo(ctx, version)
+		return err
+	})
+}
+
+func (d *Database) MigrateDownTo(ctx context.Context, version int64) error {
+	return d.migrateOwned(ctx, func(ctx context.Context, provider *goose.Provider) error {
+		_, err := provider.DownTo(ctx, version)
+		return err
+	})
+}
+
+func (d *Database) migrateOwned(ctx context.Context, apply func(context.Context, *goose.Provider) error) error {
+	if d == nil || d.migrationPool == nil || d.migrationName == "" {
+		return ErrUnownedMigrationDatabase
+	}
+	if err := verifyReachedDatabase(ctx, d.migrationPool, d.migrationName); err != nil {
+		return fmt.Errorf("verify owned migration target: %w", err)
+	}
+	if err := runMigrations(ctx, d.migrationPool, apply); err != nil {
+		return fmt.Errorf("migrate owned test database: %w", err)
+	}
+	return nil
 }

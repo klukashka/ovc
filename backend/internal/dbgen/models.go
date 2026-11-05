@@ -259,6 +259,21 @@ type MailSink struct {
 	Headers   []byte
 }
 
+type Meeting struct {
+	ID                domain.MeetingID
+	LessonID          domain.LessonID
+	Provider          domain.MeetingProvider
+	ProviderMeetingID domain.ProviderMeetingID
+	RoutingKey        domain.MeetingRoutingKey
+	State             domain.MeetingState
+	CreateTime        *domain.ProviderCreateTime
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	FirstJoinAt       *time.Time
+	EndedAt           *time.Time
+	CloseReason       *domain.MeetingCloseReason
+}
+
 type Message struct {
 	ID        domain.MessageID
 	ChannelID domain.ChannelID
