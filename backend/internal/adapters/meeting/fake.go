@@ -75,8 +75,12 @@ const (
 )
 
 func (f *Fake) report(ctx context.Context, op operation, err *error) {
+	reportProvider(ctx, f.logger, op, err)
+}
+
+func reportProvider(ctx context.Context, logger *slog.Logger, op operation, err *error) {
 	if *err == nil {
-		f.logger.LogAttrs(ctx, slog.LevelDebug, "meeting.provider.completed", slog.String("operation", string(op)), slog.String("outcome", "ok"))
+		logger.LogAttrs(ctx, slog.LevelDebug, "meeting.provider.completed", slog.String("operation", string(op)), slog.String("outcome", "ok"))
 		return
 	}
 	level := slog.LevelWarn
@@ -91,7 +95,7 @@ func (f *Fake) report(ctx context.Context, op operation, err *error) {
 	if errors.Is(*err, context.DeadlineExceeded) {
 		level, kind = slog.LevelDebug, "deadline"
 	}
-	f.logger.LogAttrs(ctx, level, "meeting.provider.failed", slog.String("operation", string(op)), slog.String("kind", kind))
+	logger.LogAttrs(ctx, level, "meeting.provider.failed", slog.String("operation", string(op)), slog.String("kind", kind))
 }
 
 func (f *Fake) available(ctx context.Context) error {

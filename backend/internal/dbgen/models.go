@@ -139,6 +139,41 @@ type EmailToken struct {
 	CreatedAt time.Time
 }
 
+type FakeMeetingLink struct {
+	Digest        []byte
+	RoomID        pgtype.UUID
+	CreateTime    int64
+	ParticipantID pgtype.UUID
+	Role          string
+}
+
+type FakeMeetingParticipant struct {
+	RoomID        pgtype.UUID
+	CreateTime    int64
+	ParticipantID pgtype.UUID
+	Role          string
+	Present       bool
+}
+
+type FakeMeetingRoom struct {
+	ID         pgtype.UUID
+	CreateTime int64
+	Name       string
+}
+
+type FakeMeetingState struct {
+	ID              bool
+	Namespace       []byte
+	MaxRooms        int64
+	MaxLinks        int64
+	MaxParticipants int64
+	MaxGenerations  int64
+	Generations     int64
+	LastCreateTime  int64
+	LinkSequence    int64
+	Unavailable     bool
+}
+
 type Group struct {
 	ID         domain.GroupID
 	TutorID    domain.UserID

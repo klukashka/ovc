@@ -285,6 +285,12 @@ Indexes:
 - at most one meeting per lesson that is not `closed` (partial unique index);
 - a partial index on `ended_at` where `settled_at` is null; reconciliation settles every meeting within 7 days, so the index stays small.
 
+### Shared fake provider infrastructure
+
+Slice 7 L2b adds `fake_meeting_` infrastructure tables owned only by the meeting adapter. They have no foreign keys to business meetings, lessons or accounts and do not establish caller authorization. A singleton holds the 256-bit provider namespace, immutable limits, availability simulation and bounded scalar counters. Rooms hold opaque provider IDs, synthetic create times and bounded names; participant rows hold opaque IDs, immutable roles and presence; issued-link rows hold capability digests and generation/participant/role bindings. Raw capabilities and participant names are absent.
+
+Room-owned state is removed on End through indexed references; singleton counters survive reconstruction. Global capacity is serialized through the singleton row and never silently evicts active state. Independent deployments require independently generated namespaces; database cloning preserves the original provider identity. Business lesson deletion does not cascade into this separate simulation. Cleanup/reconciliation must precede application activation. See the [shared-provider contract](realtime-and-video.md#shared-local-provider-slice-7-l2b).
+
 ### Recording
 
 | Column | Notes |

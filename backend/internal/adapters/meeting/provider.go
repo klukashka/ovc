@@ -40,6 +40,7 @@ const (
 	FailureConflict     Failure = "conflict"
 	FailureCapacity     Failure = "capacity"
 	FailureUnavailable  Failure = "unavailable"
+	FailureDatabase     Failure = "database"
 	FailureClock        Failure = "clock"
 	FailureRandomness   Failure = "randomness"
 )
