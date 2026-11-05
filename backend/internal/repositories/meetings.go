@@ -84,7 +84,7 @@ func (r Meetings) CloseUnderLessonLock(ctx context.Context, expected domain.Meet
 	identity := expected.Identity
 	rows, err := r.queries.CloseMeetingRow(ctx, dbgen.CloseMeetingRowParams{
 		LessonID: identity.LessonID, ID: identity.ID, ProviderMeetingID: identity.ProviderMeetingID,
-		ExpectedState: expected.State, ExpectedCreateTime: created, CloseReason: &reason, Now: &now,
+		ExpectedState: expected.State, ExpectedCreateTime: created, CloseReason: &reason, Now: now,
 	})
 	outcome, err := meetingApplied(rows, err, "close meeting")
 	if err != nil || outcome == domain.MeetingMutationApplied {

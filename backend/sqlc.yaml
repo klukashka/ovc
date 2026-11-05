@@ -581,3 +581,38 @@ sql:
               import: ovc/backend/internal/domain
               type: MeetingCloseReason
               pointer: true
+          - column: meeting_recovery.provider_meeting_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ProviderMeetingID
+          - column: meeting_recovery.provider
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingProvider
+          - column: meeting_recovery.meeting_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingID
+              pointer: true
+          - column: meeting_recovery.origin
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingRecoveryOrigin
+          - column: meeting_recovery.create_state
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingCreateState
+          - column: meeting_recovery.attempt_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingCreateAttemptID
+              pointer: true
+          - column: meeting_recovery.create_time
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ProviderCreateTime
+              pointer: true
+          - column: meeting_recovery.revision
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingRecoveryRevision

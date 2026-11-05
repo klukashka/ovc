@@ -109,6 +109,7 @@ func TestMeetingPersistenceConstraints(t *testing.T) {
 	t.Parallel()
 	f := newMeetingFixture(t, testdb.New(t))
 	identity := f.create(t, 10)
+	f.acknowledge(t, identity, 100)
 	cases := []struct{ name, assignment, code string }{
 		{"zero id", "id = '00000000-0000-0000-0000-000000000000'", checkViolation},
 		{"zero lesson", "lesson_id = '00000000-0000-0000-0000-000000000000'", checkViolation},
@@ -185,6 +186,7 @@ func TestMeetingPersistenceTransitions(t *testing.T) {
 	t.Run("complete lifecycle and idempotent observations", func(t *testing.T) {
 		f := newMeetingFixture(t, testdb.New(t))
 		identity := f.create(t, 10)
+		f.acknowledge(t, identity, 100)
 		creating := f.read(t, identity)
 		created := domain.ProviderCreateTime(100)
 		expected := domain.MeetingExpectation{Identity: identity, State: domain.MeetingOpen, CreateTime: &created}
@@ -255,6 +257,7 @@ func testMeetingReplacement(t *testing.T) {
 func testMeetingGenerationRefusal(t *testing.T) {
 	f := newMeetingFixture(t, testdb.New(t))
 	identity := f.create(t, 10)
+	f.acknowledge(t, identity, 100)
 	created := domain.ProviderCreateTime(100)
 	f.mutate(t, func(r repositories.Meetings) (domain.MeetingMutation, error) {
 		return r.OpenUnderLessonLock(t.Context(), identity, created, instant.Add(time.Second))
@@ -393,6 +396,7 @@ func testMeetingOrderedRace(t *testing.T, scenario string) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	identity := f.create(t, 10)
+	f.acknowledge(t, identity, 100)
 	created := domain.ProviderCreateTime(100)
 	creating := domain.MeetingExpectation{Identity: identity, State: domain.MeetingCreating}
 	open := domain.MeetingExpectation{Identity: identity, State: domain.MeetingOpen, CreateTime: &created}
@@ -452,6 +456,7 @@ func TestMeetingPersistenceRollbackAndPurge(t *testing.T) {
 	t.Run("rollback does not publish a transition", func(t *testing.T) {
 		f := newMeetingFixture(t, testdb.New(t))
 		identity := f.create(t, 10)
+		f.acknowledge(t, identity, 100)
 		aborted := errors.New("abort the fixture transaction")
 		var outcome domain.MeetingMutation
 
@@ -478,6 +483,7 @@ func testMeetingCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	identity := f.create(t, 10)
+	f.acknowledge(t, identity, 100)
 	release, first, _ := holdMeetingTransaction(t, ctx, f, true, func(repo repositories.Meetings) (domain.MeetingMutation, error) {
 		return repo.OpenUnderLessonLock(ctx, identity, 100, instant.Add(time.Second))
 	})
@@ -506,6 +512,7 @@ func testMeetingCancellation(t *testing.T) {
 func testMeetingPurge(t *testing.T) {
 	f := newMeetingFixture(t, testdb.New(t))
 	identity := f.create(t, 10)
+	f.acknowledge(t, identity, 100)
 	otherTutor := f.tutorAccount(t, 6)
 	card := f.card(t, invitedCard(7, otherTutor))
 	otherLesson := domain.LessonID{8}
@@ -533,7 +540,7 @@ func TestMeetingMigrationRoundTrip(t *testing.T) {
 
 	upErr := database.MigrateUpTo(t.Context(), 22)
 	if upErr == nil {
-		upErr = f.repos.Meetings.CreateUnderLessonLock(t.Context(), meetingInput(10, f.lesson))
+		upErr = insertLegacyMeeting(t.Context(), f, meetingInput(10, f.lesson))
 	}
 	downErr := database.MigrateDownTo(t.Context(), 21)
 	var absent bool
@@ -541,7 +548,7 @@ func TestMeetingMigrationRoundTrip(t *testing.T) {
 	secondUpErr := database.MigrateUpTo(t.Context(), 22)
 	var count int
 	countErr := database.Pool.QueryRow(t.Context(), "SELECT count(*) FROM lessons WHERE title = 'A lesson' AND duration_minutes = 60 AND ((id = $1 AND starts_at = $3) OR (id = $2 AND starts_at = $4))", f.lesson, f.otherLesson, instant.Add(time.Hour), instant.Add(2*time.Hour)).Scan(&count)
-	createErr := f.repos.Meetings.CreateUnderLessonLock(t.Context(), meetingInput(11, f.lesson))
+	createErr := insertLegacyMeeting(t.Context(), f, meetingInput(11, f.lesson))
 	row, readErr := f.repos.Meetings.Current(t.Context(), f.lesson)
 
 	meetingRequire(t, upErr, downErr, absentErr, secondUpErr, countErr, createErr, readErr)
@@ -555,6 +562,7 @@ func testMeetingBackwardsTime(t *testing.T) {
 		t.Run(operation, func(t *testing.T) {
 			f := newMeetingFixture(t, testdb.New(t))
 			identity := f.create(t, 10)
+			f.acknowledge(t, identity, 100)
 			created := domain.ProviderCreateTime(100)
 			if operation != "open" {
 				opened := f.mutate(t, func(r repositories.Meetings) (domain.MeetingMutation, error) {
@@ -596,6 +604,7 @@ func testMeetingOpenIdentity(t *testing.T) {
 		t.Run(field, func(t *testing.T) {
 			f := newMeetingFixture(t, testdb.New(t))
 			identity := f.create(t, 10)
+			f.acknowledge(t, identity, 100)
 			wrong := identity
 			switch field {
 			case "lesson":

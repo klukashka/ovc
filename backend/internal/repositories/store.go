@@ -14,31 +14,32 @@ import (
 var ErrNotFound = errors.New("not found")
 
 type Repositories struct {
-	Users         Users
-	TutorProfiles TutorProfiles
-	Sessions      Sessions
-	EmailTokens   EmailTokens
-	RateLimits    RateLimits
-	Attachments   Attachments
-	UploadIntents UploadIntents
-	DailyUploads  DailyUploads
-	Outbox        Outbox
-	JobRuns       JobRuns
-	Relationships Relationships
-	Invitations   Invitations
-	JoinRequests  JoinRequests
-	Blocked       BlockedRequesters
-	Groups        Groups
-	Preferences   EmailPreferences
-	Signals       Signals
-	Notifications Notifications
-	Lessons       Lessons
-	Meetings      Meetings
-	Channels      Channels
-	Messages      Messages
-	Digests       Digests
-	Presence      Presence
-	TestClock     TestClock
+	Users           Users
+	TutorProfiles   TutorProfiles
+	Sessions        Sessions
+	EmailTokens     EmailTokens
+	RateLimits      RateLimits
+	Attachments     Attachments
+	UploadIntents   UploadIntents
+	DailyUploads    DailyUploads
+	Outbox          Outbox
+	JobRuns         JobRuns
+	Relationships   Relationships
+	Invitations     Invitations
+	JoinRequests    JoinRequests
+	Blocked         BlockedRequesters
+	Groups          Groups
+	Preferences     EmailPreferences
+	Signals         Signals
+	Notifications   Notifications
+	Lessons         Lessons
+	Meetings        Meetings
+	MeetingRecovery MeetingRecovery
+	Channels        Channels
+	Messages        Messages
+	Digests         Digests
+	Presence        Presence
+	TestClock       TestClock
 
 	commit *commitHooks
 }
@@ -100,31 +101,32 @@ func (s *Store) WithReadTx(ctx context.Context, work func(Repositories) error) e
 
 func newRepositories(queries *dbgen.Queries) Repositories {
 	return Repositories{
-		Users:         Users{queries: queries},
-		TutorProfiles: TutorProfiles{queries: queries},
-		Sessions:      Sessions{queries: queries},
-		EmailTokens:   EmailTokens{queries: queries},
-		RateLimits:    RateLimits{queries: queries},
-		Attachments:   Attachments{queries: queries},
-		UploadIntents: UploadIntents{queries: queries},
-		DailyUploads:  DailyUploads{queries: queries},
-		Outbox:        Outbox{queries: queries},
-		JobRuns:       JobRuns{queries: queries},
-		Relationships: Relationships{queries: queries},
-		Invitations:   Invitations{queries: queries},
-		JoinRequests:  JoinRequests{queries: queries},
-		Blocked:       BlockedRequesters{queries: queries},
-		Groups:        Groups{queries: queries},
-		Preferences:   EmailPreferences{queries: queries},
-		Signals:       Signals{queries: queries},
-		Notifications: Notifications{queries: queries},
-		Lessons:       Lessons{queries: queries},
-		Meetings:      Meetings{queries: queries},
-		Channels:      Channels{queries: queries},
-		Messages:      Messages{queries: queries},
-		Digests:       Digests{queries: queries},
-		Presence:      Presence{queries: queries},
-		TestClock:     TestClock{queries: queries},
+		Users:           Users{queries: queries},
+		TutorProfiles:   TutorProfiles{queries: queries},
+		Sessions:        Sessions{queries: queries},
+		EmailTokens:     EmailTokens{queries: queries},
+		RateLimits:      RateLimits{queries: queries},
+		Attachments:     Attachments{queries: queries},
+		UploadIntents:   UploadIntents{queries: queries},
+		DailyUploads:    DailyUploads{queries: queries},
+		Outbox:          Outbox{queries: queries},
+		JobRuns:         JobRuns{queries: queries},
+		Relationships:   Relationships{queries: queries},
+		Invitations:     Invitations{queries: queries},
+		JoinRequests:    JoinRequests{queries: queries},
+		Blocked:         BlockedRequesters{queries: queries},
+		Groups:          Groups{queries: queries},
+		Preferences:     EmailPreferences{queries: queries},
+		Signals:         Signals{queries: queries},
+		Notifications:   Notifications{queries: queries},
+		Lessons:         Lessons{queries: queries},
+		Meetings:        Meetings{queries: queries},
+		MeetingRecovery: MeetingRecovery{queries: queries},
+		Channels:        Channels{queries: queries},
+		Messages:        Messages{queries: queries},
+		Digests:         Digests{queries: queries},
+		Presence:        Presence{queries: queries},
+		TestClock:       TestClock{queries: queries},
 	}
 }
 

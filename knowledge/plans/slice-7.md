@@ -76,3 +76,9 @@ The owner approved [L2b shared provider](slice-7-shared-fake.md) on 2026-11-05: 
 ## Provider generation discovery
 
 L2b merged as `0f14087e92f2e9e89a3efd82209733aa011e0048` with an ordinary successful gate: all 30 commands and 979 E2E cases passed, and finish confirmed the tested tree. The owner next approved the [read-only discovery plan](slice-7-provider-discovery.md) on 2026-11-05. It adds lookup of the current provider generation using only its opaque identifier, without activating application joins. Durable cleanup ownership, late-Create handling and reconciliation must still precede API/worker activation. Evidence belongs in the [discovery verification record](../reviews/slice-7-provider-discovery.md).
+
+## Durable recovery ownership stage
+
+Provider discovery merged as `01c3f8e1e8b78e8316cf1e09718d7cf89e02e11a` after all 30 gate commands and 979 E2E cases passed; finish confirmed the tested main tree. The owner approved the [meeting recovery ledger](slice-7-meeting-recovery-ledger.md) on 2026-11-05. It preserves provider identity and single-attempt evidence independently of purged business metadata, refuses late publication and supplies bounded candidate reads. Independent security planning review passed with the provenance and downgrade clarifications incorporated. Implementation evidence belongs in the [verification record](../reviews/slice-7-meeting-recovery-ledger.md).
+
+This storage stage does not activate cleanup, worker jobs or joins. The next plan must define the coordinator, capacity/retention and operator recovery before application activation. Local fake evidence still does not establish BBB compatibility or media acceptance.

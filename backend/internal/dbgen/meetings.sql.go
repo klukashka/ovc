@@ -13,15 +13,21 @@ import (
 )
 
 const closeMeetingRow = `-- name: CloseMeetingRow :execrows
-UPDATE meetings SET state = 'closed', close_reason = $1, ended_at = $2, updated_at = $2
-WHERE lesson_id = $3 AND id = $4 AND provider_meeting_id = $5
-    AND state = $6 AND state IN ('creating', 'open')
-    AND create_time IS NOT DISTINCT FROM $7::bigint AND $2 >= updated_at
+WITH closed AS (
+    UPDATE meetings SET state = 'closed', close_reason = $2, ended_at = $1, updated_at = $1
+    WHERE meetings.lesson_id = $3 AND meetings.id = $4 AND meetings.provider_meeting_id = $5
+        AND state = $6 AND state IN ('creating', 'open')
+        AND create_time IS NOT DISTINCT FROM $7::bigint AND $1 >= updated_at
+    RETURNING meetings.id, meetings.provider_meeting_id
+)
+UPDATE meeting_recovery AS recovery
+SET cleanup_requested = true, revision = revision + 1, updated_at = greatest(recovery.updated_at, $1)
+FROM closed WHERE recovery.meeting_id = closed.id AND recovery.provider_meeting_id = closed.provider_meeting_id
 `
 
 type CloseMeetingRowParams struct {
+	Now                time.Time
 	CloseReason        *domain.MeetingCloseReason
-	Now                *time.Time
 	LessonID           domain.LessonID
 	ID                 domain.MeetingID
 	ProviderMeetingID  domain.ProviderMeetingID
@@ -31,8 +37,8 @@ type CloseMeetingRowParams struct {
 
 func (q *Queries) CloseMeetingRow(ctx context.Context, arg CloseMeetingRowParams) (int64, error) {
 	result, err := q.db.Exec(ctx, closeMeetingRow,
-		arg.CloseReason,
 		arg.Now,
+		arg.CloseReason,
 		arg.LessonID,
 		arg.ID,
 		arg.ProviderMeetingID,
@@ -46,8 +52,13 @@ func (q *Queries) CloseMeetingRow(ctx context.Context, arg CloseMeetingRowParams
 }
 
 const createMeetingRow = `-- name: CreateMeetingRow :exec
-INSERT INTO meetings (id, lesson_id, provider, provider_meeting_id, routing_key, state, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, 'creating', $6, $6)
+WITH created AS (
+    INSERT INTO meetings (id, lesson_id, provider, provider_meeting_id, routing_key, state, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, 'creating', $6, $6)
+    RETURNING id, provider, provider_meeting_id, created_at, updated_at
+)
+INSERT INTO meeting_recovery (provider_meeting_id, provider, meeting_id, origin, create_state, created_at, updated_at)
+SELECT provider_meeting_id, provider, id, 'attempt', 'prepared', created_at, updated_at FROM created
 `
 
 type CreateMeetingRowParams struct {
@@ -125,9 +136,19 @@ func (q *Queries) GetMeetingRow(ctx context.Context, arg GetMeetingRowParams) (M
 }
 
 const openMeetingRow = `-- name: OpenMeetingRow :execrows
+WITH current_meeting AS MATERIALIZED (
+    SELECT meetings.id, meetings.provider_meeting_id FROM meetings
+    WHERE meetings.lesson_id = $3 AND meetings.id = $4 AND meetings.provider_meeting_id = $5
+        AND meetings.state = 'creating' AND meetings.create_time IS NULL AND $2 >= meetings.updated_at
+    FOR UPDATE
+), evidence AS MATERIALIZED (
+    SELECT recovery.meeting_id FROM meeting_recovery AS recovery JOIN current_meeting
+        ON recovery.meeting_id = current_meeting.id AND recovery.provider_meeting_id = current_meeting.provider_meeting_id
+    WHERE recovery.create_state = 'returned' AND recovery.create_time = $1 AND NOT recovery.cleanup_requested
+    FOR UPDATE OF recovery
+)
 UPDATE meetings SET state = 'open', create_time = $1, updated_at = $2
-WHERE lesson_id = $3 AND id = $4 AND provider_meeting_id = $5
-    AND state = 'creating' AND create_time IS NULL AND $2 >= updated_at
+FROM evidence WHERE meetings.id = evidence.meeting_id
 `
 
 type OpenMeetingRowParams struct {
@@ -154,7 +175,7 @@ func (q *Queries) OpenMeetingRow(ctx context.Context, arg OpenMeetingRowParams) 
 
 const recordMeetingFirstJoin = `-- name: RecordMeetingFirstJoin :execrows
 UPDATE meetings SET first_join_at = $1, updated_at = $1
-WHERE lesson_id = $2 AND id = $3 AND provider_meeting_id = $4
+WHERE meetings.lesson_id = $2 AND meetings.id = $3 AND meetings.provider_meeting_id = $4
     AND state = 'open' AND create_time = $5 AND first_join_at IS NULL AND $1 >= updated_at
 `
 

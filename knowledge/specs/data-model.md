@@ -263,7 +263,7 @@ Stored lifecycle states are distinct from provider status. One partial unique in
 
 Repository operations bind every named row to both lesson and meeting identifiers, with expected-state/generation predicates for transitions. A stale request cannot reopen a closed row or mutate a replacement meeting. Repeat close preserves original terminal metadata. Mutation methods are named `UnderLessonLock`: the caller acquires the lesson lock after existing audience/series locks and keeps it through any post-update classification read. Outcomes distinguish applied, refused, already joined and already closed; this repository boundary is not caller authorization. No join URL, provider secret or participant name is stored.
 
-Lesson deletion cascades local meeting metadata; student purge retains the tutor-owned meeting history. Until application activation, no production path creates these rows and no provider resource is owned. Provider cleanup, reconciliation and history-retention bounds must be implemented before activation; cascade deletion alone must never be represented as remote cleanup. See the [approved persistence plan](../plans/slice-7-meeting-persistence.md).
+Lesson deletion cascades local meeting metadata; student purge retains the tutor-owned meeting history. The independent recovery ledger below survives that cascade. Until application activation, no production path creates these rows and no provider resource is owned. Provider cleanup, reconciliation and history-retention bounds must be implemented before activation; cascade deletion alone must never be represented as remote cleanup. See the [approved persistence plan](../plans/slice-7-meeting-persistence.md).
 
 | Column | Notes |
 |---|---|
@@ -284,6 +284,26 @@ Indexes:
 
 - at most one meeting per lesson that is not `closed` (partial unique index);
 - a partial index on `ended_at` where `settled_at` is null; reconciliation settles every meeting within 7 days, so the index stays small.
+
+### Meeting recovery ledger
+
+The [approved recovery-ledger plan](../plans/slice-7-meeting-recovery-ledger.md) adds durable provider ownership without activating calls or cleanup. `meeting_recovery` has an immutable nonzero provider identifier, provider kind and provenance, a nullable unique business meeting reference with indexed `ON DELETE SET NULL`, finite timestamps, a positive evidence revision, a monotonic cleanup request, and conditional attempt/generation evidence. It retains no account identifier, name, participant, routing key, join address, credential or raw error. An orphan remains a cleanup candidate without needing the deleted account or lesson.
+
+New business meetings and their attempt-origin prepared ledger rows are created atomically. Successful closure atomically requests cleanup; a stale refusal affects neither a replacement nor its ledger. The existing lesson/meeting lock order precedes ledger locks. Ledger-only completion never subsequently acquires business locks. Existing Open requires matching returned generation evidence, an attached creating business meeting and no cleanup request. These predicates are not caller authorization.
+
+| Origin and state | Attempt identifier | Acknowledged create time |
+| --- | --- | --- |
+| attempt / prepared | absent | absent |
+| attempt / started or uncertain | nonzero | absent |
+| attempt / returned | nonzero | positive |
+| legacy / uncertain | absent | absent |
+| legacy / returned | absent | positive |
+
+Other combinations are refused. Begin transitions prepared to started exactly once using an injected attempt identifier and expected revision under the caller's lesson lock. Uncertainty cannot reset an attempt. A returned generation is bound to the same attempt, permits an exact idempotent repetition, and cannot be replaced by conflicting evidence. Late successful evidence may be retained after closure or purge without clearing cleanup or reopening a room. Legacy origin never accepts Begin or attempt completion; migration records existing positive generations with legacy provenance and otherwise preserves uncertainty, never inventing an acknowledgement.
+
+Revision counts explicit repository evidence transitions, not the foreign-key action that nulls the business reference. Dispatch and publication must check current membership and cleanup as well as revision. An absent provider inspection, elapsed time, a cancelled operation or a database lease proves neither that remote Create cannot finish later nor that cleanup is complete.
+
+Cleanup candidates satisfy `cleanup_requested OR meeting_id IS NULL`, use a matching partial index ordered by immutable provider identifier, and are read through keyset pages of 1–100 rows under the caller's context. A later scan must restart to see eligibility acquired behind its cursor; pagination does not establish a consistent cross-transaction snapshot or worker fairness. No settlement/deletion method, total storage cap or retention policy is implemented in this stage. Admission capacity, final evidence, bounded reconciliation and operator recovery must be implemented before activation. Downgrade locks the table and refuses while any ledger remains, rather than discarding obligations; migration round trips use disposable databases only.
 
 ### Shared fake provider infrastructure
 

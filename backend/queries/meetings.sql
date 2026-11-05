@@ -1,6 +1,11 @@
 -- name: CreateMeetingRow :exec
-INSERT INTO meetings (id, lesson_id, provider, provider_meeting_id, routing_key, state, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, 'creating', $6, $6);
+WITH created AS (
+    INSERT INTO meetings (id, lesson_id, provider, provider_meeting_id, routing_key, state, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, 'creating', $6, $6)
+    RETURNING id, provider, provider_meeting_id, created_at, updated_at
+)
+INSERT INTO meeting_recovery (provider_meeting_id, provider, meeting_id, origin, create_state, created_at, updated_at)
+SELECT provider_meeting_id, provider, id, 'attempt', 'prepared', created_at, updated_at FROM created;
 
 -- name: GetMeetingRow :one
 SELECT * FROM meetings WHERE lesson_id = $1 AND id = $2;
@@ -9,17 +14,33 @@ SELECT * FROM meetings WHERE lesson_id = $1 AND id = $2;
 SELECT * FROM meetings WHERE lesson_id = $1 AND state <> 'closed';
 
 -- name: OpenMeetingRow :execrows
+WITH current_meeting AS MATERIALIZED (
+    SELECT meetings.id, meetings.provider_meeting_id FROM meetings
+    WHERE meetings.lesson_id = sqlc.arg(lesson_id) AND meetings.id = sqlc.arg(id) AND meetings.provider_meeting_id = sqlc.arg(provider_meeting_id)
+        AND meetings.state = 'creating' AND meetings.create_time IS NULL AND sqlc.arg(now) >= meetings.updated_at
+    FOR UPDATE
+), evidence AS MATERIALIZED (
+    SELECT recovery.meeting_id FROM meeting_recovery AS recovery JOIN current_meeting
+        ON recovery.meeting_id = current_meeting.id AND recovery.provider_meeting_id = current_meeting.provider_meeting_id
+    WHERE recovery.create_state = 'returned' AND recovery.create_time = sqlc.arg(create_time) AND NOT recovery.cleanup_requested
+    FOR UPDATE OF recovery
+)
 UPDATE meetings SET state = 'open', create_time = sqlc.arg(create_time), updated_at = sqlc.arg(now)
-WHERE lesson_id = sqlc.arg(lesson_id) AND id = sqlc.arg(id) AND provider_meeting_id = sqlc.arg(provider_meeting_id)
-    AND state = 'creating' AND create_time IS NULL AND sqlc.arg(now) >= updated_at;
+FROM evidence WHERE meetings.id = evidence.meeting_id;
 
 -- name: RecordMeetingFirstJoin :execrows
 UPDATE meetings SET first_join_at = sqlc.arg(now), updated_at = sqlc.arg(now)
-WHERE lesson_id = sqlc.arg(lesson_id) AND id = sqlc.arg(id) AND provider_meeting_id = sqlc.arg(provider_meeting_id)
+WHERE meetings.lesson_id = sqlc.arg(lesson_id) AND meetings.id = sqlc.arg(id) AND meetings.provider_meeting_id = sqlc.arg(provider_meeting_id)
     AND state = 'open' AND create_time = sqlc.arg(create_time) AND first_join_at IS NULL AND sqlc.arg(now) >= updated_at;
 
 -- name: CloseMeetingRow :execrows
-UPDATE meetings SET state = 'closed', close_reason = sqlc.arg(close_reason), ended_at = sqlc.arg(now), updated_at = sqlc.arg(now)
-WHERE lesson_id = sqlc.arg(lesson_id) AND id = sqlc.arg(id) AND provider_meeting_id = sqlc.arg(provider_meeting_id)
-    AND state = sqlc.arg(expected_state) AND state IN ('creating', 'open')
-    AND create_time IS NOT DISTINCT FROM sqlc.narg(expected_create_time)::bigint AND sqlc.arg(now) >= updated_at;
+WITH closed AS (
+    UPDATE meetings SET state = 'closed', close_reason = sqlc.arg(close_reason), ended_at = sqlc.arg(now), updated_at = sqlc.arg(now)
+    WHERE meetings.lesson_id = sqlc.arg(lesson_id) AND meetings.id = sqlc.arg(id) AND meetings.provider_meeting_id = sqlc.arg(provider_meeting_id)
+        AND state = sqlc.arg(expected_state) AND state IN ('creating', 'open')
+        AND create_time IS NOT DISTINCT FROM sqlc.narg(expected_create_time)::bigint AND sqlc.arg(now) >= updated_at
+    RETURNING meetings.id, meetings.provider_meeting_id
+)
+UPDATE meeting_recovery AS recovery
+SET cleanup_requested = true, revision = revision + 1, updated_at = greatest(recovery.updated_at, sqlc.arg(now))
+FROM closed WHERE recovery.meeting_id = closed.id AND recovery.provider_meeting_id = closed.provider_meeting_id;

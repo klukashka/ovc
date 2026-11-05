@@ -39,6 +39,7 @@ FROM lesson_series WHERE id = $1::uuid`, original.Series.ID)
 	h.cancelWithRoster(t, original.Lessons[0].ID, parties.student, parties.otherStudent)
 	h.seedFutureLessons(t, parties.tutor, parties.card, 600)
 	before := h.scheduleRows(t, parties.tutor)
+	h.seedRecoveryMeeting(t, original.Lessons[1].ID)
 	h.deleteMe(t, parties.tutorToken, accountPassword)
 
 	h.at(t, h.now(t).Add(domain.DeletedAccountRetention))
@@ -49,6 +50,9 @@ FROM lesson_series WHERE id = $1::uuid`, original.Series.ID)
 	}
 	if after := h.scheduleRows(t, parties.tutor); after != [3]int64{} || h.userExists(t, tutorEmail) {
 		t.Fatalf("the purged tutor keeps lessons, series and roster rows %v", after)
+	}
+	if h.countRows(t, "SELECT count(*) FROM meeting_recovery WHERE meeting_id IS NULL AND provider_meeting_id = $1::uuid", original.Lessons[1].ID) != 1 {
+		t.Fatal("final account purge erased provider recovery identity")
 	}
 	if !h.userExists(t, "member-10@example.org") {
 		t.Fatal("the tutor's purge removed a student")
@@ -64,11 +68,15 @@ func TestStudentPurgeDeletesItsRosterRows(t *testing.T) {
 	parties := h.visibilityParties(t)
 	lesson := h.scheduled(t, parties.tutorToken, groupLessonFor(parties.group, "2030-03-12", "18:00")).Lessons[0]
 	h.cancelWithRoster(t, lesson.ID, parties.student, parties.otherStudent)
+	h.seedRecoveryMeeting(t, lesson.ID)
 	h.deleteMe(t, parties.studentToken, accountPassword)
 
 	h.at(t, h.now(t).Add(domain.DeletedAccountRetention))
 	h.tick(t)
 
+	if h.countRows(t, "SELECT count(*) FROM meeting_recovery WHERE meeting_id = $1::uuid AND NOT cleanup_requested", lesson.ID) != 1 {
+		t.Fatal("student purge removed tutor meeting recovery history")
+	}
 	if h.userExists(t, "member-10@example.org") {
 		t.Fatal("the student was not purged")
 	}
@@ -129,4 +137,15 @@ func TestEachDueAccountGetsItsShareOfAPurgeRun(t *testing.T) {
 	if spent != 100 || strings.Count(h.logs.String(), `"msg":"account.purge_paused"`) != largeTutors {
 		t.Fatalf("the run spent %d batches on the large tutors", spent)
 	}
+}
+
+func (h *authHarness) seedRecoveryMeeting(t *testing.T, lesson string) {
+	t.Helper()
+	h.exec(t, `WITH created AS (
+    INSERT INTO meetings (id, lesson_id, provider, provider_meeting_id, routing_key, state, created_at, updated_at)
+    SELECT id, id, 'fake', id, id, 'creating', created_at, updated_at FROM lessons WHERE id = $1::uuid
+    RETURNING id, provider_meeting_id, created_at, updated_at
+)
+INSERT INTO meeting_recovery (provider_meeting_id, provider, meeting_id, origin, create_state, created_at, updated_at)
+SELECT provider_meeting_id, 'fake', id, 'attempt', 'prepared', created_at, updated_at FROM created`, lesson)
 }

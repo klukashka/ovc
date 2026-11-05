@@ -309,6 +309,20 @@ type Meeting struct {
 	CloseReason       *domain.MeetingCloseReason
 }
 
+type MeetingRecovery struct {
+	ProviderMeetingID domain.ProviderMeetingID
+	Provider          domain.MeetingProvider
+	MeetingID         *domain.MeetingID
+	Origin            domain.MeetingRecoveryOrigin
+	CreateState       domain.MeetingCreateState
+	AttemptID         *domain.MeetingCreateAttemptID
+	CreateTime        *domain.ProviderCreateTime
+	CleanupRequested  bool
+	Revision          domain.MeetingRecoveryRevision
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
 type Message struct {
 	ID        domain.MessageID
 	ChannelID domain.ChannelID
