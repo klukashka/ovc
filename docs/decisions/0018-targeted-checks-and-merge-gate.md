@@ -39,7 +39,7 @@ Every agent that implemented a change ran the full local check run of the [devel
 - An implementing agent's readiness evidence is narrower; a wrongly chosen change-check set lets a review run on a diff that later fails the gate, after review. The gate catches it before `main`, and the table errs wide.
 - Merges are serialised by the merge-gate lock; serial gates of about three minutes bound merges to roughly 15 to 20 an hour, far above the current pace.
 - The coordinator reports the gate's evidence itself; the merge report carries the hashes and the command results the script printed, which reviewers and the owner can rerun (T-41).
-- `main` receives only commits on which the full run passed, except Markdown-only changes under the exception above.
+- `main` receives only commits on which the full run passed, except Markdown-only changes and the explicitly bounded one-change owner exception below.
 - A change to the gate script takes effect only after it has merged, because each gate runs `main`'s copy (T-41).
 
 ## Where it is applied
@@ -53,3 +53,9 @@ Every agent that implemented a change ran the full local check run of the [devel
 - [Plan of the concurrent lanes](../../knowledge/plans/merge-gate-lanes.md) (amended 2026-10-27, pending owner review)
 - [NFR-6.1](../requirements/non-functional.md), [roadmap](../roadmap.md), [T-41](../threat-model.md)
 - [AI development verification](../../knowledge/reviews/ai-development-setup.md)
+
+## One-change exception for the local meeting foundation
+
+Owner-approved on 2026-11-05; wording pending owner review. Only commit `0236b0b1594f3c6d0d2ab21a226c4dc131cb652e`, tree `9044627e2c553903455a8f38848de3e0221f538e`, was permitted to fast-forward from base `93dea3d5e9d00ac9770c969039581ef71880a64a` despite a failed full gate: 29 commands passed and E2E passed 978/979, with the previously observed Chromium password-reset body-observation failure. The cause remains unresolved. The owner accepted this limited uncertainty without a rerun and explicitly allowed the policy record to follow in a separate mandatory documentation change with standard/security reviews and an ordinary documentation gate/finish before further application implementation.
+
+The [integration evidence](../../knowledge/reviews/slice-7-local-foundation.md#owner-approved-exception-integration-2026-11-05) records exact pre/post commit and tree checks and every gate command result. The application gate stays failed; normal finish was not used to certify it. This exception changes no test, timeout, diagnostic rule or future gate obligation, does not prove the failure harmless, and grants no deployment or slice-completion approval. The separate documentation gate validates only its own tree and scope.

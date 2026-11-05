@@ -58,3 +58,7 @@ Each implementation plan must name its exact threat-model amendment, negative te
 ## Work coordination and immediate deliverable
 
 At most three working sessions total including other projects; one heavy check at a time. Start with the approved local provider foundation; server prerequisites no longer block local implementation. Remote tests have explicit authority and safe load boundaries and do not consume the local computer concurrently with heavy suites. Record current slice 6 uncertainty without resuming its diagnostics automatically. Immediate acceptance is a durable slice 6 disposition and this proposed slice 7 plan with a clear missing-host prerequisite; it is not delivered video functionality.
+
+## Local foundation progress
+
+L1 was integrated as `0236b0b1594f3c6d0d2ab21a226c4dc131cb652e` on 2026-11-05 under the exact one-change [ADR-0018 exception](../../docs/decisions/0018-targeted-checks-and-merge-gate.md#one-change-exception-for-the-local-meeting-foundation). Its gate passed 29 commands and 978/979 E2E; the inherited password-reset failure remains unresolved and the gate remains failed. [Evidence and integration identity](../reviews/slice-7-local-foundation.md#owner-approved-exception-integration-2026-11-05) preserve this distinction. The mandatory separate documentation record must pass its reviews and documentation gate before further application implementation. L2 persistence, authorized joins and worker integration still need a concrete approved implementation plan; real BBB acceptance remains unverified.
