@@ -161,6 +161,8 @@ Typed JSON text frames: `{"type": <enum>, "ref"?: string, "payload"?: object}`, 
 | `4401` | authentication failed, the token lapsed, or the session or account no longer allows the socket | refreshes once, then reconnects or ends the session |
 | `4429` | slow consumer, repeated frame violations, or too many sockets of the account | reconnects after up to 60 seconds |
 
+A client that gives up on a socket still connecting closes it with `1000` as soon as it opens, and sends no frame on it, because browsers report a script closing a connecting socket in the console: Chromium as a warning, Firefox and WebKit as errors. A socket that never opens is left to the browser's own failure, and a later socket to the same address may wait behind it.
+
 Close reasons are fixed short strings, never data.
 
 ### Authorization of frames

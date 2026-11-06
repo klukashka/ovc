@@ -21,8 +21,11 @@ export function realtimeAddress(origin: string): string {
   return url.toString();
 }
 
+const connectingState = 0;
+
 export interface WebSocketLike {
   binaryType: BinaryType;
+  readonly readyState: number;
   onopen: ((event: Event) => void) | null;
   onmessage: ((event: MessageEvent) => void) | null;
   onclose: ((event: CloseEvent) => void) | null;
@@ -56,9 +59,15 @@ export function webSocketFactory(open: () => WebSocketLike): SocketFactory {
         socket.send(bytes);
       },
       close: (code): void => {
-        socket.onopen = null;
         socket.onmessage = null;
         socket.onclose = null;
+        if (socket.readyState === connectingState) {
+          socket.onopen = (): void => {
+            socket.close(code);
+          };
+          return;
+        }
+        socket.onopen = null;
         socket.close(code);
       },
     };
