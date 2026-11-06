@@ -15,6 +15,7 @@ export function InputField({
   min,
   max,
   step,
+  alignRows = false,
 }: {
   readonly label: string;
   readonly name: string;
@@ -25,12 +26,13 @@ export function InputField({
   readonly min?: number;
   readonly max?: number;
   readonly step?: number;
+  readonly alignRows?: boolean;
 }): ReactElement {
   const inputId = useId();
   const errorId = useId();
   const described = [hintId ?? null, error === undefined ? null : errorId].filter((id) => id !== null).join(' ');
   return (
-    <div className="flex flex-col gap-1">
+    <div className={alignRows ? 'row-span-3 grid grid-rows-subgrid gap-1' : 'flex flex-col gap-1'}>
       <label htmlFor={inputId} className="text-label">
         {label}
       </label>

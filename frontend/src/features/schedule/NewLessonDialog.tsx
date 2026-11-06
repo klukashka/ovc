@@ -324,16 +324,17 @@ function NewLessonForm({
             </p>
           )}
         </div>
-        <div className="grid grid-cols-1 gap-4 tablet:grid-cols-3">
-          <InputField
-            label={t('newLesson.date')}
-            name="date"
-            type="date"
-            defaultValue={prefill.date}
-            error={fieldMessage(t, error, 'date')}
-          />
+        <InputField
+          label={t('newLesson.date')}
+          name="date"
+          type="date"
+          defaultValue={prefill.date}
+          error={fieldMessage(t, error, 'date')}
+        />
+        <div className="grid grid-cols-1 gap-4 tablet:grid-cols-2">
           <InputField
             label={t('newLesson.start')}
+            alignRows
             name="start"
             type="time"
             defaultValue={prefill.start}
@@ -342,6 +343,7 @@ function NewLessonForm({
           />
           <InputField
             label={t('newLesson.duration')}
+            alignRows
             name="duration_minutes"
             type="number"
             defaultValue={String(prefill.durationMinutes ?? defaultDurationMinutes)}

@@ -271,19 +271,20 @@ export function EditForm({
             </p>
           )}
         </div>
-        <div className="grid grid-cols-1 gap-4 tablet:grid-cols-3">
-          {scope === 'this' ? (
-            <InputField
-              label={t('newLesson.date')}
-              name="date"
-              type="date"
-              defaultValue={shown.date}
-              error={fieldMessage(t, error, 'date')}
-              {...(hintId === undefined ? {} : { hintId })}
-            />
-          ) : null}
+        {scope === 'this' ? (
+          <InputField
+            label={t('newLesson.date')}
+            name="date"
+            type="date"
+            defaultValue={shown.date}
+            error={fieldMessage(t, error, 'date')}
+            {...(hintId === undefined ? {} : { hintId })}
+          />
+        ) : null}
+        <div className="grid grid-cols-1 gap-4 tablet:grid-cols-2">
           <InputField
             label={t('newLesson.start')}
+            alignRows
             name="start"
             type="time"
             defaultValue={shown.start}
@@ -293,6 +294,7 @@ export function EditForm({
           />
           <InputField
             label={t('newLesson.duration')}
+            alignRows
             name="duration_minutes"
             type="number"
             defaultValue={String(shown.duration)}
