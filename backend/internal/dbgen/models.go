@@ -310,17 +310,44 @@ type Meeting struct {
 }
 
 type MeetingRecovery struct {
+	ProviderMeetingID   domain.ProviderMeetingID
+	Provider            domain.MeetingProvider
+	MeetingID           *domain.MeetingID
+	Origin              domain.MeetingRecoveryOrigin
+	CreateState         domain.MeetingCreateState
+	AttemptID           *domain.MeetingCreateAttemptID
+	CreateTime          *domain.ProviderCreateTime
+	CleanupRequested    bool
+	Revision            domain.MeetingRecoveryRevision
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	SettledAt           *time.Time
+	CycleNumber         domain.MeetingRecoveryCycleNumber
+	CycleOutboxID       *domain.OutboxID
+	CycleResult         domain.MeetingRecoveryCycleResult
+	FinalCycleRequested bool
+	FinalCycleUsed      bool
+}
+
+type MeetingRecoveryCapacity struct {
+	Singleton bool
+	Unsettled int64
+}
+
+type MeetingRecoveryCursor struct {
+	Singleton              bool
+	AfterProviderMeetingID domain.ProviderMeetingID
+	Revision               domain.MeetingRecoveryRevision
+}
+
+type MeetingRecoveryCycle struct {
+	OutboxID          domain.OutboxID
 	ProviderMeetingID domain.ProviderMeetingID
-	Provider          domain.MeetingProvider
-	MeetingID         *domain.MeetingID
-	Origin            domain.MeetingRecoveryOrigin
-	CreateState       domain.MeetingCreateState
-	AttemptID         *domain.MeetingCreateAttemptID
-	CreateTime        *domain.ProviderCreateTime
-	CleanupRequested  bool
-	Revision          domain.MeetingRecoveryRevision
+	CycleNumber       domain.MeetingRecoveryCycleNumber
+	Mode              domain.MeetingRecoveryCycleMode
+	Result            domain.MeetingRecoveryCycleResult
 	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	CompletedAt       *time.Time
 }
 
 type Message struct {

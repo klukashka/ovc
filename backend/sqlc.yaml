@@ -616,3 +616,44 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: MeetingRecoveryRevision
+          - column: meeting_recovery.cycle_number
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingRecoveryCycleNumber
+          - column: meeting_recovery.cycle_outbox_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: OutboxID
+              pointer: true
+          - column: meeting_recovery.cycle_result
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingRecoveryCycleResult
+          - column: meeting_recovery_cycles.outbox_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: OutboxID
+          - column: meeting_recovery_cycles.provider_meeting_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ProviderMeetingID
+          - column: meeting_recovery_cycles.cycle_number
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingRecoveryCycleNumber
+          - column: meeting_recovery_cycles.mode
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingRecoveryCycleMode
+          - column: meeting_recovery_cycles.result
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingRecoveryCycleResult
+          - column: meeting_recovery_cursor.after_provider_meeting_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ProviderMeetingID
+          - column: meeting_recovery_cursor.revision
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingRecoveryRevision

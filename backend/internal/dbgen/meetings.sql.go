@@ -51,10 +51,12 @@ func (q *Queries) CloseMeetingRow(ctx context.Context, arg CloseMeetingRowParams
 	return result.RowsAffected(), nil
 }
 
-const createMeetingRow = `-- name: CreateMeetingRow :exec
-WITH created AS (
+const createMeetingRow = `-- name: CreateMeetingRow :execrows
+WITH reserved AS (
+    UPDATE meeting_recovery_capacity SET unsettled = unsettled + 1 WHERE singleton AND unsettled < 4096 RETURNING singleton
+), created AS (
     INSERT INTO meetings (id, lesson_id, provider, provider_meeting_id, routing_key, state, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, 'creating', $6, $6)
+    SELECT $1, $2, $3, $4, $5, 'creating', $6, $6 FROM reserved
     RETURNING id, provider, provider_meeting_id, created_at, updated_at
 )
 INSERT INTO meeting_recovery (provider_meeting_id, provider, meeting_id, origin, create_state, created_at, updated_at)
@@ -70,8 +72,8 @@ type CreateMeetingRowParams struct {
 	CreatedAt         time.Time
 }
 
-func (q *Queries) CreateMeetingRow(ctx context.Context, arg CreateMeetingRowParams) error {
-	_, err := q.db.Exec(ctx, createMeetingRow,
+func (q *Queries) CreateMeetingRow(ctx context.Context, arg CreateMeetingRowParams) (int64, error) {
+	result, err := q.db.Exec(ctx, createMeetingRow,
 		arg.ID,
 		arg.LessonID,
 		arg.Provider,
@@ -79,7 +81,10 @@ func (q *Queries) CreateMeetingRow(ctx context.Context, arg CreateMeetingRowPara
 		arg.RoutingKey,
 		arg.CreatedAt,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getCurrentMeetingRow = `-- name: GetCurrentMeetingRow :one
@@ -144,7 +149,7 @@ WITH current_meeting AS MATERIALIZED (
 ), evidence AS MATERIALIZED (
     SELECT recovery.meeting_id FROM meeting_recovery AS recovery JOIN current_meeting
         ON recovery.meeting_id = current_meeting.id AND recovery.provider_meeting_id = current_meeting.provider_meeting_id
-    WHERE recovery.create_state = 'returned' AND recovery.create_time = $1 AND NOT recovery.cleanup_requested
+    WHERE recovery.create_state = 'returned' AND recovery.create_time = $1 AND NOT recovery.cleanup_requested AND recovery.settled_at IS NULL
     FOR UPDATE OF recovery
 )
 UPDATE meetings SET state = 'open', create_time = $1, updated_at = $2

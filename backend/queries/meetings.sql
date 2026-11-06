@@ -1,7 +1,9 @@
--- name: CreateMeetingRow :exec
-WITH created AS (
+-- name: CreateMeetingRow :execrows
+WITH reserved AS (
+    UPDATE meeting_recovery_capacity SET unsettled = unsettled + 1 WHERE singleton AND unsettled < 4096 RETURNING singleton
+), created AS (
     INSERT INTO meetings (id, lesson_id, provider, provider_meeting_id, routing_key, state, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, 'creating', $6, $6)
+    SELECT $1, $2, $3, $4, $5, 'creating', $6, $6 FROM reserved
     RETURNING id, provider, provider_meeting_id, created_at, updated_at
 )
 INSERT INTO meeting_recovery (provider_meeting_id, provider, meeting_id, origin, create_state, created_at, updated_at)
@@ -22,7 +24,7 @@ WITH current_meeting AS MATERIALIZED (
 ), evidence AS MATERIALIZED (
     SELECT recovery.meeting_id FROM meeting_recovery AS recovery JOIN current_meeting
         ON recovery.meeting_id = current_meeting.id AND recovery.provider_meeting_id = current_meeting.provider_meeting_id
-    WHERE recovery.create_state = 'returned' AND recovery.create_time = sqlc.arg(create_time) AND NOT recovery.cleanup_requested
+    WHERE recovery.create_state = 'returned' AND recovery.create_time = sqlc.arg(create_time) AND NOT recovery.cleanup_requested AND recovery.settled_at IS NULL
     FOR UPDATE OF recovery
 )
 UPDATE meetings SET state = 'open', create_time = sqlc.arg(create_time), updated_at = sqlc.arg(now)

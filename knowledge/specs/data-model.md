@@ -283,7 +283,7 @@ Lesson deletion cascades local meeting metadata; student purge retains the tutor
 Indexes:
 
 - at most one meeting per lesson that is not `closed` (partial unique index);
-- a partial index on `ended_at` where `settled_at` is null; reconciliation settles every meeting within 7 days, so the index stays small.
+- the future recording reconciliation index on `ended_at` where business `settled_at` is null. This does not impose a settlement deadline on the separate provider recovery ledger: unresolved creation can remain indefinitely under ADR-0020.
 
 ### Meeting recovery ledger
 
@@ -303,7 +303,21 @@ Other combinations are refused. Begin transitions prepared to started exactly on
 
 Revision counts explicit repository evidence transitions, not the foreign-key action that nulls the business reference. Dispatch and publication must check current membership and cleanup as well as revision. An absent provider inspection, elapsed time, a cancelled operation or a database lease proves neither that remote Create cannot finish later nor that cleanup is complete.
 
-Cleanup candidates satisfy `cleanup_requested OR meeting_id IS NULL`, use a matching partial index ordered by immutable provider identifier, and are read through keyset pages of 1–100 rows under the caller's context. A later scan must restart to see eligibility acquired behind its cursor; pagination does not establish a consistent cross-transaction snapshot or worker fairness. No settlement/deletion method, total storage cap or retention policy is implemented in this stage. Admission capacity, final evidence, bounded reconciliation and operator recovery must be implemented before activation. Downgrade locks the table and refuses while any ledger remains, rather than discarding obligations; migration round trips use disposable databases only.
+Cleanup candidates satisfy `cleanup_requested OR meeting_id IS NULL`, use a matching partial index ordered by immutable provider identifier, and are read through keyset pages of 1–100 rows under the caller's context. A later scan must restart to see eligibility acquired behind its cursor; pagination does not establish a consistent cross-transaction snapshot or worker fairness. The subsequent recovery-storage extension below provides admission, settlement and retained cycle evidence. Runtime reconciliation and operator recovery remain required before application activation. Downgrade locks the table and refuses while any ledger remains, rather than discarding obligations; migration round trips use disposable databases only.
+
+#### Recovery capacity and cleanup-cycle storage
+
+[ADR-0020](../../docs/decisions/0020-durable-meeting-recovery.md) and the [approved local completion plan](../plans/slice-7-local-completion.md) add a singleton count of unsettled obligations. New meeting insertion reserves capacity atomically with business and ledger creation. A count of 4096 or more refuses admission without partial rows; migration backfills the actual count even when it exceeds the limit. Rollback cannot leak a slot. Open rooms consume capacity until terminal settlement.
+
+The total lock order is existing scope/lesson locks, capacity, business meeting, ledger, then outbox. A ledger-only operation that needs capacity locks it before the ledger and never subsequently acquires business locks. Closing only marks cleanup; it does not release capacity or prove provider erasure.
+
+The ledger gains a terminal settlement time and durable cleanup-cycle state. Settlement is conditional on the expected evidence revision, cleanup eligibility, and either a prepared attempt irrevocably barred from dispatch or a returned acknowledgement matching the exact confirmed provider generation. Started and uncertain attempts, including legacy uncertainty, cannot settle from an absent snapshot or discovered-generation End. Settlement releases capacity once and fences later dispatch/publication. A stored return alone is not remote End evidence: the coordinator must establish that before invoking the repository settlement transition.
+
+Each cycle is tied to a stable outbox identity and typed automatic/operator origin. Queueing records its ledger transition, durable cycle receipt and provider-call outbox work atomically. Completed or exhausted cycle evidence survives deletion of its outbox row. Automatic scheduling cannot renew a spent cycle; a definitive late acknowledgement can enable only one additional final cycle. Operator cycles are explicit, separately identified and revision-checked; receipts preserve their history until terminal ledger retention expires. Their number is not bounded by the admission slot count. No raw provider errors, participant data or capabilities enter receipts.
+
+An indexed, bounded keyset cursor persists its last provider identifier and a compare-and-swap revision. It is shared across recovery passes and survives process reconstruction. The caller advances it after failed candidates and wraps at the end; a stale cursor writer cannot overwrite newer progress. Administrative reads page through technical records and receipts at most 100 at a time. These persistence operations do not create a worker loop.
+
+Settled records and their receipts may be removed only after seven days in indexed batches of at most 100, with context cancellation. Unsettled entries are never eligible. Purge still removes the business reference without deleting cleanup ownership. Downgrade refuses while recovery evidence is present. The first extension provides storage only: provider effects, monotonic pass budgets, operator commands and caller authorization remain pending integration.
 
 ### Shared fake provider infrastructure
 

@@ -12,6 +12,24 @@ import (
 	"ovc/backend/internal/domain"
 )
 
+const advanceMeetingRecoveryCursor = `-- name: AdvanceMeetingRecoveryCursor :execrows
+UPDATE meeting_recovery_cursor SET after_provider_meeting_id = $1, revision = revision + 1
+WHERE singleton AND revision = $2
+`
+
+type AdvanceMeetingRecoveryCursorParams struct {
+	AfterProviderMeetingID domain.ProviderMeetingID
+	Revision               domain.MeetingRecoveryRevision
+}
+
+func (q *Queries) AdvanceMeetingRecoveryCursor(ctx context.Context, arg AdvanceMeetingRecoveryCursorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, advanceMeetingRecoveryCursor, arg.AfterProviderMeetingID, arg.Revision)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const beginMeetingCreate = `-- name: BeginMeetingCreate :execrows
 WITH current_meeting AS MATERIALIZED (
     SELECT meetings.id, meetings.provider_meeting_id FROM meetings
@@ -23,7 +41,7 @@ UPDATE meeting_recovery AS recovery
 SET create_state = 'started', attempt_id = $1, revision = revision + 1, updated_at = $2
 FROM current_meeting
 WHERE recovery.provider_meeting_id = current_meeting.provider_meeting_id AND recovery.meeting_id = current_meeting.id
-    AND recovery.origin = 'attempt' AND recovery.create_state = 'prepared' AND NOT recovery.cleanup_requested
+    AND recovery.origin = 'attempt' AND recovery.create_state = 'prepared' AND NOT recovery.cleanup_requested AND recovery.settled_at IS NULL
     AND recovery.revision = $3 AND $2 >= recovery.updated_at
 `
 
@@ -51,8 +69,62 @@ func (q *Queries) BeginMeetingCreate(ctx context.Context, arg BeginMeetingCreate
 	return result.RowsAffected(), nil
 }
 
+const completeMeetingRecoveryCycle = `-- name: CompleteMeetingRecoveryCycle :execrows
+WITH completed AS (
+    UPDATE meeting_recovery SET cycle_result = $1, revision = revision + 1,
+        updated_at = greatest(updated_at, $2)
+    WHERE meeting_recovery.provider_meeting_id = $3 AND cycle_outbox_id = $4
+        AND cycle_result = 'pending' AND ($1::text <> 'settled' OR settled_at IS NOT NULL)
+    RETURNING cycle_outbox_id
+)
+UPDATE meeting_recovery_cycles SET result = $1, completed_at = greatest(created_at, $2)
+FROM completed WHERE outbox_id = completed.cycle_outbox_id AND result = 'pending'
+`
+
+type CompleteMeetingRecoveryCycleParams struct {
+	Result            domain.MeetingRecoveryCycleResult
+	Now               *time.Time
+	ProviderMeetingID domain.ProviderMeetingID
+	OutboxID          *domain.OutboxID
+}
+
+func (q *Queries) CompleteMeetingRecoveryCycle(ctx context.Context, arg CompleteMeetingRecoveryCycleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, completeMeetingRecoveryCycle,
+		arg.Result,
+		arg.Now,
+		arg.ProviderMeetingID,
+		arg.OutboxID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteMeetingRecoveryReceipts = `-- name: DeleteMeetingRecoveryReceipts :execrows
+DELETE FROM meeting_recovery WHERE provider_meeting_id IN (
+    SELECT provider_meeting_id FROM meeting_recovery
+    WHERE settled_at < $1::timestamptz - interval '7 days' AND cycle_result <> 'pending'
+    ORDER BY settled_at, provider_meeting_id LIMIT $2
+    FOR UPDATE SKIP LOCKED
+)
+`
+
+type DeleteMeetingRecoveryReceiptsParams struct {
+	Now       time.Time
+	BatchSize int32
+}
+
+func (q *Queries) DeleteMeetingRecoveryReceipts(ctx context.Context, arg DeleteMeetingRecoveryReceiptsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteMeetingRecoveryReceipts, arg.Now, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getMeetingRecovery = `-- name: GetMeetingRecovery :one
-SELECT provider_meeting_id, provider, meeting_id, origin, create_state, attempt_id, create_time, cleanup_requested, revision, created_at, updated_at FROM meeting_recovery WHERE provider_meeting_id = $1
+SELECT provider_meeting_id, provider, meeting_id, origin, create_state, attempt_id, create_time, cleanup_requested, revision, created_at, updated_at, settled_at, cycle_number, cycle_outbox_id, cycle_result, final_cycle_requested, final_cycle_used FROM meeting_recovery WHERE provider_meeting_id = $1
 `
 
 func (q *Queries) GetMeetingRecovery(ctx context.Context, providerMeetingID domain.ProviderMeetingID) (MeetingRecovery, error) {
@@ -70,13 +142,113 @@ func (q *Queries) GetMeetingRecovery(ctx context.Context, providerMeetingID doma
 		&i.Revision,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SettledAt,
+		&i.CycleNumber,
+		&i.CycleOutboxID,
+		&i.CycleResult,
+		&i.FinalCycleRequested,
+		&i.FinalCycleUsed,
 	)
 	return i, err
 }
 
+const getMeetingRecoveryCapacity = `-- name: GetMeetingRecoveryCapacity :one
+SELECT unsettled FROM meeting_recovery_capacity WHERE singleton
+`
+
+func (q *Queries) GetMeetingRecoveryCapacity(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, getMeetingRecoveryCapacity)
+	var unsettled int64
+	err := row.Scan(&unsettled)
+	return unsettled, err
+}
+
+const getMeetingRecoveryCursor = `-- name: GetMeetingRecoveryCursor :one
+SELECT after_provider_meeting_id, revision FROM meeting_recovery_cursor WHERE singleton
+`
+
+type GetMeetingRecoveryCursorRow struct {
+	AfterProviderMeetingID domain.ProviderMeetingID
+	Revision               domain.MeetingRecoveryRevision
+}
+
+func (q *Queries) GetMeetingRecoveryCursor(ctx context.Context) (GetMeetingRecoveryCursorRow, error) {
+	row := q.db.QueryRow(ctx, getMeetingRecoveryCursor)
+	var i GetMeetingRecoveryCursorRow
+	err := row.Scan(&i.AfterProviderMeetingID, &i.Revision)
+	return i, err
+}
+
+const getMeetingRecoveryCycle = `-- name: GetMeetingRecoveryCycle :one
+SELECT outbox_id, provider_meeting_id, cycle_number, mode, result, created_at, completed_at FROM meeting_recovery_cycles WHERE outbox_id = $1
+`
+
+func (q *Queries) GetMeetingRecoveryCycle(ctx context.Context, outboxID domain.OutboxID) (MeetingRecoveryCycle, error) {
+	row := q.db.QueryRow(ctx, getMeetingRecoveryCycle, outboxID)
+	var i MeetingRecoveryCycle
+	err := row.Scan(
+		&i.OutboxID,
+		&i.ProviderMeetingID,
+		&i.CycleNumber,
+		&i.Mode,
+		&i.Result,
+		&i.CreatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const listMeetingRecovery = `-- name: ListMeetingRecovery :many
+SELECT provider_meeting_id, provider, meeting_id, origin, create_state, attempt_id, create_time, cleanup_requested, revision, created_at, updated_at, settled_at, cycle_number, cycle_outbox_id, cycle_result, final_cycle_requested, final_cycle_used FROM meeting_recovery WHERE provider_meeting_id > $1
+ORDER BY provider_meeting_id LIMIT $2
+`
+
+type ListMeetingRecoveryParams struct {
+	AfterProviderMeetingID domain.ProviderMeetingID
+	BatchSize              int32
+}
+
+func (q *Queries) ListMeetingRecovery(ctx context.Context, arg ListMeetingRecoveryParams) ([]MeetingRecovery, error) {
+	rows, err := q.db.Query(ctx, listMeetingRecovery, arg.AfterProviderMeetingID, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MeetingRecovery
+	for rows.Next() {
+		var i MeetingRecovery
+		if err := rows.Scan(
+			&i.ProviderMeetingID,
+			&i.Provider,
+			&i.MeetingID,
+			&i.Origin,
+			&i.CreateState,
+			&i.AttemptID,
+			&i.CreateTime,
+			&i.CleanupRequested,
+			&i.Revision,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.SettledAt,
+			&i.CycleNumber,
+			&i.CycleOutboxID,
+			&i.CycleResult,
+			&i.FinalCycleRequested,
+			&i.FinalCycleUsed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMeetingRecoveryCandidates = `-- name: ListMeetingRecoveryCandidates :many
-SELECT provider_meeting_id, provider, meeting_id, origin, create_state, attempt_id, create_time, cleanup_requested, revision, created_at, updated_at FROM meeting_recovery
-WHERE (cleanup_requested OR meeting_id IS NULL) AND provider_meeting_id > $1
+SELECT provider_meeting_id, provider, meeting_id, origin, create_state, attempt_id, create_time, cleanup_requested, revision, created_at, updated_at, settled_at, cycle_number, cycle_outbox_id, cycle_result, final_cycle_requested, final_cycle_used FROM meeting_recovery
+WHERE settled_at IS NULL AND (cleanup_requested OR meeting_id IS NULL) AND provider_meeting_id > $1
 ORDER BY provider_meeting_id LIMIT $2
 `
 
@@ -106,6 +278,52 @@ func (q *Queries) ListMeetingRecoveryCandidates(ctx context.Context, arg ListMee
 			&i.Revision,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SettledAt,
+			&i.CycleNumber,
+			&i.CycleOutboxID,
+			&i.CycleResult,
+			&i.FinalCycleRequested,
+			&i.FinalCycleUsed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMeetingRecoveryCycles = `-- name: ListMeetingRecoveryCycles :many
+SELECT outbox_id, provider_meeting_id, cycle_number, mode, result, created_at, completed_at FROM meeting_recovery_cycles
+WHERE provider_meeting_id = $1 AND cycle_number > $2
+ORDER BY cycle_number LIMIT $3
+`
+
+type ListMeetingRecoveryCyclesParams struct {
+	ProviderMeetingID domain.ProviderMeetingID
+	AfterCycleNumber  domain.MeetingRecoveryCycleNumber
+	BatchSize         int32
+}
+
+func (q *Queries) ListMeetingRecoveryCycles(ctx context.Context, arg ListMeetingRecoveryCyclesParams) ([]MeetingRecoveryCycle, error) {
+	rows, err := q.db.Query(ctx, listMeetingRecoveryCycles, arg.ProviderMeetingID, arg.AfterCycleNumber, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MeetingRecoveryCycle
+	for rows.Next() {
+		var i MeetingRecoveryCycle
+		if err := rows.Scan(
+			&i.OutboxID,
+			&i.ProviderMeetingID,
+			&i.CycleNumber,
+			&i.Mode,
+			&i.Result,
+			&i.CreatedAt,
+			&i.CompletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -120,7 +338,7 @@ func (q *Queries) ListMeetingRecoveryCandidates(ctx context.Context, arg ListMee
 const markMeetingCreateUncertain = `-- name: MarkMeetingCreateUncertain :execrows
 UPDATE meeting_recovery
 SET create_state = 'uncertain', revision = revision + 1, updated_at = greatest(updated_at, $1)
-WHERE provider_meeting_id = $2 AND origin = 'attempt' AND attempt_id = $3
+WHERE provider_meeting_id = $2 AND settled_at IS NULL AND origin = 'attempt' AND attempt_id = $3
     AND create_state = 'started'
 `
 
@@ -138,12 +356,57 @@ func (q *Queries) MarkMeetingCreateUncertain(ctx context.Context, arg MarkMeetin
 	return result.RowsAffected(), nil
 }
 
+const queueMeetingRecoveryCycle = `-- name: QueueMeetingRecoveryCycle :execrows
+WITH queued AS (
+    UPDATE meeting_recovery
+    SET cycle_number = cycle_number + 1, cycle_outbox_id = $2, cycle_result = 'pending',
+        final_cycle_used = final_cycle_used OR ($3::text = 'automatic' AND cycle_number > 0),
+        revision = revision + 1, updated_at = greatest(updated_at, $1)
+    WHERE meeting_recovery.provider_meeting_id = $4 AND revision = $5
+        AND settled_at IS NULL AND (cleanup_requested OR meeting_id IS NULL) AND cycle_result <> 'pending'
+        AND ($3::text = 'operator' OR cycle_number = 0 OR (final_cycle_requested AND NOT final_cycle_used))
+        AND NOT EXISTS (SELECT 1 FROM meeting_recovery_cycles WHERE outbox_id = $2)
+    RETURNING meeting_recovery.provider_meeting_id, meeting_recovery.cycle_number, meeting_recovery.cycle_outbox_id
+), receipt AS (
+    INSERT INTO meeting_recovery_cycles (outbox_id, provider_meeting_id, cycle_number, mode, result, created_at)
+    SELECT cycle_outbox_id, provider_meeting_id, cycle_number, $3, 'pending', $1 FROM queued
+    RETURNING outbox_id, provider_meeting_id, cycle_number
+)
+INSERT INTO outbox (id, lane, priority, kind, payload, idempotency_key, status, next_attempt_at, created_at)
+SELECT outbox_id, 'provider_call', 1, 'meeting_cleanup',
+    jsonb_build_object('provider_meeting_id', provider_meeting_id, 'cycle', cycle_number),
+    'meeting-cleanup:' || outbox_id::text, 'pending', $1, $1 FROM receipt
+`
+
+type QueueMeetingRecoveryCycleParams struct {
+	Now               time.Time
+	OutboxID          *domain.OutboxID
+	Mode              string
+	ProviderMeetingID domain.ProviderMeetingID
+	Revision          domain.MeetingRecoveryRevision
+}
+
+func (q *Queries) QueueMeetingRecoveryCycle(ctx context.Context, arg QueueMeetingRecoveryCycleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, queueMeetingRecoveryCycle,
+		arg.Now,
+		arg.OutboxID,
+		arg.Mode,
+		arg.ProviderMeetingID,
+		arg.Revision,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const recordMeetingCreateReturned = `-- name: RecordMeetingCreateReturned :execrows
 UPDATE meeting_recovery
 SET create_state = 'returned', create_time = $1,
+    final_cycle_requested = final_cycle_requested OR (create_state <> 'returned' AND cycle_number > 0),
     revision = CASE WHEN create_state = 'returned' THEN revision ELSE revision + 1 END,
     updated_at = CASE WHEN create_state = 'returned' THEN updated_at ELSE greatest(updated_at, $2) END
-WHERE provider_meeting_id = $3 AND origin = 'attempt' AND attempt_id = $4
+WHERE provider_meeting_id = $3 AND settled_at IS NULL AND origin = 'attempt' AND attempt_id = $4
     AND (create_state IN ('started', 'uncertain') OR (create_state = 'returned' AND create_time = $1))
 `
 
@@ -160,6 +423,44 @@ func (q *Queries) RecordMeetingCreateReturned(ctx context.Context, arg RecordMee
 		arg.Now,
 		arg.ProviderMeetingID,
 		arg.AttemptID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const settleMeetingRecovery = `-- name: SettleMeetingRecovery :execrows
+WITH capacity AS MATERIALIZED (
+    SELECT singleton FROM meeting_recovery_capacity WHERE singleton FOR UPDATE
+), settled AS (
+    UPDATE meeting_recovery AS recovery
+    SET settled_at = $1, cleanup_requested = true, revision = recovery.revision + 1,
+        updated_at = greatest(recovery.updated_at, $1)
+    FROM capacity
+    WHERE recovery.provider_meeting_id = $2 AND recovery.revision = $3
+        AND recovery.settled_at IS NULL AND (recovery.cleanup_requested OR recovery.meeting_id IS NULL)
+        AND $1 >= recovery.updated_at
+        AND ((recovery.create_state = 'prepared' AND $4::bigint IS NULL)
+            OR (recovery.create_state = 'returned' AND recovery.create_time = $4::bigint))
+    RETURNING recovery.provider_meeting_id
+)
+UPDATE meeting_recovery_capacity SET unsettled = unsettled - 1 WHERE singleton AND EXISTS (SELECT 1 FROM settled)
+`
+
+type SettleMeetingRecoveryParams struct {
+	Now                *time.Time
+	ProviderMeetingID  domain.ProviderMeetingID
+	Revision           domain.MeetingRecoveryRevision
+	ObservedCreateTime *int64
+}
+
+func (q *Queries) SettleMeetingRecovery(ctx context.Context, arg SettleMeetingRecoveryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, settleMeetingRecovery,
+		arg.Now,
+		arg.ProviderMeetingID,
+		arg.Revision,
+		arg.ObservedCreateTime,
 	)
 	if err != nil {
 		return 0, err

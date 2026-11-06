@@ -19,3 +19,26 @@ const (
 	MeetingCreateReturned  MeetingCreateState = "returned"
 	MeetingCreateUncertain MeetingCreateState = "uncertain"
 )
+
+type MeetingRecoveryCycleNumber int64
+
+type MeetingRecoveryCycleMode string
+
+const (
+	MeetingRecoveryAutomatic MeetingRecoveryCycleMode = "automatic"
+	MeetingRecoveryOperator  MeetingRecoveryCycleMode = "operator"
+)
+
+type MeetingRecoveryCycleResult string
+
+const (
+	MeetingRecoveryCycleNone       MeetingRecoveryCycleResult = "none"
+	MeetingRecoveryCyclePending    MeetingRecoveryCycleResult = "pending"
+	MeetingRecoveryCycleSettled    MeetingRecoveryCycleResult = "settled"
+	MeetingRecoveryCycleUnresolved MeetingRecoveryCycleResult = "unresolved"
+	MeetingRecoveryCycleConflict   MeetingRecoveryCycleResult = "conflict"
+	MeetingRecoveryCycleExhausted  MeetingRecoveryCycleResult = "exhausted"
+)
+
+const KindMeetingCleanup OutboxKind = "meeting_cleanup"
+const MeetingRecoveryCapacity = 4096

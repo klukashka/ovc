@@ -456,7 +456,7 @@ func testRecoveryPurge(t *testing.T) {
 	if other.MeetingID == nil || *other.MeetingID != otherMeeting.ID || other.CleanupRequested || len(candidates) != 1 || candidates[0].ProviderMeetingID != identity.ProviderMeetingID {
 		t.Fatal("purge crossed tutor scope or orphan disappeared from cleanup candidates")
 	}
-	want := []string{"provider_meeting_id", "provider", "meeting_id", "origin", "create_state", "attempt_id", "create_time", "cleanup_requested", "revision", "created_at", "updated_at"}
+	want := []string{"provider_meeting_id", "provider", "meeting_id", "origin", "create_state", "attempt_id", "create_time", "cleanup_requested", "revision", "created_at", "updated_at", "settled_at", "cycle_number", "cycle_outbox_id", "cycle_result", "final_cycle_requested", "final_cycle_used"}
 	if fmt.Sprint(columns) != fmt.Sprint(want) {
 		t.Fatalf("unexpected retained ledger fields: %v", columns)
 	}
@@ -568,7 +568,7 @@ func TestMeetingRecoveryPagination(t *testing.T) {
 			t.Fatal("keyset pagination duplicated, omitted or reordered a candidate")
 		}
 	}
-	if uncertain.CreateState != domain.MeetingCreateUncertain || uncertain.CreateTime != nil || !uncertain.CleanupRequested || indexDefinition != "CREATE INDEX meeting_recovery_cleanup_idx ON public.meeting_recovery USING btree (provider_meeting_id) WHERE (cleanup_requested OR (meeting_id IS NULL))" {
+	if uncertain.CreateState != domain.MeetingCreateUncertain || uncertain.CreateTime != nil || !uncertain.CleanupRequested || indexDefinition != "CREATE INDEX meeting_recovery_cleanup_idx ON public.meeting_recovery USING btree (provider_meeting_id) WHERE ((settled_at IS NULL) AND (cleanup_requested OR (meeting_id IS NULL)))" {
 		t.Fatal("reconstruction lost uncertainty or cleanup predicate index differs")
 	}
 }
@@ -618,6 +618,7 @@ func testRecoveryLegacyMigration(t *testing.T) {
 	downErr := f.database.MigrateDownTo(t.Context(), 23)
 	secondUpErr := f.database.MigrateUpTo(t.Context(), 24)
 	after := recoveryMigrationRows(t, f, inputs)
+	meetingRequire(t, f.database.MigrateUpTo(t.Context(), 25))
 	refusals := make([]domain.MeetingMutation, 0, len(inputs)*3)
 	for _, input := range inputs {
 		id := input.ProviderMeetingID
@@ -660,7 +661,12 @@ func recoveryMigrationRows(t *testing.T, f meetingFixture, inputs []repositories
 	t.Helper()
 	rows := make([]repositories.StoredMeetingRecovery, len(inputs))
 	for index, input := range inputs {
-		rows[index] = f.recovery(t, input.ProviderMeetingID)
+		row := &rows[index]
+		err := f.pool.QueryRow(t.Context(), `SELECT provider_meeting_id, provider, meeting_id, origin, create_state, attempt_id,
+            create_time, cleanup_requested, revision, created_at, updated_at FROM meeting_recovery WHERE provider_meeting_id = $1`, input.ProviderMeetingID).Scan(
+			&row.ProviderMeetingID, &row.Provider, &row.MeetingID, &row.Origin, &row.CreateState, &row.AttemptID,
+			&row.CreateTime, &row.CleanupRequested, &row.Revision, &row.CreatedAt, &row.UpdatedAt)
+		meetingRequire(t, err)
 	}
 	return rows
 }
@@ -732,7 +738,7 @@ func TestMeetingRecoveryLegacyGenerationGuards(t *testing.T) {
 	input := meetingInput(10, f.lesson)
 	meetingRequire(t, insertLegacyMeeting(t.Context(), f, input))
 	_, err := f.pool.Exec(t.Context(), "UPDATE meetings SET state = 'open', create_time = 100 WHERE id = $1", input.ID)
-	meetingRequire(t, err, f.database.MigrateUpTo(t.Context(), 24))
+	meetingRequire(t, err, f.database.MigrateUpTo(t.Context(), 25))
 	identity := meetingIdentity(input)
 	created := domain.ProviderCreateTime(100)
 	wrongTime := created + 1

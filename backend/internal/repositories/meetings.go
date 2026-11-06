@@ -25,10 +25,17 @@ type NewMeeting struct {
 }
 
 func (r Meetings) CreateUnderLessonLock(ctx context.Context, meeting NewMeeting) error {
-	return done(r.queries.CreateMeetingRow(ctx, dbgen.CreateMeetingRowParams{
+	rows, err := r.queries.CreateMeetingRow(ctx, dbgen.CreateMeetingRowParams{
 		ID: meeting.ID, LessonID: meeting.LessonID, Provider: meeting.Provider,
 		ProviderMeetingID: meeting.ProviderMeetingID, RoutingKey: meeting.RoutingKey, CreatedAt: meeting.Now,
-	}), "create meeting")
+	})
+	if err != nil {
+		return done(err, "create meeting")
+	}
+	if rows != 1 {
+		return ErrMeetingRecoveryCapacity
+	}
+	return nil
 }
 
 func (r Meetings) ByID(ctx context.Context, lesson domain.LessonID, id domain.MeetingID) (StoredMeeting, error) {

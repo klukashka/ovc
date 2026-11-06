@@ -1,12 +1,12 @@
 # Slice 7: video lessons — start and implementation outline
 
-Status: preparation requested by the owner on 2026-11-05; overall implementation outline proposed; the owner approved local-first L1 in the [foundation plan](slice-7-local-foundation.md), not later application stages or provisioning. No remote test host is available. Baseline: main `e201e16f7dcc3382af0ebb19487f07f1a57f3048`, with [slice 6 accepted limitations](../reviews/slice-6-accepted-state.md). The owner requested requirements and a plan for the missing host. No spending or remote mutation is authorized.
+Status: preparation requested by the owner on 2026-11-05; remaining local sequence approved on 2026-11-06 in the [local completion plan](slice-7-local-completion.md); the owner approved local-first L1 in the [foundation plan](slice-7-local-foundation.md), with later local application stages subsequently approved in that plan; provisioning remains unapproved. No remote test host is available. Baseline: main `e201e16f7dcc3382af0ebb19487f07f1a57f3048`, with [slice 6 accepted limitations](../reviews/slice-6-accepted-state.md). The owner requested requirements and a plan for the missing host. No spending or remote mutation is authorized.
 
 ## Goal and scope
 
 Implement FR-5.1–FR-5.3: authorized tutor/student video-room joins, meeting lifecycle, provider-confirmed callbacks/reconciliation, and lesson UI with an always-available new-tab path. Embedding remains disabled until the required live-browser evidence passes. Recordings remain after the MVP. Lesson presentation/library integration remains slice 8. Follow [ADR-0004](../../docs/decisions/0004-bigbluebutton-primary-provider.md), [ADR-0013](../../docs/decisions/0013-pilot-deployment.md), the [video contract](../specs/realtime-and-video.md#video), schedule join rule and lesson-page design.
 
-The integrated L1 provides a typed provider contract and bounded constructor-injected in-memory fake. Schedule lessons and their page, a `fake` setting used by test-control guards, and a provider-call lane identifier also exist. L2a adds durable lifecycle storage; L2b adds the shared local provider independently. No application join flow or remote BBB adapter is wired; subsequent application integration remains subject to separate approval.
+The integrated L1 provides a typed provider contract and bounded constructor-injected in-memory fake. Schedule lessons and their page, a `fake` setting used by test-control guards, and a provider-call lane identifier also exist. L2a adds durable lifecycle storage; L2b adds the shared local provider independently. No application join flow or remote BBB adapter is wired; subsequent local application integration follows the approved local completion plan.
 
 Tier: slice for the overall plan and final cumulative review; individual implementation changes use standard with separate security review. Security trigger: meeting authorization, credential-bearing join links, outbound provider calls, untrusted callbacks, framing, remote personal-data processing and secret handling. Planning needs independent standard and full-security review before approval; no live check is represented as passed.
 
@@ -28,7 +28,7 @@ The probe must cover:
 
 Checks requiring a host remain blocked. Infrastructure procurement and live participants/devices are prerequisites for those checks. The owner explicitly approved local-first development on 2026-11-05: L1 now precedes the remote probe, while real-provider acceptance and enabling embedding remain gated by remote evidence.
 
-## Implementation sequence, with per-change approval and later remote verification
+## Implementation sequence and later remote verification
 
 1. **Contracts and domain:** start from the video/API/schedule/data-model specifications and reconcile later probe findings before remote acceptance; propose any discrepancy before the affected implementation. Define typed meeting/participant states, migration constraints for at most one open meeting, settings and package-layer entries. Tests prove constraints, join windows and scoped membership.
 2. **Adapters:** implement BigBlueButton and configured fake behind one interface, shared contract checks and the specified local HTTP API fake. Test checksum, required recording-off flags, bounded requests/responses, deadlines, malformed/provider failures and redacted diagnostics. Remote contract tests are opt-in and unverified until executed.
@@ -84,3 +84,9 @@ Provider discovery merged as `01c3f8e1e8b78e8316cf1e09718d7cf89e02e11a` after al
 This storage stage does not activate cleanup, worker jobs or joins. The next plan must define the coordinator, capacity/retention and operator recovery before application activation. Local fake evidence still does not establish BBB compatibility or media acceptance.
 
 The ledger merged as `be8290afed843561e1b02a6a93e96f54b7101cea` under the owner's exact [ADR-0018 exception](../../docs/decisions/0018-targeted-checks-and-merge-gate.md#one-change-exception-for-the-meeting-recovery-ledger) on 2026-11-06: 29 gate commands passed, E2E passed 978/979, and the failed Chromium password-reset observation with unknown HTTP/console diagnostics remains unresolved. No retry or normal application finish was used. The [disposition plan](slice-7-ledger-known-failure-exception.md) requires the immediately following documentation reviews and ordinary docs-only gate/finish before further application implementation; that documentation result does not repair or certify the failed application suite.
+
+## Approved local completion sequence
+
+The owner approved the [complete remaining local sequence](slice-7-local-completion.md) on 2026-11-06 after independent standard/security planning reviews. The ledger exception documentation merged as `8664fabbae992844c6be1aef986dcb5b30b9e508` after its own ordinary documentation gate and finish. The next work implements recovery storage and coordinator, lifecycle API, guarded fake room, lesson UI/pilot coverage and the BBB adapter against local protocol fixtures. New contract deviations and failed-gate exceptions still need explicit decisions; routine coherent splitting within the approved contracts does not.
+
+The first implementation change supplies capacity, durable cleanup-cycle outcomes, safe settlement and cursor persistence. Runtime reconciliation, provider lane, operator commands and authorized public routes remain pending until their corresponding changes integrate. Each change has independent reviews and its own ordinary gate. No remote provider is activated by these storage operations.
