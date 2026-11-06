@@ -63,6 +63,10 @@ At most three working sessions total including other projects; one heavy check a
 
 L1 was integrated as `0236b0b1594f3c6d0d2ab21a226c4dc131cb652e` on 2026-11-05 under the exact one-change [ADR-0018 exception](../../docs/decisions/0018-targeted-checks-and-merge-gate.md#one-change-exception-for-the-local-meeting-foundation). Its gate passed 29 commands and 978/979 E2E; the inherited password-reset failure remains unresolved and the gate remains failed. [Evidence and integration identity](../reviews/slice-7-local-foundation.md#owner-approved-exception-integration-2026-11-05) preserve this distinction. The mandatory separate documentation record merged as `94b0322bdfd7f394394dd7f547a8c4166a58d608` after its reviews and ordinary documentation gate/finish. L2a persistence has since merged; authorized joins and worker integration still need concrete approved implementation plans. Real BBB acceptance remains unverified.
 
+## Authorized lifecycle stage
+
+The creation coordinator and the authorized lesson lifecycle API are implemented on their change branches: [coordinator record](../reviews/slice-7-meeting-create-coordinator.md), [lifecycle record](../reviews/slice-7-meeting-lifecycle-api.md). The fake room, lesson UI and BigBlueButton adapter remain pending under the [local plan](slice-7-local-completion.md). Nothing here is remote evidence.
+
 ## Durable lifecycle stage
 
 The owner approved [L2a meeting persistence](slice-7-meeting-persistence.md) on 2026-11-05: database constraints, typed repository transitions, real concurrency/migration/purge tests and ordinary reviews/gate. It adds no API, provider process or UI. The later local provider must share state between API and worker; independent L1 fake instances are not a shared provider. Authorization/session checks, provider cleanup and reconciliation remain activation prerequisites. Implementation and check evidence belongs in the [persistence record](../reviews/slice-7-meeting-persistence.md); approval alone is not a passing result.

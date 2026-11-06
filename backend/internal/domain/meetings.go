@@ -8,7 +8,24 @@ const (
 	MeetingUncertainPause     = 2 * time.Minute
 	MeetingCreatingWait       = 10 * time.Second
 	MeetingCreatingStaleAfter = time.Minute
+	MeetingJoinWindowLead     = 10 * time.Minute
+	MeetingJoinWindow         = time.Minute
+	MeetingJoinsPerMinute     = 30
+	PurposeMeetingJoin        = RateLimitPurpose("meeting_join_minute")
+	MeetingHintMinimumAge     = 2 * time.Minute
+	MeetingHintDebounce       = time.Minute
+	MeetingHintRecheckAfter   = 2 * time.Minute
+	MeetingHintRechecks       = 3
+	MeetingHintChainSpan      = MeetingHintRechecks*MeetingHintRecheckAfter + time.Minute
 )
+
+const KindMeetingEndedHint OutboxKind = "meeting_ended_hint"
+
+type MeetingEndedHintPayload struct {
+	Lesson  string `json:"lesson_id"`
+	Meeting string `json:"meeting_id"`
+	Check   int16  `json:"check"`
+}
 
 type ProviderMeetingID [16]byte
 

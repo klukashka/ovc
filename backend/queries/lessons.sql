@@ -77,7 +77,10 @@ SELECT
     lessons.series_id, lessons.occurrence_date, lessons.version, lessons.cancelled_at, lessons.relationship_id, lessons.group_id,
     card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
     card.colour AS card_colour, student.timezone AS student_timezone,
-    lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
+    lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour,
+    EXISTS (
+        SELECT 1 FROM meetings WHERE meetings.lesson_id = lessons.id AND meetings.state = 'open' AND lessons.status = 'live'
+    ) AS room_open
 FROM lessons
 LEFT JOIN relationships AS card ON card.id = lessons.relationship_id
 LEFT JOIN users AS student ON student.id = card.student_id
@@ -187,7 +190,10 @@ SELECT
         WHERE own_link.id = lessons.relationship_id AND own_link.student_id = sqlc.arg(student_id)::uuid
             AND own_link.state IN ('active', 'provisional')
     ) AS current_link,
-    teacher.name AS tutor_name, coalesce(mine.state, '')::text AS my_state, mine.colour AS my_colour
+    teacher.name AS tutor_name, coalesce(mine.state, '')::text AS my_state, mine.colour AS my_colour,
+    EXISTS (
+        SELECT 1 FROM meetings WHERE meetings.lesson_id = lessons.id AND meetings.state = 'open' AND lessons.status = 'live'
+    ) AS room_open
 FROM lessons
 JOIN users AS teacher ON teacher.id = lessons.tutor_id
 LEFT JOIN groups AS lesson_group ON lesson_group.id = lessons.group_id

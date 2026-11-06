@@ -12,6 +12,16 @@ An unchanged original generation after a stale-End refusal cannot be produced by
 
 Disposition: the reachable local fake interleaving coverage gap is closed by the executed follow-up and independent reviews, with integration authorized only by the exact failed-gate exception above, not by an ordinary passing gate. The remaining provider-specific unchanged-generation outcome is retained for the named slice 7 BBB adapter and remote-activation follow-up. This is not owner acceptance for slice closure. Backend and security cumulative reviewers must recheck this entry. See the [original implementation evidence](slice-7-meeting-cleanup-worker.md) and [interleaving follow-up](slice-7-cleanup-interleavings.md).
 
+## Meeting lifecycle residuals
+
+Recorded 2026-11-06 with the authorized lifecycle change; each is an item for the cumulative reviewers, not an owner acceptance.
+
+- **Roster-only viewers get no room frames.** `entity.changed` for room and lesson transitions names the tutor and the current audience held under locks, as the existing lesson paths do. A former member sees the change on the next read. Severity: minor.
+- **A restart that cannot confirm End blocks the room.** While the provider stays unavailable, a tutor join answers `503` until End or the cleanup settlement confirms the old generation; an exhausted cleanup needs the operator retry or a working provider. The lesson can still end. This is the approved "publish no replacement" contract. Severity: minor.
+- **Stale rows near the head of a page.** The scanner's abandoned-row pass reads the oldest 100 and a failing row stays at the head. Failures stay visible through the failed job. Severity: minor.
+- **Unreachable revocation conflict.** The `conflict` branch of `Rooms.revoke`, a current generation that differs from the revoked one, cannot be produced by the shared fake, because application provider identifiers are never reused. It answers `503` and must be checked against the BigBlueButton adapter. Severity: minor.
+- **Budget of the live status pass.** It shares the status job's 20-second budget after the scheduled pass and inherits the recorded overrun limitation of the [slice 5 known limitations](slice-5-known-limitations.md). Severity: minor.
+
 ## Uncertain obligations never close
 
 Recorded 2026-11-07 with the owner's decision on the per-lesson pause. Severity: major for remote activation; it blocks that step.

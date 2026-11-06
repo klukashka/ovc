@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 )
@@ -84,6 +85,35 @@ func (s *Service) cancelLessons(ctx context.Context, repos repositories.Reposito
 	}
 	effects.cancelled = len(cancelled)
 	return effects, nil
+}
+
+func (s *Service) closeMeetingsForDeletion(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, audience lessonAudience, at time.Time) error {
+	ended, err := repos.Lessons.EndLiveOfTutor(ctx, tutor, at)
+	if err != nil {
+		return err
+	}
+	signals := make([]domain.EntitySignal, 0, len(ended))
+	for _, lesson := range ended {
+		recipients := append([]domain.UserID{tutor}, audience.of(lesson)...)
+		signals = append(signals, domain.EntitySignal{Users: recipients, Entity: domain.EntityLesson, ID: domain.EntityID(lesson.ID)})
+	}
+	current, err := repos.Meetings.CurrentOfTutor(ctx, tutor)
+	if err != nil {
+		return err
+	}
+	for _, room := range current {
+		cycle, err := core.NewID[domain.OutboxID](s.deps.Random)
+		if err != nil {
+			return err
+		}
+		if _, err := repos.CloseTutorMeetingForCleanup(ctx, room, domain.MeetingCloseTutorEnd, cycle, at); err != nil {
+			return err
+		}
+	}
+	repos.AfterCommit(ctx, func(ctx context.Context) {
+		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "meeting.closed_for_deletion", slog.String("tutor_id", tutor.String()), slog.Int("lessons", len(ended)), slog.Int("rooms", len(current)))
+	})
+	return repos.Signals.Entities(ctx, signals)
 }
 
 func (s *Service) freezeUnderWay(

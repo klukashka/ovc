@@ -309,6 +309,10 @@ The scanner uses the existing atomic revision-checked automatic `QueueCycle`. Pe
 
 Only existing cleanup-requested or orphaned ledger rows are candidates for cycles. Before them, each pass closes at most 100 attached `creating` business rows older than one business minute through the partial `meetings_creating_idx` index, oldest first, each in its own transaction under the lesson's locks, and queues their first cycle. A failed row is reported in the aggregate and does not stop the others in the pass; a permanently failing row stays at the head of later passes and stays visible as a failed job. Public route activation is a separate change. Runtime registration is described below; local operator recovery follows the video specification. Constructor-injected tests alone do not establish production activation, and local process tests do not establish remote cleanup guarantees.
 
+### Meeting ended hint effects
+
+The kind `meeting_ended_hint` runs in the `provider_call` lane through the generic `Perform` handler, with the existing 30-second deadline, eight attempts and backoff. Its payload holds the lesson and meeting identifiers and the check number, nothing else. A check whose number differs from the meeting's counter, or whose meeting is no longer open, finishes as `obsolete`, so a retried effect queues no second recheck. See [callbacks](realtime-and-video.md#callbacks).
+
 ### Registered meeting recovery job
 
 Production startup registers `meeting.recovery` once per minute with the existing bounded scanner and four `provider_call` slots per process. Each pass still selects at most 100 candidates, advances the persistent CAS cursor, and removes at most 100 eligible seven-day receipts inside one 20-second budget. Effects keep their 30-second deadline and finite eight-attempt cycle. API test-control Tick uses this same composition; the separate shared-test-clock worker does not run independently. Registration creates no new Create dispatch, callback, public route or automatic replenishment of exhausted cycles. The scanner and effect diagnostics remain the existing fixed events and safe fields.

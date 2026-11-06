@@ -21,6 +21,7 @@ import (
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/meetings"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/schedule"
 	"ovc/backend/internal/services/tutoring"
@@ -43,6 +44,7 @@ const (
 	AudienceRefreshCookie       Audience = "refresh cookie"
 	AudienceOptionalUser        Audience = "public, optional bearer"
 	AudienceFirstFrame          Audience = "user, unverified ok, by first frame"
+	AudienceProvider            Audience = "provider"
 )
 
 type audienceRule struct {
@@ -88,6 +90,7 @@ type router struct {
 	preferences *notifications.Preferences
 	inbox       *notifications.Inbox
 	chat        *chat.Service
+	meetings    *meetings.Lifecycle
 	uploads     UploadTiming
 	now         func() time.Time
 	logger      *slog.Logger

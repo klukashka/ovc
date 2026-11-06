@@ -9,8 +9,83 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"ovc/backend/internal/domain"
 )
+
+const acceptMeetingEndedHint = `-- name: AcceptMeetingEndedHint :execrows
+WITH accepted AS (
+    UPDATE meetings SET ended_hint_at = $2::timestamptz, ended_hint_until = $3::timestamptz, ended_hint_checks = 0
+    WHERE routing_key = $4 AND state = 'open' AND first_join_at IS NOT NULL AND created_at <= $5::timestamptz
+        AND (ended_hint_at IS NULL OR ended_hint_at <= $6::timestamptz)
+        AND (ended_hint_until IS NULL OR ended_hint_until <= $2::timestamptz)
+    RETURNING meetings.id AS meeting_id, meetings.lesson_id AS meeting_lesson
+)
+INSERT INTO outbox (id, lane, priority, kind, payload, idempotency_key, status, next_attempt_at, created_at)
+SELECT $1::uuid, 'provider_call', 1, 'meeting_ended_hint',
+    jsonb_build_object('lesson_id', meeting_lesson, 'meeting_id', meeting_id, 'check', 0),
+    'meeting-hint:' || $1::uuid::text, 'pending', $2::timestamptz, $2::timestamptz FROM accepted
+`
+
+type AcceptMeetingEndedHintParams struct {
+	OutboxID        pgtype.UUID
+	Now             time.Time
+	ChainUntil      time.Time
+	RoutingKey      domain.MeetingRoutingKey
+	CreatedBefore   time.Time
+	DebouncedBefore time.Time
+}
+
+func (q *Queries) AcceptMeetingEndedHint(ctx context.Context, arg AcceptMeetingEndedHintParams) (int64, error) {
+	result, err := q.db.Exec(ctx, acceptMeetingEndedHint,
+		arg.OutboxID,
+		arg.Now,
+		arg.ChainUntil,
+		arg.RoutingKey,
+		arg.CreatedBefore,
+		arg.DebouncedBefore,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const advanceMeetingEndedHint = `-- name: AdvanceMeetingEndedHint :execrows
+WITH advanced AS (
+    UPDATE meetings SET ended_hint_checks = ended_hint_checks + 1
+    WHERE meetings.lesson_id = $4 AND meetings.id = $5 AND state = 'open' AND ended_hint_checks = $6::smallint AND ended_hint_checks < 3
+    RETURNING meetings.id AS meeting_id, meetings.lesson_id AS meeting_lesson, meetings.ended_hint_checks AS next_check
+)
+INSERT INTO outbox (id, lane, priority, kind, payload, idempotency_key, status, next_attempt_at, created_at)
+SELECT $1::uuid, 'provider_call', 1, 'meeting_ended_hint',
+    jsonb_build_object('lesson_id', meeting_lesson, 'meeting_id', meeting_id, 'check', next_check),
+    'meeting-hint:' || $1::uuid::text, 'pending', $2::timestamptz, $3::timestamptz FROM advanced
+`
+
+type AdvanceMeetingEndedHintParams struct {
+	OutboxID      pgtype.UUID
+	NextAttemptAt time.Time
+	Now           time.Time
+	LessonID      domain.LessonID
+	ID            domain.MeetingID
+	ExpectedCheck int16
+}
+
+func (q *Queries) AdvanceMeetingEndedHint(ctx context.Context, arg AdvanceMeetingEndedHintParams) (int64, error) {
+	result, err := q.db.Exec(ctx, advanceMeetingEndedHint,
+		arg.OutboxID,
+		arg.NextAttemptAt,
+		arg.Now,
+		arg.LessonID,
+		arg.ID,
+		arg.ExpectedCheck,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
 
 const closeMeetingRow = `-- name: CloseMeetingRow :execrows
 WITH closed AS (
@@ -46,6 +121,25 @@ func (q *Queries) CloseMeetingRow(ctx context.Context, arg CloseMeetingRowParams
 		arg.ExpectedState,
 		arg.ExpectedCreateTime,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const confirmMeetingRevocation = `-- name: ConfirmMeetingRevocation :execrows
+UPDATE meetings SET revocation_confirmed_at = $1::timestamptz
+WHERE lesson_id = $2 AND id = $3 AND state = 'closed' AND close_reason = 'tutor_restart' AND revocation_confirmed_at IS NULL
+`
+
+type ConfirmMeetingRevocationParams struct {
+	Now      time.Time
+	LessonID domain.LessonID
+	ID       domain.MeetingID
+}
+
+func (q *Queries) ConfirmMeetingRevocation(ctx context.Context, arg ConfirmMeetingRevocationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, confirmMeetingRevocation, arg.Now, arg.LessonID, arg.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -102,13 +196,59 @@ func (q *Queries) CreateMeetingRow(ctx context.Context, arg CreateMeetingRowPara
 	return result.RowsAffected(), nil
 }
 
+const deleteAccountParticipants = `-- name: DeleteAccountParticipants :execrows
+DELETE FROM lesson_participants WHERE account_id = $1
+`
+
+func (q *Queries) DeleteAccountParticipants(ctx context.Context, accountID domain.UserID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteAccountParticipants, accountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const finishMeetingEndedHint = `-- name: FinishMeetingEndedHint :execrows
+UPDATE meetings SET ended_hint_until = NULL
+WHERE lesson_id = $1 AND id = $2 AND state = 'open' AND ended_hint_checks = $3::smallint
+`
+
+type FinishMeetingEndedHintParams struct {
+	LessonID      domain.LessonID
+	ID            domain.MeetingID
+	ExpectedCheck int16
+}
+
+func (q *Queries) FinishMeetingEndedHint(ctx context.Context, arg FinishMeetingEndedHintParams) (int64, error) {
+	result, err := q.db.Exec(ctx, finishMeetingEndedHint, arg.LessonID, arg.ID, arg.ExpectedCheck)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getCurrentMeetingRow = `-- name: GetCurrentMeetingRow :one
 SELECT id, lesson_id, provider, provider_meeting_id, routing_key, state, create_time, created_at, updated_at, first_join_at, ended_at, close_reason FROM meetings WHERE lesson_id = $1 AND state <> 'closed'
 `
 
-func (q *Queries) GetCurrentMeetingRow(ctx context.Context, lessonID domain.LessonID) (Meeting, error) {
+type GetCurrentMeetingRowRow struct {
+	ID                domain.MeetingID
+	LessonID          domain.LessonID
+	Provider          domain.MeetingProvider
+	ProviderMeetingID domain.ProviderMeetingID
+	RoutingKey        domain.MeetingRoutingKey
+	State             domain.MeetingState
+	CreateTime        *domain.ProviderCreateTime
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	FirstJoinAt       *time.Time
+	EndedAt           *time.Time
+	CloseReason       *domain.MeetingCloseReason
+}
+
+func (q *Queries) GetCurrentMeetingRow(ctx context.Context, lessonID domain.LessonID) (GetCurrentMeetingRowRow, error) {
 	row := q.db.QueryRow(ctx, getCurrentMeetingRow, lessonID)
-	var i Meeting
+	var i GetCurrentMeetingRowRow
 	err := row.Scan(
 		&i.ID,
 		&i.LessonID,
@@ -124,6 +264,38 @@ func (q *Queries) GetCurrentMeetingRow(ctx context.Context, lessonID domain.Less
 		&i.CloseReason,
 	)
 	return i, err
+}
+
+const getLessonParticipant = `-- name: GetLessonParticipant :one
+SELECT participant_id FROM lesson_participants WHERE lesson_id = $1 AND account_id = $2
+`
+
+type GetLessonParticipantParams struct {
+	LessonID  domain.LessonID
+	AccountID domain.UserID
+}
+
+func (q *Queries) GetLessonParticipant(ctx context.Context, arg GetLessonParticipantParams) (domain.ParticipantID, error) {
+	row := q.db.QueryRow(ctx, getLessonParticipant, arg.LessonID, arg.AccountID)
+	var participant_id domain.ParticipantID
+	err := row.Scan(&participant_id)
+	return participant_id, err
+}
+
+const getMeetingEndedHintChecks = `-- name: GetMeetingEndedHintChecks :one
+SELECT ended_hint_checks FROM meetings WHERE lesson_id = $1 AND id = $2
+`
+
+type GetMeetingEndedHintChecksParams struct {
+	LessonID domain.LessonID
+	ID       domain.MeetingID
+}
+
+func (q *Queries) GetMeetingEndedHintChecks(ctx context.Context, arg GetMeetingEndedHintChecksParams) (int16, error) {
+	row := q.db.QueryRow(ctx, getMeetingEndedHintChecks, arg.LessonID, arg.ID)
+	var ended_hint_checks int16
+	err := row.Scan(&ended_hint_checks)
+	return ended_hint_checks, err
 }
 
 const getMeetingRow = `-- name: GetMeetingRow :one
@@ -135,9 +307,24 @@ type GetMeetingRowParams struct {
 	ID       domain.MeetingID
 }
 
-func (q *Queries) GetMeetingRow(ctx context.Context, arg GetMeetingRowParams) (Meeting, error) {
+type GetMeetingRowRow struct {
+	ID                domain.MeetingID
+	LessonID          domain.LessonID
+	Provider          domain.MeetingProvider
+	ProviderMeetingID domain.ProviderMeetingID
+	RoutingKey        domain.MeetingRoutingKey
+	State             domain.MeetingState
+	CreateTime        *domain.ProviderCreateTime
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	FirstJoinAt       *time.Time
+	EndedAt           *time.Time
+	CloseReason       *domain.MeetingCloseReason
+}
+
+func (q *Queries) GetMeetingRow(ctx context.Context, arg GetMeetingRowParams) (GetMeetingRowRow, error) {
 	row := q.db.QueryRow(ctx, getMeetingRow, arg.LessonID, arg.ID)
-	var i Meeting
+	var i GetMeetingRowRow
 	err := row.Scan(
 		&i.ID,
 		&i.LessonID,
@@ -153,6 +340,29 @@ func (q *Queries) GetMeetingRow(ctx context.Context, arg GetMeetingRowParams) (M
 		&i.CloseReason,
 	)
 	return i, err
+}
+
+const insertLessonParticipant = `-- name: InsertLessonParticipant :exec
+INSERT INTO lesson_participants (lesson_id, account_id, participant_id, created_at)
+VALUES ($1, $2, $3, $4::timestamptz)
+ON CONFLICT (lesson_id, account_id) DO NOTHING
+`
+
+type InsertLessonParticipantParams struct {
+	LessonID      domain.LessonID
+	AccountID     domain.UserID
+	ParticipantID domain.ParticipantID
+	Now           time.Time
+}
+
+func (q *Queries) InsertLessonParticipant(ctx context.Context, arg InsertLessonParticipantParams) error {
+	_, err := q.db.Exec(ctx, insertLessonParticipant,
+		arg.LessonID,
+		arg.AccountID,
+		arg.ParticipantID,
+		arg.Now,
+	)
+	return err
 }
 
 const lessonHasFreshUncertainMeeting = `-- name: LessonHasFreshUncertainMeeting :one
@@ -176,6 +386,47 @@ func (q *Queries) LessonHasFreshUncertainMeeting(ctx context.Context, arg Lesson
 	var fresh bool
 	err := row.Scan(&fresh)
 	return fresh, err
+}
+
+const listCurrentMeetingsOfTutor = `-- name: ListCurrentMeetingsOfTutor :many
+SELECT meetings.lesson_id, meetings.id, meetings.provider_meeting_id, meetings.state, meetings.create_time FROM meetings
+JOIN lessons ON lessons.id = meetings.lesson_id
+WHERE lessons.tutor_id = $1 AND meetings.state <> 'closed'
+ORDER BY meetings.lesson_id
+`
+
+type ListCurrentMeetingsOfTutorRow struct {
+	LessonID          domain.LessonID
+	ID                domain.MeetingID
+	ProviderMeetingID domain.ProviderMeetingID
+	State             domain.MeetingState
+	CreateTime        *domain.ProviderCreateTime
+}
+
+func (q *Queries) ListCurrentMeetingsOfTutor(ctx context.Context, tutorID domain.UserID) ([]ListCurrentMeetingsOfTutorRow, error) {
+	rows, err := q.db.Query(ctx, listCurrentMeetingsOfTutor, tutorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCurrentMeetingsOfTutorRow
+	for rows.Next() {
+		var i ListCurrentMeetingsOfTutorRow
+		if err := rows.Scan(
+			&i.LessonID,
+			&i.ID,
+			&i.ProviderMeetingID,
+			&i.State,
+			&i.CreateTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listStaleCreatingMeetings = `-- name: ListStaleCreatingMeetings :many
@@ -205,6 +456,41 @@ func (q *Queries) ListStaleCreatingMeetings(ctx context.Context, arg ListStaleCr
 	for rows.Next() {
 		var i ListStaleCreatingMeetingsRow
 		if err := rows.Scan(&i.LessonID, &i.ID, &i.ProviderMeetingID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUnconfirmedMeetingRevocations = `-- name: ListUnconfirmedMeetingRevocations :many
+SELECT meetings.id, meetings.provider_meeting_id, meetings.create_time FROM meetings
+LEFT JOIN meeting_recovery AS recovery ON recovery.meeting_id = meetings.id
+WHERE meetings.lesson_id = $1 AND meetings.state = 'closed' AND meetings.close_reason = 'tutor_restart'
+    AND meetings.revocation_confirmed_at IS NULL AND meetings.create_time IS NOT NULL AND recovery.settled_at IS NULL
+ORDER BY meetings.created_at, meetings.id
+LIMIT 16
+`
+
+type ListUnconfirmedMeetingRevocationsRow struct {
+	ID                domain.MeetingID
+	ProviderMeetingID domain.ProviderMeetingID
+	CreateTime        *domain.ProviderCreateTime
+}
+
+func (q *Queries) ListUnconfirmedMeetingRevocations(ctx context.Context, lessonID domain.LessonID) ([]ListUnconfirmedMeetingRevocationsRow, error) {
+	rows, err := q.db.Query(ctx, listUnconfirmedMeetingRevocations, lessonID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUnconfirmedMeetingRevocationsRow
+	for rows.Next() {
+		var i ListUnconfirmedMeetingRevocationsRow
+		if err := rows.Scan(&i.ID, &i.ProviderMeetingID, &i.CreateTime); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

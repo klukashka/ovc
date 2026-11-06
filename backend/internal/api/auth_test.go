@@ -19,6 +19,7 @@ import (
 
 	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/adapters/mail"
+	"ovc/backend/internal/adapters/meeting"
 	"ovc/backend/internal/adapters/storage"
 	"ovc/backend/internal/api"
 	"ovc/backend/internal/core"
@@ -27,6 +28,7 @@ import (
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/meetings"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/outbox"
 	"ovc/backend/internal/services/schedule"
@@ -118,6 +120,14 @@ type authHarness struct {
 	accounts  *accounts.Service
 	tutoring  *tutoring.Service
 	chat      *chat.Service
+	logger    *slog.Logger
+	options   api.Options
+	provider  *meeting.SharedFake
+	lifecycle *meetings.Lifecycle
+	random    *countingRandom
+
+	createGate *providerClockGate
+	linkGate   *providerEntropyGate
 }
 
 type lessonJobs struct {
@@ -214,6 +224,19 @@ func newAuthHarnessWithDatabase(
 	chatService := chat.New(chat.Dependencies{
 		Store: store, Clock: shared, Random: random, Addresses: fileService, Erasure: chat.DefaultErasureSettings(), Logger: logger,
 	})
+	createGate := &providerClockGate{source: shared}
+	linkGate := &providerEntropyGate{source: random}
+	provider, err := meeting.NewSharedFake(context.Background(), database.Pool, createGate, linkGate, logger, meeting.DefaultFakeLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	roomTiming := meetings.DefaultRoomTiming()
+	lifecycle := meetings.NewLifecycle(meetings.LifecycleDependencies{
+		Rooms: meetings.NewRooms(meetings.RoomDependencies{
+			Store: store, Provider: provider, Kind: domain.MeetingProviderFake, Clock: shared, Random: random, Logger: logger, Monotonic: clock.System{}.Now, Timing: roomTiming,
+		}),
+		Store: store, Provider: provider, Clock: shared, Random: random, Keys: keys, Logger: logger, Enabled: true, ProviderCall: roomTiming.ProviderCall,
+	})
 	options := api.Options{
 		Logger: logger, Now: clock.System{}.Now, NewRequestID: core.NewRandomID,
 		Readiness:   func(context.Context) error { return nil },
@@ -224,6 +247,7 @@ func newAuthHarnessWithDatabase(
 		Preferences: preferences,
 		Inbox:       inbox,
 		Chat:        chatService,
+		Meetings:    lifecycle,
 	}
 	for _, hook := range hooks {
 		hook(&options, shared, logger, database)
@@ -279,7 +303,7 @@ func newAuthHarnessWithDatabase(
 		{Name: domain.JobNotificationsCleanup, Every: time.Hour, Run: inbox.Cleanup},
 		{Name: domain.JobMessagesDigest, Every: time.Minute, Run: chatService.QueueDigests},
 		{Name: domain.JobEraseChannels, Every: time.Minute, Run: chatService.EraseChannels},
-		{Name: domain.JobLessonStatus, Every: time.Minute, Run: jobs.run((*schedule.Jobs).EndUnjoined)},
+		{Name: domain.JobLessonStatus, Every: time.Minute, Run: jobs.run((*schedule.Jobs).EndDue)},
 		{Name: domain.JobLessonReminders, Every: time.Minute, Run: jobs.run((*schedule.Jobs).QueueReminders)},
 		{Name: domain.JobSeriesExtension, Every: time.Hour, OwnLoop: true, Run: jobs.run((*schedule.Jobs).ExtendHorizons)},
 	}
@@ -288,6 +312,7 @@ func newAuthHarnessWithDatabase(
 		server: server, store: store, clock: shared, hasher: hasher, logs: logs,
 		database: database, sink: sink, worker: background, objects: objects, links: links,
 		accounts: options.Auth.Accounts, tutoring: options.Tutoring, chat: options.Chat, keys: keys, mailer: mailer, schedule: scheduleService, jobs: jobs, files: fileService, purger: purger,
+		logger: logger, options: options, provider: provider, lifecycle: lifecycle, random: random, createGate: createGate, linkGate: linkGate,
 	}
 }
 
@@ -898,7 +923,7 @@ func TestEveryOperationDeclaresAnAudience(t *testing.T) {
 	}
 	for _, operation := range operations {
 		switch operation.Audience {
-		case api.AudiencePublic, api.AudienceRefreshCookie:
+		case api.AudiencePublic, api.AudienceRefreshCookie, api.AudienceProvider:
 		case api.AudienceOptionalUser:
 			result := h.send(t, operation.Method, operation.Path, "{}", map[string]string{
 				"Authorization": "Bearer forged", "Content-Type": "application/json", "Origin": publicOrigin,

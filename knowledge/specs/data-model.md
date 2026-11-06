@@ -286,6 +286,12 @@ Indexes:
 - the partial `meetings_creating_idx` on `(created_at, id)` of `creating` rows, which bounds the recovery scanner's search for abandoned rows;
 - the future recording reconciliation index on `ended_at` where business `settled_at` is null. This does not impose a settlement deadline on the separate provider recovery ledger: unresolved creation can remain indefinitely under ADR-0020.
 
+`revocation_confirmed_at` records that the exact generation of a `tutor_restart` closure was confirmed ended by a request; it does not settle the ledger. `ended_hint_at`, `ended_hint_until` and `ended_hint_checks` (0 to 3) hold the debounce and the bounded recheck chain of the unsigned ended hint.
+
+### Lesson participant
+
+`lesson_participants` has the primary key `(lesson_id, account_id)` and a unique random nonzero `participant_id`, with `created_at`. `lesson_id` references lessons with `ON DELETE CASCADE`. `account_id` has an index and no foreign key, like `lesson_roster.student_id`, so inserting a row takes no lock on a user row late in a transaction; the account purge deletes the rows explicitly. A row is inserted only after the caller's authorization, under the tutor's profile lock or the student's user row lock.
+
 ### Meeting recovery ledger
 
 The [approved recovery-ledger plan](../plans/slice-7-meeting-recovery-ledger.md) adds durable provider ownership without activating calls or cleanup. `meeting_recovery` has an immutable nonzero provider identifier, provider kind and provenance, a nullable unique business meeting reference with indexed `ON DELETE SET NULL`, finite timestamps, a positive evidence revision, a monotonic cleanup request, and conditional attempt/generation evidence. It retains no account identifier, name, participant, routing key, join address, credential or raw error. An orphan remains a cleanup candidate without needing the deleted account or lesson.

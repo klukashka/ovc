@@ -67,6 +67,8 @@ type Dependencies struct {
 	Random core.RandomSource
 	Keys   core.Keys
 	Logger *slog.Logger
+
+	EmbedAllowed bool
 }
 
 type Service struct {

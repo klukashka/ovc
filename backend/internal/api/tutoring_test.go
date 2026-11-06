@@ -398,10 +398,14 @@ var denialCases = map[string]denialCase{
 	"DELETE /api/v1/messages/{id}": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, _ string, message string) response {
 		return h.deleteMessage(t, bearerToken, message)
 	}),
-	"GET /api/v1/attachments/{id}":     anotherTutorsAttachment,
-	"GET /api/v1/files/{id}":           anotherAttachmentsAddress,
-	"PATCH /api/v1/lessons/{id}":       anotherTutorsLessonWrite(http.MethodPatch, "", `{"scope":"this","version":1,"title":"Taken over"}`),
-	"POST /api/v1/lessons/{id}/cancel": anotherTutorsLessonWrite(http.MethodPost, "/cancel", `{"scope":"this","version":1}`),
+	"GET /api/v1/attachments/{id}":                     anotherTutorsAttachment,
+	"GET /api/v1/files/{id}":                           anotherAttachmentsAddress,
+	"PATCH /api/v1/lessons/{id}":                       anotherTutorsLessonWrite(http.MethodPatch, "", `{"scope":"this","version":1,"title":"Taken over"}`),
+	"POST /api/v1/lessons/{id}/cancel":                 anotherTutorsLessonWrite(http.MethodPost, "/cancel", `{"scope":"this","version":1}`),
+	"POST /api/v1/lessons/{id}/join":                   anotherTutorsLessonWrite(http.MethodPost, "/join", ""),
+	"POST /api/v1/lessons/{id}/end":                    anotherTutorsLessonWrite(http.MethodPost, "/end", ""),
+	"POST /api/v1/lessons/{id}/restart-room":           anotherTutorsLessonWrite(http.MethodPost, "/restart-room", ""),
+	"GET /api/v1/integrations/bbb/{routing_key}/ended": aForeignEndedHintRevealsNothing,
 }
 
 var bodyIdentifierDenialCases = map[string]denialCase{
@@ -410,7 +414,8 @@ var bodyIdentifierDenialCases = map[string]denialCase{
 }
 
 var denialStatuses = map[string]int{
-	"POST /api/v1/invitations/{token}/accept": http.StatusConflict,
+	"POST /api/v1/invitations/{token}/accept":          http.StatusConflict,
+	"GET /api/v1/integrations/bbb/{routing_key}/ended": http.StatusOK,
 }
 
 const sharedStudentCard byte = 0x7f
@@ -534,6 +539,12 @@ func TestEveryScopedRouteHasADenialCase(t *testing.T) {
 
 			outOfScope, random := denial(t, h)
 
+			if expected == http.StatusOK {
+				if outOfScope.status != expected || random.status != expected || outOfScope.body != random.body {
+					t.Fatalf("out of scope %d %s, random %d %s", outOfScope.status, outOfScope.body, random.status, random.body)
+				}
+				return
+			}
 			if outOfScope.status != expected || refusal(t, outOfScope) != refusal(t, random) {
 				t.Fatalf("out of scope %d %s, random %d %s", outOfScope.status, outOfScope.body, random.status, random.body)
 			}

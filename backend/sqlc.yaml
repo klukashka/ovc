@@ -547,6 +547,18 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: UserID
+          - column: lesson_participants.lesson_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: LessonID
+          - column: lesson_participants.account_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: lesson_participants.participant_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ParticipantID
           - column: meetings.id
             go_type:
               import: ovc/backend/internal/domain

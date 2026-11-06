@@ -253,6 +253,13 @@ type Lesson struct {
 	UpdatedAt           time.Time
 }
 
+type LessonParticipant struct {
+	LessonID      domain.LessonID
+	AccountID     domain.UserID
+	ParticipantID domain.ParticipantID
+	CreatedAt     time.Time
+}
+
 type LessonRoster struct {
 	LessonID       domain.LessonID
 	StudentID      domain.UserID
@@ -295,18 +302,22 @@ type MailSink struct {
 }
 
 type Meeting struct {
-	ID                domain.MeetingID
-	LessonID          domain.LessonID
-	Provider          domain.MeetingProvider
-	ProviderMeetingID domain.ProviderMeetingID
-	RoutingKey        domain.MeetingRoutingKey
-	State             domain.MeetingState
-	CreateTime        *domain.ProviderCreateTime
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	FirstJoinAt       *time.Time
-	EndedAt           *time.Time
-	CloseReason       *domain.MeetingCloseReason
+	ID                    domain.MeetingID
+	LessonID              domain.LessonID
+	Provider              domain.MeetingProvider
+	ProviderMeetingID     domain.ProviderMeetingID
+	RoutingKey            domain.MeetingRoutingKey
+	State                 domain.MeetingState
+	CreateTime            *domain.ProviderCreateTime
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	FirstJoinAt           *time.Time
+	EndedAt               *time.Time
+	CloseReason           *domain.MeetingCloseReason
+	RevocationConfirmedAt *time.Time
+	EndedHintAt           *time.Time
+	EndedHintUntil        *time.Time
+	EndedHintChecks       int16
 }
 
 type MeetingRecovery struct {

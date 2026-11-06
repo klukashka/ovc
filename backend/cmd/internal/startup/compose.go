@@ -33,6 +33,8 @@ const (
 	deleteLaneConcurrency   = 4
 	providerLaneConcurrency = 4
 	smtpTimeout             = 30 * time.Second
+
+	embedAllowedBeforeRemoteProbe = false
 )
 
 func NewFiles(lifetime context.Context, logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, objects storage.Store) (*files.Service, error) {
@@ -72,7 +74,7 @@ func NewSchedule(logger *slog.Logger, settings core.Settings, database *core.Dat
 	if err != nil {
 		return nil, err
 	}
-	return schedule.New(schedule.Dependencies{Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Logger: logger}), nil
+	return schedule.New(schedule.Dependencies{Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Logger: logger, EmbedAllowed: embedAllowedBeforeRemoteProbe}), nil
 }
 
 func NewAccounts(
@@ -151,6 +153,10 @@ func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings,
 		return nil, err
 	}
 	meetingService := meetings.New(store, provider, domain.MeetingProviderFake, logger)
+	lifecycle, err := NewLifecycle(logger, settings, database, source, random, provider)
+	if err != nil {
+		return nil, err
+	}
 	meetingScanner := meetings.NewRecoveryScanner(store, random, logger, clock.System{}.Now)
 	cipher, err := core.NewFieldCipher(settings.FieldKey, core.CryptoRandom())
 	if err != nil {
@@ -200,7 +206,7 @@ func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings,
 		schedule.New(schedule.Dependencies{Store: store, Clock: source, Random: random, Keys: keys, Logger: logger}), schedule.DefaultJobSettings(),
 	)
 	lanes := []worker.Lane{
-		{Name: domain.LaneProviderCall, Concurrency: providerLaneConcurrency, PerformMeetingRecovery: meetingService.Cleanup},
+		{Name: domain.LaneProviderCall, Concurrency: providerLaneConcurrency, PerformMeetingRecovery: meetingService.Cleanup, Perform: lifecycle.CheckEndedHint},
 		{Name: domain.LaneEmail, Concurrency: emailLaneConcurrency, Perform: notifier.Deliver},
 		{Name: domain.LaneStorageDelete, Concurrency: deleteLaneConcurrency, Perform: fileService.DeleteObject},
 	}
@@ -222,7 +228,7 @@ func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings,
 		{Name: domain.JobMessagesDigest, Every: time.Minute, Run: chatService.QueueDigests},
 		{Name: domain.JobEraseChannels, Every: time.Minute, Run: chatService.EraseChannels},
 		{Name: domain.JobExpirePresence, Every: time.Minute, Run: chatService.ExpirePresence},
-		{Name: domain.JobLessonStatus, Every: time.Minute, Run: lessonJobs.EndUnjoined},
+		{Name: domain.JobLessonStatus, Every: time.Minute, Run: lessonJobs.EndDue},
 		{Name: domain.JobLessonReminders, Every: time.Minute, Run: lessonJobs.QueueReminders},
 		{Name: domain.JobSeriesExtension, Every: time.Hour, OwnLoop: true, Run: lessonJobs.ExtendHorizons},
 	}
@@ -258,6 +264,22 @@ func NewRealtime(
 		return Realtime{}, err
 	}
 	return Realtime{Gateway: gateway, Listener: adapter}, nil
+}
+
+func NewLifecycle(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, provider meeting.Provider) (*meetings.Lifecycle, error) {
+	keys, err := core.DeriveKeys(settings.JWTSecret)
+	if err != nil {
+		return nil, err
+	}
+	store := repositories.NewStore(database.Pool)
+	timing := meetings.DefaultRoomTiming()
+	rooms := meetings.NewRooms(meetings.RoomDependencies{
+		Store: store, Provider: provider, Kind: domain.MeetingProviderFake, Clock: source, Random: random, Logger: logger, Monotonic: clock.System{}.Now, Timing: timing,
+	})
+	return meetings.NewLifecycle(meetings.LifecycleDependencies{
+		Rooms: rooms, Store: store, Provider: provider, Clock: source, Random: random, Keys: keys, Logger: logger,
+		Enabled: settings.TestControl, EmbedAllowed: embedAllowedBeforeRemoteProbe, ProviderCall: timing.ProviderCall,
+	}), nil
 }
 
 func NewMeetingProvider(ctx context.Context, logger *slog.Logger, database *core.Database, source clock.Source, random core.RandomSource) (*meeting.SharedFake, error) {

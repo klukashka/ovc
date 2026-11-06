@@ -50,7 +50,7 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `internal/services/accounts` | Registration, verification, sessions, passwords, deletion | [Accounts](../specs/accounts.md) |
 | `internal/services/tutoring` | Relationships, invitations, join requests, groups | [Accounts](../specs/accounts.md#tutorstudent-relationships) |
 | `internal/services/schedule` | Lessons, series, materialisation, overlap checks, the visibility of lessons, the label table, and the status, reminder and horizon-extension work the worker runs; recurrence and timezone arithmetic comes from `internal/domain/schedule` | [Schedule](../specs/schedule.md) |
-| `internal/services/meetings` | Creation coordinator with durable ownership, bounded meeting recovery scanner, cleanup with provider inspection and exact-generation End, and revision-bound local operator recovery; joins, callbacks and recordings remain pending | [Video](../specs/realtime-and-video.md#video) |
+| `internal/services/meetings` | Creation coordinator with durable ownership, authorized join, end and restart with their rate admission, the unsigned ended hint, bounded meeting recovery scanner, cleanup with provider inspection and exact-generation End, and revision-bound local operator recovery; recordings remain pending | [Video](../specs/realtime-and-video.md#video) |
 | `internal/services/library` | Folders, materials, templates | [Homework](../specs/homework.md#library) |
 | `internal/services/homework` | Issues, submissions, scoring, reviews, analytics | [Homework](../specs/homework.md) |
 | `internal/services/chat` | Channels, messages, read markers | [Chat](../specs/realtime-and-video.md#chat) |
@@ -214,7 +214,7 @@ Settings are read once from the environment into one typed struct in `internal/c
 | `OVC_DEFAULT_FILE_QUOTA_BYTES`, `OVC_DEFAULT_RECORDING_QUOTA_BYTES` | Default tutor quotas, read by the API and written to a tutor profile at sign-up: 5000000000 and 50000000000 bytes by default (0 to 2^50) |
 | `OVC_MEETING_PROVIDER` | `fake` (the only value accepted until `bbb` lands in slice 7) |
 | `OVC_BBB_URL`, `OVC_BBB_SECRET`, `OVC_BBB_CHECKSUM_ALGORITHM` | BigBlueButton server, shared secret, checksum algorithm |
-| `OVC_BBB_EMBED_ENABLED` | Embed the conferencing client in the lesson page; false until the slice 7 probe passes |
+| `OVC_BBB_EMBED_ENABLED` | Embed the conferencing client in the lesson page; false until the slice 7 probe passes; not read until the BigBlueButton adapter lands, the composition passes false |
 | `OVC_MAIL_BACKEND` | `smtp`, or the database `sink` in development and tests (the default); the worker refuses `sink` unless every database host is local and the database name ends in `_test` or `_dev` |
 | `OVC_SMTP_HOST`, `OVC_SMTP_PORT`, `OVC_SMTP_TLS`, `OVC_SMTP_USERNAME`, `OVC_SMTP_PASSWORD`, `OVC_MAIL_FROM` | SMTP for the worker with `OVC_MAIL_BACKEND=smtp`: host name, port (587 by default), `starttls` (default) or `implicit` TLS, an optional user name with its password (a secret, set together), and one sender address |
 | `OVC_API_DOCS_ENABLED` | `true` serves the OpenAPI JSON at `/api/docs/openapi.json`; `false` by default and in production |

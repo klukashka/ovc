@@ -13,6 +13,87 @@ import (
 	"ovc/backend/internal/domain"
 )
 
+const endLiveLesson = `-- name: EndLiveLesson :execrows
+UPDATE lessons SET status = 'ended', ended_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE id = $2 AND status = 'live'
+`
+
+type EndLiveLessonParams struct {
+	Now time.Time
+	ID  domain.LessonID
+}
+
+func (q *Queries) EndLiveLesson(ctx context.Context, arg EndLiveLessonParams) (int64, error) {
+	result, err := q.db.Exec(ctx, endLiveLesson, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const endLiveLessonDue = `-- name: EndLiveLessonDue :execrows
+UPDATE lessons SET status = 'ended', ended_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE id = $2 AND status = 'live'
+    AND starts_at + make_interval(mins => duration_minutes) <= $3::timestamptz
+`
+
+type EndLiveLessonDueParams struct {
+	Now         time.Time
+	ID          domain.LessonID
+	EndedBefore time.Time
+}
+
+func (q *Queries) EndLiveLessonDue(ctx context.Context, arg EndLiveLessonDueParams) (int64, error) {
+	result, err := q.db.Exec(ctx, endLiveLessonDue, arg.Now, arg.ID, arg.EndedBefore)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const endLiveLessonsOfTutor = `-- name: EndLiveLessonsOfTutor :many
+UPDATE lessons SET status = 'ended', ended_at = $1::timestamptz, updated_at = $1::timestamptz
+FROM (
+    SELECT locked.id FROM lessons AS locked
+    WHERE locked.tutor_id = $2::uuid AND locked.status = 'live'
+    ORDER BY locked.id
+    FOR UPDATE
+) AS ending
+WHERE lessons.id = ending.id
+RETURNING lessons.id, lessons.relationship_id, lessons.group_id
+`
+
+type EndLiveLessonsOfTutorParams struct {
+	Now     time.Time
+	TutorID pgtype.UUID
+}
+
+type EndLiveLessonsOfTutorRow struct {
+	ID             domain.LessonID
+	RelationshipID *domain.RelationshipID
+	GroupID        *domain.GroupID
+}
+
+func (q *Queries) EndLiveLessonsOfTutor(ctx context.Context, arg EndLiveLessonsOfTutorParams) ([]EndLiveLessonsOfTutorRow, error) {
+	rows, err := q.db.Query(ctx, endLiveLessonsOfTutor, arg.Now, arg.TutorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []EndLiveLessonsOfTutorRow
+	for rows.Next() {
+		var i EndLiveLessonsOfTutorRow
+		if err := rows.Scan(&i.ID, &i.RelationshipID, &i.GroupID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const endUnjoinedLesson = `-- name: EndUnjoinedLesson :execrows
 UPDATE lessons SET status = 'ended', ended_at = $1::timestamptz, updated_at = $1::timestamptz
 WHERE id = $2 AND status = 'scheduled'
@@ -160,6 +241,24 @@ func (q *Queries) GetSeriesAudience(ctx context.Context, id domain.SeriesID) (Ge
 	return i, err
 }
 
+const getStudentLinkOfTutor = `-- name: GetStudentLinkOfTutor :one
+SELECT id FROM relationships
+WHERE tutor_id = $1 AND student_id = $2 AND state <> 'discarded'
+LIMIT 1
+`
+
+type GetStudentLinkOfTutorParams struct {
+	TutorID   domain.UserID
+	StudentID *domain.UserID
+}
+
+func (q *Queries) GetStudentLinkOfTutor(ctx context.Context, arg GetStudentLinkOfTutorParams) (domain.RelationshipID, error) {
+	row := q.db.QueryRow(ctx, getStudentLinkOfTutor, arg.TutorID, arg.StudentID)
+	var id domain.RelationshipID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const insertSeriesOccurrences = `-- name: InsertSeriesOccurrences :many
 INSERT INTO lessons (
     id, tutor_id, series_id, occurrence_date, relationship_id, group_id, title, description, starts_at, duration_minutes, status,
@@ -271,6 +370,55 @@ func (q *Queries) ListLessonsDueToEnd(ctx context.Context, arg ListLessonsDueToE
 	var items []ListLessonsDueToEndRow
 	for rows.Next() {
 		var i ListLessonsDueToEndRow
+		if err := rows.Scan(&i.ID, &i.EndsAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLiveLessonsDueToEnd = `-- name: ListLiveLessonsDueToEnd :many
+SELECT id, timezone('UTC', timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int))::timestamptz AS ends_at FROM lessons
+WHERE status = 'live' AND starts_at <= $1::timestamptz
+    AND timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int) <= timezone('UTC', $2::timestamptz)
+    AND (timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int), id)
+        > (timezone('UTC', $3::timestamptz), $4::uuid)
+ORDER BY timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int), id
+LIMIT $5::int
+`
+
+type ListLiveLessonsDueToEndParams struct {
+	LatestStart time.Time
+	EndedBefore time.Time
+	AfterEndsAt time.Time
+	AfterID     pgtype.UUID
+	RowLimit    int32
+}
+
+type ListLiveLessonsDueToEndRow struct {
+	ID     domain.LessonID
+	EndsAt time.Time
+}
+
+func (q *Queries) ListLiveLessonsDueToEnd(ctx context.Context, arg ListLiveLessonsDueToEndParams) ([]ListLiveLessonsDueToEndRow, error) {
+	rows, err := q.db.Query(ctx, listLiveLessonsDueToEnd,
+		arg.LatestStart,
+		arg.EndedBefore,
+		arg.AfterEndsAt,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLiveLessonsDueToEndRow
+	for rows.Next() {
+		var i ListLiveLessonsDueToEndRow
 		if err := rows.Scan(&i.ID, &i.EndsAt); err != nil {
 			return nil, err
 		}
@@ -599,6 +747,24 @@ func (q *Queries) LockSeriesOfLesson(ctx context.Context, id domain.SeriesID) (d
 	var id_2 domain.SeriesID
 	err := row.Scan(&id_2)
 	return id_2, err
+}
+
+const markLessonLive = `-- name: MarkLessonLive :execrows
+UPDATE lessons SET status = 'live', live_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE id = $2 AND status = 'scheduled'
+`
+
+type MarkLessonLiveParams struct {
+	Now time.Time
+	ID  domain.LessonID
+}
+
+func (q *Queries) MarkLessonLive(ctx context.Context, arg MarkLessonLiveParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markLessonLive, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const markLessonReminded = `-- name: MarkLessonReminded :execrows

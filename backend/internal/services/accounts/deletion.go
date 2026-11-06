@@ -143,6 +143,9 @@ func (p *Purger) purge(ctx context.Context, repos repositories.Repositories, use
 	if _, err := repos.Lessons.DeleteRosterOfStudent(ctx, user); err != nil {
 		return nil, err
 	}
+	if _, err := repos.Meetings.DeleteParticipantsOf(ctx, user); err != nil {
+		return nil, err
+	}
 	if _, err := repos.Users.Delete(ctx, user); err != nil {
 		return nil, err
 	}

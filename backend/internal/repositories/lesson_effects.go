@@ -117,7 +117,12 @@ func (r Lessons) UnderWayOfTutor(ctx context.Context, tutor domain.UserID, at ti
 	return effectLessons(lessons, err, "the lessons of a tutor under way")
 }
 
-func effectLessons[Row dbgen.CancelLessonsOfRelationshipsForEffectRow | dbgen.CancelLessonsOfGroupsForEffectRow | dbgen.ListUnderWayLessonsOfTutorRow](
+func (r Lessons) EndLiveOfTutor(ctx context.Context, tutor domain.UserID, now time.Time) ([]EffectLesson, error) {
+	rows, err := r.queries.EndLiveLessonsOfTutor(ctx, dbgen.EndLiveLessonsOfTutorParams{TutorID: pgtype.UUID{Bytes: tutor, Valid: true}, Now: now})
+	return effectLessons(rows, err, "end the live lessons of a tutor")
+}
+
+func effectLessons[Row dbgen.CancelLessonsOfRelationshipsForEffectRow | dbgen.CancelLessonsOfGroupsForEffectRow | dbgen.ListUnderWayLessonsOfTutorRow | dbgen.EndLiveLessonsOfTutorRow](
 	rows []Row, err error, what string,
 ) ([]EffectLesson, error) {
 	if _, err := one(rows, err, what); err != nil {

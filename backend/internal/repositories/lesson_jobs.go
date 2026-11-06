@@ -102,6 +102,41 @@ func (r Lessons) LockForMeeting(ctx context.Context, id domain.LessonID) (Locked
 	return one(row, err, "lock a lesson for a meeting")
 }
 
+func (r Lessons) MarkLive(ctx context.Context, id domain.LessonID, now time.Time) (bool, error) {
+	rows, err := r.queries.MarkLessonLive(ctx, dbgen.MarkLessonLiveParams{ID: id, Now: now})
+	return applied(rows, err, "mark a lesson live")
+}
+
+func (r Lessons) EndLive(ctx context.Context, id domain.LessonID, now time.Time) (bool, error) {
+	rows, err := r.queries.EndLiveLesson(ctx, dbgen.EndLiveLessonParams{ID: id, Now: now})
+	return applied(rows, err, "end a live lesson")
+}
+
+func (r Lessons) EndLiveDue(ctx context.Context, id domain.LessonID, endedBefore time.Time, now time.Time) (bool, error) {
+	rows, err := r.queries.EndLiveLessonDue(ctx, dbgen.EndLiveLessonDueParams{ID: id, EndedBefore: endedBefore, Now: now})
+	return applied(rows, err, "end a live lesson that is due")
+}
+
+func (r Lessons) LiveDueToEnd(ctx context.Context, query DueToEndQuery) ([]LessonDueToEnd, error) {
+	rows, err := r.queries.ListLiveLessonsDueToEnd(ctx, dbgen.ListLiveLessonsDueToEndParams{
+		LatestStart: query.EndedBefore.Add(-domain.LessonMinDuration * time.Minute), EndedBefore: query.EndedBefore,
+		AfterEndsAt: query.After.EndsAt, AfterID: pgtype.UUID{Bytes: query.After.ID, Valid: true}, RowLimit: query.Limit,
+	})
+	if _, err := one(rows, err, "live lessons due to end"); err != nil {
+		return nil, err
+	}
+	due := make([]LessonDueToEnd, 0, len(rows))
+	for _, row := range rows {
+		due = append(due, LessonDueToEnd(row))
+	}
+	return due, nil
+}
+
+func (r Lessons) StudentLink(ctx context.Context, tutor domain.UserID, student domain.UserID) (domain.RelationshipID, error) {
+	row, err := r.queries.GetStudentLinkOfTutor(ctx, dbgen.GetStudentLinkOfTutorParams{TutorID: tutor, StudentID: &student})
+	return one(row, err, "the relationship of a student with a tutor")
+}
+
 func (r Lessons) EndUnjoined(ctx context.Context, id domain.LessonID, endedBefore time.Time, now time.Time) (bool, error) {
 	rows, err := r.queries.EndUnjoinedLesson(ctx, dbgen.EndUnjoinedLessonParams{ID: id, EndedBefore: endedBefore, Now: now})
 	return applied(rows, err, "end an unjoined lesson")

@@ -366,7 +366,7 @@ The meetings service executes an existing pending cleanup cycle through the real
 
 Only returned evidence can settle after confirmed absence or successful End. Started, uncertain and legacy-uncertain evidence yields unresolved even after ending a discovered room. The result carries the sampled evidence revision to atomic lease-aware completion, so an acknowledgement arriving during provider work cannot be overwritten. Provider failures and cancellation retain the existing eight-attempt cycle budget. No provider wait holds a business transaction or connection. Worker composition in tests uses four provider slots and the existing 30-second effect deadline.
 
-The cleanup executor is registered in production composition as described below. Creation coordination, authorized API/UI activation and remote-provider evidence remain pending under the approved local sequence. It makes no remote erasure guarantee.
+The cleanup executor is registered in production composition as described below. The authorized API is implemented as [the join flow](#join-flow) describes; the browser room, UI and remote-provider evidence remain pending under the approved local sequence. It makes no remote erasure guarantee.
 
 ### Join flow
 
@@ -377,36 +377,38 @@ sequenceDiagram
   participant P as Meeting provider
   participant V as BigBlueButton
   S->>API: POST /api/v1/lessons/{id}/join
-  API->>API: apply the join rule, lock the lesson row for a tutor join
+  API->>API: reserve the join slot, apply the join rule under the locks, commit
   alt tutor and no usable open meeting
-    API->>API: insert meeting row with identifier and routing key, commit
+    API->>API: insert meeting and ledger rows, record the dispatch, commit
     API->>P: CreateMeeting
-    P-->>API: provider create time, stored on the row
-  else student
+    P-->>API: provider create time, recorded on the ledger
+    API->>API: repeat the checks, open the row, make the lesson live, commit
+  else open meeting
     API->>P: MeetingInfo(open meeting) must be created or running
   end
   API->>P: JoinLink(meeting, participant)
   P-->>API: JoinLink bound to the meeting create time
+  API->>API: repeat the checks, set first_join_at, add to the roster, commit
   API-->>S: {url, embed_allowed}
   S->>V: open the URL embedded or in a new tab
 ```
 
 - **Join rule:** who may join is the [join rule](schedule.md#join-rule).
 - **Several meetings per lesson:** a lesson can have several meetings over its life, at most one open at a time.
-- **On a tutor join:**
-  1. Under the lesson row lock, the request inspects the open meeting:
-     - a meeting in state `creating` that is less than one minute old means another request is creating it; this request waits up to 10 seconds for it to become `open`, then reuses it;
-     - an `open` meeting is reused when `MeetingInfo` reports `created` or `running`;
-     - on `not_found` the meeting is closed with reason `provider_not_found`;
-     - with no usable meeting, a new row is inserted in state `creating` (identifier and routing key set), and the transaction commits.
-  2. Outside the transaction, `CreateMeeting` runs and returns the provider create time. The row becomes `open` with that time, the lesson becomes `live` if it was `scheduled`, and `entity.changed` is emitted.
-  3. If the provider fails, the row is closed with reason `provider_error`, the lesson status is unchanged, and the response is `503 provider_unavailable`. A `creating` row older than one minute is treated as failed and closed. Before application activation, closing such a row must retain durable provider cleanup/reconciliation ownership; a failed or uncertain Create may already own a room, and one absent inspection cannot settle an unfinished creation. The local discovery operation alone does not implement this recovery protocol.
+- **No lock spans a provider call.** Every step in the diagram that says "commit" is a short transaction under the caller's locks in the [general order](accounts.md#locks-and-the-session-re-check), and every such transaction repeats the session, scope and lesson checks. A failure after a wait answers as a fresh request would, discards any link the provider already issued and keeps cleanup ownership.
+- **On a tutor join:** the [creation coordinator](#creation-coordinator) supplies the room. Opening it makes the lesson `live` if it was `scheduled`, freezes the roster from the locked audience and emits `entity.changed` in the same transaction. If the provider fails, the row is closed with reason `provider_error`, the lesson status is unchanged, and the response is `503 provider_unavailable`.
 - **On a student join:**
   - the student gets `lesson_not_live` unless the lesson is `live` and its open meeting is `created` or `running`;
   - a `not_found` answer closes the meeting with `provider_not_found` and emits `entity.changed`;
   - a successful student or tutor join sets the meeting's `first_join_at` if it is empty.
-- **`room_open`:** `GET /lessons/{id}` returns `room_open`, which is true while the lesson is `live` and has an `open` meeting. It changes with an `entity.changed` frame whenever a meeting opens or closes.
-- **Restart the room:** `POST /lessons/{id}/restart-room` (tutor, live lessons) ends the open meeting through the provider, closes it with reason `tutor_restart`, and starts a new one exactly as a tutor join does. Every earlier join link stops working.
+- **Request budget:** one overall context of at most 30 seconds covers a join or a restart. A round with less than one full Create budget left does not dispatch. Evidence recording after a provider call runs detached under its own 10-second budget, so a request can run to about 40 seconds and outlast the 35-second write deadline. The client then loses the response, and the state stays safe: the outcome is recorded and cleanup keeps ownership.
+- **Refusals:** a lesson outside the caller's join scope answers `404`; a revoked session `401`; a closed tutor window `409 outside_join_window`; no usable student room `409 lesson_not_live`; a failed provider call `503 provider_unavailable`; full admission capacity `503 service_unavailable`.
+- **Deployments:** the fake is the only provider. With test control off, `join`, `end` and `restart-room` answer `503 service_unavailable` before any state change or reserved slot, because no navigable room exists there; every other route keeps working.
+- **Participants:** `lesson_participants` maps one account in one lesson to a random opaque identifier, created after authorization and sent to the provider instead of the account identifier. The provider also receives the account name and the role. Tutor purge removes a lesson's mappings with the lesson; account purge removes the account's mappings.
+- **`room_open`:** `GET /lessons/{id}` and every other answer carrying the lesson detail return `room_open`, which is true while the lesson is `live` and has an `open` meeting. It changes with an `entity.changed` frame whenever a meeting opens or closes. Frames name the tutor and the current audience held under the audience's locks.
+- **Restart the room:** `POST /lessons/{id}/restart-room` (tutor, live lessons) closes the open meeting with reason `tutor_restart` and queues its cleanup in one transaction, ends that exact generation through the provider, records `revocation_confirmed_at`, and starts a new one exactly as a tutor join does. Every earlier join link stops working once End returns. The fresh join response comes only after this confirmation. Until a restarted generation is confirmed ended or its ledger is settled, no caller creates a replacement: a tutor join repeats the exact End itself and answers `503 provider_unavailable` while the provider cannot confirm it, and a student gets `lesson_not_live`. Cleanup keeps ownership in the meantime.
+- **Ending:** `POST /lessons/{id}/end` (tutor) sets a `live` lesson `ended`, closes its current meeting with reason `tutor_end`, queues cleanup and emits `entity.changed` in one transaction, and answers the lesson detail. A repeat on an `ended` lesson answers the same without changes; a `scheduled` or `cancelled` lesson answers `409 lesson_not_live`. The status job ([lesson status](schedule.md#lesson-status-and-join-window)) and tutor deletion close access and queue cleanup the same way, with reasons `status_job` and `tutor_end`.
+- **Rate limits:** see [the schedule routes](api.md#schedule).
 - **The join link:**
   - created per request and returned only in the response body of a `POST`;
   - never stored or logged by OVC, and the client navigates to it immediately and does not keep it;
@@ -432,7 +434,7 @@ sequenceDiagram
 - **The iframe** carries `allow="camera; microphone; display-capture; fullscreen; autoplay"` and a title naming the lesson.
 - **`embed_allowed`:**
   - comes from the `OVC_BBB_EMBED_ENABLED` setting and is returned both by `GET /lessons/{id}` and by the join response, so the page knows it before the click;
-  - it stays false until the slice 7 probe records success in the [research file](../research/bigbluebutton-2026-10-20.md#embedding-the-client);
+  - it stays false until the slice 7 probe records success in the [research file](../research/bigbluebutton-2026-10-20.md#embedding-the-client); until the adapter lands the startup composition passes a constant false and the setting is not read;
   - the end-to-end harness can override it per test deployment.
 - **Client join states** are in [the lesson page](../design/web/pages.md#lesson).
 
@@ -453,10 +455,11 @@ sequenceDiagram
 - **Meeting ended** (`GET /integrations/bbb/{routing_key}/ended`):
   - unsigned by the provider, so it is only a hint;
   - it is ignored for meetings created less than 2 minutes ago or with no recorded join, and debounced to one check per meeting per minute;
-  - OVC then calls `MeetingInfo` and closes the meeting only on `not_found`; if the meeting still exists, the worker checks again after 2 minutes, at most three times;
-  - `recordingmarks` is recorded for diagnostics only and never settles reconciliation, because the hint is unauthenticated;
-  - it never ends the lesson ([lesson status](schedule.md#lesson-status-and-join-window));
-  - it always answers `200`.
+  - an accepted hint queues one `meeting_ended_hint` effect in the `provider_call` lane atomically with its debounce columns. The worker calls `MeetingInfo` and closes the meeting only on `not_found`; if the meeting still exists, it checks again after 2 minutes, at most three times. While such a chain runs, up to seven minutes after its start, further hints for that meeting queue nothing;
+  - `recordingmarks` is recorded for diagnostics only, as a boolean, and never settles reconciliation, because the hint is unauthenticated;
+  - it never ends the lesson ([lesson status](schedule.md#lesson-status-and-join-window)), creates a room or renews a cleanup cycle;
+  - one process runs at most 4 hint lookups at once, each with a 2-second database wait, so a flood of unauthenticated requests cannot occupy the connection pool. Beyond that it declines the work silently, because the route has no 429. An unknown or malformed key does no work beyond one lookup;
+  - it always answers `200` with the same empty body and `no-store`.
 - **Retries:** the provider's retry behavior on non-2xx answers is an open probe item. Reconciliation makes OVC independent of it.
 
 ### Recordings

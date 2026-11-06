@@ -167,6 +167,9 @@ func (s *Service) cancelTutorLessons(
 	if err := s.freezeUnderWay(ctx, repos, tutor, audience, deletedAt, &deleted); err != nil {
 		return nil, err
 	}
+	if err := s.closeMeetingsForDeletion(ctx, repos, tutor, audience, deletedAt); err != nil {
+		return nil, err
+	}
 	return []lessonEffects{removed, deleted}, nil
 }
 

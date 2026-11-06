@@ -156,9 +156,94 @@ func lessonAttributes(lesson domain.LessonID) slog.Attr {
 	return slog.String("lesson_id", lesson.String())
 }
 
-func (j *Jobs) EndUnjoined(ctx context.Context, now time.Time) (int64, error) {
-	endedBefore := now.Add(-domain.LessonEndGrace)
+func (j *Jobs) EndDue(ctx context.Context, now time.Time) (int64, error) {
 	deadline := j.settings.Wall().Add(j.settings.StatusBudget)
+	unjoined, err := j.endUnjoinedBefore(ctx, now, deadline)
+	live, liveErr := j.endLiveBefore(ctx, now, deadline)
+	return unjoined + live, errors.Join(err, liveErr)
+}
+
+func (j *Jobs) endLiveBefore(ctx context.Context, now time.Time, deadline time.Time) (int64, error) {
+	endedBefore := now.Add(-domain.LessonEndGrace)
+	var after repositories.LessonDueToEnd
+	var ended int64
+	var failures []error
+	for j.settings.Wall().Before(deadline) {
+		batch, err := j.service.deps.Store.Repositories().Lessons.LiveDueToEnd(ctx, repositories.DueToEndQuery{
+			EndedBefore: endedBefore, After: after, Limit: j.settings.StatusBatch,
+		})
+		if err != nil {
+			failures = append(failures, err)
+			break
+		}
+		for _, lesson := range batch {
+			applied, err := j.endLive(ctx, lesson.ID, endedBefore, now)
+			if err != nil {
+				failures = append(failures, err)
+				j.service.deps.Logger.LogAttrs(ctx, slog.LevelError, "lesson.end_failed", lessonAttributes(lesson.ID), slog.String("kind", core.ErrorKind(err)))
+				continue
+			}
+			if applied {
+				ended++
+			}
+		}
+		if len(batch) < int(j.settings.StatusBatch) {
+			break
+		}
+		after = batch[len(batch)-1]
+	}
+	j.service.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "lesson.ended_live", slog.Int64("count", ended))
+	return ended, errors.Join(failures...)
+}
+
+func (j *Jobs) endLive(ctx context.Context, id domain.LessonID, endedBefore time.Time, now time.Time) (bool, error) {
+	cycle, err := core.NewID[domain.OutboxID](j.service.deps.Random)
+	if err != nil {
+		return false, err
+	}
+	ended := false
+	err = j.withAudienceRetry(ctx, jobItem{job: domain.JobLessonStatus, subject: lessonAttributes(id)}, func(repos repositories.Repositories) error {
+		ended = false
+		lesson, err := repos.Lessons.JobAudience(ctx, id)
+		if errors.Is(err, repositories.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		audience, err := lockJobAudience(ctx, repos, lesson.TutorID, lesson.RelationshipID, lesson.GroupID)
+		if err != nil {
+			return err
+		}
+		present, err := lockSeriesOfLesson(ctx, repos, lesson.SeriesID)
+		if err != nil || !present {
+			return err
+		}
+		locked, err := repos.Lessons.LockForJob(ctx, id)
+		if errors.Is(err, repositories.ErrNotFound) {
+			return nil
+		}
+		if err != nil || locked.Status != domain.LessonLive {
+			return err
+		}
+		ended, err = repos.Lessons.EndLiveDue(ctx, id, endedBefore, now)
+		if err != nil || !ended {
+			return err
+		}
+		if _, err := repos.CloseCurrentMeetingForCleanup(ctx, id, domain.MeetingCloseStatusJob, cycle, now); err != nil {
+			return err
+		}
+		return repos.Signals.Entity(ctx, append([]domain.UserID{lesson.TutorID}, audience.students()...), domain.EntityLesson, domain.EntityID(id))
+	})
+	return ended, err
+}
+
+func (j *Jobs) EndUnjoined(ctx context.Context, now time.Time) (int64, error) {
+	return j.endUnjoinedBefore(ctx, now, j.settings.Wall().Add(j.settings.StatusBudget))
+}
+
+func (j *Jobs) endUnjoinedBefore(ctx context.Context, now time.Time, deadline time.Time) (int64, error) {
+	endedBefore := now.Add(-domain.LessonEndGrace)
 	var after repositories.LessonDueToEnd
 	var ended int64
 	var failures []error
@@ -191,9 +276,13 @@ func (j *Jobs) EndUnjoined(ctx context.Context, now time.Time) (int64, error) {
 }
 
 func (j *Jobs) endLesson(ctx context.Context, id domain.LessonID, endedBefore time.Time, now time.Time) (bool, error) {
+	cycle, err := core.NewID[domain.OutboxID](j.service.deps.Random)
+	if err != nil {
+		return false, err
+	}
 	ended := false
 	var tutor domain.UserID
-	err := j.withAudienceRetry(ctx, jobItem{job: domain.JobLessonStatus, subject: lessonAttributes(id)}, func(repos repositories.Repositories) error {
+	err = j.withAudienceRetry(ctx, jobItem{job: domain.JobLessonStatus, subject: lessonAttributes(id)}, func(repos repositories.Repositories) error {
 		ended = false
 		lesson, err := repos.Lessons.JobAudience(ctx, id)
 		if errors.Is(err, repositories.ErrNotFound) {
@@ -224,6 +313,9 @@ func (j *Jobs) endLesson(ctx context.Context, id domain.LessonID, endedBefore ti
 		}
 		students := audience.students()
 		if err := repos.Lessons.FreezeRoster(ctx, id, students, now); err != nil {
+			return err
+		}
+		if _, err := repos.CloseCurrentMeetingForCleanup(ctx, id, domain.MeetingCloseStatusJob, cycle, now); err != nil {
 			return err
 		}
 		return repos.Signals.Entity(ctx, append([]domain.UserID{lesson.TutorID}, students...), domain.EntityLesson, domain.EntityID(id))

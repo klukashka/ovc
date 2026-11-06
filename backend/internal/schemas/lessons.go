@@ -78,6 +78,13 @@ type LessonDetail struct {
 	Audience        LessonAudience      `json:"audience"`
 	Tutor           *LessonTutor        `json:"tutor"`
 	ChannelID       *string             `json:"channel_id" format:"uuid" nullable:"true"`
+	RoomOpen        bool                `json:"room_open" required:"false"`
+	EmbedAllowed    bool                `json:"embed_allowed" required:"false"`
+}
+
+type LessonJoin struct {
+	URL          string `json:"url"`
+	EmbedAllowed bool   `json:"embed_allowed"`
 }
 
 func (LessonDetail) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {

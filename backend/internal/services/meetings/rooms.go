@@ -49,11 +49,12 @@ type RoomDependencies struct {
 }
 
 type Rooms struct {
-	deps RoomDependencies
+	deps    RoomDependencies
+	cleanup *Service
 }
 
 func NewRooms(dependencies RoomDependencies) *Rooms {
-	return &Rooms{deps: dependencies}
+	return &Rooms{deps: dependencies, cleanup: New(dependencies.Store, dependencies.Provider, dependencies.Kind, dependencies.Logger)}
 }
 
 type RoomSubject struct {
@@ -78,12 +79,15 @@ const (
 	roomReuse
 	roomAwait
 	roomDispatch
+	roomRevoke
 )
 
 type roomPlan struct {
 	action  roomAction
 	room    Room
 	attempt domain.MeetingCreateAttemptID
+	revoke  []repositories.MeetingRevocation
+	lesson  domain.LessonID
 }
 
 type roomIdentifiers struct {
@@ -133,6 +137,8 @@ func (r *Rooms) perform(ctx context.Context, plan roomPlan, guard RoomGuard, pub
 		return Room{}, r.await(ctx, plan.room.Identity)
 	case roomDispatch:
 		return r.dispatch(ctx, plan, guard, publish)
+	case roomRevoke:
+		return Room{}, r.revoke(ctx, plan)
 	case roomReplan:
 		return Room{}, errRoomSuperseded
 	}
@@ -170,6 +176,14 @@ func (r *Rooms) reserve(ctx context.Context, guard RoomGuard) (roomPlan, error) 
 		plan = roomPlan{}
 		current, err := repos.Meetings.Current(ctx, subject.Lesson)
 		if errors.Is(err, repositories.ErrNotFound) {
+			pending, err := repos.Meetings.UnconfirmedRevocations(ctx, subject.Lesson)
+			if err != nil {
+				return err
+			}
+			if len(pending) > 0 {
+				plan.action, plan.revoke, plan.lesson = roomRevoke, pending, subject.Lesson
+				return nil
+			}
 			return r.insert(ctx, repos, subject, ids, &plan)
 		}
 		if err != nil {
@@ -245,6 +259,30 @@ func (r *Rooms) insert(ctx context.Context, repos repositories.Repositories, sub
 	return nil
 }
 
+func (r *Rooms) revoke(ctx context.Context, plan roomPlan) error {
+	for _, pending := range plan.revoke {
+		call, cancel := context.WithTimeout(ctx, r.deps.Timing.ProviderCall)
+		conflict, err := r.cleanup.end(call, pending.ProviderMeetingID, *pending.CreateTime)
+		cancel()
+		if err != nil || conflict {
+			r.report(ctx, "meeting.room.revocation_unconfirmed", slog.String("lesson_id", plan.lesson.String()), slog.Bool("conflict", conflict))
+			if cause := ctx.Err(); cause != nil {
+				return cause
+			}
+			return ErrProviderUnavailable
+		}
+		now, err := r.deps.Clock.Instant(ctx)
+		if err != nil {
+			return err
+		}
+		if err := r.deps.Store.Repositories().Meetings.ConfirmRevocation(ctx, plan.lesson, pending.ID, now); err != nil {
+			return err
+		}
+		r.report(ctx, "meeting.room.revoked", slog.String("lesson_id", plan.lesson.String()))
+	}
+	return errRoomSuperseded
+}
+
 func (r *Rooms) evidenceContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), r.deps.Timing.Evidence)
 }
@@ -307,20 +345,27 @@ func reportEvidenceFailure(ctx context.Context, logger *slog.Logger, err error) 
 }
 
 func (r *Rooms) publish(ctx context.Context, room Room, guard RoomGuard, publish RoomPublication) error {
-	return r.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		subject, err := guard(ctx, repos)
-		if err != nil {
+	var err error
+	for range 2 {
+		err = r.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+			subject, err := guard(ctx, repos)
+			if err != nil {
+				return err
+			}
+			opened, err := repos.Meetings.OpenUnderLessonLock(ctx, room.Identity, room.Meeting.CreateTime, subject.Now)
+			if err != nil {
+				return err
+			}
+			if opened != domain.MeetingMutationApplied {
+				return errRoomSuperseded
+			}
+			return publish(ctx, repos, subject)
+		})
+		if !errors.Is(err, errAudienceMoved) {
 			return err
 		}
-		opened, err := repos.Meetings.OpenUnderLessonLock(ctx, room.Identity, room.Meeting.CreateTime, subject.Now)
-		if err != nil {
-			return err
-		}
-		if opened != domain.MeetingMutationApplied {
-			return errRoomSuperseded
-		}
-		return publish(ctx, repos, subject)
-	})
+	}
+	return err
 }
 
 func (r *Rooms) reuse(ctx context.Context, room Room) (Room, error) {

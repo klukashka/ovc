@@ -83,6 +83,8 @@ func (r *router) registerSchedule() {
 	cancel := operation("lessons-cancel", http.MethodPost, lessonsPath+"/{id}/cancel")
 	cancel.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests)
 	register(r, cancel, AudienceTutor, r.cancelLesson)
+
+	r.registerMeetings()
 }
 
 var errQueryUnparsed = errors.New("a calendar bound passed the schema but is not an RFC 3339 instant")
@@ -266,7 +268,7 @@ func lessonBody(lesson schedule.Lesson) schemas.LessonDetail {
 		ID: lesson.ID.String(), Title: lesson.Title, Description: lesson.Description, StartsAt: lesson.StartsAt, EndsAt: lesson.EndsAt(),
 		DurationMinutes: lesson.DurationMinutes, Status: lesson.Status, Timezone: lesson.Timezone, Version: lesson.Version,
 		CancelledAt: utc(lesson.CancelledAt), OtherTimezone: lesson.OtherTimezone, Audience: audience, Tutor: tutorLabelBody(lesson.Tutor),
-		ChannelID: optionalChannel(lesson.ChannelID),
+		ChannelID: optionalChannel(lesson.ChannelID), RoomOpen: lesson.RoomOpen, EmbedAllowed: lesson.EmbedAllowed,
 	}
 	if lesson.SeriesID != nil {
 		series := lesson.SeriesID.String()

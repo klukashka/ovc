@@ -121,6 +121,7 @@ The local environment has:
 - **Fakes**:
   - the meeting provider is `fake`, because BigBlueButton runs only on a dedicated Ubuntu server and not on developer machines ([research](../knowledge/research/bigbluebutton-2026-10-20.md#server));
   - mail goes to the database sink. Development runs with `OVC_TEST_CONTROL=1` against a development database, so the sink is readable only through the harness route below.
+- **The local video workflow** requires the guarded test-control deployment with the shared fake provider. Without `OVC_TEST_CONTROL=1` the join, end and restart routes answer `503 service_unavailable` (pending owner review).
 - **Live conferencing checks**, from slice 7 on, use a remote BigBlueButton test server configured through `OVC_BBB_URL` and `OVC_BBB_SECRET` in `backend/.env.local`, which is git-ignored and unreadable by agents. They are manual: the opt-in command runs the BigBlueButton adapter's contract tests. A readiness report lists the result, or `unverified` when the check was not run. The definition of done does not require them.
 
 Automated tests never call a real BigBlueButton server, SMTP provider or production storage.

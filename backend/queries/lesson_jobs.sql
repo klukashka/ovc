@@ -146,3 +146,41 @@ WHERE lessons.id = ANY (sqlc.arg(ids)::uuid[]) AND (
 SELECT id, tutor_id, series_id, relationship_id, group_id, title, status, starts_at, duration_minutes
 FROM lessons WHERE id = @id
 FOR UPDATE;
+
+-- name: MarkLessonLive :execrows
+UPDATE lessons SET status = 'live', live_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND status = 'scheduled';
+
+-- name: EndLiveLesson :execrows
+UPDATE lessons SET status = 'ended', ended_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND status = 'live';
+
+-- name: EndLiveLessonDue :execrows
+UPDATE lessons SET status = 'ended', ended_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND status = 'live'
+    AND starts_at + make_interval(mins => duration_minutes) <= sqlc.arg(ended_before)::timestamptz;
+
+-- name: EndLiveLessonsOfTutor :many
+UPDATE lessons SET status = 'ended', ended_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+FROM (
+    SELECT locked.id FROM lessons AS locked
+    WHERE locked.tutor_id = sqlc.arg(tutor_id)::uuid AND locked.status = 'live'
+    ORDER BY locked.id
+    FOR UPDATE
+) AS ending
+WHERE lessons.id = ending.id
+RETURNING lessons.id, lessons.relationship_id, lessons.group_id;
+
+-- name: ListLiveLessonsDueToEnd :many
+SELECT id, timezone('UTC', timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int))::timestamptz AS ends_at FROM lessons
+WHERE status = 'live' AND starts_at <= sqlc.arg(latest_start)::timestamptz
+    AND timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int) <= timezone('UTC', sqlc.arg(ended_before)::timestamptz)
+    AND (timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int), id)
+        > (timezone('UTC', sqlc.arg(after_ends_at)::timestamptz), sqlc.arg(after_id)::uuid)
+ORDER BY timezone('UTC', starts_at) + make_interval(mins => duration_minutes::int), id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: GetStudentLinkOfTutor :one
+SELECT id FROM relationships
+WHERE tutor_id = @tutor_id AND student_id = @student_id AND state <> 'discarded'
+LIMIT 1;
