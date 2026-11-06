@@ -95,6 +95,13 @@ func (r Lessons) LockForJob(ctx context.Context, id domain.LessonID) (LockedJobL
 	return one(row, err, "lock a lesson for a job")
 }
 
+type LockedMeetingLesson = dbgen.LockLessonForMeetingRow
+
+func (r Lessons) LockForMeeting(ctx context.Context, id domain.LessonID) (LockedMeetingLesson, error) {
+	row, err := r.queries.LockLessonForMeeting(ctx, id)
+	return one(row, err, "lock a lesson for a meeting")
+}
+
 func (r Lessons) EndUnjoined(ctx context.Context, id domain.LessonID, endedBefore time.Time, now time.Time) (bool, error) {
 	rows, err := r.queries.EndUnjoinedLesson(ctx, dbgen.EndUnjoinedLessonParams{ID: id, EndedBefore: endedBefore, Now: now})
 	return applied(rows, err, "end an unjoined lesson")

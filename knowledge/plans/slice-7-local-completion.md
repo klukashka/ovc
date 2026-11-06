@@ -90,8 +90,14 @@ Maximum three active sessions total across projects. Refresh chat/process/load s
 
 At the remote boundary deliver integrated commit evidence, a working local demonstration command, unresolved limitations and a concrete probe/server checklist. Server spending, domain/TLS/firewall/SSH operations, real students/media, remote callbacks and actual Safari/iOS evidence need separate access and approval. Do not deploy or call slice 7 complete on fake evidence.
 
+## Owner refinements of 2026-11-06
+
+Section 3's "room's bounded display name" is the neutral constant `OVC lesson`; the provider never receives the lesson title. Meeting admission also has a limit of 64 unsettled obligations per tutor, refused with 503 before any capacity reservation, beside the global 4096.
+
+A fresh uncertain outcome pauses its lesson (owner's decision of 2026-11-07): while the lesson's latest uncertain obligation is younger than 2 minutes on the business clock, join answers `503 provider_unavailable` before any row or reservation. The remaining exposure blocks remote activation until a procedure for closing uncertain obligations exists.
+
 ## Recovery integration progress
 
 The bounded scanner merged as `5d3bfe3` through an ordinary gate: 30 commands passed, 979 E2E cases passed, duration 286.4 seconds, tested/final tree prefix `33fff507`. Cleanup interleaving coverage merged as `05a79d2` only under its exact [owner-approved exception](slice-7-interleavings-known-failure-exception.md): 29 commands passed, 978/979 E2E passed, and the refresh timeout remains unresolved. Mandatory exception documentation merged as `57bf16d` after its ordinary five-command documentation gate and finish, tested/final tree prefix `e1b34593`. These exceptions grant no future failed-gate permission.
 
-The next coherent implementation registers shared-fake recovery in worker composition and adds paginated local inspection and evidence-revision retries. It uses fixed finite simulation defaults without changing provider semantics or activating Create, public API/UI, a browser room or BBB. Its [verification record](../reviews/slice-7-meeting-recovery-activation.md) separates implementation, checks and remaining acceptance. Creation and stale-business coordination remain the next stage-1 work after recovery activation passes its own ordinary gate.
+The next coherent implementation registers shared-fake recovery in worker composition and adds paginated local inspection and evidence-revision retries. It uses fixed finite simulation defaults without changing provider semantics or activating Create, public API/UI, a browser room or BBB. Its [verification record](../reviews/slice-7-meeting-recovery-activation.md) separates implementation, checks and remaining acceptance. Creation and stale-business coordination remain the next stage-1 work after recovery activation passes its own ordinary gate. They are implemented as the [creation coordinator](../reviews/slice-7-meeting-create-coordinator.md).

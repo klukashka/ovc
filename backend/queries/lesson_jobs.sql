@@ -141,3 +141,8 @@ WHERE lessons.id = ANY (sqlc.arg(ids)::uuid[]) AND (
         WHERE waiting.id = lessons.relationship_id AND waiting.state = 'reclaim_pending'
     ))
 );
+
+-- name: LockLessonForMeeting :one
+SELECT id, tutor_id, series_id, relationship_id, group_id, title, status, starts_at, duration_minutes
+FROM lessons WHERE id = @id
+FOR UPDATE;

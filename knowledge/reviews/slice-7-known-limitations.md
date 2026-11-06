@@ -12,6 +12,16 @@ An unchanged original generation after a stale-End refusal cannot be produced by
 
 Disposition: the reachable local fake interleaving coverage gap is closed by the executed follow-up and independent reviews, with integration authorized only by the exact failed-gate exception above, not by an ordinary passing gate. The remaining provider-specific unchanged-generation outcome is retained for the named slice 7 BBB adapter and remote-activation follow-up. This is not owner acceptance for slice closure. Backend and security cumulative reviewers must recheck this entry. See the [original implementation evidence](slice-7-meeting-cleanup-worker.md) and [interleaving follow-up](slice-7-cleanup-interleavings.md).
 
+## Uncertain obligations never close
+
+Recorded 2026-11-07 with the owner's decision on the per-lesson pause. Severity: major for remote activation; it blocks that step.
+
+A started or uncertain obligation never settles, because remote quiescence cannot be proved, and it counts against the tutor's limit of 64 and the global 4096. The 2-minute pause per lesson only slows this: a tutor with several lessons, or one lesson over about two hours of failures, can still reach the limit for good, and then cannot open any room. Locally the only source is the fake's simulated outage or an expired Create budget. **Remote activation is the point where this must be resolved:** a real provider must not be activated until a procedure for closing uncertain obligations exists. Attempts that crashed, and attempts whose uncertainty mark itself failed, stay `started` and start no pause, so they consume the limit without that slowdown. This is not owner acceptance for production.
+
+## Clock step residual
+
+Severity: minor. A clock stepped back behind a row's `updated_at` can no longer strand a close, but Open and first join keep their guards. A refused Open retires the row and creates one extra provider room. A refused first join discards the link and answers `503` until the clock catches up. A clock stepped back behind an uncertain outcome ends that lesson's pause early, because an outcome later than the current instant does not count. No room is stranded and cleanup keeps ownership.
+
 ## Realtime client connection limits
 
 Recorded 2026-11-06 from the independent reviews of closing a connecting realtime socket only after it opens. Both are minor and neither blocks local slice 7 work.

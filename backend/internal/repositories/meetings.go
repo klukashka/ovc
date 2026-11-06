@@ -13,6 +13,8 @@ type Meetings struct {
 	queries *dbgen.Queries
 }
 
+var ErrMeetingCloseRefused = errors.New("a meeting read under the lesson lock refused its close")
+
 type StoredMeeting = dbgen.Meeting
 
 type NewMeeting struct {
@@ -108,6 +110,49 @@ func (r Meetings) CloseUnderLessonLock(ctx context.Context, expected domain.Meet
 		return domain.MeetingAlreadyClosed, nil
 	}
 	return domain.MeetingMutationRefused, nil
+}
+
+type StaleCreatingMeeting = dbgen.ListStaleCreatingMeetingsRow
+
+func (r Meetings) UnsettledOfTutor(ctx context.Context, tutor domain.UserID) (int64, error) {
+	count, err := r.queries.CountUnsettledMeetingsOfTutor(ctx, tutor)
+	return one(count, err, "count the unsettled meetings of a tutor")
+}
+
+func (r Meetings) HasFreshUncertain(ctx context.Context, lesson domain.LessonID, since time.Time, now time.Time) (bool, error) {
+	fresh, err := r.queries.LessonHasFreshUncertainMeeting(ctx, dbgen.LessonHasFreshUncertainMeetingParams{LessonID: lesson, Since: since, Now: now})
+	return one(fresh, err, "check a lesson for a fresh uncertain meeting")
+}
+
+func (r Meetings) StaleCreating(ctx context.Context, before time.Time, limit int32) ([]StaleCreatingMeeting, error) {
+	if limit < 1 || limit > 100 {
+		return nil, ErrMeetingRecoveryBatchSize
+	}
+	rows, err := r.queries.ListStaleCreatingMeetings(ctx, dbgen.ListStaleCreatingMeetingsParams{Before: before, BatchSize: limit})
+	return rows, done(err, "list stale creating meetings")
+}
+
+func (r Repositories) CloseMeetingForCleanup(ctx context.Context, expected domain.MeetingExpectation, reason domain.MeetingCloseReason, cycle domain.OutboxID, now time.Time) (domain.MeetingMutation, error) {
+	outcome, err := r.Meetings.CloseUnderLessonLock(ctx, expected, reason, now)
+	if err != nil {
+		return outcome, err
+	}
+	if outcome == domain.MeetingMutationRefused {
+		return outcome, ErrMeetingCloseRefused
+	}
+	if outcome != domain.MeetingMutationApplied {
+		return outcome, nil
+	}
+	recovery, err := r.MeetingRecovery.ByProviderID(ctx, expected.Identity.ProviderMeetingID)
+	if err != nil {
+		return domain.MeetingMutationRefused, err
+	}
+	if _, err := r.MeetingRecovery.QueueCycle(ctx, MeetingRecoveryQueue{
+		ProviderMeetingID: recovery.ProviderMeetingID, Revision: recovery.Revision, OutboxID: cycle, Mode: domain.MeetingRecoveryAutomatic, Now: now,
+	}); err != nil {
+		return domain.MeetingMutationRefused, err
+	}
+	return outcome, nil
 }
 
 func sameCreateTime(first *domain.ProviderCreateTime, second *domain.ProviderCreateTime) bool {

@@ -37,12 +37,33 @@ WHERE meetings.lesson_id = sqlc.arg(lesson_id) AND meetings.id = sqlc.arg(id) AN
 
 -- name: CloseMeetingRow :execrows
 WITH closed AS (
-    UPDATE meetings SET state = 'closed', close_reason = sqlc.arg(close_reason), ended_at = sqlc.arg(now), updated_at = sqlc.arg(now)
+    UPDATE meetings SET state = 'closed', close_reason = sqlc.arg(close_reason),
+        ended_at = greatest(meetings.updated_at, sqlc.arg(now)), updated_at = greatest(meetings.updated_at, sqlc.arg(now))
     WHERE meetings.lesson_id = sqlc.arg(lesson_id) AND meetings.id = sqlc.arg(id) AND meetings.provider_meeting_id = sqlc.arg(provider_meeting_id)
         AND state = sqlc.arg(expected_state) AND state IN ('creating', 'open')
-        AND create_time IS NOT DISTINCT FROM sqlc.narg(expected_create_time)::bigint AND sqlc.arg(now) >= updated_at
+        AND create_time IS NOT DISTINCT FROM sqlc.narg(expected_create_time)::bigint
     RETURNING meetings.id, meetings.provider_meeting_id
 )
 UPDATE meeting_recovery AS recovery
 SET cleanup_requested = true, revision = revision + 1, updated_at = greatest(recovery.updated_at, sqlc.arg(now))
 FROM closed WHERE recovery.meeting_id = closed.id AND recovery.provider_meeting_id = closed.provider_meeting_id;
+
+-- name: ListStaleCreatingMeetings :many
+SELECT lesson_id, id, provider_meeting_id FROM meetings
+WHERE state = 'creating' AND created_at <= sqlc.arg(before)
+ORDER BY created_at, id LIMIT sqlc.arg(batch_size);
+
+-- name: CountUnsettledMeetingsOfTutor :one
+SELECT count(recovery.provider_meeting_id) FROM meeting_recovery AS recovery
+JOIN meetings ON meetings.id = recovery.meeting_id
+JOIN lessons ON lessons.id = meetings.lesson_id
+WHERE recovery.settled_at IS NULL AND lessons.tutor_id = @tutor_id;
+
+-- name: LessonHasFreshUncertainMeeting :one
+SELECT EXISTS (
+    SELECT 1 FROM meetings
+    JOIN meeting_recovery AS recovery ON recovery.meeting_id = meetings.id
+    WHERE meetings.lesson_id = @lesson_id AND meetings.state = 'closed' AND meetings.ended_at > sqlc.arg(since)::timestamptz
+        AND meetings.ended_at <= sqlc.arg(now)::timestamptz
+        AND recovery.create_state = 'uncertain' AND recovery.settled_at IS NULL
+) AS fresh;

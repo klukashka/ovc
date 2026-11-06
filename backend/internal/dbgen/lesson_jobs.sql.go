@@ -511,6 +511,41 @@ func (q *Queries) LockLessonForJob(ctx context.Context, id domain.LessonID) (Loc
 	return i, err
 }
 
+const lockLessonForMeeting = `-- name: LockLessonForMeeting :one
+SELECT id, tutor_id, series_id, relationship_id, group_id, title, status, starts_at, duration_minutes
+FROM lessons WHERE id = $1
+FOR UPDATE
+`
+
+type LockLessonForMeetingRow struct {
+	ID              domain.LessonID
+	TutorID         domain.UserID
+	SeriesID        *domain.SeriesID
+	RelationshipID  *domain.RelationshipID
+	GroupID         *domain.GroupID
+	Title           string
+	Status          domain.LessonStatus
+	StartsAt        time.Time
+	DurationMinutes int16
+}
+
+func (q *Queries) LockLessonForMeeting(ctx context.Context, id domain.LessonID) (LockLessonForMeetingRow, error) {
+	row := q.db.QueryRow(ctx, lockLessonForMeeting, id)
+	var i LockLessonForMeetingRow
+	err := row.Scan(
+		&i.ID,
+		&i.TutorID,
+		&i.SeriesID,
+		&i.RelationshipID,
+		&i.GroupID,
+		&i.Title,
+		&i.Status,
+		&i.StartsAt,
+		&i.DurationMinutes,
+	)
+	return i, err
+}
+
 const lockSeriesForExtension = `-- name: LockSeriesForExtension :one
 SELECT series.id, series.weekdays, series.local_start, series.duration_minutes, series.timezone, series.first_date, series.end_date,
     series.title, series.description, series.materialised_until, series.ended_at, tutor.state AS tutor_state

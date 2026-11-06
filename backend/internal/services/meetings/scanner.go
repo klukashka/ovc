@@ -30,9 +30,9 @@ func (s *RecoveryScanner) Run(ctx context.Context, now time.Time) (queued int64,
 	ctx, cancel := context.WithTimeout(ctx, recoveryPassBudget)
 	defer cancel()
 	deadline := s.monotonic().Add(recoveryPassBudget)
-	var removed int64
+	var removed, closed int64
 	defer func() {
-		attributes := []slog.Attr{slog.Int64("queued", queued), slog.Int64("removed", removed)}
+		attributes := []slog.Attr{slog.Int64("queued", queued), slog.Int64("removed", removed), slog.Int64("closed", closed)}
 		if err != nil {
 			level := slog.LevelWarn
 			if errors.Is(err, context.Canceled) {
@@ -49,13 +49,41 @@ func (s *RecoveryScanner) Run(ctx context.Context, now time.Time) (queued int64,
 	case <-ctx.Done():
 		return 0, ctx.Err()
 	}
+	var staleErr error
+	closed, staleErr = s.closeStale(ctx, now, deadline)
 	queued, err = s.scan(ctx, now, deadline)
+	err = errors.Join(staleErr, err)
 	if budgetErr := s.checkBudget(ctx, deadline); budgetErr != nil {
 		return queued, errors.Join(err, budgetErr)
 	}
 	var cleanupErr error
 	removed, cleanupErr = s.store.Repositories().MeetingRecovery.CleanupReceipts(ctx, now, recoveryPassLimit)
 	return queued, errors.Join(err, cleanupErr)
+}
+
+func (s *RecoveryScanner) closeStale(ctx context.Context, now, deadline time.Time) (int64, error) {
+	candidates, err := s.store.Repositories().Meetings.StaleCreating(ctx, now.Add(-domain.MeetingCreatingStaleAfter), recoveryPassLimit)
+	if err != nil {
+		return 0, err
+	}
+	source := retirement{store: s.store, random: s.random, instant: func(context.Context, repositories.Repositories) (time.Time, error) { return now, nil }}
+	var closed int64
+	var failures []error
+	for _, candidate := range candidates {
+		if err := s.checkBudget(ctx, deadline); err != nil {
+			return closed, errors.Join(append(failures, err)...)
+		}
+		identity := domain.MeetingIdentity{LessonID: candidate.LessonID, ID: candidate.ID, ProviderMeetingID: candidate.ProviderMeetingID}
+		applied, err := retireRoom(ctx, source, identity, domain.MeetingCloseProviderError)
+		if err != nil {
+			failures = append(failures, err)
+			continue
+		}
+		if applied {
+			closed++
+		}
+	}
+	return closed, errors.Join(failures...)
 }
 
 func (s *RecoveryScanner) scan(ctx context.Context, now, deadline time.Time) (int64, error) {

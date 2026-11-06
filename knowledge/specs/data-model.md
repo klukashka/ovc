@@ -283,13 +283,14 @@ Lesson deletion cascades local meeting metadata; student purge retains the tutor
 Indexes:
 
 - at most one meeting per lesson that is not `closed` (partial unique index);
+- the partial `meetings_creating_idx` on `(created_at, id)` of `creating` rows, which bounds the recovery scanner's search for abandoned rows;
 - the future recording reconciliation index on `ended_at` where business `settled_at` is null. This does not impose a settlement deadline on the separate provider recovery ledger: unresolved creation can remain indefinitely under ADR-0020.
 
 ### Meeting recovery ledger
 
 The [approved recovery-ledger plan](../plans/slice-7-meeting-recovery-ledger.md) adds durable provider ownership without activating calls or cleanup. `meeting_recovery` has an immutable nonzero provider identifier, provider kind and provenance, a nullable unique business meeting reference with indexed `ON DELETE SET NULL`, finite timestamps, a positive evidence revision, a monotonic cleanup request, and conditional attempt/generation evidence. It retains no account identifier, name, participant, routing key, join address, credential or raw error. An orphan remains a cleanup candidate without needing the deleted account or lesson.
 
-New business meetings and their attempt-origin prepared ledger rows are created atomically. Successful closure atomically requests cleanup; a stale refusal affects neither a replacement nor its ledger. The existing lesson/meeting lock order precedes ledger locks. Ledger-only completion never subsequently acquires business locks. Existing Open requires matching returned generation evidence, an attached creating business meeting and no cleanup request. These predicates are not caller authorization.
+New business meetings and their attempt-origin prepared ledger rows are created atomically. Successful closure atomically requests cleanup; a stale refusal affects neither a replacement nor its ledger. A close records the later of its instant and the row's `updated_at`, so a clock stepped back cannot strand an open room; a close that refuses a row read under the lesson lock is an error and rolls back. The existing lesson/meeting lock order precedes ledger locks. Ledger-only completion never subsequently acquires business locks. Existing Open requires matching returned generation evidence, an attached creating business meeting and no cleanup request. These predicates are not caller authorization.
 
 | Origin and state | Attempt identifier | Acknowledged create time |
 | --- | --- | --- |
@@ -309,7 +310,7 @@ Cleanup candidates satisfy `cleanup_requested OR meeting_id IS NULL`, use a matc
 
 [ADR-0020](../../docs/decisions/0020-durable-meeting-recovery.md) and the [approved local completion plan](../plans/slice-7-local-completion.md) add a singleton count of unsettled obligations. New meeting insertion reserves capacity atomically with business and ledger creation. A count of 4096 or more refuses admission without partial rows; migration backfills the actual count even when it exceeds the limit. Rollback cannot leak a slot. Open rooms consume capacity until terminal settlement.
 
-The total lock order is existing scope/lesson locks, capacity, business meeting, ledger, then outbox. A ledger-only operation that needs capacity locks it before the ledger and never subsequently acquires business locks. Closing only marks cleanup; it does not release capacity or prove provider erasure.
+The total lock order is existing scope/lesson locks, capacity, business meeting, ledger, then outbox. A ledger-only operation that needs capacity locks it before the ledger and never subsequently acquires business locks. Closing only marks cleanup; it does not release capacity or prove provider erasure. A tutor limit of 64 unsettled obligations, counted through the partial `meeting_recovery_unsettled_meeting_idx` index under the tutor's profile lock, refuses before the reservation.
 
 The ledger gains a terminal settlement time and durable cleanup-cycle state. Settlement is conditional on the expected evidence revision, cleanup eligibility, and either a prepared attempt irrevocably barred from dispatch or a returned acknowledgement matching the exact confirmed provider generation. Started and uncertain attempts, including legacy uncertainty, cannot settle from an absent snapshot or discovered-generation End. Settlement releases capacity once and fences later dispatch/publication. A stored return alone is not remote End evidence: the coordinator must establish that before invoking the repository settlement transition.
 

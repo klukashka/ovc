@@ -50,7 +50,7 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `internal/services/accounts` | Registration, verification, sessions, passwords, deletion | [Accounts](../specs/accounts.md) |
 | `internal/services/tutoring` | Relationships, invitations, join requests, groups | [Accounts](../specs/accounts.md#tutorstudent-relationships) |
 | `internal/services/schedule` | Lessons, series, materialisation, overlap checks, the visibility of lessons, the label table, and the status, reminder and horizon-extension work the worker runs; recurrence and timezone arithmetic comes from `internal/domain/schedule` | [Schedule](../specs/schedule.md) |
-| `internal/services/meetings` | Bounded meeting recovery scanner, cleanup with provider inspection and exact-generation End, and revision-bound local operator recovery; joins, callbacks and recordings remain pending | [Video](../specs/realtime-and-video.md#video) |
+| `internal/services/meetings` | Creation coordinator with durable ownership, bounded meeting recovery scanner, cleanup with provider inspection and exact-generation End, and revision-bound local operator recovery; joins, callbacks and recordings remain pending | [Video](../specs/realtime-and-video.md#video) |
 | `internal/services/library` | Folders, materials, templates | [Homework](../specs/homework.md#library) |
 | `internal/services/homework` | Issues, submissions, scoring, reviews, analytics | [Homework](../specs/homework.md) |
 | `internal/services/chat` | Channels, messages, read markers | [Chat](../specs/realtime-and-video.md#chat) |

@@ -14,10 +14,11 @@ import (
 
 const closeMeetingRow = `-- name: CloseMeetingRow :execrows
 WITH closed AS (
-    UPDATE meetings SET state = 'closed', close_reason = $2, ended_at = $1, updated_at = $1
+    UPDATE meetings SET state = 'closed', close_reason = $2,
+        ended_at = greatest(meetings.updated_at, $1), updated_at = greatest(meetings.updated_at, $1)
     WHERE meetings.lesson_id = $3 AND meetings.id = $4 AND meetings.provider_meeting_id = $5
         AND state = $6 AND state IN ('creating', 'open')
-        AND create_time IS NOT DISTINCT FROM $7::bigint AND $1 >= updated_at
+        AND create_time IS NOT DISTINCT FROM $7::bigint
     RETURNING meetings.id, meetings.provider_meeting_id
 )
 UPDATE meeting_recovery AS recovery
@@ -49,6 +50,20 @@ func (q *Queries) CloseMeetingRow(ctx context.Context, arg CloseMeetingRowParams
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const countUnsettledMeetingsOfTutor = `-- name: CountUnsettledMeetingsOfTutor :one
+SELECT count(recovery.provider_meeting_id) FROM meeting_recovery AS recovery
+JOIN meetings ON meetings.id = recovery.meeting_id
+JOIN lessons ON lessons.id = meetings.lesson_id
+WHERE recovery.settled_at IS NULL AND lessons.tutor_id = $1
+`
+
+func (q *Queries) CountUnsettledMeetingsOfTutor(ctx context.Context, tutorID domain.UserID) (int64, error) {
+	row := q.db.QueryRow(ctx, countUnsettledMeetingsOfTutor, tutorID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const createMeetingRow = `-- name: CreateMeetingRow :execrows
@@ -138,6 +153,66 @@ func (q *Queries) GetMeetingRow(ctx context.Context, arg GetMeetingRowParams) (M
 		&i.CloseReason,
 	)
 	return i, err
+}
+
+const lessonHasFreshUncertainMeeting = `-- name: LessonHasFreshUncertainMeeting :one
+SELECT EXISTS (
+    SELECT 1 FROM meetings
+    JOIN meeting_recovery AS recovery ON recovery.meeting_id = meetings.id
+    WHERE meetings.lesson_id = $1 AND meetings.state = 'closed' AND meetings.ended_at > $2::timestamptz
+        AND meetings.ended_at <= $3::timestamptz
+        AND recovery.create_state = 'uncertain' AND recovery.settled_at IS NULL
+) AS fresh
+`
+
+type LessonHasFreshUncertainMeetingParams struct {
+	LessonID domain.LessonID
+	Since    time.Time
+	Now      time.Time
+}
+
+func (q *Queries) LessonHasFreshUncertainMeeting(ctx context.Context, arg LessonHasFreshUncertainMeetingParams) (bool, error) {
+	row := q.db.QueryRow(ctx, lessonHasFreshUncertainMeeting, arg.LessonID, arg.Since, arg.Now)
+	var fresh bool
+	err := row.Scan(&fresh)
+	return fresh, err
+}
+
+const listStaleCreatingMeetings = `-- name: ListStaleCreatingMeetings :many
+SELECT lesson_id, id, provider_meeting_id FROM meetings
+WHERE state = 'creating' AND created_at <= $1
+ORDER BY created_at, id LIMIT $2
+`
+
+type ListStaleCreatingMeetingsParams struct {
+	Before    time.Time
+	BatchSize int32
+}
+
+type ListStaleCreatingMeetingsRow struct {
+	LessonID          domain.LessonID
+	ID                domain.MeetingID
+	ProviderMeetingID domain.ProviderMeetingID
+}
+
+func (q *Queries) ListStaleCreatingMeetings(ctx context.Context, arg ListStaleCreatingMeetingsParams) ([]ListStaleCreatingMeetingsRow, error) {
+	rows, err := q.db.Query(ctx, listStaleCreatingMeetings, arg.Before, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStaleCreatingMeetingsRow
+	for rows.Next() {
+		var i ListStaleCreatingMeetingsRow
+		if err := rows.Scan(&i.LessonID, &i.ID, &i.ProviderMeetingID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const openMeetingRow = `-- name: OpenMeetingRow :execrows

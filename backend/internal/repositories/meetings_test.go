@@ -222,7 +222,8 @@ func TestMeetingPersistenceTransitions(t *testing.T) {
 	})
 	t.Run("failed creation and replacement reject stale operations", testMeetingReplacement)
 	t.Run("wrong scope generation and backwards time refuse", testMeetingGenerationRefusal)
-	t.Run("backwards time alone refuses transitions", testMeetingBackwardsTime)
+	t.Run("backwards time alone refuses opening and first join", testMeetingBackwardsTime)
+	t.Run("backwards time cannot strand a close", testMeetingCloseBackwardsTime)
 	t.Run("opening isolates every identity predicate", testMeetingOpenIdentity)
 }
 
@@ -558,7 +559,7 @@ func TestMeetingMigrationRoundTrip(t *testing.T) {
 }
 
 func testMeetingBackwardsTime(t *testing.T) {
-	for _, operation := range []string{"open", "first_join", "close"} {
+	for _, operation := range []string{"open", "first_join"} {
 		t.Run(operation, func(t *testing.T) {
 			f := newMeetingFixture(t, testdb.New(t))
 			identity := f.create(t, 10)
@@ -581,8 +582,6 @@ func testMeetingBackwardsTime(t *testing.T) {
 					return r.OpenUnderLessonLock(t.Context(), identity, created, earlier)
 				case "first_join":
 					return r.FirstJoinUnderLessonLock(t.Context(), identity, created, earlier)
-				case "close":
-					return r.CloseUnderLessonLock(t.Context(), domain.MeetingExpectation{Identity: identity, State: domain.MeetingOpen, CreateTime: &created}, domain.MeetingCloseTutorEnd, earlier)
 				default:
 					panic("unknown fixture transition")
 				}
@@ -596,6 +595,29 @@ func testMeetingBackwardsTime(t *testing.T) {
 				t.Fatal("backwards time changed generation")
 			}
 		})
+	}
+}
+
+func testMeetingCloseBackwardsTime(t *testing.T) {
+	f := newMeetingFixture(t, testdb.New(t))
+	identity := f.create(t, 10)
+	f.acknowledge(t, identity, 100)
+	created := domain.ProviderCreateTime(100)
+	opened := f.mutate(t, func(r repositories.Meetings) (domain.MeetingMutation, error) {
+		return r.OpenUnderLessonLock(t.Context(), identity, created, instant.Add(2*time.Second))
+	})
+	before := f.read(t, identity)
+
+	outcome := f.mutate(t, func(r repositories.Meetings) (domain.MeetingMutation, error) {
+		return r.CloseUnderLessonLock(t.Context(), domain.MeetingExpectation{Identity: identity, State: domain.MeetingOpen, CreateTime: &created}, domain.MeetingCloseTutorEnd, before.UpdatedAt.Add(-time.Second))
+	})
+
+	row, recovery := f.read(t, identity), f.recovery(t, identity.ProviderMeetingID)
+	if opened != domain.MeetingMutationApplied || outcome != domain.MeetingMutationApplied || row.State != domain.MeetingClosed || !recovery.CleanupRequested {
+		t.Fatalf("a close before the row's last change: outcome=%s row=%+v", outcome, row)
+	}
+	if !row.UpdatedAt.Equal(before.UpdatedAt) || row.EndedAt == nil || !row.EndedAt.Equal(before.UpdatedAt) {
+		t.Fatalf("the close moved the row backwards: %+v", row)
 	}
 }
 

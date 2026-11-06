@@ -1,5 +1,15 @@
 package domain
 
+import "time"
+
+const (
+	MeetingRoomName           = "OVC lesson"
+	MeetingUnsettledPerTutor  = 64
+	MeetingUncertainPause     = 2 * time.Minute
+	MeetingCreatingWait       = 10 * time.Second
+	MeetingCreatingStaleAfter = time.Minute
+)
+
 type ProviderMeetingID [16]byte
 
 func (id ProviderMeetingID) String() string { return formatUUID(id) }
