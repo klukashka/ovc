@@ -327,7 +327,7 @@ The local storage stage atomically creates a ledger entry with each business mee
 
 These repository operations neither invoke the provider nor authorize callers. There is no automatic deletion or settlement of uncertain evidence, and no remote cleanup deadline. Before API/worker activation, the [approved local sequence](../plans/slice-7-local-completion.md) must integrate the coordinator, bounded reconciliation/outbox effects, handling of late Create and operator recovery. Its [recovery storage](data-model.md#recovery-capacity-and-cleanup-cycle-storage) adds global admission capacity, revision-bound terminal settlement, durable finite-cycle receipts and persistent cursor operations; these repository methods alone do not call the provider or prove physical erasure. [ADR-0020](../../docs/decisions/0020-durable-meeting-recovery.md) defines the retained-uncertainty and bounded-work contract. An absent inspection alone cannot justify forgetting the obligation. See the [approved storage plan](../plans/slice-7-meeting-recovery-ledger.md).
 
-The [constructor-injected scanner](notifications.md#constructor-injected-meeting-recovery-scanner) supplies bounded scheduling for existing cleanup-requested and orphaned ledger entries. It neither closes stale attached creating rows nor performs Create or authorization. Runtime registration and the remaining coordinator are pending.
+The [constructor-injected scanner](notifications.md#constructor-injected-meeting-recovery-scanner) supplies bounded scheduling for existing cleanup-requested and orphaned ledger entries. It neither closes stale attached creating rows nor performs Create or authorization. Runtime recovery registration is implemented as described below; the creation and stale-business coordinator remain pending.
 
 - **`MeetingInfo`** distinguishes three cases from `getMeetingInfo`:
   - `not_found`: no meeting with that identifier exists;
@@ -348,7 +348,7 @@ The meetings service executes an existing pending cleanup cycle through the real
 
 Only returned evidence can settle after confirmed absence or successful End. Started, uncertain and legacy-uncertain evidence yields unresolved even after ending a discovered room. The result carries the sampled evidence revision to atomic lease-aware completion, so an acknowledgement arriving during provider work cannot be overwritten. Provider failures and cancellation retain the existing eight-attempt cycle budget. No provider wait holds a business transaction or connection. Worker composition in tests uses four provider slots and the existing 30-second effect deadline.
 
-This stage supplies constructor-injected execution only. Production process registration, scanner, creation coordinator, operator commands, API/UI activation and remote-provider evidence remain pending under the approved local sequence. It makes no remote erasure guarantee.
+The cleanup executor is registered in production composition as described below. Creation coordination, authorized API/UI activation and remote-provider evidence remain pending under the approved local sequence. It makes no remote erasure guarantee.
 
 ### Join flow
 
@@ -516,3 +516,11 @@ stateDiagram-v2
 ### Configuration
 
 `OVC_MEETING_PROVIDER` is `bbb` or `fake`. `OVC_BBB_EMBED_ENABLED` gates embedding. The other variables are in [configuration](../architecture/detailed.md#configuration). There is no local BigBlueButton on developer machines; live checks use a remote test server, and end-to-end tests use the fake provider's test room ([development](../../docs/development.md#end-to-end-test-harness)).
+
+### Local recovery process composition
+
+The shared startup constructor initializes the PostgreSQL fake with the caller's cancellation context and a 20-second initialization deadline. API test-control Tick and the ordinary system-clock worker use the same composition: four `provider_call` effects per process and `meeting.recovery` every minute. The separate worker remains idle under the shared test clock; guarded API Tick drives deterministic work. Registration activates cleanup of existing eligible obligations, not Create, stale attached creating-row closure, public video routes or a browser room. BBB remains unavailable in typed process configuration.
+
+`DefaultFakeLimits` supplies 4096 active rooms, 65536 globally issued links, 256 distinct participants per room generation and 4294967296 lifetime generations. These are finite local simulation defaults, not promised product capacity. End releases room-owned links and participant bindings; Leave does not release a distinct participant binding. The lifetime generation counter never resets on End or process restart. Exhaustion refuses explicitly. All processes sharing a database must use the same immutable limits and namespace; reconstruction reuses persisted state and mismatched limits fail startup without changing it. No automatic eviction, reset, migration of old limits or independent in-memory fallback exists. No additional environment variables are introduced.
+
+Local [operator commands](accounts.md#administration-command) inspect retained evidence and request revision-bound, separately identified cycles. They never call the provider directly or settle uncertain evidence. The observer reads may race worker progress; their revision is an optimistic retry precondition, not a lock or a proof of remote quiescence.

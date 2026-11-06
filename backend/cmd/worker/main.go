@@ -63,7 +63,7 @@ func work(ctx context.Context, settings core.Settings, logging *core.Logging) er
 	}
 	random := core.CryptoRandom()
 	mailer := startup.NewMailer(logging.Logger, settings, database, random)
-	background, err := startup.NewWorker(logging.Logger, settings, database, systemClock, mailer, random, storage.NewS3(settings.Storage))
+	background, err := startup.NewWorker(ctx, logging.Logger, settings, database, systemClock, mailer, random, storage.NewS3(settings.Storage))
 	if err != nil {
 		return errors.Join(err, mailer.Close())
 	}

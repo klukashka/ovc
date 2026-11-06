@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log/slog"
 	"os"
 	"os/user"
 
@@ -10,6 +11,7 @@ import (
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/meetings"
 	"ovc/backend/internal/services/operators"
 )
 
@@ -42,6 +44,7 @@ func run() int {
 		return admin.Failed(ctx, logging.Logger, os.Stderr, operator, os.Args[1:], err)
 	}
 	command := admin.Command{
+		Meetings: meetings.NewOperator(repositories.NewStore(database.Pool), source(settings, database), core.CryptoRandom(), logging.Logger.With(slog.String("operator_uid", operator.UID), slog.String("operator", operator.Name))),
 		Uploads:  files.New(files.Dependencies{Store: repositories.NewStore(database.Pool), Clock: source(settings, database), Random: core.CryptoRandom(), Logger: logging.Logger, Lifetime: ctx}),
 		Service:  operators.New(repositories.NewStore(database.Pool), source(settings, database), logging.Logger),
 		Operator: operator,

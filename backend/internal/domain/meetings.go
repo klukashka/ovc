@@ -2,6 +2,8 @@ package domain
 
 type ProviderMeetingID [16]byte
 
+func (id ProviderMeetingID) String() string { return formatUUID(id) }
+
 type ProviderCreateTime int64
 
 type ParticipantID [16]byte

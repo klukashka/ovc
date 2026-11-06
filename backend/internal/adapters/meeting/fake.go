@@ -342,3 +342,7 @@ func (f *Fake) SimulateUnavailable(ctx context.Context, unavailable bool) (err e
 	f.unavailable = unavailable
 	return nil
 }
+
+func DefaultFakeLimits() FakeLimits {
+	return FakeLimits{Meetings: 4096, Links: 65536, Participants: 256, Generations: 1 << 32}
+}

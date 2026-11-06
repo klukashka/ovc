@@ -10,6 +10,7 @@ import (
 	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/adapters/listener"
 	"ovc/backend/internal/adapters/mail"
+	"ovc/backend/internal/adapters/meeting"
 	"ovc/backend/internal/adapters/storage"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
@@ -18,6 +19,7 @@ import (
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/meetings"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/outbox"
 	"ovc/backend/internal/services/schedule"
@@ -26,10 +28,11 @@ import (
 )
 
 const (
-	hashWait              = 5 * time.Second
-	emailLaneConcurrency  = 10
-	deleteLaneConcurrency = 4
-	smtpTimeout           = 30 * time.Second
+	hashWait                = 5 * time.Second
+	emailLaneConcurrency    = 10
+	deleteLaneConcurrency   = 4
+	providerLaneConcurrency = 4
+	smtpTimeout             = 30 * time.Second
 )
 
 func NewFiles(lifetime context.Context, logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, objects storage.Store) (*files.Service, error) {
@@ -141,8 +144,14 @@ func NewMailer(logger *slog.Logger, settings core.Settings, database *core.Datab
 	return Mailer{Mailer: mail.NewSink(database.Pool, random), Close: func() error { return nil }}
 }
 
-func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, mailer mail.Mailer, random core.RandomSource, objects storage.Store) (*worker.Worker, error) {
+func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, mailer mail.Mailer, random core.RandomSource, objects storage.Store) (*worker.Worker, error) {
 	store := repositories.NewStore(database.Pool)
+	provider, err := NewMeetingProvider(ctx, logger, database, source, random)
+	if err != nil {
+		return nil, err
+	}
+	meetingService := meetings.New(store, provider, domain.MeetingProviderFake, logger)
+	meetingScanner := meetings.NewRecoveryScanner(store, random, logger, clock.System{}.Now)
 	cipher, err := core.NewFieldCipher(settings.FieldKey, core.CryptoRandom())
 	if err != nil {
 		return nil, err
@@ -191,10 +200,12 @@ func NewWorker(logger *slog.Logger, settings core.Settings, database *core.Datab
 		schedule.New(schedule.Dependencies{Store: store, Clock: source, Random: random, Keys: keys, Logger: logger}), schedule.DefaultJobSettings(),
 	)
 	lanes := []worker.Lane{
+		{Name: domain.LaneProviderCall, Concurrency: providerLaneConcurrency, PerformMeetingRecovery: meetingService.Cleanup},
 		{Name: domain.LaneEmail, Concurrency: emailLaneConcurrency, Perform: notifier.Deliver},
 		{Name: domain.LaneStorageDelete, Concurrency: deleteLaneConcurrency, Perform: fileService.DeleteObject},
 	}
 	jobs := []worker.Job{
+		{Name: domain.JobMeetingRecovery, Every: time.Minute, Run: meetingScanner.Run},
 		{Name: domain.JobOutboxCleanup, Every: time.Hour, Run: queue.Cleanup},
 		{Name: domain.JobRateLimitCleanup, Every: time.Hour, Run: accounts.CleanupRateLimits(store)},
 		{Name: domain.JobSessionsCleanup, Every: time.Hour, Run: accounts.CleanupSessions(store)},
@@ -247,4 +258,10 @@ func NewRealtime(
 		return Realtime{}, err
 	}
 	return Realtime{Gateway: gateway, Listener: adapter}, nil
+}
+
+func NewMeetingProvider(ctx context.Context, logger *slog.Logger, database *core.Database, source clock.Source, random core.RandomSource) (*meeting.SharedFake, error) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	return meeting.NewSharedFake(ctx, database.Pool, source, random, logger, meeting.DefaultFakeLimits())
 }

@@ -13,6 +13,7 @@ import (
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/meetings"
 	"ovc/backend/internal/services/operators"
 )
 
@@ -28,7 +29,10 @@ const (
   ovc-admin users restore <email>
   ovc-admin tutors set-quota <email> --files <bytes> --recordings <bytes>
   ovc-admin uploads inspect <attachment-id> [--after <attempt-uuid>]
-  ovc-admin uploads retry-cleanup <attachment-id> --attempt <uuid>`
+  ovc-admin uploads retry-cleanup <attachment-id> --attempt <uuid>
+  ovc-admin meetings status [--after <provider-id>]
+  ovc-admin meetings inspect <provider-id> [--after <cycle-number>]
+  ovc-admin meetings retry-cleanup <provider-id> --revision <revision>`
 )
 
 var errUsage = errors.New("the command line is not a known command")
@@ -39,6 +43,7 @@ type Operator struct {
 }
 
 type Command struct {
+	Meetings *meetings.Operator
 	Service  *operators.Service
 	Uploads  *files.Service
 	Operator Operator
@@ -85,7 +90,7 @@ func subcommandOf(args []string) string {
 		return "unknown"
 	}
 	switch subcommand := args[0] + " " + args[1]; subcommand {
-	case "users list", "users block", "users unblock", "users restore", "tutors set-quota", "uploads inspect", "uploads retry-cleanup":
+	case "users list", "users block", "users unblock", "users restore", "tutors set-quota", "uploads inspect", "uploads retry-cleanup", "meetings status", "meetings inspect", "meetings retry-cleanup":
 		return subcommand
 	}
 	return "unknown"
@@ -128,6 +133,8 @@ func (c Command) dispatch(ctx context.Context, args []string) outcome {
 	subcommand := args[0] + " " + args[1]
 	rest := args[2:]
 	switch subcommand {
+	case "meetings status", "meetings inspect", "meetings retry-cleanup":
+		return outcome{subcommand: subcommand, err: c.meeting(ctx, subcommand, rest)}
 	case "users list":
 		return outcome{subcommand: subcommand, err: c.list(ctx, rest)}
 	case "users block":
@@ -227,7 +234,7 @@ func (c Command) write(target io.Writer, line string) {
 	}
 }
 
-var refusals = []error{operators.ErrUnknownAccount, operators.ErrImpossibleState, operators.ErrWrongRole, operators.ErrInvalidQuota, files.ErrNotFound, files.ErrUploadCleanupActive}
+var refusals = []error{meetings.ErrRecoveryNotFound, meetings.ErrRecoveryRetryRefused, meetings.ErrRecoveryInput, operators.ErrUnknownAccount, operators.ErrImpossibleState, operators.ErrWrongRole, operators.ErrInvalidQuota, files.ErrNotFound, files.ErrUploadCleanupActive}
 
 func refusal(err error) error {
 	for _, candidate := range refusals {

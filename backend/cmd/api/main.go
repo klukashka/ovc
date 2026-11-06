@@ -188,7 +188,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	}
 	if settings.TestControl {
 		sink := mail.NewSink(database.Pool, random)
-		background, err := startup.NewWorker(logging.Logger, settings, database, source, sink, random, objects)
+		background, err := startup.NewWorker(ctx, logging.Logger, settings, database, source, sink, random, objects)
 		if err != nil {
 			return err
 		}
