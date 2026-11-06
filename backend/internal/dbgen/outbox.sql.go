@@ -87,7 +87,7 @@ func (q *Queries) ClaimOutbox(ctx context.Context, arg ClaimOutboxParams) ([]Cla
 const completeOutbox = `-- name: CompleteOutbox :execrows
 UPDATE outbox
 SET status = 'done', done_reason = $1, done_at = $2, lease_token = NULL, lease_expires_at = NULL
-WHERE id = $3 AND lease_token = $4 AND status = 'in_progress'
+WHERE id = $3 AND lease_token = $4 AND status = 'in_progress' AND kind <> 'meeting_cleanup'
 `
 
 type CompleteOutboxParams struct {
@@ -115,6 +115,7 @@ DELETE FROM outbox
 WHERE id IN (
     SELECT finished.id FROM outbox AS finished
     WHERE finished.status = 'dead' AND finished.done_at < $1::timestamptz
+      AND NOT EXISTS (SELECT 1 FROM meeting_recovery_cycles WHERE outbox_id = finished.id AND result = 'pending')
       AND NOT EXISTS (SELECT 1 FROM upload_intents WHERE cleanup_outbox_id = finished.id AND cleanup_result = 'queued')
       AND NOT EXISTS (SELECT 1 FROM upload_cleanup_receipts WHERE outbox_id = finished.id AND status IN ('pending', 'in_progress'))
     LIMIT $2
@@ -139,6 +140,7 @@ DELETE FROM outbox
 WHERE id IN (
     SELECT finished.id FROM outbox AS finished
     WHERE finished.status = 'done' AND finished.done_at < $1::timestamptz
+      AND NOT EXISTS (SELECT 1 FROM meeting_recovery_cycles WHERE outbox_id = finished.id AND result = 'pending')
       AND NOT EXISTS (SELECT 1 FROM upload_intents WHERE cleanup_outbox_id = finished.id AND cleanup_result = 'queued')
       AND NOT EXISTS (SELECT 1 FROM upload_cleanup_receipts WHERE outbox_id = finished.id AND status IN ('pending', 'in_progress'))
     LIMIT $2
@@ -288,7 +290,7 @@ func (q *Queries) InsertOutboxRows(ctx context.Context, arg InsertOutboxRowsPara
 const killOutbox = `-- name: KillOutbox :execrows
 UPDATE outbox
 SET status = 'dead', done_at = $1, last_error_code = $2, lease_token = NULL, lease_expires_at = NULL
-WHERE id = $3 AND lease_token = $4 AND status = 'in_progress'
+WHERE id = $3 AND lease_token = $4 AND status = 'in_progress' AND kind <> 'meeting_cleanup'
 `
 
 type KillOutboxParams struct {
@@ -318,7 +320,7 @@ SET status = CASE WHEN attempts >= $1::integer THEN 'dead' ELSE 'pending' END,
     last_error_code = CASE WHEN attempts >= $1::integer THEN 'lease_expired' ELSE last_error_code END,
     lease_token = NULL,
     lease_expires_at = NULL
-WHERE status = 'in_progress' AND lease_expires_at <= $2::timestamptz
+WHERE status = 'in_progress' AND kind <> 'meeting_cleanup' AND lease_expires_at <= $2::timestamptz
 RETURNING id, kind, status
 `
 

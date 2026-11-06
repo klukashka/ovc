@@ -57,7 +57,12 @@ func (s *Service) Claim(ctx context.Context, lane domain.OutboxLane, limit int32
 	return claims, nil
 }
 
+var ErrMeetingRecoveryOutcomeRequired = errors.New("meeting cleanup requires its typed durable outcome")
+
 func (s *Service) Complete(ctx context.Context, claim Claim, reason domain.OutboxDoneReason, now time.Time) error {
+	if claim.Row.Kind == domain.KindMeetingCleanup {
+		return ErrMeetingRecoveryOutcomeRequired
+	}
 	completed, err := s.store.Repositories().Outbox.Complete(ctx, repositories.OutboxCompletion{
 		ID: claim.Row.ID, Lease: claim.Lease, Reason: reason, Now: now,
 	})
@@ -72,7 +77,14 @@ func (s *Service) Fail(ctx context.Context, claim Claim, cause error, now time.T
 	code := errorCode(cause)
 	outbox := s.store.Repositories().Outbox
 	if errors.Is(cause, domain.ErrPermanentEffect) || claim.Row.Attempts >= domain.OutboxMaxAttempts {
-		failed, err := outbox.Fail(ctx, repositories.OutboxFailure{ID: claim.Row.ID, Lease: claim.Lease, Now: now, ErrorCode: code})
+		failure := repositories.OutboxFailure{ID: claim.Row.ID, Lease: claim.Lease, Now: now, ErrorCode: code}
+		var failed bool
+		var err error
+		if claim.Row.Kind == domain.KindMeetingCleanup {
+			failed, err = s.store.FailMeetingRecovery(ctx, failure)
+		} else {
+			failed, err = outbox.Fail(ctx, failure)
+		}
 		if err != nil {
 			return err
 		}
@@ -98,6 +110,8 @@ func (s *Service) ReclaimExpired(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return err
 	}
+	meetings, meetingErr := s.store.ReclaimMeetingRecovery(ctx, now, 100)
+	reclaimed = append(reclaimed, meetings...)
 	for _, row := range reclaimed {
 		attributes := []slog.Attr{slog.String("outbox_id", hex.EncodeToString(row.ID[:])), slog.String("kind", string(row.Kind))}
 		if row.Status == domain.OutboxDead {
@@ -106,7 +120,7 @@ func (s *Service) ReclaimExpired(ctx context.Context, now time.Time) error {
 		}
 		s.logger.LogAttrs(ctx, slog.LevelWarn, "outbox.lease.reclaimed", attributes...)
 	}
-	return nil
+	return meetingErr
 }
 
 func (s *Service) Cleanup(ctx context.Context, now time.Time) (int64, error) {

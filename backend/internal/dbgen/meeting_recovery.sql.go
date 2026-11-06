@@ -123,6 +123,36 @@ func (q *Queries) DeleteMeetingRecoveryReceipts(ctx context.Context, arg DeleteM
 	return result.RowsAffected(), nil
 }
 
+const finishMeetingRecoveryOutbox = `-- name: FinishMeetingRecoveryOutbox :execrows
+UPDATE outbox SET status = $1, done_reason = $2, done_at = $3,
+    last_error_code = $4, lease_token = NULL, lease_expires_at = NULL
+WHERE id = $5 AND kind = 'meeting_cleanup' AND status = 'in_progress' AND lease_token = $6
+`
+
+type FinishMeetingRecoveryOutboxParams struct {
+	Status     domain.OutboxStatus
+	DoneReason *domain.OutboxDoneReason
+	Now        *time.Time
+	ErrorCode  *string
+	ID         domain.OutboxID
+	LeaseToken *domain.LeaseToken
+}
+
+func (q *Queries) FinishMeetingRecoveryOutbox(ctx context.Context, arg FinishMeetingRecoveryOutboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, finishMeetingRecoveryOutbox,
+		arg.Status,
+		arg.DoneReason,
+		arg.Now,
+		arg.ErrorCode,
+		arg.ID,
+		arg.LeaseToken,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getMeetingRecovery = `-- name: GetMeetingRecovery :one
 SELECT provider_meeting_id, provider, meeting_id, origin, create_state, attempt_id, create_time, cleanup_requested, revision, created_at, updated_at, settled_at, cycle_number, cycle_outbox_id, cycle_result, final_cycle_requested, final_cycle_used FROM meeting_recovery WHERE provider_meeting_id = $1
 `
@@ -196,6 +226,42 @@ func (q *Queries) GetMeetingRecoveryCycle(ctx context.Context, outboxID domain.O
 		&i.CompletedAt,
 	)
 	return i, err
+}
+
+const listExpiredMeetingRecoveryOutbox = `-- name: ListExpiredMeetingRecoveryOutbox :many
+SELECT id, lease_token FROM outbox
+WHERE kind = 'meeting_cleanup' AND status = 'in_progress' AND lease_expires_at <= $1
+ORDER BY lease_expires_at, id LIMIT $2
+`
+
+type ListExpiredMeetingRecoveryOutboxParams struct {
+	Now       *time.Time
+	BatchSize int32
+}
+
+type ListExpiredMeetingRecoveryOutboxRow struct {
+	ID         domain.OutboxID
+	LeaseToken *domain.LeaseToken
+}
+
+func (q *Queries) ListExpiredMeetingRecoveryOutbox(ctx context.Context, arg ListExpiredMeetingRecoveryOutboxParams) ([]ListExpiredMeetingRecoveryOutboxRow, error) {
+	rows, err := q.db.Query(ctx, listExpiredMeetingRecoveryOutbox, arg.Now, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListExpiredMeetingRecoveryOutboxRow
+	for rows.Next() {
+		var i ListExpiredMeetingRecoveryOutboxRow
+		if err := rows.Scan(&i.ID, &i.LeaseToken); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listMeetingRecovery = `-- name: ListMeetingRecovery :many
@@ -335,6 +401,76 @@ func (q *Queries) ListMeetingRecoveryCycles(ctx context.Context, arg ListMeeting
 	return items, nil
 }
 
+const lockMeetingRecoveryCapacity = `-- name: LockMeetingRecoveryCapacity :one
+SELECT unsettled FROM meeting_recovery_capacity WHERE singleton FOR UPDATE
+`
+
+func (q *Queries) LockMeetingRecoveryCapacity(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, lockMeetingRecoveryCapacity)
+	var unsettled int64
+	err := row.Scan(&unsettled)
+	return unsettled, err
+}
+
+const lockMeetingRecoveryForOutbox = `-- name: LockMeetingRecoveryForOutbox :one
+SELECT recovery.provider_meeting_id, recovery.provider, recovery.meeting_id, recovery.origin, recovery.create_state, recovery.attempt_id, recovery.create_time, recovery.cleanup_requested, recovery.revision, recovery.created_at, recovery.updated_at, recovery.settled_at, recovery.cycle_number, recovery.cycle_outbox_id, recovery.cycle_result, recovery.final_cycle_requested, recovery.final_cycle_used FROM meeting_recovery AS recovery
+JOIN meeting_recovery_cycles AS cycle ON cycle.provider_meeting_id = recovery.provider_meeting_id
+WHERE cycle.outbox_id = $1
+FOR UPDATE OF recovery
+`
+
+func (q *Queries) LockMeetingRecoveryForOutbox(ctx context.Context, outboxID domain.OutboxID) (MeetingRecovery, error) {
+	row := q.db.QueryRow(ctx, lockMeetingRecoveryForOutbox, outboxID)
+	var i MeetingRecovery
+	err := row.Scan(
+		&i.ProviderMeetingID,
+		&i.Provider,
+		&i.MeetingID,
+		&i.Origin,
+		&i.CreateState,
+		&i.AttemptID,
+		&i.CreateTime,
+		&i.CleanupRequested,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SettledAt,
+		&i.CycleNumber,
+		&i.CycleOutboxID,
+		&i.CycleResult,
+		&i.FinalCycleRequested,
+		&i.FinalCycleUsed,
+	)
+	return i, err
+}
+
+const lockMeetingRecoveryOutbox = `-- name: LockMeetingRecoveryOutbox :one
+SELECT id, lane, priority, kind, payload, idempotency_key, status, attempts, next_attempt_at, lease_token, lease_expires_at, last_error_code, done_reason, done_at, created_at FROM outbox WHERE id = $1 AND kind = 'meeting_cleanup' FOR UPDATE
+`
+
+func (q *Queries) LockMeetingRecoveryOutbox(ctx context.Context, id domain.OutboxID) (Outbox, error) {
+	row := q.db.QueryRow(ctx, lockMeetingRecoveryOutbox, id)
+	var i Outbox
+	err := row.Scan(
+		&i.ID,
+		&i.Lane,
+		&i.Priority,
+		&i.Kind,
+		&i.Payload,
+		&i.IdempotencyKey,
+		&i.Status,
+		&i.Attempts,
+		&i.NextAttemptAt,
+		&i.LeaseToken,
+		&i.LeaseExpiresAt,
+		&i.LastErrorCode,
+		&i.DoneReason,
+		&i.DoneAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const markMeetingCreateUncertain = `-- name: MarkMeetingCreateUncertain :execrows
 UPDATE meeting_recovery
 SET create_state = 'uncertain', revision = revision + 1, updated_at = greatest(updated_at, $1)
@@ -430,6 +566,24 @@ func (q *Queries) RecordMeetingCreateReturned(ctx context.Context, arg RecordMee
 	return result.RowsAffected(), nil
 }
 
+const requeueMeetingRecoveryOutbox = `-- name: RequeueMeetingRecoveryOutbox :execrows
+UPDATE outbox SET status = 'pending', lease_token = NULL, lease_expires_at = NULL
+WHERE id = $1 AND kind = 'meeting_cleanup' AND status = 'in_progress' AND lease_token = $2
+`
+
+type RequeueMeetingRecoveryOutboxParams struct {
+	ID         domain.OutboxID
+	LeaseToken *domain.LeaseToken
+}
+
+func (q *Queries) RequeueMeetingRecoveryOutbox(ctx context.Context, arg RequeueMeetingRecoveryOutboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, requeueMeetingRecoveryOutbox, arg.ID, arg.LeaseToken)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const settleMeetingRecovery = `-- name: SettleMeetingRecovery :execrows
 WITH capacity AS MATERIALIZED (
     SELECT singleton FROM meeting_recovery_capacity WHERE singleton FOR UPDATE
@@ -466,4 +620,74 @@ func (q *Queries) SettleMeetingRecovery(ctx context.Context, arg SettleMeetingRe
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const tryLockMeetingRecoveryCapacity = `-- name: TryLockMeetingRecoveryCapacity :one
+SELECT unsettled FROM meeting_recovery_capacity WHERE singleton FOR UPDATE SKIP LOCKED
+`
+
+func (q *Queries) TryLockMeetingRecoveryCapacity(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, tryLockMeetingRecoveryCapacity)
+	var unsettled int64
+	err := row.Scan(&unsettled)
+	return unsettled, err
+}
+
+const tryLockMeetingRecoveryForOutbox = `-- name: TryLockMeetingRecoveryForOutbox :one
+SELECT recovery.provider_meeting_id, recovery.provider, recovery.meeting_id, recovery.origin, recovery.create_state, recovery.attempt_id, recovery.create_time, recovery.cleanup_requested, recovery.revision, recovery.created_at, recovery.updated_at, recovery.settled_at, recovery.cycle_number, recovery.cycle_outbox_id, recovery.cycle_result, recovery.final_cycle_requested, recovery.final_cycle_used FROM meeting_recovery AS recovery
+JOIN meeting_recovery_cycles AS cycle ON cycle.provider_meeting_id = recovery.provider_meeting_id
+WHERE cycle.outbox_id = $1
+FOR UPDATE OF recovery SKIP LOCKED
+`
+
+func (q *Queries) TryLockMeetingRecoveryForOutbox(ctx context.Context, outboxID domain.OutboxID) (MeetingRecovery, error) {
+	row := q.db.QueryRow(ctx, tryLockMeetingRecoveryForOutbox, outboxID)
+	var i MeetingRecovery
+	err := row.Scan(
+		&i.ProviderMeetingID,
+		&i.Provider,
+		&i.MeetingID,
+		&i.Origin,
+		&i.CreateState,
+		&i.AttemptID,
+		&i.CreateTime,
+		&i.CleanupRequested,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SettledAt,
+		&i.CycleNumber,
+		&i.CycleOutboxID,
+		&i.CycleResult,
+		&i.FinalCycleRequested,
+		&i.FinalCycleUsed,
+	)
+	return i, err
+}
+
+const tryLockMeetingRecoveryOutbox = `-- name: TryLockMeetingRecoveryOutbox :one
+SELECT id, lane, priority, kind, payload, idempotency_key, status, attempts, next_attempt_at, lease_token, lease_expires_at, last_error_code, done_reason, done_at, created_at FROM outbox WHERE id = $1 AND kind = 'meeting_cleanup' FOR UPDATE SKIP LOCKED
+`
+
+func (q *Queries) TryLockMeetingRecoveryOutbox(ctx context.Context, id domain.OutboxID) (Outbox, error) {
+	row := q.db.QueryRow(ctx, tryLockMeetingRecoveryOutbox, id)
+	var i Outbox
+	err := row.Scan(
+		&i.ID,
+		&i.Lane,
+		&i.Priority,
+		&i.Kind,
+		&i.Payload,
+		&i.IdempotencyKey,
+		&i.Status,
+		&i.Attempts,
+		&i.NextAttemptAt,
+		&i.LeaseToken,
+		&i.LeaseExpiresAt,
+		&i.LastErrorCode,
+		&i.DoneReason,
+		&i.DoneAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }

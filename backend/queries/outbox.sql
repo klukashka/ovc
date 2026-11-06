@@ -39,7 +39,7 @@ SELECT * FROM outbox WHERE id = @id;
 -- name: CompleteOutbox :execrows
 UPDATE outbox
 SET status = 'done', done_reason = @done_reason, done_at = @now, lease_token = NULL, lease_expires_at = NULL
-WHERE id = @id AND lease_token = @lease_token AND status = 'in_progress';
+WHERE id = @id AND lease_token = @lease_token AND status = 'in_progress' AND kind <> 'meeting_cleanup';
 
 -- name: RetryOutbox :execrows
 UPDATE outbox
@@ -50,7 +50,7 @@ WHERE id = @id AND lease_token = @lease_token AND status = 'in_progress';
 -- name: KillOutbox :execrows
 UPDATE outbox
 SET status = 'dead', done_at = @now, last_error_code = @last_error_code, lease_token = NULL, lease_expires_at = NULL
-WHERE id = @id AND lease_token = @lease_token AND status = 'in_progress';
+WHERE id = @id AND lease_token = @lease_token AND status = 'in_progress' AND kind <> 'meeting_cleanup';
 
 -- name: ReclaimExpiredOutbox :many
 UPDATE outbox
@@ -59,7 +59,7 @@ SET status = CASE WHEN attempts >= sqlc.arg(max_attempts)::integer THEN 'dead' E
     last_error_code = CASE WHEN attempts >= sqlc.arg(max_attempts)::integer THEN 'lease_expired' ELSE last_error_code END,
     lease_token = NULL,
     lease_expires_at = NULL
-WHERE status = 'in_progress' AND lease_expires_at <= sqlc.arg(now)::timestamptz
+WHERE status = 'in_progress' AND kind <> 'meeting_cleanup' AND lease_expires_at <= sqlc.arg(now)::timestamptz
 RETURNING id, kind, status;
 
 -- name: DeleteDoneOutbox :execrows
@@ -67,6 +67,7 @@ DELETE FROM outbox
 WHERE id IN (
     SELECT finished.id FROM outbox AS finished
     WHERE finished.status = 'done' AND finished.done_at < sqlc.arg(before)::timestamptz
+      AND NOT EXISTS (SELECT 1 FROM meeting_recovery_cycles WHERE outbox_id = finished.id AND result = 'pending')
       AND NOT EXISTS (SELECT 1 FROM upload_intents WHERE cleanup_outbox_id = finished.id AND cleanup_result = 'queued')
       AND NOT EXISTS (SELECT 1 FROM upload_cleanup_receipts WHERE outbox_id = finished.id AND status IN ('pending', 'in_progress'))
     LIMIT sqlc.arg(batch_size)
@@ -77,6 +78,7 @@ DELETE FROM outbox
 WHERE id IN (
     SELECT finished.id FROM outbox AS finished
     WHERE finished.status = 'dead' AND finished.done_at < sqlc.arg(before)::timestamptz
+      AND NOT EXISTS (SELECT 1 FROM meeting_recovery_cycles WHERE outbox_id = finished.id AND result = 'pending')
       AND NOT EXISTS (SELECT 1 FROM upload_intents WHERE cleanup_outbox_id = finished.id AND cleanup_result = 'queued')
       AND NOT EXISTS (SELECT 1 FROM upload_cleanup_receipts WHERE outbox_id = finished.id AND status IN ('pending', 'in_progress'))
     LIMIT sqlc.arg(batch_size)

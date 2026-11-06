@@ -113,3 +113,41 @@ DELETE FROM meeting_recovery WHERE provider_meeting_id IN (
     ORDER BY settled_at, provider_meeting_id LIMIT sqlc.arg(batch_size)
     FOR UPDATE SKIP LOCKED
 );
+
+-- name: LockMeetingRecoveryCapacity :one
+SELECT unsettled FROM meeting_recovery_capacity WHERE singleton FOR UPDATE;
+
+-- name: LockMeetingRecoveryForOutbox :one
+SELECT recovery.* FROM meeting_recovery AS recovery
+JOIN meeting_recovery_cycles AS cycle ON cycle.provider_meeting_id = recovery.provider_meeting_id
+WHERE cycle.outbox_id = sqlc.arg(outbox_id)
+FOR UPDATE OF recovery;
+
+-- name: LockMeetingRecoveryOutbox :one
+SELECT * FROM outbox WHERE id = sqlc.arg(id) AND kind = 'meeting_cleanup' FOR UPDATE;
+
+-- name: FinishMeetingRecoveryOutbox :execrows
+UPDATE outbox SET status = sqlc.arg(status), done_reason = sqlc.narg(done_reason), done_at = sqlc.arg(now),
+    last_error_code = sqlc.narg(error_code), lease_token = NULL, lease_expires_at = NULL
+WHERE id = sqlc.arg(id) AND kind = 'meeting_cleanup' AND status = 'in_progress' AND lease_token = sqlc.arg(lease_token);
+
+-- name: ListExpiredMeetingRecoveryOutbox :many
+SELECT id, lease_token FROM outbox
+WHERE kind = 'meeting_cleanup' AND status = 'in_progress' AND lease_expires_at <= sqlc.arg(now)
+ORDER BY lease_expires_at, id LIMIT sqlc.arg(batch_size);
+
+-- name: RequeueMeetingRecoveryOutbox :execrows
+UPDATE outbox SET status = 'pending', lease_token = NULL, lease_expires_at = NULL
+WHERE id = sqlc.arg(id) AND kind = 'meeting_cleanup' AND status = 'in_progress' AND lease_token = sqlc.arg(lease_token);
+
+-- name: TryLockMeetingRecoveryCapacity :one
+SELECT unsettled FROM meeting_recovery_capacity WHERE singleton FOR UPDATE SKIP LOCKED;
+
+-- name: TryLockMeetingRecoveryForOutbox :one
+SELECT recovery.* FROM meeting_recovery AS recovery
+JOIN meeting_recovery_cycles AS cycle ON cycle.provider_meeting_id = recovery.provider_meeting_id
+WHERE cycle.outbox_id = sqlc.arg(outbox_id)
+FOR UPDATE OF recovery SKIP LOCKED;
+
+-- name: TryLockMeetingRecoveryOutbox :one
+SELECT * FROM outbox WHERE id = sqlc.arg(id) AND kind = 'meeting_cleanup' FOR UPDATE SKIP LOCKED;
