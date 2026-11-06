@@ -124,7 +124,9 @@ test.describe('Boris in English', () => {
     await expect(joinRequests(mariaPage).getByRole('listitem')).toHaveCount(0);
     await expect(joinRequests(mariaPage).getByText('Новых заявок нет.')).toBeVisible();
     await mariaPage.goto('/students');
-    await expect(mariaPage.getByRole('list', { name: 'Активные' }).getByRole('link', { name: /Boris/ })).toBeVisible();
+    await expect(
+      mariaPage.getByRole('list', { name: 'Действующие' }).getByRole('link', { name: /Boris/ }),
+    ).toBeVisible();
     await expect(page.getByRole('list', { name: 'Tutors' }).getByRole('listitem')).toHaveText([/Мария/]);
     const borisBell = bellIn(page, /^Notifications/);
     await expect(borisBell).toHaveAccessibleName('Notifications, 1 unread');

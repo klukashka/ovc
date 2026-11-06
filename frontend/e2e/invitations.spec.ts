@@ -200,7 +200,9 @@ test.describe('Anna in Russian on a phone', () => {
       await expect(mariaPage.getByRole('main').getByText(word)).toHaveCount(0);
     }
     await mariaPage.goto('/students?state=active');
-    await expect(mariaPage.getByRole('list', { name: 'Активные' }).getByRole('link', { name: /Анна/ })).toBeVisible();
+    await expect(
+      mariaPage.getByRole('list', { name: 'Действующие' }).getByRole('link', { name: /Анна/ }),
+    ).toBeVisible();
     expect(addresses.at(-1)).not.toContain(token);
     expect(addressesAfterRemoval(addresses, token).filter((address) => address.includes(token))).toEqual([]);
     await expectTokenNowhere(page, token);
