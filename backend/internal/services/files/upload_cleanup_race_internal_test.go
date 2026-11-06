@@ -81,29 +81,72 @@ func TestUploadCleanupRechecksLateCreateDuringDelete(t *testing.T) {
 	}
 }
 
-func TestUploadSettlementDeadlineCoversClockAndPoolWaits(t *testing.T) {
-	for _, kind := range []string{"clock", "pool", "intent"} {
+const lockObservationDeadline = 30 * time.Second
+
+func TestUploadSettlementDeadlineCoversPoolWaits(t *testing.T) {
+	t.Parallel()
+	h := newUploadProtocolFixture(t)
+	h.service.deps.Uploads.Settlement = 100 * time.Millisecond
+	opened := h.intent(t, domain.AttachmentID{5}, false)
+	release := h.blockSettlement(t, "pool", opened.id)
+	defer release()
+	ctx, cancel := h.service.settlementContext(context.Background(), opened.id)
+	defer cancel()
+
+	started := clock.System{}.Now()
+	finished := make(chan error, 1)
+	go func() { finished <- h.service.discardChatUpload(ctx, opened, false) }()
+	guard := time.NewTimer(lockObservationDeadline)
+	defer guard.Stop()
+	var err error
+	select {
+	case err = <-finished:
+	case <-guard.C:
+		t.Fatal("pool wait outlived its settlement budget")
+	}
+	elapsed := time.Since(started)
+
+	if !errors.Is(err, context.DeadlineExceeded) || elapsed < 50*time.Millisecond {
+		t.Fatalf("pool wait escaped settlement budget: %v after %s", err, elapsed)
+	}
+}
+
+func TestUploadSettlementBoundsItsClockAndIntentLockWaits(t *testing.T) {
+	for _, kind := range []string{"clock", "intent"} {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			h := newUploadProtocolFixture(t)
-			h.service.deps.Uploads.Settlement = 100 * time.Millisecond
+			lifetime, stop := context.WithCancel(context.Background())
+			defer stop()
+			deps := h.service.deps
+			deps.Lifetime = lifetime
+			deps.Uploads.Settlement = time.Minute
+			service := New(deps)
 			opened := h.intent(t, domain.AttachmentID{5}, false)
 			release := h.blockSettlement(t, kind, opened.id)
 			defer release()
-			ctx, cancel := h.service.settlementContext(context.Background(), opened.id)
+			settling, cancel := service.settlementContext(context.Background(), opened.id)
 			defer cancel()
-
-			started := clock.System{}.Now()
 			finished := make(chan error, 1)
-			go func() { finished <- h.service.discardChatUpload(ctx, opened, false) }()
-			if kind != "pool" {
-				h.awaitDatabaseLock(t, ctx)
-			}
-			err := <-finished
-			elapsed := time.Since(started)
+			go func() { finished <- service.discardChatUpload(settling, opened, false) }()
+			observing, stopObserving := context.WithTimeout(context.Background(), lockObservationDeadline)
+			defer stopObserving()
+			h.awaitDatabaseLock(t, observing)
 
-			if err == nil || elapsed < 50*time.Millisecond || elapsed > time.Second {
-				t.Fatalf("%s wait escaped settlement budget: %v after %s", kind, err, elapsed)
+			deadline, bounded := settling.Deadline()
+			stop()
+			var err error
+			select {
+			case err = <-finished:
+			case <-observing.Done():
+				t.Fatalf("%s wait outlived its settlement context", kind)
+			}
+
+			if !bounded || time.Until(deadline) > deps.Uploads.Settlement {
+				t.Fatalf("%s settlement has no deadline within its budget", kind)
+			}
+			if err == nil {
+				t.Fatalf("%s wait ended without an error", kind)
 			}
 		})
 	}

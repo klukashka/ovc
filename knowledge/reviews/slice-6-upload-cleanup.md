@@ -38,7 +38,7 @@ Before integration, the implementation checkout passed targeted race checks for 
 - Confirmed authorization and real lock timeout: `TestUploadCompleteRequiresConfirmedIntentTransition`, `TestUploadCompleteAuthorizationWaitCannotGrantPermission`.
 - Finite generations, stale finalizers and retention: `TestUploadIntentCleanupGenerationsAreFinite`, `TestUploadIntentSurvivesDeadOutboxRetention`.
 - Atomic capacity and pre-body HTTP refusal: `TestUploadIntentCapacityIsAtomic`, `TestUploadIntentCapacityRefusesWithoutReadingTheBody`.
-- Clock, pool, account/channel and drain deadlines: `TestUploadSettlementDeadlineCoversClockAndPoolWaits`, `TestUploadSettlementAccountAndChannelWaitsReleasePermit`, `TestUploadSettlementHonorsEarlierProcessDrain`, plus the real process shutdown test above.
+- Clock, pool, account/channel and drain deadlines: `TestUploadSettlementDeadlineCoversPoolWaits` and `TestUploadSettlementBoundsItsClockAndIntentLockWaits`, `TestUploadSettlementAccountAndChannelWaitsReleasePermit`, `TestUploadSettlementHonorsEarlierProcessDrain`, plus the real process shutdown test above.
 - Immutable deletion identity: `TestUploadIntentIdentityGuardsDeletion` and the pending/bound ownership tests.
 - Late Create, NULL-to-ID recheck and already completed cleanup: `TestUploadCleanupAcceptsLateCreateIdentifier`, `TestUploadCleanupRechecksLateCreateDuringDelete`, `TestUploadCleanupBeforeCreateReturns`.
 - Bounded ID persistence with no part/Complete invocation: `TestUploadCreateIdentifierPersistenceHasOneSettlementBudget`.
