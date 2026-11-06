@@ -50,7 +50,7 @@ One Go module ([ADR-0012](../../docs/decisions/0012-go-backend.md)). Executables
 | `internal/services/accounts` | Registration, verification, sessions, passwords, deletion | [Accounts](../specs/accounts.md) |
 | `internal/services/tutoring` | Relationships, invitations, join requests, groups | [Accounts](../specs/accounts.md#tutorstudent-relationships) |
 | `internal/services/schedule` | Lessons, series, materialisation, overlap checks, the visibility of lessons, the label table, and the status, reminder and horizon-extension work the worker runs; recurrence and timezone arithmetic comes from `internal/domain/schedule` | [Schedule](../specs/schedule.md) |
-| `internal/services/meetings` | Meetings, joins, callbacks, recordings | [Video](../specs/realtime-and-video.md#video) |
+| `internal/services/meetings` | Constructor-injected meeting cleanup with provider inspection and exact-generation End; joins, callbacks and recordings remain pending | [Video](../specs/realtime-and-video.md#video) |
 | `internal/services/library` | Folders, materials, templates | [Homework](../specs/homework.md#library) |
 | `internal/services/homework` | Issues, submissions, scoring, reviews, analytics | [Homework](../specs/homework.md) |
 | `internal/services/chat` | Channels, messages, read markers | [Chat](../specs/realtime-and-video.md#chat) |
@@ -149,6 +149,7 @@ Infrastructure adapters that keep their own state in PostgreSQL, namely the data
 | `internal/adapters` | `internal/domain`, `internal/core` |
 | `internal/adapters/meeting` | `internal/domain`, `internal/core` |
 | `internal/services` | `internal/domain`, `internal/core`, `internal/repositories`, `internal/adapters`, `internal/schemas` |
+| `internal/services/meetings` | `internal/domain`, `internal/core`, `internal/repositories`, `internal/adapters`, `internal/services/outbox` (exported typed recovery outcome only) |
 | `internal/services/schedule` | `internal/domain`, `internal/domain/schedule`, `internal/core`, `internal/repositories`, `internal/adapters`, `internal/schemas` |
 | `internal/realtime` | `internal/domain`, `internal/core`, `internal/schemas`, `internal/services`, `internal/adapters` (the listener interface) |
 | `internal/api` | `internal/domain`, `internal/core`, `internal/schemas`, `internal/services`, `internal/realtime` |

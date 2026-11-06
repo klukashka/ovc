@@ -30,10 +30,13 @@ func DefaultTiming() Timing {
 
 type Perform func(ctx context.Context, row outbox.Row, now time.Time) (domain.OutboxDoneReason, error)
 
+type PerformMeetingRecovery func(context.Context, outbox.Row, time.Time) (outbox.MeetingRecoveryOutcome, error)
+
 type Lane struct {
-	Name        domain.OutboxLane
-	Concurrency int32
-	Perform     Perform
+	Name                   domain.OutboxLane
+	Concurrency            int32
+	Perform                Perform
+	PerformMeetingRecovery PerformMeetingRecovery
 }
 
 type Job struct {
@@ -317,7 +320,7 @@ var (
 )
 
 func (w *Worker) perform(ctx context.Context, loop *laneLoop, claim outbox.Claim, claimedAt time.Time) error {
-	reason, err := w.attempt(ctx, loop.lane, claim, claimedAt)
+	result, err := w.attempt(ctx, loop.lane, claim, claimedAt)
 	now, clockErr := loop.mode.instant(ctx)
 	if clockErr != nil {
 		return fmt.Errorf("read the clock: %w", clockErr)
@@ -325,17 +328,38 @@ func (w *Worker) perform(ctx context.Context, loop *laneLoop, claim outbox.Claim
 	if err != nil {
 		return w.outbox.Fail(ctx, claim, err, now)
 	}
-	return w.outbox.Complete(ctx, claim, reason, now)
+	if claim.Row.Kind == domain.KindMeetingCleanup {
+		return w.outbox.CompleteMeetingRecovery(ctx, claim, result.meetingRecovery, now)
+	}
+	return w.outbox.Complete(ctx, claim, result.reason, now)
 }
 
-func (w *Worker) attempt(ctx context.Context, lane Lane, claim outbox.Claim, now time.Time) (reason domain.OutboxDoneReason, err error) {
+type effectResult struct {
+	reason          domain.OutboxDoneReason
+	meetingRecovery outbox.MeetingRecoveryOutcome
+}
+
+var errEffectHandler = errors.New("outbox effect handler does not match its kind and lane")
+
+func (w *Worker) attempt(ctx context.Context, lane Lane, claim outbox.Claim, now time.Time) (result effectResult, err error) {
 	effectContext, cancel := context.WithTimeout(ctx, effectTimeout)
 	defer cancel()
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			core.LogPanic(ctx, w.logger, "outbox-effect", fmt.Sprintf("%T", recovered))
-			reason, err = "", errEffectPanicked
+			result, err = effectResult{}, errEffectPanicked
 		}
 	}()
-	return lane.Perform(effectContext, claim.Row, now)
+	if claim.Row.Kind == domain.KindMeetingCleanup {
+		if lane.Name != domain.LaneProviderCall || lane.PerformMeetingRecovery == nil {
+			return result, errEffectHandler
+		}
+		result.meetingRecovery, err = lane.PerformMeetingRecovery(effectContext, claim.Row, now)
+	} else {
+		if lane.Perform == nil {
+			return result, errEffectHandler
+		}
+		result.reason, err = lane.Perform(effectContext, claim.Row, now)
+	}
+	return result, err
 }

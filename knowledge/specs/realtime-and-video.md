@@ -338,6 +338,14 @@ These repository operations neither invoke the provider nor authorize callers. T
 - **`meta_*` values** never contain a secret or personal data, because meeting users may see them.
 - **Contract tests:** the fake runs in every test run. The BigBlueButton adapter runs the same contract tests only against the remote test server, with an opt-in command; a run that was not performed is reported as `unverified`. In every test run, the BigBlueButton adapter is also tested against an in-process `httptest.Server` that answers as the BigBlueButton API and captures each request: in the MVP it asserts that `create` carries `record=false`, `autoStartRecording=false` and `allowStartStopRecording=false`, carries `meetingEndedURL` and no `meta_bbb-recording-ready-url`, and is signed with an accepted checksum; the opt-in remote run also asserts that `getMeetingInfo` reports recording off.
 
+#### Constructor-injected cleanup executor
+
+The meetings service executes an existing pending cleanup cycle through the real worker. It resolves the immutable cycle receipt by outbox identity, checks the current ledger's cycle, provider kind and cleanup eligibility, and performs provider work after repository reads release their connections. A revoked prepared attempt settles without a provider call. Other attempts inspect the provider identity; a generation differing from recorded evidence yields a retained conflict without End. End binds the exact inspected generation. A stale-handle refusal is reinspected: absence can establish that generation's termination, a replacement yields conflict, and an unchanged generation remains retryable failure.
+
+Only returned evidence can settle after confirmed absence or successful End. Started, uncertain and legacy-uncertain evidence yields unresolved even after ending a discovered room. The result carries the sampled evidence revision to atomic lease-aware completion, so an acknowledgement arriving during provider work cannot be overwritten. Provider failures and cancellation retain the existing eight-attempt cycle budget. No provider wait holds a business transaction or connection. Worker composition in tests uses four provider slots and the existing 30-second effect deadline.
+
+This stage supplies constructor-injected execution only. Production process registration, scanner, creation coordinator, operator commands, API/UI activation and remote-provider evidence remain pending under the approved local sequence. It makes no remote erasure guarantee.
+
 ### Join flow
 
 ```mermaid
