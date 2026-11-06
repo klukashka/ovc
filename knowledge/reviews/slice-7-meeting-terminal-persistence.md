@@ -1,6 +1,6 @@
 # Meeting cleanup terminal persistence verification
 
-Date: 2026-11-06. Base: `658be0514fca80c5264cf9981547003fc1a4fa71`. Status: implemented; independent standard/security reviews passed without findings; change checks passed; ordinary merge gate pending. Tier: standard. Security trigger: provider cleanup evidence, retained uncertainty, capacity accounting and safe outbox diagnostics. The [approved local completion plan](../plans/slice-7-local-completion.md) permits this runtime prerequisite as a separate change.
+Date: 2026-11-06. Base: `658be0514fca80c5264cf9981547003fc1a4fa71`. Status: integrated under the exact owner-approved exception below; independent standard/security reviews and change checks passed, the application gate failed, and ordinary application finish was not run. Mandatory documentation verification is pending. Tier: standard. Security trigger: provider cleanup evidence, retained uncertainty, capacity accounting and safe outbox diagnostics. The [approved local completion plan](../plans/slice-7-local-completion.md) permits this runtime prerequisite as a separate change.
 
 ## Scope
 
@@ -41,3 +41,51 @@ The tests exercise real PostgreSQL transactions and the actual outbox service. T
 Use isolated disposable copies and the unchanged targeted assertions: remove the successful-effect revision comparison; remove exact-generation settlement equality; allow a refused receipt update to commit settlement; permit generic completion/kill of meeting cleanup; or requeue the expired eighth lease. All five isolated mutations failed their corresponding unchanged assertion: revision 3.61 seconds, generation 2.78 seconds, receipt rollback 2.42 seconds, generic terminal bypass 2.21 seconds and expired eighth lease 2.51 seconds. No modified source entered this branch.
 
 The first coordinator full-backend command failed during setup because its monitored working directory was the repository root, not the backend module; no test assertion ran. With explicit `go -C backend`, full `go test -race -count=1 ./...` passed in 94.11 seconds, with 20 safe monitor samples and unchanged source. Vet passed. Staticcheck then required an explicit conversion between two identical generated structs instead of copying their fields (S1016). The one-expression correction changes no field or lifecycle behavior and touches no trust boundary; it requires checks but no additional independent review under the minor-fix rule. Both independent reviews examined the complete functional diff and found no issues; the mechanical conversion is distinguished from that reviewed state. The earlier failed setup and lint outcomes remain preserved. Corrected vet, lint, sqlc diff and documentation checks passed. The final full backend passed in 91.45 seconds with 20 safe monitor samples and unchanged source. The ordinary exact-tree gate/finish remain pending at this record preparation.
+
+## Owner-approved exception integration 2026-11-06
+
+The ordinary full gate failed: 29 commands passed and Chromium password-reset failed at `signup.spec.ts:882` while reading the 401 body through `Network.getResponseBody` (no resource data). Diagnostics also recorded four unknown authentication HTTP errors and two unknown console errors. E2E passed 978/979. These errors are not suppressed or declared harmless; their cause remains unknown. Gate wall time was 289.9 seconds; the monitor observed 290.88 seconds, 59 safe samples and unchanged source. The ten-minute budget was met. No retry occurred.
+
+After security planning review and its destination-worktree clarification, the owner explicitly approved the [one-change disposition](../plans/slice-7-terminal-known-failure-exception.md), including postponing the policy record to this immediately following mandatory documentation change. Pre-merge checks confirmed clean change state, unchanged main tracked/index state and only the existing owner-owned `.agents/` and `.codex/` untracked directories, which were preserved. The gate release command found no held lock. Fast-forward integrated only the exact approved commit; ordinary finish was not called.
+
+- Base: `658be0514fca80c5264cf9981547003fc1a4fa71`.
+- Tested/integrated head: `d5961bfcd7a31c8070debb52c97498ca8d93d21d`.
+- Tested tree and verified post-merge `main^{tree}`: `ade24b9e79e03eda11b52762cac6648fe42dcfb4`.
+- Post-merge `HEAD^` equals the base; the merged branch was removed with ordinary `git branch -d` after detaching its worktree.
+- Normal application gate/finish: failed / not run. This explicit exception is not a pass.
+- Mandatory documentation checks, independent reviews and docs-only gate/finish: pending at record preparation. Their success will certify only the documentation tree.
+
+Every command from the failed application gate follows:
+
+```text
+exit 0: pre: 0.2 s: .: tools/check-tool-binaries.sh
+exit 0: C: 0.1 s: .: pnpm --dir tools/docs install --frozen-lockfile
+exit 0: C: 13.5 s: .: tools/docs/check-docs.sh
+exit 0: B: 2.8 s: .: bin/gitleaks git --redact --no-banner --config .gitleaks.toml .
+exit 0: B: 0.1 s: .: bin/gitleaks git --staged --redact --no-banner --config .gitleaks.toml .
+exit 0: C: 2.9 s: .: bin/osv-scanner scan source --no-call-analysis=go --lockfile=tools/go.mod
+exit 0: C: 0.8 s: .: bin/osv-scanner scan source --no-call-analysis=go --lockfile=backend/go.mod
+exit 0: C: 1.2 s: .: bin/osv-scanner scan source --lockfile=frontend/pnpm-lock.yaml
+exit 0: C: 1.0 s: .: bin/osv-scanner scan source --lockfile=tools/docs/pnpm-lock.yaml
+exit 0: B: 0.1 s: backend: go mod tidy -diff
+exit 0: B: 0.1 s: backend: unformatted="$(gofmt -l .)" && test -z "$unformatted"
+exit 0: B: 0.4 s: backend: go vet ./...
+exit 0: B: 1.4 s: backend: ../bin/golangci-lint run ./...
+exit 0: B: 8.2 s: backend: ../bin/govulncheck ./...
+exit 0: A: 109.4 s: backend: ../tools/dev-env.sh go test -race -count=1 ./...
+exit 0: B: 0.4 s: backend: ../bin/sqlc -f sqlc.yaml diff
+exit 0: C: 0.2 s: frontend: pnpm install --frozen-lockfile
+exit 0: C: 7.8 s: frontend: pnpm typecheck
+exit 0: C: 21.2 s: frontend: pnpm lint
+exit 0: C: 2.9 s: frontend: pnpm format:check
+exit 0: C: 12.3 s: frontend: pnpm test
+exit 0: C: 1.1 s: frontend: pnpm build
+exit 0: C: 1.0 s: frontend: pnpm check:classes
+exit 0: C: 0.2 s: frontend: pnpm check:bundle
+exit 0: C: 3.1 s: frontend: pnpm api:check
+exit 0: C: 0.9 s: frontend: pnpm audit --audit-level high
+exit 1: e2e: 179.2 s: frontend: ../tools/dev-env.sh pnpm e2e
+exit 0: C: 5.7 s: .: python3 .claude/hooks/check_guard_secrets.py
+exit 0: C: 0.9 s: .: tools/check-dev-env.sh
+exit 0: B: 52.6 s: .: tools/check-merge-gate.sh
+```
