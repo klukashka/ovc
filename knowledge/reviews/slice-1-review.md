@@ -38,7 +38,7 @@ Each change had its own standard and security reviews, with fresh reviewers scop
 | Transport deadlines computed from the injected clock (T-20) | Slice 2, re-checked when session expiry first uses the shared test clock, and whenever a test clock reaches the API handler; today every process passes the system clock |
 | Route and vendor code splitting, and loading only the active language | Slice 8, before the builder pages |
 | The production reverse proxy: the page headers from `frontend/security-headers.ts`, long-lived caching of hashed assets, compression, answering the Go server's own protocol errors, redacting token segments in its access logs (T-27), and never forwarding `/__test__/` | Before OVC is first deployed, at the latest in slice 10 |
-| The readiness indicator on Home polling a database-pinging route | Slice 10, when Home gets its real content |
+| The readiness indicator on Home polling a database-pinging route | Slice 10, when Home gets its real content; moved to the [design slice](../plans/design-slice.md) on 2026-11-06 |
 | Icons at 20 px on phones | Slice 10 |
 | Verifying focus return after a native close of the sidebar overlay in Safari | Slice 10, in the accessibility pass |
 | The log queue dropping warnings and errors as readily as access records under a flood | Slice 10, with rate limits |
