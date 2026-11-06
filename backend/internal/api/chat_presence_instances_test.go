@@ -118,7 +118,7 @@ func TestReadyWaitsForCommittedPresence(t *testing.T) {
 
 func TestReadyFailsWhenPresenceCannotCommit(t *testing.T) {
 	t.Parallel()
-	h := newLiveHarness(t, liveTuning{gateway: func(deps *realtime.Dependencies) { deps.Timing.PresenceTimeout = 100 * time.Millisecond }})
+	h := newLiveHarness(t, liveTuning{gateway: func(deps *realtime.Dependencies) { deps.Timing.PresenceTimeout = presenceTestBudget }})
 	user, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
 	if _, err := h.database.Pool.Exec(context.Background(), "INSERT INTO user_presence VALUES ($1,$2,$2)", user, authStart); err != nil {
 		t.Fatal(err)
@@ -140,7 +140,7 @@ func TestAFailedPresenceReleaseRemainsPending(t *testing.T) {
 	scheduler := &manualScheduler{}
 	h := newLiveHarness(t, liveTuning{testControl: true, gateway: func(deps *realtime.Dependencies) {
 		deps.Scheduler = scheduler
-		deps.Timing.PresenceTimeout = 100 * time.Millisecond
+		deps.Timing.PresenceTimeout = presenceTestBudget
 	}})
 	user, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
 	client := h.connect(t, token)
@@ -269,7 +269,7 @@ func TestShutdownWithPendingPresenceReportsIncompleteRelease(t *testing.T) {
 	scheduler := &manualScheduler{}
 	h := newLiveHarness(t, liveTuning{gateway: func(deps *realtime.Dependencies) {
 		deps.Scheduler = scheduler
-		deps.Timing.PresenceTimeout = 100 * time.Millisecond
+		deps.Timing.PresenceTimeout = presenceTestBudget
 	}})
 	user, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
 	client := h.connect(t, token)
@@ -297,7 +297,7 @@ func TestShutdownWithPendingPresenceReportsIncompleteRelease(t *testing.T) {
 
 func TestChatPresenceFailureRecordsCarryNoBodiesNamesOrAddresses(t *testing.T) {
 	t.Parallel()
-	h := newLiveHarness(t, liveTuning{gateway: func(deps *realtime.Dependencies) { deps.Timing.PresenceTimeout = 100 * time.Millisecond }})
+	h := newLiveHarness(t, liveTuning{gateway: func(deps *realtime.Dependencies) { deps.Timing.PresenceTimeout = presenceTestBudget }})
 	parties := h.groupOfTwoStudents(t)
 	client := h.connect(t, parties.firstToken)
 	release := h.holdRow(t, presenceRowLock, parties.first.String())

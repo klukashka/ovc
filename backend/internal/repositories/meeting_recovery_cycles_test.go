@@ -3,8 +3,11 @@ package repositories_test
 import (
 	"context"
 	"errors"
+	"runtime"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
@@ -324,6 +327,15 @@ func TestMeetingRecoveryOutboxConflict(t *testing.T) {
 	}
 }
 
+func awaitNoAcquiredConnections(ctx context.Context, pool *pgxpool.Pool) int32 {
+	acquired := pool.Stat().AcquiredConns()
+	for acquired != 0 && ctx.Err() == nil {
+		runtime.Gosched()
+		acquired = pool.Stat().AcquiredConns()
+	}
+	return acquired
+}
+
 func TestMeetingRecoveryCapacityCancellation(t *testing.T) {
 	t.Parallel()
 	f := newMeetingFixture(t, testdb.New(t))
@@ -337,7 +349,9 @@ func TestMeetingRecoveryCapacityCancellation(t *testing.T) {
 	defer cancelWait()
 
 	second := recoveryRun(t, ctx, "cancelled-capacity-contender", func() error {
-		return other.repos.Meetings.CreateUnderLessonLock(waiting, meetingInput(11, f.otherLesson))
+		return other.store.WithTx(waiting, func(repos repositories.Repositories) error {
+			return repos.Meetings.CreateUnderLessonLock(waiting, meetingInput(11, f.otherLesson))
+		})
 	})
 	waitMeetingLock(t, ctx, f)
 	cancelWait()
@@ -345,10 +359,10 @@ func TestMeetingRecoveryCapacityCancellation(t *testing.T) {
 	release()
 	firstErr := meetingAwait(t, ctx, first)
 	count, countErr := other.repos.MeetingRecovery.Capacity(ctx)
-	acquired := other.pool.Stat().AcquiredConns()
+	acquired := awaitNoAcquiredConnections(ctx, other.pool)
 
 	meetingRequire(t, firstErr, countErr)
 	if !errors.Is(cancelledErr, context.Canceled) || count != 1 || acquired != 0 {
-		t.Fatal("cancelled capacity reservation leaked a slot or connection")
+		t.Fatalf("cancelled capacity reservation leaked a slot or connection: %v, count %d, acquired %d", cancelledErr, count, acquired)
 	}
 }

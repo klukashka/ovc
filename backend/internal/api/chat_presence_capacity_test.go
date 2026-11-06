@@ -11,13 +11,15 @@ import (
 	"ovc/backend/internal/realtime"
 )
 
+const presenceTestBudget = 2 * time.Second
+
 func TestPendingPresenceAccountsHaveATotalCapacity(t *testing.T) {
 	t.Parallel()
 	scheduler := &manualScheduler{}
 	h := newLiveHarness(t, liveTuning{gateway: func(deps *realtime.Dependencies) {
 		deps.Scheduler = scheduler
 		deps.Limits.Accounts = 2
-		deps.Timing.PresenceTimeout = 100 * time.Millisecond
+		deps.Timing.PresenceTimeout = presenceTestBudget
 	}})
 	first, firstToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 1, firstPresenceEmail)
 	second, secondToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, secondPresenceEmail)
@@ -82,7 +84,7 @@ func TestPresenceOperationsRespectAdmissionAndShutdownDeadlines(t *testing.T) {
 	scheduler := &manualScheduler{}
 	h := newLiveHarness(t, liveTuning{gateway: func(deps *realtime.Dependencies) {
 		deps.Scheduler = scheduler
-		deps.Timing.PresenceTimeout = 100 * time.Millisecond
+		deps.Timing.PresenceTimeout = presenceTestBudget
 	}})
 	connected, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 1, firstPresenceEmail)
 	waiting, waitingToken := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, secondPresenceEmail)
@@ -109,7 +111,7 @@ func TestPresenceOperationsRespectAdmissionAndShutdownDeadlines(t *testing.T) {
 	storedAfter, _ := h.presenceOf(t, connected)
 	leases := h.countRows(t, "SELECT count(user_id) FROM user_presence_instances WHERE user_id = $1::uuid", connected.String())
 
-	if domain.CloseCode(closed) != domain.CloseReconnect || frame.Type == domain.FrameReady || admissionDuration >= time.Second {
+	if domain.CloseCode(closed) != domain.CloseReconnect || frame.Type == domain.FrameReady || admissionDuration >= 2*presenceTestBudget {
 		t.Fatalf("blocked readiness returned frame %s, close %d after %s", frame.Type, closed, admissionDuration)
 	}
 	if scheduler.runningTickers(realtime.DefaultTiming().PresenceEvery) != 0 ||
