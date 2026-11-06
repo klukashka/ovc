@@ -161,6 +161,7 @@ export class SignalAwareRefreshBodies {
   private headerResume = (): void => undefined;
   private readonly headerGate: Promise<void>;
   private readonly cancellationFails: boolean;
+  private readonly declaresLength: boolean;
   readonly headers: Promise<void>;
   readonly reading: Promise<void>;
   private markHeaders = (): void => undefined;
@@ -181,9 +182,11 @@ export class SignalAwareRefreshBodies {
       readonly bytes?: number;
       readonly holdHeaders?: boolean;
       readonly cancellationFails?: boolean;
+      readonly declaresLength?: boolean;
     } = {},
   ) {
     this.cancellationFails = options.cancellationFails ?? false;
+    this.declaresLength = options.declaresLength ?? false;
     this.headerGate = new Promise((resolve) => {
       this.headerResume = resolve;
     });
@@ -298,10 +301,12 @@ export class SignalAwareRefreshBodies {
       },
       { highWaterMark: 0 },
     );
+    const headers = new Headers(original.headers);
+    if (this.declaresLength) headers.set('Content-Length', String(content.byteLength));
     const response = new Response(body, {
       status: original.status,
       statusText: original.statusText,
-      headers: original.headers,
+      headers,
     });
     this.lastResponse = response;
     this.markHeaders();

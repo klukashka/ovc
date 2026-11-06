@@ -104,9 +104,9 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 ### Refused refresh response ownership
 
 A recognized refresh401/204 ends the old session and releases its token/private-cache ownership
-before its response body finishes. The same existing 15-second request signal bounds a streaming
-drain with a 64-KiB maximum; overflow cancels the owned body, every reader is released, and body
-failures reject refresh/authorized-request operations. The startup error-to-state wrapper keeps its
+before its response body finishes. The same existing 15-second request signal bounds a drain with a 64-KiB
+limit, read whole for a declared length and otherwise streamed ([accounts](../../specs/accounts.md));
+a streamed overflow cancels the owned body and releases its reader, and body failures reject refresh/authorized-request operations. The startup error-to-state wrapper keeps its
 existing signed-out/new-owner behavior and does not reinterpret body failure as HTTP completion.
 The Web Lock covers the drain. A queued callback checks its captured session epoch after acquiring
 the lock and before sending a cookie-authenticated refresh; replacement-account adoption makes it

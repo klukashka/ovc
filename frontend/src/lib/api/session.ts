@@ -116,6 +116,36 @@ function responseBodyAborted(signal: AbortSignal): boolean {
   return signal.aborted;
 }
 
+function declaresBoundedBody(response: Response): boolean {
+  if (response.headers.has('Content-Encoding') || response.headers.has('Transfer-Encoding')) return false;
+  const length = response.headers.get('Content-Length');
+  return length !== null && /^\d+$/.test(length) && Number(length) <= ownedResponseBodyLimit;
+}
+
+async function drainDeclaredBody(
+  response: Response,
+  signal: AbortSignal,
+  owner: 'refresh_refusal' | 'account',
+): Promise<void> {
+  let rejectAbort = (): void => undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectAbort = (): void => {
+      reject(new Error(`${owner}_body_aborted`));
+    };
+  });
+  signal.addEventListener('abort', rejectAbort, { once: true });
+  let failure: 'overflow' | 'aborted' | 'read_failed' | null = null;
+  try {
+    const body = await Promise.race([response.arrayBuffer(), aborted]);
+    if (body.byteLength > ownedResponseBodyLimit) failure = 'overflow';
+  } catch {
+    failure = responseBodyAborted(signal) ? 'aborted' : 'read_failed';
+  } finally {
+    signal.removeEventListener('abort', rejectAbort);
+  }
+  if (failure !== null) throw new AggregateError([new Error(`${owner}_body_${failure}`)], `${owner}_body_failed`);
+}
+
 export async function drainOwnedResponse(
   response: Response,
   signal: AbortSignal,
@@ -123,6 +153,10 @@ export async function drainOwnedResponse(
 ): Promise<void> {
   if (responseBodyAborted(signal)) throw new Error(`${owner}_body_aborted`);
   if (response.body === null) return;
+  if (declaresBoundedBody(response)) {
+    await drainDeclaredBody(response, signal, owner);
+    return;
+  }
   const reader = response.body.getReader();
   let rejectAbort = (): void => undefined;
   const aborted = new Promise<never>((_resolve, reject) => {

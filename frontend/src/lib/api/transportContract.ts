@@ -649,6 +649,17 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
         cancellationReader?.releaseLock();
       }
       check(next.body?.locked === false, 'expected cancelled account reader release');
+      const wholeController = new AbortController();
+      const whole =
+        method === 'me'
+          ? await subject.transport.me(token, wholeController.signal)
+          : await subject.transport.send(new Request(meRequest(subject, token), { signal: wholeController.signal }));
+      wholeController.abort();
+      const wholeRead = await whole.arrayBuffer().then(
+        () => 'read',
+        () => 'failed',
+      );
+      check(wholeRead === 'failed', 'expected account body abort to reject a whole read');
     }
   },
 };

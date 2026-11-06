@@ -283,8 +283,7 @@ timer jumps correct test workload races without changing application timing, fra
 CORS or cookies. Added 2026-11-03; approved scope, wording pending owner review.
 
 For T-2/T-18/T-19/T-20/T-21/T-23/T-29/T-41, refresh refusal ends old account/token/cache ownership
-before a bounded body drain. The same original deadline and a 64-KiB maximum bound streamed bytes;
-reader release and cancellation preserve resource ownership on success/failure/abort. Epoch is
+before a bounded body drain. The same original deadline and a 64-KiB limit bound the drain: a body declaring its length within the limit is read whole, where the limit relies on the browser enforcing that length and a larger body is detected only after the read, which assumes a same-origin response whose encoding headers are visible, and any other body is streamed under a hard limit with reader release and cancellation on success/failure/abort (2026-11-06, pending owner review). Epoch is
 checked inside the acquired Web Lock before sending any cookie-authenticated refresh. A stale
 queued callback sends nothing, and an old body cannot overwrite a replacement account, recover old
 private cache or replay a request. Constructor-selected signal-aware fake and shared transport
@@ -371,12 +370,11 @@ verification active and without diagnostic exemptions.
 The session consumes discarded account-response bodies in `loadMe` and `ownerOf`,
 without parsing or publishing stale account data during disposal. Existing authorized-request
 classification of refusals before disposal is unchanged. A current account refusal releases
-session and private-cache ownership before disposal. Each discard streams at most
-64 KiB; read, abort, overflow and cancellation failures remain failures and cannot
+session and private-cache ownership before disposal. Each discard follows the same 64-KiB rule (2026-11-06, pending owner review); read, abort, overflow and cancellation failures remain failures and cannot
 change a replacement account. `loadMe` starts a 15-second HTTP/body signal before
 sending; `ownerOf` reuses its existing signal. This does not promise a total
 15-second operation deadline when an authorized request waits for a separate refresh.
-Reader cancellation settlement is checked separately, rather than inferred from an
+For a streamed discard, reader cancellation settlement is checked separately, rather than inferred from an
 abort signal. Arbitrary API response ownership and stale refresh200 behavior are
 unchanged. These boundaries address T-20, T-21 and T-29; the bounded, content-free
 verification evidence addresses T-18, T-19 and T-41.

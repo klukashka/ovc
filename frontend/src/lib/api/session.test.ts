@@ -9,7 +9,7 @@ import {
   memoryLocks,
   unsharedLocks,
 } from './fakeTransport.ts';
-import { type LockManagerLike, Session, drainOwnedResponse } from './session.ts';
+import { type LockManagerLike, Session, drainOwnedResponse, ownedResponseBodyLimit } from './session.ts';
 import { FollowingQueryClient, accountCacheOwnership } from '../../app/queryClient.ts';
 
 const origin = 'https://ovc.example';
@@ -774,6 +774,131 @@ test('owned account lifecycle: abort settles the owned reader and retains failur
   expect(result.failed).toBe(true);
   expect(result.error).toBeInstanceOf(AggregateError);
   expect(body.snapshot()).toMatchObject({ active: 0, aborted: 1, readerLocked: false, consumed: true });
+});
+
+test('owned account lifecycle: a declared body within the limit is read whole without a released reader', async () => {
+  const response = new Response('account data', { headers: { 'Content-Length': '12' } });
+
+  await drainOwnedResponse(response, new AbortController().signal, 'account');
+
+  expect(response.bodyUsed).toBe(true);
+  expect(response.body?.locked).toBe(true);
+});
+
+test('owned account lifecycle: abort settles a declared body and retains failure evidence', async () => {
+  const body = new SignalAwareRefreshBodies({ hold: true, declaresLength: true });
+  const controller = new AbortController();
+  const response = await body.response(new Response('account data'), controller.signal);
+  const pending = settledOperation(drainOwnedResponse(response, controller.signal, 'account'));
+  await body.reading;
+
+  controller.abort();
+  const result = await pending;
+
+  expect(result.error).toBeInstanceOf(AggregateError);
+  if (!(result.error instanceof AggregateError)) throw new Error('expected aggregate abort failure');
+  expect(result.error.errors.map((error: unknown) => (error instanceof Error ? error.message : ''))).toEqual([
+    'account_body_aborted',
+  ]);
+  expect(body.snapshot()).toMatchObject({ active: 0, aborted: 1, readerLocked: true });
+});
+
+test('owned account lifecycle: abort settles a declared drain under a signal not bound to its body', async () => {
+  const response = new Response(new ReadableStream<Uint8Array>(), { headers: { 'Content-Length': '12' } });
+  const controller = new AbortController();
+  const pending = settledOperation(drainOwnedResponse(response, controller.signal, 'account'));
+
+  controller.abort();
+  const result = await pending;
+
+  expect(result.error).toBeInstanceOf(AggregateError);
+  if (!(result.error instanceof AggregateError)) throw new Error('expected aggregate abort failure');
+  expect(result.error.errors.map((error: unknown) => (error instanceof Error ? error.message : ''))).toEqual([
+    'account_body_aborted',
+  ]);
+});
+
+test.each([
+  ['over the limit', { 'Content-Length': String(ownedResponseBodyLimit + 1) }],
+  ['malformed', { 'Content-Length': '12, 12' }],
+  ['non-decimal', { 'Content-Length': '1e3' }],
+  ['absent', {}],
+  ['compressed', { 'Content-Length': '12', 'Content-Encoding': 'gzip' }],
+  ['chunked', { 'Content-Length': '12', 'Transfer-Encoding': 'chunked' }],
+])('owned account lifecycle: a %s declaration keeps the streamed limit', async (_name, headers) => {
+  const oversized = new Uint8Array(ownedResponseBodyLimit + 1);
+  const response = new Response(oversized, { headers });
+
+  const result = await settledOperation(drainOwnedResponse(response, new AbortController().signal, 'account'));
+
+  expect(result.failed).toBe(true);
+  expect(result.error).toBeInstanceOf(AggregateError);
+  if (!(result.error instanceof AggregateError)) throw new Error('expected aggregate overflow failure');
+  expect(result.error.errors.map((error: unknown) => (error instanceof Error ? error.message : ''))).toEqual([
+    'account_body_overflow',
+  ]);
+  expect(response.body?.locked).toBe(false);
+});
+
+test('owned account lifecycle: a declared body larger than the limit fails after the read', async () => {
+  const response = new Response(new Uint8Array(ownedResponseBodyLimit + 1), { headers: { 'Content-Length': '12' } });
+
+  const result = await settledOperation(drainOwnedResponse(response, new AbortController().signal, 'account'));
+
+  expect(result.error).toBeInstanceOf(AggregateError);
+  if (!(result.error instanceof AggregateError)) throw new Error('expected aggregate overflow failure');
+  expect(result.error.errors.map((error: unknown) => (error instanceof Error ? error.message : ''))).toEqual([
+    'account_body_overflow',
+  ]);
+  expect(response.body?.locked).toBe(true);
+});
+
+test('owned account lifecycle: a declared body of exactly the limit completes', async () => {
+  const response = new Response(new Uint8Array(ownedResponseBodyLimit), {
+    headers: { 'Content-Length': String(ownedResponseBodyLimit) },
+  });
+
+  const result = await settledOperation(drainOwnedResponse(response, new AbortController().signal, 'account'));
+
+  expect(result.failed).toBe(false);
+  expect(response.body?.locked).toBe(true);
+});
+
+test('owned account lifecycle: a failed read of a declared body is a read failure', async () => {
+  const failing = new ReadableStream<Uint8Array>({
+    pull: (controller): void => {
+      controller.error(new Error('read failed'));
+    },
+  });
+  const response = new Response(failing, { headers: { 'Content-Length': '12' } });
+
+  const result = await settledOperation(drainOwnedResponse(response, new AbortController().signal, 'account'));
+
+  expect(result.error).toBeInstanceOf(AggregateError);
+  if (!(result.error instanceof AggregateError)) throw new Error('expected aggregate read failure');
+  expect(result.error.errors.map((error: unknown) => (error instanceof Error ? error.message : ''))).toEqual([
+    'account_body_read_failed',
+  ]);
+});
+
+test('owned account lifecycle: a replacement account survives the drain of a declared body', async () => {
+  const { shared, session, bodies } = await accountBodyFixture();
+  const body = new SignalAwareRefreshBodies({ hold: true, holdHeaders: true, declaresLength: true });
+  bodies.arm(body);
+  const pending = settledOperation(session.reloadAccount());
+  await body.headers;
+
+  session.endRevoked('signedOut');
+  await session.adopt(await tokenFor(shared, second));
+  body.releaseHeaders();
+  await body.reading;
+  const whileReading = signedInAs(session);
+  body.release();
+  await pending;
+
+  expect(whileReading).toBe(second.id);
+  expect(signedInAs(session)).toBe(second.id);
+  expect(body.snapshot()).toMatchObject({ consumed: true, active: 0, completed: 1, readerLocked: true });
 });
 
 test('owned account lifecycle: an arbitrary API caller still owns its response', async () => {

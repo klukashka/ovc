@@ -554,8 +554,7 @@ Playwright traces remain opaque private artifacts; safe collector exports do not
 Status: added 2026-11-03, pending owner review; scope approved in the
 [refresh response lifecycle plan](../knowledge/plans/slice-6-refresh-refusal-body-lifecycle.md).
 The old session/token/private cache ends on refresh refusal headers before body completion. A
-64-KiB streaming maximum and the original 15-second request signal bound the drain; every reader
-is released and overflow cancels the owned body. Direct body failures reject, while startup retains
+64-KiB limit and the original 15-second request signal bound the drain: a body declaring its length within the limit is read whole, and any other body is streamed, with its reader released and an overflow cancelling it (2026-11-06, pending owner review). Direct body failures reject, while startup retains
 its existing error-to-state behavior and never overwrites a newer owner. The acquired Web Lock
 callback checks epoch before a cookie-authenticated send. Holding that lock during a drain is an
 explicit resource-lifecycle consequence; it does not increase the deadline or change token policy.
@@ -651,12 +650,11 @@ verification active and without diagnostic exemptions.
 The session consumes discarded account-response bodies in `loadMe` and `ownerOf`,
 without parsing or publishing stale account data during disposal. Existing authorized-request
 classification of refusals before disposal is unchanged. A current account refusal releases
-session and private-cache ownership before disposal. Each discard streams at most
-64 KiB; read, abort, overflow and cancellation failures remain failures and cannot
+session and private-cache ownership before disposal. Each discard follows the same 64-KiB rule (2026-11-06, pending owner review); read, abort, overflow and cancellation failures remain failures and cannot
 change a replacement account. `loadMe` starts a 15-second HTTP/body signal before
 sending; `ownerOf` reuses its existing signal. This does not promise a total
 15-second operation deadline when an authorized request waits for a separate refresh.
-Reader cancellation settlement is checked separately, rather than inferred from an
+For a streamed discard, reader cancellation settlement is checked separately, rather than inferred from an
 abort signal. Arbitrary API response ownership and stale refresh200 behavior are
 unchanged. These boundaries address T-20, T-21 and T-29; the bounded, content-free
 verification evidence addresses T-18, T-19 and T-41.
