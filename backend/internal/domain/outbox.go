@@ -37,6 +37,7 @@ type JobName string
 
 const (
 	JobOutboxCleanup             JobName = "outbox.cleanup"
+	JobMeetingRecovery           JobName = "meeting.recovery"
 	JobRateLimitCleanup          JobName = "ratelimit.cleanup"
 	JobSessionsCleanup           JobName = "sessions.cleanup"
 	JobEmailRequestsCleanup      JobName = "email_requests.cleanup"

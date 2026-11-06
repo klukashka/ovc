@@ -325,6 +325,8 @@ The local storage stage atomically creates a ledger entry with each business mee
 
 These repository operations neither invoke the provider nor authorize callers. There is no automatic deletion or settlement of uncertain evidence, and no remote cleanup deadline. Before API/worker activation, the [approved local sequence](../plans/slice-7-local-completion.md) must integrate the coordinator, bounded reconciliation/outbox effects, handling of late Create and operator recovery. Its [recovery storage](data-model.md#recovery-capacity-and-cleanup-cycle-storage) adds global admission capacity, revision-bound terminal settlement, durable finite-cycle receipts and persistent cursor operations; these repository methods alone do not call the provider or prove physical erasure. [ADR-0020](../../docs/decisions/0020-durable-meeting-recovery.md) defines the retained-uncertainty and bounded-work contract. An absent inspection alone cannot justify forgetting the obligation. See the [approved storage plan](../plans/slice-7-meeting-recovery-ledger.md).
 
+The [constructor-injected scanner](notifications.md#constructor-injected-meeting-recovery-scanner) supplies bounded scheduling for existing cleanup-requested and orphaned ledger entries. It neither closes stale attached creating rows nor performs Create or authorization. Runtime registration and the remaining coordinator are pending.
+
 - **`MeetingInfo`** distinguishes three cases from `getMeetingInfo`:
   - `not_found`: no meeting with that identifier exists;
   - `created`: it exists with no participants yet;
