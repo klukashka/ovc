@@ -341,7 +341,10 @@ test.describe('text messages', () => {
     await signInThroughTheApi(page, tutor);
     await signInThroughTheApi(studentPage, student);
     await page.goto(`/messages/${channel}`);
+    const studentTraffic = trafficAfterReady(studentPage, ['/api/v1/channels']);
+    await studentTraffic.initialize();
     await studentPage.goto('/messages');
+    await expectRefetchedAfterTheSocketIsReady(studentTraffic);
 
     const listed = studentPage.getByRole('region', { name: 'Chats', exact: true }).getByRole('link');
     await listed.first().waitFor();
