@@ -110,8 +110,15 @@ func (s *Service) ReclaimExpired(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	meetings, meetingErr := s.store.ReclaimMeetingRecovery(ctx, now, 100)
-	reclaimed = append(reclaimed, meetings...)
+	meetings, err := s.store.ReclaimMeetingRecovery(ctx, now, 100)
+	reclaimed = append(reclaimed, meetings.Reclaimed...)
+	for _, failure := range meetings.Failures {
+		s.logger.LogAttrs(ctx, slog.LevelWarn, "outbox.lease.reclaim_failed",
+			slog.String("outbox_id", hex.EncodeToString(failure.OutboxID[:])),
+			slog.String("kind", string(domain.KindMeetingCleanup)),
+			slog.String("error_code", reclaimFailureCode(failure.Err)),
+		)
+	}
 	for _, row := range reclaimed {
 		attributes := []slog.Attr{slog.String("outbox_id", hex.EncodeToString(row.ID[:])), slog.String("kind", string(row.Kind))}
 		if row.Status == domain.OutboxDead {
@@ -120,7 +127,7 @@ func (s *Service) ReclaimExpired(ctx context.Context, now time.Time) error {
 		}
 		s.logger.LogAttrs(ctx, slog.LevelWarn, "outbox.lease.reclaimed", attributes...)
 	}
-	return meetingErr
+	return err
 }
 
 func (s *Service) Cleanup(ctx context.Context, now time.Time) (int64, error) {
@@ -179,6 +186,13 @@ func errorCode(cause error) string {
 	}
 	if errors.Is(cause, context.DeadlineExceeded) {
 		return "timeout"
+	}
+	return core.ErrorKind(cause)
+}
+
+func reclaimFailureCode(cause error) string {
+	if errors.Is(cause, repositories.ErrMeetingRecoveryLeaseMissing) {
+		return "lease_missing"
 	}
 	return core.ErrorKind(cause)
 }

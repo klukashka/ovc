@@ -95,7 +95,7 @@ func reportProvider(ctx context.Context, logger *slog.Logger, op operation, err 
 		level, kind = slog.LevelDebug, "cancelled"
 	}
 	if errors.Is(*err, context.DeadlineExceeded) {
-		level, kind = slog.LevelDebug, "deadline"
+		kind = "deadline"
 	}
 	logger.LogAttrs(ctx, level, "meeting.provider.failed", slog.String("operation", string(op)), slog.String("kind", kind))
 }

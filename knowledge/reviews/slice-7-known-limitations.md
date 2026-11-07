@@ -70,3 +70,12 @@ Recorded 2026-11-07 with the lesson room interface; each is an item for the cumu
 - **An End answer that never arrives has no browser test.** A network failure of `POST /lessons/{id}/end` keeps the dialog open with its reason, but jsdom has no modal dialog and the end-to-end rules allow no aborted request outside the language test, so it is proven by reading only. Severity: minor.
 - **Calendar items with `took_place` are proven by the API only.** No component test renders an ended calendar item that took place, and no backend test asserts `took_place` on `GET /calendar`. Severity: minor.
 - **A successful late answer after sign-out has no browser test.** The end-to-end sign-out test holds the join request, so it reaches the API after sign-out and gets `401`; the client dropping a successful answer that arrives after an account change is proven by the component test "unmounting, as an account change does, closes the tab and drops the late answer". Holding a response is not allowed under the no-mocks rule. Severity: minor.
+
+## Meeting cleanup reclaim residuals
+
+Recorded 2026-11-07 with the change that reports failed meeting cleanup lease reclaims per item instead of stopping the worker, from its independent standard and security reviews. Each is minor, internal-fault only, touches no trust boundary and does not block local slice 7 work.
+
+- **A persistently failing reclaim never escalates.** A row whose reclaim fails on every pass (a missing lease or a persistent database error) stays `in_progress` with an expired lease, is never dead-lettered, and logs `outbox.lease.reclaim_failed` at WARNING on every pass, about once a second per row.
+- **Head-of-list starvation.** The reclaim list is ordered by `lease_expires_at, id` with a limit of 100, so 100 or more persistently failing rows would fill every batch and later expired cleanup leases would never be reclaimed.
+- **A database outage after a successful list.** It becomes up to 100 per-item warnings and the pass returns without error; the worker stops on the next pass, when the list itself fails.
+- **Untested reclaim branches.** No test covers a failed item retried on a later pass, the 20-second budget ending a pass without error, or parent cancellation returning the joined error.

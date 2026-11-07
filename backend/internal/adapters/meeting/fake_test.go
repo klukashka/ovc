@@ -302,18 +302,22 @@ func testDiagnostics(t *testing.T) {
 	enterErr := provider.Enter(t.Context(), link, meeting, participant)
 	_, infoErr := provider.MeetingInfo(t.Context(), meeting)
 	leaveErr := provider.Leave(t.Context(), meeting, participant.ID)
+	expired, cancel := context.WithDeadline(t.Context(), time.Unix(0, 0))
+	defer cancel()
+	_, deadlineErr := provider.MeetingInfo(expired, meeting)
 	failureErr := provider.SimulateUnavailable(t.Context(), true)
 	endErr := provider.EndMeeting(t.Context(), meeting)
 	output := records.String()
 
 	requireNoErrors(t, enterErr, infoErr, leaveErr, failureErr)
+	requireFailure(t, deadlineErr, context.DeadlineExceeded)
 	requireFailure(t, endErr, FailureUnavailable)
 	for _, secret := range []string{meeting.Name, participant.Name, link.Reveal(), strings.Repeat("2a", 32)} {
 		if strings.Contains(output, secret) {
 			t.Fatal("diagnostics disclosed private content")
 		}
 	}
-	for _, marker := range []string{`"msg":"meeting.provider.completed"`, `"msg":"meeting.provider.failed"`, `"kind":"unavailable"`, `"operation":"info"`, `"component":"meeting"`} {
+	for _, marker := range []string{`"msg":"meeting.provider.completed"`, `"msg":"meeting.provider.failed"`, `"kind":"unavailable"`, `"operation":"info"`, `"component":"meeting"`, `"level":"WARN","msg":"meeting.provider.failed","component":"meeting","operation":"info","kind":"deadline"`} {
 		if !strings.Contains(output, marker) {
 			t.Fatalf("diagnostics missing %s", marker)
 		}

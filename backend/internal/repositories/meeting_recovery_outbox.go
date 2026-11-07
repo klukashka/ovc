@@ -116,21 +116,32 @@ func finishRecoveryOutbox(ctx context.Context, repos Repositories, recovery Stor
 	return nil
 }
 
-func (s *Store) ReclaimMeetingRecovery(ctx context.Context, now time.Time, limit int32) ([]ReclaimedOutboxRow, error) {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+var ErrMeetingRecoveryLeaseMissing = errors.New("expired meeting recovery outbox has no lease")
+
+type MeetingRecoveryReclaimFailure struct {
+	OutboxID domain.OutboxID
+	Err      error
+}
+
+type MeetingRecoveryReclaim struct {
+	Reclaimed []ReclaimedOutboxRow
+	Failures  []MeetingRecoveryReclaimFailure
+}
+
+func (s *Store) ReclaimMeetingRecovery(parent context.Context, now time.Time, limit int32) (MeetingRecoveryReclaim, error) {
+	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 	defer cancel()
+	var result MeetingRecoveryReclaim
 	if limit < 1 || limit > 100 {
-		return nil, ErrMeetingRecoveryBatchSize
+		return result, ErrMeetingRecoveryBatchSize
 	}
 	candidates, err := s.Repositories().MeetingRecovery.queries.ListExpiredMeetingRecoveryOutbox(ctx, dbgen.ListExpiredMeetingRecoveryOutboxParams{Now: &now, BatchSize: limit})
 	if err != nil {
-		return nil, done(err, "list expired meeting recovery outbox")
+		return result, done(err, "list expired meeting recovery outbox")
 	}
-	var reclaimed []ReclaimedOutboxRow
-	var failures error
 	for _, candidate := range candidates {
 		if candidate.LeaseToken == nil {
-			failures = errors.Join(failures, errors.New("expired meeting recovery outbox has no lease"))
+			result.Failures = append(result.Failures, MeetingRecoveryReclaimFailure{OutboxID: candidate.ID, Err: ErrMeetingRecoveryLeaseMissing})
 			continue
 		}
 		status := domain.OutboxPending
@@ -149,15 +160,18 @@ func (s *Store) ReclaimMeetingRecovery(ctx context.Context, now time.Time, limit
 			return nil
 		})
 		if err != nil {
-			failures = errors.Join(failures, err)
+			if parentErr := parent.Err(); parentErr != nil {
+				return result, errors.Join(parentErr, err)
+			}
+			result.Failures = append(result.Failures, MeetingRecoveryReclaimFailure{OutboxID: candidate.ID, Err: err})
 			if ctx.Err() != nil {
-				return reclaimed, failures
+				return result, nil
 			}
 			continue
 		}
 		if applied {
-			reclaimed = append(reclaimed, ReclaimedOutboxRow{ID: candidate.ID, Kind: domain.KindMeetingCleanup, Status: status})
+			result.Reclaimed = append(result.Reclaimed, ReclaimedOutboxRow{ID: candidate.ID, Kind: domain.KindMeetingCleanup, Status: status})
 		}
 	}
-	return reclaimed, failures
+	return result, nil
 }

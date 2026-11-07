@@ -193,7 +193,7 @@ func TestMeetingRecoveryExpiredLeases(t *testing.T) {
 			repeated, repeatErr := f.store.ReclaimMeetingRecovery(t.Context(), instant.Add(outbox.LeaseDuration), 100)
 
 			meetingRequire(t, genericErr, reclaimErr, repeatErr)
-			if len(generic) != 0 || len(repeated) != 0 {
+			if len(generic) != 0 || len(repeated.Reclaimed) != 0 || len(repeated.Failures) != 0 {
 				t.Fatal("generic or repeated reclaim took a meeting lease")
 			}
 			if attempts == domain.OutboxMaxAttempts {
@@ -297,7 +297,7 @@ func TestMeetingRecoveryReclaimSkipsLockedLedger(t *testing.T) {
 	holderErr := meetingAwait(t, ctx, holder)
 
 	meetingRequire(t, reclaimErr, holderErr)
-	if len(reclaimed) != 1 || reclaimed[0].ID != (domain.OutboxID{31}) || reclaimed[0].Status != domain.OutboxPending {
+	if len(reclaimed.Reclaimed) != 1 || len(reclaimed.Failures) != 0 || reclaimed.Reclaimed[0].ID != (domain.OutboxID{31}) || reclaimed.Reclaimed[0].Status != domain.OutboxPending {
 		t.Fatal("locked first ledger pinned another expired lease")
 	}
 }

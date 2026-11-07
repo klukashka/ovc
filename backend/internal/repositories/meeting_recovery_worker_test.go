@@ -288,3 +288,34 @@ func TestMeetingRecoveryWorkerCancellation(t *testing.T) {
 		t.Fatal("cancellation lost recovery evidence, emitted success or retained a connection")
 	}
 }
+
+func TestMeetingRecoveryReclaimFailureIsolatesItem(t *testing.T) {
+	t.Parallel()
+	f := newRecoveryWorker(t, domain.MeetingCreateReturned, true)
+	second := f.create(t, 11)
+	recoveryClose(t, f.meetingFixture, second)
+	if recoveryQueue(t, f.meetingFixture, second.ProviderMeetingID, domain.OutboxID{31}, domain.MeetingRecoveryAutomatic) != domain.MeetingMutationApplied {
+		t.Fatal("second queue refused")
+	}
+	claims, err := f.queue.Claim(t.Context(), domain.LaneProviderCall, 2, instant)
+	meetingRequire(t, err)
+	if len(claims) != 2 {
+		t.Fatal("expected both cleanup claims")
+	}
+	_, err = f.pool.Exec(t.Context(), `CREATE FUNCTION fail_first_cleanup_reclaim() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF OLD.id = '1e000000-0000-0000-0000-000000000000' AND NEW.status = 'pending' THEN RAISE EXCEPTION 'synthetic reclaim item failure'; END IF; RETURN NEW; END $$;
+ CREATE TRIGGER fail_first_cleanup_reclaim BEFORE UPDATE ON outbox FOR EACH ROW EXECUTE FUNCTION fail_first_cleanup_reclaim()`)
+	meetingRequire(t, err)
+
+	tickErr := f.worker.Tick(t.Context(), instant.Add(outbox.LeaseDuration))
+	failed, failedErr := f.repos.Outbox.ByID(t.Context(), domain.OutboxID{30})
+	progressed, progressedErr := f.repos.Outbox.ByID(t.Context(), domain.OutboxID{31})
+	output := f.logs.String()
+
+	meetingRequire(t, tickErr, failedErr, progressedErr)
+	if failed.Status != domain.OutboxInProgress || progressed.Status != domain.OutboxDone {
+		t.Fatalf("failed reclaim item stopped other work: failed=%s progressed=%s", failed.Status, progressed.Status)
+	}
+	if !strings.Contains(output, `"msg":"outbox.lease.reclaim_failed","outbox_id":"1e000000000000000000000000000000","kind":"meeting_cleanup","error_code":"sqlstate_P0001"`) || strings.Contains(output, "synthetic reclaim item failure") {
+		t.Fatal("reclaim item failure was not reported with safe structured diagnostics")
+	}
+}
