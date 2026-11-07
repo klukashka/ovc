@@ -348,6 +348,13 @@ func liveAllows(lesson repositories.LockedMeetingLesson, _ time.Time) error {
 	return nil
 }
 
+func restartAllows(lesson repositories.LockedMeetingLesson, now time.Time) error {
+	if err := liveAllows(lesson, now); err != nil {
+		return err
+	}
+	return joinWindowAllows(lesson, now)
+}
+
 type tutorScope struct {
 	account  repositories.User
 	lesson   repositories.LockedMeetingLesson
@@ -521,6 +528,13 @@ func (l *Lifecycle) studentJoin(ctx context.Context, actor Actor, id domain.Less
 		if !now.Before(end.Add(domain.LessonEndGrace)) {
 			return RoomSubject{}, ErrLessonNotLive
 		}
+		tutor, err := repos.Users.ByID(ctx, audience.TutorID)
+		if err != nil {
+			return RoomSubject{}, err
+		}
+		if tutor.State != domain.AccountActive {
+			return RoomSubject{}, ErrLessonNotLive
+		}
 		current, err := repos.Meetings.Current(ctx, id)
 		if errors.Is(err, repositories.ErrNotFound) {
 			return RoomSubject{}, ErrLessonNotLive
@@ -656,7 +670,7 @@ func (l *Lifecycle) Restart(ctx context.Context, actor Actor, id domain.LessonID
 			if err != nil {
 				return err
 			}
-			if err := liveAllows(scope.lesson, scope.now); err != nil {
+			if err := restartAllows(scope.lesson, scope.now); err != nil {
 				return err
 			}
 			closed, err := repos.CloseOpenMeetingForCleanup(ctx, id, domain.MeetingCloseTutorRestart, cycle, scope.now)
@@ -676,7 +690,7 @@ func (l *Lifecycle) Restart(ctx context.Context, actor Actor, id domain.LessonID
 		return JoinTicket{}, err
 	}
 	l.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "meeting.room.restart_requested", slog.String("lesson_id", id.String()))
-	return l.joinWithRetry(ctx, actor, id, liveAllows)
+	return l.joinWithRetry(ctx, actor, id, restartAllows)
 }
 
 func (l *Lifecycle) AcceptEndedHint(ctx context.Context, key string, recordingMarks bool) {

@@ -46,6 +46,7 @@ func TestMeetingJoinAuthorization(t *testing.T) {
 	t.Run("the grace period is an exact boundary for both roles", testJoinGraceBoundary)
 	t.Run("an unconfirmed tutor is refused like every tutor route", testJoinUnconfirmedTutor)
 	t.Run("the student joins only a live lesson", testJoinStudentNeedsLive)
+	t.Run("a blocked tutor's open room refuses students", testJoinBlockedTutor)
 	t.Run("identifiers outside the scope are not found", testJoinOutsideScope)
 	t.Run("two tutors sharing one student stay separate", testJoinSharedStudent)
 	t.Run("an ended relationship stops further joins", testJoinEndedRelationship)
@@ -168,6 +169,28 @@ func testJoinStudentNeedsLive(t *testing.T) {
 	}
 	if h.countRows(t, "SELECT count(id) FROM meetings WHERE lesson_id = $1::uuid AND first_join_at IS NOT NULL", lesson) != 1 {
 		t.Fatal("the first join was not recorded")
+	}
+}
+
+func testJoinBlockedTutor(t *testing.T) {
+	t.Parallel()
+	h := newMeetingHarness(t)
+	parties := h.visibilityParties(t)
+	lesson, _, room := h.liveWithRoom(t, parties)
+	if _, err := h.operators().Block(context.Background(), tutorEmail); err != nil {
+		t.Fatal(err)
+	}
+	roomsBefore := h.providerRooms(t)
+
+	refused := h.joinCall(t, parties.studentToken, lesson)
+
+	expectRefusal(t, "a student of a blocked tutor", refused, http.StatusConflict, "lesson_not_live")
+	if strings.Contains(refused.body, `"url"`) {
+		t.Fatalf("the refusal carried a link: %s", refused.body)
+	}
+	participants := h.countRows(t, "SELECT count(participant_id) FROM lesson_participants WHERE lesson_id = $1::uuid", lesson)
+	if participants != 1 || h.currentRoom(t, lesson) != room || h.meetingCount(t, lesson) != 1 || h.providerRooms(t) != roomsBefore {
+		t.Fatalf("the refused join left %d participants, %d meetings, %d provider rooms", participants, h.meetingCount(t, lesson), h.providerRooms(t))
 	}
 }
 
@@ -1164,6 +1187,7 @@ func TestMeetingRestartRevocation(t *testing.T) {
 	t.Run("the old link stops working and the fresh one enters", testRestartRevokes)
 	t.Run("an unconfirmed End publishes no replacement", testRestartUnavailable)
 	t.Run("restart needs a live lesson", testRestartNeedsLive)
+	t.Run("restart past the grace keeps the room", testRestartPastGrace)
 }
 
 func testRestartRevokes(t *testing.T) {
@@ -1249,6 +1273,23 @@ func testRestartNeedsLive(t *testing.T) {
 	refused := h.restartCall(t, parties.tutorToken, lesson)
 
 	expectRefusal(t, "a restart before the lesson is live", refused, http.StatusConflict, "lesson_not_live")
+}
+
+func testRestartPastGrace(t *testing.T) {
+	t.Parallel()
+	h := newMeetingHarness(t)
+	parties := h.visibilityParties(t)
+	lesson, _, room := h.liveWithRoom(t, parties)
+	h.at(t, firstLessonEnd.Add(domain.LessonEndGrace))
+	tutorToken := accessToken(t, h.login(t, tutorEmail, accountPassword))
+	roomsBefore := h.providerRooms(t)
+
+	refused := h.restartCall(t, tutorToken, lesson)
+
+	expectRefusal(t, "a restart past the grace", refused, http.StatusConflict, "outside_join_window")
+	if h.currentRoom(t, lesson) != room || h.meetingCount(t, lesson) != 1 || h.providerRooms(t) != roomsBefore {
+		t.Fatalf("the refused restart replaced the room: %d meetings, %d provider rooms", h.meetingCount(t, lesson), h.providerRooms(t))
+	}
 }
 
 func TestMeetingEndAndStatus(t *testing.T) {
@@ -1956,13 +1997,16 @@ func testRateLessonWrites(t *testing.T) {
 	t.Parallel()
 	h := newMeetingHarness(t)
 	parties := h.visibilityParties(t)
-	lesson, _, _ := h.liveWithRoom(t, parties)
+	lesson, _, room := h.liveWithRoom(t, parties)
 	_, intruder := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, secondTutorEmail)
 	base := h.slots(t, domain.PurposeLessonWrites, parties.tutor, domain.LessonWriteWindow)
+	roomsBefore := h.providerRooms(t)
 
 	foreign := h.endCall(t, intruder, lesson)
+	foreignRestart := h.restartCall(t, intruder, lesson)
 	student := h.endCall(t, parties.studentToken, lesson)
 	unscoped := h.slots(t, domain.PurposeLessonWrites, domain.UserID{2}, domain.LessonWriteWindow)
+	untouched := h.currentRoom(t, lesson) == room && h.meetingCount(t, lesson) == 1 && h.providerRooms(t) == roomsBefore
 	restart := h.restartCall(t, parties.tutorToken, lesson)
 	first := h.endCall(t, parties.tutorToken, lesson)
 	second := h.endCall(t, parties.tutorToken, lesson)
@@ -1972,6 +2016,10 @@ func testRateLessonWrites(t *testing.T) {
 	afterRefusal := h.slots(t, domain.PurposeLessonWrites, parties.tutor, domain.LessonWriteWindow)
 
 	expectRefusal(t, "a foreign tutor", foreign, http.StatusNotFound, "not_found")
+	expectRefusal(t, "a foreign tutor's restart", foreignRestart, http.StatusNotFound, "not_found")
+	if !untouched {
+		t.Fatal("a foreign tutor's restart changed the room")
+	}
 	expectRefusal(t, "a student", student, http.StatusNotFound, "not_found")
 	if restart.status != http.StatusOK || first.status != http.StatusOK || second.status != http.StatusOK {
 		t.Fatalf("restart %d, end %d, repeated %d", restart.status, first.status, second.status)

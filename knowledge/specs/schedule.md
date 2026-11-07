@@ -124,7 +124,8 @@ From slice 7; in slice 5 nobody joins a lesson. The single rule every join, page
 - **The tutor** may join their lesson while it is in the join window and not cancelled. The first join makes it `live`; a later join reuses or restarts the meeting ([join flow](realtime-and-video.md#join-flow)).
 - **A student** may join only while the lesson is `live` and all of these hold:
   - their relationship with the tutor is `active`, or, for a one-to-one lesson only, `provisional` ([ADR-0014](../../docs/decisions/0014-students-join-through-their-tutor.md));
-  - for a one-to-one lesson, they are its student; for a group lesson, they are a current member of the group (a member not yet in the roster is added to it).
+  - for a one-to-one lesson, they are its student; for a group lesson, they are a current member of the group (a member not yet in the roster is added to it);
+  - the lesson's tutor account is `active`: while an operator block or any other state keeps the tutor from being `active`, a student join answers `409 lesson_not_live`, although the lesson stays `live` and its room is not closed (the owner's decision of 2026-11-07, pending owner review).
 
 A student who sees a lesson only through its frozen roster is outside its join scope and answers `404`: historical visibility never grants joining. Scope refusals and revoked sessions consume no slot of the [join limit](api.md#schedule).
 
