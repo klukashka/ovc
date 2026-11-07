@@ -172,7 +172,13 @@ func newAuthHarnessStoring(
 	hooks ...optionsHook,
 ) *authHarness {
 	t.Helper()
-	return newAuthHarnessWithDatabase(t, testdb.NewForLockContention(t), trusted, newHandler, objectsFor, hooks...)
+	return newAuthHarnessWithDatabase(t, testdb.New(t), trusted, newHandler, objectsFor, hooks...)
+}
+
+func newFlowHarnessForLockContention(t *testing.T) *authHarness {
+	t.Helper()
+	return newAuthHarnessWithDatabase(t, testdb.NewForLockContention(t), flowProxies(), api.NewHandler,
+		func(local *teststorage.Storage) storage.Store { return local.Store })
 }
 
 func newAuthHarnessWithDatabase(

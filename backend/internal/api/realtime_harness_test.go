@@ -53,9 +53,18 @@ func (m *manualNow) advance(by time.Duration) {
 }
 
 type liveTuning struct {
-	gateway     func(*realtime.Dependencies)
-	listener    func(*listener.Timing)
-	testControl bool
+	gateway        func(*realtime.Dependencies)
+	listener       func(*listener.Timing)
+	testControl    bool
+	lockContention bool
+}
+
+func (tuning liveTuning) database(t *testing.T) *testdb.Database {
+	t.Helper()
+	if tuning.lockContention {
+		return testdb.NewForLockContention(t)
+	}
+	return testdb.New(t)
 }
 
 type liveHarness struct {
@@ -77,7 +86,7 @@ func newLiveHarness(t *testing.T, tuning liveTuning) *liveHarness {
 	var gateway *realtime.Gateway
 	var captured realtime.Dependencies
 	trusted := []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}
-	h := newAuthHarnessStoring(t, trusted, api.NewHandler, func(local *teststorage.Storage) storage.Store { return local.Store },
+	h := newAuthHarnessWithDatabase(t, tuning.database(t), trusted, api.NewHandler, func(local *teststorage.Storage) storage.Store { return local.Store },
 		func(options *api.Options, shared *clock.Shared, logger *slog.Logger, _ *testdb.Database) {
 			deps := realtime.Dependencies{
 				Sessions: options.Auth.Accounts, Chat: options.Chat, Scheduler: realtime.SystemScheduler{}, Clock: shared, Now: clock.System{}.Now,
@@ -458,9 +467,11 @@ func (h *authHarness) awaitBlockedLookups(t *testing.T, at int) {
 	t.Helper()
 	h.waitFor(t, "a session lookup waiting on its lock", func() bool {
 		var waiting int
-		err := h.database.Pool.QueryRow(context.Background(),
+		polling, cancel := context.WithTimeout(context.Background(), pauseDeadline)
+		err := h.database.Pool.QueryRow(polling,
 			`SELECT count(1) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'
 			AND query LIKE '%GetSessionStandings%'`).Scan(&waiting)
+		cancel()
 		if err != nil {
 			t.Fatal(err)
 		}

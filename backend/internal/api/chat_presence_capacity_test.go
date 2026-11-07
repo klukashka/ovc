@@ -125,7 +125,7 @@ func TestPresenceOperationsRespectAdmissionAndShutdownDeadlines(t *testing.T) {
 
 func TestPresenceHasFourConcurrentWriters(t *testing.T) {
 	t.Parallel()
-	h := newLiveHarness(t, liveTuning{gateway: func(deps *realtime.Dependencies) { deps.Timing.PresenceTimeout = 2 * time.Second }})
+	h := newLiveHarness(t, liveTuning{gateway: func(deps *realtime.Dependencies) { deps.Timing.PresenceTimeout = 2 * time.Second }, lockContention: true})
 	clients := make([]*socketClient, 0, 5)
 	tokens := make([]string, 0, 5)
 	for index := range 5 {

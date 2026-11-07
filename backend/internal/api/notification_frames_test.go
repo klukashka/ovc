@@ -261,7 +261,7 @@ func TestARemovedOrDroppedStudentReceivesNothingMoreAboutTheRelationship(t *test
 
 func TestFrameRecipientsAreReadUnderTheRelationshipLock(t *testing.T) {
 	t.Parallel()
-	h := newFlowHarness(t)
+	h := newFlowHarnessForLockContention(t)
 	_, tutorToken, card, student := provisionalLink(t, h)
 	channel := h.directChannel(t, card.ID)
 	studentToken := accessToken(t, h.login(t, newcomerEmail, newcomerPassword))

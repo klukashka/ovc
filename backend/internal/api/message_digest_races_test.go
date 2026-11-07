@@ -163,7 +163,9 @@ func (h *authHarness) waitDigestPendingWriter(t *testing.T) {
 	defer poll.Stop()
 	for {
 		var waiting bool
-		err := h.database.Pool.QueryRow(context.Background(), "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%INSERT INTO digest_pending%')").Scan(&waiting)
+		polling, cancel := context.WithTimeout(context.Background(), pauseDeadline)
+		err := h.database.Pool.QueryRow(polling, "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%INSERT INTO digest_pending%')").Scan(&waiting)
+		cancel()
 		if err != nil {
 			t.Fatal(err)
 		}

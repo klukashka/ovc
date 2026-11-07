@@ -239,7 +239,9 @@ func (h *authHarness) waitForLockWaiters(t *testing.T, expected int64) {
 	defer poll.Stop()
 	for {
 		var waiting int64
-		err := h.database.Pool.QueryRow(context.Background(), contestedRowWaiters, row.holder, row.relation, row.page, row.tuple).Scan(&waiting)
+		polling, cancel := context.WithTimeout(context.Background(), pauseDeadline)
+		err := h.database.Pool.QueryRow(polling, contestedRowWaiters, row.holder, row.relation, row.page, row.tuple).Scan(&waiting)
+		cancel()
 		if err != nil {
 			t.Fatal(err)
 		}
