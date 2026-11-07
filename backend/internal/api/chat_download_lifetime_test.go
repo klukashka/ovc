@@ -82,7 +82,12 @@ func (b *heldDownloadBody) Close() error {
 	return err
 }
 
-func newDownloadLifetimeHarness(t *testing.T, prefix int64) (*authHarness, *downloadHold) {
+var (
+	shortStreamDeadline            = files.DownloadTiming{Floor: 200 * time.Millisecond}
+	shortOpeningAndStreamDeadlines = files.DownloadTiming{Open: 200 * time.Millisecond, Floor: 200 * time.Millisecond}
+)
+
+func newDownloadLifetimeHarness(t *testing.T, prefix int64, timing files.DownloadTiming) (*authHarness, *downloadHold) {
 	t.Helper()
 	held := &downloadHold{reached: make(chan struct{}), ended: make(chan struct{}), release: make(chan struct{})}
 	var objects storage.Store
@@ -115,7 +120,7 @@ func newDownloadLifetimeHarness(t *testing.T, prefix int64) (*authHarness, *down
 		}
 		service = files.New(files.Dependencies{
 			Store: repositories.NewStore(database.Pool), Objects: objects, Clock: shared, Random: randomPerTest(t), Keys: keys, Logger: logger,
-			Downloads: files.DownloadTiming{Open: 200 * time.Millisecond, Floor: 200 * time.Millisecond},
+			Downloads: timing,
 		})
 		options.Files = service
 	})
@@ -134,7 +139,7 @@ func awaitDownloadCondition(t *testing.T, condition <-chan struct{}) {
 
 func TestChatDownloadDeadlineCoversStorageBody(t *testing.T) {
 	t.Parallel()
-	h, held := newDownloadLifetimeHarness(t, 0)
+	h, held := newDownloadLifetimeHarness(t, 0, shortStreamDeadline)
 	parties := h.activeStudentInAGroup(t)
 	direct := h.directChannel(t, parties.card.ID).ID
 	attachment := h.boundUpload(t, parties.studentToken, direct, "notes.txt", plainText(1024), 1)
@@ -199,12 +204,19 @@ func assertDownloadSlotsAvailable(t *testing.T, h *authHarness, attachment, addr
 			}
 		}
 	}()
-	for range 64 {
+	deadline := clock.System{}.Now().Add(pauseDeadline)
+	for len(opened) < 64 {
 		download, err := h.files.Download(t.Context(), id, parsed.Query().Get("t"))
-		if err != nil {
-			t.Fatal("a released download slot was unavailable")
+		switch {
+		case err == nil:
+			opened = append(opened, download.Body)
+		case errors.Is(err, files.ErrDownloadsBusy):
+			t.Fatalf("a released download slot was unavailable with %d downloads admitted", len(opened))
+		case !errors.Is(err, context.DeadlineExceeded):
+			t.Fatal("a download failed before reaching its opening deadline")
+		case clock.System{}.Now().After(deadline):
+			t.Fatal("admitted downloads kept reaching their opening deadline")
 		}
-		opened = append(opened, download.Body)
 	}
 	_, err = h.files.Download(t.Context(), id, parsed.Query().Get("t"))
 	if !errors.Is(err, files.ErrDownloadsBusy) {
@@ -214,7 +226,7 @@ func assertDownloadSlotsAvailable(t *testing.T, h *authHarness, attachment, addr
 
 func TestChatDownloadCancellationReleasesStorageBody(t *testing.T) {
 	t.Parallel()
-	h, held := newDownloadLifetimeHarness(t, 0)
+	h, held := newDownloadLifetimeHarness(t, 0, shortStreamDeadline)
 	parties := h.activeStudentInAGroup(t)
 	direct := h.directChannel(t, parties.card.ID).ID
 	attachment := h.boundUpload(t, parties.studentToken, direct, "notes.txt", plainText(1024), 1)
@@ -251,7 +263,7 @@ func TestChatDownloadCancellationReleasesStorageBody(t *testing.T) {
 
 func TestChatDownloadOpeningDeadlineIncludesDatabaseWaits(t *testing.T) {
 	t.Parallel()
-	h, _ := newDownloadLifetimeHarness(t, 0)
+	h, _ := newDownloadLifetimeHarness(t, 0, shortOpeningAndStreamDeadlines)
 	parties := h.activeStudentInAGroup(t)
 	direct := h.directChannel(t, parties.card.ID).ID
 	attachment := h.boundUpload(t, parties.studentToken, direct, "notes.txt", plainText(1024), 1)
@@ -294,7 +306,7 @@ func TestChatDownloadOpeningDeadlineIncludesDatabaseWaits(t *testing.T) {
 
 func TestChatDownloadFinalProbeHonorsCancellationAndConcurrentClose(t *testing.T) {
 	t.Parallel()
-	h, _ := newDownloadLifetimeHarness(t, 0)
+	h, _ := newDownloadLifetimeHarness(t, 0, shortStreamDeadline)
 	parties := h.activeStudentInAGroup(t)
 	direct := h.directChannel(t, parties.card.ID).ID
 	attachment := h.boundUpload(t, parties.studentToken, direct, "notes.txt", plainText(1024), 1)
@@ -333,7 +345,7 @@ func TestChatDownloadFinalProbeHonorsCancellationAndConcurrentClose(t *testing.T
 
 func TestChatDownloadDeadlineCancelsBlockedFinalProbe(t *testing.T) {
 	t.Parallel()
-	h, held := newDownloadLifetimeHarness(t, 1024)
+	h, held := newDownloadLifetimeHarness(t, 1024, shortStreamDeadline)
 	parties := h.activeStudentInAGroup(t)
 	direct := h.directChannel(t, parties.card.ID).ID
 	attachment := h.boundUpload(t, parties.studentToken, direct, "notes.txt", plainText(1025), 1)
@@ -380,7 +392,7 @@ func TestChatDownloadDeadlineCancelsBlockedFinalProbe(t *testing.T) {
 
 func TestChatDownloadCloseRacesItsDeadline(t *testing.T) {
 	t.Parallel()
-	h, _ := newDownloadLifetimeHarness(t, 0)
+	h, _ := newDownloadLifetimeHarness(t, 0, shortStreamDeadline)
 	parties := h.activeStudentInAGroup(t)
 	direct := h.directChannel(t, parties.card.ID).ID
 	attachment := h.boundUpload(t, parties.studentToken, direct, "notes.txt", plainText(1024), 1)
