@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 type MeetingCreateAttemptID [16]byte
 
 type MeetingRecoveryRevision int64
@@ -42,3 +44,13 @@ const (
 
 const KindMeetingCleanup OutboxKind = "meeting_cleanup"
 const MeetingRecoveryCapacity = 4096
+
+type MeetingRecoverySettlement string
+
+const (
+	MeetingRecoverySettledRevoked      MeetingRecoverySettlement = "revoked"
+	MeetingRecoverySettledConfirmedEnd MeetingRecoverySettlement = "confirmed_end"
+	MeetingRecoverySettledQuietAbsence MeetingRecoverySettlement = "quiet_absence"
+)
+
+const MeetingCreateQuietWindow = time.Hour

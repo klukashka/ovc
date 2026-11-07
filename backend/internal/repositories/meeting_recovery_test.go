@@ -456,7 +456,7 @@ func testRecoveryPurge(t *testing.T) {
 	if other.MeetingID == nil || *other.MeetingID != otherMeeting.ID || other.CleanupRequested || len(candidates) != 1 || candidates[0].ProviderMeetingID != identity.ProviderMeetingID {
 		t.Fatal("purge crossed tutor scope or orphan disappeared from cleanup candidates")
 	}
-	want := []string{"provider_meeting_id", "provider", "meeting_id", "origin", "create_state", "attempt_id", "create_time", "cleanup_requested", "revision", "created_at", "updated_at", "settled_at", "cycle_number", "cycle_outbox_id", "cycle_result", "final_cycle_requested", "final_cycle_used"}
+	want := []string{"provider_meeting_id", "provider", "meeting_id", "origin", "create_state", "attempt_id", "create_time", "cleanup_requested", "revision", "created_at", "updated_at", "settled_at", "cycle_number", "cycle_outbox_id", "cycle_result", "final_cycle_requested", "final_cycle_used", "dispatched_at", "settlement", "reconcile_cycle_used"}
 	if fmt.Sprint(columns) != fmt.Sprint(want) {
 		t.Fatalf("unexpected retained ledger fields: %v", columns)
 	}
@@ -618,7 +618,7 @@ func testRecoveryLegacyMigration(t *testing.T) {
 	downErr := f.database.MigrateDownTo(t.Context(), 23)
 	secondUpErr := f.database.MigrateUpTo(t.Context(), 24)
 	after := recoveryMigrationRows(t, f, inputs)
-	meetingRequire(t, f.database.MigrateUpTo(t.Context(), 25))
+	meetingRequire(t, f.database.MigrateUpTo(t.Context(), 31))
 	refusals := make([]domain.MeetingMutation, 0, len(inputs)*3)
 	for _, input := range inputs {
 		id := input.ProviderMeetingID
@@ -738,7 +738,7 @@ func TestMeetingRecoveryLegacyGenerationGuards(t *testing.T) {
 	input := meetingInput(10, f.lesson)
 	meetingRequire(t, insertLegacyMeeting(t.Context(), f, input))
 	_, err := f.pool.Exec(t.Context(), "UPDATE meetings SET state = 'open', create_time = 100 WHERE id = $1", input.ID)
-	meetingRequire(t, err, f.database.MigrateUpTo(t.Context(), 25))
+	meetingRequire(t, err, f.database.MigrateUpTo(t.Context(), 31))
 	identity := meetingIdentity(input)
 	created := domain.ProviderCreateTime(100)
 	wrongTime := created + 1

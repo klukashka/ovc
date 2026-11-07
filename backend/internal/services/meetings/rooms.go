@@ -22,6 +22,7 @@ var (
 	errAudienceMoved       = errors.New("the audience changed between reading and locking it")
 	errTutorAdmission      = errors.New("the tutor reached the limit of unsettled meetings")
 	errUncertainPause      = errors.New("the lesson has a fresh uncertain meeting")
+	errDispatchExpired     = errors.New("the create permit outlived the provider call budget before dispatch")
 )
 
 const roomAttempts = 5
@@ -83,11 +84,12 @@ const (
 )
 
 type roomPlan struct {
-	action  roomAction
-	room    Room
-	attempt domain.MeetingCreateAttemptID
-	revoke  []repositories.MeetingRevocation
-	lesson  domain.LessonID
+	action    roomAction
+	room      Room
+	attempt   domain.MeetingCreateAttemptID
+	permitted time.Time
+	revoke    []repositories.MeetingRevocation
+	lesson    domain.LessonID
 }
 
 type roomIdentifiers struct {
@@ -254,7 +256,7 @@ func (r *Rooms) insert(ctx context.Context, repos repositories.Repositories, sub
 	if !r.budgetCoversCreate(ctx) {
 		return ErrProviderUnavailable
 	}
-	plan.action, plan.attempt = roomDispatch, ids.attempt
+	plan.action, plan.attempt, plan.permitted = roomDispatch, ids.attempt, subject.Now
 	plan.room = Room{Identity: identity, Meeting: domain.Meeting{ID: ids.provider, Name: domain.MeetingRoomName, RoutingKey: ids.routing, LessonID: subject.Lesson}}
 	return nil
 }
@@ -290,7 +292,7 @@ func (r *Rooms) evidenceContext(ctx context.Context) (context.Context, context.C
 func (r *Rooms) dispatch(ctx context.Context, plan roomPlan, guard RoomGuard, publish RoomPublication) (Room, error) {
 	call, cancelCall := context.WithTimeout(context.WithoutCancel(ctx), r.deps.Timing.ProviderCall)
 	defer cancelCall()
-	created, createErr := r.deps.Provider.CreateMeeting(call, plan.room.Meeting)
+	created, createErr := r.create(call, plan)
 	evidence, cancelEvidence := r.evidenceContext(ctx)
 	defer cancelEvidence()
 	identity := plan.room.Identity
@@ -306,6 +308,9 @@ func (r *Rooms) dispatch(ctx context.Context, plan roomPlan, guard RoomGuard, pu
 		return Room{}, errors.Join(err, r.Retire(evidence, identity, domain.MeetingCloseProviderError))
 	}
 	if recorded != domain.MeetingMutationApplied {
+		ending, cancelEnding := r.evidenceContext(ctx)
+		r.endAfterSettlement(ending, identity.ProviderMeetingID, created)
+		cancelEnding()
 		if err := r.Retire(evidence, identity, domain.MeetingCloseProviderError); err != nil {
 			return Room{}, err
 		}
@@ -321,6 +326,32 @@ func (r *Rooms) dispatch(ctx context.Context, plan roomPlan, guard RoomGuard, pu
 	}
 	r.report(ctx, "meeting.room.created", slog.String("lesson_id", identity.LessonID.String()))
 	return plan.room, nil
+}
+
+func (r *Rooms) create(ctx context.Context, plan roomPlan) (domain.ProviderCreateTime, error) {
+	now, err := r.deps.Clock.Instant(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if now.Sub(plan.permitted) > r.deps.Timing.ProviderCall {
+		r.report(ctx, "meeting.room.dispatch_expired")
+		return 0, errDispatchExpired
+	}
+	return r.deps.Provider.CreateMeeting(ctx, plan.room.Meeting)
+}
+
+func (r *Rooms) endAfterSettlement(ctx context.Context, id domain.ProviderMeetingID, created domain.ProviderCreateTime) {
+	recovery, err := r.deps.Store.Repositories().MeetingRecovery.ByProviderID(ctx, id)
+	if err != nil || recovery.SettledAt == nil {
+		reportEvidenceFailure(ctx, r.deps.Logger, err)
+		return
+	}
+	conflict, err := r.cleanup.end(ctx, id, created)
+	attributes := []slog.Attr{slog.Bool("ended", err == nil && !conflict)}
+	if err != nil {
+		attributes = append(attributes, slog.String("kind", core.ErrorKind(err)))
+	}
+	r.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "meeting.room.created_after_settlement", attributes...)
 }
 
 func (r *Rooms) createFailed(ctx, evidence context.Context, plan roomPlan, createErr error) error {

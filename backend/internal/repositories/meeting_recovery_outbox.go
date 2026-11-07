@@ -16,6 +16,7 @@ type MeetingRecoveryEffectCompletion struct {
 	Lease              domain.LeaseToken
 	Revision           domain.MeetingRecoveryRevision
 	ObservedCreateTime *domain.ProviderCreateTime
+	EvaluatedAt        *time.Time
 	Result             domain.MeetingRecoveryCycleResult
 	Now                time.Time
 }
@@ -31,7 +32,7 @@ func (s *Store) FinishMeetingRecovery(ctx context.Context, input MeetingRecovery
 			return errMeetingRecoveryFence
 		}
 		if input.Result == domain.MeetingRecoveryCycleSettled {
-			outcome, err := repos.MeetingRecovery.Settle(ctx, MeetingRecoverySettlement{ProviderMeetingID: recovery.ProviderMeetingID, Revision: input.Revision, ObservedCreateTime: input.ObservedCreateTime, Now: input.Now})
+			outcome, err := repos.MeetingRecovery.Settle(ctx, MeetingRecoverySettlement{ProviderMeetingID: recovery.ProviderMeetingID, Revision: input.Revision, ObservedCreateTime: input.ObservedCreateTime, EvaluatedAt: input.EvaluatedAt, Now: input.Now})
 			if err != nil {
 				return err
 			}

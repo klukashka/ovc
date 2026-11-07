@@ -26,6 +26,8 @@ Recorded 2026-11-06 with the authorized lifecycle change; each is an item for th
 
 Recorded 2026-11-07 with the owner's decision on the per-lesson pause. Severity: major for remote activation; it blocks that step.
 
+**Resolved 2026-11-07** by the [quiet-window settlement](../specs/realtime-and-video.md#quiet-window-settlement) of [ADR-0021](../../docs/decisions/0021-quiet-window-meeting-settlement.md): a started or uncertain obligation settles once a cleanup cycle claimed at least 1 hour after dispatch observes the provider identity absent. The remaining residuals (an unreachable provider keeps obligations counted, a Create taking effect after the window, the provider's self-expiry unverified remotely) are recorded in that decision and in the threat model. The text below is kept as the original record.
+
 A started or uncertain obligation never settles, because remote quiescence cannot be proved, and it counts against the tutor's limit of 64 and the global 4096. The 2-minute pause per lesson only slows this: a tutor with several lessons, or one lesson over about two hours of failures, can still reach the limit for good, and then cannot open any room. Locally the only source is the fake's simulated outage or an expired Create budget. **Remote activation is the point where this must be resolved:** a real provider must not be activated until a procedure for closing uncertain obligations exists. Attempts that crashed, and attempts whose uncertainty mark itself failed, stay `started` and start no pause, so they consume the limit without that slowdown. This is not owner acceptance for production.
 
 ## Clock step residual

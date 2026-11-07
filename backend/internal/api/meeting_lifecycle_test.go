@@ -571,7 +571,7 @@ func TestMeetingJoinSessionRaces(t *testing.T) {
 	t.Run("logout during Create keeps cleanup and answers unauthenticated", testRaceLogoutDuringCreate)
 	t.Run("logout during the link call discards the link", testRaceLogoutDuringLink)
 	t.Run("a block during the link call discards the student link", testRaceBlockDuringLink)
-	t.Run("purge during Create keeps ownership", testRacePurgeDuringCreate)
+	t.Run("purge during Create still ends the late room", testRacePurgeDuringCreate)
 	t.Run("a removed member loses the link released after the provider call", testRaceRemovedDuringLink)
 	t.Run("aborted joins leave no uncertain obligation", testRaceClientAborts)
 }
@@ -678,8 +678,11 @@ func testRacePurgeDuringCreate(t *testing.T) {
 	h.tick(t)
 
 	expectRefusal(t, "a join of a purged tutor", answer, http.StatusUnauthorized, "unauthenticated")
-	if lessonsAfterPurge != 0 || orphan.MeetingID != nil || orphan.CreateState != domain.MeetingCreateReturned || !orphan.FinalCycleRequested {
+	if lessonsAfterPurge != 0 || orphan.MeetingID != nil || orphan.CreateState != domain.MeetingCreateStarted || orphan.Settlement == nil || *orphan.Settlement != domain.MeetingRecoverySettledQuietAbsence {
 		t.Fatalf("%d lessons survived, the orphan ledger: %+v", lessonsAfterPurge, orphan)
+	}
+	if !strings.Contains(h.logs.String(), `"msg":"meeting.room.created_after_settlement","ended":true`) {
+		t.Fatal("the Create returning after the purge-time settlement was not ended")
 	}
 	if h.providerRooms(t) != 0 || h.unsettled(t) != 0 {
 		t.Fatalf("the orphaned generation stayed: %d rooms, %d unsettled", h.providerRooms(t), h.unsettled(t))

@@ -38,7 +38,7 @@ WITH current_meeting AS MATERIALIZED (
     FOR UPDATE
 )
 UPDATE meeting_recovery AS recovery
-SET create_state = 'started', attempt_id = $1, revision = revision + 1, updated_at = $2
+SET create_state = 'started', attempt_id = $1, dispatched_at = $2::timestamptz, revision = revision + 1, updated_at = $2
 FROM current_meeting
 WHERE recovery.provider_meeting_id = current_meeting.provider_meeting_id AND recovery.meeting_id = current_meeting.id
     AND recovery.origin = 'attempt' AND recovery.create_state = 'prepared' AND NOT recovery.cleanup_requested AND recovery.settled_at IS NULL
@@ -154,7 +154,7 @@ func (q *Queries) FinishMeetingRecoveryOutbox(ctx context.Context, arg FinishMee
 }
 
 const getMeetingRecovery = `-- name: GetMeetingRecovery :one
-SELECT provider_meeting_id, provider, meeting_id, origin, create_state, attempt_id, create_time, cleanup_requested, revision, created_at, updated_at, settled_at, cycle_number, cycle_outbox_id, cycle_result, final_cycle_requested, final_cycle_used FROM meeting_recovery WHERE provider_meeting_id = $1
+SELECT provider_meeting_id, provider, meeting_id, origin, create_state, attempt_id, create_time, cleanup_requested, revision, created_at, updated_at, settled_at, cycle_number, cycle_outbox_id, cycle_result, final_cycle_requested, final_cycle_used, dispatched_at, settlement, reconcile_cycle_used FROM meeting_recovery WHERE provider_meeting_id = $1
 `
 
 func (q *Queries) GetMeetingRecovery(ctx context.Context, providerMeetingID domain.ProviderMeetingID) (MeetingRecovery, error) {
@@ -178,6 +178,9 @@ func (q *Queries) GetMeetingRecovery(ctx context.Context, providerMeetingID doma
 		&i.CycleResult,
 		&i.FinalCycleRequested,
 		&i.FinalCycleUsed,
+		&i.DispatchedAt,
+		&i.Settlement,
+		&i.ReconcileCycleUsed,
 	)
 	return i, err
 }
@@ -265,7 +268,7 @@ func (q *Queries) ListExpiredMeetingRecoveryOutbox(ctx context.Context, arg List
 }
 
 const listMeetingRecovery = `-- name: ListMeetingRecovery :many
-SELECT provider_meeting_id, provider, meeting_id, origin, create_state, attempt_id, create_time, cleanup_requested, revision, created_at, updated_at, settled_at, cycle_number, cycle_outbox_id, cycle_result, final_cycle_requested, final_cycle_used FROM meeting_recovery WHERE provider_meeting_id > $1
+SELECT provider_meeting_id, provider, meeting_id, origin, create_state, attempt_id, create_time, cleanup_requested, revision, created_at, updated_at, settled_at, cycle_number, cycle_outbox_id, cycle_result, final_cycle_requested, final_cycle_used, dispatched_at, settlement, reconcile_cycle_used FROM meeting_recovery WHERE provider_meeting_id > $1
 ORDER BY provider_meeting_id LIMIT $2
 `
 
@@ -301,6 +304,9 @@ func (q *Queries) ListMeetingRecovery(ctx context.Context, arg ListMeetingRecove
 			&i.CycleResult,
 			&i.FinalCycleRequested,
 			&i.FinalCycleUsed,
+			&i.DispatchedAt,
+			&i.Settlement,
+			&i.ReconcileCycleUsed,
 		); err != nil {
 			return nil, err
 		}
@@ -313,7 +319,7 @@ func (q *Queries) ListMeetingRecovery(ctx context.Context, arg ListMeetingRecove
 }
 
 const listMeetingRecoveryCandidates = `-- name: ListMeetingRecoveryCandidates :many
-SELECT provider_meeting_id, provider, meeting_id, origin, create_state, attempt_id, create_time, cleanup_requested, revision, created_at, updated_at, settled_at, cycle_number, cycle_outbox_id, cycle_result, final_cycle_requested, final_cycle_used FROM meeting_recovery
+SELECT provider_meeting_id, provider, meeting_id, origin, create_state, attempt_id, create_time, cleanup_requested, revision, created_at, updated_at, settled_at, cycle_number, cycle_outbox_id, cycle_result, final_cycle_requested, final_cycle_used, dispatched_at, settlement, reconcile_cycle_used FROM meeting_recovery
 WHERE settled_at IS NULL AND (cleanup_requested OR meeting_id IS NULL) AND provider_meeting_id > $1
 ORDER BY provider_meeting_id LIMIT $2
 `
@@ -350,6 +356,9 @@ func (q *Queries) ListMeetingRecoveryCandidates(ctx context.Context, arg ListMee
 			&i.CycleResult,
 			&i.FinalCycleRequested,
 			&i.FinalCycleUsed,
+			&i.DispatchedAt,
+			&i.Settlement,
+			&i.ReconcileCycleUsed,
 		); err != nil {
 			return nil, err
 		}
@@ -413,7 +422,7 @@ func (q *Queries) LockMeetingRecoveryCapacity(ctx context.Context) (int64, error
 }
 
 const lockMeetingRecoveryForOutbox = `-- name: LockMeetingRecoveryForOutbox :one
-SELECT recovery.provider_meeting_id, recovery.provider, recovery.meeting_id, recovery.origin, recovery.create_state, recovery.attempt_id, recovery.create_time, recovery.cleanup_requested, recovery.revision, recovery.created_at, recovery.updated_at, recovery.settled_at, recovery.cycle_number, recovery.cycle_outbox_id, recovery.cycle_result, recovery.final_cycle_requested, recovery.final_cycle_used FROM meeting_recovery AS recovery
+SELECT recovery.provider_meeting_id, recovery.provider, recovery.meeting_id, recovery.origin, recovery.create_state, recovery.attempt_id, recovery.create_time, recovery.cleanup_requested, recovery.revision, recovery.created_at, recovery.updated_at, recovery.settled_at, recovery.cycle_number, recovery.cycle_outbox_id, recovery.cycle_result, recovery.final_cycle_requested, recovery.final_cycle_used, recovery.dispatched_at, recovery.settlement, recovery.reconcile_cycle_used FROM meeting_recovery AS recovery
 JOIN meeting_recovery_cycles AS cycle ON cycle.provider_meeting_id = recovery.provider_meeting_id
 WHERE cycle.outbox_id = $1
 FOR UPDATE OF recovery
@@ -440,6 +449,9 @@ func (q *Queries) LockMeetingRecoveryForOutbox(ctx context.Context, outboxID dom
 		&i.CycleResult,
 		&i.FinalCycleRequested,
 		&i.FinalCycleUsed,
+		&i.DispatchedAt,
+		&i.Settlement,
+		&i.ReconcileCycleUsed,
 	)
 	return i, err
 }
@@ -496,11 +508,14 @@ const queueMeetingRecoveryCycle = `-- name: QueueMeetingRecoveryCycle :execrows
 WITH queued AS (
     UPDATE meeting_recovery
     SET cycle_number = cycle_number + 1, cycle_outbox_id = $2, cycle_result = 'pending',
-        final_cycle_used = final_cycle_used OR ($3::text = 'automatic' AND cycle_number > 0),
+        final_cycle_used = final_cycle_used OR ($3::text = 'automatic' AND cycle_number > 0 AND create_state NOT IN ('started', 'uncertain')),
+        reconcile_cycle_used = reconcile_cycle_used OR ($3::text = 'automatic' AND cycle_number > 0 AND create_state IN ('started', 'uncertain')),
         revision = revision + 1, updated_at = greatest(updated_at, $1)
     WHERE meeting_recovery.provider_meeting_id = $4 AND revision = $5
         AND settled_at IS NULL AND (cleanup_requested OR meeting_id IS NULL) AND cycle_result <> 'pending'
-        AND ($3::text = 'operator' OR cycle_number = 0 OR (final_cycle_requested AND NOT final_cycle_used))
+        AND ($3::text = 'operator' OR cycle_number = 0
+            OR (create_state NOT IN ('started', 'uncertain') AND final_cycle_requested AND NOT final_cycle_used)
+            OR (create_state IN ('started', 'uncertain') AND NOT reconcile_cycle_used AND dispatched_at <= $1::timestamptz - interval '1 hour'))
         AND NOT EXISTS (SELECT 1 FROM meeting_recovery_cycles WHERE outbox_id = $2)
     RETURNING meeting_recovery.provider_meeting_id, meeting_recovery.cycle_number, meeting_recovery.cycle_outbox_id
 ), receipt AS (
@@ -590,13 +605,17 @@ WITH capacity AS MATERIALIZED (
 ), settled AS (
     UPDATE meeting_recovery AS recovery
     SET settled_at = $1, cleanup_requested = true, revision = recovery.revision + 1,
+        settlement = CASE recovery.create_state WHEN 'prepared' THEN 'revoked' WHEN 'returned' THEN 'confirmed_end' ELSE 'quiet_absence' END,
         updated_at = greatest(recovery.updated_at, $1)
     FROM capacity
     WHERE recovery.provider_meeting_id = $2 AND recovery.revision = $3
         AND recovery.settled_at IS NULL AND (recovery.cleanup_requested OR recovery.meeting_id IS NULL)
         AND $1 >= recovery.updated_at
         AND ((recovery.create_state = 'prepared' AND $4::bigint IS NULL)
-            OR (recovery.create_state = 'returned' AND recovery.create_time = $4::bigint))
+            OR (recovery.create_state = 'returned' AND recovery.create_time = $4::bigint)
+            OR (recovery.create_state IN ('started', 'uncertain') AND $4::bigint IS NULL
+                AND $5::timestamptz <= $1
+                AND recovery.dispatched_at <= $5::timestamptz - interval '1 hour'))
     RETURNING recovery.provider_meeting_id
 )
 UPDATE meeting_recovery_capacity SET unsettled = unsettled - 1 WHERE singleton AND EXISTS (SELECT 1 FROM settled)
@@ -607,6 +626,7 @@ type SettleMeetingRecoveryParams struct {
 	ProviderMeetingID  domain.ProviderMeetingID
 	Revision           domain.MeetingRecoveryRevision
 	ObservedCreateTime *int64
+	EvaluatedAt        *time.Time
 }
 
 func (q *Queries) SettleMeetingRecovery(ctx context.Context, arg SettleMeetingRecoveryParams) (int64, error) {
@@ -615,6 +635,7 @@ func (q *Queries) SettleMeetingRecovery(ctx context.Context, arg SettleMeetingRe
 		arg.ProviderMeetingID,
 		arg.Revision,
 		arg.ObservedCreateTime,
+		arg.EvaluatedAt,
 	)
 	if err != nil {
 		return 0, err
@@ -634,7 +655,7 @@ func (q *Queries) TryLockMeetingRecoveryCapacity(ctx context.Context) (int64, er
 }
 
 const tryLockMeetingRecoveryForOutbox = `-- name: TryLockMeetingRecoveryForOutbox :one
-SELECT recovery.provider_meeting_id, recovery.provider, recovery.meeting_id, recovery.origin, recovery.create_state, recovery.attempt_id, recovery.create_time, recovery.cleanup_requested, recovery.revision, recovery.created_at, recovery.updated_at, recovery.settled_at, recovery.cycle_number, recovery.cycle_outbox_id, recovery.cycle_result, recovery.final_cycle_requested, recovery.final_cycle_used FROM meeting_recovery AS recovery
+SELECT recovery.provider_meeting_id, recovery.provider, recovery.meeting_id, recovery.origin, recovery.create_state, recovery.attempt_id, recovery.create_time, recovery.cleanup_requested, recovery.revision, recovery.created_at, recovery.updated_at, recovery.settled_at, recovery.cycle_number, recovery.cycle_outbox_id, recovery.cycle_result, recovery.final_cycle_requested, recovery.final_cycle_used, recovery.dispatched_at, recovery.settlement, recovery.reconcile_cycle_used FROM meeting_recovery AS recovery
 JOIN meeting_recovery_cycles AS cycle ON cycle.provider_meeting_id = recovery.provider_meeting_id
 WHERE cycle.outbox_id = $1
 FOR UPDATE OF recovery SKIP LOCKED
@@ -661,6 +682,9 @@ func (q *Queries) TryLockMeetingRecoveryForOutbox(ctx context.Context, outboxID 
 		&i.CycleResult,
 		&i.FinalCycleRequested,
 		&i.FinalCycleUsed,
+		&i.DispatchedAt,
+		&i.Settlement,
+		&i.ReconcileCycleUsed,
 	)
 	return i, err
 }

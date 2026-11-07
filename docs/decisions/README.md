@@ -26,6 +26,7 @@ One record per significant decision, in the MADR shape: context, decision, alter
 | [ADR-0018](0018-targeted-checks-and-merge-gate.md) | Change checks per change from a table in the development guide, and the full local check run once per merge in a locked merge gate bound to the base commit and the tested tree; Markdown-only changes gate on the documentation and secret checks (pending owner review) | accepted |
 | [ADR-0019](0019-durable-upload-cleanup.md) | Durable chat upload cleanup ownership, bounded automatic attempts, retained uncertainty and local operator recovery (pending wording review) | accepted, 2026-11-01 |
 | [ADR-0020](0020-durable-meeting-recovery.md) | Durable meeting admission, finite cleanup cycles, retained uncertainty and local operator recovery (pending wording review) | accepted, 2026-11-06 |
+| [ADR-0021](0021-quiet-window-meeting-settlement.md) | Quiet-window settlement of uncertain meeting creation after 1 hour and provider absence (pending wording review) | accepted, 2026-11-07 |
 
 ## Writing a new record
 

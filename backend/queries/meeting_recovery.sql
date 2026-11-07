@@ -9,7 +9,7 @@ WITH current_meeting AS MATERIALIZED (
     FOR UPDATE
 )
 UPDATE meeting_recovery AS recovery
-SET create_state = 'started', attempt_id = sqlc.arg(attempt_id), revision = revision + 1, updated_at = sqlc.arg(now)
+SET create_state = 'started', attempt_id = sqlc.arg(attempt_id), dispatched_at = sqlc.arg(now)::timestamptz, revision = revision + 1, updated_at = sqlc.arg(now)
 FROM current_meeting
 WHERE recovery.provider_meeting_id = current_meeting.provider_meeting_id AND recovery.meeting_id = current_meeting.id
     AND recovery.origin = 'attempt' AND recovery.create_state = 'prepared' AND NOT recovery.cleanup_requested AND recovery.settled_at IS NULL
@@ -44,13 +44,17 @@ WITH capacity AS MATERIALIZED (
 ), settled AS (
     UPDATE meeting_recovery AS recovery
     SET settled_at = sqlc.arg(now), cleanup_requested = true, revision = recovery.revision + 1,
+        settlement = CASE recovery.create_state WHEN 'prepared' THEN 'revoked' WHEN 'returned' THEN 'confirmed_end' ELSE 'quiet_absence' END,
         updated_at = greatest(recovery.updated_at, sqlc.arg(now))
     FROM capacity
     WHERE recovery.provider_meeting_id = sqlc.arg(provider_meeting_id) AND recovery.revision = sqlc.arg(revision)
         AND recovery.settled_at IS NULL AND (recovery.cleanup_requested OR recovery.meeting_id IS NULL)
         AND sqlc.arg(now) >= recovery.updated_at
         AND ((recovery.create_state = 'prepared' AND sqlc.narg(observed_create_time)::bigint IS NULL)
-            OR (recovery.create_state = 'returned' AND recovery.create_time = sqlc.narg(observed_create_time)::bigint))
+            OR (recovery.create_state = 'returned' AND recovery.create_time = sqlc.narg(observed_create_time)::bigint)
+            OR (recovery.create_state IN ('started', 'uncertain') AND sqlc.narg(observed_create_time)::bigint IS NULL
+                AND sqlc.narg(evaluated_at)::timestamptz <= sqlc.arg(now)
+                AND recovery.dispatched_at <= sqlc.narg(evaluated_at)::timestamptz - interval '1 hour'))
     RETURNING recovery.provider_meeting_id
 )
 UPDATE meeting_recovery_capacity SET unsettled = unsettled - 1 WHERE singleton AND EXISTS (SELECT 1 FROM settled);
@@ -59,11 +63,14 @@ UPDATE meeting_recovery_capacity SET unsettled = unsettled - 1 WHERE singleton A
 WITH queued AS (
     UPDATE meeting_recovery
     SET cycle_number = cycle_number + 1, cycle_outbox_id = sqlc.arg(outbox_id), cycle_result = 'pending',
-        final_cycle_used = final_cycle_used OR (sqlc.arg(mode)::text = 'automatic' AND cycle_number > 0),
+        final_cycle_used = final_cycle_used OR (sqlc.arg(mode)::text = 'automatic' AND cycle_number > 0 AND create_state NOT IN ('started', 'uncertain')),
+        reconcile_cycle_used = reconcile_cycle_used OR (sqlc.arg(mode)::text = 'automatic' AND cycle_number > 0 AND create_state IN ('started', 'uncertain')),
         revision = revision + 1, updated_at = greatest(updated_at, sqlc.arg(now))
     WHERE meeting_recovery.provider_meeting_id = sqlc.arg(provider_meeting_id) AND revision = sqlc.arg(revision)
         AND settled_at IS NULL AND (cleanup_requested OR meeting_id IS NULL) AND cycle_result <> 'pending'
-        AND (sqlc.arg(mode)::text = 'operator' OR cycle_number = 0 OR (final_cycle_requested AND NOT final_cycle_used))
+        AND (sqlc.arg(mode)::text = 'operator' OR cycle_number = 0
+            OR (create_state NOT IN ('started', 'uncertain') AND final_cycle_requested AND NOT final_cycle_used)
+            OR (create_state IN ('started', 'uncertain') AND NOT reconcile_cycle_used AND dispatched_at <= sqlc.arg(now)::timestamptz - interval '1 hour'))
         AND NOT EXISTS (SELECT 1 FROM meeting_recovery_cycles WHERE outbox_id = sqlc.arg(outbox_id))
     RETURNING meeting_recovery.provider_meeting_id, meeting_recovery.cycle_number, meeting_recovery.cycle_outbox_id
 ), receipt AS (

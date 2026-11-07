@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/core"
@@ -132,8 +133,20 @@ type RecoveryEntry struct {
 	CycleResult         domain.MeetingRecoveryCycleResult
 	FinalCycleRequested bool
 	FinalCycleUsed      bool
+	Settlement          *domain.MeetingRecoverySettlement
+	DispatchedAt        *time.Time
+	ReconcileCycleUsed  bool
+	OperatorAction      bool
 }
 
 func recoveryEntry(row repositories.StoredMeetingRecovery) RecoveryEntry {
-	return RecoveryEntry{ProviderMeetingID: row.ProviderMeetingID, Provider: row.Provider, Origin: row.Origin, CreateState: row.CreateState, Revision: row.Revision, CleanupRequested: row.CleanupRequested, Settled: row.SettledAt != nil, Orphaned: row.MeetingID == nil, CreateTime: row.CreateTime, CycleNumber: row.CycleNumber, CycleResult: row.CycleResult, FinalCycleRequested: row.FinalCycleRequested, FinalCycleUsed: row.FinalCycleUsed}
+	return RecoveryEntry{ProviderMeetingID: row.ProviderMeetingID, Provider: row.Provider, Origin: row.Origin, CreateState: row.CreateState, Revision: row.Revision, CleanupRequested: row.CleanupRequested, Settled: row.SettledAt != nil, Orphaned: row.MeetingID == nil, CreateTime: row.CreateTime, CycleNumber: row.CycleNumber, CycleResult: row.CycleResult, FinalCycleRequested: row.FinalCycleRequested, FinalCycleUsed: row.FinalCycleUsed, Settlement: row.Settlement, DispatchedAt: row.DispatchedAt, ReconcileCycleUsed: row.ReconcileCycleUsed, OperatorAction: operatorActionRequired(row)}
+}
+
+func operatorActionRequired(row repositories.StoredMeetingRecovery) bool {
+	if row.SettledAt != nil || row.CycleNumber == 0 || row.CycleResult == domain.MeetingRecoveryCyclePending || finalCycleDue(row) {
+		return false
+	}
+	unknown := row.CreateState == domain.MeetingCreateStarted || row.CreateState == domain.MeetingCreateUncertain
+	return !unknown || row.ReconcileCycleUsed
 }

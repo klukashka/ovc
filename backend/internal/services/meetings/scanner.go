@@ -130,7 +130,7 @@ func (s *RecoveryScanner) scan(ctx context.Context, now, deadline time.Time) (in
 }
 
 func (s *RecoveryScanner) queue(ctx context.Context, row repositories.StoredMeetingRecovery, now time.Time) (bool, error) {
-	if row.CycleResult == domain.MeetingRecoveryCyclePending || (row.CycleNumber > 0 && (!row.FinalCycleRequested || row.FinalCycleUsed)) {
+	if row.CycleResult == domain.MeetingRecoveryCyclePending || (row.CycleNumber > 0 && !finalCycleDue(row) && !reconciliationDue(row, now)) {
 		return false, nil
 	}
 	id, err := core.NewID[domain.OutboxID](s.random)
@@ -141,6 +141,14 @@ func (s *RecoveryScanner) queue(ctx context.Context, row repositories.StoredMeet
 		ProviderMeetingID: row.ProviderMeetingID, Revision: row.Revision, OutboxID: id, Mode: domain.MeetingRecoveryAutomatic, Now: now,
 	})
 	return result == domain.MeetingMutationApplied, err
+}
+
+func finalCycleDue(row repositories.StoredMeetingRecovery) bool {
+	return row.FinalCycleRequested && !row.FinalCycleUsed
+}
+
+func reconciliationDue(row repositories.StoredMeetingRecovery, now time.Time) bool {
+	return !row.ReconcileCycleUsed && quietWindowElapsed(row, now)
 }
 
 func (s *RecoveryScanner) checkBudget(ctx context.Context, deadline time.Time) error {

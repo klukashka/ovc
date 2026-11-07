@@ -77,6 +77,7 @@ type MeetingRecoverySettlement struct {
 	ProviderMeetingID  domain.ProviderMeetingID
 	Revision           domain.MeetingRecoveryRevision
 	ObservedCreateTime *domain.ProviderCreateTime
+	EvaluatedAt        *time.Time
 	Now                time.Time
 }
 
@@ -112,7 +113,7 @@ func (r MeetingRecovery) Settle(ctx context.Context, input MeetingRecoverySettle
 		value := int64(*input.ObservedCreateTime)
 		observed = &value
 	}
-	rows, err := r.queries.SettleMeetingRecovery(ctx, dbgen.SettleMeetingRecoveryParams{ProviderMeetingID: input.ProviderMeetingID, Revision: input.Revision, ObservedCreateTime: observed, Now: &input.Now})
+	rows, err := r.queries.SettleMeetingRecovery(ctx, dbgen.SettleMeetingRecoveryParams{ProviderMeetingID: input.ProviderMeetingID, Revision: input.Revision, ObservedCreateTime: observed, EvaluatedAt: input.EvaluatedAt, Now: &input.Now})
 	return meetingApplied(rows, err, "settle meeting recovery")
 }
 

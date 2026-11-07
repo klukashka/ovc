@@ -42,8 +42,8 @@ func TestMeetingRecoveryCapacity(t *testing.T) {
 func testRecoveryCapacityAdmission(t *testing.T) {
 	f := newMeetingFixture(t, testdb.New(t))
 	other := independentMeetingFixture(t, f)
-	_, err := f.pool.Exec(t.Context(), `INSERT INTO meeting_recovery (provider_meeting_id, provider, origin, create_state, created_at, updated_at)
- SELECT md5('capacity-' || item::text)::uuid, 'fake', 'legacy', 'uncertain', $1, $1 FROM generate_series(1, 4095) AS item`, instant)
+	_, err := f.pool.Exec(t.Context(), `INSERT INTO meeting_recovery (provider_meeting_id, provider, origin, create_state, dispatched_at, created_at, updated_at)
+ SELECT md5('capacity-' || item::text)::uuid, 'fake', 'legacy', 'uncertain', $1, $1, $1 FROM generate_series(1, 4095) AS item`, instant)
 	meetingRequire(t, err)
 	_, err = f.pool.Exec(t.Context(), "UPDATE meeting_recovery_capacity SET unsettled = 4095")
 	meetingRequire(t, err)

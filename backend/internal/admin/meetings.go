@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/services/meetings"
@@ -92,5 +93,13 @@ func (c Command) writeMeeting(row meetings.RecoveryEntry) {
 	if row.CreateTime != nil {
 		generation = strconv.FormatInt(int64(*row.CreateTime), 10)
 	}
-	c.write(c.Stdout, fmt.Sprintf("recovery\t%s\t%s\torigin=%s\tcreate=%s\trevision=%d\tcleanup_requested=%t\tsettled=%t\tcycle=%d\tresult=%s\torphaned=%t\tgeneration=%s\tfinal_cycle_requested=%t\tfinal_cycle_used=%t", row.ProviderMeetingID, row.Provider, row.Origin, row.CreateState, row.Revision, row.CleanupRequested, row.Settled, row.CycleNumber, row.CycleResult, row.Orphaned, generation, row.FinalCycleRequested, row.FinalCycleUsed))
+	settlement := "none"
+	if row.Settlement != nil {
+		settlement = string(*row.Settlement)
+	}
+	dispatched := "none"
+	if row.DispatchedAt != nil {
+		dispatched = row.DispatchedAt.UTC().Format(time.RFC3339)
+	}
+	c.write(c.Stdout, fmt.Sprintf("recovery\t%s\t%s\torigin=%s\tcreate=%s\trevision=%d\tcleanup_requested=%t\tsettled=%t\tcycle=%d\tresult=%s\torphaned=%t\tgeneration=%s\tfinal_cycle_requested=%t\tfinal_cycle_used=%t\tsettlement=%s\tdispatched_at=%s\treconcile_cycle_used=%t\toperator_action=%t", row.ProviderMeetingID, row.Provider, row.Origin, row.CreateState, row.Revision, row.CleanupRequested, row.Settled, row.CycleNumber, row.CycleResult, row.Orphaned, generation, row.FinalCycleRequested, row.FinalCycleUsed, settlement, dispatched, row.ReconcileCycleUsed, row.OperatorAction))
 }

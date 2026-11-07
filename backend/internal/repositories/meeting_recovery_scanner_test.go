@@ -98,8 +98,8 @@ func TestMeetingRecoveryScannerWorkerAndRetention(t *testing.T) {
 	uncertain := f.recovery(t, f.identity.ProviderMeetingID)
 
 	meetingRequire(t, firstErr, secondErr, retainedErr, removedErr)
-	if retained != 0 || removed != 0 || boundary.SettledAt == nil || !errors.Is(absentErr, repositories.ErrNotFound) || uncertain.CycleNumber != 1 || uncertain.SettledAt != nil || uncertain.CycleResult != domain.MeetingRecoveryCycleUnresolved {
-		t.Fatal("scanner renewed spent cycle or lost retention boundary")
+	if retained != 1 || removed != 0 || boundary.SettledAt == nil || !errors.Is(absentErr, repositories.ErrNotFound) || uncertain.CycleNumber != 2 || !uncertain.ReconcileCycleUsed || uncertain.SettledAt != nil || uncertain.CycleResult != domain.MeetingRecoveryCyclePending {
+		t.Fatal("scanner did not queue exactly one reconciliation cycle after the window or lost the retention boundary")
 	}
 	if !strings.Contains(f.logs.String(), "meeting.recovery.scanned") {
 		t.Fatal("scanner did not emit safe pass diagnostics")

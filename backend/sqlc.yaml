@@ -641,6 +641,11 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: MeetingRecoveryCycleResult
+          - column: meeting_recovery.settlement
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MeetingRecoverySettlement
+              pointer: true
           - column: meeting_recovery_cycles.outbox_id
             go_type:
               import: ovc/backend/internal/domain

@@ -4,6 +4,7 @@
 - Reviewed: local implementation scope approved by the project owner on 2026-11-06; wording pending line-by-line owner review
 - Deciders: project owner
 - Related: [ADR-0004](0004-bigbluebutton-primary-provider.md), [ADR-0006](0006-background-worker-and-email.md), [ADR-0008](0008-hosting-and-data-residency.md), [approved local plan](../../knowledge/plans/slice-7-local-completion.md)
+- Amended by: [ADR-0021](0021-quiet-window-meeting-settlement.md), which lets started and uncertain obligations settle after a 1-hour quiet window and provider absence (pending owner review)
 - Amends: ADR-0008's bounded-retention statement for minimal unresolved meeting recovery obligations and their explicit cleanup-cycle receipts; hosting and residency requirements are unchanged
 
 ## Context

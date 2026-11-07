@@ -339,6 +339,9 @@ type MeetingRecovery struct {
 	CycleResult         domain.MeetingRecoveryCycleResult
 	FinalCycleRequested bool
 	FinalCycleUsed      bool
+	DispatchedAt        *time.Time
+	Settlement          *domain.MeetingRecoverySettlement
+	ReconcileCycleUsed  bool
 }
 
 type MeetingRecoveryCapacity struct {

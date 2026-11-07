@@ -45,7 +45,7 @@ func TestMeetingRecoveryRuntime(t *testing.T) {
 			state = domain.MeetingCreateReturned
 			acknowledged = &generation
 		}
-		if _, err := f.database.Pool.Exec(ctx, "UPDATE meeting_recovery SET create_state=$2, attempt_id=$1, create_time=$3 WHERE provider_meeting_id=$1", id, state, acknowledged); err != nil {
+		if _, err := f.database.Pool.Exec(ctx, "UPDATE meeting_recovery SET create_state=$2, attempt_id=$1, create_time=$3, dispatched_at=$4 WHERE provider_meeting_id=$1", id, state, acknowledged, now); err != nil {
 			t.Fatal(err)
 		}
 	}

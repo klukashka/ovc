@@ -29,7 +29,7 @@ func New(store *repositories.Store, provider meeting.Provider, kind domain.Meeti
 var errRecoveryEvidence = errors.New("meeting cleanup evidence does not match its pending cycle")
 var errProviderSnapshot = errors.New("meeting provider returned an invalid inspection")
 
-func (s *Service) Cleanup(ctx context.Context, row outbox.Row, _ time.Time) (outcome outbox.MeetingRecoveryOutcome, err error) {
+func (s *Service) Cleanup(ctx context.Context, row outbox.Row, now time.Time) (outcome outbox.MeetingRecoveryOutcome, err error) {
 	defer func() { s.reportCleanup(ctx, row.ID, outcome, err) }()
 	recovery, err := s.cleanupEvidence(ctx, row)
 	if err != nil {
@@ -37,7 +37,7 @@ func (s *Service) Cleanup(ctx context.Context, row outbox.Row, _ time.Time) (out
 	}
 	outcome = outbox.MeetingRecoveryOutcome{Revision: recovery.Revision, Result: domain.MeetingRecoveryCycleUnresolved}
 	if recovery.CreateState == domain.MeetingCreatePrepared {
-		outcome.Result = domain.MeetingRecoveryCycleSettled
+		outcome.Result, outcome.Settlement = domain.MeetingRecoveryCycleSettled, domain.MeetingRecoverySettledRevoked
 		return outcome, ctx.Err()
 	}
 	info, err := s.inspect(ctx, recovery.ProviderMeetingID)
@@ -58,11 +58,29 @@ func (s *Service) Cleanup(ctx context.Context, row outbox.Row, _ time.Time) (out
 			return outcome, ctx.Err()
 		}
 	}
-	if recovery.CreateState == domain.MeetingCreateReturned {
-		outcome.Result = domain.MeetingRecoveryCycleSettled
+	switch {
+	case recovery.CreateState == domain.MeetingCreateReturned:
+		outcome.Result, outcome.Settlement = domain.MeetingRecoveryCycleSettled, domain.MeetingRecoverySettledConfirmedEnd
 		outcome.ObservedCreateTime = recovery.CreateTime
+	case quietWindowElapsed(recovery, now):
+		if info.Status != domain.MeetingNotFound {
+			confirmed, err := s.inspect(ctx, recovery.ProviderMeetingID)
+			if err != nil {
+				return outcome, err
+			}
+			if confirmed.Status != domain.MeetingNotFound {
+				return outcome, ctx.Err()
+			}
+		}
+		outcome.Result, outcome.Settlement = domain.MeetingRecoveryCycleSettled, domain.MeetingRecoverySettledQuietAbsence
+		outcome.EvaluatedAt = &now
 	}
 	return outcome, ctx.Err()
+}
+
+func quietWindowElapsed(recovery repositories.StoredMeetingRecovery, now time.Time) bool {
+	unknown := recovery.CreateState == domain.MeetingCreateStarted || recovery.CreateState == domain.MeetingCreateUncertain
+	return unknown && recovery.CreateTime == nil && recovery.DispatchedAt != nil && !now.Before(recovery.DispatchedAt.Add(domain.MeetingCreateQuietWindow))
 }
 
 func (s *Service) cleanupEvidence(ctx context.Context, row outbox.Row) (repositories.StoredMeetingRecovery, error) {
@@ -134,6 +152,9 @@ func (s *Service) reportCleanup(ctx context.Context, id domain.OutboxID, outcome
 		}
 		s.logger.LogAttrs(ctx, level, "meeting.cleanup.failed", append(attributes, slog.String("kind", core.ErrorKind(err)))...)
 		return
+	}
+	if outcome.Settlement != "" {
+		attributes = append(attributes, slog.String("settlement", string(outcome.Settlement)))
 	}
 	s.logger.LogAttrs(ctx, slog.LevelDebug, "meeting.cleanup.evaluated", append(attributes, slog.String("result", string(outcome.Result)))...)
 }

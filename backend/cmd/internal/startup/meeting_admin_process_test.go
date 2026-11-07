@@ -158,7 +158,7 @@ func TestMeetingRecoveryAdminSettledAndSubsequentCycle(t *testing.T) {
 	f := newAdminFixture(t)
 	settled := seedAdminMeeting(t, f, 1)
 	retryable := seedAdminMeeting(t, f, 2)
-	if _, err := f.database.Pool.Exec(t.Context(), "UPDATE meeting_recovery SET settled_at=$2 WHERE provider_meeting_id=$1", settled, adminStart); err != nil {
+	if _, err := f.database.Pool.Exec(t.Context(), "UPDATE meeting_recovery SET settled_at=$2, settlement='revoked' WHERE provider_meeting_id=$1", settled, adminStart); err != nil {
 		t.Fatal(err)
 	}
 	first := f.admin(t, "meetings", "retry-cleanup", retryable.String(), "--revision", "1")
@@ -174,11 +174,23 @@ func TestMeetingRecoveryAdminSettledAndSubsequentCycle(t *testing.T) {
 
 	refused := f.admin(t, "meetings", "retry-cleanup", settled.String(), "--revision", "1")
 	stale := f.admin(t, "meetings", "retry-cleanup", retryable.String(), "--revision", "1")
+	settledView := f.admin(t, "meetings", "inspect", settled.String())
+	spentView := f.admin(t, "meetings", "inspect", retryable.String())
 	second := f.admin(t, "meetings", "retry-cleanup", retryable.String(), "--revision", "3")
 	inspection := f.admin(t, "meetings", "inspect", retryable.String())
 
 	if refused.exitCode != 1 || stale.exitCode != 1 || second.exitCode != 0 || second.stdout == first.stdout || !strings.HasPrefix(second.stdout, "cycle\t2\t") || strings.Count(inspection.stdout, "cycle\t") != 2 {
 		t.Fatalf("bounded cycles: refused=%+v second=%+v inspect=%+v", refused, second, inspection)
+	}
+	for _, field := range []string{"settled=true", "settlement=revoked", "dispatched_at=none", "reconcile_cycle_used=false", "operator_action=false"} {
+		if !strings.Contains(settledView.stdout, field) {
+			t.Fatalf("settled inspection lacks %s: %+v", field, settledView)
+		}
+	}
+	for _, field := range []string{"settled=false", "settlement=none", "result=exhausted", "operator_action=true"} {
+		if !strings.Contains(spentView.stdout, field) {
+			t.Fatalf("spent inspection lacks %s: %+v", field, spentView)
+		}
 	}
 }
 
