@@ -4,9 +4,10 @@ import { useTranslation } from 'react-i18next';
 
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
+import { formatStorage } from './storageAmount.ts';
 
 export function StorageUsage(): ReactElement {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const client = useApiClient();
   const query = useQuery({
     queryKey: ['tutor', 'settings'],
@@ -38,7 +39,12 @@ export function StorageUsage(): ReactElement {
             aria-label={t('teaching.files')}
             className="w-full"
           />
-          <p>{t('teaching.storageBytes', { used: query.data.file_usage_bytes, quota: query.data.file_quota_bytes })}</p>
+          <p>
+            {t('teaching.storageAmount', {
+              used: formatStorage(query.data.file_usage_bytes, i18n.language),
+              quota: formatStorage(query.data.file_quota_bytes, i18n.language),
+            })}
+          </p>
         </>
       )}
     </section>

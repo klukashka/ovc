@@ -20,6 +20,7 @@ import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib
 import { type Me, useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { isLanguage, languages } from '../../lib/i18n/resources.ts';
 import { SettingsNav } from './SettingsNav.tsx';
+import { TimezoneField } from './TimezoneField.tsx';
 
 type Outcome =
   | { readonly kind: 'idle' }
@@ -35,11 +36,6 @@ const dangerButtonClass =
 
 function isTheme(value: string): value is Theme {
   return themes.some((theme) => theme === value);
-}
-
-function timezones(current: string): readonly string[] {
-  const known = Intl.supportedValuesOf('timeZone');
-  return known.includes(current) ? known : [current, ...known];
 }
 
 function refusedFrom(response: Response, error: unknown): Outcome {
@@ -172,18 +168,12 @@ function PreferencesSection({ me }: { readonly me: Me }): ReactElement {
           </option>
         ))}
       </SelectField>
-      <SelectField
-        label={t('settings.timezone')}
+      <TimezoneField
         name="timezone"
         defaultValue={me.timezone}
+        language={me.language}
         error={fieldMessage(t, error, 'timezone')}
-      >
-        {timezones(me.timezone).map((zone) => (
-          <option key={zone} value={zone}>
-            {zone}
-          </option>
-        ))}
-      </SelectField>
+      />
       <SelectField
         label={t('settings.theme')}
         name="theme"

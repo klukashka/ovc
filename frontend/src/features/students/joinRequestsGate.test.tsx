@@ -92,15 +92,13 @@ describe('content shown once the join requests have settled', () => {
     resume();
   });
 
-  test('keeps the tutor code and the server status shown on Today while a failed request list is retried', async () => {
+  test('keeps the tutor code shown on Today while a failed request list is retried', async () => {
     const server = await showFailingJoinRequests('/today');
-    const status = await screen.findByRole('heading', { name: 'Your tutor code' });
-    const readiness = document.querySelector('[data-readiness]');
+    const code = await screen.findByRole('heading', { name: 'Your tutor code' });
 
     const resume = await retryJoinRequestsWhileItWaits(server, sectionBusyWhileWaiting);
 
-    expect(status.closest('[hidden]')).toBeNull();
-    expect(readiness?.closest('[hidden]')).toBeNull();
+    expect(code.closest('[hidden]')).toBeNull();
     resume();
   });
 });

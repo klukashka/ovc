@@ -74,8 +74,10 @@ test('the preview server has no build manifest to serve', async ({ request, depl
   expect(bodies.filter((body) => body.includes('isEntry'))).toEqual([]);
 });
 
-test('the tutor frame shows the tutor sections and server readiness', async ({ signedInPage: page }) => {
-  await page.goto('/today');
+test('the tutor frame shows the tutor sections without a server status block', async ({ signedInPage: page }) => {
+  const readinessRequests = recordRequestsTo(page, '/api/v1/health/ready');
+
+  await openSettledToday(page);
 
   const navigation = page.getByRole('navigation', { name: 'Основная навигация' });
   for (const label of ['Сегодня', 'Расписание', 'Ученики', 'Группы', 'Задания', 'Сообщения', 'Настройки']) {
@@ -83,9 +85,20 @@ test('the tutor frame shows the tutor sections and server readiness', async ({ s
   }
   await expect(navigation.getByRole('button', { name: /^Уведомления/ })).toBeVisible();
   await expect(navigation.getByRole('link', { name: 'Сегодня' })).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByRole('region', { name: 'Состояние сервера' }).getByRole('status')).toHaveText('Сервер готов');
+  await expect(page.getByRole('region', { name: 'Состояние сервера' })).toHaveCount(0);
+  expect(readinessRequests).toEqual([]);
   await expect(page).toHaveTitle('Сегодня · OVC');
 });
+
+function recordRequestsTo(page: Page, path: string): readonly string[] {
+  const requested: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === path) {
+      requested.push(request.url());
+    }
+  });
+  return requested;
+}
 
 async function openSettledToday(page: Page): Promise<void> {
   const traffic = trafficAfterReady(page, todayQueryPaths);

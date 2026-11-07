@@ -50,6 +50,7 @@ const calendarPath = '/api/v1/calendar';
 const lessonPathPrefix = '/api/v1/lessons/';
 const joinRequestsPath = '/api/v1/join-requests';
 const notificationsPath = '/api/v1/notifications';
+const tutorSettingsPath = '/api/v1/tutor/settings';
 const invitationPathPrefix = '/api/v1/invitations/';
 const fakeTokenPrefix = 'fake-';
 const emailPreferencesPath = '/api/v1/users/me/email-preferences';
@@ -376,6 +377,7 @@ export class FakeAuthServer {
   private readonly sent: string[] = [];
   private readonly addresses: URL[] = [];
   private readonly calendarItems = new Map<string, CalendarItem[]>();
+  private readonly tutorSettings = new Map<string, components['schemas']['TutorSettings']>();
   private readonly lessons = new Map<string, FakeLesson>();
   private lessonWriteGate: Promise<void> | null = null;
   private lessonWriteReceived: () => void = () => undefined;
@@ -486,6 +488,10 @@ export class FakeAuthServer {
     });
     this.joinRequestReadReceived = received;
     return { resume, answered };
+  }
+
+  setTutorSettings(email: string, settings: components['schemas']['TutorSettings']): void {
+    this.tutorSettings.set(this.account(email).me.id, settings);
   }
 
   addCalendarItem(email: string, item: CalendarItem): void {
@@ -791,6 +797,9 @@ export class FakeAuthServer {
     if (request.method === 'GET' && path === notificationsPath) {
       return this.readNotifications(token);
     }
+    if (request.method === 'GET' && path === tutorSettingsPath) {
+      return this.readTutorSettings(accountId ?? '');
+    }
     if (request.method === 'GET' && path === calendarPath) {
       return this.readCalendar(token, address.searchParams);
     }
@@ -959,6 +968,11 @@ export class FakeAuthServer {
       .filter((item) => Date.parse(item.ends_at) > from && Date.parse(item.starts_at) < to)
       .sort((left, right) => Date.parse(left.starts_at) - Date.parse(right.starts_at));
     return json(200, { items, truncated: false });
+  }
+
+  private readTutorSettings(accountId: string): Response {
+    const settings = this.tutorSettings.get(accountId);
+    return settings === undefined ? refusal(404, 'not_found') : json(200, settings);
   }
 
   private readNotifications(token: string): Response {

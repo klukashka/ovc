@@ -10,7 +10,6 @@ import { currentTutors } from '../tutors/api.ts';
 import { CodeEntry } from '../tutors/CodeEntry.tsx';
 import { type SentRequestsQuery, hasPendingRequest, useSentRequests } from '../tutors/SentRequests.tsx';
 import { TutorList, TutorsLoadFailed, useMyTutors } from '../tutors/TutorList.tsx';
-import { Readiness } from './Readiness.tsx';
 
 function FirstTutor({ query }: { readonly query: SentRequestsQuery }): ReactElement {
   const { t } = useTranslation();
@@ -72,7 +71,6 @@ export function HomePage(): ReactElement {
         </h2>
         <StudentTutors />
       </section>
-      <Readiness />
     </Page>
   );
 }

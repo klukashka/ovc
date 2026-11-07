@@ -123,8 +123,10 @@ export function BellIcon(props: IconProps): ReactElement {
 export function SettingsIcon(props: IconProps): ReactElement {
   return (
     <Outline {...props}>
-      <circle cx="8" cy="8" r="2" />
-      <path d="M8 1.8v1.7M8 12.5v1.7M2.6 4.9l1.5.9M11.9 10.2l1.5.9M2.6 11.1l1.5-.9M11.9 5.8l1.5-.9" />
+      <path d="M2.5 4h6M11.5 4h2M2.5 8h2M7.5 8h6M2.5 12h7M12.5 12h1" />
+      <circle cx="10" cy="4" r="1.5" />
+      <circle cx="6" cy="8" r="1.5" />
+      <circle cx="11" cy="12" r="1.5" />
     </Outline>
   );
 }

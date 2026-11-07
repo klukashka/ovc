@@ -431,8 +431,8 @@ test.describe('in Russian', () => {
     expect(onStudents.now).toEqual(onStudents.first);
   });
 
-  test('join requests › arriving requests do not move the Today code and status', async ({ page, deployment }) => {
-    const todayParts = ['main h3', 'main [data-readiness]'];
+  test('join requests › arriving requests do not move the Today code', async ({ page, deployment }) => {
+    const todayParts = ['main h3'];
     const maria = await seedVerifiedUser(deployment, 'Мария');
     await seedJoinRequests(deployment, maria, 1);
     await recordFirstOffsets(page, todayParts);
@@ -441,7 +441,7 @@ test.describe('in Russian', () => {
     await page.goto('/today');
 
     await expect(joinRequests(page).getByRole('listitem')).toHaveCount(1);
-    await expect(page.locator('main [data-readiness="ready"]')).toBeVisible();
+    await expect(page.locator('main h3')).toBeVisible();
     const onToday = await offsetsBelowHeading(page, todayParts);
     expect(Object.keys(onToday.first).sort()).toEqual([...todayParts].sort());
     expect(onToday.now).toEqual(onToday.first);

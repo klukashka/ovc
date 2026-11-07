@@ -10,7 +10,6 @@ import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type CopyResult, copyText } from '../../lib/clipboard.ts';
 import { type TutorCode as TutorCodeValue, fetchTutorCode, tutorCodeKey } from '../settings/tutorCode.ts';
 import { JoinRequests, useJoinRequestsSettled } from '../students/JoinRequests.tsx';
-import { Readiness } from './Readiness.tsx';
 
 type CopyNotice = { readonly result: CopyResult; readonly count: number } | null;
 
@@ -101,9 +100,6 @@ export function TodayPage(): ReactElement {
           <TutorCode />
         </div>
       </JoinRequests>
-      <div hidden={!settled} className="contents">
-        <Readiness />
-      </div>
     </Page>
   );
 }

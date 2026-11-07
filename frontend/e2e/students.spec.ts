@@ -111,7 +111,8 @@ test.describe('in Russian', () => {
     await control.tick();
 
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Добавить ученика' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Добавить ученика' })).toHaveCount(1);
+    await expect(page.locator('main header').getByRole('button', { name: 'Добавить ученика' })).toBeFocused();
     await page.getByRole('link', { name: 'Приглашённые' }).click();
     await expect(page).toHaveURL('/students?state=invited');
     const row = page.getByRole('link', { name: /Анна/ });

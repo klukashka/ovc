@@ -311,6 +311,8 @@ export const ru = {
     preferences: 'Язык, часовой пояс и тема',
     language: 'Язык',
     timezone: 'Часовой пояс',
+    timezoneSearch: 'Найти город или пояс',
+    timezoneNothingFound: 'Ничего не найдено. Выбранный пояс остаётся.',
     theme: 'Тема',
     themes: {
       system: 'Как в системе',
@@ -364,12 +366,6 @@ export const ru = {
     done: 'Эти письма отключены',
     allSettings: 'Все настройки писем',
     invalid: 'Ссылка больше не действует',
-  },
-  readiness: {
-    label: 'Состояние сервера',
-    checking: 'Проверяем сервер',
-    ready: 'Сервер готов',
-    unavailable: 'Сервер недоступен',
   },
   notFound: {
     body: 'Такой страницы нет или она недоступна.',
@@ -565,7 +561,7 @@ export const ru = {
   teaching: {
     storage: 'Использование хранилища',
     files: 'Файлы',
-    storageBytes: '{used, number} из {quota, number} байт',
+    storageAmount: '{used} из {quota}',
     code: 'Код репетитора',
     codeHint: 'Ученик вводит этот код, чтобы отправить вам заявку.',
     copy: 'Скопировать код',

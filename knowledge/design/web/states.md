@@ -236,7 +236,7 @@ Strings with fixed keys, so tests assert by key and both languages stay in step.
 | `time.other_zone` | {time} {city} time ({local} your time) | {time} по времени {city} ({local} по вашему) |
 | `time.other_offset` | {time} {offset} ({local} your time) | {time} по {offset} ({local} по вашему) |
 
-The bundled timezone table gives each city in the form the string needs: "Moscow" in English and the genitive "Москвы" in Russian. A zone the table does not list uses `time.other_offset`, where `{offset}` is the zone's offset at that instant in the form `UTC±hh:mm` (from slice 5; the wording is a proposal to confirm with the lesson page).
+The bundled timezone table gives each city in the form the string needs: "Moscow" in English and the genitive "Москвы" in Russian; its nominative "Москва" names the zone in the account settings' timezone choice (design slice step D1, pending owner review). A zone the table does not list uses `time.other_offset`, where `{offset}` is the zone's offset at that instant in the form `UTC±hh:mm` (from slice 5; the wording is a proposal to confirm with the lesson page).
 
 ## Feedback messages
 

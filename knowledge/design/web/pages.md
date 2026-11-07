@@ -75,7 +75,8 @@ FR-15.1, FR-15.2, FR-2.3, FR-5.1.
   - a decision shows a notice in the panel, which takes focus: "Request accepted. The student is now in Students.", "Request declined." or "Request declined. Requests from this student no longer reach you."; no dialog asks first, because a block is undone in Teaching settings;
   - a request that is no longer open when decided (`not_found`, `not_editable`) shows the alert "This request is no longer open. The list is up to date.", which takes focus each time, and the list reloads; a decision refused with `email_not_verified` shows the confirmation prompt "Confirm your email to answer join requests." inside an alert that takes focus;
   - with no visible request the panel says "No new requests."; an unconfirmed tutor sees no request list, and the code with "The code starts working once you confirm your email";
-  - until the request list and the tutor code have first loaded, the tutor code and the server status below the list are not shown (a loading state stands in their place once the list has loaded), so nothing moves when the requests arrive; once shown they stay shown, also while a failed list or code is retried.
+  - until the request list and the tutor code have first loaded, the tutor code below the list is not shown (a loading state stands in its place once the list has loaded), so nothing moves when the requests arrive; once shown it stays shown, also while a failed list or code is retried.
+- **No server status:** neither Today nor Home shows a server status block or asks for `/health/ready`, which stays for deployment probes (design slice step D1, pending owner review).
 - **Unread messages:** channels with unread counts.
 - **Upcoming deadlines:** issues due in the next 3 days with progress "{submitted}/{total}".
 - **Computer layout:** the greeting spans the page; the main column holds the checklist, today's lessons and needs checking; a 300 px side column holds join requests, upcoming deadlines and unread messages.
@@ -169,11 +170,12 @@ FR-2.1, FR-2.3, FR-2.5.
 - **Search:** searching, with the Search button or Enter in the field, keeps focus where it was, and the field and the group choice show what the address holds after every change of the address (including Back); "Clear search" appears while a search or a group is applied, empties both and moves focus to the search field.
 - **Group filter:** beside the search, a "Group" choice of every group of the tutor ("All groups" first, archived groups marked "(archived)"), applied with the search and kept in the address as `group=`; it is shown once the tutor has a group. A group the tutor cannot reach, or a `group=` value that is not a group identifier, shows "This group is not available." with a link to all groups; a search the API refuses (longer than 254 characters) shows "This search cannot be used. A search holds at most 254 characters." with the link "Show the list without the search"; neither offers Retry.
 - **Rows:** avatar, display name, email, state and groups, and from slice 5 the next lesson; open assignments and last activity arrive with the slices that add them (as built in slice 5, pending owner review: the date and time of the next lesson, or "No lesson scheduled" for an `active` or `provisional` card without one; an invited or ended card shows its next lesson only when it has one).
+- **"Add student"** is the page's only such button and stands in the page header, to the right of the title, whatever the list shows; closing its dialog returns focus to it (design slice step D1, pending owner review).
 - **"Add student" dialog:**
   - display name and optional email, then "Create invitation";
   - the result shows the link with Copy and, if an email was given, "Send by email"; sending shows "Sent" as a toast and never a delivery status.
 - **Pending join requests** appear at the top with Accept, Decline and, in a menu, "Decline and block", in the same section and with the same notices as on Today; the section is shown only while requests wait, and stays after the last decision until the page is left, so its notice keeps focus. Until the join requests have first loaded, the tabs, the search and the list are not shown (a loading state stands in their place), so they do not move when requests arrive; once shown they stay shown, also while a failed request list is retried.
-- **Empty:** a heading with "Invite your first student" and "Share your tutor code {code}"; the empty Invited and Ended tabs and a search or group without matches say so in one line ("No open invitations.", "No ended relationships.", "Nobody matches the search.") and keep "Add student".
+- **Empty:** a heading with "Invite your first student" and "Share your tutor code {code}"; the empty Invited and Ended tabs and a search or group without matches say so in one line ("No open invitations.", "No ended relationships.", "Nobody matches the search."); the empty states add no button of their own, because "Add student" stays in the header (pending owner review).
 - **An unconfirmed tutor** gets the confirmation prompt instead of "Add student".
 
 ### Student card
@@ -311,7 +313,8 @@ FR-1.4–FR-1.7, FR-5.6, FR-13.3, FR-14.2, FR-17.
 
 - **Profile:** name, avatar, bio and subjects (tutor).
 - **Account:**
-  - language, timezone (the browser's list of IANA zones), theme (system, light or dark);
+  - language, timezone, theme (system, light or dark);
+  - the timezone choice lists the browser's IANA zones as "UTC+03:00 · Moscow": the offset at the moment the page opened and the city in the interface language, in the nominative (the Russian names come from the CLDR exemplar cities, in the bundled city table), ordered by offset and then by city; a search field above it, "Find a city or time zone", narrows the list by the city in either language, the zone identifier and the offset, always keeps the chosen zone, says "Nothing found. The current time zone stays chosen." when nothing else matches, and never submits the form on Enter; the saved value is still the IANA identifier (design slice step D1, pending owner review);
   - change password, sign out everywhere, delete account;
   - deleting asks for the password in a dialog that names the consequence, and the sign-in page then says the account was deleted;
   - the consequence names the role's effects on tutoring: for a tutor, that working together ends with every student and the students get an email, the invitation links and the tutor code stop working, join requests expire and the groups are archived; for a student, that studying ends with every tutor, the student leaves their groups and the requests to tutors expire.
@@ -320,6 +323,7 @@ FR-1.4–FR-1.7, FR-5.6, FR-13.3, FR-14.2, FR-17.
   - tutor code with Copy and Regenerate (an unconfirmed tutor gets the confirmation prompt instead of Regenerate);
   - recording retention;
   - storage usage bars for files and recordings, against their quotas; in the MVP, from slice 6, a usage bar for files only, from `GET /tutor/settings`;
+  - the usage reads "{used} of {quota}" in decimal units: megabytes below one gigabyte, gigabytes from one gigabyte (after rounding to one decimal), at most one decimal, and a non-zero amount below 0.1 MB as 0.1 MB, so 5 000 000 000 bytes read "5 GB" (design slice step D1, pending owner review);
   - blocked students with Unblock, each row with the avatar, the account name and the blocked date; a student whose account is deleted is shown as "Deleted account" with that label's initial in the avatar circle, never the student's picture, and its Unblock button is named "Unblock the deleted account blocked on {date}" for screen readers, so several such rows stay distinguishable;
   - unblocking shows the notice "The student was unblocked.", which takes focus; an Unblock answered `not_found` (the student was unblocked meanwhile) is not reported as done: the alert "This student is no longer blocked. The list is up to date." takes focus each time, and the list reloads.
 

@@ -301,6 +301,8 @@ export const en: Resources = {
     preferences: 'Language, timezone and theme',
     language: 'Language',
     timezone: 'Timezone',
+    timezoneSearch: 'Find a city or time zone',
+    timezoneNothingFound: 'Nothing found. The current time zone stays chosen.',
     theme: 'Theme',
     themes: {
       system: 'Same as the system',
@@ -354,12 +356,6 @@ export const en: Resources = {
     done: 'These emails are turned off',
     allSettings: 'All email settings',
     invalid: 'This link is no longer valid',
-  },
-  readiness: {
-    label: 'Server status',
-    checking: 'Checking the server',
-    ready: 'Server ready',
-    unavailable: 'Server unavailable',
   },
   notFound: {
     body: 'This page does not exist or is not available.',
@@ -553,7 +549,7 @@ export const en: Resources = {
   teaching: {
     storage: 'Storage usage',
     files: 'Files',
-    storageBytes: '{used, number} of {quota, number} bytes',
+    storageAmount: '{used} of {quota}',
     code: 'Tutor code',
     codeHint: 'Students enter this code to send you a join request.',
     copy: 'Copy code',

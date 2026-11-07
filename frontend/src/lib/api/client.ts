@@ -5,8 +5,6 @@ import { type components, errorBodyCodeValues, type paths } from './schema.ts';
 
 export type ApiClient = Client<paths>;
 
-export type ReadyStatus = components['schemas']['ReadyStatus'];
-
 export type ApiErrorBody = components['schemas']['ErrorBody'];
 
 export type OverlappingLesson = components['schemas']['OverlappingLesson'];
@@ -196,15 +194,4 @@ function isErrorEnvelope(value: unknown): value is { error: ReceivedErrorBody } 
       body.fields === null ||
       (Array.isArray(body.fields) && body.fields.every(isReceivedFieldError)))
   );
-}
-
-export async function fetchReadiness(client: ApiClient): Promise<ReadyStatus> {
-  const { data, error, response } = await client.GET('/api/v1/health/ready');
-  if (data?.status === 'ready') {
-    return data;
-  }
-  if (data !== undefined) {
-    throw new ApiError(response.status, undefined);
-  }
-  throw apiErrorFrom(response.status, error);
 }

@@ -205,13 +205,7 @@ function StudentRow({ card }: { readonly card: StudentCardSummary }): ReactEleme
   );
 }
 
-function EmptyList({
-  view,
-  addButton,
-}: {
-  readonly view: ListView;
-  readonly addButton: ReactElement | null;
-}): ReactElement {
+function EmptyList({ view }: { readonly view: ListView }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const { state } = view;
@@ -225,12 +219,9 @@ function EmptyList({
   });
   if (!firstStudent) {
     return (
-      <div className="flex flex-col items-start gap-4">
-        {addButton}
-        <p className="text-text-muted">
-          {t(filtered ? 'students.noMatches' : state === 'invited' ? 'students.emptyInvited' : 'students.emptyEnded')}
-        </p>
-      </div>
+      <p className="text-text-muted">
+        {t(filtered ? 'students.noMatches' : state === 'invited' ? 'students.emptyInvited' : 'students.emptyEnded')}
+      </p>
     );
   }
   return (
@@ -250,7 +241,6 @@ function EmptyList({
           }}
         />
       ) : null}
-      {addButton}
     </section>
   );
 }
@@ -265,13 +255,7 @@ function unusableFilter(error: ApiError, view: ListView): 'group' | 'search' | n
   return null;
 }
 
-function StudentList({
-  view,
-  addButton,
-}: {
-  readonly view: ListView;
-  readonly addButton: ReactElement | null;
-}): ReactElement {
+function StudentList({ view }: { readonly view: ListView }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const { state, search, group } = view;
@@ -327,11 +311,10 @@ function StudentList({
     );
   }
   if (cards.length === 0) {
-    return <EmptyList view={view} addButton={addButton} />;
+    return <EmptyList view={view} />;
   }
   return (
     <div aria-busy={query.isPlaceholderData} className="flex flex-col items-start gap-4">
-      {addButton}
       <ul ref={listRef} aria-label={t(`students.tabs.${state}`)} className="w-full border-b border-border">
         {cards.map((card) => (
           <StudentRow key={card.id} card={card} />
@@ -402,14 +385,14 @@ export function StudentsPage(): ReactElement {
     );
 
   return (
-    <Page wide>
+    <Page wide action={addButton ?? undefined}>
       <LiveNotice message={withdrawnView === null ? null : t('students.withdrawn')} />
       <JoinRequests hideWhenEmpty />
       {requestsSettled ? null : <DelayedLoading />}
       <div hidden={!requestsSettled} className="flex flex-col gap-6">
         <Tabs view={view} />
         <SearchForm view={view} />
-        <StudentList view={view} addButton={addButton} />
+        <StudentList view={view} />
       </div>
       <AddStudentDialog
         open={dialogOpen}
