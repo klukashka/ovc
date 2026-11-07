@@ -1,6 +1,6 @@
 # One-change disposition of the cleanup interleaving test gate
 
-Status: owner-approved on 2026-11-06; exact exceptional integration completed. Mandatory documentation verification remains pending. Standard tier; security trigger: verification policy boundary 9/T-41 and private diagnostic artifacts T-18/T-19.
+Status: owner-approved on 2026-11-06; exact exceptional integration completed. The mandatory documentation change merged as `57bf16d4be98b6e7e367747a2f35b3a2943d9366` through the merge gate (status line updated 2026-11-07 by the slice 7 slice review records). Standard tier; security trigger: verification policy boundary 9/T-41 and private diagnostic artifacts T-18/T-19.
 
 ## Evidence
 

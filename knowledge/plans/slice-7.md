@@ -25,6 +25,7 @@ The probe must cover:
 - Unsigned ended callback behavior and reconciliation; callback retry behavior recorded rather than relied upon.
 - External network destinations, especially STUN/TURN, before admitting user data; authorized Russian processing only.
 - The carried slice 4 2,000-socket reconnect test over a real network, with a distinct bounded plan and ownership of the OVC test deployment.
+- The items of the [remote-activation checklist](slice-7-remote-activation-checklist.md) recorded by the slice review on 2026-11-07.
 
 Checks requiring a host remain blocked. Infrastructure procurement and live participants/devices are prerequisites for those checks. The owner explicitly approved local-first development on 2026-11-05: L1 now precedes the remote probe, while real-provider acceptance and enabling embedding remain gated by remote evidence.
 

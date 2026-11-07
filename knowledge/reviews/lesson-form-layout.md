@@ -83,4 +83,10 @@ five-minute load average of 18 on 12 cores. The same backend passed the gate
 minutes earlier at `00e201d`. Load is the suspected cause, not a proven one. The
 owner approved one rerun on an idle machine for this change only; it exempts no
 check and sets no precedent. Commit `39d5385` replaced the upload test, whose
-failure was a test race; the two presence tests stay open as flaky.
+failure was a test race; the two presence tests stayed open as flaky. Commit
+`3023459`, approved by the project owner on 2026-11-07, later raised the
+presence-operation deadline of both presence tests and four others from 100 ms
+to 2 s, because the deadline also applied to each test's setup connection, which
+closed with 1012 on a busy machine; the
+[slice 7 known limitations](slice-7-known-limitations.md#presence-test-deadlines-raised)
+record it.
