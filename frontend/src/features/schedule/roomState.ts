@@ -73,10 +73,12 @@ export function sessionAfterLessonChange(session: RoomSession, lesson: RoomLesso
   return entered.roomSeenOpen ? { kind: 'outside' } : entered;
 }
 
+const loopbackHosts: ReadonlySet<string> = new Set(['127.0.0.1', '[::1]']);
+
 export function isRoomAddress(url: string): boolean {
   if (!URL.canParse(url)) {
     return false;
   }
-  const { protocol } = new URL(url);
-  return protocol === 'https:' || protocol === 'http:';
+  const { protocol, hostname } = new URL(url);
+  return protocol === 'https:' || (protocol === 'http:' && loopbackHosts.has(hostname));
 }

@@ -109,6 +109,68 @@ async function tokenOf(server: FakeAuthServer, account: typeof other): Promise<u
   return response.json();
 }
 
+interface AdoptionRig {
+  readonly server: FakeAuthServer;
+  readonly gateway: FakeGateway;
+  readonly session: Session;
+  readonly clock: ManualScheduler;
+  readonly events: RealtimeEvent[];
+  readonly readiness: boolean[];
+  readonly failures: Error[];
+}
+
+async function rigBeforeAdoption(): Promise<AdoptionRig> {
+  const server = new FakeAuthServer();
+  server.addAccount(tutor);
+  server.addAccount(other);
+  const gateway = new FakeGateway(server);
+  const session = new Session({
+    origin,
+    transport: server.transport(),
+    locks: memoryLocks(),
+    scheduler: manualScheduler(),
+  });
+  await session.signIn(tutor.email, tutor.password);
+  const clock = manualScheduler();
+  const events: RealtimeEvent[] = [];
+  const readiness: boolean[] = [];
+  const failures: Error[] = [];
+  connectWhileSignedIn(
+    session,
+    (epoch): RealtimeClient =>
+      new RealtimeClient({
+        sockets: gateway.sockets,
+        tokens: session,
+        epoch,
+        scheduler: clock,
+        random: (): number => 0.5,
+        onEvent: (event): void => {
+          events.push(event);
+        },
+        onReadiness: (ready): void => {
+          readiness.push(ready);
+        },
+        onFailure: (error): void => {
+          failures.push(error);
+        },
+        connectedBefore: false,
+      }),
+  );
+  await eventually(() => {
+    expect(gateway.readySockets(tutor.id)).toBe(1);
+  });
+  return { server, gateway, session, clock, events, readiness, failures };
+}
+
+async function reconnectOnce(rig: AdoptionRig): Promise<void> {
+  const opened = rig.gateway.socketsOpened;
+  rig.gateway.closeAccount(tutor.id, closeCodes.reconnect);
+  await passEveryReconnectDelay(rig.clock, 1);
+  await eventually(() => {
+    expect(rig.gateway.socketsOpened).toBe(opened + 1);
+  });
+}
+
 describe('realtime client', () => {
   test('accepts a lesson entity frame without dropping the socket', async () => {
     const events: RealtimeEvent[] = [];
@@ -303,6 +365,55 @@ describe('realtime client', () => {
     expect(rig.gateway.tokensOfferedOnSocketsOf(tutor.id).map((token) => rig.server.issuedBy(token))).toEqual([
       tutor.id,
     ]);
+    expect(rig.failures).toEqual([]);
+  });
+
+  test('a socket that opens while another account is being adopted never sends the old token', async () => {
+    const rig = await rigBeforeAdoption();
+    const otherToken = await tokenOf(rig.server, other);
+    const releaseOpenings = rig.gateway.holdOpenings();
+    await reconnectOnce(rig);
+    const accountReads = rig.server.pauseAccountReads();
+    const adoption = rig.session.adopt(otherToken);
+    await accountReads.answered;
+
+    releaseOpenings();
+    const openRightAfterOpening = rig.gateway.openSockets;
+    accountReads.resume();
+    await adoption;
+    await eventually(() => {
+      expect(rig.gateway.readySockets(other.id)).toBe(1);
+    });
+
+    expect(openRightAfterOpening).toBe(0);
+    expect(rig.gateway.offeredTokens.map((token) => rig.server.issuedBy(token))).toEqual([tutor.id, other.id]);
+    expect(rig.failures).toEqual([]);
+  });
+
+  test('ready, entity and notification frames arriving while another account is being adopted reach no callback', async () => {
+    const rig = await rigBeforeAdoption();
+    const otherToken = await tokenOf(rig.server, other);
+    const releaseFrames = rig.gateway.holdFrames();
+    await reconnectOnce(rig);
+    await eventually(() => {
+      expect(rig.gateway.readySockets(tutor.id)).toBe(1);
+    });
+    rig.gateway.changed(tutor.id, 'lesson', 'a-lesson');
+    rig.gateway.notify(tutor.id, 'a-notification');
+    const accountReads = rig.server.pauseAccountReads();
+    const adoption = rig.session.adopt(otherToken);
+    await accountReads.answered;
+    const eventsBefore = rig.events.length;
+    const readinessBefore = rig.readiness.length;
+
+    releaseFrames();
+    const eventsOfOldAccount = rig.events.slice(eventsBefore);
+    const readinessOfOldAccount = rig.readiness.slice(readinessBefore);
+    accountReads.resume();
+    await adoption;
+
+    expect(eventsOfOldAccount).toEqual([]);
+    expect(readinessOfOldAccount).toEqual([]);
     expect(rig.failures).toEqual([]);
   });
 });

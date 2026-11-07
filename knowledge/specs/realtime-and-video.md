@@ -450,6 +450,7 @@ sequenceDiagram
 - **The join link:**
   - created per request and returned only in the response body of a `POST`;
   - never stored or logged by OVC, and the client navigates to it immediately and does not keep it;
+  - the client hands it to a tab or a frame only when it is an `https` address, or an `http` address on the loopback addresses `127.0.0.1` and `[::1]` used by the local fake room; any other address counts as an unavailable video service;
   - bound to the meeting's create time, so it stops working when that meeting ends, but not single-use within the meeting;
   - it does appear in the conferencing host's access logs and, for a new tab, in browser history: an accepted residual risk ([T-25](../../docs/threat-model.md#threats-and-controls)).
 

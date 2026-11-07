@@ -139,10 +139,15 @@ export class RealtimeClient {
     const current = (): boolean => !this.stopped && generation === this.generation;
     const socket = this.deps.sockets({
       onOpen: () => {
-        if (current() && this.connection !== null) {
-          this.connection.sentToken = this.latestToken ?? token;
-          this.connection.socket.send(authFrame(this.connection.sentToken));
+        if (!current() || this.connection === null) {
+          return;
         }
+        if (!this.ownsCurrentEpoch()) {
+          this.drop();
+          return;
+        }
+        this.connection.sentToken = this.latestToken ?? token;
+        this.connection.socket.send(authFrame(this.connection.sentToken));
       },
       onText: (text) => {
         if (current()) {
@@ -173,6 +178,9 @@ export class RealtimeClient {
   }
 
   private handle(frame: ServerFrame): void {
+    if (!this.ownsCurrentEpoch()) {
+      return;
+    }
     switch (frame.type) {
       case 'ready':
         this.authenticated();
@@ -217,7 +225,7 @@ export class RealtimeClient {
         return;
       case 'typing':
       case 'presence':
-        if (this.connection?.ready === true && this.deps.tokens.currentEpoch() === this.deps.epoch) {
+        if (this.connection?.ready === true) {
           this.deps.onChatSignal?.(frame);
         }
         return;
@@ -226,7 +234,7 @@ export class RealtimeClient {
 
   private authenticated(): void {
     const connection = this.connection;
-    if (connection === null || connection.ready) {
+    if (connection === null || connection.ready || !this.ownsCurrentEpoch()) {
       return;
     }
     connection.ready = true;
@@ -237,6 +245,10 @@ export class RealtimeClient {
     }
     this.deps.onEvent({ kind: 'connected', reconnect: this.connectedBefore || this.attempt > 0 });
     this.connectedBefore = true;
+  }
+
+  private ownsCurrentEpoch(): boolean {
+    return this.deps.tokens.currentEpoch() === this.deps.epoch;
   }
 
   private renewed(token: string): void {

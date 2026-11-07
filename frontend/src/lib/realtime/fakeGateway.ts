@@ -74,6 +74,10 @@ export class FakeGateway {
   private readonly connections: FakeConnection[] = [];
   private frameIds = 0;
   private readonly refusals: number[] = [];
+  private openingsHeld = false;
+  private readonly heldOpenings: (() => void)[] = [];
+  private framesHeld = false;
+  private readonly heldFrames: (() => void)[] = [];
 
   constructor(server: FakeAuthServer) {
     this.server = server;
@@ -103,6 +107,30 @@ export class FakeGateway {
     }
   }
 
+  get offeredTokens(): readonly string[] {
+    return this.connections.flatMap((connection) => connection.offered);
+  }
+
+  holdOpenings(): () => void {
+    this.openingsHeld = true;
+    return (): void => {
+      this.openingsHeld = false;
+      for (const open of this.heldOpenings.splice(0)) {
+        open();
+      }
+    };
+  }
+
+  holdFrames(): () => void {
+    this.framesHeld = true;
+    return (): void => {
+      this.framesHeld = false;
+      for (const deliver of this.heldFrames.splice(0)) {
+        deliver();
+      }
+    };
+  }
+
   tokensOfferedOnSocketsOf(accountId: string): readonly string[] {
     return this.connections
       .filter((connection) => connection.account === accountId)
@@ -129,7 +157,16 @@ export class FakeGateway {
         this.close(connection, refusal);
         return;
       }
-      events.onOpen();
+      const open = (): void => {
+        if (!connection.closed) {
+          events.onOpen();
+        }
+      };
+      if (this.openingsHeld) {
+        this.heldOpenings.push(open);
+        return;
+      }
+      open();
     });
     const socket: RealtimeSocket = {
       send: (frame): void => {
@@ -268,10 +305,17 @@ export class FakeGateway {
 
   private send(connection: FakeConnection, frame: unknown): void {
     const text = JSON.stringify(frame);
-    later(() => {
+    const deliver = (): void => {
       if (!connection.closed) {
         connection.events.onText(text);
       }
+    };
+    later(() => {
+      if (this.framesHeld) {
+        this.heldFrames.push(deliver);
+        return;
+      }
+      deliver();
     });
   }
 

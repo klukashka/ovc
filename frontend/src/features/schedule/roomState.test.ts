@@ -61,6 +61,11 @@ describe('the room address', () => {
   test.each([
     ['https://room.example/join', true],
     ['http://127.0.0.1:8000/__test__/fake-room', true],
+    ['http://[::1]:8000/__test__/fake-room', true],
+    ['https://127.0.0.1:8443/__test__/fake-room', true],
+    ['http://room.example/join', false],
+    ['http://localhost:8000/__test__/fake-room', false],
+    ['http://127.0.0.1.room.example/join', false],
     ['javascript:alert(1)', false],
     ['data:text/html,x', false],
     ['/relative', false],

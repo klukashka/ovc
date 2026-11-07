@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 
 export interface RoomTab {
-  readonly navigate: (url: string) => void;
+  readonly navigate: (url: string) => boolean;
   readonly close: () => void;
 }
 
@@ -14,8 +14,16 @@ export const openBrowserRoomTab: OpenRoomTab = () => {
   }
   opened.opener = null;
   return {
-    navigate: (url): void => {
-      opened.location.replace(url);
+    navigate: (url): boolean => {
+      if (opened.closed) {
+        return false;
+      }
+      try {
+        opened.location.replace(url);
+      } catch {
+        return false;
+      }
+      return true;
     },
     close: (): void => {
       opened.close();

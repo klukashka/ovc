@@ -66,8 +66,12 @@ class RoomTabs {
     const tab = new RecordedTab();
     this.opened.push(tab);
     return {
-      navigate: (url): void => {
+      navigate: (url): boolean => {
+        if (tab.closed) {
+          return false;
+        }
         tab.visited.push(url);
+        return true;
       },
       close: (): void => {
         tab.closed = true;
@@ -272,6 +276,36 @@ describe('joining through a new tab', () => {
 
     expect(alert.textContent).toContain('Браузер заблокировал новую вкладку');
     expect(lessonWrites(shown.server)).toEqual([]);
+  });
+
+  test('a tab the user closed before the answer returns to the join button without a message', async () => {
+    const shown = await showRoom();
+    const paused = shown.server.pauseLessonWrites();
+    const button = joinButton('Подключиться к уроку');
+    button.focus();
+    fireEvent.click(button);
+    await paused.received;
+    shown.tabs.only().closed = true;
+
+    paused.resume();
+
+    expect(await screen.findByRole('button', { name: 'Подключиться к уроку' })).toBe(button);
+    expect(document.activeElement).toBe(button);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('Урок открыт в другой вкладке')).toBeNull();
+    expect(shown.tabs.only().visited).toEqual([]);
+  });
+
+  test('an answer with a plain http address outside loopback never reaches the tab', async () => {
+    const shown = await showRoom();
+    shown.server.nextRoomAddress = 'http://room.example/join';
+
+    fireEvent.click(joinButton('Подключиться к уроку'));
+    const alert = await screen.findByRole('alert');
+
+    expect(alert.textContent).toBe('Видеосвязь недоступна, попробуйте ещё раз');
+    expect(shown.tabs.only().visited).toEqual([]);
+    expect(shown.tabs.only().closed).toBe(true);
   });
 
   test('an answer with an address that is not a web address never reaches the tab', async () => {
@@ -526,6 +560,21 @@ describe('the embedded room', () => {
     await waitFor(() => {
       expect(shown.tabs.only().visited).toHaveLength(1);
     });
+  });
+
+  test('a blocked pop-up from Open in new tab keeps the frame, explains it and keeps focus on the button', async () => {
+    const shown = await embeddedRoom();
+    shown.tabs.refuses = true;
+    const button = joinButton('Открыть в новой вкладке');
+    button.focus();
+
+    fireEvent.click(button);
+    const alert = await screen.findByRole('alert');
+
+    expect(alert.textContent).toContain('Браузер заблокировал новую вкладку');
+    expect(screen.getByTitle(embeddable.title)).toBe(shown.frame);
+    expect(document.activeElement).toBe(button);
+    expect(lessonWrites(shown.server)).toEqual([`/api/v1/lessons/${embeddable.id}/join`]);
   });
 
   test('a lesson change to ended removes the frame and focus moves to the heading', async () => {

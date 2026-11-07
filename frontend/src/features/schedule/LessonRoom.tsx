@@ -23,6 +23,7 @@ import type { Me } from '../../lib/api/session.ts';
 import type { LessonDetail } from './api.ts';
 import { formatClock } from './calendarFormat.ts';
 import { calendarKey, lessonKey } from './keys.ts';
+import { replaceLessonDetail } from './lessonCache.ts';
 import { roomOpensAt, type LessonPhase } from './lessonTiming.ts';
 import { type RoomOffer, type RoomSession, isRoomAddress, roomOfferOf, sessionAfterLessonChange } from './roomState.ts';
 import { type RoomTab, useOpenRoomTab } from './roomTab.ts';
@@ -159,7 +160,9 @@ function useRoomEntry(lessonId: string): {
       return fail({ kind: 'embedUnavailable' });
     }
     if (tab !== null) {
-      tab.navigate(data.url);
+      if (!tab.navigate(data.url)) {
+        return fail({ kind: 'abandoned' });
+      }
       setSession({ kind: 'inTab', roomSeenOpen: false });
       return { kind: 'entered' };
     }
@@ -468,7 +471,7 @@ export function LessonRoom({
         }
         return refused;
       }
-      queryClient.setQueryData(lessonKey(lesson.id), data);
+      await replaceLessonDetail(queryClient, data);
       void queryClient.invalidateQueries({ queryKey: calendarKey });
       leaveRoom();
       setDialog(null);
@@ -516,16 +519,22 @@ export function LessonRoom({
   return (
     <section aria-label={t('lesson.room')} className="flex flex-col gap-3" data-part="lesson-room">
       {session.kind === 'embedded' ? (
-        <EmbeddedRoom
-          key={session.entry}
-          url={session.url}
-          title={lesson.title}
-          acceptsEscape={dialog === null}
-          onOpenInNewTab={() => {
-            leaveRoom();
-            join(true);
-          }}
-        />
+        <>
+          <EmbeddedRoom
+            key={session.entry}
+            url={session.url}
+            title={lesson.title}
+            acceptsEscape={dialog === null}
+            onOpenInNewTab={() => {
+              join(true);
+            }}
+          />
+          {refusalShown === null ? null : (
+            <p role="alert" className="text-danger">
+              {refusalShown}
+            </p>
+          )}
+        </>
       ) : (
         <div className="flex flex-col items-start gap-3 rounded-lg border border-border bg-surface p-4 dark:border-border-strong">
           {text === null ? null : <p className="text-strong">{text}</p>}
