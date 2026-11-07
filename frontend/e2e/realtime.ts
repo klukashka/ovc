@@ -1,4 +1,5 @@
 import { emitBoundedDiagnostic } from './browser-diagnostics.ts';
+import { isCancellationText } from './request-failures.ts';
 import {
   type Page,
   type WebSocket as PageWebSocket,
@@ -344,7 +345,7 @@ export function trafficAfterReady(page: Page, queryPaths: readonly string[]): Tr
     const id = requests.get(request);
     if (id === undefined) return;
     requests.delete(request);
-    state.requestFailed(id);
+    state.requestFailed(id, isCancellationText(request.failure()?.errorText ?? ''));
   };
   const onSocket = (socket: PageWebSocket): void => {
     if (disposed || !singleFrame() || socket.url() !== realtimeAddress(new URL(page.url()).origin)) return;

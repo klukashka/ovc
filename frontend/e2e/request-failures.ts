@@ -20,8 +20,12 @@ const cancellationTexts: readonly string[] = [
   'Provisiolal navigation canceled.',
 ];
 
+export function isCancellationText(reason: string): boolean {
+  return cancellationTexts.includes(reason);
+}
+
 function isCancellation(failed: FailedRequest): boolean {
-  return cancellationTexts.includes(failed.reason);
+  return isCancellationText(failed.reason);
 }
 
 export function cancellationAfterNavigationAction(failed: FailedRequest, action: number): boolean {

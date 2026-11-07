@@ -161,8 +161,14 @@ export class NavigationReadiness {
       this.completed.add(query.path);
   }
 
-  requestFailed(id: ReadinessRequestId): void {
-    if (this.pending.has(id)) this.fail('request_failed');
+  requestFailed(id: ReadinessRequestId, cancelled: boolean): void {
+    const query = this.pending.get(id);
+    if (query === undefined) return;
+    if (cancelled && !query.requiredRead) {
+      this.pending.delete(id);
+      return;
+    }
+    this.fail('request_failed');
   }
 
   fail(reason: ReadinessFailure = 'observer_failure'): void {

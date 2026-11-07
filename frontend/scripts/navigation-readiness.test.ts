@@ -147,7 +147,7 @@ for (const outcome of ['failed', 'http_failure', 'missing_terminal', 'missing_re
     openDocument(state, 1, 2);
     state.requestStarted(3, requiredQuery);
 
-    if (outcome === 'failed') state.requestFailed(3);
+    if (outcome === 'failed') state.requestFailed(3, false);
     if (outcome === 'http_failure') {
       state.response(3, 503);
       state.requestFinished(3);
@@ -270,7 +270,7 @@ test('diagnostic evidence preserves the first failure and exports counts without
   openDocument(state, 1, 2);
   state.requestStarted(3, '/api/v1/private/account-identifier');
 
-  state.requestFailed(3);
+  state.requestFailed(3, false);
   state.fail('observer_operation_failed');
 
   expect(state.readyReceived()).toBe(false);
@@ -358,4 +358,62 @@ test('retired request cancellation requires unanswered exact action ordering', (
   ];
 
   expect(outcomes).toEqual([true, false, false, false, false]);
+});
+
+test('a cancelled write leaves nothing pending and readiness reachable', () => {
+  const state = new NavigationReadiness([requiredQuery]);
+  openDocument(state, 1, 2);
+  state.requestStarted(3, '/api/v1/auth/refresh', false);
+
+  state.requestFailed(3, true);
+  finishQuery(state, 4);
+
+  expect(state.coherent(true)).toBe(true);
+  expect(state.evidence()).toMatchObject({ pending: 0, reason: 'none' });
+});
+
+test('a write cancelled after its response leaves nothing pending and readiness reachable', () => {
+  const state = new NavigationReadiness([requiredQuery]);
+  openDocument(state, 1, 2);
+  state.requestStarted(3, '/api/v1/auth/refresh', false);
+  state.response(3, 204);
+
+  state.requestFailed(3, true);
+  finishQuery(state, 4);
+
+  expect(state.coherent(true)).toBe(true);
+  expect(state.evidence()).toMatchObject({ pending: 0, reason: 'none' });
+});
+
+test('a write failed by the transport fails readiness', () => {
+  const state = new NavigationReadiness([requiredQuery]);
+  openDocument(state, 1, 2);
+  state.requestStarted(3, '/api/v1/auth/refresh', false);
+
+  state.requestFailed(3, false);
+  finishQuery(state, 4);
+
+  expect(state.coherent(true)).toBe(false);
+  expect(state.evidence()).toMatchObject({ phase: 'failed', reason: 'request_failed' });
+});
+
+test('a cancelled read fails readiness', () => {
+  const state = new NavigationReadiness([requiredQuery]);
+  openDocument(state, 1, 2);
+  state.requestStarted(3, requiredQuery);
+
+  state.requestFailed(3, true);
+
+  expect(state.coherent(true)).toBe(false);
+  expect(state.evidence()).toMatchObject({ phase: 'failed', reason: 'request_failed' });
+});
+
+test('a failure of a request the state does not track changes nothing', () => {
+  const state = new NavigationReadiness([requiredQuery]);
+  openDocument(state, 1, 2);
+
+  state.requestFailed(9, false);
+  finishQuery(state, 4);
+
+  expect(state.coherent(true)).toBe(true);
 });
