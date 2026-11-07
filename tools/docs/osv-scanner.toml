@@ -5,5 +5,5 @@ reason = "Low-severity katex 0.16.47 inside the diagram renderer; the fix is in 
 
 [[IgnoredVulns]]
 id = "GHSA-g3hv-75wg-m249"
-ignoreUntil = 2026-11-07T00:00:00Z
+ignoreUntil = 2026-11-21T00:00:00Z
 reason = "The described optimizationLevel >= 2 glob preprocessing is absent in minimatch 3/5 and disabled in the inspected minimatch 10 tool callers; patterns are local configuration, never OVC request content. Recheck on any caller/options/version change or expiry. Triage: knowledge/research/minimatch-advisory-2026-10-31.md"
