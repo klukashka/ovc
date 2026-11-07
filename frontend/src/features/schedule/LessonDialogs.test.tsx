@@ -36,6 +36,7 @@ const moscowLesson: LessonDetail = {
   ends_at: '2026-11-03T16:00:00Z',
   duration_minutes: 60,
   status: 'scheduled',
+  took_place: false,
   timezone: 'Europe/Moscow',
   series_id: null,
   series: null,
@@ -45,6 +46,8 @@ const moscowLesson: LessonDetail = {
   audience: { kind: 'one_to_one', label: 'Анна', label_kind: null, colour: 'moss', members: [] },
   tutor: null,
   channel_id: null,
+  room_open: false,
+  embed_allowed: false,
 };
 
 function Form(): ReactElement {

@@ -1,12 +1,21 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
-import { type ReactElement, type ReactNode, type RefObject, useEffect, useId, useRef, useState } from 'react';
+import {
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router';
 
 import { useAction } from '../../components/ui/action.ts';
 import { dangerButtonClass, linkClass, quietButtonClass } from '../../components/ui/Form.tsx';
-import { CalendarIcon, CrossIcon, DashIcon, DoorIcon } from '../../components/ui/icons.tsx';
+import { CalendarIcon, CheckIcon, CrossIcon, DashIcon, DoorIcon } from '../../components/ui/icons.tsx';
 import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed, RefetchFailed, focusHeadingIfLost } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
@@ -23,7 +32,8 @@ import { formatClock, formatFullDate, formatLongDay, formatWeekdayName } from '.
 import { calendarKey, lessonKey, lessonsKey } from './keys.ts';
 import { CancelLessonDialog, EditLessonDialog } from './LessonDialogs.tsx';
 import { audienceLabel } from './LessonParts.tsx';
-import { type LessonPhase, dialogOutdated, isEditable, phaseOf, roomOpensAt, useLessonClock } from './lessonTiming.ts';
+import { LessonRoom } from './LessonRoom.tsx';
+import { type LessonPhase, dialogOutdated, isEditable, phaseOf, useLessonClock } from './lessonTiming.ts';
 import { type LessonPrefill, NewLessonDialog, nextFullHour } from './NewLessonDialog.tsx';
 import { seriesTimingIn } from './seriesTiming.ts';
 
@@ -36,9 +46,15 @@ interface OpenDialog {
 
 interface PageNotice {
   readonly lessonId: string;
-  readonly kind: 'changed' | 'cancelled';
+  readonly kind: 'changed' | 'cancelled' | 'ended';
   readonly count: number;
 }
+
+const noticeKeys = {
+  changed: 'lesson.changedMeanwhile',
+  cancelled: 'lesson.cancelledNotice',
+  ended: 'lesson.endedNotice',
+} as const;
 
 function ColourDot({ colour }: { readonly colour: PaletteColour | null }): ReactElement | null {
   return colour === null ? null : (
@@ -80,10 +96,15 @@ function PhaseWord({
       );
     case 'past':
     case 'ended':
-      return (
+      return lesson.took_place ? (
+        <span className="inline-flex items-center gap-1.5 text-success">
+          <CheckIcon size={14} />
+          {t('lesson.status.ended')}
+        </span>
+      ) : (
         <span className="inline-flex items-center gap-1.5 text-text-muted">
           <DashIcon size={14} />
-          {t('lesson.status.ended')}
+          {t('lesson.didNotTakePlace')}
         </span>
       );
     case 'cancelled':
@@ -138,29 +159,6 @@ function seriesRule(t: TFunction, series: LessonSeries, lesson: LessonDetail, me
   return city === null
     ? t('lesson.seriesOffset', { rule, offset: utcOffsetText(Date.parse(lesson.starts_at), series.timezone) })
     : t('lesson.seriesZone', { rule, city });
-}
-
-function RoomState({
-  phase,
-  lesson,
-  me,
-}: {
-  readonly phase: LessonPhase;
-  readonly lesson: LessonDetail;
-  readonly me: Me;
-}): ReactElement | null {
-  const { t } = useTranslation();
-  const text =
-    phase === 'before'
-      ? t('lesson.roomOpensAt', {
-          time: formatClock(new Date(roomOpensAt(lesson)).toISOString(), me.language, me.timezone),
-        })
-      : phase === 'window' && me.role === 'student'
-        ? t('lesson.roomOpensWithTutor')
-        : null;
-  return text === null ? null : (
-    <p className="rounded-lg border border-border bg-surface p-4 text-strong dark:border-border-strong">{text}</p>
-  );
 }
 
 function AudienceLine({ lesson }: { readonly lesson: LessonDetail }): ReactElement {
@@ -277,11 +275,13 @@ export function LessonView({
   lesson,
   me,
   now,
+  room = null,
   controls = null,
 }: {
   readonly lesson: LessonDetail;
   readonly me: Me;
   readonly now: number;
+  readonly room?: ReactNode;
   readonly controls?: ReactNode;
 }): ReactElement {
   const { t } = useTranslation();
@@ -306,13 +306,13 @@ export function LessonView({
             {other === null ? null : <p className="text-small text-text-muted">{other}</p>}
             <AudienceLine lesson={lesson} />
           </div>
+          {room}
           {lesson.description === null ? null : (
             <p dir="auto" data-part="description" className="break-words whitespace-pre-line">
               {lesson.description}
             </p>
           )}
           {controlsShown ? controls : null}
-          <RoomState phase={phase} lesson={lesson} me={me} />
         </div>
         <AboutLesson lesson={lesson} me={me} />
       </div>
@@ -459,9 +459,18 @@ export function LessonPage(): ReactElement {
   const lesson = error === null ? query.data : undefined;
   const shownNotice = notice !== null && notice.lessonId === lessonId && !notFound ? notice : null;
 
-  function noticeOf(kind: PageNotice['kind']): void {
-    setNotice((previous) => ({ lessonId, kind, count: (previous?.count ?? 0) + 1 }));
-  }
+  const noticeOf = useCallback(
+    (kind: PageNotice['kind']): void => {
+      setNotice((previous) => ({ lessonId, kind, count: (previous?.count ?? 0) + 1 }));
+    },
+    [lessonId],
+  );
+  const roomChangedMeanwhile = useCallback((): void => {
+    noticeOf('changed');
+  }, [noticeOf]);
+  const roomEnded = useCallback((): void => {
+    noticeOf('ended');
+  }, [noticeOf]);
 
   if (dialog !== null && !action.busy && dialogOutdated(dialog.lesson, lesson, now)) {
     setDialog(null);
@@ -545,6 +554,16 @@ export function LessonPage(): ReactElement {
         lesson={lesson}
         me={me}
         now={now}
+        room={
+          <LessonRoom
+            key={lesson.id}
+            lesson={lesson}
+            me={me}
+            phase={phaseOf(lesson, now)}
+            onChangedMeanwhile={roomChangedMeanwhile}
+            onEnded={roomEnded}
+          />
+        }
         controls={
           tutorWrites ? (
             <TutorControls
@@ -563,10 +582,7 @@ export function LessonPage(): ReactElement {
   return (
     <Page {...headingOf(lesson, notFound)}>
       {shownNotice === null ? null : (
-        <FocusedNotice
-          key={shownNotice.count}
-          message={t(shownNotice.kind === 'changed' ? 'lesson.changedMeanwhile' : 'lesson.cancelledNotice')}
-        />
+        <FocusedNotice key={shownNotice.count} message={t(noticeKeys[shownNotice.kind])} />
       )}
       {refetchError === null ? null : (
         <RefetchFailed

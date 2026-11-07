@@ -687,6 +687,7 @@ export async function startDeployment(
         PATH: process.env.PATH,
         HOME: process.env.HOME,
         OVC_FRONTEND_API_TARGET: apiUrl,
+        OVC_FRONTEND_TEST_ROOM_ORIGIN: roomOrigin,
         OVC_FRONTEND_PREVIEW_CERTIFICATE: tls.certificate,
         OVC_FRONTEND_PREVIEW_PRIVATE_KEY: tls.privateKey,
       },

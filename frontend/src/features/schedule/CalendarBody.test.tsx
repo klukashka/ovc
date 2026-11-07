@@ -34,6 +34,7 @@ const lesson: CalendarItem = {
   starts_at: '2026-11-03T15:00:00Z',
   ends_at: '2026-11-03T16:00:00Z',
   status: 'scheduled',
+  took_place: false,
   timezone: 'Europe/Moscow',
   audience: { kind: 'one_to_one', label: 'Анна', label_kind: null, colour: 'moss' },
   tutor: null,

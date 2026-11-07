@@ -27,6 +27,7 @@ type CalendarItem struct {
 	StartsAt        time.Time
 	DurationMinutes int
 	Status          domain.LessonStatus
+	TookPlace       bool
 	Timezone        string
 	Audience        Audience
 	Tutor           *TutorLabel
@@ -99,7 +100,7 @@ func tutorItem(row repositories.TutorCalendarItem) CalendarItem {
 	audience := source.audience()
 	audience.Members = nil
 	return CalendarItem{
-		ID: row.ID, Title: row.Title, StartsAt: row.StartsAt.UTC(), DurationMinutes: int(row.DurationMinutes), Status: row.Status,
+		ID: row.ID, Title: row.Title, StartsAt: row.StartsAt.UTC(), DurationMinutes: int(row.DurationMinutes), Status: row.Status, TookPlace: row.TookPlace,
 		Timezone: row.Timezone, Audience: audience,
 	}
 }
@@ -129,7 +130,7 @@ func studentCalendar(ctx context.Context, repos repositories.Repositories, stude
 		}
 		audience, label := source.labels()
 		calendar.Items = append(calendar.Items, CalendarItem{
-			ID: row.ID, Title: row.Title, StartsAt: row.StartsAt.UTC(), DurationMinutes: int(row.DurationMinutes), Status: row.Status,
+			ID: row.ID, Title: row.Title, StartsAt: row.StartsAt.UTC(), DurationMinutes: int(row.DurationMinutes), Status: row.Status, TookPlace: row.TookPlace,
 			Timezone: row.Timezone, Audience: audience, Tutor: label,
 		})
 	}

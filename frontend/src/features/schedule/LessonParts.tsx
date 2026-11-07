@@ -3,27 +3,42 @@ import { type ReactElement, createContext, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
-import { CalendarIcon, CrossIcon, DashIcon } from '../../components/ui/icons.tsx';
+import { CalendarIcon, CheckIcon, CrossIcon, DashIcon } from '../../components/ui/icons.tsx';
 import { paletteDotClass, paletteEdgeClass } from '../../components/ui/palette.ts';
 import type { Language } from '../../lib/i18n/resources.ts';
 import type { CalendarAudience, CalendarItem, LessonStatus } from './api.ts';
 import { formatClock } from './calendarFormat.ts';
 
-const statusTone: Readonly<Record<LessonStatus, string>> = {
-  scheduled: 'text-info',
-  live: 'text-live',
-  ended: 'text-text-muted',
-  cancelled: 'text-danger',
-};
+interface LessonState {
+  readonly status: LessonStatus;
+  readonly took_place: boolean;
+}
 
-function StatusIcon({ status }: { readonly status: LessonStatus }): ReactElement {
+function statusToneOf({ status, took_place }: LessonState): string {
+  switch (status) {
+    case 'scheduled':
+      return 'text-info';
+    case 'live':
+      return 'text-live';
+    case 'ended':
+      return took_place ? 'text-success' : 'text-text-muted';
+    case 'cancelled':
+      return 'text-danger';
+  }
+}
+
+function statusWord(t: TFunction, { status, took_place }: LessonState): string {
+  return status === 'ended' && !took_place ? t('lesson.didNotTakePlace') : t(`lesson.status.${status}`);
+}
+
+function StatusIcon({ status, took_place }: LessonState): ReactElement {
   switch (status) {
     case 'scheduled':
       return <CalendarIcon size={12} />;
     case 'live':
       return <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-live motion-safe:animate-pulse" />;
     case 'ended':
-      return <DashIcon size={12} />;
+      return took_place ? <CheckIcon size={12} /> : <DashIcon size={12} />;
     case 'cancelled':
       return <CrossIcon size={12} />;
   }
@@ -71,12 +86,12 @@ export function audienceLabel(t: TFunction, audience: CalendarAudience): string 
   return audience.label_kind === null ? '' : t(`lesson.${audience.label_kind}`);
 }
 
-export function LessonStatusWord({ status }: { readonly status: LessonStatus }): ReactElement {
+export function LessonStatusWord({ lesson }: { readonly lesson: LessonState }): ReactElement {
   const { t } = useTranslation();
   return (
-    <span className={`inline-flex items-center gap-1.5 text-small ${statusTone[status]}`}>
-      <StatusIcon status={status} />
-      {t(`lesson.status.${status}`)}
+    <span className={`inline-flex items-center gap-1.5 text-small ${statusToneOf(lesson)}`}>
+      <StatusIcon status={lesson.status} took_place={lesson.took_place} />
+      {statusWord(t, lesson)}
     </span>
   );
 }
@@ -113,7 +128,7 @@ function CompactBlock({
 }): ReactElement {
   const { t } = useTranslation();
   const edge = item.audience.colour === null ? 'border-l-border-strong' : paletteEdgeClass[item.audience.colour];
-  const status = t(`lesson.status.${item.status}`);
+  const status = statusWord(t, item);
   const focused = useContext(LessonFocusContext);
   return (
     <Link
@@ -129,12 +144,8 @@ function CompactBlock({
       <span aria-hidden="true" data-part="time" className={compactTime[item.status]}>
         {start}
       </span>
-      <span
-        aria-hidden="true"
-        data-part="status"
-        className={`inline-flex shrink-0 items-center ${statusTone[item.status]}`}
-      >
-        <StatusIcon status={item.status} />
+      <span aria-hidden="true" data-part="status" className={`inline-flex shrink-0 items-center ${statusToneOf(item)}`}>
+        <StatusIcon status={item.status} took_place={item.took_place} />
       </span>
       <span className="sr-only">
         {times} <LessonTitle title={item.title} cancelled={item.status === 'cancelled'} />{' '}
@@ -180,7 +191,7 @@ export function LessonBlock({
       </span>
       <span className="truncate text-text-muted">{audienceLabel(t, item.audience)}</span>
       <TutorLabel item={item} />
-      <LessonStatusWord status={item.status} />
+      <LessonStatusWord lesson={item} />
     </Link>
   );
 }

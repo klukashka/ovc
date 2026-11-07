@@ -37,6 +37,7 @@ type Lesson struct {
 	StartsAt        time.Time
 	DurationMinutes int
 	Status          domain.LessonStatus
+	TookPlace       bool
 	Timezone        string
 	SeriesID        *domain.SeriesID
 	OccurrenceDate  *domain.LocalDate
@@ -144,7 +145,7 @@ func (s *Service) tutorViews(ctx context.Context, repos repositories.Repositorie
 		}
 		lesson := Lesson{
 			ID: row.ID, Title: row.Title, Description: row.Description, StartsAt: row.StartsAt.UTC(), DurationMinutes: int(row.DurationMinutes),
-			Status: row.Status, Timezone: row.Timezone, SeriesID: row.SeriesID, Version: row.Version, CancelledAt: row.CancelledAt,
+			Status: row.Status, TookPlace: row.TookPlace, Timezone: row.Timezone, SeriesID: row.SeriesID, Version: row.Version, CancelledAt: row.CancelledAt,
 			Audience: source.audience(), RoomOpen: row.RoomOpen, EmbedAllowed: s.deps.Embed.On(),
 		}
 		if row.OccurrenceDate.Valid {
@@ -271,7 +272,7 @@ func (s *Service) Lesson(ctx context.Context, viewer domain.UserID, role domain.
 		audience, tutor := source.labels()
 		lesson = Lesson{
 			ID: row.ID, Title: row.Title, Description: row.Description, StartsAt: row.StartsAt.UTC(), DurationMinutes: int(row.DurationMinutes),
-			Status: row.Status, Timezone: row.Timezone, SeriesID: row.SeriesID, Version: row.Version, CancelledAt: row.CancelledAt,
+			Status: row.Status, TookPlace: row.TookPlace, Timezone: row.Timezone, SeriesID: row.SeriesID, Version: row.Version, CancelledAt: row.CancelledAt,
 			Audience: audience, Tutor: tutor, RoomOpen: row.RoomOpen, EmbedAllowed: s.deps.Embed.On(),
 		}
 		if row.Timezone != account.Timezone {

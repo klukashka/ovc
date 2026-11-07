@@ -50,6 +50,7 @@ const lesson: LessonDetail = {
   ends_at: '2026-11-03T16:00:00Z',
   duration_minutes: 60,
   status: 'scheduled',
+  took_place: false,
   timezone: 'Europe/Moscow',
   series_id: null,
   series: null,
@@ -59,6 +60,8 @@ const lesson: LessonDetail = {
   audience: { kind: 'one_to_one', label: null, label_kind: 'individual', colour: 'moss', members: null },
   tutor: { name: 'Мария', colour: 'moss' },
   channel_id: null,
+  room_open: false,
+  embed_allowed: false,
 };
 
 const start = Date.parse(lesson.starts_at);
@@ -199,22 +202,12 @@ describe('lesson page', () => {
     expect(screen.getAllByText('18:00 по времени Москвы (16:00 по вашему)').length).toBeGreaterThan(0);
   });
 
-  test('inside the join window a student sees Starting soon and waits for the tutor', async () => {
+  test('inside the join window the status word is Starting soon', async () => {
     await show({ now: start - 5 * minute });
 
     const status = screen.getByRole('status');
 
     expect(status.textContent).toBe('Скоро начало');
-    expect(screen.getByText('Комната откроется, когда подключится преподаватель')).toBeTruthy();
-  });
-
-  test('inside the join window the tutor sees Starting soon without a join area', async () => {
-    await show({ me: tutor, now: start - 5 * minute, lesson: { ...lesson, tutor: null, other_timezone: null } });
-
-    const status = screen.getByRole('status');
-
-    expect(status.textContent).toBe('Скоро начало');
-    expect(screen.queryByText(/^Комната откроется/)).toBeNull();
   });
 
   test('a scheduled lesson whose end has passed shows Did not take place', async () => {
@@ -223,7 +216,6 @@ describe('lesson page', () => {
     const status = screen.getByRole('status');
 
     expect(status.textContent).toBe('Не состоялся');
-    expect(screen.queryByText(/^Комната откроется/)).toBeNull();
   });
 
   test('focused controls that leave when the start passes move focus to the heading', async () => {

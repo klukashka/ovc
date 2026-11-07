@@ -4,7 +4,7 @@ import { signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect } from './fixtures.ts';
 import { expectSettledAfterTheSocketIsReady, todayQueryPaths, trafficAfterReady } from './realtime.ts';
 
-import { contentSecurityPolicy } from '../security-headers.ts';
+import { contentSecurityPolicyWithTestRoom } from '../security-headers.ts';
 
 async function recordThemeAtFirstBody(page: Page): Promise<void> {
   await page.addInitScript(() => {
@@ -51,14 +51,14 @@ test('the chosen language is remembered across reloads', async ({ page }) => {
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Sign up' })).toBeVisible();
 });
 
-test('pages and proxied API responses carry the security headers', async ({ page, request }) => {
+test('pages and proxied API responses carry the security headers', async ({ page, request, deployment }) => {
   const pageResponse = await page.goto('/today');
   const apiResponse = await request.get('/api/v1/health/live');
 
   const pageHeaders = pageResponse?.headers() ?? {};
   expect(pageHeaders['referrer-policy']).toBe('no-referrer');
   expect(pageHeaders['x-content-type-options']).toBe('nosniff');
-  expect(pageHeaders['content-security-policy']).toBe(contentSecurityPolicy);
+  expect(pageHeaders['content-security-policy']).toBe(contentSecurityPolicyWithTestRoom(deployment.roomOrigin));
   expect(apiResponse.status()).toBe(200);
   expect(apiResponse.headers()['referrer-policy']).toBe('no-referrer');
   expect(apiResponse.headers()['x-content-type-options']).toBe('nosniff');

@@ -73,7 +73,7 @@ WHERE id = @id AND student_id = @student_id AND state IN ('active', 'provisional
 
 -- name: ListTutorLessonViews :many
 SELECT
-    lessons.id, lessons.title, lessons.description, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.id, lessons.title, lessons.description, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
     lessons.series_id, lessons.occurrence_date, lessons.version, lessons.cancelled_at, lessons.relationship_id, lessons.group_id,
     card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
     card.colour AS card_colour, student.timezone AS student_timezone,
@@ -90,7 +90,7 @@ ORDER BY lessons.starts_at, lessons.id;
 
 -- name: ListTutorCalendar :many
 SELECT
-    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
     lessons.relationship_id, lessons.group_id,
     card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
     card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
@@ -153,7 +153,7 @@ WITH visible AS (
         )
 )
 SELECT
-    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
     lessons.group_id, lesson_group.name AS group_name,
     EXISTS (
         SELECT 1 FROM group_members
@@ -178,7 +178,7 @@ LIMIT sqlc.arg(row_limit)::int;
 
 -- name: GetStudentLessonView :one
 SELECT
-    lessons.id, lessons.title, lessons.description, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.id, lessons.title, lessons.description, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
     lessons.series_id, lessons.version, lessons.cancelled_at, lessons.group_id, lesson_group.name AS group_name,
     EXISTS (
         SELECT 1 FROM group_members
@@ -273,7 +273,7 @@ WITH candidates AS (
     LIMIT sqlc.arg(row_limit)::int)
 )
 SELECT
-    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
     lessons.relationship_id, lessons.group_id,
     card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
     card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
@@ -313,7 +313,7 @@ WITH visible AS (
     LIMIT sqlc.arg(row_limit)::int)
 )
 SELECT
-    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
     lessons.relationship_id, lessons.group_id,
     card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
     card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
@@ -356,7 +356,7 @@ WHERE requested.tutor_id = @tutor_id AND requested.id = ANY (sqlc.arg(ids)::uuid
 
 -- name: ListGroupNextLessons :many
 SELECT
-    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
     lessons.relationship_id, lessons.group_id,
     card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
     card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour

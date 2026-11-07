@@ -73,7 +73,7 @@ export function LessonList({
                   {audienceLabel(t, item.audience)}
                 </span>
               ) : null}
-              <LessonStatusWord status={item.status} />
+              <LessonStatusWord lesson={item} />
             </Link>
           </li>
         );

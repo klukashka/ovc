@@ -1255,6 +1255,44 @@ func TestMeetingEndAndStatus(t *testing.T) {
 	t.Run("the status job closes a stale creating row with its lesson", testStatusJobClosesCreating)
 	t.Run("tutor deletion closes access and queues cleanup", testTutorDeletionCloses)
 	t.Run("students never reach end or restart", testEndAudience)
+	t.Run("a lesson took place once it has been live", testLessonTookPlace)
+	t.Run("a lesson nobody joined did not take place", testLessonDidNotTakePlace)
+}
+
+func testLessonTookPlace(t *testing.T) {
+	t.Parallel()
+	h := newMeetingHarness(t)
+	parties := h.visibilityParties(t)
+	lesson := oneToOneLesson(t, h, parties)
+
+	before := h.roomLesson(t, parties.studentToken, lesson)
+	h.joined(t, parties.tutorToken, lesson)
+	while := h.roomLesson(t, parties.studentToken, lesson)
+	ended := h.endCall(t, parties.tutorToken, lesson)
+	afterForTutor := h.roomLesson(t, parties.tutorToken, lesson)
+	afterForStudent := h.roomLesson(t, parties.studentToken, lesson)
+
+	if before.TookPlace || !while.TookPlace {
+		t.Fatalf("before %+v, while live %+v", before, while)
+	}
+	if ended.status != http.StatusOK || afterForTutor.Status != "ended" || !afterForTutor.TookPlace || !afterForStudent.TookPlace {
+		t.Fatalf("end answered %d, tutor %+v, student %+v", ended.status, afterForTutor, afterForStudent)
+	}
+}
+
+func testLessonDidNotTakePlace(t *testing.T) {
+	t.Parallel()
+	h := newMeetingHarness(t)
+	parties := h.visibilityParties(t)
+	lesson := oneToOneLesson(t, h, parties)
+
+	h.tickAt(t, firstLessonEnd.Add(domain.LessonEndGrace+time.Minute))
+	fresh := accessToken(t, h.login(t, tutorEmail, accountPassword))
+	view := h.roomLesson(t, fresh, lesson)
+
+	if view.Status != "ended" || view.TookPlace {
+		t.Fatalf("an unattended lesson: %+v", view)
+	}
 }
 
 func testEndClosesAndCleans(t *testing.T) {

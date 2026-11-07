@@ -44,6 +44,7 @@ export interface DiagnosticRecord {
 export interface ConsoleExpectation {
   readonly expected: string[];
   readonly abortedPaths: RegExp[];
+  readonly expectedWarnings: Map<string, number>;
 }
 export interface ObservedBrowser {
   readonly newContext: (options?: BrowserContextOptions) => Promise<BrowserContext>;
@@ -191,6 +192,15 @@ export function observeBrowserContext(
       languages.get(page)?.warning(message.text(), message.location().url) === true
     )
       return;
+    if (severity === 'warning' && page !== null) {
+      const known = expectations.get(page)?.expectedWarnings;
+      const text = message.text();
+      const matched = [...(known?.keys() ?? [])].find((fragment) => text.includes(fragment));
+      if (known !== undefined && matched !== undefined) {
+        known.set(matched, (known.get(matched) ?? 0) + 1);
+        return;
+      }
+    }
     if (severity === 'error') {
       const text = message.text();
       const address = message.location().url;
@@ -222,7 +232,7 @@ export function observeBrowserContext(
     expect: (page: Page): ConsoleExpectation => {
       const existing = expectations.get(page);
       if (existing !== undefined) return existing;
-      const created: ConsoleExpectation = { expected: [], abortedPaths: [] };
+      const created: ConsoleExpectation = { expected: [], abortedPaths: [], expectedWarnings: new Map() };
       expectations.set(page, created);
       return created;
     },
@@ -261,7 +271,11 @@ export function observeBrowserContext(
         finishLanguage(page, phase);
       }
       languages.clear();
-      const missing = [...expectations.values()].reduce((sum, entry) => sum + entry.expected.length, 0);
+      const missing = [...expectations.values()].reduce(
+        (sum, entry) =>
+          sum + entry.expected.length + [...entry.expectedWarnings.values()].filter((seen) => seen === 0).length,
+        0,
+      );
       if (records.size !== 0 || missing !== 0)
         throw new Error(
           JSON.stringify({

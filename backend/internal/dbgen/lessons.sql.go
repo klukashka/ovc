@@ -258,7 +258,7 @@ func (q *Queries) DeleteTutorSeriesBatch(ctx context.Context, arg DeleteTutorSer
 
 const getStudentLessonView = `-- name: GetStudentLessonView :one
 SELECT
-    lessons.id, lessons.title, lessons.description, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.id, lessons.title, lessons.description, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
     lessons.series_id, lessons.version, lessons.cancelled_at, lessons.group_id, lesson_group.name AS group_name,
     EXISTS (
         SELECT 1 FROM group_members
@@ -316,6 +316,7 @@ type GetStudentLessonViewRow struct {
 	StartsAt        time.Time
 	DurationMinutes int16
 	Status          domain.LessonStatus
+	TookPlace       bool
 	Timezone        string
 	SeriesID        *domain.SeriesID
 	Version         int32
@@ -340,6 +341,7 @@ func (q *Queries) GetStudentLessonView(ctx context.Context, arg GetStudentLesson
 		&i.StartsAt,
 		&i.DurationMinutes,
 		&i.Status,
+		&i.TookPlace,
 		&i.Timezone,
 		&i.SeriesID,
 		&i.Version,
@@ -479,7 +481,7 @@ WITH visible AS (
     LIMIT $1::int)
 )
 SELECT
-    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
     lessons.relationship_id, lessons.group_id,
     card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
     card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
@@ -505,6 +507,7 @@ type ListCardLessonHistoryRow struct {
 	StartsAt          time.Time
 	DurationMinutes   int16
 	Status            domain.LessonStatus
+	TookPlace         bool
 	Timezone          string
 	RelationshipID    *domain.RelationshipID
 	GroupID           *domain.GroupID
@@ -537,6 +540,7 @@ func (q *Queries) ListCardLessonHistory(ctx context.Context, arg ListCardLessonH
 			&i.StartsAt,
 			&i.DurationMinutes,
 			&i.Status,
+			&i.TookPlace,
 			&i.Timezone,
 			&i.RelationshipID,
 			&i.GroupID,
@@ -573,7 +577,7 @@ WITH candidates AS (
     LIMIT $1::int)
 )
 SELECT
-    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
     lessons.relationship_id, lessons.group_id,
     card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
     card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
@@ -598,6 +602,7 @@ type ListCardNextLessonsRow struct {
 	StartsAt          time.Time
 	DurationMinutes   int16
 	Status            domain.LessonStatus
+	TookPlace         bool
 	Timezone          string
 	RelationshipID    *domain.RelationshipID
 	GroupID           *domain.GroupID
@@ -629,6 +634,7 @@ func (q *Queries) ListCardNextLessons(ctx context.Context, arg ListCardNextLesso
 			&i.StartsAt,
 			&i.DurationMinutes,
 			&i.Status,
+			&i.TookPlace,
 			&i.Timezone,
 			&i.RelationshipID,
 			&i.GroupID,
@@ -782,7 +788,7 @@ func (q *Queries) ListGroupLessonMembers(ctx context.Context, arg ListGroupLesso
 
 const listGroupNextLessons = `-- name: ListGroupNextLessons :many
 SELECT
-    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
     lessons.relationship_id, lessons.group_id,
     card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
     card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
@@ -808,6 +814,7 @@ type ListGroupNextLessonsRow struct {
 	StartsAt          time.Time
 	DurationMinutes   int16
 	Status            domain.LessonStatus
+	TookPlace         bool
 	Timezone          string
 	RelationshipID    *domain.RelationshipID
 	GroupID           *domain.GroupID
@@ -839,6 +846,7 @@ func (q *Queries) ListGroupNextLessons(ctx context.Context, arg ListGroupNextLes
 			&i.StartsAt,
 			&i.DurationMinutes,
 			&i.Status,
+			&i.TookPlace,
 			&i.Timezone,
 			&i.RelationshipID,
 			&i.GroupID,
@@ -1036,7 +1044,7 @@ WITH visible AS (
         )
 )
 SELECT
-    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
     lessons.group_id, lesson_group.name AS group_name,
     EXISTS (
         SELECT 1 FROM group_members
@@ -1074,6 +1082,7 @@ type ListStudentCalendarRow struct {
 	StartsAt        time.Time
 	DurationMinutes int16
 	Status          domain.LessonStatus
+	TookPlace       bool
 	Timezone        string
 	GroupID         *domain.GroupID
 	GroupName       *string
@@ -1104,6 +1113,7 @@ func (q *Queries) ListStudentCalendar(ctx context.Context, arg ListStudentCalend
 			&i.StartsAt,
 			&i.DurationMinutes,
 			&i.Status,
+			&i.TookPlace,
 			&i.Timezone,
 			&i.GroupID,
 			&i.GroupName,
@@ -1124,7 +1134,7 @@ func (q *Queries) ListStudentCalendar(ctx context.Context, arg ListStudentCalend
 
 const listTutorCalendar = `-- name: ListTutorCalendar :many
 SELECT
-    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
     lessons.relationship_id, lessons.group_id,
     card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
     card.colour AS card_colour, lesson_group.name AS group_name, coalesce(lesson_group.colour, '')::text AS group_colour
@@ -1152,6 +1162,7 @@ type ListTutorCalendarRow struct {
 	StartsAt          time.Time
 	DurationMinutes   int16
 	Status            domain.LessonStatus
+	TookPlace         bool
 	Timezone          string
 	RelationshipID    *domain.RelationshipID
 	GroupID           *domain.GroupID
@@ -1183,6 +1194,7 @@ func (q *Queries) ListTutorCalendar(ctx context.Context, arg ListTutorCalendarPa
 			&i.StartsAt,
 			&i.DurationMinutes,
 			&i.Status,
+			&i.TookPlace,
 			&i.Timezone,
 			&i.RelationshipID,
 			&i.GroupID,
@@ -1205,7 +1217,7 @@ func (q *Queries) ListTutorCalendar(ctx context.Context, arg ListTutorCalendarPa
 
 const listTutorLessonViews = `-- name: ListTutorLessonViews :many
 SELECT
-    lessons.id, lessons.title, lessons.description, lessons.starts_at, lessons.duration_minutes, lessons.status, lessons.timezone,
+    lessons.id, lessons.title, lessons.description, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
     lessons.series_id, lessons.occurrence_date, lessons.version, lessons.cancelled_at, lessons.relationship_id, lessons.group_id,
     card.display_name AS card_name, coalesce(card.state, '')::text AS card_state, card.discard_reason AS card_discard_reason,
     card.colour AS card_colour, student.timezone AS student_timezone,
@@ -1233,6 +1245,7 @@ type ListTutorLessonViewsRow struct {
 	StartsAt          time.Time
 	DurationMinutes   int16
 	Status            domain.LessonStatus
+	TookPlace         bool
 	Timezone          string
 	SeriesID          *domain.SeriesID
 	OccurrenceDate    pgtype.Date
@@ -1266,6 +1279,7 @@ func (q *Queries) ListTutorLessonViews(ctx context.Context, arg ListTutorLessonV
 			&i.StartsAt,
 			&i.DurationMinutes,
 			&i.Status,
+			&i.TookPlace,
 			&i.Timezone,
 			&i.SeriesID,
 			&i.OccurrenceDate,

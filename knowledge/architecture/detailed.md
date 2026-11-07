@@ -224,6 +224,7 @@ Settings are read once from the environment into one typed struct in `internal/c
 | `OVC_LOG_LEVEL`, `OVC_LOG_FORMAT` | Diagnostics level (`debug`, `info` by default, `warn`, `error`) and `json` (default) or `console` output |
 | `OVC_TEST_DATABASE_ADMIN_URL` | Tests only: a PostgreSQL URL allowed to create and drop the per-test databases |
 | `OVC_FRONTEND_API_TARGET` | Frontend development and preview servers only: where they proxy `/api`, `http://127.0.0.1:8000` by default |
+| `OVC_FRONTEND_TEST_ROOM_ORIGIN` | Frontend preview server only, set by the end-to-end deployment: the `https://127.0.0.1` origin of the fake room admitted in `frame-src`; any other value refuses to start, and without it `frame-src` stays `'none'` |
 
 ## Deployment shapes
 

@@ -37,6 +37,17 @@ While the window is open and the lesson is not yet live, students see "The room 
 | The field code `too_many` elsewhere (proposal of 2026-10-28) | Limit reached. | Достигнут предел. |
 | A period of the agenda without lessons (proposal of 2026-10-28) | No lessons in this period | В этом периоде нет уроков |
 | A calendar response with `truncated: true` (proposal of 2026-10-28) | Only the first 1,000 lessons of this period are shown. Open a week to see the rest. | Показаны только первые 1 000 уроков этого периода. Откройте неделю, чтобы увидеть остальные. |
+| Video area of the lesson page (slice 7, pending owner review) | Video room | Видеокомната |
+| Tutor's and student's join (slice 7, pending owner review) | Join lesson / Join / Rejoin | Подключиться к уроку / Подключиться / Подключиться снова |
+| While joining (slice 7, pending owner review) | Joining… | Подключение… |
+| `provider_unavailable` on a join, a restart or a link the page cannot use (slice 7, pending owner review) | The video service is unavailable, try again | Видеосвязь недоступна, попробуйте ещё раз |
+| `not_found` on a join (slice 7, pending owner review) | You can't join this lesson | Вы не можете подключиться к этому уроку |
+| Blocked pop-up (slice 7, pending owner review) | Your browser blocked the new tab. Allow pop-ups for this site and try again. | Браузер заблокировал новую вкладку. Разрешите всплывающие окна для этого сайта и попробуйте ещё раз. |
+| In room, new tab (slice 7, pending owner review) | The lesson is open in another tab / Open again | Урок открыт в другой вкладке / Открыть снова |
+| In room, embedded (slice 7, pending owner review) | Open in new tab / Having trouble? Open in a new tab / Focus mode / Exit focus | Открыть в новой вкладке / Возникли проблемы? Откройте в новой вкладке / Режим фокуса / Выйти из режима фокуса |
+| End lesson confirmation (slice 7, pending owner review) | End lesson; End the lesson; The room closes for everyone and the lesson ends. It cannot be opened again. | Завершить урок; Завершить урок; Комната закроется для всех, и урок завершится. Открыть его снова будет нельзя. |
+| After ending (slice 7, pending owner review) | Lesson ended | Урок завершён |
+| Restart confirmation (slice 7, pending owner review) | Restart the room; The room closes for everyone and a new one opens. Everyone must rejoin, and earlier links stop working. | Перезапустить комнату; Комната закроется для всех, и откроется новая. Всем нужно будет подключиться снова, а прежние ссылки перестанут работать. |
 | Polite announcement after creating | Lesson scheduled | Урок запланирован |
 | Polite announcement after editing | Lesson changed | Урок изменён |
 | Changed-meanwhile notice | This lesson changed in the meantime. Its current state is shown below. | Этот урок тем временем изменился. Ниже показано его текущее состояние. |

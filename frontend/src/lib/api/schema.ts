@@ -1022,6 +1022,7 @@ export interface components {
             status: "scheduled" | "live" | "ended" | "cancelled";
             timezone: string;
             title: string;
+            took_place: boolean;
             tutor: components["schemas"]["LessonTutor"] | null;
         };
         CardAccount: {
@@ -1306,7 +1307,7 @@ export interface components {
             description: string | null;
             /** Format: int64 */
             duration_minutes: number;
-            embed_allowed?: boolean;
+            embed_allowed: boolean;
             /** Format: date-time */
             ends_at: string;
             /** Format: uuid */
@@ -1314,7 +1315,7 @@ export interface components {
             /** Format: date */
             occurrence_date?: string;
             other_timezone: string | null;
-            room_open?: boolean;
+            room_open: boolean;
             series: components["schemas"]["LessonSeries"] | null;
             /** Format: uuid */
             series_id: string | null;
@@ -1324,6 +1325,7 @@ export interface components {
             status: "scheduled" | "live" | "ended" | "cancelled";
             timezone: string;
             title: string;
+            took_place: boolean;
             tutor: components["schemas"]["LessonTutor"] | null;
             /** Format: int32 */
             version: number;

@@ -162,6 +162,14 @@ export function DashIcon(props: IconProps): ReactElement {
   );
 }
 
+export function CheckIcon(props: IconProps): ReactElement {
+  return (
+    <Outline {...props}>
+      <path d="M5 13l4 4L19 7" />
+    </Outline>
+  );
+}
+
 export function CrossIcon(props: IconProps): ReactElement {
   return (
     <Outline {...props}>

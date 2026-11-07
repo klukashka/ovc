@@ -98,6 +98,7 @@ type roomLesson struct {
 	lessonView
 	RoomOpen     bool `json:"room_open"`
 	EmbedAllowed bool `json:"embed_allowed"`
+	TookPlace    bool `json:"took_place"`
 }
 
 func newMeetingHarness(t *testing.T) *authHarness {

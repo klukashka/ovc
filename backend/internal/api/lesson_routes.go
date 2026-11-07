@@ -114,7 +114,7 @@ func (r *router) calendar(ctx context.Context, input *calendarInput) (*calendarO
 
 func calendarItemBody(item schedule.CalendarItem) schemas.CalendarItem {
 	return schemas.CalendarItem{
-		ID: item.ID.String(), Title: item.Title, StartsAt: item.StartsAt, EndsAt: item.EndsAt(), Status: item.Status, Timezone: item.Timezone,
+		ID: item.ID.String(), Title: item.Title, StartsAt: item.StartsAt, EndsAt: item.EndsAt(), Status: item.Status, TookPlace: item.TookPlace, Timezone: item.Timezone,
 		Audience: schemas.CalendarAudience{Kind: item.Audience.Kind, Label: item.Audience.Label, LabelKind: item.Audience.LabelKind, Colour: item.Audience.Colour},
 		Tutor:    tutorLabelBody(item.Tutor),
 	}
@@ -266,7 +266,7 @@ func lessonBody(lesson schedule.Lesson) schemas.LessonDetail {
 	}
 	body := schemas.LessonDetail{
 		ID: lesson.ID.String(), Title: lesson.Title, Description: lesson.Description, StartsAt: lesson.StartsAt, EndsAt: lesson.EndsAt(),
-		DurationMinutes: lesson.DurationMinutes, Status: lesson.Status, Timezone: lesson.Timezone, Version: lesson.Version,
+		DurationMinutes: lesson.DurationMinutes, Status: lesson.Status, TookPlace: lesson.TookPlace, Timezone: lesson.Timezone, Version: lesson.Version,
 		CancelledAt: utc(lesson.CancelledAt), OtherTimezone: lesson.OtherTimezone, Audience: audience, Tutor: tutorLabelBody(lesson.Tutor),
 		ChannelID: optionalChannel(lesson.ChannelID), RoomOpen: lesson.RoomOpen, EmbedAllowed: lesson.EmbedAllowed,
 	}

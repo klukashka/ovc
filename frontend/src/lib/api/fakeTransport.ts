@@ -19,6 +19,16 @@ interface FakeSession {
   revoked: boolean;
 }
 
+interface FakeLesson {
+  readonly detail: LessonDetail;
+  readonly members: readonly string[];
+}
+
+interface FakeLessonRefusal {
+  readonly status: number;
+  readonly code: string;
+}
+
 interface FakeAccessToken {
   readonly sessionId: number;
   readonly issuedAt: number;
@@ -33,9 +43,11 @@ type StudentCard = components['schemas']['StudentCard'];
 type EmailGroup = components['schemas']['EmailPreference']['group'];
 type EmailPreference = components['schemas']['EmailPreference'];
 type CalendarItem = components['schemas']['CalendarItem'];
+type LessonDetail = components['schemas']['LessonDetail'];
 
 const cardPathPrefix = '/api/v1/students/';
 const calendarPath = '/api/v1/calendar';
+const lessonPathPrefix = '/api/v1/lessons/';
 const joinRequestsPath = '/api/v1/join-requests';
 const notificationsPath = '/api/v1/notifications';
 const invitationPathPrefix = '/api/v1/invitations/';
@@ -364,6 +376,13 @@ export class FakeAuthServer {
   private readonly sent: string[] = [];
   private readonly addresses: URL[] = [];
   private readonly calendarItems = new Map<string, CalendarItem[]>();
+  private readonly lessons = new Map<string, FakeLesson>();
+  private lessonWriteGate: Promise<void> | null = null;
+  private lessonWriteReceived: () => void = () => undefined;
+  private refusedLessonWrite: FakeLessonRefusal | null = null;
+  private roomGeneration = 0;
+  private readonly embeddingRefused = new Set<string>();
+  nextRoomAddress: string | null = null;
   private calendarReadGate: Promise<void> | null = null;
   private calendarReadReceived: () => void = () => undefined;
   private readonly cards = new Map<string, FakeCard>();
@@ -472,6 +491,43 @@ export class FakeAuthServer {
   addCalendarItem(email: string, item: CalendarItem): void {
     const accountId = this.account(email).me.id;
     this.calendarItems.set(accountId, [...(this.calendarItems.get(accountId) ?? []), item]);
+  }
+
+  addLesson(detail: LessonDetail, emails: readonly string[]): void {
+    this.lessons.set(detail.id, { detail, members: emails.map((email) => this.account(email).me.id) });
+  }
+
+  changeLesson(id: string, change: Partial<LessonDetail>): void {
+    const lesson = this.lessons.get(id);
+    if (lesson === undefined) {
+      throw new Error('the fake server has no such lesson');
+    }
+    this.lessons.set(id, { ...lesson, detail: { ...lesson.detail, ...change, version: lesson.detail.version + 1 } });
+  }
+
+  refuseEmbedding(id: string): void {
+    this.embeddingRefused.add(id);
+  }
+
+  refuseNextLessonWrite(status: number, code: string): void {
+    this.refusedLessonWrite = { status, code };
+  }
+
+  pauseLessonWrites(): PausedReads {
+    let resume = (): void => undefined;
+    let notifyReceived = (): void => undefined;
+    this.lessonWriteGate = new Promise((resolve) => {
+      resume = (): void => {
+        this.lessonWriteGate = null;
+        this.lessonWriteReceived = (): void => undefined;
+        resolve();
+      };
+    });
+    const received = new Promise<void>((resolve) => {
+      notifyReceived = resolve;
+    });
+    this.lessonWriteReceived = notifyReceived;
+    return { resume, received };
   }
 
   pauseCalendarReads(): PausedReads {
@@ -738,6 +794,9 @@ export class FakeAuthServer {
     if (request.method === 'GET' && path === calendarPath) {
       return this.readCalendar(token, address.searchParams);
     }
+    if (path.startsWith(lessonPathPrefix)) {
+      return this.answerLesson(request.method, path.slice(lessonPathPrefix.length), token);
+    }
     if (path === emailPreferencesPath) {
       return this.answerPreferences(request, token);
     }
@@ -827,6 +886,50 @@ export class FakeAuthServer {
       return refusal(500, 'internal');
     }
     return json(200, { items: [], next_cursor: null });
+  }
+
+  private async answerLesson(method: string, route: string, token: string): Promise<Response> {
+    const refused = this.refusedToken(token);
+    if (refused !== null) {
+      return refused;
+    }
+    const [id = '', action] = route.split('/');
+    const lesson = this.lessons.get(id);
+    const accountId = this.sessionOf(token)?.accountId ?? '';
+    if (lesson?.members.includes(accountId) !== true) {
+      return refusal(404, 'not_found');
+    }
+    if (method === 'GET' && action === undefined) {
+      return json(200, lesson.detail);
+    }
+    if (method !== 'POST' || (action !== 'join' && action !== 'end' && action !== 'restart-room')) {
+      return refusal(405, 'method_not_allowed');
+    }
+    this.lessonWriteReceived();
+    await this.lessonWriteGate;
+    const planned = this.refusedLessonWrite;
+    this.refusedLessonWrite = null;
+    if (planned !== null) {
+      return refusal(planned.status, planned.code);
+    }
+    return action === 'end' ? this.endLesson(id) : this.openFakeRoom(id);
+  }
+
+  private endLesson(id: string): Response {
+    this.changeLesson(id, { status: 'ended', room_open: false, took_place: true });
+    return json(200, this.lessons.get(id)?.detail);
+  }
+
+  private openFakeRoom(id: string): Response {
+    this.changeLesson(id, { status: 'live', room_open: true, took_place: true });
+    this.roomGeneration += 1;
+    const lesson = this.lessons.get(id);
+    const url = this.nextRoomAddress ?? `https://room.example/${id}/${String(this.roomGeneration)}`;
+    this.nextRoomAddress = null;
+    return json(200, {
+      url,
+      embed_allowed: (lesson?.detail.embed_allowed ?? false) && !this.embeddingRefused.has(id),
+    });
   }
 
   private async readCalendar(token: string, query: URLSearchParams): Promise<Response> {

@@ -68,6 +68,7 @@ type LessonDetail struct {
 	EndsAt          time.Time           `json:"ends_at"`
 	DurationMinutes int                 `json:"duration_minutes"`
 	Status          domain.LessonStatus `json:"status" enum:"scheduled,live,ended,cancelled"`
+	TookPlace       bool                `json:"took_place"`
 	Timezone        string              `json:"timezone"`
 	SeriesID        *string             `json:"series_id" format:"uuid" nullable:"true"`
 	OccurrenceDate  *string             `json:"occurrence_date,omitempty" format:"date"`
@@ -78,8 +79,8 @@ type LessonDetail struct {
 	Audience        LessonAudience      `json:"audience"`
 	Tutor           *LessonTutor        `json:"tutor"`
 	ChannelID       *string             `json:"channel_id" format:"uuid" nullable:"true"`
-	RoomOpen        bool                `json:"room_open" required:"false"`
-	EmbedAllowed    bool                `json:"embed_allowed" required:"false"`
+	RoomOpen        bool                `json:"room_open"`
+	EmbedAllowed    bool                `json:"embed_allowed"`
 }
 
 type LessonJoin struct {
@@ -112,14 +113,15 @@ func (CreatedLessons) TransformSchema(_ huma.Registry, schema *huma.Schema) *hum
 }
 
 type CalendarItem struct {
-	ID       string              `json:"id" format:"uuid"`
-	Title    string              `json:"title"`
-	StartsAt time.Time           `json:"starts_at"`
-	EndsAt   time.Time           `json:"ends_at"`
-	Status   domain.LessonStatus `json:"status" enum:"scheduled,live,ended,cancelled"`
-	Timezone string              `json:"timezone"`
-	Audience CalendarAudience    `json:"audience"`
-	Tutor    *LessonTutor        `json:"tutor"`
+	ID        string              `json:"id" format:"uuid"`
+	Title     string              `json:"title"`
+	StartsAt  time.Time           `json:"starts_at"`
+	EndsAt    time.Time           `json:"ends_at"`
+	Status    domain.LessonStatus `json:"status" enum:"scheduled,live,ended,cancelled"`
+	TookPlace bool                `json:"took_place"`
+	Timezone  string              `json:"timezone"`
+	Audience  CalendarAudience    `json:"audience"`
+	Tutor     *LessonTutor        `json:"tutor"`
 }
 
 func (CalendarItem) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {

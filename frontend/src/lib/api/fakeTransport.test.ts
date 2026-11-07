@@ -53,6 +53,7 @@ function fakeSubject(): ContractSubject {
         starts_at: startsAt,
         ends_at: endsAt,
         status: 'scheduled',
+        took_place: false,
         timezone: 'Europe/Moscow',
         audience: { kind: 'one_to_one', label: 'A student', label_kind: null, colour: 'moss' },
         tutor: null,

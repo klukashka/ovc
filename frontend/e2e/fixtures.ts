@@ -251,6 +251,7 @@ export interface PageDiagnostics {
   readonly beginLanguageFailure: (language: 'en' | 'ru') => void;
   readonly finishLanguageFailure: () => Promise<void>;
   readonly expectConsoleError: (text: string) => void;
+  readonly expectConsoleWarning: (fragment: string) => void;
 }
 
 export interface Diagnostics extends PageDiagnostics {
@@ -380,6 +381,9 @@ function watchPage(page: Page, deployment: Deployment, registry: DiagnosticRegis
     expectConsoleError: (text): void => {
       consoleExpectation.expected.push(text);
     },
+    expectConsoleWarning: (fragment): void => {
+      consoleExpectation.expectedWarnings.set(fragment, 0);
+    },
     verify: (): void => {
       expect([
         ...unexpectedFailures(unexpectedAborts(failedRequests, abortedPaths), { navigations, requests, closes }).map(
@@ -408,6 +412,7 @@ export const diagnosedTest = test.extend<{ diagnostics: Diagnostics }>({
         finishLanguageFailure: main.finishLanguageFailure,
         expectAbortedRequest: main.expectAbortedRequest,
         expectConsoleError: main.expectConsoleError,
+        expectConsoleWarning: main.expectConsoleWarning,
         watch: (other): Promise<PageDiagnostics> => {
           const existing = pages.get(other);
           if (existing !== undefined) return Promise.resolve(existing);

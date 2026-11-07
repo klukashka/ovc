@@ -15,7 +15,7 @@ import {
 } from './scripts/bundle-budget.ts';
 import { developmentLogger, developmentTls } from './scripts/development-tls.ts';
 import { realtimePath } from './src/lib/realtime/socket.ts';
-import { pageHeaders, responseHeaders } from './security-headers.ts';
+import { previewHeaders, responseHeaders } from './security-headers.ts';
 
 const defaultApiTarget = 'http://127.0.0.1:8000';
 const idleApiConnectionMilliseconds = 60_000;
@@ -129,7 +129,7 @@ export function frontendConfiguration(mode: string, environment: Readonly<Record
       port: 4173,
       strictPort: true,
       cors: false,
-      headers: pageHeaders,
+      headers: previewHeaders(environment.OVC_FRONTEND_TEST_ROOM_ORIGIN),
       proxy: apiProxy(apiTarget),
       ...previewTls(environment.OVC_FRONTEND_PREVIEW_CERTIFICATE, environment.OVC_FRONTEND_PREVIEW_PRIVATE_KEY),
     },
