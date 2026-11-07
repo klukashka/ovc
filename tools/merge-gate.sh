@@ -834,6 +834,43 @@ prepare_log_folder() {
   chmod 700 "$log_folder"
 }
 
+keep_end_to_end_evidence() {
+  local run="$1" kept="$2" test_folder name evidence
+  while IFS= read -r test_folder; do
+    name="$(basename "$run")/$(basename "$test_folder")"
+    printf '%s\n' "$name" >>"$kept/failed-tests.txt" || add_problem "could not list $name in $kept"
+    evidence="$test_folder/browser-diagnostics.json"
+    if [[ -f "$evidence" && ! -L "$evidence" ]]; then
+      if [[ -n "$(find "$evidence" -links 1)" ]]; then
+        if ! { mkdir -p "$kept/$name" && cat "$evidence" >"$kept/$name/browser-diagnostics.json"; }; then
+          add_problem "could not keep the browser diagnostics of $name in $kept"
+        fi
+      else
+        add_problem "did not keep the browser diagnostics of $name, which has more than one hard link"
+      fi
+    fi
+  done < <(find "$run" -mindepth 1 -maxdepth 1 -type d ! -name attachments)
+}
+
+keep_end_to_end_results() {
+  local marker="$1" results="$root/frontend/test-results" outputs="$root/frontend/test-results/playwright" run
+  local kept="$log_folder/e2e-results" previous_umask
+  if [[ -n "$laned_failure" && -d "$outputs" && ! -L "$results" && ! -L "$outputs" ]]; then
+    previous_umask="$(umask)"
+    umask 077
+    while IFS= read -r run; do
+      if mkdir -p "$kept" && : >>"$kept/failed-tests.txt"; then
+        keep_end_to_end_evidence "$run" "$kept"
+        kept_results="$kept"
+      else
+        add_problem "could not create $kept for the failed end-to-end evidence"
+      fi
+    done < <(find "$outputs" -mindepth 1 -maxdepth 1 -type d -name 'run-*' -newer "$marker")
+    umask "$previous_umask"
+  fi
+  rm -f "$marker"
+}
+
 run_entry() {
   cd "$root/${entry_directories[$1]}"
   if [[ "${entry_tags[$1]}" == e2e ]]; then
@@ -1110,7 +1147,7 @@ run_phase() {
 }
 
 run_laned_checks() {
-  local changed
+  local changed marker
   prepare_log_folder
   run_phase pre
   if [[ -n "$laned_failure" ]]; then
@@ -1128,7 +1165,9 @@ run_laned_checks() {
     laned_failure="the end-to-end run lock $run_lock_path no longer holds this gate"
     return 0
   fi
+  marker="$(umask 077 && mktemp "$log_folder/e2e-started.XXXXXX")"
   run_phase e2e
+  keep_end_to_end_results "$marker"
 }
 
 print_laned_results() {
@@ -1174,6 +1213,9 @@ print_laned_results() {
   printf 'gate wall time: %s s\n' "$(elapsed_seconds "$gate_started" "$(now_seconds)")"
   printf 'cores: %s\n' "$(getconf _NPROCESSORS_ONLN)"
   printf 'command logs: %s\n' "${log_folder:-none}"
+  if [[ -n "$kept_results" ]]; then
+    printf 'kept end-to-end evidence of the failed run: %s\n' "$kept_results"
+  fi
   if [[ -n "$problems" ]]; then
     printf 'lane problems:\n%s' "$problems"
   fi
@@ -1279,6 +1321,7 @@ gate() {
   active_lanes=""
   recorded_lanes=""
   log_folder=""
+  kept_results=""
   problems=""
   failed_check=no
   laned_failure=""

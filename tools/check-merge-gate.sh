@@ -513,6 +513,7 @@ contains "$(cat "$logs/1.log")" "output of a1" "a command's output goes to its o
 check "$(test -d "$lock_dir/logs.expired" && echo kept || echo removed)" "removed" "log folders older than seven days are removed"
 check "$(test -d "$lock_dir/logs.recent" && echo kept || echo removed)" "kept" "recent log folders are kept"
 check "$(lock_field lanes)" "" "a passed gate's lock records no lane groups"
+check "$(count_matching '^kept end-to-end results')" "0" "a passed gate keeps no end-to-end results"
 check "$(lock_field checks)" "self-test-lanes" "the lock records the lane self-test list"
 run_gate finish
 contains "$output" "check list check: failed" "finish refuses a gate that ran the lane self-test list"
@@ -559,11 +560,81 @@ contains "$output" "entry 1 of lane A has no record" "the report names the missi
 check "$(result_line "no record" A a1)" "1" "the report marks the command of the killed lane as without a record"
 check "$(result_line "not run" e2e e2e)" "1" "the end-to-end suites do not run after a lane was killed"
 
-lane_change fix/lane-e2e-fails e2e "exit 1"
-run_lanes
+playwright_outputs="$repo/frontend/test-results/playwright"
+lane_change fix/lane-e2e-fails e2e "outputs=frontend/test-results/playwright/run-4242
+mkdir -p \"\$outputs/smoke-chromium/attachments\" \"\$outputs/linked-chromium\" \"\$outputs/hard-linked-chromium\"
+printf 'trace of the failed test\\n' >\"\$outputs/smoke-chromium/trace.zip\"
+printf 'error context of the failed test\\n' >\"\$outputs/smoke-chromium/error-context.md\"
+printf 'screenshot of the failed test\\n' >\"\$outputs/smoke-chromium/test-failed-1.png\"
+printf 'attachment of the failed test\\n' >\"\$outputs/smoke-chromium/attachments/browser-diagnostics-1.json\"
+printf 'redacted diagnostics of the failed test\\n' >\"\$outputs/smoke-chromium/browser-diagnostics.json\"
+ln -s '$work/outside-secret' \"\$outputs/linked-chromium/browser-diagnostics.json\"
+ln '$work/hard-linked-secret' \"\$outputs/hard-linked-chromium/browser-diagnostics.json\"
+exit 1"
+mkdir -p "$repo/frontend"
+commit_file frontend/.gitignore "test-results" "Ignore the end-to-end results"
+
+prepare_e2e_outputs() {
+  rm -rf "$repo/frontend/test-results" "$work/outside-results" "$work/outside-run"
+  printf 'outside the run\n' >"$work/outside-secret"
+  printf 'hard-linked outside the run\n' >"$work/hard-linked-secret"
+}
+
+run_failing_e2e() {
+  run_lanes
+  logs="$(printf '%s\n' "$output" | sed -n 's/^command logs: //p')"
+  kept="$(printf '%s\n' "$output" | sed -n 's/^kept end-to-end evidence of the failed run: //p')"
+}
+
+prepare_e2e_outputs
+mkdir -p "$playwright_outputs/run-1/earlier-chromium"
+printf 'diagnostics of an earlier run\n' >"$playwright_outputs/run-1/earlier-chromium/browser-diagnostics.json"
+touch -t 202001010000 "$playwright_outputs/run-1"
+run_failing_e2e
 check "$status" "1" "a failing end-to-end entry after every lane passed fails the gate"
 check "$(result_line "exit 0" C c2)|$(result_line "exit 1" e2e e2e)" "1|1" "the end-to-end entry runs only after the lanes passed and is reported"
 contains "$output" "result: failed: a check failed" "the result names the failed end-to-end entry"
+check "$kept" "$logs/e2e-results" "a failed end-to-end run keeps its evidence in the command log folder"
+check "$(placement "$kept" "$repo/*")" "outside" "the kept end-to-end evidence lies outside the repository"
+check "$(cat "$kept/run-4242/smoke-chromium/browser-diagnostics.json")" "redacted diagnostics of the failed test" \
+  "the failed test's redacted browser diagnostics are kept"
+check "$(sort "$kept/failed-tests.txt" | tr '\n' ' ')" "run-4242/hard-linked-chromium run-4242/linked-chromium run-4242/smoke-chromium " \
+  "the kept evidence names the output folder of every failed test"
+check "$(find "$kept" -type f | sed "s|^$kept/||" | sort | tr '\n' ' ')" \
+  "failed-tests.txt run-4242/smoke-chromium/browser-diagnostics.json " \
+  "no trace, error context, screenshot, attachment, linked or hard-linked file is kept"
+contains "$output" "did not keep the browser diagnostics of run-4242/hard-linked-chromium, which has more than one hard link" \
+  "the report names the skipped hard-linked diagnostics"
+check "$(find "$kept" ! -type f ! -type d | wc -l | tr -d ' ')" "0" "the kept evidence holds no link and no special file"
+check "$(find "$kept" -type f ! -links 1 | wc -l | tr -d ' ')" "0" "the kept evidence holds no hard-linked file"
+check "$(find "$kept" \( -perm -040 -o -perm -004 \) | wc -l | tr -d ' ')" "0" "the kept evidence is readable only by the owner"
+check "$(find "$logs" -name 'e2e-started.*' | wc -l | tr -d ' ')" "0" "the gate removes its end-to-end start marker"
+
+prepare_e2e_outputs
+mkdir -p "$work/outside-results" "$repo/frontend"
+ln -s "$work/outside-results" "$repo/frontend/test-results"
+run_failing_e2e
+check "$status|$(result_line "exit 1" e2e e2e)|$kept" "1|1|" "a failed end-to-end run keeps nothing when frontend/test-results is a link"
+check "$(test -e "$logs/e2e-results" && echo kept || echo absent)" "absent" \
+  "no evidence folder is created when frontend/test-results is a link"
+
+prepare_e2e_outputs
+mkdir -p "$work/outside-results" "$repo/frontend/test-results"
+ln -s "$work/outside-results" "$playwright_outputs"
+run_failing_e2e
+check "$status|$(result_line "exit 1" e2e e2e)|$kept" "1|1|" "a failed end-to-end run keeps nothing when its playwright folder is a link"
+check "$(test -e "$logs/e2e-results" && echo kept || echo absent)" "absent" \
+  "no evidence folder is created when the playwright folder is a link"
+
+prepare_e2e_outputs
+mkdir -p "$work/outside-run" "$playwright_outputs"
+ln -s "$work/outside-run" "$playwright_outputs/run-4242"
+run_failing_e2e
+check "$status|$(result_line "exit 1" e2e e2e)|$kept" "1|1|" "a failed end-to-end run keeps nothing from a run folder that is a link"
+check "$(test -e "$logs/e2e-results" && echo kept || echo absent)" "absent" \
+  "no evidence folder is created for a run folder that is a link"
+rm -rf "$repo/frontend/test-results" "$work/outside-results" "$work/outside-run" "$work/outside-secret" \
+  "$work/hard-linked-secret"
 
 lane_change fix/lane-changes-tree c1 "printf 'changed by a lane\\n' >docs/guide.md"
 run_lanes
@@ -601,7 +672,7 @@ finish_background_gate() {
 }
 
 fd9_probe() {
-  printf 'if { printf "%s\\\\n" >&9; } 2>/dev/null; then echo open; else echo closed; fi >"%s"; for found in "%s"/logs.*/*; do printf "%s\\\\n" >>"$found"; done' \
+  printf 'if { printf "%s\\\\n" >&9; } 2>/dev/null; then echo open; else echo closed; fi >"%s"; for found in "%s"/logs.*/*; do if test -f "$found"; then printf "%s\\\\n" >>"$found"; fi; done' \
     "$1" "$2" "$lock_dir" "$1"
 }
 

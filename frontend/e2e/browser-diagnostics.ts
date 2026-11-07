@@ -1,5 +1,6 @@
 import type { ReadinessFailure, ReadinessPhase } from './navigation-readiness.ts';
 import { HttpNegativePhase, LanguageFailurePhase, type HttpNegative } from './diagnostic-expectations.ts';
+import { redactAddress, redactMethod, redactText } from './diagnostic-redaction.ts';
 import { test } from '@playwright/test';
 import type { Browser, BrowserContext, BrowserContextOptions, Page, Request } from '@playwright/test';
 
@@ -41,6 +42,28 @@ export interface DiagnosticRecord {
   readonly route: DiagnosticRoute;
   readonly count: number;
 }
+export type DiagnosticEvidence =
+  | { readonly text: string; readonly source: string }
+  | { readonly method: string; readonly path: string; readonly status: number };
+export type DiagnosticDetail = {
+  readonly category: DiagnosticCategory;
+  readonly engine: string;
+  readonly stage: string;
+  readonly route: DiagnosticRoute;
+  readonly page: string;
+} & (DiagnosticEvidence | { readonly evidence: 'counted_only' });
+export interface DiagnosticDetails {
+  readonly details: readonly DiagnosticDetail[];
+  readonly omitted: number;
+}
+const detailLimit = 50;
+
+function redactedEvidence(evidence: DiagnosticEvidence | undefined): DiagnosticEvidence | { evidence: 'counted_only' } {
+  if (evidence === undefined) return { evidence: 'counted_only' };
+  if ('text' in evidence) return { text: redactText(evidence.text), source: redactAddress(evidence.source) };
+  return { method: redactMethod(evidence.method), path: redactAddress(evidence.path), status: evidence.status };
+}
+
 export interface ConsoleExpectation {
   readonly expected: string[];
   readonly abortedPaths: RegExp[];
@@ -67,6 +90,7 @@ export function observeBrowserContext(
 ): {
   readonly finish: () => Promise<void>;
   readonly records: () => readonly DiagnosticRecord[];
+  readonly details: () => DiagnosticDetails;
   readonly expect: (page: Page) => ConsoleExpectation;
   readonly expectHttp: (page: Page, negative: HttpNegative) => void;
   readonly finishHttp: (page: Page) => Promise<void>;
@@ -77,9 +101,23 @@ export function observeBrowserContext(
   readonly errors: () => number;
 } {
   const records = new Map<string, DiagnosticRecord>();
+  const details: DiagnosticDetail[] = [];
+  let omittedDetails = 0;
   const expectations = new Map<Page, ConsoleExpectation>();
-  const record = (category: DiagnosticCategory, page: Page | null): void => {
+  const record = (category: DiagnosticCategory, page: Page | null, evidence?: DiagnosticEvidence): void => {
     const route = diagnosticRoute(page?.url() ?? '');
+    if (details.length < detailLimit) {
+      details.push({
+        category,
+        engine,
+        stage,
+        route,
+        page: page === null ? 'unknown' : redactAddress(page.url()),
+        ...redactedEvidence(evidence),
+      });
+    } else {
+      omittedDetails = Math.min(1_000_000, omittedDetails + 1);
+    }
     const key = `${category}:${route}`;
     const previous = records.get(key);
     records.set(key, {
@@ -127,7 +165,7 @@ export function observeBrowserContext(
     languages.get(page)?.request(request.url());
     if (phase !== undefined) {
       if (started.size >= 2000) {
-        record('http_error', page);
+        record('http_error', page, { text: 'tracked_request_limit_reached', source: request.url() });
         return;
       }
       sequence += 1;
@@ -147,7 +185,7 @@ export function observeBrowserContext(
     if (page === null) return;
     const entry = started.get(request);
     if (entry === undefined || phases.get(page) !== entry.phase) {
-      record('http_error', page);
+      record('http_error', page, { method: request.method(), path: response.url(), status: response.status() });
       return;
     }
     if (!entry.phase.response(entry.id, response.status(), response.statusText())) return;
@@ -218,10 +256,13 @@ export function observeBrowserContext(
       )
         return;
     }
-    record(severity === 'warning' ? 'console_warning' : 'console_error', page);
+    record(severity === 'warning' ? 'console_warning' : 'console_error', page, {
+      text: message.text(),
+      source: message.location().url,
+    });
   });
   context.on('weberror', (error) => {
-    record('page_error', error.page());
+    record('page_error', error.page(), { text: error.error().message, source: '' });
   });
   const result = {
     finish: async (): Promise<void> => {
@@ -229,6 +270,7 @@ export function observeBrowserContext(
       result.verify();
     },
     records: (): readonly DiagnosticRecord[] => [...records.values()],
+    details: (): DiagnosticDetails => ({ details: [...details], omitted: omittedDetails }),
     expect: (page: Page): ConsoleExpectation => {
       const existing = expectations.get(page);
       if (existing !== undefined) return existing;

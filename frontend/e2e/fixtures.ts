@@ -1,4 +1,14 @@
-import { type BrowserContext, type Locator, type Page, type Request, expect, test as base } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
+
+import {
+  type BrowserContext,
+  type Locator,
+  type Page,
+  type Request,
+  type TestInfo,
+  expect,
+  test as base,
+} from '@playwright/test';
 
 import {
   type TestAccount,
@@ -10,6 +20,7 @@ import {
   signInThroughTheApi,
 } from './accounts.ts';
 import {
+  type DiagnosticDetails,
   type ObservedBrowser,
   installPolicyObserver,
   observeBrowserContext,
@@ -149,10 +160,10 @@ export const test = base.extend<
   { deployment: Deployment } & SharedActors & MeasurementWorkerOptions
 >({
   diagnosticRegistry: [
-    async ({ browserName }, use): Promise<void> => {
+    async ({ browserName }, use, testInfo): Promise<void> => {
       const registry = diagnosticRegistry(browserName);
       await use(registry);
-      await registry.verify();
+      await registry.verify(testInfo);
     },
     { auto: true },
   ],
@@ -272,7 +283,13 @@ function describeFailure(failure: ExpectedFailure): string {
 interface DiagnosticRegistry {
   readonly watch: (context: BrowserContext) => Promise<void>;
   readonly console: (page: Page) => ReturnType<typeof observeBrowserContext>;
-  readonly verify: () => Promise<void>;
+  readonly verify: (testInfo: TestInfo) => Promise<void>;
+}
+
+async function attachDiagnosticDetails(testInfo: TestInfo, details: DiagnosticDetails): Promise<void> {
+  const path = testInfo.outputPath('browser-diagnostics.json');
+  await writeFile(path, `${JSON.stringify(details, null, 2)}\n`, { mode: 0o600 });
+  await testInfo.attach('browser-diagnostics', { path, contentType: 'application/json' });
 }
 
 function diagnosticRegistry(engine: string): DiagnosticRegistry {
@@ -288,8 +305,23 @@ function diagnosticRegistry(engine: string): DiagnosticRegistry {
       if (observer === undefined) throw new Error('browser context was not observed before page creation');
       return observer;
     },
-    verify: async (): Promise<void> => {
-      for (const observer of watched.values()) await observer.finish();
+    verify: async (testInfo): Promise<void> => {
+      for (const observer of watched.values()) {
+        try {
+          await observer.finish();
+        } catch (error) {
+          try {
+            await attachDiagnosticDetails(testInfo, observer.details());
+          } catch (attachment) {
+            throw new AggregateError(
+              [error, attachment],
+              error instanceof Error ? error.message : 'browser diagnostics failed',
+              { cause: error },
+            );
+          }
+          throw error;
+        }
+      }
     },
   };
 }

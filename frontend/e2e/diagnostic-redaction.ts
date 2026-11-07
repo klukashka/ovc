@@ -1,0 +1,71 @@
+export const redactedTextLimit = 400;
+const scannedTextLimit = 8000;
+const redacted = ':redacted';
+const truncationMark = ' [truncated]';
+
+const plainSegment =
+  /^(?:[a-z][a-z0-9-]{0,39}|[0-9]{1,12}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z0-9_-]{1,40}\.(?:js|css|json|svg|png|jpg|jpeg|gif|webp|woff|woff2|ico|map|html|txt|pdf|mp4|webm))$/u;
+const routeWord = /^[a-z]+(?:-[a-z]+)*$/u;
+const universallyUniqueIdentifier = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+const opaqueSegment = /^[A-Za-z0-9_-]{16,}$/u;
+const tokenParentSegments = new Set(['invite', 'invitations', 'bbb', 'unsubscribe', 'verify-email', 'reset-password']);
+
+const bearerToken = /\bbearer\s+[^\s"',;]+/giu;
+const jsonWebToken = /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}(?:\.[A-Za-z0-9_-]*)?/gu;
+const emailAddress = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/gu;
+const secretAssignment = /\b(token|key|secret|password|signature|code)=[^\s&"']+/giu;
+const addressOrPath = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`]+|\/[^\s"'<>`]*/giu;
+const opaqueToken = /[A-Za-z0-9_-]{32,}/gu;
+
+export function redactPath(path: string): string {
+  const segments = path.split('/');
+  return segments
+    .map((segment, index) => {
+      if (segment === '') return segment;
+      if (tokenParentSegments.has(segments[index - 1] ?? '')) return redacted;
+      if (opaqueSegment.test(segment) && !routeWord.test(segment) && !universallyUniqueIdentifier.test(segment))
+        return redacted;
+      return plainSegment.test(segment) ? segment : redacted;
+    })
+    .join('/');
+}
+
+function redactRelativeAddress(address: string): string {
+  const end = address.search(/[?#]/u);
+  if (end === -1) return redactPath(address);
+  return `${redactPath(address.slice(0, end))}?${redacted}`;
+}
+
+export function redactAddress(address: string): string {
+  if (!URL.canParse(address)) return redactRelativeAddress(address);
+  const url = new URL(address);
+  const origin = url.origin !== 'null' ? url.origin : url.host === '' ? url.protocol : `${url.protocol}//${url.host}`;
+  const query = url.search === '' && url.hash === '' ? '' : `?${redacted}`;
+  return `${origin}${redactPath(url.pathname)}${query}`;
+}
+
+function boundedForScanning(text: string): string {
+  if (text.length <= scannedTextLimit) return text;
+  return text.slice(0, scannedTextLimit).replace(/\S*$/u, '');
+}
+
+function capped(text: string): string {
+  if (text.length <= redactedTextLimit) return text;
+  return `${text.slice(0, redactedTextLimit - truncationMark.length)}${truncationMark}`;
+}
+
+export function redactText(text: string): string {
+  return capped(
+    boundedForScanning(text)
+      .replace(bearerToken, `Bearer ${redacted}`)
+      .replace(jsonWebToken, redacted)
+      .replace(emailAddress, redacted)
+      .replace(secretAssignment, (_match, name: string) => `${name}=${redacted}`)
+      .replace(addressOrPath, (address) => redactAddress(address))
+      .replace(opaqueToken, redacted),
+  );
+}
+
+export function redactMethod(method: string): string {
+  return /^[A-Z]{1,10}$/u.test(method) ? method : 'OTHER';
+}
