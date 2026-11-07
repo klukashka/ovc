@@ -455,14 +455,13 @@ test('a resend starts the 60-second countdown again and it counts down each seco
   await page.clock.install();
   await signUpThroughTheForm(page, newTestAccount('Repeating tutor'));
   await expect(page.getByText(/^Можно отправить через \d+ с\.$/)).toBeVisible();
-  await page.clock.runFor('01:01');
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 61_000);
   await page.getByRole('button', { name: 'Отправить ещё раз' }).click();
-  await expect(page.getByRole('status')).toHaveText('Письмо отправлено ещё раз.');
-  const restarted = page.getByText('Можно отправить через 60 с.');
-  await expect(restarted).toBeVisible();
+  await expect(page.getByText('Можно отправить через 60 с.')).toBeVisible();
 
   await page.clock.runFor(1000);
 
+  await expect(page.getByRole('status')).toHaveText('Письмо отправлено ещё раз.');
   await expect(page.getByText('Можно отправить через 59 с.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Отправить ещё раз' })).toBeDisabled();
 });

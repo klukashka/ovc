@@ -24,24 +24,27 @@ type ResendState =
   | { readonly kind: 'sent' }
   | { readonly kind: 'failed'; readonly error: ApiError; readonly retryAfter: number | null };
 
+function millisecondsToNextSecond(until: number, current: number): number {
+  return ((until - current - 1) % 1000) + 1;
+}
+
 function useCooldown(initialSeconds: number): readonly [number, (seconds: number) => void] {
   const [until, setUntil] = useState(() => Date.now() + initialSeconds * 1000);
   const [now, setNow] = useState(() => Date.now());
   const remaining = Math.max(0, Math.ceil((until - now) / 1000));
 
   useEffect(() => {
-    if (until <= Date.now()) {
-      return undefined;
-    }
-    const timer = window.setInterval(() => {
+    let timer: number | undefined;
+    function tick(): void {
       const current = Date.now();
       setNow(current);
-      if (current >= until) {
-        window.clearInterval(timer);
+      if (current < until) {
+        timer = window.setTimeout(tick, millisecondsToNextSecond(until, current));
       }
-    }, 1000);
+    }
+    tick();
     return (): void => {
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
     };
   }, [until]);
 

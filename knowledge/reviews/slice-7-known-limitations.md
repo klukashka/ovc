@@ -163,3 +163,12 @@ Recorded 2026-11-07 from the [slice 7 slice review](slice-7-slice-review.md) of 
 ### Development tooling
 
 - **A package-layer qualifier is not enforced by the architecture test.** The row of `internal/services/meetings` in the package layers table of `knowledge/architecture/detailed.md` allows `internal/services/outbox` "(exported typed recovery outcome only)", but `backend/internal/conventions/architecture_test.go` reads only code spans, so the whole outbox package is allowed and the restriction is prose. A later change can drop the qualifier or move the shared outcome type into a package the row can name precisely.
+
+## Resend countdown timing coverage
+
+Recorded 2026-11-08 from the independent review of the change that pauses the fake clock in the resend countdown end-to-end test and aligns the cooldown tick to its deadline. The change resolves the WebKit failure of `e2e/signup.spec.ts:454`, "a resend starts the 60-second countdown again and it counts down each second", seen in two merge gates on 2026-11-07. The cause was Playwright's installed clock flowing with real time, so the 59-second state lasted about one real second. Both items are minor and touch no trust boundary.
+
+- **The countdown timing has no component test.** `CheckEmail` and its cooldown have no unit or component test. The second-boundary alignment, reaching zero and a restart mid-countdown are proven only by the signup and accessibility end-to-end tests.
+- **Each start renders once more.** Each effect start renders once more, because the first tick sets the current time synchronously. This is behaviour-neutral.
+
+The same day, `[webkit] e2e/messages.spec.ts:164`, "editing and deleting own messages, and the tutor deleting a member's message", timed out once in a merge gate on a click at a load average near 17. It belongs to the open entry on WebKit end-to-end failures under heavy load.
