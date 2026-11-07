@@ -74,6 +74,7 @@ const (
 	varMeetingProvider = "OVC_MEETING_PROVIDER"
 	varMailBackend     = "OVC_MAIL_BACKEND"
 	varPublicURL       = "OVC_PUBLIC_URL"
+	varFakeRoomOrigin  = "OVC_FAKE_ROOM_ORIGIN"
 	varSMTPHost        = "OVC_SMTP_HOST"
 	varSMTPPort        = "OVC_SMTP_PORT"
 	varSMTPTLS         = "OVC_SMTP_TLS"
@@ -97,7 +98,7 @@ const (
 func VariableNames() []string {
 	return append([]string{
 		varHTTPAddr, varDatabaseURL, varDBPoolSize, varLogLevel, varLogFormat, varAPIDocsEnabled,
-		varTestControl, varClock, varMeetingProvider, varMailBackend, varPublicURL, varSMTPHost, varSMTPPort,
+		varTestControl, varClock, varMeetingProvider, varMailBackend, varPublicURL, varFakeRoomOrigin, varSMTPHost, varSMTPPort,
 		varSMTPTLS, varSMTPUsername, varSMTPPassword, varMailFrom, varJWTSecret, varAccessTTL, varRefreshTTL,
 		varTrustedProxies, varTestDatabaseURL, varFileQuota, varRecordingQuota, varFieldKey, varUnsubscribeKey,
 	}, storageVariableNames()...)
@@ -118,6 +119,7 @@ type Settings struct {
 	MeetingProvider MeetingProvider
 	MailBackend     MailBackend
 	PublicURL       string
+	FakeRoomOrigin  string
 	SMTP            SMTPSettings
 	MailFrom        string
 	JWTSecret       Secret
@@ -272,6 +274,9 @@ func Load(lookup Lookup, process Process) (Settings, error) {
 		settings.MailFrom = from
 	}
 
+	if value, set := lookup(varFakeRoomOrigin); set {
+		settings.FakeRoomOrigin = value
+	}
 	problems = append(problems, settings.testControlProblems()...)
 	if len(problems) > 0 {
 		return Settings{}, errors.Join(problems...)
@@ -319,7 +324,13 @@ func (s Settings) testControlProblems() []error {
 		problems = append(problems, &SettingsError{Variable: varClock, Problem: "test is allowed only with OVC_TEST_CONTROL=1"})
 	}
 	if !s.TestControl {
+		if s.FakeRoomOrigin != "" {
+			problems = append(problems, &SettingsError{Variable: varFakeRoomOrigin, Problem: "is allowed only with OVC_TEST_CONTROL=1"})
+		}
 		return problems
+	}
+	if s.FakeRoomOrigin != "" && !IsFakeRoomOrigin(s.FakeRoomOrigin) {
+		problems = append(problems, &SettingsError{Variable: varFakeRoomOrigin, Problem: "must be an http or https origin on a loopback IP address with a port"})
 	}
 	if s.MeetingProvider != MeetingProviderFake {
 		problems = append(problems, &SettingsError{Variable: varMeetingProvider, Problem: "must be fake with OVC_TEST_CONTROL=1"})
@@ -533,6 +544,19 @@ func narrowEnoughToTrust(prefix netip.Prefix) bool {
 
 func (s Settings) RequiresTestDatabase() bool {
 	return s.TestControl || (s.Process == ProcessWorker && s.MailBackend == MailBackendSink)
+}
+
+func IsFakeRoomOrigin(origin string) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || origin != parsed.Scheme+"://"+parsed.Host {
+		return false
+	}
+	port, err := strconv.ParseUint(parsed.Port(), 10, 16)
+	if err != nil || port == 0 {
+		return false
+	}
+	address, err := netip.ParseAddr(parsed.Hostname())
+	return err == nil && (address == netip.AddrFrom4([4]byte{127, 0, 0, 1}) || address == netip.IPv6Loopback())
 }
 
 func isLoopbackListenAddress(address string) bool {

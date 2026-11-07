@@ -27,6 +27,7 @@ import {
   processAncestors,
   releaseRunLock,
 } from './run-lock.ts';
+import { type RoomOriginServer, startRoomOrigin } from './room-origin.ts';
 import { assertOutputRootIsReal, playwrightOutputRoot } from './run-output.ts';
 
 const frontendRoot = resolve(import.meta.dirname, '..');
@@ -46,6 +47,7 @@ const pollIntervalMilliseconds = 100;
 const pollTimeoutMilliseconds = 2_000;
 const firstApiPort = 18_800;
 const firstPreviewPort = 4_300;
+const firstRoomPort = 18_900;
 const loopbackHosts: ReadonlySet<string> = new Set(['127.0.0.1', '[::1]', 'localhost']);
 const storageBucket = 'ovc-e2e';
 const storagePortPattern = /^[1-9][0-9]{0,4}$/;
@@ -89,6 +91,7 @@ export interface MeasurementPeer {
 export interface Deployment {
   readonly origin: string;
   readonly apiUrl: string;
+  readonly roomOrigin: string;
   readonly administer: (args: readonly string[]) => void;
   readonly startMeasurementPeer?: () => Promise<MeasurementPeer>;
   readonly measurementProcessIds?: () => readonly number[];
@@ -335,6 +338,7 @@ function backendEnvironment(
   settings: E2ESettings,
   apiAddress: string,
   origin: string,
+  roomOrigin: string,
 ): NodeJS.ProcessEnv {
   return {
     OVC_HTTP_ADDR: apiAddress,
@@ -348,6 +352,7 @@ function backendEnvironment(
     OVC_MEETING_PROVIDER: 'fake',
     OVC_MAIL_BACKEND: 'sink',
     OVC_PUBLIC_URL: origin,
+    OVC_FAKE_ROOM_ORIGIN: roomOrigin,
     OVC_JWT_SECRET: randomBytes(32).toString('hex'),
     OVC_FIELD_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
     OVC_UNSUBSCRIBE_SIGNING_SECRET: randomBytes(32).toString('base64'),
@@ -592,19 +597,24 @@ export async function startDeployment(
   const previewPort = firstPreviewPort + slot;
   const origin = `https://127.0.0.1:${String(previewPort)}`;
   const apiUrl = `http://${apiAddress}`;
+  const roomPort = firstRoomPort + slot;
+  const roomOrigin = `https://127.0.0.1:${String(roomPort)}`;
   await assertAddressFree(apiAddress);
   await assertAddressFree(`127.0.0.1:${String(previewPort)}`);
+  await assertAddressFree(`127.0.0.1:${String(roomPort)}`);
   const connection = adminConnection(settings.adminUrl);
   const database = `ovc_e2e_${randomBytes(6).toString('hex')}_test`;
   runInPostgresContainer('createdb', connection, [database]);
-  const environment = backendEnvironment(database, settings, apiAddress, origin);
+  const environment = backendEnvironment(database, settings, apiAddress, origin, roomOrigin);
   const processes: ManagedProcess[] = [];
+  let roomServer: RoomOriginServer | undefined;
   let temporaryTls: string | undefined;
   const heldMeasurements = new Set<() => Promise<void>>();
   const teardown = async (): Promise<void> => {
     const released = await Promise.allSettled([...heldMeasurements].map((release) => release()));
+    const room = await Promise.allSettled(roomServer === undefined ? [] : [roomServer.stop()]);
     const stopped = await Promise.allSettled(processes.map((managed) => stop(managed)));
-    const problems = [...failures(released), ...failures(stopped)];
+    const problems = [...failures(released), ...failures(room), ...failures(stopped)];
     if (temporaryTls !== undefined && processes.every((managed) => hasExited(managed.child))) {
       try {
         rmSync(temporaryTls, { recursive: true });
@@ -662,6 +672,7 @@ export async function startDeployment(
       chmodSync(temporaryTls, 0o700);
       tls = createFixtureCertificate(temporaryTls);
     }
+    roomServer = await startRoomOrigin(tls, roomPort, firstApiPort + slot);
     await lifecycle?.beforeFrontendStart?.(previewPort);
     const preview = start(
       frontendMode === 'preview' ? 'preview' : 'development',
@@ -746,6 +757,7 @@ export async function startDeployment(
   return {
     origin,
     apiUrl,
+    roomOrigin,
     administer,
     stop: teardown,
     ...(measurement === undefined

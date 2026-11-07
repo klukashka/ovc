@@ -33,8 +33,6 @@ const (
 	deleteLaneConcurrency   = 4
 	providerLaneConcurrency = 4
 	smtpTimeout             = 30 * time.Second
-
-	embedAllowedBeforeRemoteProbe = false
 )
 
 func NewFiles(lifetime context.Context, logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, objects storage.Store) (*files.Service, error) {
@@ -69,12 +67,12 @@ func NewChat(logger *slog.Logger, database *core.Database, source clock.Source, 
 	})
 }
 
-func NewSchedule(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource) (*schedule.Service, error) {
+func NewSchedule(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, embed *core.Switch) (*schedule.Service, error) {
 	keys, err := core.DeriveKeys(settings.JWTSecret)
 	if err != nil {
 		return nil, err
 	}
-	return schedule.New(schedule.Dependencies{Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Logger: logger, EmbedAllowed: embedAllowedBeforeRemoteProbe}), nil
+	return schedule.New(schedule.Dependencies{Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Logger: logger, Embed: embed}), nil
 }
 
 func NewAccounts(
@@ -153,7 +151,7 @@ func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings,
 		return nil, err
 	}
 	meetingService := meetings.New(store, provider, domain.MeetingProviderFake, logger)
-	lifecycle, err := NewLifecycle(logger, settings, database, source, random, provider)
+	lifecycle, err := NewLifecycle(logger, settings, database, source, random, provider, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +264,7 @@ func NewRealtime(
 	return Realtime{Gateway: gateway, Listener: adapter}, nil
 }
 
-func NewLifecycle(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, provider meeting.Provider) (*meetings.Lifecycle, error) {
+func NewLifecycle(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, provider meeting.Provider, embed *core.Switch) (*meetings.Lifecycle, error) {
 	keys, err := core.DeriveKeys(settings.JWTSecret)
 	if err != nil {
 		return nil, err
@@ -278,7 +276,7 @@ func NewLifecycle(logger *slog.Logger, settings core.Settings, database *core.Da
 	})
 	return meetings.NewLifecycle(meetings.LifecycleDependencies{
 		Rooms: rooms, Store: store, Provider: provider, Clock: source, Random: random, Keys: keys, Logger: logger,
-		Enabled: settings.TestControl, EmbedAllowed: embedAllowedBeforeRemoteProbe, ProviderCall: timing.ProviderCall,
+		Enabled: settings.TestControl, Embed: embed, ProviderCall: timing.ProviderCall,
 	}), nil
 }
 
@@ -286,4 +284,15 @@ func NewMeetingProvider(ctx context.Context, logger *slog.Logger, database *core
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	return meeting.NewSharedFake(ctx, database.Pool, source, random, logger, meeting.DefaultFakeLimits())
+}
+
+func NewJoinProvider(settings core.Settings, provider *meeting.SharedFake) (meeting.Provider, error) {
+	if !settings.TestControl {
+		return provider, nil
+	}
+	origin := settings.FakeRoomOrigin
+	if origin == "" {
+		origin = "http://" + settings.HTTPAddr
+	}
+	return meeting.NewNavigableFake(provider, origin)
 }

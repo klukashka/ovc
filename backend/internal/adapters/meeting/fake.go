@@ -73,6 +73,7 @@ const (
 	operationEnter        operation = "enter"
 	operationLeave        operation = "leave"
 	operationAvailability operation = "availability"
+	operationRoomView     operation = "room_view"
 )
 
 func (f *Fake) report(ctx context.Context, op operation, err *error) {

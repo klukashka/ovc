@@ -116,6 +116,52 @@ func TestLoadRefusesUnsafeTestControlCombinations(t *testing.T) {
 	}
 }
 
+func TestLoadChecksTheFakeRoomOrigin(t *testing.T) {
+	cases := map[string]struct {
+		flag     string
+		origin   string
+		accepted bool
+	}{
+		"without the flag": {"0", "https://127.0.0.1:18900", false},
+		"a remote origin":  {"1", "https://room.ovc.example:18900", false},
+		"a host name":      {"1", "https://localhost:18900", false},
+		"another address":  {"1", "https://127.0.0.2:18900", false},
+		"a path":           {"1", "https://127.0.0.1:18900/room", false},
+		"an empty query":   {"1", "https://127.0.0.1:18900?", false},
+		"an empty anchor":  {"1", "https://127.0.0.1:18900#", false},
+		"another scheme":   {"1", "ftp://127.0.0.1:18900", false},
+		"no port":          {"1", "https://127.0.0.1", false},
+		"an invalid port":  {"1", "https://127.0.0.1:99999", false},
+		"port zero":        {"1", "https://127.0.0.1:0", false},
+		"an exact origin":  {"1", "https://127.0.0.1:18900", true},
+		"an IPv6 origin":   {"1", "http://[::1]:18900", true},
+	}
+	for name, testCase := range cases {
+		for _, process := range []core.Process{core.ProcessAPI, core.ProcessWorker} {
+			t.Run(name+" in "+string(process), func(t *testing.T) {
+				values := validValues()
+				values["OVC_TEST_CONTROL"] = testCase.flag
+				values["OVC_HTTP_ADDR"] = "127.0.0.1:8000"
+				values["OVC_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
+				values["OVC_FAKE_ROOM_ORIGIN"] = testCase.origin
+
+				settings, err := core.Load(lookupFrom(values), process)
+
+				if testCase.accepted {
+					if err != nil || settings.FakeRoomOrigin != testCase.origin {
+						t.Fatalf("expected acceptance, got %q, %v", settings.FakeRoomOrigin, err)
+					}
+					return
+				}
+				var settingsError *core.SettingsError
+				if !errors.As(err, &settingsError) || settingsError.Variable != "OVC_FAKE_ROOM_ORIGIN" {
+					t.Fatalf("expected a refusal naming the origin, got %v", err)
+				}
+			})
+		}
+	}
+}
+
 func TestLoadAcceptsTestControlOnLoopback(t *testing.T) {
 	values := validValues()
 	values["OVC_TEST_CONTROL"] = "1"

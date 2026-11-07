@@ -150,7 +150,8 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	if err != nil {
 		return err
 	}
-	scheduleService, err := startup.NewSchedule(logging.Logger, settings, database, source, random)
+	embed := &core.Switch{}
+	scheduleService, err := startup.NewSchedule(logging.Logger, settings, database, source, random, embed)
 	if err != nil {
 		return err
 	}
@@ -163,7 +164,11 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	if err != nil {
 		return err
 	}
-	lifecycle, err := startup.NewLifecycle(logging.Logger, settings, database, source, random, provider)
+	joinProvider, err := startup.NewJoinProvider(settings, provider)
+	if err != nil {
+		return err
+	}
+	lifecycle, err := startup.NewLifecycle(logging.Logger, settings, database, source, random, joinProvider, embed)
 	if err != nil {
 		return err
 	}
@@ -207,7 +212,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		}
 		options.Mount = testcontrol.New(testcontrol.Dependencies{
 			Logger: logging.Logger, Clock: shared, Worker: background, Sink: sink, Realtime: live.Gateway,
-			Seeder: seeder,
+			Seeder: seeder, Room: provider, Embed: embed, FramingOrigin: settings.PublicURL,
 		}).Mount
 	}
 	handler, err := api.NewHandler(options)

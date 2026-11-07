@@ -145,7 +145,7 @@ func (s *Service) tutorViews(ctx context.Context, repos repositories.Repositorie
 		lesson := Lesson{
 			ID: row.ID, Title: row.Title, Description: row.Description, StartsAt: row.StartsAt.UTC(), DurationMinutes: int(row.DurationMinutes),
 			Status: row.Status, Timezone: row.Timezone, SeriesID: row.SeriesID, Version: row.Version, CancelledAt: row.CancelledAt,
-			Audience: source.audience(), RoomOpen: row.RoomOpen, EmbedAllowed: s.deps.EmbedAllowed,
+			Audience: source.audience(), RoomOpen: row.RoomOpen, EmbedAllowed: s.deps.Embed.On(),
 		}
 		if row.OccurrenceDate.Valid {
 			occurrence := domain.DateOf(row.OccurrenceDate.Time)
@@ -272,7 +272,7 @@ func (s *Service) Lesson(ctx context.Context, viewer domain.UserID, role domain.
 		lesson = Lesson{
 			ID: row.ID, Title: row.Title, Description: row.Description, StartsAt: row.StartsAt.UTC(), DurationMinutes: int(row.DurationMinutes),
 			Status: row.Status, Timezone: row.Timezone, SeriesID: row.SeriesID, Version: row.Version, CancelledAt: row.CancelledAt,
-			Audience: audience, Tutor: tutor, RoomOpen: row.RoomOpen, EmbedAllowed: s.deps.EmbedAllowed,
+			Audience: audience, Tutor: tutor, RoomOpen: row.RoomOpen, EmbedAllowed: s.deps.Embed.On(),
 		}
 		if row.Timezone != account.Timezone {
 			other := row.Timezone

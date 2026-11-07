@@ -68,7 +68,7 @@ type Dependencies struct {
 	Keys   core.Keys
 	Logger *slog.Logger
 
-	EmbedAllowed bool
+	Embed *core.Switch
 }
 
 type Service struct {

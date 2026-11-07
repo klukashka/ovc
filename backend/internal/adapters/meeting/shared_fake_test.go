@@ -47,6 +47,16 @@ func TestSharedFakeProviderContract(t *testing.T) {
 	runProviderContract(t, func(t *testing.T) Provider { return newShared(t, testdb.New(t).Pool, testLimits(), 1) })
 }
 
+func TestNavigableFakeProviderContract(t *testing.T) {
+	runProviderContract(t, func(t *testing.T) Provider {
+		provider, err := NewNavigableFake(newShared(t, testdb.New(t).Pool, testLimits(), 1), "http://127.0.0.1:18099")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return provider
+	})
+}
+
 func TestSharedFakeInitializationAndLimits(t *testing.T) {
 	t.Run("concurrent initialization", testSharedInitialization)
 	t.Run("global room and generation bounds", func(t *testing.T) {
@@ -365,6 +375,8 @@ func TestSharedFakePrivacyAndStorage(t *testing.T) {
 	foreignErr := provider.Enter(t.Context(), otherLink, room, participant)
 	readErr := database.Pool.QueryRow(t.Context(), `SELECT digest FROM fake_meeting_links`).Scan(&storedDigest)
 	rowsErr := database.Pool.QueryRow(t.Context(), `SELECT json_agg(row_to_json(p))::text FROM fake_meeting_participants p`).Scan(&storedRows)
+	var linkRows string
+	linkRowsErr := database.Pool.QueryRow(t.Context(), `SELECT json_agg(row_to_json(l))::text FROM fake_meeting_links l`).Scan(&linkRows)
 	columnsErr := database.Pool.QueryRow(t.Context(), `SELECT count(*) FROM information_schema.columns WHERE table_name IN ('fake_meeting_links', 'fake_meeting_participants') AND column_name IN ('name', 'token', 'address')`).Scan(&columns)
 	_, databaseErr := broken.MeetingInfo(t.Context(), room)
 	_, inspectionErr := broken.InspectMeeting(t.Context(), room.ID)
@@ -374,7 +386,7 @@ func TestSharedFakePrivacyAndStorage(t *testing.T) {
 	formats := fmt.Sprintf("%s %v %+v %#v %q %x %v %#v", link, link, link, link, link, link, container, container) + string(encoded) + string(textValue) + string(containerJSON)
 	provider.logger.DebugContext(t.Context(), "redaction", "link", link, "container", container)
 
-	requireNoErrors(t, enterErr, readErr, rowsErr, columnsErr, textErr, containerErr)
+	requireNoErrors(t, enterErr, readErr, rowsErr, linkRowsErr, columnsErr, textErr, containerErr)
 	if !strings.Contains(logs.String(), `"kind":"database"`) {
 		t.Fatal("missing safe database failure diagnostic")
 	}
@@ -388,9 +400,40 @@ func TestSharedFakePrivacyAndStorage(t *testing.T) {
 		t.Fatal("stored capability schema mismatch")
 	}
 	for _, forbidden := range []string{participant.Name, room.Name, link.Reveal(), database.URL.Reveal(), hex.EncodeToString(digest[:])} {
-		if strings.Contains(logs.String(), forbidden) || strings.Contains(formats, forbidden) || strings.Contains(storedRows, forbidden) {
+		if strings.Contains(logs.String(), forbidden) || strings.Contains(formats, forbidden) {
 			t.Fatal("private provider data escaped")
 		}
+	}
+	if strings.Contains(linkRows, participant.Name) || strings.Contains(linkRows, link.Reveal()) {
+		t.Fatal("a link row holds a name or a credential")
+	}
+	for _, forbidden := range []string{room.Name, link.Reveal(), database.URL.Reveal(), hex.EncodeToString(digest[:])} {
+		if strings.Contains(storedRows, forbidden) {
+			t.Fatal("private provider data escaped into the participant rows")
+		}
+	}
+}
+
+const fakeNameMigration = 30
+
+func TestSharedFakeParticipantNameMigration(t *testing.T) {
+	database := testdb.NewMigratedTo(t, fakeNameMigration-1)
+	_, roomErr := database.Pool.Exec(t.Context(), `INSERT INTO fake_meeting_rooms (id, create_time, name) VALUES ('00000000-0000-4000-8000-000000000001', 1, 'OVC lesson')`)
+	_, participantErr := database.Pool.Exec(t.Context(), `INSERT INTO fake_meeting_participants (room_id, create_time, participant_id, role) VALUES ('00000000-0000-4000-8000-000000000001', 1, '00000000-0000-4000-8000-000000000002', 'viewer')`)
+	requireNoErrors(t, roomErr, participantErr)
+
+	upErr := database.MigrateUpTo(t.Context(), fakeNameMigration)
+	var existing string
+	existingErr := database.Pool.QueryRow(t.Context(), `SELECT display_name FROM fake_meeting_participants`).Scan(&existing)
+	_, unnamedErr := database.Pool.Exec(t.Context(), `INSERT INTO fake_meeting_participants (room_id, create_time, participant_id, role) VALUES ('00000000-0000-4000-8000-000000000001', 1, '00000000-0000-4000-8000-000000000003', 'viewer')`)
+	_, longErr := database.Pool.Exec(t.Context(), `INSERT INTO fake_meeting_participants (room_id, create_time, participant_id, role, display_name) VALUES ('00000000-0000-4000-8000-000000000001', 1, '00000000-0000-4000-8000-000000000004', 'viewer', repeat('x', 101))`)
+	downErr := database.MigrateDownTo(t.Context(), fakeNameMigration-1)
+	var kept int
+	keptErr := database.Pool.QueryRow(t.Context(), `SELECT count(*) FROM fake_meeting_participants`).Scan(&kept)
+
+	requireNoErrors(t, upErr, existingErr, downErr, keptErr)
+	if existing != "" || unnamedErr == nil || longErr == nil || kept != 1 {
+		t.Fatalf("the name column kept %q, allowed unnamed %v, allowed long %v, kept %d rows", existing, unnamedErr, longErr, kept)
 	}
 }
 
@@ -399,7 +442,7 @@ func TestSharedFakeMigrationRoundTrip(t *testing.T) {
 	_, seedErr := database.Pool.Exec(t.Context(), `INSERT INTO users (id, role, state, email, password_hash, name, language, timezone, theme, consent_version, consent_at, unverified_since, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000001', 'tutor', 'unverified', 'migration@example.test', '$argon2id$unused', 'Migration account', 'en', 'UTC', 'system', 'v1', $1, $1, $1, $1)`, time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC))
 	requireNoErrors(t, seedErr)
 
-	upErr := database.MigrateUpTo(t.Context(), 23)
+	upErr := database.MigrateUpTo(t.Context(), fakeNameMigration)
 	requireNoErrors(t, upErr)
 	provider := newShared(t, database.Pool, testLimits(), 1)
 	room := createdMeeting(t, provider)
@@ -407,7 +450,7 @@ func TestSharedFakeMigrationRoundTrip(t *testing.T) {
 	downErr := database.MigrateDownTo(t.Context(), 22)
 	var removed bool
 	removedErr := database.Pool.QueryRow(t.Context(), `SELECT to_regclass('public.fake_meeting_state') IS NULL`).Scan(&removed)
-	secondUp := database.MigrateUpTo(t.Context(), 23)
+	secondUp := database.MigrateUpTo(t.Context(), fakeNameMigration)
 	var users int
 	preservedErr := database.Pool.QueryRow(t.Context(), `SELECT count(*) FROM users WHERE email = 'migration@example.test'`).Scan(&users)
 

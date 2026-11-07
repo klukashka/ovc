@@ -14,6 +14,7 @@ import (
 
 	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/adapters/mail"
+	"ovc/backend/internal/adapters/meeting"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/realtime"
@@ -31,25 +32,34 @@ const (
 var errTrailingData = errors.New("trailing data after the JSON body")
 
 type Routes struct {
-	logger   *slog.Logger
-	clock    *clock.Shared
-	worker   *worker.Worker
-	sink     *mail.Sink
-	realtime *realtime.Gateway
-	seeder   *accounts.Seeder
+	logger        *slog.Logger
+	clock         *clock.Shared
+	worker        *worker.Worker
+	sink          *mail.Sink
+	realtime      *realtime.Gateway
+	seeder        *accounts.Seeder
+	room          *meeting.SharedFake
+	embed         *core.Switch
+	framingOrigin string
 }
 
 type Dependencies struct {
-	Logger   *slog.Logger
-	Clock    *clock.Shared
-	Worker   *worker.Worker
-	Sink     *mail.Sink
-	Realtime *realtime.Gateway
-	Seeder   *accounts.Seeder
+	Logger        *slog.Logger
+	Clock         *clock.Shared
+	Worker        *worker.Worker
+	Sink          *mail.Sink
+	Realtime      *realtime.Gateway
+	Seeder        *accounts.Seeder
+	Room          *meeting.SharedFake
+	Embed         *core.Switch
+	FramingOrigin string
 }
 
 func New(deps Dependencies) *Routes {
-	return &Routes{logger: deps.Logger, clock: deps.Clock, worker: deps.Worker, sink: deps.Sink, realtime: deps.Realtime, seeder: deps.Seeder}
+	return &Routes{
+		logger: deps.Logger, clock: deps.Clock, worker: deps.Worker, sink: deps.Sink, realtime: deps.Realtime, seeder: deps.Seeder,
+		room: deps.Room, embed: deps.Embed, framingOrigin: deps.FramingOrigin,
+	}
 }
 
 func (routes *Routes) Mount(mux *http.ServeMux) {
@@ -61,6 +71,12 @@ func (routes *Routes) Mount(mux *http.ServeMux) {
 	if routes.realtime != nil {
 		mux.Handle("POST /__test__/presence", routes.guard(routes.presence))
 		mux.Handle("POST /__test__/realtime/close", routes.guard(routes.closeSockets))
+	}
+	if routes.room != nil {
+		routes.mountFakeRoom(mux)
+	}
+	if routes.embed != nil {
+		mux.Handle("POST /__test__/settings/embed", routes.guard(routes.setEmbed))
 	}
 	if routes.clock == nil {
 		return
@@ -334,7 +350,9 @@ func (routes *Routes) fail(ctx context.Context, w http.ResponseWriter, err error
 		writeError(ctx, routes.logger, w, domain.ErrorValidationFailed, []schemas.FieldError{{Path: "clock", Code: "not_set"}})
 		return
 	}
-	routes.logger.LogAttrs(ctx, slog.LevelError, "testcontrol.failed", slog.String("kind", "internal"))
+	if !errors.Is(err, context.Canceled) {
+		routes.logger.LogAttrs(ctx, slog.LevelError, "testcontrol.failed", slog.String("kind", "internal"))
+	}
 	writeError(ctx, routes.logger, w, domain.ErrorInternal, nil)
 }
 
@@ -365,7 +383,7 @@ func isLoopbackHost(hostHeader string) bool {
 	return loopbackHosts[host]
 }
 
-func decode[T clockRequest | mailRequest | presenceRequest | closeRequest | seedAccountRequest | seedSessionRequest | struct{}](logger *slog.Logger, w http.ResponseWriter, r *http.Request, target *T) bool {
+func decode[T clockRequest | mailRequest | presenceRequest | closeRequest | seedAccountRequest | seedSessionRequest | fakeRoomRequest | availabilityRequest | embedRequest | struct{}](logger *slog.Logger, w http.ResponseWriter, r *http.Request, target *T) bool {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	err := decoder.Decode(target)
@@ -401,7 +419,7 @@ func trailingDataError(decoder *json.Decoder) error {
 	return err
 }
 
-func writeJSON[T clockResponse | tickResponse | mailResponse | presenceResponse | closeResponse | seedAccountResponse | schemas.AccessToken](ctx context.Context, logger *slog.Logger, w http.ResponseWriter, body T) {
+func writeJSON[T clockResponse | tickResponse | mailResponse | presenceResponse | closeResponse | seedAccountResponse | fakeRoomResponse | availabilityResponse | embedResponse | schemas.AccessToken](ctx context.Context, logger *slog.Logger, w http.ResponseWriter, body T) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		panic("a test control response could not be encoded")

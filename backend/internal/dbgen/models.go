@@ -153,6 +153,7 @@ type FakeMeetingParticipant struct {
 	ParticipantID pgtype.UUID
 	Role          string
 	Present       bool
+	DisplayName   string
 }
 
 type FakeMeetingRoom struct {

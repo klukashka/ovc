@@ -50,10 +50,8 @@ func (f *SharedFake) JoinLink(ctx context.Context, requested domain.Meeting, par
 		}
 		address := sharedLinkPrefix + hex.EncodeToString(state.namespace) + "/" + strconv.FormatInt(state.linkSequence+1, 10) + "/" + hex.EncodeToString(nonce[:])
 		digest := sha256.Sum256([]byte(address))
-		if !exists {
-			if _, err := tx.Exec(ctx, `INSERT INTO fake_meeting_participants (room_id, create_time, participant_id, role) VALUES ($1,$2,$3,$4)`, [16]byte(requested.ID), requested.CreateTime, [16]byte(participant.ID), participant.Role); err != nil {
-				return err
-			}
+		if _, err := tx.Exec(ctx, `INSERT INTO fake_meeting_participants (room_id, create_time, participant_id, role, display_name) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (room_id, participant_id) DO UPDATE SET display_name = EXCLUDED.display_name`, [16]byte(requested.ID), requested.CreateTime, [16]byte(participant.ID), participant.Role, participant.Name); err != nil {
+			return err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO fake_meeting_links (digest, room_id, create_time, participant_id, role) VALUES ($1,$2,$3,$4,$5)`, digest[:], [16]byte(requested.ID), requested.CreateTime, [16]byte(participant.ID), participant.Role); err != nil {
 			return err

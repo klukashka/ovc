@@ -50,7 +50,7 @@ type LifecycleDependencies struct {
 	Keys         core.Keys
 	Logger       *slog.Logger
 	Enabled      bool
-	EmbedAllowed bool
+	Embed        *core.Switch
 	ProviderCall time.Duration
 	HintPermits  int
 	HintWait     time.Duration
@@ -434,7 +434,7 @@ func (l *Lifecycle) tutorJoin(ctx context.Context, actor Actor, id domain.Lesson
 	if err != nil {
 		return JoinTicket{}, err
 	}
-	return JoinTicket{Link: link, EmbedAllowed: l.deps.EmbedAllowed}, nil
+	return JoinTicket{Link: link, EmbedAllowed: l.deps.Embed.On()}, nil
 }
 
 func (l *Lifecycle) participant(ctx context.Context, room Room, actor Actor, guard RoomGuard) (domain.ParticipantID, error) {
@@ -560,7 +560,7 @@ func (l *Lifecycle) studentJoin(ctx context.Context, actor Actor, id domain.Less
 	if err := l.release(ctx, room, guard, roster); err != nil {
 		return JoinTicket{}, err
 	}
-	return JoinTicket{Link: link, EmbedAllowed: l.deps.EmbedAllowed}, nil
+	return JoinTicket{Link: link, EmbedAllowed: l.deps.Embed.On()}, nil
 }
 
 func (l *Lifecycle) confirmStudentRoom(ctx context.Context, room Room) error {
