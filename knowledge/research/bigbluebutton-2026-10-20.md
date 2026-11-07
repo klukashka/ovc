@@ -2,6 +2,8 @@
 
 Evidence for [ADR-0004](../../docs/decisions/0004-bigbluebutton-primary-provider.md) and the [video specification](../specs/realtime-and-video.md#video). Facts are marked **verified** (read in the official documentation on the date above) or **unverified** (believed, to be confirmed by a probe in [roadmap slice 7](../../docs/roadmap.md#slice-7-video-lessons) before the adapter relies on them).
 
+The [adapter facts checked on 2026-11-07](bigbluebutton-api-2026-11-07.md) add the exact protocol details the HTTP adapter relies on.
+
 ## Sources
 
 - [API reference](https://docs.bigbluebutton.org/development/api/), version 4.0 selected.

@@ -123,6 +123,8 @@ The files service owns `upload.accounting.cutover` (INFO), emitted for a student
 
 From slice 7 L1, `internal/adapters/meeting` owns `meeting.provider.completed` at DEBUG, with fixed `operation` and `outcome` fields, and `meeting.provider.failed` with fixed `operation` and error `kind`. Cancellation is DEBUG; other provider failures are WARNING. A successful `MeetingInfo` poll never logs at INFO. The adapter receives a bound logger and does not configure a sink. No provider identifiers, participant names, addresses, tokens, raw errors or meeting titles are included in these events. Later meeting services own business authorization, lesson-live and room lifecycle events; the fake does not emit those outcomes. Tests inspect real structured output for both event shape and absence of sensitive values.
 
+The BigBlueButton adapter uses the same events and operations. Its additional error kinds are `malformed_response`, `oversized_response`, `wrong_meeting`, `redirected` and `rejected`. A failed close of a response body emits DEBUG `meeting.provider.body_close_failed` with the fixed `kind` `transport`, because the call's outcome is already decided. It logs no URL, checksum, response body, provider message, identifier or name, and returns only fixed failures because transport errors contain the signed URL.
+
 The provider-generation discovery operation uses the fixed operation value `inspect` with the same DEBUG success, DEBUG cancellation and WARNING failure convention. Its result and diagnostics include no credential, participant name, room title, provider identifier or raw database error. Business recovery and authorization outcomes remain owned by later services; inspection logs do not certify either outcome.
 
 ## Meeting cleanup terminal diagnostics

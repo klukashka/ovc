@@ -35,6 +35,8 @@ type ProviderCreateTime int64
 
 type ParticipantID [16]byte
 
+func (id ParticipantID) String() string { return formatUUID(id) }
+
 const ParticipantNameMaxRunes = 100
 
 type ParticipantRole string
@@ -56,6 +58,8 @@ type Meeting struct {
 	ID         ProviderMeetingID
 	Name       string
 	CreateTime ProviderCreateTime
+	RoutingKey MeetingRoutingKey
+	LessonID   LessonID
 }
 
 type Participant struct {
@@ -73,6 +77,8 @@ type MeetingInfo struct {
 type MeetingID [16]byte
 
 type MeetingRoutingKey [16]byte
+
+func (key MeetingRoutingKey) String() string { return formatUUID(key) }
 
 type MeetingProvider string
 

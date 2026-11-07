@@ -377,7 +377,7 @@ A capacity refusal answers `ErrAdmissionCapacity` before any provider call and l
 - **Meeting identifiers** are random, server-generated values, never derived from client input.
 - **Checksums** are computed only by the backend with SHA-256 or stronger. The server's `supportedChecksumAlgorithms` excludes SHA-1, and the shared secret never leaves the backend.
 - **`meta_*` values** never contain a secret or personal data, because meeting users may see them.
-- **Contract tests:** the fake runs in every test run. The BigBlueButton adapter runs the same contract tests only against the remote test server, with an opt-in command; a run that was not performed is reported as `unverified`. In every test run, the BigBlueButton adapter is also tested against an in-process `httptest.Server` that answers as the BigBlueButton API and captures each request: in the MVP it asserts that `create` carries `record=false`, `autoStartRecording=false` and `allowStartStopRecording=false`, carries `meetingEndedURL` and no `meta_bbb-recording-ready-url`, and is signed with an accepted checksum; the opt-in remote run also asserts that `getMeetingInfo` reports recording off.
+- **Contract tests:** the fake runs in every test run. In every test run the BigBlueButton adapter runs the same contract tests against an in-process TLS `httptest.Server` that implements the BigBlueButton API and captures each request; that is local protocol evidence only. The remote test server runs them only through an opt-in command, and a run that was not performed is reported as `unverified`. The in-process run also proves: in the MVP it asserts that `create` carries `record=false`, `autoStartRecording=false` and `allowStartStopRecording=false`, carries `meetingEndedURL` and no `meta_bbb-recording-ready-url`, and is signed with an accepted checksum; the opt-in remote run also asserts that `getMeetingInfo` reports recording off.
 
 #### Constructor-injected cleanup executor
 
@@ -386,6 +386,19 @@ The meetings service executes an existing pending cleanup cycle through the real
 Only returned evidence can settle after confirmed absence or successful End. Started, uncertain and legacy-uncertain evidence yields unresolved even after ending a discovered room. The result carries the sampled evidence revision to atomic lease-aware completion, so an acknowledgement arriving during provider work cannot be overwritten. Provider failures and cancellation retain the existing eight-attempt cycle budget. No provider wait holds a business transaction or connection. Worker composition in tests uses four provider slots and the existing 30-second effect deadline.
 
 The cleanup executor is registered in production composition as described below. The authorized API is implemented as [the join flow](#join-flow) describes; the browser room, UI and remote-provider evidence remain pending under the approved local sequence. It makes no remote erasure guarantee.
+
+#### BigBlueButton adapter (prepared locally)
+
+`meeting.BigBlueButton` implements the provider interface with the standard library only, against the [dated protocol facts](../research/bigbluebutton-api-2026-11-07.md). It is built only by `NewBigBlueButton` from a typed configuration: an HTTPS endpoint without credentials, query or fragment, the HTTPS public OVC address, a redacting shared secret of at least 32 bytes, a SHA-256, SHA-384 or SHA-512 checksum algorithm, trust roots and a bound logger. SHA-1 cannot be selected. **No process can select it:** `OVC_MEETING_PROVIDER=bbb` is refused at start-up, `OVC_BBB_*` are not read, and a test proves no production code constructs it. Activation requires the approved remote probe.
+
+- **Transport:** normal sockets with the injected roots and TLS 1.2 or newer, HTTP/1.1, no proxy, no compression, no connection reuse, so the transport can never replay a Create. A redirect is refused and never followed.
+- **Bounds:** each interface call has one 15-second deadline inside the caller's, covering connection, all its requests and their bodies. A response above 1 MiB is refused. Caller cancellation returns the caller's error; the adapter's own deadline returns `unavailable`.
+- **Requests:** query keys are sorted and values use the encoding the [server rebuilds](../research/bigbluebutton-api-2026-11-07.md#facts-read-from-source-only). `create` sends the room name, `record=false`, `autoStartRecording=false`, `allowStartStopRecording=false`, `meetingExpireIfNoUserJoinedInMinutes=10`, `endWhenNoModerator=true`, `endWhenNoModeratorDelayInMinutes=15`, `logoutURL` to the lesson page and `meetingEndedURL` to `/api/v1/integrations/bbb/{routing_key}/ended`. It sends no `meta_*` value, recording-ready callback or presentation. The coordinator supplies the routing key and lesson, and the constant room name, which must have 2 to 64 characters.
+- **Responses:** strict XML with one `response` root, preceded only by whitespace or an XML declaration and followed only by whitespace; each field the adapter uses appears at most once. Failures are typed and carry no provider text: `unavailable` (transport, non-200 or deadline), `redirected`, `oversized_response`, `malformed_response`, `wrong_meeting` (a different echoed identifier), `rejected` (any other provider refusal), `conflict` (`idNotUnique`, or an ended or different generation) and `not_found`.
+- **Generations:** `getMeetingInfo` with `notFound`, a positive `endTime` or `hasBeenForciblyEnded=true` reports absence. `MeetingInfo`, `JoinLink` and `EndMeeting` compare `createTime`. `end` has no generation parameter, so End reads first and sends nothing for a different generation: this check-then-act relies on the one Create per provider identifier of [ADR-0020](../../docs/decisions/0020-durable-meeting-recovery.md) and is not atomic. A non-zero create time passed to Create sends no `create`. A repeated `create` answers the existing generation even with a differing name or callback address, because the server does not compare them; idempotency here is by identifier only, unlike the fakes' refusal of inconsistent input.
+- **End:** after `sentEndMeetingRequest` the adapter reads up to five times, one second apart. It returns success only on observed absence, `conflict` when another generation appears, and `unavailable` when the room remains, so cleanup retries under its existing budget and restart refuses.
+- **Join links:** issued only after reading the exact current generation, built from the configured endpoint with `meetingID`, `createTime`, `fullName`, `role` and `userID`, and returned only as a redacting `JoinLink`. No provider-supplied address is used.
+- **Tests:** the shared provider contract and transport checks run on a real in-process TLS server with injected roots. It parses and checks each request's signature and implements room state. Opt-in remote commands are not prepared yet; every remote criterion stays `unverified`.
 
 ### Join flow
 
@@ -440,7 +453,7 @@ sequenceDiagram
   - `meetingExpireIfNoUserJoinedInMinutes=10`, and `endWhenNoModerator` with a 15-minute delay;
   - `logoutURL` back to the lesson page;
   - the recording-ready callback URL (after the MVP) and `meetingEndedURL`, each with the per-meeting routing key in its path;
-  - the presentation, when the lesson has attached PDF materials, from the first of them in attachment order, as a signed storage URL valid for 5 minutes (the provider fetches it at creation).
+  - the presentation (with the library integration in slice 8; the MVP adapter sends none), when the lesson has attached PDF materials, from the first of them in attachment order, as a signed storage URL valid for 5 minutes (the provider fetches it at creation).
 
   The routing key is not a secret, because `meta_*` values may be visible to participants.
 
@@ -453,7 +466,7 @@ sequenceDiagram
 - **The iframe** carries `allow="camera; microphone; display-capture; fullscreen; autoplay"` and a title naming the lesson.
 - **`embed_allowed`:**
   - comes from the `OVC_BBB_EMBED_ENABLED` setting and is returned both by `GET /lessons/{id}` and by the join response, so the page knows it before the click;
-  - it stays false until the slice 7 probe records success in the [research file](../research/bigbluebutton-2026-10-20.md#embedding-the-client); until the adapter lands the startup composition starts it false and the setting is not read;
+  - it stays false until the slice 7 probe records success in the [research file](../research/bigbluebutton-2026-10-20.md#embedding-the-client); until the remote probe activates the adapter the startup composition starts it false and the setting is not read;
   - the end-to-end harness can override it per test deployment through `POST /__test__/settings/embed`, which exists only with `OVC_TEST_CONTROL=1`.
 - **Client join states** are in [the lesson page](../design/web/pages.md#lesson).
 
@@ -555,7 +568,7 @@ stateDiagram-v2
 
 ### Configuration
 
-`OVC_MEETING_PROVIDER` is `bbb` or `fake`. `OVC_BBB_EMBED_ENABLED` gates embedding. The other variables are in [configuration](../architecture/detailed.md#configuration). There is no local BigBlueButton on developer machines; live checks use a remote test server, and end-to-end tests use the fake provider's test room ([development](../../docs/development.md#end-to-end-test-harness)).
+`OVC_MEETING_PROVIDER` accepts only `fake`; `bbb` stays refused until the remote probe passes. `OVC_BBB_EMBED_ENABLED` gates embedding. The other variables are in [configuration](../architecture/detailed.md#configuration). There is no local BigBlueButton on developer machines; live checks use a remote test server, and end-to-end tests use the fake provider's test room ([development](../../docs/development.md#end-to-end-test-harness)).
 
 ### Local recovery process composition
 

@@ -91,6 +91,26 @@ func TestLoadRefusesInvalidValues(t *testing.T) {
 	}
 }
 
+func TestLoadRefusesTheBigBlueButtonProviderInEveryProcess(t *testing.T) {
+	for name, process := range map[string]core.Process{"api": core.ProcessAPI, "worker": core.ProcessWorker, "admin": core.ProcessAdmin} {
+		t.Run(name, func(t *testing.T) {
+			lookup := lookupFrom(map[string]string{
+				"OVC_DATABASE_URL":     "postgres://x@127.0.0.1/a",
+				"OVC_PUBLIC_URL":       "https://ovc.example",
+				"OVC_JWT_SECRET":       sentinel("jwt-signing-material-0123456789"),
+				"OVC_MEETING_PROVIDER": "bbb",
+			})
+
+			_, err := core.Load(lookup, process)
+
+			var settingsError *core.SettingsError
+			if !errors.As(err, &settingsError) || !strings.Contains(err.Error(), "OVC_MEETING_PROVIDER") {
+				t.Fatalf("expected a refusal naming the provider setting, got %v", err)
+			}
+		})
+	}
+}
+
 func TestLoadRefusesUnsafeTestControlCombinations(t *testing.T) {
 	cases := map[string]map[string]string{
 		"test clock without the flag":      {"OVC_CLOCK": "test"},

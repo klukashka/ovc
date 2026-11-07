@@ -202,6 +202,16 @@ func (f *Fake) InspectMeeting(ctx context.Context, id domain.ProviderMeetingID) 
 	return fakeRoomInfo(room), nil
 }
 
+func (f *Fake) Requested(id domain.ProviderMeetingID) (domain.Meeting, bool) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	room, found := f.meetings[id]
+	if !found {
+		return domain.Meeting{}, false
+	}
+	return room.meeting, true
+}
+
 func fakeRoomInfo(room *fakeMeeting) domain.MeetingInfo {
 	info := domain.MeetingInfo{Status: domain.MeetingCreated, CreateTime: room.meeting.CreateTime}
 	for _, participant := range room.participants {

@@ -255,7 +255,7 @@ func (r *Rooms) insert(ctx context.Context, repos repositories.Repositories, sub
 		return ErrProviderUnavailable
 	}
 	plan.action, plan.attempt = roomDispatch, ids.attempt
-	plan.room = Room{Identity: identity, Meeting: domain.Meeting{ID: ids.provider, Name: domain.MeetingRoomName}}
+	plan.room = Room{Identity: identity, Meeting: domain.Meeting{ID: ids.provider, Name: domain.MeetingRoomName, RoutingKey: ids.routing, LessonID: subject.Lesson}}
 	return nil
 }
 

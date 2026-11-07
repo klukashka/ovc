@@ -44,6 +44,11 @@ const (
 	FailureDatabase     Failure = "database"
 	FailureClock        Failure = "clock"
 	FailureRandomness   Failure = "randomness"
+	FailureMalformed    Failure = "malformed_response"
+	FailureOversized    Failure = "oversized_response"
+	FailureMismatch     Failure = "wrong_meeting"
+	FailureRedirected   Failure = "redirected"
+	FailureRejected     Failure = "rejected"
 )
 
 func (failure Failure) Error() string {

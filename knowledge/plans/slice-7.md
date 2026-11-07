@@ -106,3 +106,7 @@ The integrated prerequisite supplies atomic lease-fenced cleanup outcomes and ex
 ### Cleanup interleaving integration disposition
 
 The local cleanup reinspection follow-up merged as `05a79d2207c1573617f9ba4838ae7325b0f2280a` from `5d3bfe31965a61cd861c3a10704c06dce41ea41b` under the [exact owner exception](../../docs/decisions/0018-targeted-checks-and-merge-gate.md#one-change-exception-for-cleanup-interleaving-tests). Its 29 successful commands and 978/979 E2E are not a passing full gate. The password-reset timeout and unknown diagnostics remain unresolved; no repeat or ordinary application finish occurred. The [mandatory disposition record](slice-7-interleavings-known-failure-exception.md) requires independent standard/security review and an ordinary documentation gate/finish before further implementation. The remaining BBB-specific coverage limitation is retained; this integration does not close the slice or activate BBB.
+
+### BigBlueButton adapter prepared locally
+
+The [HTTP adapter](../specs/realtime-and-video.md#bigbluebutton-adapter-prepared-locally) exists behind the provider interface and passes the shared contract against a local TLS protocol fake. `bbb` remains refused at start-up. Real BBB acceptance remains unverified until the approved remote probe.

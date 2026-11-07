@@ -194,6 +194,7 @@ func TestMeetingCreateOwnership(t *testing.T) {
 	t.Run("a cancel during the reserving transaction burns no slot", testRoomCancelDuringReservation)
 	t.Run("a failed closure behind a refused publication is reported", testRoomFailedRetireReported)
 	t.Run("the room name is the neutral constant", testRoomNeutralName)
+	t.Run("Create carries the meeting's own routing key and lesson", testRoomCallbackIdentity)
 	t.Run("a budget too short for Create reserves nothing", testRoomBudgetTooShort)
 	t.Run("a clock stepped back cannot strand a close", testRoomCloseAfterClockStepBack)
 	t.Run("the scanner counts only rows it closed", testRoomScannerCountsItsCloses)
@@ -760,6 +761,24 @@ func testRoomNeutralName(t *testing.T) {
 	meetingRequire(t, f.pool.QueryRow(t.Context(), "SELECT name FROM fake_meeting_rooms").Scan(&name))
 	if name != domain.MeetingRoomName {
 		t.Fatalf("the provider received the room name %q", name)
+	}
+}
+
+func testRoomCallbackIdentity(t *testing.T) {
+	t.Parallel()
+	f := newRoomFixture(t)
+	provider, err := meeting.NewFake(f.clock, core.CryptoRandom(), f.logger, meeting.DefaultFakeLimits())
+	meetingRequire(t, err)
+	rooms := f.newRooms(meetings.DefaultRoomTiming(), core.CryptoRandom(), provider)
+
+	room, err := rooms.Ensure(t.Context(), f.guard, publishNothing)
+
+	meetingRequire(t, err)
+	var routingKey string
+	meetingRequire(t, f.pool.QueryRow(t.Context(), "SELECT routing_key::text FROM meetings").Scan(&routingKey))
+	requested, found := provider.Requested(room.Identity.ProviderMeetingID)
+	if !found || requested.RoutingKey.String() != routingKey || requested.LessonID != f.lesson {
+		t.Fatal("Create did not receive the persisted routing key and the lesson")
 	}
 }
 

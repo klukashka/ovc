@@ -43,7 +43,7 @@ func configuredFake(t *testing.T, clock Clock, random io.Reader, logger *slog.Lo
 }
 
 func meetingInput() domain.Meeting {
-	return domain.Meeting{ID: domain.ProviderMeetingID{1}, Name: "Private lesson title"}
+	return domain.Meeting{ID: domain.ProviderMeetingID{1}, Name: "Private lesson title", RoutingKey: domain.MeetingRoutingKey{3}, LessonID: domain.LessonID{4}}
 }
 
 func testParticipant() domain.Participant {
