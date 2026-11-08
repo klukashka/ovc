@@ -13,7 +13,7 @@ export interface UpcomingLessons {
   readonly query: UseQueryResult<Calendar>;
 }
 
-export function useUpcomingLessons(me: Me, tutor: string | null): UpcomingLessons {
+export function useUpcomingLessons(me: Me, tutor: string | null, enabled = true): UpcomingLessons {
   const client = useApiClient();
   const today = useLocalToday(me.timezone);
   const range = {
@@ -23,6 +23,7 @@ export function useUpcomingLessons(me: Me, tutor: string | null): UpcomingLesson
   const query = useQuery({
     queryKey: calendarRangeKey(range, tutor),
     queryFn: () => fetchCalendar(client, range, tutor),
+    enabled,
     retry: false,
   });
   return { today, query };

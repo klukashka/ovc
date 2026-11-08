@@ -25,3 +25,17 @@ Two whole `pnpm e2e` runs of the step D2a working tree showed four WebKit failur
 | `today.spec.ts` › a new tutor sees the three undone checklist steps | WebKit | before the test body | `browserContext.newPage: Target page, context or browser has been closed`, only when it ran right after the upload test above | 15 of 15 passed alone |
 
 Pairing check: the upload test followed by the existing `smoke.spec.ts` in one WebKit worker (`--workers=1 --repeat-each=8`) failed the upload test and then nine smoke tests with the same closed-browser error. Observed order, not a proven mechanism: after the upload test fails or times out, the tests that follow it fail to open a page. The cause predates step D2a and is not established; the owner chose on 2026-11-08 to investigate and fix it in a separate change after step D2.
+
+## The first merge gate of step D2a
+
+The first gate of step D2a (commit `1b6b99f` on base `dc5ab40`, tested tree `d20806b`) failed on one WebKit test on 2026-11-08; the owner approved a rerun of the same tree, which passed, and the change merged.
+
+| Test | Browser | Phase | Evidence | Repeat alone |
+|---|---|---|---|---|
+| `message-attachments.spec.ts` › pilot-3 › steps 14–15 Anna unsubscribes through the digest and receives no new digest while offline | WebKit | journey | The message send answered `201`, then waiting for the composer to become writable again ran out the 30 s test timeout; no `browser-diagnostics.json` was kept because no console or HTTP error was recorded, so the evidence is the gate's `failed-tests.txt` and its end-to-end log | 10 of 10 passed; the whole `pnpm e2e` on the same tree before the gate passed 1374 of 1374 |
+
+## Failures seen while preparing step D2b (not in a merge gate)
+
+| Test | Browser | Phase | Evidence | Repeat alone |
+|---|---|---|---|---|
+| `message-attachments.spec.ts` › pilot-3 › steps 8–11 Anna closes her tabs and receives one digest for one unread group message without a duplicate | WebKit | journey, route `messages` | Three HTTP errors with their console errors on the Messages page, the same signature as the step L1 entry above | 10 of 10 passed |

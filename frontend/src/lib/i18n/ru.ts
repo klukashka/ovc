@@ -75,6 +75,20 @@ export const ru = {
     checklistDone: 'выполнено',
     checklistNotDone: 'ещё не выполнено',
   },
+  home: {
+    aside: 'Неделя и мои репетиторы',
+    summary:
+      '{count, plural, =0 {Сегодня уроков нет} one {Сегодня # урок} few {Сегодня # урока} many {Сегодня # уроков} other {Сегодня # урока}}',
+    filter: 'Репетитор',
+    allTutors: 'Все репетиторы',
+    lessonsWaitForTutors: 'Уроки появятся, когда загрузится список репетиторов.',
+    tutorUnavailable: 'Этот репетитор недоступен.',
+    nextLesson: 'Следующий урок',
+    noNextLesson: 'Урок не запланирован',
+    nextSevenDays: 'Ближайшие семь дней',
+    noLessonsThisWeek: 'На ближайшие семь дней уроков нет',
+    openSchedule: 'Открыть расписание',
+  },
   page: {
     signIn: 'Вход',
     signUp: 'Регистрация',

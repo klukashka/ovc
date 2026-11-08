@@ -112,7 +112,7 @@ Each change gets one standard reviewer and one security-profile reviewer, dispat
 - The filter applies to the next lesson and the next seven days, never to My tutors.
 - A value that `/calendar` answers with `404` or with `422` at `query.tutor`, or that no current tutor holds, shows the notice "This tutor is not available." with the link "All tutors", and no lesson. It offers no Retry and never repeats the value.
 
-**Next lesson** (`features/home/NextLesson.tsx`).
+**Next lesson** (`features/home/NextLesson.tsx`; as built, it and the next seven days share `features/home/HomeLessons.tsx`).
 
 - One calendar query covers the next lesson and the next seven days: from local midnight today to 62 days ahead, with `tutor` when filtered.
 - The next lesson is the first lesson that is not cancelled and has not ended. It shows the tutor label, the title, the date and time, and a link to the lesson page.
@@ -178,12 +178,13 @@ All end-to-end tests run in Chromium, Firefox and WebKit, except where a test ne
 
 1. `frontend/e2e/home.spec.ts` (new) › "a student with two tutors sees each lesson on Home with its tutor label": the next lesson and the next seven days show both tutors' lessons, each with its tutor's name and colour dot.
 2. › "filtering by one tutor shows only that tutor's lessons and keeps My tutors whole". `?tutor=` is in the address, and Back restores All tutors.
-3. › "an out-of-scope tutor in the address shows that the tutor is not available": a relationship of another student (`404`) and a malformed value (`422`) each show the notice with "All tutors", no lesson and not the value, after My tutors has loaded.
+3. › "a tutor value no current tutor holds shows that the tutor is not available and never reaches the calendar": a relationship of another student and a malformed value each show the notice with "All tutors", no lesson and not the value, and a passive request listener proves no calendar request carries either value (as built: the page refuses a value no current tutor holds before asking the calendar, so the server's `404`/`422` path is reached only in a race and is recorded as a known limitation).
 4. › "a cancelled lesson is left out of the next seven days and the next lesson".
 5. › "an unconfirmed student's Home shows the provisional link's lesson".
 6. › "a reclaim_pending link's lessons are not shown on Home": the test goes to `/home` explicitly (sign-in lands on `/reclaim` while a choice is pending), waits for the other link's lesson or the settled empty state, then asserts the reclaim-pending link's lesson is absent; the reclaim-pending relationship's own identifier as `?tutor=` shows the notice.
 7. › "a removed group member's open Home drops the group lesson without reloading", and › "an ended relationship's group lesson leaves an open Home": the ending tutor's group has a scheduled group lesson; the student sees it, the tutor ends the relationship, and it disappears with no new document load. (A one-to-one lesson would only turn cancelled and reach the student through a `lesson` frame, which proves nothing new.)
-7a. › "an account change clears Home": student A's Home with `?tutor=` shown, then sign out and in as student B; B's own state settles first, then A's lessons and tutor are absent and A's `tutor` value shows the notice.
+7a. › "an account change inside the app clears Home": student A's Home, unfiltered and then filtered, then sign out and in as student B in the same document; a passive observer proves A's lessons never appear while B's Home settles, B's own state shows, and the document never reloads. A previous account's `tutor` value is covered by criterion 3, which uses another student's relationship.
+7c. Focus: › "focus moves to the lesson that takes the place of a cancelled focused next lesson", the removed-member test asserting the page heading is focused, and › "focus moves to the page heading when the filter disappears with focus on it".
 7b. › "Home makes only its listed requests", counted after it settles as on Today.
 8. › "a lesson title, group name and tutor name with markup show as text on Home", including the filter's button names.
 9. Existing specs that visit Home pass unchanged in meaning: `join-requests.spec.ts`, `invitations.spec.ts`, `notifications.spec.ts`, `session.spec.ts` and `reclaim.spec.ts`.

@@ -103,7 +103,7 @@ const statusText: Readonly<Record<LessonStatus, string>> = {
   cancelled: 'text-text-muted',
 };
 
-function TutorLabel({ item }: { readonly item: CalendarItem }): ReactElement | null {
+export function TutorLabel({ item }: { readonly item: CalendarItem }): ReactElement | null {
   if (item.tutor === null) {
     return null;
   }

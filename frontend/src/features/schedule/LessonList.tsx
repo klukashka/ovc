@@ -9,7 +9,7 @@ import type { Me } from '../../lib/api/session.ts';
 import { localDateOf } from '../../lib/time/localDates.ts';
 import type { CalendarItem } from './api.ts';
 import { formatClock, formatDay } from './calendarFormat.ts';
-import { LessonStatusWord, LessonTitle, audienceLabel } from './LessonParts.tsx';
+import { LessonStatusWord, LessonTitle, TutorLabel, audienceLabel } from './LessonParts.tsx';
 
 export function lessonWhen(t: TFunction, item: CalendarItem, me: Me): string {
   const day = formatDay(localDateOf(Date.parse(item.starts_at), me.timezone), me.language);
@@ -38,12 +38,14 @@ export function LessonList({
   label,
   me,
   showAudience,
+  showTutor = false,
   listRef,
 }: {
   readonly items: readonly CalendarItem[];
   readonly label: string;
   readonly me: Me;
   readonly showAudience: boolean;
+  readonly showTutor?: boolean;
   readonly listRef?: RefObject<HTMLUListElement | null>;
 }): ReactElement {
   const { t } = useTranslation();
@@ -73,6 +75,7 @@ export function LessonList({
                   {audienceLabel(t, item.audience)}
                 </span>
               ) : null}
+              {showTutor ? <TutorLabel item={item} /> : null}
               <LessonStatusWord lesson={item} />
             </Link>
           </li>
