@@ -2,6 +2,7 @@ import { type ReactElement, type RefObject, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ActionButton, errorMessage, fieldMessage, quietButtonClass } from '../../components/ui/Form.tsx';
+import { AttachIcon } from '../../components/ui/icons.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import type { UploadItem } from './UploadQueue.ts';
 import type { ChatTexts } from './translations.ts';
@@ -19,6 +20,9 @@ function UploadFailure({ item, texts }: { readonly item: UploadItem; readonly te
     </p>
   );
 }
+
+const attachButtonClass =
+  'inline-flex size-11 items-center justify-center rounded-md border border-border-strong text-icon hover:bg-surface aria-disabled:opacity-60 desktop:pointer-fine:size-10';
 
 export function UploadComposer({
   items,
@@ -67,15 +71,16 @@ export function UploadComposer({
           />
           <ActionButton
             type="button"
-            className={quietButtonClass}
+            className={attachButtonClass}
             busy={busy}
             unavailable={unavailable}
             unavailableReason={reason}
+            label={texts.attach}
             onClick={() => {
               if (!busy && !unavailable) picker.current?.click();
             }}
           >
-            {texts.attach}
+            <AttachIcon />
           </ActionButton>
         </>
       ) : (

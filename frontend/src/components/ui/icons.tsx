@@ -188,3 +188,11 @@ export function DoorIcon(props: IconProps): ReactElement {
     </Outline>
   );
 }
+
+export function AttachIcon(props: IconProps): ReactElement {
+  return (
+    <Outline {...props}>
+      <path d="M13.5 7.5l-5.6 5.6a2.5 2.5 0 01-3.5-3.5l6-6a1.75 1.75 0 012.5 2.5l-6 6a1 1 0 01-1.4-1.4l5.3-5.3" />
+    </Outline>
+  );
+}

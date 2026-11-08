@@ -78,14 +78,24 @@ function MessagesContent({ texts }: { readonly texts: ChatTexts }): ReactElement
   const wide = useMediaQuery('(min-width: 768px)');
   const me = useSignedInAccount();
   return (
-    <div className={wide ? 'grid grid-cols-2 gap-6' : 'flex flex-col gap-3'}>
-      {wide || channelId === undefined ? <ChannelList texts={texts} /> : null}
+    <div
+      className={
+        wide
+          ? 'grid grid-cols-2 gap-6 desktop:h-[calc(100dvh-(--spacing(24)))] desktop:grid-cols-[var(--container-aside)_minmax(0,1fr)] desktop:gap-0'
+          : 'flex flex-col gap-3'
+      }
+    >
+      {wide || channelId === undefined ? (
+        <div className="min-w-0 desktop:min-h-0 desktop:overflow-y-auto desktop:border-r desktop:border-border desktop:pr-4">
+          <ChannelList texts={texts} />
+        </div>
+      ) : null}
       {channelId === undefined ? (
         wide ? (
           <p>{texts.choose}</p>
         ) : null
       ) : (
-        <div className="flex min-w-0 flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3 desktop:min-h-0 desktop:pl-6">
           {!wide ? (
             <Link to="/messages" className="text-accent-text underline">
               {texts.back}
@@ -101,7 +111,7 @@ function MessagesContent({ texts }: { readonly texts: ChatTexts }): ReactElement
 export function MessagesPage(): ReactElement {
   const { texts, failed, retry } = useChatTexts();
   return (
-    <Page>
+    <Page titleHiddenOnDesktop>
       {failed ? <LoadFailed error={asApiError(undefined)} onRetry={retry} /> : null}
       {texts === null ? <DelayedLoading /> : <MessagesContent texts={texts} />}
     </Page>

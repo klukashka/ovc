@@ -7,20 +7,51 @@ import { markRead } from './api.ts';
 import { ReadTracker, type ReadView } from './ReadTracker.ts';
 import { scheduleChatReads } from './refetch.ts';
 
+interface Bounds {
+  readonly top: number;
+  readonly bottom: number;
+  readonly left: number;
+  readonly right: number;
+}
+
+function clipsContent(element: Element): boolean {
+  const style = getComputedStyle(element);
+  return style.overflowX !== 'visible' || style.overflowY !== 'visible';
+}
+
+function visibleBounds(list: HTMLElement): Bounds {
+  let bounds: Bounds = { top: 0, bottom: window.innerHeight, left: 0, right: window.innerWidth };
+  for (let ancestor = list.parentElement; ancestor !== null; ancestor = ancestor.parentElement) {
+    if (clipsContent(ancestor)) {
+      const box = ancestor.getBoundingClientRect();
+      bounds = {
+        top: Math.max(bounds.top, box.top),
+        bottom: Math.min(bounds.bottom, box.bottom),
+        left: Math.max(bounds.left, box.left),
+        right: Math.min(bounds.right, box.right),
+      };
+    }
+  }
+  return bounds;
+}
+
 function visibleMessages(list: RefObject<HTMLOListElement | null>): ReadView {
   let hidden = false;
   return {
     shownSequence: (): number => {
       if (hidden || document.visibilityState !== 'visible') return 0;
+      const element = list.current;
+      if (element === null) return 0;
+      const bounds = visibleBounds(element);
       let shown = 0;
-      for (const row of list.current?.querySelectorAll<HTMLElement>('[data-seq]') ?? []) {
+      for (const row of element.querySelectorAll<HTMLElement>('[data-seq]')) {
         const box = row.getBoundingClientRect();
         if (
           box.height > 0 &&
-          box.bottom > 0 &&
-          box.top < window.innerHeight &&
-          box.right > 0 &&
-          box.left < window.innerWidth
+          box.bottom > bounds.top &&
+          box.top < bounds.bottom &&
+          box.right > bounds.left &&
+          box.left < bounds.right
         ) {
           shown = Math.max(shown, Number(row.dataset.seq));
         }

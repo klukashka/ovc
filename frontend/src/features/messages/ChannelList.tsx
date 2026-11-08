@@ -147,12 +147,12 @@ function ChannelPages({
         />
       )}
       {first.isSuccess && channels.length === 0 ? <p>{texts.empty}</p> : null}
-      <ul ref={list} className="flex flex-col gap-2">
+      <ul ref={list} className="flex flex-col border-t border-border">
         {channels.map((channel) => (
           <li key={channel.id} data-row={channel.id}>
             <Link
               to={`/messages/${encodeURIComponent(channel.id)}`}
-              className="block rounded-md border border-border p-3 hover:bg-hover"
+              className="block border-b border-border px-2 py-3 hover:bg-hover"
             >
               <span dir="auto" className={channel.unread_count > 0 ? 'font-semibold' : ''}>
                 {channel.label ?? texts.deletedUser}

@@ -24,6 +24,7 @@ export function Page({
   headingDir,
   width = 'page',
   titleSize = 'title',
+  titleHiddenOnDesktop = false,
   focusTitle = false,
   action,
   menu,
@@ -34,6 +35,7 @@ export function Page({
   readonly headingDir?: 'auto';
   readonly width?: PageWidth;
   readonly titleSize?: TitleSize;
+  readonly titleHiddenOnDesktop?: boolean;
   readonly focusTitle?: boolean;
   readonly action?: ReactNode;
   readonly menu?: ReactNode;
@@ -59,7 +61,7 @@ export function Page({
       ref={heading}
       tabIndex={-1}
       dir={headingDir}
-      className={`${titleClass[titleSize]}${headingDir === undefined ? '' : ' break-words'}`}
+      className={`${titleClass[titleSize]}${headingDir === undefined ? '' : ' break-words'}${titleHiddenOnDesktop ? ' desktop:sr-only' : ''}`}
     >
       {title}
     </h1>

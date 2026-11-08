@@ -421,3 +421,149 @@ paginationTest.describe('channel pagination', () => {
     }
   }
 });
+
+test.describe('Messages on a computer', () => {
+  test.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', viewport: { width: 1440, height: 900 } });
+
+  async function longHistory(
+    deployment: Deployment,
+  ): Promise<{ readonly tutor: TestAccount; readonly studentToken: string; readonly channel: string }> {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { student, cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+    const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+    const senders = [await accessToken(deployment, student), await accessToken(deployment, tutor)];
+    for (let index = 1; index <= 12; index += 1) {
+      const lines = Array.from({ length: 5 }, (_, line) => `Line ${String(line + 1)} of a long message`).join('\n');
+      const sent = await callApi(deployment, senders[index % 2] ?? '', 'POST', `/channels/${channel}/messages`, {
+        body: `${lines}\nHistory message ${String(index)}`,
+        attachment_ids: [],
+      });
+      expect(sent.status).toBe(201);
+    }
+    return { tutor, studentToken: senders[0] ?? '', channel };
+  }
+
+  function isChannelRead(request: Request): boolean {
+    return request.method() === 'POST' && /\/channels\/[^/]+\/read$/.test(new URL(request.url()).pathname);
+  }
+
+  function channelReads(page: Page): { readonly count: number } {
+    const reads = { count: 0 };
+    page.on('request', (request) => {
+      if (isChannelRead(request)) reads.count += 1;
+    });
+    return reads;
+  }
+
+  async function scrollHistory(page: Page, lastRowBelowPaneEdge: number): Promise<void> {
+    await page.getByRole('list', { name: 'Messages', exact: true }).evaluate((list, below) => {
+      let pane = list.parentElement;
+      while (pane !== null && getComputedStyle(pane).overflowY !== 'auto') pane = pane.parentElement;
+      if (pane === null) throw new Error('the history has no scroll pane');
+      pane.scrollTop = pane.scrollHeight;
+      if (below > 0) {
+        pane.scrollTop -= pane.getBoundingClientRect().bottom + below - list.getBoundingClientRect().bottom;
+      }
+      pane.dispatchEvent(new Event('scroll'));
+    }, lastRowBelowPaneEdge);
+  }
+
+  test("at 1440 × 900 the composer's bottom edge stays inside the window with a long history", async ({
+    page,
+    deployment,
+  }) => {
+    const { tutor, channel } = await longHistory(deployment);
+    await signInThroughTheApi(page, tutor);
+
+    await page.goto(`/messages/${channel}`);
+    await messages(page)
+      .getByText(/History message 12$/)
+      .waitFor();
+
+    const composerBox = await page.getByRole('textbox', { name: 'Message', exact: true }).boundingBox();
+    const pageScrolls = await page.evaluate(
+      () => document.documentElement.scrollHeight > document.documentElement.clientHeight,
+    );
+    expect(composerBox).not.toBeNull();
+    expect((composerBox?.y ?? 0) + (composerBox?.height ?? 0)).toBeLessThanOrEqual(900);
+    expect(pageScrolls).toBe(false);
+  });
+
+  test('an opened conversation shows its latest message', async ({ page, deployment }) => {
+    const { tutor, channel } = await longHistory(deployment);
+    await signInThroughTheApi(page, tutor);
+
+    await page.goto(`/messages/${channel}`);
+
+    await expect(messages(page).getByText(/History message 12$/)).toBeInViewport();
+    await expect(page.getByRole('heading', { level: 2, name: 'Anna', exact: true })).toBeFocused();
+  });
+
+  test('a message that arrives below the history pane edge stays unread until it is scrolled into view', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { tutor, studentToken, channel } = await longHistory(deployment);
+    await page.clock.install({ time: await control.now() });
+    const reads = channelReads(page);
+    await signInThroughTheApi(page, tutor);
+    await page.goto(`/messages/${channel}`);
+    await expect(messages(page).getByText(/History message 12$/)).toBeInViewport();
+    await page.clock.runFor(2000);
+    await expect.poll(() => reads.count).toBeGreaterThan(0);
+    await scrollHistory(page, 40);
+    const readsBeforeArrival = reads.count;
+
+    const sent = await callApi(deployment, studentToken, 'POST', `/channels/${channel}/messages`, {
+      body: 'Arrived out of view',
+      attachment_ids: [],
+    });
+    await messages(page).getByText('Arrived out of view').waitFor({ state: 'attached' });
+    await page.clock.runFor(2000);
+    const readsBeforeScrolling = reads.count;
+    const unreadBeforeScrolling = await channelUnread(deployment, tutor, channel);
+    await scrollHistory(page, 0);
+    await page.clock.runFor(2000);
+
+    expect(sent.status).toBe(201);
+    expect(readsBeforeScrolling).toBe(readsBeforeArrival);
+    expect(unreadBeforeScrolling).toBe(1);
+    await expect.poll(() => channelUnread(deployment, tutor, channel)).toBe(0);
+  });
+
+  test('the composer grows with its text up to eight lines', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+    const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+    await signInThroughTheApi(page, tutor);
+    await page.goto(`/messages/${channel}`);
+    const field = page.getByRole('textbox', { name: 'Message', exact: true });
+    await settledComposer(page);
+    const oneLine = await field.evaluate((element) => (element instanceof HTMLTextAreaElement ? element.rows : -1));
+
+    await field.fill(['one', 'two', 'three', 'four'].join('\n'));
+    const fourLines = await field.evaluate((element) => (element instanceof HTMLTextAreaElement ? element.rows : -1));
+    await field.fill(Array.from({ length: 12 }, (_, index) => `line ${String(index)}`).join('\n'));
+    const manyLines = await field.evaluate((element) => (element instanceof HTMLTextAreaElement ? element.rows : -1));
+
+    expect(oneLine).toBe(1);
+    expect(fourLines).toBe(4);
+    expect(manyLines).toBe(8);
+  });
+
+  test('Send is the primary action and attach is a named icon button', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+    const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+    await signInThroughTheApi(page, tutor);
+
+    await page.goto(`/messages/${channel}`);
+    await settledComposer(page);
+
+    const attach = page.getByRole('button', { name: 'Attach files', exact: true });
+    await expect(attach).toBeVisible();
+    await expect(attach).toHaveText('');
+    await expect(page.getByRole('button', { name: 'Send', exact: true })).toHaveClass(/bg-accent/);
+  });
+});
