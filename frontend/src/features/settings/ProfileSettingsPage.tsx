@@ -21,6 +21,7 @@ import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib
 import { type components } from '../../lib/api/schema.ts';
 import { type Me, useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { SettingsNav } from './SettingsNav.tsx';
+import { SettingsSection } from './SettingsRow.tsx';
 
 type Saving =
   | { readonly kind: 'idle' }
@@ -112,7 +113,6 @@ function AvatarSection({ me, work }: { readonly me: Me; readonly work: PendingWo
   const { t } = useTranslation();
   const client = useApiClient();
   const inputId = useId();
-  const headingId = useId();
   const { saving, save, refuse, settle } = useProfileUpdate(work);
   const address = avatarAddress(me);
 
@@ -148,56 +148,57 @@ function AvatarSection({ me, work }: { readonly me: Me; readonly work: PendingWo
   }
 
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 id={headingId} className="text-heading">
-        {t('settings.avatar')}
-      </h2>
-      {address === null ? (
-        <p className="text-text-muted">{t('settings.noAvatar')}</p>
-      ) : (
-        <img
-          src={address}
-          alt={t('settings.avatarAlt', { name: me.name })}
-          className="size-24 rounded-full object-cover"
-        />
-      )}
+    <SettingsSection heading={t('settings.avatar')}>
       {saving.kind === 'refused' ? <FormAlert>{errorMessage(t, saving.error, saving.retryAfter)}</FormAlert> : null}
       {saving.kind === 'saved' ? <FormNotice takeFocus>{t('settings.avatarSaved')}</FormNotice> : null}
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          id={inputId}
-          type="file"
-          accept={acceptedAvatarFiles}
-          onChange={onChange}
-          onClick={(event) => {
-            if (work.busy) {
-              event.preventDefault();
-            }
-          }}
-          aria-disabled={work.busy}
-          className="peer sr-only"
-        />
-        <label
-          htmlFor={inputId}
-          className={`${quietButtonClass} cursor-pointer peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus peer-aria-disabled:cursor-default peer-aria-disabled:opacity-60`}
-        >
-          {t('settings.chooseAvatar')}
-        </label>
-        {address === null ? null : (
-          <ActionButton
-            busy={work.busy}
-            onClick={() => {
-              settle();
-              save({ avatar_id: null });
-            }}
-            className="inline-flex min-h-11 items-center px-2 text-small text-accent-text underline aria-disabled:opacity-60"
-          >
-            {t('settings.removeAvatar')}
-          </ActionButton>
+      <div className="flex flex-wrap items-center gap-6">
+        {address === null ? (
+          <p className="text-text-muted">{t('settings.noAvatar')}</p>
+        ) : (
+          <img
+            src={address}
+            alt={t('settings.avatarAlt', { name: me.name })}
+            className="size-24 rounded-full object-cover"
+          />
         )}
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              id={inputId}
+              type="file"
+              accept={acceptedAvatarFiles}
+              onChange={onChange}
+              onClick={(event) => {
+                if (work.busy) {
+                  event.preventDefault();
+                }
+              }}
+              aria-disabled={work.busy}
+              className="peer sr-only"
+            />
+            <label
+              htmlFor={inputId}
+              className={`${quietButtonClass} cursor-pointer peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus peer-aria-disabled:cursor-default peer-aria-disabled:opacity-60`}
+            >
+              {t('settings.chooseAvatar')}
+            </label>
+            {address === null ? null : (
+              <ActionButton
+                busy={work.busy}
+                onClick={() => {
+                  settle();
+                  save({ avatar_id: null });
+                }}
+                className="inline-flex min-h-11 items-center px-2 text-small text-accent-text underline aria-disabled:opacity-60"
+              >
+                {t('settings.removeAvatar')}
+              </ActionButton>
+            )}
+          </div>
+          <p className="text-small text-text-muted">{t('settings.avatarHint')}</p>
+        </div>
       </div>
-      <p className="text-small text-text-muted">{t('settings.avatarHint')}</p>
-    </section>
+    </SettingsSection>
   );
 }
 
@@ -230,12 +231,7 @@ function DetailsSection({ me, work }: { readonly me: Me; readonly work: PendingW
   }
 
   return (
-    <form
-      onSubmit={onSubmit}
-      onChange={settle}
-      aria-labelledby={headingId}
-      className="flex max-w-reading flex-col gap-4"
-    >
+    <form onSubmit={onSubmit} onChange={settle} aria-labelledby={headingId} className="flex flex-col gap-4">
       <h2 id={headingId} className="text-heading">
         {t('settings.details')}
       </h2>
@@ -247,14 +243,27 @@ function DetailsSection({ me, work }: { readonly me: Me; readonly work: PendingW
         </FormAlert>
       )}
       <LiveNotice message={saving.kind === 'saved' ? t('settings.saved') : null} />
-      <TextField
-        label={t('signUp.name')}
-        name="name"
-        autoComplete="name"
-        maxLength={100}
-        defaultValue={me.name}
-        error={fieldMessage(t, error, 'name')}
-      />
+      <div className="grid gap-4 desktop:grid-cols-2">
+        <TextField
+          label={t('signUp.name')}
+          name="name"
+          autoComplete="name"
+          maxLength={100}
+          defaultValue={me.name}
+          error={fieldMessage(t, error, 'name')}
+        />
+        {me.role === 'tutor' ? (
+          <TextField
+            label={t('settings.subjects')}
+            name="subjects"
+            autoComplete="off"
+            required={false}
+            defaultValue={(me.subjects ?? []).join(', ')}
+            hint={t('settings.subjectsHint', { count: maxSubjects })}
+            error={fieldMessage(t, error, 'subjects')}
+          />
+        ) : null}
+      </div>
       {me.role === 'tutor' ? (
         <>
           <div className="flex flex-col gap-1">
@@ -278,18 +287,11 @@ function DetailsSection({ me, work }: { readonly me: Me; readonly work: PendingW
               </p>
             )}
           </div>
-          <TextField
-            label={t('settings.subjects')}
-            name="subjects"
-            autoComplete="off"
-            required={false}
-            defaultValue={(me.subjects ?? []).join(', ')}
-            hint={t('settings.subjectsHint', { count: maxSubjects })}
-            error={fieldMessage(t, error, 'subjects')}
-          />
         </>
       ) : null}
-      <SubmitButton busy={work.busy}>{t('settings.save')}</SubmitButton>
+      <div>
+        <SubmitButton busy={work.busy}>{t('settings.save')}</SubmitButton>
+      </div>
     </form>
   );
 }
@@ -298,7 +300,7 @@ export function ProfileSettingsPage(): ReactElement {
   const me = useSignedInAccount();
   const work = usePendingWork();
   return (
-    <Page width="reading">
+    <Page>
       <SettingsNav />
       <AvatarSection me={me} work={work} />
       <DetailsSection key={me.id} me={me} work={work} />

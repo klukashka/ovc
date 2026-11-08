@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, type RefObject, useEffect, useId, useRef, useState } from 'react';
 
 const menuButtonClass =
   'inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-border-strong px-3 text-strong text-text hover:bg-surface aria-disabled:opacity-60';
@@ -13,18 +13,21 @@ export function ActionMenu({
   busy = false,
   unavailable,
   items,
+  buttonRef,
   children,
 }: {
   readonly label: string;
   readonly busy?: boolean;
   readonly unavailable: boolean;
   readonly items: readonly MenuItem[];
+  readonly buttonRef?: RefObject<HTMLButtonElement | null>;
   readonly children: ReactNode;
 }): ReactElement {
   const [open, setOpen] = useState(false);
   const menuId = useId();
   const container = useRef<HTMLDivElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
+  const ownButton = useRef<HTMLButtonElement>(null);
+  const button = buttonRef ?? ownButton;
 
   useEffect(() => {
     if (!open) {
@@ -58,7 +61,7 @@ export function ActionMenu({
       element?.removeEventListener('keydown', closeOnEscape);
       element?.removeEventListener('focusout', closeOnFocusLeaving);
     };
-  }, [open]);
+  }, [open, button]);
 
   return (
     <div ref={container} className="relative">

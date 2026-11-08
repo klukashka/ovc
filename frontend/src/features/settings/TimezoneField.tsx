@@ -17,11 +17,13 @@ export function TimezoneField({
   defaultValue,
   language,
   error,
+  legendHidden = false,
 }: {
   readonly name: string;
   readonly defaultValue: string;
   readonly language: Language;
   readonly error: string | undefined;
+  readonly legendHidden?: boolean;
 }): ReactElement {
   const { t } = useTranslation();
   const scheduler = useScheduler();
@@ -40,8 +42,8 @@ export function TimezoneField({
     .join(' ');
 
   return (
-    <fieldset className="flex flex-col gap-1">
-      <legend id={legendId} className="mb-1 text-label">
+    <fieldset className="flex w-full max-w-sm flex-col gap-1">
+      <legend id={legendId} className={legendHidden ? 'sr-only' : 'mb-1 text-label'}>
         {t('settings.timezone')}
       </legend>
       <label htmlFor={searchId} className="sr-only">

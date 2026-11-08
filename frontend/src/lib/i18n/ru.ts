@@ -329,10 +329,13 @@ export const ru = {
     changePassword: 'Сменить пароль',
     currentPassword: 'Текущий пароль',
     passwordChanged: 'Пароль изменён.',
+    accountActions: 'Действия с аккаунтом',
+    security: 'Безопасность',
+    password: 'Пароль',
+    signOutEverywhereConfirm: 'Выйти на всех устройствах?',
     signOutEverywhere: 'Выйти на всех устройствах',
     signOutEverywhereBody: 'Все сессии, включая эту, будут завершены.',
     deleteAccount: 'Удалить аккаунт',
-    deleteAccountBody: 'Аккаунт и загруженные файлы будут удалены. Это нельзя отменить.',
     deleteAccountConfirm: 'Удалить аккаунт?',
     deleteAccountConsequence: {
       tutor:
@@ -579,6 +582,11 @@ export const ru = {
     ink: 'Чернила',
   },
   teaching: {
+    columns: {
+      student: 'Ученик',
+      blocked: 'Дата блокировки',
+      actions: 'Действия',
+    },
     storage: 'Использование хранилища',
     files: 'Файлы',
     storageAmount: '{used} из {quota}',

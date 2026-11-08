@@ -6,6 +6,14 @@ import { trafficAfterReady, expectRefetchedAfterTheSocketIsReady } from './realt
 
 test.use({ locale: 'ru-RU' });
 
+const heldRequests: (() => Promise<void>)[] = [];
+
+test.afterEach(async () => {
+  for (const releaseHeld of heldRequests.splice(0)) {
+    await releaseHeld();
+  }
+});
+
 const onePixelPng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   'base64',
@@ -151,8 +159,9 @@ test('an avatar saved while another field has focus leaves the focus there', asy
 
 test('Escape on the deletion dialog returns focus to the button that opened it', async ({ page, tutor }) => {
   await signedInAt(page, tutor, '/settings/account');
-  const opener = page.getByRole('button', { name: 'Удалить аккаунт' });
+  const opener = page.getByRole('button', { name: 'Действия с аккаунтом' });
   await opener.click();
+  await page.getByRole('button', { name: 'Удалить аккаунт' }).click();
   await expect(page.getByRole('dialog', { name: 'Удалить аккаунт?' })).toBeVisible();
 
   await page.keyboard.press('Escape');
@@ -163,6 +172,7 @@ test('Escape on the deletion dialog returns focus to the button that opened it',
 
 test('the deletion dialog opens on its password field', async ({ page, tutor }) => {
   await signedInAt(page, tutor, '/settings/account');
+  await page.getByRole('button', { name: 'Действия с аккаунтом' }).click();
 
   await page.getByRole('button', { name: 'Удалить аккаунт' }).click();
 
@@ -187,17 +197,45 @@ test('a busy preferences save keeps focus on its button', async ({ page, deploym
 test('a busy password change keeps focus on its button', async ({ page, deployment }) => {
   const account = await seedVerifiedUser(deployment, 'Фокус на кнопке смены пароля');
   await signedInAt(page, account, '/settings/account');
+  await page.getByRole('main').getByRole('button', { name: 'Сменить пароль' }).click();
   const password = page.getByRole('form', { name: 'Сменить пароль' });
   const change = password.getByRole('button', { name: 'Сменить пароль' });
   await password.getByLabel('Текущий пароль').fill(account.password);
   await password.getByLabel('Новый пароль').fill(`${account.password} changed`);
   await change.focus();
+  let release: () => void = () => undefined;
+  const resumed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/v1/auth/password/change', async (route) => {
+    await resumed;
+    await route.continue();
+  });
+  heldRequests.push(async () => {
+    const changed = page.waitForResponse('**/api/v1/auth/password/change');
+    release();
+    await changed;
+    await page.unroute('**/api/v1/auth/password/change');
+  });
 
   await page.keyboard.press('Enter');
 
-  await expect(password.getByRole('status')).toHaveText('Пароль изменён.');
+  await expect(change).toHaveAttribute('aria-busy', 'true');
   await expect(change).toBeFocused();
-  await expect(password.getByLabel('Текущий пароль')).toHaveValue('');
+});
+
+test('a changed password closes its dialog onto the notice', async ({ page, deployment }) => {
+  const account = await seedVerifiedUser(deployment, 'Уведомление о смене пароля');
+  await signedInAt(page, account, '/settings/account');
+  await page.getByRole('main').getByRole('button', { name: 'Сменить пароль' }).click();
+  const password = page.getByRole('form', { name: 'Сменить пароль' });
+  await password.getByLabel('Текущий пароль').fill(account.password);
+  await password.getByLabel('Новый пароль').fill(`${account.password} changed`);
+
+  await password.getByLabel('Новый пароль').press('Enter');
+
+  await expect(page.getByRole('main').getByText('Пароль изменён.')).toBeFocused();
+  await expect(password).toHaveCount(0);
 });
 
 test('the resend button keeps focus while it waits', async ({ page }) => {

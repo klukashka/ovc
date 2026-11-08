@@ -173,7 +173,7 @@ function EmailSwitches({ preferences }: { readonly preferences: EmailPreferences
 
   return (
     <>
-      <ul className="flex flex-col divide-y divide-border">
+      <ul className="flex flex-col divide-y divide-border border-y border-border">
         {preferences.groups.map((stored) => {
           const wanted = pending.get(stored.group);
           return (
@@ -239,9 +239,9 @@ export function NotificationSettingsPage(): ReactElement {
   }
 
   return (
-    <Page width="reading">
+    <Page>
       <SettingsNav />
-      <section aria-labelledby={headingId} className="flex flex-col gap-3">
+      <section aria-labelledby={headingId} className="flex max-w-reading flex-col gap-3">
         <h2 id={headingId} className="text-heading">
           {t('emailSettings.heading')}
         </h2>

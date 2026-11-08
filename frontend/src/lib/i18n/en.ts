@@ -319,10 +319,13 @@ export const en: Resources = {
     changePassword: 'Change password',
     currentPassword: 'Current password',
     passwordChanged: 'Your password has been changed.',
+    accountActions: 'Account actions',
+    security: 'Security',
+    password: 'Password',
+    signOutEverywhereConfirm: 'Sign out everywhere?',
     signOutEverywhere: 'Sign out everywhere',
     signOutEverywhereBody: 'Every session, including this one, will end.',
     deleteAccount: 'Delete account',
-    deleteAccountBody: 'Your account and uploaded files will be deleted. This cannot be undone.',
     deleteAccountConfirm: 'Delete your account?',
     deleteAccountConsequence: {
       tutor:
@@ -567,6 +570,11 @@ export const en: Resources = {
     ink: 'Ink',
   },
   teaching: {
+    columns: {
+      student: 'Student',
+      blocked: 'Blocked on',
+      actions: 'Actions',
+    },
     storage: 'Storage usage',
     files: 'Files',
     storageAmount: '{used} of {quota}',

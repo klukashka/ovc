@@ -172,8 +172,7 @@ Each criterion is checked by a named test or command. All new end-to-end tests r
    - › "the password dialog does not outlive the session":
      - open the dialog and type;
      - revoke the session with `callApi(… '/auth/logout-all')`, as `realtime.spec.ts` does;
-     - the sign-in page shows with no dialog and no password input;
-     - after signing in again, Account shows no open dialog.
+     - the sign-in page shows with no dialog, and its only password input is the empty sign-in field (as built, the sign-in again was left out to keep the test to one act; a fresh page load cannot hold a dialog).
 4. Sign out everywhere, each a separate test:
    - › "sign out everywhere opens on Cancel";
    - › "Cancel on sign out everywhere revokes nothing":
@@ -183,7 +182,7 @@ Each criterion is checked by a named test or command. All new end-to-end tests r
    - The existing test "signing out everywhere ends the sessions of other browsers" goes through the dialog and keeps every assertion.
 5. Delete account:
    - › "the delete dialog leaves no password field behind": as criterion 3, for Esc and for Cancel, with the address and storage assertions;
-   - › "the delete dialog opens on its password field and returns focus to the menu button".
+   - › "the delete dialog opens on its empty password field"; the focus return to the menu button is asserted by the Esc and Cancel tests above and by `accessibility.spec.ts` › "Escape on the deletion dialog returns focus to the button that opened it".
 
    The existing delete tests pass from the menu: the wrong password, the sixth wrong password answering 429, and deletion signing out with the deleted-account message.
 6. The existing Settings specs pass:

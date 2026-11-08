@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
+import { SettingsSection } from './SettingsRow.tsx';
 import { formatStorage } from './storageAmount.ts';
 
 export function StorageUsage(): ReactElement {
@@ -19,8 +20,7 @@ export function StorageUsage(): ReactElement {
     retry: false,
   });
   return (
-    <section className="flex flex-col gap-3" aria-label={t('teaching.storage')}>
-      <h2 className="text-heading">{t('teaching.storage')}</h2>
+    <SettingsSection heading={t('teaching.storage')}>
       {query.isPending ? <DelayedLoading /> : null}
       {query.isError ? (
         <LoadFailed
@@ -47,6 +47,6 @@ export function StorageUsage(): ReactElement {
           </p>
         </>
       )}
-    </section>
+    </SettingsSection>
   );
 }

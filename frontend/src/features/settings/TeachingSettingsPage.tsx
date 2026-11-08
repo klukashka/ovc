@@ -1,9 +1,17 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type ReactElement, useId, useState } from 'react';
+import { type ReactElement, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { type ActionState, done, refusedBy, showsStaleData, useAction } from '../../components/ui/action.ts';
 import { Avatar } from '../../components/ui/Avatar.tsx';
+import {
+  DataTable,
+  type TableColumn,
+  cellClass,
+  endCellClass,
+  primaryCellClass,
+  tableRowClass,
+} from '../../components/ui/DataTable.tsx';
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
 import { ActionButton, FormAlert, FormNotice, quietButtonClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
@@ -17,6 +25,7 @@ import { type CopyResult, copyText } from '../../lib/clipboard.ts';
 import { formatDate } from '../../lib/format/dates.ts';
 import { StorageUsage } from './StorageUsage.tsx';
 import { SettingsNav } from './SettingsNav.tsx';
+import { SettingsSection } from './SettingsRow.tsx';
 import { fetchTutorCode, tutorCodeKey } from './tutorCode.ts';
 
 type BlockedRequesterPage = components['schemas']['BlockedRequesterPage'];
@@ -53,7 +62,6 @@ function TutorCodeSection(): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const queryClient = useQueryClient();
-  const headingId = useId();
   const action = useAction();
   const [notice, setNotice] = useState<CodeNotice>('none');
   const query = useQuery({
@@ -136,14 +144,7 @@ function TutorCodeSection(): ReactElement {
     );
   }
 
-  return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 id={headingId} className="text-heading">
-        {t('teaching.code')}
-      </h2>
-      {body()}
-    </section>
-  );
+  return <SettingsSection heading={t('teaching.code')}>{body()}</SettingsSection>;
 }
 
 function BlockedRow({
@@ -166,22 +167,30 @@ function BlockedRow({
       ? t('teaching.unblockDeleted', { date: blockedDate })
       : t('teaching.unblockNamed', { name: student.name });
   return (
-    <li className="flex flex-wrap items-center gap-3 border-t border-border py-3">
-      <Avatar name={name} avatarId={student.avatar_id} />
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className={student.name === null ? 'truncate text-text-muted' : 'truncate text-strong'}>{name}</span>
+    <tr data-row={student.student_id} className={tableRowClass}>
+      <th scope="row" className={primaryCellClass}>
+        <span className="flex min-w-0 items-center gap-3">
+          <Avatar name={name} avatarId={student.avatar_id} />
+          <span dir="auto" className={student.name === null ? 'text-text-muted' : 'text-strong'}>
+            {name}
+          </span>
+        </span>
+      </th>
+      <td className={cellClass}>
         <span className="tabular text-small text-text-muted">{t('teaching.blockedAt', { date: blockedDate })}</span>
-      </span>
-      <ActionButton
-        busy={busy}
-        unavailable={unavailable}
-        label={unblockLabel}
-        onClick={onUnblock}
-        className={quietButtonClass}
-      >
-        {t('teaching.unblock')}
-      </ActionButton>
-    </li>
+      </td>
+      <td className={endCellClass}>
+        <ActionButton
+          busy={busy}
+          unavailable={unavailable}
+          label={unblockLabel}
+          onClick={onUnblock}
+          className={quietButtonClass}
+        >
+          {t('teaching.unblock')}
+        </ActionButton>
+      </td>
+    </tr>
   );
 }
 
@@ -189,7 +198,6 @@ function BlockedStudentsSection(): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const queryClient = useQueryClient();
-  const headingId = useId();
   const action = useAction();
   const [unblocking, setUnblocking] = useState<string | null>(null);
   const [refusals, setRefusals] = useState(0);
@@ -201,9 +209,14 @@ function BlockedStudentsSection(): ReactElement {
     retry: false,
   });
   const students = query.data?.pages.flatMap((page) => page.items) ?? [];
-  const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
+  const blockedColumns: readonly TableColumn[] = [
+    { key: 'student', label: t('teaching.columns.student'), width: 'w-1/2' },
+    { key: 'blocked', label: t('teaching.columns.blocked'), width: 'w-1/4' },
+    { key: 'actions', label: t('teaching.columns.actions'), visuallyHidden: true, width: 'w-1/4' },
+  ];
+  const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLTableSectionElement>(
     students.length,
-    ':scope > li button',
+    ':scope > tr button',
     query.isFetchingNextPage,
   );
 
@@ -255,7 +268,7 @@ function BlockedStudentsSection(): ReactElement {
         {students.length === 0 ? (
           <p className="text-text-muted">{t('teaching.blockedEmpty')}</p>
         ) : (
-          <ul ref={listRef} className="border-b border-border">
+          <DataTable label={t('teaching.blocked')} columns={blockedColumns} bodyRef={listRef}>
             {students.map((student) => (
               <BlockedRow
                 key={student.student_id}
@@ -267,7 +280,7 @@ function BlockedStudentsSection(): ReactElement {
                 }}
               />
             ))}
-          </ul>
+          </DataTable>
         )}
         {query.hasNextPage ? (
           <p>
@@ -292,23 +305,21 @@ function BlockedStudentsSection(): ReactElement {
   }
 
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 id={headingId} className="text-heading">
-        {t('teaching.blocked')}
-      </h2>
-      <p className="text-small text-text-muted">{t('teaching.blockedHint')}</p>
+    <SettingsSection heading={t('teaching.blocked')} description={t('teaching.blockedHint')}>
       {body()}
-    </section>
+    </SettingsSection>
   );
 }
 
 export function TeachingSettingsPage(): ReactElement {
   return (
-    <Page width="reading">
+    <Page>
       <SettingsNav />
-      <StorageUsage />
-      <TutorCodeSection />
-      <BlockedStudentsSection />
+      <div className="flex flex-col border-b border-border">
+        <TutorCodeSection />
+        <StorageUsage />
+        <BlockedStudentsSection />
+      </div>
     </Page>
   );
 }

@@ -207,6 +207,55 @@ test.describe('desktop layout', () => {
     await expect(newGroup).toBeFocused();
   });
 
+  for (const { path, heading } of [
+    { path: '/settings/account', heading: 'Timezone' },
+    { path: '/settings/teaching', heading: 'Tutor code' },
+  ] as const) {
+    test(`a Settings row on ${path} has its label and value on one line at 1440 × 900`, async ({
+      page,
+      deployment,
+    }) => {
+      const tutor = await seedVerifiedUser(deployment, 'Tutor', 'en');
+      await signInThroughTheApi(page, tutor);
+
+      await openAt(page, computer, path, 'heading');
+      const label = page.locator('[data-settings-label]').filter({ hasText: heading });
+      const row = label.locator('xpath=..');
+      const control = row.locator('[data-settings-value]').locator('select, button, p').first();
+      await control.waitFor();
+      const labelBox = await label.boundingBox();
+      const controlBox = await control.boundingBox();
+      const rowBox = await row.boundingBox();
+
+      expect(labelBox).not.toBeNull();
+      expect(controlBox).not.toBeNull();
+      expect(rowBox).not.toBeNull();
+      if (labelBox !== null && controlBox !== null && rowBox !== null) {
+        expect(labelBox.x + labelBox.width).toBeLessThanOrEqual(controlBox.x);
+        expect(Math.abs(labelBox.y + labelBox.height / 2 - (controlBox.y + controlBox.height / 2))).toBeLessThan(
+          rowBox.height / 2,
+        );
+      }
+    });
+  }
+
+  for (const path of ['/settings/profile', '/settings/account', '/settings/notifications', '/settings/teaching']) {
+    for (const [name, size] of [
+      ['1024 px', smallComputer],
+      ['390 px', phone],
+    ] as const) {
+      test(`${path} does not scroll sideways at ${name}`, async ({ page, deployment }) => {
+        const tutor = await seedVerifiedUser(deployment, 'Tutor', 'en');
+        await signInThroughTheApi(page, tutor);
+
+        await openAt(page, size, path, 'heading');
+        await page.locator('main [data-settings-value], main form, main [role="switch"]').first().waitFor();
+
+        expect(await scrollsSideways(page)).toBe(false);
+      });
+    }
+  }
+
   test('a tutor name with markup is shown as text in My tutors', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, markup, 'en');
     const { student } = await seedActiveStudent(deployment, tutor, 'Vera Student', 'en');

@@ -4,11 +4,14 @@ import type { ObservedBrowser } from './browser-diagnostics.ts';
 
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import {
+  accountId,
   trafficAfterReady,
   expectRefetchedAfterTheSocketIsReady,
   expectReadyForNavigation,
   todayQueryPaths,
+  waitForSockets,
 } from './realtime.ts';
+import { accessToken, callApi } from './tutoring.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 
@@ -61,10 +64,49 @@ function deletionDialog(page: Page): Locator {
   return page.getByRole('dialog', { name: 'Удалить аккаунт?' });
 }
 
+function accountActions(page: Page): Locator {
+  return page.getByRole('main').getByRole('button', { name: 'Действия с аккаунтом' });
+}
+
+async function chooseAccountAction(page: Page, action: string): Promise<void> {
+  await accountActions(page).click();
+  await page.getByRole('main').getByRole('button', { name: action, exact: true }).click();
+}
+
 async function openDeletionDialog(page: Page): Promise<void> {
-  await page.getByRole('main').getByRole('button', { name: 'Удалить аккаунт' }).click();
+  await chooseAccountAction(page, 'Удалить аккаунт');
   await expect(deletionDialog(page)).toBeVisible();
 }
+
+function signOutDialog(page: Page): Locator {
+  return page.getByRole('dialog', { name: 'Выйти на всех устройствах?' });
+}
+
+async function openSignOutDialog(page: Page): Promise<void> {
+  await chooseAccountAction(page, 'Выйти на всех устройствах');
+  await expect(signOutDialog(page)).toBeVisible();
+}
+
+function passwordOpener(page: Page): Locator {
+  return page.getByRole('main').getByRole('button', { name: 'Сменить пароль' });
+}
+
+async function openPasswordDialog(page: Page): Promise<void> {
+  await passwordOpener(page).click();
+  await expect(passwordForm(page)).toBeVisible();
+}
+
+async function storedState(
+  page: Page,
+): Promise<{ readonly local: string[]; readonly session: number; readonly history: string }> {
+  return page.evaluate(() => ({
+    local: Object.keys(globalThis.localStorage).sort(),
+    session: globalThis.sessionStorage.length,
+    history: JSON.stringify(globalThis.history.state ?? null),
+  }));
+}
+
+const knownPreferenceKeys = ['ovc.language', 'ovc.sidebar', 'ovc.theme'];
 
 async function confirmDeletion(page: Page, password: string): Promise<void> {
   await deletionDialog(page).getByLabel('Текущий пароль').fill(password);
@@ -86,6 +128,14 @@ async function switchScheme(page: Page, colorScheme: 'light' | 'dark', changesSo
 }
 
 test.describe('account edge cases', () => {
+  const heldRequests: (() => Promise<void>)[] = [];
+
+  test.afterEach(async () => {
+    for (const releaseHeld of heldRequests.splice(0)) {
+      await releaseHeld();
+    }
+  });
+
   test('FR-1.3 › a tutor opening My tutors sees that the page is not found and no code form', async ({
     page,
     deployment,
@@ -120,7 +170,8 @@ test.describe('account edge cases', () => {
     await signedInAt(page, account, '/settings/account');
     await expectRefetchedAfterTheSocketIsReady(traffic);
     otherDiagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/refresh', status: 401 });
-    await page.getByRole('main').getByRole('button', { name: 'Выйти на всех устройствах' }).click();
+    await openSignOutDialog(page);
+    await signOutDialog(page).getByRole('button', { name: 'Выйти на всех устройствах' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
 
     await expect(otherPage.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
@@ -140,10 +191,18 @@ test.describe('account edge cases', () => {
     const account = await seedVerifiedUser(deployment, 'Tutor changing a password');
     const newPassword = `${account.password} changed`;
     await signedInAt(page, account, '/settings/account');
+    await openPasswordDialog(page);
     await passwordForm(page).getByLabel('Текущий пароль').fill(account.password);
     await passwordForm(page).getByLabel('Новый пароль').fill(newPassword);
     await passwordForm(page).getByRole('button', { name: 'Сменить пароль' }).click();
-    await expect(passwordForm(page).getByRole('status')).toHaveText('Пароль изменён.');
+    await expect(page.getByRole('main').getByText('Пароль изменён.')).toBeFocused();
+    await expect(passwordForm(page)).toHaveCount(0);
+    await expect(page).toHaveURL('/settings/account');
+    const stored = await storedState(page);
+    expect(stored.history).not.toContain(account.password);
+    expect(stored.history).not.toContain(newPassword);
+    expect(knownPreferenceKeys).toEqual(expect.arrayContaining(stored.local));
+    expect(stored.session).toBe(0);
 
     await page.reload();
 
@@ -157,6 +216,7 @@ test.describe('account edge cases', () => {
     diagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/password/change', status: 422 });
     const account = await seedVerifiedUser(deployment, 'Tutor mistyping a password');
     await signedInAt(page, account, '/settings/account');
+    await openPasswordDialog(page);
 
     await passwordForm(page).getByLabel('Текущий пароль').fill(`${account.password} wrong`);
     await passwordForm(page).getByLabel('Новый пароль').fill(`${account.password} changed`);
@@ -164,6 +224,169 @@ test.describe('account edge cases', () => {
 
     await expect(passwordForm(page).getByRole('alert')).toHaveText('Проверьте выделенные поля.');
     await expect(passwordForm(page).getByLabel('Текущий пароль')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  for (const closing of ['Escape', 'Отмена'] as const) {
+    test(`the password dialog leaves no password field behind when closed with ${closing}`, async ({
+      page,
+      deployment,
+    }) => {
+      const account = await seedVerifiedUser(deployment, 'Tutor closing the password dialog');
+      await signedInAt(page, account, '/settings/account');
+      await openPasswordDialog(page);
+      await passwordForm(page).getByLabel('Текущий пароль').fill(account.password);
+      await passwordForm(page).getByLabel('Новый пароль').fill(`${account.password} changed`);
+
+      if (closing === 'Escape') {
+        await page.keyboard.press('Escape');
+      } else {
+        await passwordForm(page).getByRole('button', { name: 'Отмена' }).click();
+      }
+
+      await expect(page.locator('input[type="password"]')).toHaveCount(0);
+      await expect(passwordOpener(page)).toBeFocused();
+      await expect(page).toHaveURL('/settings/account');
+      const stored = await storedState(page);
+      expect(stored.history).not.toContain(account.password);
+      expect(stored.history).not.toContain(`${account.password} changed`);
+      expect(knownPreferenceKeys).toEqual(expect.arrayContaining(stored.local));
+      expect(stored.session).toBe(0);
+    });
+
+    test(`the delete dialog leaves no password field behind when closed with ${closing}`, async ({
+      page,
+      deployment,
+    }) => {
+      const account = await seedVerifiedUser(deployment, 'Tutor closing the delete dialog');
+      await signedInAt(page, account, '/settings/account');
+      await openDeletionDialog(page);
+      await deletionDialog(page).getByLabel('Текущий пароль').fill(account.password);
+
+      if (closing === 'Escape') {
+        await page.keyboard.press('Escape');
+      } else {
+        await deletionDialog(page).getByRole('button', { name: 'Отмена' }).click();
+      }
+
+      await expect(page.locator('input[type="password"]')).toHaveCount(0);
+      await expect(accountActions(page)).toBeFocused();
+      await expect(page).toHaveURL('/settings/account');
+      const stored = await storedState(page);
+      expect(stored.history).not.toContain(account.password);
+      expect(knownPreferenceKeys).toEqual(expect.arrayContaining(stored.local));
+      expect(stored.session).toBe(0);
+    });
+  }
+
+  test('the password dialog reopens empty on its first field', async ({ page, deployment }) => {
+    const account = await seedVerifiedUser(deployment, 'Tutor reopening the password dialog');
+    await signedInAt(page, account, '/settings/account');
+    await openPasswordDialog(page);
+    await passwordForm(page).getByLabel('Текущий пароль').fill(account.password);
+    await passwordForm(page).getByLabel('Новый пароль').fill(`${account.password} changed`);
+    await page.keyboard.press('Escape');
+
+    await openPasswordDialog(page);
+
+    await expect(passwordForm(page).getByLabel('Текущий пароль')).toBeFocused();
+    await expect(passwordForm(page).getByLabel('Текущий пароль')).toHaveValue('');
+    await expect(passwordForm(page).getByLabel('Новый пароль')).toHaveValue('');
+  });
+
+  test('the password dialog does not outlive the session', async ({ page, deployment, diagnostics }) => {
+    const account = await seedVerifiedUser(deployment, 'Tutor signed out while typing');
+    const user = await accountId(deployment, account);
+    await signedInAt(page, account, '/settings/account');
+    await waitForSockets(deployment, user, 1);
+    await openPasswordDialog(page);
+    await passwordForm(page).getByLabel('Текущий пароль').fill(account.password);
+    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/refresh', status: 401 });
+
+    const signedOut = await callApi(deployment, await accessToken(deployment, account), 'POST', '/auth/logout-all');
+
+    expect(signedOut.status).toBe(204);
+    await expect(page.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.locator('input[type="password"]')).toHaveCount(1);
+    await expect(page.locator('input[type="password"]')).toHaveValue('');
+  });
+
+  test('sign out everywhere opens on Cancel', async ({ page, deployment }) => {
+    const account = await seedVerifiedUser(deployment, 'Tutor about to sign out everywhere');
+    await signedInAt(page, account, '/settings/account');
+
+    await openSignOutDialog(page);
+
+    await expect(signOutDialog(page).getByRole('button', { name: 'Отмена' })).toBeFocused();
+    await expect(signOutDialog(page)).toContainText('Все сессии, включая эту, будут завершены.');
+  });
+
+  test('while sign out everywhere runs, its dialog stays open and Account actions is unavailable', async ({
+    page,
+    deployment,
+  }) => {
+    const account = await seedVerifiedUser(deployment, 'Tutor waiting for sign out');
+    await signedInAt(page, account, '/settings/account');
+    await openSignOutDialog(page);
+    let release: () => void = () => undefined;
+    const resumed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route('**/api/v1/auth/logout-all', async (route) => {
+      await resumed;
+      await route.continue();
+    });
+    heldRequests.push(async () => {
+      const signedOut = page.waitForResponse('**/api/v1/auth/logout-all');
+      release();
+      await signedOut;
+      await page.unroute('**/api/v1/auth/logout-all');
+    });
+
+    await signOutDialog(page).getByRole('button', { name: 'Выйти на всех устройствах' }).click();
+    await page.keyboard.press('Escape');
+
+    await expect(signOutDialog(page)).toBeVisible();
+    await expect(signOutDialog(page).getByRole('button', { name: 'Выйти на всех устройствах' })).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+    await expect(signOutDialog(page).getByRole('button', { name: 'Отмена' })).toHaveAttribute('aria-disabled', 'true');
+    await expect(accountActions(page)).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  test('Cancel on sign out everywhere revokes nothing', async ({ page, observedBrowser: browser, deployment }) => {
+    const account = await seedVerifiedUser(deployment, 'Tutor changing their mind about signing out');
+    const elsewhere = await freshContext(browser, deployment);
+    const otherPage = await elsewhere.newPage();
+    await signedInAt(otherPage, account, '/settings/account');
+    await signedInAt(page, account, '/settings/account');
+    const signOutRequests: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().endsWith('/api/v1/auth/logout-all')) {
+        signOutRequests.push(request.url());
+      }
+    });
+    await openSignOutDialog(page);
+
+    await signOutDialog(page).getByRole('button', { name: 'Отмена' }).click();
+
+    await expect(signOutDialog(page)).toHaveCount(0);
+    await expect(accountActions(page)).toBeFocused();
+    await otherPage.reload();
+    await expect(otherPage.getByRole('heading', { level: 1, name: 'Аккаунт' })).toBeVisible();
+    expect(signOutRequests).toEqual([]);
+    await elsewhere.close();
+  });
+
+  test('the delete dialog opens on its empty password field', async ({ page, deployment }) => {
+    const account = await seedVerifiedUser(deployment, 'Tutor looking at deletion');
+    await signedInAt(page, account, '/settings/account');
+
+    await openDeletionDialog(page);
+
+    await expect(deletionDialog(page).getByLabel('Текущий пароль')).toBeFocused();
+    await expect(deletionDialog(page).getByLabel('Текущий пароль')).toHaveValue('');
   });
 
   test('deleting the account with a wrong password is refused under the field', async ({

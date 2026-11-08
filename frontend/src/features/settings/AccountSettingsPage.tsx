@@ -1,6 +1,8 @@
-import { type ReactElement, type ReactNode, type SyntheticEvent, useEffect, useId, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, type RefObject, type SyntheticEvent, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ActionMenu } from '../../components/ui/ActionMenu.tsx';
+import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
   FormAlert,
@@ -8,18 +10,22 @@ import {
   SubmitButton,
   TextField,
   errorMessage,
+  fieldClass,
   fieldMessage,
   quietButtonClass,
   retryAfterSeconds,
   selectClass,
   stringField,
+  textButtonClass,
 } from '../../components/ui/Form.tsx';
-import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
+import { MoreIcon } from '../../components/ui/icons.tsx';
+import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type Me, useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { isLanguage, languages } from '../../lib/i18n/resources.ts';
 import { SettingsNav } from './SettingsNav.tsx';
+import { SettingsRow, SettingsRows } from './SettingsRow.tsx';
 import { TimezoneField } from './TimezoneField.tsx';
 
 type Outcome =
@@ -64,7 +70,7 @@ function RefusalMessage({ outcome }: { readonly outcome: Outcome }): ReactElemen
   );
 }
 
-function SelectField({
+function SelectRow({
   label,
   name,
   defaultValue,
@@ -80,11 +86,8 @@ function SelectField({
   const selectId = useId();
   const errorId = useId();
   return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={selectId} className="text-label">
-        {label}
-      </label>
-      <div className="relative">
+    <SettingsRow label={label} labelFor={selectId}>
+      <div className="relative w-full max-w-sm">
         <select
           id={selectId}
           name={name}
@@ -102,7 +105,7 @@ function SelectField({
           {error}
         </p>
       )}
-    </div>
+    </SettingsRow>
   );
 }
 
@@ -149,53 +152,72 @@ function PreferencesSection({ me }: { readonly me: Me }): ReactElement {
           setOutcome(failed(thrown));
         });
       }}
-      className="flex max-w-sm flex-col gap-4"
+      className="flex flex-col gap-4"
     >
       <h2 id={headingId} className="text-heading">
         {t('settings.preferences')}
       </h2>
       <RefusalMessage outcome={outcome} />
       <LiveNotice message={outcome.kind === 'done' ? t('settings.saved') : null} />
-      <SelectField
-        label={t('settings.language')}
-        name="language"
-        defaultValue={me.language}
-        error={fieldMessage(t, error, 'language')}
-      >
-        {languages.map((language) => (
-          <option key={language} value={language} lang={language}>
-            {t(`language.${language}`)}
-          </option>
-        ))}
-      </SelectField>
-      <TimezoneField
-        name="timezone"
-        defaultValue={me.timezone}
-        language={me.language}
-        error={fieldMessage(t, error, 'timezone')}
-      />
-      <SelectField
-        label={t('settings.theme')}
-        name="theme"
-        defaultValue={me.theme}
-        error={fieldMessage(t, error, 'theme')}
-      >
-        {themes.map((theme) => (
-          <option key={theme} value={theme}>
-            {t(`settings.themes.${theme}`)}
-          </option>
-        ))}
-      </SelectField>
-      <SubmitButton busy={outcome.kind === 'sending'}>{t('settings.save')}</SubmitButton>
+      <SettingsRows>
+        <SelectRow
+          label={t('settings.language')}
+          name="language"
+          defaultValue={me.language}
+          error={fieldMessage(t, error, 'language')}
+        >
+          {languages.map((language) => (
+            <option key={language} value={language} lang={language}>
+              {t(`language.${language}`)}
+            </option>
+          ))}
+        </SelectRow>
+        <SettingsRow label={t('settings.timezone')}>
+          <TimezoneField
+            name="timezone"
+            defaultValue={me.timezone}
+            language={me.language}
+            error={fieldMessage(t, error, 'timezone')}
+            legendHidden
+          />
+        </SettingsRow>
+        <SelectRow
+          label={t('settings.theme')}
+          name="theme"
+          defaultValue={me.theme}
+          error={fieldMessage(t, error, 'theme')}
+        >
+          {themes.map((theme) => (
+            <option key={theme} value={theme}>
+              {t(`settings.themes.${theme}`)}
+            </option>
+          ))}
+        </SelectRow>
+      </SettingsRows>
+      <div>
+        <SubmitButton busy={outcome.kind === 'sending'}>{t('settings.save')}</SubmitButton>
+      </div>
     </form>
   );
 }
 
-function PasswordSection(): ReactElement {
+function PasswordDialog({
+  open,
+  returnFocus,
+  onClose,
+  onChanged,
+}: {
+  readonly open: boolean;
+  readonly returnFocus: RefObject<HTMLElement | null>;
+  readonly onClose: () => void;
+  readonly onChanged: () => void;
+}): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const headingId = useId();
+  const firstField = useRef<HTMLInputElement>(null);
   const [outcome, setOutcome] = useState<Outcome>({ kind: 'idle' });
+  const sending = outcome.kind === 'sending';
   const error = outcome.kind === 'refused' ? outcome.error : null;
 
   async function change(form: HTMLFormElement): Promise<void> {
@@ -211,63 +233,133 @@ function PasswordSection(): ReactElement {
       setOutcome(refusedFrom(response, refusal));
       return;
     }
-    form.reset();
-    setOutcome({ kind: 'done' });
+    setOutcome({ kind: 'idle' });
+    onChanged();
   }
 
   return (
-    <form
-      aria-labelledby={headingId}
-      onChange={() => {
-        setOutcome(settled);
+    <ModalDialog
+      open={open}
+      busy={sending}
+      labelledBy={headingId}
+      returnFocus={returnFocus}
+      initialFocus={firstField}
+      onClose={() => {
+        setOutcome({ kind: 'idle' });
+        onClose();
       }}
-      onSubmit={(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
-        event.preventDefault();
-        change(event.currentTarget).catch((thrown: unknown) => {
-          setOutcome(failed(thrown));
-        });
-      }}
-      className="flex max-w-sm flex-col gap-4"
     >
-      <h2 id={headingId} className="text-heading">
-        {t('settings.changePassword')}
-      </h2>
-      <RefusalMessage outcome={outcome} />
-      <LiveNotice message={outcome.kind === 'done' ? t('settings.passwordChanged') : null} />
-      <TextField
-        label={t('settings.currentPassword')}
-        name="current_password"
-        type="password"
-        autoComplete="current-password"
-        error={fieldMessage(t, error, 'current_password')}
-      />
-      <TextField
-        label={t('verifyEmail.newPassword')}
-        name="new_password"
-        type="password"
-        autoComplete="new-password"
-        minLength={10}
-        maxLength={128}
-        hint={t('signUp.passwordHint')}
-        error={fieldMessage(t, error, 'new_password')}
-      />
-      <SubmitButton busy={outcome.kind === 'sending'} quiet>
-        {t('settings.changePassword')}
-      </SubmitButton>
-    </form>
+      <form
+        aria-labelledby={headingId}
+        onChange={() => {
+          setOutcome(settled);
+        }}
+        onSubmit={(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
+          event.preventDefault();
+          change(event.currentTarget).catch((thrown: unknown) => {
+            setOutcome(failed(thrown));
+          });
+        }}
+        className="flex flex-col gap-4"
+      >
+        <h2 id={headingId} className="text-heading">
+          {t('settings.changePassword')}
+        </h2>
+        <RefusalMessage outcome={outcome} />
+        <PasswordInput
+          inputRef={firstField}
+          label={t('settings.currentPassword')}
+          name="current_password"
+          autoComplete="current-password"
+          error={fieldMessage(t, error, 'current_password')}
+        />
+        <TextField
+          label={t('verifyEmail.newPassword')}
+          name="new_password"
+          type="password"
+          autoComplete="new-password"
+          minLength={10}
+          maxLength={128}
+          hint={t('signUp.passwordHint')}
+          error={fieldMessage(t, error, 'new_password')}
+        />
+        <div className="flex flex-wrap gap-3">
+          <SubmitButton busy={sending}>{t('settings.changePassword')}</SubmitButton>
+          <ActionButton busy={false} unavailable={sending} onClick={onClose} className={textButtonClass}>
+            {t('settings.cancel')}
+          </ActionButton>
+        </div>
+      </form>
+    </ModalDialog>
   );
 }
 
-function SignOutEverywhereSection(): ReactElement {
+function PasswordInput({
+  inputRef,
+  label,
+  name,
+  autoComplete,
+  error,
+}: {
+  readonly inputRef: RefObject<HTMLInputElement | null>;
+  readonly label: string;
+  readonly name: string;
+  readonly autoComplete: string;
+  readonly error: string | undefined;
+}): ReactElement {
+  const inputId = useId();
+  const errorId = useId();
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={inputId} className="text-label">
+        {label}
+      </label>
+      <input
+        ref={inputRef}
+        id={inputId}
+        name={name}
+        type="password"
+        autoComplete={autoComplete}
+        required
+        aria-invalid={error === undefined ? undefined : true}
+        aria-describedby={error === undefined ? undefined : errorId}
+        className={fieldClass}
+      />
+      {error === undefined ? null : (
+        <p id={errorId} className="text-small text-danger">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SignOutEverywhereDialog({
+  open,
+  returnFocus,
+  onBusy,
+  onClose,
+}: {
+  readonly open: boolean;
+  readonly returnFocus: RefObject<HTMLElement | null>;
+  readonly onBusy: (busy: boolean) => void;
+  readonly onClose: () => void;
+}): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const session = useSession();
+  const headingId = useId();
+  const consequenceId = useId();
+  const cancelButton = useRef<HTMLButtonElement>(null);
   const [outcome, setOutcome] = useState<Outcome>({ kind: 'idle' });
+  const sending = outcome.kind === 'sending';
 
   async function signOutEverywhere(): Promise<void> {
     setOutcome({ kind: 'sending' });
+    onBusy(true);
     const { error, response } = await session.whileEnding(() => client.POST('/api/v1/auth/logout-all'));
     if (!response.ok) {
+      onBusy(false);
       setOutcome(refusedFrom(response, error));
       return;
     }
@@ -275,61 +367,83 @@ function SignOutEverywhereSection(): ReactElement {
   }
 
   return (
-    <section className="flex max-w-reading flex-col gap-3">
-      <h2 className="text-heading">{t('settings.signOutEverywhere')}</h2>
-      <p className="text-text-muted">{t('settings.signOutEverywhereBody')}</p>
-      <RefusalMessage outcome={outcome} />
-      <p>
-        <ActionButton
-          busy={outcome.kind === 'sending'}
-          onClick={() => {
-            signOutEverywhere().catch((thrown: unknown) => {
-              setOutcome(failed(thrown));
-            });
-          }}
-          className={quietButtonClass}
-        >
-          {t('settings.signOutEverywhere')}
-        </ActionButton>
-      </p>
-    </section>
+    <ModalDialog
+      open={open}
+      busy={sending}
+      labelledBy={headingId}
+      describedBy={consequenceId}
+      returnFocus={returnFocus}
+      initialFocus={cancelButton}
+      onClose={() => {
+        setOutcome({ kind: 'idle' });
+        onClose();
+      }}
+    >
+      <div className="flex flex-col gap-4">
+        <h2 id={headingId} className="text-heading">
+          {t('settings.signOutEverywhereConfirm')}
+        </h2>
+        <p id={consequenceId}>{t('settings.signOutEverywhereBody')}</p>
+        <RefusalMessage outcome={outcome} />
+        <div className="flex flex-wrap gap-3">
+          <ActionButton
+            busy={sending}
+            onClick={() => {
+              signOutEverywhere().catch((thrown: unknown) => {
+                onBusy(false);
+                setOutcome(failed(thrown));
+              });
+            }}
+            className={dangerButtonClass}
+          >
+            {t('settings.signOutEverywhere')}
+          </ActionButton>
+          <ActionButton
+            ref={cancelButton}
+            busy={false}
+            unavailable={sending}
+            onClick={onClose}
+            className={textButtonClass}
+          >
+            {t('settings.cancel')}
+          </ActionButton>
+        </div>
+      </div>
+    </ModalDialog>
   );
 }
 
-function DeleteAccountSection({ role }: { readonly role: Me['role'] }): ReactElement {
+function DeleteAccountDialog({
+  role,
+  open,
+  returnFocus,
+  onBusy,
+  onClose,
+}: {
+  readonly role: Me['role'];
+  readonly open: boolean;
+  readonly returnFocus: RefObject<HTMLElement | null>;
+  readonly onBusy: (busy: boolean) => void;
+  readonly onClose: () => void;
+}): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const session = useSession();
-  const dialog = useRef<HTMLDialogElement>(null);
-  const opener = useRef<HTMLButtonElement>(null);
   const headingId = useId();
   const consequenceId = useId();
-  const [opening, setOpening] = useState(0);
-  const [open, setOpen] = useState(false);
+  const passwordField = useRef<HTMLInputElement>(null);
   const [outcome, setOutcome] = useState<Outcome>({ kind: 'idle' });
   const sending = outcome.kind === 'sending';
   const error = outcome.kind === 'refused' ? outcome.error : null;
 
-  useEffect(() => {
-    const element = dialog.current;
-    if (element === null) {
-      return;
-    }
-    if (open && !element.open) {
-      element.showModal();
-    }
-    if (!open && element.open) {
-      element.close();
-      opener.current?.focus();
-    }
-  }, [open]);
-
   async function remove(data: FormData): Promise<void> {
     setOutcome({ kind: 'sending' });
+    onBusy(true);
     const { error: refusal, response } = await session.whileEnding(() =>
       client.DELETE('/api/v1/users/me', { body: { password: stringField(data, 'password') } }),
     );
     if (!response.ok) {
+      onBusy(false);
       setOutcome(refusedFrom(response, refusal));
       return;
     }
@@ -337,100 +451,143 @@ function DeleteAccountSection({ role }: { readonly role: Me['role'] }): ReactEle
   }
 
   return (
-    <section className="flex max-w-reading flex-col gap-3">
-      <h2 className="text-heading">{t('settings.deleteAccount')}</h2>
-      <p className="text-text-muted">{t('settings.deleteAccountBody')}</p>
-      <p>
-        <button
-          ref={opener}
-          type="button"
-          onClick={() => {
-            if (sending) {
-              return;
-            }
-            setOutcome({ kind: 'idle' });
-            setOpening((count) => count + 1);
-            setOpen(true);
-          }}
-          className={dangerButtonClass}
-        >
-          {t('settings.deleteAccount')}
-        </button>
-      </p>
-      <dialog
-        ref={dialog}
-        aria-labelledby={headingId}
-        aria-describedby={consequenceId}
-        onCancel={(event) => {
-          if (sending) {
-            event.preventDefault();
-          }
+    <ModalDialog
+      open={open}
+      busy={sending}
+      labelledBy={headingId}
+      describedBy={consequenceId}
+      returnFocus={returnFocus}
+      initialFocus={passwordField}
+      onClose={() => {
+        setOutcome({ kind: 'idle' });
+        onClose();
+      }}
+    >
+      <form
+        onChange={() => {
+          setOutcome(settled);
         }}
-        onClose={() => {
-          if (sending) {
-            dialog.current?.showModal();
-            return;
-          }
-          setOpen(false);
-          opener.current?.focus();
+        onSubmit={(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
+          event.preventDefault();
+          remove(new FormData(event.currentTarget)).catch((thrown: unknown) => {
+            onBusy(false);
+            setOutcome(failed(thrown));
+          });
         }}
-        className="m-auto w-full max-w-sm rounded-lg border border-border bg-surface p-6 text-text shadow-raised backdrop:bg-scrim dark:border-border-strong dark:shadow-none"
+        className="flex flex-col gap-4"
       >
-        <form
-          key={opening}
-          onChange={() => {
-            setOutcome(settled);
-          }}
-          onSubmit={(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
-            event.preventDefault();
-            remove(new FormData(event.currentTarget)).catch((thrown: unknown) => {
-              setOutcome(failed(thrown));
-            });
-          }}
-          className="flex flex-col gap-4"
-        >
-          <h3 id={headingId} className="text-heading">
-            {t('settings.deleteAccountConfirm')}
-          </h3>
-          <p id={consequenceId}>{t(`settings.deleteAccountConsequence.${role}`)}</p>
-          <RefusalMessage outcome={outcome} />
-          <TextField
-            label={t('settings.currentPassword')}
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            error={fieldMessage(t, error, 'password')}
-          />
-          <div className="flex flex-wrap gap-3">
-            <ActionButton type="submit" busy={sending} className={dangerButtonClass}>
-              {t('settings.deleteAccountSubmit')}
-            </ActionButton>
-            <ActionButton
-              busy={false}
-              unavailable={sending}
-              onClick={() => {
-                setOpen(false);
-              }}
-              className="inline-flex min-h-11 items-center px-3 text-small text-accent-text underline aria-disabled:opacity-60"
-            >
-              {t('settings.cancel')}
-            </ActionButton>
-          </div>
-        </form>
-      </dialog>
-    </section>
+        <h2 id={headingId} className="text-heading">
+          {t('settings.deleteAccountConfirm')}
+        </h2>
+        <p id={consequenceId}>{t(`settings.deleteAccountConsequence.${role}`)}</p>
+        <RefusalMessage outcome={outcome} />
+        <PasswordInput
+          inputRef={passwordField}
+          label={t('settings.currentPassword')}
+          name="password"
+          autoComplete="current-password"
+          error={fieldMessage(t, error, 'password')}
+        />
+        <div className="flex flex-wrap gap-3">
+          <ActionButton type="submit" busy={sending} className={dangerButtonClass}>
+            {t('settings.deleteAccountSubmit')}
+          </ActionButton>
+          <ActionButton busy={false} unavailable={sending} onClick={onClose} className={textButtonClass}>
+            {t('settings.cancel')}
+          </ActionButton>
+        </div>
+      </form>
+    </ModalDialog>
   );
 }
 
+type AccountDialog = 'password' | 'signOutEverywhere' | 'delete' | null;
+
 export function AccountSettingsPage(): ReactElement {
+  const { t } = useTranslation();
   const me = useSignedInAccount();
+  const passwordButton = useRef<HTMLButtonElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const [dialog, setDialog] = useState<AccountDialog>(null);
+  const [ending, setEnding] = useState(false);
+  const [passwordNotice, setPasswordNotice] = useState(0);
+  const securityHeading = useId();
+  const close = (): void => {
+    setDialog(null);
+  };
+
   return (
-    <Page width="reading">
+    <Page
+      menu={
+        <ActionMenu
+          label={t('settings.accountActions')}
+          unavailable={ending}
+          busy={ending}
+          buttonRef={menuButton}
+          items={[
+            {
+              label: t('settings.signOutEverywhere'),
+              onChoose: (): void => {
+                setDialog('signOutEverywhere');
+              },
+            },
+            {
+              label: t('settings.deleteAccount'),
+              onChoose: (): void => {
+                setDialog('delete');
+              },
+            },
+          ]}
+        >
+          <MoreIcon />
+        </ActionMenu>
+      }
+    >
       <SettingsNav />
       <PreferencesSection key={me.id} me={me} />
-      <PasswordSection />
-      <SignOutEverywhereSection />
-      <DeleteAccountSection role={me.role} />
+      <section aria-labelledby={securityHeading} className="flex flex-col gap-4">
+        <h2 id={securityHeading} className="text-heading">
+          {t('settings.security')}
+        </h2>
+        {passwordNotice === 0 ? null : <FocusedNotice key={passwordNotice} message={t('settings.passwordChanged')} />}
+        <SettingsRows>
+          <SettingsRow label={t('settings.password')}>
+            <button
+              ref={passwordButton}
+              type="button"
+              onClick={() => {
+                setPasswordNotice(0);
+                setDialog('password');
+              }}
+              className={quietButtonClass}
+            >
+              {t('settings.changePassword')}
+            </button>
+          </SettingsRow>
+        </SettingsRows>
+      </section>
+      <PasswordDialog
+        open={dialog === 'password'}
+        returnFocus={passwordButton}
+        onClose={close}
+        onChanged={() => {
+          setDialog(null);
+          setPasswordNotice((count) => count + 1);
+        }}
+      />
+      <SignOutEverywhereDialog
+        open={dialog === 'signOutEverywhere'}
+        returnFocus={menuButton}
+        onBusy={setEnding}
+        onClose={close}
+      />
+      <DeleteAccountDialog
+        role={me.role}
+        open={dialog === 'delete'}
+        returnFocus={menuButton}
+        onBusy={setEnding}
+        onClose={close}
+      />
     </Page>
   );
 }
