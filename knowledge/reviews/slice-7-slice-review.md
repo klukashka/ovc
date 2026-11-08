@@ -1,6 +1,6 @@
 # Slice 7 slice review
 
-Status: review completed 2026-11-07; the follow-up code changes have merged, as listed below. This record is evidence for the owner's slice decision, not an owner acceptance and not a slice closure. Remote BigBlueButton behaviour stays `unverified` throughout.
+Status: review completed 2026-11-07; the follow-up code changes have merged, as listed below. The review was resolved for local closure on 2026-11-08; see [Resolution](#resolution). Remote BigBlueButton behaviour stays `unverified` throughout.
 
 ## Scope
 
@@ -220,7 +220,13 @@ Each rerun was a one-time owner exception for this change only and sets no prece
 
 ## Open items for slice closure
 
+All resolved on 2026-11-08 as the [Resolution](#resolution) records; the list below is kept as the original record.
+
 - The owner accepts or carries each known limitation added by this review, and the stress-run readiness entry.
 - The WebKit end-to-end failures seen in the gates of the cleanup reclaim, test harness pool and access-rules changes are investigated as a flaky-test bug, or carried by the owner into a named later slice.
 - The chat download slot failures are fixed by the separate change being investigated, or carried by the owner.
 - Remote activation stays blocked on the [remote-activation checklist](../plans/slice-7-remote-activation-checklist.md) and the probe of the [slice 7 plan](../plans/slice-7.md#remote-prerequisites-and-probe-before-live-provider-acceptance).
+
+## Resolution
+
+Resolved for local closure on 2026-11-08. The owner gave every open entry of the [slice 7 known limitations](slice-7-known-limitations.md#owner-dispositions-2026-11-08) a disposition: the remaining minor test, code and performance items are accepted as known limitations of slice 7; the provider-specific items are carried into the [remote BigBlueButton probe and activation](../plans/slice-7.md#remote-prerequisites-and-probe-before-live-provider-acceptance) and held by its [remote-activation checklist](../plans/slice-7-remote-activation-checklist.md); the WebKit failures under heavy load, the readiness failures seen only under a stress run and Join on Home and Today are carried into the [design slice](../plans/design-slice.md). The chat download slot failures were resolved by their own change. The remote probe is still pending a host, and remote BigBlueButton behaviour stays `unverified`; this resolution does not approve activation of a real provider.

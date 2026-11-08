@@ -1,6 +1,6 @@
 # Slice 7 known limitations
 
-Status: working review inventory. Entries are evidence for cumulative slice review, not automatic owner acceptance or permission to close the slice.
+Status: resolved for local closure on 2026-11-08. The owner gave every open entry a disposition: accepted as a known limitation of slice 7, carried into the [remote BigBlueButton probe and activation](../plans/slice-7.md#remote-prerequisites-and-probe-before-live-provider-acceptance) through its [remote-activation checklist](../plans/slice-7-remote-activation-checklist.md), or carried into the [design slice](../plans/design-slice.md) ("Design slice: the desktop interface" in the roadmap). The [summary of dispositions](#owner-dispositions-2026-11-08) at the end lists every entry. Remote BigBlueButton behaviour stays `unverified`; local closure does not approve activation.
 
 ## Cleanup reinspection interleaving
 
@@ -12,6 +12,8 @@ An unchanged original generation after a stale-End refusal cannot be produced by
 
 Disposition: the reachable local fake interleaving coverage gap is closed by the executed follow-up and independent reviews, with integration authorized only by the exact failed-gate exception above, not by an ordinary passing gate. The remaining provider-specific unchanged-generation outcome is retained for the named slice 7 BBB adapter and remote-activation follow-up. This is not owner acceptance for slice closure. Backend and security cumulative reviewers must recheck this entry. See the [original implementation evidence](slice-7-meeting-cleanup-worker.md) and [interleaving follow-up](slice-7-cleanup-interleavings.md).
 
+Owner dispositions, 2026-11-08: the unchanged-generation branch is carried into the remote BigBlueButton probe and activation, where the remote-activation checklist holds it.
+
 ## Meeting lifecycle residuals
 
 Recorded 2026-11-06 with the authorized lifecycle change; each is an item for the cumulative reviewers, not an owner acceptance.
@@ -21,6 +23,8 @@ Recorded 2026-11-06 with the authorized lifecycle change; each is an item for th
 - **Stale rows near the head of a page.** The scanner's abandoned-row pass reads the oldest 100 and a failing row stays at the head. Failures stay visible through the failed job. Severity: minor.
 - **Unreachable revocation conflict.** The `conflict` branch of `Rooms.revoke`, a current generation that differs from the revoked one, cannot be produced by the shared fake, because application provider identifiers are never reused. It answers `503` and must be checked against the BigBlueButton adapter. Severity: minor.
 - **Budget of the live status pass.** It shares the status job's 20-second budget after the scheduled pass and inherits the recorded overrun limitation of the [slice 5 known limitations](slice-5-known-limitations.md). Severity: minor.
+
+Owner dispositions, 2026-11-08: the unreachable revocation conflict is carried into the remote BigBlueButton probe and activation. "A restart that cannot confirm End blocks the room" is carried there only for the end-latency measurement against the 5-second End wait; otherwise it is accepted as a known limitation of slice 7. Roster-only viewers, stale rows near the head of a page and the budget of the live status pass are accepted as known limitations of slice 7.
 
 ## Uncertain obligations never close
 
@@ -34,12 +38,16 @@ A started or uncertain obligation never settles, because remote quiescence canno
 
 Severity: minor. A clock stepped back behind a row's `updated_at` can no longer strand a close, but Open and first join keep their guards. A refused Open retires the row and creates one extra provider room. A refused first join discards the link and answers `503` until the clock catches up. A clock stepped back behind an uncertain outcome ends that lesson's pause early, because an outcome later than the current instant does not count. No room is stranded and cleanup keeps ownership.
 
+Owner dispositions, 2026-11-08: accepted as a known limitation of slice 7.
+
 ## Realtime client connection limits
 
 Recorded 2026-11-06 from the independent reviews of closing a connecting realtime socket only after it opens. Both are minor and neither blocks local slice 7 work.
 
 - **A hung handshake delays the next socket.** The client no longer closes a connecting socket, so if the upgrade stalls, a new socket to the same address can queue behind it until the browser gives up. A local probe showed the next socket still connecting after 5 seconds in Chromium, Firefox and WebKit. Only live updates wait, REST is unaffected, and the client had no connect timeout before. The browser's own timeout was not measured. Accepted because an injected deadline would add a console message on an already broken path; revisit with the real-network reconnect measurement of the remote probe.
 - **A socket opening during an account adoption can send the old token.** `adopt` advances the session epoch before it notifies listeners, so a still-connecting socket of the old client that opens in that window sends `auth` with the old account's own token, and non-chat frames can trigger refetches, which REST answers under the new token. No cross-account data was found on this path, and the server still validates that token. This predates the change above. A later change should add the epoch check to the client's `onOpen` guard, with a test. The slice review found the window lasts a whole account read and that `authenticated()` (and so `onReadiness` and the typing wiring) and the `entity.changed` and `notification.new` handling were unguarded too. **Resolved 2026-11-07** by the change that closes the lesson room client residuals: a socket of an older epoch that opens closes without sending `auth`, and every frame it receives, `ready` included, reaches no callback; `client.test.ts` opens the old socket and delivers `ready`, `entity.changed` and `notification.new` while the adoption's account read is held.
+
+Owner dispositions, 2026-11-08: the hung handshake is carried into the remote BigBlueButton probe and activation and revisited with its real-network reconnect measurement. The account adoption entry was already resolved.
 
 ## Navigable fake room residuals
 
@@ -50,15 +58,21 @@ Recorded 2026-11-07 with the [navigable fake room](slice-7-fake-room.md); each i
 - **An unusable default room origin fails late.** With the flag `Load` accepts `OVC_HTTP_ADDR` values that give no usable room origin, for example port 0, a named or empty port, another address of `127.0.0.0/8`, an IPv4-mapped address or a zone, and the default room origin built from them is refused. The API then stops at composition with a generic invalid input failure that names no variable. It fails closed and only under a local test configuration. Severity: minor.
 - **No resume after a back-forward restore.** The room stops refreshing on `pagehide` and does not resume if the browser restores the page from the back-forward cache, so the page shows its last state until it is reloaded. The room is served `no-store` and exists only for tests. Severity: minor.
 
+Owner dispositions, 2026-11-08: all four are accepted as known limitations of slice 7.
+
 ## End-to-end readiness failures seen only under a stress run
 
 Severity: minor, not assessed by a reviewer. Change: the readiness fix for cancelled writes in `frontend/e2e/navigation-readiness.ts`. Repeating one Chromium test of `session.spec.ts` 400 times with 12 workers also produced `GET /api/v1/health/ready` answered `503` after about one second (`response_refused_or_duplicate`), reads still pending when the 5-second readiness wait ended, and a failed `ovc-admin users block`. Their causes are not established. They may be overload from the stress run itself, because the same test passed 60 of 60 repetitions at ordinary load, and the failures clustered at the same moments. They were accepted because no full gate has been shown to fail from them. Recheck them at the slice review.
 
 Slice review status, 2026-11-07: still open and unverified. None of the five slice reviewers ran a stress repetition, because the machine was kept quiet for other work, and no change in the reviewed range shows a cause or a gate failure from these symptoms. The cause of the failed `ovc-admin users block` under stress, a harness subprocess or overload, is not established. The slice cannot close on this entry until the owner accepts it or carries it into a named later slice; the development tooling reviewer recommends carrying it into the slice that runs the remote probe, or slice 10, with a time-boxed causal check on an idle machine.
 
+Owner dispositions, 2026-11-08: carried into the design slice, with a time-boxed causal check on an idle machine.
+
 ## End-to-end readiness and cancelled writes
 
 Severity: minor, from the standard review. Change: the readiness fix for cancelled writes. A non-GET request cancelled without any response no longer fails the readiness observer. On a page with watched diagnostics such a cancellation still fails at teardown, unless the existing navigation, close or expected-abort rules excuse it. The second and third tabs of `session.spec.ts:197` and `:220` have a readiness observer without watched diagnostics, so an unanswered cancelled refresh there is not detected. Readiness also no longer shows that the server has finished a cancelled write. The owner accepted this on 2026-11-07, because it is unknown whether the observed cancellation had a response before it. The cause of the cancellation is also not established. Recheck both at the slice review.
+
+Owner dispositions, 2026-11-08: the owner's acceptance of 2026-11-07 stands.
 
 ## Lesson room interface residuals
 
@@ -73,6 +87,8 @@ Recorded 2026-11-07 with the lesson room interface; each is an item for the cumu
 - **Calendar items with `took_place` are proven by the API only.** No component test renders an ended calendar item that took place, and no backend test asserts `took_place` on `GET /calendar`. Severity: minor.
 - **A successful late answer after sign-out has no browser test.** The end-to-end sign-out test holds the join request, so it reaches the API after sign-out and gets `401`; the client dropping a successful answer that arrives after an account change is proven by the component test "unmounting, as an account change does, closes the tab and drops the late answer". Holding a response is not allowed under the no-mocks rule. Severity: minor.
 
+Owner dispositions, 2026-11-08: Join on Home and Today stays carried into the design slice. The blocked new tab keeps the owner's acceptance of 2026-11-07. The other six entries are accepted as known limitations of slice 7.
+
 ## Meeting cleanup reclaim residuals
 
 Recorded 2026-11-07 with the change that reports failed meeting cleanup lease reclaims per item instead of stopping the worker, from its independent standard and security reviews. Each is minor, internal-fault only, touches no trust boundary and does not block local slice 7 work.
@@ -82,6 +98,8 @@ Recorded 2026-11-07 with the change that reports failed meeting cleanup lease re
 - **A database outage after a successful list.** It becomes up to 100 per-item warnings and the pass returns without error; the worker stops on the next pass, when the list itself fails.
 - **Untested reclaim branches.** No test covers a failed item retried on a later pass, the 20-second budget ending a pass without error, or parent cancellation returning the joined error.
 
+Owner dispositions, 2026-11-08: all four are accepted as known limitations of slice 7.
+
 ## Lesson room client residual tests
 
 Recorded 2026-11-07 from the independent standard review of the change that closes the lesson room client residuals. Both are minor, touch no trust boundary and do not block local slice 7 work.
@@ -89,11 +107,15 @@ Recorded 2026-11-07 from the independent standard review of the change that clos
 - **End against an in-flight refetch is proven only through its helper.** `lessonCache.test.ts` proves that `replaceLessonDetail` cancels a held lesson read before writing the ended detail, but no `LessonRoom.test.tsx` test holds a refetch while End is confirmed, because jsdom has no modal dialog; nothing proves the End path calls the helper.
 - **The real room tab's closed and throwing branches have no test.** `openBrowserRoomTab` checks `closed` and catches a throwing `location.replace`, but only the test fake `RoomTabs` copies the closed check, and the throwing case described in the page specification is not exercised.
 
+Owner dispositions, 2026-11-08: both are accepted as known limitations of slice 7.
+
 ## Presence test deadlines raised
 
 Recorded 2026-11-07 from the development tooling review of the slice, which found the change and its approval recorded only in a commit message. Commit `3023459` ("Remove load and race assumptions from presence and capacity tests") raised the presence-operation deadline of six presence tests from 100 ms to 2 s: `TestPendingPresenceAccountsHaveATotalCapacity`, `TestPresenceOperationsRespectAdmissionAndShutdownDeadlines`, `TestReadyFailsWhenPresenceCannotCommit`, `TestAFailedPresenceReleaseRemainsPending`, `TestShutdownWithPendingPresenceReportsIncompleteRelease` and `TestChatPresenceFailureRecordsCarryNoBodiesNamesOrAddresses`. Cause: the deadline also applied to the connection each test makes during setup, so on a busy machine the socket closed with 1012 before the test began; the neighbouring tests already used 2 s. The admission bound of `TestPresenceOperationsRespectAdmissionAndShutdownDeadlines` scales with it, from 1 s to twice the deadline. The project owner approved the change on 2026-11-07, as AGENTS.md requires for a raised timeout. Severity: minor.
 
 This closes the note in the [lesson form layout record](lesson-form-layout.md) that the two presence tests stay open as flaky, for the setup-connection cause only. The earlier retained-lease failure of `TestPresenceOperationsRespectAdmissionAndShutdownDeadlines` recorded in the [storage verification record](slice-7-meeting-recovery-storage.md) has no established cause; a recurrence after this change is a new flaky-test bug, not covered by it.
+
+Owner dispositions, 2026-11-08: the owner's approval of 2026-11-07 stands.
 
 ## WebKit end-to-end failures under heavy load
 
@@ -122,11 +144,15 @@ Measured 2026-11-08 with Playwright 1.63.0, running the full end-to-end suite ex
 
 The owner decided on 2026-11-08 not to limit WebKit workers. The idle baseline passes, and the gate failures track load from other processes and memory pressure. Those are addressed by the rule that heavy runs never overlap, by the redacted failure diagnostics and by the fake-clock fix of the resend countdown test. The entry stays open until a gate failure in WebKit is diagnosed from its kept evidence.
 
+Owner dispositions, 2026-11-08: carried into the design slice. The next WebKit gate failure is diagnosed there from its kept redacted evidence.
+
 ## Chat download slot availability under load
 
 Recorded 2026-11-07 from the fourth gate attempt of the access-rules change `0a16bd1`. Severity: minor. Status: open, a flaky-test bug. `TestChatDownloadFinalProbeHonorsCancellationAndConcurrentClose` and `TestChatDownloadOpeningDeadlineIncludesDatabaseWaits` failed with "a released download slot was unavailable"; `TestChatDownloadCloseRacesItsDeadline` belongs to the same group of download slot tests. They passed in the fifth, owner-approved attempt on the same tree ([slice review gate evidence](slice-7-slice-review.md#merge-gate-evidence-for-the-access-rules-change)). The cause is not established. A fix is being investigated as a separate change; until it merges, a recurrence is reported as a failed check, never rerun silently.
 
 **Resolved 2026-11-07** by the change that gives the download lifecycle tests the service's default opening deadline. The cause was not a slot leak: the harness gave every lifecycle test a 200 ms opening deadline, and under load some of the 64 opens in `assertDownloadSlotsAvailable` reached it against the local storage server (reproduced in 15 of 15 stressed runs, every failure a deadline). Only `TestChatDownloadOpeningDeadlineIncludesDatabaseWaits` keeps 200 ms; the helper fails at once on `ErrDownloadsBusy` and on any error other than an opening deadline, and re-opens after an opening deadline until 64 are admitted within `pauseDeadline`, then still requires the 65th to be refused. Residual, minor: `pauseDeadline` is checked only after a failed open, so in the tests with the 30-second default one hung open would be caught by the `go test` timeout rather than by this check.
+
+Owner dispositions, 2026-11-08: the `pauseDeadline` residual is accepted as a known limitation of slice 7.
 
 ## Lock-waiter poll bounds
 
@@ -135,9 +161,13 @@ Recorded 2026-11-07 from the re-review of the change that gives the API test har
 - **A poll timeout does not name the waiter poll.** When a bounded poll query times out, the test fails with a bare "context deadline exceeded" that does not say it came from the lock-waiter poll, so a reader has to find the cause from the stack.
 - **The worst case is about twice the pause deadline.** Each poll query is bounded by the same `pauseDeadline` as the overall wait, so a query started just before the overall deadline can run for another full `pauseDeadline`.
 
+Owner dispositions, 2026-11-08: both are accepted as known limitations of slice 7.
+
 ## Slice review residuals
 
 Recorded 2026-11-07 from the [slice 7 slice review](slice-7-slice-review.md) of `e201e16..2950e1c`. Every entry is minor and was not fixed in code by the follow-up changes of that review. Each is an item for the owner, not an owner acceptance. Entries marked "remote activation" are carried into the [remote-activation checklist](../plans/slice-7-remote-activation-checklist.md) and must be resolved or explicitly accepted before a real provider is selected.
+
+Owner dispositions, 2026-11-08: every entry marked "remote activation" is carried into the remote BigBlueButton probe and activation; every other entry is accepted as a known limitation of slice 7. Each subsection below repeats its own disposition.
 
 ### Backend meeting coordination
 
@@ -145,6 +175,8 @@ Recorded 2026-11-07 from the [slice 7 slice review](slice-7-slice-review.md) of 
 - **The recovery scanner writes its cursor once per candidate.** The scanner advances the singleton `meeting_recovery_cursor` with a compare-and-set update before each of up to 100 candidates per pass, including candidates with nothing due. With at least 100 candidates this is steady write-ahead-log and dead-tuple churn on one hot row, and it contends with the other worker processes' compare-and-set, which then stop early. Correctness holds. A later change can filter candidates in memory first and advance the cursor once per batch, with a matching update of the notifications specification.
 - **A Create failure followed by two failed closures adds a 10-second wait.** When Create fails and the audience moves under both closure attempts, the coordinator returns an error that still wraps the audience-moved signal, so the join retries, finds the young `creating` row, polls it for the full 10-second creating wait and only then answers `503`. Later joins on that lesson wait the same 10 seconds until the scanner closes the row after a minute. State stays safe, because the scanner closes the row and cleanup keeps ownership. A later change can classify join retries on the primary cause only.
 - **SQL literals duplicate Go constants.** The quiet window of 1 hour appears as `interval '1 hour'` in `backend/queries/meeting_recovery.sql` and in the check constraint of migration `00031`, and the global capacity of 4096 as `unsettled < 4096` in `backend/queries/meetings.sql`, while Go uses `domain.MeetingCreateQuietWindow` and `domain.MeetingRecoveryCapacity`. Changing a Go constant alone would make cleanup report settlements the database refuses, and `ovc-admin` would print a capacity the database does not enforce. The upload intent capacity follows the same pattern. A later change can pass both values as sqlc parameters, or add a test that fails on drift.
+
+Owner dispositions, 2026-11-08: all four are accepted as known limitations of slice 7.
 
 ### Lesson room client
 
@@ -155,11 +187,15 @@ Recorded 2026-11-07 from the [slice 7 slice review](slice-7-slice-review.md) of 
 - **The frame's `allow` list holds only for the frame's own origin (remote activation).** The `allow` value names no origins, so it defaults to the `src` origin. If the BigBlueButton join address redirects the frame to another origin, for example through a load balancer or a node host, camera and microphone are denied inside the room, and the page cannot detect it. The fake room keeps one origin.
 - **Phone joins depend on the backgrounded opener page (remote activation).** On phones every join opens a blank tab first and navigates it when the join answer arrives. On an iPhone the OVC page goes to the background when the tab opens, and WebKit may throttle or suspend it, so the tab could stay blank until the user switches back. Playwright WebKit on a desktop cannot show this. If it fails on a device, the new tab can load a same-origin OVC joining route that performs the join itself.
 
+Owner dispositions, 2026-11-08: the frame's `allow` list and phone joins are carried into the remote BigBlueButton probe and activation. The other four are accepted as known limitations of slice 7.
+
 ### Fake room and test control
 
 - **The fake room's presence flag is not authoritative.** This extends the entry "Closing a tab leaves the participant present" under the navigable fake room residuals: closing a room tab or removing a frame sends no leave, so the fake reports the participant present until the room ends. Nothing depends on it today. A future decision that uses presence as evidence for authorization or cleanup, for example "nobody is present, so end", must not trust fake presence. The [threat model](../../docs/threat-model.md#slice-7-cumulative-review-residuals) records the residual.
 - **Shared cookies on the loopback address in end-to-end tests (informational).** The test room origin `https://127.0.0.1:<roomPort>` is same-site with the OVC preview origin `https://127.0.0.1:<port>`, because cookies ignore ports, so a script there could toss host cookies, the T-24 pattern. The only script on that origin is OVC's own static fake room script, which touches no cookies, and the refresh route's exact-origin check rejects that origin. Test-only.
 - **The default fake room origin is the API origin (informational).** Without an explicit fake room origin setting, the room origin is `http://` plus the API listen address, so the fake room script runs same-origin with `/api` and every `/__test__/` route. It is OVC's own constant script, renders server names with `textContent` and runs under `script-src 'self'`. The end-to-end deployment always sets the separate HTTPS room origin. Test-only.
+
+Owner dispositions, 2026-11-08: all three are accepted as known limitations of slice 7.
 
 ### Provider admission and deployment
 
@@ -168,9 +204,13 @@ Recorded 2026-11-07 from the [slice 7 slice review](slice-7-slice-review.md) of 
 - **An intermediary may retry the `create` request (remote activation).** BigBlueButton's `create` is a GET. OVC's adapter disables connection reuse, so Go never replays it, which is the premise of the quiet-window settlement of ADR-0021. A reverse proxy or load balancer in front of the provider may still retry it on an upstream error or timeout, and an ended identifier can create a new generation, so a room could exist that OVC records as absent or ended, possibly on another server. This also reopens the cleanup branches recorded above as unreachable. The deployment must use a single upstream with no retries for the provider API.
 - **No frame sandbox and no `Permissions-Policy` header (informational, remote activation).** The specification requires neither. Camera, microphone, display capture, fullscreen and autoplay are delegated only to the frame's own origin, and `frame-src` limits frames to the room origin. At activation, decide in the embedding decision record whether to send a `Permissions-Policy` naming the room origin and whether BigBlueButton tolerates a sandbox without top navigation, and record the outcome in T-16.
 
+Owner dispositions, 2026-11-08: all four are carried into the remote BigBlueButton probe and activation.
+
 ### Development tooling
 
 - **A package-layer qualifier is not enforced by the architecture test.** The row of `internal/services/meetings` in the package layers table of `knowledge/architecture/detailed.md` allows `internal/services/outbox` "(exported typed recovery outcome only)", but `backend/internal/conventions/architecture_test.go` reads only code spans, so the whole outbox package is allowed and the restriction is prose. A later change can drop the qualifier or move the shared outcome type into a package the row can name precisely.
+
+Owner dispositions, 2026-11-08: accepted as a known limitation of slice 7.
 
 ## Resend countdown timing coverage
 
@@ -181,6 +221,8 @@ Recorded 2026-11-08 from the independent review of the change that pauses the fa
 
 The same day, `[webkit] e2e/messages.spec.ts:164`, "editing and deleting own messages, and the tutor deleting a member's message", timed out once in a merge gate on a click at a load average near 17. It belongs to the open entry on WebKit end-to-end failures under heavy load.
 
+Owner dispositions, 2026-11-08: both items are accepted as known limitations of slice 7. The WebKit timeout follows the WebKit entry into the design slice.
+
 ## End-to-end failure diagnostics residuals
 
 Recorded 2026-11-07 from the reviews of the change that keeps redacted browser diagnostics of failed end-to-end runs. Every item is minor, and none lets a credential defined in ADR-0009 into the kept evidence.
@@ -189,3 +231,72 @@ Recorded 2026-11-07 from the reviews of the change that keeps redacted browser d
 - **Some segments are redacted unevenly.** An opaque path segment of lower-case letters only, up to 40 characters, stays readable. A route word of 16 or more characters that contains a digit is redacted.
 - **A free-text token of 16 to 31 characters can survive.** This holds for a token that is not a bearer value, not a `name=` assignment and not in a path. No ADR-0009 token is that short.
 - **The gate checks before it reads.** It checks that a test's `browser-diagnostics.json` is a regular file with a single link, then reads it later with `cat`. A process left over from the run could swap the file in between. This is accidental exposure only, because the gated code runs anyway.
+
+Owner dispositions, 2026-11-08: all four are accepted as known limitations of slice 7.
+
+## Owner dispositions, 2026-11-08
+
+The owner decided on 2026-11-08 the disposition of every entry still open. "Remote activation" means carried into the [remote BigBlueButton probe and activation](../plans/slice-7.md#remote-prerequisites-and-probe-before-live-provider-acceptance), whose [remote-activation checklist](../plans/slice-7-remote-activation-checklist.md) holds each such item. "Design slice" means carried into the [design slice](../plans/design-slice.md). "Accepted" means accepted by the owner as a known limitation of slice 7.
+
+| Entry | Disposition |
+| --- | --- |
+| Cleanup reinspection interleaving: reachable local fake coverage | Closed earlier by the interleaving follow-up |
+| Cleanup reinspection interleaving: unchanged generation after a stale-End refusal | Remote activation |
+| Meeting lifecycle: roster-only viewers get no room frames | Accepted |
+| Meeting lifecycle: a restart that cannot confirm End blocks the room | Remote activation for the end-latency measurement only; otherwise accepted |
+| Meeting lifecycle: stale rows near the head of a page | Accepted |
+| Meeting lifecycle: unreachable revocation conflict | Remote activation |
+| Meeting lifecycle: budget of the live status pass | Accepted |
+| Uncertain obligations never close | Resolved earlier by the quiet-window settlement of ADR-0021 |
+| Clock step residual | Accepted |
+| Realtime client: a hung handshake delays the next socket | Remote activation, with the real-network reconnect measurement |
+| Realtime client: a socket opening during an account adoption | Resolved earlier |
+| Navigable fake room: removing a room frame can abort a refresh | Accepted |
+| Navigable fake room: closing a tab leaves the participant present | Accepted |
+| Navigable fake room: an unusable default room origin fails late | Accepted |
+| Navigable fake room: no resume after a back-forward restore | Accepted |
+| End-to-end readiness failures seen only under a stress run | Design slice, with a time-boxed causal check on an idle machine |
+| End-to-end readiness and cancelled writes | Accepted earlier by the owner on 2026-11-07 |
+| Lesson room interface: a blocked new tab has no end-to-end proof | Accepted earlier by the owner on 2026-11-07 (component test) |
+| Lesson room interface: embedded rooms are left before their frame is removed | Accepted |
+| Lesson room interface: Firefox warns about the `autoplay` permission | Accepted |
+| Lesson room interface: Join on Home and Today | Design slice |
+| Lesson room interface: the fake transport's lesson writes have no contract test | Accepted |
+| Lesson room interface: an End answer that never arrives has no browser test | Accepted |
+| Lesson room interface: calendar items with `took_place` proven by the API only | Accepted |
+| Lesson room interface: a successful late answer after sign-out has no browser test | Accepted |
+| Meeting cleanup reclaim: a persistently failing reclaim never escalates | Accepted |
+| Meeting cleanup reclaim: head-of-list starvation | Accepted |
+| Meeting cleanup reclaim: a database outage after a successful list | Accepted |
+| Meeting cleanup reclaim: untested reclaim branches | Accepted |
+| Lesson room client tests: End against an in-flight refetch | Accepted |
+| Lesson room client tests: the real room tab's closed and throwing branches | Accepted |
+| Presence test deadlines raised | Approved earlier by the owner on 2026-11-07 |
+| WebKit end-to-end failures under heavy load | Design slice; the next WebKit gate failure is diagnosed from its kept redacted evidence |
+| Chat download slot availability under load | Resolved earlier; the `pauseDeadline` residual is accepted |
+| Lock-waiter poll: a poll timeout does not name the waiter poll | Accepted |
+| Lock-waiter poll: the worst case is about twice the pause deadline | Accepted |
+| Backend meeting coordination: every cleanup completion takes the capacity row lock | Accepted |
+| Backend meeting coordination: the scanner writes its cursor once per candidate | Accepted |
+| Backend meeting coordination: a Create failure with two failed closures adds a 10-second wait | Accepted |
+| Backend meeting coordination: SQL literals duplicate Go constants | Accepted |
+| Lesson room client: the device clock decides whether Join shows | Accepted |
+| Lesson room client: one component test breaks Arrange–Act–Assert | Accepted |
+| Lesson room client: the room-tab fake has no shared contract test | Accepted |
+| Lesson room client: the pilot scenario 1 steps 8–11 test does not assert live | Accepted |
+| Lesson room client: the frame's `allow` list holds only for its own origin | Remote activation |
+| Lesson room client: phone joins depend on the backgrounded opener page | Remote activation |
+| Fake room and test control: the fake room's presence flag is not authoritative | Accepted |
+| Fake room and test control: shared cookies on the loopback address | Accepted |
+| Fake room and test control: the default fake room origin is the API origin | Accepted |
+| Provider admission: anonymous requests can starve the ended-hint permit pool | Remote activation |
+| Provider admission: admission caps not tied to host capacity | Remote activation |
+| Provider admission: an intermediary may retry `create` | Remote activation |
+| Provider admission: no frame sandbox and no `Permissions-Policy` header | Remote activation |
+| Development tooling: a package-layer qualifier is not enforced | Accepted |
+| Resend countdown: no component test of the countdown timing | Accepted |
+| Resend countdown: each start renders once more | Accepted |
+| End-to-end failure diagnostics: four redaction rules without an isolating test | Accepted |
+| End-to-end failure diagnostics: some segments are redacted unevenly | Accepted |
+| End-to-end failure diagnostics: a free-text token of 16 to 31 characters can survive | Accepted |
+| End-to-end failure diagnostics: the gate checks before it reads | Accepted |

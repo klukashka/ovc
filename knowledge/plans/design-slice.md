@@ -18,6 +18,12 @@ Status: approved by the owner on 2026-11-06. It carries out the [interface decis
 
 **Already merged and counted in this slice.** The Russian student tab labels (`06f2f3c`) and the lesson form layout (`1cae202`).
 
+**Carried from slice 7** by the owner on 2026-11-08 ([dispositions](../reviews/slice-7-known-limitations.md#owner-dispositions-2026-11-08)):
+
+- WebKit end-to-end failures under heavy load: the next WebKit gate failure is diagnosed from its kept redacted evidence.
+- End-to-end readiness failures seen only under a stress run: a time-boxed causal check on an idle machine.
+- Join on Home and Today, already step D6.
+
 ## 2. Verification tier and security trigger
 
 - **This plan and the roadmap change (D0):** the plan meets the [security trigger](../../AGENTS.md#development-verification), because D2, D6, D7 and part of L touch trust boundaries. It gets one standard reviewer and one security-profile reviewer before the owner approves it. It changes no behavior and no verification policy.
