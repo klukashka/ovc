@@ -15,6 +15,16 @@ import { LessonPage } from './LessonPage.tsx';
 import { embedLoadHintMilliseconds } from './LessonRoom.tsx';
 import { type OpenRoomTab, RoomTabContext } from './roomTab.ts';
 
+async function focusMovesTo(target: () => Element): Promise<void> {
+  await waitFor(() => {
+    expect(document.activeElement).toBe(target());
+  });
+}
+
+async function focusMovesToTheHeading(): Promise<void> {
+  await focusMovesTo(() => screen.getByRole('heading', { level: 1 }));
+}
+
 afterEach(() => {
   cleanup();
 });
@@ -454,7 +464,7 @@ describe('what each role sees', () => {
 
     expect(alert.textContent).toBe('Вы не можете подключиться к этому уроку');
     expect(screen.queryByRole('button', { name: 'Подключиться' })).toBeNull();
-    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
+    await focusMovesToTheHeading();
   });
 
   test('a student told the room is not live sees the waiting state without an alert', async () => {
@@ -468,7 +478,7 @@ describe('what each role sees', () => {
 
     expect(await screen.findByText('Комната откроется, когда подключится преподаватель')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
+    await focusMovesToTheHeading();
     expect(shown.tabs.only().closed).toBe(true);
   });
 
@@ -503,7 +513,7 @@ describe('the embedded room', () => {
     expect(shown.frame.tagName).toBe('IFRAME');
     expect(shown.frame.getAttribute('allow')).toBe('camera; microphone; display-capture; fullscreen; autoplay');
     expect(shown.frame.getAttribute('referrerpolicy')).toBe('no-referrer');
-    expect(document.activeElement).toBe(shown.frame);
+    await focusMovesTo(() => shown.frame);
     expect(joinButton('Открыть в новой вкладке')).toBeTruthy();
     expect(roomAddressesCached(shown.queryClient)).toBe(false);
   });
@@ -589,7 +599,7 @@ describe('the embedded room', () => {
     await waitFor(() => {
       expect(screen.queryByTitle(embeddable.title)).toBeNull();
     });
-    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
+    await focusMovesToTheHeading();
   });
 
   test('leaving the page removes the frame and cancels the hint timer', async () => {

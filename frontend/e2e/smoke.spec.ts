@@ -27,7 +27,7 @@ async function chooseEnglish(page: Page): Promise<void> {
 }
 
 async function openOverlay(page: Page): Promise<void> {
-  await page.goto('/today');
+  await openSettledToday(page);
   await page.getByRole('button', { name: 'Показать боковую панель' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
 }
