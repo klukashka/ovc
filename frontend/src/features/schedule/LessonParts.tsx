@@ -112,7 +112,9 @@ function TutorLabel({ item }: { readonly item: CalendarItem }): ReactElement | n
       {item.tutor.colour === null ? null : (
         <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${paletteDotClass[item.tutor.colour]}`} />
       )}
-      <span className="truncate">{item.tutor.name}</span>
+      <span dir="auto" className="truncate">
+        {item.tutor.name}
+      </span>
     </span>
   );
 }
@@ -189,7 +191,9 @@ export function LessonBlock({
       <span className="text-strong">
         <LessonTitle title={item.title} cancelled={struck} />
       </span>
-      <span className="truncate text-text-muted">{audienceLabel(t, item.audience)}</span>
+      <span dir="auto" className="truncate text-text-muted">
+        {audienceLabel(t, item.audience)}
+      </span>
       <TutorLabel item={item} />
       <LessonStatusWord lesson={item} />
     </Link>

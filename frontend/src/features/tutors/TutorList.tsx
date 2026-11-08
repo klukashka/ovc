@@ -81,10 +81,12 @@ function TutorRow({
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <p className="inline-flex items-center gap-2 text-strong">
           <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${paletteDotClass[tutor.colour]}`} />
-          {profile.name}
+          <span dir="auto">{profile.name}</span>
         </p>
         {profile.subjects.length === 0 ? null : (
-          <p className="text-small text-text-muted">{profile.subjects.join(', ')}</p>
+          <p dir="auto" className="text-small text-text-muted">
+            {profile.subjects.join(', ')}
+          </p>
         )}
         {withBio && profile.bio !== '' ? <p className="text-small whitespace-pre-line">{profile.bio}</p> : null}
         <EndedLine tutor={tutor} />

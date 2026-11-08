@@ -447,9 +447,17 @@ export const todayQueryPaths: readonly string[] = [
   '/api/v1/notifications',
   '/api/v1/tutor/code',
   '/api/v1/join-requests',
+  '/api/v1/calendar',
+  '/api/v1/students',
+  '/api/v1/channels',
 ];
 
-export const unverifiedTutorTodayQueryPaths: readonly string[] = ['/api/v1/notifications', '/api/v1/tutor/code'];
+export const unverifiedTutorTodayQueryPaths: readonly string[] = [
+  '/api/v1/notifications',
+  '/api/v1/tutor/code',
+  '/api/v1/calendar',
+  '/api/v1/channels',
+];
 
 export async function expectSettledAfterTheSocketIsReady(page: Page, traffic: TrafficAfterReady): Promise<void> {
   await expectRefetchedAfterTheSocketIsReady(traffic);

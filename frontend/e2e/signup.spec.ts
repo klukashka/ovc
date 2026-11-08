@@ -340,7 +340,7 @@ async function confirmAccountWithCleanupProof(
   if (failures.length > 0) throw new AggregateError(failures, 'account_switch_cleanup_proof_failed');
 }
 
-test('pilot-1 › steps 1–3 sign up, confirm in a fresh browser with a new password, then save the bio', async ({
+test('pilot-1 › steps 1–3 sign up, confirm in a fresh browser with a new password, see the first-run checklist, then save the bio and see its step done', async ({
   diagnostics,
   page,
   observedBrowser: browser,
@@ -369,12 +369,17 @@ test('pilot-1 › steps 1–3 sign up, confirm in a fresh browser with a new pas
   await expectSignedInToToday(confirming);
   await expectReadyForNavigation(confirming, confirmingReady);
   await expect(confirming.getByRole('region', { name: 'Подтверждение email' })).toHaveCount(0);
+  const checklist = confirming.getByRole('region', { name: 'С чего начать' });
+  await expect(checklist.getByRole('listitem').first()).toHaveText(/Заполните профиль.*ещё не выполнено/);
   await confirming.goto('/settings/profile');
   await confirming.getByLabel('О себе').fill('Английский для взрослых, разговорная практика.');
   await confirming.getByRole('button', { name: 'Сохранить' }).click();
   await expect(confirming.getByRole('status')).toHaveText('Сохранено.');
   await confirming.reload();
   await expect(confirming.getByLabel('О себе')).toHaveValue('Английский для взрослых, разговорная практика.');
+  await confirming.goto('/today');
+  await expect(checklist.getByRole('listitem').first()).toHaveText(/Заполните профиль.*выполнено/);
+  await expect(checklist.getByRole('listitem').first()).not.toHaveText(/ещё не выполнено/);
   await diagnostics.closeContext(fresh);
 });
 

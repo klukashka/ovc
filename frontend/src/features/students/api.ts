@@ -26,6 +26,8 @@ export function hasNotice(state: unknown, notice: string): boolean {
 
 export const studentListsKey = [...studentsKey, 'list'] as const;
 
+export const firstStudentCardKey = [...studentListsKey, 'first-card'] as const;
+
 export function studentListKey(state: StudentListState, search: string, group: string): readonly unknown[] {
   return [...studentListsKey, state, search, group];
 }

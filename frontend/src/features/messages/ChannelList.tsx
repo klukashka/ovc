@@ -1,4 +1,4 @@
-import { skipToken, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { type ReactElement, useState, useRef, useLayoutEffect, useCallback, useSyncExternalStore } from 'react';
 import { Link } from 'react-router';
 
@@ -12,6 +12,7 @@ import { formatDateTime } from '../../lib/format/dates.ts';
 import { type ChannelItem, type ChannelPage, fetchChannels } from './api.ts';
 import { channelScopeRevision, channelsScopeRevisionKey } from './cache.ts';
 import { channelsKey } from './keys.ts';
+import { useFirstChannelPage } from './firstPage.ts';
 import { ChannelPresence } from './PresenceSummary.tsx';
 import type { ChatTexts } from './translations.ts';
 
@@ -49,7 +50,7 @@ function ChannelPages({
   const me = useSignedInAccount();
   const session = useSession();
   const cache = useQueryClient();
-  useQuery<number>({ queryKey: channelsScopeRevisionKey, queryFn: skipToken, enabled: false, initialData: 0 });
+  const first = useFirstChannelPage(q);
   const subscribeScope = useCallback(
     (changed: () => void): (() => void) =>
       cache.getQueryCache().subscribe((event) => {
@@ -60,16 +61,6 @@ function ChannelPages({
   );
   const readScope = useCallback((): number => channelScopeRevision(cache), [cache]);
   const scope = useSyncExternalStore(subscribeScope, readScope);
-  const first = useQuery({
-    queryKey: [...channelsKey, q, null],
-    queryFn: async ({ signal }) => {
-      const fetchedScopeRevision = channelScopeRevision(cache);
-      const page = await fetchChannels(client, q, null, signal);
-      return { ...page, fetchedScopeRevision };
-    },
-    retry: false,
-    refetchOnMount: 'always',
-  });
   const currentBoundary = first.data?.next_cursor;
   const [boundary, setBoundary] = useState<string | null | undefined>(undefined);
   const [cursors, setCursors] = useState<readonly string[]>([]);

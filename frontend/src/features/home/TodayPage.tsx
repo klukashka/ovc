@@ -5,11 +5,18 @@ import { useTranslation } from 'react-i18next';
 import { FormAlert, FormNotice, quietButtonClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
+import { PageColumns } from '../../components/ui/PageColumns.tsx';
 import { useSettledOnce } from '../../components/ui/settledOnce.ts';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
+import { useSignedInAccount } from '../../lib/api/session.ts';
 import { type CopyResult, copyText } from '../../lib/clipboard.ts';
 import { type TutorCode as TutorCodeValue, fetchTutorCode, tutorCodeKey } from '../settings/tutorCode.ts';
+import { formatLongDay } from '../schedule/calendarFormat.ts';
 import { JoinRequests, useJoinRequestsSettled } from '../students/JoinRequests.tsx';
+import { FirstRunChecklist } from './FirstRunChecklist.tsx';
+import { TodayLessons } from './TodayLessons.tsx';
+import { UnreadMessages } from './UnreadMessages.tsx';
+import { useUpcomingLessons } from './upcoming.ts';
 
 type CopyNotice = { readonly result: CopyResult; readonly count: number } | null;
 
@@ -89,17 +96,35 @@ function TutorCode(): ReactElement {
 }
 
 export function TodayPage(): ReactElement {
+  const { t } = useTranslation();
+  const me = useSignedInAccount();
   const requestsSettled = useJoinRequestsSettled();
   const code = useTutorCode();
   const settled = useSettledOnce(requestsSettled && !code.isPending);
+  const { today, query: lessons } = useUpcomingLessons(me, null);
   return (
-    <Page width="reading" titleSize="display">
-      <JoinRequests hideWhenEmpty={false}>
-        {requestsSettled && !settled ? <DelayedLoading /> : null}
-        <div hidden={!settled} className="contents">
-          <TutorCode />
-        </div>
-      </JoinRequests>
+    <Page titleSize="display">
+      <p className="-mt-4 text-text-muted">{formatLongDay(today, me.language)}</p>
+      <PageColumns
+        asideLabel={t('today.aside')}
+        main={
+          <>
+            <FirstRunChecklist me={me} lessons={lessons} />
+            <TodayLessons me={me} today={today} query={lessons} />
+          </>
+        }
+        aside={
+          <>
+            <JoinRequests hideWhenEmpty={false}>
+              {requestsSettled && !settled ? <DelayedLoading /> : null}
+              <div hidden={!settled} className="contents">
+                <TutorCode />
+              </div>
+            </JoinRequests>
+            <UnreadMessages />
+          </>
+        }
+      />
     </Page>
   );
 }

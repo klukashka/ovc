@@ -16,7 +16,7 @@ import type { NotificationArrivals } from './notificationArrivals.ts';
 function queriesOf(entity: EntityKind, id: string): readonly QueryKey[] {
   switch (entity) {
     case 'relationship':
-      return [studentListsKey, studentCardKey(id), groupsKey, memberChoiceKey, myTutorsKey];
+      return [studentListsKey, studentCardKey(id), groupsKey, memberChoiceKey, myTutorsKey, calendarKey];
     case 'join_request':
       return [joinRequestsKey, sentRequestsKey];
     case 'notification':
@@ -24,7 +24,7 @@ function queriesOf(entity: EntityKind, id: string): readonly QueryKey[] {
     case 'lesson':
       return [calendarKey, lessonKey(id), studentListsKey, studentCardsKey, groupsKey];
     case 'channel':
-      return [];
+      return [calendarKey];
   }
 }
 

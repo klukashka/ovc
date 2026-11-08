@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import type { TFunction } from 'i18next';
 import { type ReactElement, type RefObject, type SyntheticEvent, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router';
@@ -99,7 +100,7 @@ function SignOutInPlace({ label }: { readonly label: string }): ReactElement {
 }
 
 function signUpError(
-  t: ReturnType<typeof useTranslation>['t'],
+  t: TFunction,
   state: ActionState,
 ): { readonly form: string | null; readonly error: ApiError | null } {
   if (state.kind !== 'refused') {

@@ -9,7 +9,17 @@ import {
   trafficAfterReady,
   waitForSockets,
 } from './realtime.ts';
-import { accessToken, callApi, createCard, removeStudent, seedJoinRequests, signUpOnInvitation } from './tutoring.ts';
+import { addDays, lessonLinks, localDate, scheduleLessonsWithIds } from './schedule.ts';
+import {
+  accessToken,
+  callApi,
+  createCard,
+  createGroup,
+  removeStudent,
+  seedActiveStudent,
+  seedJoinRequests,
+  signUpOnInvitation,
+} from './tutoring.ts';
 
 function socketAddresses(page: Page): string[] {
   const addresses: string[] = [];
@@ -157,4 +167,37 @@ test("realtime › a student's My tutors drops a tutor who removed the link with
   await expect(page.getByRole('heading', { level: 1, name: 'My tutors' })).toBeFocused();
   await expect(page.getByRole('main').getByText('No tutor yet.')).toBeVisible();
   await expect(page.getByRole('table', { name: 'Tutors', exact: true })).toHaveCount(0);
+});
+
+test("realtime › a removed group member's open Schedule drops the group lesson without reloading", async ({
+  page,
+  deployment,
+  control,
+}) => {
+  const maria = await seedVerifiedUser(deployment, 'Мария');
+  const anna = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
+  const groupId = await createGroup(deployment, maria, 'B1 вечерняя', [anna.cardId]);
+  const date = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
+  await scheduleLessonsWithIds(deployment, maria, {
+    group_id: groupId,
+    title: 'Групповое занятие',
+    date,
+    start: '18:00',
+    duration_minutes: 60,
+  });
+  await signInThroughTheApi(page, anna.student);
+  await page.goto(`/schedule?view=week&date=${date}`);
+  await expect(lessonLinks(page)).toHaveCount(1);
+  await waitForSockets(deployment, await accountId(deployment, anna.student), 1);
+  await page.evaluate(() => {
+    document.documentElement.dataset.sameDocument = 'yes';
+  });
+
+  const removed = await callApi(deployment, await accessToken(deployment, maria), 'PATCH', `/groups/${groupId}`, {
+    remove: [anna.cardId],
+  });
+
+  expect(removed.status).toBe(200);
+  await expect(lessonLinks(page)).toHaveCount(0);
+  await expect(page.locator('html')).toHaveAttribute('data-same-document', 'yes');
 });

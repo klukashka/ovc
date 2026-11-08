@@ -9,11 +9,13 @@ export type CalendarAudience = components['schemas']['CalendarAudience'];
 export type LessonStatus = CalendarItem['status'];
 export type NewLesson = components['schemas']['NewLesson'];
 
-export function calendarRangeKey(range: CalendarRange, tutor: string | null): readonly unknown[] {
+export type CalendarSpan = Pick<CalendarRange, 'from' | 'to'>;
+
+export function calendarRangeKey(range: CalendarSpan, tutor: string | null): readonly unknown[] {
   return [...calendarKey, range.from, range.to, tutor];
 }
 
-export async function fetchCalendar(client: ApiClient, range: CalendarRange, tutor: string | null): Promise<Calendar> {
+export async function fetchCalendar(client: ApiClient, range: CalendarSpan, tutor: string | null): Promise<Calendar> {
   const { data, error, response } = await client.GET('/api/v1/calendar', {
     params: {
       query: {
