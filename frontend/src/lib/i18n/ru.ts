@@ -572,14 +572,14 @@ export const ru = {
     groupLimit: 'Достигнут предел в {limit} групп, включая архивные.',
   },
   colours: {
-    clay: 'Глина',
-    slate: 'Сланец',
-    moss: 'Мох',
-    plum: 'Слива',
-    ochre: 'Охра',
-    teal: 'Морская волна',
-    rust: 'Ржавчина',
-    ink: 'Чернила',
+    clay: 'Коричневый',
+    slate: 'Синий',
+    moss: 'Зелёный',
+    plum: 'Фиолетовый',
+    ochre: 'Горчичный',
+    teal: 'Бирюзовый',
+    rust: 'Розовый',
+    ink: 'Серый',
   },
   teaching: {
     columns: {

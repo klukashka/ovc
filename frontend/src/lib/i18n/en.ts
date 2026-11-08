@@ -560,14 +560,14 @@ export const en: Resources = {
     groupLimit: 'You have reached the limit of {limit} groups, archived groups included.',
   },
   colours: {
-    clay: 'Clay',
-    slate: 'Slate',
-    moss: 'Moss',
-    plum: 'Plum',
-    ochre: 'Ochre',
+    clay: 'Brown',
+    slate: 'Blue',
+    moss: 'Green',
+    plum: 'Purple',
+    ochre: 'Mustard',
     teal: 'Teal',
-    rust: 'Rust',
-    ink: 'Ink',
+    rust: 'Pink',
+    ink: 'Grey',
   },
   teaching: {
     columns: {

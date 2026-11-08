@@ -538,7 +538,6 @@ export function GroupView({
       </p>
       <p className="flex items-center gap-2 text-text-muted">
         <GroupDot colour={group.colour} />
-        {t(`colours.${group.colour}`)}
         {group.archived_at === null ? null : <StatusWord tone="muted">{t('groups.archived')}</StatusWord>}
       </p>
       <Members group={group} handlers={handlers} />

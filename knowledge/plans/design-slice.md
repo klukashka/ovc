@@ -24,6 +24,8 @@ Status: approved by the owner on 2026-11-06. It carries out the [interface decis
 - End-to-end readiness failures seen only under a stress run: a time-boxed causal check on an idle machine.
 - Join on Home and Today, already step D6.
 
+The owner decided on 2026-11-08 that the stress readiness check, the diagnosis of WebKit failures under load and performance measurements wait until OVC is deployed on a server, and moved the two items above into Slice 10 (results, home pages and hardening), which prepares the pilot deployment of [ADR-0013](../../docs/decisions/0013-pilot-deployment.md) that first puts OVC on a server; this slice concentrates on the interface. Merge gates and change checks stay as they are. A WebKit failure of a gate is still recorded from its redacted evidence in [the WebKit failure record](../reviews/design-slice-webkit-failures.md) and goes to the owner, without a load diagnosis. The slice review below keeps its performance profile as a review of performance risks in the code; only the measurements on the machine wait for the deployment (owner's decision of the same day).
+
 ## 2. Verification tier and security trigger
 
 - **This plan and the roadmap change (D0):** the plan meets the [security trigger](../../AGENTS.md#development-verification), because D2, D6, D7 and part of L touch trust boundaries. It gets one standard reviewer and one security-profile reviewer before the owner approves it. It changes no behavior and no verification policy.

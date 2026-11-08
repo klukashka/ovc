@@ -66,7 +66,7 @@ Severity: minor, not assessed by a reviewer. Change: the readiness fix for cance
 
 Slice review status, 2026-11-07: still open and unverified. None of the five slice reviewers ran a stress repetition, because the machine was kept quiet for other work, and no change in the reviewed range shows a cause or a gate failure from these symptoms. The cause of the failed `ovc-admin users block` under stress, a harness subprocess or overload, is not established. The slice cannot close on this entry until the owner accepts it or carries it into a named later slice; the development tooling reviewer recommends carrying it into the slice that runs the remote probe, or slice 10, with a time-boxed causal check on an idle machine.
 
-Owner dispositions, 2026-11-08: carried into the design slice, with a time-boxed causal check on an idle machine.
+Owner dispositions, 2026-11-08: carried into the design slice, with a time-boxed causal check on an idle machine. Moved on 2026-11-08 by the owner into Slice 10 (results, home pages and hardening), which prepares the first deployment of OVC on a server ([design slice plan](../plans/design-slice.md)); the time-boxed causal check runs there.
 
 ## End-to-end readiness and cancelled writes
 
@@ -144,7 +144,7 @@ Measured 2026-11-08 with Playwright 1.63.0, running the full end-to-end suite ex
 
 The owner decided on 2026-11-08 not to limit WebKit workers. The idle baseline passes, and the gate failures track load from other processes and memory pressure. Those are addressed by the rule that heavy runs never overlap, by the redacted failure diagnostics and by the fake-clock fix of the resend countdown test. The entry stays open until a gate failure in WebKit is diagnosed from its kept evidence.
 
-Owner dispositions, 2026-11-08: carried into the design slice. The next WebKit gate failure is diagnosed there from its kept redacted evidence.
+Owner dispositions, 2026-11-08: carried into the design slice. The next WebKit gate failure is diagnosed there from its kept redacted evidence. Moved on 2026-11-08 by the owner into Slice 10 (results, home pages and hardening), which prepares the first deployment of OVC on a server ([design slice plan](../plans/design-slice.md)); until then a WebKit gate failure is recorded from its redacted evidence in [the design slice WebKit record](design-slice-webkit-failures.md) and goes to the owner, without a load diagnosis.
 
 ## Chat download slot availability under load
 
@@ -255,7 +255,7 @@ The owner decided on 2026-11-08 the disposition of every entry still open. "Remo
 | Navigable fake room: closing a tab leaves the participant present | Accepted |
 | Navigable fake room: an unusable default room origin fails late | Accepted |
 | Navigable fake room: no resume after a back-forward restore | Accepted |
-| End-to-end readiness failures seen only under a stress run | Design slice, with a time-boxed causal check on an idle machine |
+| End-to-end readiness failures seen only under a stress run | Design slice, with a time-boxed causal check on an idle machine; moved the same day to Slice 10, which prepares the first deployment |
 | End-to-end readiness and cancelled writes | Accepted earlier by the owner on 2026-11-07 |
 | Lesson room interface: a blocked new tab has no end-to-end proof | Accepted earlier by the owner on 2026-11-07 (component test) |
 | Lesson room interface: embedded rooms are left before their frame is removed | Accepted |
@@ -272,7 +272,7 @@ The owner decided on 2026-11-08 the disposition of every entry still open. "Remo
 | Lesson room client tests: End against an in-flight refetch | Accepted |
 | Lesson room client tests: the real room tab's closed and throwing branches | Accepted |
 | Presence test deadlines raised | Approved earlier by the owner on 2026-11-07 |
-| WebKit end-to-end failures under heavy load | Design slice; the next WebKit gate failure is diagnosed from its kept redacted evidence |
+| WebKit end-to-end failures under heavy load | Design slice; the next WebKit gate failure is diagnosed from its kept redacted evidence; moved the same day to Slice 10, which prepares the first deployment |
 | Chat download slot availability under load | Resolved earlier; the `pauseDeadline` residual is accepted |
 | Lock-waiter poll: a poll timeout does not name the waiter poll | Accepted |
 | Lock-waiter poll: the worst case is about twice the pause deadline | Accepted |

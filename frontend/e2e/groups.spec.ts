@@ -154,7 +154,7 @@ test.describe('Maria in Russian', () => {
     const dialog = page.getByRole('dialog', { name: 'Новая группа' });
     await expect(dialog.getByLabel('Название')).toBeFocused();
     await dialog.getByLabel('Название').fill('B1 evening');
-    await dialog.getByRole('radio', { name: 'Мох' }).check();
+    await dialog.getByRole('radio', { name: 'Зелёный' }).check();
     await dialog.getByRole('checkbox', { name: 'Анна' }).check();
     await dialog.getByRole('checkbox', { name: 'Boris' }).check();
     await expect(dialog.getByText('Выбрано: 2 из 30')).toBeVisible();
@@ -442,7 +442,7 @@ test.describe('in English', () => {
     await expectRefetchedAfterTheSocketIsReady(traffic);
     const details = page.getByRole('form', { name: 'Name and colour' });
     await details.getByLabel('Name', { exact: true }).fill('Typed name');
-    await details.getByRole('radio', { name: 'Plum' }).check();
+    await details.getByRole('radio', { name: 'Purple' }).check();
     const renamed = await callApi(deployment, await accessToken(deployment, pavel), 'PATCH', `/groups/${groupId}`, {
       name: 'Morning algebra',
       colour: 'teal',
@@ -455,7 +455,7 @@ test.describe('in English', () => {
 
     await expect(page.getByRole('heading', { level: 1, name: 'Morning algebra' })).toBeVisible();
     await expect(details.getByLabel('Name', { exact: true })).toHaveValue('Typed name');
-    await expect(details.getByRole('radio', { name: 'Plum' })).toBeChecked();
+    await expect(details.getByRole('radio', { name: 'Purple' })).toBeChecked();
     await expect(details.getByRole('radio', { name: 'Teal' })).not.toBeChecked();
   });
 
@@ -704,5 +704,81 @@ test.describe('in English, one tutor with 31 active students shared by the tests
     await expect(dialog.getByText('Chosen: 0 of 0')).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Add', exact: true })).toHaveAttribute('aria-disabled', 'true');
     expect(await groupMemberNames(deployment, pavel, groupId)).toHaveLength(30);
+  });
+});
+
+test.describe('in English, the colour swatches', () => {
+  test.use({ locale: 'en-GB', viewport: { width: 1280, height: 800 }, colorScheme: 'light' });
+
+  async function openNewGroup(page: Page, deployment: Deployment): Promise<Locator> {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    await createGroup(deployment, pavel, 'First group', []);
+    await signInThroughTheApi(page, pavel);
+    await page.goto('/groups');
+    await page.locator('main header').getByRole('button', { name: 'New group' }).click();
+    const dialog = page.getByRole('dialog', { name: 'New group' });
+    await expect(dialog.getByLabel('Name')).toBeFocused();
+    return dialog.getByRole('group', { name: 'Colour' });
+  }
+
+  test('the arrow keys move the chosen colour like native radios', async ({ page, deployment }) => {
+    const colours = await openNewGroup(page, deployment);
+    const first = colours.getByRole('radio').first();
+    await first.focus();
+    await page.keyboard.press('Space');
+
+    await page.keyboard.press('ArrowRight');
+
+    await expect(colours.getByRole('radio').nth(1)).toBeChecked();
+    await expect(colours.getByRole('radio').nth(1)).toBeFocused();
+    await expect(first).not.toBeChecked();
+  });
+
+  test('only the chosen swatch shows its check mark', async ({ page, deployment }) => {
+    const colours = await openNewGroup(page, deployment);
+
+    await colours.getByRole('radio', { name: 'Pink' }).check();
+
+    await expect(colours.locator('[data-swatch="rust"] [data-swatch-check]')).toBeVisible();
+    await expect(colours.locator('[data-swatch-check]').filter({ visible: true })).toHaveCount(1);
+    await expect(colours.locator('[data-swatch="rust"]')).toHaveAttribute('title', 'Pink');
+  });
+
+  test('the colour swatches are at least 44 px on a coarse pointer @coarse-pointer', async ({
+    observedBrowser: browser,
+    deployment,
+    diagnostics,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    await createGroup(deployment, pavel, 'First group', []);
+    const context = await browser.newContext({
+      baseURL: deployment.origin,
+      ignoreHTTPSErrors: true,
+      locale: 'en-GB',
+      viewport: { width: 1280, height: 800 },
+      hasTouch: true,
+      isMobile: true,
+    });
+    try {
+      const touchPage = await context.newPage();
+      await diagnostics.watch(touchPage);
+      await signInThroughTheApi(touchPage, pavel);
+      await touchPage.goto('/groups');
+      await touchPage.locator('main header').getByRole('button', { name: 'New group' }).click();
+      const swatches = touchPage.getByRole('dialog', { name: 'New group' }).locator('[data-swatch]');
+      await swatches.first().waitFor();
+
+      const sizes = await swatches.evaluateAll((labels) =>
+        labels.map((label) => {
+          const box = label.getBoundingClientRect();
+          return Math.min(box.width, box.height);
+        }),
+      );
+
+      expect(sizes).toHaveLength(8);
+      expect(Math.min(...sizes)).toBeGreaterThanOrEqual(44);
+    } finally {
+      await diagnostics.closeContext(context);
+    }
   });
 });

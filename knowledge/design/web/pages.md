@@ -207,6 +207,7 @@ FR-3.
 - **List:** name, colour, member avatars, next lesson (from slice 5), and "New group".
 - **Table** (design slice step L, pending owner review): "New group" stands in the page header once the tutor has a group, and the empty state keeps it as its action instead; the list is a table with the columns Name (colour dot and name, the link to the group), Members (avatars, "+{n}" and the count), Next lesson and State ("Archived"); below 768 px the Members column is hidden and the count is shown under the name.
 - **"New group" dialog:** name, colour from the palette, and members picked from active students with search.
+- **Colour by swatch** (design slice step C, owner's decisions of 2026-11-06 and 2026-11-08, pending owner review): the New group dialog and the group's "Name and colour" choose the colour from the [swatch picker](tokens.md#components), round swatches with no visible names whose accessible names and tooltips are plain colour words (brown, blue, green, purple, mustard, teal, pink, grey); a free colour stays preselected; the group page shows its colour dot without naming the colour.
 - **Group page:**
   - members with Add and Remove;
   - lessons: from slice 5 the next five, a link to the Schedule and "Schedule a lesson", which opens the New lesson dialog with the group preselected; issued assignments and a link to the group chat;

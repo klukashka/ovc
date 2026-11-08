@@ -1,6 +1,6 @@
 # Design slice: WebKit end-to-end failures under load
 
-Status: agent record, started 2026-11-08 under the [step L plan](../plans/design-step-l.md#8-the-two-items-carried-from-slice-7). It carries the slice 7 item "WebKit end-to-end failures under heavy load" ([owner dispositions](slice-7-known-limitations.md#owner-dispositions-2026-11-08)). Each entry quotes only fields of the redacted `browser-diagnostics.json` and the Playwright error, never request bodies, cookies or addresses carrying tokens.
+Status: agent record, started 2026-11-08 under the [step L plan](../plans/design-step-l.md#8-the-two-items-carried-from-slice-7). It carries the slice 7 item "WebKit end-to-end failures under heavy load" ([owner dispositions](slice-7-known-limitations.md#owner-dispositions-2026-11-08)). The owner moved the load diagnosis of these failures to Slice 10 on 2026-11-08, which prepares the first deployment of OVC on a server; until then each failure is recorded here and goes to the owner. Each entry quotes only fields of the redacted `browser-diagnostics.json` and the Playwright error, never request bodies, cookies or addresses carrying tokens.
 
 ## Failures seen while preparing step L1 (not in a merge gate)
 

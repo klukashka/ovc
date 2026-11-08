@@ -54,7 +54,7 @@ describe('the group colour choice showing a stored colour', () => {
   test('keeps the user’s pick when the stored colour changes in the background', async () => {
     const changes = [{ colour: 'teal', reloads: 0 } as const];
 
-    const checked = await checkedAfter('Moss', changes);
+    const checked = await checkedAfter('Green', changes);
 
     expect(checked).toEqual(['moss']);
   });
@@ -62,8 +62,52 @@ describe('the group colour choice showing a stored colour', () => {
   test('shows the changed stored colour after a reload because the group changed meanwhile', async () => {
     const changes = [{ colour: 'teal', reloads: 0 } as const, { colour: 'teal', reloads: 1 } as const];
 
-    const checked = await checkedAfter('Moss', changes);
+    const checked = await checkedAfter('Green', changes);
 
     expect(checked).toEqual(['teal']);
+  });
+});
+
+async function renderedIn(language: 'ru' | 'en'): Promise<HTMLElement> {
+  const translations = await createI18n(language);
+  const { container } = render(field(translations, { colour: 'moss', reloads: 0 }));
+  return container;
+}
+
+function visibleText(container: HTMLElement): string {
+  const shown = [...container.querySelectorAll('*')].filter(
+    (element) => element.closest('.sr-only') === null && element.closest('[aria-hidden="true"]') === null,
+  );
+  return shown
+    .flatMap((element) => [...element.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE))
+    .map((node) => node.textContent ?? '')
+    .join(' ');
+}
+
+describe('the group colour swatches', () => {
+  test('show no visible colour names', async () => {
+    const container = await renderedIn('ru');
+
+    const text = visibleText(container);
+
+    expect(text.trim()).toBe('Цвет');
+    expect(screen.getByRole<HTMLInputElement>('radio', { name: 'Зелёный' }).checked).toBe(true);
+  });
+
+  test('use eight native radios in one named group', async () => {
+    await renderedIn('en');
+
+    const group = screen.getByRole('group', { name: 'Colour' });
+
+    expect(group.querySelectorAll('input[type="radio"][name="colour"]')).toHaveLength(8);
+  });
+
+  test.each(['ru', 'en'] as const)('give eight distinct accessible names in %s', async (language) => {
+    await renderedIn(language);
+
+    const names = screen.getAllByRole('radio').map((radio) => radio.closest('label')?.textContent ?? '');
+
+    expect(new Set(names).size).toBe(8);
+    expect(names.every((name) => name.trim() !== '')).toBe(true);
   });
 });

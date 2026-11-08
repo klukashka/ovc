@@ -89,18 +89,20 @@ Every text pair meets WCAG AA for normal text (4.5:1); `icon`, `border-strong` o
 
 ### Tutor colours
 
-A relationship's colour labels a tutor's items in the student's views ([states](states.md#tutor-labels)) as an 8 px dot. It is always shown together with the tutor's name or initials, never alone. The palette is muted and earthy so it sits beside the olive accent without competing with it.
+A relationship's colour labels a tutor's items in the student's views ([states](states.md#tutor-labels)) as an 8 px dot. It is always shown together with the tutor's name or initials, never alone. The palette is muted and earthy so it sits beside the olive accent without competing with it; `slate` is its most vivid blue, which keeps it apart from `info` (design slice step C, pending owner review).
 
-| Key | Light | Dark | On `bg` / `surface` (light) | On `bg` / `surface` (dark) |
-|---|---|---|---|---|
-| `clay` | `#9A5B3C` | `#D49A7B` | 4.9 / 5.1 | 7.1 / 6.6 |
-| `slate` | `#3F5E7A` | `#8FB0CE` | 6.2 / 6.5 | 7.6 / 7.0 |
-| `moss` | `#4F6B4A` | `#9DBB95` | 5.4 / 5.6 | 8.2 / 7.6 |
-| `plum` | `#7A4A6B` | `#C99BBB` | 6.3 / 6.6 | 7.3 / 6.7 |
-| `ochre` | `#86621A` | `#D3B064` | 5.1 / 5.3 | 8.3 / 7.7 |
-| `teal` | `#2F6B6B` | `#7FBDBA` | 5.6 / 5.8 | 8.1 / 7.5 |
-| `rust` | `#A0442E` | `#E3907B` | 5.7 / 5.9 | 7.0 / 6.5 |
-| `ink` | `#4A4A5E` | `#AEAEC4` | 7.9 / 8.2 | 7.9 / 7.3 |
+| Key | Word | Light | Dark | On `bg` / `surface` (light) | On `bg` / `surface` (dark) |
+|---|---|---|---|---|---|
+| `clay` | brown | `#6E3D22` | `#C29582` | 8.1 / 8.5 | 6.5 / 6.0 |
+| `slate` | blue | `#13759D` | `#5E9AC8` | 4.7 / 4.9 | 5.7 / 5.3 |
+| `moss` | green | `#2B5037` | `#848F7E` | 8.3 / 8.7 | 5.1 / 4.7 |
+| `plum` | purple | `#7A5E81` | `#B183AE` | 5.1 / 5.3 | 5.5 / 5.1 |
+| `ochre` | mustard | `#7F6B37` | `#CFB87C` | 4.7 / 4.9 | 8.9 / 8.2 |
+| `teal` | teal | `#2F7475` | `#54AEA4` | 4.9 / 5.1 | 6.5 / 6.0 |
+| `rust` | pink | `#9D5264` | `#F5ABBD` | 5.0 / 5.2 | 9.4 / 8.7 |
+| `ink` | grey | `#50555E` | `#BFC0CD` | 6.8 / 7.1 | 9.5 / 8.8 |
+
+Measured on 2026-11-08 with CIE76 (sRGB to CIE Lab, D65): the closest palette pair is `plum`–`ink` at 21.7 in the light theme and `clay`–`ochre` at 24.4 in the dark theme; the closest value to a state colour (`info`, `success`, `warning`, `danger`, `live`, `accent`) is `moss`–`success` at 12.4 and `ink`–`info` at 14.9. The thresholds are at least 20 between palette values and at least 12 to a state colour in both themes, and `frontend/scripts/palette.test.ts` computes all three measures from `styles.css` (design slice step C, pending owner review). The keys keep their stored names; the words people hear and see in tooltips follow the colours.
 
 Group colours use the same palette.
 
@@ -111,6 +113,7 @@ Group colours use the same palette.
 - **Page header** (design slice step L, pending owner review): one line with the title on the left and, on the right, the page's main action and a menu for its rare actions; it wraps below the title when the line is too narrow.
 - **Table** (design slice step L, pending owner review): lists of people and things are semantic tables with column headers in `text-label` `text-muted`, rows separated by 1 px `border` hairlines with no striping, the name cell as the row header holding the row's link when it has one, and row actions in the last cell, so a row never nests buttons inside a link. A row highlights with `surface` on hover. Long words wrap inside their cell, except a name that is the row's link in Students and Groups, which is cut with an ellipsis on one line. Below 768 px secondary columns are hidden and their content is shown under the name in the first cell, so the table never scrolls sideways and keeps its table semantics.
 - **Settings row** (design slice step L2, pending owner review): a 1 px `border` rule above, the label in `text-strong` with an optional `text-small` `text-muted` description in a 240 px column (`--container-settings-label`), the value or control beside it from 768 px and below it under 768 px.
+- **Swatch picker** (design slice step C, pending owner review): a group colour is chosen from eight round 32 px swatches with no visible names, each a native radio covering a 44 px target (40 px from 1024 px with a fine pointer); the radio's accessible name and the tooltip are the plain colour word; the chosen swatch has a 2 px `text` ring with a 2 px offset and a check mark in `bg`, so the selection never depends on hue; the focus ring is the shared `focus` ring outside it; arrow keys move the choice as native radios do.
 - **Filter row** (design slice step L, pending owner review): a list's tabs, search and filters sit in one row above its table from 1024 px, and wrap below.
 - **Primary button:** `accent` fill, `on-accent` label, `radius-m`, 40 px tall (48 px for the join button).
 - **Quiet button:** transparent with a 1 px `border-strong` outline and `text` label; hover fills with `surface`.
