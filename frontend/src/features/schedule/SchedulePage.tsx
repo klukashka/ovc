@@ -255,7 +255,7 @@ export function SchedulePage(): ReactElement {
   }
 
   return (
-    <Page wide>
+    <Page>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <Toolbar
           range={range}

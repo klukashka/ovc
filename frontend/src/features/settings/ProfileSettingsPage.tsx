@@ -298,7 +298,7 @@ export function ProfileSettingsPage(): ReactElement {
   const me = useSignedInAccount();
   const work = usePendingWork();
   return (
-    <Page>
+    <Page width="reading">
       <SettingsNav />
       <AvatarSection me={me} work={work} />
       <DetailsSection key={me.id} me={me} work={work} />

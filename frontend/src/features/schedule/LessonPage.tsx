@@ -428,9 +428,9 @@ function TutorControls({
 
 export function headingOf(lesson: LessonDetail | undefined, notFound: boolean): Parameters<typeof Page>[0] {
   if (notFound) {
-    return { title: 'page.notFound', focusTitle: true, wide: true };
+    return { title: 'page.notFound', focusTitle: true };
   }
-  return lesson === undefined ? { wide: true } : { headingText: lesson.title, headingDir: 'auto', wide: true };
+  return lesson === undefined ? {} : { headingText: lesson.title, headingDir: 'auto' };
 }
 
 export function LessonPage(): ReactElement {

@@ -625,6 +625,7 @@ export function GroupPage(): ReactElement {
 
   return (
     <Page
+      width="reading"
       {...(notFound ? { title: 'page.notFound' as const } : {})}
       {...(error === null && query.data !== undefined ? { headingText: query.data.name } : {})}
       focusTitle={notFound}

@@ -5,6 +5,16 @@ import { Link } from 'react-router';
 
 import { ActionMenu } from '../../components/ui/ActionMenu.tsx';
 import { Avatar } from '../../components/ui/Avatar.tsx';
+import {
+  DataTable,
+  type TableColumn,
+  cellClass,
+  endCellClass,
+  narrowOnlyClass,
+  primaryCellClass,
+  secondaryCellClass,
+  tableRowClass,
+} from '../../components/ui/DataTable.tsx';
 import { MoreIcon } from '../../components/ui/icons.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { LoadFailed } from '../../components/ui/LoadState.tsx';
@@ -127,5 +137,152 @@ export function TutorList({
         <TutorRow key={tutor.relationship_id} tutor={tutor} withBio={withBio} onStopStudying={onStopStudying} />
       ))}
     </ul>
+  );
+}
+
+function TutorCell({ tutor, withBio }: { readonly tutor: MyTutor; readonly withBio: boolean }): ReactElement {
+  const profile = tutor.tutor;
+  const subjects = profile.subjects.join(', ');
+  return (
+    <th scope="row" className={primaryCellClass}>
+      <span className="flex min-w-0 items-start gap-3">
+        <Avatar name={profile.name} avatarId={profile.avatar_id} />
+        <span className="flex min-w-0 flex-col gap-1">
+          <span className="inline-flex min-w-0 items-center gap-2 text-strong">
+            <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${paletteDotClass[tutor.colour]}`} />
+            <span dir="auto" className="min-w-0">
+              {profile.name}
+            </span>
+          </span>
+          {subjects === '' ? null : (
+            <span dir="auto" className={`text-small text-text-muted ${narrowOnlyClass}`}>
+              {subjects}
+            </span>
+          )}
+          {withBio && profile.bio !== '' ? (
+            <span dir="auto" title={profile.bio} className="line-clamp-2 text-small font-normal whitespace-pre-line">
+              {profile.bio}
+            </span>
+          ) : null}
+        </span>
+      </span>
+    </th>
+  );
+}
+
+function MessagesLink({ tutor }: { readonly tutor: MyTutor }): ReactElement | null {
+  const { t } = useTranslation();
+  if (tutor.channel_id === null) {
+    return null;
+  }
+  return (
+    <Link
+      to={`/messages/${encodeURIComponent(tutor.channel_id)}`}
+      className="inline-flex min-h-11 items-center px-2 text-small whitespace-nowrap text-accent-text underline"
+    >
+      {t('section.messages')}
+    </Link>
+  );
+}
+
+function SubjectsCell({ tutor }: { readonly tutor: MyTutor }): ReactElement {
+  return (
+    <td className={secondaryCellClass}>
+      <span dir="auto" className="text-small text-text-muted">
+        {tutor.tutor.subjects.join(', ')}
+      </span>
+    </td>
+  );
+}
+
+export function CurrentTutorTable({
+  tutors,
+  label,
+  onStopStudying,
+}: {
+  readonly tutors: readonly MyTutor[];
+  readonly label: string;
+  readonly onStopStudying: (tutor: MyTutor) => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const bodyRef = useRef<HTMLTableSectionElement>(null);
+  useFocusAfterRemovedRow(
+    bodyRef,
+    tutors.map((tutor) => tutor.relationship_id),
+    'button',
+  );
+  const columns: readonly TableColumn[] = [
+    { key: 'tutor', label: t('tutors.columns.tutor'), width: 'w-2/3 tablet:w-6/12' },
+    { key: 'subjects', label: t('tutors.columns.subjects'), secondary: true, width: 'w-3/12' },
+    { key: 'actions', label: t('tutors.columns.actions'), visuallyHidden: true, width: 'w-1/3 tablet:w-3/12' },
+  ];
+  return (
+    <DataTable label={label} columns={columns} bodyRef={bodyRef}>
+      {tutors.map((tutor) => (
+        <tr key={tutor.relationship_id} data-row={tutor.relationship_id} className={tableRowClass}>
+          <TutorCell tutor={tutor} withBio />
+          <SubjectsCell tutor={tutor} />
+          <td className={endCellClass}>
+            <span className="flex flex-wrap items-center justify-end gap-x-2">
+              <MessagesLink tutor={tutor} />
+              {tutor.state === 'ended' ? null : (
+                <ActionMenu
+                  label={t('tutors.more', { name: tutor.tutor.name })}
+                  unavailable={false}
+                  items={[
+                    {
+                      label: t('tutors.stopStudying'),
+                      onChoose: (): void => {
+                        onStopStudying(tutor);
+                      },
+                    },
+                  ]}
+                >
+                  <MoreIcon />
+                </ActionMenu>
+              )}
+            </span>
+          </td>
+        </tr>
+      ))}
+    </DataTable>
+  );
+}
+
+export function PastTutorTable({
+  tutors,
+  label,
+}: {
+  readonly tutors: readonly MyTutor[];
+  readonly label: string;
+}): ReactElement {
+  const { t } = useTranslation();
+  const bodyRef = useRef<HTMLTableSectionElement>(null);
+  useFocusAfterRemovedRow(
+    bodyRef,
+    tutors.map((tutor) => tutor.relationship_id),
+    'a',
+  );
+  const columns: readonly TableColumn[] = [
+    { key: 'tutor', label: t('tutors.columns.tutor'), width: 'w-1/2 tablet:w-4/12' },
+    { key: 'subjects', label: t('tutors.columns.subjects'), secondary: true, width: 'w-3/12' },
+    { key: 'ended', label: t('tutors.columns.ended'), width: 'w-1/4 tablet:w-3/12' },
+    { key: 'actions', label: t('tutors.columns.actions'), visuallyHidden: true, width: 'w-1/4 tablet:w-2/12' },
+  ];
+  return (
+    <DataTable label={label} columns={columns} bodyRef={bodyRef}>
+      {tutors.map((tutor) => (
+        <tr key={tutor.relationship_id} data-row={tutor.relationship_id} className={tableRowClass}>
+          <TutorCell tutor={tutor} withBio={false} />
+          <SubjectsCell tutor={tutor} />
+          <td className={cellClass}>
+            <EndedLine tutor={tutor} />
+          </td>
+          <td className={endCellClass}>
+            <MessagesLink tutor={tutor} />
+          </td>
+        </tr>
+      ))}
+    </DataTable>
   );
 }

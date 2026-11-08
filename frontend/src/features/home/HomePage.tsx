@@ -64,7 +64,7 @@ export function HomePage(): ReactElement {
   const { t } = useTranslation();
   const tutorsHeading = useId();
   return (
-    <Page>
+    <Page width="reading" titleSize="display">
       <section aria-labelledby={tutorsHeading} className="flex flex-col gap-3">
         <h2 id={tutorsHeading} className="text-heading">
           {t('section.tutors')}

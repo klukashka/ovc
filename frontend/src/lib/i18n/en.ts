@@ -208,6 +208,13 @@ export const en: Resources = {
     reloadFailed: 'Your choices are saved, but the account could not be refreshed. Reload the page.',
   },
   tutors: {
+    asideLabel: 'Adding a tutor and sent requests',
+    columns: {
+      tutor: 'Tutor',
+      subjects: 'Subjects',
+      actions: 'Actions',
+      ended: 'Ended',
+    },
     list: 'Tutors',
     empty: 'No tutor yet.',
     add: 'Add a tutor',
@@ -391,6 +398,13 @@ export const en: Resources = {
     ended: 'Ended',
   },
   students: {
+    columns: {
+      name: 'Name',
+      email: 'Email',
+      state: 'State',
+      groups: 'Groups',
+      nextLesson: 'Next lesson',
+    },
     group: 'Group',
     allGroups: 'All groups',
     archivedGroup: '{name} (archived)',
@@ -484,6 +498,12 @@ export const en: Resources = {
     gone: 'This student is no longer on your list.',
   },
   groups: {
+    columns: {
+      name: 'Name',
+      members: 'Members',
+      nextLesson: 'Next lesson',
+      state: 'State',
+    },
     archiveTitle: 'Archive the group?',
     archiveConsequence:
       '{count, plural, one {# future lesson will be cancelled.} other {# future lessons will be cancelled.}} Unarchiving the group restores neither lessons nor series.',
@@ -572,6 +592,11 @@ export const en: Resources = {
     showMore: 'Show more',
   },
   notifications: {
+    columns: {
+      event: 'Event',
+      from: 'From',
+      time: 'Time',
+    },
     heading: 'Notifications',
     list: 'Notifications',
     markAllRead: 'Mark all as read',

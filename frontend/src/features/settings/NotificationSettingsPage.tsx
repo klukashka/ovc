@@ -239,7 +239,7 @@ export function NotificationSettingsPage(): ReactElement {
   }
 
   return (
-    <Page>
+    <Page width="reading">
       <SettingsNav />
       <section aria-labelledby={headingId} className="flex flex-col gap-3">
         <h2 id={headingId} className="text-heading">

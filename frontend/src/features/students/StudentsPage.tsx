@@ -6,6 +6,17 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { Avatar } from '../../components/ui/Avatar.tsx';
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
 import {
+  DataTable,
+  type TableColumn,
+  cellClass,
+  narrowOnlyClass,
+  primaryCellClass,
+  rowLinkClass,
+  rowLinkSelector,
+  secondaryCellClass,
+  tableRowClass,
+} from '../../components/ui/DataTable.tsx';
+import {
   SelectChevron,
   fieldClass,
   linkClass,
@@ -65,7 +76,7 @@ function listAddress(view: ListView): string {
 function Tabs({ view }: { readonly view: ListView }): ReactElement {
   const { t } = useTranslation();
   return (
-    <nav aria-label={t('students.lists')} className="border-b border-border">
+    <nav aria-label={t('students.lists')} className="shrink-0 border-b border-border desktop:border-b-0">
       <ul className="flex flex-wrap gap-6">
         {studentListStates.map((state) => (
           <li key={state}>
@@ -139,7 +150,12 @@ function SearchForm({ view }: { readonly view: ListView }): ReactElement {
   }
 
   return (
-    <form role="search" aria-label={t('students.search')} onSubmit={submit} className="flex flex-wrap items-end gap-3">
+    <form
+      role="search"
+      aria-label={t('students.search')}
+      onSubmit={submit}
+      className="flex flex-1 flex-wrap items-end gap-3"
+    >
       <div className="flex min-w-60 flex-1 flex-col gap-1">
         <label htmlFor={inputId} className="text-label">
           {t('students.searchLabel')}
@@ -181,27 +197,39 @@ function StudentRow({ card }: { readonly card: StudentCardSummary }): ReactEleme
   const { t } = useTranslation();
   const me = useSignedInAccount();
   const email = card.email ?? card.account?.email ?? null;
+  const lesson = lessonShown(card) ? <NextLessonLine item={card.next_lesson} me={me} /> : null;
   return (
-    <li data-row={card.id} className="border-t border-border">
-      <Link
-        to={`/students/${encodeURIComponent(card.id)}`}
-        className="grid min-h-11 grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 px-2 py-3 hover:bg-surface tablet:grid-cols-[auto_minmax(0,2fr)_minmax(0,2fr)_minmax(14rem,1fr)]"
-      >
-        <Avatar name={card.display_name} avatarId={card.account?.avatar_id ?? null} />
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate text-strong">{card.display_name}</span>
-          <span className="truncate text-small text-text-muted tablet:hidden">{email ?? t('students.noEmail')}</span>
+    <tr data-row={card.id} className={tableRowClass}>
+      <th scope="row" className={primaryCellClass}>
+        <span className="flex min-w-0 items-center gap-3">
+          <Avatar name={card.display_name} avatarId={card.account?.avatar_id ?? null} />
+          <span className="flex min-w-0 flex-col">
+            <Link
+              data-row-link=""
+              to={`/students/${encodeURIComponent(card.id)}`}
+              dir="auto"
+              className={`truncate ${rowLinkClass}`}
+            >
+              {card.display_name}
+            </Link>
+            <span className={`truncate text-small text-text-muted ${narrowOnlyClass}`}>
+              {email ?? t('students.noEmail')}
+            </span>
+            {lesson === null ? null : <span className={narrowOnlyClass}>{lesson}</span>}
+          </span>
         </span>
-        <span className="hidden truncate text-small text-text-muted tablet:block">
-          {email ?? t('students.noEmail')}
-        </span>
-        <span className="col-start-2 flex flex-col gap-1 tablet:col-start-auto">
-          <StateBadge state={card.state} />
-          <GroupDots groups={card.groups} />
-          {lessonShown(card) ? <NextLessonLine item={card.next_lesson} me={me} /> : null}
-        </span>
-      </Link>
-    </li>
+      </th>
+      <td className={secondaryCellClass}>
+        <span className="block truncate text-small text-text-muted">{email ?? t('students.noEmail')}</span>
+      </td>
+      <td className={cellClass}>
+        <StateBadge state={card.state} />
+      </td>
+      <td className={cellClass}>
+        <GroupDots groups={card.groups} />
+      </td>
+      <td className={secondaryCellClass}>{lesson}</td>
+    </tr>
   );
 }
 
@@ -269,15 +297,22 @@ function StudentList({ view }: { readonly view: ListView }): ReactElement {
     retry: false,
   });
   const cards = query.data?.pages.flatMap((page) => page.items) ?? [];
-  const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
+  const columns: readonly TableColumn[] = [
+    { key: 'name', label: t('students.columns.name'), width: 'w-1/2 tablet:w-3/12' },
+    { key: 'email', label: t('students.columns.email'), secondary: true, width: 'w-3/12' },
+    { key: 'state', label: t('students.columns.state'), width: 'w-1/4 tablet:w-2/12' },
+    { key: 'groups', label: t('students.columns.groups'), width: 'w-1/4 tablet:w-2/12' },
+    { key: 'lesson', label: t('students.columns.nextLesson'), secondary: true, width: 'w-2/12' },
+  ];
+  const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLTableSectionElement>(
     cards.length,
-    ':scope > li > a',
+    `:scope > tr ${rowLinkSelector}`,
     query.isFetchingNextPage,
   );
   useFocusAfterRemovedRow(
     listRef,
     cards.map((card) => card.id),
-    ':scope > a',
+    rowLinkSelector,
   );
   if (query.isPending) {
     return <DelayedLoading />;
@@ -315,11 +350,11 @@ function StudentList({ view }: { readonly view: ListView }): ReactElement {
   }
   return (
     <div aria-busy={query.isPlaceholderData} className="flex flex-col items-start gap-4">
-      <ul ref={listRef} aria-label={t(`students.tabs.${state}`)} className="w-full border-b border-border">
+      <DataTable label={t(`students.tabs.${state}`)} columns={columns} bodyRef={listRef}>
         {cards.map((card) => (
           <StudentRow key={card.id} card={card} />
         ))}
-      </ul>
+      </DataTable>
       {query.hasNextPage ? (
         <button
           type="button"
@@ -385,13 +420,15 @@ export function StudentsPage(): ReactElement {
     );
 
   return (
-    <Page wide action={addButton ?? undefined}>
+    <Page action={addButton ?? undefined}>
       <LiveNotice message={withdrawnView === null ? null : t('students.withdrawn')} />
       <JoinRequests hideWhenEmpty />
       {requestsSettled ? null : <DelayedLoading />}
       <div hidden={!requestsSettled} className="flex flex-col gap-6">
-        <Tabs view={view} />
-        <SearchForm view={view} />
+        <div className="flex flex-col gap-4 desktop:flex-row desktop:items-end desktop:gap-8">
+          <Tabs view={view} />
+          <SearchForm view={view} />
+        </div>
         <StudentList view={view} />
       </div>
       <AddStudentDialog

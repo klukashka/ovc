@@ -5,7 +5,7 @@ import type { ObservedBrowser } from './browser-diagnostics.ts';
 import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { bellIn, panelRowsIn } from './notifications.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
+import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor, tableRows } from './fixtures.ts';
 import { recordLazyChunkAddresses } from './observers.ts';
 import {
   createCard,
@@ -65,12 +65,15 @@ async function expectTokenNowhere(page: Page, token: string): Promise<void> {
   expect(stored.cookies).toBe('');
 }
 
-function tutorRows(page: Page): Locator {
+function homeTutorRows(page: Page): Locator {
   return page.getByRole('list', { name: /^(Репетиторы|Tutors)$/ }).getByRole('listitem');
 }
 
-async function expectTutors(page: Page, names: readonly string[]): Promise<void> {
-  const rows = tutorRows(page);
+function myTutorRows(page: Page): Locator {
+  return tableRows(page, /^(Репетиторы|Tutors)$/);
+}
+
+async function expectTutors(rows: Locator, names: readonly string[]): Promise<void> {
   await expect(rows).toHaveCount(names.length);
   for (const name of names) {
     await expect(rows.filter({ hasText: name })).toHaveCount(1);
@@ -164,7 +167,7 @@ test.describe('Anna in Russian on a phone', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Главная' })).toBeFocused();
     const banner = page.getByRole('region', { name: 'Подтверждение email' });
     await expect(banner).toContainText('Подтвердите email, чтобы продолжить занятия с репетитором.');
-    await expectTutors(page, ['Мария']);
+    await expectTutors(homeTutorRows(page), ['Мария']);
     const mariaContext = await tutorContext(browser, deployment, 'ru-RU');
     const mariaPage = await mariaContext.newPage();
     await diagnostics.watch(mariaPage);
@@ -189,7 +192,7 @@ test.describe('Anna in Russian on a phone', () => {
     await page.getByRole('main').getByRole('link', { name: 'Продолжить' }).click();
 
     await expect(page).toHaveURL('/home');
-    await expectTutors(page, ['Мария']);
+    await expectTutors(homeTutorRows(page), ['Мария']);
     await expect(page.getByRole('region', { name: 'Подтверждение email' })).toHaveCount(0);
     await mariaPage.reload();
     await expect(mariaPage.getByRole('heading', { level: 1, name: 'Анна' })).toBeVisible();
@@ -200,9 +203,7 @@ test.describe('Anna in Russian on a phone', () => {
       await expect(mariaPage.getByRole('main').getByText(word)).toHaveCount(0);
     }
     await mariaPage.goto('/students?state=active');
-    await expect(
-      mariaPage.getByRole('list', { name: 'Действующие' }).getByRole('link', { name: /Анна/ }),
-    ).toBeVisible();
+    await expect(tableRows(mariaPage, 'Действующие').getByRole('link', { name: /Анна/ })).toBeVisible();
     expect(addresses.at(-1)).not.toContain(token);
     expect(addressesAfterRemoval(addresses, token).filter((address) => address.includes(token))).toEqual([]);
     await expectTokenNowhere(page, token);
@@ -230,8 +231,8 @@ test.describe('Anna in Russian on a phone', () => {
 
     await expect(page).toHaveURL('/tutors');
     await expect(page.getByRole('heading', { level: 1, name: 'Мои репетиторы' })).toBeFocused();
-    await expectTutors(page, ['Мария', 'Pavel']);
-    const colours = await dotColours(tutorRows(page));
+    await expectTutors(myTutorRows(page), ['Мария', 'Pavel']);
+    const colours = await dotColours(myTutorRows(page));
     expect(colours.every((colour) => colour !== '' && colour !== 'rgba(0, 0, 0, 0)')).toBe(true);
     expect(new Set(colours).size).toBe(2);
     expect(await invitationIsUsable(deployment, link)).toBe(false);
@@ -318,7 +319,7 @@ test.describe('in English', () => {
     await page.getByRole('button', { name: 'Accept' }).click();
 
     await expect(page).toHaveURL('/tutors');
-    await expectTutors(page, ['Pavel', 'Maria']);
+    await expectTutors(myTutorRows(page), ['Pavel', 'Maria']);
     await expectTokenNowhere(page, token);
     expect(addresses.at(-1)).not.toContain(token);
     expect(addressesAfterRemoval(addresses, token).filter((address) => address.includes(token))).toEqual([]);
@@ -366,7 +367,7 @@ test.describe('in English', () => {
     await page.getByRole('button', { name: 'Accept' }).click();
 
     await expect(page).toHaveURL('/tutors');
-    await expectTutors(page, ['Pavel', 'Maria']);
+    await expectTutors(myTutorRows(page), ['Pavel', 'Maria']);
   });
 
   test('invitations › a sign-up with a taken email and another password asks to check the email or sign in', async ({

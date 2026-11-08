@@ -471,6 +471,12 @@ export const diagnosedTest = test.extend<{ diagnostics: Diagnostics }>({
   ],
 });
 
+export function tableRows(scope: Page | Locator, name: string | RegExp): Locator {
+  return scope
+    .getByRole('table', typeof name === 'string' ? { name, exact: true } : { name })
+    .locator(':scope > tbody > tr');
+}
+
 export async function expectRowsNamed(rows: Locator, names: readonly string[]): Promise<void> {
   await expect(rows).toHaveCount(names.length);
   for (const name of names) {

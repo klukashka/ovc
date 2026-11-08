@@ -1,4 +1,4 @@
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { type UseInfiniteQueryResult, type InfiniteData, useInfiniteQuery } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -7,25 +7,17 @@ import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
-import { fetchNotifications, notificationPagesKey } from './api.ts';
-import { MarkAllRead, NotificationList } from './NotificationRows.tsx';
+import { type NotificationPage, fetchNotifications, notificationPagesKey } from './api.ts';
+import { MarkAllRead, NotificationTable, notificationRowSelector } from './NotificationRows.tsx';
 
-const rowSelector = ':scope > li > a, :scope > li[tabindex]';
+type PagesQuery = UseInfiniteQueryResult<InfiniteData<NotificationPage>>;
 
-function NotificationPages(): ReactElement {
+function NotificationPages({ query }: { readonly query: PagesQuery }): ReactElement {
   const { t } = useTranslation();
-  const client = useApiClient();
-  const query = useInfiniteQuery({
-    queryKey: notificationPagesKey,
-    queryFn: ({ pageParam }) => fetchNotifications(client, null, pageParam),
-    initialPageParam: null as string | null,
-    getNextPageParam: (page) => page.next_cursor,
-    retry: false,
-  });
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
-  const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
+  const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLTableSectionElement>(
     items.length,
-    rowSelector,
+    notificationRowSelector,
     query.isFetchingNextPage,
   );
 
@@ -42,14 +34,12 @@ function NotificationPages(): ReactElement {
       />
     );
   }
-  const newest = items[0];
-  if (newest === undefined) {
+  if (items.length === 0) {
     return <p className="text-text-muted">{t('notifications.empty')}</p>;
   }
   return (
     <>
-      <MarkAllRead newest={newest} />
-      <NotificationList items={items} label={t('notifications.list')} listRef={listRef} onChoose={() => undefined} />
+      <NotificationTable items={items} label={t('notifications.list')} bodyRef={listRef} />
       {query.hasNextPage ? (
         <p>
           <button
@@ -73,9 +63,18 @@ function NotificationPages(): ReactElement {
 }
 
 export function NotificationsPage(): ReactElement {
+  const client = useApiClient();
+  const query = useInfiniteQuery({
+    queryKey: notificationPagesKey,
+    queryFn: ({ pageParam }) => fetchNotifications(client, null, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor,
+    retry: false,
+  });
+  const newest = query.data?.pages[0]?.items[0];
   return (
-    <Page>
-      <NotificationPages />
+    <Page action={newest === undefined || query.isError ? null : <MarkAllRead newest={newest} />}>
+      <NotificationPages query={query} />
     </Page>
   );
 }

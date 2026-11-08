@@ -4,21 +4,39 @@ import { useTranslation } from 'react-i18next';
 
 import { useRouteTitle } from '../../app/handles.ts';
 
+export type PageWidth = 'page' | 'reading';
+
+export type TitleSize = 'title' | 'display';
+
+const widthClass: Record<PageWidth, string> = {
+  page: 'flex flex-col gap-6',
+  reading: 'flex max-w-reading flex-col gap-6',
+};
+
+const titleClass: Record<TitleSize, string> = {
+  title: 'font-serif text-title outline-none',
+  display: 'font-serif text-title outline-none desktop:text-display',
+};
+
 export function Page({
   title: titleKey,
   headingText,
   headingDir,
-  wide = false,
+  width = 'page',
+  titleSize = 'title',
   focusTitle = false,
   action,
+  menu,
   children,
 }: {
   readonly title?: ParseKeys;
   readonly headingText?: string;
   readonly headingDir?: 'auto';
-  readonly wide?: boolean;
+  readonly width?: PageWidth;
+  readonly titleSize?: TitleSize;
   readonly focusTitle?: boolean;
   readonly action?: ReactNode;
+  readonly menu?: ReactNode;
   readonly children?: ReactNode;
 }): ReactElement {
   const { t } = useTranslation();
@@ -41,24 +59,23 @@ export function Page({
       ref={heading}
       tabIndex={-1}
       dir={headingDir}
-      className={
-        headingDir === undefined
-          ? 'font-serif text-title outline-none desktop:text-display'
-          : 'font-serif text-title break-words outline-none desktop:text-display'
-      }
+      className={`${titleClass[titleSize]}${headingDir === undefined ? '' : ' break-words'}`}
     >
       {title}
     </h1>
   );
 
   return (
-    <article className={wide ? 'flex flex-col gap-6' : 'flex max-w-reading flex-col gap-6'}>
-      {action === undefined ? (
+    <article className={widthClass[width]}>
+      {action === undefined && menu === undefined ? (
         headingElement
       ) : (
         <header className="flex flex-wrap items-center justify-between gap-3">
           {headingElement}
-          {action}
+          <div className="flex flex-wrap items-center gap-2">
+            {action}
+            {menu}
+          </div>
         </header>
       )}
       {children}
@@ -69,7 +86,7 @@ export function Page({
 export function PlaceholderPage(): ReactElement {
   const { t } = useTranslation();
   return (
-    <Page>
+    <Page width="reading">
       <p className="text-text-muted">{t('app.placeholder')}</p>
     </Page>
   );

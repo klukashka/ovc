@@ -5,7 +5,7 @@ import type { ObservedBrowser } from './browser-diagnostics.ts';
 import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import type { Diagnostics, PageDiagnostics, TestControl } from './fixtures.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { diagnosedTest as test, expect, seedVerifiedUser, tableRows } from './fixtures.ts';
 import {
   callApi,
   createCard,
@@ -256,7 +256,7 @@ test('reclaim › an invitation accepted while the choice waits leaves the choic
   await expect(waiting).toHaveAttribute('href', '/reclaim');
   await page.getByRole('button', { name: 'Принять' }).click();
   await expect(page).toHaveURL('/tutors');
-  await expect(page.getByRole('list', { name: 'Репетиторы' }).getByRole('listitem')).toHaveText([/Pavel/]);
+  await expect(tableRows(page, 'Репетиторы')).toHaveText([/Pavel/]);
 
   await page.goto('/reclaim');
 

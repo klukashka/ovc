@@ -304,7 +304,7 @@ function BlockedStudentsSection(): ReactElement {
 
 export function TeachingSettingsPage(): ReactElement {
   return (
-    <Page>
+    <Page width="reading">
       <SettingsNav />
       <StorageUsage />
       <TutorCodeSection />

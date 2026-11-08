@@ -1,8 +1,19 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { type ReactElement, type Ref, useEffect, useState } from 'react';
+import { type ReactElement, type Ref, type RefObject, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
+import {
+  DataTable,
+  type TableColumn,
+  cellClass,
+  narrowOnlyClass,
+  primaryCellClass,
+  rowLinkClass,
+  rowLinkSelector,
+  secondaryCellClass,
+  tableRowClass,
+} from '../../components/ui/DataTable.tsx';
 import { ActionButton, quietButtonClass } from '../../components/ui/Form.tsx';
 import { BellIcon } from '../../components/ui/icons.tsx';
 import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
@@ -135,17 +146,7 @@ function NotificationRow({
   );
 }
 
-export function NotificationList({
-  items,
-  label,
-  listRef,
-  onChoose,
-}: {
-  readonly items: readonly Notification[];
-  readonly label: string;
-  readonly listRef?: Ref<HTMLUListElement>;
-  readonly onChoose: () => void;
-}): ReactElement {
+function useNow(items: readonly Notification[]): number {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -159,6 +160,116 @@ export function NotificationList({
       window.clearInterval(interval);
     };
   }, [items]);
+  return now;
+}
+
+function UnreadMarker({ item }: { readonly item: Notification }): ReactElement | null {
+  const { t } = useTranslation();
+  if (item.read_at !== null) {
+    return null;
+  }
+  return (
+    <span className="shrink-0">
+      <span aria-hidden="true" className="block size-news-dot rounded-full bg-accent-text" />
+      <span className="sr-only">{t('notifications.unread')}</span>
+    </span>
+  );
+}
+
+function EventCell({ item }: { readonly item: Notification }): ReactElement {
+  const { t } = useTranslation();
+  const markRead = useMarkRead();
+  const text = t(eventTexts[item.event]);
+  const link = item.link;
+  return (
+    <th scope="row" className={primaryCellClass}>
+      <span className="flex min-w-0 items-center gap-3">
+        <span aria-hidden="true" className="text-icon">
+          <BellIcon />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          {link === null ? (
+            <span data-row-link="" tabIndex={-1} className="outline-none">
+              {text}
+            </span>
+          ) : (
+            <Link
+              data-row-link=""
+              to={linkAddress(link)}
+              onClick={() => {
+                if (item.read_at === null) {
+                  markRead({ ids: [item.id] }).catch(reportError);
+                }
+              }}
+              className={rowLinkClass}
+            >
+              {text}
+            </Link>
+          )}
+          <span className={narrowOnlyClass}>
+            <Label item={item} />
+          </span>
+        </span>
+        <UnreadMarker item={item} />
+      </span>
+    </th>
+  );
+}
+
+export const notificationRowSelector = `:scope > tr ${rowLinkSelector}`;
+
+export function NotificationTable({
+  items,
+  label,
+  bodyRef,
+}: {
+  readonly items: readonly Notification[];
+  readonly label: string;
+  readonly bodyRef: RefObject<HTMLTableSectionElement | null>;
+}): ReactElement {
+  const { t } = useTranslation();
+  const me = useSignedInAccount();
+  const now = useNow(items);
+  const columns: readonly TableColumn[] = [
+    { key: 'event', label: t('notifications.columns.event'), width: 'w-2/3 tablet:w-6/12' },
+    { key: 'from', label: t('notifications.columns.from'), secondary: true, width: 'w-3/12' },
+    { key: 'time', label: t('notifications.columns.time'), width: 'w-1/3 tablet:w-3/12' },
+  ];
+  return (
+    <DataTable label={label} columns={columns} bodyRef={bodyRef}>
+      {items.map((item) => (
+        <tr key={item.id} data-row={item.id} className={tableRowClass}>
+          <EventCell item={item} />
+          <td className={secondaryCellClass}>
+            <Label item={item} />
+          </td>
+          <td className={cellClass}>
+            <time
+              dateTime={item.created_at}
+              title={formatDateTime(item.created_at, me.language, me.timezone)}
+              className="tabular text-small text-text-muted"
+            >
+              {formatAgo(item.created_at, me.language, me.timezone, now)}
+            </time>
+          </td>
+        </tr>
+      ))}
+    </DataTable>
+  );
+}
+
+export function NotificationList({
+  items,
+  label,
+  listRef,
+  onChoose,
+}: {
+  readonly items: readonly Notification[];
+  readonly label: string;
+  readonly listRef?: Ref<HTMLUListElement>;
+  readonly onChoose: () => void;
+}): ReactElement {
+  const now = useNow(items);
   return (
     <ul ref={listRef} aria-label={label} className="border-b border-border">
       {items.map((item) => (

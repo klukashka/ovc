@@ -5,7 +5,7 @@ import type { ObservedBrowser } from './browser-diagnostics.ts';
 import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { bellIn, panelRowsIn } from './notifications.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
+import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor, tableRows } from './fixtures.ts';
 import { busyControls, offsetsBelowHeading, recordBusyControls, recordFirstOffsets } from './observers.ts';
 import {
   acceptSignedIn,
@@ -124,9 +124,7 @@ test.describe('Boris in English', () => {
     await expect(joinRequests(mariaPage).getByRole('listitem')).toHaveCount(0);
     await expect(joinRequests(mariaPage).getByText('Новых заявок нет.')).toBeVisible();
     await mariaPage.goto('/students');
-    await expect(
-      mariaPage.getByRole('list', { name: 'Действующие' }).getByRole('link', { name: /Boris/ }),
-    ).toBeVisible();
+    await expect(tableRows(mariaPage, 'Действующие').getByRole('link', { name: /Boris/ })).toBeVisible();
     await expect(page.getByRole('list', { name: 'Tutors' }).getByRole('listitem')).toHaveText([/Мария/]);
     const borisBell = bellIn(page, /^Notifications/);
     await expect(borisBell).toHaveAccessibleName('Notifications, 1 unread');
@@ -176,7 +174,7 @@ test.describe('Anna in Russian', () => {
     await page.goto('/tutors');
 
     await expect(page.getByRole('main').getByText('Репетитора пока нет.')).toBeVisible();
-    const past = page.getByRole('list', { name: 'Прошлые репетиторы' }).getByRole('listitem');
+    const past = tableRows(page, 'Прошлые репетиторы');
     await expect(past).toHaveCount(2);
     await expect(past.filter({ hasText: 'Мария' })).toContainText(/Занятия завершены \d/);
     await expect(past.filter({ hasText: 'Pavel' })).toContainText(/Аккаунт закрыт — результаты доступны до \d/);

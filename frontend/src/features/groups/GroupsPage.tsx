@@ -5,6 +5,16 @@ import { Link } from 'react-router';
 
 import { Avatar } from '../../components/ui/Avatar.tsx';
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
+import {
+  DataTable,
+  type TableColumn,
+  cellClass,
+  narrowOnlyClass,
+  primaryCellClass,
+  rowLinkClass,
+  secondaryCellClass,
+  tableRowClass,
+} from '../../components/ui/DataTable.tsx';
 import { primaryButtonClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
@@ -20,32 +30,43 @@ function GroupRow({ group }: { readonly group: GroupSummary }): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
   const hidden = group.member_count - group.members.length;
+  const memberCount = t('groups.memberCount', { count: group.member_count });
   return (
-    <li className="border-t border-border">
-      <Link
-        to={`/groups/${encodeURIComponent(group.id)}`}
-        className="grid min-h-11 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-2 py-3 hover:bg-surface tablet:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_auto]"
-      >
+    <tr data-row={group.id} className={tableRowClass}>
+      <th scope="row" className={primaryCellClass}>
         <span className="flex min-w-0 items-center gap-2">
           <GroupDot colour={group.colour} />
-          <span className="truncate text-strong">{group.name}</span>
+          <span className="flex min-w-0 flex-col">
+            <Link
+              data-row-link=""
+              to={`/groups/${encodeURIComponent(group.id)}`}
+              dir="auto"
+              className={`truncate ${rowLinkClass}`}
+            >
+              {group.name}
+            </Link>
+            <span className={`text-small text-text-muted ${narrowOnlyClass}`}>{memberCount}</span>
+          </span>
         </span>
-        <span className="flex items-center gap-1" aria-hidden="true">
-          {group.members.map((member) => (
-            <Avatar key={member.relationship_id} name={member.display_name} avatarId={member.avatar_id} />
-          ))}
-          {hidden > 0 ? <span className="text-small text-text-muted">+{hidden}</span> : null}
+      </th>
+      <td className={secondaryCellClass}>
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="flex items-center gap-1" aria-hidden="true">
+            {group.members.map((member) => (
+              <Avatar key={member.relationship_id} name={member.display_name} avatarId={member.avatar_id} />
+            ))}
+            {hidden > 0 ? <span className="text-small text-text-muted">+{hidden}</span> : null}
+          </span>
+          <span className="text-small text-text-muted">{memberCount}</span>
         </span>
-        <span className="flex flex-col items-start gap-1 tablet:items-end">
-          <span className="text-small text-text-muted">{t('groups.memberCount', { count: group.member_count })}</span>
-          {group.archived_at === null ? (
-            <NextLessonLine item={group.next_lesson} me={me} />
-          ) : (
-            <StatusWord tone="muted">{t('groups.archived')}</StatusWord>
-          )}
-        </span>
-      </Link>
-    </li>
+      </td>
+      <td className={cellClass}>
+        {group.archived_at === null ? <NextLessonLine item={group.next_lesson} me={me} /> : null}
+      </td>
+      <td className={cellClass}>
+        {group.archived_at === null ? null : <StatusWord tone="muted">{t('groups.archived')}</StatusWord>}
+      </td>
+    </tr>
   );
 }
 
@@ -83,15 +104,18 @@ function GroupList({
       </section>
     );
   }
+  const columns: readonly TableColumn[] = [
+    { key: 'name', label: t('groups.columns.name'), width: 'w-1/2 tablet:w-4/12' },
+    { key: 'members', label: t('groups.columns.members'), secondary: true, width: 'w-3/12' },
+    { key: 'lesson', label: t('groups.columns.nextLesson'), width: 'w-1/4 tablet:w-3/12' },
+    { key: 'state', label: t('groups.columns.state'), width: 'w-1/4 tablet:w-2/12' },
+  ];
   return (
-    <div className="flex flex-col items-start gap-4">
-      {addButton}
-      <ul aria-label={t('groups.list')} className="w-full border-b border-border">
-        {query.data.map((group) => (
-          <GroupRow key={group.id} group={group} />
-        ))}
-      </ul>
-    </div>
+    <DataTable label={t('groups.list')} columns={columns}>
+      {query.data.map((group) => (
+        <GroupRow key={group.id} group={group} />
+      ))}
+    </DataTable>
   );
 }
 
@@ -122,7 +146,7 @@ export function GroupsPage(): ReactElement {
     );
 
   return (
-    <Page wide>
+    <Page action={query.isSuccess && query.data.length > 0 ? addButton : null}>
       <GroupList query={query} addButton={addButton} />
       <NewGroupDialog
         open={dialogOpen}

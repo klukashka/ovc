@@ -18,7 +18,7 @@ function PageLoading(): ReactElement {
   );
 
   return (
-    <Page>
+    <Page width="reading">
       <DelayedLoading />
     </Page>
   );
@@ -26,7 +26,7 @@ function PageLoading(): ReactElement {
 
 function PageLoadFailed(): ReactElement {
   return (
-    <Page>
+    <Page width="reading">
       <ModuleLoadFailed />
     </Page>
   );

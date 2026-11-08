@@ -242,5 +242,5 @@ export function ReclaimPage(): ReactElement {
     );
   }
 
-  return <Page>{body()}</Page>;
+  return <Page width="reading">{body()}</Page>;
 }

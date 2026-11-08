@@ -964,6 +964,7 @@ export function StudentCardPage(): ReactElement {
 
   return (
     <Page
+      width="reading"
       {...(notFound ? { title: 'page.notFound' as const } : {})}
       {...(error === null && query.data !== undefined ? { headingText: query.data.display_name } : {})}
       focusTitle={notFound}

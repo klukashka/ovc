@@ -44,7 +44,7 @@ export function ForgotPasswordPage(): ReactElement {
 
   if (request.kind === 'done') {
     return (
-      <Page>
+      <Page width="reading">
         <FormNotice takeFocus>{t('forgotPassword.sent', { email: request.email })}</FormNotice>
         <p>
           <Link to="/" className={linkClass}>
@@ -57,7 +57,7 @@ export function ForgotPasswordPage(): ReactElement {
 
   const error = request.kind === 'editing' ? request.error : null;
   return (
-    <Page>
+    <Page width="reading">
       <form
         onSubmit={(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
           event.preventDefault();
@@ -124,7 +124,7 @@ export function ResetPasswordPage(): ReactElement {
 
   if (token === null) {
     return (
-      <Page>
+      <Page width="reading">
         <p>{t('resetPassword.openLinkAgain')}</p>
         <p>
           <Link to="/forgot-password" className={linkClass}>
@@ -136,7 +136,7 @@ export function ResetPasswordPage(): ReactElement {
   }
   if (reset.kind === 'done' || reset.kind === 'invalid') {
     return (
-      <Page>
+      <Page width="reading">
         {reset.kind === 'done' ? (
           <FormNotice takeFocus>{t('resetPassword.done')}</FormNotice>
         ) : (
@@ -155,7 +155,7 @@ export function ResetPasswordPage(): ReactElement {
   const error = reset.kind === 'editing' ? reset.error : null;
   const passwordError = fieldMessage(t, error, 'new_password');
   return (
-    <Page>
+    <Page width="reading">
       <form
         onSubmit={(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
           event.preventDefault();
@@ -185,7 +185,7 @@ export function ResetPasswordPage(): ReactElement {
 export function PrivacyPage(): ReactElement {
   const { t } = useTranslation();
   return (
-    <Page>
+    <Page width="reading">
       <p className="text-text-muted">{t('privacy.placeholder')}</p>
     </Page>
   );

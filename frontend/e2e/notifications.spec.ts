@@ -1,7 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 
 import { newTestAccount, signInThroughTheApi } from './accounts.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { diagnosedTest as test, expect, seedVerifiedUser, tableRows } from './fixtures.ts';
 import { notificationRows } from './notifications.ts';
 import { accountId, waitForSockets } from './realtime.ts';
 import { addDays, editThisLesson, localDate, scheduleLessonsWithIds } from './schedule.ts';
@@ -76,7 +76,7 @@ test.describe('notifications in Russian on a computer', () => {
       await expect(page).toHaveURL('/notifications');
       await expect(page.getByRole('heading', { level: 1, name: 'Уведомления' })).toBeFocused();
       await expect(panel(page)).toHaveCount(0);
-      await expect(rowsOf(page.getByRole('main'))).toHaveCount(30);
+      await expect(tableRows(page.getByRole('main'), 'Уведомления')).toHaveCount(30);
     });
 
     test('notifications › Show more on the page moves focus to the first new row', async ({
@@ -86,7 +86,7 @@ test.describe('notifications in Russian on a computer', () => {
       const { maria } = mariaWithJoinRequests;
       await signInThroughTheApi(page, maria);
       await page.goto('/notifications');
-      const rows = rowsOf(page.getByRole('main'));
+      const rows = tableRows(page.getByRole('main'), 'Уведомления');
       await expect(rows).toHaveCount(30);
 
       await page.getByRole('button', { name: 'Показать ещё' }).click();
@@ -131,6 +131,46 @@ test.describe('notifications in Russian on a computer', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Анна' })).toBeFocused();
     await expect(panel(page)).toHaveCount(0);
     await expect(sidebarBell(page)).toHaveAccessibleName('Уведомления');
+  });
+
+  test('notifications › a row of the notifications page marks it read and opens its page', async ({
+    page,
+    deployment,
+  }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const { cardId } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
+    await signInThroughTheApi(page, maria);
+    await page.goto('/notifications');
+    await expect(sidebarBell(page)).toHaveAccessibleName('Уведомления, 1 непрочитанное');
+    const row = tableRows(page.getByRole('main'), 'Уведомления').first();
+    await expect(row).toContainText('Анна');
+    await expect(row).toContainText('Приглашение принято');
+    await expect(row).toContainText('Не прочитано');
+
+    await row.getByRole('link', { name: 'Приглашение принято' }).click();
+
+    await expect(page).toHaveURL(`/students/${cardId}`);
+    await expect(page.getByRole('heading', { level: 1, name: 'Анна' })).toBeFocused();
+    await expect(sidebarBell(page)).toHaveAccessibleName('Уведомления');
+  });
+
+  test('notifications › Mark all as read in the page header marks every row and keeps focus', async ({
+    page,
+    deployment,
+  }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    await seedActiveStudent(deployment, maria, 'Анна', 'ru');
+    await signInThroughTheApi(page, maria);
+    await page.goto('/notifications');
+    const markAll = page.getByRole('main').getByRole('button', { name: 'Отметить все как прочитанные' });
+    await expect(tableRows(page.getByRole('main'), 'Уведомления').first()).toContainText('Не прочитано');
+
+    await markAll.press('Enter');
+
+    await expect(page.getByRole('main').getByRole('status')).toHaveText('Все уведомления отмечены как прочитанные.');
+    await expect(tableRows(page.getByRole('main'), 'Уведомления').first()).not.toContainText('Не прочитано');
+    await expect(sidebarBell(page)).toHaveAccessibleName('Уведомления');
+    await expect(markAll).toBeFocused();
   });
 
   test('notifications › a lesson change row links to the lesson', async ({ page, deployment, control }) => {

@@ -21,8 +21,8 @@ The values behind the quiet visual language described in [the product overview](
 
 | Token | Family | Size / line height | Weight | Use |
 |---|---|---|---|---|
-| `text-display` | Literata | 36 / 44 | 400 | Page titles and greetings on computers |
-| `text-title` | Literata | 28 / 36 | 400 | Page titles on phones, dialog titles, the assignment title |
+| `text-display` | Literata | 36 / 44 | 400 | The Today and Home titles and greetings on computers (design slice step L, pending owner review) |
+| `text-title` | Literata | 28 / 36 | 400 | Page titles at every width, except Today and Home on computers; dialog titles, the assignment title (design slice step L, pending owner review) |
 | `text-heading` | Golos Text | 18 / 26 | 500 | Join block state, large inline headings |
 | `text-body` | Golos Text | 15 / 22 | 400 | Body text on computers |
 | `text-body-phone` | Golos Text | 16 / 24 | 400 | Body text below 768 px and every input at any width (16 px avoids zoom on iOS) |
@@ -39,7 +39,9 @@ Times, dates and counts use tabular figures (`font-variant-numeric: tabular-nums
 - **Radius:** `radius-s` 6 (sidebar items, small inputs, segmented controls), `radius-m` 8 (buttons, inputs), `radius-l` 10 (panels, dialogs), `radius-full` (avatars, state and tutor dots). In the Tailwind theme they are `--radius-sm`, `--radius-md`, `--radius-lg` and `--radius-full` (utilities `rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-full`), because `rounded-s` is Tailwind's start-side utility.
 - **Elevation:** `shadow-raised` `0 8px 24px rgba(38,36,31,.12)` for menus, popovers and dialogs only. Dark theme uses a `border-strong` outline instead.
 - **Targets:** from 1024 px with a fine pointer, buttons and inputs are at least 40 px tall, sidebar items 32 px tall and the sidebar's icon buttons 28 × 28 px; below 1024 px or with a coarse or absent pointer (`pointer: coarse` or `pointer: none`), every target is at least 44 × 44 px. Links inside running text are exempt, as WCAG 2.5.8 allows.
-- **Layout widths:** the sidebar is 248 px; page content is centred with a maximum of 1120 px and side padding of 56 px; reading width is at most 720 px; the main column and a 300 px side column sit 64 px apart. Breakpoints are 768, 1024 and 1280 px.
+- **Layout widths:** the sidebar is 248 px; page content is centred with a maximum of 1120 px and side padding of 56 px; reading width is at most 720 px; the main column and a 300 px side column (`--container-aside`) sit 64 px apart. Breakpoints are 768, 1024 and 1280 px.
+- **Page widths** (design slice step L, pending owner review): signed-in pages use the full page content width by default (`Page` with `width="page"`); public pages, the token pages and short forms keep the reading width (`width="reading"`). Until their own design slice steps, Today and Home (step D2) and the student card and group page (step D5) also keep the reading width.
+- **Side column** (owner's decision of 2026-11-08, pending owner review): from 1280 px the main column and the side column sit side by side; below 1280 px the side column follows the main column in one column, because at 1024 px a side column would leave the main column only 300 px. The side column comes after the main column in the document, so reading and tab order match the stacked order.
 
 ## Colours
 
@@ -106,6 +108,9 @@ Group colours use the same palette.
 
 - **Sidebar item:** 16 px outline icon in `icon`, label in `text-small`, optional count in `text-caption` `text-muted` aligned right; `radius-s`; `hover` background on hover and for the current page, where the label turns `text` and weight 500. Unavailable items are never shown.
 - **Row:** a grid of columns on one baseline, 1 px `border` above, the last row also closed by a rule below. A whole-row link highlights with `surface` on hover.
+- **Page header** (design slice step L, pending owner review): one line with the title on the left and, on the right, the page's main action and a menu for its rare actions; it wraps below the title when the line is too narrow.
+- **Table** (design slice step L, pending owner review): lists of people and things are semantic tables with column headers in `text-label` `text-muted`, rows separated by 1 px `border` hairlines with no striping, the name cell as the row header holding the row's link when it has one, and row actions in the last cell, so a row never nests buttons inside a link. A row highlights with `surface` on hover. Long words wrap inside their cell, except a name that is the row's link in Students and Groups, which is cut with an ellipsis on one line. Below 768 px secondary columns are hidden and their content is shown under the name in the first cell, so the table never scrolls sideways and keeps its table semantics.
+- **Filter row** (design slice step L, pending owner review): a list's tabs, search and filters sit in one row above its table from 1024 px, and wrap below.
 - **Primary button:** `accent` fill, `on-accent` label, `radius-m`, 40 px tall (48 px for the join button).
 - **Quiet button:** transparent with a 1 px `border-strong` outline and `text` label; hover fills with `surface`.
 - **Text button:** `text-muted` label with no box; `text` on hover.

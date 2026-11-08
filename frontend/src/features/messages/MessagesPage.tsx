@@ -101,7 +101,7 @@ function MessagesContent({ texts }: { readonly texts: ChatTexts }): ReactElement
 export function MessagesPage(): ReactElement {
   const { texts, failed, retry } = useChatTexts();
   return (
-    <Page wide>
+    <Page>
       {failed ? <LoadFailed error={asApiError(undefined)} onRetry={retry} /> : null}
       {texts === null ? <DelayedLoading /> : <MessagesContent texts={texts} />}
     </Page>

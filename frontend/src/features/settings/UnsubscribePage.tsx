@@ -80,7 +80,7 @@ function InvalidLinkMessage(): ReactElement {
 
 export function UnsubscribePage(): ReactElement {
   const token = useAddressToken();
-  return <Page>{token === null ? <InvalidLinkMessage /> : <Confirmation token={token} />}</Page>;
+  return <Page width="reading">{token === null ? <InvalidLinkMessage /> : <Confirmation token={token} />}</Page>;
 }
 
 function GroupLine({ group }: { readonly group: EmailGroup }): ReactElement {

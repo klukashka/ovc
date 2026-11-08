@@ -2,7 +2,7 @@ import type { BrowserContext, Locator, Page } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, registerTutor, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
+import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor, tableRows } from './fixtures.ts';
 import { apiRequestsInFlight, busyControls, recordBusyControls } from './observers.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { addDays, cancelThisLesson, localDate, scheduleLessons, scheduleLessonsWithIds } from './schedule.ts';
@@ -115,12 +115,12 @@ test.describe('in Russian', () => {
     await expect(page.locator('main header').getByRole('button', { name: 'Добавить ученика' })).toBeFocused();
     await page.getByRole('link', { name: 'Приглашённые' }).click();
     await expect(page).toHaveURL('/students?state=invited');
-    const row = page.getByRole('link', { name: /Анна/ });
+    const row = tableRows(page, 'Приглашённые').filter({ hasText: 'Анна' });
     await expect(row).toContainText(anna.email);
     await expect(row).toContainText('Приглашение отправлено');
     const emailed = invitationLinks((await control.mail(anna.email)).flatMap((message) => message.links));
     expect(emailed).toEqual([link]);
-    await row.click();
+    await row.getByRole('link', { name: 'Анна' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Анна' })).toBeFocused();
     expect(await shownLink(page.getByRole('main'))).toBe(link);
   });
@@ -361,10 +361,10 @@ test.describe('in English with the dark theme', () => {
     const inFlight = apiRequestsInFlight(page);
     await signInThroughTheApi(page, pavel);
     await page.goto('/students');
-    const row = page.getByRole('link', { name: /Boris/ });
+    const row = tableRows(page, 'Active').filter({ hasText: 'Boris' });
     await expect(row).toContainText(student.email);
     await expect(row).not.toContainText('Invitation sent');
-    await row.click();
+    await row.getByRole('link', { name: 'Boris' }).click();
     await expect(page).toHaveURL(`/students/${cardId}`);
     await expect(page.getByRole('heading', { level: 1, name: 'Boris' })).toBeFocused();
     await expect(page.getByRole('heading', { level: 2, name: 'Invitation link' })).toHaveCount(0);
@@ -556,7 +556,7 @@ test.describe('in English with the dark theme', () => {
 
     await page.goto('/students');
 
-    await expect(page.getByRole('link', { name: /Boris/ })).toContainText(/Next lesson.*10:00–11:00/);
+    await expect(tableRows(page, 'Active').filter({ hasText: 'Boris' })).toContainText(/Next lesson.*10:00–11:00/);
   });
 
   test('students › a new student with the email of an active student is refused with a link to that card', async ({
@@ -590,7 +590,7 @@ test.describe('in English with the dark theme', () => {
     await signInThroughTheApi(page, pavel);
     await page.goto('/students?state=invited');
     await expect(page.getByRole('link', { name: 'Invited', exact: true })).toHaveAttribute('aria-current', 'page');
-    const rows = page.getByRole('list', { name: 'Invited' }).getByRole('listitem');
+    const rows = tableRows(page, 'Invited');
     await expect(rows).toHaveCount(30);
 
     await page.getByRole('button', { name: 'Show more' }).click();
@@ -613,7 +613,7 @@ test.describe('in English with the dark theme', () => {
     await signInThroughTheApi(page, pavel);
     await page.goto('/students?state=invited');
     await page.getByRole('link', { name: 'Active', exact: true }).click();
-    await expect(page.getByRole('list', { name: 'Active' }).getByRole('link', { name: /Vera Active/ })).toBeVisible();
+    await expect(tableRows(page, 'Active').getByRole('link', { name: /Vera Active/ })).toBeVisible();
     await page.getByLabel('Name or email').fill('vera');
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page).toHaveURL('/students?state=active&q=vera');

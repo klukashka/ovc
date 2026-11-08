@@ -2,7 +2,14 @@ import type { Locator, Page } from '@playwright/test';
 
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { diagnosedTest as test, expect, expectRowsNamed, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
+import {
+  diagnosedTest as test,
+  expect,
+  expectRowsNamed,
+  seedVerifiedUser,
+  signUpAndConfirmTutor,
+  tableRows,
+} from './fixtures.ts';
 import { busyControls, recordBusyControls } from './observers.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import {
@@ -159,7 +166,7 @@ test.describe('Maria in Russian', () => {
     expect(await cardState(deployment, maria, anna.cardId)).toEqual({ state: 'active', groups: ['B1 evening'] });
     expect(await cardState(deployment, maria, boris.cardId)).toEqual({ state: 'active', groups: ['B1 evening'] });
     await page.getByRole('link', { name: 'Все группы' }).click();
-    await expect(members(page, 'Группы')).toHaveText([/B1 evening.*2 ученика/]);
+    await expect(tableRows(page, 'Группы')).toHaveText([/B1 evening.*2 ученика/]);
     await page.goto('/messages');
     await expect(
       page.getByRole('region', { name: 'Чаты', exact: true }).getByRole('link').filter({ hasText: 'B1 evening' }),
@@ -506,7 +513,7 @@ test.describe('in English, the student list', () => {
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
     await signInThroughTheApi(page, pavel);
     await page.goto('/students');
-    const rows = page.getByRole('list', { name: 'Active', exact: true }).locator(':scope > li');
+    const rows = tableRows(page, 'Active');
     await expectRowsNamed(rows, ['Anna', 'Boris']);
     await page.getByLabel('Group', { exact: true }).selectOption({ label: 'Evening algebra' });
     await page.getByRole('search', { name: 'Search students' }).getByRole('button', { name: 'Search' }).click();

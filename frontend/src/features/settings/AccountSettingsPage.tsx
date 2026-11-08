@@ -425,7 +425,7 @@ function DeleteAccountSection({ role }: { readonly role: Me['role'] }): ReactEle
 export function AccountSettingsPage(): ReactElement {
   const me = useSignedInAccount();
   return (
-    <Page>
+    <Page width="reading">
       <SettingsNav />
       <PreferencesSection key={me.id} me={me} />
       <PasswordSection />

@@ -51,14 +51,14 @@ function NoToken({ state }: { readonly state: SessionState }): ReactElement {
   const { t } = useTranslation();
   if (state.kind === 'signedIn' && state.me.state === 'unverified') {
     return (
-      <Page title="page.checkEmail">
+      <Page width="reading" title="page.checkEmail">
         <CheckEmail email={state.me.email} audience={{ kind: 'signedIn' }} />
       </Page>
     );
   }
   if (state.kind === 'signedIn') {
     return (
-      <Page>
+      <Page width="reading">
         <p>{t('verifyEmail.alreadyConfirmed')}</p>
         <p>
           <Link to="/" className={linkClass}>
@@ -69,7 +69,7 @@ function NoToken({ state }: { readonly state: SessionState }): ReactElement {
     );
   }
   return (
-    <Page>
+    <Page width="reading">
       <p>{t('verifyEmail.openLinkAgain')}</p>
       <p>
         <Link to="/" className={linkClass}>
@@ -138,7 +138,7 @@ export function VerifyEmailPage(): ReactElement {
     case 'waiting':
     case 'confirming':
       return (
-        <Page>
+        <Page width="reading">
           <p role="status" className="text-text-muted">
             {t('verifyEmail.confirming')}
           </p>
@@ -152,7 +152,7 @@ export function VerifyEmailPage(): ReactElement {
         return <Navigate to={reclaimAddress} replace />;
       }
       return (
-        <Page>
+        <Page width="reading">
           <FormNotice takeFocus>{t(`outcome.${confirmation.outcome}`)}</FormNotice>
           <p>
             <Link to="/" className={linkClass}>
@@ -163,7 +163,7 @@ export function VerifyEmailPage(): ReactElement {
       );
     case 'invalid':
       return (
-        <Page>
+        <Page width="reading">
           <FormAlert>{t('errors.token_invalid')}</FormAlert>
           <p>
             <Link to="/" className={linkClass}>
@@ -175,7 +175,7 @@ export function VerifyEmailPage(): ReactElement {
     case 'signOutFailed':
     case 'failed':
       return (
-        <Page>
+        <Page width="reading">
           <FormAlert>
             {confirmation.kind === 'failed' ? errorMessage(t, confirmation.error, null) : t('frame.signOutFailed')}
           </FormAlert>
@@ -195,7 +195,7 @@ export function VerifyEmailPage(): ReactElement {
     case 'needsPassword': {
       const passwordError = fieldMessage(t, confirmation.error, 'new_password');
       return (
-        <Page>
+        <Page width="reading">
           <form
             onSubmit={(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
               event.preventDefault();

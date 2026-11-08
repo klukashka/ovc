@@ -1,7 +1,7 @@
 import type { Page, WebSocket } from '@playwright/test';
 
 import { newTestAccount, signInThroughTheApi } from './accounts.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { diagnosedTest as test, expect, seedVerifiedUser, tableRows } from './fixtures.ts';
 import {
   accountId,
   closeSockets,
@@ -148,7 +148,7 @@ test("realtime › a student's My tutors drops a tutor who removed the link with
   await signUpOnInvitation(deployment, card.link, boris, 'en');
   await signInThroughTheApi(page, boris);
   await page.goto('/tutors');
-  await expect(page.getByRole('list', { name: 'Tutors', exact: true }).getByRole('listitem')).toHaveCount(1);
+  await expect(tableRows(page, 'Tutors')).toHaveCount(1);
   await waitForSockets(deployment, await accountId(deployment, boris), 1);
   await page.getByRole('button', { name: 'More actions for Pavel' }).focus();
 
@@ -156,5 +156,5 @@ test("realtime › a student's My tutors drops a tutor who removed the link with
 
   await expect(page.getByRole('heading', { level: 1, name: 'My tutors' })).toBeFocused();
   await expect(page.getByRole('main').getByText('No tutor yet.')).toBeVisible();
-  await expect(page.getByRole('list', { name: 'Tutors', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('table', { name: 'Tutors', exact: true })).toHaveCount(0);
 });

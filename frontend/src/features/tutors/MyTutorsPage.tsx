@@ -5,11 +5,12 @@ import { useTranslation } from 'react-i18next';
 import { FocusedNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
+import { PageColumns } from '../../components/ui/PageColumns.tsx';
 import { type MyTutor, currentTutors, myTutorsKey, pastTutors } from './api.ts';
 import { CodeEntry } from './CodeEntry.tsx';
 import { SentRequests } from './SentRequests.tsx';
 import { type StopOutcome, StopStudyingDialog } from './StopStudying.tsx';
-import { TutorList, TutorsLoadFailed, useMyTutors } from './TutorList.tsx';
+import { CurrentTutorTable, PastTutorTable, TutorsLoadFailed, useMyTutors } from './TutorList.tsx';
 
 const stopNotice = {
   ended: 'tutors.stopped',
@@ -39,7 +40,7 @@ function PastTutors({ tutors }: { readonly tutors: readonly MyTutor[] }): ReactE
       <h2 id={headingId} className="text-heading">
         {t('tutors.past')}
       </h2>
-      <TutorList tutors={tutors} label={t('tutors.past')} withBio={false} />
+      <PastTutorTable tutors={tutors} label={t('tutors.past')} />
     </section>
   );
 }
@@ -70,10 +71,9 @@ export function MyTutorsPage(): ReactElement {
     return tutors.length === 0 ? (
       <p className="text-text-muted">{t('tutors.empty')}</p>
     ) : (
-      <TutorList
+      <CurrentTutorTable
         tutors={tutors}
         label={t('tutors.list')}
-        withBio
         onStopStudying={(tutor) => {
           opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
           setOutcome(null);
@@ -95,15 +95,26 @@ export function MyTutorsPage(): ReactElement {
   return (
     <Page>
       {outcome === null ? null : <FocusedNotice key={outcome.count} message={t(stopNotice[outcome.kind])} />}
-      {current()}
-      <section aria-labelledby={addHeading} className="flex flex-col gap-3">
-        <h2 id={addHeading} className="text-heading">
-          {t('tutors.add')}
-        </h2>
-        <CodeEntry label={t('tutors.code')} waiting={false} replaceWhenSent={false} />
-      </section>
-      <SentRequests />
-      <PastTutors tutors={query.isSuccess ? pastTutors(query.data) : []} />
+      <PageColumns
+        asideLabel={t('tutors.asideLabel')}
+        main={
+          <>
+            {current()}
+            <PastTutors tutors={query.isSuccess ? pastTutors(query.data) : []} />
+          </>
+        }
+        aside={
+          <>
+            <section aria-labelledby={addHeading} className="flex flex-col gap-3">
+              <h2 id={addHeading} className="text-heading">
+                {t('tutors.add')}
+              </h2>
+              <CodeEntry label={t('tutors.code')} waiting={false} replaceWhenSent={false} />
+            </section>
+            <SentRequests />
+          </>
+        }
+      />
       <StopStudyingDialog
         tutor={stopping}
         vanished={vanished}

@@ -7,7 +7,14 @@ import type { Deployment } from './deployment.ts';
 import { channelOf } from './messages.ts';
 import { notificationRows, bellIn, panelRowsIn } from './notifications.ts';
 import { addDays, cardLessonStatuses, isoWeekday, localDate, scheduleLessonsWithIds } from './schedule.ts';
-import { diagnosedTest as test, expect, expectRowsNamed, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
+import {
+  diagnosedTest as test,
+  expect,
+  expectRowsNamed,
+  seedVerifiedUser,
+  signUpAndConfirmTutor,
+  tableRows,
+} from './fixtures.ts';
 import {
   accessToken,
   callApi,
@@ -304,7 +311,7 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
     await borisPage.getByRole('button', { name: 'Accept' }).click();
 
     await expect(borisPage).toHaveURL('/tutors');
-    await expect(rowsOf(borisPage, 'Tutors')).toHaveText([/Мария/]);
+    await expect(tableRows(borisPage, 'Tutors')).toHaveText([/Мария/]);
     await bellIn(page, /^Уведомления/).click();
     const borisAccepted = panelRowsIn(page, 'Уведомления')
       .filter({ hasText: 'Boris' })
@@ -418,7 +425,7 @@ test.describe('Anna in Russian', () => {
     await expect(notice).toBeFocused();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByRole('main').getByText('Репетитора пока нет.')).toBeVisible();
-    await expect(rowsOf(page, 'Прошлые репетиторы')).toHaveText([/Мария.*Занятия завершены \d/]);
+    await expect(tableRows(page, 'Прошлые репетиторы')).toHaveText([/Мария.*Занятия завершены \d/]);
     await control.tick();
     const ended = (await control.mail(maria.email)).filter((mail) => mail.subject === endedForTutor);
     expect(ended).toHaveLength(1);
@@ -514,6 +521,6 @@ test.describe('Boris in English', () => {
         .getByRole('status')
         .filter({ hasText: 'Your tutors changed in the meantime. The list below is up to date.' }),
     ).toBeFocused();
-    await expect(rowsOf(page, 'Past tutors')).toHaveText([/Pavel/]);
+    await expect(tableRows(page, 'Past tutors')).toHaveText([/Pavel/]);
   });
 });

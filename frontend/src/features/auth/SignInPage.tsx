@@ -119,7 +119,7 @@ export function SignInPage(): ReactElement {
   }
 
   return (
-    <Page>
+    <Page width="reading">
       {endedNotice === null ? null : (
         <p role="status" className="text-text">
           {t(endedNotice)}

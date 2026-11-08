@@ -26,7 +26,7 @@ const choiceClass =
 export function SignUpChoicePage(): ReactElement {
   const { t } = useTranslation();
   return (
-    <Page>
+    <Page width="reading">
       <nav aria-label={t('signUp.choiceLabel')} className="flex flex-col gap-4 tablet:flex-row">
         <Link to="/signup/tutor" className={choiceClass}>
           <span className="text-heading">{t('signUp.teach')}</span>
@@ -184,7 +184,7 @@ function SignUpPage({ accountRole }: { readonly accountRole: SignUpRole }): Reac
 
   if (state.kind === 'sent') {
     return (
-      <Page title="page.checkEmail" focusTitle>
+      <Page width="reading" title="page.checkEmail" focusTitle>
         <CheckEmail email={state.email} audience={{ kind: 'email', email: state.email }} />
       </Page>
     );
@@ -194,7 +194,7 @@ function SignUpPage({ accountRole }: { readonly accountRole: SignUpRole }): Reac
   const fieldError = (field: string): string | undefined => fieldMessage(t, error, field);
   const alert = formError(t, error, state.kind === 'editing' ? state.retryAfter : null);
   return (
-    <Page>
+    <Page width="reading">
       <form onSubmit={onSubmit} className="flex max-w-sm flex-col gap-4">
         {alert === null ? null : <FormAlert>{alert}</FormAlert>}
         {accountRole === 'student' ? (

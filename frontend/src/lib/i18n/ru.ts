@@ -217,6 +217,13 @@ export const ru = {
     reloadFailed: 'Выбор сохранён, но обновить данные аккаунта не удалось. Обновите страницу.',
   },
   tutors: {
+    asideLabel: 'Добавление репетитора и отправленные заявки',
+    columns: {
+      tutor: 'Репетитор',
+      subjects: 'Предметы',
+      actions: 'Действия',
+      ended: 'Завершено',
+    },
     list: 'Репетиторы',
     empty: 'Репетитора пока нет.',
     add: 'Добавить репетитора',
@@ -401,6 +408,13 @@ export const ru = {
     ended: 'Занятия завершены',
   },
   students: {
+    columns: {
+      name: 'Имя',
+      email: 'Email',
+      state: 'Статус',
+      groups: 'Группы',
+      nextLesson: 'Следующий урок',
+    },
     group: 'Группа',
     allGroups: 'Все группы',
     archivedGroup: '{name} (в архиве)',
@@ -494,6 +508,12 @@ export const ru = {
     gone: 'Этого ученика больше нет в вашем списке.',
   },
   groups: {
+    columns: {
+      name: 'Название',
+      members: 'Ученики',
+      nextLesson: 'Следующий урок',
+      state: 'Статус',
+    },
     archiveTitle: 'Отправить группу в архив?',
     archiveConsequence:
       '{count, plural, one {# будущий урок будет отменён.} few {# будущих урока будут отменены.} many {# будущих уроков будут отменены.} other {# будущего урока будут отменены.}} Возврат группы из архива не восстановит ни уроки, ни серии.',
@@ -584,6 +604,11 @@ export const ru = {
     showMore: 'Показать ещё',
   },
   notifications: {
+    columns: {
+      event: 'Событие',
+      from: 'От кого',
+      time: 'Время',
+    },
     heading: 'Уведомления',
     list: 'Уведомления',
     markAllRead: 'Отметить все как прочитанные',

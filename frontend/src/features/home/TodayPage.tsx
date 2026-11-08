@@ -93,7 +93,7 @@ export function TodayPage(): ReactElement {
   const code = useTutorCode();
   const settled = useSettledOnce(requestsSettled && !code.isPending);
   return (
-    <Page>
+    <Page width="reading" titleSize="display">
       <JoinRequests hideWhenEmpty={false}>
         {requestsSettled && !settled ? <DelayedLoading /> : null}
         <div hidden={!settled} className="contents">

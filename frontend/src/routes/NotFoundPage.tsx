@@ -21,7 +21,7 @@ export function NotFoundContent(): ReactElement {
 
 export function NotFoundPage(): ReactElement {
   return (
-    <Page title="page.notFound">
+    <Page width="reading" title="page.notFound">
       <NotFoundContent />
     </Page>
   );
