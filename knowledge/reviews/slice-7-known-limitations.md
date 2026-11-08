@@ -114,6 +114,14 @@ The logs showed `browserContext.newPage: Target page, context or browser has bee
 
 Investigate on an idle machine before the slice closes, or have the owner carry it into a named later slice; do not hide it with retries or longer timeouts.
 
+Measured 2026-11-08 with Playwright 1.63.0, running the full end-to-end suite exactly as the gate does:
+
+- **Unchanged configuration (six shared workers).** 220 s with all 1201 tests passing. The projects ran in sequence (Chromium, then Firefox, then WebKit from about 120 s to 213 s) at a peak load average of 17.5.
+- **WebKit first, limited to three workers.** 289 s with three WebKit timeouts, among them a click on Send hanging as in the gates. Summed WebKit test time grew from 469 s to 789 s at a load average of 12 to 14.
+- **WebKit last, limited to three workers.** The first 185 of the 385 WebKit tests passed within 144 s at a load average near 6. Then the run was invalidated: the one-minute load average rose to between 120 and 165 for about a minute and peaked near 172, and 83 WebKit tests timed out, 16 failed and 5 were skipped. During that spike, the implementing agent observed system processes restarting repeatedly and little free memory; the run logs hold only load samples, so this observation is not recorded evidence.
+
+The owner decided on 2026-11-08 not to limit WebKit workers. The idle baseline passes, and the gate failures track load from other processes and memory pressure. Those are addressed by the rule that heavy runs never overlap, by the redacted failure diagnostics and by the fake-clock fix of the resend countdown test. The entry stays open until a gate failure in WebKit is diagnosed from its kept evidence.
+
 ## Chat download slot availability under load
 
 Recorded 2026-11-07 from the fourth gate attempt of the access-rules change `0a16bd1`. Severity: minor. Status: open, a flaky-test bug. `TestChatDownloadFinalProbeHonorsCancellationAndConcurrentClose` and `TestChatDownloadOpeningDeadlineIncludesDatabaseWaits` failed with "a released download slot was unavailable"; `TestChatDownloadCloseRacesItsDeadline` belongs to the same group of download slot tests. They passed in the fifth, owner-approved attempt on the same tree ([slice review gate evidence](slice-7-slice-review.md#merge-gate-evidence-for-the-access-rules-change)). The cause is not established. A fix is being investigated as a separate change; until it merges, a recurrence is reported as a failed check, never rerun silently.
