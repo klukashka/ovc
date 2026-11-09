@@ -816,19 +816,23 @@ test.describe('the embedded room under the test override', () => {
     page.on('framenavigated', (navigated) => {
       if (navigated.url().includes('/__test__/fake-room')) roomDocuments += 1;
     });
+    const loaded = nextRoomDocument(page);
 
     await roomButton(page, 'Подключиться к уроку').click();
+    await loaded;
+    await page.getByRole('status').filter({ hasText: 'Идёт сейчас' }).waitFor();
+    await editLessonButton(page).waitFor({ state: 'detached' });
+    await page.frameLocator(`iframe[title="${lessonTitle}"]`).locator('#room[data-state="entered"]').waitFor();
+    const lessonActionsShown = await page.getByRole('button', { name: 'Действия с уроком' }).count();
+    const frameFocused = await frameOf(page).evaluate((frame) => frame === document.activeElement);
+    const frames = await frameOf(page).count();
+    const documentsWhileLive = roomDocuments;
+    await leaveTheFrame(page);
 
-    await expect(page.getByRole('status').filter({ hasText: 'Идёт сейчас' })).toBeVisible();
-    await expect(editLessonButton(page)).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Действия с уроком' })).toHaveCount(0);
-    await expect(page.frameLocator(`iframe[title="${lessonTitle}"]`).locator('#room')).toHaveAttribute(
-      'data-state',
-      'entered',
-    );
-    await expect(frameOf(page)).toBeFocused();
-    await expect(frameOf(page)).toHaveCount(1);
-    expect(roomDocuments).toBe(1);
+    expect(lessonActionsShown).toBe(0);
+    expect(frameFocused).toBe(true);
+    expect(frames).toBe(1);
+    expect(documentsWhileLive).toBe(1);
   });
 
   test('lesson room › the frame is titled, permitted, focused and stays beside a new-tab button', async ({
