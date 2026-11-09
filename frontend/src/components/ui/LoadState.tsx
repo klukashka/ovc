@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ApiError } from '../../lib/api/client.ts';
@@ -93,6 +93,24 @@ export function LoadFailed({
   );
 }
 
+function useFocusWhenRemovedHoldingFocus(container: RefObject<HTMLElement | null>): void {
+  const heldFocus = useRef(false);
+  useLayoutEffect(() => {
+    const element = container.current;
+    return (): void => {
+      heldFocus.current = element?.contains(document.activeElement) ?? false;
+    };
+  }, [container]);
+  useEffect(
+    () => (): void => {
+      if (heldFocus.current) {
+        focusHeadingIfLost();
+      }
+    },
+    [],
+  );
+}
+
 export function RefetchFailed({
   error,
   onRetry,
@@ -102,9 +120,11 @@ export function RefetchFailed({
 }): ReactElement {
   const { t } = useTranslation();
   const retried = useRef(false);
+  const container = useRef<HTMLDivElement>(null);
   useFocusAfterRetry(retried, focusHeadingIfLost);
+  useFocusWhenRemovedHoldingFocus(container);
   return (
-    <div className="flex flex-col items-start gap-2">
+    <div ref={container} className="flex flex-col items-start gap-2">
       <LiveNotice message={t('load.refetchFailed')} />
       <button
         type="button"

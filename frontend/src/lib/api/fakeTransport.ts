@@ -45,6 +45,8 @@ type EmailGroup = components['schemas']['EmailPreference']['group'];
 type EmailPreference = components['schemas']['EmailPreference'];
 type CalendarItem = components['schemas']['CalendarItem'];
 type LessonDetail = components['schemas']['LessonDetail'];
+type Notification = components['schemas']['Notification'];
+type StudentCardSummary = components['schemas']['StudentCardSummary'];
 
 const cardPathPrefix = '/api/v1/students/';
 const calendarPath = '/api/v1/calendar';
@@ -120,6 +122,56 @@ export interface FakeAccountSeed {
   readonly password: string;
   readonly role?: Me['role'];
   readonly state?: Me['state'];
+  readonly bio?: string;
+}
+
+const defaultPageLimit = 30;
+const maximumPageLimit = 100;
+const unreadCountCap = 100;
+const cursorPrefix = 'fake-cursor-';
+const supportedStudentListParameters: ReadonlySet<string> = new Set(['limit', 'cursor']);
+
+interface KeysetPage<Item> {
+  readonly items: Item[];
+  readonly next_cursor: string | null;
+}
+
+const decimalDigits = /^\d+$/;
+
+function decimalOrNull(text: string): number | null {
+  return decimalDigits.test(text) ? Number(text) : null;
+}
+
+function pageOf<Item>(items: readonly Item[], query: URLSearchParams): KeysetPage<Item> | null {
+  const limitText = query.get('limit');
+  const limit = limitText === null ? defaultPageLimit : decimalOrNull(limitText);
+  const cursor = query.get('cursor');
+  const offset =
+    cursor === null ? 0 : cursor.startsWith(cursorPrefix) ? decimalOrNull(cursor.slice(cursorPrefix.length)) : null;
+  if (limit === null || offset === null || limit < 1 || limit > maximumPageLimit) {
+    return null;
+  }
+  const end = offset + limit;
+  return {
+    items: items.slice(offset, end),
+    next_cursor: end < items.length ? `${cursorPrefix}${String(end)}` : null,
+  };
+}
+
+function summaryOf(card: StudentCard): StudentCardSummary {
+  return {
+    id: card.id,
+    state: card.state,
+    display_name: card.display_name,
+    email: card.email,
+    account: card.account,
+    groups: card.groups,
+    linked_at: card.linked_at,
+    ended_at: card.ended_at,
+    ended_by: card.ended_by,
+    created_at: card.created_at,
+    next_lesson: null,
+  };
 }
 
 function json(status: number, body: unknown): Response {
@@ -379,6 +431,9 @@ export class FakeAuthServer {
   private joinRequestReadReceived: () => void = () => undefined;
   private failingJoinRequestReads = 0;
   private notificationReadsFailing = false;
+  private readonly notifications = new Map<string, Notification[]>();
+  private failingCalendarReads = 0;
+  private failingStudentListReads = 0;
   private failingCardReads = 0;
   private failingCardWrites = 0;
   private cardWriteGate: Promise<void> | null = null;
@@ -450,6 +505,7 @@ export class FakeAuthServer {
         state: seed.state ?? 'active',
         language: 'ru',
         theme: 'system',
+        ...(seed.bio === undefined ? {} : { bio: seed.bio }),
       },
     });
   }
@@ -579,6 +635,22 @@ export class FakeAuthServer {
 
   failNotificationReads(failing: boolean): void {
     this.notificationReadsFailing = failing;
+  }
+
+  failNextCalendarRead(): void {
+    this.failingCalendarReads += 1;
+  }
+
+  failNextStudentListRead(): void {
+    this.failingStudentListReads += 1;
+  }
+
+  addNotification(email: string, notification: Notification): void {
+    const accountId = this.account(email).me.id;
+    const newestFirst = [...(this.notifications.get(accountId) ?? []), notification].sort(
+      (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at) || right.id.localeCompare(left.id),
+    );
+    this.notifications.set(accountId, newestFirst);
   }
 
   failNextCardRead(): void {
@@ -827,7 +899,7 @@ export class FakeAuthServer {
       return json(200, { tutors: this.tutors.get(accountId ?? '') ?? [] });
     }
     if (path === '/api/v1/students' || path.startsWith(cardPathPrefix)) {
-      return this.answerCards(request, token, path);
+      return this.answerCards(request, token, address);
     }
     if (request.method === 'GET' && path.startsWith(invitationPathPrefix)) {
       return this.answerInvitation(decodeURIComponent(path.slice(invitationPathPrefix.length)));
@@ -836,7 +908,7 @@ export class FakeAuthServer {
       return this.readJoinRequests(token);
     }
     if (request.method === 'GET' && path === notificationsPath) {
-      return this.readNotifications(token);
+      return this.readNotifications(token, address.searchParams);
     }
     if (request.method === 'GET' && path === tutorSettingsPath) {
       return this.readTutorSettings(accountId ?? '');
@@ -868,7 +940,8 @@ export class FakeAuthServer {
     return new Response(null, { status: 204 });
   }
 
-  private async answerCards(request: Request, token: string, path: string): Promise<Response> {
+  private async answerCards(request: Request, token: string, address: URL): Promise<Response> {
+    const path = address.pathname;
     const refused = this.refusedToken(token);
     if (refused !== null) {
       return refused;
@@ -892,6 +965,21 @@ export class FakeAuthServer {
       const card = fakeCard(id, body.display_name);
       this.cards.set(id, { tutorId, card });
       return json(201, card);
+    }
+    if (request.method === 'GET' && path === '/api/v1/students') {
+      if ([...address.searchParams.keys()].some((name) => !supportedStudentListParameters.has(name))) {
+        return refusal(422, 'validation_failed');
+      }
+      if (this.failingStudentListReads > 0) {
+        this.failingStudentListReads -= 1;
+        return refusal(503, 'service_unavailable');
+      }
+      const newestFirst = [...this.cards.values()]
+        .filter((found) => found.tutorId === tutorId)
+        .map((found) => summaryOf(found.card))
+        .reverse();
+      const page = pageOf(newestFirst, address.searchParams);
+      return page === null ? refusal(422, 'validation_failed') : json(200, page);
     }
     const found = this.cards.get(path.slice(cardPathPrefix.length));
     if (found?.tutorId !== tutorId) {
@@ -1014,6 +1102,10 @@ export class FakeAuthServer {
     if (refused !== null) {
       return refused;
     }
+    if (this.failingCalendarReads > 0) {
+      this.failingCalendarReads -= 1;
+      return refusal(503, 'service_unavailable');
+    }
     const accountId = this.sessionOf(token)?.accountId ?? '';
     const caller = [...this.accounts.values()].find((account) => account.me.id === accountId);
     if (caller?.me.role === 'tutor' && query.has('tutor')) {
@@ -1041,7 +1133,7 @@ export class FakeAuthServer {
     return settings === undefined ? refusal(404, 'not_found') : json(200, settings);
   }
 
-  private readNotifications(token: string): Response {
+  private readNotifications(token: string, query: URLSearchParams): Response {
     const refused = this.refusedToken(token);
     if (refused !== null) {
       return refused;
@@ -1049,7 +1141,13 @@ export class FakeAuthServer {
     if (this.notificationReadsFailing) {
       return refusal(503, 'service_unavailable');
     }
-    return json(200, { items: [], next_cursor: null, unread_count: 0 });
+    const rows = this.notifications.get(this.sessionOf(token)?.accountId ?? '') ?? [];
+    const page = pageOf(rows, query);
+    if (page === null) {
+      return refusal(422, 'validation_failed');
+    }
+    const unread = rows.filter((row) => row.read_at === null).length;
+    return json(200, { ...page, unread_count: Math.min(unread, unreadCountCap) });
   }
 
   private async answerPreferences(request: Request, token: string): Promise<Response> {

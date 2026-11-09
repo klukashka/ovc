@@ -3,7 +3,7 @@ import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { quietButtonClass } from '../../components/ui/Form.tsx';
-import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
+import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
@@ -24,7 +24,7 @@ function NotificationPages({ query }: { readonly query: PagesQuery }): ReactElem
   if (query.isPending) {
     return <DelayedLoading />;
   }
-  if (query.isError) {
+  if (query.data === undefined) {
     return (
       <LoadFailed
         error={asApiError(query.error)}
@@ -34,13 +34,34 @@ function NotificationPages({ query }: { readonly query: PagesQuery }): ReactElem
       />
     );
   }
-  if (items.length === 0) {
-    return <p className="text-text-muted">{t('notifications.empty')}</p>;
-  }
+  const refetchFailed = query.isError && !query.isFetchNextPageError;
   return (
     <>
-      <NotificationTable items={items} label={t('notifications.list')} bodyRef={listRef} />
-      {query.hasNextPage ? (
+      {refetchFailed ? (
+        <RefetchFailed
+          error={asApiError(query.error)}
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
+      ) : null}
+      {items.length === 0 ? (
+        <p className="text-text-muted">{t('notifications.empty')}</p>
+      ) : (
+        <NotificationTable items={items} label={t('notifications.list')} bodyRef={listRef} />
+      )}
+      {query.isFetchNextPageError ? (
+        <RefetchFailed
+          error={asApiError(query.error)}
+          onRetry={() => {
+            if (!query.isFetchingNextPage) {
+              loadingMore();
+              void query.fetchNextPage();
+            }
+          }}
+        />
+      ) : null}
+      {query.hasNextPage && items.length > 0 ? (
         <p>
           <button
             type="button"
@@ -73,7 +94,7 @@ export function NotificationsPage(): ReactElement {
   });
   const newest = query.data?.pages[0]?.items[0];
   return (
-    <Page action={newest === undefined || query.isError ? null : <MarkAllRead newest={newest} />}>
+    <Page action={newest === undefined ? null : <MarkAllRead newest={newest} />}>
       <NotificationPages query={query} />
     </Page>
   );

@@ -7,7 +7,7 @@ import { ConfirmationPrompt, type ConfirmationReason } from '../../components/ui
 import { linkClass } from '../../components/ui/Form.tsx';
 import { CheckIcon } from '../../components/ui/icons.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
-import { LoadFailed } from '../../components/ui/LoadState.tsx';
+import { LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
 import { apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { Me } from '../../lib/api/session.ts';
 import type { Calendar } from '../schedule/api.ts';
@@ -85,7 +85,8 @@ export function FirstRunChecklist({
       confirmation: confirmed ? null : 'schedule',
     },
   ];
-  const failed = confirmed ? [cards, lessons].find((query) => query.isError) : undefined;
+  const failed = confirmed ? [cards, lessons].find((query) => query.isError && query.data === undefined) : undefined;
+  const cardsRefetchFailed = confirmed && cards.isError && cards.data !== undefined;
   const pending = confirmed && (cards.isPending || lessons.isPending);
   const shown = !pending && (failed !== undefined || !steps.every((step) => step.done));
   useFocusAfterRemovedRow(
@@ -110,6 +111,14 @@ export function FirstRunChecklist({
           }}
         />
       )}
+      {failed === undefined && cardsRefetchFailed ? (
+        <RefetchFailed
+          error={asApiError(cards.error)}
+          onRetry={() => {
+            void cards.refetch();
+          }}
+        />
+      ) : null}
       {failed !== undefined ? null : (
         <ol ref={listRef} className="flex flex-col gap-3">
           {steps.map((step) => (

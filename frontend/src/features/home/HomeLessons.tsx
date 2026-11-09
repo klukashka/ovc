@@ -5,7 +5,7 @@ import { Link } from 'react-router';
 
 import { useScheduler } from '../../app/clock.ts';
 import { linkClass } from '../../components/ui/Form.tsx';
-import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
+import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { Me } from '../../lib/api/session.ts';
 import { type Calendar, type CalendarItem, fetchLesson } from '../schedule/api.ts';
@@ -22,15 +22,17 @@ function upcoming(items: readonly CalendarItem[], now: number): CalendarItem[] {
 
 function Loaded({
   query,
+  reportsRefetchFailure,
   render,
 }: {
   readonly query: UseQueryResult<Calendar>;
+  readonly reportsRefetchFailure: boolean;
   readonly render: (calendar: Calendar) => ReactElement;
 }): ReactElement {
   if (query.isPending) {
     return <DelayedLoading />;
   }
-  if (query.isError) {
+  if (query.data === undefined) {
     return (
       <LoadFailed
         error={asApiError(query.error)}
@@ -40,7 +42,19 @@ function Loaded({
       />
     );
   }
-  return render(query.data);
+  return (
+    <>
+      {reportsRefetchFailure && query.isError ? (
+        <RefetchFailed
+          error={asApiError(query.error)}
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
+      ) : null}
+      {render(query.data)}
+    </>
+  );
 }
 
 function NextLessonJoin({ item, me }: { readonly item: CalendarItem; readonly me: Me }): ReactElement {
@@ -94,6 +108,7 @@ export function NextLesson({ me, query }: { readonly me: Me; readonly query: Use
       </h2>
       <Loaded
         query={query}
+        reportsRefetchFailure
         render={(calendar) => {
           const next = upcoming(calendar.items, scheduler.wallClock()).at(0);
           return next === undefined ? (
@@ -133,6 +148,7 @@ export function NextSevenDays({
       </h2>
       <Loaded
         query={query}
+        reportsRefetchFailure={false}
         render={(calendar) => {
           const now = scheduler.wallClock();
           const week = upcoming(calendar.items, now).filter(

@@ -5,7 +5,7 @@ import { Link } from 'react-router';
 
 import { useScheduler } from '../../app/clock.ts';
 import { linkClass } from '../../components/ui/Form.tsx';
-import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
+import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
 import { asApiError } from '../../lib/api/client.ts';
 import type { Me } from '../../lib/api/session.ts';
 import { type LocalDate, localDateOf } from '../../lib/time/localDates.ts';
@@ -39,7 +39,7 @@ export function TodayLessons({
     if (query.isPending) {
       return <DelayedLoading />;
     }
-    if (query.isError) {
+    if (query.data === undefined) {
       return (
         <LoadFailed
           error={asApiError(query.error)}
@@ -88,6 +88,14 @@ export function TodayLessons({
       <h2 id={headingId} className="text-heading">
         {t('today.lessons')}
       </h2>
+      {query.data !== undefined && query.isError ? (
+        <RefetchFailed
+          error={asApiError(query.error)}
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
+      ) : null}
       {body()}
     </section>
   );
