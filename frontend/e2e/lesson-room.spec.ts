@@ -96,6 +96,10 @@ function nextLessonOnHome(page: Page): ReturnType<Page['getByRole']> {
   return page.getByRole('region', { name: 'Следующий урок', exact: true });
 }
 
+function editLessonButton(page: Page): ReturnType<Page['getByRole']> {
+  return page.getByRole('button', { name: 'Изменить урок' });
+}
+
 function roomButton(page: Page, name: string): ReturnType<Page['getByRole']> {
   return page.getByRole('region', { name: 'Видеокомната' }).getByRole('button', { name, exact: true });
 }
@@ -282,6 +286,30 @@ test.describe('the lesson room through a new tab', () => {
     expect(blank.url()).toBe('about:blank');
     expect(page.context().pages()).toHaveLength(2);
     await release();
+  });
+
+  test('lesson room › a join in flight while the start passes and the header controls leave enters its blank tab', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const seed = await seedLesson(deployment, control);
+    await openLesson(page, seed.tutor, seed.lessonId, control);
+    await expect(editLessonButton(page)).toBeVisible();
+    const { blank, release } = await heldJoinTab(page, 'Подключиться к уроку', diagnostics);
+
+    await control.advance(startsInMilliseconds / 1000 + 60);
+    await page.clock.fastForward(startsInMilliseconds + 60_000);
+    await editLessonButton(page).waitFor({ state: 'detached' });
+    await release();
+
+    await expect(blank.locator('#room')).toHaveAttribute('data-state', 'entered');
+    expect(blank.isClosed()).toBe(false);
+    expect(page.context().pages()).toHaveLength(2);
+    await expect(editLessonButton(page)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Действия с уроком' })).toHaveCount(0);
+    await expect(roomButton(page, 'Открыть снова')).toBeFocused();
   });
 
   test('lesson room › pressing the busy button sends no second join and the answer enters the room', async ({
@@ -775,6 +803,33 @@ test.describe('the embedded room under the test override', () => {
     await room.getByRole('button', { name: 'Leave' }).click();
     await expect(room.locator('#room')).toHaveAttribute('data-state', 'left');
   }
+
+  test('lesson room › the frame loads one room document and keeps focus while the lesson goes live and the header controls leave', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = await seedLesson(deployment, control);
+    await openLesson(page, seed.tutor, seed.lessonId, control);
+    await expect(editLessonButton(page)).toBeVisible();
+    let roomDocuments = 0;
+    page.on('framenavigated', (navigated) => {
+      if (navigated.url().includes('/__test__/fake-room')) roomDocuments += 1;
+    });
+
+    await roomButton(page, 'Подключиться к уроку').click();
+
+    await expect(page.getByRole('status').filter({ hasText: 'Идёт сейчас' })).toBeVisible();
+    await expect(editLessonButton(page)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Действия с уроком' })).toHaveCount(0);
+    await expect(page.frameLocator(`iframe[title="${lessonTitle}"]`).locator('#room')).toHaveAttribute(
+      'data-state',
+      'entered',
+    );
+    await expect(frameOf(page)).toBeFocused();
+    await expect(frameOf(page)).toHaveCount(1);
+    expect(roomDocuments).toBe(1);
+  });
 
   test('lesson room › the frame is titled, permitted, focused and stays beside a new-tab button', async ({
     page,

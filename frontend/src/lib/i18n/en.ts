@@ -716,6 +716,7 @@ export const en: Resources = {
     cancel: 'Cancel lesson',
     changed: 'Lesson changed',
     endSeries: 'End this series and create a new one',
+    actions: 'Lesson actions',
     cancelledNotice: 'Lesson cancelled',
     changedMeanwhile: 'This lesson changed in the meantime. Its current state is shown below.',
     didNotTakePlace: 'Did not take place',

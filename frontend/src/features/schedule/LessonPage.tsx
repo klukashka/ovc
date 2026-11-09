@@ -1,24 +1,17 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
-import {
-  type ReactElement,
-  type ReactNode,
-  type RefObject,
-  useCallback,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from 'react';
+import { type ReactElement, type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router';
 
 import { useAction } from '../../components/ui/action.ts';
-import { dangerButtonClass, linkClass, quietButtonClass } from '../../components/ui/Form.tsx';
-import { CalendarIcon, CheckIcon, CrossIcon, DashIcon, DoorIcon } from '../../components/ui/icons.tsx';
+import { ActionMenu, type MenuItem } from '../../components/ui/ActionMenu.tsx';
+import { linkClass, quietButtonClass } from '../../components/ui/Form.tsx';
+import { CalendarIcon, CheckIcon, CrossIcon, DashIcon, DoorIcon, MoreIcon } from '../../components/ui/icons.tsx';
 import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed, RefetchFailed, focusHeadingIfLost } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
+import { PageColumns } from '../../components/ui/PageColumns.tsx';
 import { type PaletteColour, paletteDotClass } from '../../components/ui/palette.ts';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type Me, useSignedInAccount } from '../../lib/api/session.ts';
@@ -161,28 +154,6 @@ function seriesRule(t: TFunction, series: LessonSeries, lesson: LessonDetail, me
     : t('lesson.seriesZone', { rule, city });
 }
 
-function AudienceLine({ lesson }: { readonly lesson: LessonDetail }): ReactElement {
-  const { t } = useTranslation();
-  return (
-    <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <span className="inline-flex min-w-0 items-center gap-1.5">
-        <ColourDot colour={lesson.audience.colour} />
-        <span dir="auto" className="break-words">
-          {audienceLabel(t, lesson.audience)}
-        </span>
-      </span>
-      {lesson.tutor === null ? null : (
-        <span className="inline-flex min-w-0 items-center gap-1.5 text-text-muted">
-          <ColourDot colour={lesson.tutor.colour} />
-          <span dir="auto" className="break-words">
-            {lesson.tutor.name}
-          </span>
-        </span>
-      )}
-    </p>
-  );
-}
-
 function Detail({ term, children }: { readonly term: string; readonly children: ReactNode }): ReactElement {
   return (
     <div className="flex flex-col gap-0.5 border-t border-border py-3">
@@ -214,22 +185,24 @@ export function MemberLabel({
 
 function AboutLesson({ lesson, me }: { readonly lesson: LessonDetail; readonly me: Me }): ReactElement {
   const { t } = useTranslation();
-  const headingId = useId();
   const group = lesson.audience.kind === 'group';
+  const audienceDetailShown = me.role === 'tutor' || group;
   const other = otherZoneTime(t, lesson, me);
   const members = lesson.audience.members;
   return (
-    <aside aria-labelledby={headingId} className="flex flex-col gap-2">
-      <h2 id={headingId} className="text-heading">
-        {t('lesson.about')}
-      </h2>
+    <div className="flex flex-col gap-2">
+      <h2 className="text-heading">{t('lesson.about')}</h2>
       <dl className="border-b border-border">
         <Detail term={t('lesson.dateAndTime')}>
           <span className="block">{dateAndTime(t, lesson, me)}</span>
           {other === null ? null : <span className="block text-small text-text-muted">{other}</span>}
         </Detail>
-        <Detail term={t('lesson.format')}>{t(group ? 'lesson.formatGroup' : 'lesson.formatIndividual')}</Detail>
-        {me.role === 'tutor' || group ? (
+        <Detail term={t('lesson.format')}>
+          {audienceDetailShown
+            ? t(group ? 'lesson.formatGroup' : 'lesson.formatIndividual')
+            : audienceLabel(t, lesson.audience)}
+        </Detail>
+        {audienceDetailShown ? (
           <Detail term={t(group ? 'lesson.groupName' : 'lesson.student')}>
             <span dir="auto">{audienceLabel(t, lesson.audience)}</span>
           </Detail>
@@ -257,11 +230,15 @@ function AboutLesson({ lesson, me }: { readonly lesson: LessonDetail; readonly m
           <Detail term={t('lesson.series')}>{seriesRule(t, lesson.series, lesson, me)}</Detail>
         )}
       </dl>
-    </aside>
+    </div>
   );
 }
 
-function useHeadingWhenControlsLeave(shown: boolean): void {
+export function lessonControlsShown(me: Me, lesson: LessonDetail | undefined, now: number): boolean {
+  return me.role === 'tutor' && me.state === 'active' && lesson !== undefined && isEditable(lesson, now);
+}
+
+export function useHeadingWhenControlsLeave(shown: boolean): void {
   const shownBefore = useRef(shown);
   useEffect(() => {
     if (shownBefore.current && !shown) {
@@ -276,19 +253,14 @@ export function LessonView({
   me,
   now,
   room = null,
-  controls = null,
 }: {
   readonly lesson: LessonDetail;
   readonly me: Me;
   readonly now: number;
   readonly room?: ReactNode;
-  readonly controls?: ReactNode;
 }): ReactElement {
   const { t } = useTranslation();
   const phase = phaseOf(lesson, now);
-  const other = otherZoneTime(t, lesson, me);
-  const controlsShown = controls !== null && isEditable(lesson, now);
-  useHeadingWhenControlsLeave(controlsShown);
   return (
     <>
       <p>
@@ -296,26 +268,25 @@ export function LessonView({
           {t('lesson.back')}
         </Link>
       </p>
-      <div className="grid grid-cols-1 gap-8 desktop:grid-cols-[minmax(0,1fr)_300px] desktop:gap-16">
-        <div className="flex min-w-0 flex-col gap-6">
-          <div className="flex flex-col gap-2">
-            <p role="status" className="text-strong">
-              <PhaseWord phase={phase} lesson={lesson} me={me} />
-            </p>
-            <p>{dateAndTime(t, lesson, me)}</p>
-            {other === null ? null : <p className="text-small text-text-muted">{other}</p>}
-            <AudienceLine lesson={lesson} />
-          </div>
-          {room}
-          {lesson.description === null ? null : (
-            <p dir="auto" data-part="description" className="break-words whitespace-pre-line">
-              {lesson.description}
-            </p>
-          )}
-          {controlsShown ? controls : null}
-        </div>
-        <AboutLesson lesson={lesson} me={me} />
-      </div>
+      <PageColumns
+        asideLabel={t('lesson.about')}
+        main={
+          <>
+            <div data-part="join" className="flex flex-col gap-3">
+              <p role="status" className="text-strong">
+                <PhaseWord phase={phase} lesson={lesson} me={me} />
+              </p>
+              {room}
+            </div>
+            {lesson.description === null ? null : (
+              <p dir="auto" data-part="description" className="break-words whitespace-pre-line">
+                {lesson.description}
+              </p>
+            )}
+          </>
+        }
+        aside={<AboutLesson lesson={lesson} me={me} />}
+      />
     </>
   );
 }
@@ -376,53 +347,59 @@ export function nextSeriesAfterEnding(
   return nextSeriesPrefill(t, ended, timeZone);
 }
 
-function TutorControls({
+export function LessonEditButton({
   editButton,
-  cancelButton,
-  endSeriesButton,
   onOpen,
 }: {
   readonly editButton: RefObject<HTMLButtonElement | null>;
-  readonly cancelButton: RefObject<HTMLButtonElement | null>;
-  readonly endSeriesButton: RefObject<HTMLButtonElement | null> | null;
   readonly onOpen: (kind: DialogKind) => void;
 }): ReactElement {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-wrap gap-3">
-      <button
-        ref={editButton}
-        type="button"
-        onClick={() => {
-          onOpen('edit');
-        }}
-        className={quietButtonClass}
-      >
-        {t('lesson.edit')}
-      </button>
-      <button
-        ref={cancelButton}
-        type="button"
-        onClick={() => {
-          onOpen('cancel');
-        }}
-        className={dangerButtonClass}
-      >
-        {t('lesson.cancel')}
-      </button>
-      {endSeriesButton === null ? null : (
-        <button
-          ref={endSeriesButton}
-          type="button"
-          onClick={() => {
-            onOpen('endSeries');
-          }}
-          className={quietButtonClass}
-        >
-          {t('lesson.endSeries')}
-        </button>
-      )}
-    </div>
+    <button
+      ref={editButton}
+      type="button"
+      onClick={() => {
+        onOpen('edit');
+      }}
+      className={quietButtonClass}
+    >
+      {t('lesson.edit')}
+    </button>
+  );
+}
+
+export function LessonActionsMenu({
+  menuButton,
+  series,
+  onOpen,
+}: {
+  readonly menuButton: RefObject<HTMLButtonElement | null>;
+  readonly series: boolean;
+  readonly onOpen: (kind: DialogKind) => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const cancel: MenuItem = {
+    label: t('lesson.cancel'),
+    onChoose: (): void => {
+      onOpen('cancel');
+    },
+  };
+  const endSeries: MenuItem = {
+    label: t('lesson.endSeries'),
+    onChoose: (): void => {
+      onOpen('endSeries');
+    },
+  };
+  return (
+    <ActionMenu
+      label={t('lesson.actions')}
+      unavailable={false}
+      items={series ? [cancel, endSeries] : [cancel]}
+      buttonRef={menuButton}
+    >
+      <MoreIcon />
+    </ActionMenu>
   );
 }
 
@@ -441,8 +418,7 @@ export function LessonPage(): ReactElement {
   const { t } = useTranslation();
   const key = lessonKey(lessonId);
   const editButton = useRef<HTMLButtonElement>(null);
-  const cancelButton = useRef<HTMLButtonElement>(null);
-  const endSeriesButton = useRef<HTMLButtonElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
   const [dialog, setDialog] = useState<OpenDialog | null>(null);
   const [nextSeries, setNextSeries] = useState<LessonPrefill | null>(null);
   const [closedPrefill] = useState<LessonPrefill>(() => nextFullHour(Date.now(), me.timezone));
@@ -458,6 +434,8 @@ export function LessonPage(): ReactElement {
   const notFound = error?.code === 'not_found';
   const lesson = error === null ? query.data : undefined;
   const shownNotice = notice !== null && notice.lessonId === lessonId && !notFound ? notice : null;
+  const controlsShown = lessonControlsShown(me, lesson, now);
+  useHeadingWhenControlsLeave(controlsShown);
 
   const noticeOf = useCallback(
     (kind: PageNotice['kind']): void => {
@@ -548,7 +526,6 @@ export function LessonPage(): ReactElement {
     if (lesson === undefined) {
       return <DelayedLoading />;
     }
-    const tutorWrites = me.role === 'tutor' && me.state === 'active';
     return (
       <LessonView
         lesson={lesson}
@@ -564,23 +541,30 @@ export function LessonPage(): ReactElement {
             onEnded={roomEnded}
           />
         }
-        controls={
-          tutorWrites ? (
-            <TutorControls
-              editButton={editButton}
-              cancelButton={cancelButton}
-              endSeriesButton={lesson.series === null ? null : endSeriesButton}
-              onOpen={open}
-            />
-          ) : null
-        }
       />
     );
   }
 
   const tutor = me.role === 'tutor';
   return (
-    <Page {...headingOf(lesson, notFound)}>
+    <Page
+      {...headingOf(lesson, notFound)}
+      action={
+        <>
+          {lesson?.channel_id != null ? (
+            <Link to={`/messages/${encodeURIComponent(lesson.channel_id)}`} className={linkClass}>
+              {t('section.messages')}
+            </Link>
+          ) : null}
+          {controlsShown ? <LessonEditButton editButton={editButton} onOpen={open} /> : null}
+        </>
+      }
+      menu={
+        controlsShown && lesson !== undefined ? (
+          <LessonActionsMenu menuButton={menuButton} series={lesson.series !== null} onOpen={open} />
+        ) : null
+      }
+    >
       {shownNotice === null ? null : (
         <FocusedNotice key={shownNotice.count} message={t(noticeKeys[shownNotice.kind])} />
       )}
@@ -592,11 +576,6 @@ export function LessonPage(): ReactElement {
           }}
         />
       )}
-      {lesson?.channel_id != null ? (
-        <Link to={`/messages/${encodeURIComponent(lesson.channel_id)}`} className="text-accent-text underline">
-          {t('section.messages')}
-        </Link>
-      ) : null}
       <LiveNotice message={announcement} />
       {body()}
       {tutor ? (
@@ -617,7 +596,7 @@ export function LessonPage(): ReactElement {
           <CancelLessonDialog
             lesson={dialog?.kind === 'cancel' ? dialog.lesson : null}
             action={action}
-            returnFocus={cancelButton}
+            returnFocus={menuButton}
             handlers={{
               onDismiss: dismissed,
               onSaved: (changed) => {
@@ -630,7 +609,7 @@ export function LessonPage(): ReactElement {
             lesson={dialog?.kind === 'endSeries' ? dialog.lesson : null}
             purpose="endSeries"
             action={action}
-            returnFocus={endSeriesButton}
+            returnFocus={menuButton}
             handlers={{
               onDismiss: dismissed,
               onSaved: (changed) => {
@@ -644,7 +623,7 @@ export function LessonPage(): ReactElement {
           <NewLessonDialog
             open={nextSeries !== null}
             prefill={nextSeries ?? closedPrefill}
-            returnFocus={endSeriesButton}
+            returnFocus={menuButton}
             onClose={nextSeriesClosed}
             onScheduled={() => {
               nextSeriesClosed();

@@ -731,6 +731,7 @@ export const ru = {
     cancel: 'Отменить урок',
     changed: 'Урок изменён',
     endSeries: 'Завершить эту серию и создать новую',
+    actions: 'Действия с уроком',
     cancelledNotice: 'Урок отменён',
     changedMeanwhile: 'Этот урок тем временем изменился. Ниже показано его текущее состояние.',
     didNotTakePlace: 'Не состоялся',

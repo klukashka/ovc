@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
-import { type ReactElement, type ReactNode, useSyncExternalStore } from 'react';
+import { type ReactElement, useRef, useSyncExternalStore } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { afterEach, describe, expect, test } from 'vitest';
@@ -8,7 +8,16 @@ import { Page } from '../../components/ui/Page.tsx';
 import type { Me } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import type { ChangedLessons, LessonDetail, LessonSeries } from './api.ts';
-import { LessonView, MemberLabel, headingOf, nextSeriesAfterEnding } from './LessonPage.tsx';
+import {
+  LessonActionsMenu,
+  LessonEditButton,
+  LessonView,
+  MemberLabel,
+  headingOf,
+  lessonControlsShown,
+  nextSeriesAfterEnding,
+  useHeadingWhenControlsLeave,
+} from './LessonPage.tsx';
 
 afterEach(() => {
   cleanup();
@@ -106,7 +115,6 @@ interface Shown {
   readonly lesson: LessonDetail;
   readonly me: Me;
   readonly now: number;
-  readonly controls: ReactNode;
 }
 
 class ShownStore {
@@ -134,17 +142,31 @@ class ShownStore {
   }
 }
 
+const openNoDialog = (): undefined => undefined;
+
 function Shown({ store }: { readonly store: ShownStore }): ReactElement {
   const shown = useSyncExternalStore(store.subscribe, store.get);
+  const editButton = useRef<HTMLButtonElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const controlsShown = lessonControlsShown(shown.me, shown.lesson, shown.now);
+  useHeadingWhenControlsLeave(controlsShown);
   return (
-    <Page {...headingOf(shown.lesson, false)}>
-      <LessonView lesson={shown.lesson} me={shown.me} now={shown.now} controls={shown.controls} />
+    <Page
+      {...headingOf(shown.lesson, false)}
+      action={controlsShown ? <LessonEditButton editButton={editButton} onOpen={openNoDialog} /> : null}
+      menu={
+        controlsShown ? (
+          <LessonActionsMenu menuButton={menuButton} series={shown.lesson.series !== null} onOpen={openNoDialog} />
+        ) : null
+      }
+    >
+      <LessonView lesson={shown.lesson} me={shown.me} now={shown.now} />
     </Page>
   );
 }
 
 async function show(initial: Partial<Shown> = {}): Promise<ShownStore> {
-  const store = new ShownStore({ lesson, me: student, now: dayBefore, controls: null, ...initial });
+  const store = new ShownStore({ lesson, me: student, now: dayBefore, ...initial });
   const i18n = await createI18n('ru');
   const router = createMemoryRouter(
     [
@@ -171,19 +193,19 @@ async function show(initial: Partial<Shown> = {}): Promise<ShownStore> {
   return store;
 }
 
-const editControl = (
-  <button type="button" data-control="edit">
-    Изменить урок
-  </button>
-);
-
 function focusedEditControl(): HTMLElement {
-  const control = document.querySelector<HTMLElement>('[data-control="edit"]');
-  if (control === null) {
-    throw new Error('the edit control is not shown');
-  }
+  const control = screen.getByRole('button', { name: 'Изменить урок' });
   control.focus();
   return control;
+}
+
+function focusedCancelItemOfOpenMenu(): HTMLElement {
+  act(() => {
+    screen.getByRole('button', { name: 'Действия с уроком' }).click();
+  });
+  const item = screen.getByRole('button', { name: 'Отменить урок' });
+  item.focus();
+  return item;
 }
 
 describe('lesson page', () => {
@@ -219,7 +241,7 @@ describe('lesson page', () => {
   });
 
   test('focused controls that leave when the start passes move focus to the heading', async () => {
-    const store = await show({ me: tutor, now: start - minute, controls: editControl });
+    const store = await show({ me: tutor, now: start - minute });
     const control = focusedEditControl();
 
     act(() => {
@@ -231,7 +253,7 @@ describe('lesson page', () => {
   });
 
   test('focused controls that leave when a refetch shows the lesson cancelled move focus to the heading', async () => {
-    const store = await show({ me: tutor, controls: editControl });
+    const store = await show({ me: tutor });
     const control = focusedEditControl();
 
     act(() => {
@@ -240,6 +262,33 @@ describe('lesson page', () => {
 
     expect(control.isConnected).toBe(false);
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
+  });
+
+  test('a focused item of the open lesson actions menu that leaves when the start passes moves focus to the heading', async () => {
+    const store = await show({ me: tutor, now: start - minute });
+    const item = focusedCancelItemOfOpenMenu();
+
+    act(() => {
+      store.set({ now: start });
+    });
+
+    expect(item.isConnected).toBe(false);
+    expect(screen.queryByRole('button', { name: 'Действия с уроком' })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
+  });
+
+  test('the heading stays the same element when the controls leave', async () => {
+    const store = await show({ me: tutor, now: start - minute });
+    const headingWithControls = screen.getByRole('heading', { level: 1 });
+    const editShownBefore = screen.queryByRole('button', { name: 'Изменить урок' });
+
+    act(() => {
+      store.set({ now: start });
+    });
+
+    expect(editShownBefore).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Изменить урок' })).toBeNull();
+    expect(screen.getByRole('heading', { level: 1 })).toBe(headingWithControls);
   });
 
   test('a lesson detail without its occurrence date treats a series ending as changed meanwhile', async () => {
