@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { afterEach, describe, expect, test } from 'vitest';
@@ -104,18 +104,33 @@ interface LoadedCard {
   readonly notes: HTMLElement;
   readonly scheduler: ManualScheduler;
   readonly leave: () => Promise<void>;
+  readonly open: (other: StudentCard) => Promise<void>;
 }
 
-async function showLoadedCard(): Promise<LoadedCard> {
-  const server = new FakeAuthServer();
-  const session = await signedInTutor(server);
+async function createCard(session: Session, displayName: string): Promise<StudentCard> {
   const created = await session.authorizedFetch(`${origin}/api/v1/students`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ display_name: 'Борис' }),
+    body: JSON.stringify({ display_name: displayName }),
   });
-  const card = (await created.json()) as StudentCard;
-  const queryClient = new QueryClient();
+  return (await created.json()) as StudentCard;
+}
+
+async function storeNotes(session: Session, card: StudentCard, notes: string): Promise<StudentCard> {
+  const written = await session.authorizedFetch(`${origin}/api/v1/students/${card.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes }),
+  });
+  return (await written.json()) as StudentCard;
+}
+
+async function renderCardPage(
+  server: FakeAuthServer,
+  session: Session,
+  card: StudentCard,
+  queryClient: QueryClient,
+): Promise<LoadedCard> {
   const scheduler = manualScheduler();
   const router = createMemoryRouter(
     [
@@ -144,7 +159,7 @@ async function showLoadedCard(): Promise<LoadedCard> {
       </SchedulerContext>
     </SessionContext>,
   );
-  await screen.findByRole('heading', { level: 1, name: 'Борис' });
+  await screen.findByRole('heading', { level: 1, name: card.display_name });
   const notes = screen.getByRole('textbox', { name: 'Заметки' });
   notes.focus();
   const leave = async (): Promise<void> => {
@@ -152,7 +167,32 @@ async function showLoadedCard(): Promise<LoadedCard> {
       await router.navigate('/students');
     });
   };
-  return { server, queryClient, card, notes, scheduler, leave };
+  const open = async (other: StudentCard): Promise<void> => {
+    await act(async () => {
+      await router.navigate(`/students/${other.id}`);
+    });
+    await screen.findByRole('heading', { level: 1, name: other.display_name });
+  };
+  return { server, queryClient, card, notes, scheduler, leave, open };
+}
+
+async function showLoadedCard(): Promise<LoadedCard> {
+  const server = new FakeAuthServer();
+  const session = await signedInTutor(server);
+  const card = await createCard(session, 'Борис');
+  return renderCardPage(server, session, card, new QueryClient());
+}
+
+const otherNotes = 'Заметки Веры';
+
+async function showLoadedCardBesideCachedCard(): Promise<LoadedCard & { readonly other: StudentCard }> {
+  const server = new FakeAuthServer();
+  const session = await signedInTutor(server);
+  const card = await createCard(session, 'Борис');
+  const other = await storeNotes(session, await createCard(session, 'Вера'), otherNotes);
+  const queryClient = new QueryClient();
+  queryClient.setQueryData(studentCardKey(other.id), { ...other, next_lessons: [] });
+  return { ...(await renderCardPage(server, session, card, queryClient)), other };
 }
 
 async function showLoadedCardWithTyping(): Promise<LoadedCard> {
@@ -163,6 +203,10 @@ async function showLoadedCardWithTyping(): Promise<LoadedCard> {
 
 function type(notes: HTMLElement, value: string): void {
   fireEvent.change(notes, { target: { value } });
+}
+
+function notesStatus(): string | null {
+  return within(screen.getByRole('form', { name: 'Заметки' })).getByRole('status').textContent;
 }
 
 function pass(scheduler: ManualScheduler, milliseconds: number): void {
@@ -383,12 +427,16 @@ describe('the notes of a student card', () => {
 
     pass(scheduler, 1);
     await paused.received;
+    const writesWhileSaving = [...server.cardWrites];
+    const statusWhileSaving = notesStatus();
+    paused.resume();
+    await screen.findByText('Сохранено.');
 
     expect(writesBeforeTheDelay).toEqual([]);
+    expect(writesWhileSaving).toEqual(['{"notes":"Предпочитает вечер"}']);
+    expect(statusWhileSaving).toBe('Сохранение…');
     expect(server.cardWrites).toEqual(['{"notes":"Предпочитает вечер"}']);
-    expect(await screen.findByText('Сохранение…')).toBeDefined();
-    paused.resume();
-    expect(await screen.findByText('Сохранено.')).toBeDefined();
+    expect(notesStatus()).toBe('Сохранено.');
     expect(screen.getByText('Сохранено.').closest('[role="status"]')).not.toBeNull();
     expect(document.activeElement).toBe(notes);
   });
@@ -430,7 +478,8 @@ describe('the notes of a student card', () => {
     server.failNextCardWrite();
     type(notes, 'Не потерять');
     pass(scheduler, 1000);
-    expect(await screen.findByText('Заметки не сохранены.')).toBeDefined();
+    await screen.findByText('Заметки не сохранены.');
+    const statusAfterTheFailure = notesStatus();
     const valueAfterTheFailure = (notes as HTMLTextAreaElement).value;
     const focusAfterTheFailure = document.activeElement;
 
@@ -440,6 +489,7 @@ describe('the notes of a student card', () => {
     });
     await screen.findByText('Сохранено.');
 
+    expect(statusAfterTheFailure).toBe('Заметки не сохранены.');
     expect(valueAfterTheFailure).toBe('Не потерять');
     expect(focusAfterTheFailure).toBe(notes);
     expect(server.cardWrites).toEqual(['{"notes":"Не потерять"}', '{"notes":"Не потерять"}']);
@@ -472,5 +522,52 @@ describe('the notes of a student card', () => {
 
     expect(server.cardWrites).toEqual([]);
     expect(scheduler.pendingDelays()).not.toContain(1000);
+  });
+
+  test('refused on one card are neither shown nor offered again nor sent once a cached card is opened', async () => {
+    const { server, card, notes, scheduler, other, open } = await showLoadedCardBesideCachedCard();
+    server.failNextCardWrite();
+    type(notes, 'Заметки Бориса');
+    pass(scheduler, 1000);
+    await screen.findByText('Заметки не сохранены.');
+
+    await open(other);
+    const otherField = screen.getByRole('textbox', { name: 'Заметки' });
+    fireEvent.blur(otherField);
+    pass(scheduler, 1000);
+
+    expect(otherField).toHaveProperty('value', otherNotes);
+    expect(notesStatus()).toBe('');
+    expect(screen.queryByText('Заметки не сохранены.')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Попробовать ещё раз' })).toBeNull();
+    expect(server.cardWritesTo(other.id)).toEqual([`{"notes":"${otherNotes}"}`]);
+    expect(server.cardWritesTo(card.id)).toEqual(['{"notes":"Заметки Бориса"}']);
+  });
+
+  test('saved on one card while a cached card is opened leave the other card its own text and status', async () => {
+    const { server, card, notes, scheduler, other, open } = await showLoadedCardBesideCachedCard();
+    const paused = server.pauseCardWrites();
+    type(notes, 'Заметки Бориса');
+    pass(scheduler, 1000);
+    await paused.received;
+
+    await open(other);
+    const otherField = screen.getByRole('textbox', { name: 'Заметки' });
+    const statusAfterOpening = notesStatus();
+    paused.resume();
+    type(otherField, `${(otherField as HTMLTextAreaElement).value}!`);
+    fireEvent.blur(otherField);
+    await waitFor(() => {
+      if (server.cardWritesTo(other.id).length < 2) {
+        throw new Error('the other card has not been saved yet');
+      }
+    });
+    await screen.findByText('Сохранено.');
+
+    expect(statusAfterOpening).toBe('');
+    expect(otherField).toHaveProperty('value', `${otherNotes}!`);
+    expect(notesStatus()).toBe('Сохранено.');
+    expect(server.cardWritesTo(card.id)).toEqual(['{"notes":"Заметки Бориса"}']);
+    expect(server.cardWritesTo(other.id)).toEqual([`{"notes":"${otherNotes}"}`, `{"notes":"${otherNotes}!"}`]);
   });
 });

@@ -383,7 +383,7 @@ export class FakeAuthServer {
   private failingCardWrites = 0;
   private cardWriteGate: Promise<void> | null = null;
   private cardWriteReceived: () => void = () => undefined;
-  private readonly writtenCards: string[] = [];
+  private readonly writtenCards: { readonly cardId: string; readonly body: string }[] = [];
   private refreshCount = 0;
   private reuse = false;
   private readonly sent: string[] = [];
@@ -427,7 +427,11 @@ export class FakeAuthServer {
   }
 
   get cardWrites(): readonly string[] {
-    return this.writtenCards;
+    return this.writtenCards.map((write) => write.body);
+  }
+
+  cardWritesTo(cardId: string): readonly string[] {
+    return this.writtenCards.filter((write) => write.cardId === cardId).map((write) => write.body);
   }
 
   addAccount(seed: FakeAccountSeed): void {
@@ -907,7 +911,7 @@ export class FakeAuthServer {
   }
 
   private async writeCard(found: FakeCard, body: string): Promise<Response> {
-    this.writtenCards.push(body);
+    this.writtenCards.push({ cardId: found.card.id, body });
     this.cardWriteReceived();
     await this.cardWriteGate;
     if (this.failingCardWrites > 0) {

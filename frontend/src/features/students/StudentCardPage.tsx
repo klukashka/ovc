@@ -686,7 +686,7 @@ function CardColumns({
           {children}
         </>
       }
-      aside={<NotesAutosave card={card} reloads={reloads} handlers={handlers} />}
+      aside={<NotesAutosave key={card.id} card={card} reloads={reloads} handlers={handlers} />}
     />
   );
 }
@@ -827,6 +827,7 @@ export function StudentCardView({
   return (
     <>
       <CardActions
+        key={card.id}
         card={card}
         reloads={reloads}
         handlers={handlers}
@@ -1177,6 +1178,7 @@ export function StudentCardPage(): ReactElement {
       menu={
         shown === null ? null : (
           <CardActions
+            key={shown.id}
             card={shown}
             reloads={reloads}
             handlers={handlers}
