@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import { type ReactElement, type RefObject, useRef } from 'react';
+import { type ReactElement, type ReactNode, type RefObject, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
@@ -40,6 +40,7 @@ export function LessonList({
   showAudience,
   showTutor = false,
   listRef,
+  rowAction,
 }: {
   readonly items: readonly CalendarItem[];
   readonly label: string;
@@ -47,6 +48,7 @@ export function LessonList({
   readonly showAudience: boolean;
   readonly showTutor?: boolean;
   readonly listRef?: RefObject<HTMLUListElement | null>;
+  readonly rowAction?: (item: CalendarItem) => ReactNode;
 }): ReactElement {
   const { t } = useTranslation();
   const ownList = useRef<HTMLUListElement>(null);
@@ -78,6 +80,7 @@ export function LessonList({
               {showTutor ? <TutorLabel item={item} /> : null}
               <LessonStatusWord lesson={item} />
             </Link>
+            {rowAction?.(item)}
           </li>
         );
       })}

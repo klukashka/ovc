@@ -1,4 +1,4 @@
-import type { UseQueryResult } from '@tanstack/react-query';
+import { type UseQueryResult, useQuery } from '@tanstack/react-query';
 import { type ReactElement, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
@@ -6,10 +6,13 @@ import { Link } from 'react-router';
 import { useScheduler } from '../../app/clock.ts';
 import { linkClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
-import { asApiError } from '../../lib/api/client.ts';
+import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { Me } from '../../lib/api/session.ts';
-import type { Calendar, CalendarItem } from '../schedule/api.ts';
+import { type Calendar, type CalendarItem, fetchLesson } from '../schedule/api.ts';
+import { type JoinLesson, JoinControl } from '../schedule/JoinControl.tsx';
+import { lessonKey } from '../schedule/keys.ts';
 import { LessonList } from '../schedule/LessonList.tsx';
+import { phaseOf, useLessonClock } from '../schedule/lessonTiming.ts';
 
 const weekMilliseconds = 7 * 24 * 60 * 60 * 1000;
 
@@ -40,6 +43,46 @@ function Loaded({
   return render(query.data);
 }
 
+function NextLessonJoin({ item, me }: { readonly item: CalendarItem; readonly me: Me }): ReactElement {
+  const client = useApiClient();
+  const phase = phaseOf(item, useLessonClock(item));
+  const roomMayOpen = phase === 'window' || phase === 'live';
+  const detail = useQuery({
+    queryKey: lessonKey(item.id),
+    queryFn: () => fetchLesson(client, item.id),
+    enabled: roomMayOpen,
+    retry: false,
+  });
+  const fromCalendar: JoinLesson = {
+    id: item.id,
+    status: item.status,
+    starts_at: item.starts_at,
+    ends_at: item.ends_at,
+    room_open: false,
+  };
+  const lesson: JoinLesson =
+    roomMayOpen && detail.data !== undefined
+      ? {
+          id: item.id,
+          status: detail.data.status,
+          starts_at: detail.data.starts_at,
+          ends_at: detail.data.ends_at,
+          room_open: detail.data.room_open,
+        }
+      : fromCalendar;
+  if (roomMayOpen && detail.isError && detail.data === undefined) {
+    return (
+      <LoadFailed
+        error={asApiError(detail.error)}
+        onRetry={() => {
+          void detail.refetch();
+        }}
+      />
+    );
+  }
+  return <JoinControl key={item.id} lesson={lesson} me={me} showsOpensAt />;
+}
+
 export function NextLesson({ me, query }: { readonly me: Me; readonly query: UseQueryResult<Calendar> }): ReactElement {
   const { t } = useTranslation();
   const headingId = useId();
@@ -56,7 +99,14 @@ export function NextLesson({ me, query }: { readonly me: Me; readonly query: Use
           return next === undefined ? (
             <p className="text-text-muted">{t('home.noNextLesson')}</p>
           ) : (
-            <LessonList items={[next]} label={t('home.nextLesson')} me={me} showAudience showTutor />
+            <LessonList
+              items={[next]}
+              label={t('home.nextLesson')}
+              me={me}
+              showAudience
+              showTutor
+              rowAction={(item) => <NextLessonJoin key={item.id} item={item} me={me} />}
+            />
           );
         }}
       />

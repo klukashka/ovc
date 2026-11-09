@@ -2,10 +2,10 @@ import type { Page } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, registerTutor, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { type Diagnostics, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { accountId, expectReadyForNavigation, todayQueryPaths, trafficAfterReady, waitForSockets } from './realtime.ts';
 import { channelOf } from './messages.ts';
-import { addDays, localDate, scheduleLessonsWithIds } from './schedule.ts';
+import { addDays, cancelThisLesson, localClock, localDate, scheduleLessonsWithIds } from './schedule.ts';
 import { acceptSignedIn, accessToken, callApi, createCard, createGroup, seedActiveStudent } from './tutoring.ts';
 
 const markup = '<img src=x onerror="document.title=1"><b>Bold</b>';
@@ -34,7 +34,7 @@ function hourIn(instant: number, zone: string): number {
   );
 }
 
-function laterToday(now: number): LocalTime {
+function daytimeZone(now: number): string {
   const zone = daytimeZones.find((candidate) => {
     const hour = hourIn(now, candidate);
     return hour >= 5 && hour <= 17;
@@ -42,6 +42,11 @@ function laterToday(now: number): LocalTime {
   if (zone === undefined) {
     throw new Error('no daytime zone in the list');
   }
+  return zone;
+}
+
+function laterToday(now: number): LocalTime {
+  const zone = daytimeZone(now);
   const start = hourIn(now, zone) + 3;
   return { zone, date: localDate(now, zone), start: `${String(start).padStart(2, '0')}:00` };
 }
@@ -457,5 +462,119 @@ test.describe('Today', () => {
 
     await expect(checklist(page).getByRole('link', { name: 'Open Students' })).toHaveCount(0);
     await expect(checklist(page).getByRole('heading', { name: 'Getting started' })).toBeFocused();
+  });
+});
+
+interface SoonLesson {
+  readonly title: string;
+  readonly minutesAhead: number;
+}
+
+interface TutorWithSoonLessons {
+  readonly tutor: TestAccount;
+  readonly zone: string;
+  readonly lessonIds: readonly string[];
+}
+
+async function tutorWithSoonLessons(
+  deployment: Deployment,
+  now: number,
+  soon: readonly SoonLesson[],
+): Promise<TutorWithSoonLessons> {
+  const zone = daytimeZone(now);
+  const tutor = await seedVerifiedUser(deployment, 'Tutor', 'en');
+  await setTimezone(deployment, tutor, zone);
+  const { cardId } = await seedActiveStudent(deployment, tutor, 'Vera Student', 'en');
+  const lessonIds: string[] = [];
+  for (const lesson of soon) {
+    const start = now + lesson.minutesAhead * 60_000;
+    const [scheduled] = await scheduleLessonsWithIds(deployment, tutor, {
+      relationship_id: cardId,
+      title: lesson.title,
+      date: localDate(start, zone),
+      start: localClock(start, zone),
+      duration_minutes: 30,
+    });
+    if (scheduled === undefined) {
+      throw new Error('no lesson was scheduled');
+    }
+    lessonIds.push(scheduled.id);
+  }
+  return { tutor, zone, lessonIds };
+}
+
+function lessonRow(page: Page, title: string): ReturnType<Page['getByRole']> {
+  return lessons(page).getByRole('listitem').filter({ hasText: title });
+}
+
+async function joinFromToday(page: Page, title: string, diagnostics: Diagnostics): Promise<Page> {
+  const opened = page.context().waitForEvent('page');
+  await lessonRow(page, title).getByRole('button', { name: 'Join lesson', exact: true }).click();
+  const room = await opened;
+  await diagnostics.watch(room);
+  await expect(room.locator('#room')).toHaveAttribute('data-state', 'entered');
+  return room;
+}
+
+test.describe('Join on Today', () => {
+  test.use({ locale: 'en-GB', viewport: { width: 1440, height: 900 }, colorScheme: 'light' });
+
+  test("the tutor's Join opens the room in one new tab without an opener and focus lands on Open again", async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const now = await control.now();
+    const { tutor, lessonIds } = await tutorWithSoonLessons(deployment, now, [
+      { title: 'Conversation practice', minutesAhead: 5 },
+    ]);
+    await signInThroughTheApi(page, tutor);
+    const lessonReads: string[] = [];
+    page.on('request', (request) => {
+      const path = new URL(request.url()).pathname;
+      if (request.method() === 'GET' && path.startsWith('/api/v1/lessons/')) {
+        lessonReads.push(path);
+      }
+    });
+    await openToday(page, now);
+    const row = lessonRow(page, 'Conversation practice');
+    await expect(row.getByRole('button', { name: 'Join lesson', exact: true })).toBeVisible();
+
+    const room = await joinFromToday(page, 'Conversation practice', diagnostics);
+
+    await expect(room.locator('#participant-name')).toHaveText('Tutor');
+    await expect(room.locator('#participant-role')).toHaveText('moderator');
+    expect(await room.evaluate(() => window.opener === null)).toBe(true);
+    expect(page.context().pages()).toHaveLength(2);
+    await expect(page).toHaveURL('/today');
+    await expect(row.getByRole('button', { name: 'Open again', exact: true })).toBeFocused();
+    await expect(row.getByRole('link')).toHaveAttribute('href', `/lessons/${lessonIds[0] ?? ''}`);
+    await expect(row.getByRole('link').getByRole('button')).toHaveCount(0);
+    expect(lessonReads).toEqual([]);
+  });
+
+  test('before its window the next lesson shows when the room opens with no button, and a cancelled lesson shows no control', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const now = await control.now();
+    const { tutor, zone, lessonIds } = await tutorWithSoonLessons(deployment, now, [
+      { title: 'Cancelled lesson', minutesAhead: 5 },
+      { title: 'Later lesson', minutesAhead: 60 },
+      { title: 'Last lesson', minutesAhead: 120 },
+    ]);
+    await cancelThisLesson(deployment, tutor, lessonIds[0] ?? '');
+    await signInThroughTheApi(page, tutor);
+    const opensAt = localClock(now + 60 * 60_000 - 10 * 60_000, zone);
+
+    await openToday(page, now);
+
+    await expect(lessons(page).getByRole('link')).toHaveCount(3);
+    await expect(lessonRow(page, 'Later lesson')).toContainText(`Room opens at ${opensAt}`);
+    await expect(lessons(page).getByRole('button')).toHaveCount(0);
+    await expect(lessonRow(page, 'Cancelled lesson')).not.toContainText('Room opens at');
+    await expect(lessonRow(page, 'Last lesson')).not.toContainText('Room opens at');
   });
 });

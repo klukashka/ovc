@@ -1,10 +1,10 @@
-import type { Locator, Page } from '@playwright/test';
+import type { Locator, Page, Route } from '@playwright/test';
 
 import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { type Diagnostics, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { accountId, expectReadyForNavigation, trafficAfterReady, waitForSockets } from './realtime.ts';
-import { addDays, cancelThisLesson, localDate, scheduleLessonsWithIds } from './schedule.ts';
+import { addDays, cancelThisLesson, localClock, localDate, scheduleLessonsWithIds } from './schedule.ts';
 import {
   acceptSignedIn,
   accessToken,
@@ -481,5 +481,338 @@ test.describe('Home', () => {
     await expect(page.getByRole('group', { name: 'Tutor' }).getByRole('button', { name: markup })).toBeVisible();
     await expect(page.getByRole('main').locator('img, b')).toHaveCount(0);
     await expect(page).toHaveTitle('Home · OVC');
+  });
+});
+
+const moscow = 'Europe/Moscow';
+const waitingText = 'The room opens when your tutor joins';
+
+type LessonAudience = { readonly relationship_id: string } | { readonly group_id: string };
+
+async function lessonSoon(
+  deployment: Deployment,
+  tutor: TestAccount,
+  audience: LessonAudience,
+  title: string,
+  start: number,
+): Promise<string> {
+  const [lesson] = await scheduleLessonsWithIds(deployment, tutor, {
+    ...audience,
+    title,
+    date: localDate(start, moscow),
+    start: localClock(start, moscow),
+    duration_minutes: 60,
+  });
+  if (lesson === undefined) {
+    throw new Error('no lesson was scheduled');
+  }
+  return lesson.id;
+}
+
+async function tutorJoins(deployment: Deployment, tutor: TestAccount, lessonId: string): Promise<void> {
+  const joined = await callApi(deployment, await accessToken(deployment, tutor), 'POST', `/lessons/${lessonId}/join`);
+  expect(joined.status).toBe(200);
+}
+
+function nextLessonRegion(page: Page): Locator {
+  return region(page, 'Next lesson');
+}
+
+function homeJoinButton(page: Page, name: string): Locator {
+  return nextLessonRegion(page).getByRole('button', { name, exact: true });
+}
+
+async function joinFromHome(page: Page, name: string, diagnostics: Diagnostics): Promise<Page> {
+  const opened = page.context().waitForEvent('page');
+  await homeJoinButton(page, name).click();
+  const room = await opened;
+  await diagnostics.watch(room);
+  await expect(room.locator('#room')).toHaveAttribute('data-state', 'entered');
+  return room;
+}
+
+function recordLessonReads(page: Page): string[] {
+  const reads: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path.startsWith('/api/v1/lessons/')) {
+      reads.push(path);
+    }
+  });
+  return reads;
+}
+
+async function holdJoin(page: Page): Promise<{ readonly held: Promise<Route>; readonly release: () => Promise<void> }> {
+  let received: (route: Route) => void = () => undefined;
+  const held = new Promise<Route>((resolve) => {
+    received = resolve;
+  });
+  await page.route('**/api/v1/lessons/*/join', (route) => {
+    received(route);
+  });
+  return {
+    held,
+    release: async (): Promise<void> => {
+      await (await held).continue();
+      await page.unroute('**/api/v1/lessons/*/join');
+    },
+  };
+}
+
+test.describe('Join on Home', () => {
+  test.use({
+    locale: 'en-GB',
+    timezoneId: moscow,
+    viewport: { width: 1440, height: 900 },
+    colorScheme: 'light',
+  });
+
+  test('the student waits in the window, Join appears without a reload once the tutor joins, and the room opens as viewer with her name', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const now = await control.now();
+    const maria = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, maria, 'Anna', 'en');
+    const lessonId = await lessonSoon(deployment, maria, { relationship_id: cardId }, 'Soon lesson', now + 5 * 60_000);
+    await signInThroughTheApi(page, anna);
+    const lessonReads = recordLessonReads(page);
+    const consoleTexts: string[] = [];
+    page.on('console', (message) => {
+      consoleTexts.push(message.text());
+    });
+    const requests: string[] = [];
+    page.on('request', (request) => {
+      requests.push(`${request.url()} ${request.postData() ?? ''}`);
+    });
+    await openHome(page, now);
+    await expect(nextLessonRegion(page).getByText(waitingText)).toBeVisible();
+    await expect(nextLessonRegion(page).getByRole('button')).toHaveCount(0);
+    await expect.poll(() => lessonReads.length).toBeGreaterThan(0);
+    await waitForSockets(deployment, await accountId(deployment, anna), 1);
+    await page.evaluate(() => {
+      document.documentElement.dataset.sameDocument = 'yes';
+    });
+
+    await tutorJoins(deployment, maria, lessonId);
+    const room = await joinFromHome(page, 'Join', diagnostics);
+
+    await expect(room.locator('#participant-name')).toHaveText('Anna');
+    await expect(room.locator('#participant-role')).toHaveText('viewer');
+    await expect(room.locator('body')).not.toContainText('Maria');
+    expect(await room.evaluate(() => window.opener === null)).toBe(true);
+    await expect(page).toHaveURL('/home');
+    await expect(page.locator('html')).toHaveAttribute('data-same-document', 'yes');
+    await expect(homeJoinButton(page, 'Open again')).toBeFocused();
+    expect(new Set(lessonReads)).toEqual(new Set([`/api/v1/lessons/${lessonId}`]));
+    const capability = new URL(room.url()).hash.slice(1);
+    const stored = await page.evaluate(() =>
+      JSON.stringify([Object.entries(window.localStorage), Object.entries(window.sessionStorage), history.state]),
+    );
+    expect(capability).not.toBe('');
+    expect(stored).not.toContain(capability);
+    expect(consoleTexts.join('\n')).not.toContain(capability);
+    expect(requests.join('\n')).not.toContain(capability);
+    expect(page.url()).not.toContain(capability);
+  });
+
+  test("Home reads only the next lesson's detail while two lessons are in their window", async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const now = await control.now();
+    const { anna, maria, pavel, mariaCard, pavelCard } = await studentWithTwoTutors(deployment, now);
+    const nextId = await lessonSoon(deployment, maria, { relationship_id: mariaCard }, 'First soon', now + 4 * 60_000);
+    await lessonSoon(deployment, pavel, { relationship_id: pavelCard }, 'Second soon', now + 8 * 60_000);
+    await signInThroughTheApi(page, anna);
+    const lessonReads = recordLessonReads(page);
+
+    await openHome(page, now);
+    await expect(weekRows(page)).toHaveCount(4);
+    await expect(nextLessonRegion(page).getByText(waitingText)).toBeVisible();
+    await expect.poll(() => lessonReads.length).toBeGreaterThan(0);
+
+    expect(new Set(lessonReads)).toEqual(new Set([`/api/v1/lessons/${nextId}`]));
+    await expect(region(page, 'Next seven days').getByRole('button')).toHaveCount(0);
+  });
+
+  test('an unconfirmed student with a provisional link joins a live lesson from Home', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const now = await control.now();
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const boris = newTestAccount('Boris', 'student');
+    const card = await createCard(deployment, pavel, 'Boris', boris.email);
+    await signUpOnInvitation(deployment, card.link, boris, 'en');
+    const lessonId = await lessonSoon(
+      deployment,
+      pavel,
+      { relationship_id: card.id },
+      'Provisional lesson',
+      now + 5 * 60_000,
+    );
+    await tutorJoins(deployment, pavel, lessonId);
+    await signInThroughTheApi(page, boris);
+    await openHome(page, now);
+
+    const room = await joinFromHome(page, 'Join', diagnostics);
+
+    await expect(room.locator('#participant-name')).toHaveText('Boris');
+    await expect(room.locator('#participant-role')).toHaveText('viewer');
+  });
+
+  test("a reclaim_pending account's Home shows no lesson and no Join for the live lesson", async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/verify-email', status: 422 });
+    const now = await control.now();
+    const maria = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const owner = newTestAccount('Owner', 'student');
+    const card = await createCard(deployment, maria, 'Anna', owner.email);
+    await signUpOnInvitation(deployment, card.link, owner, 'en');
+    const lessonId = await lessonSoon(
+      deployment,
+      maria,
+      { relationship_id: card.id },
+      'Squatted lesson',
+      now + 5 * 60_000,
+    );
+    await tutorJoins(deployment, maria, lessonId);
+    await control.tick();
+    await page.goto(emailedLinkTo(await control.mail(owner.email), '/verify-email'));
+    await page.getByLabel('New password').fill(`${owner.password} reclaimed`);
+    const reclaimRead = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/api/v1/users/me/reclaim',
+    );
+    await page.getByRole('button', { name: 'Confirm and sign in' }).click();
+    await expect(page).toHaveURL('/reclaim');
+    await reclaimRead;
+
+    await openHome(page, now);
+
+    await expect(nextLessonRegion(page).getByText('No lesson scheduled')).toBeVisible();
+    await expect(page.getByRole('main')).not.toContainText('Squatted lesson');
+    await expect(page.getByRole('main').getByRole('button', { name: 'Join', exact: true })).toHaveCount(0);
+  });
+
+  test('after an ending the live lesson seen only through the roster refuses Join, closes the tab and keeps no button', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const now = await control.now();
+    const maria = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, maria, 'Anna', 'en');
+    const lessonId = await lessonSoon(deployment, maria, { relationship_id: cardId }, 'Live lesson', now + 5 * 60_000);
+    await lessonSoon(deployment, maria, { relationship_id: cardId }, 'Future lesson', now + 26 * 60 * 60_000);
+    await tutorJoins(deployment, maria, lessonId);
+    await signInThroughTheApi(page, anna);
+    await openHome(page, now);
+    await expect(homeJoinButton(page, 'Join')).toBeVisible();
+    await expect(weekRows(page)).toHaveCount(2);
+    await waitForSockets(deployment, await accountId(deployment, anna), 1);
+    const ended = await callApi(
+      deployment,
+      await accessToken(deployment, maria),
+      'POST',
+      `/students/${cardId}/end`,
+      {},
+    );
+    expect(ended.status).toBe(200);
+    await expect(page.getByRole('main')).not.toContainText('Future lesson');
+    diagnostics.expectFailure({ method: 'POST', path: `/api/v1/lessons/${lessonId}/join`, status: 404 });
+    const opened = page.context().waitForEvent('page');
+
+    await homeJoinButton(page, 'Join').click();
+    const refusedTab = await opened;
+    await diagnostics.watch(refusedTab);
+
+    await expect(nextLessonRegion(page).getByRole('alert')).toHaveText("You can't join this lesson");
+    await expect.poll(() => refusedTab.isClosed()).toBe(true);
+    await expect(nextLessonRegion(page).getByRole('button')).toHaveCount(0);
+    await expect(nextLessonRegion(page).getByRole('link')).toContainText('Live lesson');
+  });
+
+  test('after a group removal the live lesson seen only through the roster refuses Open again and closes the tab', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const now = await control.now();
+    const maria = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const anna = await seedActiveStudent(deployment, maria, 'Anna', 'en');
+    const groupId = await createGroup(deployment, maria, 'Evening group', [anna.cardId]);
+    const lessonId = await lessonSoon(deployment, maria, { group_id: groupId }, 'Group lesson', now + 5 * 60_000);
+    await tutorJoins(deployment, maria, lessonId);
+    await signInThroughTheApi(page, anna.student);
+    await openHome(page, now);
+    const firstRoom = await joinFromHome(page, 'Join', diagnostics);
+    const removed = await callApi(deployment, await accessToken(deployment, maria), 'PATCH', `/groups/${groupId}`, {
+      remove: [anna.cardId],
+    });
+    expect(removed.status).toBe(200);
+    diagnostics.expectFailure({ method: 'POST', path: `/api/v1/lessons/${lessonId}/join`, status: 404 });
+    const opened = page.context().waitForEvent('page');
+
+    await homeJoinButton(page, 'Open again').click();
+    const refusedTab = await opened;
+    await diagnostics.watch(refusedTab);
+
+    await expect(nextLessonRegion(page).getByRole('alert')).toHaveText("You can't join this lesson");
+    await expect.poll(() => refusedTab.isClosed()).toBe(true);
+    await expect(nextLessonRegion(page).getByRole('button')).toHaveCount(0);
+    await expect(firstRoom.locator('#room')).toHaveAttribute('data-state', 'entered');
+  });
+
+  test('an account change during a held join closes the blank tab and the next account sees nothing of the previous one', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const now = await control.now();
+    const maria = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, maria, 'Anna', 'en');
+    const olga = await seedVerifiedUser(deployment, 'Olga', 'en');
+    const { student: boris } = await seedActiveStudent(deployment, olga, 'Boris', 'en');
+    const lessonId = await lessonSoon(deployment, maria, { relationship_id: cardId }, 'Held lesson', now + 5 * 60_000);
+    await tutorJoins(deployment, maria, lessonId);
+    await signInThroughTheApi(page, anna);
+    await openHome(page, now);
+    diagnostics.expectFailure({ method: 'POST', path: `/api/v1/lessons/${lessonId}/join`, status: 401 });
+    const write = await holdJoin(page);
+    const opened = page.context().waitForEvent('page');
+    await homeJoinButton(page, 'Join').click();
+    const blank = await opened;
+    await diagnostics.watch(blank);
+    await write.held;
+    const closed = blank.waitForEvent('close');
+    const refused = page.waitForResponse((response) => response.url().endsWith('/join'));
+
+    await page.getByRole('button', { name: /Account menu/ }).click();
+    await page.getByRole('button', { name: 'Sign out' }).click();
+    await closed;
+    await write.release();
+    await refused;
+    await diagnostics.finishHttpPhase();
+    await page.getByLabel('Email').fill(boris.email);
+    await page.getByLabel('Password', { exact: true }).fill(boris.password);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+
+    await expect(region(page, 'My tutors').getByRole('listitem')).toHaveText([/Olga/]);
+    expect(page.context().pages()).toEqual([page]);
+    await expect(page.getByRole('main')).not.toContainText('Held lesson');
+    await expect(page.getByRole('main').getByRole('button', { name: 'Join', exact: true })).toHaveCount(0);
   });
 });

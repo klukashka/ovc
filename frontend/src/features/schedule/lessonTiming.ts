@@ -8,7 +8,7 @@ export type LessonPhase = 'before' | 'window' | 'past' | 'live' | 'ended' | 'can
 const joinWindowMilliseconds = 10 * 60_000;
 const longestTimer = 2_147_483_647;
 
-interface LessonTimes {
+export interface LessonTimes {
   readonly status: LessonDetail['status'];
   readonly starts_at: string;
   readonly ends_at: string;

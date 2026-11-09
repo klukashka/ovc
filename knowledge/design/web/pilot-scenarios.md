@@ -37,9 +37,9 @@ Recordings (FR-5.4 to FR-5.6) and analytics (FR-11.2 to FR-11.4) are outside the
 | 6 | Maria | Schedule | `POST /lessons` (series, Tuesdays and Thursdays at 18:00, 8 lessons) | Eight lessons in the calendar; Anna's Schedule shows them at 16:00; her lesson page shows `time.other_zone` with 18:00 and Moscow |
 | 7 | Clock, Worker | — | `harness: POST /clock` to 60 minutes before the first lesson, `harness: POST /tick` | The 1-hour reminder emails for Maria and Anna are in the sink, in Russian, with Anna's in Berlin time |
 | 8 | Clock | — | `harness: POST /clock` to 5 minutes before the first lesson | — |
-| 9 | Anna | Home | (proven on the lesson page until Home gets its Join control; `GET /home` is `pending implementation` until slice 10) | "The room opens when your tutor joins"; no Join button |
+| 9 | Anna | Home | `GET /calendar`, then `GET /lessons/{id}` for the next lesson in its window (`GET /home` is `pending implementation` until slice 10; proven on Home from design slice step D6, pending owner review) | "The room opens when your tutor joins"; no Join button |
 | 10 | Maria | Lesson | `POST /lessons/{id}/join` | The fake room opens in a new tab as moderator, showing her name; the lesson becomes live |
-| 11 | Anna | Home | (proven on the lesson page until Home gets its Join control) `POST /lessons/{id}/join` | The Join button appears without reload; the fake room opens as viewer, showing her name |
+| 11 | Anna | Home | `POST /lessons/{id}/join` (proven on Home from design slice step D6, pending owner review) | The Join button appears without reload; the fake room opens as viewer, showing her name |
 | 12 | Maria | — | `harness: POST /fake-provider/lessons/{lesson}/recording` start, then stop | The fake room shows its recording state as on, then off, to both |
 | 13 | Maria | Lesson | "End lesson", `POST /lessons/{id}/end` | The lesson shows "Ended" for both; in the MVP the lesson page shows no Recordings block for Maria or Anna |
 | 14 | Worker | — | `harness: POST /fake-provider/lessons/{lesson}/ready`, `harness: POST /tick` | The recording appears on the lesson page for Maria and Anna, available until 90 days later |

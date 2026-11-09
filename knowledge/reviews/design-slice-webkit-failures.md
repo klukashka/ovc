@@ -53,3 +53,9 @@ The same class as the WebKit page load failures above, carried into slice 10 wit
 | Test | Browser | Phase | Evidence | Repeat alone |
 |---|---|---|---|---|
 | `message-attachments.spec.ts` › pilot-3 › steps 8–11 Anna closes her tabs and receives one digest for one unread group message without a duplicate | WebKit | journey, route `messages` | Four HTTP errors with four console errors on the Messages page, the signature of the step L1 and step D2b entries; step D4 does not touch Messages | Not repeated alone; the whole run otherwise passed (1442 tests) |
+
+## Failures seen while preparing step D6 (not in a merge gate)
+
+| Test | Browser | Phase | Evidence | Repeat alone |
+|---|---|---|---|---|
+| `students.spec.ts` › student card › notes typed and reloaded before the save keep nothing in storage or the address (from step D5) | WebKit | journey | One page error during the reload; the redacted diagnostics do not keep its text, so the cause is not established; a reload while an autosave is in flight is the suspected moment | 15 of 15 passed alone (`--repeat-each=15`) |

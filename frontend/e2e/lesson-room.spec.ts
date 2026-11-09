@@ -11,7 +11,13 @@ import {
   expect,
   seedVerifiedUser,
 } from './fixtures.ts';
-import { accountId, closeSockets, expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
+import {
+  accountId,
+  closeSockets,
+  expectRefetchedAfterTheSocketIsReady,
+  trafficAfterReady,
+  waitForSockets,
+} from './realtime.ts';
 import { localClock, localDate, readLesson, scheduleLessonsWithIds } from './schedule.ts';
 import { accessToken, callApi, createCard, acceptSignedIn, createGroup } from './tutoring.ts';
 
@@ -77,6 +83,17 @@ async function openLesson(
   await expect(page.getByRole('heading', { level: 1, name: lessonTitle })).toBeVisible();
   await expectRefetchedAfterTheSocketIsReady(traffic);
   return traffic;
+}
+
+async function openHome(page: Page, account: TestAccount, control: TestControl): Promise<void> {
+  await followSharedClock(page.context(), control);
+  await signInThroughTheApi(page, account);
+  await page.goto('/home');
+  await expect(nextLessonOnHome(page).getByRole('link')).toContainText(lessonTitle);
+}
+
+function nextLessonOnHome(page: Page): ReturnType<Page['getByRole']> {
+  return page.getByRole('region', { name: 'Следующий урок', exact: true });
 }
 
 function roomButton(page: Page, name: string): ReturnType<Page['getByRole']> {
@@ -940,7 +957,7 @@ test.describe('the embedded room under the test override', () => {
 test.describe('pilot scenario 1 in the lesson room', () => {
   test.use({ locale: 'ru-RU', timezoneId: moscow, viewport: { width: 1280, height: 800 } });
 
-  test('pilot-1 › steps 8–11 Five minutes before the start Anna waits, Maria joins as moderator and Anna joins as viewer without a reload', async ({
+  test('pilot-1 › steps 8–11 Five minutes before the start Anna waits on Home, Maria joins as moderator and Anna joins from Home as viewer without a reload', async ({
     page,
     observedBrowser,
     deployment,
@@ -951,20 +968,27 @@ test.describe('pilot scenario 1 in the lesson room', () => {
     const annaContext = await secondContext(observedBrowser, deployment);
     const annaPage = await annaContext.newPage();
     await diagnostics.watch(annaPage);
-    await openLesson(annaPage, seed.student, seed.lessonId, control);
+    await openHome(annaPage, seed.student, control);
+    await waitForSockets(deployment, await accountId(deployment, seed.student), 1);
 
-    await expect(annaPage.getByText(waitingText)).toBeVisible();
-    await expect(roomButton(annaPage, 'Подключиться')).toHaveCount(0);
+    await expect(nextLessonOnHome(annaPage).getByText(waitingText)).toBeVisible();
+    await expect(nextLessonOnHome(annaPage).getByRole('button', { name: 'Подключиться', exact: true })).toHaveCount(0);
 
     await openLesson(page, seed.tutor, seed.lessonId, control);
     const mariaRoom = await joinInNewTab(page, 'Подключиться к уроку', diagnostics);
     await expect(mariaRoom.locator('#participant-role')).toHaveText('moderator');
     await expect(mariaRoom.locator('#participant-name')).toHaveText(tutorName);
 
-    await expect(roomButton(annaPage, 'Подключиться')).toBeVisible();
-    const annaRoom = await joinInNewTab(annaPage, 'Подключиться', diagnostics);
+    const annaJoin = nextLessonOnHome(annaPage).getByRole('button', { name: 'Подключиться', exact: true });
+    await expect(annaJoin).toBeVisible();
+    const annaOpened = annaPage.context().waitForEvent('page');
+    await annaJoin.click();
+    const annaRoom = await annaOpened;
+    await diagnostics.watch(annaRoom);
+    await expect(annaRoom.locator('#room')).toHaveAttribute('data-state', 'entered');
     await expect(annaRoom.locator('#participant-role')).toHaveText('viewer');
     await expect(annaRoom.locator('#participant-name')).toHaveText(studentName);
+    await expect(annaPage).toHaveURL('/home');
 
     await diagnostics.closeContext(annaContext);
   });

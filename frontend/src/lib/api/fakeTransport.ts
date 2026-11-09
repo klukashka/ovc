@@ -27,6 +27,7 @@ interface FakeLesson {
 interface FakeLessonRefusal {
   readonly status: number;
   readonly code: string;
+  readonly retryAfterSeconds: number | null;
 }
 
 interface FakeAccessToken {
@@ -127,6 +128,13 @@ function json(status: number, body: unknown): Response {
 
 function refusal(status: number, code: string): Response {
   return json(status, { error: { code, message: code, request_id: 'fake-request' } });
+}
+
+function refusalRetryingAfter(status: number, code: string, seconds: number): Response {
+  return new Response(JSON.stringify({ error: { code, message: code, request_id: 'fake-request' } }), {
+    status,
+    headers: { 'Content-Type': 'application/json', 'Retry-After': String(seconds) },
+  });
 }
 
 function fieldRefusal(path: string, code: string): Response {
@@ -523,8 +531,8 @@ export class FakeAuthServer {
     this.embeddingRefused.add(id);
   }
 
-  refuseNextLessonWrite(status: number, code: string): void {
-    this.refusedLessonWrite = { status, code };
+  refuseNextLessonWrite(status: number, code: string, retryAfterSeconds: number | null = null): void {
+    this.refusedLessonWrite = { status, code, retryAfterSeconds };
   }
 
   pauseLessonWrites(): PausedReads {
@@ -971,7 +979,9 @@ export class FakeAuthServer {
     const planned = this.refusedLessonWrite;
     this.refusedLessonWrite = null;
     if (planned !== null) {
-      return refusal(planned.status, planned.code);
+      return planned.retryAfterSeconds === null
+        ? refusal(planned.status, planned.code)
+        : refusalRetryingAfter(planned.status, planned.code, planned.retryAfterSeconds);
     }
     return action === 'end' ? this.endLesson(id) : this.openFakeRoom(id);
   }
