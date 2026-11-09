@@ -69,17 +69,17 @@ export function Page({
 
   return (
     <article className={widthClass[width]}>
-      {action === undefined && menu === undefined ? (
-        headingElement
-      ) : (
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          {headingElement}
+      <header
+        className={`flex flex-wrap items-center justify-between gap-3${titleHiddenOnDesktop && action === undefined && menu === undefined ? ' desktop:sr-only' : ''}`}
+      >
+        {headingElement}
+        {action === undefined && menu === undefined ? null : (
           <div className="flex flex-wrap items-center gap-2">
             {action}
             {menu}
           </div>
-        </header>
-      )}
+        )}
+      </header>
       {children}
     </article>
   );

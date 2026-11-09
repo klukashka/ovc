@@ -122,6 +122,8 @@ function Controls({ rows }: { readonly rows: readonly ControlRow[] }): ReactElem
 
 interface ShownControls {
   readonly server: FakeAuthServer;
+  readonly session: Session;
+  readonly email: string;
   readonly tabs: RoomTabs;
   readonly scheduler: ManualScheduler;
   readonly queryClient: QueryClient;
@@ -185,6 +187,8 @@ async function showControls({
   });
   return {
     server,
+    session,
+    email,
     tabs,
     scheduler,
     queryClient,
@@ -420,6 +424,25 @@ describe('a held join that loses its control', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
     });
+  });
+
+  test('a join answered after the session changed closes the tab, which never receives the link', async () => {
+    const shown = await showControls();
+    const paused = shown.server.pauseLessonWrites();
+    fireEvent.click(button('Подключиться к уроку'));
+    await paused.received;
+    const token: unknown = await (await shown.server.transport().login(shown.email, password)).json();
+
+    await act(async () => {
+      await shown.session.adopt(token);
+    });
+    paused.resume();
+    await settled();
+
+    expect(joinWrites(shown.server)).toHaveLength(1);
+    expect(shown.tabs.only().closed).toBe(true);
+    expect(shown.tabs.only().visited).toEqual([]);
+    expect(await screen.findByRole('button', { name: 'Подключиться к уроку' })).toBeTruthy();
   });
 
   test('an unloaded page closes the held tab of every control', async () => {

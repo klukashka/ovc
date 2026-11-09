@@ -41,6 +41,13 @@ const composerMaximumRows = 8;
 
 const bottomTolerance = 24;
 
+function fitComposerRows(field: HTMLTextAreaElement): void {
+  field.rows = 1;
+  while (field.scrollHeight > field.clientHeight && field.rows < composerMaximumRows) {
+    field.rows += 1;
+  }
+}
+
 export const MessageKeyContext = createContext<() => string>(() => crypto.randomUUID());
 
 function messageIsEditable(message: Message | undefined, writable: boolean, now: number): boolean {
@@ -133,6 +140,7 @@ export function Conversation({
   });
   const messages = useMemo(() => [...(query.data?.items ?? [])].sort((a, b) => a.seq - b.seq), [query.data]);
   const historyPane = useRef<HTMLDivElement>(null);
+  const historyContent = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
   const lastShown = useRef<string | null>(null);
   const rememberBottom = (): void => {
@@ -160,16 +168,41 @@ export function Conversation({
       return;
     }
     const keepBottom = atBottom.current;
-    field.rows = 1;
-    while (field.scrollHeight > field.clientHeight && field.rows < composerMaximumRows) {
-      field.rows += 1;
-    }
+    fitComposerRows(field);
     const pane = historyPane.current;
     if (keepBottom && pane !== null) {
       pane.scrollTop = pane.scrollHeight;
       atBottom.current = true;
     }
   }, [draft]);
+  const unavailable = query.isError && asApiError(query.error).status === 404;
+  useEffect(() => {
+    const pane = historyPane.current;
+    const content = historyContent.current;
+    if (unavailable || pane === null || content === null) {
+      return;
+    }
+    const keepPinned = (): void => {
+      if (atBottom.current) {
+        pane.scrollTop = pane.scrollHeight;
+      }
+    };
+    const windowResized = (): void => {
+      const field = composer.current;
+      if (field !== null) {
+        fitComposerRows(field);
+      }
+      keepPinned();
+    };
+    window.addEventListener('resize', windowResized);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(keepPinned);
+    observer?.observe(pane);
+    observer?.observe(content);
+    return (): void => {
+      observer?.disconnect();
+      window.removeEventListener('resize', windowResized);
+    };
+  }, [unavailable]);
   useAttachmentExpiry(messages, refreshAttachments, isAlive);
   useEffect(() => {
     const first = messages[0];
@@ -231,6 +264,10 @@ export function Conversation({
       if (first !== undefined) {
         list.current?.querySelector<HTMLElement>(`[data-seq="${String(first.seq)}"]`)?.focus();
         olderThan.current = null;
+        const pane = historyPane.current;
+        if (pane !== null) {
+          atBottom.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight <= bottomTolerance;
+        }
       }
     }
   }, [messages, loadingOlder]);
@@ -281,12 +318,17 @@ export function Conversation({
     olderRequest.current = request;
     try {
       const page = await history.older(request.signal);
-      if (page === null || !isAlive() || request.signal.aborted) return;
+      if (page === null || !isAlive() || request.signal.aborted) {
+        rememberBottom();
+        return;
+      }
       const first = page.items.at(-1);
-      if (first !== undefined) oldestShown.current = Math.min(oldestShown.current ?? first.seq, first.seq);
+      if (first === undefined) rememberBottom();
+      else oldestShown.current = Math.min(oldestShown.current ?? first.seq, first.seq);
     } catch (error: unknown) {
       if (isAlive() && !request.signal.aborted) {
         olderThan.current = null;
+        rememberBottom();
         const refusal = asApiError(error);
         if (refusal.status === 404) onUnavailable();
         else setFailure(refusal);
@@ -475,7 +517,7 @@ export function Conversation({
       if (isAlive()) setBusy(false);
     }
   }
-  if (query.isError && asApiError(query.error).status === 404) return <FocusedNotice message={texts.unavailable} />;
+  if (unavailable) return <FocusedNotice message={texts.unavailable} />;
   return (
     <section className="flex min-w-0 flex-col gap-3 desktop:h-full desktop:min-h-0">
       <h2 ref={heading} tabIndex={-1} dir="auto" className="text-heading outline-none">
@@ -509,107 +551,110 @@ export function Conversation({
       <div
         ref={historyPane}
         onScroll={rememberBottom}
-        className="flex min-w-0 flex-col gap-3 desktop:min-h-0 desktop:flex-1 desktop:overflow-y-auto"
+        className="flex min-w-0 flex-col desktop:min-h-0 desktop:flex-1 desktop:overflow-y-auto"
       >
-        {query.isPending ? <DelayedLoading /> : null}
-        {conflict?.error != null ||
-        channelError !== null ||
-        (conflict === null && query.isError && asApiError(query.error).status !== 404) ? (
-          <LoadFailed
-            error={conflict?.error ?? channelError ?? asApiError(query.error)}
-            onRetry={() => {
-              if (conflict !== null && editing !== null) void refreshConflict(editing.id, conflict.generation);
-              else if (channelError !== null) void refreshChannel();
-              else void query.refetch();
-            }}
+        <div ref={historyContent} className="flex min-w-0 shrink-0 flex-col gap-3">
+          {query.isPending ? <DelayedLoading /> : null}
+          {conflict?.error != null ||
+          channelError !== null ||
+          (conflict === null && query.isError && asApiError(query.error).status !== 404) ? (
+            <LoadFailed
+              error={conflict?.error ?? channelError ?? asApiError(query.error)}
+              onRetry={() => {
+                if (conflict !== null && editing !== null) void refreshConflict(editing.id, conflict.generation);
+                else if (channelError !== null) void refreshChannel();
+                else void query.refetch();
+              }}
+            />
+          ) : null}
+          {query.data?.next_cursor != null ? (
+            <button
+              type="button"
+              className={quietButtonClass}
+              aria-disabled={loadingOlder || query.isFetching}
+              onClick={() => {
+                if (!loadingOlder && !query.isFetching) {
+                  atBottom.current = false;
+                  olderThan.current = messages[0]?.seq ?? null;
+                  void showOlder();
+                }
+              }}
+            >
+              {texts.older}
+            </button>
+          ) : null}
+          {query.isSuccess && messages.length === 0 ? <p>{texts.noMessages}</p> : null}
+          <ol ref={list} aria-label={texts.history} className="flex flex-col border-t border-border">
+            {messages.map((message, index) => {
+              const day = formatDate(message.created_at, me.language, me.timezone);
+              const previous = messages[index - 1];
+              const firstOfDay =
+                previous === undefined || formatDate(previous.created_at, me.language, me.timezone) !== day;
+              const editable =
+                message.own &&
+                channel.writable &&
+                scheduler.wallClock() - Date.parse(message.created_at) <= 24 * 60 * 60 * 1000;
+              return (
+                <li
+                  key={message.id}
+                  data-row={message.id}
+                  data-seq={message.seq}
+                  tabIndex={-1}
+                  className="border-b border-border px-1 py-3 outline-none focus-visible:ring-2"
+                >
+                  {firstOfDay ? <p className="mb-2 text-small text-text-muted">{day}</p> : null}
+                  <div className="flex items-center justify-between gap-2">
+                    <span dir="auto" className="text-strong">
+                      {message.own ? texts.you : (message.sender_label ?? texts.deletedUser)}
+                    </span>
+                    {!message.deleted && !message.erased && (message.own || me.role === 'tutor') ? (
+                      <MessageMenu
+                        texts={texts}
+                        editable={editable}
+                        busy={busy}
+                        onEdit={() => {
+                          guard.run(() => {
+                            editGeneration.current += 1;
+                            conflictRefresh.current?.cancel();
+                            conflictRefresh.current = null;
+                            setConflict(null);
+                            if (editing === null) savedDraft.current = draft;
+                            setEditing(message);
+                            setDraft(message.body ?? '');
+                            setFailure(null);
+                            composer.current?.focus();
+                          });
+                        }}
+                        onDelete={() => {
+                          deletion.run(() => {
+                            void remove(message);
+                          });
+                        }}
+                      />
+                    ) : null}
+                  </div>
+                  {message.deleted ? (
+                    <p>{texts.deleted}</p>
+                  ) : message.erased ? (
+                    <p>{texts.erased}</p>
+                  ) : (
+                    <MessageBody body={message.body ?? ''} />
+                  )}
+                  <Attachments message={message} texts={texts} refresh={refreshAttachments} />
+                  {message.edited_at === null || message.deleted || message.erased ? null : (
+                    <span className="text-small text-text-muted">{texts.edited}</span>
+                  )}
+                  {message.sent_before_reclaim ? <p className="text-small">{texts.reclaimed}</p> : null}
+                </li>
+              );
+            })}
+          </ol>
+          <TypingIndicator
+            presence={presence}
+            someoneTyping={texts.someoneTyping}
+            namedTyping={(name) => texts.namedTyping.replace('{name}', name)}
           />
-        ) : null}
-        {query.data?.next_cursor != null ? (
-          <button
-            type="button"
-            className={quietButtonClass}
-            aria-disabled={loadingOlder || query.isFetching}
-            onClick={() => {
-              if (!loadingOlder && !query.isFetching) {
-                olderThan.current = messages[0]?.seq ?? null;
-                void showOlder();
-              }
-            }}
-          >
-            {texts.older}
-          </button>
-        ) : null}
-        {query.isSuccess && messages.length === 0 ? <p>{texts.noMessages}</p> : null}
-        <ol ref={list} aria-label={texts.history} className="flex flex-col border-t border-border">
-          {messages.map((message, index) => {
-            const day = formatDate(message.created_at, me.language, me.timezone);
-            const previous = messages[index - 1];
-            const firstOfDay =
-              previous === undefined || formatDate(previous.created_at, me.language, me.timezone) !== day;
-            const editable =
-              message.own &&
-              channel.writable &&
-              scheduler.wallClock() - Date.parse(message.created_at) <= 24 * 60 * 60 * 1000;
-            return (
-              <li
-                key={message.id}
-                data-row={message.id}
-                data-seq={message.seq}
-                tabIndex={-1}
-                className="border-b border-border px-1 py-3 outline-none focus-visible:ring-2"
-              >
-                {firstOfDay ? <p className="mb-2 text-small text-text-muted">{day}</p> : null}
-                <div className="flex items-center justify-between gap-2">
-                  <span dir="auto" className="text-strong">
-                    {message.own ? texts.you : (message.sender_label ?? texts.deletedUser)}
-                  </span>
-                  {!message.deleted && !message.erased && (message.own || me.role === 'tutor') ? (
-                    <MessageMenu
-                      texts={texts}
-                      editable={editable}
-                      busy={busy}
-                      onEdit={() => {
-                        guard.run(() => {
-                          editGeneration.current += 1;
-                          conflictRefresh.current?.cancel();
-                          conflictRefresh.current = null;
-                          setConflict(null);
-                          if (editing === null) savedDraft.current = draft;
-                          setEditing(message);
-                          setDraft(message.body ?? '');
-                          setFailure(null);
-                          composer.current?.focus();
-                        });
-                      }}
-                      onDelete={() => {
-                        deletion.run(() => {
-                          void remove(message);
-                        });
-                      }}
-                    />
-                  ) : null}
-                </div>
-                {message.deleted ? (
-                  <p>{texts.deleted}</p>
-                ) : message.erased ? (
-                  <p>{texts.erased}</p>
-                ) : (
-                  <MessageBody body={message.body ?? ''} />
-                )}
-                <Attachments message={message} texts={texts} refresh={refreshAttachments} />
-                {message.edited_at === null || message.deleted || message.erased ? null : (
-                  <span className="text-small text-text-muted">{texts.edited}</span>
-                )}
-                {message.sent_before_reclaim ? <p className="text-small">{texts.reclaimed}</p> : null}
-              </li>
-            );
-          })}
-        </ol>
-        <TypingIndicator
-          presence={presence}
-          someoneTyping={texts.someoneTyping}
-          namedTyping={(name) => texts.namedTyping.replace('{name}', name)}
-        />
+        </div>
       </div>
       {read.failed ? (
         <button type="button" className={quietButtonClass} onClick={read.retry}>

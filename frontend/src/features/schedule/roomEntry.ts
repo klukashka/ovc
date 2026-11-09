@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { type ActionState, refusedBy } from '../../components/ui/action.ts';
 import { refusalText } from '../../components/ui/Refusal.tsx';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
-import type { Me } from '../../lib/api/session.ts';
+import { type Me, useSession } from '../../lib/api/session.ts';
 import type { LessonDetail } from './api.ts';
 import { formatClock } from './calendarFormat.ts';
 import { calendarKey, lessonKey } from './keys.ts';
@@ -71,6 +71,7 @@ export function useRoomEntry(lessonId: string): {
   readonly observeLesson: (lesson: Pick<LessonDetail, 'status' | 'room_open'>) => void;
 } {
   const client = useApiClient();
+  const signIn = useSession();
   const queryClient = useQueryClient();
   const openTab = useOpenRoomTab();
   const [session, setSession] = useState<RoomSession>({ kind: 'outside' });
@@ -105,12 +106,19 @@ export function useRoomEntry(lessonId: string): {
     const current: Attempt = { tab };
     attempt.current = current;
     setSession({ kind: 'joining' });
+    const epoch = signIn.currentEpoch();
     const answered = await client
       .POST(path, { params: { path: { id: lessonId } } })
       .then((answer) => ({ answer, thrown: null }))
       .catch((thrown: unknown) => ({ answer: null, thrown }));
     if (attempt.current !== current) {
       tab?.close();
+      return { kind: 'abandoned' };
+    }
+    if (signIn.currentEpoch() !== epoch) {
+      attempt.current = null;
+      tab?.close();
+      setSession({ kind: 'outside' });
       return { kind: 'abandoned' };
     }
     attempt.current = null;

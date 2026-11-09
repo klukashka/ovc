@@ -212,15 +212,13 @@ function StudentRow({ card }: { readonly card: StudentCardSummary }): ReactEleme
             >
               {card.display_name}
             </Link>
-            <span className={`truncate text-small text-text-muted ${narrowOnlyClass}`}>
-              {email ?? t('students.noEmail')}
-            </span>
+            <span className={`text-small text-text-muted ${narrowOnlyClass}`}>{email ?? t('students.noEmail')}</span>
             {lesson === null ? null : <span className={narrowOnlyClass}>{lesson}</span>}
           </span>
         </span>
       </th>
       <td className={secondaryCellClass}>
-        <span className="block truncate text-small text-text-muted">{email ?? t('students.noEmail')}</span>
+        <span className="block text-small text-text-muted">{email ?? t('students.noEmail')}</span>
       </td>
       <td className={cellClass}>
         <StateBadge state={card.state} />

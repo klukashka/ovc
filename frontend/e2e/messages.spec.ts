@@ -499,6 +499,20 @@ test.describe('Messages on a computer', () => {
     await expect(page.getByRole('heading', { level: 2, name: 'Anna', exact: true })).toBeFocused();
   });
 
+  test('a history shown at its bottom stays at its bottom when the window gets shorter', async ({
+    page,
+    deployment,
+  }) => {
+    const { tutor, channel } = await longHistory(deployment);
+    await signInThroughTheApi(page, tutor);
+    await page.goto(`/messages/${channel}`);
+    await expect(messages(page).getByText(/History message 12$/)).toBeInViewport();
+
+    await page.setViewportSize({ width: 1440, height: 600 });
+
+    await expect(messages(page).getByText(/History message 12$/)).toBeInViewport();
+  });
+
   test('a message that arrives below the history pane edge stays unread until it is scrolled into view', async ({
     page,
     deployment,

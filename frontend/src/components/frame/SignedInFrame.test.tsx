@@ -134,6 +134,14 @@ afterEach(() => {
   cleanup();
 });
 
+function topBar(): HTMLElement {
+  const bar = screen.getAllByRole('banner').find((element) => element.closest('main') === null);
+  if (bar === undefined) {
+    throw new Error('the frame shows no top bar');
+  }
+  return bar;
+}
+
 describe('the signed-in frame of a student', () => {
   test('shows the student sections in English and no tutor sections', async () => {
     await renderFrame(account('student'), '/homework', true, 'en');
@@ -165,7 +173,7 @@ describe('the signed-in frame of a student', () => {
     const heading = await screen.findByRole('heading', { level: 1, name: 'Уведомления' });
 
     expect(heading).toBeDefined();
-    expect(within(screen.getByRole('banner')).getByRole('button', { name: 'Уведомления' })).toBeDefined();
+    expect(within(topBar()).getByRole('button', { name: 'Уведомления' })).toBeDefined();
     const overlay = screen.getByRole('dialog', { hidden: true });
     expect(within(overlay).getByRole('link', { name: 'Уведомления', hidden: true }).getAttribute('href')).toBe(
       '/notifications',
@@ -177,7 +185,7 @@ describe('the signed-in frame of a student', () => {
   test('below 1024 px a title override replaces the route title in the top bar', async () => {
     await renderFrame(account('student'), '/homework', false, 'ru', 'page.notFound');
 
-    const banner = screen.getByRole('banner');
+    const banner = topBar();
 
     expect(within(banner).getByText('Страница не найдена')).toBeDefined();
     expect(within(banner).queryByText('Задания')).toBeNull();
@@ -199,7 +207,7 @@ describe('the signed-in frame of an unconfirmed student', () => {
   test('below 1024 px the top bar has no notifications bell', async () => {
     await renderFrame(account('student', 'unverified'), '/homework', false);
 
-    const banner = screen.getByRole('banner');
+    const banner = topBar();
 
     expect(within(banner).queryByRole('button', { name: /Уведомления/ })).toBeNull();
     expect(within(banner).queryByRole('link', { name: /Уведомления/ })).toBeNull();
@@ -266,7 +274,7 @@ describe('the notifications bell', () => {
 
   test('below 1024 px the top bar bell opens the panel on its heading and Escape returns focus to the bell', async () => {
     await renderFrame(account('student'), '/homework', false);
-    const bell = within(screen.getByRole('banner')).getByRole('button', { name: 'Уведомления' });
+    const bell = within(topBar()).getByRole('button', { name: 'Уведомления' });
     const heading = await openedPanelHeading(bell);
 
     await act(async () => {

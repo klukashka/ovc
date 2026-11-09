@@ -46,9 +46,26 @@ function PageWhoseActionArrives({ action }: { readonly action: ActionSwitch }): 
   );
 }
 
-async function renderPage(action: ActionSwitch): Promise<HTMLElement> {
+function PageWhoseUndefinedActionArrives({ action }: { readonly action: ActionSwitch }): ReactElement {
+  const shown = useSyncExternalStore(action.subscribe, action.shown);
+  return (
+    <Page
+      headingText="Уведомления"
+      action={shown ? <button type="button">Отметить все прочитанными</button> : undefined}
+    >
+      <p>Строки</p>
+    </Page>
+  );
+}
+
+async function renderPage(action: ActionSwitch, startsUndefined = false): Promise<HTMLElement> {
   const i18n = await createI18n('ru');
-  const router = createMemoryRouter([{ path: '*', element: <PageWhoseActionArrives action={action} /> }]);
+  const element = startsUndefined ? (
+    <PageWhoseUndefinedActionArrives action={action} />
+  ) : (
+    <PageWhoseActionArrives action={action} />
+  );
+  const router = createMemoryRouter([{ path: '*', element }]);
   render(
     <I18nextProvider i18n={i18n}>
       <RouterProvider router={router} />
@@ -68,6 +85,20 @@ describe('page header', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Отметить все прочитанными' })).toBeDefined();
+    expect(document.activeElement).toBe(heading);
+  });
+
+  test('an action slot that goes from undefined to an element keeps the same heading element focused', async () => {
+    const action = actionSwitch();
+    const heading = await renderPage(action, true);
+    heading.focus();
+
+    act(() => {
+      action.show();
+    });
+
+    expect(screen.getByRole('button', { name: 'Отметить все прочитанными' })).toBeDefined();
+    expect(screen.getByRole('heading', { level: 1, name: 'Уведомления' })).toBe(heading);
     expect(document.activeElement).toBe(heading);
   });
 });
