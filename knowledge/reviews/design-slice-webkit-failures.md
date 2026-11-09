@@ -39,3 +39,17 @@ The first gate of step D2a (commit `1b6b99f` on base `dc5ab40`, tested tree `d20
 | Test | Browser | Phase | Evidence | Repeat alone |
 |---|---|---|---|---|
 | `message-attachments.spec.ts` › pilot-3 › steps 8–11 Anna closes her tabs and receives one digest for one unread group message without a duplicate | WebKit | journey, route `messages` | Three HTTP errors with their console errors on the Messages page, the same signature as the step L1 entry above | 10 of 10 passed |
+
+## A merge gate of the lesson room focus and Today settle test fix
+
+| Test | Browser | Phase | Evidence | Repeat alone |
+|---|---|---|---|---|
+| `schedule.spec.ts` › pilot-1 › step 6 Maria schedules eight lessons on Tuesdays and Thursdays, which Anna sees in Berlin time | WebKit | sign-in through the API | `pageSettled` waited for `main h1` until the 30 s test timeout ended the page; the change touched only a component test of the lesson room and the overlay smoke tests | Not repeated alone; the owner approved one gate rerun on 2026-11-09, which passed on the same tree `6aae58aa3e6f0a00afebd5d9886765b94be9820c` |
+
+The same class as the WebKit page load failures above, carried into slice 10 with them.
+
+## Failures seen while preparing step D4 (not in a merge gate)
+
+| Test | Browser | Phase | Evidence | Repeat alone |
+|---|---|---|---|---|
+| `message-attachments.spec.ts` › pilot-3 › steps 8–11 Anna closes her tabs and receives one digest for one unread group message without a duplicate | WebKit | journey, route `messages` | Four HTTP errors with four console errors on the Messages page, the signature of the step L1 and step D2b entries; step D4 does not touch Messages | Not repeated alone; the whole run otherwise passed (1442 tests) |

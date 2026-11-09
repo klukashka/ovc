@@ -207,7 +207,7 @@ async function endedSeriesWithNewLessonOpen(
   await page.goto(lessonAddress(secondLessonOf(series)));
   await endSeriesButton(page).click();
   await endSeriesDialog(page).getByRole('button', { name: 'Завершить серию' }).click();
-  await newLessonDialog(page).getByLabel('Поиск ученика или группы').waitFor();
+  await newLessonDialog(page).getByRole('button', { name: 'Изменить', exact: true }).waitFor();
   return { seed, series };
 }
 
@@ -439,9 +439,9 @@ test.describe('lesson page for a tutor in Russian', () => {
     await endSeriesDialog(page).getByRole('button', { name: 'Завершить серию' }).click();
 
     const dialog = newLessonDialog(page);
-    await expect(dialog.getByLabel('Поиск ученика или группы')).toBeFocused();
+    await expect(dialog.getByRole('button', { name: 'Изменить', exact: true })).toBeFocused();
     await expect(page.getByText(changedMeanwhile)).toHaveCount(0);
-    await expect(dialog.getByRole('radio', { name: 'Анна', exact: true })).toBeChecked();
+    await expect(dialog.getByRole('button', { name: 'Изменить', exact: true })).toHaveAccessibleDescription('Анна');
     await expect(dialog.getByLabel('Дата', { exact: true })).toHaveValue(series.secondDate);
     await expect(dialog.getByLabel('Время начала')).toHaveValue('18:00');
     await expect(dialog.getByLabel('Длительность, минут')).toHaveValue('90');
@@ -468,8 +468,10 @@ test.describe('lesson page for a tutor in Russian', () => {
     await endSeriesDialog(page).getByRole('button', { name: 'Завершить серию' }).click();
 
     const dialog = newLessonDialog(page);
-    await expect(dialog.getByLabel('Поиск ученика или группы')).toBeFocused();
-    await expect(dialog.getByRole('radio', { name: 'Вечерняя группа', exact: true })).toBeChecked();
+    await expect(dialog.getByRole('button', { name: 'Изменить', exact: true })).toBeFocused();
+    await expect(dialog.getByRole('button', { name: 'Изменить', exact: true })).toHaveAccessibleDescription(
+      'Вечерняя группа',
+    );
     await expect(dialog.getByLabel('Название')).toHaveValue('Урок Вечерняя группа');
     await expect(dialog.getByLabel('Время начала')).toHaveValue('18:00');
     expect(await checkedWeekdays(dialog)).toEqual(series.weekdays);
@@ -516,7 +518,7 @@ test.describe('lesson page for a tutor in Russian', () => {
   }) => {
     const { seed, series } = await endSeriesInReykjavik(page, deployment, control.now);
     await endSeriesDialog(page).getByRole('button', { name: 'Завершить серию' }).click();
-    await newLessonDialog(page).getByLabel('Поиск ученика или группы').waitFor();
+    await newLessonDialog(page).getByRole('button', { name: 'Изменить', exact: true }).waitFor();
 
     await newLessonDialog(page).getByRole('button', { name: 'Запланировать' }).click();
 

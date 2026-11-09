@@ -118,7 +118,7 @@ test.describe('Today', () => {
     await expect(row).toHaveCount(1);
     await expect(row).toContainText('Conversation practice');
     await expect(row).toContainText('Vera Student');
-    await expect(row).toContainText('Scheduled');
+    await expect(row).not.toContainText('Scheduled');
     await expect(row).toContainText(when.start);
     await expect(row).toHaveAttribute('href', /^\/lessons\//);
     await expect(page.getByRole('main')).not.toContainText('Tomorrow lesson');

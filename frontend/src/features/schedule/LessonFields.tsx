@@ -1,4 +1,4 @@
-import { type ReactElement, useId } from 'react';
+import { type ReactElement, type RefObject, useId } from 'react';
 
 import { fieldClass } from '../../components/ui/Form.tsx';
 
@@ -16,6 +16,7 @@ export function InputField({
   max,
   step,
   alignRows = false,
+  inputRef,
 }: {
   readonly label: string;
   readonly name: string;
@@ -27,6 +28,7 @@ export function InputField({
   readonly max?: number;
   readonly step?: number;
   readonly alignRows?: boolean;
+  readonly inputRef?: RefObject<HTMLInputElement | null>;
 }): ReactElement {
   const inputId = useId();
   const errorId = useId();
@@ -37,6 +39,7 @@ export function InputField({
         {label}
       </label>
       <input
+        ref={inputRef}
         id={inputId}
         name={name}
         type={type}

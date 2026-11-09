@@ -10,6 +10,7 @@ import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realt
 import {
   type LocalDate,
   addDays,
+  cancelThisLesson,
   isoWeekday,
   lessonAddresses,
   lessonLinks,
@@ -18,6 +19,7 @@ import {
   moscowInstant,
   nextWeekday,
   scheduleLessons,
+  scheduleLessonsWithIds,
   seriesDates,
   setTimezone,
 } from './schedule.ts';
@@ -89,7 +91,7 @@ async function fillOneOffLesson(
   date: LocalDate,
   start: string,
 ): Promise<void> {
-  await dialog.getByRole('radio', { name: student }).check();
+  await dialog.getByRole('button', { name: student, exact: true }).click();
   await dialog.getByLabel('Дата', { exact: true }).fill(date);
   await dialog.getByLabel('Время начала').fill(start);
 }
@@ -217,7 +219,7 @@ test.describe('schedule for a tutor in Russian', () => {
     });
   }
 
-  test('schedule › next week keeps the shown week and its scroll position while the next week loads', async ({
+  test('schedule › next week keeps the shown week and its scroll position while the next week loads, then opens at its lesson', async ({
     page,
     deployment,
     control,
@@ -230,17 +232,66 @@ test.describe('schedule for a tutor in Russian', () => {
     const weekGrid = 'section[aria-label="Уроки недели"]';
     const hours = page.locator(`${weekGrid} [data-part="hours"]`);
     const scrolledTo = await hours.evaluate((element) => {
-      element.scrollTop = element.scrollHeight / 2;
+      element.scrollTop = 0;
       return element.scrollTop;
     });
     await recordShownRegion(page, weekGrid);
+    let releaseNextWeek = (): void => undefined;
+    const nextWeekReleased = new Promise<void>((resolve) => {
+      releaseNextWeek = resolve;
+    });
+    await page.route('**/api/v1/calendar?**', async (route) => {
+      await nextWeekReleased;
+      await route.continue();
+    });
 
     await page.getByRole('button', { name: 'Следующая неделя' }).click();
+    await page.locator(`[aria-busy="true"]:has(${weekGrid})`).waitFor();
+    const scrollWhileLoading = await hours.evaluate((element) => element.scrollTop);
+    releaseNextWeek();
 
-    await expect(lessonLinks(page).filter({ hasText: conversationTitle })).toBeVisible();
+    const lesson = lessonLinks(page).filter({ hasText: conversationTitle });
+    await expect(lesson).toBeVisible();
     await expect(page.locator(`[aria-busy]:has(${weekGrid})`)).toHaveAttribute('aria-busy', 'false');
-    expect(await hours.evaluate((element) => element.scrollTop)).toBe(scrolledTo);
+    expect(scrollWhileLoading).toBe(scrolledTo);
+    await expect(lesson).toBeInViewport();
+    expect(await hours.evaluate((element) => element.scrollTop)).toBeGreaterThan(scrolledTo);
     expect(await shownRegion(page)).toEqual({ busy: true, replaced: false });
+  });
+
+  test('schedule › at 1440 × 900 the week opens at its only lesson at 20:30 without scrolling', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { maria, cardId } = await tutorWithStudent(deployment);
+    const date = await moscowTomorrow(control.now);
+    await scheduleLessons(deployment, maria, {
+      relationship_id: cardId,
+      title: 'Вечерний урок',
+      date,
+      start: '20:30',
+      duration_minutes: 60,
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await signInThroughTheApi(page, maria);
+
+    await page.goto(weekAddress(date));
+    const evening = lessonLinks(page).filter({ hasText: 'Вечерний урок' });
+    await evening.waitFor();
+    const shownWithoutScrolling = await evening.evaluate((link) => {
+      const hours = link.closest('[data-part="hours"]');
+      if (hours === null) throw new Error('the lesson is not in the hours area');
+      const pane = hours.getBoundingClientRect();
+      const block = link.getBoundingClientRect();
+      return block.top >= pane.top && block.bottom <= pane.bottom && block.bottom <= window.innerHeight;
+    });
+    const blockText = await evening.innerText();
+    await evening.click();
+
+    expect(shownWithoutScrolling).toBe(true);
+    expect(blockText).not.toContain('Запланирован');
+    await expect(page.getByRole('main').getByText('Запланирован', { exact: true })).toBeVisible();
   });
 
   test('schedule › Ends on starts from the first date the tutor chose', async ({ page, deployment, control }) => {
@@ -499,7 +550,7 @@ test.describe('schedule for a tutor in Russian', () => {
     }
   });
 
-  test('schedule › a 15-minute lesson at 1024 px shows its time and status icon inside a 24 px link', async ({
+  test('schedule › at 1024 px a 15-minute lesson shows its time, and a cancelled one also its status icon, inside a 24 px link', async ({
     page,
     deployment,
     control,
@@ -507,25 +558,44 @@ test.describe('schedule for a tutor in Russian', () => {
     const { maria, cardId } = await tutorWithStudent(deployment);
     const date = await moscowDayWhoseNextDayIsInTheSameWeek(control.now);
     await scheduleShortLessons(deployment, maria, cardId, date);
+    const [cancelled] = await scheduleLessonsWithIds(deployment, maria, {
+      relationship_id: cardId,
+      title: 'Отменённый урок',
+      date,
+      start: '12:00',
+      duration_minutes: 15,
+    });
+    if (cancelled === undefined) throw new Error('the cancelled lesson was not scheduled');
+    await cancelThisLesson(deployment, maria, cancelled.id);
     await page.setViewportSize({ width: 1024, height: 800 });
     await signInThroughTheApi(page, maria);
 
     await page.goto(weekAddress(date));
 
     await expect(page.getByRole('navigation', { name: 'Основная навигация' })).toBeVisible();
-    const link = lessonLinks(page).filter({ hasText: 'Короткий урок в 10:00' });
-    await link.scrollIntoViewIfNeeded();
-    const [linkBox, timeBox, statusBox] = await Promise.all([
-      link.boundingBox(),
-      link.locator('[data-part="time"]').boundingBox(),
-      link.locator('[data-part="status"]').boundingBox(),
+    const scheduled = lessonLinks(page).filter({ hasText: 'Короткий урок в 10:00' });
+    const struck = lessonLinks(page).filter({ hasText: 'Отменённый урок' });
+    await scheduled.scrollIntoViewIfNeeded();
+    const [scheduledBox, scheduledTimeBox] = await Promise.all([
+      scheduled.boundingBox(),
+      scheduled.locator('[data-part="time"]').boundingBox(),
     ]);
-    expect(linkBox?.height ?? 0).toBeGreaterThanOrEqual(24);
-    for (const part of [timeBox, statusBox]) {
+    await struck.scrollIntoViewIfNeeded();
+    const [struckBox, struckTimeBox, struckStatusBox] = await Promise.all([
+      struck.boundingBox(),
+      struck.locator('[data-part="time"]').boundingBox(),
+      struck.locator('[data-part="status"]').boundingBox(),
+    ]);
+    expect(scheduledBox?.height ?? 0).toBeGreaterThanOrEqual(24);
+    expect(isInside(scheduledTimeBox, scheduledBox)).toBe(true);
+    await expect(scheduled.locator('[data-part="status"]')).toHaveCount(0);
+    await expect(scheduled).toHaveAttribute('title', /Короткий урок в 10:00$/);
+    expect(struckBox?.height ?? 0).toBeGreaterThanOrEqual(24);
+    for (const part of [struckTimeBox, struckStatusBox]) {
       expect(part).not.toBeNull();
-      expect(isInside(part, linkBox)).toBe(true);
+      expect(isInside(part, struckBox)).toBe(true);
     }
-    await expect(link).toHaveAttribute('title', /Короткий урок в 10:00 · Запланирован/);
+    await expect(struck).toHaveAttribute('title', /Отменённый урок · Отменён/);
   });
 
   test('schedule › a focused lesson keeps focus when the week switches between the grid and the list', async ({
@@ -567,6 +637,92 @@ test.describe('schedule for a tutor in Russian', () => {
     await expect(page.getByRole('button', { name: 'Новый урок' })).toBeFocused();
     await expect(page.getByRole('status').filter({ hasText: 'Урок запланирован' })).toBeVisible();
     await expect(lessonLinks(page).filter({ hasText: '12:00–13:00' })).toContainText('Анна');
+  });
+
+  test('schedule › choosing a student collapses the picker, and Change brings the search back with focus', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { maria } = await tutorWithStudent(deployment);
+    const date = await moscowTomorrow(control.now);
+    await signInThroughTheApi(page, maria);
+    await page.goto(weekAddress(date));
+    const dialog = await openNewLesson(page);
+    const change = dialog.getByRole('button', { name: 'Изменить', exact: true });
+
+    await dialog.getByRole('button', { name: 'Анна', exact: true }).click();
+    const collapsedFocus = await change.evaluate((element) => element === document.activeElement);
+    const searchWhileCollapsed = await dialog.getByLabel('Поиск ученика или группы').count();
+    await change.click();
+
+    expect(collapsedFocus).toBe(true);
+    expect(searchWhileCollapsed).toBe(0);
+    await expect(dialog.getByLabel('Поиск ученика или группы')).toBeFocused();
+    await expect(dialog.getByRole('button', { name: 'Анна', exact: true })).toBeVisible();
+  });
+
+  test('schedule › after Change, submitting from the search asks for an audience instead of scheduling the previous one', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { maria } = await tutorWithStudent(deployment);
+    const date = await moscowTomorrow(control.now);
+    const lessonWrites: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/v1/lessons') {
+        lessonWrites.push(request.url());
+      }
+    });
+    await signInThroughTheApi(page, maria);
+    await page.goto(weekAddress(date));
+    const dialog = await openNewLesson(page);
+    await fillOneOffLesson(dialog, 'Анна', date, '12:00');
+    await dialog.getByRole('button', { name: 'Изменить', exact: true }).click();
+
+    await dialog.getByLabel('Поиск ученика или группы').press('Enter');
+
+    await expect(dialog.getByText('Выберите ученика или группу.')).toBeVisible();
+    await expect(dialog.getByLabel('Поиск ученика или группы')).toBeFocused();
+    await expect(dialog).toBeVisible();
+    expect(lessonWrites).toEqual([]);
+  });
+
+  test('schedule › a duration preset and a free value set the saved length, and Add description opens its field', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { maria } = await tutorWithStudent(deployment);
+    const date = await moscowTomorrow(control.now);
+    await signInThroughTheApi(page, maria);
+    await page.goto(weekAddress(date));
+    const first = await openNewLesson(page);
+    await fillOneOffLesson(first, 'Анна', date, '12:00');
+    const dateFits = await first
+      .getByLabel('Дата', { exact: true })
+      .evaluate((element) => element.scrollWidth <= element.clientWidth);
+    await first.getByRole('button', { name: '90 мин', exact: true }).click();
+    await first.getByRole('button', { name: 'Добавить описание', exact: true }).click();
+    const descriptionFocused = await first
+      .getByLabel('Описание', { exact: true })
+      .evaluate((element) => element === document.activeElement);
+    await first.getByLabel('Описание', { exact: true }).fill('Повторение глаголов');
+    await first.getByRole('button', { name: 'Запланировать' }).click();
+    await first.waitFor({ state: 'hidden' });
+    const second = await openNewLesson(page);
+    await fillOneOffLesson(second, 'Анна', date, '15:00');
+    await second.getByLabel('Длительность, минут').fill('75');
+    await second.getByRole('button', { name: 'Запланировать' }).click();
+    await second.waitFor({ state: 'hidden' });
+
+    expect(dateFits).toBe(true);
+    expect(descriptionFocused).toBe(true);
+    await expect(lessonLinks(page).filter({ hasText: '12:00–13:30' })).toHaveCount(1);
+    await expect(lessonLinks(page).filter({ hasText: '15:00–16:15' })).toHaveCount(1);
+    await lessonLinks(page).filter({ hasText: '12:00–13:30' }).click();
+    await expect(page.getByRole('main').getByText('Повторение глаголов')).toBeVisible();
   });
 
   test('schedule › month shows "+{n} more" with 44 px targets', async ({ page, deployment, control }) => {
@@ -651,7 +807,7 @@ test.describe('schedule for a tutor in English', () => {
     await page.goto('/schedule');
     await page.getByRole('button', { name: 'New lesson' }).click();
     const dialog = page.getByRole('dialog', { name: 'New lesson' });
-    const students = dialog.getByRole('list', { name: 'Students' }).getByRole('radio');
+    const students = dialog.getByRole('list', { name: 'Students' }).getByRole('button');
     await expect(students).toHaveCount(30);
 
     await dialog.getByRole('button', { name: 'Show more' }).click();
@@ -726,7 +882,7 @@ test.describe('pilot 1, the first lessons of Maria and Anna', () => {
     await signInThroughTheApi(page, maria);
     await page.goto(`/schedule?view=month&date=${firstDate}`);
     const dialog = await openNewLesson(page);
-    await dialog.getByRole('radio', { name: 'Анна' }).check();
+    await dialog.getByRole('button', { name: 'Анна', exact: true }).click();
     await dialog.getByLabel('Дата', { exact: true }).fill(firstDate);
     await dialog.getByLabel('Время начала').fill('18:00');
     await dialog.getByRole('checkbox', { name: 'Повторять каждую неделю' }).check();
@@ -864,7 +1020,7 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
 
     await page.locator(`[data-slot="${monday}T10:00"]`).click();
     const dialog = page.getByRole('dialog', { name: 'New lesson' });
-    await dialog.getByRole('radio', { name: 'Anna' }).check();
+    await dialog.getByRole('button', { name: 'Anna', exact: true }).click();
     await dialog.getByRole('button', { name: 'Schedule', exact: true }).click();
 
     await expect(dialog).toBeHidden();

@@ -43,8 +43,10 @@ async function showPicker(server: FakeAuthServer, scheduler: ManualScheduler): P
                 chosen={null}
                 preselected={null}
                 searchField={createRef<HTMLInputElement>()}
+                changeButton={createRef<HTMLButtonElement>()}
                 error={undefined}
                 onChoose={() => undefined}
+                onClear={() => undefined}
               />
             </I18nextProvider>
           </QueryClientProvider>

@@ -434,9 +434,9 @@ test.describe('in English with the dark theme', () => {
     await expect(opener).toBeFocused();
     const history = page.getByRole('list', { name: 'Lessons', exact: true }).getByRole('listitem');
     await expect(history).toHaveText([
-      /09:00–10:00.*Lesson.*Boris.*Scheduled/,
+      /09:00–10:00.*Lesson.*Boris$/,
       /12:00–13:00.*Lesson.*Boris.*Cancelled/,
-      /10:00–11:00.*Lesson.*Boris.*Scheduled/,
+      /10:00–11:00.*Lesson.*Boris$/,
     ]);
   });
 

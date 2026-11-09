@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
-import { type ReactElement, type RefObject, type SyntheticEvent, useId, useRef, useState } from 'react';
+import { type ReactElement, type RefObject, type SyntheticEvent, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { type Action, type ActionState, done, refusedBy, useAction } from '../../components/ui/action.ts';
@@ -11,6 +11,7 @@ import {
   fieldClass,
   fieldMessage,
   primaryButtonClass,
+  quietButtonClass,
   stringField,
   textButtonClass,
 } from '../../components/ui/Form.tsx';
@@ -40,6 +41,7 @@ export function nextFullHour(now: number, timeZone: string): LessonPrefill {
 }
 
 const defaultDurationMinutes = 60;
+const durationPresets = [45, 60, 90] as const;
 const weekdays = [1, 2, 3, 4, 5, 6, 7];
 
 type SeriesEnd = 'date' | 'count';
@@ -165,8 +167,92 @@ function SeriesFields({
   );
 }
 
+function DurationPresets({
+  durationField,
+}: {
+  readonly durationField: RefObject<HTMLInputElement | null>;
+}): ReactElement {
+  const { t } = useTranslation();
+  return (
+    <ul aria-label={t('newLesson.durationPresets')} className="flex flex-wrap gap-2">
+      {durationPresets.map((preset) => (
+        <li key={preset}>
+          <button
+            type="button"
+            onClick={() => {
+              if (durationField.current !== null) {
+                durationField.current.value = String(preset);
+              }
+            }}
+            className="min-h-11 rounded-md border border-border-strong px-3 text-small hover:border-accent"
+          >
+            {t('newLesson.minutes', { count: preset })}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function DescriptionField({ error }: { readonly error: string | undefined }): ReactElement {
+  const { t } = useTranslation();
+  const descriptionId = useId();
+  const errorId = useId();
+  const field = useRef<HTMLTextAreaElement>(null);
+  const [opened, setOpened] = useState(false);
+  const focusOnOpen = useRef(false);
+  const shown = opened || error !== undefined;
+
+  useEffect(() => {
+    if (focusOnOpen.current) {
+      field.current?.focus();
+    }
+    focusOnOpen.current = false;
+  });
+
+  if (!shown) {
+    return (
+      <p>
+        <button
+          type="button"
+          onClick={() => {
+            focusOnOpen.current = true;
+            setOpened(true);
+          }}
+          className={quietButtonClass}
+        >
+          {t('newLesson.addDescription')}
+        </button>
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={descriptionId} className="text-label">
+        {t('newLesson.description')}
+      </label>
+      <textarea
+        ref={field}
+        id={descriptionId}
+        name="description"
+        dir="auto"
+        rows={3}
+        maxLength={descriptionLimit}
+        aria-invalid={error === undefined ? undefined : true}
+        aria-describedby={error === undefined ? undefined : errorId}
+        className="min-h-22 w-full rounded-md border border-border-strong bg-field px-3 py-2 text-body-phone text-text tablet:text-body"
+      />
+      {error === undefined ? null : (
+        <p id={errorId} className="text-small text-danger">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function lessonBody(data: FormData, audience: Audience, title: string, repeat: boolean): NewLesson {
-  const description = stringField(data, 'description');
+  const description = data.has('description') ? stringField(data, 'description') : '';
   const target = audience.kind === 'group' ? { group_id: audience.id } : { relationship_id: audience.id };
   const lesson: NewLesson = {
     ...target,
@@ -191,12 +277,14 @@ function NewLessonForm({
   headingId,
   prefill,
   searchField,
+  changeButton,
   action,
   onCancel,
 }: {
   readonly headingId: string;
   readonly prefill: LessonPrefill;
   readonly searchField: RefObject<HTMLInputElement | null>;
+  readonly changeButton: RefObject<HTMLButtonElement | null>;
   readonly action: Action;
   readonly onCancel: () => void;
 }): ReactElement {
@@ -208,8 +296,8 @@ function NewLessonForm({
   const titleId = useId();
   const titleHintId = useId();
   const titleErrorId = useId();
-  const descriptionId = useId();
   const form = useRef<HTMLFormElement>(null);
+  const durationField = useRef<HTMLInputElement>(null);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const preselected = prefill.audience ?? null;
   const [audience, setAudience] = useState<Audience | null>(preselected);
@@ -223,7 +311,6 @@ function NewLessonForm({
   const [startedBy, setStartedBy] = useState<'submit' | 'anyway'>('submit');
   const error = action.state.kind === 'refused' ? action.state.error : null;
   const overlap = error?.code === 'lesson_overlap' ? error : action.busy && startedBy === 'anyway' ? lastOverlap : null;
-  const descriptionErrorId = useId();
   const descriptionError = fieldMessage(t, error, 'description');
   const refusal = lessonRefusal(t, action.state);
   const titleError = fieldMessage(t, error, 'title');
@@ -285,12 +372,19 @@ function NewLessonForm({
           chosen={audience}
           preselected={preselected}
           searchField={searchField}
+          changeButton={changeButton}
           error={missing === 'audience' ? t('newLesson.audienceRequired') : undefined}
           onChoose={(chosen) => {
             setAudience(chosen);
             setMissing(null);
             if (!titleEdited) {
               setTitle(defaultTitle(t, chosen));
+            }
+          }}
+          onClear={() => {
+            setAudience(null);
+            if (!titleEdited) {
+              setTitle(defaultTitle(t, null));
             }
           }}
         />
@@ -344,6 +438,7 @@ function NewLessonForm({
           <InputField
             label={t('newLesson.duration')}
             alignRows
+            inputRef={durationField}
             name="duration_minutes"
             type="number"
             defaultValue={String(prefill.durationMinutes ?? defaultDurationMinutes)}
@@ -353,6 +448,7 @@ function NewLessonForm({
             error={fieldMessage(t, error, 'duration_minutes')}
           />
         </div>
+        <DurationPresets durationField={durationField} />
         <label className="inline-flex min-h-11 items-center gap-2 text-strong">
           <input
             type="checkbox"
@@ -377,26 +473,7 @@ function NewLessonForm({
           />
         ) : null}
         {missing === 'weekdays' ? <FormAlert key={missingAttempts}>{t('newLesson.weekdaysRequired')}</FormAlert> : null}
-        <div className="flex flex-col gap-1">
-          <label htmlFor={descriptionId} className="text-label">
-            {t('newLesson.description')}
-          </label>
-          <textarea
-            id={descriptionId}
-            name="description"
-            dir="auto"
-            rows={3}
-            maxLength={descriptionLimit}
-            aria-invalid={descriptionError === undefined ? undefined : true}
-            aria-describedby={descriptionError === undefined ? undefined : descriptionErrorId}
-            className="min-h-22 w-full rounded-md border border-border-strong bg-field px-3 py-2 text-body-phone text-text tablet:text-body"
-          />
-          {descriptionError === undefined ? null : (
-            <p id={descriptionErrorId} className="text-small text-danger">
-              {descriptionError}
-            </p>
-          )}
-        </div>
+        <DescriptionField error={descriptionError} />
       </form>
       {error?.code === 'email_not_verified' ? <Refusal state={action.state} confirmation="schedule" /> : null}
       {refusal === null ? null : <FormAlert key={refusals}>{refusal}</FormAlert>}
@@ -446,6 +523,7 @@ export function NewLessonDialog({
 }): ReactElement {
   const headingId = useId();
   const searchField = useRef<HTMLInputElement>(null);
+  const changeButton = useRef<HTMLButtonElement>(null);
   const action = useAction((settled) => {
     if (settled.kind === 'done') {
       onScheduled();
@@ -463,13 +541,14 @@ export function NewLessonDialog({
       busy={action.busy}
       labelledBy={headingId}
       returnFocus={returnFocus}
-      initialFocus={searchField}
+      initialFocus={prefill.audience === undefined ? searchField : changeButton}
       onClose={close}
     >
       <NewLessonForm
         headingId={headingId}
         prefill={prefill}
         searchField={searchField}
+        changeButton={changeButton}
         action={action}
         onCancel={close}
       />

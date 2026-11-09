@@ -27,7 +27,10 @@ function statusToneOf({ status, took_place }: LessonState): string {
   }
 }
 
-function statusWord(t: TFunction, { status, took_place }: LessonState): string {
+function shownStatusWord(t: TFunction, { status, took_place }: LessonState): string | null {
+  if (status === 'scheduled') {
+    return null;
+  }
   return status === 'ended' && !took_place ? t('lesson.didNotTakePlace') : t(`lesson.status.${status}`);
 }
 
@@ -86,12 +89,16 @@ export function audienceLabel(t: TFunction, audience: CalendarAudience): string 
   return audience.label_kind === null ? '' : t(`lesson.${audience.label_kind}`);
 }
 
-export function LessonStatusWord({ lesson }: { readonly lesson: LessonState }): ReactElement {
+export function LessonStatusWord({ lesson }: { readonly lesson: LessonState }): ReactElement | null {
   const { t } = useTranslation();
+  const word = shownStatusWord(t, lesson);
+  if (word === null) {
+    return null;
+  }
   return (
     <span className={`inline-flex items-center gap-1.5 text-small ${statusToneOf(lesson)}`}>
       <StatusIcon status={lesson.status} took_place={lesson.took_place} />
-      {statusWord(t, lesson)}
+      {word}
     </span>
   );
 }
@@ -130,7 +137,7 @@ function CompactBlock({
 }): ReactElement {
   const { t } = useTranslation();
   const edge = item.audience.colour === null ? 'border-l-border-strong' : paletteEdgeClass[item.audience.colour];
-  const status = statusWord(t, item);
+  const status = shownStatusWord(t, item);
   const focused = useContext(LessonFocusContext);
   return (
     <Link
@@ -140,18 +147,24 @@ function CompactBlock({
       to={`/lessons/${encodeURIComponent(item.id)}`}
       data-layout="compact"
       data-lesson-id={item.id}
-      title={`${times} ${item.title} · ${status}`}
+      title={status === null ? `${times} ${item.title}` : `${times} ${item.title} · ${status}`}
       className={`flex h-full min-w-0 items-center gap-1 overflow-hidden rounded-sm border border-l-4 border-border bg-surface px-1 whitespace-nowrap hover:border-border-strong ${edge} ${statusText[item.status]}`}
     >
       <span aria-hidden="true" data-part="time" className={compactTime[item.status]}>
         {start}
       </span>
-      <span aria-hidden="true" data-part="status" className={`inline-flex shrink-0 items-center ${statusToneOf(item)}`}>
-        <StatusIcon status={item.status} took_place={item.took_place} />
-      </span>
+      {status === null ? null : (
+        <span
+          aria-hidden="true"
+          data-part="status"
+          className={`inline-flex shrink-0 items-center ${statusToneOf(item)}`}
+        >
+          <StatusIcon status={item.status} took_place={item.took_place} />
+        </span>
+      )}
       <span className="sr-only">
         {times} <LessonTitle title={item.title} cancelled={item.status === 'cancelled'} />{' '}
-        {audienceLabel(t, item.audience)} {item.tutor?.name ?? ''} {status}
+        {audienceLabel(t, item.audience)} {item.tutor?.name ?? ''} {status ?? ''}
       </span>
     </Link>
   );

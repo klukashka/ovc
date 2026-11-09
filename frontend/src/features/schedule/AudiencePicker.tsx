@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { type ReactElement, type RefObject, useId, useState } from 'react';
+import { type ReactElement, type RefObject, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDebouncedValue } from '../../app/clock.ts';
@@ -42,45 +42,39 @@ function matches(group: GroupSummary, search: string): boolean {
 }
 
 function Choice({
-  value,
   label,
   hint,
   dot,
-  checked,
   onChoose,
 }: {
-  readonly value: string;
   readonly label: string;
   readonly hint: string | null;
   readonly dot: string | null;
-  readonly checked: boolean;
   readonly onChoose: () => void;
 }): ReactElement {
-  const inputId = useId();
+  const labelId = useId();
   const hintId = useId();
   return (
-    <li className="flex min-h-11 items-center gap-3 text-small">
-      <input
-        id={inputId}
-        type="radio"
-        name="audience"
-        value={value}
-        checked={checked}
+    <li className="border-b border-border">
+      <button
+        type="button"
+        aria-labelledby={labelId}
         aria-describedby={hint === null ? undefined : hintId}
-        onChange={onChoose}
-        className="size-4 accent-accent"
-      />
-      {dot === null ? null : <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${dot}`} />}
-      <span className="flex min-w-0 flex-col">
-        <label htmlFor={inputId} className="truncate text-strong">
-          {label}
-        </label>
-        {hint === null ? null : (
-          <span id={hintId} className="truncate text-text-muted">
-            {hint}
+        onClick={onChoose}
+        className="flex min-h-11 w-full items-center gap-3 px-1 text-left text-small hover:bg-hover focus-visible:-outline-offset-2"
+      >
+        {dot === null ? null : <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${dot}`} />}
+        <span className="flex min-w-0 flex-col">
+          <span id={labelId} dir="auto" className="truncate text-strong">
+            {label}
           </span>
-        )}
-      </span>
+          {hint === null ? null : (
+            <span id={hintId} className="truncate text-text-muted">
+              {hint}
+            </span>
+          )}
+        </span>
+      </button>
     </li>
   );
 }
@@ -93,13 +87,11 @@ function isListed(audience: Audience, cards: readonly StudentCardSummary[], grou
 
 function Choices({
   search,
-  chosen,
   preselected,
   searchField,
   onChoose,
 }: {
   readonly search: string;
-  readonly chosen: Audience | null;
   readonly preselected: Audience | null;
   readonly searchField: RefObject<HTMLInputElement | null>;
   readonly onChoose: (audience: Audience) => void;
@@ -118,7 +110,7 @@ function Choices({
   const cards = (students.data?.pages.flatMap((page) => page.items) ?? []).filter(schedulable);
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     cards.length,
-    ':scope > li input',
+    ':scope > li button',
     students.isFetchingNextPage,
     searchField,
   );
@@ -144,13 +136,11 @@ function Choices({
   return (
     <div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
       {pinned === null ? null : (
-        <ul aria-label={t('newLesson.preselected')} className="flex flex-col">
+        <ul aria-label={t('newLesson.preselected')} className="flex flex-col border-t border-border">
           <Choice
-            value={`${pinned.kind}:${pinned.id}`}
             label={pinned.name}
             hint={null}
             dot={null}
-            checked={chosen?.kind === pinned.kind && chosen.id === pinned.id}
             onChoose={() => {
               onChoose(pinned);
             }}
@@ -158,15 +148,13 @@ function Choices({
         </ul>
       )}
       {cards.length === 0 ? null : (
-        <ul ref={listRef} aria-label={t('newLesson.students')} className="flex flex-col">
+        <ul ref={listRef} aria-label={t('newLesson.students')} className="flex flex-col border-t border-border">
           {cards.map((card) => (
             <Choice
               key={card.id}
-              value={`relationship:${card.id}`}
               label={card.display_name}
               hint={card.state === 'provisional' ? t('newLesson.emailNotConfirmed') : null}
               dot={null}
-              checked={chosen?.kind === 'one_to_one' && chosen.id === card.id}
               onChoose={() => {
                 onChoose({ kind: 'one_to_one', id: card.id, name: card.display_name });
               }}
@@ -193,15 +181,13 @@ function Choices({
         </p>
       ) : null}
       {shownGroups.length === 0 ? null : (
-        <ul aria-label={t('newLesson.groups')} className="flex flex-col">
+        <ul aria-label={t('newLesson.groups')} className="flex flex-col border-t border-border">
           {shownGroups.map((group) => (
             <Choice
               key={group.id}
-              value={`group:${group.id}`}
               label={group.name}
               hint={null}
               dot={paletteDotClass[group.colour]}
-              checked={chosen?.kind === 'group' && chosen.id === group.id}
               onChoose={() => {
                 onChoose({ kind: 'group', id: group.id, name: group.name });
               }}
@@ -213,25 +199,73 @@ function Choices({
   );
 }
 
+type PendingFocus = 'search' | 'change' | null;
+
 export function AudiencePicker({
   chosen,
   preselected,
   searchField,
+  changeButton,
   error,
   onChoose,
+  onClear,
 }: {
   readonly chosen: Audience | null;
   readonly preselected: Audience | null;
   readonly searchField: RefObject<HTMLInputElement | null>;
+  readonly changeButton: RefObject<HTMLButtonElement | null>;
   readonly error: string | undefined;
   readonly onChoose: (audience: Audience) => void;
+  readonly onClear: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   const legendId = useId();
   const inputId = useId();
   const errorId = useId();
+  const chosenId = useId();
   const [search, setSearch] = useState('');
+  const [changing, setChanging] = useState(false);
+  const pendingFocus = useRef<PendingFocus>(null);
   const settledSearch = useDebouncedValue(search.trim(), searchDelayMilliseconds);
+  const collapsed = chosen !== null && !changing;
+
+  useEffect(() => {
+    if (pendingFocus.current === 'search') {
+      searchField.current?.focus();
+    } else if (pendingFocus.current === 'change') {
+      changeButton.current?.focus();
+    }
+    pendingFocus.current = null;
+  });
+
+  if (collapsed) {
+    return (
+      <fieldset aria-labelledby={legendId} className="flex flex-col gap-2">
+        <legend id={legendId} className="text-label">
+          {t('newLesson.audience')}
+        </legend>
+        <p className="flex min-h-11 items-center gap-3">
+          <span id={chosenId} dir="auto" className="min-w-0 truncate text-strong">
+            {chosen.name}
+          </span>
+          <button
+            ref={changeButton}
+            type="button"
+            aria-describedby={chosenId}
+            onClick={() => {
+              pendingFocus.current = 'search';
+              setChanging(true);
+              onClear();
+            }}
+            className={quietButtonClass}
+          >
+            {t('newLesson.changeAudience')}
+          </button>
+        </p>
+      </fieldset>
+    );
+  }
+
   return (
     <fieldset aria-labelledby={legendId} className="flex flex-col gap-2">
       <legend id={legendId} className="text-label">
@@ -260,10 +294,13 @@ export function AudiencePicker({
       )}
       <Choices
         search={settledSearch}
-        chosen={chosen}
         preselected={preselected}
         searchField={searchField}
-        onChoose={onChoose}
+        onChoose={(audience) => {
+          onChoose(audience);
+          pendingFocus.current = 'change';
+          setChanging(false);
+        }}
       />
     </fieldset>
   );

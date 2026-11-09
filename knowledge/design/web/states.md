@@ -1,6 +1,6 @@
 # States, colours and words
 
-One vocabulary for every status in OVC. Each state has exactly one colour token from [tokens](tokens.md#colours) and one word per language, used identically in rows, panels, badges, emails and notifications; the lesson table also fixes icons, and the component library maps every other state to one icon. Status is never shown by colour alone: the word is always present. A "badge" in these documents is the state word in its colour, optionally after a small dot; a "count badge" is a number in `text-muted` beside a sidebar item; neither is a filled pill ([tokens](tokens.md#principles)). Phrases avoid interpolating names into positions that need a grammatical case in Russian.
+One vocabulary for every status in OVC. Each state has exactly one colour token from [tokens](tokens.md#colours) and one word per language, used identically in rows, panels, badges, emails and notifications; the lesson table also fixes icons, and the component library maps every other state to one icon. Status is never shown by colour alone: the word is always present, with one exception: in calendar blocks and lesson lists an ordinary `scheduled` lesson shows no status word and no status icon, because it is the default state, and carries no status colour either (design slice step D4, owner's decision of 2026-11-09, pending owner review); the lesson page still shows "Scheduled". A "badge" in these documents is the state word in its colour, optionally after a small dot; a "count badge" is a number in `text-muted` beside a sidebar item; neither is a filled pill ([tokens](tokens.md#principles)). Phrases avoid interpolating names into positions that need a grammatical case in Russian.
 
 Recording states apply once recordings land [after the MVP](../../../docs/roadmap.md#after-the-mvp) (owner's decision of 2026-10-22).
 
@@ -8,7 +8,7 @@ Recording states apply once recordings land [after the MVP](../../../docs/roadma
 
 | State | When | Token | Icon | English | Русский |
 |---|---|---|---|---|---|
-| `scheduled` | before the tutor joins | `info` | calendar | Scheduled | Запланирован |
+| `scheduled` | before the tutor joins; on the lesson page only (design slice step D4) | `info` | calendar | Scheduled | Запланирован |
 | `scheduled`, join window open | 10 minutes before start | `accent-text` | door | Starting soon | Скоро начало |
 | `live` | the tutor has joined | `live` | pulsing dot | Live now | Идёт сейчас |
 | `ended`, took place | after it ran | `success` | check | Ended | Завершён |
