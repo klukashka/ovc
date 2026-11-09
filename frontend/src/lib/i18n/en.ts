@@ -498,6 +498,11 @@ export const en: Resources = {
     revoked: 'Link revoked after repeated wrong emails',
   },
   studentCard: {
+    actions: 'Card actions',
+    editDetails: 'Name and email…',
+    notesSaving: 'Saving…',
+    notesNotSaved: 'Notes were not saved.',
+    notesRetry: 'Try again',
     sections: 'Card sections',
     overview: 'Overview',
     lessons: 'Lessons',
@@ -534,6 +539,8 @@ export const en: Resources = {
     gone: 'This student is no longer on your list.',
   },
   groups: {
+    actions: 'Group actions',
+    editDetails: 'Name and colour…',
     columns: {
       name: 'Name',
       members: 'Members',

@@ -2,7 +2,16 @@ import type { BrowserContext, Locator, Page } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, registerTutor, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor, tableRows } from './fixtures.ts';
+import {
+  chooseFromPageMenu,
+  diagnosedTest as test,
+  expect,
+  openPageMenu,
+  pageMenuButton,
+  seedVerifiedUser,
+  signUpAndConfirmTutor,
+  tableRows,
+} from './fixtures.ts';
 import { apiRequestsInFlight, busyControls, recordBusyControls } from './observers.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { addDays, cancelThisLesson, localDate, scheduleLessons, scheduleLessonsWithIds } from './schedule.ts';
@@ -79,6 +88,36 @@ async function expectNoLinkStored(page: Page): Promise<void> {
   expect(stored.localValues).not.toContain('/invite/');
   expect(stored.session).toBe(0);
   expect(stored.historyState).not.toContain('/invite/');
+}
+
+function recordCardWrites(page: Page, cardId: string): string[] {
+  const writes: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'PATCH' && new URL(request.url()).pathname === `/api/v1/students/${cardId}`) {
+      writes.push(request.method());
+    }
+  });
+  return writes;
+}
+
+async function storedNotes(deployment: Deployment, tutor: TestAccount, cardId: string): Promise<unknown> {
+  const answer = await callApi(deployment, await accessToken(deployment, tutor), 'GET', `/students/${cardId}`);
+  return typeof answer.body === 'object' && answer.body !== null && 'notes' in answer.body ? answer.body.notes : null;
+}
+
+async function expectNothingStoredContaining(page: Page, text: string): Promise<void> {
+  const stored = await page.evaluate(() => ({
+    local: Object.keys(globalThis.localStorage).sort(),
+    localValues: Object.values(globalThis.localStorage).join(' '),
+    session: globalThis.sessionStorage.length,
+    historyState: JSON.stringify(globalThis.history.state),
+    address: globalThis.location.href,
+  }));
+  expect(stored.local.every((key) => knownPreferenceKeys.includes(key))).toBe(true);
+  expect(stored.localValues).not.toContain(text);
+  expect(stored.session).toBe(0);
+  expect(stored.historyState).not.toContain(text);
+  expect(decodeURIComponent(stored.address)).not.toContain(text);
 }
 
 test.describe('in Russian', () => {
@@ -181,7 +220,7 @@ async function createThroughTheDialog(page: Page, email: string): Promise<Locato
 }
 
 async function withdrawThroughTheDialog(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Withdraw invitation' }).click();
+  await chooseFromPageMenu(page, 'Card actions', 'Withdraw invitation');
   await page
     .getByRole('dialog', { name: 'Withdraw the invitation?' })
     .getByRole('button', { name: 'Withdraw', exact: true })
@@ -260,15 +299,16 @@ test.describe('in English with the dark theme', () => {
     await signInThroughTheApi(page, pavel);
     await page.goto(`/students/${card.id}`);
     expect(await shownLink(page.getByRole('main'))).toBe(card.link);
+    const mainColumn = page.locator('[data-column="main"]');
     await page.getByRole('button', { name: 'Send by email' }).click();
-    await expect(page.getByRole('status')).toHaveText('Sent.');
-    await expect(page.getByRole('status')).toBeFocused();
+    await expect(mainColumn.getByRole('status')).toHaveText('Sent.');
+    await expect(mainColumn.getByRole('status')).toBeFocused();
     await control.tick();
 
     await page.getByRole('button', { name: 'Create a new link' }).click();
 
-    await expect(page.getByRole('status')).toHaveText('A new link was created. The old one no longer works.');
-    await expect(page.getByRole('status')).toBeFocused();
+    await expect(mainColumn.getByRole('status')).toHaveText('A new link was created. The old one no longer works.');
+    await expect(mainColumn.getByRole('status')).toBeFocused();
     const regenerated = await shownLink(page.getByRole('main'));
     expect(await busyControls(page)).toEqual([['Send by email'], ['Create a new link']]);
     expect(regenerated).not.toBe(card.link);
@@ -288,13 +328,13 @@ test.describe('in English with the dark theme', () => {
     const addresses = recordAddresses(page);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/students/${card.id}`);
-    const opener = page.getByRole('button', { name: 'Withdraw invitation' });
-    await opener.click();
+    const opener = pageMenuButton(page, 'Card actions');
+    await chooseFromPageMenu(page, 'Card actions', 'Withdraw invitation');
     const confirm = page.getByRole('dialog', { name: 'Withdraw the invitation?' });
     await expect(confirm).toContainText('The link stops working and this card is removed.');
     await page.keyboard.press('Escape');
     await expect(opener).toBeFocused();
-    await opener.click();
+    await chooseFromPageMenu(page, 'Card actions', 'Withdraw invitation');
     await expect(confirm.getByRole('button', { name: 'Cancel' })).toBeFocused();
 
     await confirm.getByRole('button', { name: 'Withdraw', exact: true }).click();
@@ -352,7 +392,7 @@ test.describe('in English with the dark theme', () => {
     expect(addresses.filter((address) => address.includes('/invite/'))).toEqual([]);
   });
 
-  test('students › the card of an active student opens from its row without invitation controls and keeps saved notes', async ({
+  test('students › the card of an active student opens from its row without invitation controls and autosaves its notes', async ({
     page,
     deployment,
   }) => {
@@ -368,22 +408,181 @@ test.describe('in English with the dark theme', () => {
     await expect(page).toHaveURL(`/students/${cardId}`);
     await expect(page.getByRole('heading', { level: 1, name: 'Boris' })).toBeFocused();
     await expect(page.getByRole('heading', { level: 2, name: 'Invitation link' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Withdraw invitation' })).toHaveCount(0);
+    const actions = await openPageMenu(page, 'Card actions');
+    await expect(actions.getByRole('button', { name: 'End working together' })).toBeVisible();
+    await expect(actions.getByRole('button', { name: 'Withdraw invitation' })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    const writes = recordCardWrites(page, cardId);
     const notes = page.getByRole('form', { name: 'Notes' });
-    await notes.getByLabel('Notes').fill('Prefers evening lessons.');
     const cardRefetched = page.waitForResponse(
       (response) =>
         response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/v1/students/${cardId}`,
     );
-    await notes.getByRole('button', { name: 'Save' }).click();
+    await notes.getByLabel('Notes').fill('Prefers evening lessons.');
     await expect(notes.getByRole('status')).toHaveText('Saved.');
-    await expect(notes.getByRole('status')).toBeFocused();
+    await expect(notes.getByLabel('Notes')).toBeFocused();
+    await expect(notes.getByRole('button')).toHaveCount(0);
     await cardRefetched;
+    expect(writes).toEqual(['PATCH']);
+    expect(await storedNotes(deployment, pavel, cardId)).toBe('Prefers evening lessons.');
     await expect.poll(inFlight).toBe(0);
 
     await page.reload();
 
     await expect(page.getByRole('form', { name: 'Notes' }).getByLabel('Notes')).toHaveValue('Prefers evening lessons.');
+  });
+
+  test('student card › at 1440 × 900 the notes of an active card are in view without scrolling', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
+    await signInThroughTheApi(page, pavel);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto(`/students/${cardId}`);
+    const notes = page.getByRole('form', { name: 'Notes' }).getByLabel('Notes');
+    await notes.waitFor();
+
+    await expect(notes).toBeInViewport({ ratio: 1 });
+    expect(await page.evaluate(() => globalThis.scrollY)).toBe(0);
+    await expect(page.getByRole('complementary', { name: 'Notes' })).toContainText('Only you see this.');
+  });
+
+  test('student card › notes typed and reloaded before the save keep nothing in storage or the address', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${cardId}`);
+    const draft = 'Draft that must not be stored';
+    await page.getByRole('form', { name: 'Notes' }).getByLabel('Notes').fill(draft);
+
+    await expectNothingStoredContaining(page, draft);
+    await page.reload();
+    await page.getByRole('form', { name: 'Notes' }).getByLabel('Notes').waitFor();
+
+    await expectNothingStoredContaining(page, draft);
+  });
+
+  test('student card › notes the server refuses keep the text and say they were not saved, and Try again keeps focus in the notes', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
+    diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/students/${cardId}`, status: 422 });
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${cardId}`);
+    const form = page.getByRole('form', { name: 'Notes' });
+    const notes = form.getByLabel('Notes');
+    const refused = 'Bell \u0007 character';
+    await notes.focus();
+    await notes.evaluate((field, value) => {
+      if (!(field instanceof HTMLTextAreaElement)) throw new Error('the notes field is not a text area');
+      field.setRangeText(value, 0, field.value.length, 'end');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    }, refused);
+
+    await form.getByRole('status').filter({ hasText: 'Notes were not saved.' }).waitFor();
+    await diagnostics.finishHttpPhase();
+    diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/students/${cardId}`, status: 422 });
+    const failures = page.waitForResponse(
+      (response) => response.request().method() === 'PATCH' && response.status() === 422,
+    );
+
+    await form.getByRole('button', { name: 'Try again' }).focus();
+    await page.keyboard.press('Enter');
+    await failures;
+
+    await expect(notes).toBeFocused();
+    await expect(notes).toHaveValue(refused);
+    await expect(form.getByRole('status')).toHaveText('Notes were not saved.');
+    await expect(form.getByRole('button', { name: 'Try again' })).toBeVisible();
+  });
+
+  test('student card › notes corrected after a refusal are saved', async ({ page, deployment, diagnostics }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
+    diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/students/${cardId}`, status: 422 });
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${cardId}`);
+    const form = page.getByRole('form', { name: 'Notes' });
+    const notes = form.getByLabel('Notes');
+    const refused = 'Bell \u0007 character';
+    await notes.focus();
+    await notes.evaluate((field, value) => {
+      if (!(field instanceof HTMLTextAreaElement)) throw new Error('the notes field is not a text area');
+      field.setRangeText(value, 0, field.value.length, 'end');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    }, refused);
+
+    await form.getByRole('status').filter({ hasText: 'Notes were not saved.' }).waitFor();
+
+    await notes.fill('Prefers mornings.');
+    await form.getByRole('status').filter({ hasText: 'Saved.' }).waitFor();
+
+    await expect(form.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+    expect(await storedNotes(deployment, pavel, cardId)).toBe('Prefers mornings.');
+  });
+
+  test('student card › an invited card edits its email in Name and email…, which replaces the link, and an active card offers no email field', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const invited = await createCard(deployment, pavel, 'Boris', newTestAccount('Boris', 'student').email);
+    const { cardId: activeCard } = await seedActiveStudent(deployment, pavel, 'Vera');
+    const newEmail = newTestAccount('Boris', 'student').email;
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${activeCard}`);
+    await chooseFromPageMenu(page, 'Card actions', 'Name and email…');
+    const activeDialog = page.getByRole('dialog', { name: 'Name and email' });
+    await activeDialog.getByLabel('Name', { exact: true }).waitFor();
+    const activeEmailFields = await activeDialog.getByLabel('Email (optional)').count();
+    await page.keyboard.press('Escape');
+    await page.goto(`/students/${invited.id}`);
+    await chooseFromPageMenu(page, 'Card actions', 'Name and email…');
+    const dialog = page.getByRole('dialog', { name: 'Name and email' });
+    const email = dialog.getByLabel('Email (optional)');
+
+    await email.fill(newEmail);
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await dialog.waitFor({ state: 'hidden' });
+
+    expect(activeEmailFields).toBe(0);
+    await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeFocused();
+    await expect(page.getByRole('main')).toContainText(newEmail);
+    expect(await shownLink(page.getByRole('main'))).not.toBe(invited.link);
+  });
+
+  test('student card › Name and email… edits the name in a dialog that opens on its first field and closes onto Saved', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const card = await createCard(deployment, pavel, 'Boris', newTestAccount('Boris', 'student').email);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${card.id}`);
+    await chooseFromPageMenu(page, 'Card actions', 'Name and email…');
+    const dialog = page.getByRole('dialog', { name: 'Name and email' });
+    await expect(dialog.getByLabel('Name', { exact: true })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(pageMenuButton(page, 'Card actions')).toBeFocused();
+    await chooseFromPageMenu(page, 'Card actions', 'Name and email…');
+    await dialog.getByLabel('Name', { exact: true }).fill('Boris Petrov');
+
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeFocused();
+    await expect(page.getByRole('heading', { level: 1, name: 'Boris Petrov' })).toBeVisible();
+    expect(await shownLink(page.getByRole('main'))).toBe(card.link);
   });
 
   for (const { chosen, from } of [
@@ -731,7 +930,7 @@ test.describe('in English with the dark theme', () => {
     });
   });
 
-  test('students › a card that changed meanwhile shows its current name and keeps the unsaved notes', async ({
+  test('students › a card that changed meanwhile shows its current name and keeps the notes typed before it', async ({
     socketSlots,
     page,
     deployment,
@@ -742,31 +941,60 @@ test.describe('in English with the dark theme', () => {
     const card = await createCard(deployment, pavel, 'Boris', boris.email);
     diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/students/${card.id}`, status: 409 });
     await socketSlots.keepPageSocketsOff(pavel);
+    let releaseNotes = (): void => undefined;
+    const notesHeld = new Promise<void>((resolve) => {
+      releaseNotes = resolve;
+    });
+    await page.route(`**/api/v1/students/${card.id}`, async (route) => {
+      if (route.request().method() === 'PATCH') {
+        await notesHeld;
+      }
+      await route.fallback();
+    });
     await signInThroughTheApi(page, pavel);
     await page.goto(`/students/${card.id}`);
     const notes = page.getByRole('form', { name: 'Notes' }).getByLabel('Notes');
-    await notes.fill('Unsaved: prefers evenings.');
+    await notes.fill('Typed before: prefers evenings.');
     const renamed = await callApi(deployment, await accessToken(deployment, pavel), 'PATCH', `/students/${card.id}`, {
       display_name: 'Boris Petrov',
     });
     expect(renamed.status).toBe(200);
     await signUpOnInvitation(deployment, card.link, boris, 'en');
-    await page.getByRole('button', { name: 'Withdraw invitation' }).click();
+    await chooseFromPageMenu(page, 'Card actions', 'Withdraw invitation');
 
     await page
       .getByRole('dialog', { name: 'Withdraw the invitation?' })
       .getByRole('button', { name: 'Withdraw', exact: true })
       .click();
+    const changedNotice = page
+      .getByRole('status')
+      .filter({ hasText: 'This card changed in the meantime. Its current state is shown below.' });
+    await changedNotice.waitFor();
+    const noticeFocused = await page
+      .waitForFunction(
+        (text) => document.activeElement?.textContent.includes(text) === true,
+        'This card changed in the meantime.',
+      )
+      .then(
+        () => true,
+        () => false,
+      );
+    const notesWhileHeld = await notes.inputValue();
+    const notesSaved = page.waitForResponse(
+      (response) => response.request().method() === 'PATCH' && response.url().endsWith(`/students/${card.id}`),
+    );
+    releaseNotes();
+    const savedStatus = (await notesSaved).status();
 
-    await expect(
-      page
-        .getByRole('status')
-        .filter({ hasText: 'This card changed in the meantime. Its current state is shown below.' }),
-    ).toBeFocused();
+    expect(noticeFocused).toBe(true);
+    expect(notesWhileHeld).toBe('Typed before: prefers evenings.');
+    expect(savedStatus).toBe(200);
+    expect(await storedNotes(deployment, pavel, card.id)).toBe('Typed before: prefers evenings.');
     await expect(page.getByRole('heading', { level: 1, name: 'Boris Petrov' })).toBeVisible();
+    await expect(notes).toHaveValue('Typed before: prefers evenings.');
+    await chooseFromPageMenu(page, 'Card actions', 'Name and email…');
     await expect(page.getByRole('form', { name: 'Name and email' }).getByLabel('Name', { exact: true })).toHaveValue(
       'Boris Petrov',
     );
-    await expect(notes).toHaveValue('Unsaved: prefers evenings.');
   });
 });

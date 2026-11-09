@@ -372,6 +372,10 @@ export class FakeAuthServer {
   private failingJoinRequestReads = 0;
   private notificationReadsFailing = false;
   private failingCardReads = 0;
+  private failingCardWrites = 0;
+  private cardWriteGate: Promise<void> | null = null;
+  private cardWriteReceived: () => void = () => undefined;
+  private readonly writtenCards: string[] = [];
   private refreshCount = 0;
   private reuse = false;
   private readonly sent: string[] = [];
@@ -412,6 +416,10 @@ export class FakeAuthServer {
 
   get sentAddresses(): readonly URL[] {
     return this.addresses;
+  }
+
+  get cardWrites(): readonly string[] {
+    return this.writtenCards;
   }
 
   addAccount(seed: FakeAccountSeed): void {
@@ -563,6 +571,27 @@ export class FakeAuthServer {
 
   failNextCardRead(): void {
     this.failingCardReads += 1;
+  }
+
+  failNextCardWrite(): void {
+    this.failingCardWrites += 1;
+  }
+
+  pauseCardWrites(): PausedReads {
+    let resume = (): void => undefined;
+    let notifyReceived = (): void => undefined;
+    this.cardWriteGate = new Promise((resolve) => {
+      resume = (): void => {
+        this.cardWriteGate = null;
+        this.cardWriteReceived = (): void => undefined;
+        resolve();
+      };
+    });
+    const received = new Promise<void>((resolve) => {
+      notifyReceived = resolve;
+    });
+    this.cardWriteReceived = notifyReceived;
+    return { resume, received };
   }
 
   failNextAccountCheck(): void {
@@ -853,7 +882,13 @@ export class FakeAuthServer {
       return json(201, card);
     }
     const found = this.cards.get(path.slice(cardPathPrefix.length));
-    if (request.method !== 'GET' || found?.tutorId !== tutorId) {
+    if (found?.tutorId !== tutorId) {
+      return refusal(404, 'not_found');
+    }
+    if (request.method === 'PATCH') {
+      return this.writeCard(found, await request.text());
+    }
+    if (request.method !== 'GET') {
       return refusal(404, 'not_found');
     }
     if (this.failingCardReads > 0) {
@@ -861,6 +896,23 @@ export class FakeAuthServer {
       return refusal(503, 'service_unavailable');
     }
     return json(200, { ...found.card, next_lessons: [] });
+  }
+
+  private async writeCard(found: FakeCard, body: string): Promise<Response> {
+    this.writtenCards.push(body);
+    this.cardWriteReceived();
+    await this.cardWriteGate;
+    if (this.failingCardWrites > 0) {
+      this.failingCardWrites -= 1;
+      return refusal(503, 'service_unavailable');
+    }
+    const patch: unknown = JSON.parse(body);
+    if (typeof patch !== 'object' || patch === null || !('notes' in patch) || typeof patch.notes !== 'string') {
+      return refusal(422, 'validation_failed');
+    }
+    const card: StudentCard = { ...found.card, notes: patch.notes };
+    this.cards.set(card.id, { tutorId: found.tutorId, card });
+    return json(200, card);
   }
 
   private answerInvitation(invitationToken: string): Response {

@@ -5,7 +5,8 @@ import { RouterProvider, createMemoryRouter } from 'react-router';
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
-import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
+import { SchedulerContext } from '../../app/clock.ts';
+import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import { type StudentCard, studentCardKey } from './api.ts';
@@ -84,7 +85,14 @@ async function show(card: StudentCard): Promise<void> {
 }
 
 function buttonNames(): string[] {
-  return screen.getAllByRole('button').map((button) => button.textContent);
+  return screen.getAllByRole('button').map((button) => button.getAttribute('aria-label') ?? button.textContent);
+}
+
+function cardActionNames(): string[] {
+  const menuButton = screen.getByRole('button', { name: 'Действия с карточкой' });
+  fireEvent.click(menuButton);
+  const menu = document.getElementById(menuButton.getAttribute('aria-controls') ?? '');
+  return [...(menu?.querySelectorAll('button') ?? [])].map((button) => button.textContent);
 }
 
 const refetchFailedText = 'Не удалось обновить данные. На странице показано то, что загрузилось раньше.';
@@ -94,9 +102,11 @@ interface LoadedCard {
   readonly queryClient: QueryClient;
   readonly card: StudentCard;
   readonly notes: HTMLElement;
+  readonly scheduler: ManualScheduler;
+  readonly leave: () => Promise<void>;
 }
 
-async function showLoadedCardWithTyping(): Promise<LoadedCard> {
+async function showLoadedCard(): Promise<LoadedCard> {
   const server = new FakeAuthServer();
   const session = await signedInTutor(server);
   const created = await session.authorizedFetch(`${origin}/api/v1/students`, {
@@ -106,6 +116,7 @@ async function showLoadedCardWithTyping(): Promise<LoadedCard> {
   });
   const card = (await created.json()) as StudentCard;
   const queryClient = new QueryClient();
+  const scheduler = manualScheduler();
   const router = createMemoryRouter(
     [
       {
@@ -116,25 +127,48 @@ async function showLoadedCardWithTyping(): Promise<LoadedCard> {
           </main>
         ),
       },
+      { path: '/students', element: <p>Список</p> },
     ],
     { initialEntries: [`/students/${card.id}`] },
   );
   render(
     <SessionContext value={session}>
-      <ApiClientContext value={createApiClient(origin, session.authorizedFetch)}>
-        <QueryClientProvider client={queryClient}>
-          <I18nextProvider i18n={await createI18n('ru')}>
-            <RouterProvider router={router} />
-          </I18nextProvider>
-        </QueryClientProvider>
-      </ApiClientContext>
+      <SchedulerContext value={scheduler}>
+        <ApiClientContext value={createApiClient(origin, session.authorizedFetch)}>
+          <QueryClientProvider client={queryClient}>
+            <I18nextProvider i18n={await createI18n('ru')}>
+              <RouterProvider router={router} />
+            </I18nextProvider>
+          </QueryClientProvider>
+        </ApiClientContext>
+      </SchedulerContext>
     </SessionContext>,
   );
   await screen.findByRole('heading', { level: 1, name: 'Борис' });
   const notes = screen.getByRole('textbox', { name: 'Заметки' });
   notes.focus();
-  fireEvent.change(notes, { target: { value: 'Unsaved typing' } });
-  return { server, queryClient, card, notes };
+  const leave = async (): Promise<void> => {
+    await act(async () => {
+      await router.navigate('/students');
+    });
+  };
+  return { server, queryClient, card, notes, scheduler, leave };
+}
+
+async function showLoadedCardWithTyping(): Promise<LoadedCard> {
+  const shown = await showLoadedCard();
+  fireEvent.change(shown.notes, { target: { value: 'Unsaved typing' } });
+  return shown;
+}
+
+function type(notes: HTMLElement, value: string): void {
+  fireEvent.change(notes, { target: { value } });
+}
+
+function pass(scheduler: ManualScheduler, milliseconds: number): void {
+  act(() => {
+    scheduler.pass(milliseconds);
+  });
 }
 
 async function failOneRefetch({ server, queryClient, card }: LoadedCard): Promise<void> {
@@ -154,19 +188,13 @@ describe('the student card', () => {
     await show(invitedCard);
 
     const names = buttonNames();
+    const actions = cardActionNames();
 
     expect(screen.getByText('Приглашение отправлено')).toBeDefined();
     expect(screen.getByText(link)).toBeDefined();
     expect(screen.getByText('Действует до 7 нояб., 18:00')).toBeDefined();
-    expect(screen.getByLabelText('Email (необязательно)')).toBeDefined();
-    expect(names).toEqual([
-      'Скопировать ссылку',
-      'Отправить по email',
-      'Создать новую ссылку',
-      'Сохранить',
-      'Сохранить',
-      'Отозвать приглашение',
-    ]);
+    expect(names).toEqual(['Действия с карточкой', 'Скопировать ссылку', 'Отправить по email', 'Создать новую ссылку']);
+    expect(actions).toEqual(['Имя и email…', 'Отозвать приглашение']);
   });
 
   test('an invited card without an email cannot be sent by email', async () => {
@@ -205,12 +233,14 @@ describe('the student card', () => {
     await show(activeCard);
 
     const names = buttonNames();
+    const actions = cardActionNames();
 
     expect(screen.getByText('Анна Петрова')).toBeDefined();
     expect(screen.getByText('B1 вечер')).toBeDefined();
     expect(screen.queryByRole('heading', { name: 'Ссылка-приглашение' })).toBeNull();
     expect(screen.queryByLabelText('Email (необязательно)')).toBeNull();
-    expect(names).toEqual(['Сохранить', 'Сохранить', 'Завершить занятия']);
+    expect(names).toEqual(['Действия с карточкой']);
+    expect(actions).toEqual(['Имя и email…', 'Завершить занятия']);
     for (const word of ['Приглашение отправлено', 'Email не подтверждён', 'Ждём ответа ученика', 'Занятия завершены']) {
       expect(screen.queryByText(word)).toBeNull();
     }
@@ -220,47 +250,49 @@ describe('the student card', () => {
     await show({ ...activeCard, state: 'provisional', groups: [] });
 
     const names = buttonNames();
+    const actions = cardActionNames();
 
     expect(screen.getByText('Email не подтверждён')).toBeDefined();
     expect(screen.getByText('Анна Петрова')).toBeDefined();
-    expect(names).toEqual(['Сохранить', 'Сохранить', 'Завершить занятия']);
+    expect(names).toEqual(['Действия с карточкой']);
+    expect(actions).toEqual(['Имя и email…', 'Завершить занятия']);
   });
 
   test('a reclaim-pending card shows its state word, no account and the action that ends it', async () => {
     await show({ ...activeCard, state: 'reclaim_pending', account: null, groups: [] });
 
     const names = buttonNames();
+    const actions = cardActionNames();
 
     expect(screen.getByText('Ждём ответа ученика')).toBeDefined();
     expect(screen.getByText('Владелец этого адреса решает, продолжать ли занятия с вами.')).toBeDefined();
     expect(screen.queryByText('Анна Петрова')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Аккаунт ученика' })).toBeNull();
-    expect(names).toEqual(['Сохранить', 'Сохранить', 'Завершить занятия']);
+    expect(names).toEqual(['Действия с карточкой']);
+    expect(actions).toEqual(['Имя и email…', 'Завершить занятия']);
   });
 
   test('an ended card without a link shows its state word and offers to invite again, not to end', async () => {
     await show({ ...activeCard, state: 'ended', groups: [] });
 
     const names = buttonNames();
+    const actions = cardActionNames();
 
     expect(screen.getByText('Занятия завершены')).toBeDefined();
     expect(screen.queryByRole('heading', { name: 'Ссылка-приглашение' })).toBeNull();
-    expect(names).toEqual(['Пригласить снова', 'Сохранить', 'Сохранить']);
+    expect(names).toEqual(['Действия с карточкой', 'Пригласить снова']);
+    expect(actions).toEqual(['Имя и email…']);
   });
 
   test('an ended card with an open link offers the link instead of inviting again', async () => {
     await show({ ...activeCard, state: 'ended', groups: [], invitation: invitedCard.invitation });
 
     const names = buttonNames();
+    const actions = cardActionNames();
 
     expect(screen.getByText(link)).toBeDefined();
-    expect(names).toEqual([
-      'Скопировать ссылку',
-      'Отправить по email',
-      'Создать новую ссылку',
-      'Сохранить',
-      'Сохранить',
-    ]);
+    expect(names).toEqual(['Действия с карточкой', 'Скопировать ссылку', 'Отправить по email', 'Создать новую ссылку']);
+    expect(actions).toEqual(['Имя и email…']);
   });
 });
 
@@ -336,5 +368,109 @@ describe('the student card page', () => {
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Борис' }));
     expect(screen.getByRole('textbox', { name: 'Заметки' })).toBe(shown.notes);
     expect(shown.notes).toHaveProperty('value', 'Unsaved typing');
+  });
+});
+
+describe('the notes of a student card', () => {
+  test('are saved one second after typing stops, with only the notes, and say Saving then Saved', async () => {
+    const { server, notes, scheduler } = await showLoadedCard();
+    const paused = server.pauseCardWrites();
+    type(notes, 'Пред');
+    pass(scheduler, 999);
+    type(notes, 'Предпочитает вечер');
+    pass(scheduler, 999);
+    const writesBeforeTheDelay = [...server.cardWrites];
+
+    pass(scheduler, 1);
+    await paused.received;
+
+    expect(writesBeforeTheDelay).toEqual([]);
+    expect(server.cardWrites).toEqual(['{"notes":"Предпочитает вечер"}']);
+    expect(await screen.findByText('Сохранение…')).toBeDefined();
+    paused.resume();
+    expect(await screen.findByText('Сохранено.')).toBeDefined();
+    expect(screen.getByText('Сохранено.').closest('[role="status"]')).not.toBeNull();
+    expect(document.activeElement).toBe(notes);
+  });
+
+  test('are saved at once when the field is left, and the pending delay sends nothing more', async () => {
+    const { server, notes, scheduler } = await showLoadedCard();
+    type(notes, 'Ушёл из поля');
+
+    fireEvent.blur(notes);
+    await screen.findByText('Сохранено.');
+    pass(scheduler, 1000);
+
+    expect(server.cardWrites).toEqual(['{"notes":"Ушёл из поля"}']);
+  });
+
+  test('send one request at a time and save typing made during a save after it without overwriting it', async () => {
+    const { server, notes, scheduler } = await showLoadedCard();
+    const paused = server.pauseCardWrites();
+    type(notes, 'Первое');
+    pass(scheduler, 1000);
+    await paused.received;
+    type(notes, 'Первое и второе');
+    pass(scheduler, 1000);
+    const writesWhileTheFirstIsInFlight = [...server.cardWrites];
+
+    paused.resume();
+    await waitFor(() => {
+      expect(server.cardWrites).toHaveLength(2);
+    });
+    await screen.findByText('Сохранено.');
+
+    expect(writesWhileTheFirstIsInFlight).toEqual(['{"notes":"Первое"}']);
+    expect(server.cardWrites).toEqual(['{"notes":"Первое"}', '{"notes":"Первое и второе"}']);
+    expect(notes).toHaveProperty('value', 'Первое и второе');
+  });
+
+  test('that failed to save keep the text and say so, and Retry saves them', async () => {
+    const { server, notes, scheduler } = await showLoadedCard();
+    server.failNextCardWrite();
+    type(notes, 'Не потерять');
+    pass(scheduler, 1000);
+    expect(await screen.findByText('Заметки не сохранены.')).toBeDefined();
+    const valueAfterTheFailure = (notes as HTMLTextAreaElement).value;
+    const focusAfterTheFailure = document.activeElement;
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Попробовать ещё раз' }).click();
+      await Promise.resolve();
+    });
+    await screen.findByText('Сохранено.');
+
+    expect(valueAfterTheFailure).toBe('Не потерять');
+    expect(focusAfterTheFailure).toBe(notes);
+    expect(server.cardWrites).toEqual(['{"notes":"Не потерять"}', '{"notes":"Не потерять"}']);
+    expect(screen.queryByText('Заметки не сохранены.')).toBeNull();
+  });
+
+  test('that were refused are not resent on leaving the field, but a correction typed after the refusal is', async () => {
+    const { server, notes, scheduler } = await showLoadedCard();
+    server.failNextCardWrite();
+    type(notes, 'Отклонено');
+    pass(scheduler, 1000);
+    await screen.findByText('Заметки не сохранены.');
+    fireEvent.blur(notes);
+    const writesAfterLeavingRefused = [...server.cardWrites];
+
+    type(notes, 'Исправлено');
+    fireEvent.blur(notes);
+    await screen.findByText('Сохранено.');
+
+    expect(writesAfterLeavingRefused).toEqual(['{"notes":"Отклонено"}']);
+    expect(server.cardWrites).toEqual(['{"notes":"Отклонено"}', '{"notes":"Исправлено"}']);
+  });
+
+  test('typed just before leaving the card are not sent once the page is gone', async () => {
+    const { server, notes, scheduler, leave } = await showLoadedCard();
+    type(notes, 'Не отправлять');
+
+    await leave();
+    pass(scheduler, 1000);
+
+    expect(server.cardWrites).toEqual([]);
+    expect(scheduler.pendingDelays()).not.toContain(1000);
   });
 });

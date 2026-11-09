@@ -1,7 +1,7 @@
 import { type ReactElement, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { quietButtonClass } from '../../components/ui/Form.tsx';
+import { primaryButtonClass } from '../../components/ui/Form.tsx';
 import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import type { Audience } from './AudiencePicker.tsx';
@@ -29,7 +29,7 @@ export function ScheduleLessonAction({
           setAnnouncement(null);
           setPrefill({ ...nextFullHour(Date.now(), me.timezone), audience });
         }}
-        className={quietButtonClass}
+        className={primaryButtonClass}
       >
         {t('lessons.schedule')}
       </button>

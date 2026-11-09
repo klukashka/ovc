@@ -510,6 +510,11 @@ export const ru = {
     revoked: 'Ссылка отозвана после нескольких попыток с другим email',
   },
   studentCard: {
+    actions: 'Действия с карточкой',
+    editDetails: 'Имя и email…',
+    notesSaving: 'Сохранение…',
+    notesNotSaved: 'Заметки не сохранены.',
+    notesRetry: 'Попробовать ещё раз',
     sections: 'Разделы карточки',
     overview: 'Обзор',
     lessons: 'Уроки',
@@ -546,6 +551,8 @@ export const ru = {
     gone: 'Этого ученика больше нет в вашем списке.',
   },
   groups: {
+    actions: 'Действия с группой',
+    editDetails: 'Название и цвет…',
     columns: {
       name: 'Название',
       members: 'Ученики',

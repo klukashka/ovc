@@ -8,8 +8,10 @@ import { channelOf } from './messages.ts';
 import { notificationRows, bellIn, panelRowsIn } from './notifications.ts';
 import { addDays, cardLessonStatuses, isoWeekday, localDate, scheduleLessonsWithIds } from './schedule.ts';
 import {
+  chooseFromPageMenu,
   diagnosedTest as test,
   expect,
+  openPageMenu,
   expectRowsNamed,
   seedVerifiedUser,
   signUpAndConfirmTutor,
@@ -173,7 +175,7 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
     const { maria, boris, borisCard, groupId, seriesLessonId, seriesLessonCount } = pilotFour();
     await signInThroughTheApi(page, maria);
     await page.goto(`/students/${borisCard}`);
-    await page.getByRole('button', { name: 'Завершить занятия' }).click();
+    await chooseFromPageMenu(page, 'Действия с карточкой', 'Завершить занятия');
     const dialog = page.getByRole('dialog', { name: 'Завершить занятия?' });
     await expect(dialog.getByRole('button', { name: 'Отмена' })).toBeFocused();
     await expect(dialog).toContainText('Ученик выйдет из ваших групп, будущие уроки отменятся');
@@ -323,7 +325,9 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Boris' })).toBeVisible();
     await expect(page.getByRole('main').getByText('Занятия завершены', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('form', { name: 'Заметки' }).getByLabel('Заметки')).toHaveValue('Прошли вводный урок.');
-    await expect(page.getByRole('button', { name: 'Завершить занятия' })).toBeVisible();
+    const cardActions = await openPageMenu(page, 'Действия с карточкой');
+    await expect(cardActions.getByRole('button', { name: 'Завершить занятия' })).toBeVisible();
+    await page.keyboard.press('Escape');
     expect(await cardState(deployment, maria, borisCard)).toEqual({ state: 'active', groups: [] });
     expect(await groupMemberNames(deployment, maria, groupId)).toEqual(['Анна']);
     const channel = await channelOf(deployment, maria, `/students/${borisCard}`);

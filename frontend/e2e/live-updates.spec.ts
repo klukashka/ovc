@@ -2,7 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { chooseFromPageMenu, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { accountId, waitForSockets } from './realtime.ts';
 import {
   confirmInTheOwnBrowser,
@@ -102,7 +102,7 @@ test('live updates › a dialog whose student was removed closes onto the notice
   await signUpOnInvitation(deployment, card.link, boris, 'en');
   await signInThroughTheApi(page, pavel);
   await page.goto(`/students/${card.id}`);
-  await page.getByRole('button', { name: 'End working together' }).click();
+  await chooseFromPageMenu(page, 'Card actions', 'End working together');
   await expect(page.getByRole('dialog', { name: 'End working together?' })).toBeVisible();
   await waitForSockets(deployment, await accountId(deployment, pavel), 1);
   diagnostics.expectFailure({ method: 'GET', path: `/api/v1/students/${card.id}`, status: 404 });
@@ -125,7 +125,7 @@ test('live updates › a card whose state changed while its dialog was open clos
   await signUpOnInvitation(deployment, card.link, boris, 'en');
   await signInThroughTheApi(page, pavel);
   await page.goto(`/students/${card.id}`);
-  await page.getByRole('button', { name: 'End working together' }).click();
+  await chooseFromPageMenu(page, 'Card actions', 'End working together');
   await expect(page.getByRole('dialog', { name: 'End working together?' })).toBeVisible();
   await waitForSockets(deployment, await accountId(deployment, pavel), 1);
 

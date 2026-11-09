@@ -484,5 +484,19 @@ export async function expectRowsNamed(rows: Locator, names: readonly string[]): 
   }
 }
 
+export function pageMenuButton(page: Page, menu: string): Locator {
+  return page.locator('main header').getByRole('button', { name: menu, exact: true });
+}
+
+export async function openPageMenu(page: Page, menu: string): Promise<Locator> {
+  await pageMenuButton(page, menu).click();
+  return page.locator('main header [aria-expanded="true"] + div');
+}
+
+export async function chooseFromPageMenu(page: Page, menu: string, item: string): Promise<void> {
+  const items = await openPageMenu(page, menu);
+  await items.getByRole('button', { name: item, exact: true }).click();
+}
+
 export { expect } from '@playwright/test';
 export { testNetAddress } from './accounts.ts';

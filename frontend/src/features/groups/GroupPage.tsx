@@ -1,15 +1,16 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { TFunction } from 'i18next';
 import { type ReactElement, type RefObject, type SyntheticEvent, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router';
 
 import { type ActionState, done, refusedBy, showsStaleData, useAction } from '../../components/ui/action.ts';
+import { ActionMenu, type MenuItem } from '../../components/ui/ActionMenu.tsx';
 import { Avatar } from '../../components/ui/Avatar.tsx';
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
   FormAlert,
-  FormNotice,
   SubmitButton,
   TextField,
   dangerButtonClass,
@@ -20,10 +21,12 @@ import {
   stringField,
   textButtonClass,
 } from '../../components/ui/Form.tsx';
+import { MoreIcon } from '../../components/ui/icons.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { FocusedNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
+import { PageColumns } from '../../components/ui/PageColumns.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
 import { StatusWord } from '../../components/ui/StatusWord.tsx';
 import { type ApiClient, asApiError, useApiClient } from '../../lib/api/client.ts';
@@ -72,14 +75,25 @@ function isGroup(value: Group | ActionState): value is Group {
   return 'id' in value;
 }
 
-function DetailsForm({
+type GroupOutcome =
+  { readonly kind: 'saved' | 'archived' | 'unarchived' } | { readonly kind: 'refused'; readonly state: ActionState };
+
+function DetailsDialog({
   group,
   reloads,
   handlers,
+  open,
+  returnFocus,
+  onClose,
+  onSaved,
 }: {
   readonly group: Group;
   readonly reloads: number;
   readonly handlers: GroupHandlers;
+  readonly open: boolean;
+  readonly returnFocus: RefObject<HTMLElement | null>;
+  readonly onClose: () => void;
+  readonly onSaved: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
@@ -99,43 +113,60 @@ function DetailsForm({
       const answer = await patchGroup(client, group.id, patch);
       if (!isGroup(answer)) {
         if (showsStaleData(answer)) {
+          onClose();
           handlers.onChangedElsewhere();
+          return { kind: 'idle' };
         }
         return answer;
       }
       handlers.onChanged(answer);
-      return done;
+      onSaved();
+      return { kind: 'idle' };
     });
   }
 
   return (
-    <form
-      aria-labelledby={headingId}
-      onSubmit={submit}
-      onChange={action.reset}
-      className="flex max-w-sm flex-col gap-4"
+    <ModalDialog
+      open={open}
+      busy={action.busy}
+      labelledBy={headingId}
+      returnFocus={returnFocus}
+      onClose={() => {
+        action.reset();
+        onClose();
+      }}
     >
-      <h2 id={headingId} className="text-heading">
-        {t('groups.details')}
-      </h2>
-      <Refusal state={action.state} />
-      {action.state.kind === 'done' ? <FormNotice takeFocus>{t('groups.saved')}</FormNotice> : null}
-      <TextField
-        label={t('groups.name')}
-        name="name"
-        autoComplete="off"
-        maxLength={60}
-        defaultValue={group.name}
-        reloads={reloads}
-        error={fieldMessage(t, error, 'name')}
-      />
-      <ColourField defaultColour={group.colour} reloads={reloads} />
-      <p>
-        <SubmitButton busy={action.busy} quiet>
-          {t('groups.save')}
-        </SubmitButton>
-      </p>
-    </form>
+      <form aria-labelledby={headingId} onSubmit={submit} onChange={action.reset} className="flex flex-col gap-4">
+        <h2 id={headingId} className="text-heading">
+          {t('groups.details')}
+        </h2>
+        <Refusal state={action.state} />
+        <TextField
+          label={t('groups.name')}
+          name="name"
+          autoComplete="off"
+          maxLength={60}
+          defaultValue={group.name}
+          reloads={reloads}
+          error={fieldMessage(t, error, 'name')}
+        />
+        <ColourField defaultColour={group.colour} reloads={reloads} />
+        <div className="flex flex-wrap gap-3">
+          <SubmitButton busy={action.busy}>{t('groups.save')}</SubmitButton>
+          <ActionButton
+            busy={false}
+            unavailable={action.busy}
+            onClick={() => {
+              action.reset();
+              onClose();
+            }}
+            className={textButtonClass}
+          >
+            {t('groups.cancel')}
+          </ActionButton>
+        </div>
+      </form>
+    </ModalDialog>
   );
 }
 
@@ -367,27 +398,36 @@ function needsArchiveConfirmation(group: GroupDetail): boolean {
   return group.archived_at === null && (group.future_lesson_count > 0 || group.has_open_series);
 }
 
-function ArchiveSection({
+type GroupDialog = 'details' | 'archive' | null;
+
+function GroupActions({
   group,
+  reloads,
   handlers,
+  onOutcome,
 }: {
   readonly group: GroupDetail;
+  readonly reloads: number;
   readonly handlers: GroupHandlers;
+  readonly onOutcome: (outcome: GroupOutcome | null) => void;
 }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
-  const headingId = useId();
   const dialogHeadingId = useId();
   const consequenceId = useId();
-  const opener = useRef<HTMLButtonElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
   const dismissButton = useRef<HTMLButtonElement>(null);
-  const [confirming, setConfirming] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
+  const [dialog, setDialog] = useState<GroupDialog>(null);
   const action = useAction();
   const archived = group.archived_at !== null;
+  const confirming = dialog === 'archive';
+
+  function close(): void {
+    setDialog(null);
+  }
 
   function toggle(viaDialog: boolean): void {
-    setConfirmed(viaDialog);
+    onOutcome(null);
     action.run(async (): Promise<ActionState> => {
       const params = { params: { path: { id: group.id } } };
       const { data, error, response } = archived
@@ -396,58 +436,73 @@ function ArchiveSection({
       if (data === undefined) {
         const refused = refusedBy(response, error);
         if (showsStaleData(refused)) {
-          setConfirming(false);
+          setDialog(null);
           handlers.onChangedElsewhere();
+        } else if (!viaDialog) {
+          onOutcome({ kind: 'refused', state: refused });
         }
         return refused;
       }
-      setConfirming(false);
+      setDialog(null);
       handlers.onChanged(data);
+      onOutcome({ kind: archived ? 'unarchived' : 'archived' });
       return done;
     });
   }
 
-  const doneNotice = t(archived ? 'groups.archivedNotice' : 'groups.unarchivedNotice');
+  const items: MenuItem[] = [
+    {
+      label: t('groups.editDetails'),
+      onChoose: (): void => {
+        onOutcome(null);
+        setDialog('details');
+      },
+    },
+    {
+      label: t(archived ? 'groups.unarchiveSubmit' : 'groups.archiveSubmit'),
+      onChoose: (): void => {
+        if (needsArchiveConfirmation(group)) {
+          onOutcome(null);
+          action.reset();
+          setDialog('archive');
+          return;
+        }
+        toggle(false);
+      },
+    },
+  ];
+
   return (
-    <section aria-labelledby={headingId} className="flex flex-col items-start gap-3">
-      <h2 id={headingId} className="text-heading">
-        {t('groups.archive')}
-      </h2>
-      <p className="text-small text-text-muted">{t(archived ? 'groups.unarchiveHint' : 'groups.archiveHint')}</p>
-      {confirming ? null : <Refusal state={action.state} />}
-      {action.state.kind === 'done' ? (
-        confirmed ? (
-          <FocusedNotice message={doneNotice} />
-        ) : (
-          <FormNotice takeFocus>{doneNotice}</FormNotice>
-        )
-      ) : null}
-      <ActionButton
-        ref={opener}
+    <>
+      <ActionMenu
+        label={t('groups.actions')}
         busy={action.busy && !confirming}
         unavailable={action.busy}
-        onClick={() => {
-          if (needsArchiveConfirmation(group)) {
-            action.reset();
-            setConfirming(true);
-            return;
-          }
-          toggle(false);
-        }}
-        className={quietButtonClass}
+        items={items}
+        buttonRef={menuButton}
       >
-        {t(archived ? 'groups.unarchiveSubmit' : 'groups.archiveSubmit')}
-      </ActionButton>
+        <MoreIcon />
+      </ActionMenu>
+      <DetailsDialog
+        group={group}
+        reloads={reloads}
+        handlers={handlers}
+        open={dialog === 'details'}
+        returnFocus={menuButton}
+        onClose={close}
+        onSaved={() => {
+          close();
+          onOutcome({ kind: 'saved' });
+        }}
+      />
       <ModalDialog
         open={confirming}
         busy={action.busy}
         labelledBy={dialogHeadingId}
         describedBy={consequenceId}
-        returnFocus={opener}
+        returnFocus={menuButton}
         initialFocus={dismissButton}
-        onClose={() => {
-          setConfirming(false);
-        }}
+        onClose={close}
       >
         <div className="flex flex-col gap-4">
           <h2 id={dialogHeadingId} className="text-heading">
@@ -469,9 +524,7 @@ function ArchiveSection({
               ref={dismissButton}
               busy={false}
               unavailable={action.busy}
-              onClick={() => {
-                setConfirming(false);
-              }}
+              onClick={close}
               className={textButtonClass}
             >
               {t('groups.cancel')}
@@ -479,17 +532,11 @@ function ArchiveSection({
           </div>
         </div>
       </ModalDialog>
-    </section>
+    </>
   );
 }
 
-function GroupLessons({
-  group,
-  onScheduled,
-}: {
-  readonly group: GroupDetail;
-  readonly onScheduled: () => void;
-}): ReactElement {
+function GroupLessons({ group }: { readonly group: GroupDetail }): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
   const headingId = useId();
@@ -510,23 +557,16 @@ function GroupLessons({
           {t('lessons.openSchedule')}
         </Link>
       </p>
-      {group.archived_at === null && me.state === 'active' ? (
-        <ScheduleLessonAction audience={{ kind: 'group', id: group.id, name: group.name }} onScheduled={onScheduled} />
-      ) : null}
     </section>
   );
 }
 
-export function GroupView({
+function GroupView({
   group,
-  reloads = 0,
   handlers,
-  onScheduled,
 }: {
   readonly group: GroupDetail;
-  readonly reloads?: number;
   readonly handlers: GroupHandlers;
-  readonly onScheduled: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   return (
@@ -540,12 +580,32 @@ export function GroupView({
         <GroupDot colour={group.colour} />
         {group.archived_at === null ? null : <StatusWord tone="muted">{t('groups.archived')}</StatusWord>}
       </p>
-      <Members group={group} handlers={handlers} />
-      <GroupLessons group={group} onScheduled={onScheduled} />
-      <DetailsForm group={group} reloads={reloads} handlers={handlers} />
-      <ArchiveSection group={group} handlers={handlers} />
+      <PageColumns
+        asideLabel={t('lessons.next')}
+        main={<Members group={group} handlers={handlers} />}
+        aside={<GroupLessons group={group} />}
+      />
     </>
   );
+}
+
+function outcomeMessage(t: TFunction, outcome: GroupOutcome): string | null {
+  if (outcome.kind === 'saved') {
+    return t('groups.saved');
+  }
+  if (outcome.kind === 'archived') {
+    return t('groups.archivedNotice');
+  }
+  return outcome.kind === 'unarchived' ? t('groups.unarchivedNotice') : null;
+}
+
+function OutcomeNotice({ outcome }: { readonly outcome: GroupOutcome }): ReactElement | null {
+  const { t } = useTranslation();
+  if (outcome.kind === 'refused') {
+    return <Refusal state={outcome.state} />;
+  }
+  const message = outcomeMessage(t, outcome);
+  return message === null ? null : <FocusedNotice message={message} />;
 }
 
 export function GroupPage(): ReactElement {
@@ -570,6 +630,41 @@ export function GroupPage(): ReactElement {
   const error = refetchError === null ? queryError : null;
   const notFound = error?.code === 'not_found';
 
+  const me = useSignedInAccount();
+  const [outcome, setOutcome] = useState<{
+    readonly id: string;
+    readonly count: number;
+    readonly outcome: GroupOutcome;
+  } | null>(null);
+  if (outcome !== null && outcome.id !== groupId) {
+    setOutcome(null);
+  }
+  const shown = error === null ? (query.data ?? null) : null;
+  const handlers: GroupHandlers = {
+    onChanged: (group) => {
+      queryClient.setQueryData<GroupDetail>(key, (previous) =>
+        previous === undefined
+          ? previous
+          : {
+              ...group,
+              next_lessons: previous.next_lessons,
+              future_lesson_count: previous.future_lesson_count,
+              has_open_series: previous.has_open_series,
+              channel_id: previous.channel_id,
+            },
+      );
+      void queryClient.invalidateQueries({ queryKey: key });
+      void queryClient.invalidateQueries({ queryKey: groupsKey, refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
+    },
+    onChangedElsewhere: () => {
+      setChanged((previous) => ({ id: groupId, count: (previous?.count ?? 0) + 1 }));
+      void queryClient.invalidateQueries({ queryKey: groupsKey }).then(() => {
+        setReloads((count) => count + 1);
+      });
+    },
+  };
+
   function body(): ReactElement {
     if (error !== null) {
       return notFound ? (
@@ -583,53 +678,54 @@ export function GroupPage(): ReactElement {
         />
       );
     }
-    if (query.data === undefined) {
+    if (shown === null) {
       return <DelayedLoading />;
     }
-    return (
-      <GroupView
-        group={query.data}
-        reloads={reloads}
-        onScheduled={() => {
-          void queryClient.invalidateQueries({ queryKey: key });
-          void queryClient.invalidateQueries({ queryKey: groupsKey, refetchType: 'none' });
-        }}
-        handlers={{
-          onChanged: (group) => {
-            queryClient.setQueryData<GroupDetail>(key, (previous) =>
-              previous === undefined
-                ? previous
-                : {
-                    ...group,
-                    next_lessons: previous.next_lessons,
-                    future_lesson_count: previous.future_lesson_count,
-                    has_open_series: previous.has_open_series,
-                    channel_id: previous.channel_id,
-                  },
-            );
-            void queryClient.invalidateQueries({ queryKey: key });
-            void queryClient.invalidateQueries({ queryKey: groupsKey, refetchType: 'none' });
-            void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
-          },
-          onChangedElsewhere: () => {
-            setChanged((previous) => ({ id: groupId, count: (previous?.count ?? 0) + 1 }));
-            void queryClient.invalidateQueries({ queryKey: groupsKey }).then(() => {
-              setReloads((count) => count + 1);
-            });
-          },
-        }}
-      />
-    );
+    return <GroupView group={shown} handlers={handlers} />;
   }
 
   return (
     <Page
-      width="reading"
       {...(notFound ? { title: 'page.notFound' as const } : {})}
-      {...(error === null && query.data !== undefined ? { headingText: query.data.name } : {})}
+      {...(shown === null ? {} : { headingText: shown.name })}
       focusTitle={notFound}
+      action={
+        shown === null ? null : (
+          <>
+            {shown.channel_id == null ? null : (
+              <Link to={`/messages/${encodeURIComponent(shown.channel_id)}`} className={linkClass}>
+                {t('section.messages')}
+              </Link>
+            )}
+            {shown.archived_at === null && me.state === 'active' ? (
+              <ScheduleLessonAction
+                audience={{ kind: 'group', id: shown.id, name: shown.name }}
+                onScheduled={() => {
+                  void queryClient.invalidateQueries({ queryKey: key });
+                  void queryClient.invalidateQueries({ queryKey: groupsKey, refetchType: 'none' });
+                }}
+              />
+            ) : null}
+          </>
+        )
+      }
+      menu={
+        shown === null ? null : (
+          <GroupActions
+            group={shown}
+            reloads={reloads}
+            handlers={handlers}
+            onOutcome={(next) => {
+              setOutcome((previous) =>
+                next === null ? null : { id: groupId, count: (previous?.count ?? 0) + 1, outcome: next },
+              );
+            }}
+          />
+        )
+      }
     >
       {changed === null || notFound ? null : <FocusedNotice key={changed.count} message={t('groups.changed')} />}
+      {outcome === null || notFound ? null : <OutcomeNotice key={outcome.count} outcome={outcome.outcome} />}
       {refetchError === null ? null : (
         <RefetchFailed
           error={refetchError}
@@ -638,11 +734,6 @@ export function GroupPage(): ReactElement {
           }}
         />
       )}
-      {error === null && query.data?.channel_id != null ? (
-        <Link to={`/messages/${encodeURIComponent(query.data.channel_id)}`} className="text-accent-text underline">
-          {t('section.messages')}
-        </Link>
-      ) : null}
       {body()}
     </Page>
   );

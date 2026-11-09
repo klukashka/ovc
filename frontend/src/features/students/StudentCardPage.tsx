@@ -1,15 +1,25 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type ReactElement, type SyntheticEvent, useEffect, useId, useRef, useState } from 'react';
+import type { TFunction } from 'i18next';
+import {
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+  type SyntheticEvent,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 
 import { type ActionState, done, refusedBy, showsStaleData, useAction } from '../../components/ui/action.ts';
+import { ActionMenu, type MenuItem } from '../../components/ui/ActionMenu.tsx';
 import { Avatar } from '../../components/ui/Avatar.tsx';
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
-  FormNotice,
   SubmitButton,
   TextField,
   fieldClass,
@@ -20,10 +30,12 @@ import {
   stringField,
   textButtonClass,
 } from '../../components/ui/Form.tsx';
+import { MoreIcon } from '../../components/ui/icons.tsx';
 import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
+import { PageColumns } from '../../components/ui/PageColumns.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
 import { useStoredValue, valueAccess } from '../../components/ui/serverValue.ts';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
@@ -36,6 +48,7 @@ import { LessonList } from '../schedule/LessonList.tsx';
 import { ScheduleLessonAction } from '../schedule/ScheduleLessonAction.tsx';
 import {
   type CardInvitation,
+  type RelationshipState,
   type StudentCard,
   type StudentCardDetail,
   cardLessonsKey,
@@ -49,6 +62,7 @@ import {
 } from './api.ts';
 import { GroupDots } from './GroupDots.tsx';
 import { InvitationLink } from './InvitationLink.tsx';
+import { type AutosaveStatus, useAutosave } from './notesAutosave.ts';
 import { StateBadge } from './StateBadge.tsx';
 
 type StudentCardPatch = components['schemas']['StudentCardPatch'];
@@ -86,23 +100,13 @@ async function withoutLiveRefetch(
   }
 }
 
-function useCardDialog(handlers: CardHandlers): {
-  readonly open: boolean;
-  readonly show: (open: boolean) => void;
-  readonly action: ReturnType<typeof useAction>;
-} {
-  const [open, setOpen] = useState(false);
-  const show = (next: boolean): void => {
-    setOpen(next);
-    handlers.onDialog(next);
-  };
-  const action = useAction((state) => {
+function useDialogAction(handlers: CardHandlers, close: () => void): ReturnType<typeof useAction> {
+  return useAction((state) => {
     if (showsStaleData(state)) {
-      show(false);
+      close();
       handlers.onChangedElsewhere();
     }
   });
-  return { open, show, action };
 }
 
 function useStaleAwareAction(onStale: () => void): ReturnType<typeof useAction> {
@@ -113,47 +117,48 @@ function useStaleAwareAction(onStale: () => void): ReturnType<typeof useAction> 
   });
 }
 
-function usePatch(
-  cardId: string,
-  handlers: CardHandlers,
-): {
-  readonly action: ReturnType<typeof useAction>;
-  readonly save: (patch: StudentCardPatch) => void;
-} {
-  const client = useApiClient();
-  const action = useStaleAwareAction(handlers.onStale);
-  return {
-    action,
-    save: (patch): void => {
-      action.run(async (): Promise<ActionState> => {
-        const { data, error, response } = await client.PATCH('/api/v1/students/{id}', {
-          params: { path: { id: cardId } },
-          body: patch,
-        });
-        if (data === undefined) {
-          return refusedBy(response, error);
-        }
-        handlers.onChanged(data);
-        return done;
-      });
-    },
-  };
-}
-
-function DetailsForm({
+function DetailsDialog({
   card,
   reloads,
   handlers,
+  open,
+  returnFocus,
+  onClose,
+  onSaved,
 }: {
   readonly card: StudentCard;
   readonly reloads: number;
   readonly handlers: CardHandlers;
+  readonly open: boolean;
+  readonly returnFocus: RefObject<HTMLElement | null>;
+  readonly onClose: () => void;
+  readonly onSaved: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   const headingId = useId();
-  const { action, save } = usePatch(card.id, handlers);
+  const client = useApiClient();
+  const action = useStaleAwareAction(handlers.onStale);
   const error = action.state.kind === 'refused' ? action.state.error : null;
   const emailEditable = card.state === 'invited';
+
+  function save(patch: StudentCardPatch): void {
+    action.run(async (): Promise<ActionState> => {
+      const {
+        data,
+        error: refusal,
+        response,
+      } = await client.PATCH('/api/v1/students/{id}', {
+        params: { path: { id: card.id } },
+        body: patch,
+      });
+      if (data === undefined) {
+        return refusedBy(response, refusal);
+      }
+      handlers.onChanged(data);
+      onSaved();
+      return { kind: 'idle' };
+    });
+  }
 
   function submit(event: SyntheticEvent<HTMLFormElement, SubmitEvent>): void {
     event.preventDefault();
@@ -169,51 +174,80 @@ function DetailsForm({
   }
 
   return (
-    <form
-      aria-labelledby={headingId}
-      onSubmit={submit}
-      onChange={action.reset}
-      className="flex max-w-sm flex-col gap-4"
+    <ModalDialog
+      open={open}
+      busy={action.busy}
+      labelledBy={headingId}
+      returnFocus={returnFocus}
+      onClose={() => {
+        action.reset();
+        onClose();
+      }}
     >
-      <h2 id={headingId} className="text-heading">
-        {t('studentCard.details')}
-      </h2>
-      <Refusal state={action.state} dailyLimit="emailChanges" />
-      {action.state.kind === 'done' ? <FormNotice takeFocus>{t('studentCard.saved')}</FormNotice> : null}
-      <TextField
-        label={t('studentCard.displayName')}
-        name="display_name"
-        autoComplete="off"
-        maxLength={100}
-        defaultValue={card.display_name}
-        reloads={reloads}
-        hint={t('addStudent.displayNameHint')}
-        error={fieldMessage(t, error, 'display_name')}
-      />
-      {emailEditable ? (
+      <form aria-labelledby={headingId} onSubmit={submit} onChange={action.reset} className="flex flex-col gap-4">
+        <h2 id={headingId} className="text-heading">
+          {t('studentCard.details')}
+        </h2>
+        <Refusal state={action.state} dailyLimit="emailChanges" />
         <TextField
-          label={t('addStudent.email')}
-          name="email"
-          type="email"
+          label={t('studentCard.displayName')}
+          name="display_name"
           autoComplete="off"
-          required={false}
-          maxLength={254}
-          defaultValue={card.email ?? ''}
+          maxLength={100}
+          defaultValue={card.display_name}
           reloads={reloads}
-          hint={t('studentCard.emailChangeHint')}
-          error={fieldMessage(t, error, 'email')}
+          hint={t('addStudent.displayNameHint')}
+          error={fieldMessage(t, error, 'display_name')}
         />
-      ) : null}
-      <p>
-        <SubmitButton busy={action.busy} quiet>
-          {t('studentCard.save')}
-        </SubmitButton>
-      </p>
-    </form>
+        {emailEditable ? (
+          <TextField
+            label={t('addStudent.email')}
+            name="email"
+            type="email"
+            autoComplete="off"
+            required={false}
+            maxLength={254}
+            defaultValue={card.email ?? ''}
+            reloads={reloads}
+            hint={t('studentCard.emailChangeHint')}
+            error={fieldMessage(t, error, 'email')}
+          />
+        ) : null}
+        <div className="flex flex-wrap gap-3">
+          <SubmitButton busy={action.busy}>{t('studentCard.save')}</SubmitButton>
+          <ActionButton
+            busy={false}
+            unavailable={action.busy}
+            onClick={() => {
+              action.reset();
+              onClose();
+            }}
+            className={textButtonClass}
+          >
+            {t('studentCard.cancel')}
+          </ActionButton>
+        </div>
+      </form>
+    </ModalDialog>
   );
 }
 
-function NotesForm({
+function autosaveMessage(t: TFunction, status: AutosaveStatus): string | null {
+  if (status === 'saving') {
+    return t('studentCard.notesSaving');
+  }
+  if (status === 'saved') {
+    return t('studentCard.saved');
+  }
+  return status === 'failed' ? t('studentCard.notesNotSaved') : null;
+}
+
+const notesStatusClass: Readonly<Record<'failed' | 'quiet', string>> = {
+  failed: 'text-small text-danger',
+  quiet: 'text-small text-text-muted',
+};
+
+function NotesAutosave({
   card,
   reloads,
   handlers,
@@ -223,28 +257,40 @@ function NotesForm({
   readonly handlers: CardHandlers;
 }): ReactElement {
   const { t } = useTranslation();
+  const client = useApiClient();
   const headingId = useId();
   const notesId = useId();
   const hintId = useId();
-  const notes = useStoredValue<HTMLTextAreaElement>(card.notes, reloads, valueAccess);
+  const autosave = useAutosave(async (notes): Promise<boolean> => {
+    const { data, error, response } = await client.PATCH('/api/v1/students/{id}', {
+      params: { path: { id: card.id } },
+      body: { notes },
+    });
+    if (data === undefined) {
+      if (showsStaleData(refusedBy(response, error))) {
+        handlers.onStale();
+      }
+      return false;
+    }
+    handlers.onChanged(data);
+    return true;
+  });
+  const notes = useStoredValue<HTMLTextAreaElement>(autosave.unsaved ? undefined : card.notes, reloads, valueAccess);
   const [initialNotes] = useState(card.notes);
-  const { action, save } = usePatch(card.id, handlers);
+  const message = autosaveMessage(t, autosave.status);
 
   return (
     <form
       aria-labelledby={headingId}
-      onChange={action.reset}
       onSubmit={(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
         event.preventDefault();
-        save({ notes: stringField(new FormData(event.currentTarget), 'notes') });
+        autosave.left();
       }}
       className="flex flex-col gap-3"
     >
       <h2 id={headingId} className="text-heading">
         {t('studentCard.notes')}
       </h2>
-      <Refusal state={action.state} />
-      {action.state.kind === 'done' ? <FormNotice takeFocus>{t('studentCard.saved')}</FormNotice> : null}
       <label htmlFor={notesId} className="sr-only">
         {t('studentCard.notes')}
       </label>
@@ -252,20 +298,36 @@ function NotesForm({
         ref={notes}
         id={notesId}
         name="notes"
-        rows={6}
+        rows={8}
         maxLength={10000}
         defaultValue={initialNotes}
         aria-describedby={hintId}
+        onChange={(event) => {
+          autosave.changed(event.currentTarget.value);
+        }}
+        onBlur={autosave.left}
         className={`${fieldClass} py-2`}
       />
       <p id={hintId} className="text-small text-text-muted">
         {t('studentCard.notesHint')}
       </p>
-      <p>
-        <SubmitButton busy={action.busy} quiet>
-          {t('studentCard.save')}
-        </SubmitButton>
-      </p>
+      <div className="flex min-h-11 flex-wrap items-center gap-3">
+        <p role="status" className={notesStatusClass[autosave.status === 'failed' ? 'failed' : 'quiet']}>
+          {message}
+        </p>
+        {autosave.status === 'failed' ? (
+          <button
+            type="button"
+            onClick={() => {
+              notes.current?.focus();
+              autosave.retry();
+            }}
+            className={quietButtonClass}
+          >
+            {t('studentCard.notesRetry')}
+          </button>
+        ) : null}
+      </div>
     </form>
   );
 }
@@ -273,14 +335,19 @@ function NotesForm({
 function WithdrawInvitation({
   cardId,
   handlers,
+  open,
+  returnFocus,
+  onClose,
 }: {
   readonly cardId: string;
   readonly handlers: CardHandlers;
+  readonly open: boolean;
+  readonly returnFocus: RefObject<HTMLElement | null>;
+  readonly onClose: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
-  const { open, show, action } = useCardDialog(handlers);
-  const opener = useRef<HTMLButtonElement>(null);
+  const action = useDialogAction(handlers, onClose);
   const cancel = useRef<HTMLButtonElement>(null);
   const headingId = useId();
   const consequenceId = useId();
@@ -301,128 +368,99 @@ function WithdrawInvitation({
   }
 
   return (
-    <section className="flex flex-col items-start gap-3">
-      <button
-        ref={opener}
-        type="button"
-        onClick={() => {
-          action.reset();
-          show(true);
-        }}
-        className={dangerButtonClass}
-      >
-        {t('studentCard.withdraw')}
-      </button>
-      <ModalDialog
-        open={open}
-        busy={action.busy}
-        labelledBy={headingId}
-        describedBy={consequenceId}
-        returnFocus={opener}
-        initialFocus={cancel}
-        onClose={() => {
-          show(false);
-        }}
-      >
-        <div className="flex flex-col gap-4">
-          <h2 id={headingId} className="text-heading">
-            {t('studentCard.withdrawTitle')}
-          </h2>
-          <p id={consequenceId}>{t('studentCard.withdrawConsequence')}</p>
-          <Refusal state={action.state} />
-          <div className="flex flex-wrap gap-3">
-            <ActionButton busy={action.busy} onClick={withdraw} className={dangerButtonClass}>
-              {t('studentCard.withdrawSubmit')}
-            </ActionButton>
-            <ActionButton
-              ref={cancel}
-              busy={false}
-              unavailable={action.busy}
-              onClick={() => {
-                show(false);
-              }}
-              className={textButtonClass}
-            >
-              {t('studentCard.cancel')}
-            </ActionButton>
-          </div>
+    <ModalDialog
+      open={open}
+      busy={action.busy}
+      labelledBy={headingId}
+      describedBy={consequenceId}
+      returnFocus={returnFocus}
+      initialFocus={cancel}
+      onClose={onClose}
+    >
+      <div className="flex flex-col gap-4">
+        <h2 id={headingId} className="text-heading">
+          {t('studentCard.withdrawTitle')}
+        </h2>
+        <p id={consequenceId}>{t('studentCard.withdrawConsequence')}</p>
+        <Refusal state={action.state} />
+        <div className="flex flex-wrap gap-3">
+          <ActionButton busy={action.busy} onClick={withdraw} className={dangerButtonClass}>
+            {t('studentCard.withdrawSubmit')}
+          </ActionButton>
+          <ActionButton
+            ref={cancel}
+            busy={false}
+            unavailable={action.busy}
+            onClick={onClose}
+            className={textButtonClass}
+          >
+            {t('studentCard.cancel')}
+          </ActionButton>
         </div>
-      </ModalDialog>
-    </section>
+      </div>
+    </ModalDialog>
   );
 }
 
 function EndWorkingTogether({
   consequence,
   handlers,
+  open,
+  returnFocus,
+  onClose,
   end,
 }: {
   readonly consequence: string;
   readonly handlers: CardHandlers;
+  readonly open: boolean;
+  readonly returnFocus: RefObject<HTMLElement | null>;
+  readonly onClose: () => void;
   readonly end: () => Promise<ActionState>;
 }): ReactElement {
   const { t } = useTranslation();
-  const { open, show, action } = useCardDialog(handlers);
-  const opener = useRef<HTMLButtonElement>(null);
+  const action = useDialogAction(handlers, onClose);
   const cancel = useRef<HTMLButtonElement>(null);
   const headingId = useId();
   const consequenceId = useId();
 
   return (
-    <section className="flex flex-col items-start gap-3">
-      <button
-        ref={opener}
-        type="button"
-        onClick={() => {
-          action.reset();
-          show(true);
-        }}
-        className={dangerButtonClass}
-      >
-        {t('studentCard.end')}
-      </button>
-      <ModalDialog
-        open={open}
-        busy={action.busy}
-        labelledBy={headingId}
-        describedBy={consequenceId}
-        returnFocus={opener}
-        initialFocus={cancel}
-        onClose={() => {
-          show(false);
-        }}
-      >
-        <div className="flex flex-col gap-4">
-          <h2 id={headingId} className="text-heading">
-            {t('studentCard.removeTitle')}
-          </h2>
-          <p id={consequenceId}>{consequence}</p>
-          <Refusal state={action.state} />
-          <div className="flex flex-wrap gap-3">
-            <ActionButton
-              busy={action.busy}
-              onClick={() => {
-                action.run(end);
-              }}
-              className={dangerButtonClass}
-            >
-              {t('studentCard.removeSubmit')}
-            </ActionButton>
-            <ActionButton
-              ref={cancel}
-              busy={false}
-              unavailable={action.busy}
-              onClick={() => {
-                show(false);
-              }}
-              className={textButtonClass}
-            >
-              {t('studentCard.cancel')}
-            </ActionButton>
-          </div>
+    <ModalDialog
+      open={open}
+      busy={action.busy}
+      labelledBy={headingId}
+      describedBy={consequenceId}
+      returnFocus={returnFocus}
+      initialFocus={cancel}
+      onClose={onClose}
+    >
+      <div className="flex flex-col gap-4">
+        <h2 id={headingId} className="text-heading">
+          {t('studentCard.removeTitle')}
+        </h2>
+        <p id={consequenceId}>{consequence}</p>
+        <Refusal state={action.state} />
+        <div className="flex flex-wrap gap-3">
+          <ActionButton
+            busy={action.busy}
+            onClick={() => {
+              action.run(end);
+            }}
+            className={dangerButtonClass}
+          >
+            {t('studentCard.removeSubmit')}
+          </ActionButton>
+          <ActionButton
+            ref={cancel}
+            busy={false}
+            unavailable={action.busy}
+            onClick={onClose}
+            className={textButtonClass}
+          >
+            {t('studentCard.cancel')}
+          </ActionButton>
         </div>
-      </ModalDialog>
-    </section>
+      </div>
+    </ModalDialog>
   );
 }
 
@@ -430,10 +468,16 @@ function RemoveStudent({
   cardId,
   state,
   handlers,
+  open,
+  returnFocus,
+  onClose,
 }: {
   readonly cardId: string;
   readonly state: 'provisional' | 'reclaim_pending';
   readonly handlers: CardHandlers;
+  readonly open: boolean;
+  readonly returnFocus: RefObject<HTMLElement | null>;
+  readonly onClose: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
@@ -443,6 +487,9 @@ function RemoveStudent({
         state === 'provisional' ? 'studentCard.removeConsequence' : 'studentCard.removeReclaimConsequence',
       )}
       handlers={handlers}
+      open={open}
+      returnFocus={returnFocus}
+      onClose={onClose}
       end={() =>
         withoutLiveRefetch(handlers, false, async (): Promise<ActionState> => {
           const { data, error, response } = await client.POST('/api/v1/students/{id}/remove', {
@@ -462,9 +509,15 @@ function RemoveStudent({
 function EndRelationship({
   cardId,
   handlers,
+  open,
+  returnFocus,
+  onClose,
 }: {
   readonly cardId: string;
   readonly handlers: CardHandlers;
+  readonly open: boolean;
+  readonly returnFocus: RefObject<HTMLElement | null>;
+  readonly onClose: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
@@ -472,6 +525,9 @@ function EndRelationship({
     <EndWorkingTogether
       consequence={t('studentCard.endConsequence')}
       handlers={handlers}
+      open={open}
+      returnFocus={returnFocus}
+      onClose={onClose}
       end={() =>
         withoutLiveRefetch(handlers, true, async (): Promise<ActionState> => {
           const { data, error, response } = await client.POST('/api/v1/students/{id}/end', {
@@ -556,63 +612,205 @@ function CardSummary({ card }: { readonly card: StudentCard }): ReactElement {
           {t('studentCard.back')}
         </Link>
       </p>
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <Avatar name={card.display_name} avatarId={card.account?.avatar_id ?? null} size="large" />
-        <div className="flex flex-col gap-1">
-          <p className="text-text-muted">{email ?? t('students.noEmail')}</p>
-          <StateBadge state={card.state} />
-          <GroupDots groups={card.groups} />
-        </div>
+        <p className="text-text-muted">{email ?? t('students.noEmail')}</p>
+        <StateBadge state={card.state} />
+        <GroupDots groups={card.groups} />
       </div>
-      {card.account === null ? null : <AccountDetails account={card.account} />}
-      {card.state === 'reclaim_pending' ? <p className="text-text-muted">{t('studentCard.waitingForOwner')}</p> : null}
     </>
   );
 }
 
-function CardOverview({
+function CardInvitation({
+  card,
+  handlers,
+}: {
+  readonly card: StudentCard;
+  readonly handlers: CardHandlers;
+}): ReactElement | null {
+  const [invitedAgain, setInvitedAgain] = useState<string | null>(null);
+  const linkState = card.state === 'invited' || card.state === 'ended';
+  if (linkState && card.invitation !== null) {
+    return (
+      <InvitationLink
+        cardId={card.id}
+        invitation={card.invitation}
+        canSend={card.email !== null}
+        initialNotice={invitedAgain === card.id ? 'created' : 'none'}
+        onRegenerated={(invitation) => {
+          handlers.onChanged({ ...card, invitation });
+        }}
+        onSent={handlers.onSent}
+        onStale={handlers.onStale}
+      />
+    );
+  }
+  if (card.state === 'ended' && card.invitation === null) {
+    return (
+      <InviteAgain
+        cardId={card.id}
+        handlers={handlers}
+        onInvited={(invitation) => {
+          setInvitedAgain(card.id);
+          handlers.onChanged({ ...card, invitation });
+        }}
+      />
+    );
+  }
+  return null;
+}
+
+function CardColumns({
   card,
   reloads,
   handlers,
+  children,
 }: {
   readonly card: StudentCard;
   readonly reloads: number;
   readonly handlers: CardHandlers;
+  readonly children?: ReactNode;
 }): ReactElement {
-  const [invitedAgain, setInvitedAgain] = useState<string | null>(null);
-  const linkState = card.state === 'invited' || card.state === 'ended';
+  const { t } = useTranslation();
+  return (
+    <PageColumns
+      asideLabel={t('studentCard.notes')}
+      main={
+        <>
+          {card.account === null ? null : <AccountDetails account={card.account} />}
+          {card.state === 'reclaim_pending' ? (
+            <p className="text-text-muted">{t('studentCard.waitingForOwner')}</p>
+          ) : null}
+          <CardInvitation card={card} handlers={handlers} />
+          {children}
+        </>
+      }
+      aside={<NotesAutosave card={card} reloads={reloads} handlers={handlers} />}
+    />
+  );
+}
+
+type CardDialogKind = 'details' | 'danger';
+
+interface OpenCardDialog {
+  readonly kind: CardDialogKind;
+  readonly state: RelationshipState;
+}
+
+function dangerousActionLabel(t: TFunction, state: RelationshipState): string | null {
+  if (state === 'invited') {
+    return t('studentCard.withdraw');
+  }
+  return state === 'ended' ? null : t('studentCard.end');
+}
+
+export function CardActions({
+  card,
+  reloads,
+  handlers,
+  onDetails,
+  onSaved,
+}: {
+  readonly card: StudentCard;
+  readonly reloads: number;
+  readonly handlers: CardHandlers;
+  readonly onDetails: () => void;
+  readonly onSaved: () => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const [dialog, setDialog] = useState<OpenCardDialog | null>(null);
+  const [openings, setOpenings] = useState(0);
+  if (dialog !== null && dialog.state !== card.state) {
+    setDialog(null);
+  }
+  const dangerous = dangerousActionLabel(t, card.state);
+
+  function open(kind: CardDialogKind): void {
+    setOpenings((count) => count + 1);
+    setDialog({ kind, state: card.state });
+    handlers.onDialog(true);
+    if (kind === 'details') {
+      onDetails();
+    }
+  }
+
+  function close(): void {
+    setDialog(null);
+    handlers.onDialog(false);
+  }
+
+  const detailsOpen = dialog?.kind === 'details' && dialog.state === card.state;
+  const dangerOpen = dialog?.kind === 'danger' && dialog.state === card.state;
+
+  const items: MenuItem[] = [
+    {
+      label: t('studentCard.editDetails'),
+      onChoose: (): void => {
+        open('details');
+      },
+    },
+    ...(dangerous === null
+      ? []
+      : [
+          {
+            label: dangerous,
+            onChoose: (): void => {
+              open('danger');
+            },
+          },
+        ]),
+  ];
+
   return (
     <>
-      {linkState && card.invitation !== null ? (
-        <InvitationLink
-          cardId={card.id}
-          invitation={card.invitation}
-          canSend={card.email !== null}
-          initialNotice={invitedAgain === card.id ? 'created' : 'none'}
-          onRegenerated={(invitation) => {
-            handlers.onChanged({ ...card, invitation });
-          }}
-          onSent={handlers.onSent}
-          onStale={handlers.onStale}
-        />
-      ) : null}
-      {card.state === 'ended' && card.invitation === null ? (
-        <InviteAgain
+      <ActionMenu label={t('studentCard.actions')} unavailable={false} items={items} buttonRef={menuButton}>
+        <MoreIcon />
+      </ActionMenu>
+      <DetailsDialog
+        card={card}
+        reloads={reloads}
+        handlers={handlers}
+        open={detailsOpen}
+        returnFocus={menuButton}
+        onClose={close}
+        onSaved={() => {
+          close();
+          onSaved();
+        }}
+      />
+      {card.state === 'invited' ? (
+        <WithdrawInvitation
+          key={openings}
           cardId={card.id}
           handlers={handlers}
-          onInvited={(invitation) => {
-            setInvitedAgain(card.id);
-            handlers.onChanged({ ...card, invitation });
-          }}
+          open={dangerOpen}
+          returnFocus={menuButton}
+          onClose={close}
         />
       ) : null}
-      <DetailsForm card={card} reloads={reloads} handlers={handlers} />
-      <NotesForm card={card} reloads={reloads} handlers={handlers} />
-      {card.state === 'invited' ? <WithdrawInvitation cardId={card.id} handlers={handlers} /> : null}
       {card.state === 'provisional' || card.state === 'reclaim_pending' ? (
-        <RemoveStudent key={card.state} cardId={card.id} state={card.state} handlers={handlers} />
+        <RemoveStudent
+          key={`${card.state}-${String(openings)}`}
+          cardId={card.id}
+          state={card.state}
+          handlers={handlers}
+          open={dangerOpen}
+          returnFocus={menuButton}
+          onClose={close}
+        />
       ) : null}
-      {card.state === 'active' ? <EndRelationship cardId={card.id} handlers={handlers} /> : null}
+      {card.state === 'active' ? (
+        <EndRelationship
+          key={openings}
+          cardId={card.id}
+          handlers={handlers}
+          open={dangerOpen}
+          returnFocus={menuButton}
+          onClose={close}
+        />
+      ) : null}
     </>
   );
 }
@@ -628,8 +826,15 @@ export function StudentCardView({
 }): ReactElement {
   return (
     <>
+      <CardActions
+        card={card}
+        reloads={reloads}
+        handlers={handlers}
+        onDetails={() => undefined}
+        onSaved={() => undefined}
+      />
       <CardSummary card={card} />
-      <CardOverview card={card} reloads={reloads} handlers={handlers} />
+      <CardColumns card={card} reloads={reloads} handlers={handlers} />
     </>
   );
 }
@@ -770,33 +975,19 @@ function CardWithLessons({
   tab,
   reloads,
   handlers,
-  onScheduled,
 }: {
   readonly card: StudentCardDetail;
   readonly tab: CardTab;
   readonly reloads: number;
   readonly handlers: CardHandlers;
-  readonly onScheduled: () => void;
 }): ReactElement {
-  const me = useSignedInAccount();
   return (
     <>
       <CardSummary card={card} />
-      {me.state === 'active' && schedulable(card) ? (
-        <ScheduleLessonAction
-          audience={{ kind: 'one_to_one', id: card.id, name: card.display_name }}
-          onScheduled={onScheduled}
-        />
-      ) : null}
-      <CardTabs cardId={card.id} tab={tab} />
-      {tab === 'lessons' ? (
-        <CardLessonHistory cardId={card.id} />
-      ) : (
-        <>
-          <NextLessons items={card.next_lessons} />
-          <CardOverview card={card} reloads={reloads} handlers={handlers} />
-        </>
-      )}
+      <CardColumns card={card} reloads={reloads} handlers={handlers}>
+        <CardTabs cardId={card.id} tab={tab} />
+        {tab === 'lessons' ? <CardLessonHistory cardId={card.id} /> : <NextLessons items={card.next_lessons} />}
+      </CardColumns>
     </>
   );
 }
@@ -825,6 +1016,11 @@ export function StudentCardPage(): ReactElement {
   if (endedCard !== null && endedCard !== studentId) {
     setEndedCard(null);
   }
+  const [savedCard, setSavedCard] = useState<{ readonly id: string; readonly count: number } | null>(null);
+  if (savedCard !== null && savedCard.id !== studentId) {
+    setSavedCard(null);
+  }
+  const me = useSignedInAccount();
   const key = studentCardKey(studentId);
   const [reloads, setReloads] = useState(0);
 
@@ -874,6 +1070,51 @@ export function StudentCardPage(): ReactElement {
     }
   }
 
+  const handlers: CardHandlers = {
+    onChanged: (card) => {
+      keepLessons(card);
+      void queryClient.invalidateQueries({ queryKey: key });
+      void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
+    },
+    onStale: reloadAfterStaleEdit,
+    onSent: () => {
+      void queryClient.invalidateQueries({ queryKey: key });
+    },
+    onWithdrawn: () => {
+      void navigate('/students?state=invited', { state: { notice: withdrawnNotice } });
+      void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
+    },
+    onEnded: (card) => {
+      setDialogSubject(null);
+      setChangedCard(null);
+      setEndedCard(studentId);
+      keepLessons(card);
+      void queryClient.invalidateQueries({ queryKey: key });
+      void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: groupsKey, refetchType: 'none' });
+    },
+    onChangedElsewhere: () => {
+      setDialogSubject(null);
+      setEndedCard(null);
+      setChangedCard((previous) => ({ id: studentId, count: (previous?.count ?? 0) + 1 }));
+      reloadAfterStaleEdit();
+    },
+    onLeaving: (leaving) => {
+      setLeavingCard(leaving ? studentId : null);
+    },
+    onDialog: (open) => {
+      setDialogSubject(open && query.data !== undefined ? { id: studentId, state: query.data.state } : null);
+    },
+    onRemoved: (newCard) => {
+      void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
+      void navigate(`/students/${encodeURIComponent(newCard.id)}`, {
+        replace: true,
+        state: { notice: removedNotice },
+      });
+    },
+  };
+  const shown = error === null ? (query.data ?? null) : null;
+
   function body(): ReactElement {
     if (gone) {
       return (
@@ -902,78 +1143,61 @@ export function StudentCardPage(): ReactElement {
         />
       );
     }
-    if (query.data === undefined) {
+    if (shown === null) {
       return <DelayedLoading />;
     }
-    const shown = query.data;
-    return (
-      <CardWithLessons
-        card={shown}
-        tab={tab}
-        reloads={reloads}
-        onScheduled={() => {
-          void queryClient.invalidateQueries({ queryKey: key });
-          void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
-        }}
-        handlers={{
-          onChanged: (card) => {
-            keepLessons(card);
-            void queryClient.invalidateQueries({ queryKey: key });
-            void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
-          },
-          onStale: reloadAfterStaleEdit,
-          onSent: () => {
-            void queryClient.invalidateQueries({ queryKey: key });
-          },
-          onWithdrawn: () => {
-            void navigate('/students?state=invited', { state: { notice: withdrawnNotice } });
-            void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
-          },
-          onEnded: (card) => {
-            setDialogSubject(null);
-            setChangedCard(null);
-            setEndedCard(studentId);
-            keepLessons(card);
-            void queryClient.invalidateQueries({ queryKey: key });
-            void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
-            void queryClient.invalidateQueries({ queryKey: groupsKey, refetchType: 'none' });
-          },
-          onChangedElsewhere: () => {
-            setDialogSubject(null);
-            setEndedCard(null);
-            setChangedCard((previous) => ({ id: studentId, count: (previous?.count ?? 0) + 1 }));
-            reloadAfterStaleEdit();
-          },
-          onLeaving: (leaving) => {
-            setLeavingCard(leaving ? studentId : null);
-          },
-          onDialog: (open) => {
-            setDialogSubject(open ? { id: studentId, state: shown.state } : null);
-          },
-          onRemoved: (newCard) => {
-            void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
-            void navigate(`/students/${encodeURIComponent(newCard.id)}`, {
-              replace: true,
-              state: { notice: removedNotice },
-            });
-          },
-        }}
-      />
-    );
+    return <CardWithLessons card={shown} tab={tab} reloads={reloads} handlers={handlers} />;
   }
 
   return (
     <Page
-      width="reading"
       {...(notFound ? { title: 'page.notFound' as const } : {})}
-      {...(error === null && query.data !== undefined ? { headingText: query.data.display_name } : {})}
+      {...(shown === null ? {} : { headingText: shown.display_name })}
       focusTitle={notFound}
+      action={
+        shown === null ? null : (
+          <>
+            {shown.channel_id == null ? null : (
+              <Link to={`/messages/${encodeURIComponent(shown.channel_id)}`} className={linkClass}>
+                {t('section.messages')}
+              </Link>
+            )}
+            {me.state === 'active' && schedulable(shown) ? (
+              <ScheduleLessonAction
+                audience={{ kind: 'one_to_one', id: shown.id, name: shown.display_name }}
+                onScheduled={() => {
+                  void queryClient.invalidateQueries({ queryKey: key });
+                  void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
+                }}
+              />
+            ) : null}
+          </>
+        )
+      }
+      menu={
+        shown === null ? null : (
+          <CardActions
+            card={shown}
+            reloads={reloads}
+            handlers={handlers}
+            onDetails={() => {
+              setSavedCard(null);
+            }}
+            onSaved={() => {
+              setSavedCard((previous) => ({ id: studentId, count: (previous?.count ?? 0) + 1 }));
+            }}
+          />
+        )
+      }
     >
       {removedCard === null ? null : <LiveNotice message={t('studentCard.removed')} />}
       {changedCard === null || notFound || gone ? null : (
         <FocusedNotice key={changedCard.count} message={t('studentCard.changedElsewhere')} />
       )}
       {endedCard === null || notFound || gone ? null : <FocusedNotice message={t('studentCard.ended')} />}
+      {savedCard === null || notFound || gone ? null : (
+        <FocusedNotice key={savedCard.count} message={t('studentCard.saved')} />
+      )}
       {refetchError === null ? null : (
         <RefetchFailed
           error={refetchError}
@@ -982,11 +1206,6 @@ export function StudentCardPage(): ReactElement {
           }}
         />
       )}
-      {error === null && query.data?.channel_id != null ? (
-        <Link to={`/messages/${encodeURIComponent(query.data.channel_id)}`} className="text-accent-text underline">
-          {t('section.messages')}
-        </Link>
-      ) : null}
       {body()}
     </Page>
   );

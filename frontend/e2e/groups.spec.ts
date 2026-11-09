@@ -3,9 +3,11 @@ import type { Locator, Page } from '@playwright/test';
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import {
+  chooseFromPageMenu,
   diagnosedTest as test,
   expect,
   expectRowsNamed,
+  pageMenuButton,
   seedVerifiedUser,
   signUpAndConfirmTutor,
   tableRows,
@@ -208,7 +210,7 @@ test.describe('in English', () => {
     await page.goto(`/groups/${groupId}`);
     await expectRowsNamed(members(page, 'Students'), ['Anna']);
 
-    await page.getByRole('button', { name: 'Archive group' }).click();
+    await chooseFromPageMenu(page, 'Group actions', 'Archive group');
 
     const archived = page.getByRole('status').filter({ hasText: 'The group is archived.' });
     await expect(archived).toBeFocused();
@@ -227,7 +229,7 @@ test.describe('in English', () => {
     await signInThroughTheApi(page, pavel);
     await page.goto(`/groups/${groupId}`);
 
-    await page.getByRole('button', { name: 'Archive group' }).click();
+    await chooseFromPageMenu(page, 'Group actions', 'Archive group');
 
     const dialog = page.getByRole('dialog', { name: 'Archive the group?' });
     await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
@@ -236,7 +238,7 @@ test.describe('in English', () => {
     );
   });
 
-  test('groups › dismissing the archive confirmation returns focus to Archive group and archives nothing', async ({
+  test('groups › dismissing the archive confirmation returns focus to the Group actions menu and archives nothing', async ({
     page,
     deployment,
     control,
@@ -244,8 +246,8 @@ test.describe('in English', () => {
     const { pavel, annaCard, groupId } = await groupWithTwoFutureLessons(deployment, control.now);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/groups/${groupId}`);
-    const archive = page.getByRole('button', { name: 'Archive group' });
-    await archive.click();
+    const archive = pageMenuButton(page, 'Group actions');
+    await chooseFromPageMenu(page, 'Group actions', 'Archive group');
     const dialog = page.getByRole('dialog', { name: 'Archive the group?' });
 
     await dialog.getByRole('button', { name: 'Cancel' }).click();
@@ -263,7 +265,7 @@ test.describe('in English', () => {
     const { pavel, groupId } = await groupWithTwoFutureLessons(deployment, control.now);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/groups/${groupId}`);
-    await page.getByRole('button', { name: 'Archive group' }).click();
+    await chooseFromPageMenu(page, 'Group actions', 'Archive group');
     const dialog = page.getByRole('dialog', { name: 'Archive the group?' });
 
     await dialog.getByRole('button', { name: 'Archive group' }).click();
@@ -355,7 +357,7 @@ test.describe('in English', () => {
     await page.goto(`/groups/${groupId}`);
     await expect(page.getByRole('main').getByText('Archived', { exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Unarchive group' }).click();
+    await chooseFromPageMenu(page, 'Group actions', 'Unarchive group');
 
     const unarchived = page.getByRole('status').filter({ hasText: 'The group is active again.' });
     await expect(unarchived).toBeFocused();
@@ -410,20 +412,28 @@ test.describe('in English', () => {
     expect((await groupMemberNames(deployment, pavel, groupId)).sort()).toEqual(['Anna', 'Boris']);
   });
 
-  test('groups › renaming saves the name with a notice that takes focus', async ({ page, deployment }) => {
+  test('groups › renaming in the Name and colour dialog closes it onto a notice that takes focus', async ({
+    page,
+    deployment,
+  }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
     const anna = await seedActiveStudent(deployment, pavel, 'Anna');
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/groups/${groupId}`);
-    const details = page.getByRole('form', { name: 'Name and colour' });
+    await chooseFromPageMenu(page, 'Group actions', 'Name and colour…');
+    const dialog = page.getByRole('dialog', { name: 'Name and colour' });
+    const details = dialog.getByRole('form', { name: 'Name and colour' });
+    await expect(details.getByLabel('Name', { exact: true })).toBeFocused();
     await details.getByLabel('Name', { exact: true }).fill('Morning algebra');
     await details.getByRole('radio', { name: 'Teal' }).check();
 
     await details.getByRole('button', { name: 'Save' }).click();
 
-    await expect(details.getByRole('status')).toHaveText('Saved.');
-    await expect(details.getByRole('status')).toBeFocused();
+    await expect(dialog).toBeHidden();
+    const saved = page.getByRole('status').filter({ hasText: 'Saved.' });
+    await expect(saved).toHaveText('Saved.');
+    await expect(saved).toBeFocused();
     await expect(page.getByRole('heading', { level: 1, name: 'Morning algebra' })).toBeVisible();
     expect(await cardState(deployment, pavel, anna.cardId)).toEqual({ state: 'active', groups: ['Morning algebra'] });
   });
@@ -440,7 +450,10 @@ test.describe('in English', () => {
     await traffic.initialize();
     await page.goto(`/groups/${groupId}`);
     await expectRefetchedAfterTheSocketIsReady(traffic);
-    const details = page.getByRole('form', { name: 'Name and colour' });
+    await chooseFromPageMenu(page, 'Group actions', 'Name and colour…');
+    const details = page
+      .getByRole('dialog', { name: 'Name and colour' })
+      .getByRole('form', { name: 'Name and colour' });
     await details.getByLabel('Name', { exact: true }).fill('Typed name');
     await details.getByRole('radio', { name: 'Purple' }).check();
     const renamed = await callApi(deployment, await accessToken(deployment, pavel), 'PATCH', `/groups/${groupId}`, {
@@ -457,6 +470,55 @@ test.describe('in English', () => {
     await expect(details.getByLabel('Name', { exact: true })).toHaveValue('Typed name');
     await expect(details.getByRole('radio', { name: 'Purple' })).toBeChecked();
     await expect(details.getByRole('radio', { name: 'Teal' })).not.toBeChecked();
+  });
+
+  test('groups › dismissing the Name and colour dialog returns focus to the Group actions menu and keeps the name', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await chooseFromPageMenu(page, 'Group actions', 'Name and colour…');
+    const dialog = page.getByRole('dialog', { name: 'Name and colour' });
+    await dialog.getByLabel('Name', { exact: true }).fill('Discarded name');
+
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(pageMenuButton(page, 'Group actions')).toBeFocused();
+    await expect(page.getByRole('heading', { level: 1, name: 'Evening algebra' })).toBeVisible();
+  });
+
+  test('groups › at 1440 × 900 the members stand in the main column and the next lessons beside them', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    await signInThroughTheApi(page, pavel);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto(`/groups/${groupId}`);
+    await expectRowsNamed(members(page, 'Students'), ['Anna']);
+
+    const mainColumn = page.locator('[data-column="main"]');
+    const sideColumn = page.getByRole('complementary', { name: 'Next lessons' });
+    await expect(mainColumn.getByRole('heading', { level: 2, name: 'Students' })).toBeVisible();
+    await expect(sideColumn.getByRole('heading', { level: 2, name: 'Next lessons' })).toBeVisible();
+    await expect(sideColumn.getByRole('link', { name: 'Open the schedule' })).toBeVisible();
+    const mainBox = await mainColumn.boundingBox();
+    const sideBox = await sideColumn.boundingBox();
+    expect(mainBox).not.toBeNull();
+    expect(sideBox).not.toBeNull();
+    if (mainBox !== null && sideBox !== null) {
+      expect(Math.abs(sideBox.y - mainBox.y)).toBeLessThanOrEqual(1);
+      expect(sideBox.x).toBeGreaterThanOrEqual(mainBox.x + mainBox.width);
+    }
+    await expect(page.locator('main header').getByRole('button', { name: 'Schedule a lesson' })).toBeVisible();
   });
 
   test('groups › adding to a group archived meanwhile closes the dialog and shows the current group', async ({
@@ -493,7 +555,10 @@ test.describe('in English', () => {
     ).toBeFocused();
     await expect(page.getByRole('main').getByText('Archived', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add students' })).toHaveCount(0);
-    const details = page.getByRole('form', { name: 'Name and colour' });
+    await chooseFromPageMenu(page, 'Group actions', 'Name and colour…');
+    const details = page
+      .getByRole('dialog', { name: 'Name and colour' })
+      .getByRole('form', { name: 'Name and colour' });
     await expect(details.getByLabel('Name', { exact: true })).toHaveValue('Morning algebra');
     await expect(details.getByRole('radio', { name: 'Teal' })).toBeChecked();
     expect(await groupMemberNames(deployment, pavel, groupId)).toEqual(['Anna']);

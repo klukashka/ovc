@@ -5,7 +5,15 @@ import type { ObservedBrowser } from './browser-diagnostics.ts';
 import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { bellIn, panelRowsIn } from './notifications.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor, tableRows } from './fixtures.ts';
+import {
+  chooseFromPageMenu,
+  diagnosedTest as test,
+  expect,
+  openPageMenu,
+  seedVerifiedUser,
+  signUpAndConfirmTutor,
+  tableRows,
+} from './fixtures.ts';
 import { recordLazyChunkAddresses } from './observers.ts';
 import {
   createCard,
@@ -174,7 +182,9 @@ test.describe('Anna in Russian on a phone', () => {
     await signInThroughTheApi(mariaPage, maria);
     await mariaPage.goto(`/students/${card.id}`);
     await expect(mariaPage.getByRole('main').getByText('Email не подтверждён')).toBeVisible();
-    await expect(mariaPage.getByRole('button', { name: 'Завершить занятия' })).toBeVisible();
+    const mariaCardActions = await openPageMenu(mariaPage, 'Действия с карточкой');
+    await expect(mariaCardActions.getByRole('button', { name: 'Завершить занятия' })).toBeVisible();
+    await mariaPage.keyboard.press('Escape');
     const mariaBell = bellIn(mariaPage, /^Уведомления/);
     await expect(mariaBell).toHaveAccessibleName('Уведомления, 1 непрочитанное');
     await mariaBell.click();
@@ -407,7 +417,7 @@ test.describe('in English', () => {
     await socketSlots.keepPageSocketsOff(pavel);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/students/${card.id}`);
-    await page.getByRole('button', { name: 'End working together' }).click();
+    await chooseFromPageMenu(page, 'Card actions', 'End working together');
     await confirmInTheOwnBrowser(deployment, control, boris);
 
     await page
@@ -436,7 +446,7 @@ test.describe('in English', () => {
     await socketSlots.keepPageSocketsOff(pavel);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/students/${card.id}`);
-    await page.getByRole('button', { name: 'Withdraw invitation' }).click();
+    await chooseFromPageMenu(page, 'Card actions', 'Withdraw invitation');
     await signUpOnInvitation(deployment, card.link, boris, 'en');
 
     await page
@@ -464,14 +474,14 @@ test.describe('in English', () => {
     await signInThroughTheApi(page, pavel);
     await page.goto(`/students/${card.id}`);
     const notice = page.getByRole('status').filter({ hasText: 'This card changed in the meantime.' });
-    await page.getByRole('button', { name: 'Withdraw invitation' }).click();
+    await chooseFromPageMenu(page, 'Card actions', 'Withdraw invitation');
     await signUpOnInvitation(deployment, card.link, boris, 'en');
     await page
       .getByRole('dialog', { name: 'Withdraw the invitation?' })
       .getByRole('button', { name: 'Withdraw' })
       .click();
     await notice.waitFor();
-    await page.getByRole('button', { name: 'End working together' }).click();
+    await chooseFromPageMenu(page, 'Card actions', 'End working together');
     await expect(
       page.getByRole('dialog', { name: 'End working together?' }).getByRole('button', { name: 'Cancel' }),
     ).toBeFocused();
@@ -486,7 +496,8 @@ test.describe('in English', () => {
     await expect(notice).toBeFocused();
     await expect(notice).toHaveCount(1);
     await expect(page.getByRole('main').getByText('Email not confirmed')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'End working together' })).toBeVisible();
+    const cardActions = await openPageMenu(page, 'Card actions');
+    await expect(cardActions.getByRole('button', { name: 'End working together' })).toBeVisible();
     await expect(page).toHaveURL(`/students/${card.id}`);
   });
 
@@ -511,7 +522,8 @@ test.describe('in English', () => {
 
     await expect(page.getByRole('status').filter({ hasText: 'This card changed in the meantime.' })).toBeFocused();
     await expect(page.getByRole('button', { name: 'Invite again' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'End working together' })).toBeVisible();
+    const cardActions = await openPageMenu(page, 'Card actions');
+    await expect(cardActions.getByRole('button', { name: 'End working together' })).toBeVisible();
     await expect(page.getByRole('main').getByText(/\/invite\//)).toHaveCount(0);
   });
 
@@ -528,8 +540,7 @@ test.describe('in English', () => {
     await page.goto(`/students/${card.id}`);
     await expect(page.getByRole('main').getByText('Email not confirmed')).toBeVisible();
     await expect(page.getByText('Boris Account')).toBeVisible();
-    const opener = page.getByRole('button', { name: 'End working together' });
-    await opener.click();
+    await chooseFromPageMenu(page, 'Card actions', 'End working together');
     const dialog = page.getByRole('dialog', { name: 'End working together?' });
     await expect(dialog).toContainText('A new card with a fresh link replaces this one');
     await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
