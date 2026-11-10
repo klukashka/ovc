@@ -211,7 +211,7 @@ func newAuthHarnessWithDatabase(
 	tutoringService := tutoring.New(tutoring.Dependencies{
 		Store: store, Clock: shared, Random: random, Keys: keys, Cipher: cipher, PublicURL: publicOrigin, Logger: logger,
 	})
-	scheduleService := schedule.New(schedule.Dependencies{Store: store, Clock: shared, Random: random, Keys: keys, Logger: logger})
+	scheduleService := schedule.New(schedule.Dependencies{Store: store, Clock: shared, Random: random, Keys: keys, Logger: logger, Addresses: fileService})
 	service := accounts.New(accounts.Dependencies{
 		Store: store, Clock: shared, Random: random, Hasher: hasher, Keys: keys, Logger: logger,
 		Tokens: core.NewAccessTokens(keys, publicOrigin, 15*time.Minute), RefreshTTL: 30 * 24 * time.Hour,

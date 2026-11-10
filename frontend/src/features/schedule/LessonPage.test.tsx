@@ -71,6 +71,7 @@ const lesson: LessonDetail = {
   channel_id: null,
   room_open: false,
   embed_allowed: false,
+  materials: [],
 };
 
 const start = Date.parse(lesson.starts_at);

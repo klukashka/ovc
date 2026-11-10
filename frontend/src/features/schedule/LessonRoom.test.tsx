@@ -55,6 +55,7 @@ const scheduledLesson: LessonDetail = {
   channel_id: null,
   room_open: false,
   embed_allowed: false,
+  materials: [],
 };
 
 const liveLesson: LessonDetail = { ...scheduledLesson, status: 'live', took_place: true, room_open: true };

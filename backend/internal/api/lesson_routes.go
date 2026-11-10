@@ -57,6 +57,12 @@ type cancelLessonInput struct {
 	Body        schemas.LessonCancellation
 }
 
+type lessonMaterialsInput struct {
+	ID          string `path:"id"`
+	ContentType string `header:"Content-Type"`
+	Body        schemas.LessonMaterialsUpdate
+}
+
 type lessonOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         schemas.LessonDetail
@@ -83,6 +89,10 @@ func (r *router) registerSchedule() {
 	cancel := operation("lessons-cancel", http.MethodPost, lessonsPath+"/{id}/cancel")
 	cancel.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests)
 	register(r, cancel, AudienceTutor, r.cancelLesson)
+
+	materials := operation("lessons-materials-update", http.MethodPost, lessonsPath+"/{id}/materials")
+	materials.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests)
+	register(r, materials, AudienceTutor, r.setLessonMaterials)
 
 	r.registerMeetings()
 }
@@ -139,6 +149,11 @@ func (r *router) createLessons(ctx context.Context, input *createLessonsInput) (
 		DurationMinutes: input.Body.DurationMinutes, Weekdays: input.Body.Weekdays, EndDate: input.Body.EndDate, Count: input.Body.Count,
 		AllowOverlap: input.Body.AllowOverlap,
 	}
+	materials, err := materialIDs(input.Body.MaterialIDs)
+	if err != nil {
+		return nil, r.internal(ctx, "lessons.create.failed", err)
+	}
+	request.MaterialIDs = materials
 	if input.Body.RelationshipID != nil {
 		id, valid := domain.ParseUUID[domain.RelationshipID](*input.Body.RelationshipID)
 		if !valid {
@@ -190,6 +205,11 @@ func (r *router) editLesson(ctx context.Context, input *editLessonInput) (*creat
 		Description:  input.Body.Description.Value,
 		AllowOverlap: input.Body.AllowOverlap,
 	}
+	materials, err := materialIDs(input.Body.MaterialIDs)
+	if err != nil {
+		return nil, r.internal(ctx, "lessons.update.failed", err)
+	}
+	edit.MaterialIDs = materials
 	changed, err := r.schedule.EditLesson(ctx, tutorActorFrom(ctx), id, edit)
 	if err != nil {
 		return nil, r.scheduleError(ctx, "lessons.update.failed", err)
@@ -211,6 +231,58 @@ func (r *router) cancelLesson(ctx context.Context, input *cancelLessonInput) (*c
 		return nil, r.scheduleError(ctx, "lessons.cancel.failed", err)
 	}
 	return &createdLessonsOutput{CacheControl: noStore, Body: createdBody(cancelled)}, nil
+}
+
+var errMaterialUnparsed = errors.New("a material identifier passed the schema but is not a UUID")
+
+func materialIDs(texts []string) ([]domain.MaterialID, error) {
+	if texts == nil {
+		return nil, nil
+	}
+	ids := make([]domain.MaterialID, 0, len(texts))
+	for _, text := range texts {
+		id, valid := domain.ParseUUID[domain.MaterialID](text)
+		if !valid {
+			return nil, errMaterialUnparsed
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+func (r *router) setLessonMaterials(ctx context.Context, input *lessonMaterialsInput) (*lessonOutput, error) {
+	if err := requireJSON(ctx, input.ContentType); err != nil {
+		return nil, err
+	}
+	id, valid := domain.ParseUUID[domain.LessonID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	materials, err := materialIDs(input.Body.MaterialIDs)
+	if err != nil {
+		return nil, r.internal(ctx, "lessons.materials.failed", err)
+	}
+	lesson, err := r.schedule.SetLessonMaterials(ctx, tutorActorFrom(ctx), id, schedule.MaterialsChange{MaterialIDs: materials, Version: input.Body.Version})
+	if err != nil {
+		return nil, r.scheduleError(ctx, "lessons.materials.failed", err)
+	}
+	return &lessonOutput{CacheControl: noStore, Body: lessonBody(lesson)}, nil
+}
+
+func lessonMaterialsBody(materials []schedule.LessonMaterial) []schemas.LessonMaterial {
+	body := make([]schemas.LessonMaterial, 0, len(materials))
+	for _, material := range materials {
+		item := schemas.LessonMaterial{
+			AttachmentID: material.AttachmentID.String(), Title: material.Title, Filename: material.Filename, MediaType: material.MediaType,
+			SizeBytes: material.SizeBytes, Width: material.Width, Height: material.Height, URL: material.URL, ExpiresAt: material.ExpiresAt.UTC(),
+		}
+		if material.MaterialID != nil {
+			id := material.MaterialID.String()
+			item.MaterialID = &id
+		}
+		body = append(body, item)
+	}
+	return body
 }
 
 func createdBody(created schedule.Created) schemas.CreatedLessons {
@@ -269,6 +341,7 @@ func lessonBody(lesson schedule.Lesson) schemas.LessonDetail {
 		DurationMinutes: lesson.DurationMinutes, Status: lesson.Status, TookPlace: lesson.TookPlace, Timezone: lesson.Timezone, Version: lesson.Version,
 		CancelledAt: utc(lesson.CancelledAt), OtherTimezone: lesson.OtherTimezone, Audience: audience, Tutor: tutorLabelBody(lesson.Tutor),
 		ChannelID: optionalChannel(lesson.ChannelID), RoomOpen: lesson.RoomOpen, EmbedAllowed: lesson.EmbedAllowed,
+		Materials: lessonMaterialsBody(lesson.Materials),
 	}
 	if lesson.SeriesID != nil {
 		series := lesson.SeriesID.String()

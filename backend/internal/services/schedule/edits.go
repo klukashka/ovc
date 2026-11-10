@@ -33,6 +33,7 @@ type LessonEdit struct {
 	DescriptionSet  bool
 	Description     *string
 	AllowOverlap    bool
+	MaterialIDs     []domain.MaterialID
 }
 
 type LessonCancellation struct {
@@ -66,13 +67,14 @@ func (w lessonWrite) coveredIDs() []domain.LessonID {
 }
 
 type writeOutcome struct {
-	result   Created
-	changed  bool
-	fields   []domain.LessonField
-	split    *domain.SeriesID
-	count    int
-	rows     []queuedNotification
-	original *domain.SeriesID
+	result    Created
+	changed   bool
+	fields    []domain.LessonField
+	split     *domain.SeriesID
+	count     int
+	rows      []queuedNotification
+	original  *domain.SeriesID
+	materials *int
 }
 
 func editable(lesson repositories.LockedLesson, now time.Time) bool {
@@ -192,10 +194,14 @@ type editChanges struct {
 	title          *string
 	descriptionSet bool
 	description    *string
+	materials      []domain.MaterialID
 }
 
 func shapeProblem(edit LessonEdit) error {
-	if edit.Date == nil && edit.Start == nil && edit.DurationMinutes == nil && edit.Title == nil && !edit.DescriptionSet {
+	if edit.Scope == domain.ScopeThis && edit.MaterialIDs != nil {
+		return invalid(fieldMaterialIDs, domain.FieldNotAllowed)
+	}
+	if edit.Date == nil && edit.Start == nil && edit.DurationMinutes == nil && edit.Title == nil && !edit.DescriptionSet && edit.MaterialIDs == nil {
 		return invalid(fieldBody, domain.FieldRequired)
 	}
 	if edit.Scope == domain.ScopeFollowing && edit.Date != nil {
@@ -205,8 +211,14 @@ func shapeProblem(edit LessonEdit) error {
 }
 
 func parseEdit(edit LessonEdit) (editChanges, error) {
-	changes := editChanges{duration: edit.DurationMinutes, title: edit.Title, descriptionSet: edit.DescriptionSet, description: normalisedDescription(edit.Description)}
+	changes := editChanges{
+		duration: edit.DurationMinutes, title: edit.Title, descriptionSet: edit.DescriptionSet, description: normalisedDescription(edit.Description),
+		materials: edit.MaterialIDs,
+	}
 	var problems []FieldProblem
+	if problem := materialIDProblem(edit.MaterialIDs); problem != nil {
+		problems = append(problems, *problem)
+	}
 	if edit.Date != nil {
 		date, valid := domain.ParseLocalDate(*edit.Date)
 		if !valid {
@@ -340,6 +352,10 @@ func (s *Service) logEdit(ctx context.Context, tutor domain.UserID, id domain.Le
 		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "series.split", tutorAttribute(tutor), slog.String("series_id", outcome.original.String()),
 			slog.String("split_series_id", outcome.split.String()))
 	}
+	if outcome.split != nil && outcome.materials != nil {
+		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "lesson.materials.changed", tutorAttribute(tutor), slog.String("series_id", outcome.split.String()),
+			slog.Int("count", *outcome.materials), slog.String("scope", string(scope)))
+	}
 	s.logRows(ctx, outcome.rows)
 }
 
@@ -364,6 +380,23 @@ func (s *Service) edit(
 	if err != nil {
 		return writeOutcome{}, err
 	}
+	var seriesMaterials []domain.MaterialID
+	retired := false
+	if write.series != nil {
+		if seriesMaterials, err = repos.LessonMaterials.OfSeries(ctx, write.series.ID); err != nil {
+			return writeOutcome{}, err
+		}
+		if retired, err = seriesRetired(*write.series, now); err != nil {
+			return writeOutcome{}, err
+		}
+		kept, err := s.keptMaterials(ctx, repos, write, seriesMaterials, retired)
+		if err != nil {
+			return writeOutcome{}, err
+		}
+		if err := resolveMaterials(ctx, repos, write.account.ID, edit.MaterialIDs, kept); err != nil {
+			return writeOutcome{}, err
+		}
+	}
 	if err := s.checkState(write, edit.Version, now); err != nil {
 		return writeOutcome{}, err
 	}
@@ -372,7 +405,7 @@ func (s *Service) edit(
 		return writeOutcome{}, err
 	}
 	if edit.Scope == domain.ScopeFollowing {
-		return s.editFollowing(ctx, repos, write, changes, edit.AllowOverlap, now)
+		return s.editFollowing(ctx, repos, write, followingEdit{changes: changes, seriesMaterials: seriesMaterials, retired: retired, allowOverlap: edit.AllowOverlap}, now)
 	}
 	return s.editThis(ctx, repos, write, changes, edit.AllowOverlap, now)
 }
@@ -459,23 +492,84 @@ func studentTargets(audience jobAudience) []notificationTarget {
 	return targets
 }
 
+type followingEdit struct {
+	changes         editChanges
+	seriesMaterials []domain.MaterialID
+	retired         bool
+	allowOverlap    bool
+}
+
+func (f followingEdit) materialsDiffer() bool {
+	return !f.retired && f.changes.materials != nil && !slices.Equal(f.changes.materials, f.seriesMaterials)
+}
+
+func seriesRetired(series repositories.LockedSeriesForEdit, now time.Time) (bool, error) {
+	if series.Ended || series.EndDate == nil {
+		return true, nil
+	}
+	zone, err := loadZone(series.Timezone)
+	if err != nil {
+		return false, err
+	}
+	if series.EndDate.Before(domain.DateOf(now.In(zone))) {
+		return true, nil
+	}
+	pattern := schedule.Series{Weekdays: series.Weekdays, First: series.First, EndDate: series.EndDate, Start: series.Start, Zone: zone}
+	return len(schedule.DatesBetween(pattern, series.MaterialisedUntil, *series.EndDate)) == 0, nil
+}
+
+func (s *Service) keptMaterials(
+	ctx context.Context, repos repositories.Repositories, write lessonWrite, seriesMaterials []domain.MaterialID, retired bool,
+) ([]domain.MaterialID, error) {
+	if !retired {
+		return seriesMaterials, nil
+	}
+	attached, err := repos.LessonMaterials.OfLessons(ctx, write.coveredIDs())
+	if err != nil {
+		return nil, err
+	}
+	kept := slices.Clone(seriesMaterials)
+	for _, materials := range attached {
+		kept = append(kept, materials...)
+	}
+	return kept, nil
+}
+
+func (f followingEdit) takesMaterials(lesson repositories.LockedLesson, selected bool, current []domain.MaterialID) bool {
+	if f.changes.materials == nil || slices.Equal(current, f.changes.materials) {
+		return false
+	}
+	return selected || !slices.Contains(lesson.OverriddenFields, domain.LessonFieldMaterials)
+}
+
 func (s *Service) editFollowing(
-	ctx context.Context, repos repositories.Repositories, write lessonWrite, changes editChanges, allowOverlap bool, now time.Time,
+	ctx context.Context, repos repositories.Repositories, write lessonWrite, following followingEdit, now time.Time,
 ) (writeOutcome, error) {
+	changes, allowOverlap := following.changes, following.allowOverlap
 	original := *write.series
 	zone, err := loadZone(original.Timezone)
 	if err != nil {
 		return writeOutcome{}, err
 	}
+	current, err := repos.LessonMaterials.OfLessons(ctx, write.coveredIDs())
+	if err != nil {
+		return writeOutcome{}, err
+	}
 	var planned []plannedEdit
 	var fields []domain.LessonField
+	var materialLessons []domain.LessonID
 	for _, lesson := range write.covered {
 		if !editable(lesson, now) {
 			continue
 		}
-		edit := editRule{changes: changes, zone: zone, applyAll: lesson.ID == write.selected.ID, now: now}.plan(lesson)
+		selected := lesson.ID == write.selected.ID
+		edit := editRule{changes: changes, zone: zone, applyAll: selected, now: now}.plan(lesson)
 		if edit.values.Moved && !edit.values.StartsAt.After(now) {
 			return writeOutcome{}, ErrLessonInPast
+		}
+		if following.takesMaterials(lesson, selected, current[lesson.ID]) {
+			edit.fields = append(edit.fields, domain.LessonFieldMaterials)
+			materialLessons = append(materialLessons, lesson.ID)
 		}
 		if edit.changed() {
 			planned = append(planned, edit)
@@ -487,6 +581,7 @@ func (s *Service) editFollowing(
 		}
 	}
 	split := splitValues(original, changes)
+	split.differs = split.differs || following.materialsDiffer()
 	if len(planned) == 0 && !split.differs {
 		views, err := s.tutorViews(ctx, repos, write.account, write.coveredIDs())
 		return writeOutcome{result: Created{Series: seriesView(original.Series), Lessons: views}}, err
@@ -514,17 +609,23 @@ func (s *Service) editFollowing(
 	if err != nil {
 		return writeOutcome{}, err
 	}
-	var changed []domain.LessonID
+	if err := s.splitMaterials(ctx, repos, write, created.ID, changes.materials, materialLessons, now); err != nil {
+		return writeOutcome{}, err
+	}
+	var changed, notified []domain.LessonID
 	for _, edit := range planned {
 		if _, err := repos.Lessons.ApplyEdit(ctx, edit.values); err != nil {
 			return writeOutcome{}, err
 		}
 		changed = append(changed, edit.values.ID)
+		if slices.ContainsFunc(edit.fields, func(field domain.LessonField) bool { return field != domain.LessonFieldMaterials }) {
+			notified = append(notified, edit.values.ID)
+		}
 	}
 	if err := s.signalCovered(ctx, repos, write); err != nil {
 		return writeOutcome{}, err
 	}
-	rows, err := s.queueSeriesChanged(ctx, repos, write, write.audience, changed, now)
+	rows, err := s.queueSeriesChanged(ctx, repos, write, write.audience, notified, now)
 	if err != nil {
 		return writeOutcome{}, err
 	}
@@ -536,7 +637,48 @@ func (s *Service) editFollowing(
 		changed: true, fields: fields, split: &created.ID, original: &original.ID, count: len(changed), rows: rows,
 		result: Created{Series: seriesView(created), Lessons: views},
 	}
+	if following.materialsDiffer() || len(materialLessons) > 0 {
+		count := len(changes.materials)
+		outcome.materials = &count
+	}
 	return outcome, nil
+}
+
+func (s *Service) splitMaterials(
+	ctx context.Context, repos repositories.Repositories, write lessonWrite, split domain.SeriesID, materials []domain.MaterialID,
+	lessons []domain.LessonID, now time.Time,
+) error {
+	tutor := write.account.ID
+	var references repositories.ReferenceChange
+	if materials == nil {
+		added, err := repos.LessonMaterials.CopySeries(ctx, write.series.ID, split, now)
+		if err != nil {
+			return err
+		}
+		references.Added = added
+	} else {
+		replaced, err := repos.LessonMaterials.ReplaceForSeries(ctx, tutor, split, materials, now)
+		if err != nil {
+			return err
+		}
+		references.Added = replaced.Added
+	}
+	retired, err := repos.LessonMaterials.ReplaceForSeries(ctx, tutor, write.series.ID, nil, now)
+	if err != nil {
+		return err
+	}
+	references.Removed = retired.Removed
+	if err := s.releaseReferences(ctx, repos, domain.ReferenceSeries, references, now); err != nil {
+		return err
+	}
+	if materials == nil {
+		return nil
+	}
+	lessonReferences, err := repos.LessonMaterials.ReplaceForLessons(ctx, tutor, lessons, materials, now)
+	if err != nil {
+		return err
+	}
+	return s.releaseReferences(ctx, repos, domain.ReferenceLesson, lessonReferences, now)
 }
 
 type splitRule struct {

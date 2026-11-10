@@ -50,6 +50,7 @@ type Lesson struct {
 	ChannelID       *domain.ChannelID
 	RoomOpen        bool
 	EmbedAllowed    bool
+	Materials       []LessonMaterial
 }
 
 func (l Lesson) EndsAt() time.Time {
@@ -169,6 +170,9 @@ func (s *Service) tutorViews(ctx context.Context, repos repositories.Repositorie
 	if err := withChannels(ctx, repos, tutor.ID, lessons); err != nil {
 		return nil, err
 	}
+	if err := s.withMaterials(ctx, repos, lessons, true); err != nil {
+		return nil, err
+	}
 	return withSeries(ctx, repos, lessons)
 }
 
@@ -281,6 +285,9 @@ func (s *Service) Lesson(ctx context.Context, viewer domain.UserID, role domain.
 		}
 		withChannel := []Lesson{lesson}
 		if err := withChannels(ctx, repos, viewer, withChannel); err != nil {
+			return err
+		}
+		if err := s.withMaterials(ctx, repos, withChannel, false); err != nil {
 			return err
 		}
 		lesson = withChannel[0]

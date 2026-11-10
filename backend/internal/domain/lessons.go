@@ -75,6 +75,7 @@ const (
 	OpenSeriesCapPerTutor     = 100
 	FutureLessonCapPerTutor   = 3000
 	LessonWritesPerHour       = 120
+	LessonMaterialsMax        = 20
 	OverlapListLimit          = 20
 	CalendarItemLimit         = 1000
 	CardNextLessonCount       = 3

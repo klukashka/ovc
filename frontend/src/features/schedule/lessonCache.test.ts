@@ -25,6 +25,7 @@ const liveLesson: LessonDetail = {
   channel_id: null,
   room_open: true,
   embed_allowed: false,
+  materials: [],
 };
 
 const endedLesson: LessonDetail = { ...liveLesson, status: 'ended', room_open: false, version: 3 };

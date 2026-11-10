@@ -93,6 +93,9 @@ func (s *Service) cancel(
 		if err := repos.Lessons.EndSeriesBefore(ctx, write.series.ID, write.occurrenceDate(), now); err != nil {
 			return writeOutcome{}, err
 		}
+		if err := s.retireSeriesMaterials(ctx, repos, write.account.ID, write.series.ID, now); err != nil {
+			return writeOutcome{}, err
+		}
 		outcome.rows, err = s.queueSeriesChanged(ctx, repos, write, write.audience, orderedCancelled(write, cancelled), now)
 	} else {
 		outcome.rows, err = s.queueCancelled(ctx, repos, write, now)

@@ -48,6 +48,7 @@ const moscowLesson: LessonDetail = {
   channel_id: null,
   room_open: false,
   embed_allowed: false,
+  materials: [],
 };
 
 function Form(): ReactElement {

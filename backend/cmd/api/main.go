@@ -151,7 +151,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		return err
 	}
 	embed := &core.Switch{}
-	scheduleService, err := startup.NewSchedule(logging.Logger, settings, database, source, random, embed)
+	scheduleService, err := startup.NewSchedule(logging.Logger, settings, database, source, random, fileService, embed)
 	if err != nil {
 		return err
 	}

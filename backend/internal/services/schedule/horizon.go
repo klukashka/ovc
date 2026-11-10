@@ -48,8 +48,69 @@ func (j *Jobs) ExtendHorizons(ctx context.Context, now time.Time) (int64, error)
 		}
 		after = batch[len(batch)-1]
 	}
-	j.service.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "series.extended", slog.Int64("count", extended), slog.Int64("lessons", created))
+	retired, err := j.retireMaterials(ctx, deadline, now)
+	if err != nil {
+		failures = append(failures, err)
+	}
+	j.service.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "series.extended", slog.Int64("count", extended), slog.Int64("lessons", created),
+		slog.Int64("retired", retired))
 	return extended, errors.Join(failures...)
+}
+
+func (j *Jobs) retireMaterials(ctx context.Context, deadline time.Time, now time.Time) (int64, error) {
+	var retired int64
+	var failures []error
+	attempted := map[domain.SeriesID]bool{}
+	var tried int32
+	for j.settings.Wall().Before(deadline) {
+		limit := j.settings.ExtensionBatch + tried
+		batch, err := j.service.deps.Store.Repositories().LessonMaterials.RetiredSeries(ctx, now, limit)
+		if err != nil {
+			return retired, errors.Join(append(failures, err)...)
+		}
+		fresh := 0
+		for _, candidate := range batch {
+			if attempted[candidate.ID] {
+				continue
+			}
+			attempted[candidate.ID] = true
+			tried++
+			fresh++
+			var done bool
+			err := j.service.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+				var err error
+				done, err = j.retireSeries(ctx, repos, candidate, now)
+				return err
+			})
+			if err != nil {
+				failures = append(failures, err)
+				j.service.deps.Logger.LogAttrs(ctx, slog.LevelError, "series.retirement_failed", slog.String("series_id", candidate.ID.String()),
+					slog.String("kind", core.ErrorKind(err)))
+				continue
+			}
+			if done {
+				retired++
+			}
+		}
+		if fresh == 0 || len(batch) < int(limit) {
+			break
+		}
+	}
+	return retired, errors.Join(failures...)
+}
+
+func (j *Jobs) retireSeries(ctx context.Context, repos repositories.Repositories, candidate repositories.RetiredSeries, now time.Time) (bool, error) {
+	if err := repos.TutorProfiles.Lock(ctx, candidate.TutorID); errors.Is(err, repositories.ErrNotFound) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	if err := repos.LessonMaterials.LockRetiredSeries(ctx, candidate.ID, now); errors.Is(err, repositories.ErrNotFound) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	return true, j.service.retireSeriesMaterials(ctx, repos, candidate.TutorID, candidate.ID, now)
 }
 
 func (j *Jobs) extend(ctx context.Context, id domain.SeriesID, now time.Time) (int64, error) {
@@ -89,6 +150,11 @@ func (j *Jobs) extend(ctx context.Context, id domain.SeriesID, now time.Time) (i
 		if err := repos.Lessons.SetMaterialisedUntil(ctx, id, through, now); err != nil {
 			return err
 		}
+		added, err := repos.LessonMaterials.CopyToLessons(ctx, id, ids, now)
+		if err != nil {
+			return err
+		}
+		j.service.logReferences(ctx, repos, domain.ReferenceLesson, difference(added, nil), nil)
 		inserted = int64(len(ids))
 		return signalLessons(ctx, repos, series.TutorID, audience.students(), ids)
 	})

@@ -379,7 +379,7 @@ func (s *tracedSchedule) hook(t *testing.T) optionsHook {
 			t.Fatal(err)
 		}
 		options.Schedule = schedule.New(schedule.Dependencies{
-			Store: repositories.NewStore(pool), Clock: shared, Random: rand.Reader, Keys: keys, Logger: logger,
+			Store: repositories.NewStore(pool), Clock: shared, Random: rand.Reader, Keys: keys, Logger: logger, Addresses: options.Files,
 		})
 	}
 }

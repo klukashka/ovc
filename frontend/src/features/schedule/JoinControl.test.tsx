@@ -44,6 +44,7 @@ const firstDetail: LessonDetail = {
   channel_id: null,
   room_open: false,
   embed_allowed: true,
+  materials: [],
 };
 
 const secondDetail: LessonDetail = {

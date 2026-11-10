@@ -730,3 +730,27 @@ sql:
               import: ovc/backend/internal/domain
               type: TemplateSaveID
               pointer: true
+          - column: lesson_materials.lesson_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: LessonID
+          - column: lesson_materials.material_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MaterialID
+          - column: lesson_materials.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: series_materials.series_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: SeriesID
+          - column: series_materials.material_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MaterialID
+          - column: series_materials.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID

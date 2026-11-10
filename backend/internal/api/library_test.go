@@ -520,13 +520,20 @@ func TestAttachmentMintRequiresReference(t *testing.T) {
 		detached.AttachmentID)
 	h.mustAnswer(t, h.deleteMaterial(t, token, detached.ID), http.StatusNoContent)
 	foreign := h.createMaterial(t, otherToken, h.pendingLibraryPicture(t, other, 50, 4), "Foreign", nil)
+	card := h.linkedCard(t, tutor, 10, domain.RelationshipActive)
+	withFirst := h.scheduled(t, token, oneOffFor(card, "2030-03-12", "18:00")).Lessons[0]
+	withSecond := h.scheduled(t, token, oneOffFor(card, "2030-03-13", "18:00")).Lessons[0]
+	h.attached(t, token, withFirst.ID, 1, first.ID)
+	h.attached(t, token, withSecond.ID, 1, second.ID)
 
 	refusals := map[string]string{
 		"another tutor's attachment with the tutor's material": foreign.AttachmentID + "?ref=material:" + first.ID,
 		"the tutor's attachment with another of its materials": first.AttachmentID + "?ref=material:" + second.ID,
-		"a detached material":              detached.AttachmentID + "?ref=material:" + detached.ID,
-		"a missing reference":              first.AttachmentID,
-		"another kind naming the material": first.AttachmentID + "?ref=template:" + first.ID,
+		"a detached material":                               detached.AttachmentID + "?ref=material:" + detached.ID,
+		"a missing reference":                               first.AttachmentID,
+		"another kind naming the material":                  first.AttachmentID + "?ref=template:" + first.ID,
+		"a visible lesson with another lesson's attachment": second.AttachmentID + "?ref=lesson:" + withFirst.ID,
+		"a lesson reference naming the material":            first.AttachmentID + "?ref=lesson:" + first.ID,
 	}
 	random, _ := h.addressOf(t, token, fixtureID(50, 9), "?ref=material:"+first.ID)
 	malformed, _ := h.addressOf(t, token, first.AttachmentID, "?ref=material:nonsense")

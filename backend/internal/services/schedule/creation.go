@@ -42,6 +42,7 @@ type NewLesson struct {
 	Count           *int16
 	AllowOverlap    bool
 	CreateKey       *string
+	MaterialIDs     []domain.MaterialID
 }
 
 type SeriesView struct {
@@ -169,8 +170,15 @@ func (s *Service) create(ctx context.Context, repos repositories.Repositories, a
 		return outcome, err
 	}
 	target, err := lockAudience(ctx, repos, tutor, request)
-	if err != nil {
+	inactive := errors.Is(err, ErrAudienceNotActive)
+	if err != nil && !inactive {
 		return creationOutcome{}, err
+	}
+	if err := resolveMaterials(ctx, repos, tutor, request.MaterialIDs, nil); err != nil {
+		return creationOutcome{}, err
+	}
+	if inactive {
+		return creationOutcome{}, ErrAudienceNotActive
 	}
 	now, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
 	if err != nil {
@@ -300,6 +308,9 @@ func plan(request NewLesson, profileTimezone string, now time.Time) (plannedLess
 	date, validDate := domain.ParseLocalDate(request.Date)
 	start, validStart := domain.ParseLocalTime(request.Start)
 	problems := textProblems(request)
+	if problem := materialIDProblem(request.MaterialIDs); problem != nil {
+		problems = append(problems, *problem)
+	}
 	if !validDate {
 		problems = append(problems, FieldProblem{Path: fieldDate, Code: domain.FieldInvalid})
 	}
@@ -456,6 +467,9 @@ func (s *Service) insert(
 			return Created{}, err
 		}
 	}
+	if err := s.attachCreated(ctx, repos, tutor.ID, rows.SeriesID, ids, request.MaterialIDs, now); err != nil {
+		return Created{}, err
+	}
 	if err := signalLessons(ctx, repos, tutor.ID, target.students, ids); err != nil {
 		return Created{}, err
 	}
@@ -486,4 +500,27 @@ func textProblems(request NewLesson) []FieldProblem {
 
 func controlOtherThanLineBreak(character rune) bool {
 	return unicode.IsControl(character) && character != '\n'
+}
+
+func (s *Service) attachCreated(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, series *domain.SeriesID, lessons []domain.LessonID,
+	materials []domain.MaterialID, now time.Time,
+) error {
+	if len(materials) == 0 {
+		return nil
+	}
+	if series != nil {
+		references, err := repos.LessonMaterials.ReplaceForSeries(ctx, tutor, *series, materials, now)
+		if err != nil {
+			return err
+		}
+		if err := s.releaseReferences(ctx, repos, domain.ReferenceSeries, references, now); err != nil {
+			return err
+		}
+	}
+	references, err := repos.LessonMaterials.ReplaceForLessons(ctx, tutor, lessons, materials, now)
+	if err != nil {
+		return err
+	}
+	return s.releaseReferences(ctx, repos, domain.ReferenceLesson, references, now)
 }

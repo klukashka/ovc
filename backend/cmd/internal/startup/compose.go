@@ -80,12 +80,15 @@ func NewLibrary(
 	}), nil
 }
 
-func NewSchedule(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, embed *core.Switch) (*schedule.Service, error) {
+func NewSchedule(
+	logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, fileService *files.Service,
+	embed *core.Switch,
+) (*schedule.Service, error) {
 	keys, err := core.DeriveKeys(settings.JWTSecret)
 	if err != nil {
 		return nil, err
 	}
-	return schedule.New(schedule.Dependencies{Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Logger: logger, Embed: embed}), nil
+	return schedule.New(schedule.Dependencies{Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Logger: logger, Addresses: fileService, Embed: embed}), nil
 }
 
 func NewAccounts(
@@ -214,7 +217,8 @@ func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings,
 		return nil, err
 	}
 	lessonJobs := schedule.NewJobs(
-		schedule.New(schedule.Dependencies{Store: store, Clock: source, Random: random, Keys: keys, Logger: logger}), schedule.DefaultJobSettings(),
+		schedule.New(schedule.Dependencies{Store: store, Clock: source, Random: random, Keys: keys, Logger: logger, Addresses: fileService}),
+		schedule.DefaultJobSettings(),
 	)
 	lanes := []worker.Lane{
 		{Name: domain.LaneProviderCall, Concurrency: providerLaneConcurrency, PerformMeetingRecovery: meetingService.Cleanup, Perform: lifecycle.CheckEndedHint},

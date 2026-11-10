@@ -20,17 +20,18 @@ const (
 )
 
 type lessonRequest struct {
-	RelationshipID *string `json:"relationship_id,omitempty"`
-	GroupID        *string `json:"group_id,omitempty"`
-	Title          string  `json:"title"`
-	Description    *string `json:"description,omitempty"`
-	Date           string  `json:"date"`
-	Start          string  `json:"start"`
-	Duration       int     `json:"duration_minutes"`
-	Weekdays       []int   `json:"weekdays,omitempty"`
-	EndDate        *string `json:"end_date,omitempty"`
-	Count          *int    `json:"count,omitempty"`
-	AllowOverlap   bool    `json:"allow_overlap,omitempty"`
+	RelationshipID *string  `json:"relationship_id,omitempty"`
+	GroupID        *string  `json:"group_id,omitempty"`
+	Title          string   `json:"title"`
+	Description    *string  `json:"description,omitempty"`
+	Date           string   `json:"date"`
+	Start          string   `json:"start"`
+	Duration       int      `json:"duration_minutes"`
+	Weekdays       []int    `json:"weekdays,omitempty"`
+	EndDate        *string  `json:"end_date,omitempty"`
+	Count          *int     `json:"count,omitempty"`
+	AllowOverlap   bool     `json:"allow_overlap,omitempty"`
+	MaterialIDs    []string `json:"material_ids,omitempty"`
 }
 
 func oneOffFor(card string, date string, start string) lessonRequest {
@@ -113,20 +114,21 @@ type lessonTutor struct {
 }
 
 type lessonView struct {
-	ID            string         `json:"id"`
-	Title         string         `json:"title"`
-	StartsAt      time.Time      `json:"starts_at"`
-	EndsAt        time.Time      `json:"ends_at"`
-	Status        string         `json:"status"`
-	Timezone      string         `json:"timezone"`
-	SeriesID      *string        `json:"series_id"`
-	Occurrence    *string        `json:"occurrence_date"`
-	Series        *lessonSeries  `json:"series"`
-	Version       int            `json:"version"`
-	CancelledAt   *time.Time     `json:"cancelled_at"`
-	OtherTimezone *string        `json:"other_timezone"`
-	Audience      lessonAudience `json:"audience"`
-	Tutor         *lessonTutor   `json:"tutor"`
+	ID            string               `json:"id"`
+	Title         string               `json:"title"`
+	StartsAt      time.Time            `json:"starts_at"`
+	EndsAt        time.Time            `json:"ends_at"`
+	Status        string               `json:"status"`
+	Timezone      string               `json:"timezone"`
+	SeriesID      *string              `json:"series_id"`
+	Occurrence    *string              `json:"occurrence_date"`
+	Series        *lessonSeries        `json:"series"`
+	Version       int                  `json:"version"`
+	CancelledAt   *time.Time           `json:"cancelled_at"`
+	OtherTimezone *string              `json:"other_timezone"`
+	Audience      lessonAudience       `json:"audience"`
+	Tutor         *lessonTutor         `json:"tutor"`
+	Materials     []lessonMaterialBody `json:"materials"`
 }
 
 type lessonSeries struct {

@@ -15,14 +15,15 @@ import (
 )
 
 type lessonPatch struct {
-	Scope        string  `json:"scope"`
-	Version      int     `json:"version"`
-	Date         *string `json:"date,omitempty"`
-	Start        *string `json:"start,omitempty"`
-	Duration     *int    `json:"duration_minutes,omitempty"`
-	Title        *string `json:"title,omitempty"`
-	Description  *string `json:"description,omitempty"`
-	AllowOverlap bool    `json:"allow_overlap,omitempty"`
+	Scope        string    `json:"scope"`
+	Version      int       `json:"version"`
+	Date         *string   `json:"date,omitempty"`
+	Start        *string   `json:"start,omitempty"`
+	Duration     *int      `json:"duration_minutes,omitempty"`
+	Title        *string   `json:"title,omitempty"`
+	Description  *string   `json:"description,omitempty"`
+	AllowOverlap bool      `json:"allow_overlap,omitempty"`
+	MaterialIDs  *[]string `json:"material_ids,omitempty"`
 }
 
 func (p lessonPatch) body(t *testing.T) string {

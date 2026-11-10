@@ -40,6 +40,7 @@ type Repositories struct {
 	Digests         Digests
 	Presence        Presence
 	Library         Library
+	LessonMaterials LessonMaterials
 	TestClock       TestClock
 
 	commit *commitHooks
@@ -128,6 +129,7 @@ func newRepositories(queries *dbgen.Queries) Repositories {
 		Digests:         Digests{queries: queries},
 		Presence:        Presence{queries: queries},
 		Library:         Library{queries: queries},
+		LessonMaterials: LessonMaterials{queries: queries},
 		TestClock:       TestClock{queries: queries},
 	}
 }

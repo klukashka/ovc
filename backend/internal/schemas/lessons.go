@@ -12,17 +12,18 @@ import (
 )
 
 type NewLesson struct {
-	RelationshipID  *string `json:"relationship_id,omitempty" format:"uuid"`
-	GroupID         *string `json:"group_id,omitempty" format:"uuid"`
-	Title           string  `json:"title" minLength:"1" maxLength:"120"`
-	Description     *string `json:"description,omitempty" maxLength:"2000"`
-	Date            string  `json:"date" pattern:"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
-	Start           string  `json:"start" pattern:"^([01][0-9]|2[0-3]):[0-5][0-9]$"`
-	DurationMinutes int16   `json:"duration_minutes" minimum:"15" maximum:"240" multipleOf:"5"`
-	Weekdays        []int16 `json:"weekdays,omitempty" minItems:"1" maxItems:"7" uniqueItems:"true" nullable:"false"`
-	EndDate         *string `json:"end_date,omitempty" pattern:"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
-	Count           *int16  `json:"count,omitempty" minimum:"1" maximum:"100"`
-	AllowOverlap    bool    `json:"allow_overlap,omitempty"`
+	RelationshipID  *string  `json:"relationship_id,omitempty" format:"uuid"`
+	GroupID         *string  `json:"group_id,omitempty" format:"uuid"`
+	Title           string   `json:"title" minLength:"1" maxLength:"120"`
+	Description     *string  `json:"description,omitempty" maxLength:"2000"`
+	Date            string   `json:"date" pattern:"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
+	Start           string   `json:"start" pattern:"^([01][0-9]|2[0-3]):[0-5][0-9]$"`
+	DurationMinutes int16    `json:"duration_minutes" minimum:"15" maximum:"240" multipleOf:"5"`
+	Weekdays        []int16  `json:"weekdays,omitempty" minItems:"1" maxItems:"7" uniqueItems:"true" nullable:"false"`
+	EndDate         *string  `json:"end_date,omitempty" pattern:"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
+	Count           *int16   `json:"count,omitempty" minimum:"1" maximum:"100"`
+	AllowOverlap    bool     `json:"allow_overlap,omitempty"`
+	MaterialIDs     []string `json:"material_ids,omitempty" format:"uuid" nullable:"false"`
 }
 
 func (NewLesson) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
@@ -81,6 +82,25 @@ type LessonDetail struct {
 	ChannelID       *string             `json:"channel_id" format:"uuid" nullable:"true"`
 	RoomOpen        bool                `json:"room_open"`
 	EmbedAllowed    bool                `json:"embed_allowed"`
+	Materials       []LessonMaterial    `json:"materials" nullable:"false"`
+}
+
+type LessonMaterial struct {
+	MaterialID   *string   `json:"material_id,omitempty" format:"uuid"`
+	AttachmentID string    `json:"attachment_id" format:"uuid"`
+	Title        string    `json:"title"`
+	Filename     string    `json:"filename"`
+	MediaType    string    `json:"media_type"`
+	SizeBytes    int64     `json:"size_bytes"`
+	Width        *int32    `json:"width" nullable:"true"`
+	Height       *int32    `json:"height" nullable:"true"`
+	URL          string    `json:"url"`
+	ExpiresAt    time.Time `json:"expires_at"`
+}
+
+type LessonMaterialsUpdate struct {
+	MaterialIDs []string `json:"material_ids" format:"uuid" nullable:"false"`
+	Version     int32    `json:"version" minimum:"1"`
 }
 
 type LessonJoin struct {
@@ -148,6 +168,7 @@ type LessonPatch struct {
 	Title           *string             `json:"title,omitempty" minLength:"1" maxLength:"120"`
 	Description     NullableDescription `json:"description,omitempty"`
 	AllowOverlap    bool                `json:"allow_overlap,omitempty"`
+	MaterialIDs     []string            `json:"material_ids,omitempty" format:"uuid" nullable:"false"`
 }
 
 type NullableDescription struct {

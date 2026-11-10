@@ -591,6 +591,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lessons/{id}/materials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["lessons-materials-update"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lessons/{id}/restart-room": {
         parameters: {
             query?: never;
@@ -1456,6 +1472,7 @@ export interface components {
             ends_at: string;
             /** Format: uuid */
             id: string;
+            materials: components["schemas"]["LessonMaterial"][];
             /** Format: date */
             occurrence_date?: string;
             other_timezone: string | null;
@@ -1478,6 +1495,29 @@ export interface components {
             embed_allowed: boolean;
             url: string;
         };
+        LessonMaterial: {
+            /** Format: uuid */
+            attachment_id: string;
+            /** Format: date-time */
+            expires_at: string;
+            filename: string;
+            /** Format: int32 */
+            height: number | null;
+            /** Format: uuid */
+            material_id?: string;
+            media_type: string;
+            /** Format: int64 */
+            size_bytes: number;
+            title: string;
+            url: string;
+            /** Format: int32 */
+            width: number | null;
+        };
+        LessonMaterialsUpdate: {
+            material_ids: string[];
+            /** Format: int32 */
+            version: number;
+        };
         LessonMember: {
             label: string;
             /** @enum {string|null} */
@@ -1489,6 +1529,7 @@ export interface components {
             description?: string | null;
             /** Format: int32 */
             duration_minutes?: number;
+            material_ids?: string[];
             /** @enum {string} */
             scope: "this" | "following";
             start?: string;
@@ -1698,6 +1739,7 @@ export interface components {
             end_date?: string;
             /** Format: uuid */
             group_id?: string;
+            material_ids?: string[];
             /** Format: uuid */
             relationship_id?: string;
             start: string;
@@ -6059,6 +6101,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LessonJoin"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "lessons-materials-update": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LessonMaterialsUpdate"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDetail"];
                 };
             };
             /** @description Bad Request */

@@ -23,7 +23,7 @@ func (h *authHarness) referencedLibraryFile(t *testing.T, id string, tutor domai
 	}
 }
 
-func TestDownloadTokenV2LayoutIsRefusedUntilItsKindIsAuthorized(t *testing.T) {
+func TestDownloadTokenV2IsRefusedWithoutALiveReferenceOfItsKind(t *testing.T) {
 	t.Parallel()
 	h := newUploadHarness(t)
 	parties := h.activeStudentInAGroup(t)
@@ -41,7 +41,7 @@ func TestDownloadTokenV2LayoutIsRefusedUntilItsKindIsAuthorized(t *testing.T) {
 	if !valid {
 		t.Fatal("the lesson file's identifier does not parse")
 	}
-	versionTwo, err := h.files.ReferenceAddress(otherLessonID, files.DownloadReference{Kind: domain.ReferenceLesson, Item: otherLesson},
+	versionTwo, err := h.files.ReferenceAddress(otherLessonID, files.DownloadReference{Kind: domain.ReferenceLesson, Item: lesson},
 		domain.DispositionInline, h.now(t))
 	if err != nil {
 		t.Fatal(err)
@@ -50,6 +50,7 @@ func TestDownloadTokenV2LayoutIsRefusedUntilItsKindIsAuthorized(t *testing.T) {
 
 	servedVersionTwo := h.fetch(t, versionTwo.URL, nil)
 	servedVersionOneForLesson := h.fetch(t, versionOneForLesson.URL, nil)
+	forged := h.fetch(t, "/api/v1/files/"+lessonFile+"?t=forged", nil)
 	chatAddress, chatBody := h.addressOf(t, parties.studentToken, chatFile, "")
 	servedChat := h.fetch(t, chatBody.URL, nil)
 	chatWithReference, _ := h.addressOf(t, parties.studentToken, chatFile, "?ref=lesson:"+otherLesson.String())
@@ -59,8 +60,9 @@ func TestDownloadTokenV2LayoutIsRefusedUntilItsKindIsAuthorized(t *testing.T) {
 	otherLessonWithoutReference, _ := h.addressOf(t, parties.tutorToken, otherLessonFile, "")
 
 	for name, refused := range map[string]response{
-		"a version 2 token of a kind without its authorization": servedVersionTwo,
-		"a version 1 token for a lesson-referenced file":        servedVersionOneForLesson,
+		"a version 2 token naming a lesson without the file": servedVersionTwo,
+		"a version 1 token for a lesson-referenced file":     servedVersionOneForLesson,
+		"a forged token": forged,
 	} {
 		if refused.status != http.StatusNotFound || code(t, refused) != "not_found" {
 			t.Fatalf("%s answered %s", name, describe(refused))
@@ -70,17 +72,17 @@ func TestDownloadTokenV2LayoutIsRefusedUntilItsKindIsAuthorized(t *testing.T) {
 		t.Fatalf("a version 1 token for a message answered %s and %s", describe(chatAddress), describe(servedChat))
 	}
 	for name, refused := range map[string]response{
-		"a reference on a chat attachment":                  chatWithReference,
-		"a malformed reference on a chat attachment":        chatWithMalformedReference,
-		"a reference to a lesson without its authorization": otherLessonWithReference,
-		"a malformed reference to an unauthorized lesson":   otherLessonWithMalformedReference,
-		"a lesson file without a reference":                 otherLessonWithoutReference,
+		"a reference on a chat attachment":               chatWithReference,
+		"a malformed reference on a chat attachment":     chatWithMalformedReference,
+		"a reference to a lesson the caller cannot see":  otherLessonWithReference,
+		"a malformed reference without a visible lesson": otherLessonWithMalformedReference,
+		"a lesson file without a reference":              otherLessonWithoutReference,
 	} {
 		if refused.status != http.StatusNotFound || code(t, refused) != "not_found" {
 			t.Fatalf("%s answered %s", name, describe(refused))
 		}
 	}
-	if h.countLogs(`"msg":"download.refused"`, `"reason":"token"`) != 1 || h.countLogs(`"msg":"download.refused"`, `"reason":"unreferenced"`) != 1 {
+	if h.countLogs(`"msg":"download.refused"`, `"reason":"token"`) != 1 || h.countLogs(`"msg":"download.refused"`, `"reason":"unreferenced"`) != 2 {
 		t.Fatal("the refused downloads were not recorded with their reasons")
 	}
 }

@@ -46,6 +46,7 @@ const (
 	ReferenceTemplate      ReferenceKind = "template"
 	ReferenceIssueSnapshot ReferenceKind = "issue_snapshot"
 	ReferenceLesson        ReferenceKind = "lesson"
+	ReferenceSeries        ReferenceKind = "series"
 	ReferenceAvatar        ReferenceKind = "avatar"
 )
 

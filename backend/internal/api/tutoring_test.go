@@ -402,6 +402,7 @@ var denialCases = map[string]denialCase{
 	"GET /api/v1/files/{id}":                           anotherAttachmentsAddress,
 	"PATCH /api/v1/lessons/{id}":                       anotherTutorsLessonWrite(http.MethodPatch, "", `{"scope":"this","version":1,"title":"Taken over"}`),
 	"POST /api/v1/lessons/{id}/cancel":                 anotherTutorsLessonWrite(http.MethodPost, "/cancel", `{"scope":"this","version":1}`),
+	"POST /api/v1/lessons/{id}/materials":              anotherTutorsLessonWrite(http.MethodPost, "/materials", `{"material_ids":[],"version":1}`),
 	"POST /api/v1/lessons/{id}/join":                   anotherTutorsLessonWrite(http.MethodPost, "/join", ""),
 	"POST /api/v1/lessons/{id}/end":                    anotherTutorsLessonWrite(http.MethodPost, "/end", ""),
 	"POST /api/v1/lessons/{id}/restart-room":           anotherTutorsLessonWrite(http.MethodPost, "/restart-room", ""),

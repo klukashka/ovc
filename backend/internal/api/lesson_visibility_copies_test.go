@@ -73,11 +73,15 @@ type visibilityCopies struct {
 	email        bool
 	series       bool
 	partSeries   bool
+	materials    bool
+	mint         bool
 }
 
 func (c visibilityCase) want() visibilityCopies {
 	emailed := c.visible && c.account.confirmed && c.lesson.status != domain.LessonEnded
-	return visibilityCopies{calendar: c.visible, page: c.visible, notification: c.visible, email: emailed, series: c.audience}
+	return visibilityCopies{
+		calendar: c.visible, page: c.visible, notification: c.visible, email: emailed, series: c.audience, materials: c.visible, mint: c.visible,
+	}
 }
 
 func (h *authHarness) lessonRowFor(t *testing.T, testCase visibilityCase) {
@@ -297,6 +301,29 @@ func (h *authHarness) labelledInNotifications(t *testing.T, token string, lesson
 	return false
 }
 
+func (h *authHarness) attachVisibilityMaterials(t *testing.T, world visibilityWorld) map[string]string {
+	t.Helper()
+	emails := map[domain.UserID]string{{1}: tutorEmail, {2}: secondTutorEmail}
+	materials := map[domain.UserID]libraryItemBody{}
+	attachments := map[string]string{}
+	for _, testCase := range world.cases {
+		lesson := testCase.lesson
+		if _, done := attachments[lesson.id]; done {
+			continue
+		}
+		token := accessToken(t, h.login(t, emails[lesson.tutor], accountPassword))
+		material, created := materials[lesson.tutor]
+		if !created {
+			material = h.libraryMaterial(t, lesson.tutor, token, lesson.tutor[0], "Visibility material")
+			materials[lesson.tutor] = material
+		}
+		version := decodeLesson(t, h.lessonPage(t, token, lesson.id)).Version
+		h.attached(t, token, lesson.id, version, material.ID)
+		attachments[lesson.id] = material.AttachmentID
+	}
+	return attachments
+}
+
 func carriesItsSeries(view lessonView) bool {
 	return view.SeriesID != nil && view.Series != nil && view.Series.ID == *view.SeriesID
 }
@@ -305,6 +332,7 @@ func TestTheStudentVisibilityCopiesAgree(t *testing.T) {
 	t.Parallel()
 	h := newAuthHarness(t)
 	world := h.visibilityWorld(t)
+	attachments := h.attachVisibilityMaterials(t, world)
 	emails := make([]domain.OutboxID, 0, len(world.cases))
 	for _, testCase := range world.cases {
 		h.lessonRowFor(t, testCase)
@@ -321,7 +349,9 @@ func TestTheStudentVisibilityCopiesAgree(t *testing.T) {
 		}
 		student := tokens[testCase.account.id]
 		page := h.lessonPage(t, student, testCase.lesson.id)
+		minted, _ := h.addressOf(t, student, attachments[testCase.lesson.id], "?ref=lesson:"+testCase.lesson.id)
 		copies := visibilityCopies{
+			mint:         minted.status == http.StatusOK,
 			calendar:     slices.Contains(calendarIDs(h.calendarOf(t, student, calendarFrom, calendarTo)), testCase.lesson.id),
 			page:         page.status == http.StatusOK,
 			notification: h.labelledInNotifications(t, student, testCase.lesson.id),
@@ -330,6 +360,7 @@ func TestTheStudentVisibilityCopiesAgree(t *testing.T) {
 		if page.status == http.StatusOK {
 			view := decodeLesson(t, page)
 			copies.series = carriesItsSeries(view)
+			copies.materials = len(view.Materials) == 1 && view.Materials[0].MaterialID == nil
 			if view.Audience.Kind == string(domain.AudienceGroup) {
 				member, err := h.store.Repositories().Lessons.IsCurrentMember(context.Background(), identifierBytes(t, world.group), testCase.account.id)
 				if err != nil {
@@ -344,7 +375,7 @@ func TestTheStudentVisibilityCopiesAgree(t *testing.T) {
 
 	for _, testCase := range world.cases {
 		if results[testCase.name] != testCase.want() {
-			t.Errorf("%s: calendar, page, notification label, lesson email, series and partial series are %+v, want %+v", testCase.name, results[testCase.name], testCase.want())
+			t.Errorf("%s: calendar, page, notification label, lesson email, series, partial series, materials and mint are %+v, want %+v", testCase.name, results[testCase.name], testCase.want())
 		}
 	}
 	if len(groupLabels) != 3 {

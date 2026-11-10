@@ -264,6 +264,14 @@ type Lesson struct {
 	UpdatedAt           time.Time
 }
 
+type LessonMaterial struct {
+	LessonID   domain.LessonID
+	MaterialID domain.MaterialID
+	TutorID    domain.UserID
+	Position   int16
+	CreatedAt  time.Time
+}
+
 type LessonParticipant struct {
 	LessonID      domain.LessonID
 	AccountID     domain.UserID
@@ -464,6 +472,14 @@ type Relationship struct {
 	DiscardedAt   *time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+}
+
+type SeriesMaterial struct {
+	SeriesID   domain.SeriesID
+	MaterialID domain.MaterialID
+	TutorID    domain.UserID
+	Position   int16
+	CreatedAt  time.Time
 }
 
 type Session struct {

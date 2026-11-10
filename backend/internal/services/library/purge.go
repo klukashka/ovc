@@ -18,7 +18,45 @@ type Purge struct {
 type PurgeStep func(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, now time.Time) (int64, error)
 
 func (p Purge) TutorSteps() []PurgeStep {
-	return []PurgeStep{p.templateReferencesBatch, p.materialReferencesBatch, templatesBatch, materialsBatch, foldersBatch}
+	return []PurgeStep{
+		p.lessonMaterialsBatch, p.seriesMaterialsBatch, p.templateReferencesBatch, p.materialReferencesBatch, templatesBatch, materialsBatch, foldersBatch,
+	}
+}
+
+func (p Purge) lessonMaterialsBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, now time.Time) (int64, error) {
+	rows, err := repos.LessonMaterials.LessonBatchOfTutor(ctx, tutor, batch)
+	if err != nil || len(rows) == 0 {
+		return 0, err
+	}
+	if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
+		return 0, err
+	}
+	removed, err := repos.LessonMaterials.RemoveLessonRows(ctx, tutor, rows)
+	if err != nil {
+		return 0, err
+	}
+	if err := (release{random: p.Random, logger: p.Logger, kind: domain.ReferenceLesson}).attachments(ctx, repos, removed, now); err != nil {
+		return 0, err
+	}
+	return int64(len(rows)), nil
+}
+
+func (p Purge) seriesMaterialsBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, now time.Time) (int64, error) {
+	rows, err := repos.LessonMaterials.SeriesBatchOfTutor(ctx, tutor, batch)
+	if err != nil || len(rows) == 0 {
+		return 0, err
+	}
+	if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
+		return 0, err
+	}
+	removed, err := repos.LessonMaterials.RemoveSeriesRows(ctx, tutor, rows)
+	if err != nil {
+		return 0, err
+	}
+	if err := (release{random: p.Random, logger: p.Logger, kind: domain.ReferenceSeries}).attachments(ctx, repos, removed, now); err != nil {
+		return 0, err
+	}
+	return int64(len(rows)), nil
 }
 
 func (p Purge) materialReferencesBatch(
