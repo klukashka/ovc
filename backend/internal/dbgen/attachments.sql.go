@@ -169,21 +169,27 @@ func (q *Queries) CompleteUpload(ctx context.Context, arg CompleteUploadParams) 
 	return result.RowsAffected(), nil
 }
 
-const countOpenChatUploads = `-- name: CountOpenChatUploads :one
+const countOpenUploads = `-- name: CountOpenUploads :one
 SELECT count(id) FROM attachments
-WHERE uploader_id = $1 AND context = 'chat'
-    AND ((state = 'pending' AND expires_at > $2::timestamptz)
-        OR (state = 'uploading' AND created_at > $3::timestamptz))
+WHERE uploader_id = $1 AND context = ANY ($2::text[])
+    AND ((state = 'pending' AND expires_at > $3::timestamptz)
+        OR (state = 'uploading' AND created_at > $4::timestamptz))
 `
 
-type CountOpenChatUploadsParams struct {
+type CountOpenUploadsParams struct {
 	UploaderID     domain.UserID
+	Contexts       []string
 	Now            time.Time
 	UploadingSince time.Time
 }
 
-func (q *Queries) CountOpenChatUploads(ctx context.Context, arg CountOpenChatUploadsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countOpenChatUploads, arg.UploaderID, arg.Now, arg.UploadingSince)
+func (q *Queries) CountOpenUploads(ctx context.Context, arg CountOpenUploadsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countOpenUploads,
+		arg.UploaderID,
+		arg.Contexts,
+		arg.Now,
+		arg.UploadingSince,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -380,45 +386,6 @@ func (q *Queries) GetAvatarOf(ctx context.Context, refID domain.EntityID) (domai
 	return id, err
 }
 
-const getChatQuotaUse = `-- name: GetChatQuotaUse :one
-SELECT tutor_profiles.file_quota_bytes, tutor_profiles.file_usage_bytes,
-    COALESCE((
-        SELECT sum(CASE WHEN open.state = 'pending' THEN open.size_bytes ELSE open.reserved_bytes END)
-        FROM attachments AS open
-        WHERE open.quota_tutor_id = tutor_profiles.user_id AND open.context = 'chat'
-            AND ($1::uuid IS NULL OR open.id <> $1::uuid)
-            AND ((open.state = 'pending' AND open.expires_at > $2::timestamptz)
-                OR (open.state = 'uploading' AND open.created_at > $3::timestamptz))
-    ), 0)::bigint AS pending_bytes
-FROM tutor_profiles
-WHERE tutor_profiles.user_id = $4
-`
-
-type GetChatQuotaUseParams struct {
-	Excluded       pgtype.UUID
-	Now            time.Time
-	UploadingSince time.Time
-	TutorID        domain.UserID
-}
-
-type GetChatQuotaUseRow struct {
-	FileQuotaBytes int64
-	FileUsageBytes int64
-	PendingBytes   int64
-}
-
-func (q *Queries) GetChatQuotaUse(ctx context.Context, arg GetChatQuotaUseParams) (GetChatQuotaUseRow, error) {
-	row := q.db.QueryRow(ctx, getChatQuotaUse,
-		arg.Excluded,
-		arg.Now,
-		arg.UploadingSince,
-		arg.TutorID,
-	)
-	var i GetChatQuotaUseRow
-	err := row.Scan(&i.FileQuotaBytes, &i.FileUsageBytes, &i.PendingBytes)
-	return i, err
-}
-
 const getDownloadableChatAttachment = `-- name: GetDownloadableChatAttachment :one
 SELECT attachments.id, attachment_references.ref_id AS message_id, attachments.width, attachments.height
 FROM attachments
@@ -453,6 +420,45 @@ func (q *Queries) GetDownloadableChatAttachment(ctx context.Context, arg GetDown
 		&i.Width,
 		&i.Height,
 	)
+	return i, err
+}
+
+const getQuotaUse = `-- name: GetQuotaUse :one
+SELECT tutor_profiles.file_quota_bytes, tutor_profiles.file_usage_bytes,
+    COALESCE((
+        SELECT sum(CASE WHEN open.state = 'pending' THEN open.size_bytes ELSE open.reserved_bytes END)
+        FROM attachments AS open
+        WHERE open.quota_tutor_id = tutor_profiles.user_id
+            AND ($1::uuid IS NULL OR open.id <> $1::uuid)
+            AND ((open.state = 'pending' AND open.expires_at > $2::timestamptz)
+                OR (open.state = 'uploading' AND open.created_at > $3::timestamptz))
+    ), 0)::bigint AS pending_bytes
+FROM tutor_profiles
+WHERE tutor_profiles.user_id = $4
+`
+
+type GetQuotaUseParams struct {
+	Excluded       pgtype.UUID
+	Now            time.Time
+	UploadingSince time.Time
+	TutorID        domain.UserID
+}
+
+type GetQuotaUseRow struct {
+	FileQuotaBytes int64
+	FileUsageBytes int64
+	PendingBytes   int64
+}
+
+func (q *Queries) GetQuotaUse(ctx context.Context, arg GetQuotaUseParams) (GetQuotaUseRow, error) {
+	row := q.db.QueryRow(ctx, getQuotaUse,
+		arg.Excluded,
+		arg.Now,
+		arg.UploadingSince,
+		arg.TutorID,
+	)
+	var i GetQuotaUseRow
+	err := row.Scan(&i.FileQuotaBytes, &i.FileUsageBytes, &i.PendingBytes)
 	return i, err
 }
 

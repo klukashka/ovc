@@ -13,8 +13,9 @@ import (
 	"ovc/backend/internal/services/accounts"
 )
 
-type ChatUploadAdmission struct {
+type UploadAdmission struct {
 	service         *Service
+	target          uploadTarget
 	opened          openUpload
 	release         func()
 	once            sync.Once
@@ -22,13 +23,19 @@ type ChatUploadAdmission struct {
 	createAttempted bool
 }
 
+type ChatUploadAdmission = UploadAdmission
+
 func (s *Service) BeginChatUpload(ctx context.Context, principal accounts.Principal, channel domain.ChannelID, declared int64) (*ChatUploadAdmission, error) {
+	return s.beginUpload(ctx, s.chatTarget(channel), principal, declared)
+}
+
+func (s *Service) beginUpload(ctx context.Context, target uploadTarget, principal accounts.Principal, declared int64) (*UploadAdmission, error) {
 	release, err := s.gate.enter(principal.UserID)
 	if err != nil {
 		s.rejectedFor(ctx, principal.UserID, domain.RejectedBusy)
 		return nil, err
 	}
-	opened, err := s.openChatUpload(ctx, ChatUpload{Principal: principal, Channel: channel, Declared: declared}, "upload")
+	opened, err := s.startUpload(ctx, target, principal, declared, "upload")
 	if err != nil {
 		release()
 		if errors.Is(err, repositories.ErrUploadCapacity) {
@@ -36,10 +43,10 @@ func (s *Service) BeginChatUpload(ctx context.Context, principal accounts.Princi
 		}
 		return nil, err
 	}
-	return &ChatUploadAdmission{service: s, opened: opened, release: release}, nil
+	return &UploadAdmission{service: s, target: target, opened: opened, release: release}, nil
 }
 
-func (a *ChatUploadAdmission) Close(ctx context.Context) {
+func (a *UploadAdmission) Close(ctx context.Context) {
 	a.once.Do(func() {
 		defer a.release()
 		if !a.settled {
@@ -56,7 +63,7 @@ func (a *ChatUploadAdmission) Close(ctx context.Context) {
 	})
 }
 
-func (a *ChatUploadAdmission) Upload(ctx context.Context, filename string, body io.Reader, finish func() error) (Upload, error) {
+func (a *UploadAdmission) Upload(ctx context.Context, filename string, body io.Reader, finish func() error) (Upload, error) {
 	s := a.service
 	name, valid := cleanFileName(filename)
 	if !valid {
@@ -88,7 +95,7 @@ func (a *ChatUploadAdmission) Upload(ctx context.Context, filename string, body 
 		return Upload{}, ErrOutOfScope
 	}
 	recordedCancel()
-	content, completed, err := s.streamChatUpload(ctx, a.opened, ChatUpload{Body: body, Finish: finish}, name)
+	content, completed, err := s.streamUpload(ctx, a.target.policy, a.opened, body, finish, name)
 	settling, cancel := s.settlementContext(ctx, a.opened.id)
 	defer cancel()
 	a.settled = true
@@ -97,15 +104,15 @@ func (a *ChatUploadAdmission) Upload(ctx context.Context, filename string, body 
 		s.discardOrReport(settling, a.opened, completed)
 		return Upload{}, err
 	}
-	if err := s.settleChatUpload(settling, a.opened, content); err != nil {
+	if err := s.settleUpload(settling, a.target, a.opened, content); err != nil {
 		return Upload{}, err
 	}
 	mediaType := content.kind.mediaType()
-	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.accepted", userAttribute(a.opened.uploader.UserID), attachmentAttribute(a.opened.id), channelAttribute(a.opened.channel), slog.String("context", string(domain.ContextChat)), slog.String("media_type", mediaType), slog.Int64("size_bytes", content.size))
+	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.accepted", userAttribute(a.opened.uploader.UserID), attachmentAttribute(a.opened.id), channelAttribute(a.opened.channel), slog.String("context", string(a.target.policy.context)), slog.String("media_type", mediaType), slog.Int64("size_bytes", content.size))
 	return Upload{ID: a.opened.id, Filename: name, MediaType: mediaType, SizeBytes: content.size}, nil
 }
 
-func (a *ChatUploadAdmission) name(ctx context.Context, name string) error {
+func (a *UploadAdmission) name(ctx context.Context, name string) error {
 	return a.service.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		row, found, err := lockUpload(ctx, repos, a.opened.id)
 		if err != nil {
@@ -125,7 +132,7 @@ func (a *ChatUploadAdmission) name(ctx context.Context, name string) error {
 	})
 }
 
-func (a *ChatUploadAdmission) abandon(ctx context.Context) error {
+func (a *UploadAdmission) abandon(ctx context.Context) error {
 	now, err := a.service.deps.Clock.Instant(ctx)
 	if err != nil {
 		return err

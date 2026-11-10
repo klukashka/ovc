@@ -95,8 +95,12 @@ func (s *Service) authorizeComplete(ctx context.Context, opened openUpload) erro
 		if !found || row.State != domain.AttachmentUploading || row.StorageKey != opened.key {
 			return ErrOutOfScope
 		}
+		policy, known := uploadPolicyOf(row.Context)
+		if !known {
+			return fmt.Errorf("%w: %s", errUnregisteredContext, row.Context)
+		}
 		opened.created = row.CreatedAt
-		if err := s.checkDailyActivation(ctx, repos, opened, now); err != nil {
+		if err := s.checkDailyActivation(ctx, repos, policy, opened, now); err != nil {
 			return err
 		}
 		if _, err := repos.UploadIntents.Lock(ctx, opened.id); err != nil {

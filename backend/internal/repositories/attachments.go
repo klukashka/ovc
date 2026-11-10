@@ -12,7 +12,10 @@ import (
 	"ovc/backend/internal/domain"
 )
 
-var ErrUndescribedAttachment = errors.New("a stored attachment has no recorded media type or size")
+var (
+	ErrUndescribedAttachment = errors.New("a stored attachment has no recorded media type or size")
+	ErrNoCountedContexts     = errors.New("an open upload count names no context")
+)
 
 type ServableAvatar struct {
 	StorageKey string
@@ -28,7 +31,7 @@ type (
 	AgedUpload         = dbgen.ClaimAgedUploadsRow
 	DownloadableFile   = dbgen.GetDownloadableChatAttachmentRow
 	ServableFile       = dbgen.GetServableChatAttachmentRow
-	ChatQuotaUse       = dbgen.GetChatQuotaUseRow
+	QuotaUse           = dbgen.GetQuotaUseRow
 	MemberChannelShare = dbgen.GetChannelOfActiveMemberRow
 )
 
@@ -46,20 +49,29 @@ func (r Attachments) CompleteUpload(ctx context.Context, upload CompletedUpload)
 	return applied(rows, err, "complete upload")
 }
 
-func (r Attachments) CountOpenChatUploads(ctx context.Context, uploader domain.UserID, now time.Time, uploadingSince time.Time) (int64, error) {
-	count, err := r.queries.CountOpenChatUploads(ctx, dbgen.CountOpenChatUploadsParams{UploaderID: uploader, Now: now, UploadingSince: uploadingSince})
-	return one(count, err, "count open chat uploads")
+func (r Attachments) CountOpenUploads(
+	ctx context.Context, uploader domain.UserID, contexts []domain.AttachmentContext, now time.Time, uploadingSince time.Time,
+) (int64, error) {
+	if len(contexts) == 0 {
+		return 0, ErrNoCountedContexts
+	}
+	names := make([]string, 0, len(contexts))
+	for _, counted := range contexts {
+		names = append(names, string(counted))
+	}
+	count, err := r.queries.CountOpenUploads(ctx, dbgen.CountOpenUploadsParams{UploaderID: uploader, Contexts: names, Now: now, UploadingSince: uploadingSince})
+	return one(count, err, "count open uploads")
 }
 
-func (r Attachments) ChatQuotaUse(
+func (r Attachments) QuotaUse(
 	ctx context.Context, tutor domain.UserID, excluded *domain.AttachmentID, now time.Time, uploadingSince time.Time,
-) (ChatQuotaUse, error) {
-	params := dbgen.GetChatQuotaUseParams{TutorID: tutor, Now: now, UploadingSince: uploadingSince}
+) (QuotaUse, error) {
+	params := dbgen.GetQuotaUseParams{TutorID: tutor, Now: now, UploadingSince: uploadingSince}
 	if excluded != nil {
 		params.Excluded = pgtype.UUID{Bytes: *excluded, Valid: true}
 	}
-	use, err := r.queries.GetChatQuotaUse(ctx, params)
-	return one(use, err, "chat quota use")
+	use, err := r.queries.GetQuotaUse(ctx, params)
+	return one(use, err, "quota use")
 }
 
 func (r Attachments) ClaimAged(ctx context.Context, cutoff time.Time, batch int32) ([]AgedUpload, error) {

@@ -20,8 +20,8 @@ func (*AccountingUnavailableError) Error() string {
 	return "student chat upload accounting is unavailable"
 }
 
-func (s *Service) checkDailyActivation(ctx context.Context, repos repositories.Repositories, opened openUpload, now time.Time) error {
-	if opened.uploader.Role != domain.RoleStudent {
+func (s *Service) checkDailyActivation(ctx context.Context, repos repositories.Repositories, policy uploadPolicy, opened openUpload, now time.Time) error {
+	if !policy.dailyBytes || opened.uploader.Role != domain.RoleStudent {
 		return nil
 	}
 	activation, err := repos.DailyUploads.Activation(ctx)

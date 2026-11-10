@@ -145,7 +145,7 @@ func New(dependencies Dependencies) *Service {
 	return &Service{
 		deps: dependencies, gate: newGate(), decodes: newDecodeBudget(decodeBudgetBytes),
 		avatarReads: make(chan struct{}, avatarReadSlots), downloads: make(chan struct{}, downloadSlots),
-		hourly: newHourlyUploads(), tokens: downloadTokens{keys: dependencies.Keys},
+		hourly: newHourlyUploads(domain.ChatUploadsPerHour), tokens: downloadTokens{keys: dependencies.Keys},
 	}
 }
 

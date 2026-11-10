@@ -80,18 +80,18 @@ SET state = 'pending', media_type = sqlc.arg(media_type)::text, size_bytes = sql
     expires_at = sqlc.arg(expires_at)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
 WHERE id = @id AND state = 'uploading';
 
--- name: CountOpenChatUploads :one
+-- name: CountOpenUploads :one
 SELECT count(id) FROM attachments
-WHERE uploader_id = @uploader_id AND context = 'chat'
+WHERE uploader_id = @uploader_id AND context = ANY (sqlc.arg(contexts)::text[])
     AND ((state = 'pending' AND expires_at > sqlc.arg(now)::timestamptz)
         OR (state = 'uploading' AND created_at > sqlc.arg(uploading_since)::timestamptz));
 
--- name: GetChatQuotaUse :one
+-- name: GetQuotaUse :one
 SELECT tutor_profiles.file_quota_bytes, tutor_profiles.file_usage_bytes,
     COALESCE((
         SELECT sum(CASE WHEN open.state = 'pending' THEN open.size_bytes ELSE open.reserved_bytes END)
         FROM attachments AS open
-        WHERE open.quota_tutor_id = tutor_profiles.user_id AND open.context = 'chat'
+        WHERE open.quota_tutor_id = tutor_profiles.user_id
             AND (sqlc.narg(excluded)::uuid IS NULL OR open.id <> sqlc.narg(excluded)::uuid)
             AND ((open.state = 'pending' AND open.expires_at > sqlc.arg(now)::timestamptz)
                 OR (open.state = 'uploading' AND open.created_at > sqlc.arg(uploading_since)::timestamptz))
