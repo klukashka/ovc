@@ -140,6 +140,7 @@ Paragraphs, bold, italic, ordered and unordered lists, inline code, code blocks 
 
 - **The renderer** (from slice 8; the owner's decision of 2026-11-10 in the [slice 8 plan](../plans/slice-8.md#4-owner-questions)) is OVC's own small parser in `frontend/src/lib/markdown/`, with no dependency, producing React elements and never an HTML string, so the lint rules against unsafe DOM sinks stay unweakened.
 - **Links** are kept only when the URL parser yields `https:` with a host and no user information; they open with `target="_blank"` and `rel="noopener noreferrer"`, and anything else, a raw HTML tag included, renders as text.
+- **Blocks and nesting:** fenced code blocks open with three or more backticks or tildes; a line break inside a paragraph or a list item is kept as a line break; lists do not nest, so a marker indented by up to three spaces with the list's own bullet or delimiter continues the list, a marker of another kind starts a new list, and a line indented further continues the item's text; emphasis and links nested deeper than eight levels render as plain text, which bounds the depth of the rendered tree.
 - **Tests** run an injection corpus (raw HTML, `javascript:` and `data:` links, nested emphasis, unbalanced markers) and count the parser's steps on 10,000-character adversarial inputs, which must stay within a fixed multiple of the input length; there is no wall-clock bound.
 - Lesson descriptions stay plain text ([schedule](schedule.md#titles-and-descriptions)).
 
