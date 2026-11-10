@@ -712,3 +712,21 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: AttachmentID
+          - column: templates.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: TemplateID
+          - column: templates.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: templates.folder_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: FolderID
+              pointer: true
+          - column: templates.last_save_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: TemplateSaveID
+              pointer: true

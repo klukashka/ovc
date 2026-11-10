@@ -19,6 +19,7 @@ var (
 	ErrNotFound        = errors.New("the item is not in the caller's library")
 	ErrNotEditable     = errors.New("the folder is not empty")
 	ErrQuotaExceeded   = errors.New("the tutor's file quota has no room for the file")
+	ErrConflict        = errors.New("the template changed since the version the request names")
 )
 
 const (
@@ -62,6 +63,7 @@ func (e *ThrottledError) Error() string {
 
 type Addresses interface {
 	MaterialAddress(id domain.AttachmentID, material domain.MaterialID, disposition domain.Disposition, now time.Time) (string, time.Time)
+	TemplateAddress(id domain.AttachmentID, template domain.TemplateID, disposition domain.Disposition, now time.Time) (string, time.Time)
 }
 
 type Dependencies struct {
@@ -79,9 +81,7 @@ type Service struct {
 }
 
 func New(dependencies Dependencies) *Service {
-	if dependencies.Caps == (domain.LibraryCaps{}) {
-		dependencies.Caps = domain.DefaultLibraryCaps
-	}
+	dependencies.Caps = dependencies.Caps.WithDefaults()
 	return &Service{deps: dependencies}
 }
 
@@ -140,6 +140,10 @@ func (s *Service) write(ctx context.Context, actor domain.TutorActor, work func(
 	})
 }
 
+func (s *Service) release(kind domain.ReferenceKind) release {
+	return release{random: s.deps.Random, logger: s.deps.Logger, kind: kind}
+}
+
 func (s *Service) reserveWrite(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, now time.Time) error {
 	window, retryAfter := domain.FixedWindow(now, domain.LibraryWriteWindow)
 	count, err := repos.RateLimits.Reserve(ctx, repositories.RateLimitSlot{
@@ -182,6 +186,7 @@ func requireFolder(tree domain.FolderTree, folder *domain.FolderID) error {
 type release struct {
 	random core.RandomSource
 	logger *slog.Logger
+	kind   domain.ReferenceKind
 }
 
 func (r release) attachments(ctx context.Context, repos repositories.Repositories, attachments []domain.AttachmentID, now time.Time) error {
@@ -191,7 +196,7 @@ func (r release) attachments(ctx context.Context, repos repositories.Repositorie
 	repos.AfterCommit(ctx, func(ctx context.Context) {
 		for _, attachment := range attachments {
 			r.logger.LogAttrs(ctx, slog.LevelInfo, "file.reference.removed", attachmentAttribute(attachment),
-				slog.String(recordRefKind, string(domain.ReferenceMaterial)))
+				slog.String(recordRefKind, string(r.kind)))
 		}
 	})
 	if _, err := repos.Library.ReleaseCharges(ctx, attachments, now); err != nil {

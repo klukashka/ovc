@@ -114,6 +114,8 @@ func (r *router) registerLibrary() {
 	deleteMaterial.DefaultStatus = http.StatusNoContent
 	deleteMaterial.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound, http.StatusTooManyRequests)
 	register(r, deleteMaterial, AudienceTutorUnverifiedOK, r.deleteLibraryMaterial)
+
+	r.registerTemplates()
 }
 
 func (r *router) libraryListing(ctx context.Context, input *libraryInput) (*libraryOutput, error) {
@@ -143,8 +145,12 @@ func (r *router) libraryListing(ctx context.Context, input *libraryInput) (*libr
 		folder := folderBody(*listing.Folder)
 		body.Folder = &folder
 	}
-	for _, material := range listing.Items {
-		body.Items = append(body.Items, materialBody(material))
+	for _, item := range listing.Items {
+		if item.Material != nil {
+			body.Items = append(body.Items, materialBody(*item.Material))
+			continue
+		}
+		body.Items = append(body.Items, templateItemBody(*item.Template))
 	}
 	return &libraryOutput{CacheControl: noStore, Body: body}, nil
 }
@@ -328,6 +334,8 @@ func (r *router) libraryError(ctx context.Context, event string, err error) erro
 		return NewError(ctx, domain.ErrorUnauthenticated)
 	case errors.Is(err, library.ErrNotEditable):
 		return NewError(ctx, domain.ErrorNotEditable)
+	case errors.Is(err, library.ErrConflict):
+		return NewError(ctx, domain.ErrorConflict)
 	case errors.Is(err, library.ErrQuotaExceeded):
 		return NewError(ctx, domain.ErrorQuotaExceeded)
 	case errors.As(err, &invalid):

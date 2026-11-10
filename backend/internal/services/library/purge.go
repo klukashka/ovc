@@ -18,7 +18,7 @@ type Purge struct {
 type PurgeStep func(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, now time.Time) (int64, error)
 
 func (p Purge) TutorSteps() []PurgeStep {
-	return []PurgeStep{p.materialReferencesBatch, materialsBatch, foldersBatch}
+	return []PurgeStep{p.templateReferencesBatch, p.materialReferencesBatch, templatesBatch, materialsBatch, foldersBatch}
 }
 
 func (p Purge) materialReferencesBatch(
@@ -35,7 +35,7 @@ func (p Purge) materialReferencesBatch(
 	if err != nil {
 		return 0, err
 	}
-	if err := (release{random: p.Random, logger: p.Logger}).attachments(ctx, repos, removed, now); err != nil {
+	if err := (release{random: p.Random, logger: p.Logger, kind: domain.ReferenceMaterial}).attachments(ctx, repos, removed, now); err != nil {
 		return 0, err
 	}
 	return int64(len(removed)), nil
@@ -47,4 +47,28 @@ func materialsBatch(ctx context.Context, repos repositories.Repositories, tutor 
 
 func foldersBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, _ time.Time) (int64, error) {
 	return repos.Library.DeleteLeafFoldersBatchOfTutor(ctx, tutor, batch)
+}
+
+func (p Purge) templateReferencesBatch(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, now time.Time,
+) (int64, error) {
+	references, err := repos.Library.TemplateReferencesBatchOfTutor(ctx, tutor, batch)
+	if err != nil || len(references) == 0 {
+		return 0, err
+	}
+	if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
+		return 0, err
+	}
+	removed, err := repos.Library.RemoveTemplateReferencesOfTutor(ctx, tutor, references)
+	if err != nil {
+		return 0, err
+	}
+	if err := (release{random: p.Random, logger: p.Logger, kind: domain.ReferenceTemplate}).attachments(ctx, repos, removed, now); err != nil {
+		return 0, err
+	}
+	return int64(len(removed)), nil
+}
+
+func templatesBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, _ time.Time) (int64, error) {
+	return repos.Library.DeleteTemplatesBatchOfTutor(ctx, tutor, batch)
 }

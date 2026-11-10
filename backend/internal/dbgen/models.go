@@ -477,6 +477,26 @@ type Session struct {
 	CreatedAt   time.Time
 }
 
+type Template struct {
+	ID              domain.TemplateID
+	TutorID         domain.UserID
+	FolderID        *domain.FolderID
+	Title           string
+	NormalisedTitle string
+	Blocks          []byte
+	SchemaVersion   int32
+	Version         int64
+	LastSaveID      *domain.TemplateSaveID
+	CreateKey       *string
+	QuestionCount   int32
+	MaxPoints       int32
+	Ready           bool
+	BlocksBytes     int64
+	DeletedAt       *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
 type TestClock struct {
 	ID      int16
 	Instant time.Time

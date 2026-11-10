@@ -1,8 +1,10 @@
 package library
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -19,11 +21,23 @@ type ListingQuery struct {
 	Cursor string
 }
 
+type LibraryItem struct {
+	Kind     domain.LibraryItemKind
+	Material *Material
+	Template *TemplateListItem
+}
+
+type orderedItem struct {
+	after repositories.MaterialListAfter
+	item  LibraryItem
+	path  *domain.FolderID
+}
+
 type Listing struct {
 	Folder        *Folder
 	Path          []PathEntry
 	Folders       []Folder
-	Items         []Material
+	Items         []LibraryItem
 	NextCursor    *string
 	TemplateCount int64
 }
@@ -78,23 +92,59 @@ func (s *Service) Listing(ctx context.Context, tutor domain.UserID, query Listin
 		if err != nil {
 			return err
 		}
-		if len(materials) > int(query.Limit) {
-			materials = materials[:query.Limit]
-			last := materials[len(materials)-1]
-			next := formatCursor(repositories.MaterialListAfter{Title: last.NormalisedTitle, Kind: domain.LibraryItemMaterial, ID: domain.EntityID(last.ID)})
-			listing.NextCursor = &next
+		templates, err := repos.Library.Templates(ctx, page)
+		if err != nil {
+			return err
 		}
-		listing.Items = make([]Material, 0, len(materials))
+		if listing.TemplateCount, err = repos.Library.LiveTemplateCount(ctx, tutor); err != nil {
+			return err
+		}
+		ordered := make([]orderedItem, 0, len(materials)+len(templates))
 		for _, row := range materials {
 			material := s.materialOf(row, now)
+			ordered = append(ordered, orderedItem{
+				after: repositories.MaterialListAfter{Title: row.NormalisedTitle, Kind: domain.LibraryItemMaterial, ID: domain.EntityID(row.ID)},
+				item:  LibraryItem{Kind: domain.LibraryItemMaterial, Material: &material}, path: row.FolderID,
+			})
+		}
+		for _, row := range templates {
+			template := templateItemOf(row)
+			ordered = append(ordered, orderedItem{
+				after: repositories.MaterialListAfter{Title: row.NormalisedTitle, Kind: domain.LibraryItemTemplate, ID: domain.EntityID(row.ID)},
+				item:  LibraryItem{Kind: domain.LibraryItemTemplate, Template: &template}, path: row.FolderID,
+			})
+		}
+		slices.SortFunc(ordered, func(left, right orderedItem) int { return compareAfter(left.after, right.after) })
+		if len(ordered) > int(query.Limit) {
+			ordered = ordered[:query.Limit]
+			next := formatCursor(ordered[len(ordered)-1].after)
+			listing.NextCursor = &next
+		}
+		listing.Items = make([]LibraryItem, 0, len(ordered))
+		for _, entry := range ordered {
 			if query.Query != nil {
-				material.Path = pathOf(tree, names, row.FolderID)
+				path := pathOf(tree, names, entry.path)
+				if entry.item.Material != nil {
+					entry.item.Material.Path = path
+				} else {
+					entry.item.Template.Path = path
+				}
 			}
-			listing.Items = append(listing.Items, material)
+			listing.Items = append(listing.Items, entry.item)
 		}
 		return nil
 	})
 	return listing, err
+}
+
+func compareAfter(left, right repositories.MaterialListAfter) int {
+	if order := strings.Compare(left.Title, right.Title); order != 0 {
+		return order
+	}
+	if order := strings.Compare(string(left.Kind), string(right.Kind)); order != 0 {
+		return order
+	}
+	return bytes.Compare(left.ID[:], right.ID[:])
 }
 
 func folderView(

@@ -25,6 +25,9 @@ SELECT EXISTS (
     UNION ALL
     SELECT 1 FROM materials
     WHERE materials.folder_id = sqlc.arg(folder_id)::uuid AND materials.tutor_id = sqlc.arg(tutor_id)::uuid AND materials.deleted_at IS NULL
+    UNION ALL
+    SELECT 1 FROM templates
+    WHERE templates.folder_id = sqlc.arg(folder_id)::uuid AND templates.tutor_id = sqlc.arg(tutor_id)::uuid AND templates.deleted_at IS NULL
 );
 
 -- name: DeleteFolder :execrows

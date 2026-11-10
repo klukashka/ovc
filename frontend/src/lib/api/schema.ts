@@ -687,6 +687,70 @@ export interface paths {
         patch: operations["library-materials-update"];
         trace?: never;
     };
+    "/api/v1/library/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["library-templates-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/templates/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["library-templates-get"];
+        put: operations["library-templates-save"];
+        post?: never;
+        delete: operations["library-templates-delete"];
+        options?: never;
+        head?: never;
+        patch: operations["library-templates-move"];
+        trace?: never;
+    };
+    "/api/v1/library/templates/{id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["library-templates-duplicate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/templates/{id}/student-view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["library-templates-student-view"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/messages/{id}": {
         parameters: {
             query?: never;
@@ -1488,14 +1552,21 @@ export interface components {
             id: string;
             /** @enum {string} */
             kind: "material" | "template";
+            /** Format: int32 */
+            max_points?: number;
             media_type?: string;
             path: components["schemas"]["LibraryPathEntry"][] | null;
+            /** Format: int32 */
+            question_count?: number;
+            ready?: boolean;
             /** Format: int64 */
             size_bytes?: number;
             title: string;
             /** Format: date-time */
             updated_at: string;
             url: string | null;
+            /** Format: int64 */
+            version?: number;
             /** Format: int32 */
             width: number | null;
         };
@@ -1652,6 +1723,12 @@ export interface components {
         NewStudentCard: {
             display_name: string;
             email?: string;
+        };
+        NewTemplate: {
+            blocks: components["schemas"]["TemplateBlockInput"][];
+            /** Format: uuid */
+            folder_id: string | null;
+            title: string;
         };
         Notification: {
             /** @enum {string|null} */
@@ -1890,6 +1967,195 @@ export interface components {
             next_lesson: components["schemas"]["CalendarItem"] | null;
             /** @enum {string} */
             state: "invited" | "provisional" | "reclaim_pending" | "active" | "ended";
+        };
+        StudentTemplate: {
+            blocks: components["schemas"]["StudentTemplateBlock"][];
+            title: string;
+        };
+        StudentTemplateBlock: {
+            allowed_kinds?: string[];
+            /** Format: uuid */
+            id: string;
+            images?: components["schemas"]["StudentTemplateFile"][];
+            material?: components["schemas"]["StudentTemplateMaterial"];
+            /** Format: int32 */
+            max_files?: number;
+            /** Format: int32 */
+            max_length?: number;
+            options?: components["schemas"]["StudentTemplateOption"][];
+            prompt?: string;
+            text?: string;
+            /** @enum {string} */
+            type: "instruction" | "material" | "single_choice" | "multiple_choice" | "short_text" | "short_number" | "long_text" | "file";
+        };
+        StudentTemplateFile: {
+            /** Format: date-time */
+            expires_at: string;
+            filename: string;
+            /** Format: int32 */
+            height: number | null;
+            media_type: string;
+            /** Format: int64 */
+            size_bytes: number;
+            url: string;
+            /** Format: int32 */
+            width: number | null;
+        };
+        StudentTemplateMaterial: {
+            /** Format: date-time */
+            expires_at: string;
+            filename: string;
+            /** Format: int32 */
+            height: number | null;
+            media_type: string;
+            /** Format: int64 */
+            size_bytes: number;
+            title: string;
+            url: string;
+            /** Format: int32 */
+            width: number | null;
+        };
+        StudentTemplateOption: {
+            /** Format: uuid */
+            id: string;
+            text: string;
+        };
+        Template: {
+            blocks: components["schemas"]["TemplateBlock"][];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            folder_id: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: int32 */
+            max_points: number;
+            problems: components["schemas"]["TemplateProblem"][];
+            /** Format: int32 */
+            question_count: number;
+            ready: boolean;
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: int64 */
+            version: number;
+        };
+        TemplateBlock: {
+            accepted_answers?: string[];
+            allowed_kinds?: string[];
+            explanation?: string;
+            /** Format: uuid */
+            id: string;
+            image_ids?: string[];
+            images?: components["schemas"]["TemplateFile"][];
+            material?: components["schemas"]["TemplateMaterial"];
+            /** Format: uuid */
+            material_id?: string;
+            /** Format: int32 */
+            max_files?: number;
+            /** Format: int32 */
+            max_length?: number;
+            options?: components["schemas"]["TemplateOption"][];
+            /** Format: int32 */
+            points?: number;
+            prompt?: string;
+            /** @enum {string} */
+            scoring?: "all_or_nothing" | "partial";
+            text?: string;
+            tolerance?: string;
+            /** @enum {string} */
+            type: "instruction" | "material" | "single_choice" | "multiple_choice" | "short_text" | "short_number" | "long_text" | "file";
+            value?: string;
+        };
+        TemplateBlockInput: {
+            accepted_answers?: string[];
+            allowed_kinds?: string[];
+            explanation?: string;
+            /** Format: uuid */
+            id: string;
+            image_ids?: string[];
+            /** Format: uuid */
+            material_id?: string;
+            /** Format: int32 */
+            max_files?: number;
+            /** Format: int32 */
+            max_length?: number;
+            options?: components["schemas"]["TemplateOption"][];
+            /** Format: int32 */
+            points?: number;
+            prompt?: string;
+            /** @enum {string} */
+            scoring?: "all_or_nothing" | "partial";
+            text?: string;
+            tolerance?: string;
+            /** @enum {string} */
+            type: "instruction" | "material" | "single_choice" | "multiple_choice" | "short_text" | "short_number" | "long_text" | "file";
+            value?: string;
+        };
+        TemplateDuplicate: {
+            /** Format: uuid */
+            folder_id: string | null;
+            title: string;
+        };
+        TemplateFile: {
+            /** Format: uuid */
+            attachment_id: string;
+            /** Format: date-time */
+            expires_at: string;
+            filename: string;
+            /** Format: int32 */
+            height: number | null;
+            media_type: string;
+            /** Format: int64 */
+            size_bytes: number;
+            url: string;
+            /** Format: int32 */
+            width: number | null;
+        };
+        TemplateMaterial: {
+            /** Format: uuid */
+            attachment_id: string;
+            deleted: boolean;
+            /** Format: date-time */
+            expires_at: string;
+            filename: string;
+            /** Format: int32 */
+            height: number | null;
+            /** Format: uuid */
+            material_id: string;
+            media_type: string;
+            /** Format: int64 */
+            size_bytes: number;
+            title: string;
+            url: string;
+            /** Format: int32 */
+            width: number | null;
+        };
+        TemplateMove: {
+            /** Format: uuid */
+            folder_id: string | null;
+            /** Format: int64 */
+            version: number;
+        };
+        TemplateOption: {
+            correct?: boolean;
+            /** Format: uuid */
+            id: string;
+            text: string;
+        };
+        TemplateProblem: {
+            /** Format: uuid */
+            block_id: string | null;
+            /** @enum {string} */
+            code: "no_blocks" | "text_missing" | "prompt_missing" | "too_few_options" | "option_empty" | "correct_count" | "no_correct_option" | "no_accepted_answer" | "accepted_answer_empty" | "value_invalid" | "tolerance_invalid";
+        };
+        TemplateSave: {
+            blocks: components["schemas"]["TemplateBlockInput"][];
+            /** Format: uuid */
+            save_id: string;
+            title: string;
+            /** Format: int64 */
+            version: number;
         };
         TutorCode: {
             active: boolean;
@@ -6867,6 +7133,782 @@ export interface operations {
             };
         };
     };
+    "library-templates-create": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewTemplate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Template"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Insufficient Storage */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "library-templates-get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Template"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "library-templates-save": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateSave"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Template"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Insufficient Storage */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "library-templates-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "library-templates-move": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateMove"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Template"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "library-templates-duplicate": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateDuplicate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Template"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Insufficient Storage */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "library-templates-student-view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudentTemplate"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "messages-delete": {
         parameters: {
             query?: never;
@@ -10202,4 +11244,10 @@ export const studentCardDetailEnded_byValues: ReadonlyArray<FlattenedDeepRequire
 export const studentCardDetailStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardDetail"]["state"]> = ["invited", "provisional", "reclaim_pending", "active", "ended"];
 export const studentCardSummaryEnded_byValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardSummary"]["ended_by"]> = ["tutor", "student", "deletion"];
 export const studentCardSummaryStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardSummary"]["state"]> = ["invited", "provisional", "reclaim_pending", "active", "ended"];
+export const studentTemplateBlockTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentTemplateBlock"]["type"]> = ["instruction", "material", "single_choice", "multiple_choice", "short_text", "short_number", "long_text", "file"];
+export const templateBlockScoringValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateBlock"]["scoring"]> = ["all_or_nothing", "partial"];
+export const templateBlockTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateBlock"]["type"]> = ["instruction", "material", "single_choice", "multiple_choice", "short_text", "short_number", "long_text", "file"];
+export const templateBlockInputScoringValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateBlockInput"]["scoring"]> = ["all_or_nothing", "partial"];
+export const templateBlockInputTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateBlockInput"]["type"]> = ["instruction", "material", "single_choice", "multiple_choice", "short_text", "short_number", "long_text", "file"];
+export const templateProblemCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateProblem"]["code"]> = ["no_blocks", "text_missing", "prompt_missing", "too_few_options", "option_empty", "correct_count", "no_correct_option", "no_accepted_answer", "accepted_answer_empty", "value_invalid", "tolerance_invalid"];
 export const unsubscribePreviewGroupValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["UnsubscribePreview"]["group"]> = ["lesson_reminders", "lesson_changes", "homework", "results", "submissions", "message_digest"];

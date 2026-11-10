@@ -123,7 +123,11 @@ func (s *Service) refuseBeyondMaterialCaps(ctx context.Context, repos repositori
 	if err != nil {
 		return err
 	}
-	if counts.Live >= s.deps.Caps.Materials || counts.Total >= s.deps.Caps.Rows {
+	templates, err := repos.Library.CountTemplates(ctx, tutor)
+	if err != nil {
+		return err
+	}
+	if counts.Live >= s.deps.Caps.Materials || counts.Total+templates.Total >= s.deps.Caps.Rows {
 		return invalid(fieldBody, domain.FieldTooMany)
 	}
 	return nil
@@ -205,6 +209,6 @@ func (s *Service) DeleteMaterial(ctx context.Context, actor domain.TutorActor, i
 		repos.AfterCommit(ctx, func(ctx context.Context) {
 			s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "library.material.deleted", tutorAttribute(tutor), materialAttribute(id))
 		})
-		return release{random: s.deps.Random, logger: s.deps.Logger}.attachments(ctx, repos, removed, now)
+		return s.release(domain.ReferenceMaterial).attachments(ctx, repos, removed, now)
 	})
 }

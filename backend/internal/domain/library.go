@@ -43,13 +43,27 @@ const (
 )
 
 type LibraryCaps struct {
-	Folders   int64
-	Materials int64
-	Templates int64
-	Rows      int64
+	Folders            int64
+	Materials          int64
+	Templates          int64
+	Rows               int64
+	TemplateBlockBytes int64
 }
 
-var DefaultLibraryCaps = LibraryCaps{Folders: 1_000, Materials: 10_000, Templates: 2_000, Rows: 50_000}
+var DefaultLibraryCaps = LibraryCaps{Folders: 1_000, Materials: 10_000, Templates: 2_000, Rows: 50_000, TemplateBlockBytes: TemplateBlockBudgetBytes}
+
+func (c LibraryCaps) WithDefaults() LibraryCaps {
+	defaults := DefaultLibraryCaps
+	for _, field := range []struct{ value, fallback *int64 }{
+		{&c.Folders, &defaults.Folders}, {&c.Materials, &defaults.Materials}, {&c.Templates, &defaults.Templates}, {&c.Rows, &defaults.Rows},
+		{&c.TemplateBlockBytes, &defaults.TemplateBlockBytes},
+	} {
+		if *field.value == 0 {
+			*field.value = *field.fallback
+		}
+	}
+	return c
+}
 
 type LibraryTextLimits struct {
 	MaxRunes        int

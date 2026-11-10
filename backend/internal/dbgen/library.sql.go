@@ -159,6 +159,9 @@ SELECT EXISTS (
     UNION ALL
     SELECT 1 FROM materials
     WHERE materials.folder_id = $1::uuid AND materials.tutor_id = $2::uuid AND materials.deleted_at IS NULL
+    UNION ALL
+    SELECT 1 FROM templates
+    WHERE templates.folder_id = $1::uuid AND templates.tutor_id = $2::uuid AND templates.deleted_at IS NULL
 )
 `
 

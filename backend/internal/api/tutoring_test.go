@@ -410,6 +410,13 @@ var denialCases = map[string]denialCase{
 	"DELETE /api/v1/library/folders/{id}":              anotherTutorsFolder(http.MethodDelete, ""),
 	"PATCH /api/v1/library/materials/{id}":             anotherTutorsMaterial(http.MethodPatch, `{"title":"Taken over"}`),
 	"DELETE /api/v1/library/materials/{id}":            anotherTutorsMaterial(http.MethodDelete, ""),
+	"GET /api/v1/library/templates/{id}":               anotherTutorsTemplate(http.MethodGet, "", ""),
+	"PUT /api/v1/library/templates/{id}": anotherTutorsTemplate(http.MethodPut, "",
+		`{"title":"Taken over","version":1,"save_id":"0d8f2a1c-5b4e-4c3a-9e7f-1a2b3c4d5e6f","blocks":[]}`),
+	"PATCH /api/v1/library/templates/{id}":            anotherTutorsTemplate(http.MethodPatch, "", `{"folder_id":null,"version":1}`),
+	"DELETE /api/v1/library/templates/{id}":           anotherTutorsTemplate(http.MethodDelete, "", ""),
+	"GET /api/v1/library/templates/{id}/student-view": anotherTutorsTemplate(http.MethodGet, "/student-view", ""),
+	"POST /api/v1/library/templates/{id}/duplicate":   anotherTutorsTemplate(http.MethodPost, "/duplicate", `{"title":"Copy","folder_id":null}`),
 }
 
 var bodyIdentifierDenialCases = map[string]denialCase{
@@ -418,6 +425,7 @@ var bodyIdentifierDenialCases = map[string]denialCase{
 	"POST /api/v1/library/folders":    anotherTutorsParentFolder,
 	"POST /api/v1/library/materials":  anotherTutorsLibraryUpload,
 	"GET /api/v1/library":             anotherTutorsListedFolder,
+	"POST /api/v1/library/templates":  anotherTutorsTemplateFolder,
 }
 
 var denialStatuses = map[string]int{

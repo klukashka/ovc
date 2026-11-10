@@ -24,20 +24,24 @@ type LibraryPathEntry struct {
 }
 
 type LibraryItem struct {
-	Kind         domain.LibraryItemKind `json:"kind" enum:"material,template"`
-	ID           string                 `json:"id" format:"uuid"`
-	Title        string                 `json:"title"`
-	FolderID     *string                `json:"folder_id" format:"uuid" nullable:"true"`
-	Path         []LibraryPathEntry     `json:"path" nullable:"true"`
-	UpdatedAt    time.Time              `json:"updated_at"`
-	AttachmentID *string                `json:"attachment_id,omitempty" format:"uuid"`
-	Filename     *string                `json:"filename,omitempty"`
-	MediaType    *string                `json:"media_type,omitempty"`
-	SizeBytes    *int64                 `json:"size_bytes,omitempty"`
-	Width        *int32                 `json:"width" nullable:"true"`
-	Height       *int32                 `json:"height" nullable:"true"`
-	URL          *string                `json:"url" nullable:"true"`
-	ExpiresAt    *time.Time             `json:"expires_at" nullable:"true"`
+	Kind          domain.LibraryItemKind `json:"kind" enum:"material,template"`
+	ID            string                 `json:"id" format:"uuid"`
+	Title         string                 `json:"title"`
+	FolderID      *string                `json:"folder_id" format:"uuid" nullable:"true"`
+	Path          []LibraryPathEntry     `json:"path" nullable:"true"`
+	UpdatedAt     time.Time              `json:"updated_at"`
+	AttachmentID  *string                `json:"attachment_id,omitempty" format:"uuid"`
+	Filename      *string                `json:"filename,omitempty"`
+	MediaType     *string                `json:"media_type,omitempty"`
+	SizeBytes     *int64                 `json:"size_bytes,omitempty"`
+	Width         *int32                 `json:"width" nullable:"true"`
+	Height        *int32                 `json:"height" nullable:"true"`
+	URL           *string                `json:"url" nullable:"true"`
+	ExpiresAt     *time.Time             `json:"expires_at" nullable:"true"`
+	QuestionCount *int32                 `json:"question_count,omitempty"`
+	MaxPoints     *int32                 `json:"max_points,omitempty"`
+	Ready         *bool                  `json:"ready,omitempty"`
+	Version       *int64                 `json:"version,omitempty"`
 }
 
 type Library struct {
