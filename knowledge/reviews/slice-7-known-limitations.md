@@ -227,7 +227,7 @@ Owner dispositions, 2026-11-08: both items are accepted as known limitations of 
 
 Recorded 2026-11-07 from the reviews of the change that keeps redacted browser diagnostics of failed end-to-end runs. Every item is minor, and none lets a credential defined in ADR-0009 into the kept evidence.
 
-- **Four redaction rules have no test that fails only without them.** These are the bearer-token rule, the secret-assignment rule, the free-standing opaque-token rule of 32 or more characters, and the final fallback for short segments that are neither plain nor opaque. They overlap with other rules in the current cases.
+- **Four redaction rules have no test that fails only without them.** Resolved by the design slice review follow-up: each rule now has a case in `e2e/diagnostic-redaction.test.ts` that fails only without it. These are the bearer-token rule, the secret-assignment rule, the free-standing opaque-token rule of 32 or more characters, and the final fallback for short segments that are neither plain nor opaque.
 - **Some segments are redacted unevenly.** An opaque path segment of lower-case letters only, up to 40 characters, stays readable. A route word of 16 or more characters that contains a digit is redacted.
 - **A free-text token of 16 to 31 characters can survive.** This holds for a token that is not a bearer value, not a `name=` assignment and not in a path. No ADR-0009 token is that short.
 - **The gate checks before it reads.** It checks that a test's `browser-diagnostics.json` is a regular file with a single link, then reads it later with `cat`. A process left over from the run could swap the file in between. This is accidental exposure only, because the gated code runs anyway.

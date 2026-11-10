@@ -262,7 +262,8 @@ export function observeBrowserContext(
     });
   });
   context.on('weberror', (error) => {
-    record('page_error', error.page(), { text: error.error().message, source: '' });
+    const thrown = error.error();
+    record('page_error', error.page(), { text: thrown.message === '' ? thrown.name : thrown.message, source: '' });
   });
   const result = {
     finish: async (): Promise<void> => {

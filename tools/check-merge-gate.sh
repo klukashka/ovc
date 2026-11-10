@@ -485,7 +485,11 @@ live_groups() {
 
 mkdir -p "$lock_dir/logs.expired" "$lock_dir/logs.recent"
 touch -t 202001010000 "$lock_dir/logs.expired"
-lane_change fix/lanes-pass a1 "printf 'output of a1\\n'"
+lane_change fix/lanes-pass a1 "printf 'output of a1\\n'" \
+  e2e "mkdir -p frontend/test-results/playwright/run-5151/smoke-chromium
+printf 'diagnostics of a passed run\\n' >frontend/test-results/playwright/run-5151/smoke-chromium/browser-diagnostics.json"
+mkdir -p "$repo/frontend"
+commit_file frontend/.gitignore "test-results" "Ignore the end-to-end results"
 run_lanes
 check "$status" "0" "a gate whose lanes all pass passes"
 check "$(slot_order)" "pre A B C A B e2e C " "the report lists every command in list order with its slot"
@@ -513,7 +517,11 @@ contains "$(cat "$logs/1.log")" "output of a1" "a command's output goes to its o
 check "$(test -d "$lock_dir/logs.expired" && echo kept || echo removed)" "removed" "log folders older than seven days are removed"
 check "$(test -d "$lock_dir/logs.recent" && echo kept || echo removed)" "kept" "recent log folders are kept"
 check "$(lock_field lanes)" "" "a passed gate's lock records no lane groups"
-check "$(count_matching '^kept end-to-end results')" "0" "a passed gate keeps no end-to-end results"
+check "$(test -f "$repo/frontend/test-results/playwright/run-5151/smoke-chromium/browser-diagnostics.json" && echo written || echo missing)" \
+  "written" "the passed gate's end-to-end entry left browser diagnostics of its run"
+check "$(count_matching '^kept end-to-end evidence')" "0" "a passed gate reports no kept end-to-end evidence"
+check "$(test -e "$logs/e2e-results" && echo kept || echo absent)" "absent" "a passed gate keeps no end-to-end evidence"
+rm -rf "$repo/frontend/test-results"
 check "$(lock_field checks)" "self-test-lanes" "the lock records the lane self-test list"
 run_gate finish
 contains "$output" "check list check: failed" "finish refuses a gate that ran the lane self-test list"
@@ -635,6 +643,37 @@ check "$(test -e "$logs/e2e-results" && echo kept || echo absent)" "absent" \
   "no evidence folder is created for a run folder that is a link"
 rm -rf "$repo/frontend/test-results" "$work/outside-results" "$work/outside-run" "$work/outside-secret" \
   "$work/hard-linked-secret"
+
+mkfifo "$work/fifo-marker"
+exec 3<>"$work/fifo-marker"
+find "$lock_dir" -mindepth 1 -maxdepth 1 -type d -name 'logs.*' >"$work/log-folders-before"
+lane_change fix/e2e-marker-fails \
+  a2 "printf 'a2\\n' >\"$work/fifo-marker\"" \
+  b2 "printf 'b2\\n' >\"$work/fifo-marker\"" \
+  c2 "read -r -t 30 one <\"$work/fifo-marker\" && read -r -t 30 two <\"$work/fifo-marker\" || exit 1
+for folder in \"$lock_dir\"/logs.*; do
+  grep -qxF \"\$folder\" \"$work/log-folders-before\" || chmod 500 \"\$folder\"
+done" \
+  e2e "printf 'ran\\n' >\"$work/marker-e2e\""
+restore_log_folders() {
+  find "$lock_dir" -mindepth 1 -maxdepth 1 -type d -name 'logs.*' -exec chmod 700 {} +
+}
+trap 'restore_log_folders; rm -rf "$work"' EXIT
+run_lanes
+exec 3<&-
+restore_log_folders
+find "$lock_dir" -mindepth 1 -maxdepth 1 -type d -name 'logs.*' | sort >"$work/log-folders-after"
+new_log_folders="$(sort "$work/log-folders-before" | comm -13 - "$work/log-folders-after")"
+check "$(printf '%s' "$new_log_folders" | awk 'END { print NR }')" "1" "the gate whose marker cannot be created made exactly one command log folder"
+trap 'rm -rf "$work"' EXIT
+check "$status" "1" "a gate that cannot create its end-to-end start marker fails"
+contains "$output" "merge gate: stopped with status 1 before a result" "the gate stops before a result when the marker cannot be created"
+contains "$output" "/e2e-started." "the stop names the end-to-end start marker"
+check "$(count_matching '^merge gate: running e2e')" "0" "the gate stops before it starts the end-to-end phase"
+check "$(test -e "$work/marker-e2e" && echo ran || echo "not run")" "not run" "the end-to-end entry does not run without its start marker"
+contains "$(tail -n 1 "$log")" "result=stopped" "the attempt log records the stopped gate"
+check "$(lock_state)" "released" "the gate releases its lock after the marker could not be created"
+check "$(run_lock_state)" "released" "the gate releases the end-to-end run lock after the marker could not be created"
 
 lane_change fix/lane-changes-tree c1 "printf 'changed by a lane\\n' >docs/guide.md"
 run_lanes

@@ -13,7 +13,14 @@ const tokenParentSegments = new Set(['invite', 'invitations', 'bbb', 'unsubscrib
 const bearerToken = /\bbearer\s+[^\s"',;]+/giu;
 const jsonWebToken = /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}(?:\.[A-Za-z0-9_-]*)?/gu;
 const emailAddress = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/gu;
-const secretAssignment = /\b(token|key|secret|password|signature|code)=[^\s&"']+/giu;
+const secretName = /token|key|secret|password|signature|code|refresh|session|cookie/iu;
+const jsonSecretName = /token|key|secret|password|signature|code|refresh|session|cookie|access/iu;
+const jsonPublicName = /^code$/iu;
+const apiErrorCode = /^[a-z][a-z0-9_]*$/u;
+const cookieHeader = /\b((?:set-)?cookie)\s*:[^\r\n]*/giu;
+const jsonStringValue = /"([\w.-]+)"\s*:\s*"((?:[^"\\]|\\.)*)"/gu;
+const assignedName = /(?<![\w.-])([\w.-]+)=/gu;
+const assignedValue = /[^\s&"']+/uy;
 const addressOrPath = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`]+|\/[^\s"'<>`]*/giu;
 const opaqueToken = /[A-Za-z0-9_-]{32,}/gu;
 
@@ -54,13 +61,36 @@ function capped(text: string): string {
   return `${text.slice(0, redactedTextLimit - truncationMark.length)}${truncationMark}`;
 }
 
+function redactJsonStringValue(match: string, name: string, value: string): string {
+  if (!jsonSecretName.test(name) || (jsonPublicName.test(name) && apiErrorCode.test(value))) return match;
+  return `"${name}":"${redacted}"`;
+}
+
+function redactAssignments(text: string): string {
+  const names = new RegExp(assignedName.source, assignedName.flags);
+  const values = new RegExp(assignedValue.source, assignedValue.flags);
+  let kept = '';
+  let from = 0;
+  for (let found = names.exec(text); found !== null; found = names.exec(text)) {
+    if (!secretName.test(found[1] ?? '')) continue;
+    values.lastIndex = names.lastIndex;
+    if (values.exec(text) === null) continue;
+    kept += `${text.slice(from, names.lastIndex)}${redacted}`;
+    from = values.lastIndex;
+    names.lastIndex = values.lastIndex;
+  }
+  return `${kept}${text.slice(from)}`;
+}
+
 export function redactText(text: string): string {
+  const withoutMarkedSecrets = boundedForScanning(text)
+    .replace(cookieHeader, (_match, name: string) => `${name}: ${redacted}`)
+    .replace(jsonStringValue, redactJsonStringValue)
+    .replace(bearerToken, `Bearer ${redacted}`)
+    .replace(jsonWebToken, redacted)
+    .replace(emailAddress, redacted);
   return capped(
-    boundedForScanning(text)
-      .replace(bearerToken, `Bearer ${redacted}`)
-      .replace(jsonWebToken, redacted)
-      .replace(emailAddress, redacted)
-      .replace(secretAssignment, (_match, name: string) => `${name}=${redacted}`)
+    redactAssignments(withoutMarkedSecrets)
       .replace(addressOrPath, (address) => redactAddress(address))
       .replace(opaqueToken, redacted),
   );

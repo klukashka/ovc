@@ -17,6 +17,9 @@ const jsonWebTokenValue = [
   .concat(tokenShaped('session signature'))
   .join('.');
 const email = 'maria.tutor+e2e@example.invalid';
+const shortSecret = tokenShaped('short secret').slice(0, 15);
+const cappedAtLimit = (text: string): string =>
+  `${text.slice(0, redactedTextLimit - ' [truncated]'.length)} [truncated]`;
 
 describe('the redaction of browser diagnostics details', () => {
   test('an address keeps its origin and route but drops its query string and fragment', () => {
@@ -91,6 +94,117 @@ describe('the redaction of browser diagnostics details', () => {
         'reset token=:redacted',
       ].join(' | '),
     );
+  });
+
+  test('a bearer token shorter than an opaque token is replaced', () => {
+    const message = `Authorization: Bearer ${shortSecret}`;
+
+    const redacted = redactText(message);
+
+    expect(redacted).toBe('Authorization: Bearer :redacted');
+  });
+
+  test('a named secret assignment is replaced whatever prefix its name carries', () => {
+    const assignments = [
+      `token=${shortSecret}`,
+      `access_token=${shortSecret}`,
+      `refresh_token=${shortSecret}`,
+      `ovc_refresh=${shortSecret}`,
+      `x-session.id=${shortSecret}`,
+    ];
+
+    const redacted = assignments.map((assignment) => redactText(assignment));
+
+    expect(redacted).toEqual([
+      'token=:redacted',
+      'access_token=:redacted',
+      'refresh_token=:redacted',
+      'ovc_refresh=:redacted',
+      'x-session.id=:redacted',
+    ]);
+  });
+
+  test('a JSON string value under a secret-named key is replaced', () => {
+    const bodies = [
+      `{"token":"${shortSecret}"}`,
+      `{"accessToken": "${shortSecret}"}`,
+      `{"refresh":"${shortSecret}","password":"a \\"quoted\\" ${shortSecret}"}`,
+      `{"access":"${shortSecret}","cookie":"${shortSecret}","client_secret":"${shortSecret}"}`,
+    ];
+
+    const redacted = bodies.map((body) => redactText(body));
+
+    expect(redacted).toEqual([
+      '{"token":":redacted"}',
+      '{"accessToken":":redacted"}',
+      '{"refresh":":redacted","password":":redacted"}',
+      '{"access":":redacted","cookie":":redacted","client_secret":":redacted"}',
+    ]);
+  });
+
+  test('an API error code under the exact key code stays readable while other code values and prefixed code keys are replaced', () => {
+    const body = `{"code":"not_found","Code":"forbidden","code":"K7QM-4XRP","authCode":"${shortSecret}","verification_code":"${shortSecret}"}`;
+
+    const redacted = redactText(body);
+
+    expect(redacted).toBe(
+      '{"code":"not_found","Code":"forbidden","code":":redacted","authCode":":redacted","verification_code":":redacted"}',
+    );
+  });
+
+  test('an assignment under a name that is not a secret stays readable and the secret after it is replaced', () => {
+    const message = `page=2 lang=ru-RU step=token=${shortSecret}`;
+
+    const redacted = redactText(message);
+
+    expect(redacted).toBe('page=2 lang=ru-RU step=token=:redacted');
+  });
+
+  test('adversarial runs of secret names at the scanning bound are redacted without a closing equals sign or quote', () => {
+    const run = `${'tokenx'.repeat(50)}-`.repeat(26);
+    const repeatedNames = 'a.token-'.repeat(1000);
+    const repeatedKeys = '"tokenx":'.repeat(888);
+    const repeatedAssignments = 'x='.repeat(4000);
+    const inputs = [run, `"${run}`, `"${run}":"${shortSecret}"`, repeatedNames, repeatedKeys, repeatedAssignments];
+
+    const redacted = inputs.map((input) => redactText(input));
+
+    expect(Math.max(...inputs.map((input) => input.length))).toBeLessThanOrEqual(8000);
+    expect(redacted).toEqual([
+      ':redacted',
+      '":redacted',
+      '":redacted":":redacted"',
+      cappedAtLimit(repeatedNames),
+      cappedAtLimit('"tokenx":":redacted":'.repeat(20)),
+      cappedAtLimit(repeatedAssignments),
+    ]);
+  });
+
+  test('the value of a Cookie or Set-Cookie header is replaced', () => {
+    const headers = [
+      `Cookie: theme=${shortSecret}; lang=${shortSecret}`,
+      `set-cookie: ${shortSecret}; Path=/; HttpOnly`,
+    ];
+
+    const redacted = headers.map((header) => redactText(header));
+
+    expect(redacted).toEqual(['Cookie: :redacted', 'set-cookie: :redacted']);
+  });
+
+  test('a free-standing opaque token of 32 or more characters is replaced', () => {
+    const message = `request failed for ${resetToken} after retry`;
+
+    const redacted = redactText(message);
+
+    expect(redacted).toBe('request failed for :redacted after retry');
+  });
+
+  test('a short path segment that is neither plain nor opaque is replaced', () => {
+    const path = '/api/v1/students/Maria/notes';
+
+    const redacted = redactPath(path);
+
+    expect(redacted).toBe('/api/v1/students/:redacted/notes');
   });
 
   test('a long message is capped after redaction and never ends in a fragment of a secret', () => {

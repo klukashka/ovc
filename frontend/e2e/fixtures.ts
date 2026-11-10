@@ -27,6 +27,7 @@ import {
   observedBrowser,
 } from './browser-diagnostics.ts';
 import { type Deployment, readE2ESettings, startDeployment } from './deployment.ts';
+import { redactAddress, redactPath } from './diagnostic-redaction.ts';
 import { type SocketSlotHolder, socketSlotHolder } from './realtime.ts';
 import { type FailedRequest, unexpectedFailures } from './request-failures.ts';
 import { createGroup, seedActiveStudent, seedActiveStudentsThroughCode, seedJoinRequests } from './tutoring.ts';
@@ -327,7 +328,7 @@ function diagnosticRegistry(engine: string): DiagnosticRegistry {
 }
 
 function pathOf(address: string): string {
-  return URL.canParse(address) ? new URL(address).pathname : address;
+  return URL.canParse(address) ? redactPath(new URL(address).pathname) : redactAddress(address);
 }
 
 interface FailedAt {
