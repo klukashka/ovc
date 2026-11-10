@@ -3,6 +3,14 @@ import type { Locator, Page } from '@playwright/test';
 import { type TestAccount, seedAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import {
+  attachLessonMaterials,
+  createLibraryFolder,
+  createLibraryMaterial,
+  deleteLibraryMaterial,
+  lessonMaterialTitles,
+  scheduledCardLessonIds,
+} from './materials.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import {
   type LessonRequest,
@@ -896,5 +904,415 @@ test.describe('lesson page for a student in Russian', () => {
 
     await expect(page.getByRole('main').getByText('20:30–21:30').first()).toBeVisible();
     await expect(page.getByRole('main').getByText('18:00–19:00')).toHaveCount(0);
+  });
+});
+
+const markupTitle = '<img src=x onerror="document.title=1">Карточки';
+
+function materialsBlock(page: Page): Locator {
+  return page.getByRole('region', { name: 'Материалы' });
+}
+
+function attachButton(page: Page): Locator {
+  return materialsBlock(page).getByRole('button', { name: 'Прикрепить материал' });
+}
+
+function attachDialog(page: Page): Locator {
+  return page.getByRole('dialog', { name: 'Прикрепить материал' });
+}
+
+function librarySearch(scope: Locator): Locator {
+  return scope.getByRole('searchbox', { name: 'Поиск по библиотеке' });
+}
+
+function libraryChoice(scope: Locator, title: string): Locator {
+  return scope.getByRole('list', { name: 'Материалы' }).getByRole('checkbox', { name: title, exact: true });
+}
+
+function folderPath(scope: Locator): Locator {
+  return scope.getByRole('list', { name: 'Путь к папке' });
+}
+
+function materialRow(page: Page, title: string): Locator {
+  return materialsBlock(page)
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('link', { name: title, exact: true }) });
+}
+
+function detachButton(page: Page, title: string): Locator {
+  return materialRow(page, title).getByRole('button', { name: 'Открепить' });
+}
+
+async function lessonWithMaterials(
+  deployment: Deployment,
+  seed: TutorAndStudent,
+  date: LocalDate,
+  titles: readonly string[],
+): Promise<ScheduledLesson> {
+  const lesson = await oneLesson(deployment, seed, date);
+  const ids: string[] = [];
+  for (const title of titles) {
+    ids.push(await createLibraryMaterial(deployment, seed.maria, title));
+  }
+  await attachLessonMaterials(deployment, seed.maria, lesson.id, ids);
+  return lesson;
+}
+
+async function openLessonAsTutor(page: Page, seed: TutorAndStudent, lesson: ScheduledLesson): Promise<void> {
+  await signInThroughTheApi(page, seed.maria);
+  await page.goto(lessonAddress(lesson));
+  await materialsBlock(page).waitFor();
+}
+
+async function seriesWithMaterial(
+  deployment: Deployment,
+  seed: TutorAndStudent,
+  date: LocalDate,
+  materialId: string,
+): Promise<readonly ScheduledLesson[]> {
+  return scheduleLessonsWithIds(deployment, seed.maria, {
+    relationship_id: seed.cardId,
+    title: 'Серия',
+    date,
+    start: '18:00',
+    duration_minutes: 60,
+    weekdays: [1, 2, 3, 4, 5, 6, 7],
+    count: 3,
+    material_ids: [materialId],
+  });
+}
+
+async function openFollowingEdit(page: Page, seed: TutorAndStudent, lesson: ScheduledLesson): Promise<Locator> {
+  await openLessonAsTutor(page, seed, lesson);
+  await editButton(page).click();
+  const dialog = editDialog(page);
+  await dialog.getByRole('radio', { name: 'Этот и следующие уроки' }).check();
+  return dialog;
+}
+
+test.describe('lesson materials for a tutor in Russian', () => {
+  test.use({ locale: 'ru-RU', timezoneId: moscow, viewport: { width: 1280, height: 800 } });
+
+  test('lesson › Attach material opens the picker on its search field', async ({ page, deployment, control }) => {
+    const seed = await tutorAndStudent(deployment);
+    const lesson = await oneLesson(deployment, seed, await tomorrow(control.now));
+    await openLessonAsTutor(page, seed, lesson);
+
+    await attachButton(page).click();
+
+    await expect(librarySearch(attachDialog(page))).toBeFocused();
+    await expect(materialsBlock(page).getByText('Материалов нет')).toBeVisible();
+  });
+
+  test('lesson › opening a folder in the picker moves focus to its name in the path and lists its materials as text', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = await tutorAndStudent(deployment);
+    const lesson = await oneLesson(deployment, seed, await tomorrow(control.now));
+    const folder = await createLibraryFolder(deployment, seed.maria, 'Грамматика <b>1</b>');
+    await createLibraryMaterial(deployment, seed.maria, markupTitle, folder);
+    await openLessonAsTutor(page, seed, lesson);
+    await attachButton(page).click();
+    const dialog = attachDialog(page);
+
+    await dialog.getByRole('list', { name: 'Папки' }).getByRole('button', { name: 'Грамматика <b>1</b>' }).click();
+
+    await expect(folderPath(dialog).getByText('Грамматика <b>1</b>', { exact: true })).toBeFocused();
+    await expect(libraryChoice(dialog, markupTitle)).toBeVisible();
+    await expect(dialog.locator('img, b')).toHaveCount(0);
+  });
+
+  test('lesson › a path entry in the picker moves focus to the folder it opens', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = await tutorAndStudent(deployment);
+    const lesson = await oneLesson(deployment, seed, await tomorrow(control.now));
+    const folder = await createLibraryFolder(deployment, seed.maria, 'Грамматика');
+    await createLibraryMaterial(deployment, seed.maria, 'Таблица глаголов', folder);
+    await openLessonAsTutor(page, seed, lesson);
+    await attachButton(page).click();
+    const dialog = attachDialog(page);
+    await dialog.getByRole('list', { name: 'Папки' }).getByRole('button', { name: 'Грамматика' }).click();
+    await libraryChoice(dialog, 'Таблица глаголов').waitFor();
+
+    await folderPath(dialog).getByRole('button', { name: 'Библиотека' }).click();
+
+    await expect(folderPath(dialog).getByText('Библиотека', { exact: true })).toBeFocused();
+    await expect(dialog.getByRole('list', { name: 'Папки' }).getByRole('button', { name: 'Грамматика' })).toBeVisible();
+  });
+
+  test('lesson › Show more in the picker moves focus to the first new material', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = await tutorAndStudent(deployment);
+    const lesson = await oneLesson(deployment, seed, await tomorrow(control.now));
+    for (let index = 1; index <= 31; index += 1) {
+      await createLibraryMaterial(deployment, seed.maria, `Лист ${String(index).padStart(2, '0')}`);
+    }
+    await openLessonAsTutor(page, seed, lesson);
+    await attachButton(page).click();
+    const dialog = attachDialog(page);
+    await libraryChoice(dialog, 'Лист 30').waitFor();
+
+    await dialog.getByRole('button', { name: 'Показать ещё' }).click();
+
+    await expect(libraryChoice(dialog, 'Лист 31')).toBeFocused();
+    await expect(dialog.getByRole('button', { name: 'Показать ещё' })).toHaveCount(0);
+  });
+
+  test('lesson › the picker saves a root and a folder material in order and returns focus to Attach material', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = await tutorAndStudent(deployment);
+    const lesson = await oneLesson(deployment, seed, await tomorrow(control.now));
+    const folder = await createLibraryFolder(deployment, seed.maria, 'Грамматика');
+    await createLibraryMaterial(deployment, seed.maria, 'Рабочий лист');
+    await createLibraryMaterial(deployment, seed.maria, 'Таблица глаголов', folder);
+    await openLessonAsTutor(page, seed, lesson);
+    await attachButton(page).click();
+    const dialog = attachDialog(page);
+
+    await libraryChoice(dialog, 'Рабочий лист').check();
+    await dialog.getByRole('list', { name: 'Папки' }).getByRole('button', { name: 'Грамматика' }).click();
+    await libraryChoice(dialog, 'Таблица глаголов').check();
+    await dialog.getByRole('button', { name: 'Сохранить' }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(attachButton(page)).toBeFocused();
+    await expect(materialsBlock(page).getByRole('link')).toHaveText(['Рабочий лист', 'Таблица глаголов']);
+    await expect(materialRow(page, 'Рабочий лист')).toContainText('Рабочий лист.pdf');
+    expect(await lessonMaterialTitles(deployment, seed.maria, lesson.id)).toEqual(['Рабочий лист', 'Таблица глаголов']);
+  });
+
+  test('lesson › detaching a material moves focus to the row that took its place', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = await tutorAndStudent(deployment);
+    const lesson = await lessonWithMaterials(deployment, seed, await tomorrow(control.now), [
+      'Рабочий лист',
+      'Таблица глаголов',
+    ]);
+    await openLessonAsTutor(page, seed, lesson);
+
+    await detachButton(page, 'Рабочий лист').click();
+
+    await expect(materialRow(page, 'Рабочий лист')).toHaveCount(0);
+    await expect(detachButton(page, 'Таблица глаголов')).toBeFocused();
+    expect(await lessonMaterialTitles(deployment, seed.maria, lesson.id)).toEqual(['Таблица глаголов']);
+  });
+
+  test('lesson › detaching the last row of several moves focus to the previous row', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = await tutorAndStudent(deployment);
+    const lesson = await lessonWithMaterials(deployment, seed, await tomorrow(control.now), [
+      'Рабочий лист',
+      'Таблица глаголов',
+    ]);
+    await openLessonAsTutor(page, seed, lesson);
+
+    await detachButton(page, 'Таблица глаголов').click();
+
+    await expect(materialRow(page, 'Таблица глаголов')).toHaveCount(0);
+    await expect(detachButton(page, 'Рабочий лист')).toBeFocused();
+  });
+
+  test('lesson › detaching the only material moves focus to the Materials heading', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = await tutorAndStudent(deployment);
+    const lesson = await lessonWithMaterials(deployment, seed, await tomorrow(control.now), ['Рабочий лист']);
+    await openLessonAsTutor(page, seed, lesson);
+
+    await detachButton(page, 'Рабочий лист').click();
+
+    await expect(materialsBlock(page).getByText('Материалов нет')).toBeVisible();
+    await expect(materialsBlock(page).getByRole('heading', { name: 'Материалы' })).toBeFocused();
+  });
+
+  test('lesson › a material deleted from the library while it is being attached closes onto the changed notice', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const seed = await tutorAndStudent(deployment);
+    const lesson = await oneLesson(deployment, seed, await tomorrow(control.now));
+    const material = await createLibraryMaterial(deployment, seed.maria, 'Рабочий лист');
+    diagnostics.expectFailure({ method: 'POST', path: `/api/v1/lessons/${lesson.id}/materials`, status: 404 });
+    await openLessonAsTutor(page, seed, lesson);
+    await attachButton(page).click();
+    await libraryChoice(attachDialog(page), 'Рабочий лист').check();
+    await deleteLibraryMaterial(deployment, seed.maria, material);
+
+    await attachDialog(page).getByRole('button', { name: 'Сохранить' }).click();
+
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('status').filter({ hasText: changedMeanwhile })).toBeFocused();
+    await expect(materialsBlock(page).getByText('Материалов нет')).toBeVisible();
+  });
+
+  test('lesson › a material attached elsewhere while the picker is open refuses the stale save with the changed notice', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const seed = await tutorAndStudent(deployment);
+    const lesson = await oneLesson(deployment, seed, await tomorrow(control.now));
+    const worksheet = await createLibraryMaterial(deployment, seed.maria, 'Рабочий лист');
+    await createLibraryMaterial(deployment, seed.maria, 'Таблица глаголов');
+    diagnostics.expectFailure({ method: 'POST', path: `/api/v1/lessons/${lesson.id}/materials`, status: 409 });
+    const traffic = trafficAfterReady(page, [`/api/v1/lessons/${lesson.id}`]);
+    await signInThroughTheApi(page, seed.maria);
+    await traffic.initialize();
+    await page.goto(lessonAddress(lesson));
+    await expectRefetchedAfterTheSocketIsReady(traffic);
+    await attachButton(page).click();
+    await libraryChoice(attachDialog(page), 'Таблица глаголов').check();
+    const refetched = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/v1/lessons/${lesson.id}`,
+    );
+    await attachLessonMaterials(deployment, seed.maria, lesson.id, [worksheet]);
+    await refetched;
+
+    await attachDialog(page).getByRole('button', { name: 'Сохранить' }).click();
+
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('status').filter({ hasText: changedMeanwhile })).toBeFocused();
+    expect(await lessonMaterialTitles(deployment, seed.maria, lesson.id)).toEqual(['Рабочий лист']);
+  });
+
+  test('lesson › Attach material in New lesson opens the picker on its search field', async ({ page, deployment }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    await signInThroughTheApi(page, maria);
+    await page.goto('/schedule');
+    await page.getByRole('button', { name: 'Новый урок' }).click();
+    const dialog = newLessonDialog(page);
+
+    await dialog.getByRole('button', { name: 'Прикрепить материал' }).click();
+
+    await expect(librarySearch(dialog)).toBeFocused();
+  });
+
+  test('lesson › a series scheduled in New lesson with a material found by search carries it on every lesson', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { seed } = await endedSeriesWithNewLessonOpen(page, deployment, control.now);
+    await createLibraryMaterial(deployment, seed.maria, 'Рабочий лист');
+    await createLibraryMaterial(deployment, seed.maria, 'Таблица глаголов');
+    const dialog = newLessonDialog(page);
+    await dialog.getByRole('button', { name: 'Прикрепить материал' }).click();
+    await libraryChoice(dialog, 'Таблица глаголов').waitFor();
+
+    await librarySearch(dialog).fill('лист');
+    await libraryChoice(dialog, 'Таблица глаголов').waitFor({ state: 'detached' });
+    await libraryChoice(dialog, 'Рабочий лист').check();
+    await dialog.getByRole('button', { name: 'Запланировать' }).click();
+
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const lessons = await scheduledCardLessonIds(deployment, seed.maria, seed.cardId);
+    expect(lessons).toHaveLength(9);
+    const titles = await Promise.all(lessons.map((id) => lessonMaterialTitles(deployment, seed.maria, id)));
+    expect(titles.filter((materials) => materials.length > 0)).toEqual(Array(8).fill(['Рабочий лист']));
+  });
+
+  test('lesson › Attach material in Edit lesson opens the picker on its search field', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = await tutorAndStudent(deployment);
+    const worksheet = await createLibraryMaterial(deployment, seed.maria, 'Рабочий лист');
+    const lessons = await seriesWithMaterial(deployment, seed, await tomorrow(control.now), worksheet);
+    const dialog = await openFollowingEdit(page, seed, secondLessonOf({ lessons }));
+
+    await dialog.getByRole('button', { name: 'Прикрепить материал' }).click();
+
+    await expect(librarySearch(dialog)).toBeFocused();
+  });
+
+  test('lesson › editing this and following lessons replaces the materials of the following lessons', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = await tutorAndStudent(deployment);
+    const worksheet = await createLibraryMaterial(deployment, seed.maria, 'Рабочий лист');
+    await createLibraryMaterial(deployment, seed.maria, 'Таблица глаголов');
+    const lessons = await seriesWithMaterial(deployment, seed, await tomorrow(control.now), worksheet);
+    const dialog = await openFollowingEdit(page, seed, secondLessonOf({ lessons }));
+    await dialog.getByRole('group', { name: 'Материалы' }).getByText('Рабочий лист').waitFor();
+
+    await dialog.getByRole('button', { name: 'Прикрепить материал' }).click();
+    await dialog.getByRole('list', { name: 'Выбрано' }).getByRole('checkbox', { name: 'Рабочий лист' }).uncheck();
+    await libraryChoice(dialog, 'Таблица глаголов').check();
+    await dialog.getByRole('button', { name: 'Сохранить' }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(materialsBlock(page).getByRole('link')).toHaveText(['Таблица глаголов']);
+    const titles = await Promise.all(lessons.map((lesson) => lessonMaterialTitles(deployment, seed.maria, lesson.id)));
+    expect(titles).toEqual([['Рабочий лист'], ['Таблица глаголов'], ['Таблица глаголов']]);
+  });
+});
+
+test.describe('lesson materials for a student in Russian', () => {
+  test.use({ locale: 'ru-RU', timezoneId: moscow, viewport: { width: 1280, height: 800 } });
+
+  test('lesson › a student without materials sees no Materials block', async ({ page, deployment, control }) => {
+    const seed = await tutorAndStudent(deployment);
+    const lesson = await oneLesson(deployment, seed, await tomorrow(control.now));
+    await signInThroughTheApi(page, seed.anna);
+
+    await page.goto(lessonAddress(lesson));
+
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Разговорная практика');
+    await expect(materialsBlock(page)).toHaveCount(0);
+  });
+
+  test('lesson › a student downloads a material and sees one attached meanwhile without reload', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = await tutorAndStudent(deployment);
+    const lesson = await oneLesson(deployment, seed, await tomorrow(control.now));
+    const worksheet = await createLibraryMaterial(deployment, seed.maria, 'Рабочий лист');
+    const cards = await createLibraryMaterial(deployment, seed.maria, markupTitle);
+    await attachLessonMaterials(deployment, seed.maria, lesson.id, [worksheet]);
+    await signInThroughTheApi(page, seed.anna);
+    const traffic = trafficAfterReady(page, [`/api/v1/lessons/${lesson.id}`]);
+    await traffic.initialize();
+    await page.goto(lessonAddress(lesson));
+    await materialsBlock(page).getByRole('link', { name: 'Рабочий лист' }).waitFor();
+    await expectRefetchedAfterTheSocketIsReady(traffic);
+
+    const downloaded = page.waitForEvent('download');
+    await materialsBlock(page).getByRole('link', { name: 'Рабочий лист' }).click();
+    const download = await downloaded;
+    await attachLessonMaterials(deployment, seed.maria, lesson.id, [worksheet, cards]);
+
+    expect(download.suggestedFilename().normalize('NFC')).toBe('Рабочий лист.pdf');
+    expect(await download.failure()).toBeNull();
+    await expect(materialsBlock(page).getByRole('link')).toHaveText(['Рабочий лист', markupTitle]);
+    await expect(materialsBlock(page).locator('img, b')).toHaveCount(0);
+    await expect(materialsBlock(page).getByRole('button')).toHaveCount(0);
   });
 });

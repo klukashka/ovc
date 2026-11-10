@@ -160,6 +160,8 @@ From slice 8 (pending owner review). A template's readiness ([validation](../../
 | Today's checklist step | Create an assignment | Создайте задание |
 | Lesson materials block | Materials / No materials | Материалы / Материалов нет |
 | Lesson material actions | Attach material / Detach / Download | Прикрепить материал / Открепить / Скачать |
+| Library picker (change F4, pending owner review) | Search the library / Folder path / Folders / No materials here / A lesson holds at most {limit} materials. | Поиск по библиотеке / Путь к папке / Папки / Здесь нет материалов / К уроку можно прикрепить не больше {limit} материалов. |
+| New lesson refused with materials chosen (`not_found`, change F4, pending owner review) | A chosen material is no longer in the library, or this student or group can no longer get lessons. | Выбранного материала больше нет в библиотеке, или этот ученик или группа больше недоступны для уроков. |
 
 ## Relationships, requests and groups
 

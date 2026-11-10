@@ -4,6 +4,7 @@ import { type ReactElement, type ReactNode, type RefObject, useCallback, useEffe
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router';
 
+import { useScheduler } from '../../app/clock.ts';
 import { useAction } from '../../components/ui/action.ts';
 import { ActionMenu, type MenuItem } from '../../components/ui/ActionMenu.tsx';
 import { linkClass, quietButtonClass } from '../../components/ui/Form.tsx';
@@ -25,8 +26,10 @@ import { formatClock, formatFullDate, formatLongDay, formatWeekdayName } from '.
 import { calendarKey, lessonKey, lessonsKey } from './keys.ts';
 import { CancelLessonDialog, EditLessonDialog } from './LessonDialogs.tsx';
 import { audienceLabel } from './LessonParts.tsx';
+import { LessonMaterials } from './LessonMaterials.tsx';
 import { LessonRoom } from './LessonRoom.tsx';
 import { type LessonPhase, dialogOutdated, isEditable, phaseOf, useLessonClock } from './lessonTiming.ts';
+import { addressRenewalDelay } from './materials.ts';
 import { type LessonPrefill, NewLessonDialog, nextFullHour } from './NewLessonDialog.tsx';
 import { seriesTimingIn } from './seriesTiming.ts';
 
@@ -253,11 +256,13 @@ export function LessonView({
   me,
   now,
   room = null,
+  materials = null,
 }: {
   readonly lesson: LessonDetail;
   readonly me: Me;
   readonly now: number;
   readonly room?: ReactNode;
+  readonly materials?: ReactNode;
 }): ReactElement {
   const { t } = useTranslation();
   const phase = phaseOf(lesson, now);
@@ -283,6 +288,7 @@ export function LessonView({
                 {lesson.description}
               </p>
             )}
+            {materials}
           </>
         }
         aside={<AboutLesson lesson={lesson} me={me} />}
@@ -415,6 +421,7 @@ export function LessonPage(): ReactElement {
   const me = useSignedInAccount();
   const client = useApiClient();
   const queryClient = useQueryClient();
+  const scheduler = useScheduler();
   const { t } = useTranslation();
   const key = lessonKey(lessonId);
   const editButton = useRef<HTMLButtonElement>(null);
@@ -425,7 +432,12 @@ export function LessonPage(): ReactElement {
   const [notice, setNotice] = useState<PageNotice | null>(null);
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const action = useAction();
-  const query = useQuery({ queryKey: key, queryFn: () => fetchLesson(client, lessonId), retry: false });
+  const query = useQuery({
+    queryKey: key,
+    queryFn: () => fetchLesson(client, lessonId),
+    retry: false,
+    refetchInterval: (current) => addressRenewalDelay(current.state.data, scheduler.wallClock()),
+  });
   const now = useLessonClock(query.data);
   const queryError = query.isError ? asApiError(query.error) : null;
   const refetchError =
@@ -539,6 +551,18 @@ export function LessonPage(): ReactElement {
             phase={phaseOf(lesson, now)}
             onChangedMeanwhile={roomChangedMeanwhile}
             onEnded={roomEnded}
+          />
+        }
+        materials={
+          <LessonMaterials
+            lesson={lesson}
+            me={me}
+            handlers={{
+              onSaved: (updated) => {
+                queryClient.setQueryData(key, updated);
+              },
+              onStale: stale,
+            }}
           />
         }
       />

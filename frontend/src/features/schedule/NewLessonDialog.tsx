@@ -24,6 +24,9 @@ import { formatWeekdayName } from './calendarFormat.ts';
 import { type LocalDate, addDays, localDateOf, localMinutesOf, localTimeOf } from '../../lib/time/localDates.ts';
 import { calendarKey } from './keys.ts';
 import { InputField, descriptionLimit, titleLimit } from './LessonFields.tsx';
+import { useMaterialTexts } from './materialTexts.ts';
+import { MaterialsField } from './MaterialPicker.tsx';
+import { type PickedMaterial, idsOf } from './materials.ts';
 import { OverlapWarning } from './OverlapWarning.tsx';
 
 export interface LessonPrefill {
@@ -52,13 +55,16 @@ function defaultTitle(t: TFunction, audience: Audience | null): string {
     : t('newLesson.defaultTitle');
 }
 
-function lessonRefusal(t: TFunction, state: ActionState): string | null {
+function lessonRefusal(t: TFunction, state: ActionState, materialGone: string | null): string | null {
   if (state.kind !== 'refused' || state.error.code === 'lesson_overlap' || state.error.code === 'email_not_verified') {
     return null;
   }
   const error = state.error;
   if (error.fieldCode('body') === 'too_many') {
     return t('newLesson.tooMany');
+  }
+  if (error.code === 'not_found' && materialGone !== null) {
+    return materialGone;
   }
   if (error.code === 'audience_not_active' || error.code === 'not_found') {
     return t('newLesson.audienceChanged');
@@ -251,7 +257,13 @@ function DescriptionField({ error }: { readonly error: string | undefined }): Re
   );
 }
 
-function lessonBody(data: FormData, audience: Audience, title: string, repeat: boolean): NewLesson {
+function lessonBody(
+  data: FormData,
+  audience: Audience,
+  title: string,
+  repeat: boolean,
+  materials: readonly PickedMaterial[],
+): NewLesson {
   const description = data.has('description') ? stringField(data, 'description') : '';
   const target = audience.kind === 'group' ? { group_id: audience.id } : { relationship_id: audience.id };
   const lesson: NewLesson = {
@@ -261,6 +273,7 @@ function lessonBody(data: FormData, audience: Audience, title: string, repeat: b
     start: stringField(data, 'start'),
     duration_minutes: Number(stringField(data, 'duration_minutes')),
     ...(description === '' ? {} : { description }),
+    ...(materials.length === 0 ? {} : { material_ids: idsOf(materials) }),
   };
   if (!repeat) {
     return lesson;
@@ -304,6 +317,7 @@ function NewLessonForm({
   const [title, setTitle] = useState(() => defaultTitle(t, preselected));
   const [titleEdited, setTitleEdited] = useState(false);
   const [repeat, setRepeat] = useState(prefill.weekdays !== undefined);
+  const [materials, setMaterials] = useState<readonly PickedMaterial[]>([]);
   const [missing, setMissing] = useState<'audience' | 'weekdays' | null>(null);
   const [refusals, setRefusals] = useState(0);
   const [missingAttempts, setMissingAttempts] = useState(0);
@@ -312,7 +326,8 @@ function NewLessonForm({
   const error = action.state.kind === 'refused' ? action.state.error : null;
   const overlap = error?.code === 'lesson_overlap' ? error : action.busy && startedBy === 'anyway' ? lastOverlap : null;
   const descriptionError = fieldMessage(t, error, 'description');
-  const refusal = lessonRefusal(t, action.state);
+  const materialTexts = useMaterialTexts();
+  const refusal = lessonRefusal(t, action.state, materials.length > 0 ? materialTexts.materialGone : null);
   const titleError = fieldMessage(t, error, 'title');
 
   function send(allowOverlap: boolean): void {
@@ -334,7 +349,7 @@ function NewLessonForm({
     setMissing(null);
     setStartedBy(allowOverlap ? 'anyway' : 'submit');
     const body: NewLesson = {
-      ...lessonBody(data, audience, title, repeat),
+      ...lessonBody(data, audience, title, repeat, materials),
       ...(allowOverlap ? { allow_overlap: true } : {}),
     };
     action.run(async (): Promise<ActionState> => {
@@ -474,6 +489,7 @@ function NewLessonForm({
         ) : null}
         {missing === 'weekdays' ? <FormAlert key={missingAttempts}>{t('newLesson.weekdaysRequired')}</FormAlert> : null}
         <DescriptionField error={descriptionError} />
+        <MaterialsField chosen={materials} onChange={setMaterials} />
       </form>
       {error?.code === 'email_not_verified' ? <Refusal state={action.state} confirmation="schedule" /> : null}
       {refusal === null ? null : <FormAlert key={refusals}>{refusal}</FormAlert>}

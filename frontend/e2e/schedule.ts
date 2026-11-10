@@ -16,6 +16,7 @@ export interface LessonRequest {
   readonly weekdays?: readonly number[];
   readonly count?: number;
   readonly end_date?: LocalDate;
+  readonly material_ids?: readonly string[];
 }
 
 const dayMilliseconds = 86_400_000;

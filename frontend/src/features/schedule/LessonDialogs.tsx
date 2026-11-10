@@ -27,6 +27,8 @@ import {
   lessonDurationLimits,
 } from './api.ts';
 import { InputField, descriptionLimit, titleLimit } from './LessonFields.tsx';
+import { MaterialsField } from './MaterialPicker.tsx';
+import { type PickedMaterial, idsOf, pickedOf, sameMaterials } from './materials.ts';
 import { OverlapWarning } from './OverlapWarning.tsx';
 
 type LessonChanges = Omit<LessonPatch, 'scope' | 'version' | 'allow_overlap'>;
@@ -37,6 +39,7 @@ interface ShownValues {
   readonly start: string;
   readonly duration: number;
   readonly description: string;
+  readonly materials: readonly PickedMaterial[];
 }
 
 export interface DialogHandlers {
@@ -63,10 +66,16 @@ function shownValues(lesson: LessonDetail): ShownValues {
     start: localTimeOf(localMinutesOf(start, lesson.timezone)),
     duration: lesson.duration_minutes,
     description: withUnixLineBreaks(lesson.description ?? ''),
+    materials: pickedOf(lesson.materials),
   };
 }
 
-function changesOf(data: FormData, shown: ShownValues, scope: LessonScope): LessonChanges | null {
+function changesOf(
+  data: FormData,
+  shown: ShownValues,
+  scope: LessonScope,
+  materials: readonly PickedMaterial[],
+): LessonChanges | null {
   const title = stringField(data, 'title');
   const date = scope === 'this' ? stringField(data, 'date') : shown.date;
   const start = stringField(data, 'start');
@@ -78,6 +87,7 @@ function changesOf(data: FormData, shown: ShownValues, scope: LessonScope): Less
     ...(start === shown.start ? {} : { start }),
     ...(duration === shown.duration ? {} : { duration_minutes: duration }),
     ...(description === shown.description ? {} : { description: description === '' ? null : description }),
+    ...(scope === 'this' || sameMaterials(materials, shown.materials) ? {} : { material_ids: idsOf(materials) }),
   };
   return Object.keys(changes).length === 0 ? null : changes;
 }
@@ -171,6 +181,7 @@ export function EditForm({
   const form = useRef<HTMLFormElement>(null);
   const [shown] = useState(() => shownValues(lesson));
   const [scope, setScope] = useState<LessonScope>('this');
+  const [materials, setMaterials] = useState<readonly PickedMaterial[]>(shown.materials);
   const [refusals, setRefusals] = useState(0);
   const [lastOverlap, setLastOverlap] = useState<ApiError | null>(null);
   const [startedBy, setStartedBy] = useState<'submit' | 'anyway'>('submit');
@@ -188,7 +199,7 @@ export function EditForm({
     if (element === null) {
       return;
     }
-    const changes = changesOf(new FormData(element), shown, scope);
+    const changes = changesOf(new FormData(element), shown, scope, materials);
     if (changes === null) {
       handlers.onDismiss();
       return;
@@ -330,6 +341,7 @@ export function EditForm({
             </p>
           )}
         </div>
+        {scope === 'following' ? <MaterialsField chosen={materials} onChange={setMaterials} /> : null}
       </form>
       {refusal === null ? null : <FormAlert key={refusals}>{refusal}</FormAlert>}
       {overlap === null ? null : (
