@@ -1,6 +1,6 @@
 # Minimatch glob-preprocessing advisory triage
 
-Checked on 2026-10-31. The owner approved this narrowly scoped acceptance until 2026-11-07T00:00:00Z and extended it on 2026-11-07 until 2026-11-21T00:00:00Z. Recheck sooner if a version, caller, pattern source or optimization option changes. This is evidence for the current development tools, not a claim about all minimatch behavior.
+Checked on 2026-10-31. The owner approved this narrowly scoped acceptance until 2026-11-07T00:00:00Z and extended it on 2026-11-07 until 2026-11-21T00:00:00Z. On 2026-11-10 the version-10 consumers were moved to minimatch 11.0.5 and the acceptance was removed; see [the last section](#removal-of-the-version-10-consumers-2026-11-10). The sections before it are the history of the acceptance. Recheck sooner if a version, caller, pattern source or optimization option changes. This is evidence for the current development tools, not a claim about all minimatch behavior.
 
 ## Advisory and affected inventories
 
@@ -44,3 +44,15 @@ Prettier 3.9.9 and Playwright 1.63.0 bundle copies of minimatch 10 with this pha
 The registry now lists minimatch up to 11.0.5, published 2026-11-05. At the new expiry, replace the version-10 consumers if upstream allows it, or request another explicit decision; the acceptance does not renew by itself.
 
 On 2026-11-09 the owner decided, in the design slice review, that the minimatch 10.x consumers are removed in a separate change before this acceptance ends on 2026-11-21.
+
+## Removal of the version-10 consumers, 2026-11-10
+
+Checked on 2026-11-10 against the npm registry. No upstream release leaves the version-10 line: typescript-eslint up to 8.72.2 (2026-11-09) has typescript-estree declare `^10.2.2`, and markdownlint-cli declares `~10.2.5` in the pinned 0.49.1 and `~10.2.6` in the newest, 0.50.0 (2026-10-24). minimatch publishes no fixed 10.x release; the newest is 10.2.6.
+
+Both workspaces therefore add the override `minimatch@10: 11.0.5` to `pnpm-workspace.yaml`, applied with `pnpm install`. It is scoped by the `@10` selector to the version-10 requests, so minimatch 3.1.5 and 5.1.9 of ESLint and Redocly, outside the advisory's range, stay as they were. `pnpm why minimatch` now lists 3.1.5, 5.1.9 and 11.0.5 in the frontend and only 11.0.5 in the documentation tools. minimatch 11.0.5 was published at 2026-11-05T23:30:59Z and its new dependency `@isaacs/nonrecursive-glob-match` 1.1.0 at 2026-11-05T21:38:25Z; both are older than the three-day minimum release age. `@isaacs/nonrecursive-glob-match` is new (first published 2026-10-26, six releases by 1.1.0), comes from minimatch's own publisher under the same BlueOak-1.0.0 licence, has no install scripts and, like minimatch, no npm provenance attestation; it runs only in local development tools, never in served output, and minimatch 11.0.5 requires Node `20 || >=22`, which fits the project's Node 26. brace-expansion stays at 5.0.12.
+
+Version 11 removes `makeRe`, the `AST` export, the `debug` option and `maxExtglobRecursion`, and keeps the named `minimatch` function, the `Minimatch` class with `match`, and the options the two callers pass. typescript-estree calls only `minimatch(filePath, pattern, { dot: true })` in `useProgramFromProjectService.js`, and only for `allowDefaultProject`, which the repository's ESLint configuration does not set. markdownlint-cli imports the named `minimatch` and uses `new minimatch.Minimatch(pattern, globOptions)` with `match` when it applies `--ignore` patterns to an earlier file list; its other globbing goes through tinyglobby. A resolution check through each caller's own module path loaded 11.0.5 and returned the expected matches, and markdownlint run on a glob with an `--ignore` pattern, which takes the `Minimatch` path, exited 0.
+
+The `GHSA-g3hv-75wg-m249` entries are removed from `frontend/osv-scanner.toml`, which is empty again, and from `tools/docs/osv-scanner.toml`, which keeps only the katex entry. OSV-Scanner over both lockfiles passes without them.
+
+The copies of minimatch 10 bundled inside Prettier 3.9.9 and Playwright 1.63.0 are unchanged and remain invisible to lockfile scans; their callers leave the optimization level at its default, as recorded above. Remove the override when typescript-eslint and markdownlint-cli declare a fixed minimatch range themselves.

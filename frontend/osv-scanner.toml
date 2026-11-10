@@ -1,4 +1,0 @@
-[[IgnoredVulns]]
-id = "GHSA-g3hv-75wg-m249"
-ignoreUntil = 2026-11-21T00:00:00Z
-reason = "OSV now gives the affected range as >=7.0.0 <11.0.1, so this entry suppresses only minimatch 10.2.6; the traced minimatch 10 tool callers leave optimizationLevel at its default, so the described glob preprocessing is not enabled, and patterns are local configuration, never OVC request content. A fix exists in the 11.x line through a scoped replacement of the two version-10 consumers, whose compatibility is unverified. Copies bundled inside Prettier and Playwright are invisible to this lockfile scan. Recheck on any caller/options/version change or expiry. Triage: knowledge/research/minimatch-advisory-2026-10-31.md"

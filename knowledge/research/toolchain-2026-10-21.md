@@ -34,7 +34,7 @@ Pinned 2026-10-21 in `tools/docs` (package manifest, lockfile and pnpm policy) i
 | playwright-core | 1.63.0 | Same version as the frontend's Playwright, used only to locate its Chromium for the renderer |
 | lychee | 0.24.2 | Installed outside the repository with the official instructions; no checksum is recorded |
 
-Overrides in `tools/docs/pnpm-workspace.yaml` raise `smol-toml` to 1.9.0 and `js-yaml` 5 to 5.4.1, both older than two weeks, to clear their advisories. Accepted findings, listed in `tools/docs/osv-scanner.toml` (OSV-Scanner over `tools/docs/pnpm-lock.yaml`, rechecked 2026-10-24):
+Overrides in `tools/docs/pnpm-workspace.yaml` raise `smol-toml` to 1.9.0 and `js-yaml` 5 to 5.4.1, both older than two weeks, to clear their advisories. Since 2026-11-10 a third override, `minimatch@10: 11.0.5`, replaces markdownlint-cli's minimatch 10.2.6 to clear GHSA-g3hv-75wg-m249 ([triage](minimatch-advisory-2026-10-31.md#removal-of-the-version-10-consumers-2026-11-10)). Accepted findings, listed in `tools/docs/osv-scanner.toml` (OSV-Scanner over `tools/docs/pnpm-lock.yaml`, rechecked 2026-10-24):
 
 | Advisory | Package | Reason |
 |---|---|---|
