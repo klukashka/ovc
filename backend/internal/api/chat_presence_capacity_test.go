@@ -11,7 +11,10 @@ import (
 	"ovc/backend/internal/realtime"
 )
 
-const presenceTestBudget = 2 * time.Second
+const (
+	presenceTestBudget = 2 * time.Second
+	blockedBackends    = "SELECT count(*) FROM pg_stat_activity WHERE datname=$1::text AND cardinality(pg_blocking_pids(pid)) > 0"
+)
 
 func TestPendingPresenceAccountsHaveATotalCapacity(t *testing.T) {
 	t.Parallel()
@@ -39,13 +42,16 @@ func TestPendingPresenceAccountsHaveATotalCapacity(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.awaitLogs(t, 2, `"msg":"presence.release.pending"`)
+	h.waitFor(t, "no backend blocked on a held presence row", func() bool { return h.countRows(t, blockedBackends, h.database.Name) == 0 })
 	pendingFirst := h.gateway.Presence(first)
 	pendingSecond := h.gateway.Presence(second)
+	presenceRecordsBefore := h.countLogs(`"msg":"presence.`)
 	refused := h.open(t)
-	started := clock.System{}.Now()
 	refused.auth(t, thirdToken)
 	frame, closed := refused.next(t)
-	refusalDuration := time.Since(started)
+	blockedAtRefusal := h.countRows(t, blockedBackends, h.database.Name)
+	presenceRecordsAtRefusal := h.countLogs(`"msg":"presence.`) - presenceRecordsBefore
+	capacityRefusals := h.countLogs(`"msg":"ws.auth.refused"`, `"reason":"too_many_accounts"`)
 	retainedFirst := h.gateway.Presence(first)
 	retainedSecond := h.gateway.Presence(second)
 	thirdLeases := h.countRows(t, "SELECT count(user_id) FROM user_presence_instances WHERE user_id = $1::uuid", third.String())
@@ -68,8 +74,11 @@ func TestPendingPresenceAccountsHaveATotalCapacity(t *testing.T) {
 		pendingFirst.Sockets != 0 || pendingSecond.Sockets != 0 {
 		t.Fatalf("failed releases lost pending state: first %+v, second %+v", pendingFirst, pendingSecond)
 	}
-	if domain.CloseCode(closed) != domain.CloseTooMany || frame.Type == domain.FrameReady || refusalDuration >= time.Second {
-		t.Fatalf("capacity admission returned frame %s, close %d after %s", frame.Type, closed, refusalDuration)
+	if domain.CloseCode(closed) != domain.CloseTooMany || frame.Type == domain.FrameReady || capacityRefusals != 1 {
+		t.Fatalf("capacity admission returned frame %s, close %d, capacity refusal records %d", frame.Type, closed, capacityRefusals)
+	}
+	if blockedAtRefusal != 0 || presenceRecordsAtRefusal != 0 {
+		t.Fatalf("capacity refusal waited on presence: blocked backends %d, presence records %d", blockedAtRefusal, presenceRecordsAtRefusal)
 	}
 	if !retainedFirst.Pending || !retainedSecond.Pending || thirdLeases != 0 {
 		t.Fatalf("refusal displaced accepted releases: first %+v, second %+v, third leases %d", retainedFirst, retainedSecond, thirdLeases)
