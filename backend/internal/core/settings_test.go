@@ -136,6 +136,23 @@ func TestLoadRefusesUnsafeTestControlCombinations(t *testing.T) {
 	}
 }
 
+func TestLoadRefusesTestControlWithSMTPMail(t *testing.T) {
+	values := validValues()
+	for key, value := range map[string]string{
+		"OVC_TEST_CONTROL": "1", "OVC_HTTP_ADDR": "127.0.0.1:8000", "OVC_STORAGE_ENDPOINT": "http://127.0.0.1:58333",
+		"OVC_MAIL_BACKEND": "smtp", "OVC_SMTP_HOST": "smtp.example", "OVC_MAIL_FROM": "noreply@ovc.example",
+	} {
+		values[key] = value
+	}
+
+	_, err := core.Load(lookupFrom(values), core.ProcessAPI)
+
+	var settingsError *core.SettingsError
+	if !errors.As(err, &settingsError) || !strings.Contains(err.Error(), "OVC_MAIL_BACKEND") {
+		t.Fatalf("expected a refusal naming OVC_MAIL_BACKEND, got %v", err)
+	}
+}
+
 func TestLoadChecksTheFakeRoomOrigin(t *testing.T) {
 	cases := map[string]struct {
 		flag     string

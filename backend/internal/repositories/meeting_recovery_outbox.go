@@ -11,6 +11,8 @@ import (
 
 var errMeetingRecoveryFence = errors.New("meeting recovery completion fence refused")
 
+var ErrMeetingRecoveryCompletionInvalid = errors.New("meeting recovery completion lacks a positive revision or a terminal result")
+
 type MeetingRecoveryEffectCompletion struct {
 	OutboxID           domain.OutboxID
 	Lease              domain.LeaseToken
@@ -25,7 +27,7 @@ func (s *Store) FinishMeetingRecovery(ctx context.Context, input MeetingRecovery
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if input.Revision <= 0 || (input.Result != domain.MeetingRecoveryCycleSettled && input.Result != domain.MeetingRecoveryCycleUnresolved && input.Result != domain.MeetingRecoveryCycleConflict) {
-		return false, nil
+		return false, ErrMeetingRecoveryCompletionInvalid
 	}
 	return s.meetingRecoveryOutbox(ctx, input.OutboxID, input.Lease, input.Now, false, func(repos Repositories, recovery StoredMeetingRecovery, _ OutboxRow) error {
 		if recovery.Revision != input.Revision {

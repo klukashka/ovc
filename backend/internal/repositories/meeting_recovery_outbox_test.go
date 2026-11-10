@@ -131,6 +131,34 @@ func TestMeetingRecoveryTerminalFences(t *testing.T) {
 	}
 }
 
+func TestMeetingRecoveryTerminalRefusesInvalidCompletion(t *testing.T) {
+	t.Parallel()
+	cases := []string{"zero revision", "negative revision", "pending result", "exhausted result"}
+	for _, name := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newRecoveryEffect(t, domain.MeetingCreateReturned)
+			input := f.completion(t, domain.MeetingRecoveryCycleSettled)
+			switch name {
+			case "zero revision":
+				input.Revision = 0
+			case "negative revision":
+				input.Revision = -1
+			case "pending result":
+				input.Result = domain.MeetingRecoveryCyclePending
+			case "exhausted result":
+				input.Result = domain.MeetingRecoveryCycleExhausted
+			}
+
+			applied, err := f.store.FinishMeetingRecovery(t.Context(), input)
+
+			if applied || !errors.Is(err, repositories.ErrMeetingRecoveryCompletionInvalid) {
+				t.Fatalf("invalid completion answered applied=%v err=%v", applied, err)
+			}
+			f.assertResult(t, domain.MeetingRecoveryCyclePending, domain.OutboxInProgress, 1)
+		})
+	}
+}
+
 func TestMeetingRecoveryTerminalDispatch(t *testing.T) {
 	t.Parallel()
 	f := newRecoveryEffect(t, domain.MeetingCreateReturned)

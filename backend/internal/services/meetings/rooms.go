@@ -308,10 +308,10 @@ func (r *Rooms) dispatch(ctx context.Context, plan roomPlan, guard RoomGuard, pu
 		return Room{}, errors.Join(err, r.Retire(evidence, identity, domain.MeetingCloseProviderError))
 	}
 	if recorded != domain.MeetingMutationApplied {
-		ending, cancelEnding := r.evidenceContext(ctx)
-		r.endAfterSettlement(ending, identity.ProviderMeetingID, created)
-		cancelEnding()
-		if err := r.Retire(evidence, identity, domain.MeetingCloseProviderError); err != nil {
+		r.endAfterSettlement(ctx, identity.ProviderMeetingID, created)
+		retiring, cancelRetiring := r.evidenceContext(ctx)
+		defer cancelRetiring()
+		if err := r.Retire(retiring, identity, domain.MeetingCloseProviderError); err != nil {
 			return Room{}, err
 		}
 		return Room{}, errRoomSuperseded
@@ -341,12 +341,16 @@ func (r *Rooms) create(ctx context.Context, plan roomPlan) (domain.ProviderCreat
 }
 
 func (r *Rooms) endAfterSettlement(ctx context.Context, id domain.ProviderMeetingID, created domain.ProviderCreateTime) {
-	recovery, err := r.deps.Store.Repositories().MeetingRecovery.ByProviderID(ctx, id)
+	reading, cancelReading := r.evidenceContext(ctx)
+	defer cancelReading()
+	recovery, err := r.deps.Store.Repositories().MeetingRecovery.ByProviderID(reading, id)
 	if err != nil || recovery.SettledAt == nil {
 		reportEvidenceFailure(ctx, r.deps.Logger, err)
 		return
 	}
-	conflict, err := r.cleanup.end(ctx, id, created)
+	call, cancelCall := context.WithTimeout(context.WithoutCancel(ctx), r.deps.Timing.ProviderCall)
+	defer cancelCall()
+	conflict, err := r.cleanup.end(call, id, created)
 	attributes := []slog.Attr{slog.Bool("ended", err == nil && !conflict)}
 	if err != nil {
 		attributes = append(attributes, slog.String("kind", core.ErrorKind(err)))

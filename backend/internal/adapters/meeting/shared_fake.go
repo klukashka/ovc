@@ -39,9 +39,6 @@ func NewSharedFake(ctx context.Context, pool *pgxpool.Pool, clock Clock, random 
 	if pool == nil || clock == nil || random == nil || logger == nil || limits.Meetings <= 0 || limits.Links <= 0 || limits.Participants <= 0 || limits.Generations == 0 || limits.Generations > math.MaxInt64 {
 		return nil, FailureInvalidInput
 	}
-	if limits.Generations > math.MaxInt64 {
-		return nil, FailureInvalidInput
-	}
 	maximumGenerations := int64(limits.Generations)
 	provider := &SharedFake{pool: pool, clock: clock, random: random, logger: logger, limits: limits}
 	existing, err := scanSharedState(pool.QueryRow(ctx, `SELECT `+sharedStateColumns+` FROM fake_meeting_state WHERE id`))

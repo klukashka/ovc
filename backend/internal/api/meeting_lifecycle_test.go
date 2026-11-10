@@ -51,6 +51,7 @@ func TestMeetingJoinAuthorization(t *testing.T) {
 	t.Run("two tutors sharing one student stay separate", testJoinSharedStudent)
 	t.Run("an ended relationship stops further joins", testJoinEndedRelationship)
 	t.Run("a provisional student joins one to one", testJoinProvisional)
+	t.Run("a reclaim-pending student is not found and spends no slot", testJoinReclaimPending)
 	t.Run("group membership decides and joining adds to the roster", testJoinGroupRoster)
 	t.Run("an absent room closes without ending the lesson", testJoinAbsentRoom)
 	t.Run("provider failure and capacity are distinct refusals", testJoinProviderAndCapacity)
@@ -292,6 +293,24 @@ func testJoinProvisional(t *testing.T) {
 
 	if err := h.enter(t, answer, h.currentRoom(t, lesson), lesson, domain.UserID{20}, domain.ParticipantViewer); err != nil {
 		t.Fatalf("the provisional student does not enter: %v", err)
+	}
+}
+
+func testJoinReclaimPending(t *testing.T) {
+	t.Parallel()
+	h := newMeetingHarness(t)
+	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	card := h.linkedCard(t, tutor, 20, domain.RelationshipProvisional)
+	lesson := h.lessonAt(t, tutorToken, card, firstLessonDate, firstLessonLocal)
+	studentToken := h.studentToken(t, 20)
+	h.joined(t, tutorToken, lesson)
+	h.exec(t, "UPDATE relationships SET state = 'reclaim_pending' WHERE id = $1::uuid", card)
+
+	refused := h.joinCall(t, studentToken, lesson)
+
+	expectRefusal(t, "a reclaim-pending student", refused, http.StatusNotFound, "not_found")
+	if slots := h.slots(t, domain.PurposeMeetingJoin, domain.UserID{20}, domain.MeetingJoinWindow); slots != 0 {
+		t.Fatalf("the refused join used %d slots", slots)
 	}
 }
 
@@ -938,16 +957,19 @@ func testRestartDuringReplacement(t *testing.T) {
 	t.Cleanup(release)
 	first := h.inBackground(lesson, "restart-room", parties.tutorToken)
 	awaitClosed(t, reached)
-	requests := h.countLogs(`"msg":"meeting.room.restart_requested"`)
+	requests := h.countLogs(`"msg":"meeting.room.restart_requested"`, `"closed":false`)
 
 	second := h.inBackground(lesson, "restart-room", parties.tutorToken)
-	h.awaitLogs(t, requests+1, `"msg":"meeting.room.restart_requested"`)
+	h.awaitLogs(t, requests+1, `"msg":"meeting.room.restart_requested"`, `"closed":false`)
 	release()
 	firstLink, secondLink := decodeJoin(t, awaitAnswer(t, first)), decodeJoin(t, awaitAnswer(t, second))
 
 	room := h.currentRoom(t, lesson)
 	if h.providerRooms(t) != 1 || h.meetingCount(t, lesson) != 2 {
 		t.Fatalf("the second restart left %d rooms, %d rows", h.providerRooms(t), h.meetingCount(t, lesson))
+	}
+	if h.countLogs(`"msg":"meeting.room.restart_requested"`, `"closed":true`) != 1 || h.countLogs(`"msg":"meeting.room.restart_requested"`, `"closed":false`) != requests+1 {
+		t.Fatalf("the restarts were not reported with what they closed:\n%s", h.logs.String())
 	}
 	for _, link := range []joinAnswer{firstLink, secondLink} {
 		if err := h.enter(t, link, room, lesson, parties.tutor, domain.ParticipantModerator); err != nil {

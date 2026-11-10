@@ -664,8 +664,10 @@ func (l *Lifecycle) Restart(ctx context.Context, actor Actor, id domain.LessonID
 	if err != nil {
 		return JoinTicket{}, err
 	}
+	closed := false
 	for range joinAttempts {
 		err = l.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+			closed = false
 			scope, err := l.lockTutorScope(ctx, repos, actor, id)
 			if err != nil {
 				return err
@@ -673,7 +675,7 @@ func (l *Lifecycle) Restart(ctx context.Context, actor Actor, id domain.LessonID
 			if err := restartAllows(scope.lesson, scope.now); err != nil {
 				return err
 			}
-			closed, err := repos.CloseOpenMeetingForCleanup(ctx, id, domain.MeetingCloseTutorRestart, cycle, scope.now)
+			closed, err = repos.CloseOpenMeetingForCleanup(ctx, id, domain.MeetingCloseTutorRestart, cycle, scope.now)
 			if err != nil || !closed {
 				return err
 			}
@@ -689,7 +691,7 @@ func (l *Lifecycle) Restart(ctx context.Context, actor Actor, id domain.LessonID
 	if err != nil {
 		return JoinTicket{}, err
 	}
-	l.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "meeting.room.restart_requested", slog.String("lesson_id", id.String()))
+	l.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "meeting.room.restart_requested", slog.String("lesson_id", id.String()), slog.Bool("closed", closed))
 	return l.joinWithRetry(ctx, actor, id, restartAllows)
 }
 
@@ -759,7 +761,9 @@ func (l *Lifecycle) CheckEndedHint(ctx context.Context, row outbox.Row, now time
 	if current.State != domain.MeetingOpen || current.CreateTime == nil || checks != payload.Check {
 		return domain.DoneObsolete, nil
 	}
-	info, err := l.deps.Provider.MeetingInfo(ctx, domain.Meeting{ID: current.ProviderMeetingID, CreateTime: *current.CreateTime})
+	call, cancel := context.WithTimeout(ctx, l.deps.ProviderCall)
+	defer cancel()
+	info, err := l.deps.Provider.MeetingInfo(call, domain.Meeting{ID: current.ProviderMeetingID, CreateTime: *current.CreateTime})
 	if err != nil {
 		return "", fmt.Errorf("confirm the ended hint: %w", err)
 	}

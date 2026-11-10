@@ -55,6 +55,13 @@ func TestMeetingRecoveryAdminRevisionAndRefusals(t *testing.T) {
 	if receipts != 1 || queued != 1 {
 		t.Fatalf("receipt/outbox counts: %d/%d", receipts, queued)
 	}
+	var queuedID string
+	if err := f.database.Pool.QueryRow(t.Context(), "SELECT replace(id::text, '-', '') FROM outbox WHERE kind='meeting_cleanup'").Scan(&queuedID); err != nil {
+		t.Fatal(err)
+	}
+	if !hasRecord(first.stderr, `"msg":"meeting.recovery.retry.queued"`, `"outbox_id":"`+queuedID+`"`) || strings.Contains(replay.stderr+pending.stderr, "meeting.recovery.retry.queued") {
+		t.Fatalf("queued retry audit: first=%s replay=%s pending=%s", first.stderr, replay.stderr, pending.stderr)
+	}
 	for _, result := range []outcome{first, replay, pending, absent, invalid, inspection} {
 		if strings.Contains(result.stderr, id.String()) || strings.Contains(result.stderr, missing.String()) {
 			t.Fatal("provider identifier entered operator diagnostics")
@@ -192,6 +199,19 @@ func TestMeetingRecoveryAdminSettledAndSubsequentCycle(t *testing.T) {
 			t.Fatalf("spent inspection lacks %s: %+v", field, spentView)
 		}
 	}
+}
+
+func hasRecord(diagnostics string, fragments ...string) bool {
+	for _, line := range strings.Split(diagnostics, "\n") {
+		matched := line != ""
+		for _, fragment := range fragments {
+			matched = matched && strings.Contains(line, fragment)
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
 }
 
 func assertMeetingAdminAudit(t *testing.T, result outcome) {

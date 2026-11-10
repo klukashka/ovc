@@ -101,17 +101,22 @@ func (s *Service) closeMeetingsForDeletion(ctx context.Context, repos repositori
 	if err != nil {
 		return err
 	}
+	closed := 0
 	for _, room := range current {
 		cycle, err := core.NewID[domain.OutboxID](s.deps.Random)
 		if err != nil {
 			return err
 		}
-		if _, err := repos.CloseTutorMeetingForCleanup(ctx, room, domain.MeetingCloseTutorEnd, cycle, at); err != nil {
+		applied, err := repos.CloseTutorMeetingForCleanup(ctx, room, domain.MeetingCloseTutorEnd, cycle, at)
+		if err != nil {
 			return err
+		}
+		if applied {
+			closed++
 		}
 	}
 	repos.AfterCommit(ctx, func(ctx context.Context) {
-		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "meeting.closed_for_deletion", slog.String("tutor_id", tutor.String()), slog.Int("lessons", len(ended)), slog.Int("rooms", len(current)))
+		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "meeting.closed_for_deletion", slog.String("tutor_id", tutor.String()), slog.Int("lessons", len(ended)), slog.Int("rooms", closed))
 	})
 	return repos.Signals.Entities(ctx, signals)
 }

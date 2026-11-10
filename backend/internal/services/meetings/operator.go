@@ -2,6 +2,7 @@ package meetings
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"time"
@@ -115,7 +116,7 @@ func (s *Operator) Retry(ctx context.Context, id domain.ProviderMeetingID, revis
 	if result != domain.MeetingMutationApplied {
 		return repositories.StoredMeetingRecoveryCycle{}, ErrRecoveryRetryRefused
 	}
-	s.logger.LogAttrs(ctx, slog.LevelInfo, "meeting.recovery.retry.queued", slog.String("outbox_id", outbox.String()))
+	s.logger.LogAttrs(ctx, slog.LevelInfo, "meeting.recovery.retry.queued", slog.String("outbox_id", hex.EncodeToString(outbox[:])))
 	return repo.Cycle(ctx, outbox)
 }
 
