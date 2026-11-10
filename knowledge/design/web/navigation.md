@@ -13,7 +13,7 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
   - below, the role's sections as items with an outline icon, a label and an optional count, then Notifications (with the unread count, "99+" above 99; it opens the notifications panel, [pages](pages.md#notifications); in the sidebar overlay below 1024 px it is a link to the page, because the top bar's Notifications button opens the panel) and Settings at the end of the list;
   - when hidden on a computer, a "Show sidebar" icon button stays in the top-left corner and carries an `accent-text` dot when any section count or the unread-notification count is above zero (its accessible name then ends with "new items" / "есть новое"); the choice is remembered per browser;
   - the page itself may have a thin top bar with breadcrumbs and the page's own actions (the builder, review and lesson pages), never a second navigation.
-- **Tutor sections:** Today, Schedule, Students, Groups, Homework (count: needs checking), Messages (count: unread). Homework opens `/homework/library` and has three tabs: Library, Issued and Needs checking.
+- **Tutor sections:** Today, Schedule, Students, Groups, Homework (count: needs checking), Messages (count: unread). Homework opens `/homework/library` and has three tabs: Library, Issued and Needs checking. In slice 8 it shows the Library tab only and no count; the Issued and Needs checking tabs and the count arrive with slice 9 (pending owner review).
 - **Student sections:** Home, Schedule, Homework (count: to do), Messages (count: unread), My tutors.
 - **Below 1024 px (interim frame for both roles, including phones until slice 10):**
   - a top bar shows the "Show sidebar" button (with the same dot and accessible name), the page title and the Notifications button with its unread count as a number, so notifications stay one tap away;
@@ -44,8 +44,8 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 | `/students?state=&group=&q=` | Students |
 | `/students/{id}` | Student card |
 | `/groups`, `/groups/{id}` | Groups, group page |
-| `/homework/library?folder=&q=` | Library |
-| `/homework/templates/{id}` | Builder |
+| `/homework/library?folder=&q=` | Library; from slice 8. `folder` and `q` are not sent together: a search ignores the folder, and an unknown folder shows Not found |
+| `/homework/templates/{id}` | Builder; from slice 8. "New assignment" in the library creates a template titled with the localised "New assignment" and opens it here; a deleted or foreign template shows Not found |
 | `/homework/issued?status=` | Issued work |
 | `/homework/issued/{id}` | Issue page with Submissions and Analytics tabs |
 | `/homework/review` | Needs checking |

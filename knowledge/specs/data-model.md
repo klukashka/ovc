@@ -45,6 +45,11 @@ erDiagram
   TUTOR_PROFILE ||--o{ FOLDER : organises
   TUTOR_PROFILE ||--o{ TEMPLATE : authors
   TUTOR_PROFILE ||--o{ MATERIAL : uploads
+  FOLDER ||--o{ FOLDER : contains
+  LESSON ||--o{ LESSON_MATERIAL : shows
+  MATERIAL ||--o{ LESSON_MATERIAL : "attached as"
+  LESSON_SERIES ||--o{ SERIES_MATERIAL : copies
+  MATERIAL ||--o{ SERIES_MATERIAL : "attached as"
   TEMPLATE ||--o{ ISSUE : "snapshotted into"
   ISSUE ||--o{ SUBMISSION : "one per student"
   SUBMISSION ||--o{ ANSWER : has
@@ -120,7 +125,7 @@ Slice 4 adds three row-level `AFTER` triggers, so every path that revokes a sess
 
 ### Rate limit counter
 
-`purpose`, `subject`, `window_start`, `count`; primary key on the three key columns, plus an index on `window_start` for cleanup. `subject` is the 32-byte HMAC-SHA-256 of the email, IP address (IPv6 by /64), account or tutor, keyed with a key derived by HKDF-SHA-256 from `OVC_JWT_SECRET` with the info string `throttle`, never the signing key itself, so no raw address is stored. A slot is reserved with one `INSERT … ON CONFLICT … DO UPDATE … RETURNING count` before any hashing work. From slice 5 lesson write attempts reserve here with the purpose `lesson_writes_hour`, the tutor as `subject` and the hour as `window_start` (at most 120 per tutor per hour, committed after the schema checks and the replay and before every check of the service, and kept when the request is refused, [scheduling limits](schedule.md#scheduling-limits)), and the dispatcher also reserves here, with the purpose `lesson_emails`, the recipient's account as `subject` and the UTC day as `window_start`, one slot per student-addressed lesson email (`lesson_reminders` and `lesson_changes` together, at most 20 per day), reserved only after every other dispatch check passed, immediately before sending, and only while the counter is below 20, so an email dropped over the cap holds no slot, and released with `ReleaseRateLimitSlot` for the `window_start` of its own reservation when the send fails, and the hourly cleanup of rate-limit windows removes the old counters ([dispatch-time checks](notifications.md#dispatch-time-checks)).
+`purpose`, `subject`, `window_start`, `count`; primary key on the three key columns, plus an index on `window_start` for cleanup. `subject` is the 32-byte HMAC-SHA-256 of the email, IP address (IPv6 by /64), account or tutor, keyed with a key derived by HKDF-SHA-256 from `OVC_JWT_SECRET` with the info string `throttle`, never the signing key itself, so no raw address is stored. A slot is reserved with one `INSERT … ON CONFLICT … DO UPDATE … RETURNING count` before any hashing work. From slice 8 library writes reserve here with the purpose `library_writes_hour` (the tutor as `subject`, at most 600 per hour), and template saves with `template_saves_hour` (the tutor, at most 3,600 per hour) and `template_saves_second` (the template, the second as `window_start`, at most 2), under the same reservation rule as lesson writes ([library](homework.md#library)). From slice 5 lesson write attempts reserve here with the purpose `lesson_writes_hour`, the tutor as `subject` and the hour as `window_start` (at most 120 per tutor per hour, committed after the schema checks and the replay and before every check of the service, and kept when the request is refused, [scheduling limits](schedule.md#scheduling-limits)), and the dispatcher also reserves here, with the purpose `lesson_emails`, the recipient's account as `subject` and the UTC day as `window_start`, one slot per student-addressed lesson email (`lesson_reminders` and `lesson_changes` together, at most 20 per day), reserved only after every other dispatch check passed, immediately before sending, and only while the counter is below 20, so an email dropped over the cap holds no slot, and released with `ReleaseRateLimitSlot` for the `window_start` of its own reservation when the send fails, and the hourly cleanup of rate-limit windows removes the old counters ([dispatch-time checks](notifications.md#dispatch-time-checks)).
 
 ## Relationships and groups
 
@@ -190,7 +195,7 @@ Constraints and indexes:
 
 ## Schedule
 
-Slice 5 adds the `lesson_series`, `lesson` and `lesson_roster` tables. Series and lessons reference the tutor profile, the relationship and the group with `ON DELETE RESTRICT`, so the tutor purge deletes them first ([purge](#purge)); the relationship key is `(relationship_id, tutor_id)` against the relationship's `(id, tutor_id)` and the group key `(group_id, tutor_id)` against the group's `(id, tutor_id)`, as for group members, so a lesson or series can only hold its own tutor's audience; the xor of relationship and group is a check constraint. Materials, and the material tables below, arrive with the library in slice 8.
+Slice 5 adds the `lesson_series`, `lesson` and `lesson_roster` tables. Series and lessons reference the tutor profile, the relationship and the group with `ON DELETE RESTRICT`, so the tutor purge deletes them first ([purge](#purge)); the relationship key is `(relationship_id, tutor_id)` against the relationship's `(id, tutor_id)` and the group key `(group_id, tutor_id)` against the group's `(id, tutor_id)`, as for group members, so a lesson or series can only hold its own tutor's audience; the xor of relationship and group is a check constraint. The material tables of lessons and series below arrive with the library in slice 8.
 
 ### Lesson series
 
@@ -211,7 +216,9 @@ Slice 5 adds the `lesson_series`, `lesson` and `lesson_roster` tables. Series an
 | `create_key` | the `Idempotency-Key` of the creating request, nullable; unique `(tutor_id, create_key)` where not null |
 | `ended_at` | |
 
-**Series material** (slice 8): `series_id`, `material_id`, `position`; primary key `(series_id, material_id)`.
+From slice 8 `lesson_series` and `lesson` (below) each have a unique `(id, tutor_id)`, which the composite same-tutor keys of series and lesson materials reference.
+
+**Series material** (slice 8): `series_id`, `material_id`, `tutor_id`, `position`, `created_at`; primary key `(series_id, material_id)`, unique `(series_id, position)`. `(series_id, tutor_id)` references the series' `(id, tutor_id)` with `ON DELETE RESTRICT`, and `(material_id, tutor_id)` the material's `(id, tutor_id)` with `ON DELETE RESTRICT`, so a series can only hold its own tutor's materials ([T-5](../../docs/threat-model.md#threats-and-controls)); indexes on `material_id` and `(tutor_id, series_id)` serve the purge. Each row has a `series` [attachment reference](#attachment-reference-and-quota-charge) for the material's file, charged to the tutor, so a material deleted from the library is still copied into new occurrences ([lesson materials](schedule.md#lesson-materials)). At most 20 rows per series.
 
 ### Lesson
 
@@ -229,7 +236,7 @@ Slice 5 adds the `lesson_series`, `lesson` and `lesson_roster` tables. Series an
 | `schedule_revision` | incremented on every change to start or duration |
 | `version` | incremented on every change of any field an edit changes; edits are conditional on it ([edits](schedule.md#rules-for-all-edits)) |
 | `reminded_24h_revision`, `reminded_1h_revision` | the schedule revision the reminders were last written for |
-| `overridden_fields` | set of start time, date, duration, title, description and materials (`materials` is accepted before slice 8, which adds the material tables) |
+| `overridden_fields` | set of start time, date, duration, title, description and materials; `materials` is recorded from slice 8 when `POST /lessons/{id}/materials` changes a series occurrence ([lesson materials](schedule.md#lesson-materials)) |
 | `cancelled_at`, `cancel_cause` | `cancel_cause` is `tutor`, `relationship_ended`, `provisional_removed`, `group_archived` or `tutor_deleted`; both are set exactly when the status is `cancelled`, checked |
 | `create_key` | the `Idempotency-Key` of the creating request of a one-off lesson, nullable; unique `(tutor_id, create_key)` where not null |
 | `live_at`, `ended_at` | "took place" means `live_at` is set |
@@ -237,6 +244,7 @@ Slice 5 adds the `lesson_series`, `lesson` and `lesson_roster` tables. Series an
 Indexes:
 
 - unique `(series_id, occurrence_date)`;
+- unique `(id, tutor_id)` from slice 8, for the same-tutor key of lesson materials;
 - `(tutor_id, starts_at, id)`, which also orders the tutor purge's lesson batches, `(relationship_id, starts_at)` and `(group_id, starts_at)`;
 - partial `(group_id, starts_at)` where `status = 'scheduled'`, for the group page;
 - partial `(tutor_id, starts_at)` where `status = 'scheduled'`, through which a tutor deletion cancels the tutor's future lessons and an ending or a tutor deletion finds the tutor's lessons under way without reading past or cancelled ones (pending owner review);
@@ -253,7 +261,7 @@ Indexes:
 
 ### Lesson links
 
-**Lesson material** (slice 8): `lesson_id`, `material_id`, `position`; primary key `(lesson_id, material_id)`. The lesson's linked issues are `issue.lesson_id`.
+**Lesson material** (slice 8): `lesson_id`, `material_id`, `tutor_id`, `position`, `created_at`; primary key `(lesson_id, material_id)`, unique `(lesson_id, position)`. `(lesson_id, tutor_id)` references the lesson's `(id, tutor_id)` with `ON DELETE RESTRICT`, and `(material_id, tutor_id)` the material's `(id, tutor_id)` with `ON DELETE RESTRICT`, so a lesson can only hold its own tutor's materials; indexes on `material_id` and `(tutor_id, lesson_id)` serve the purge. Each row has a `lesson` [attachment reference](#attachment-reference-and-quota-charge) for the material's file, charged to the tutor, so the file stays downloadable from the lesson after the material's deletion. At most 20 rows per lesson. The lesson's linked issues are `issue.lesson_id`.
 
 ### Meeting
 
@@ -344,6 +352,8 @@ Slice 7 L2b adds `fake_meeting_` infrastructure tables owned only by the meeting
 
 Room-owned state is removed on End through indexed references; singleton counters survive reconstruction. Global capacity is serialized through the singleton row and never silently evicts active state. Independent deployments require independently generated namespaces; database cloning preserves the original provider identity. Business lesson deletion does not cascade into this separate simulation. Cleanup/reconciliation must precede application activation. See the [shared-provider contract](realtime-and-video.md#shared-local-provider-slice-7-l2b).
 
+From slice 8 a room row also records the size and SHA-256 of the presentation the fake fetched at creation (both null without one), never its URL or content, added by a migration of the meeting presentation change ([presentation](realtime-and-video.md#presentation)).
+
 ### Recording
 
 | Column | Notes |
@@ -422,17 +432,53 @@ Rows keyed by an account without a foreign key are deleted by every purge path, 
 
 ## Homework
 
+Slice 8 adds the `folder`, `material` and `template` tables ([library](homework.md#library)). Each references the tutor profile with `ON DELETE RESTRICT`, so the tutor purge deletes them first, and carries a unique `(id, tutor_id)` so that every same-tutor link below is a composite foreign key and a cross-tutor link is impossible below the service ([T-5](../../docs/threat-model.md#threats-and-controls)). Attachment references are polymorphic (`ref_kind`, `ref_id`), so their same-tutor rule is enforced by the library and schedule services and proven by their foreign-attachment and denial tests.
+
 ### Folder
 
-`id`, `tutor_id`, `parent_id` (nullable, depth ≤ 3), `name`.
+| Column | Notes |
+|---|---|
+| `id` | |
+| `tutor_id` | references the tutor profile, `ON DELETE RESTRICT` |
+| `parent_id` | nullable (the root); `(parent_id, tutor_id)` references the folder's `(id, tutor_id)` with `ON DELETE RESTRICT`, so only an empty folder can be deleted and the purge deletes folders deepest first; indexed; the depth of at most 3 and the absence of cycles are checked by the service under the tutor's profile lock |
+| `name`, `normalised_name` | 1 to 100 code points as entered, and its text normalisation version 1; unique `(tutor_id, parent_id, normalised_name)` with `NULLS NOT DISTINCT`, so two root folders cannot share a name either |
+| `updated_at` | |
+
+Deleted folders leave the table directly.
 
 ### Material
 
-`id`, `tutor_id`, `folder_id` (null means the library root), `title`, `normalised_title`, `attachment_id`, `deleted_at`.
+| Column | Notes |
+|---|---|
+| `id` | |
+| `tutor_id` | references the tutor profile, `ON DELETE RESTRICT` |
+| `folder_id` | null means the library root, and is set to null when the material is deleted; `(folder_id, tutor_id)` references the folder's `(id, tutor_id)` with `ON DELETE RESTRICT` |
+| `title`, `normalised_title` | 1 to 200 code points as entered, and its text normalisation version 1 |
+| `attachment_id` | the material's file, never replaced; its `material` [reference](#attachment-reference-and-quota-charge) exists while the material is not deleted |
+| `deleted_at` | soft deletion; deleted materials stay until the tutor purge, because lessons, series and templates keep showing their titles |
+| `updated_at` | |
+
+Indexes: `(tutor_id, folder_id, normalised_title, id)` and `(tutor_id, normalised_title, id)`, both where `deleted_at` is null, for listing and search; `(tutor_id, id)` for the caps and the purge; `folder_id`.
 
 ### Template
 
-`id`, `tutor_id`, `folder_id` (null means the library root), `title`, `normalised_title`, `blocks` (JSON validated by the block schema), `schema_version`, `version` (optimistic lock), `deleted_at`.
+| Column | Notes |
+|---|---|
+| `id` | |
+| `tutor_id` | references the tutor profile, `ON DELETE RESTRICT` |
+| `folder_id` | as for materials |
+| `title`, `normalised_title` | 1 to 200 code points as entered, and its text normalisation version 1 |
+| `blocks` | JSON validated by the [block schema](homework.md#block-schema) |
+| `schema_version` | the block schema's version, `1` from slice 8 |
+| `version` | optimistic lock, incremented by every save |
+| `last_save_id` | the `save_id` of the last applied save, nullable |
+| `create_key` | the `Idempotency-Key` of the creating request, nullable; unique `(tutor_id, create_key)` where not null |
+| `question_count`, `max_points`, `ready` | written by every save from the blocks ([validation](homework.md#validation)) |
+| `blocks_bytes` | the byte length of the stored `blocks`, written by every save and set to 0 on deletion, when `blocks` becomes an empty list; the per-tutor budget of 64 MiB sums it over the tutor's templates that are not deleted through a partial index `(tutor_id) INCLUDE (blocks_bytes)` where `deleted_at` is null, so a save reads no deleted row ([library](homework.md#library)) |
+| `deleted_at` | soft deletion; issues reference the template, so it is never removed before the tutor purge |
+| `updated_at` | |
+
+Indexes as for materials, where `deleted_at` is null, plus `(tutor_id, id)` and `folder_id`.
 
 ### Issue
 
@@ -500,7 +546,7 @@ Constraints and indexes:
 | `id` | |
 | `uploader_id` | |
 | `context` | `avatar`, `prompt_image`, `library`, `chat`, `answer`, `corrected` |
-| `scope_kind`, `scope_id`, `scope_question_id` | the upload scope: `channel` or `submission`; both kind and identifier or neither; a question only within a submission |
+| `scope_kind`, `scope_id`, `scope_question_id` | the upload scope: `channel` or `submission`; both kind and identifier or neither; a question only within a submission; neither for the `avatar`, `library` and `prompt_image` contexts, whose scope is the uploader's own account or library |
 | `quota_tutor_id` | slice 6: a partial index `(uploader_id, quota_tutor_id, created_at)` where `context = 'chat'` serves retained-upload backfill and the uploading-row check of [daily accounting cleanup](files.md#durable-daily-upload-accounting) |
 | `storage_key` | random, never returned |
 | `filename` | |
@@ -508,7 +554,7 @@ Constraints and indexes:
 | `size_bytes`, `sha256` | null under the same rule as `media_type`, enforced by the same check (`attachments_stored_rows_described`) |
 | `state` | `uploading` (slice 6: the row exists while its object streams and is inspected; a partial index on `created_at` where `uploading` serves the age rule of `uploads.expire`), `pending`, `bound`, `deleted` |
 | `expires_at` | pending only; partial index |
-| `reserved_bytes` | slice 6; the bytes an `uploading` row counts against the quota: the request's `Content-Length` capped at the context limit, or the context limit without one; a check requires it on every `uploading` row, and a partial index on `quota_tutor_id` where `context = 'chat'` and the state is `uploading` or `pending` serves the quota checks' sum of open uploads |
+| `reserved_bytes` | slice 6; the bytes an `uploading` row counts against the quota: the request's `Content-Length` capped at the context limit, or the context limit without one; a check requires it on every `uploading` row, and a partial index on `quota_tutor_id` where `context = 'chat'` and the state is `uploading` or `pending` serves the quota checks' sum of open uploads; from slice 8 a partial index on `quota_tutor_id` where the state is `uploading` or `pending`, whatever the context, serves admission across contexts ([quotas](files.md#quotas)) |
 | `multipart_upload_id` | slice 6; the storage multipart upload's identifier, recorded with the independent intent in a short transaction after Create and before parts; cleanup reads the latest intent ID even after the attachment is purged. An unknown incomplete MPU remains subject to the configured one-day lifecycle eligibility, not a guaranteed physical-erasure instant ([upload flow](files.md#upload-flow)) |
 | `width`, `height` | slice 6; a picture's dimensions read from its header, null for other kinds and above 50 megapixels |
 
@@ -526,16 +572,17 @@ The chat journal of [ADR-0019](../../docs/decisions/0019-durable-upload-cleanup.
 
 Named phases are `opening`, `streaming`, `completing`, `cleanup` and `uncertain`. Monotonic `completion_started`, `completion_confirmed` and `cleanup_requested` flags separate authorization, definite acknowledgement and irrevocable publication revocation. `final_cleanup_required` preserves the final generation obligation while another cycle is active. Automatic generation is absent, 0 or 1; each has a fixed outbox identity and a safe result (`none`, `queued`, `deleted`, `failed`). Business timestamps support scheduling and diagnostics, never remote-operation fencing. Error fields contain finite safe codes, not raw text. SQL checks and conditional transitions enforce valid state combinations.
 
-A capacity row holds `used`, bounded from zero to 4,096. Intent creation reserves and terminal removal releases capacity atomically, with that row locked last. A confirmed pending publication removes the intent in the same transaction. An uncertain started Complete retains the journal even after successful Delete; failed/dead results survive ordinary outbox retention. Indexed candidate state and attachment-ID keyset ordering support bounded recovery without taking intent locks before attachment locks.
+A capacity row holds `used`, bounded from zero to 4,096. From slice 8 ([ADR-0022](../../docs/decisions/0022-library-upload-cleanup-adoption.md)) the journal has one capacity row per capacity class: `chat`, bounded to 4,096, and `library`, bounded to 1,024 and shared by the `library` and `prompt_image` contexts; each intent records its class, so its creation reserves and its removal releases that class's row. Intent creation reserves and terminal removal releases capacity atomically, with that row locked last. A confirmed pending publication removes the intent in the same transaction. An uncertain started Complete retains the journal even after successful Delete; failed/dead results survive ordinary outbox retention. Indexed candidate state and attachment-ID keyset ordering support bounded recovery without taking intent locks before attachment locks.
 
 Operator receipts have an immutable `(attachment_id, attempt_id UUID)` identity, fixed outbox identity and cycle state. They survive outbox retention until safe intent removal; no total receipt count limit is imposed. Only explicit privileged commands create them. UUID lookup and active-cycle lookup are indexed; paginated inspection returns at most 100 history rows, with no full-history scan under the intent lock. The 4,096-intent capacity does not bound all receipt bytes. See [cleanup rules](files.md#durable-chat-upload-cleanup) for generation and removal evidence.
 
 ### Attachment reference and quota charge
 
 - **Attachment reference:**
-  - columns: `attachment_id`, `ref_kind` (`message`, `answer`, `review_item`, `material`, `template`, `issue_snapshot`, `lesson`, `avatar`), `ref_id`, `question_id` (for answers and review items);
+  - columns: `attachment_id`, `ref_kind` (`message`, `answer`, `review_item`, `material`, `template`, `issue_snapshot`, `lesson`, `series`, `avatar`; `series` from slice 8, for the files of a series' materials), `ref_id`, `question_id` (for answers and review items);
   - a unique constraint on all four with `NULLS NOT DISTINCT`, because `question_id` is null for most kinds, an index on `(ref_kind, ref_id)`, and a unique partial index on `ref_id` where `ref_kind = 'avatar'`, so a user has at most one avatar; replacing an avatar deletes the old reference before inserting the new one in the same transaction.
-- **Quota charge:** `tutor_id`, `attachment_id`, `size_bytes`; primary key on the pair. It is created with the first reference that charges the tutor and deleted with the last one.
+- **Quota charge:** `tutor_id`, `attachment_id`, `size_bytes`; primary key on the pair. It is created with the first reference that charges the tutor and deleted with the last one. Every `material`, `template`, `lesson` and `series` reference charges the material's, template's, lesson's or series' tutor.
+- **Same-tutor rule:** a `material`, `template`, `lesson` or `series` reference names a file of that item's own tutor: an attachment the tutor uploaded in the `library` or `prompt_image` context, or the file of one of the tutor's own materials; the services check it before inserting, because the reference is polymorphic and has no composite key.
 
 ## Notifications and worker
 
@@ -607,6 +654,12 @@ Slice 6 adds, on every purge path:
 - **the tutor purge's chat batches:** the attachment references and quota charges of the tutor's channels, queueing a `storage_delete` for every attachment that loses its last reference, whoever uploaded it (students' uploads included), then messages, member rows and channels, each 500 rows per batch in key order, before group members, because channels reference the relationships and groups; the final transaction therefore finds no charge left, so `attachments.quota_tutor_id`'s `ON DELETE RESTRICT` never fails the purge, and it also deletes the tutor's `digest_pending` and `digest_state` rows;
 - **a discarded link's channel** is erased whole by the deferred erasure job, not by the purge ([channels](realtime-and-video.md#channels)).
 
+Slice 8 adds, on every purge path of a tutor (the 30-day purge, the 7-day cleanup and the immediate purge of an unconfirmed tutor):
+
+- **the library batches,** before the lesson batches, because lesson and series materials reference materials and restrict the deletion of lessons and series: lesson materials with their `lesson` references and charges, series materials with their `series` references and charges, then template references and charges, material references and charges, templates, materials, and folders deepest first, each 500 rows per batch in key order inside the round-robin budget; each `storage_delete` follows its file's last reference, in the batch that removes it, and each batch locks the tutor's profile before any charge, as the charge lock order requires; `account.purge_paused` counts these batch kinds with the others;
+- **the tutor's unbound library uploads:** `uploading` and `pending` attachments of the `library` and `prompt_image` contexts go through the intent-routed deletion of [upload flow](files.md#upload-flow) item 11, and `uploads.expire` treats them as no longer bindable once their tutor is deleted or blocked;
+- the student purge is unchanged: a student holds no library row and no lesson or series material.
+
 | Table | Student purge | Tutor purge |
 |---|---|---|
 | User | Row deleted | Row deleted |
@@ -621,7 +674,8 @@ Slice 6 adds, on every purge path:
 | Channel, channel member | Memberships deleted, suspended ones included, under the channel locks in the final transaction | Channels and memberships deleted in batches |
 | Message | Body erased, `sender_id` null, its attachment references removed, in batches | Messages of the tutor's channels deleted in batches, after their references and charges |
 | User presence summary and instance leases, digest pending, digest state | Removed: presence with the user row (`ON DELETE CASCADE`), the digest rows in the final transaction | Same |
-| Folder, material, template | — | Deleted |
+| Folder, material, template | — | Deleted in batches with their references and charges, before lessons and series, folders deepest first |
+| Lesson material, series material | — | Deleted in batches with their `lesson` and `series` references and charges, before the other library batches |
 | Issue | — | Deleted |
 | Submission, answer, review revision | Deleted; analytics no longer count them | Deleted |
 | Attachment, reference, quota charge | References from deleted rows removed; unreferenced files deleted | Same |
@@ -638,11 +692,12 @@ Slice 6 adds, on every purge path:
   - `join_request.tutor_id`, `join_request.student_id`, `blocked_requester.student_id`;
   - `group.tutor_id`, `group_member.relationship_id`;
   - `lesson_series.tutor_id`, `lesson_series.relationship_id`, `lesson_series.group_id` and `lesson_series.split_from_series_id`, as the rule below requires, and the lesson indexes above, which lead with `tutor_id`, `relationship_id`, `group_id` and `series_id`;
+  - `folder.tutor_id` and `folder.parent_id`, `material.tutor_id` and `material.folder_id`, `template.tutor_id` and `template.folder_id`, `lesson_material.material_id` and `series_material.material_id` (slice 8);
   - `issue.tutor_id`, `issue.relationship_id`, `issue.group_id`;
   - `submission.student_id`;
   - `lesson_roster.student_id`;
   - `channel.tutor_id`, `channel.relationship_id`, `channel.group_id`, `channel_member.user_id`, `message.channel_id` (through its unique key with `seq`) and `message.sender_id`.
 - Every foreign key that cascades, restricts or sets null on delete is indexed, so a purge never scans a table for referencing rows.
 - Notification rows have no foreign keys, so the purge's deletion of the rows that name an account goes through the `user_id`, `tutor_id` and `student_id` indexes; every purge path (the 30-day purge, the 7-day cleanup and the immediate purge) applies it, and once it commits no row names the account, because every producer of such a row holds a lock that the purge also takes ([channels](notifications.md#channels)).
-- Message pagination, notification lists, the student list, join-request lists and the review queue use keyset ordering on indexed columns, never `OFFSET`.
+- Message pagination, notification lists, the student list, join-request lists, the library listing and search (from slice 8) and the review queue use keyset ordering on indexed columns, never `OFFSET`.
 - Every periodic job reads through the partial index on its due column named above and processes a bounded batch per run.

@@ -80,7 +80,7 @@ FR-15.1, FR-15.2, FR-2.3, FR-5.1.
 - **Unread messages:** channels with unread counts.
 - **As built in design slice step D2** (owner's decisions of 2026-11-08, pending owner review):
   - the title "Today" with the local date on the line below it; the page width, with the checklist and today's lessons in the main column and the join requests (with the tutor code) and unread messages in the side column;
-  - the checklist shows three steps while any is undone and disappears by itself when all are done, with no dismissal until `PATCH /tutor/settings` arrives in slice 10: "Fill in your profile" (done when the bio or the subjects are set), "Invite a student" (done when the tutor has any student card) and "Schedule a lesson" (done when the calendar from today to 62 days ahead holds a lesson); "Create an assignment" stays hidden until the library exists; an unconfirmed tutor sees the confirmation prompt instead of the invite and schedule links, and their Today requests no route closed to them;
+  - the checklist shows its steps while any is undone and disappears by itself when all are done, with no dismissal until `PATCH /tutor/settings` arrives in slice 10: "Fill in your profile" (done when the bio or the subjects are set), "Invite a student" (done when the tutor has any student card), "Schedule a lesson" (done when the calendar from today to 62 days ahead holds a lesson) and, from slice 8, "Create an assignment" (done when `template_count` of `GET /library?limit=1` is above zero, linking to the library); the steps follow current data, so a tutor who had finished the first three sees the checklist again with this one step until they create a template, and deleting every template makes it undone again (pending owner review); an unconfirmed tutor sees the confirmation prompt instead of the invite and schedule links, and their Today requests no route closed to them;
   - today's lessons are those starting today in the viewer's timezone, each with the time range, title, audience label and status and a link to the lesson page; empty: "No lessons today" with "Open the schedule";
   - Join (design slice step D6, pending owner review): each of today's lessons that is `scheduled` inside its join window or `live` shows, below its link and never inside it, the lesson page's join button ("Join lesson", or "Rejoin" while `live`), which goes through "Joining…" to "Open again" with "The lesson is open in another tab", keeping focus, and joins only through a new tab, never embedded, under the lesson page's pre-opened tab rules; the next lesson that is not yet in its window shows "Room opens at {time}" with no button; a cancelled or ended lesson shows no control; the offers come from the calendar alone, with the lesson taken as open while it is `live`, so Today issues no `GET /lessons/{id}`; refusals show as on the lesson page: the error code's message (`outside_join_window`, `provider_unavailable`, the shared refusal text with the waiting time for `429`) under the button with focus kept on it, and for `not_found` "You can't join this lesson" with no button for that lesson, with focus moving to the page heading when it was on the removed button; when a lesson whose control has focus is cancelled or ends, the control is removed and focus moves to the page heading; each row's control is independent under the shared rule on several controls: it has its own join attempt, two rows can each open one tab on explicit clicks, and a control whose lesson leaves the row, is cancelled or ends while its join is in flight closes the pre-opened tab and drops the late answer;
   - unread messages show up to five channels with unread messages from the first page of the Messages channel list, each with its label, colour dot and count ("99+" above 99) and a link to the conversation, never a message preview, then "All messages, {n} unread" ("All messages" when none is unread); with none, "No unread messages";
@@ -108,7 +108,7 @@ FR-4.1–FR-4.5. Built in slice 5 from `GET /calendar` and `POST /lessons` ([sch
   - audience picker: a student (also one whose email is not confirmed, for one-to-one lessons) or a group, with search, which asks the server once the text has not changed for 300 ms (pending owner review); as built in design slice step D4 (pending owner review), the results are a short list of buttons, about six rows high, that scrolls; choosing one collapses the picker to the chosen name and a Change button, which takes focus, and Change clears the choice and brings the search back with focus on it, so a submit before a new choice asks for one; a preselected audience starts collapsed;
   - title, prefilled with "Lesson" for a one-to-one lesson and with "Lesson" and the group's name for a group lesson, never with the card's display name, editable, with the hint "Students see the title"; date, start time and duration; under the duration, the buttons "45 min", "60 min" and "90 min" put their value into the duration field, which keeps any other value (design slice step D4, pending owner review);
   - "Repeat weekly" with weekday toggles and "Ends on {date}" or "After {n} lessons";
-  - description, collapsed behind "Add description", which opens the field with focus on it (design slice step D4, pending owner review); materials from the library arrive in slice 8;
+  - description, collapsed behind "Add description", which opens the field with focus on it (design slice step D4, pending owner review); from slice 8 the library picker for materials, as on the lesson page ([lesson](#lesson));
   - a saved lesson closes the dialog, returns focus to the control that opened it and announces "Lesson scheduled" politely.
 - **Overlap warning:** an inline list of the overlapping lessons (at most 20, then "and {count} more") with "Schedule anyway" after the list; the warning takes focus inside the dialog.
 - **Editing or cancelling a series occurrence** asks: "This lesson" or "This and following lessons". Weekday changes are offered as "End this series and create a new one".
@@ -160,7 +160,7 @@ FR-4.6, FR-4.7, FR-5.1–FR-5.6. Built in slice 5 without video from `GET /lesso
   - **End lesson and Restart the room** stand below the room for the active tutor while the lesson is `live`. Each confirmation opens on its dismiss button (Cancel) and returns focus to its button when dismissed, as the cancel dialog does. A confirmed end closes onto the notice "Lesson ended", which takes focus. A confirmed restart closes after the fresh join answer: the tab opens in the confirming click on the new-tab path; on the embedded path the old frame goes at once and the new frame appears with the answer. Focus returns to "Restart the room". A refusal that does not mean the lesson changed keeps the dialog open with its reason; `conflict`, `lesson_not_live` and `not_found`, and a lesson that stops being live while the dialog is open, close it onto the changed-meanwhile notice.
   - **Focus:** when the control holding focus leaves because the room's state changed, focus moves to the area's button if one is shown, otherwise to the page heading. A refusal keeps focus on the button and is announced as an alert.
   - **Position:** the room comes directly after the status word, as the first content of the main column, before the description; the tutor's actions are in the header, and the date, time and audience are shown once, in "About the lesson" (design slice step D7, pending owner review). The room keeps its place and its element whatever the phase, the header's controls, notices, refetch state or role, so a layout change never remounts it.
-- **Materials:** attached library files with download; the tutor has "Attach material" at any status, opening the library picker.
+- **Materials** (slice 8, from the lesson detail's `materials`, pending owner review): a "Materials" block with the attached files in order, each with its title, file name and size and a download link to its address (pictures open in a new tab); empty: "No materials" for the tutor, and the block is hidden for students without materials. The tutor has "Attach material" at any status, opening the library picker (a dialog on its search field, listing materials with checkboxes, at most 20 attached), whose Save sends `POST /lessons/{id}/materials` and returns focus to "Attach material", and "Detach" on each row, after which focus follows the shared rule for a removed row. A refusal (`conflict`, a material deleted meanwhile) reloads the lesson and shows the changed-meanwhile notice, which takes focus. The New lesson and Edit lesson dialogs offer the same picker for a one-off lesson and for a series ("this and following" edits only). A student sees a newly attached material on an open page without reload through `entity.changed lesson`.
 - **Room state** comes from `room_open` and `embed_allowed` in the lesson data, refreshed on `entity.changed`.
 - **Restart the room** appears for the tutor while the lesson is live, with a confirmation explaining that everyone must rejoin.
 - **Assignments for this lesson:** linked issues. Tutor: "Issue assignment". Student: their submission state.
@@ -244,32 +244,46 @@ FR-3.
 
 ### Library
 
-FR-6.
+FR-6. Built in slice 8 from `GET /library`, `GET /library/folders` and the library routes ([library](../../specs/homework.md#library)); the Issue actions, the Issued and Needs checking tabs and the Homework count arrive with slice 9 and stay hidden until then (pending owner review).
 
-- **Layout:** a folder tree on the left (a drop-down on phones) and search.
-- **Items:** a grid or list of materials (file icon, title, size) and templates (title, question count, maximum points, last edited).
-- **Actions:**
-  - "New assignment", "Upload material", "New folder";
-  - per item: Open, Duplicate, Move, Issue (templates), Delete.
-- **Empty:** "Build your first assignment" plus an upload drop zone.
+- **Layout:** the desktop layout standard: a one-line header "Library" with "New assignment" as the main action and a menu holding "Upload material" and "New folder"; on a computer the folder tree in the side column and the items as a table in the main column, with search in one row above it; below 1024 px the interim one-column frame, with the folder tree as a drop-down above the items.
+- **Folder tree:** "Library" (the root) and every folder from `GET /library/folders`, nested at most three levels; choosing one sets `?folder=` and shows its path as breadcrumbs above the table.
+- **Items:** one table of the folder's child folders first, then its materials and templates in title order: a material shows a file icon, title, file name and size; a template shows its title, question count (`library.question_count`), maximum points, "Ready" or "Incomplete" ([states](states.md#library-and-builder)) and its last edit; "Show more" loads the next page and moves focus to the first new row.
+- **Search:** a field that searches all folders after a 300 ms pause on the injected scheduler; results show each item's folder path; clearing it returns to the current folder; a query that normalises to empty sends no request.
+- **Actions:** per folder Rename, Move and Delete; per material Open (downloads the file), Rename, Move and Delete; per template Open (the builder), Duplicate, Move and Delete; all in the row's last-cell menu.
+- **Dialogs and focus** (each move has a `toBeFocused` test):
+  - "New folder" and Rename open on the name field; saving closes the dialog and moves focus to the created or renamed folder's row (or its tree item when it is not shown in the table); a refusal (`taken`, the depth limit, `too_many`) shows inline under the field and keeps focus there;
+  - "Upload material" opens the file picker; a chosen file uploads with progress in a dialog that opens on its title field, prefilled with the file name without its extension; saving creates the material and moves focus to its row; an upload refusal shows inline in the dialog and takes focus ([shared behavior](#shared-behavior));
+  - Move opens on its destination picker, which lists the root and every folder (the moved folder's own subtree unavailable); moving closes the dialog and the notice "Moved." takes focus, because the item leaves the shown folder;
+  - Delete opens a confirmation on Cancel naming the consequence; deleting removes the row and focus follows the shared rule for a removed row; a folder that is not empty answers `not_editable`, shown as "Only an empty folder can be deleted." in the dialog, which takes focus;
+  - Duplicate creates "{title} (copy)" in the same folder and moves focus to the new row;
+  - "New assignment" creates a template titled "New assignment" in the shown folder and opens the builder, whose heading takes focus as on every route change.
+- **Unconfirmed tutor:** folders and templates work; "Upload material" shows "Confirm your email to upload files." in place of the picker, and the builder offers no prompt images.
+- **Empty:** the root with nothing in it shows "Build your first assignment" with "New assignment" and an upload drop zone; an empty folder shows "This folder is empty"; a search without results shows "Nothing found".
+- **Errors:** a stale or missing item (`not_found`) reloads the folder and shows "This item is no longer in your library.", which takes focus; the shared refetch notice applies to a failed refetch.
 
 ### Builder
 
-FR-7, FR-8.1.
+FR-7, FR-8.1. Built in slice 8 at `/homework/templates/{id}` from `GET`, `PUT` and `/student-view` of [templates](../../specs/homework.md#templates); Issue arrives with slice 9 (pending owner review).
 
-- **Header:** a title field, autosave status ("Saved" or "Saving…"), Preview, and Issue.
+- **Header:** a thin top bar with breadcrumbs (Library, the template's folder path), the title field, the autosave status ("Saving…", "Saved", or "Not saved" with Retry), "Ready to issue" or the number of problems, and Preview.
 - **Block list:**
-  - each block is a section under a hairline rule, and the block being edited becomes a panel; each has a type label, a drag handle (keyboard: Move up and Move down buttons), Duplicate and Delete;
-  - "Add block" opens a menu of the eight block types.
+  - each block is a section under a hairline rule, and the block being edited becomes a panel; each has its type label as its heading, a drag handle for the pointer (the browser's own drag events), and Move up, Move down, Duplicate and Delete buttons for the keyboard and touch;
+  - "Add block" opens a menu of the eight block types and inserts the new block after the focused one, or at the end;
+  - a block with completeness problems shows each problem's message under the field it concerns, in `warning`, without blocking the save ([validation](../../specs/homework.md#validation)).
 - **Question editors:**
-  - choice options with a correct toggle;
+  - choice options with a correct toggle, Add option and Remove option;
   - accepted answers as chips for short text;
   - value and tolerance for numbers;
   - points;
   - an explanation, collapsed by default;
-  - allowed file kinds and count.
-- **Preview** renders the student view in a phone-width or desktop-width frame.
+  - allowed file kinds and count; the maximum length for long text;
+  - up to three prompt images (confirmed tutors only), each with Remove; a material block opens the library picker.
+- **Autosave:** one second after the last change, with at most one request in flight; the title field shows "Enter a title" and sends no save while it is blank; a save that answers after newer typing never overwrites that typing, which the next save sends; `413` shows "This assignment is too large to save" and a `422` at `body` with `too_many` shows "Your assignments have reached their storage limit", each keeping the blocks; a stale `version` (`conflict`) shows the shared notice "This changed elsewhere" with "Reload", which takes focus and keeps the unsaved blocks visible until Reload replaces them, after which focus moves to the title field.
+- **Focus** (each move has a `toBeFocused` test): a new block's first field takes focus; after Move up or Move down focus stays on the pressed button, also when it becomes unavailable at the top or bottom; after Duplicate the copy's first field takes focus; after Delete the next block's heading, else the previous block's, else "Add block".
+- **Preview:** flushes the pending save, then opens a dialog on its Close button that renders `GET /library/templates/{id}/student-view` in the student view's components, in a phone-width or computer-width frame ("Phone", "Computer"); closing returns focus to Preview. The preview never shows a key, an explanation or points.
 - **The width** is optimised for desktop; on phones the builder stacks and stays fully usable.
+- **Code:** the builder is its own lazily loaded route chunk; no module reachable only from it enters the entry or a student page chunk ([frontend module map](../../architecture/detailed.md#frontend-frontendsrc)).
 
 ### Issue dialog
 

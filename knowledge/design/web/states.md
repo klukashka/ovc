@@ -103,6 +103,64 @@ The API sends the fixed labels above as codes: `label` is `null` and `label_kind
 | submission with a review draft | `info` | Review in progress | Проверка начата |
 | `closed` | `text-muted` | Closed | Закрыто |
 
+## Library and builder
+
+From slice 8 (pending owner review). A template's readiness ([validation](../../specs/homework.md#validation)) is the only library state:
+
+| State | Token | English | Русский |
+|---|---|---|---|
+| `ready` true | `success` | Ready | Готово |
+| `ready` false | `warning` | Incomplete | Не готово |
+
+**Library, builder and lesson material texts** (a proposal to confirm when the pages are built; titles, folder names and file names are user content and never translated):
+
+| Element | English | Русский |
+|---|---|---|
+| Page heading and tree root | Library | Библиотека |
+| Main action, and the title of a new template | New assignment | Новое задание |
+| Menu actions | Upload material / New folder | Загрузить материал / Новая папка |
+| Row actions | Open / Rename / Move / Duplicate / Delete | Открыть / Переименовать / Переместить / Дублировать / Удалить |
+| Search field | Search the library | Поиск по библиотеке |
+| Duplicate's proposed title | {title} (copy) | {title} (копия) |
+| `library.question_count` | {count, plural, one {# question} other {# questions}} | {count, plural, one {# вопрос} few {# вопроса} many {# вопросов} other {# вопроса}} |
+| Empty library | Build your first assignment | Создайте первое задание |
+| Empty folder | This folder is empty | Папка пуста |
+| No search results | Nothing found | Ничего не найдено |
+| Move result notice | Moved. | Перемещено. |
+| Name taken (`taken`) | A folder with this name already exists here. | Папка с таким названием здесь уже есть. |
+| Depth limit | Folders can be nested at most three levels deep. | Папки можно вкладывать не глубже трёх уровней. |
+| Caps (`too_many`) | The library has reached its limit. | В библиотеке больше нет места для новых элементов. |
+| Folder not empty (`not_editable`) | Only an empty folder can be deleted. | Удалить можно только пустую папку. |
+| Delete a material | Delete this material? Lessons and assignments that use it keep the file. | Удалить материал? Уроки и задания, в которых он есть, сохранят файл. |
+| Delete an assignment | Delete this assignment? Files used only in it are deleted too. | Удалить задание? Файлы, которые есть только в нём, тоже удалятся. |
+| Delete a folder | Delete this folder? | Удалить папку? |
+| Gone item | This item is no longer in your library. | Этого элемента больше нет в библиотеке. |
+| Unconfirmed tutor's upload | Confirm your email to upload files. | Подтвердите адрес почты, чтобы загружать файлы. |
+| Autosave status | Saving… / Saved / Not saved | Сохраняется… / Сохранено / Не сохранено |
+| Readiness | Ready to issue / {count, plural, one {# problem} other {# problems}} | Готово к выдаче / {count, plural, one {# недочёт} few {# недочёта} many {# недочётов} other {# недочёта}} |
+| Blank title | Enter a title | Введите название |
+| Body too large (`413`) | This assignment is too large to save | Задание слишком большое, сохранить его нельзя |
+| Template JSON budget (`too_many` on a save) | Your assignments have reached their storage limit | Задания заняли всё отведённое им место |
+| Stale save (`conflict`) | This changed elsewhere / Reload | Задание изменили в другом месте / Обновить |
+| Block menu | Add block | Добавить блок |
+| Block types | Instruction / Material / Single choice / Multiple choice / Short text / Number / Long text / File | Инструкция / Материал / Один вариант / Несколько вариантов / Короткий ответ / Число / Развёрнутый ответ / Файл |
+| Block buttons | Move up / Move down / Duplicate / Delete | Выше / Ниже / Дублировать / Удалить |
+| Preview and its frames | Preview / Phone / Computer | Предпросмотр / Телефон / Компьютер |
+| `no_blocks` | Add at least one block | Добавьте хотя бы один блок |
+| `text_missing` | Write the instruction | Напишите текст инструкции |
+| `prompt_missing` | Write the question | Напишите вопрос |
+| `too_few_options` | Add at least two options | Добавьте хотя бы два варианта |
+| `option_empty` | Write the option's text | Напишите текст варианта |
+| `correct_count` | Mark exactly one correct option | Отметьте ровно один верный вариант |
+| `no_correct_option` | Mark at least one correct option | Отметьте хотя бы один верный вариант |
+| `no_accepted_answer` | Add an accepted answer | Добавьте правильный ответ |
+| `accepted_answer_empty` | An accepted answer is empty | Один из правильных ответов пуст |
+| `value_invalid` | Enter a number with at most 6 decimal places | Введите число, не больше 6 знаков после запятой |
+| `tolerance_invalid` | Enter a tolerance of zero or more, with at most 6 decimal places | Введите погрешность от нуля, не больше 6 знаков после запятой |
+| Today's checklist step | Create an assignment | Создайте задание |
+| Lesson materials block | Materials / No materials | Материалы / Материалов нет |
+| Lesson material actions | Attach material / Detach / Download | Прикрепить материал / Открепить / Скачать |
+
 ## Relationships, requests and groups
 
 | State | Token | English | Русский |
