@@ -1,27 +1,13 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { useScheduler } from '../../app/clock.ts';
+import { downloadAddress } from '../../lib/files/downloadAddress.ts';
 import type { components } from '../../lib/api/schema.ts';
 import type { Message } from './api.ts';
 import type { ChatTexts } from './translations.ts';
 
 type Attachment = components['schemas']['MessageAttachment'];
 export function attachmentAddress(file: Attachment, origin: string): string | null {
-  try {
-    const url = new URL(file.url, origin);
-    if (
-      url.origin !== origin ||
-      url.username !== '' ||
-      url.password !== '' ||
-      url.hash !== '' ||
-      url.pathname !== `/api/v1/files/${file.id}` ||
-      url.searchParams.getAll('t').length !== 1 ||
-      [...url.searchParams.keys()].some((key) => key !== 't')
-    )
-      return null;
-    return url.href;
-  } catch {
-    return null;
-  }
+  return downloadAddress(file.id, file.url, origin);
 }
 export function useAttachmentExpiry(
   messages: readonly Message[],

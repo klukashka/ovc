@@ -131,9 +131,10 @@ interface PageSetup {
   readonly page: Shown;
   readonly bio?: string;
   readonly withStudentCard?: boolean;
+  readonly withTemplate?: boolean;
 }
 
-async function showPage({ page, bio, withStudentCard = false }: PageSetup): Promise<ShownPage> {
+async function showPage({ page, bio, withStudentCard = false, withTemplate = false }: PageSetup): Promise<ShownPage> {
   const server = new FakeAuthServer();
   const role = page === 'today' ? 'tutor' : 'student';
   const email = page === 'today' ? tutorEmail : studentEmail;
@@ -147,6 +148,9 @@ async function showPage({ page, bio, withStudentCard = false }: PageSetup): Prom
     ...(bio === undefined ? {} : { bio }),
   });
   server.addLesson(detail, [email]);
+  if (withTemplate) {
+    server.addTemplates(email, 1);
+  }
   server.addCalendarItem(email, calendarItemOf(detail, page === 'today' ? null : { name: 'Мария', colour: 'moss' }));
   const session = new Session({
     origin,
@@ -246,7 +250,12 @@ describe('a failed calendar refetch on Today', () => {
   });
 
   test('keeps a completed checklist hidden instead of showing a load failure', async () => {
-    const shown = await showPage({ page: 'today', bio: 'Преподаю английский', withStudentCard: true });
+    const shown = await showPage({
+      page: 'today',
+      bio: 'Преподаю английский',
+      withStudentCard: true,
+      withTemplate: true,
+    });
     const hiddenBefore = screen.queryByRole('heading', { name: checklistHeading });
 
     await refetchCalendarFailing(shown);
@@ -275,7 +284,7 @@ describe('a failed student list refetch on Today', () => {
     expect(checklist?.contains(notice)).toBe(true);
     expect(screen.getAllByText(refetchFailedText)).toHaveLength(1);
     expect(checklist?.querySelector('[data-step="invite"]')?.getAttribute('data-done')).toBe('true');
-    expect(checklist?.querySelectorAll('[data-step]')).toHaveLength(3);
+    expect(checklist?.querySelectorAll('[data-step]')).toHaveLength(4);
     expect(screen.queryByText(loadFailedText)).toBeNull();
   });
 });

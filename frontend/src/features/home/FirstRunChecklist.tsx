@@ -10,21 +10,24 @@ import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
 import { apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { Me } from '../../lib/api/session.ts';
+import { fetchTemplateCount, librarySummaryKey } from '../library/api.ts';
 import type { Calendar } from '../schedule/api.ts';
 import { firstStudentCardKey } from '../students/api.ts';
 
-type StepName = 'profile' | 'invite' | 'schedule';
+type StepName = 'profile' | 'invite' | 'schedule' | 'assignment';
 
 const stepText = {
   profile: 'today.checklistProfile',
   invite: 'today.checklistInvite',
   schedule: 'today.checklistSchedule',
+  assignment: 'today.checklistAssignment',
 } as const satisfies Readonly<Record<StepName, string>>;
 
 const stepAction = {
   profile: 'today.checklistProfileAction',
   invite: 'today.checklistInviteAction',
   schedule: 'today.checklistScheduleAction',
+  assignment: 'today.checklistAssignmentAction',
 } as const satisfies Readonly<Record<StepName, string>>;
 
 interface Step {
@@ -53,6 +56,15 @@ function useHasStudentCard(me: Me): UseQueryResult<boolean> {
   });
 }
 
+function useHasTemplate(): UseQueryResult<boolean> {
+  const client = useApiClient();
+  return useQuery({
+    queryKey: librarySummaryKey,
+    queryFn: async ({ signal }) => (await fetchTemplateCount(client, signal)) > 0,
+    retry: false,
+  });
+}
+
 function profileDone(me: Me): boolean {
   return (me.bio ?? '').trim() !== '' || (me.subjects ?? []).length > 0;
 }
@@ -69,6 +81,7 @@ export function FirstRunChecklist({
   const listRef = useRef<HTMLOListElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const cards = useHasStudentCard(me);
+  const templates = useHasTemplate();
   const confirmed = me.state === 'active';
   const steps: readonly Step[] = [
     { name: 'profile', done: profileDone(me), address: '/settings/profile', confirmation: null },
@@ -84,10 +97,14 @@ export function FirstRunChecklist({
       address: '/schedule',
       confirmation: confirmed ? null : 'schedule',
     },
+    { name: 'assignment', done: templates.data === true, address: '/homework/library', confirmation: null },
   ];
-  const failed = confirmed ? [cards, lessons].find((query) => query.isError && query.data === undefined) : undefined;
-  const cardsRefetchFailed = confirmed && cards.isError && cards.data !== undefined;
-  const pending = confirmed && (cards.isPending || lessons.isPending);
+  const watched = confirmed ? [cards, lessons, templates] : [templates];
+  const failed = watched.find((query) => query.isError && query.data === undefined);
+  const refetchFailed = (confirmed ? [cards, templates] : [templates]).find(
+    (query) => query.isError && query.data !== undefined,
+  );
+  const pending = templates.isPending || (confirmed && (cards.isPending || lessons.isPending));
   const shown = !pending && (failed !== undefined || !steps.every((step) => step.done));
   useFocusAfterRemovedRow(
     listRef,
@@ -111,11 +128,11 @@ export function FirstRunChecklist({
           }}
         />
       )}
-      {failed === undefined && cardsRefetchFailed ? (
+      {failed === undefined && refetchFailed !== undefined ? (
         <RefetchFailed
-          error={asApiError(cards.error)}
+          error={asApiError(refetchFailed.error)}
           onRetry={() => {
-            void cards.refetch();
+            void refetchFailed.refetch();
           }}
         />
       ) : null}

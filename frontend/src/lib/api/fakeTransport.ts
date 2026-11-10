@@ -205,7 +205,8 @@ function fakeAudienceRefusal(method: string, path: string, caller: Me): Response
     path === '/api/v1/students' ||
     path.startsWith(cardPathPrefix) ||
     path === joinRequestsPath ||
-    path.startsWith('/api/v1/groups');
+    path.startsWith('/api/v1/groups') ||
+    path.startsWith('/api/v1/library');
   if ((tutorOnly && caller.role !== 'tutor') || (path === '/api/v1/tutors' && caller.role !== 'student')) {
     return refusal(404, 'not_found');
   }
@@ -214,6 +215,7 @@ function fakeAudienceRefusal(method: string, path: string, caller: Me): Response
     path === '/api/v1/auth/logout' ||
     path === emailPreferencesPath ||
     (method === 'GET' && (path === notificationsPath || path === calendarPath || path === '/api/v1/tutors')) ||
+    path.startsWith('/api/v1/library') ||
     (method === 'GET' &&
       (path === '/api/v1/channels' ||
         path === '/api/v1/channels/unread' ||
@@ -412,6 +414,9 @@ export class FakeAuthServer {
   }
   readonly chat = new FakeChatServer();
   private readonly tutors = new Map<string, components['schemas']['MyTutor'][]>();
+  private readonly templateCounts = new Map<string, number>();
+  private readonly libraryUploadRefusals: Response[] = [];
+  private libraryUploads = 0;
   private readonly accounts = new Map<string, FakeAccount>();
   private readonly sessions = new Map<number, FakeSession>();
   private readonly tokens = new Map<string, FakeAccessToken>();
@@ -645,6 +650,28 @@ export class FakeAuthServer {
     this.failingStudentListReads += 1;
   }
 
+  addTemplates(email: string, count: number): void {
+    const accountId = this.account(email).me.id;
+    this.templateCounts.set(accountId, (this.templateCounts.get(accountId) ?? 0) + count);
+  }
+
+  refuseNextLibraryUpload(status: number, code: string): void {
+    this.libraryUploadRefusals.push(refusal(status, code));
+  }
+
+  refuseNextLibraryUploadAsTooLarge(fieldCode: string): void {
+    this.libraryUploadRefusals.push(
+      json(413, {
+        error: {
+          code: 'payload_too_large',
+          message: 'payload_too_large',
+          request_id: 'fake-request',
+          fields: [{ path: 'body.file', code: fieldCode }],
+        },
+      }),
+    );
+  }
+
   addNotification(email: string, notification: Notification): void {
     const accountId = this.account(email).me.id;
     const newestFirst = [...(this.notifications.get(accountId) ?? []), notification].sort(
@@ -873,6 +900,24 @@ export class FakeAuthServer {
       if (audienceRefusal !== null) {
         return audienceRefusal;
       }
+    }
+    if (
+      path === '/api/v1/uploads' &&
+      request.method === 'POST' &&
+      address.searchParams.get('context') === 'library' &&
+      caller !== undefined
+    ) {
+      return this.uploadToLibrary(request, caller, upload);
+    }
+    if (request.method === 'GET' && path === '/api/v1/library' && caller !== undefined) {
+      return json(200, {
+        folder: null,
+        path: [],
+        folders: [],
+        items: [],
+        next_cursor: null,
+        template_count: this.templateCounts.get(caller.id) ?? 0,
+      });
     }
     if (path === '/api/v1/uploads' && request.method === 'POST' && caller !== undefined) {
       request.signal.throwIfAborted();
@@ -1126,6 +1171,33 @@ export class FakeAuthServer {
       .filter((item) => Date.parse(item.ends_at) > from && Date.parse(item.starts_at) < to)
       .sort((left, right) => Date.parse(left.starts_at) - Date.parse(right.starts_at));
     return json(200, { items, truncated: false });
+  }
+
+  private async uploadToLibrary(request: Request, caller: Me, upload: UploadTransfer | undefined): Promise<Response> {
+    request.signal.throwIfAborted();
+    if (caller.role !== 'tutor') {
+      return refusal(404, 'not_found');
+    }
+    if (caller.state !== 'active') {
+      return refusal(403, 'email_not_verified');
+    }
+    const body = upload?.body ?? (await request.formData());
+    const file = body.get('file');
+    if (file === null || typeof file === 'string') {
+      return fieldRefusal('body.file', 'required');
+    }
+    const refused = this.libraryUploadRefusals.shift();
+    if (refused !== undefined) {
+      return refused;
+    }
+    upload?.progress(file.size, file.size);
+    this.libraryUploads += 1;
+    return json(201, {
+      id: `00000000-0000-4000-9000-${String(this.libraryUploads).padStart(12, '0')}`,
+      filename: file.name,
+      media_type: file.type,
+      size_bytes: file.size,
+    });
   }
 
   private readTutorSettings(accountId: string): Response {

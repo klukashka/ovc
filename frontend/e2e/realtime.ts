@@ -450,6 +450,7 @@ export const todayQueryPaths: readonly string[] = [
   '/api/v1/calendar',
   '/api/v1/students',
   '/api/v1/channels',
+  '/api/v1/library',
 ];
 
 export const unverifiedTutorTodayQueryPaths: readonly string[] = [
@@ -457,6 +458,7 @@ export const unverifiedTutorTodayQueryPaths: readonly string[] = [
   '/api/v1/tutor/code',
   '/api/v1/calendar',
   '/api/v1/channels',
+  '/api/v1/library',
 ];
 
 export async function expectSettledAfterTheSocketIsReady(page: Page, traffic: TrafficAfterReady): Promise<void> {

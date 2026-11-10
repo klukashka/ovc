@@ -84,6 +84,15 @@ async function tutorWithLessonToday(
   return { tutor, student, cardId };
 }
 
+async function createAssignment(deployment: Deployment, account: TestAccount): Promise<void> {
+  const answer = await callApi(deployment, await accessToken(deployment, account), 'POST', '/library/templates', {
+    title: 'First quiz',
+    folder_id: null,
+    blocks: [],
+  });
+  expect(answer.status).toBe(201);
+}
+
 async function openToday(page: Page, now: number): Promise<void> {
   await page.clock.install({ time: now });
   await page.goto('/today');
@@ -129,18 +138,19 @@ test.describe('Today', () => {
     await expect(page.getByRole('main')).not.toContainText('Tomorrow lesson');
   });
 
-  test('a new tutor sees the three undone checklist steps', async ({ page, deployment }) => {
+  test('a new tutor sees the four undone checklist steps', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'New tutor', 'en');
     await signInThroughTheApi(page, tutor);
 
     await page.goto('/today');
 
     const steps = checklist(page).getByRole('listitem');
-    await expect(steps).toHaveCount(3);
+    await expect(steps).toHaveCount(4);
     await expect(steps).toHaveText([
       /Fill in your profile.*not done/,
       /Invite a student.*not done/,
       /Schedule a lesson.*not done/,
+      /Create an assignment.*not done/,
     ]);
     await expect(checklist(page).getByRole('link', { name: 'Open your profile' })).toHaveAttribute(
       'href',
@@ -148,7 +158,11 @@ test.describe('Today', () => {
     );
   });
 
-  test('a tutor with a bio, a student and a lesson sees no checklist', async ({ page, deployment, control }) => {
+  test('a tutor with a bio, a student, a lesson and an assignment sees no checklist', async ({
+    page,
+    deployment,
+    control,
+  }) => {
     const now = await control.now();
     const { tutor } = await tutorWithLessonToday(deployment, now, {
       tutor: 'Busy tutor',
@@ -156,6 +170,7 @@ test.describe('Today', () => {
       title: 'Lesson',
     });
     await setBio(deployment, tutor);
+    await createAssignment(deployment, tutor);
     await signInThroughTheApi(page, tutor);
     const ready = trafficAfterReady(page, todayQueryPaths);
     await ready.initialize();
@@ -242,6 +257,7 @@ test.describe('Today', () => {
     await signInThroughTheApi(page, tutor);
     const requested: string[] = [];
     const studentQueries: string[] = [];
+    const libraryQueries: string[] = [];
     page.on('request', (request) => {
       const url = new URL(request.url());
       if (
@@ -253,6 +269,9 @@ test.describe('Today', () => {
       }
       if (url.pathname === '/api/v1/students') {
         studentQueries.push(url.search);
+      }
+      if (url.pathname === '/api/v1/library') {
+        libraryQueries.push(url.search);
       }
     });
     const ready = trafficAfterReady(page, todayQueryPaths);
@@ -271,6 +290,7 @@ test.describe('Today', () => {
         '/api/v1/channels',
         '/api/v1/channels/unread',
         '/api/v1/join-requests',
+        '/api/v1/library',
         '/api/v1/notifications',
         '/api/v1/students',
         '/api/v1/tutor/code',
@@ -279,6 +299,7 @@ test.describe('Today', () => {
     );
     expect(Math.max(...Object.values(counts))).toBeLessThanOrEqual(2);
     expect(new Set(studentQueries)).toEqual(new Set(['?limit=1']));
+    expect(new Set(libraryQueries)).toEqual(new Set(['?limit=1']));
   });
 
   test('a lesson title, group name, student name and channel label with markup show as text on Today', async ({
@@ -430,6 +451,7 @@ test.describe('Today', () => {
     const tutor = await seedVerifiedUser(deployment, 'Tutor', 'en');
     await setTimezone(deployment, tutor, when.zone);
     await setBio(deployment, tutor);
+    await createAssignment(deployment, tutor);
     const student = await seedActiveStudent(deployment, tutor, 'Anna Student', 'en');
     await signInThroughTheApi(page, tutor);
     await openToday(page, now);
