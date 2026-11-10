@@ -131,7 +131,9 @@ type Service struct {
 	avatarReads    chan struct{}
 	downloads      chan struct{}
 	hourly         *hourlyUploads
+	libraryHourly  *hourlyUploads
 	tokens         downloadTokens
+	references     []referenceAuthorization
 	recoveryMutex  sync.Mutex
 	recoveryCursor domain.AttachmentID
 }
@@ -145,7 +147,7 @@ func New(dependencies Dependencies) *Service {
 	return &Service{
 		deps: dependencies, gate: newGate(), decodes: newDecodeBudget(decodeBudgetBytes),
 		avatarReads: make(chan struct{}, avatarReadSlots), downloads: make(chan struct{}, downloadSlots),
-		hourly: newHourlyUploads(domain.ChatUploadsPerHour), tokens: downloadTokens{keys: dependencies.Keys},
+		hourly: newHourlyUploads(domain.ChatUploadsPerHour), libraryHourly: newHourlyUploads(domain.LibraryUploadsPerHour), tokens: downloadTokens{keys: dependencies.Keys},
 	}
 }
 
@@ -164,7 +166,7 @@ func (s *Service) UploadAvatar(ctx context.Context, principal accounts.Principal
 	uploader := principal.UserID
 	release, err := s.gate.enter(uploader)
 	if err != nil {
-		s.rejected(ctx, uploader, "busy")
+		s.rejected(ctx, uploader, domain.ContextAvatar, "busy")
 		return Upload{}, err
 	}
 	defer release()
@@ -181,12 +183,12 @@ func (s *Service) UploadAvatar(ctx context.Context, principal accounts.Principal
 		return Upload{}, err
 	}
 	if len(data) > domain.AvatarMaxBytes {
-		s.rejected(ctx, uploader, "too_large")
+		s.rejected(ctx, uploader, domain.ContextAvatar, "too_large")
 		return Upload{}, ErrTooLarge
 	}
 	encoded, mediaType, storedName, err := s.reencode(ctx, uploader, data, filename)
 	if reason, rejected := rejectionReason(err); rejected {
-		s.rejected(ctx, uploader, reason)
+		s.rejected(ctx, uploader, domain.ContextAvatar, reason)
 		return Upload{}, err
 	}
 	if err != nil {
@@ -195,7 +197,7 @@ func (s *Service) UploadAvatar(ctx context.Context, principal accounts.Principal
 	}
 	upload, err := s.store(ctx, principal, encoded, mediaType, storedName, now)
 	if errors.Is(err, ErrBusy) {
-		s.rejected(ctx, uploader, "pending")
+		s.rejected(ctx, uploader, domain.ContextAvatar, "pending")
 		return Upload{}, err
 	}
 	if err != nil {
@@ -213,7 +215,7 @@ func (s *Service) admit(ctx context.Context, uploader domain.UserID, now time.Ti
 		return err
 	}
 	if pending >= pendingAvatarsPerUser {
-		s.rejected(ctx, uploader, "pending")
+		s.rejected(ctx, uploader, domain.ContextAvatar, "pending")
 		return ErrBusy
 	}
 	window, retryAfter := domain.FixedWindow(now, uploadWindow)
@@ -224,7 +226,7 @@ func (s *Service) admit(ctx context.Context, uploader domain.UserID, now time.Ti
 		return err
 	}
 	if count > uploadsPerWindow {
-		s.rejected(ctx, uploader, "hourly")
+		s.rejected(ctx, uploader, domain.ContextAvatar, "hourly")
 		return &ThrottledError{RetryAfter: retryAfter}
 	}
 	return nil
@@ -399,7 +401,7 @@ func (s *Service) settle(ctx context.Context, principal accounts.Principal, id d
 	case purged:
 		return ErrPurgedDuringUpload
 	case refused != nil && stored:
-		s.rejected(ctx, principal.UserID, "session_revoked")
+		s.rejected(ctx, principal.UserID, domain.ContextAvatar, "session_revoked")
 		return refused
 	}
 	return nil
@@ -573,6 +575,8 @@ func (s *Service) PurgeUploadsOf(ctx context.Context, repos repositories.Reposit
 	return err
 }
 
+var deletableKeyPrefixes = []string{domain.AvatarKeyPrefix, domain.ChatKeyPrefix, domain.LibraryKeyPrefix, domain.PromptImageKeyPrefix}
+
 func (s *Service) DeleteObject(ctx context.Context, row repositories.ClaimedOutboxRow, now time.Time) (domain.OutboxDoneReason, error) {
 	var payload domain.AttachmentPayload
 	decoder := json.NewDecoder(bytes.NewReader(row.Payload))
@@ -581,7 +585,7 @@ func (s *Service) DeleteObject(ctx context.Context, row repositories.ClaimedOutb
 		return "", domain.PermanentEffect(fmt.Errorf("%w: %w", errMalformedPayload, err))
 	}
 	id, ok := domain.ParseUUID[domain.AttachmentID](payload.Attachment)
-	if !ok || (!strings.HasPrefix(payload.Key, domain.AvatarKeyPrefix) && !strings.HasPrefix(payload.Key, domain.ChatKeyPrefix)) {
+	if !ok || !slices.ContainsFunc(deletableKeyPrefixes, func(prefix string) bool { return strings.HasPrefix(payload.Key, prefix) }) {
 		return "", domain.PermanentEffect(errMalformedPayload)
 	}
 	if payload.Generation != nil || payload.Attempt != nil {
@@ -621,7 +625,7 @@ func (s *Service) DeleteObject(ctx context.Context, row repositories.ClaimedOutb
 func (s *Service) ExpirePending(ctx context.Context, now time.Time) (int64, error) {
 	var expired int64
 	sweeps := []func(context.Context, repositories.Repositories, time.Time) (int, error){
-		s.expireBatch, s.expireAgedUploadingBatch, s.expireUnbindableBatch,
+		s.expireBatch, s.expireAgedUploadingBatch, s.expireUnbindableBatch, s.expireUnbindableLibraryBatch,
 	}
 	for _, sweep := range sweeps {
 		for range expireRounds {
@@ -653,6 +657,14 @@ func (s *Service) expireBatch(ctx context.Context, repos repositories.Repositori
 
 func (s *Service) expireUnbindableBatch(ctx context.Context, repos repositories.Repositories, now time.Time) (int, error) {
 	ids, err := repos.Attachments.ClaimUnbindableChat(ctx, expireBatch)
+	if err != nil {
+		return 0, err
+	}
+	return len(ids), s.discardAll(ctx, repos, ids, now)
+}
+
+func (s *Service) expireUnbindableLibraryBatch(ctx context.Context, repos repositories.Repositories, now time.Time) (int, error) {
+	ids, err := repos.Attachments.ClaimUnbindableLibrary(ctx, expireBatch)
 	if err != nil {
 		return 0, err
 	}
@@ -691,8 +703,8 @@ func (s *Service) discardAll(ctx context.Context, repos repositories.Repositorie
 	return nil
 }
 
-func (s *Service) rejected(ctx context.Context, uploader domain.UserID, reason string) {
-	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.rejected", userAttribute(uploader), slog.String("reason", reason))
+func (s *Service) rejected(ctx context.Context, uploader domain.UserID, uploaded domain.AttachmentContext, reason string) {
+	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.rejected", userAttribute(uploader), slog.String("context", string(uploaded)), slog.String("reason", reason))
 }
 
 func userAttribute(user domain.UserID) slog.Attr {

@@ -18,6 +18,13 @@ const (
 	UploadUncertain  UploadPhase = "uncertain"
 )
 
+type UploadCapacityClass string
+
+const (
+	UploadCapacityChat    UploadCapacityClass = "chat"
+	UploadCapacityLibrary UploadCapacityClass = "library"
+)
+
 type UploadCleanupGeneration int16
 
 const (
@@ -39,6 +46,7 @@ const (
 	UploadRecoveryBudget                  = 30 * time.Second
 	UploadRecoveryCandidateBudget         = time.Second
 	UploadIntentCapacity                  = 4096
+	LibraryUploadIntentCapacity           = 1024
 	JobUploadsRecover             JobName = "uploads.recover"
 )
 

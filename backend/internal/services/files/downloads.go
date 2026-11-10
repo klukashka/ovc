@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -24,6 +25,7 @@ const (
 
 var (
 	ErrInvalidDisposition = errors.New("the disposition is not one the attachment accepts")
+	ErrInvalidReference   = errors.New("the referencing item is not a known kind and identifier")
 	ErrDownloadsBusy      = errors.New("the instance is serving as many downloads as it allows at once")
 )
 
@@ -32,18 +34,24 @@ type DownloadAddress struct {
 	ExpiresAt time.Time
 }
 
-type DispositionRequest struct {
-	Values []string
+type AddressRequest struct {
+	Dispositions []string
+	References   []string
 }
 
-func (r DispositionRequest) parse() (domain.Disposition, bool) {
+func (r AddressRequest) disposition(width *int32) (domain.Disposition, bool) {
+	disposition, valid := r.parseDisposition()
+	return disposition, valid && (disposition != domain.DispositionInline || width != nil)
+}
+
+func (r AddressRequest) parseDisposition() (domain.Disposition, bool) {
 	switch {
-	case len(r.Values) == 0:
+	case len(r.Dispositions) == 0:
 		return domain.DispositionAttachment, true
-	case len(r.Values) > 1:
+	case len(r.Dispositions) > 1:
 		return "", false
 	}
-	switch domain.Disposition(r.Values[0]) {
+	switch domain.Disposition(r.Dispositions[0]) {
 	case domain.DispositionAttachment:
 		return domain.DispositionAttachment, true
 	case domain.DispositionInline:
@@ -52,16 +60,39 @@ func (r DispositionRequest) parse() (domain.Disposition, bool) {
 	return "", false
 }
 
-func (s *Service) DownloadAddress(ctx context.Context, viewer domain.UserID, id domain.AttachmentID, request DispositionRequest) (DownloadAddress, error) {
+type visibleReference struct {
+	reference DownloadReference
+	width     *int32
+}
+
+type referenceAuthorization interface {
+	kind() domain.ReferenceKind
+	visible(ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID) ([]visibleReference, error)
+	servable(ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID) (repositories.ServableFile, error)
+}
+
+func (s *Service) authorizationOf(kind domain.ReferenceKind) (referenceAuthorization, bool) {
+	for _, authorization := range s.references {
+		if authorization.kind() == kind {
+			return authorization, true
+		}
+	}
+	return nil, false
+}
+
+func (s *Service) DownloadAddress(ctx context.Context, viewer domain.UserID, id domain.AttachmentID, request AddressRequest) (DownloadAddress, error) {
 	file, err := s.deps.Store.Repositories().Attachments.DownloadableChat(ctx, viewer, id)
 	if errors.Is(err, repositories.ErrNotFound) {
-		return DownloadAddress{}, ErrNotFound
+		return s.referencedAddress(ctx, viewer, id, request)
 	}
 	if err != nil {
 		return DownloadAddress{}, err
 	}
-	disposition, valid := request.parse()
-	if !valid || (disposition == domain.DispositionInline && file.Width == nil) {
+	if len(request.References) > 0 {
+		return DownloadAddress{}, ErrNotFound
+	}
+	disposition, valid := request.disposition(file.Width)
+	if !valid {
 		return DownloadAddress{}, ErrInvalidDisposition
 	}
 	now, err := s.deps.Clock.Instant(ctx)
@@ -71,10 +102,56 @@ func (s *Service) DownloadAddress(ctx context.Context, viewer domain.UserID, id 
 	return s.MintAddress(id, file.MessageID, disposition, now), nil
 }
 
+func (s *Service) referencedAddress(ctx context.Context, viewer domain.UserID, id domain.AttachmentID, request AddressRequest) (DownloadAddress, error) {
+	repos := s.deps.Store.Repositories()
+	var visible []visibleReference
+	for _, authorization := range s.references {
+		found, err := authorization.visible(ctx, repos, viewer, id)
+		if err != nil {
+			return DownloadAddress{}, err
+		}
+		visible = append(visible, found...)
+	}
+	if len(visible) == 0 || len(request.References) == 0 {
+		return DownloadAddress{}, ErrNotFound
+	}
+	reference, valid := parseReference(request.References)
+	if !valid {
+		return DownloadAddress{}, ErrInvalidReference
+	}
+	index := slices.IndexFunc(visible, func(candidate visibleReference) bool { return candidate.reference == reference })
+	if index < 0 {
+		return DownloadAddress{}, ErrNotFound
+	}
+	disposition, valid := request.disposition(visible[index].width)
+	if !valid {
+		return DownloadAddress{}, ErrInvalidDisposition
+	}
+	now, err := s.deps.Clock.Instant(ctx)
+	if err != nil {
+		return DownloadAddress{}, err
+	}
+	return s.ReferenceAddress(id, reference, disposition, now)
+}
+
 func (s *Service) MintAddress(id domain.AttachmentID, message domain.EntityID, disposition domain.Disposition, now time.Time) DownloadAddress {
+	address, err := s.ReferenceAddress(id, DownloadReference{Kind: domain.ReferenceMessage, Item: message}, disposition, now)
+	if err != nil {
+		panic("a message download token could not be minted")
+	}
+	return address
+}
+
+func (s *Service) ReferenceAddress(id domain.AttachmentID, reference DownloadReference, disposition domain.Disposition, now time.Time) (DownloadAddress, error) {
+	if reference.Kind != domain.ReferenceMessage && !slices.Contains(addressableKinds, reference.Kind) {
+		return DownloadAddress{}, errUnmintableReference
+	}
 	expires := downloadExpiry(now)
-	token := s.tokens.mint(downloadClaims{Attachment: id, Message: message, ExpiresAt: expires, Disposition: disposition})
-	return DownloadAddress{URL: downloadRoute + id.String() + downloadQuery + token, ExpiresAt: expires}
+	token, err := s.tokens.mint(downloadClaims{Attachment: id, Reference: reference, ExpiresAt: expires, Disposition: disposition})
+	if err != nil {
+		return DownloadAddress{}, err
+	}
+	return DownloadAddress{URL: downloadRoute + id.String() + downloadQuery + token, ExpiresAt: expires}, nil
 }
 
 func (s *Service) ChatAddress(id domain.AttachmentID, message domain.MessageID, disposition domain.Disposition, now time.Time) (string, time.Time) {
@@ -100,6 +177,9 @@ func (s *Service) Download(ctx context.Context, id domain.AttachmentID, token st
 		return Download{}, s.refusedDownload(ctx, id, domain.RefusedExpired)
 	}
 	if err != nil || claims.Attachment != id {
+		return Download{}, s.refusedDownload(ctx, id, domain.RefusedToken)
+	}
+	if _, authorized := s.authorizationOf(claims.Reference.Kind); claims.Reference.Kind != domain.ReferenceMessage && !authorized {
 		return Download{}, s.refusedDownload(ctx, id, domain.RefusedToken)
 	}
 	opening, cancelCause := context.WithCancelCause(ctx)
@@ -187,7 +267,7 @@ func (b *timedDownloadBody) Close() error {
 }
 
 func (s *Service) openDownload(ctx context.Context, id domain.AttachmentID, claims downloadClaims, cancel context.CancelFunc) (Download, error) {
-	file, err := s.deps.Store.Repositories().Attachments.ServableChat(ctx, id, claims.Message)
+	file, err := s.servableFile(ctx, id, claims.Reference)
 	if errors.Is(err, repositories.ErrNotFound) {
 		return Download{}, s.refusedDownload(ctx, id, domain.RefusedUnreferenced)
 	}
@@ -225,6 +305,18 @@ func (s *Service) openDownload(ctx context.Context, id domain.AttachmentID, clai
 		MediaType: mediaType, SizeBytes: file.SizeBytes, ContentDisposition: ContentDisposition(claims.Disposition, file.Filename),
 		Body: &objectBody{Reader: io.LimitReader(body, file.SizeBytes), object: body, release: release},
 	}, nil
+}
+
+func (s *Service) servableFile(ctx context.Context, id domain.AttachmentID, reference DownloadReference) (repositories.ServableFile, error) {
+	repos := s.deps.Store.Repositories()
+	if reference.Kind == domain.ReferenceMessage {
+		return repos.Attachments.ServableChat(ctx, id, reference.Item)
+	}
+	authorization, authorized := s.authorizationOf(reference.Kind)
+	if !authorized {
+		return repositories.ServableFile{}, repositories.ErrNotFound
+	}
+	return authorization.servable(ctx, repos, id, reference.Item)
 }
 
 func (s *Service) refusedDownload(ctx context.Context, id domain.AttachmentID, reason domain.DownloadRefusal) error {

@@ -25,7 +25,7 @@ import (
 const (
 	avatarBodyBytes     = domain.AvatarMaxBytes + domain.UploadOverheadBytes
 	avatarReadDeadline  = 60 * time.Second
-	uploadBodyBytes     = domain.ChatMaxBytes + domain.UploadOverheadBytes
+	uploadBodyBytes     = domain.LibraryMaxBytes + domain.UploadOverheadBytes
 	uploadReadDeadline  = domain.UploadDeadlineCeiling
 	uploadWriteDeadline = 65 * time.Second
 	avatarCacheControl  = "private, max-age=86400"
@@ -53,7 +53,7 @@ type deleteAccountInput struct {
 }
 
 type uploadInput struct {
-	Context string `query:"context" enum:"avatar,chat" required:"true"`
+	Context string `query:"context" enum:"avatar,chat,library,prompt_image" required:"true"`
 	Scope   string `query:"scope" maxLength:"100"`
 }
 
@@ -123,22 +123,20 @@ func (r *router) keepRawRequest(ctx huma.Context, next func(huma.Context)) {
 	controller := http.NewResponseController(writer)
 	now := r.now()
 	readDeadline, writeDeadline, bodyBytes := avatarReadDeadline, uploadWriteDeadline, int64(avatarBodyBytes)
-	if domain.AttachmentContext(ctx.Query("context")) == domain.ContextChat {
+	uploaded := domain.AttachmentContext(ctx.Query("context"))
+	if limit, streamed := streamedUploadLimit(uploaded); streamed {
 		principal := principalFrom(ctx.Context())
-		if principal.State != domain.AccountActive {
+		if refusal, refused := earlyUploadRefusal(uploaded, principal, request.ContentLength, limit); refused {
+			if refusal == domain.ErrorPayloadTooLarge {
+				r.files.RecordRejection(ctx.Context(), principal.UserID, uploaded, domain.RejectedTooLarge)
+			}
 			ctx.SetHeader("Connection", "close")
-			r.writeError(ctx, domain.ErrorEmailNotVerified)
+			r.writeError(ctx, refusal)
 			return
 		}
-		if request.ContentLength > uploadBodyBytes {
-			r.files.RecordRejection(ctx.Context(), principal.UserID, domain.RejectedTooLarge)
-			ctx.SetHeader("Connection", "close")
-			r.writeError(ctx, domain.ErrorPayloadTooLarge)
-			return
-		}
-		readDeadline = r.uploads.deadline(domain.ChatMaxBytes)
+		readDeadline = r.uploads.deadline(limit)
 		writeDeadline = readDeadline + chatWriteDeadline
-		bodyBytes = uploadBodyBytes
+		bodyBytes = limit + domain.UploadOverheadBytes
 	}
 	if err := controller.SetReadDeadline(now.Add(readDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
 		r.logger.LogAttrs(ctx.Context(), slog.LevelWarn, "http.deadline.failed", slog.String("kind", "read"))
@@ -192,8 +190,12 @@ func (r *router) upload(ctx context.Context, input *uploadInput) (*uploadOutput,
 	if !found {
 		panic("an upload ran without its raw request")
 	}
-	if domain.AttachmentContext(input.Context) == domain.ContextChat {
+	switch uploaded := domain.AttachmentContext(input.Context); uploaded {
+	case domain.ContextChat:
 		return r.uploadChat(ctx, input, request)
+	case domain.ContextLibrary, domain.ContextPromptImage:
+		return r.uploadLibrary(ctx, uploaded, request)
+	case domain.ContextAvatar, domain.ContextAnswer, domain.ContextCorrected:
 	}
 	mediaType, parameters, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
 	if err != nil || mediaType != "multipart/form-data" || parameters["boundary"] == "" {

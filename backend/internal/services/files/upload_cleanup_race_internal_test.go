@@ -43,7 +43,7 @@ func TestUploadCleanupRechecksLateCreateDuringDelete(t *testing.T) {
 	})
 	opened := openUpload{id: domain.AttachmentID{9}, key: "chat/late-multipart", created: h.now}
 	if err := h.service.deps.Store.WithTx(context.Background(), func(repos repositories.Repositories) error {
-		return repos.UploadIntents.Create(context.Background(), opened.id, opened.key, h.now)
+		return repos.UploadIntents.Create(context.Background(), opened.id, opened.key, domain.UploadCapacityChat, h.now)
 	}); err != nil {
 		t.Fatal(err)
 	}

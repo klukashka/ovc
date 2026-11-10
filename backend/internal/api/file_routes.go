@@ -22,7 +22,9 @@ const (
 	filePolicy         = "default-src 'none'; sandbox; frame-ancestors 'none'"
 	fileCacheControl   = "private, no-store"
 	fieldDisposition   = "query.disposition"
+	fieldReference     = "query.ref"
 	dispositionParam   = "disposition"
+	referenceParam     = "ref"
 	fileEventsPrefix   = "files.get"
 	avatarEventsPrefix = "avatars.get"
 )
@@ -31,6 +33,7 @@ type queryKey struct{}
 
 type attachmentInput struct {
 	ID          string `path:"id"`
+	Reference   string `query:"ref"`
 	Disposition string `query:"disposition"`
 }
 
@@ -83,10 +86,14 @@ func (r *router) attachmentAddress(ctx context.Context, input *attachmentInput) 
 	if !found {
 		panic("an attachment address ran without its query")
 	}
-	address, err := r.files.DownloadAddress(ctx, principalFrom(ctx).UserID, id, files.DispositionRequest{Values: query[dispositionParam]})
+	address, err := r.files.DownloadAddress(ctx, principalFrom(ctx).UserID, id, files.AddressRequest{
+		Dispositions: query[dispositionParam], References: query[referenceParam],
+	})
 	switch {
 	case errors.Is(err, files.ErrNotFound):
 		return nil, NewError(ctx, domain.ErrorNotFound)
+	case errors.Is(err, files.ErrInvalidReference):
+		return nil, fieldError(ctx, fieldReference, domain.FieldInvalid)
 	case errors.Is(err, files.ErrInvalidDisposition):
 		return nil, fieldError(ctx, fieldDisposition, domain.FieldInvalid)
 	case err != nil:

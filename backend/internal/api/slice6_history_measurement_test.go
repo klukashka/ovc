@@ -59,7 +59,7 @@ func measurementResources(t *testing.T, h *authHarness, phase string) {
 	var memory runtime.MemStats
 	runtime.ReadMemStats(&memory)
 	var intentRows, capacity, receipts int64
-	if err := h.database.Pool.QueryRow(t.Context(), "SELECT (SELECT count(*) FROM upload_intents), (SELECT used FROM upload_intent_capacity), (SELECT count(*) FROM upload_cleanup_receipts)").Scan(&intentRows, &capacity, &receipts); err != nil {
+	if err := h.database.Pool.QueryRow(t.Context(), "SELECT (SELECT count(*) FROM upload_intents), (SELECT used FROM upload_intent_capacity WHERE capacity_class = 'chat'), (SELECT count(*) FROM upload_cleanup_receipts)").Scan(&intentRows, &capacity, &receipts); err != nil {
 		t.Fatal("measurement upload intent schema unavailable; integrate the final upload implementation first")
 	}
 	t.Logf("event=measurement.mode smoke=%t", *slice6Smoke)

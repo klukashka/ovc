@@ -21,7 +21,7 @@ Behavior for FR-14 and every upload in OVC. Storage is S3-compatible object stor
   - video: MP4;
   - plain text.
 - **Type detection** reads the content, not the client's claim, with the standard library only (no sniffing dependency):
-  - ordinary kinds by magic bytes from the first part: JPEG, PNG, WebP, GIF, PDF; MP3 by an ID3 tag or, without one, at least three consecutive valid MPEG audio frame headers; M4A by its `ftyp` brand; OGG by a Vorbis or Opus first page; WAV; and, for the `library` context only, MP4 video by the [MP4 rule](#mp4-video) (slice 8);
+  - ordinary kinds by magic bytes from the first part: JPEG, PNG, WebP, GIF, PDF; MP3 by an ID3 tag or, without one, at least three consecutive valid MPEG audio frame headers; M4A by its `ftyp` brand (a major or compatible brand in chat; in the `library` context the major brand alone, by the [MP4 rule](#mp4-video)); OGG by a Vorbis or Opus first page; WAV; and, for the `library` context only, MP4 video by the [MP4 rule](#mp4-video) (slice 8);
   - plain text as valid UTF-8 without NUL or control characters other than tab, line feed and carriage return, checked over the whole stream, served as `text/plain; charset=utf-8`;
   - office documents by [inspecting the container](#office-containers); a generic ZIP is refused.
 

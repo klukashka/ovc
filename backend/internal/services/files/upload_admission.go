@@ -29,17 +29,26 @@ func (s *Service) BeginChatUpload(ctx context.Context, principal accounts.Princi
 	return s.beginUpload(ctx, s.chatTarget(channel), principal, declared)
 }
 
+func (s *Service) BeginLibraryUpload(ctx context.Context, principal accounts.Principal, uploaded domain.AttachmentContext, declared int64) (*UploadAdmission, error) {
+	target, err := s.libraryTarget(uploaded)
+	if err != nil {
+		return nil, err
+	}
+	return s.beginUpload(ctx, target, principal, declared)
+}
+
 func (s *Service) beginUpload(ctx context.Context, target uploadTarget, principal accounts.Principal, declared int64) (*UploadAdmission, error) {
 	release, err := s.gate.enter(principal.UserID)
 	if err != nil {
-		s.rejectedFor(ctx, principal.UserID, domain.RejectedBusy)
+		s.rejectedFor(ctx, principal.UserID, target.policy.context, domain.RejectedBusy)
 		return nil, err
 	}
 	opened, err := s.startUpload(ctx, target, principal, declared, "upload")
 	if err != nil {
 		release()
 		if errors.Is(err, repositories.ErrUploadCapacity) {
-			s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "upload.capacity.rejected")
+			s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "upload.capacity.rejected", userAttribute(principal.UserID),
+				slog.String("context", string(target.policy.context)), slog.String("capacity_class", string(target.policy.class)))
 		}
 		return nil, err
 	}
@@ -54,7 +63,7 @@ func (a *UploadAdmission) Close(ctx context.Context) {
 			defer cancel()
 			if !a.createAttempted {
 				if err := a.abandon(settling); err != nil {
-					a.service.deps.Logger.LogAttrs(settling, slog.LevelError, "upload.discard_failed", attachmentAttribute(a.opened.id), slog.String("kind", core.ErrorKind(err)))
+					a.service.uploadEvent(settling, slog.LevelError, "upload.discard_failed", a.opened, attachmentAttribute(a.opened.id), slog.String("kind", core.ErrorKind(err)))
 				}
 			} else {
 				a.service.discardOrReport(settling, a.opened, false)
@@ -67,7 +76,7 @@ func (a *UploadAdmission) Upload(ctx context.Context, filename string, body io.R
 	s := a.service
 	name, valid := cleanFileName(filename)
 	if !valid {
-		s.rejectedFor(ctx, a.opened.uploader.UserID, domain.RejectedFilename)
+		s.rejectedFor(ctx, a.opened.uploader.UserID, a.opened.context, domain.RejectedFilename)
 		return Upload{}, ErrInvalidName
 	}
 	if err := a.name(ctx, name); err != nil {
@@ -85,7 +94,7 @@ func (a *UploadAdmission) Upload(ctx context.Context, filename string, body io.R
 		settling := recording
 		defer recordedCancel()
 		if aborted := s.deps.Objects.AbortMultipartUpload(settling, a.opened.key, upload); aborted != nil {
-			s.deps.Logger.LogAttrs(settling, slog.LevelError, "upload.abort_failed", attachmentAttribute(a.opened.id), slog.String("kind", core.ErrorKind(aborted)))
+			s.uploadEvent(settling, slog.LevelError, "upload.abort_failed", a.opened, attachmentAttribute(a.opened.id), slog.String("kind", core.ErrorKind(aborted)))
 		}
 		s.discardOrReport(settling, a.opened, false)
 		a.settled = true
@@ -108,7 +117,7 @@ func (a *UploadAdmission) Upload(ctx context.Context, filename string, body io.R
 		return Upload{}, err
 	}
 	mediaType := content.kind.mediaType()
-	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.accepted", userAttribute(a.opened.uploader.UserID), attachmentAttribute(a.opened.id), channelAttribute(a.opened.channel), slog.String("context", string(a.target.policy.context)), slog.String("media_type", mediaType), slog.Int64("size_bytes", content.size))
+	s.uploadEvent(ctx, slog.LevelInfo, "upload.accepted", a.opened, attachmentAttribute(a.opened.id), slog.String("media_type", mediaType), slog.Int64("size_bytes", content.size))
 	return Upload{ID: a.opened.id, Filename: name, MediaType: mediaType, SizeBytes: content.size}, nil
 }
 

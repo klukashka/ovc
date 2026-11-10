@@ -505,6 +505,14 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: AttachmentID
+          - column: upload_intents.capacity_class
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UploadCapacityClass
+          - column: upload_intent_capacity.capacity_class
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UploadCapacityClass
           - column: upload_intents.phase
             go_type:
               import: ovc/backend/internal/domain

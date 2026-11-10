@@ -48,6 +48,7 @@ type ChatUpload struct {
 type openUpload struct {
 	id       domain.AttachmentID
 	key      string
+	context  domain.AttachmentContext
 	channel  domain.ChannelID
 	tutor    domain.UserID
 	upload   storage.MultipartUploadID
@@ -140,7 +141,7 @@ func (s *Service) startUpload(ctx context.Context, target uploadTarget, principa
 	if err != nil {
 		return openUpload{}, err
 	}
-	opened := openUpload{id: id, key: target.policy.keyPrefix + keyText, created: now, uploader: principal}
+	opened := openUpload{id: id, key: target.policy.keyPrefix + keyText, context: target.policy.context, created: now, uploader: principal}
 	target.scope.describe(&opened)
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		if err := s.lockUploader(ctx, repos, principal, now); err != nil {
@@ -151,7 +152,7 @@ func (s *Service) startUpload(ctx context.Context, target uploadTarget, principa
 			return err
 		}
 		now, opened.created = checkedAt, checkedAt
-		locked, err := target.scope.lock(ctx, repos, uploader)
+		locked, err := target.scope.lock(ctx, repos, principal)
 		if errors.Is(err, repositories.ErrNotFound) {
 			return s.refuse(ctx, opened, domain.RejectedScope, ErrOutOfScope)
 		}
@@ -167,15 +168,15 @@ func (s *Service) startUpload(ctx context.Context, target uploadTarget, principa
 		}
 		scope, scopeID := target.scope.row()
 		if err := repos.Attachments.CreateUploading(ctx, repositories.NewUploading{
-			ID: id, UploaderID: uploader, Context: target.policy.context, ScopeKind: &scope, ScopeID: &scopeID, QuotaTutorID: &opened.tutor,
+			ID: id, UploaderID: uploader, Context: target.policy.context, ScopeKind: scope, ScopeID: scopeID, QuotaTutorID: &opened.tutor,
 			StorageKey: opened.key, Filename: name, ReservedBytes: reservedBytes(declared, target.policy.maxBytes), CreatedAt: now,
 		}); err != nil {
 			return err
 		}
-		return repos.UploadIntents.Create(ctx, id, opened.key, now)
+		return repos.UploadIntents.Create(ctx, id, opened.key, target.policy.class, now)
 	})
 	if errors.Is(err, accounts.ErrUnauthenticated) {
-		s.rejectedFor(ctx, uploader, domain.RejectedSessionRevoked)
+		s.rejectedFor(ctx, uploader, target.policy.context, domain.RejectedSessionRevoked)
 	}
 	if err != nil {
 		return openUpload{}, err
@@ -227,31 +228,41 @@ func refusalOfChecks(err error) bool {
 	return errors.Is(err, ErrQuotaExceeded) || errors.As(err, &throttled)
 }
 
+func (o openUpload) attributes(extra ...slog.Attr) []slog.Attr {
+	attributes := []slog.Attr{userAttribute(o.uploader.UserID), slog.String("context", string(o.context))}
+	if o.channel != (domain.ChannelID{}) {
+		attributes = append(attributes, channelAttribute(o.channel))
+	}
+	return append(attributes, extra...)
+}
+
+func (s *Service) uploadEvent(ctx context.Context, level slog.Level, event string, opened openUpload, extra ...slog.Attr) {
+	s.deps.Logger.LogAttrs(ctx, level, event, opened.attributes(extra...)...)
+}
+
 func (s *Service) quotaRefusal(ctx context.Context, opened openUpload) error {
-	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "quota.exceeded", slog.String("tutor_id", opened.tutor.String()),
-		userAttribute(opened.uploader.UserID), channelAttribute(opened.channel))
+	s.uploadEvent(ctx, slog.LevelInfo, "quota.exceeded", opened, slog.String("tutor_id", opened.tutor.String()))
 	return s.refuse(ctx, opened, domain.RejectedQuota, ErrQuotaExceeded)
 }
 
 func (s *Service) refuse(ctx context.Context, opened openUpload, reason domain.UploadRejection, err error) error {
-	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.rejected", userAttribute(opened.uploader.UserID),
-		channelAttribute(opened.channel), slog.String("reason", string(reason)))
+	s.uploadEvent(ctx, slog.LevelInfo, "upload.rejected", opened, slog.String("reason", string(reason)))
 	return err
 }
 
 func (s *Service) rateLimited(ctx context.Context, opened openUpload, reason domain.UploadRejection, limit domain.ChatLimit) {
-	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "chat.rate_limited", userAttribute(opened.uploader.UserID),
-		channelAttribute(opened.channel), slog.String("limit", string(limit)))
-	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.rejected", userAttribute(opened.uploader.UserID),
-		channelAttribute(opened.channel), slog.String("reason", string(reason)))
+	if opened.context == domain.ContextChat {
+		s.uploadEvent(ctx, slog.LevelInfo, "chat.rate_limited", opened, slog.String("limit", string(limit)))
+	}
+	s.uploadEvent(ctx, slog.LevelInfo, "upload.rejected", opened, slog.String("reason", string(reason)))
 }
 
-func (s *Service) RecordRejection(ctx context.Context, uploader domain.UserID, reason domain.UploadRejection) {
-	s.rejectedFor(ctx, uploader, reason)
+func (s *Service) RecordRejection(ctx context.Context, uploader domain.UserID, uploaded domain.AttachmentContext, reason domain.UploadRejection) {
+	s.rejectedFor(ctx, uploader, uploaded, reason)
 }
 
-func (s *Service) rejectedFor(ctx context.Context, uploader domain.UserID, reason domain.UploadRejection) {
-	s.rejected(ctx, uploader, string(reason))
+func (s *Service) rejectedFor(ctx context.Context, uploader domain.UserID, uploaded domain.AttachmentContext, reason domain.UploadRejection) {
+	s.rejected(ctx, uploader, uploaded, string(reason))
 }
 
 type sizeLimit struct {
@@ -335,7 +346,7 @@ func (s *Service) streamUpload(ctx context.Context, policy uploadPolicy, opened 
 	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
 		return storedContent{}, false, err
 	}
-	kind, detected := detectKind(head, name)
+	kind, detected := policy.kinds.detect(head, name)
 	if !detected || len(head) == 0 {
 		return storedContent{}, false, ErrUnsupported
 	}
@@ -411,7 +422,6 @@ func (p *partSink) holdWebP(input *bufio.Reader) (pictureSize, error) {
 }
 
 func (s *Service) reportStreamFailure(ctx context.Context, opened openUpload, err error) {
-	uploader := opened.uploader.UserID
 	var reason domain.UploadRejection
 	switch {
 	case errors.Is(err, ErrStalled):
@@ -425,18 +435,15 @@ func (s *Service) reportStreamFailure(ctx context.Context, opened openUpload, er
 	case errors.Is(err, ErrUnexpectedPart):
 		reason = domain.RejectedParts
 	default:
-		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.aborted", userAttribute(uploader), attachmentAttribute(opened.id),
-			slog.String("kind", core.ErrorKind(err)))
+		s.uploadEvent(ctx, slog.LevelInfo, "upload.aborted", opened, attachmentAttribute(opened.id), slog.String("kind", core.ErrorKind(err)))
 		return
 	}
-	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.rejected", userAttribute(uploader), attachmentAttribute(opened.id),
-		channelAttribute(opened.channel), slog.String("reason", string(reason)))
+	s.uploadEvent(ctx, slog.LevelInfo, "upload.rejected", opened, attachmentAttribute(opened.id), slog.String("reason", string(reason)))
 }
 
 func (s *Service) discardOrReport(ctx context.Context, opened openUpload, completed bool) {
 	if err := s.discardChatUpload(ctx, opened, completed); err != nil {
-		s.deps.Logger.LogAttrs(ctx, slog.LevelError, "upload.discard_failed", userAttribute(opened.uploader.UserID),
-			attachmentAttribute(opened.id), slog.String("kind", core.ErrorKind(err)))
+		s.uploadEvent(ctx, slog.LevelError, "upload.discard_failed", opened, attachmentAttribute(opened.id), slog.String("kind", core.ErrorKind(err)))
 	}
 }
 
@@ -473,7 +480,7 @@ func (s *Service) settleUpload(ctx context.Context, target uploadTarget, opened 
 		} else if err != nil {
 			return err
 		}
-		locked, err := target.scope.lock(ctx, repos, opened.uploader.UserID)
+		locked, err := target.scope.lock(ctx, repos, opened.uploader)
 		if errors.Is(err, repositories.ErrNotFound) {
 			refusal = s.refuse(ctx, opened, domain.RejectedScope, ErrOutOfScope)
 			return s.discardLocked(ctx, repos, opened, true, now)

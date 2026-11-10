@@ -219,9 +219,14 @@ type streamingUpload struct {
 
 func (h *authHarness) startChatUpload(t *testing.T, token string, channel string) *streamingUpload {
 	t.Helper()
+	return h.startUploadTo(t, token, chatScope(channel))
+}
+
+func (h *authHarness) startUploadTo(t *testing.T, token string, route string) *streamingUpload {
+	t.Helper()
 	reader, writer := io.Pipe()
 	upload := &streamingUpload{pipe: writer, form: multipart.NewWriter(writer), result: make(chan uploadResult, 1)}
-	request, err := http.NewRequestWithContext(context.Background(), http.MethodPost, h.server.URL+chatScope(channel), reader)
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodPost, h.server.URL+route, reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,9 +331,18 @@ type storedUpload struct {
 
 func (h *authHarness) uploadsBy(t *testing.T, uploader domain.UserID) []storedUpload {
 	t.Helper()
+	return h.uploadsIn(t, uploader, domain.ContextChat)
+}
+
+func (h *authHarness) uploadsIn(t *testing.T, uploader domain.UserID, contexts ...domain.AttachmentContext) []storedUpload {
+	t.Helper()
+	names := make([]string, 0, len(contexts))
+	for _, uploaded := range contexts {
+		names = append(names, string(uploaded))
+	}
 	rows, err := h.database.Pool.Query(context.Background(),
 		`SELECT id::text, state, storage_key, media_type, size_bytes, reserved_bytes, multipart_upload_id, width, height, sha256
-FROM attachments WHERE uploader_id = $1::uuid AND context = 'chat' ORDER BY created_at, id`, uploader.String())
+FROM attachments WHERE uploader_id = $1::uuid AND context = ANY ($2::text[]) ORDER BY created_at, id`, uploader.String(), names)
 	if err != nil {
 		t.Fatal(err)
 	}

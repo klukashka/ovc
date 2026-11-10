@@ -133,6 +133,35 @@ func (q *Queries) ClaimUnbindableChatUploads(ctx context.Context, batchSize int3
 	return items, nil
 }
 
+const claimUnbindableLibraryUploads = `-- name: ClaimUnbindableLibraryUploads :many
+SELECT attachments.id FROM attachments
+JOIN users ON users.id = attachments.uploader_id
+WHERE attachments.state = 'pending' AND attachments.context IN ('library', 'prompt_image') AND users.state IN ('blocked', 'deleted')
+ORDER BY attachments.id
+LIMIT $1
+FOR UPDATE OF attachments SKIP LOCKED
+`
+
+func (q *Queries) ClaimUnbindableLibraryUploads(ctx context.Context, batchSize int32) ([]domain.AttachmentID, error) {
+	rows, err := q.db.Query(ctx, claimUnbindableLibraryUploads, batchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.AttachmentID
+	for rows.Next() {
+		var id domain.AttachmentID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const completeUpload = `-- name: CompleteUpload :execrows
 UPDATE attachments
 SET state = 'pending', media_type = $1::text, size_bytes = $2::bigint,

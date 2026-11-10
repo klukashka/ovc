@@ -72,7 +72,7 @@ func (h uploadProtocolFixture) intent(t *testing.T, id domain.AttachmentID, comp
 	}
 	opened.upload = upload
 	err = h.service.deps.Store.WithTx(context.Background(), func(repos repositories.Repositories) error {
-		if err := repos.UploadIntents.Create(context.Background(), id, opened.key, h.now); err != nil {
+		if err := repos.UploadIntents.Create(context.Background(), id, opened.key, domain.UploadCapacityChat, h.now); err != nil {
 			return err
 		}
 		return nil
@@ -117,7 +117,7 @@ func (h uploadProtocolFixture) read(t *testing.T, id domain.AttachmentID) reposi
 func (h uploadProtocolFixture) capacity(t *testing.T) int {
 	t.Helper()
 	var used int
-	if err := h.database.Pool.QueryRow(context.Background(), "SELECT used FROM upload_intent_capacity").Scan(&used); err != nil {
+	if err := h.database.Pool.QueryRow(context.Background(), "SELECT COALESCE(sum(used), 0)::integer FROM upload_intent_capacity").Scan(&used); err != nil {
 		t.Fatal(err)
 	}
 	return used
@@ -359,11 +359,11 @@ EXECUTE FUNCTION fail_one_upload_recovery()`, first.id)
 func TestUploadIntentCapacityIsAtomic(t *testing.T) {
 	t.Parallel()
 	h := newUploadProtocolFixture(t)
-	if _, err := h.database.Pool.Exec(context.Background(), `INSERT INTO upload_intents (attachment_id, storage_key, phase, cleanup_requested, created_at, updated_at)
- SELECT md5(n::text)::uuid, 'chat/capacity/' || n, 'cleanup', true, $1, $1 FROM generate_series(1,4095) AS n`, h.now); err != nil {
+	if _, err := h.database.Pool.Exec(context.Background(), `INSERT INTO upload_intents (attachment_id, storage_key, capacity_class, phase, cleanup_requested, created_at, updated_at)
+ SELECT md5(n::text)::uuid, 'chat/capacity/' || n, 'chat', 'cleanup', true, $1, $1 FROM generate_series(1,4095) AS n`, h.now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.database.Pool.Exec(context.Background(), "UPDATE upload_intent_capacity SET used = 4095"); err != nil {
+	if _, err := h.database.Pool.Exec(context.Background(), "UPDATE upload_intent_capacity SET used = 4095 WHERE capacity_class = 'chat'"); err != nil {
 		t.Fatal(err)
 	}
 	type admissionResult struct {
@@ -377,7 +377,7 @@ func TestUploadIntentCapacityIsAtomic(t *testing.T) {
 		go func() {
 			<-start
 			err := h.service.deps.Store.WithTx(context.Background(), func(repos repositories.Repositories) error {
-				return repos.UploadIntents.Create(context.Background(), id, domain.ChatKeyPrefix+id.String(), h.now)
+				return repos.UploadIntents.Create(context.Background(), id, domain.ChatKeyPrefix+id.String(), domain.UploadCapacityChat, h.now)
 			})
 			finished <- admissionResult{id: id, err: err}
 		}()

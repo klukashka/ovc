@@ -499,13 +499,14 @@ type UploadIntent struct {
 	ErrorCode            *string
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+	CapacityClass        domain.UploadCapacityClass
 }
 
 type UploadIntentCapacity struct {
-	Singleton bool
-	Used      int32
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Used          int32
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	CapacityClass domain.UploadCapacityClass
 }
 
 type User struct {

@@ -106,7 +106,7 @@ func TestEveryDetectedKindHasItsMediaTypeAndOnlyItsExtensions(t *testing.T) {
 	expected := map[string]fileKind{
 		".jpg": kindJPEG, ".jpeg": kindJPEG, ".png": kindPNG, ".webp": kindWebP, ".gif": kindGIF, ".pdf": kindPDF,
 		".docx": kindDOCX, ".xlsx": kindXLSX, ".pptx": kindPPTX, ".odt": kindODT, ".ods": kindODS, ".odp": kindODP,
-		".mp3": kindMP3, ".m4a": kindM4A, ".ogg": kindOGG, ".oga": kindOGG, ".opus": kindOGG, ".wav": kindWAV, ".txt": kindPlainText,
+		".mp3": kindMP3, ".m4a": kindM4A, ".ogg": kindOGG, ".oga": kindOGG, ".opus": kindOGG, ".wav": kindWAV, ".mp4": kindMP4, ".txt": kindPlainText,
 	}
 
 	listed := map[string]fileKind{}

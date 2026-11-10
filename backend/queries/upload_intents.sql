@@ -1,12 +1,13 @@
 -- name: CreateUploadIntent :exec
-INSERT INTO upload_intents (attachment_id, storage_key, phase, created_at, updated_at)
-VALUES (@attachment_id, @storage_key, 'opening', @created_at, @created_at);
+INSERT INTO upload_intents (attachment_id, storage_key, capacity_class, phase, created_at, updated_at)
+VALUES (@attachment_id, @storage_key, @capacity_class, 'opening', @created_at, @created_at);
 
 -- name: ReserveUploadIntentCapacity :execrows
-UPDATE upload_intent_capacity SET used = used + 1, updated_at = @now WHERE singleton AND used < 4096;
+UPDATE upload_intent_capacity SET used = used + 1, updated_at = @now
+WHERE capacity_class = @capacity_class AND used < CASE capacity_class WHEN 'chat' THEN 4096 ELSE 1024 END;
 
 -- name: ReleaseUploadIntentCapacity :execrows
-UPDATE upload_intent_capacity SET used = used - 1, updated_at = @now WHERE singleton AND used > 0;
+UPDATE upload_intent_capacity SET used = used - 1, updated_at = @now WHERE capacity_class = @capacity_class AND used > 0;
 
 -- name: LockUploadIntent :one
 SELECT * FROM upload_intents WHERE attachment_id = @attachment_id FOR UPDATE;
@@ -48,8 +49,8 @@ WHERE attachment_id = @attachment_id AND cleanup_requested
 UPDATE upload_intents SET cleanup_result = @cleanup_result, error_code = @error_code, updated_at = @now
 WHERE attachment_id = @attachment_id AND cleanup_outbox_id = @outbox_id;
 
--- name: DeleteUploadIntent :execrows
-DELETE FROM upload_intents WHERE attachment_id = @attachment_id AND storage_key = @storage_key;
+-- name: DeleteUploadIntent :many
+DELETE FROM upload_intents WHERE attachment_id = @attachment_id AND storage_key = @storage_key RETURNING capacity_class;
 
 -- name: UploadIntentCandidates :many
 SELECT attachment_id FROM upload_intents

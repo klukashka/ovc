@@ -27,12 +27,12 @@ func TestProductionWorkerRecoversAnUploadWithoutAnAttachment(t *testing.T) {
 	}
 	id := domain.AttachmentID{0x65}
 	_, err := database.Pool.Exec(ctx, `INSERT INTO upload_intents
- (attachment_id, storage_key, multipart_upload_id, phase, completion_started, cleanup_requested, created_at, updated_at)
- VALUES ($1, 'chat/recovery-process-fixture', 'absent-multipart-fixture', 'uncertain', true, true, $2, $2)`, id, adminStart)
+ (attachment_id, storage_key, capacity_class, multipart_upload_id, phase, completion_started, cleanup_requested, created_at, updated_at)
+ VALUES ($1, 'chat/recovery-process-fixture', 'chat', 'absent-multipart-fixture', 'uncertain', true, true, $2, $2)`, id, adminStart)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.Pool.Exec(ctx, "UPDATE upload_intent_capacity SET used = 1"); err != nil {
+	if _, err := database.Pool.Exec(ctx, "UPDATE upload_intent_capacity SET used = 1 WHERE capacity_class = 'chat'"); err != nil {
 		t.Fatal(err)
 	}
 	address := freeAddress(t)
@@ -55,7 +55,7 @@ func TestProductionWorkerRecoversAnUploadWithoutAnAttachment(t *testing.T) {
 	var recovered bool
 	err = database.Pool.QueryRow(ctx, `SELECT COALESCE(cleanup_generation = 0 AND cleanup_result = 'deleted'
  AND phase = 'uncertain' AND completion_started AND NOT completion_confirmed
- AND (SELECT used = 1 FROM upload_intent_capacity)
+ AND (SELECT used = 1 FROM upload_intent_capacity WHERE capacity_class = 'chat')
  AND EXISTS (SELECT 1 FROM outbox WHERE id = upload_intents.cleanup_outbox_id AND status = 'done')
  AND EXISTS (SELECT 1 FROM job_runs WHERE job = 'uploads.recover' AND last_result = 'ok')
  AND EXISTS (SELECT 1 FROM job_runs WHERE job = 'uploads.daily_cleanup' AND last_result = 'ok')

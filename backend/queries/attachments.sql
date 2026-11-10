@@ -145,3 +145,11 @@ WHERE attachments.id = @id AND attachments.context = 'chat' AND attachments.stat
 
 -- name: NameUploadingAttachment :execrows
 UPDATE attachments SET filename = @filename, updated_at = @now WHERE id = @id AND state = 'uploading';
+
+-- name: ClaimUnbindableLibraryUploads :many
+SELECT attachments.id FROM attachments
+JOIN users ON users.id = attachments.uploader_id
+WHERE attachments.state = 'pending' AND attachments.context IN ('library', 'prompt_image') AND users.state IN ('blocked', 'deleted')
+ORDER BY attachments.id
+LIMIT sqlc.arg(batch_size)
+FOR UPDATE OF attachments SKIP LOCKED;

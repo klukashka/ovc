@@ -288,7 +288,7 @@ func TestAMemberRemovedMidStreamLeavesNoObject(t *testing.T) {
 		}
 		h.assertLeftNothing(t, started)
 		if h.countRows(t, "SELECT count(*) FROM upload_intents WHERE attachment_id = $1::uuid", started.ID) != 0 ||
-			h.countRows(t, "SELECT used FROM upload_intent_capacity WHERE singleton = $1::boolean", "true") != 0 {
+			h.countRows(t, "SELECT used FROM upload_intent_capacity WHERE capacity_class = $1", "chat") != 0 {
 			t.Fatal("confirmed final cleanup retained its intent or capacity reservation")
 		}
 	})

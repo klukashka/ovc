@@ -26,6 +26,7 @@ const (
 	kindM4A       fileKind = "m4a"
 	kindOGG       fileKind = "ogg"
 	kindWAV       fileKind = "wav"
+	kindMP4       fileKind = "mp4"
 	kindPlainText fileKind = "text"
 )
 
@@ -51,6 +52,7 @@ var kindRules = []kindRule{
 	{kindM4A, "audio/mp4", []string{".m4a"}},
 	{kindOGG, "audio/ogg", []string{".ogg", ".oga", ".opus"}},
 	{kindWAV, "audio/wav", []string{".wav"}},
+	{kindMP4, "video/mp4", []string{".mp4"}},
 	{kindPlainText, "text/plain", []string{".txt"}},
 }
 
@@ -91,6 +93,29 @@ func kindForExtension(name string) (fileKind, bool) {
 }
 
 var zipSignature = []byte{'P', 'K', 0x03, 0x04}
+
+type kindPolicy struct {
+	allowed []fileKind
+	video   bool
+}
+
+var (
+	pictureKinds  = []fileKind{kindJPEG, kindPNG, kindWebP, kindGIF}
+	audioKinds    = []fileKind{kindMP3, kindM4A, kindOGG, kindWAV}
+	documentKinds = slices.Concat(pictureKinds, []fileKind{kindPDF}, officeKinds, audioKinds)
+
+	chatKinds        = kindPolicy{allowed: slices.Concat(documentKinds, []fileKind{kindPlainText})}
+	libraryKinds     = kindPolicy{allowed: slices.Concat(documentKinds, []fileKind{kindMP4}), video: true}
+	promptImageKinds = kindPolicy{allowed: pictureKinds}
+)
+
+func (p kindPolicy) detect(head []byte, name string) (fileKind, bool) {
+	kind, detected := detectKind(head, name)
+	if p.video && ftypBox(head) {
+		kind, detected = detectBrandedKind(head, name)
+	}
+	return kind, detected && slices.Contains(p.allowed, kind)
+}
 
 func detectKind(head []byte, name string) (fileKind, bool) {
 	claimed, known := kindForExtension(name)
@@ -155,7 +180,44 @@ func oggAudio(head []byte) bool {
 	return bytes.HasPrefix(packet, []byte("\x01vorbis")) || bytes.HasPrefix(packet, []byte("OpusHead"))
 }
 
-const m4aBrand = "M4A "
+const (
+	m4aBrand     = "M4A "
+	ftypMinBytes = 16
+	ftypMaxBytes = 4096
+)
+
+var videoBrands = []string{"isom", "iso2", "mp41", "mp42", "avc1", "M4V "}
+
+func ftypBox(head []byte) bool {
+	return len(head) >= 8 && bytes.Equal(head[4:8], []byte("ftyp"))
+}
+
+func brandedKind(head []byte) (fileKind, bool) {
+	if len(head) < ftypMinBytes || !ftypBox(head) {
+		return "", false
+	}
+	size := int(binary.BigEndian.Uint32(head[0:4]))
+	if size < ftypMinBytes || size > ftypMaxBytes || size > len(head) {
+		return "", false
+	}
+	major := string(head[8:12])
+	switch {
+	case slices.Contains(videoBrands, major):
+		return kindMP4, true
+	case major == m4aBrand:
+		return kindM4A, true
+	}
+	return "", false
+}
+
+func detectBrandedKind(head []byte, name string) (fileKind, bool) {
+	claimed, known := kindForExtension(name)
+	if !known {
+		return "", false
+	}
+	detected, found := brandedKind(head)
+	return detected, found && detected == claimed
+}
 
 func m4aAudio(head []byte) bool {
 	if len(head) < 16 || !bytes.Equal(head[4:8], []byte("ftyp")) {

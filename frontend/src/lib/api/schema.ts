@@ -1795,6 +1795,7 @@ export interface operations {
     "attachments-get": {
         parameters: {
             query?: {
+                ref?: string;
                 disposition?: string;
             };
             header?: never;
@@ -8362,7 +8363,7 @@ export interface operations {
     "uploads-create": {
         parameters: {
             query: {
-                context: "avatar" | "chat";
+                context: "avatar" | "chat" | "library" | "prompt_image";
                 scope?: string;
             };
             header?: never;
@@ -9137,7 +9138,7 @@ type ReadonlyArray<T> = [
     unknown[]
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const pathsApiV1StudentsGetParametersQueryStateValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/students"]["get"]["parameters"]["query"]["state"]> = ["active", "invited", "ended"];
-export const pathsApiV1UploadsPostParametersQueryContextValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/uploads"]["post"]["parameters"]["query"]["context"]> = ["avatar", "chat"];
+export const pathsApiV1UploadsPostParametersQueryContextValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/uploads"]["post"]["parameters"]["query"]["context"]> = ["avatar", "chat", "library", "prompt_image"];
 export const calendarAudienceColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CalendarAudience"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const calendarAudienceKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CalendarAudience"]["kind"]> = ["one_to_one", "group"];
 export const calendarAudienceLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CalendarAudience"]["label_kind"]> = ["individual", "group", "removed_student"];

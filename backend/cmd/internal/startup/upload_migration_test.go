@@ -39,7 +39,9 @@ AS fixture(n, context, state, multipart)`, owner, adminStart)
 	}
 	var valid bool
 	err = database.Pool.QueryRow(context.Background(), `SELECT
-(SELECT used = 3 FROM upload_intent_capacity) AND
+(SELECT used = 3 FROM upload_intent_capacity WHERE capacity_class = 'chat') AND
+(SELECT used = 0 FROM upload_intent_capacity WHERE capacity_class = 'library') AND
+NOT EXISTS (SELECT 1 FROM upload_intents WHERE capacity_class <> 'chat') AND
 (SELECT count(*) = 3 FROM upload_intents) AND
 (SELECT count(*) = 5 FROM attachments) AND
 (SELECT count(*) = 1 FROM upload_intents WHERE storage_key = 'legacy/1' AND phase = 'cleanup'

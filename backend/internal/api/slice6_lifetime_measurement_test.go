@@ -180,7 +180,7 @@ func measurementUploadCleanup(t *testing.T, h *authHarness, actor measurementUpl
 		remaining := h.countRows(t, "SELECT count(*) FROM attachments WHERE uploader_id=$1::uuid AND state IN ('uploading','pending','bound')", actor.user.String())
 		intents := h.countRows(t, "SELECT count(*) FROM upload_intents WHERE storage_key LIKE $1", "chat/%")
 		var capacity, receipts int64
-		if err := h.database.Pool.QueryRow(t.Context(), "SELECT (SELECT used FROM upload_intent_capacity), (SELECT count(*) FROM upload_cleanup_receipts)").Scan(&capacity, &receipts); err != nil {
+		if err := h.database.Pool.QueryRow(t.Context(), "SELECT (SELECT used FROM upload_intent_capacity WHERE capacity_class = 'chat'), (SELECT count(*) FROM upload_cleanup_receipts)").Scan(&capacity, &receipts); err != nil {
 			t.Fatal("measurement upload resource observation failed")
 		}
 		if remaining == 0 && intents == 0 && capacity == 0 && receipts == 0 {

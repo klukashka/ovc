@@ -224,23 +224,67 @@ func rawFileName(part *multipart.Part) string {
 	return parameters["filename"]
 }
 
+func streamedUploadLimit(uploaded domain.AttachmentContext) (int64, bool) {
+	switch uploaded {
+	case domain.ContextChat:
+		return domain.ChatMaxBytes, true
+	case domain.ContextLibrary:
+		return domain.LibraryMaxBytes, true
+	case domain.ContextPromptImage:
+		return domain.PromptImageMaxBytes, true
+	case domain.ContextAvatar, domain.ContextAnswer, domain.ContextCorrected:
+		return 0, false
+	}
+	return 0, false
+}
+
+func earlyUploadRefusal(uploaded domain.AttachmentContext, principal accounts.Principal, declared int64, limit int64) (domain.ErrorCode, bool) {
+	library := uploaded == domain.ContextLibrary || uploaded == domain.ContextPromptImage
+	switch {
+	case library && principal.Role != domain.RoleTutor:
+		return domain.ErrorNotFound, true
+	case principal.State != domain.AccountActive:
+		return domain.ErrorEmailNotVerified, true
+	case declared > limit+domain.UploadOverheadBytes:
+		return domain.ErrorPayloadTooLarge, true
+	}
+	return "", false
+}
+
+type admissionStart func(declared int64) (*files.UploadAdmission, error)
+
 func (r *router) uploadChat(ctx context.Context, input *uploadInput, request *http.Request) (*uploadOutput, error) {
-	principal := principalFrom(ctx)
 	channel, valid := parseChannelScope(input.Scope)
 	if !valid {
 		return nil, fieldError(ctx, fieldScope, domain.FieldInvalid)
 	}
+	return r.uploadStreamed(ctx, domain.ContextChat, request, func(declared int64) (*files.UploadAdmission, error) {
+		return r.files.BeginChatUpload(ctx, principalFrom(ctx), channel, declared)
+	})
+}
+
+func (r *router) uploadLibrary(ctx context.Context, uploaded domain.AttachmentContext, request *http.Request) (*uploadOutput, error) {
+	if request.URL.Query().Has("scope") {
+		return nil, fieldError(ctx, fieldScope, domain.FieldNotAllowed)
+	}
+	return r.uploadStreamed(ctx, uploaded, request, func(declared int64) (*files.UploadAdmission, error) {
+		return r.files.BeginLibraryUpload(ctx, principalFrom(ctx), uploaded, declared)
+	})
+}
+
+func (r *router) uploadStreamed(ctx context.Context, uploaded domain.AttachmentContext, request *http.Request, begin admissionStart) (*uploadOutput, error) {
+	principal := principalFrom(ctx)
 	mediaType, parameters, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
 	if err != nil || mediaType != "multipart/form-data" || parameters["boundary"] == "" {
 		return nil, NewError(ctx, domain.ErrorUnsupportedMediaType)
 	}
 	controller, found := ctx.Value(rawControllerKey{}).(*http.ResponseController)
 	if !found {
-		panic("a chat upload ran without its response controller")
+		panic("a streamed upload ran without its response controller")
 	}
-	admission, err := r.files.BeginChatUpload(ctx, principal, channel, request.ContentLength)
+	admission, err := begin(request.ContentLength)
 	if err != nil {
-		return nil, r.chatUploadError(ctx, err)
+		return nil, r.streamedUploadError(ctx, err)
 	}
 	defer admission.Close(ctx)
 	guard := r.guardAgainstStalls(ctx, request.Body, controller)
@@ -252,14 +296,14 @@ func (r *router) uploadChat(ctx context.Context, input *uploadInput, request *ht
 	case errors.Is(err, io.EOF):
 		return nil, uploadFieldError(ctx)
 	case errors.Is(err, errPartHeadersTooLarge):
-		r.files.RecordRejection(ctx, principal.UserID, domain.RejectedParts)
+		r.files.RecordRejection(ctx, principal.UserID, uploaded, domain.RejectedParts)
 		return nil, uploadFieldError(ctx)
 	case err != nil:
-		return nil, r.chatUploadError(ctx, errors.Join(errMalformedUpload, err))
+		return nil, r.streamedUploadError(ctx, errors.Join(errMalformedUpload, err))
 	}
 	headers.open = true
 	if part.FormName() != "file" || rawFileName(part) == "" || partHeaderBytes(part.Header) > domain.UploadPartHeaderBytes {
-		r.files.RecordRejection(ctx, principal.UserID, domain.RejectedParts)
+		r.files.RecordRejection(ctx, principal.UserID, uploaded, domain.RejectedParts)
 		return nil, uploadFieldError(ctx)
 	}
 	finish := func() error {
@@ -279,7 +323,7 @@ func (r *router) uploadChat(ctx context.Context, input *uploadInput, request *ht
 		r.logger.LogAttrs(ctx, slog.LevelWarn, "http.deadline.failed", slog.String("kind", "write"))
 	}
 	if err != nil {
-		return nil, r.chatUploadError(ctx, err)
+		return nil, r.streamedUploadError(ctx, err)
 	}
 	return &uploadOutput{CacheControl: noStore, Body: schemas.UploadedFile{
 		ID: upload.ID.String(), Filename: upload.Filename, MediaType: upload.MediaType, SizeBytes: upload.SizeBytes,
@@ -292,7 +336,7 @@ func fieldError(ctx context.Context, path string, code domain.FieldCode) error {
 	)}
 }
 
-func (r *router) chatUploadError(ctx context.Context, err error) error {
+func (r *router) streamedUploadError(ctx context.Context, err error) error {
 	var tooLarge *http.MaxBytesError
 	var throttled *files.ThrottledError
 	var accountingUnavailable *files.AccountingUnavailableError

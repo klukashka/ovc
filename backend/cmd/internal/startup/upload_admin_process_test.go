@@ -13,12 +13,12 @@ func seedAdminUploadIntent(t *testing.T, f *adminFixture) domain.AttachmentID {
 	t.Helper()
 	id := domain.AttachmentID{0x71}
 	_, err := f.database.Pool.Exec(context.Background(), `INSERT INTO upload_intents
-(attachment_id, storage_key, multipart_upload_id, phase, completion_started, cleanup_requested, created_at, updated_at)
-VALUES ($1, 'chat/private-storage-key', 'private-multipart-id', 'uncertain', true, true, $2, $2)`, id, adminStart)
+(attachment_id, storage_key, capacity_class, multipart_upload_id, phase, completion_started, cleanup_requested, created_at, updated_at)
+VALUES ($1, 'chat/private-storage-key', 'chat', 'private-multipart-id', 'uncertain', true, true, $2, $2)`, id, adminStart)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.database.Pool.Exec(context.Background(), "UPDATE upload_intent_capacity SET used = 1"); err != nil {
+	if _, err := f.database.Pool.Exec(context.Background(), "UPDATE upload_intent_capacity SET used = 1 WHERE capacity_class = 'chat'"); err != nil {
 		t.Fatal(err)
 	}
 	return id

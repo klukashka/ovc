@@ -84,6 +84,15 @@ const (
 	DownloadAddressMaxAhead = 10*time.Minute + 30*time.Second
 )
 
+const (
+	LibraryMaxBytes            = 100_000_000
+	PromptImageMaxBytes        = 5_000_000
+	LibraryOpenUploadsPerTutor = 20
+	LibraryUploadsPerHour      = 60
+	LibraryKeyPrefix           = "library/"
+	PromptImageKeyPrefix       = "prompts/"
+)
+
 type Disposition string
 
 const (

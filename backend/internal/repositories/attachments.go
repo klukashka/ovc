@@ -84,6 +84,11 @@ func (r Attachments) ClaimUnbindableChat(ctx context.Context, batch int32) ([]do
 	return one(ids, err, "claim unbindable chat uploads")
 }
 
+func (r Attachments) ClaimUnbindableLibrary(ctx context.Context, batch int32) ([]domain.AttachmentID, error) {
+	ids, err := r.queries.ClaimUnbindableLibraryUploads(ctx, batch)
+	return one(ids, err, "claim unbindable library uploads")
+}
+
 func (r Attachments) DownloadableChat(ctx context.Context, viewer domain.UserID, id domain.AttachmentID) (DownloadableFile, error) {
 	file, err := r.queries.GetDownloadableChatAttachment(ctx, dbgen.GetDownloadableChatAttachmentParams{
 		Viewer: pgtype.UUID{Bytes: viewer, Valid: true}, ID: id,

@@ -20,11 +20,11 @@ type UploadIntents struct{ queries *dbgen.Queries }
 type UploadIntent = dbgen.UploadIntent
 type UploadCleanupReceipt = dbgen.UploadCleanupReceipt
 
-func (r UploadIntents) Create(ctx context.Context, id domain.AttachmentID, key string, now time.Time) error {
-	if err := r.queries.CreateUploadIntent(ctx, dbgen.CreateUploadIntentParams{AttachmentID: id, StorageKey: key, CreatedAt: now}); err != nil {
+func (r UploadIntents) Create(ctx context.Context, id domain.AttachmentID, key string, class domain.UploadCapacityClass, now time.Time) error {
+	if err := r.queries.CreateUploadIntent(ctx, dbgen.CreateUploadIntentParams{AttachmentID: id, StorageKey: key, CapacityClass: class, CreatedAt: now}); err != nil {
 		return done(err, "create upload intent")
 	}
-	rows, err := r.queries.ReserveUploadIntentCapacity(ctx, now)
+	rows, err := r.queries.ReserveUploadIntentCapacity(ctx, dbgen.ReserveUploadIntentCapacityParams{CapacityClass: class, Now: now})
 	if err != nil {
 		return done(err, "reserve upload intent capacity")
 	}
@@ -75,14 +75,14 @@ func (r UploadIntents) Finish(ctx context.Context, id domain.AttachmentID, outbo
 }
 
 func (r UploadIntents) Remove(ctx context.Context, id domain.AttachmentID, key string, now time.Time) error {
-	rows, err := r.queries.DeleteUploadIntent(ctx, dbgen.DeleteUploadIntentParams{AttachmentID: id, StorageKey: key})
+	classes, err := r.queries.DeleteUploadIntent(ctx, dbgen.DeleteUploadIntentParams{AttachmentID: id, StorageKey: key})
 	if err != nil {
 		return done(err, "delete upload intent")
 	}
-	if rows == 0 {
+	if len(classes) == 0 {
 		return nil
 	}
-	released, err := r.queries.ReleaseUploadIntentCapacity(ctx, now)
+	released, err := r.queries.ReleaseUploadIntentCapacity(ctx, dbgen.ReleaseUploadIntentCapacityParams{CapacityClass: classes[0], Now: now})
 	return intentApplied(released, err)
 }
 

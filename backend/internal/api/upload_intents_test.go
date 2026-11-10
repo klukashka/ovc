@@ -17,11 +17,11 @@ func TestUploadIntentCapacityRefusesWithoutReadingTheBody(t *testing.T) {
 	h := newUploadHarness(t)
 	parties := h.activeStudentInAGroup(t)
 	channel := h.directChannel(t, parties.card.ID).ID
-	if _, err := h.database.Pool.Exec(context.Background(), `INSERT INTO upload_intents (attachment_id, storage_key, phase, cleanup_requested, created_at, updated_at)
- SELECT md5(n::text)::uuid, 'chat/capacity/' || n, 'cleanup', true, $1, $1 FROM generate_series(1,4096) AS n`, authStart); err != nil {
+	if _, err := h.database.Pool.Exec(context.Background(), `INSERT INTO upload_intents (attachment_id, storage_key, capacity_class, phase, cleanup_requested, created_at, updated_at)
+ SELECT md5(n::text)::uuid, 'chat/capacity/' || n, 'chat', 'cleanup', true, $1, $1 FROM generate_series(1,4096) AS n`, authStart); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.database.Pool.Exec(context.Background(), "UPDATE upload_intent_capacity SET used = 4096"); err != nil {
+	if _, err := h.database.Pool.Exec(context.Background(), "UPDATE upload_intent_capacity SET used = 4096 WHERE capacity_class = 'chat'"); err != nil {
 		t.Fatal(err)
 	}
 	request := fmt.Sprintf("POST %s HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer %s\r\nContent-Type: multipart/form-data; boundary=waiting\r\nContent-Length: 1000\r\n\r\n", chatScope(channel), parties.studentToken)

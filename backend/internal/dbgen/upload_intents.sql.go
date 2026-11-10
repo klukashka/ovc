@@ -113,23 +113,29 @@ func (q *Queries) CreateUploadCleanupReceipt(ctx context.Context, arg CreateUplo
 }
 
 const createUploadIntent = `-- name: CreateUploadIntent :exec
-INSERT INTO upload_intents (attachment_id, storage_key, phase, created_at, updated_at)
-VALUES ($1, $2, 'opening', $3, $3)
+INSERT INTO upload_intents (attachment_id, storage_key, capacity_class, phase, created_at, updated_at)
+VALUES ($1, $2, $3, 'opening', $4, $4)
 `
 
 type CreateUploadIntentParams struct {
-	AttachmentID domain.AttachmentID
-	StorageKey   string
-	CreatedAt    time.Time
+	AttachmentID  domain.AttachmentID
+	StorageKey    string
+	CapacityClass domain.UploadCapacityClass
+	CreatedAt     time.Time
 }
 
 func (q *Queries) CreateUploadIntent(ctx context.Context, arg CreateUploadIntentParams) error {
-	_, err := q.db.Exec(ctx, createUploadIntent, arg.AttachmentID, arg.StorageKey, arg.CreatedAt)
+	_, err := q.db.Exec(ctx, createUploadIntent,
+		arg.AttachmentID,
+		arg.StorageKey,
+		arg.CapacityClass,
+		arg.CreatedAt,
+	)
 	return err
 }
 
-const deleteUploadIntent = `-- name: DeleteUploadIntent :execrows
-DELETE FROM upload_intents WHERE attachment_id = $1 AND storage_key = $2
+const deleteUploadIntent = `-- name: DeleteUploadIntent :many
+DELETE FROM upload_intents WHERE attachment_id = $1 AND storage_key = $2 RETURNING capacity_class
 `
 
 type DeleteUploadIntentParams struct {
@@ -137,12 +143,24 @@ type DeleteUploadIntentParams struct {
 	StorageKey   string
 }
 
-func (q *Queries) DeleteUploadIntent(ctx context.Context, arg DeleteUploadIntentParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteUploadIntent, arg.AttachmentID, arg.StorageKey)
+func (q *Queries) DeleteUploadIntent(ctx context.Context, arg DeleteUploadIntentParams) ([]domain.UploadCapacityClass, error) {
+	rows, err := q.db.Query(ctx, deleteUploadIntent, arg.AttachmentID, arg.StorageKey)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected(), nil
+	defer rows.Close()
+	var items []domain.UploadCapacityClass
+	for rows.Next() {
+		var capacity_class domain.UploadCapacityClass
+		if err := rows.Scan(&capacity_class); err != nil {
+			return nil, err
+		}
+		items = append(items, capacity_class)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const finishUploadIntentCleanup = `-- name: FinishUploadIntentCleanup :execrows
@@ -196,7 +214,7 @@ func (q *Queries) GetUploadCleanupReceipt(ctx context.Context, arg GetUploadClea
 }
 
 const getUploadIntent = `-- name: GetUploadIntent :one
-SELECT attachment_id, storage_key, multipart_upload_id, phase, completion_started, completion_confirmed, cleanup_requested, final_cleanup_required, cleanup_generation, cleanup_outbox_id, cleanup_result, error_code, created_at, updated_at FROM upload_intents WHERE attachment_id = $1
+SELECT attachment_id, storage_key, multipart_upload_id, phase, completion_started, completion_confirmed, cleanup_requested, final_cleanup_required, cleanup_generation, cleanup_outbox_id, cleanup_result, error_code, created_at, updated_at, capacity_class FROM upload_intents WHERE attachment_id = $1
 `
 
 func (q *Queries) GetUploadIntent(ctx context.Context, attachmentID domain.AttachmentID) (UploadIntent, error) {
@@ -217,6 +235,7 @@ func (q *Queries) GetUploadIntent(ctx context.Context, attachmentID domain.Attac
 		&i.ErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CapacityClass,
 	)
 	return i, err
 }
@@ -259,7 +278,7 @@ func (q *Queries) ListUploadCleanupReceipts(ctx context.Context, arg ListUploadC
 }
 
 const lockUploadIntent = `-- name: LockUploadIntent :one
-SELECT attachment_id, storage_key, multipart_upload_id, phase, completion_started, completion_confirmed, cleanup_requested, final_cleanup_required, cleanup_generation, cleanup_outbox_id, cleanup_result, error_code, created_at, updated_at FROM upload_intents WHERE attachment_id = $1 FOR UPDATE
+SELECT attachment_id, storage_key, multipart_upload_id, phase, completion_started, completion_confirmed, cleanup_requested, final_cleanup_required, cleanup_generation, cleanup_outbox_id, cleanup_result, error_code, created_at, updated_at, capacity_class FROM upload_intents WHERE attachment_id = $1 FOR UPDATE
 `
 
 func (q *Queries) LockUploadIntent(ctx context.Context, attachmentID domain.AttachmentID) (UploadIntent, error) {
@@ -280,6 +299,7 @@ func (q *Queries) LockUploadIntent(ctx context.Context, attachmentID domain.Atta
 		&i.ErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CapacityClass,
 	)
 	return i, err
 }
@@ -340,11 +360,16 @@ func (q *Queries) RecordUploadIntentMultipart(ctx context.Context, arg RecordUpl
 }
 
 const releaseUploadIntentCapacity = `-- name: ReleaseUploadIntentCapacity :execrows
-UPDATE upload_intent_capacity SET used = used - 1, updated_at = $1 WHERE singleton AND used > 0
+UPDATE upload_intent_capacity SET used = used - 1, updated_at = $1 WHERE capacity_class = $2 AND used > 0
 `
 
-func (q *Queries) ReleaseUploadIntentCapacity(ctx context.Context, now time.Time) (int64, error) {
-	result, err := q.db.Exec(ctx, releaseUploadIntentCapacity, now)
+type ReleaseUploadIntentCapacityParams struct {
+	Now           time.Time
+	CapacityClass domain.UploadCapacityClass
+}
+
+func (q *Queries) ReleaseUploadIntentCapacity(ctx context.Context, arg ReleaseUploadIntentCapacityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, releaseUploadIntentCapacity, arg.Now, arg.CapacityClass)
 	if err != nil {
 		return 0, err
 	}
@@ -352,11 +377,17 @@ func (q *Queries) ReleaseUploadIntentCapacity(ctx context.Context, now time.Time
 }
 
 const reserveUploadIntentCapacity = `-- name: ReserveUploadIntentCapacity :execrows
-UPDATE upload_intent_capacity SET used = used + 1, updated_at = $1 WHERE singleton AND used < 4096
+UPDATE upload_intent_capacity SET used = used + 1, updated_at = $1
+WHERE capacity_class = $2 AND used < CASE capacity_class WHEN 'chat' THEN 4096 ELSE 1024 END
 `
 
-func (q *Queries) ReserveUploadIntentCapacity(ctx context.Context, now time.Time) (int64, error) {
-	result, err := q.db.Exec(ctx, reserveUploadIntentCapacity, now)
+type ReserveUploadIntentCapacityParams struct {
+	Now           time.Time
+	CapacityClass domain.UploadCapacityClass
+}
+
+func (q *Queries) ReserveUploadIntentCapacity(ctx context.Context, arg ReserveUploadIntentCapacityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reserveUploadIntentCapacity, arg.Now, arg.CapacityClass)
 	if err != nil {
 		return 0, err
 	}
