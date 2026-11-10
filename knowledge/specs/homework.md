@@ -148,8 +148,8 @@ Paragraphs, bold, italic, ordered and unordered lists, inline code, code blocks 
 
 **Text normalisation, version `1`,** is applied identically to accepted answers, to student answers and to search terms:
 
-1. Unicode NFKC, then case folding, then NFKC again, so the result is stable when applied twice.
-2. `ё` → `е`.
+1. Unicode NFKC, then case folding, then NFKC again, so the result is stable when applied twice. Case folding follows the Unicode case folding table, which folds Cherokee letters to their uppercase forms; `golang.org/x/text/cases` folds them to lowercase instead, so Cherokee letters are mapped to uppercase after it (the owner's decision of 2026-11-10 during the change that implements this rule).
+2. `ё` → `е`, repeated after canonical composition until no `ё` remains, because an `е` followed by a combining diaeresis left in the text composes into `ё` again (the owner's decision of 2026-11-10 during the change that implements this rule).
 3. Quotes `«`, `»`, `„`, `“`, `”`, `‟` → `"`; quotes `‘`, `’`, `‚`, `‛`, `′`, `‹`, `›` → `'`.
 4. Dashes `‐`, `‑`, `‒`, `–`, `—`, `―`, `−` → `-`.
 5. Trim, and collapse every run of whitespace to one space.
@@ -162,7 +162,7 @@ From slice 8 both rules live in `internal/domain` as pure functions with unit te
 
 1. Removes spaces, including U+00A0, U+202F and U+2009.
 2. Accepts at most one decimal separator, `,` or `.`; a text containing both is invalid. Under this rule `1,000` is the number one, following the Russian decimal comma.
-3. Requires the whole text to match `^[+-]?[0-9]+([.,][0-9]+)?$`, where `-` also covers `−` and `–` after step 4 above. Anything else, including exponents, `NaN` and `Infinity`, is invalid.
+3. Requires the whole text to match `^[+-]?[0-9]+([.,][0-9]+)?$`, where `-` also covers every dash of step 4 above. Anything else, including exponents, `NaN` and `Infinity`, is invalid.
 4. Parses the match into an exact decimal.
 
 The answer is correct when `|answer − value| ≤ tolerance` in exact decimal arithmetic. A text that does not parse is incorrect and is kept as entered.

@@ -81,6 +81,13 @@ linters:
           deny:
             - pkg: golang.org/x/image
               desc: image decoding belongs to internal/services/files
+        text:
+          files:
+            - $all
+            - "!**/internal/domain/*.go"
+          deny:
+            - pkg: golang.org/x/text
+              desc: text normalisation belongs to internal/domain
         huma:
           files:
             - $all
