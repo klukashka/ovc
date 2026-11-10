@@ -14,6 +14,7 @@ import {
   type SentMailLinks,
   type TestAccount,
   newTestAccount,
+  pageSettled,
   registerTutor,
   signInThroughTheApi,
 } from './accounts.ts';
@@ -438,6 +439,7 @@ test('the confirmation link opened in a signed-in browser asks for no password a
   await expectReadyForNavigation(tab, tabReady);
   await expect(otherPage.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
   await otherDiagnostics.finishHttpPhase();
+  await pageSettled(otherPage);
   await otherPage.reload();
 
   await expect(otherPage.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();

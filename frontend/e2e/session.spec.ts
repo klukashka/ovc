@@ -1,8 +1,9 @@
 import type { Page, Response } from '@playwright/test';
 
-import { newTestAccount, registerTutor, signInThroughTheApi } from './accounts.ts';
+import { newTestAccount, pageSettled, registerTutor, signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser, type PageDiagnostics } from './fixtures.ts';
 import {
+  accessTokenExpiredWithinSocketGrace,
   expectRefetchedAfterTheSocketIsReady,
   expectReadyForNavigation,
   todayQueryPaths,
@@ -12,7 +13,6 @@ import {
 test.use({ locale: 'ru-RU' });
 
 const knownPreferenceKeys = ['ovc.language', 'ovc.sidebar', 'ovc.theme'];
-const accessTokenExpiredWithinSocketGrace = 15 * 60 + 10;
 
 async function signInThroughTheForm(page: Page, email: string, password: string): Promise<void> {
   await page.getByLabel('Email').fill(email);
@@ -98,6 +98,7 @@ test('signing in follows next, signing out returns to sign-in that a reload keep
   await signOutThroughTheMenu(page);
   await expect(page).toHaveURL('/');
   await expect(page.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
+  await pageSettled(page);
 
   await page.reload();
 

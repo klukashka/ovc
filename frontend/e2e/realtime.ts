@@ -443,6 +443,8 @@ export async function expectRefetchedAfterTheSocketIsReady(traffic: TrafficAfter
   }
 }
 
+export const accessTokenExpiredWithinSocketGrace = 15 * 60 + 10;
+
 export const todayQueryPaths: readonly string[] = [
   '/api/v1/notifications',
   '/api/v1/tutor/code',

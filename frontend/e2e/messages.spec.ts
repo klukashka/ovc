@@ -85,6 +85,22 @@ function messages(page: Page): Locator {
   return page.getByRole('list', { name: 'Messages', exact: true }).getByRole('listitem');
 }
 
+function conversationQueryPaths(channel: string): readonly string[] {
+  return [`/api/v1/channels/${channel}`, `/api/v1/channels/${channel}/messages`];
+}
+
+async function openSettledConversation(
+  page: Page,
+  channel: string,
+  layout: 'with the chat list' | 'conversation only',
+): Promise<void> {
+  const paths = conversationQueryPaths(channel);
+  const traffic = trafficAfterReady(page, layout === 'with the chat list' ? [...paths, '/api/v1/channels'] : paths);
+  await traffic.initialize();
+  await page.goto(`/messages/${channel}`);
+  await expectRefetchedAfterTheSocketIsReady(traffic);
+}
+
 async function settledComposer(page: Page): Promise<void> {
   await page.waitForFunction(() => document.querySelector('textarea')?.readOnly === false);
 }
@@ -175,8 +191,8 @@ test.describe('text messages', () => {
     await diagnostics.watch(studentPage);
     await signInThroughTheApi(page, tutor);
     await signInThroughTheApi(studentPage, student);
-    await page.goto(`/messages/${channel}`);
-    await studentPage.goto(`/messages/${channel}`);
+    await openSettledConversation(page, channel, 'with the chat list');
+    await openSettledConversation(studentPage, channel, 'conversation only');
     await send(studentPage, 'Please correct this');
     await send(page, 'First version');
     const own = messages(page).filter({ hasText: 'First version' });

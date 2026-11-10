@@ -105,3 +105,11 @@ Not a WebKit failure, but recorded here with the other failures under load, whic
 | `session.spec.ts` › the sixth failed sign-in within 15 minutes says when to try again | WebKit | journey | One HTTP error beyond the expected refusals; the run took the usual 5 minutes; the change touched only the backend | Not repeated alone; the owner approved a rerun on 2026-11-10 and, until the slice closes, one rerun per gate when only a browser test unrelated to the change fails, each case recorded here and in the merge report |
 
 The standing approval of one rerun per gate for an unrelated browser failure ended when the design slice closed on 2026-11-10; from then on the rerun rule of AGENTS.md and ADR-0018 applies unchanged.
+
+## The slice 8 merge gates (Firefox ending under load)
+
+| Test | Browser | Phase | Evidence | Repeat alone |
+|---|---|---|---|---|
+| Six tests, among them the meeting room and message attachments suites | Firefox | journey and context teardown | The tests failed with "browser has been closed" or a context teardown timeout in one gate; no test or application cause was found | Not reproduced alone |
+
+The owner accepted it on 2026-11-10 as an infrastructure failure of the same class as the Firefox runs under memory pressure above, carried into slice 10's load diagnosis. The other slice 8 gate failures, their causes and fixes are in [the slice 8 known limitations](slice-8-known-limitations.md#flaky-tests-of-the-slice-8-merge-gates); the WebKit timeouts of the schedule pilot steps stay in slice 10's diagnosis, and the messages edit and delete failure recorded twice above is fixed there.

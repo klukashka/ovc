@@ -242,7 +242,7 @@ func TestSettingTheClockFlushesLocalPresenceEvenAtTheSameInstant(t *testing.T) {
 
 func TestReconnectBeforePendingReleaseRecoveryKeepsTheNewLease(t *testing.T) {
 	t.Parallel()
-	h := newLiveHarness(t, liveTuning{gateway: func(deps *realtime.Dependencies) { deps.Timing.PresenceTimeout = 200 * time.Millisecond }})
+	h := newLiveHarness(t, liveTuning{gateway: func(deps *realtime.Dependencies) { deps.Timing.PresenceTimeout = presenceTestBudget }})
 	user, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 2, studentEmail)
 	first := h.connect(t, token)
 	release := h.holdRow(t, presenceRowLock, user.String())
@@ -250,6 +250,8 @@ func TestReconnectBeforePendingReleaseRecoveryKeepsTheNewLease(t *testing.T) {
 	if err := first.conn.CloseNow(); err != nil {
 		t.Fatal(err)
 	}
+	h.waitForLockWaiters(t, 1)
+	h.cancelLockWaiters(t, 1)
 	h.awaitLogs(t, 1, `"msg":"presence.release.pending"`)
 	next := h.open(t)
 	next.auth(t, token)

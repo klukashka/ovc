@@ -8,7 +8,11 @@ import type { UploadTransfer } from '../src/lib/api/transport.ts';
 import { signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { channelOf } from './messages.ts';
-import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
+import {
+  accessTokenExpiredWithinSocketGrace,
+  expectRefetchedAfterTheSocketIsReady,
+  trafficAfterReady,
+} from './realtime.ts';
 import { accessToken, createGroup } from './tutoring.ts';
 
 async function uploadModulePath(): Promise<string> {
@@ -207,7 +211,7 @@ test('upload transport › an expired multipart upload refreshes once, removal a
   const saved = page.waitForResponse((response) => isUploadResponse(response) && response.status() === 201);
   await page.locator('input[type=file]').setInputFiles(filePayload);
   await expired.reached;
-  await control.advance(16 * 60);
+  await control.advance(accessTokenExpiredWithinSocketGrace);
   await expired.release();
   const uploaded: unknown = await (await saved).json();
   await page.getByRole('list', { name: 'Attachments', exact: true }).getByText('Uploaded', { exact: true }).waitFor();

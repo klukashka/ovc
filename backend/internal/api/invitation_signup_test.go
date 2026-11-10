@@ -159,19 +159,30 @@ type contestedRow struct {
 
 const lockedRowPosition = "tableoid::oid, (ctid::text::point)[0]::int4, (ctid::text::point)[1]::int2"
 
-const contestedRowWaiters = `
-WITH RECURSIVE waiting(pid) AS (
+const contestedRowDirectWaiters = `
     SELECT direct.pid FROM pg_locks AS direct
     WHERE NOT direct.granted AND (
         (direct.locktype = 'transactionid' AND direct.transactionid IN (
             SELECT held.transactionid FROM pg_locks AS held WHERE held.pid = $1 AND held.locktype = 'transactionid' AND held.granted))
         OR (direct.locktype = 'tuple' AND direct.database = (SELECT oid FROM pg_database WHERE datname = current_database())
             AND direct.relation = $2 AND direct.page = $3 AND direct.tuple = $4))
+`
+
+const contestedRowWaiters = `
+WITH RECURSIVE waiting(pid) AS (` + contestedRowDirectWaiters + `
     UNION
     SELECT queued.pid FROM pg_locks AS queued JOIN waiting ON waiting.pid = ANY (pg_blocking_pids(queued.pid))
     WHERE NOT queued.granted
 )
 SELECT count(pid) FROM waiting`
+
+const cancelContestedRowDirectWaiters = `
+WITH waiting AS MATERIALIZED (
+    SELECT direct.pid FROM (` + contestedRowDirectWaiters + `) AS direct
+    JOIN pg_stat_activity AS activity ON activity.pid = direct.pid
+    WHERE activity.datname = current_database()
+)
+SELECT count(*) FILTER (WHERE cancelled) FROM (SELECT pg_cancel_backend(pid) AS cancelled FROM waiting) AS attempts`
 
 func (h *authHarness) holdRow(t *testing.T, lockQuery string, key string) func() {
 	t.Helper()
@@ -253,6 +264,23 @@ func (h *authHarness) waitForLockWaiters(t *testing.T, expected int64) {
 			t.Fatalf("%d requests wait on the held row, directly or behind another waiter, instead of %d", waiting, expected)
 		case <-poll.C:
 		}
+	}
+}
+
+func (h *authHarness) cancelLockWaiters(t *testing.T, expected int64) {
+	t.Helper()
+	if h.contested == nil {
+		t.Fatal("no row is held, so no waiter can be cancelled")
+	}
+	row := *h.contested
+	cancelling, cancel := context.WithTimeout(context.Background(), pauseDeadline)
+	defer cancel()
+	var cancelled int64
+	if err := h.database.Pool.QueryRow(cancelling, cancelContestedRowDirectWaiters, row.holder, row.relation, row.page, row.tuple).Scan(&cancelled); err != nil {
+		t.Fatal(err)
+	}
+	if cancelled != expected {
+		t.Fatalf("cancelled %d statements waiting on the held row instead of %d", cancelled, expected)
 	}
 }
 

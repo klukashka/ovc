@@ -186,13 +186,13 @@ describe('the session after it changes hands', () => {
     expect(signedInAs(session)).toBe(second.id);
   });
 
-  test('an account answer that arrives after sign-out does not sign the tab back in', async () => {
+  test('an account answer that arrives after the session ended does not sign the tab back in', async () => {
     const shared = browser();
     const session = await signedInTab(shared);
     const paused = shared.server.pauseAccountReads();
     const reload = session.reloadAccount();
     await paused.answered;
-    await session.signOut();
+    session.endRevoked('signedOut');
 
     paused.resume();
     await reload;
@@ -388,6 +388,98 @@ describe('session', () => {
     expect(results.slice(0, 2)).toEqual([{ kind: 'superseded' }, { kind: 'renewed' }]);
     expect(ended.server.refreshes).toBe(refreshesBeforeEnding);
     expect(failed.server.refreshes).toBe(refreshesBeforeFailure + 1);
+  });
+
+  test('a request made while the tab signs out waits and is never sent once the sign-out ended the session', async () => {
+    const shared = browser();
+    const session = await signedInTab(shared);
+    const paused = shared.server.pauseSignOuts();
+    const signingOut = session.signOut();
+    await paused.answered;
+    const mark = shared.server.sentTokens.length;
+    const held = readAccount(session).then(
+      () => 'sent',
+      (error: unknown) => (error instanceof DOMException ? error.name : 'other'),
+    );
+
+    paused.resume();
+    await signingOut;
+
+    expect(await held).toBe('AbortError');
+    expect(sentSince(shared, mark)).toEqual([]);
+    expect(session.snapshot()).toEqual({ kind: 'signedOut', reason: 'signedOut' });
+  });
+
+  test('sign-out waits for the requests already in flight and sends its own request after they are answered', async () => {
+    const shared = browser();
+    const session = await signedInTab(shared);
+    const accountPaused = shared.server.pauseAccountReads();
+    const reading = readAccount(session);
+    await accountPaused.answered;
+    const signOutPaused = shared.server.pauseSignOuts();
+    const events: string[] = [];
+    const signingOut = session.signOut();
+    const readAnswered = reading.then((answer) => {
+      events.push(`read answered ${String(answer.status)}`);
+    });
+    const signOutReceived = signOutPaused.answered.then(() => {
+      events.push('sign-out received');
+    });
+
+    accountPaused.resume();
+    await Promise.all([readAnswered, signOutReceived]);
+    signOutPaused.resume();
+    await signingOut;
+
+    expect(events).toEqual(['read answered 200', 'sign-out received']);
+    expect(session.snapshot()).toEqual({ kind: 'signedOut', reason: 'signedOut' });
+  });
+
+  test('sign-out stops waiting for a read in flight after 15 seconds and sends its own request', async () => {
+    const shared = browser();
+    const scheduler = manualScheduler();
+    const session = await signedInTab(shared, scheduler);
+    const accountPaused = shared.server.pauseAccountReads();
+    const reading = readAccount(session);
+    await accountPaused.answered;
+    const signOutPaused = shared.server.pauseSignOuts();
+    const scheduled = scheduler.nextSchedule();
+    const signingOut = session.signOut();
+    const deadline = await scheduled;
+
+    scheduler.pass(deadline);
+    await signOutPaused.answered;
+    signOutPaused.resume();
+    await signingOut;
+    accountPaused.resume();
+    await reading;
+
+    expect(deadline).toBe(15_000);
+    expect(session.snapshot()).toEqual({ kind: 'signedOut', reason: 'signedOut' });
+  });
+
+  test('a request made while the tab fails to end its session is sent afterwards with the same session', async () => {
+    const shared = browser();
+    const session = await signedInTab(shared);
+    let loseAnswer = (): void => undefined;
+    const lost = new Promise<Response>((_resolve, reject) => {
+      loseAnswer = (): void => {
+        reject(new Error('the sign-out answer was lost'));
+      };
+    });
+    const failing = session.whileEnding(
+      () => lost,
+      () => 'signedOut',
+    );
+    const mark = shared.server.sentTokens.length;
+    const held = readAccount(session);
+
+    loseAnswer();
+    await failing.catch(() => undefined);
+
+    expect((await held).status).toBe(200);
+    expect(sentSince(shared, mark).map((token) => shared.server.issuedBy(token))).toEqual([first.id]);
+    expect(signedInAs(session)).toBe(first.id);
   });
 
   test('start keeps a session that a revocation replaced meanwhile', async () => {

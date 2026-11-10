@@ -357,13 +357,14 @@ function SignOutEverywhereDialog({
   async function signOutEverywhere(): Promise<void> {
     setOutcome({ kind: 'sending' });
     onBusy(true);
-    const { error, response } = await session.whileEnding(() => client.POST('/api/v1/auth/logout-all'));
+    const { error, response } = await session.whileEnding(
+      (send) => client.POST('/api/v1/auth/logout-all', { fetch: send }),
+      (answer) => (answer.response.ok ? 'signedOut' : null),
+    );
     if (!response.ok) {
       onBusy(false);
       setOutcome(refusedFrom(response, error));
-      return;
     }
-    session.endRevoked('signedOut');
   }
 
   return (
@@ -439,15 +440,14 @@ function DeleteAccountDialog({
   async function remove(data: FormData): Promise<void> {
     setOutcome({ kind: 'sending' });
     onBusy(true);
-    const { error: refusal, response } = await session.whileEnding(() =>
-      client.DELETE('/api/v1/users/me', { body: { password: stringField(data, 'password') } }),
+    const { error: refusal, response } = await session.whileEnding(
+      (send) => client.DELETE('/api/v1/users/me', { body: { password: stringField(data, 'password') }, fetch: send }),
+      (answer) => (answer.response.ok ? 'accountDeleted' : null),
     );
     if (!response.ok) {
       onBusy(false);
       setOutcome(refusedFrom(response, refusal));
-      return;
     }
-    session.endRevoked('accountDeleted');
   }
 
   return (

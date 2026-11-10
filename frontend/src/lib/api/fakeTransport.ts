@@ -431,6 +431,8 @@ export class FakeAuthServer {
   private failingRefreshes = 0;
   private lostRefreshes = 0;
   private accountReadGate: Promise<void> | null = null;
+  private signOutGate: Promise<void> | null = null;
+  private signOutReceived: () => void = () => undefined;
   private accountReadReceived: () => void = () => undefined;
   private joinRequestReadGate: Promise<void> | null = null;
   private joinRequestReadReceived: () => void = () => undefined;
@@ -536,6 +538,22 @@ export class FakeAuthServer {
       received = resolve;
     });
     this.refreshReceived = received;
+    return { resume, answered };
+  }
+
+  pauseSignOuts(): PausedAnswers {
+    let resume = (): void => undefined;
+    let received = (): void => undefined;
+    this.signOutGate = new Promise((resolve) => {
+      resume = (): void => {
+        this.signOutGate = null;
+        resolve();
+      };
+    });
+    const answered = new Promise<void>((resolve) => {
+      received = resolve;
+    });
+    this.signOutReceived = received;
     return { resume, answered };
   }
 
@@ -977,6 +995,8 @@ export class FakeAuthServer {
     if (refused !== null) {
       return refused;
     }
+    this.signOutReceived();
+    await this.signOutGate;
     const session = this.sessionOf(token);
     if (session !== undefined) {
       session.revoked = true;

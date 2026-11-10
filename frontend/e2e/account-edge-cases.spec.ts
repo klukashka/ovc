@@ -2,7 +2,7 @@ import type { BrowserContext, Locator, Page } from '@playwright/test';
 
 import type { ObservedBrowser } from './browser-diagnostics.ts';
 
-import { type TestAccount, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, pageSettled, signInThroughTheApi } from './accounts.ts';
 import {
   accountId,
   trafficAfterReady,
@@ -176,6 +176,7 @@ test.describe('account edge cases', () => {
 
     await expect(otherPage.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
     await otherDiagnostics.finishHttpPhase();
+    await pageSettled(otherPage);
     await otherPage.reload();
 
     await expect(otherPage.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();

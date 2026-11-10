@@ -30,6 +30,10 @@ export type SessionState =
   | { readonly kind: 'signedOut'; readonly reason: SignedOutReason }
   | { readonly kind: 'signedIn'; readonly me: Me };
 
+export type EndingSend = (request: Request) => Promise<Response>;
+
+export type EndingReason = 'signedOut' | 'accountDeleted';
+
 export type SignInResult =
   | { readonly kind: 'signedIn' }
   | { readonly kind: 'refused'; readonly error: ApiError; readonly retryAfterSeconds: number | null };
@@ -44,6 +48,7 @@ export interface SessionDependencies {
 const refreshLock = 'ovc-refresh';
 const refreshShare = 0.8;
 const refreshTimeoutMilliseconds = 15_000;
+const readsBeforeEndingMilliseconds = 15_000;
 const proactiveRetryMilliseconds = 30_000;
 const apiPrefix = '/api/';
 const superseded: RefreshResult = { kind: 'superseded' };
@@ -210,6 +215,7 @@ export class Session {
   private epoch = 0;
   private pendingRefresh: Promise<RefreshResult> | null = null;
   private readonly endingActions = new Set<Promise<unknown>>();
+  private readonly requestsInFlight = new Set<Promise<unknown>>();
   private cancelScheduled: (() => void) | null = null;
   private readonly listeners = new Set<() => void>();
   private readonly tokenListeners = new Set<(token: string, epoch: number) => void>();
@@ -236,8 +242,17 @@ export class Session {
     };
   };
 
-  readonly whileEnding = async <Result>(work: () => Promise<Result>): Promise<Result> => {
-    const running = work();
+  readonly whileEnding = async <Result>(
+    work: (send: EndingSend) => Promise<Result>,
+    endsWith: (result: Result) => EndingReason | null = () => null,
+  ): Promise<Result> => {
+    const running = this.settleRequestsInFlight()
+      .then(() => work(this.sendWhileEnding))
+      .then((result) => {
+        const reason = endsWith(result);
+        if (reason !== null) this.end({ kind: 'signedOut', reason });
+        return result;
+      });
     this.endingActions.add(running);
     try {
       return await running;
@@ -246,13 +261,8 @@ export class Session {
     }
   };
 
-  readonly refreshAfterSocketRefusal = async (): Promise<RefreshResult> => {
-    const epoch = this.epoch;
-    while (this.endingActions.size > 0) {
-      await Promise.allSettled([...this.endingActions]);
-    }
-    return epoch === this.epoch ? this.refresh() : superseded;
-  };
+  readonly refreshAfterSocketRefusal = async (): Promise<RefreshResult> =>
+    (await this.survivesOwnEnding()) ? this.refresh() : superseded;
 
   readonly freshToken = async (minimumValidityMilliseconds: number, epoch: number): Promise<string | null> => {
     if (epoch !== this.epoch) {
@@ -276,8 +286,55 @@ export class Session {
     return this.authorizedRequest(new Request(request, { headers }), upload);
   };
 
-  private async authorizedRequest(request: Request, upload?: UploadTransfer): Promise<Response> {
+  private readonly sendWhileEnding = (request: Request): Promise<Response> =>
+    this.authorizedRequest(request, undefined, 'ending');
+
+  private async survivesOwnEnding(): Promise<boolean> {
+    const epoch = this.epoch;
+    while (this.endingActions.size > 0) {
+      await Promise.allSettled([...this.endingActions]);
+    }
+    return epoch === this.epoch;
+  }
+
+  private async authorizedRequest(
+    request: Request,
+    upload?: UploadTransfer,
+    owner: 'ending' | 'session' = 'session',
+  ): Promise<Response> {
     request.signal.throwIfAborted();
+    if (owner === 'session' && this.endingActions.size > 0 && !(await this.survivesOwnEnding())) {
+      throw new DOMException('the session ended before the request was sent', 'AbortError');
+    }
+    request.signal.throwIfAborted();
+    const exchange = this.exchange(request, upload);
+    if (owner === 'ending' || request.method !== 'GET') return exchange;
+    this.requestsInFlight.add(exchange);
+    try {
+      return await exchange;
+    } finally {
+      this.requestsInFlight.delete(exchange);
+    }
+  }
+
+  private settleRequestsInFlight(): Promise<void> {
+    if (this.requestsInFlight.size === 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      const cancelDeadline = this.deps.scheduler.schedule(readsBeforeEndingMilliseconds, resolve);
+      void this.everyRequestInFlightSettled().then(() => {
+        cancelDeadline();
+        resolve();
+      });
+    });
+  }
+
+  private async everyRequestInFlightSettled(): Promise<void> {
+    while (this.requestsInFlight.size > 0) {
+      await Promise.allSettled([...this.requestsInFlight]);
+    }
+  }
+
+  private async exchange(request: Request, upload: UploadTransfer | undefined): Promise<Response> {
     const retry = request.clone();
     const sentToken = this.token;
     const epoch = this.epoch;
@@ -370,14 +427,15 @@ export class Session {
     await this.loadMe();
   };
 
-  readonly signOut = (): Promise<void> =>
-    this.whileEnding(async () => {
-      const response = await this.authorizedFetch(`${this.deps.origin}/api/v1/auth/logout`, { method: 'POST' });
-      if (!response.ok && response.status !== 401) {
-        throw await errorOf(response);
-      }
-      this.end({ kind: 'signedOut', reason: 'signedOut' });
-    });
+  readonly signOut = async (): Promise<void> => {
+    const response = await this.whileEnding(
+      (send) => send(new Request(`${this.deps.origin}/api/v1/auth/logout`, { method: 'POST' })),
+      (answer) => (answer.ok || answer.status === 401 ? 'signedOut' : null),
+    );
+    if (!response.ok && response.status !== 401) {
+      throw await errorOf(response);
+    }
+  };
 
   private async installAccount(token: unknown, epoch: number): Promise<void> {
     try {
