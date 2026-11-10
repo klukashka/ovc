@@ -28,6 +28,7 @@ import (
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/library"
 	"ovc/backend/internal/services/meetings"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/outbox"
@@ -230,6 +231,7 @@ func newAuthHarnessWithDatabase(
 	chatService := chat.New(chat.Dependencies{
 		Store: store, Clock: shared, Random: random, Addresses: fileService, Erasure: chat.DefaultErasureSettings(), Logger: logger,
 	})
+	libraryService := library.New(library.Dependencies{Store: store, Clock: shared, Random: random, Keys: keys, Addresses: fileService, Logger: logger})
 	createGate := &providerClockGate{source: shared}
 	linkGate := &providerEntropyGate{source: random}
 	provider, err := meeting.NewSharedFake(context.Background(), database.Pool, createGate, linkGate, logger, meeting.DefaultFakeLimits())
@@ -253,6 +255,7 @@ func newAuthHarnessWithDatabase(
 		Preferences: preferences,
 		Inbox:       inbox,
 		Chat:        chatService,
+		Library:     libraryService,
 		Meetings:    lifecycle,
 	}
 	for _, hook := range hooks {

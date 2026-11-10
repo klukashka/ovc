@@ -18,6 +18,7 @@ import (
 	"ovc/backend/internal/schemas"
 	"ovc/backend/internal/services/chat"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/library"
 	"ovc/backend/internal/services/meetings"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/schedule"
@@ -82,6 +83,7 @@ type Options struct {
 	Preferences   *notifications.Preferences
 	Inbox         *notifications.Inbox
 	Chat          *chat.Service
+	Library       *library.Service
 	Meetings      *meetings.Lifecycle
 	Realtime      *realtime.Gateway
 	Uploads       UploadTiming
@@ -97,7 +99,7 @@ func newHandler(options Options, registerExtra func(*router)) (http.Handler, err
 	readiness := &sharedReadiness{check: options.Readiness, now: options.Now, logger: options.Logger}
 	routes := &router{
 		api: api, auth: options.Auth, files: options.Files, tutoring: options.Tutoring, schedule: options.Schedule, preferences: options.Preferences,
-		inbox: options.Inbox, chat: options.Chat, meetings: options.Meetings, uploads: options.Uploads.withDefaults(),
+		inbox: options.Inbox, chat: options.Chat, library: options.Library, meetings: options.Meetings, uploads: options.Uploads.withDefaults(),
 		now: options.Now, logger: options.Logger,
 	}
 	routes.registerAll(readiness.run)
@@ -189,6 +191,7 @@ func (r *router) registerAll(readiness ReadinessFunc) {
 	r.registerTutoring()
 	r.registerSchedule()
 	r.registerChat()
+	r.registerLibrary()
 	r.registerFileRoutes()
 	r.registerRealtimeAudience()
 }

@@ -29,19 +29,19 @@ func TestDownloadTokenV2LayoutIsRefusedUntilItsKindIsAuthorized(t *testing.T) {
 	parties := h.activeStudentInAGroup(t)
 	channel := h.directChannel(t, parties.card.ID).ID
 	chatFile := h.boundUpload(t, parties.studentToken, channel, "essay.txt", plainText(64), 31)
-	material, lesson := domain.EntityID{0x6d, 0x61, 1}, domain.EntityID{0x6c, 0x65, 1}
-	materialFile, lessonFile := fixtureID(24, 1), fixtureID(24, 2)
-	h.referencedLibraryFile(t, materialFile, parties.tutor, domain.ReferenceMaterial, material)
+	template, lesson := domain.EntityID{0x74, 0x65, 1}, domain.EntityID{0x6c, 0x65, 1}
+	templateFile, lessonFile := fixtureID(24, 1), fixtureID(24, 2)
+	h.referencedLibraryFile(t, templateFile, parties.tutor, domain.ReferenceTemplate, template)
 	h.referencedLibraryFile(t, lessonFile, parties.tutor, domain.ReferenceLesson, lesson)
-	materialID, valid := domain.ParseUUID[domain.AttachmentID](materialFile)
+	templateID, valid := domain.ParseUUID[domain.AttachmentID](templateFile)
 	if !valid {
-		t.Fatal("the material file's identifier does not parse")
+		t.Fatal("the template file's identifier does not parse")
 	}
 	lessonID, valid := domain.ParseUUID[domain.AttachmentID](lessonFile)
 	if !valid {
 		t.Fatal("the lesson file's identifier does not parse")
 	}
-	versionTwo, err := h.files.ReferenceAddress(materialID, files.DownloadReference{Kind: domain.ReferenceMaterial, Item: material},
+	versionTwo, err := h.files.ReferenceAddress(templateID, files.DownloadReference{Kind: domain.ReferenceTemplate, Item: template},
 		domain.DispositionInline, h.now(t))
 	if err != nil {
 		t.Fatal(err)
@@ -52,11 +52,11 @@ func TestDownloadTokenV2LayoutIsRefusedUntilItsKindIsAuthorized(t *testing.T) {
 	servedVersionOneForLesson := h.fetch(t, versionOneForLesson.URL, nil)
 	chatAddress, chatBody := h.addressOf(t, parties.studentToken, chatFile, "")
 	servedChat := h.fetch(t, chatBody.URL, nil)
-	chatWithReference, _ := h.addressOf(t, parties.studentToken, chatFile, "?ref=material:"+material.String())
+	chatWithReference, _ := h.addressOf(t, parties.studentToken, chatFile, "?ref=template:"+template.String())
 	chatWithMalformedReference, _ := h.addressOf(t, parties.studentToken, chatFile, "?ref=nonsense")
-	materialWithReference, _ := h.addressOf(t, parties.tutorToken, materialFile, "?ref=material:"+material.String())
-	materialWithMalformedReference, _ := h.addressOf(t, parties.tutorToken, materialFile, "?ref=nonsense")
-	materialWithoutReference, _ := h.addressOf(t, parties.tutorToken, materialFile, "")
+	templateWithReference, _ := h.addressOf(t, parties.tutorToken, templateFile, "?ref=template:"+template.String())
+	templateWithMalformedReference, _ := h.addressOf(t, parties.tutorToken, templateFile, "?ref=nonsense")
+	templateWithoutReference, _ := h.addressOf(t, parties.tutorToken, templateFile, "")
 
 	for name, refused := range map[string]response{
 		"a version 2 token of a kind without its authorization": servedVersionTwo,
@@ -72,9 +72,9 @@ func TestDownloadTokenV2LayoutIsRefusedUntilItsKindIsAuthorized(t *testing.T) {
 	for name, refused := range map[string]response{
 		"a reference on a chat attachment":                    chatWithReference,
 		"a malformed reference on a chat attachment":          chatWithMalformedReference,
-		"a reference to a material without its authorization": materialWithReference,
-		"a malformed reference to an unauthorized material":   materialWithMalformedReference,
-		"a material without a reference":                      materialWithoutReference,
+		"a reference to a template without its authorization": templateWithReference,
+		"a malformed reference to an unauthorized template":   templateWithMalformedReference,
+		"a template without a reference":                      templateWithoutReference,
 	} {
 		if refused.status != http.StatusNotFound || code(t, refused) != "not_found" {
 			t.Fatalf("%s answered %s", name, describe(refused))

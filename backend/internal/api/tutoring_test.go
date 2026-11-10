@@ -406,11 +406,18 @@ var denialCases = map[string]denialCase{
 	"POST /api/v1/lessons/{id}/end":                    anotherTutorsLessonWrite(http.MethodPost, "/end", ""),
 	"POST /api/v1/lessons/{id}/restart-room":           anotherTutorsLessonWrite(http.MethodPost, "/restart-room", ""),
 	"GET /api/v1/integrations/bbb/{routing_key}/ended": aForeignEndedHintRevealsNothing,
+	"PATCH /api/v1/library/folders/{id}":               anotherTutorsFolder(http.MethodPatch, `{"name":"Taken over"}`),
+	"DELETE /api/v1/library/folders/{id}":              anotherTutorsFolder(http.MethodDelete, ""),
+	"PATCH /api/v1/library/materials/{id}":             anotherTutorsMaterial(http.MethodPatch, `{"title":"Taken over"}`),
+	"DELETE /api/v1/library/materials/{id}":            anotherTutorsMaterial(http.MethodDelete, ""),
 }
 
 var bodyIdentifierDenialCases = map[string]denialCase{
 	"POST /api/v1/notifications/read": anotherAccountsNotification,
 	"POST /api/v1/lessons":            anotherTutorsLessonAudience,
+	"POST /api/v1/library/folders":    anotherTutorsParentFolder,
+	"POST /api/v1/library/materials":  anotherTutorsLibraryUpload,
+	"GET /api/v1/library":             anotherTutorsListedFolder,
 }
 
 var denialStatuses = map[string]int{

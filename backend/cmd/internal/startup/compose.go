@@ -19,6 +19,7 @@ import (
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/library"
 	"ovc/backend/internal/services/meetings"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/outbox"
@@ -65,6 +66,18 @@ func NewChat(logger *slog.Logger, database *core.Database, source clock.Source, 
 		Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Addresses: fileService, Erasure: chat.DefaultErasureSettings(),
 		Logger: logger,
 	})
+}
+
+func NewLibrary(
+	logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, fileService *files.Service,
+) (*library.Service, error) {
+	keys, err := core.DeriveKeys(settings.JWTSecret)
+	if err != nil {
+		return nil, err
+	}
+	return library.New(library.Dependencies{
+		Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Addresses: fileService, Logger: logger,
+	}), nil
 }
 
 func NewSchedule(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, embed *core.Switch) (*schedule.Service, error) {

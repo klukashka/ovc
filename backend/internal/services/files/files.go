@@ -148,6 +148,7 @@ func New(dependencies Dependencies) *Service {
 		deps: dependencies, gate: newGate(), decodes: newDecodeBudget(decodeBudgetBytes),
 		avatarReads: make(chan struct{}, avatarReadSlots), downloads: make(chan struct{}, downloadSlots),
 		hourly: newHourlyUploads(domain.ChatUploadsPerHour), libraryHourly: newHourlyUploads(domain.LibraryUploadsPerHour), tokens: downloadTokens{keys: dependencies.Keys},
+		references: []referenceAuthorization{materialAuthorization{}},
 	}
 }
 

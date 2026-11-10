@@ -682,3 +682,33 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: MeetingRecoveryRevision
+          - column: folders.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: FolderID
+          - column: folders.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: folders.parent_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: FolderID
+              pointer: true
+          - column: materials.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MaterialID
+          - column: materials.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: materials.folder_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: FolderID
+              pointer: true
+          - column: materials.attachment_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: AttachmentID

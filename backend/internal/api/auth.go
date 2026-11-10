@@ -21,6 +21,7 @@ import (
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/library"
 	"ovc/backend/internal/services/meetings"
 	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/schedule"
@@ -90,6 +91,7 @@ type router struct {
 	preferences *notifications.Preferences
 	inbox       *notifications.Inbox
 	chat        *chat.Service
+	library     *library.Service
 	meetings    *meetings.Lifecycle
 	uploads     UploadTiming
 	now         func() time.Time

@@ -313,6 +313,7 @@ export const en: Resources = {
     too_long: 'Too long.',
     incorrect: 'This value is incorrect.',
     too_many: 'Limit reached.',
+    taken: 'A folder with this name already exists here.',
     passwordLength: 'The password must be 10 to 128 characters long.',
   },
   form: {

@@ -441,7 +441,7 @@ Slice 8 adds the `folder`, `material` and `template` tables ([library](homework.
 | `id` | |
 | `tutor_id` | references the tutor profile, `ON DELETE RESTRICT` |
 | `parent_id` | nullable (the root); `(parent_id, tutor_id)` references the folder's `(id, tutor_id)` with `ON DELETE RESTRICT`, so only an empty folder can be deleted and the purge deletes folders deepest first; indexed; the depth of at most 3 and the absence of cycles are checked by the service under the tutor's profile lock |
-| `name`, `normalised_name` | 1 to 100 code points as entered, and its text normalisation version 1; unique `(tutor_id, parent_id, normalised_name)` with `NULLS NOT DISTINCT`, so two root folders cannot share a name either |
+| `name`, `normalised_name` | 1 to 100 code points as entered, and its text normalisation version 1, at most 400 bytes, with the `C` collation; unique `(tutor_id, parent_id, normalised_name)` with `NULLS NOT DISTINCT`, so two root folders cannot share a name either |
 | `updated_at` | |
 
 Deleted folders leave the table directly.
@@ -453,8 +453,8 @@ Deleted folders leave the table directly.
 | `id` | |
 | `tutor_id` | references the tutor profile, `ON DELETE RESTRICT` |
 | `folder_id` | null means the library root, and is set to null when the material is deleted; `(folder_id, tutor_id)` references the folder's `(id, tutor_id)` with `ON DELETE RESTRICT` |
-| `title`, `normalised_title` | 1 to 200 code points as entered, and its text normalisation version 1 |
-| `attachment_id` | the material's file, never replaced; its `material` [reference](#attachment-reference-and-quota-charge) exists while the material is not deleted |
+| `title`, `normalised_title` | 1 to 200 code points as entered, and its text normalisation version 1, at most 800 bytes, with the `C` collation that the listing's keyset order uses |
+| `attachment_id` | the material's file, never replaced; its `material` [reference](#attachment-reference-and-quota-charge) exists while the material is not deleted; no foreign key, because the attachment row leaves storage and the table after its last reference is removed while a deleted material stays until the purge |
 | `deleted_at` | soft deletion; deleted materials stay until the tutor purge, because lessons, series and templates keep showing their titles |
 | `updated_at` | |
 

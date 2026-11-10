@@ -175,6 +175,16 @@ type FakeMeetingState struct {
 	Unavailable     bool
 }
 
+type Folder struct {
+	ID             domain.FolderID
+	TutorID        domain.UserID
+	ParentID       *domain.FolderID
+	Name           string
+	NormalisedName string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 type Group struct {
 	ID         domain.GroupID
 	TutorID    domain.UserID
@@ -300,6 +310,18 @@ type MailSink struct {
 	MessageID string
 	SentAt    time.Time
 	Headers   []byte
+}
+
+type Material struct {
+	ID              domain.MaterialID
+	TutorID         domain.UserID
+	FolderID        *domain.FolderID
+	Title           string
+	NormalisedTitle string
+	AttachmentID    domain.AttachmentID
+	DeletedAt       *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type Meeting struct {

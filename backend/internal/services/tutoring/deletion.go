@@ -14,6 +14,7 @@ import (
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
+	"ovc/backend/internal/services/library"
 )
 
 const DefaultPurgeBatchRows int32 = 500
@@ -500,6 +501,12 @@ func (s *Service) PurgeTutorBatch(ctx context.Context, repos repositories.Reposi
 		repos.Blocked.DeleteBatchOfTutor,
 		repos.Relationships.DeleteBatchOfTutor,
 		repos.Notifications.DeleteBatchNaming,
+	}
+	for _, step := range (library.Purge{Random: s.deps.Random, Logger: s.deps.Logger}).TutorSteps() {
+		deleted, err := step(ctx, repos, tutor, s.purgeBatchRows(), now)
+		if err != nil || deleted > 0 {
+			return deleted, err
+		}
 	}
 	for _, step := range steps {
 		deleted, err := step(ctx, tutor, s.purgeBatchRows())

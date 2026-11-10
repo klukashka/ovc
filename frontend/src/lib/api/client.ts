@@ -25,6 +25,7 @@ export const fieldCodes = [
   'too_long',
   'incorrect',
   'too_many',
+  'taken',
   'webp_too_large',
 ] as const;
 

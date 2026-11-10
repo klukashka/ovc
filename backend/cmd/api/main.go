@@ -160,6 +160,10 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		return err
 	}
 	chatService := startup.NewChat(logging.Logger, database, source, random, fileService)
+	libraryService, err := startup.NewLibrary(logging.Logger, settings, database, source, random, fileService)
+	if err != nil {
+		return err
+	}
 	provider, err := startup.NewMeetingProvider(ctx, logging.Logger, database, source, random)
 	if err != nil {
 		return err
@@ -195,6 +199,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		Preferences: preferences,
 		Inbox:       startup.NewInbox(logging.Logger, database, source),
 		Chat:        chatService,
+		Library:     libraryService,
 		Meetings:    lifecycle,
 		Realtime:    live.Gateway,
 		DocsEnabled: settings.APIDocsEnabled,
