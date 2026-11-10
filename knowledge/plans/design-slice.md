@@ -1,6 +1,6 @@
 # Design slice implementation plan: the desktop interface
 
-Status: approved by the owner on 2026-11-06. It carries out the [interface decisions of 2026-11-06](ui-ux-decisions-2026-11-06.md), which hold the findings, the decisions, the step table with each step's main check and the open items; this plan does not repeat them, and when the two disagree the owner decides. The owner decided on 2026-11-06 how this slice is reviewed at its close (section 5) and where the lesson page and the Join button go (section 4).
+Status: approved by the owner on 2026-11-06; carried out through steps D0 to D7, and the slice closed on 2026-11-10 after its [slice review](../reviews/slice-design-slice-review.md). It carries out the [interface decisions of 2026-11-06](ui-ux-decisions-2026-11-06.md), which hold the findings, the decisions, the step table with each step's main check and the open items; this plan does not repeat them, and when the two disagree the owner decides. The owner decided on 2026-11-06 how this slice is reviewed at its close (section 5) and where the lesson page and the Join button go (section 4).
 
 ## 1. Problem, outcome and scope
 

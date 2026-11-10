@@ -197,7 +197,7 @@ stateDiagram-v2
   scheduled --> ended: 30 minutes after the scheduled end with no tutor join
 ```
 
-- **The join window** opens 10 minutes before the start and closes when the lesson ends. Who may join is defined by the [join rule](#join-rule).
+- **The join window** opens 10 minutes before the start and closes 30 minutes after the scheduled end (`LessonEndGrace`), so a lesson that runs over can still be joined or rejoined (owner's decision of 2026-11-09, matching the lifecycle code, its tests and the [video specification](realtime-and-video.md)). Who may join is defined by the [join rule](#join-rule).
 - **In slice 5**, without joining, the lesson page shows: before the window, "Room opens at {time}" to both roles; inside the window, the status word "Starting soon", "The room opens when your tutor joins" to students, and the time and status without a join area to the tutor. Every past lesson of slice 5 ends as "did not take place".
 - **Before the tutor joins**, the lesson page and Home show students that the room opens when their tutor joins, and update live through the [realtime channel](realtime-and-video.md#in-app-notifications-and-live-updates).
 - **When the conferencing meeting ends on the provider side** (the tutor's connection dropped, or no moderator remained), the lesson does not end. It stays `live`, students see "the room opens when your tutor joins" again, and the tutor's rejoin starts a new meeting.

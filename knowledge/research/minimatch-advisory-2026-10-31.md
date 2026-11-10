@@ -42,3 +42,5 @@ The [OSV record](https://api.osv.dev/v1/vulns/GHSA-g3hv-75wg-m249), modified 202
 Prettier 3.9.9 and Playwright 1.63.0 bundle copies of minimatch 10 with this phase, which lockfile scans do not see. They stay at the default level, and the traced callers' options do not set it. Replacing the two lockfile consumers clears the scanner finding, not these copies.
 
 The registry now lists minimatch up to 11.0.5, published 2026-11-05. At the new expiry, replace the version-10 consumers if upstream allows it, or request another explicit decision; the acceptance does not renew by itself.
+
+On 2026-11-09 the owner decided, in the design slice review, that the minimatch 10.x consumers are removed in a separate change before this acceptance ends on 2026-11-21.

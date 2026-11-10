@@ -59,3 +59,49 @@ The same class as the WebKit page load failures above, carried into slice 10 wit
 | Test | Browser | Phase | Evidence | Repeat alone |
 |---|---|---|---|---|
 | `students.spec.ts` › student card › notes typed and reloaded before the save keep nothing in storage or the address (from step D5) | WebKit | journey | One page error during the reload; the redacted diagnostics do not keep its text, so the cause is not established; a reload while an autosave is in flight is the suspected moment | 15 of 15 passed alone (`--repeat-each=15`) |
+
+## The first merge gate of the notes autosave per-card fix
+
+| Test | Browser | Phase | Evidence | Repeat alone |
+|---|---|---|---|---|
+| `messages.spec.ts` › text messages › editing and deleting own messages, and the tutor deleting a member's message | WebKit | journey, route `messages` | The click on the message menu's Delete waited 30 s for the button to become visible, enabled and stable; the change touched only the student card | 10 of 10 passed alone (`--repeat-each=10`); the owner approved one gate rerun on 2026-11-09 |
+
+The same class as the WebKit failures under load above, carried into slice 10 with them.
+
+## The first merge gate of the design slice frontend small fixes
+
+| Test | Browser | Phase | Evidence | Repeat alone |
+|---|---|---|---|---|
+| `messages.spec.ts` › text messages › editing and deleting own messages, and the tutor deleting a member's message | WebKit | journey, route `messages` | The same failure as in the first gate of the notes autosave per-card fix: the click on the message menu's Delete for the member's message waited 30 s for the button to become visible, enabled and stable; neither change touches Messages' menu | 20 of 20 passed with four workers (`--repeat-each=20 --workers=4`), after 10 of 10 alone; the owner approved one gate rerun on 2026-11-10 |
+
+This test has now failed the same way in two merge gates of unrelated changes and never alone, so it is recorded as a flaky test with an unknown cause in the known limitations and carried into slice 10's WebKit diagnosis.
+
+## The first merge gate of the meeting backend small fixes
+
+| Test | Browser | Phase | Evidence | Repeat alone |
+|---|---|---|---|---|
+| `lesson-room.spec.ts` › the lesson room through a new tab › lesson room › signed out, the lesson address asks to sign in and shows nothing private | WebKit | journey | One console error, `page_load_failed TypeError`, from the frontend's own load-failure log: a request of the page load ended with a network error; the change touched only the backend | Not repeated alone; the owner approved one gate rerun on 2026-11-10 |
+
+The same class as the WebKit page load failures under load above, carried into slice 10 with them.
+
+## The first merge gate of the presence capacity test fix (Firefox under memory pressure)
+
+| Test | Browser | Phase | Evidence | Repeat alone |
+|---|---|---|---|---|
+| Eight tests in `groups.spec.ts`, `home.spec.ts` and `invitations.spec.ts` | Firefox | journey and test API calls | The end-to-end lane ran 17.6 minutes instead of about 5; test API calls ended with `TimeoutError` and pages with test timeouts; the machine used 3.4 of 5 GB of swap with a load average near 15; the change touched only a backend test | Not repeated alone; the owner approved one gate rerun on 2026-11-10 |
+
+Not a WebKit failure, but recorded here with the other failures under load, which slice 10 diagnoses.
+
+## The merge gate of the meeting backend small changes on the moved main (Firefox under memory pressure)
+
+| Test | Browser | Phase | Evidence | Repeat alone |
+|---|---|---|---|---|
+| Fourteen tests, among them `desktop-layout.spec.ts` › no sideways scroll at 1024 px | Firefox | journey | The end-to-end lane ran 23.5 minutes; Firefox's own automation layer logged internal errors (`NS_ERROR_FAILURE` from its remote agent); the machine kept 3.4 of 5 GB of swap with a load average near 20; the change touched only the backend | Not repeated alone; the owner chose a gate rerun without restarting the machine on 2026-11-10 |
+
+## The next merge gate of the meeting backend small changes
+
+| Test | Browser | Phase | Evidence | Repeat alone |
+|---|---|---|---|---|
+| `session.spec.ts` › the sixth failed sign-in within 15 minutes says when to try again | WebKit | journey | One HTTP error beyond the expected refusals; the run took the usual 5 minutes; the change touched only the backend | Not repeated alone; the owner approved a rerun on 2026-11-10 and, until the slice closes, one rerun per gate when only a browser test unrelated to the change fails, each case recorded here and in the merge report |
+
+The standing approval of one rerun per gate for an unrelated browser failure ended when the design slice closed on 2026-11-10; from then on the rerun rule of AGENTS.md and ADR-0018 applies unchanged.
