@@ -156,6 +156,7 @@ export function FormNotice({
 }
 
 export function ActionButton({
+  id,
   busy,
   unavailable = false,
   unavailableReason,
@@ -168,6 +169,7 @@ export function ActionButton({
   ref,
   children,
 }: {
+  readonly id?: string;
   readonly busy: boolean;
   readonly unavailable?: boolean;
   readonly unavailableReason?: string | undefined;
@@ -185,6 +187,7 @@ export function ActionButton({
   return (
     <>
       <button
+        id={id}
         ref={ref}
         type={type}
         form={form}

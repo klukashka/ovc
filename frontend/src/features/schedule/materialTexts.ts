@@ -10,6 +10,10 @@ export interface MaterialTexts {
   readonly noLibraryMaterials: string;
   readonly materialsLimit: string;
   readonly materialGone: string;
+  readonly libraryRoot: string;
+  readonly libraryPath: string;
+  readonly libraryFolders: string;
+  readonly librarySearch: string;
 }
 
 const materialTexts: Readonly<Record<Language, MaterialTexts>> = {
@@ -21,6 +25,10 @@ const materialTexts: Readonly<Record<Language, MaterialTexts>> = {
     noLibraryMaterials: 'No materials here',
     materialsLimit: 'A lesson holds at most 20 materials.',
     materialGone: 'A chosen material is no longer in the library, or this student or group can no longer get lessons.',
+    libraryRoot: 'Library',
+    libraryPath: 'Folder path',
+    libraryFolders: 'Folders',
+    librarySearch: 'Search the library',
   },
   ru: {
     materials: 'Материалы',
@@ -31,6 +39,10 @@ const materialTexts: Readonly<Record<Language, MaterialTexts>> = {
     materialsLimit: 'К уроку можно прикрепить не больше 20 материалов.',
     materialGone:
       'Выбранного материала больше нет в библиотеке, или этот ученик или группа больше недоступны для уроков.',
+    libraryRoot: 'Библиотека',
+    libraryPath: 'Путь к папке',
+    libraryFolders: 'Папки',
+    librarySearch: 'Поиск по библиотеке',
   },
 };
 

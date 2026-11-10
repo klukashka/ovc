@@ -1,7 +1,20 @@
+import type { assignmentTexts } from '../../features/assignment/texts.en.ts';
+import type { builderTexts } from '../../features/builder/texts.en.ts';
+import type { libraryTexts } from '../../features/library/texts.en.ts';
 import type { ru } from './ru.ts';
 
-type Shape<Tree> = { readonly [Key in keyof Tree]: Tree[Key] extends string ? string : Shape<Tree[Key]> };
+export type Shape<Tree> = { readonly [Key in keyof Tree]: Tree[Key] extends string ? string : Shape<Tree[Key]> };
 
 export type Resources = Shape<typeof ru>;
+
+export interface FeatureSections {
+  readonly library: Shape<typeof libraryTexts>;
+  readonly builder: Shape<typeof builderTexts>;
+  readonly assignment: Shape<typeof assignmentTexts>;
+}
+
+export type FeatureSection = keyof FeatureSections;
+
+export type TranslationResources = Resources & FeatureSections;
 
 export { isLanguage, type Language, languages } from './languages.ts';

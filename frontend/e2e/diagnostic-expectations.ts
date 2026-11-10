@@ -1,4 +1,4 @@
-export type DiagnosticHttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+export type DiagnosticHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 export interface HttpNegative {
   readonly method: DiagnosticHttpMethod;
   readonly address: string;

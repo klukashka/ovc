@@ -195,6 +195,27 @@ const testOnlyModuleImports = {
   ],
 };
 
+const studentViewImports = {
+  ...testOnlyModuleImports,
+  patterns: [
+    ...testOnlyModuleImports.patterns,
+    {
+      group: ['**/builder', '**/builder/*', '**/library', '**/library/*'],
+      message: 'The student view never reaches tutor code, so answer keys cannot enter it',
+    },
+  ],
+};
+
+const featureTextFolders = ['src/features/library/**', 'src/features/builder/**', 'src/features/assignment/**'];
+
+const featureTextMessage =
+  'Library, builder and student-view texts load only with their own pages, so other code cannot read them';
+
+const forbiddenFeatureTextKeys = [
+  "CallExpression[callee.name='t'] > Literal[value=/^(library|builder|assignment)\\./]",
+  "CallExpression[callee.name='t'] > TemplateLiteral[quasis.0.value.raw=/^(library|builder|assignment)\\./]",
+].map((selector) => ({ selector, message: featureTextMessage }));
+
 const languageTextsMessage =
   'A language file holds only its texts: it loads before the first render, so it imports only types and runs no code.';
 
@@ -322,6 +343,11 @@ export default defineConfig(
     rules: { 'no-restricted-imports': ['error', testOnlyModuleImports] },
   },
   {
+    files: ['src/features/assignment/**/*.{ts,tsx}'],
+    ignores: ['src/**/*.test.{ts,tsx}'],
+    rules: { 'no-restricted-imports': ['error', studentViewImports] },
+  },
+  {
     files: ['src/**/*.{ts,tsx}', 'public/**/*.js'],
     rules: {
       'no-eval': 'error',
@@ -342,6 +368,21 @@ export default defineConfig(
         ...forbiddenReflectGlobals,
         ...forbiddenDomGlobals,
         ...forbiddenStorageGlobals,
+      ],
+    },
+  },
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: [...featureTextFolders, 'src/**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...forbiddenFetchReplacement,
+        ...forbiddenDynamicImports,
+        ...forbiddenReflectSyntax,
+        ...forbiddenDomSyntax,
+        ...forbiddenStorageSyntax,
+        ...forbiddenFeatureTextKeys,
       ],
     },
   },

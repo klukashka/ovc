@@ -1,6 +1,12 @@
 import { IntlMessageFormat } from 'intl-messageformat';
 import { describe, expect, test } from 'vitest';
 
+import { assignmentTexts as assignmentEnglish } from '../../features/assignment/texts.en.ts';
+import { assignmentTexts as assignmentRussian } from '../../features/assignment/texts.ru.ts';
+import { builderTexts as builderEnglish } from '../../features/builder/texts.en.ts';
+import { builderTexts as builderRussian } from '../../features/builder/texts.ru.ts';
+import { libraryTexts as libraryEnglish } from '../../features/library/texts.en.ts';
+import { libraryTexts as libraryRussian } from '../../features/library/texts.ru.ts';
 import { en } from './en.ts';
 import { ru } from './ru.ts';
 
@@ -21,7 +27,10 @@ function messages(tree: MessageTree, prefix = ''): Map<string, string> {
   return entries;
 }
 
-const catalogues = { ru: messages(ru), en: messages(en) };
+const catalogues = {
+  ru: messages({ ...ru, library: libraryRussian, builder: builderRussian, assignment: assignmentRussian }),
+  en: messages({ ...en, library: libraryEnglish, builder: builderEnglish, assignment: assignmentEnglish }),
+};
 
 function sampleValues(message: string, count: number): Record<string, number> {
   const names = [...message.matchAll(/\{\s*(\w+)/g)].map((match) => match[1] ?? '');

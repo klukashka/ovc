@@ -3,6 +3,8 @@ import { type ReactElement, type ReactNode, type RefObject, useEffect, useId, us
 const menuButtonClass =
   'inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-border-strong px-3 text-strong text-text hover:bg-surface aria-disabled:opacity-60';
 
+const menuPosition: Readonly<Record<'start' | 'end', string>> = { start: 'left-0', end: 'right-0' };
+
 export interface MenuItem {
   readonly label: string;
   readonly onChoose: () => void;
@@ -14,6 +16,8 @@ export function ActionMenu({
   unavailable,
   items,
   buttonRef,
+  buttonId,
+  align = 'end',
   children,
 }: {
   readonly label: string;
@@ -21,6 +25,8 @@ export function ActionMenu({
   readonly unavailable: boolean;
   readonly items: readonly MenuItem[];
   readonly buttonRef?: RefObject<HTMLButtonElement | null>;
+  readonly buttonId?: string;
+  readonly align?: 'start' | 'end';
   readonly children: ReactNode;
 }): ReactElement {
   const [open, setOpen] = useState(false);
@@ -66,6 +72,7 @@ export function ActionMenu({
   return (
     <div ref={container} className="relative">
       <button
+        id={buttonId}
         ref={button}
         type="button"
         aria-expanded={open}
@@ -85,7 +92,7 @@ export function ActionMenu({
       {open ? (
         <div
           id={menuId}
-          className="absolute top-full right-0 z-20 mt-1 w-56 rounded-lg border border-border bg-surface p-1 shadow-raised dark:border-border-strong dark:shadow-none"
+          className={`absolute top-full ${menuPosition[align]} z-20 mt-1 w-56 rounded-lg border border-border bg-surface p-1 shadow-raised dark:border-border-strong dark:shadow-none`}
         >
           {items.map((item) => (
             <button

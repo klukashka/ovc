@@ -7,13 +7,30 @@ export type UploadState =
   | { readonly kind: 'uploading'; readonly loaded: number; readonly total: number | null }
   | { readonly kind: 'uploaded'; readonly file: UploadedFile }
   | { readonly kind: 'refused'; readonly error: ApiError; readonly retryAfter: number | null }
-  | { readonly kind: 'tooLarge'; readonly limit: 'file' | 'webp' };
+  | { readonly kind: 'tooLarge'; readonly limit: 'file' | 'webp' | 'picture' }
+  | { readonly kind: 'wrongType' };
+
+export type UploadContext = 'library' | 'prompt_image';
+
+export const promptImageLimitBytes = 5_000_000;
+
+const promptImageTypes: readonly string[] = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 function isWebp(file: File): boolean {
   return file.type === 'image/webp' || file.name.toLowerCase().endsWith('.webp');
 }
 
-function sizeRefusal(file: File): UploadState | null {
+function promptImageRefusal(file: File): UploadState | null {
+  if (!promptImageTypes.includes(file.type)) {
+    return { kind: 'wrongType' };
+  }
+  return file.size > promptImageLimitBytes ? { kind: 'tooLarge', limit: 'picture' } : null;
+}
+
+function sizeRefusal(file: File, context: UploadContext): UploadState | null {
+  if (context === 'prompt_image') {
+    return promptImageRefusal(file);
+  }
   if (file.size > libraryUploadLimitBytes) {
     return { kind: 'tooLarge', limit: 'file' };
   }
@@ -29,9 +46,12 @@ export class LibraryUpload {
   private readonly listeners = new Set<() => void>();
   private readonly controller = new AbortController();
 
-  constructor(client: ApiClient, session: Session, file: File) {
+  private readonly context: UploadContext;
+
+  constructor(client: ApiClient, session: Session, file: File, context: UploadContext = 'library') {
     this.file = file;
-    const refused = sizeRefusal(file);
+    this.context = context;
+    const refused = sizeRefusal(file, context);
     this.state = refused ?? { kind: 'uploading', loaded: 0, total: file.size };
     if (refused === null) {
       void this.send(client, session);
@@ -67,7 +87,7 @@ export class LibraryUpload {
     body.append('file', this.file);
     try {
       const { data, error, response } = await client.POST('/api/v1/uploads', {
-        params: { query: { context: 'library' } },
+        params: { query: { context: this.context } },
         signal: this.controller.signal,
         body: { file: '' },
         bodySerializer: () => null,

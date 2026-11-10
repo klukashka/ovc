@@ -26,7 +26,7 @@ function headers(deployment: Deployment, token: string | null): Record<string, s
 export async function callApi(
   deployment: Deployment,
   token: string | null,
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
 ): Promise<ApiAnswer> {

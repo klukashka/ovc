@@ -84,10 +84,10 @@ function FolderPath({
   readonly currentStep: RefObject<HTMLElement | null>;
   readonly onOpen: (depth: number) => void;
 }): ReactElement {
-  const { t } = useTranslation();
-  const steps = [{ id: null, name: t('library.root') }, ...trail];
+  const texts = useMaterialTexts();
+  const steps = [{ id: null, name: texts.libraryRoot }, ...trail];
   return (
-    <ol aria-label={t('library.path')} className="flex flex-wrap items-center gap-x-2 text-small">
+    <ol aria-label={texts.libraryPath} className="flex flex-wrap items-center gap-x-2 text-small">
       {steps.map((step, depth) => (
         <li key={step.id ?? 'root'} className="inline-flex items-center gap-2">
           {depth === 0 ? null : <span aria-hidden="true">/</span>}
@@ -174,7 +174,7 @@ function LibraryListing({
         </p>
       ) : null}
       {folders.length === 0 ? null : (
-        <ul aria-label={t('library.folders')} className="flex flex-col border-t border-border">
+        <ul aria-label={texts.libraryFolders} className="flex flex-col border-t border-border">
           {folders.map((child) => (
             <li key={child.id} className="border-b border-border">
               <button
@@ -273,7 +273,7 @@ export function MaterialPicker({
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
         <label htmlFor={inputId} className="text-label">
-          {t('library.search')}
+          {texts.librarySearch}
         </label>
         <input
           ref={searchField}

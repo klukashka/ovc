@@ -163,6 +163,27 @@ From slice 8 (pending owner review). A template's readiness ([validation](../../
 | Library picker (change F4, pending owner review) | Search the library / Folder path / Folders / No materials here / A lesson holds at most {limit} materials. | Поиск по библиотеке / Путь к папке / Папки / Здесь нет материалов / К уроку можно прикрепить не больше {limit} материалов. |
 | New lesson refused with materials chosen (`not_found`, change F4, pending owner review) | A chosen material is no longer in the library, or this student or group can no longer get lessons. | Выбранного материала больше нет в библиотеке, или этот ученик или группа больше недоступны для уроков. |
 
+**Builder and student view texts as built** (slice 8 change F3, pending owner review); they load with the builder's code, as the library's texts load with the library page:
+
+| Element | English | Русский |
+|---|---|---|
+| Block heading | {position}. {type} | {position}. {type} |
+| Fields | Title / Text / Question / Points / Explanation | Название / Текст / Вопрос / Баллы / Пояснение |
+| Markdown hint | Bold \*\*text\*\*, italic \*text\*, lists, \`code\` and https links. | Жирный \*\*текст\*\*, курсив \*текст\*, списки, \`код\` и ссылки https. |
+| Explanation hint | Shown to students only when answers are visible. | Ученики видят его, только когда ответы открыты. |
+| Options | Options / Option {number} / Correct: option {number} / Add option / Remove option {number} / At most 10 options | Варианты / Вариант {number} / Верный: вариант {number} / Добавить вариант / Удалить вариант {number} / Не больше 10 вариантов |
+| Scoring | Scoring / All or nothing / Partial credit | Оценивание / Всё или ничего / Частичный балл |
+| Accepted answers | Accepted answers / New accepted answer / Add answer / Remove the answer {answer} / At most 20 accepted answers | Правильные ответы / Новый правильный ответ / Добавить ответ / Удалить ответ {answer} / Не больше 20 правильных ответов |
+| Number | Correct value / Tolerance | Правильное значение / Погрешность |
+| Long text and file | Maximum length in characters / Allowed file types / Pictures, PDF, Office documents, Audio / Maximum number of files | Максимальная длина в символах / Разрешённые типы файлов / Изображения, PDF, Офисные документы, Аудио / Максимум файлов |
+| Number ranges | Enter a whole number from 0 to 100 / from 1 to 20,000 / from 1 to 5 | Введите целое число от 0 до 100 / от 1 до 20 000 / от 1 до 5 |
+| Prompt pictures | Pictures / Add picture / Remove the picture {filename} / Uploading {filename} / {filename} appears once the assignment is saved | Изображения / Добавить изображение / Удалить изображение {filename} / Загрузка: {filename} / {filename} появится после сохранения задания |
+| Picture refusals | File is larger than 5 MB / This file type is not allowed here / Storage is full | Файл больше 5 МБ / Этот тип файла здесь не разрешён / Хранилище заполнено |
+| Material block | Choose material / Change material / Download / Deleted from the library; students still receive the file. | Выбрать материал / Заменить материал / Скачать / Удалён из библиотеки; ученики всё равно получат файл. |
+| Material picker | Choose a material / Search the library / Folder path / Folders / Materials / No materials here / Nothing found / Show more / Cancel | Выбор материала / Поиск по библиотеке / Путь к папке / Папки / Материалы / Здесь нет материалов / Ничего не найдено / Показать ещё / Отмена |
+| Other | Retry / Blocks / Drag to reorder / Close / Preview width | Повторить / Блоки / Перетащите, чтобы изменить порядок / Закрыть / Ширина предпросмотра |
+| Student view | Question {number} / Your answer / Up to {count} characters / {kinds}; up to {count} files / Attach files / Material / Download | Вопрос {number} / Ваш ответ / Не больше {count} символов / {kinds}; не больше {count} файлов / Прикрепить файлы / Материал / Скачать |
+
 ## Relationships, requests and groups
 
 | State | Token | English | Русский |

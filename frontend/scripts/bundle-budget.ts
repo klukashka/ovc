@@ -266,6 +266,147 @@ export function checkBundle(
   return { lines, failures };
 }
 
+export const moduleGraphPath = resolve(import.meta.dirname, '..', 'build-report', 'module-graph.json');
+
+export const builderPage = 'src/features/builder/BuilderPage.tsx';
+
+export interface GraphModule {
+  readonly id: string;
+  readonly imports: readonly string[];
+  readonly dynamicImports: readonly string[];
+}
+
+export interface GraphChunk {
+  readonly file: string;
+  readonly modules: readonly string[];
+}
+
+export interface ModuleGraph {
+  readonly chunks: readonly GraphChunk[];
+  readonly modules: readonly GraphModule[];
+}
+
+function stringList(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || !value.every((item): item is string => typeof item === 'string')) {
+    throw new Error(`the module graph has a malformed ${field}`);
+  }
+  return value;
+}
+
+function record(value: unknown, field: string): object {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`the module graph has a malformed ${field}`);
+  }
+  return value;
+}
+
+export function parseModuleGraph(json: unknown): ModuleGraph {
+  const graph = record(json, 'graph');
+  const chunks = 'chunks' in graph && Array.isArray(graph.chunks) ? graph.chunks : null;
+  const modules = 'modules' in graph && Array.isArray(graph.modules) ? graph.modules : null;
+  if (chunks === null || modules === null) {
+    throw new Error('the module graph has no chunks or modules');
+  }
+  return {
+    chunks: chunks.map((value: unknown) => {
+      const chunk = record(value, 'chunk');
+      if (!('file' in chunk) || typeof chunk.file !== 'string' || !('modules' in chunk)) {
+        throw new Error('the module graph has a chunk without a file or modules');
+      }
+      return { file: chunk.file, modules: stringList(chunk.modules, 'chunk modules') };
+    }),
+    modules: modules.map((value: unknown) => {
+      const module = record(value, 'module');
+      if (
+        !('id' in module) ||
+        typeof module.id !== 'string' ||
+        !('imports' in module) ||
+        !('dynamicImports' in module)
+      ) {
+        throw new Error('the module graph has a module without an identifier or imports');
+      }
+      return {
+        id: module.id,
+        imports: stringList(module.imports, 'imports'),
+        dynamicImports: stringList(module.dynamicImports, 'dynamic imports'),
+      };
+    }),
+  };
+}
+
+function reachable(graph: ModuleGraph, roots: readonly string[], barrier: string | null): Set<string> {
+  const edges = new Map(graph.modules.map((module) => [module.id, [...module.imports, ...module.dynamicImports]]));
+  const seen = new Set<string>();
+  const pending = roots.filter((root) => root !== barrier);
+  for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
+    if (seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    pending.push(...(edges.get(id) ?? []).filter((next) => next !== barrier));
+  }
+  return seen;
+}
+
+export function builderOnlyModules(
+  graph: ModuleGraph,
+  manifest: Manifest,
+  pageModules: readonly string[],
+): Set<string> {
+  const entryFile = chunkAt(manifest, entryKey).file;
+  const entryModules = graph.chunks.find((chunk) => chunk.file === entryFile)?.modules ?? [];
+  const otherRoots = [...entryModules, ...pageModules.filter((page) => page !== builderPage)];
+  const others = reachable(graph, otherRoots, builderPage);
+  return new Set([...reachable(graph, [builderPage], null)].filter((id) => !others.has(id)));
+}
+
+export function checkBuilderChunk(
+  manifest: Manifest,
+  graph: ModuleGraph,
+  pageModules: readonly string[],
+  sizeOf: (file: string) => number,
+): BundleReport {
+  const failures: string[] = [];
+  if (manifest.get(builderPage)?.isDynamicEntry !== true) {
+    return { lines: [], failures: [`${builderPage} is not loaded on demand`] };
+  }
+  const builderOnly = builderOnlyModules(graph, manifest, pageModules);
+  const elsewhere = new Map<string, string>();
+  for (const [name, keys] of [
+    ['the entry', [entryKey]],
+    ...pageModules.filter((page) => page !== builderPage).map((page) => [page, [page]] as const),
+  ] as const) {
+    for (const file of staticFiles(manifest, keys)) {
+      if (!elsewhere.has(file)) {
+        elsewhere.set(file, name);
+      }
+    }
+  }
+  for (const chunk of graph.chunks) {
+    const loader = elsewhere.get(chunk.file);
+    if (loader === undefined) {
+      continue;
+    }
+    for (const module of chunk.modules.filter((id) => builderOnly.has(id))) {
+      failures.push(
+        `${module} is reachable only from the builder but is built into ${chunk.file}, loaded by ${loader}`,
+      );
+    }
+  }
+  if (builderOnly.size === 0) {
+    failures.push('no module is reachable only from the builder, so the builder check would prove nothing');
+  }
+  const initial = staticFiles(manifest, [entryKey]);
+  const builderFiles = new Set([...staticFiles(manifest, [builderPage])].filter((file) => !initial.has(file)));
+  const size = total(builderFiles, sizeOf);
+  return {
+    lines: [
+      `builder chunk and its imports beyond the entry: ${kilobytes(size)} gzip, ${String(builderOnly.size)} modules reachable only from the builder`,
+    ],
+    failures,
+  };
+}
+
 export type ServedEntryKind = 'file' | 'directory' | 'link' | 'other';
 
 export interface ServedEntry {

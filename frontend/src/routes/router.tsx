@@ -24,6 +24,7 @@ const studentCardPage = lazyPage(
 const groupsPage = lazyPage(async () => (await import('../features/groups/GroupsPage.tsx')).GroupsPage);
 const groupPage = lazyPage(async () => (await import('../features/groups/GroupPage.tsx')).GroupPage);
 const libraryPage = lazyPage(async () => (await import('../features/library/LibraryPage.tsx')).LibraryPage);
+const builderPage = lazyPage(async () => (await import('../features/builder/BuilderPage.tsx')).BuilderPage);
 const teachingSettingsPage = lazyPage(
   async () => (await import('../features/settings/TeachingSettingsPage.tsx')).TeachingSettingsPage,
 );
@@ -66,7 +67,7 @@ export const tutorPages: RouteObject[] = [
   page('/groups', 'page.groups', groupsPage),
   page('/groups/:groupId', 'page.group', groupPage),
   page('/homework/library', 'page.library', libraryPage),
-  page('/homework/templates/:templateId', 'page.builder'),
+  page('/homework/templates/:templateId', 'page.builder', builderPage),
   page('/homework/issued', 'page.issued'),
   page('/homework/issued/:issueId', 'page.issue'),
   page('/homework/review', 'page.review'),

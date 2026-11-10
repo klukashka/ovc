@@ -2,12 +2,15 @@ import { describe, expect, test } from 'vitest';
 
 import {
   type BuiltChunk,
+  builderPage,
+  checkBuilderChunk,
   checkBundle,
   committedPublicFiles,
   kilobyte,
   languageChunkContentProblems,
   manifestNamedFiles,
   parseManifest,
+  parseModuleGraph,
   type ServedEntry,
   type ServedFiles,
   unexpectedServedEntries,
@@ -395,5 +398,80 @@ describe('served build contents', () => {
     expect(committed.problems).toEqual([
       'public/ has changes that are not committed: M public/favicon.svg, A  public/staged.txt, ?? public/new.txt',
     ]);
+  });
+});
+
+describe('builder chunk', () => {
+  const builderManifest = parseManifest({
+    'index.html': {
+      file: 'assets/index.js',
+      isEntry: true,
+      imports: ['_vendor'],
+      dynamicImports: [homePage, builderPage],
+    },
+    _vendor: { file: 'assets/vendor.js' },
+    [homePage]: { file: 'assets/HomePage.js', isDynamicEntry: true, imports: ['_vendor'] },
+    [builderPage]: { file: 'assets/BuilderPage.js', isDynamicEntry: true, imports: ['_vendor'] },
+  });
+
+  function graphWith(vendorModules: readonly string[]): ReturnType<typeof parseModuleGraph> {
+    return parseModuleGraph({
+      chunks: [
+        { file: 'assets/index.js', modules: ['index.html', 'src/main.tsx'] },
+        { file: 'assets/vendor.js', modules: ['node_modules/react/index.js', ...vendorModules] },
+        { file: 'assets/HomePage.js', modules: [homePage] },
+        { file: 'assets/BuilderPage.js', modules: [builderPage, 'src/features/builder/blocks.ts'] },
+      ],
+      modules: [
+        { id: 'index.html', imports: ['src/main.tsx'], dynamicImports: [] },
+        { id: 'src/main.tsx', imports: ['node_modules/react/index.js'], dynamicImports: [homePage, builderPage] },
+        { id: homePage, imports: ['node_modules/react/index.js'], dynamicImports: [] },
+        {
+          id: builderPage,
+          imports: ['node_modules/react/index.js', 'src/features/builder/blocks.ts', 'node_modules/drag/index.js'],
+          dynamicImports: [],
+        },
+        { id: 'src/features/builder/blocks.ts', imports: [], dynamicImports: [] },
+        { id: 'node_modules/drag/index.js', imports: [], dynamicImports: [] },
+        { id: 'node_modules/react/index.js', imports: [], dynamicImports: [] },
+      ],
+    });
+  }
+
+  test('accepts builder modules kept in chunks that only the builder loads and reports their size', () => {
+    const graph = graphWith([]);
+
+    const report = checkBuilderChunk(
+      builderManifest,
+      graph,
+      [homePage, builderPage],
+      sizes({ 'assets/BuilderPage.js': 12, 'assets/vendor.js': 140 }),
+    );
+
+    expect(report.failures).toEqual([]);
+    expect(report.lines).toEqual([
+      'builder chunk and its imports beyond the entry: 12.0 KB gzip, 3 modules reachable only from the builder',
+    ]);
+  });
+
+  test('fails when a module reachable only from the builder is built into a chunk the entry loads', () => {
+    const graph = graphWith(['node_modules/drag/index.js']);
+
+    const report = checkBuilderChunk(builderManifest, graph, [homePage, builderPage], sizes({}));
+
+    expect(report.failures).toEqual([
+      'node_modules/drag/index.js is reachable only from the builder but is built into assets/vendor.js, loaded by the entry',
+    ]);
+  });
+
+  test('fails when the builder page is not loaded on demand', () => {
+    const manifest = parseManifest({
+      'index.html': { file: 'assets/index.js', isEntry: true },
+      [homePage]: { file: 'assets/HomePage.js', isDynamicEntry: true },
+    });
+
+    const report = checkBuilderChunk(manifest, graphWith([]), [homePage, builderPage], sizes({}));
+
+    expect(report.failures).toEqual([`${builderPage} is not loaded on demand`]);
   });
 });

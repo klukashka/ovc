@@ -5,11 +5,14 @@ import { gzipSync } from 'node:zlib';
 
 import {
   buildManifestPath,
+  checkBuilderChunk,
   checkBundle,
   type CommittedPublicFiles,
   committedPublicFiles,
   manifestNamedFiles,
+  moduleGraphPath,
   parseManifest,
+  parseModuleGraph,
   type ServedEntry,
   type ServedEntryKind,
   unexpectedServedEntries,
@@ -73,6 +76,14 @@ function manifestJson(): unknown {
   }
 }
 
+function moduleGraphJson(): unknown {
+  try {
+    return JSON.parse(readFileSync(moduleGraphPath, 'utf8'));
+  } catch (error) {
+    throw new Error('build-report/module-graph.json is missing or unreadable; run pnpm build first', { cause: error });
+  }
+}
+
 if (existsSync(join(distRoot, '.vite'))) {
   process.stderr.write('dist/.vite exists: the build left its manifest in the served build\n');
   process.exit(1);
@@ -96,7 +107,9 @@ if (pages.length === 0) {
   process.stderr.write('No page module was found in src/features; the bundle check would prove nothing\n');
   process.exit(1);
 }
-const report = checkBundle(manifest, pages, gzipSize);
+const budget = checkBundle(manifest, pages, gzipSize);
+const builder = checkBuilderChunk(manifest, parseModuleGraph(moduleGraphJson()), pages, gzipSize);
+const report = { lines: [...budget.lines, ...builder.lines], failures: [...budget.failures, ...builder.failures] };
 process.stdout.write(`${report.lines.join('\n')}\n`);
 if (report.failures.length > 0) {
   process.stderr.write(`The bundle is outside its budget:\n${report.failures.join('\n')}\n`);

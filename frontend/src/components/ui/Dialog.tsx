@@ -5,6 +5,9 @@ import { focusHeadingIfLost } from './LoadState.tsx';
 export const dialogClass =
   'm-auto w-full max-w-md rounded-lg border border-border bg-surface p-6 text-text shadow-raised backdrop:bg-scrim dark:border-border-strong dark:shadow-none';
 
+const wideDialogClass =
+  'm-auto w-full max-w-5xl rounded-lg border border-border bg-surface p-6 text-text shadow-raised backdrop:bg-scrim dark:border-border-strong dark:shadow-none';
+
 export function returnFocusTo(target: HTMLElement | null): void {
   if (target?.isConnected === true) {
     target.focus();
@@ -20,6 +23,7 @@ export function ModalDialog({
   describedBy,
   returnFocus,
   initialFocus,
+  wide = false,
   onClose,
   children,
 }: {
@@ -29,6 +33,7 @@ export function ModalDialog({
   readonly describedBy?: string;
   readonly returnFocus: RefObject<HTMLElement | null>;
   readonly initialFocus?: RefObject<HTMLElement | null>;
+  readonly wide?: boolean;
   readonly onClose: () => void;
   readonly children: ReactNode;
 }): ReactElement {
@@ -77,7 +82,7 @@ export function ModalDialog({
         }
         returnFocusTo(returnFocus.current);
       }}
-      className={dialogClass}
+      className={wide ? wideDialogClass : dialogClass}
     >
       {open ? children : null}
     </dialog>

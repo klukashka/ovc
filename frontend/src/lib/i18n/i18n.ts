@@ -6,6 +6,8 @@ import { type Language, type Resources, languages } from './resources.ts';
 
 const namespace = 'translation';
 
+const catalogueSection = 'app';
+
 const catalogues: Readonly<Record<Language, () => Promise<Resources>>> = {
   ru: async () => (await import('./ru.ts')).ru,
   en: async () => (await import('./en.ts')).en,
@@ -33,7 +35,7 @@ export async function createI18n(language: Language): Promise<i18n> {
 }
 
 export function isLanguageLoaded(translations: i18n, language: Language): boolean {
-  return translations.hasResourceBundle(language, namespace);
+  return translations.getResource(language, namespace, catalogueSection) !== undefined;
 }
 
 export function reportLanguageLoadFailure(error: unknown): void {

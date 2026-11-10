@@ -49,6 +49,21 @@ describe('i18n', () => {
     expect(translations.t('language.label')).toBe('Язык');
   });
 
+  test('feature texts added in both languages leave the other catalogue to load on a switch', async () => {
+    const translations = await createI18n('en');
+    for (const language of ['en', 'ru'] as const) {
+      translations.addResourceBundle(language, 'translation', { library: { root: 'Library' } }, true, true);
+    }
+
+    const russianLoadedBefore = isLanguageLoaded(translations, 'ru');
+    const applied = await switchLanguage(translations, 'ru');
+
+    expect(russianLoadedBefore).toBe(false);
+    expect(applied).toBe(true);
+    expect(translations.t('language.label')).toBe('Язык');
+    expect(translations.t('library.root')).toBe('Library');
+  });
+
   test('a switch overtaken by a later choice does not apply', async () => {
     const translations = await createI18n('en');
 

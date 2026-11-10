@@ -1,8 +1,8 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { Agent } from 'node:http';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { type Plugin, type ProxyOptions, loadEnv } from 'vite';
 import { type ViteUserConfig, defineConfig } from 'vitest/config';
 
@@ -12,6 +12,7 @@ import {
   languageChunkContentProblems,
   languageChunkFileName,
   languageChunks,
+  moduleGraphPath,
 } from './scripts/bundle-budget.ts';
 import { developmentLogger, developmentTls } from './scripts/development-tls.ts';
 import { realtimePath } from './src/lib/realtime/socket.ts';
@@ -37,6 +38,33 @@ function moveBuildManifest(): Plugin {
       mkdirSync(dirname(buildManifestPath), { recursive: true });
       renameSync(join(outDir, '.vite', 'manifest.json'), buildManifestPath);
       rmSync(join(outDir, '.vite'), { recursive: true });
+    },
+  };
+}
+
+function graphName(id: string): string {
+  const path = relative(import.meta.dirname, id);
+  return path.startsWith('..') || isAbsolute(path) ? `external:${basename(id)}` : path;
+}
+
+function writeModuleGraph(): Plugin {
+  return {
+    name: 'ovc-write-module-graph',
+    apply: 'build',
+    writeBundle(_options, bundle): void {
+      const outputChunks = Object.values(bundle).flatMap((output) => (output.type === 'chunk' ? [output] : []));
+      const ids = new Set(outputChunks.flatMap((chunk) => chunk.moduleIds));
+      const modules = [...ids].map((id) => {
+        const info = this.getModuleInfo(id);
+        return {
+          id: graphName(id),
+          imports: (info?.importedIds ?? []).map(graphName),
+          dynamicImports: (info?.dynamicallyImportedIds ?? []).map(graphName),
+        };
+      });
+      const chunks = outputChunks.map((chunk) => ({ file: chunk.fileName, modules: chunk.moduleIds.map(graphName) }));
+      mkdirSync(dirname(moduleGraphPath), { recursive: true });
+      writeFileSync(moduleGraphPath, JSON.stringify({ chunks, modules }));
     },
   };
 }
@@ -97,7 +125,7 @@ export function frontendConfiguration(mode: string, environment: Readonly<Record
   const apiTarget = environment.OVC_FRONTEND_API_TARGET ?? defaultApiTarget;
   return {
     ...(mode === 'measurement-dev-tls' ? { customLogger: developmentLogger() } : {}),
-    plugins: [react(), tailwindcss(), languageChunksHoldOnlyTexts(), moveBuildManifest()],
+    plugins: [react(), tailwindcss(), languageChunksHoldOnlyTexts(), moveBuildManifest(), writeModuleGraph()],
     build: {
       assetsInlineLimit: 0,
       sourcemap: false,

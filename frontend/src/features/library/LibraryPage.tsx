@@ -33,6 +33,7 @@ import { refusalText } from '../../components/ui/Refusal.tsx';
 import { type ApiError, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { downloadAddress } from '../../lib/files/downloadAddress.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import {
   type FolderNode,
@@ -60,6 +61,7 @@ import {
   rowKey,
 } from './LibraryDialogs.tsx';
 import { type RowCommand, type RowHandlers, LibraryTable, folderAddress, templateAddress } from './LibraryTable.tsx';
+import { libraryTextLoaders } from './texts.ts';
 import { LibraryUpload } from './upload.ts';
 
 const searchDelayMilliseconds = 300;
@@ -430,6 +432,7 @@ function ListBody({
 
 export function LibraryPage(): ReactElement {
   const { t } = useTranslation();
+  const texts = useFeatureTexts('library', libraryTextLoaders);
   const me = useSignedInAccount();
   const session = useSession();
   const client = useApiClient();
@@ -725,6 +728,14 @@ export function LibraryPage(): ReactElement {
     childFolders.length === 0 &&
     items.length === 0 &&
     !list.hasNextPage;
+
+  if (!texts.ready) {
+    return (
+      <Page>
+        {texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />}
+      </Page>
+    );
+  }
 
   if (notFound) {
     return (

@@ -8,6 +8,7 @@ import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fake
 import { Session } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import { UploadStatus } from './LibraryDialogs.tsx';
+import { libraryTexts } from './texts.ru.ts';
 import { LibraryUpload } from './upload.ts';
 
 afterEach(() => {
@@ -41,6 +42,7 @@ async function showRefusedUpload(refusal: Refusal, file: File): Promise<void> {
   await session.signIn(email, password);
   const client = createApiClient(origin, session.authorizedFetch);
   const i18n = await createI18n('ru');
+  i18n.addResourceBundle('ru', 'translation', { library: libraryTexts }, true, true);
   render(
     <I18nextProvider i18n={i18n}>
       <main>
