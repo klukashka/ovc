@@ -100,7 +100,7 @@ func VariableNames() []string {
 		varHTTPAddr, varDatabaseURL, varDBPoolSize, varLogLevel, varLogFormat, varAPIDocsEnabled,
 		varTestControl, varClock, varMeetingProvider, varMailBackend, varPublicURL, varFakeRoomOrigin, varSMTPHost, varSMTPPort,
 		varSMTPTLS, varSMTPUsername, varSMTPPassword, varMailFrom, varJWTSecret, varAccessTTL, varRefreshTTL,
-		varTrustedProxies, varTestDatabaseURL, varFileQuota, varRecordingQuota, varFieldKey, varUnsubscribeKey,
+		varTrustedProxies, varTestDatabaseURL, varFileQuota, varRecordingQuota, varFieldKey, varUnsubscribeKey, varPresentationEndpoint,
 	}, storageVariableNames()...)
 }
 
@@ -128,6 +128,7 @@ type Settings struct {
 	TrustedProxies  []netip.Prefix
 	TutorQuotas     TutorQuotas
 	Storage         StorageSettings
+	Presentation    string
 	FieldKey        Secret
 	UnsubscribeKey  Secret
 }
@@ -248,8 +249,10 @@ func Load(lookup Lookup, process Process) (Settings, error) {
 	settings.Clock = clock
 
 	provider, err := oneOf(lookup, varMeetingProvider, MeetingProviderFake, MeetingProviderFake)
+	presentationProvider := provider
 	if err != nil {
 		problems = append(problems, err)
+		presentationProvider = ""
 	}
 	settings.MeetingProvider = provider
 
@@ -272,6 +275,14 @@ func Load(lookup Lookup, process Process) (Settings, error) {
 		problems = append(problems, mailProblems...)
 		settings.SMTP = smtp
 		settings.MailFrom = from
+	}
+
+	if process == ProcessAPI {
+		presentation, err := presentationEndpointFrom(lookup, presentationProvider, settings.TestControl)
+		if err != nil {
+			problems = append(problems, err)
+		}
+		settings.Presentation = presentation
 	}
 
 	if value, set := lookup(varFakeRoomOrigin); set {

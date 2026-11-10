@@ -114,14 +114,14 @@ func validName(name string, maximum int) bool {
 	return utf8.ValidString(name) && strings.TrimSpace(name) != "" && utf8.RuneCountInString(name) <= maximum && strings.IndexFunc(name, unicode.IsControl) < 0
 }
 
-func (f *Fake) CreateMeeting(ctx context.Context, requested domain.Meeting) (created domain.ProviderCreateTime, err error) {
+func (f *Fake) CreateMeeting(ctx context.Context, requested domain.Meeting, presentation *Presentation) (created domain.ProviderCreateTime, err error) {
 	defer f.report(ctx, operationCreate, &err)
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	if err := f.available(ctx); err != nil {
 		return 0, err
 	}
-	if requested.ID == (domain.ProviderMeetingID{}) || !validName(requested.Name, domain.LessonTitleMaxRunes) {
+	if presentation != nil || requested.ID == (domain.ProviderMeetingID{}) || !validName(requested.Name, domain.LessonTitleMaxRunes) {
 		return 0, FailureInvalidInput
 	}
 	if existing, found := f.meetings[requested.ID]; found {

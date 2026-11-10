@@ -184,3 +184,12 @@ WHERE lesson_series.id = @id AND (
     )
 )
 FOR UPDATE;
+
+-- name: FirstLessonPresentation :one
+SELECT attachments.id, attachments.storage_key
+FROM lesson_materials
+JOIN materials ON materials.id = lesson_materials.material_id AND materials.tutor_id = lesson_materials.tutor_id
+JOIN attachments ON attachments.id = materials.attachment_id AND attachments.state = 'bound'
+WHERE lesson_materials.lesson_id = @lesson_id AND attachments.media_type = 'application/pdf'
+ORDER BY lesson_materials.position
+LIMIT 1;

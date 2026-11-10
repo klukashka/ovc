@@ -45,7 +45,7 @@ func newRecoveryWorker(t *testing.T, state domain.MeetingCreateState, present bo
 	f.identity = f.create(t, 10)
 	f.generation = 100
 	if present {
-		f.generation, err = f.provider.CreateMeeting(t.Context(), domain.Meeting{ID: f.identity.ProviderMeetingID, Name: "Private lesson sentinel"})
+		f.generation, err = f.provider.CreateMeeting(t.Context(), domain.Meeting{ID: f.identity.ProviderMeetingID, Name: "Private lesson sentinel"}, nil)
 		meetingRequire(t, err)
 	}
 	if state == domain.MeetingCreateReturned {
@@ -146,7 +146,7 @@ func testRecoveryWorkerTerminal(t *testing.T) {
 func testRecoveryWorkerGenerationConflict(t *testing.T) {
 	f := newRecoveryWorker(t, domain.MeetingCreateReturned, true)
 	meetingRequire(t, f.provider.EndMeeting(t.Context(), domain.Meeting{ID: f.identity.ProviderMeetingID, CreateTime: f.generation}))
-	replacement, createErr := f.provider.CreateMeeting(t.Context(), domain.Meeting{ID: f.identity.ProviderMeetingID, Name: "Replacement sentinel"})
+	replacement, createErr := f.provider.CreateMeeting(t.Context(), domain.Meeting{ID: f.identity.ProviderMeetingID, Name: "Replacement sentinel"}, nil)
 	meetingRequire(t, createErr)
 
 	err := f.worker.Tick(t.Context(), instant)

@@ -24,12 +24,16 @@ import (
 const (
 	protocolSecret   = "protocol-fake-shared-value-for-local-tests"
 	protocolBasePath = "/bigbluebutton/api/"
+	protocolMaxBody  = 64 << 10
 )
 
 type protocolRequest struct {
-	method string
-	call   string
-	values url.Values
+	method      string
+	call        string
+	values      url.Values
+	rawQuery    string
+	contentType string
+	body        []byte
 }
 
 type protocolRoom struct {
@@ -148,8 +152,15 @@ func (fake *protocolFake) handle(writer http.ResponseWriter, request *http.Reque
 		writeProtocolAnswer(writer, protocolRefusal("checksumError"))
 		return
 	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, protocolMaxBody))
+	if err != nil {
+		writeProtocolAnswer(writer, protocolRefusal("unreadableBody"))
+		return
+	}
 	fake.mutex.Lock()
-	fake.requests = append(fake.requests, protocolRequest{method: request.Method, call: call, values: values})
+	fake.requests = append(fake.requests, protocolRequest{
+		method: request.Method, call: call, values: values, rawQuery: request.URL.RawQuery, contentType: request.Header.Get("Content-Type"), body: body,
+	})
 	fault, faulted := fake.faults[call]
 	fake.mutex.Unlock()
 	if faulted {

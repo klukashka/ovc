@@ -75,7 +75,7 @@ func recoveryReplaceDuringInspection(t *testing.T, ctx context.Context, f recove
 	t.Helper()
 	meetingAwait(t, ctx, barrier.inspected)
 	meetingRequire(t, f.provider.EndMeeting(ctx, domain.Meeting{ID: f.identity.ProviderMeetingID, CreateTime: f.generation}))
-	replacement, err := f.provider.CreateMeeting(ctx, domain.Meeting{ID: f.identity.ProviderMeetingID, Name: "Replacement sentinel"})
+	replacement, err := f.provider.CreateMeeting(ctx, domain.Meeting{ID: f.identity.ProviderMeetingID, Name: "Replacement sentinel"}, nil)
 	meetingRequire(t, err)
 	close(barrier.continueEnd)
 	meetingAwait(t, ctx, barrier.refused)

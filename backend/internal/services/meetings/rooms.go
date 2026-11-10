@@ -23,6 +23,7 @@ var (
 	errTutorAdmission      = errors.New("the tutor reached the limit of unsettled meetings")
 	errUncertainPause      = errors.New("the lesson has a fresh uncertain meeting")
 	errDispatchExpired     = errors.New("the create permit outlived the provider call budget before dispatch")
+	errNoPresentations     = errors.New("this process offers no lesson presentations")
 )
 
 const roomAttempts = 5
@@ -38,15 +39,26 @@ func DefaultRoomTiming() RoomTiming {
 	return RoomTiming{CreatingWait: domain.MeetingCreatingWait, Poll: 50 * time.Millisecond, ProviderCall: 15 * time.Second, Evidence: 10 * time.Second}
 }
 
+type PresentationSigner interface {
+	PresignRead(ctx context.Context, key string) (core.Secret, error)
+}
+
+type NoPresentations struct{}
+
+func (NoPresentations) PresignRead(context.Context, string) (core.Secret, error) {
+	return core.Secret{}, errNoPresentations
+}
+
 type RoomDependencies struct {
-	Store     *repositories.Store
-	Provider  meeting.Provider
-	Kind      domain.MeetingProvider
-	Clock     clock.Source
-	Random    core.RandomSource
-	Logger    *slog.Logger
-	Monotonic func() time.Time
-	Timing    RoomTiming
+	Store         *repositories.Store
+	Provider      meeting.Provider
+	Presentations PresentationSigner
+	Kind          domain.MeetingProvider
+	Clock         clock.Source
+	Random        core.RandomSource
+	Logger        *slog.Logger
+	Monotonic     func() time.Time
+	Timing        RoomTiming
 }
 
 type Rooms struct {
@@ -55,6 +67,9 @@ type Rooms struct {
 }
 
 func NewRooms(dependencies RoomDependencies) *Rooms {
+	if dependencies.Presentations == nil {
+		panic("the room coordinator needs a presentation signer")
+	}
 	return &Rooms{deps: dependencies, cleanup: New(dependencies.Store, dependencies.Provider, dependencies.Kind, dependencies.Logger)}
 }
 
@@ -337,7 +352,32 @@ func (r *Rooms) create(ctx context.Context, plan roomPlan) (domain.ProviderCreat
 		r.report(ctx, "meeting.room.dispatch_expired")
 		return 0, errDispatchExpired
 	}
-	return r.deps.Provider.CreateMeeting(ctx, plan.room.Meeting)
+	return r.deps.Provider.CreateMeeting(ctx, plan.room.Meeting, r.presentation(ctx, plan.room.Identity.LessonID))
+}
+
+func (r *Rooms) presentation(ctx context.Context, lesson domain.LessonID) *meeting.Presentation {
+	file, err := r.deps.Store.Repositories().LessonMaterials.FirstPresentation(ctx, lesson)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return nil
+	}
+	var address core.Secret
+	if err == nil {
+		address, err = r.deps.Presentations.PresignRead(ctx, file.StorageKey)
+	}
+	if err != nil {
+		r.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "meeting.presentation.unavailable", slog.String("lesson_id", lesson.String()), slog.String("kind", presentationFailureKind(err)))
+		return nil
+	}
+	r.report(ctx, "meeting.presentation.offered", slog.String("lesson_id", lesson.String()), slog.String("attachment_id", file.ID.String()))
+	presentation := meeting.NewPresentation(address)
+	return &presentation
+}
+
+func presentationFailureKind(err error) string {
+	if errors.Is(err, errNoPresentations) {
+		return "not_offered"
+	}
+	return core.ErrorKind(err)
 }
 
 func (r *Rooms) endAfterSettlement(ctx context.Context, id domain.ProviderMeetingID, created domain.ProviderCreateTime) {

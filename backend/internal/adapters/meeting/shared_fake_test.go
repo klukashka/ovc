@@ -68,11 +68,11 @@ func TestSharedFakeInitializationAndLimits(t *testing.T) {
 		other := meetingInput()
 		other.ID[0] = 3
 
-		_, roomCapacity := second.CreateMeeting(t.Context(), other)
+		_, roomCapacity := second.CreateMeeting(t.Context(), other, nil)
 		endErr := second.EndMeeting(t.Context(), room)
-		recreated, recreateErr := second.CreateMeeting(t.Context(), meetingInput())
+		recreated, recreateErr := second.CreateMeeting(t.Context(), meetingInput(), nil)
 		endReplacement := first.EndMeeting(t.Context(), domain.Meeting{ID: room.ID, CreateTime: recreated})
-		_, generationCapacity := first.CreateMeeting(t.Context(), other)
+		_, generationCapacity := first.CreateMeeting(t.Context(), other, nil)
 		size := sharedSize(t, database.Pool)
 
 		requireFailure(t, roomCapacity, FailureCapacity)
@@ -122,7 +122,7 @@ func TestSharedFakeInitializationAndLimits(t *testing.T) {
 		overflow.Generations = math.MaxUint64
 
 		_, linkErr := provider.JoinLink(t.Context(), room, testParticipant())
-		_, createErr := provider.CreateMeeting(t.Context(), other)
+		_, createErr := provider.CreateMeeting(t.Context(), other, nil)
 		_, constructorErr := NewSharedFake(t.Context(), database.Pool, sharedClock(), sharedRandom(2), testLogger(), overflow)
 		size := sharedSize(t, database.Pool)
 
@@ -212,7 +212,7 @@ func TestSharedFakeGenerationAndRevocation(t *testing.T) {
 	running, infoErr := second.MeetingInfo(t.Context(), room)
 	ended := first.EndMeeting(t.Context(), room)
 	released := sharedSize(t, database.Pool)
-	replacementTime, createErr := second.CreateMeeting(t.Context(), meetingInput())
+	replacementTime, createErr := second.CreateMeeting(t.Context(), meetingInput(), nil)
 	staleEnd := first.EndMeeting(t.Context(), room)
 	staleLink := second.Enter(t.Context(), link, room, participant)
 	replacement := room
@@ -245,7 +245,7 @@ func TestSharedFakeCancellationAndResources(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		created, err := provider.CreateMeeting(ctx, meetingInput())
+		created, err := provider.CreateMeeting(ctx, meetingInput(), nil)
 
 		requireNoErrors(t, err)
 		if int64(created) != time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC).UnixMilli() {
@@ -336,8 +336,8 @@ func testSharedResourceFailures(t *testing.T) {
 	other := meetingInput()
 	other.ID[0] = 3
 
-	existing, existingErr := broken.CreateMeeting(t.Context(), meetingInput())
-	_, clockErr := broken.CreateMeeting(t.Context(), other)
+	existing, existingErr := broken.CreateMeeting(t.Context(), meetingInput(), nil)
+	_, clockErr := broken.CreateMeeting(t.Context(), other, nil)
 	_, randomErr := broken.JoinLink(t.Context(), room, testParticipant())
 	size := sharedSize(t, database.Pool)
 
@@ -442,7 +442,7 @@ func TestSharedFakeMigrationRoundTrip(t *testing.T) {
 	_, seedErr := database.Pool.Exec(t.Context(), `INSERT INTO users (id, role, state, email, password_hash, name, language, timezone, theme, consent_version, consent_at, unverified_since, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000001', 'tutor', 'unverified', 'migration@example.test', '$argon2id$unused', 'Migration account', 'en', 'UTC', 'system', 'v1', $1, $1, $1, $1)`, time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC))
 	requireNoErrors(t, seedErr)
 
-	upErr := database.MigrateUpTo(t.Context(), fakeNameMigration)
+	upErr := database.MigrateUpTo(t.Context(), fakePresentationMigration)
 	requireNoErrors(t, upErr)
 	provider := newShared(t, database.Pool, testLimits(), 1)
 	room := createdMeeting(t, provider)
@@ -450,7 +450,7 @@ func TestSharedFakeMigrationRoundTrip(t *testing.T) {
 	downErr := database.MigrateDownTo(t.Context(), 22)
 	var removed bool
 	removedErr := database.Pool.QueryRow(t.Context(), `SELECT to_regclass('public.fake_meeting_state') IS NULL`).Scan(&removed)
-	secondUp := database.MigrateUpTo(t.Context(), fakeNameMigration)
+	secondUp := database.MigrateUpTo(t.Context(), fakePresentationMigration)
 	var users int
 	preservedErr := database.Pool.QueryRow(t.Context(), `SELECT count(*) FROM users WHERE email = 'migration@example.test'`).Scan(&users)
 

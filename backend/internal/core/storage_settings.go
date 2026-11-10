@@ -15,6 +15,8 @@ const (
 	varStorageAccessKey = "OVC_STORAGE_ACCESS_KEY"
 	varStorageSecretKey = "OVC_STORAGE_SECRET_KEY"
 
+	varPresentationEndpoint = "OVC_PRESENTATION_STORAGE_ENDPOINT"
+
 	varDevStorageAccessKey = "OVC_DEV_STORAGE_ACCESS_KEY"
 	varDevStorageSecretKey = "OVC_DEV_STORAGE_SECRET_KEY"
 	varDevStoragePort      = "OVC_DEV_STORAGE_PORT"
@@ -77,6 +79,27 @@ func (s *Settings) loadStorageSettings(lookup Lookup) []error {
 		AccessKey: NewSecret(accessKey), SecretKey: NewSecret(secretKey),
 	}
 	return problems
+}
+
+func presentationEndpointFrom(lookup Lookup, provider MeetingProvider, testControl bool) (string, error) {
+	endpoint, _ := lookup(varPresentationEndpoint)
+	if !validStorageEndpoint(endpoint) {
+		return "", &SettingsError{Variable: varPresentationEndpoint, Problem: "is required: an https origin, or http only on a loopback host"}
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return "", &SettingsError{Variable: varPresentationEndpoint, Problem: "is not a valid origin"}
+	}
+	if provider == MeetingProviderFake && !isLoopbackHost(parsed.Hostname()) {
+		return "", &SettingsError{Variable: varPresentationEndpoint, Problem: "must be on a loopback host with OVC_MEETING_PROVIDER=fake, which fetches presentations only from local storage"}
+	}
+	if parsed.Scheme == "http" && provider != MeetingProviderFake {
+		return "", &SettingsError{Variable: varPresentationEndpoint, Problem: "may use http only with OVC_MEETING_PROVIDER=fake"}
+	}
+	if testControl && !isLoopbackAddress(parsed.Hostname()) {
+		return "", &SettingsError{Variable: varPresentationEndpoint, Problem: "must use a loopback IP address with OVC_TEST_CONTROL=1"}
+	}
+	return strings.TrimRight(endpoint, "/"), nil
 }
 
 func validStorageEndpoint(value string) bool {

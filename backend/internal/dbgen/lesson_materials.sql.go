@@ -122,6 +122,28 @@ func (q *Queries) DeleteSeriesMaterials(ctx context.Context, seriesID domain.Ser
 	return result.RowsAffected(), nil
 }
 
+const firstLessonPresentation = `-- name: FirstLessonPresentation :one
+SELECT attachments.id, attachments.storage_key
+FROM lesson_materials
+JOIN materials ON materials.id = lesson_materials.material_id AND materials.tutor_id = lesson_materials.tutor_id
+JOIN attachments ON attachments.id = materials.attachment_id AND attachments.state = 'bound'
+WHERE lesson_materials.lesson_id = $1 AND attachments.media_type = 'application/pdf'
+ORDER BY lesson_materials.position
+LIMIT 1
+`
+
+type FirstLessonPresentationRow struct {
+	ID         domain.AttachmentID
+	StorageKey string
+}
+
+func (q *Queries) FirstLessonPresentation(ctx context.Context, lessonID domain.LessonID) (FirstLessonPresentationRow, error) {
+	row := q.db.QueryRow(ctx, firstLessonPresentation, lessonID)
+	var i FirstLessonPresentationRow
+	err := row.Scan(&i.ID, &i.StorageKey)
+	return i, err
+}
+
 const getServableLessonFile = `-- name: GetServableLessonFile :one
 SELECT attachments.storage_key, attachments.media_type::text AS media_type, attachments.size_bytes::bigint AS size_bytes,
     attachments.filename, attachments.width

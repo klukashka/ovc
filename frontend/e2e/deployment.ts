@@ -359,6 +359,7 @@ function backendEnvironment(
     OVC_TRUSTED_PROXY_CIDRS: '127.0.0.1/32',
     OVC_STORAGE_BACKEND: 's3',
     OVC_STORAGE_ENDPOINT: settings.storage.endpoint,
+    OVC_PRESENTATION_STORAGE_ENDPOINT: settings.storage.endpoint,
     OVC_STORAGE_REGION: 'us-east-1',
     OVC_STORAGE_BUCKET: storageBucket,
     OVC_STORAGE_ACCESS_KEY: settings.storage.accessKey,

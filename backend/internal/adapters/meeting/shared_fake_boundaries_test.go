@@ -54,7 +54,7 @@ func TestSharedFakeAvailabilityAndCancelledOperations(t *testing.T) {
 		run  func(context.Context, *SharedFake, domain.Meeting, JoinLink) error
 	}{
 		{name: "create", run: func(ctx context.Context, p *SharedFake, m domain.Meeting, _ JoinLink) error {
-			_, err := p.CreateMeeting(ctx, m)
+			_, err := p.CreateMeeting(ctx, m, nil)
 			return err
 		}},
 		{name: "inspect", run: func(ctx context.Context, p *SharedFake, m domain.Meeting, _ JoinLink) error {

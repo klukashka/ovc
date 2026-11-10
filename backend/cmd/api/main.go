@@ -164,7 +164,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	if err != nil {
 		return err
 	}
-	provider, err := startup.NewMeetingProvider(ctx, logging.Logger, database, source, random)
+	provider, err := startup.NewMeetingProvider(ctx, logging.Logger, database, source, random, settings.Presentation)
 	if err != nil {
 		return err
 	}
@@ -172,7 +172,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	if err != nil {
 		return err
 	}
-	lifecycle, err := startup.NewLifecycle(logging.Logger, settings, database, source, random, joinProvider, embed)
+	lifecycle, err := startup.NewLifecycle(logging.Logger, settings, database, source, random, joinProvider, startup.NewPresentations(settings), embed)
 	if err != nil {
 		return err
 	}

@@ -53,7 +53,7 @@ func testParticipant() domain.Participant {
 func createdMeeting(t *testing.T, provider Provider) domain.Meeting {
 	t.Helper()
 	meeting := meetingInput()
-	created, err := provider.CreateMeeting(t.Context(), meeting)
+	created, err := provider.CreateMeeting(t.Context(), meeting, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) Provider) {
 		provider := factory(t)
 		meeting := createdMeeting(t, provider)
 
-		created, createErr := provider.CreateMeeting(t.Context(), meetingInput())
+		created, createErr := provider.CreateMeeting(t.Context(), meetingInput(), nil)
 		info, infoErr := provider.MeetingInfo(t.Context(), meeting)
 
 		if createErr != nil || infoErr != nil || created != meeting.CreateTime || created <= 0 || info.CreateTime != created || info.Status != domain.MeetingCreated {

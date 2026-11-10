@@ -135,7 +135,7 @@ func testFakeInspectionCreationBarrier(t *testing.T) {
 	var created domain.ProviderCreateTime
 	creator := core.Run(ctx, testLogger(), "inspection-create", func() error {
 		var err error
-		created, err = provider.CreateMeeting(ctx, meetingInput())
+		created, err = provider.CreateMeeting(ctx, meetingInput(), nil)
 		return err
 	})
 	await(t, ctx, entered)

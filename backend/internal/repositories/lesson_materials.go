@@ -20,6 +20,7 @@ type (
 	VisibleLessonFile   = dbgen.VisibleLessonReferencesRow
 	LessonMaterialRow   = dbgen.ListTutorLessonMaterialsBatchRow
 	SeriesMaterialRow   = dbgen.ListTutorSeriesMaterialsBatchRow
+	LessonPresentation  = dbgen.FirstLessonPresentationRow
 	LockedMaterialsItem struct {
 		ID               domain.LessonID
 		SeriesID         *domain.SeriesID
@@ -60,6 +61,11 @@ func (r LessonMaterials) OfLessons(ctx context.Context, lessons []domain.LessonI
 func (r LessonMaterials) OfSeries(ctx context.Context, series domain.SeriesID) ([]domain.MaterialID, error) {
 	ids, err := r.queries.ListMaterialIDsOfSeries(ctx, series)
 	return one(ids, err, "materials of a series")
+}
+
+func (r LessonMaterials) FirstPresentation(ctx context.Context, lesson domain.LessonID) (LessonPresentation, error) {
+	row, err := r.queries.FirstLessonPresentation(ctx, lesson)
+	return one(row, err, "first presentation of a lesson")
 }
 
 func (r LessonMaterials) Views(ctx context.Context, lessons []domain.LessonID) ([]LessonMaterialView, error) {

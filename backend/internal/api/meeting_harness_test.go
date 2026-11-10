@@ -126,7 +126,7 @@ func (h *authHarness) instance(t *testing.T, adjust func(*meetings.LifecycleDepe
 	t.Helper()
 	timing := meetings.DefaultRoomTiming()
 	rooms := meetings.NewRooms(meetings.RoomDependencies{
-		Store: h.store, Provider: h.provider, Kind: domain.MeetingProviderFake, Clock: h.clock, Random: h.random, Logger: h.logger, Monotonic: clock.System{}.Now, Timing: timing,
+		Store: h.store, Provider: h.provider, Presentations: meetings.NoPresentations{}, Kind: domain.MeetingProviderFake, Clock: h.clock, Random: h.random, Logger: h.logger, Monotonic: clock.System{}.Now, Timing: timing,
 	})
 	dependencies := meetings.LifecycleDependencies{
 		Rooms: rooms, Store: h.store, Provider: h.provider, Clock: h.clock, Random: h.random, Keys: h.keys, Logger: h.logger,
@@ -174,7 +174,7 @@ func (h *authHarness) instanceLogging(t *testing.T, logger *slog.Logger) string 
 	}
 	timing := meetings.DefaultRoomTiming()
 	rooms := meetings.NewRooms(meetings.RoomDependencies{
-		Store: h.store, Provider: provider, Kind: domain.MeetingProviderFake, Clock: h.clock, Random: h.random, Logger: h.logger, Monotonic: clock.System{}.Now, Timing: timing,
+		Store: h.store, Provider: provider, Presentations: meetings.NoPresentations{}, Kind: domain.MeetingProviderFake, Clock: h.clock, Random: h.random, Logger: h.logger, Monotonic: clock.System{}.Now, Timing: timing,
 	})
 	options := h.options
 	options.Meetings = meetings.NewLifecycle(meetings.LifecycleDependencies{
@@ -193,7 +193,7 @@ func (h *authHarness) gatedInstance(t *testing.T) (string, *providerEntropyGate)
 	}
 	timing := meetings.DefaultRoomTiming()
 	rooms := meetings.NewRooms(meetings.RoomDependencies{
-		Store: h.store, Provider: provider, Kind: domain.MeetingProviderFake, Clock: h.clock, Random: h.random, Logger: h.logger, Monotonic: clock.System{}.Now, Timing: timing,
+		Store: h.store, Provider: provider, Presentations: meetings.NoPresentations{}, Kind: domain.MeetingProviderFake, Clock: h.clock, Random: h.random, Logger: h.logger, Monotonic: clock.System{}.Now, Timing: timing,
 	})
 	options := h.options
 	options.Meetings = meetings.NewLifecycle(meetings.LifecycleDependencies{

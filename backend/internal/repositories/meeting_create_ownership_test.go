@@ -101,7 +101,7 @@ func newRoomFixture(t *testing.T) *roomFixture {
 
 func (f *roomFixture) newRooms(timing meetings.RoomTiming, random io.Reader, provider meeting.Provider) *meetings.Rooms {
 	return meetings.NewRooms(meetings.RoomDependencies{
-		Store: f.store, Provider: provider, Kind: domain.MeetingProviderFake, Clock: f.clock, Random: random, Logger: f.logger, Monotonic: clock.System{}.Now, Timing: timing,
+		Store: f.store, Provider: provider, Presentations: meetings.NoPresentations{}, Kind: domain.MeetingProviderFake, Clock: f.clock, Random: random, Logger: f.logger, Monotonic: clock.System{}.Now, Timing: timing,
 	})
 }
 

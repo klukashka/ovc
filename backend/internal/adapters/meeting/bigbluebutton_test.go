@@ -121,7 +121,7 @@ func TestBigBlueButtonCreateRequest(t *testing.T) {
 			requireNoErrors(t, err)
 			room := meetingInput()
 
-			created, createErr := provider.CreateMeeting(t.Context(), room)
+			created, createErr := provider.CreateMeeting(t.Context(), room, nil)
 			requests := fake.captured(bbbCallCreate)
 
 			requireNoErrors(t, createErr)
@@ -151,8 +151,8 @@ func TestBigBlueButtonCreateRequest(t *testing.T) {
 		first, second := meetingInput(), meetingInput()
 		second.ID, second.RoutingKey = domain.ProviderMeetingID{8}, domain.MeetingRoutingKey{9}
 
-		_, firstErr := provider.CreateMeeting(t.Context(), first)
-		_, secondErr := provider.CreateMeeting(t.Context(), second)
+		_, firstErr := provider.CreateMeeting(t.Context(), first, nil)
+		_, secondErr := provider.CreateMeeting(t.Context(), second, nil)
 		requests := fake.captured(bbbCallCreate)
 
 		requireNoErrors(t, firstErr, secondErr)
@@ -175,7 +175,7 @@ func TestBigBlueButtonCreateRequest(t *testing.T) {
 			room := meetingInput()
 			change(&room)
 
-			_, err := provider.CreateMeeting(t.Context(), room)
+			_, err := provider.CreateMeeting(t.Context(), room, nil)
 
 			if !errors.Is(err, FailureInvalidInput) {
 				t.Fatalf("%s: error = %v", name, err)
@@ -199,14 +199,14 @@ func TestBigBlueButtonDuplicateCreate(t *testing.T) {
 	absent := meetingInput()
 	absent.ID, absent.CreateTime = domain.ProviderMeetingID{7}, 5
 
-	repeated, repeatedErr := provider.CreateMeeting(t.Context(), meetingInput())
-	undetected, undetectedErr := provider.CreateMeeting(t.Context(), differing)
+	repeated, repeatedErr := provider.CreateMeeting(t.Context(), meetingInput(), nil)
+	undetected, undetectedErr := provider.CreateMeeting(t.Context(), differing, nil)
 	creates := len(fake.captured(bbbCallCreate))
-	boundRepeat, boundErr := provider.CreateMeeting(t.Context(), known)
-	_, staleErr := provider.CreateMeeting(t.Context(), unknown)
-	_, absentErr := provider.CreateMeeting(t.Context(), absent)
+	boundRepeat, boundErr := provider.CreateMeeting(t.Context(), known, nil)
+	_, staleErr := provider.CreateMeeting(t.Context(), unknown, nil)
+	_, absentErr := provider.CreateMeeting(t.Context(), absent, nil)
 	fake.setFault(bbbCallCreate, protocolFault{respond: respondWith(http.StatusOK, protocolFailure(bbbKeyIDNotUnique))})
-	_, refusedErr := provider.CreateMeeting(t.Context(), meetingInput())
+	_, refusedErr := provider.CreateMeeting(t.Context(), meetingInput(), nil)
 
 	requireNoErrors(t, repeatedErr, undetectedErr, boundErr)
 	requireFailure(t, staleErr, FailureConflict)
@@ -273,7 +273,7 @@ func TestBigBlueButtonResponseFailures(t *testing.T) {
 			fake.setFault(bbbCallCreate, fault)
 			fake.setFault(bbbCallInfo, fault)
 
-			created, createErr := provider.CreateMeeting(t.Context(), room)
+			created, createErr := provider.CreateMeeting(t.Context(), room, nil)
 			info, inspectErr := provider.InspectMeeting(t.Context(), room.ID)
 
 			requireFailure(t, createErr, testCase.expected)
@@ -329,7 +329,7 @@ func TestBigBlueButtonResponseFailures(t *testing.T) {
 		provider := newProtocolProvider(t, fake)
 		fake.setFault(bbbCallCreate, protocolFault{respond: respondWith(http.StatusOK, `<response><returncode>SUCCESS</returncode><meetingID>`+id+`</meetingID><createTime>5</createTime><hasBeenForciblyEnded>true</hasBeenForciblyEnded></response>`)})
 
-		_, err := provider.CreateMeeting(t.Context(), room)
+		_, err := provider.CreateMeeting(t.Context(), room, nil)
 
 		requireFailure(t, err, FailureConflict)
 	})
@@ -383,7 +383,7 @@ func TestBigBlueButtonCreateIsNotReplayed(t *testing.T) {
 		}
 	}})
 
-	_, createErr := provider.CreateMeeting(t.Context(), room)
+	_, createErr := provider.CreateMeeting(t.Context(), room, nil)
 	info, inspectErr := provider.InspectMeeting(t.Context(), room.ID)
 
 	requireFailure(t, createErr, FailureUnavailable)
@@ -453,7 +453,7 @@ func stalledOperations() map[string]struct {
 		run     func(context.Context, *BigBlueButton, domain.Meeting) error
 	}{
 		"create": {call: bbbCallCreate, run: func(ctx context.Context, provider *BigBlueButton, room domain.Meeting) error {
-			_, err := provider.CreateMeeting(ctx, room)
+			_, err := provider.CreateMeeting(ctx, room, nil)
 			return err
 		}},
 		"inspect": {call: bbbCallInfo, run: func(ctx context.Context, provider *BigBlueButton, room domain.Meeting) error {
@@ -574,7 +574,7 @@ func TestBigBlueButtonDeadlinesAndCancellation(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 
-		_, createErr := provider.CreateMeeting(ctx, meetingInput())
+		_, createErr := provider.CreateMeeting(ctx, meetingInput(), nil)
 		_, inspectErr := provider.InspectMeeting(ctx, meetingInput().ID)
 		_, infoErr := provider.MeetingInfo(ctx, meetingInput())
 		_, linkErr := provider.JoinLink(ctx, meetingInput(), testParticipant())

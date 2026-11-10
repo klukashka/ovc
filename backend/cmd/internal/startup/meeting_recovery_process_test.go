@@ -35,7 +35,7 @@ func TestMeetingRecoveryRuntime(t *testing.T) {
 	returned := seedAdminMeeting(t, f, 1)
 	uncertain := seedAdminMeeting(t, f, 2)
 	for _, id := range []domain.ProviderMeetingID{returned, uncertain} {
-		generation, err := provider.CreateMeeting(ctx, domain.Meeting{ID: id, Name: "Private recovery room sentinel"})
+		generation, err := provider.CreateMeeting(ctx, domain.Meeting{ID: id, Name: "Private recovery room sentinel"}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -129,7 +129,7 @@ func TestMeetingRecoveryRuntimeRefusesDifferentProviderLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := domain.ProviderMeetingID{9}
-	generation, err := provider.CreateMeeting(ctx, domain.Meeting{ID: id, Name: "Private mismatch room sentinel"})
+	generation, err := provider.CreateMeeting(ctx, domain.Meeting{ID: id, Name: "Private mismatch room sentinel"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -31,6 +31,7 @@ func validValues() map[string]string {
 	values := map[string]string{"OVC_DATABASE_URL": databaseURL.String(), "OVC_PUBLIC_URL": "https://ovc.example"}
 	values["OVC_JWT_SECRET"] = sentinel("jwt-signing-material-0123456789")
 	values["OVC_STORAGE_ENDPOINT"] = "https://storage.ovc.example"
+	values["OVC_PRESENTATION_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
 	values["OVC_STORAGE_REGION"] = "ru-central1"
 	values["OVC_STORAGE_BUCKET"] = "ovc-files"
 	values["OVC_STORAGE_ACCESS_KEY"] = sentinel("storage-access-key")
@@ -140,7 +141,8 @@ func TestLoadRefusesTestControlWithSMTPMail(t *testing.T) {
 	values := validValues()
 	for key, value := range map[string]string{
 		"OVC_TEST_CONTROL": "1", "OVC_HTTP_ADDR": "127.0.0.1:8000", "OVC_STORAGE_ENDPOINT": "http://127.0.0.1:58333",
-		"OVC_MAIL_BACKEND": "smtp", "OVC_SMTP_HOST": "smtp.example", "OVC_MAIL_FROM": "noreply@ovc.example",
+		"OVC_PRESENTATION_STORAGE_ENDPOINT": "http://127.0.0.1:58333",
+		"OVC_MAIL_BACKEND":                  "smtp", "OVC_SMTP_HOST": "smtp.example", "OVC_MAIL_FROM": "noreply@ovc.example",
 	} {
 		values[key] = value
 	}
@@ -180,6 +182,7 @@ func TestLoadChecksTheFakeRoomOrigin(t *testing.T) {
 				values["OVC_TEST_CONTROL"] = testCase.flag
 				values["OVC_HTTP_ADDR"] = "127.0.0.1:8000"
 				values["OVC_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
+				values["OVC_PRESENTATION_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
 				values["OVC_FAKE_ROOM_ORIGIN"] = testCase.origin
 
 				settings, err := core.Load(lookupFrom(values), process)
@@ -205,6 +208,7 @@ func TestLoadAcceptsTestControlOnLoopback(t *testing.T) {
 	values["OVC_CLOCK"] = "test"
 	values["OVC_HTTP_ADDR"] = "[::1]:8000"
 	values["OVC_STORAGE_ENDPOINT"] = "http://[::1]:58333"
+	values["OVC_PRESENTATION_STORAGE_ENDPOINT"] = "http://[::1]:58333"
 
 	settings, err := core.Load(lookupFrom(values), core.ProcessAPI)
 
@@ -358,6 +362,7 @@ func TestPublicURLMustBeAnHTTPSOrigin(t *testing.T) {
 			if testCase.testControl != "" {
 				values["OVC_TEST_CONTROL"] = testCase.testControl
 				values["OVC_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
+				values["OVC_PRESENTATION_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
 			}
 
 			settings, err := core.Load(lookupFrom(values), core.ProcessAPI)
@@ -560,6 +565,66 @@ func TestStorageOnLoopbackMayUsePlainHTTPAndKeysStayRedacted(t *testing.T) {
 	}
 	if printed := fmt.Sprintf("%v %+v %#v", settings, settings, settings); strings.Contains(printed, "storage-access-key") || strings.Contains(printed, "storage-secret-key") {
 		t.Fatal("a storage key was printed")
+	}
+}
+
+func TestPresentationStorageEndpointRule(t *testing.T) {
+	loopbackTestControl := map[string]string{"OVC_TEST_CONTROL": "1", "OVC_HTTP_ADDR": "127.0.0.1:8000", "OVC_STORAGE_ENDPOINT": "http://127.0.0.1:58333"}
+	cases := map[string]struct {
+		extra    map[string]string
+		value    string
+		accepted string
+	}{
+		"https on a loopback address":        {value: "https://127.0.0.1:58333/", accepted: "https://127.0.0.1:58333"},
+		"remote https with the fake":         {value: "https://conferencing-storage.ovc.example"},
+		"http on a loopback address":         {value: "http://127.0.0.1:58333", accepted: "http://127.0.0.1:58333"},
+		"http on localhost":                  {value: "http://localhost:58333", accepted: "http://localhost:58333"},
+		"loopback IP under test control":     {extra: loopbackTestControl, value: "http://127.0.0.1:58333", accepted: "http://127.0.0.1:58333"},
+		"missing":                            {},
+		"http on a remote host":              {value: "http://storage.ovc.example"},
+		"http on loopback with another kind": {extra: map[string]string{"OVC_MEETING_PROVIDER": "bigbluebutton"}, value: "http://127.0.0.1:58333"},
+		"localhost under test control":       {extra: loopbackTestControl, value: "http://localhost:58333"},
+		"remote https under test control":    {extra: loopbackTestControl, value: "https://storage.ovc.example"},
+		"a path":                             {value: "https://storage.ovc.example/bucket"},
+		"user information":                   {value: "https://key@storage.ovc.example"},
+		"a query":                            {value: "https://storage.ovc.example?x=1"},
+		"another scheme":                     {value: "ftp://storage.ovc.example"},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			values := validValues()
+			delete(values, "OVC_PRESENTATION_STORAGE_ENDPOINT")
+			for key, value := range testCase.extra {
+				values[key] = value
+			}
+			if testCase.value != "" {
+				values["OVC_PRESENTATION_STORAGE_ENDPOINT"] = testCase.value
+			}
+
+			settings, err := core.Load(lookupFrom(values), core.ProcessAPI)
+
+			if testCase.accepted != "" {
+				if err != nil || settings.Presentation != testCase.accepted {
+					t.Fatalf("got %q, %v; want %q", settings.Presentation, err, testCase.accepted)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "OVC_PRESENTATION_STORAGE_ENDPOINT") {
+				t.Fatalf("expected a refusal naming the presentation endpoint, got %v", err)
+			}
+		})
+	}
+}
+
+func TestOnlyTheAPINeedsThePresentationStorageEndpoint(t *testing.T) {
+	values := validValues()
+	delete(values, "OVC_PRESENTATION_STORAGE_ENDPOINT")
+
+	_, workerErr := core.Load(lookupFrom(values), core.ProcessWorker)
+	_, apiErr := core.Load(lookupFrom(values), core.ProcessAPI)
+
+	if workerErr != nil || apiErr == nil {
+		t.Fatalf("worker %v, api %v", workerErr, apiErr)
 	}
 }
 

@@ -101,7 +101,7 @@ func newRoomFixture(t *testing.T) *roomFixture {
 func (f *roomFixture) room(t *testing.T, id byte) domain.Meeting {
 	t.Helper()
 	requested := domain.Meeting{ID: domain.ProviderMeetingID{id}, Name: neutralRoomName}
-	created, err := f.shared.CreateMeeting(t.Context(), requested)
+	created, err := f.shared.CreateMeeting(t.Context(), requested, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

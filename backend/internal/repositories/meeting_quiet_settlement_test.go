@@ -119,7 +119,7 @@ func testQuietLateRoomEnded(t *testing.T) {
 	f := newRecoveryWorker(t, domain.MeetingCreateUncertain, false)
 	scanner := recoveryScanner(f.meetingFixture, f.logger)
 	f.tick(t, instant)
-	_, err := f.provider.CreateMeeting(t.Context(), domain.Meeting{ID: f.identity.ProviderMeetingID, Name: "Private lesson sentinel"})
+	_, err := f.provider.CreateMeeting(t.Context(), domain.Meeting{ID: f.identity.ProviderMeetingID, Name: "Private lesson sentinel"}, nil)
 	meetingRequire(t, err)
 
 	due := f.scan(t, scanner, instant.Add(quietWindow))
@@ -371,7 +371,7 @@ func testQuietExpiredPermit(t *testing.T) {
 	f := newRoomFixture(t)
 	timing := meetings.DefaultRoomTiming()
 	rooms := meetings.NewRooms(meetings.RoomDependencies{
-		Store: f.store, Provider: f.provider, Kind: domain.MeetingProviderFake, Clock: offsetClock{Source: f.clock, offset: timing.ProviderCall + time.Second},
+		Store: f.store, Provider: f.provider, Presentations: meetings.NoPresentations{}, Kind: domain.MeetingProviderFake, Clock: offsetClock{Source: f.clock, offset: timing.ProviderCall + time.Second},
 		Random: bytes.NewReader(bytes.Repeat([]byte{91}, 256)), Logger: f.logger, Monotonic: clock.System{}.Now, Timing: timing,
 	})
 

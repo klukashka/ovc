@@ -42,6 +42,9 @@ const (
 	bbbRoomNameMaxRunes         = 64
 	bbbExpireWithoutJoinMinutes = "10"
 	bbbEndWithoutModeratorDelay = "15"
+	bbbPresentationModule       = "presentation"
+	bbbPresentationFilename     = "presentation.pdf"
+	bbbBodyContentType          = "application/xml"
 )
 
 const (
@@ -213,10 +216,57 @@ func (response bbbResponse) ended() bool {
 	return (response.EndTime != nil && *response.EndTime > 0) || (response.HasBeenForciblyEnded != nil && *response.HasBeenForciblyEnded)
 }
 
+type bbbModules struct {
+	XMLName xml.Name  `xml:"modules"`
+	Module  bbbModule `xml:"module"`
+}
+
+type bbbModule struct {
+	Name     string                  `xml:"name,attr"`
+	Document bbbPresentationDocument `xml:"document"`
+}
+
+type bbbPresentationDocument struct {
+	URL      string `xml:"url,attr"`
+	Filename string `xml:"filename,attr"`
+}
+
+func presentationBody(presentation *Presentation) ([]byte, error) {
+	if presentation == nil {
+		return nil, nil
+	}
+	if !validPresentationAddress(presentation.Reveal()) {
+		return nil, FailureInvalidInput
+	}
+	body, err := xml.Marshal(bbbModules{Module: bbbModule{
+		Name: bbbPresentationModule, Document: bbbPresentationDocument{URL: presentation.Reveal(), Filename: bbbPresentationFilename},
+	}})
+	if err != nil {
+		return nil, FailureInvalidInput
+	}
+	return body, nil
+}
+
+func validPresentationAddress(address string) bool {
+	parsed, err := url.Parse(address)
+	return err == nil && parsed.Scheme == "https" && parsed.Hostname() != "" && parsed.User == nil && parsed.Fragment == "" && parsed.Opaque == ""
+}
+
 func (b *BigBlueButton) call(ctx context.Context, name string, values url.Values) (bbbResponse, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, b.signedURL(name, values), http.NoBody)
+	return b.send(ctx, name, values, nil)
+}
+
+func (b *BigBlueButton) send(ctx context.Context, name string, values url.Values, body []byte) (bbbResponse, error) {
+	method, content := http.MethodGet, io.Reader(http.NoBody)
+	if body != nil {
+		method, content = http.MethodPost, bytes.NewReader(body)
+	}
+	request, err := http.NewRequestWithContext(ctx, method, b.signedURL(name, values), content)
 	if err != nil {
 		return bbbResponse{}, FailureInvalidInput
+	}
+	if body != nil {
+		request.Header.Set("Content-Type", bbbBodyContentType)
 	}
 	answer, err := b.client.Do(request)
 	if err != nil {
@@ -229,14 +279,14 @@ func (b *BigBlueButton) call(ctx context.Context, name string, values url.Values
 	if answer.StatusCode != http.StatusOK {
 		return bbbResponse{}, FailureUnavailable
 	}
-	body, err := io.ReadAll(io.LimitReader(answer.Body, bbbMaxResponseBytes+1))
+	answered, err := io.ReadAll(io.LimitReader(answer.Body, bbbMaxResponseBytes+1))
 	if err != nil {
 		return bbbResponse{}, FailureUnavailable
 	}
-	if len(body) > bbbMaxResponseBytes {
+	if len(answered) > bbbMaxResponseBytes {
 		return bbbResponse{}, FailureOversized
 	}
-	return parseBigBlueButtonResponse(body)
+	return parseBigBlueButtonResponse(answered)
 }
 
 func closeBigBlueButtonBody(ctx context.Context, logger *slog.Logger, body io.Closer) {
@@ -317,17 +367,18 @@ func (b *BigBlueButton) bounded(ctx context.Context, operation func(context.Cont
 	return err
 }
 
-func (b *BigBlueButton) CreateMeeting(ctx context.Context, requested domain.Meeting) (created domain.ProviderCreateTime, err error) {
+func (b *BigBlueButton) CreateMeeting(ctx context.Context, requested domain.Meeting, presentation *Presentation) (created domain.ProviderCreateTime, err error) {
 	defer reportProvider(ctx, b.logger, operationCreate, &err)
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	if !b.validCreate(requested) {
+	body, bodyErr := presentationBody(presentation)
+	if !b.validCreate(requested) || bodyErr != nil {
 		return 0, FailureInvalidInput
 	}
 	err = b.bounded(ctx, func(bounded context.Context) error {
 		var createErr error
-		created, createErr = b.create(bounded, requested)
+		created, createErr = b.create(bounded, requested, body)
 		return createErr
 	})
 	if err != nil {
@@ -343,11 +394,11 @@ func (b *BigBlueButton) validCreate(requested domain.Meeting) bool {
 	return validName(requested.Name, bbbRoomNameMaxRunes) && utf8.RuneCountInString(requested.Name) >= bbbRoomNameMinRunes
 }
 
-func (b *BigBlueButton) create(ctx context.Context, requested domain.Meeting) (domain.ProviderCreateTime, error) {
+func (b *BigBlueButton) create(ctx context.Context, requested domain.Meeting, body []byte) (domain.ProviderCreateTime, error) {
 	if requested.CreateTime != 0 {
 		return b.existingGeneration(ctx, requested)
 	}
-	response, err := b.call(ctx, bbbCallCreate, b.createValues(requested))
+	response, err := b.send(ctx, bbbCallCreate, b.createValues(requested), body)
 	if err != nil {
 		return 0, err
 	}

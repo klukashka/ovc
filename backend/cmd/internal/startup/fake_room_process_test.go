@@ -86,7 +86,7 @@ func TestJoinProviderFollowsTheFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 	room := domain.Meeting{ID: domain.ProviderMeetingID{1}, Name: "OVC lesson"}
-	room.CreateTime, err = shared.CreateMeeting(t.Context(), room)
+	room.CreateTime, err = shared.CreateMeeting(t.Context(), room, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestFakeRoomAcrossProcesses(t *testing.T) {
 	waitForStatus(t, ctx, first+"/api/v1/health/ready")
 	waitForStatus(t, ctx, second+"/api/v1/health/ready")
 	room := domain.Meeting{ID: domain.ProviderMeetingID{1}, Name: "OVC lesson"}
-	room.CreateTime, err = provider.CreateMeeting(ctx, room)
+	room.CreateTime, err = provider.CreateMeeting(ctx, room, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

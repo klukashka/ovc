@@ -162,12 +162,12 @@ func NewMailer(logger *slog.Logger, settings core.Settings, database *core.Datab
 
 func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, mailer mail.Mailer, random core.RandomSource, objects storage.Store) (*worker.Worker, error) {
 	store := repositories.NewStore(database.Pool)
-	provider, err := NewMeetingProvider(ctx, logger, database, source, random)
+	provider, err := NewMeetingProvider(ctx, logger, database, source, random, "")
 	if err != nil {
 		return nil, err
 	}
 	meetingService := meetings.New(store, provider, domain.MeetingProviderFake, logger)
-	lifecycle, err := NewLifecycle(logger, settings, database, source, random, provider, nil)
+	lifecycle, err := NewLifecycle(logger, settings, database, source, random, provider, meetings.NoPresentations{}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +281,10 @@ func NewRealtime(
 	return Realtime{Gateway: gateway, Listener: adapter}, nil
 }
 
-func NewLifecycle(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, provider meeting.Provider, embed *core.Switch) (*meetings.Lifecycle, error) {
+func NewLifecycle(
+	logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, provider meeting.Provider,
+	presentations meetings.PresentationSigner, embed *core.Switch,
+) (*meetings.Lifecycle, error) {
 	keys, err := core.DeriveKeys(settings.JWTSecret)
 	if err != nil {
 		return nil, err
@@ -289,7 +292,8 @@ func NewLifecycle(logger *slog.Logger, settings core.Settings, database *core.Da
 	store := repositories.NewStore(database.Pool)
 	timing := meetings.DefaultRoomTiming()
 	rooms := meetings.NewRooms(meetings.RoomDependencies{
-		Store: store, Provider: provider, Kind: domain.MeetingProviderFake, Clock: source, Random: random, Logger: logger, Monotonic: clock.System{}.Now, Timing: timing,
+		Store: store, Provider: provider, Presentations: presentations, Kind: domain.MeetingProviderFake, Clock: source, Random: random, Logger: logger,
+		Monotonic: clock.System{}.Now, Timing: timing,
 	})
 	return meetings.NewLifecycle(meetings.LifecycleDependencies{
 		Rooms: rooms, Store: store, Provider: provider, Clock: source, Random: random, Keys: keys, Logger: logger,
@@ -297,10 +301,16 @@ func NewLifecycle(logger *slog.Logger, settings core.Settings, database *core.Da
 	}), nil
 }
 
-func NewMeetingProvider(ctx context.Context, logger *slog.Logger, database *core.Database, source clock.Source, random core.RandomSource) (*meeting.SharedFake, error) {
+func NewMeetingProvider(
+	ctx context.Context, logger *slog.Logger, database *core.Database, source clock.Source, random core.RandomSource, presentationOrigin string,
+) (*meeting.SharedFake, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	return meeting.NewSharedFake(ctx, database.Pool, source, random, logger, meeting.DefaultFakeLimits())
+	return meeting.NewSharedFakeReceivingPresentations(ctx, database.Pool, source, random, logger, meeting.DefaultFakeLimits(), presentationOrigin)
+}
+
+func NewPresentations(settings core.Settings) *storage.Presigner {
+	return storage.NewPresigner(settings.Storage, settings.Presentation)
 }
 
 func NewJoinProvider(settings core.Settings, provider *meeting.SharedFake) (meeting.Provider, error) {

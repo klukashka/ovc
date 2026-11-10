@@ -96,7 +96,7 @@ func TestFakeMeetingLifecycle(t *testing.T) {
 
 		endErr := provider.EndMeeting(t.Context(), oldMeeting)
 		endedSize := sizeOf(provider)
-		created, createErr := provider.CreateMeeting(t.Context(), meetingInput())
+		created, createErr := provider.CreateMeeting(t.Context(), meetingInput(), nil)
 		newMeeting := meetingInput()
 		newMeeting.CreateTime = created
 		oldEnterErr := provider.Enter(t.Context(), oldLink, newMeeting, participant)
@@ -123,7 +123,7 @@ func TestFakeMeetingLifecycle(t *testing.T) {
 		meeting := createdMeeting(t, provider)
 		requireNoErrors(t, provider.EndMeeting(t.Context(), meeting))
 
-		created, err := provider.CreateMeeting(t.Context(), meetingInput())
+		created, err := provider.CreateMeeting(t.Context(), meetingInput(), nil)
 		size := sizeOf(provider)
 
 		requireFailure(t, err, FailureCapacity)
@@ -194,10 +194,10 @@ func TestFakeMeetingIsolationAndBounds(t *testing.T) {
 		other := meetingInput()
 		other.ID = domain.ProviderMeetingID{3}
 
-		_, meetingErr := provider.CreateMeeting(t.Context(), other)
+		_, meetingErr := provider.CreateMeeting(t.Context(), other, nil)
 		_, linkErr := provider.JoinLink(t.Context(), meeting, testParticipant())
 		endErr := provider.EndMeeting(t.Context(), meeting)
-		created, createErr := provider.CreateMeeting(t.Context(), other)
+		created, createErr := provider.CreateMeeting(t.Context(), other, nil)
 		other.CreateTime = created
 		link, newLinkErr := provider.JoinLink(t.Context(), other, testParticipant())
 		size := sizeOf(provider)
@@ -250,11 +250,11 @@ func testInvalidInput(t *testing.T) {
 	participant.Role = domain.ParticipantRole("invalid")
 	before := sizeOf(provider)
 
-	_, conflictErr := provider.CreateMeeting(t.Context(), conflicting)
+	_, conflictErr := provider.CreateMeeting(t.Context(), conflicting, nil)
 	_, roleErr := provider.JoinLink(t.Context(), meeting, participant)
 	_, unknownErr := provider.JoinLink(t.Context(), meetingInput(), testParticipant())
-	_, zeroErr := provider.CreateMeeting(t.Context(), domain.Meeting{Name: "Name"})
-	_, nameErr := provider.CreateMeeting(t.Context(), domain.Meeting{ID: domain.ProviderMeetingID{3}, Name: strings.Repeat("x", domain.LessonTitleMaxRunes+1)})
+	_, zeroErr := provider.CreateMeeting(t.Context(), domain.Meeting{Name: "Name"}, nil)
+	_, nameErr := provider.CreateMeeting(t.Context(), domain.Meeting{ID: domain.ProviderMeetingID{3}, Name: strings.Repeat("x", domain.LessonTitleMaxRunes+1)}, nil)
 	after := sizeOf(provider)
 
 	requireFailure(t, conflictErr, FailureConflict)
@@ -273,7 +273,7 @@ func testProviderFailures(t *testing.T) {
 	requireNoErrors(t, provider.SimulateUnavailable(t.Context(), true))
 	before := sizeOf(provider)
 
-	_, createErr := provider.CreateMeeting(t.Context(), meetingInput())
+	_, createErr := provider.CreateMeeting(t.Context(), meetingInput(), nil)
 	_, infoErr := provider.MeetingInfo(t.Context(), meeting)
 	_, inspectErr := provider.InspectMeeting(t.Context(), meeting.ID)
 	_, joinErr := provider.JoinLink(t.Context(), meeting, testParticipant())
@@ -368,7 +368,7 @@ func TestFakeMeetingCancellationAndConcurrency(t *testing.T) {
 		defer cancel()
 		meeting := meetingInput()
 
-		created, createErr := provider.CreateMeeting(ctx, meeting)
+		created, createErr := provider.CreateMeeting(ctx, meeting, nil)
 		cancel()
 		meeting.CreateTime = created
 		info, infoErr := provider.MeetingInfo(t.Context(), meeting)
@@ -389,7 +389,7 @@ func testCancelledCalls(t *testing.T) {
 		{name: "create", run: func(ctx context.Context, provider *Fake, _ domain.Meeting, _ JoinLink) error {
 			input := meetingInput()
 			input.ID = domain.ProviderMeetingID{3}
-			_, err := provider.CreateMeeting(ctx, input)
+			_, err := provider.CreateMeeting(ctx, input, nil)
 			return err
 		}},
 		{name: "inspect", run: func(ctx context.Context, provider *Fake, m domain.Meeting, _ JoinLink) error {
@@ -445,7 +445,7 @@ func testWaitingCancellation(t *testing.T) {
 	entered, release := make(chan struct{}, 1), make(chan struct{})
 	provider := configuredFake(t, heldClock{entered: entered, release: release}, strings.NewReader(""), testLogger(), testLimits())
 	first := core.Run(ctx, testLogger(), "meeting-create-holder", func() error {
-		_, err := provider.CreateMeeting(ctx, meetingInput())
+		_, err := provider.CreateMeeting(ctx, meetingInput(), nil)
 		return err
 	})
 	await(t, ctx, entered)
@@ -457,7 +457,7 @@ func testWaitingCancellation(t *testing.T) {
 		close(started)
 		other := meetingInput()
 		other.ID = domain.ProviderMeetingID{3}
-		_, err := provider.CreateMeeting(waiterCtx, other)
+		_, err := provider.CreateMeeting(waiterCtx, other, nil)
 		return err
 	})
 	await(t, ctx, started)
@@ -536,7 +536,7 @@ func testConcurrentLifecycle(t *testing.T) {
 	for index, result := range results {
 		failures[index] = await(t, ctx, result)
 	}
-	created, createErr := provider.CreateMeeting(ctx, meetingInput())
+	created, createErr := provider.CreateMeeting(ctx, meetingInput(), nil)
 	meeting := meetingInput()
 	meeting.CreateTime = created
 	endErr := provider.EndMeeting(ctx, meeting)
@@ -551,7 +551,7 @@ func testConcurrentLifecycle(t *testing.T) {
 
 func concurrentLifecycle(ctx context.Context, provider *Fake) error {
 	meeting := meetingInput()
-	created, err := provider.CreateMeeting(ctx, meeting)
+	created, err := provider.CreateMeeting(ctx, meeting, nil)
 	if err != nil {
 		return err
 	}
@@ -612,7 +612,7 @@ func testSourceFailures(t *testing.T) {
 	randomProvider := configuredFake(t, fixedClock{instant: time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)}, strings.NewReader(""), logger, testLimits())
 	meeting := createdMeeting(t, randomProvider)
 
-	created, clockErr := clockProvider.CreateMeeting(t.Context(), meetingInput())
+	created, clockErr := clockProvider.CreateMeeting(t.Context(), meetingInput(), nil)
 	link, randomErr := randomProvider.JoinLink(t.Context(), meeting, testParticipant())
 	clockSize := sizeOf(clockProvider)
 	randomSize := sizeOf(randomProvider)

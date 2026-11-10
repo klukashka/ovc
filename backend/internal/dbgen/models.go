@@ -157,9 +157,11 @@ type FakeMeetingParticipant struct {
 }
 
 type FakeMeetingRoom struct {
-	ID         pgtype.UUID
-	CreateTime int64
-	Name       string
+	ID                 pgtype.UUID
+	CreateTime         int64
+	Name               string
+	PresentationSize   *int64
+	PresentationSha256 []byte
 }
 
 type FakeMeetingState struct {

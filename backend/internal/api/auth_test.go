@@ -110,6 +110,7 @@ type authHarness struct {
 	sink      *mail.Sink
 	worker    *worker.Worker
 	objects   *storage.S3
+	storage   core.StorageSettings
 	contested *contestedRow
 	links     core.UnsubscribeTokens
 	keys      core.Keys
@@ -234,14 +235,14 @@ func newAuthHarnessWithDatabase(
 	libraryService := library.New(library.Dependencies{Store: store, Clock: shared, Random: random, Keys: keys, Addresses: fileService, Logger: logger})
 	createGate := &providerClockGate{source: shared}
 	linkGate := &providerEntropyGate{source: random}
-	provider, err := meeting.NewSharedFake(context.Background(), database.Pool, createGate, linkGate, logger, meeting.DefaultFakeLimits())
+	provider, err := meeting.NewSharedFakeReceivingPresentations(context.Background(), database.Pool, createGate, linkGate, logger, meeting.DefaultFakeLimits(), local.Settings.Endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
 	roomTiming := meetings.DefaultRoomTiming()
 	lifecycle := meetings.NewLifecycle(meetings.LifecycleDependencies{
 		Rooms: meetings.NewRooms(meetings.RoomDependencies{
-			Store: store, Provider: provider, Kind: domain.MeetingProviderFake, Clock: shared, Random: random, Logger: logger, Monotonic: clock.System{}.Now, Timing: roomTiming,
+			Store: store, Provider: provider, Presentations: storage.NewPresigner(local.Settings, local.Settings.Endpoint), Kind: domain.MeetingProviderFake, Clock: shared, Random: random, Logger: logger, Monotonic: clock.System{}.Now, Timing: roomTiming,
 		}),
 		Store: store, Provider: provider, Clock: shared, Random: random, Keys: keys, Logger: logger, Enabled: true, ProviderCall: roomTiming.ProviderCall,
 	})
@@ -319,7 +320,7 @@ func newAuthHarnessWithDatabase(
 	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, scheduled, worker.DefaultTiming())
 	return &authHarness{
 		server: server, store: store, clock: shared, hasher: hasher, logs: logs,
-		database: database, sink: sink, worker: background, objects: objects, links: links,
+		database: database, sink: sink, worker: background, objects: objects, storage: local.Settings, links: links,
 		accounts: options.Auth.Accounts, tutoring: options.Tutoring, chat: options.Chat, keys: keys, mailer: mailer, schedule: scheduleService, jobs: jobs, files: fileService, purger: purger,
 		logger: logger, options: options, provider: provider, lifecycle: lifecycle, random: random, createGate: createGate, linkGate: linkGate,
 	}

@@ -15,12 +15,13 @@ import (
 )
 
 type SharedFake struct {
-	pool         *pgxpool.Pool
-	clock        Clock
-	random       io.Reader
-	entropyMutex sync.Mutex
-	logger       *slog.Logger
-	limits       FakeLimits
+	pool          *pgxpool.Pool
+	clock         Clock
+	random        io.Reader
+	entropyMutex  sync.Mutex
+	logger        *slog.Logger
+	limits        FakeLimits
+	presentations presentationReceiver
 }
 
 type sharedState struct {
@@ -36,11 +37,21 @@ type sharedState struct {
 const sharedStateColumns = `namespace, max_rooms, max_links, max_participants, max_generations, generations, last_create_time, link_sequence, unavailable`
 
 func NewSharedFake(ctx context.Context, pool *pgxpool.Pool, clock Clock, random io.Reader, logger *slog.Logger, limits FakeLimits) (*SharedFake, error) {
+	return NewSharedFakeReceivingPresentations(ctx, pool, clock, random, logger, limits, "")
+}
+
+func NewSharedFakeReceivingPresentations(
+	ctx context.Context, pool *pgxpool.Pool, clock Clock, random io.Reader, logger *slog.Logger, limits FakeLimits, presentationOrigin string,
+) (*SharedFake, error) {
 	if pool == nil || clock == nil || random == nil || logger == nil || limits.Meetings <= 0 || limits.Links <= 0 || limits.Participants <= 0 || limits.Generations == 0 || limits.Generations > math.MaxInt64 {
 		return nil, FailureInvalidInput
 	}
+	presentations, err := newPresentationReceiver(presentationOrigin)
+	if err != nil {
+		return nil, err
+	}
 	maximumGenerations := int64(limits.Generations)
-	provider := &SharedFake{pool: pool, clock: clock, random: random, logger: logger, limits: limits}
+	provider := &SharedFake{pool: pool, clock: clock, random: random, logger: logger, limits: limits, presentations: presentations}
 	existing, err := scanSharedState(pool.QueryRow(ctx, `SELECT `+sharedStateColumns+` FROM fake_meeting_state WHERE id`))
 	if err == nil {
 		if existing.limits != limits {
@@ -157,10 +168,16 @@ func currentSharedRoom(ctx context.Context, tx pgx.Tx, requested domain.Meeting)
 	return nil
 }
 
-func (f *SharedFake) CreateMeeting(ctx context.Context, requested domain.Meeting) (domain.ProviderCreateTime, error) {
+func (f *SharedFake) CreateMeeting(ctx context.Context, requested domain.Meeting, presentation *Presentation) (domain.ProviderCreateTime, error) {
+	received, err := f.receivePresentation(ctx, requested, presentation)
+	if err != nil {
+		reportProvider(ctx, f.logger, operationCreate, &err)
+		return 0, err
+	}
+	size, digest := presentationColumns(received)
 	instant, clockErr := f.clock.Instant(ctx)
 	var created domain.ProviderCreateTime
-	err := f.transaction(ctx, operationCreate, func(tx pgx.Tx, state sharedState) error {
+	err = f.transaction(ctx, operationCreate, func(tx pgx.Tx, state sharedState) error {
 		if requested.ID == (domain.ProviderMeetingID{}) || !validName(requested.Name, domain.LessonTitleMaxRunes) {
 			return FailureInvalidInput
 		}
@@ -189,7 +206,7 @@ func (f *SharedFake) CreateMeeting(ctx context.Context, requested domain.Meeting
 			return FailureClock
 		}
 		created = max(domain.ProviderCreateTime(instant.UnixMilli()), state.lastCreateTime+1)
-		if _, err := tx.Exec(ctx, `INSERT INTO fake_meeting_rooms (id, name, create_time) VALUES ($1,$2,$3)`, [16]byte(requested.ID), requested.Name, created); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO fake_meeting_rooms (id, name, create_time, presentation_size, presentation_sha256) VALUES ($1,$2,$3,$4,$5)`, [16]byte(requested.ID), requested.Name, created, size, digest); err != nil {
 			return err
 		}
 		_, err = tx.Exec(ctx, `UPDATE fake_meeting_state SET generations = generations + 1, last_create_time = $1 WHERE id`, created)
