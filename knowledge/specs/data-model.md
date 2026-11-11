@@ -549,6 +549,7 @@ Constraints and indexes:
 
 - unique `(issue_id, student_id)`;
 - `(student_id, status)`, and `relationship_id`;
+- `(tutor_id, issue_id)`, for the composite key to the issue and the tutor purge's batches;
 - partial `(tutor_id, first_submitted_at, id)` where `status = 'submitted'`, for the review queue and its `count`;
 - partial `(student_id, deadline_at, issued_at, id)` where the status is `not_started`, `draft` or `returned`, for the student's `todo` list;
 - partial `(release_pending_since)` where not null, for `homework.cleanup`;

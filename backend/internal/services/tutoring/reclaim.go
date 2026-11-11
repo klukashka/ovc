@@ -13,6 +13,7 @@ import (
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
+	"ovc/backend/internal/services/homework"
 )
 
 const (
@@ -137,6 +138,9 @@ func (s *Service) reclaim(ctx context.Context, repos repositories.Repositories, 
 			ids = append(ids, link.ID)
 		}
 		if err := s.mirror(ctx, repos, domain.PathReclaim, directAudience(ids...), now); err != nil {
+			return "", nil, err
+		}
+		if err := homework.FlagReclaimedWork(ctx, repos, ids, now); err != nil {
 			return "", nil, err
 		}
 	}

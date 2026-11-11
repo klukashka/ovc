@@ -1,4 +1,4 @@
-import { type ServerFrame, authFrame, closeCodes, parseServerFrame, pingFrame } from './frames.ts';
+import { type EntityKind, type ServerFrame, authFrame, closeCodes, parseServerFrame, pingFrame } from './frames.ts';
 import type { RealtimeSocket, SocketFactory } from './socket.ts';
 
 export interface RealtimeContractSubject {
@@ -9,6 +9,7 @@ export interface RealtimeContractSubject {
   readonly closeSockets: (code: typeof closeCodes.tooMany | typeof closeCodes.reconnect) => Promise<void>;
   readonly changeRelationship: () => Promise<void>;
   readonly changeChannel: () => Promise<void>;
+  readonly issueAssignment: () => Promise<void>;
   readonly exchangeMessage: () => Promise<void>;
   readonly readChannel: () => Promise<void>;
   readonly memberConnectsAndTypes: () => Promise<() => void>;
@@ -98,6 +99,15 @@ class ContractConnection {
     for (;;) {
       const frame = await this.frame();
       if (frame.type === type) {
+        return frame;
+      }
+    }
+  }
+
+  async changeOfKind(kind: EntityKind): Promise<ServerFrame> {
+    for (;;) {
+      const frame = await this.frameOfType('entity.changed');
+      if (frame.type === 'entity.changed' && frame.kind === kind) {
         return frame;
       }
     }
@@ -344,6 +354,17 @@ export const realtimeContract: Readonly<Record<string, RealtimeContractScenario>
 
       const frame = await connection.frameOfType('entity.changed');
       check(frame.type === 'entity.changed' && frame.kind === 'channel', 'expected a channel change');
+    }),
+  'an issued assignment arrives as entity.changed of kinds issue and submission': (subject) =>
+    withConnection(subject, async (connection) => {
+      await connection.authenticated(await subject.token());
+
+      await subject.issueAssignment();
+
+      const issue = await connection.changeOfKind('issue');
+      const submission = await connection.changeOfKind('submission');
+      check(issue.type === 'entity.changed' && issue.id !== '', 'expected an issue change');
+      check(submission.type === 'entity.changed' && submission.id !== '', 'expected a submission change');
     }),
   'a message, its edit and its deletion arrive as message.new, message.updated and message.deleted': (subject) =>
     withConnection(subject, async (connection) => {

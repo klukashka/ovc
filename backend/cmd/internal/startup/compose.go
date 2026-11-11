@@ -19,6 +19,7 @@ import (
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/homework"
 	"ovc/backend/internal/services/library"
 	"ovc/backend/internal/services/meetings"
 	"ovc/backend/internal/services/notifications"
@@ -77,6 +78,20 @@ func NewLibrary(
 	}
 	return library.New(library.Dependencies{
 		Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Addresses: fileService, Logger: logger,
+	}), nil
+}
+
+func NewHomework(
+	logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, fileService *files.Service,
+	libraryService *library.Service,
+) (*homework.Service, error) {
+	keys, err := core.DeriveKeys(settings.JWTSecret)
+	if err != nil {
+		return nil, err
+	}
+	return homework.New(homework.Dependencies{
+		Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Addresses: fileService, Templates: libraryService,
+		Logger: logger,
 	}), nil
 }
 
@@ -204,7 +219,13 @@ func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings,
 	if err != nil {
 		return nil, err
 	}
-	builders, err := notifications.Combine(accountEmails.Builders(), relationshipEmails.Builders(), lessonEmails.Builders(), digestEmails.Builders())
+	homeworkEmails, err := notifications.NewHomeworkEmails(store, unsubscribeTokens, settings.PublicURL)
+	if err != nil {
+		return nil, err
+	}
+	builders, err := notifications.Combine(
+		accountEmails.Builders(), relationshipEmails.Builders(), lessonEmails.Builders(), digestEmails.Builders(), homeworkEmails.Builders(),
+	)
 	if err != nil {
 		return nil, err
 	}

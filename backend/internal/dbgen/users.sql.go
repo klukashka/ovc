@@ -234,7 +234,7 @@ func (q *Queries) GetTutorCode(ctx context.Context, userID domain.UserID) (GetTu
 }
 
 const getTutorProfile = `-- name: GetTutorProfile :one
-SELECT user_id, bio, subjects, recording_retention_days, file_quota_bytes, recording_quota_bytes, file_usage_bytes, recording_usage_bytes, onboarding_dismissed_at, created_at, updated_at, code FROM tutor_profiles WHERE user_id = $1
+SELECT user_id, bio, subjects, recording_retention_days, file_quota_bytes, recording_quota_bytes, file_usage_bytes, recording_usage_bytes, onboarding_dismissed_at, created_at, updated_at, code, snapshot_bytes_total FROM tutor_profiles WHERE user_id = $1
 `
 
 func (q *Queries) GetTutorProfile(ctx context.Context, userID domain.UserID) (TutorProfile, error) {
@@ -253,6 +253,7 @@ func (q *Queries) GetTutorProfile(ctx context.Context, userID domain.UserID) (Tu
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Code,
+		&i.SnapshotBytesTotal,
 	)
 	return i, err
 }

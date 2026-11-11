@@ -28,6 +28,7 @@ import (
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/homework"
 	"ovc/backend/internal/services/library"
 	"ovc/backend/internal/services/meetings"
 	"ovc/backend/internal/services/notifications"
@@ -233,6 +234,9 @@ func newAuthHarnessWithDatabase(
 		Store: store, Clock: shared, Random: random, Addresses: fileService, Erasure: chat.DefaultErasureSettings(), Logger: logger,
 	})
 	libraryService := library.New(library.Dependencies{Store: store, Clock: shared, Random: random, Keys: keys, Addresses: fileService, Logger: logger})
+	homeworkService := homework.New(homework.Dependencies{
+		Store: store, Clock: shared, Random: random, Keys: keys, Addresses: fileService, Templates: libraryService, Logger: logger,
+	})
 	createGate := &providerClockGate{source: shared}
 	linkGate := &providerEntropyGate{source: random}
 	provider, err := meeting.NewSharedFakeReceivingPresentations(context.Background(), database.Pool, createGate, linkGate, logger, meeting.DefaultFakeLimits(), local.Settings.Endpoint)
@@ -257,6 +261,7 @@ func newAuthHarnessWithDatabase(
 		Inbox:       inbox,
 		Chat:        chatService,
 		Library:     libraryService,
+		Homework:    homeworkService,
 		Meetings:    lifecycle,
 	}
 	for _, hook := range hooks {
@@ -286,7 +291,13 @@ func newAuthHarnessWithDatabase(
 	if err != nil {
 		t.Fatal(err)
 	}
-	builders, err := notifications.Combine(accountEmails.Builders(), relationshipEmails.Builders(), lessonEmails.Builders(), digestEmails.Builders())
+	homeworkEmails, err := notifications.NewHomeworkEmails(store, links, publicOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	builders, err := notifications.Combine(
+		accountEmails.Builders(), relationshipEmails.Builders(), lessonEmails.Builders(), digestEmails.Builders(), homeworkEmails.Builders(),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

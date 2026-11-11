@@ -447,6 +447,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["issues-list"];
+        put?: never;
+        post: operations["issues-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/issues/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["issues-get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["issues-update"];
+        trace?: never;
+    };
+    "/api/v1/issues/{id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["issues-withdraw"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/join-requests": {
         parameters: {
             query?: never;
@@ -1416,6 +1464,173 @@ export interface components {
         InvitationPage: {
             tutor: components["schemas"]["PublicTutor"];
         };
+        Issue: {
+            /** @enum {string} */
+            answer_policy: "never" | "after_submission" | "after_check";
+            audience: components["schemas"]["IssueAudience"];
+            blocks: components["schemas"]["IssueBlock"][];
+            /** Format: date-time */
+            deadline_at: string | null;
+            has_manual_questions: boolean;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            issued_at: string;
+            /** Format: uuid */
+            lesson_id: string | null;
+            /** Format: int32 */
+            max_points: number;
+            progress: components["schemas"]["IssueProgress"];
+            /** @enum {string} */
+            status: "active" | "withdrawn";
+            submission?: components["schemas"]["IssueStudentSubmission"];
+            submissions: components["schemas"]["IssueSubmission"][];
+            title: string;
+            /** Format: int64 */
+            version: number;
+            /** Format: date-time */
+            withdrawn_at: string | null;
+        };
+        IssueAudience: {
+            display_name?: string;
+            /** Format: uuid */
+            group_id?: string;
+            name?: string;
+            /** Format: uuid */
+            relationship_id?: string;
+        };
+        IssueAudienceInput: {
+            /** Format: uuid */
+            group_id?: string;
+            /** Format: uuid */
+            relationship_id?: string;
+        };
+        IssueBlock: {
+            accepted_answers?: string[];
+            allowed_kinds?: string[];
+            explanation?: string;
+            /** Format: uuid */
+            id: string;
+            images?: components["schemas"]["TemplateFile"][];
+            material?: components["schemas"]["IssueMaterial"];
+            /** Format: int32 */
+            max_files?: number;
+            /** Format: int32 */
+            max_length?: number;
+            options?: components["schemas"]["TemplateOption"][];
+            /** Format: int32 */
+            points?: number;
+            prompt?: string;
+            /** @enum {string} */
+            scoring?: "all_or_nothing" | "partial";
+            text?: string;
+            tolerance?: string;
+            /** @enum {string} */
+            type: "instruction" | "material" | "single_choice" | "multiple_choice" | "short_text" | "short_number" | "long_text" | "file";
+            value?: string;
+        };
+        IssueItem: {
+            /** @enum {string} */
+            answer_policy: "never" | "after_submission" | "after_check";
+            audience: components["schemas"]["IssueAudience"];
+            /** Format: date-time */
+            deadline_at: string | null;
+            has_manual_questions: boolean;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            issued_at: string;
+            /** Format: uuid */
+            lesson_id: string | null;
+            /** Format: int32 */
+            max_points: number;
+            progress: components["schemas"]["IssueProgress"];
+            /** @enum {string} */
+            status: "active" | "withdrawn";
+            submission?: components["schemas"]["IssueStudentSubmission"];
+            title: string;
+            /** Format: int64 */
+            version: number;
+            /** Format: date-time */
+            withdrawn_at: string | null;
+        };
+        IssueMaterial: {
+            /** Format: uuid */
+            attachment_id: string;
+            /** Format: date-time */
+            expires_at: string;
+            filename: string;
+            /** Format: int32 */
+            height: number | null;
+            media_type: string;
+            /** Format: int64 */
+            size_bytes: number;
+            title: string;
+            url: string;
+            /** Format: int32 */
+            width: number | null;
+        };
+        IssuePage: {
+            items: components["schemas"]["IssueItem"][];
+            next_cursor: string | null;
+        };
+        IssuePatch: {
+            /** Format: date-time */
+            deadline_at?: string | null;
+            /** Format: uuid */
+            lesson_id?: string | null;
+            /** Format: int64 */
+            version: number;
+        };
+        IssueProgress: {
+            /** Format: int64 */
+            checked: number;
+            /** Format: int64 */
+            late: number;
+            /** Format: int64 */
+            needs_checking: number;
+            /** Format: int64 */
+            returned: number;
+            /** Format: int64 */
+            students: number;
+            /** Format: int64 */
+            submitted: number;
+        };
+        IssueStudentSubmission: {
+            /** Format: int32 */
+            final_points: number | null;
+            /** Format: uuid */
+            id: string;
+            issued_before_reclaim: boolean;
+            late: boolean;
+            /** @enum {string} */
+            status: "not_started" | "draft" | "submitted" | "returned" | "checked" | "closed";
+        };
+        IssueSubmission: {
+            /** Format: date-time */
+            checked_at: string | null;
+            /** Format: int32 */
+            final_points: number | null;
+            /** Format: date-time */
+            first_submitted_at: string | null;
+            has_draft: boolean;
+            /** Format: uuid */
+            id: string;
+            issued_before_reclaim: boolean;
+            late: boolean;
+            /** Format: int64 */
+            percentage: number | null;
+            /** @enum {string} */
+            status: "not_started" | "draft" | "submitted" | "returned" | "checked" | "closed";
+            student: components["schemas"]["IssueSubmissionStudent"];
+            /** Format: date-time */
+            submitted_at: string | null;
+        };
+        IssueSubmissionStudent: {
+            display_name: string;
+            /** Format: uuid */
+            relationship_id: string;
+        };
         IssuedInvitation: {
             /** Format: date-time */
             expires_at: string;
@@ -1728,6 +1943,17 @@ export interface components {
             member_ids: string[];
             name: string;
         };
+        NewIssue: {
+            /** @enum {string} */
+            answer_policy: "never" | "after_submission" | "after_check";
+            audience: components["schemas"]["IssueAudienceInput"];
+            /** Format: date-time */
+            deadline_at: string | null;
+            /** Format: uuid */
+            lesson_id: string | null;
+            /** Format: uuid */
+            template_id: string;
+        };
         NewLesson: {
             allow_overlap?: boolean;
             /** Format: int32 */
@@ -1778,7 +2004,7 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             /** @enum {string} */
-            event: "invitation.accepted" | "join_request.created" | "join_request.accepted" | "join_request.declined" | "relationship.ended" | "lesson.reminder_1h" | "lesson.moved" | "lesson.cancelled" | "lesson.series_changed" | "group.archived";
+            event: "invitation.accepted" | "join_request.created" | "join_request.accepted" | "join_request.declined" | "relationship.ended" | "lesson.reminder_1h" | "lesson.moved" | "lesson.cancelled" | "lesson.series_changed" | "group.archived" | "issue.created" | "issue.withdrawn" | "submission.submitted" | "submission.checked" | "submission.returned" | "submission.review_updated";
             /** Format: uuid */
             id: string;
             label: string | null;
@@ -1793,7 +2019,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            kind: "student_card" | "join_requests" | "my_tutors" | "lesson";
+            kind: "student_card" | "join_requests" | "my_tutors" | "lesson" | "assignment" | "review";
         };
         NotificationPage: {
             items: components["schemas"]["Notification"][];
@@ -4851,6 +5077,597 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "issues-list": {
+        parameters: {
+            query?: {
+                status?: "active" | "withdrawn";
+                group?: string;
+                student?: string;
+                needs_checking?: boolean;
+                deadline_before?: string;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuePage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "issues-create": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewIssue"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueItem"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "issues-get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Issue"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "issues-update": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssuePatch"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueItem"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "issues-withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueItem"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11349,6 +12166,7 @@ type ReadonlyArray<T> = [
 ] extends [
     unknown[]
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
+export const pathsApiV1IssuesGetParametersQueryStatusValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/issues"]["get"]["parameters"]["query"]["status"]> = ["active", "withdrawn"];
 export const pathsApiV1StudentsGetParametersQueryStateValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/students"]["get"]["parameters"]["query"]["state"]> = ["active", "invited", "ended"];
 export const pathsApiV1UploadsPostParametersQueryContextValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/uploads"]["post"]["parameters"]["query"]["context"]> = ["avatar", "chat", "library", "prompt_image"];
 export const calendarAudienceColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CalendarAudience"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
@@ -11373,6 +12191,14 @@ export const groupDetailColourValues: ReadonlyArray<FlattenedDeepRequired<compon
 export const groupPatchColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["GroupPatch"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const groupSummaryColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["GroupSummary"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const invitationAcceptRequestLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["InvitationAcceptRequest"]["language"]> = ["ru", "en"];
+export const issueAnswer_policyValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Issue"]["answer_policy"]> = ["never", "after_submission", "after_check"];
+export const issueStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Issue"]["status"]> = ["active", "withdrawn"];
+export const issueBlockScoringValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueBlock"]["scoring"]> = ["all_or_nothing", "partial"];
+export const issueBlockTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueBlock"]["type"]> = ["instruction", "material", "single_choice", "multiple_choice", "short_text", "short_number", "long_text", "file"];
+export const issueItemAnswer_policyValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueItem"]["answer_policy"]> = ["never", "after_submission", "after_check"];
+export const issueItemStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueItem"]["status"]> = ["active", "withdrawn"];
+export const issueStudentSubmissionStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueStudentSubmission"]["status"]> = ["not_started", "draft", "submitted", "returned", "checked", "closed"];
+export const issueSubmissionStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueSubmission"]["status"]> = ["not_started", "draft", "submitted", "returned", "checked", "closed"];
 export const issuedInvitationStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssuedInvitation"]["status"]> = ["open"];
 export const joinRequestDecisionStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["JoinRequestDecision"]["state"]> = ["declined"];
 export const lessonAudienceColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonAudience"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
@@ -11394,10 +12220,11 @@ export const myTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components
 export const myTutorEnded_byValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MyTutor"]["ended_by"]> = ["tutor", "student", "deletion"];
 export const myTutorStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MyTutor"]["state"]> = ["active", "provisional", "ended"];
 export const newGroupColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NewGroup"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
+export const newIssueAnswer_policyValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NewIssue"]["answer_policy"]> = ["never", "after_submission", "after_check"];
 export const notificationColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
-export const notificationEventValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["event"]> = ["invitation.accepted", "join_request.created", "join_request.accepted", "join_request.declined", "relationship.ended", "lesson.reminder_1h", "lesson.moved", "lesson.cancelled", "lesson.series_changed", "group.archived"];
+export const notificationEventValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["event"]> = ["invitation.accepted", "join_request.created", "join_request.accepted", "join_request.declined", "relationship.ended", "lesson.reminder_1h", "lesson.moved", "lesson.cancelled", "lesson.series_changed", "group.archived", "issue.created", "issue.withdrawn", "submission.submitted", "submission.checked", "submission.returned", "submission.review_updated"];
 export const notificationLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["label_kind"]> = ["group"];
-export const notificationLinkKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NotificationLink"]["kind"]> = ["student_card", "join_requests", "my_tutors", "lesson"];
+export const notificationLinkKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NotificationLink"]["kind"]> = ["student_card", "join_requests", "my_tutors", "lesson", "assignment", "review"];
 export const passwordResetOutcomeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["PasswordReset"]["outcome"]> = ["choice_required"];
 export const profilePatchLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["language"]> = ["ru", "en"];
 export const profilePatchThemeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["theme"]> = ["light", "dark", "system"];

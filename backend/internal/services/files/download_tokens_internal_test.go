@@ -245,9 +245,10 @@ func TestReferenceParameterNamesOneAddressableKindAndAUUID(t *testing.T) {
 	t.Parallel()
 	item := domain.EntityID{0xD4, 0x05}
 	accepted := map[string]DownloadReference{
-		"material:" + item.String(): {Kind: domain.ReferenceMaterial, Item: item},
-		"template:" + item.String(): {Kind: domain.ReferenceTemplate, Item: item},
-		"lesson:" + item.String():   {Kind: domain.ReferenceLesson, Item: item},
+		"material:" + item.String():       {Kind: domain.ReferenceMaterial, Item: item},
+		"template:" + item.String():       {Kind: domain.ReferenceTemplate, Item: item},
+		"lesson:" + item.String():         {Kind: domain.ReferenceLesson, Item: item},
+		"issue_snapshot:" + item.String(): {Kind: domain.ReferenceIssueSnapshot, Item: item},
 	}
 	refused := [][]string{
 		nil,
@@ -259,7 +260,6 @@ func TestReferenceParameterNamesOneAddressableKindAndAUUID(t *testing.T) {
 		{"Material:" + item.String()},
 		{"message:" + item.String()},
 		{"avatar:" + item.String()},
-		{"issue_snapshot:" + item.String()},
 		{"answer:" + item.String()},
 		{"review_item:" + item.String()},
 		{"series:" + item.String()},

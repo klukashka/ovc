@@ -14,6 +14,7 @@ import (
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
+	"ovc/backend/internal/services/homework"
 	"ovc/backend/internal/services/library"
 )
 
@@ -475,6 +476,10 @@ func (s *Service) tutorActive(ctx context.Context, repos repositories.Repositori
 
 func (s *Service) PurgeBatch(ctx context.Context, repos repositories.Repositories, user domain.UserID, role domain.Role, now time.Time) (int64, error) {
 	if role == domain.RoleStudent {
+		deleted, err := homework.PurgeStudentBatch(ctx, repos, user, s.purgeBatchRows())
+		if err != nil || deleted > 0 {
+			return deleted, err
+		}
 		return chat.Release{Random: s.deps.Random, Logger: s.deps.Logger}.PurgeSenderBatch(ctx, repos, user, s.purgeBatchRows(), now)
 	}
 	return s.PurgeTutorBatch(ctx, repos, user, now)
@@ -502,7 +507,9 @@ func (s *Service) PurgeTutorBatch(ctx context.Context, repos repositories.Reposi
 		repos.Relationships.DeleteBatchOfTutor,
 		repos.Notifications.DeleteBatchNaming,
 	}
-	for _, step := range (library.Purge{Random: s.deps.Random, Logger: s.deps.Logger}).TutorSteps() {
+	homeworkSteps := (homework.Purge{Random: s.deps.Random, Logger: s.deps.Logger}).TutorSteps()
+	librarySteps := (library.Purge{Random: s.deps.Random, Logger: s.deps.Logger}).TutorSteps()
+	for _, step := range append(homeworkSteps, librarySteps...) {
 		deleted, err := step(ctx, repos, tutor, s.purgeBatchRows(), now)
 		if err != nil || deleted > 0 {
 			return deleted, err

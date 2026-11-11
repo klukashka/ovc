@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="{{.Language}}">
+<head>
+<meta charset="utf-8">
+<title>{{.Subject}}</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2933;">
+<p>{{.Intro}}</p>
+<p style="font-weight: bold;">{{.Title}}</p>
+{{range .Details}}<p><span style="color: #52606d;">{{.Label}}:</span> {{.Value}}</p>
+{{end}}<p><a href="{{.ActionURL}}" style="color: #c2410c; font-weight: bold;">{{.Action}}</a></p>
+<p style="color: #52606d; font-size: 14px;">{{.Note}}</p>
+<p style="color: #52606d; font-size: 14px;">{{.UnsubscribeNote}} <a href="{{.UnsubscribeURL}}" style="color: #52606d;">{{.Unsubscribe}}</a></p>
+</body>
+</html>

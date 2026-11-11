@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,9 +19,19 @@ import (
 
 func (h *authHarness) erasureService(t *testing.T, store *repositories.Store, batch int32) *chat.Service {
 	t.Helper()
+	return h.erasureServiceWithin(t, store, batch, 200*time.Millisecond)
+}
+
+func (h *authHarness) erasureServiceWithin(t *testing.T, store *repositories.Store, batch int32, budget time.Duration) *chat.Service {
+	t.Helper()
 	settings := chat.DefaultErasureSettings()
-	settings.Budget = 200 * time.Millisecond
+	settings.Budget = budget
 	settings.MessageBatch = batch
+	return h.erasureServiceWith(t, store, settings)
+}
+
+func (h *authHarness) erasureServiceWith(t *testing.T, store *repositories.Store, settings chat.ErasureSettings) *chat.Service {
+	t.Helper()
 	return chat.New(chat.Dependencies{Store: store, Clock: h.clock, Random: randomPerTest(t), Addresses: h.files,
 		Logger: slog.New(slog.NewJSONHandler(h.logs, nil)), Erasure: settings})
 }
@@ -191,8 +202,17 @@ func TestErasureDeadlineDoesNotStopWorkerScheduling(t *testing.T) {
 	h.mustAnswer(t, h.removeStudent(t, token, card.ID), http.StatusOK)
 	release := h.holdRow(t, "SELECT "+lockedRowPosition+" FROM channels WHERE id = $1::uuid FOR UPDATE", channel.ID)
 	logger := slog.New(slog.NewJSONHandler(h.logs, nil))
-	service := h.erasureService(t, h.store, 500)
-	jobs := []worker.Job{{Name: domain.JobEraseChannels, Every: time.Minute, Run: service.EraseChannels},
+	blockedSettings := chat.DefaultErasureSettings()
+	blockedSettings.Budget, blockedSettings.MessageBatch = 200*time.Millisecond, 500
+	blockedSettings.Wall = func() time.Time { return authStart }
+	bounded := h.erasureServiceWith(t, h.store, blockedSettings)
+	recovering := h.erasureServiceWithin(t, h.store, 500, chat.DefaultErasureSettings().Budget)
+	passes := []func(context.Context, time.Time) (int64, error){bounded.EraseChannels, recovering.EraseChannels}
+	var started atomic.Int32
+	erase := func(ctx context.Context, now time.Time) (int64, error) {
+		return passes[min(int(started.Add(1)), len(passes))-1](ctx, now)
+	}
+	jobs := []worker.Job{{Name: domain.JobEraseChannels, Every: time.Minute, Run: erase},
 		{Name: domain.JobSessionsCleanup, Every: time.Hour, Run: accounts.CleanupSessions(h.store)}}
 	background := worker.New(logger, h.clock, outbox.New(h.store, randomPerTest(t), logger), nil, jobs, worker.DefaultTiming())
 

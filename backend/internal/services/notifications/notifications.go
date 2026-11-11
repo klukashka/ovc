@@ -190,12 +190,13 @@ func (s *Service) reserve(ctx context.Context, optional *Optional, now time.Time
 		return nil, true, nil
 	}
 	window, _ := domain.FixedWindow(now, domain.LessonEmailWindow)
+	purpose, limit := domain.DailyEmailCap(optional.Group)
 	slot := repositories.RateLimitSlot{
-		Purpose: domain.PurposeLessonEmails, WindowStart: window,
-		Subject: s.dispatch.Keys.ThrottleSubject(string(domain.PurposeLessonEmails), optional.Recipient.String()),
+		Purpose: purpose, WindowStart: window,
+		Subject: s.dispatch.Keys.ThrottleSubject(string(purpose), optional.Recipient.String()),
 	}
 	reserved, err := s.dispatch.Store.Repositories().RateLimits.ReserveBelow(ctx, repositories.DailySlot{
-		Purpose: slot.Purpose, Subject: slot.Subject, WindowStart: slot.WindowStart, Below: domain.LessonEmailsPerDay,
+		Purpose: slot.Purpose, Subject: slot.Subject, WindowStart: slot.WindowStart, Below: limit,
 	})
 	if err != nil || !reserved {
 		return nil, false, err

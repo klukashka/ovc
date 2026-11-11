@@ -164,6 +164,10 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	if err != nil {
 		return err
 	}
+	homeworkService, err := startup.NewHomework(logging.Logger, settings, database, source, random, fileService, libraryService)
+	if err != nil {
+		return err
+	}
 	provider, err := startup.NewMeetingProvider(ctx, logging.Logger, database, source, random, settings.Presentation)
 	if err != nil {
 		return err
@@ -200,6 +204,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		Inbox:       startup.NewInbox(logging.Logger, database, source),
 		Chat:        chatService,
 		Library:     libraryService,
+		Homework:    homeworkService,
 		Meetings:    lifecycle,
 		Realtime:    live.Gateway,
 		DocsEnabled: settings.APIDocsEnabled,

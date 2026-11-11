@@ -249,3 +249,10 @@ func folderAttribute(folder domain.FolderID) slog.Attr {
 func materialAttribute(material domain.MaterialID) slog.Attr {
 	return slog.String("material_id", material.String())
 }
+
+func ReleaseReferences(
+	ctx context.Context, repos repositories.Repositories, random core.RandomSource, logger *slog.Logger, kind domain.ReferenceKind,
+	attachments []domain.AttachmentID, now time.Time,
+) error {
+	return release{random: random, logger: logger, kind: kind}.attachments(ctx, repos, attachments, now)
+}

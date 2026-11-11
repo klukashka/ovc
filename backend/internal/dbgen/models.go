@@ -221,6 +221,29 @@ type Invitation struct {
 	CreatedAt      time.Time
 }
 
+type Issue struct {
+	ID                 domain.IssueID
+	TutorID            domain.UserID
+	TemplateID         domain.TemplateID
+	RelationshipID     *domain.RelationshipID
+	GroupID            *domain.GroupID
+	LessonID           *domain.LessonID
+	Title              string
+	Snapshot           []byte
+	SnapshotBytes      int64
+	MaxPoints          int32
+	HasManualQuestions bool
+	DeadlineAt         *time.Time
+	AnswerPolicy       domain.AnswerPolicy
+	Status             domain.IssueStatus
+	CreateKey          *string
+	Version            int64
+	ErasePendingSince  *time.Time
+	IssuedAt           time.Time
+	WithdrawnAt        *time.Time
+	UpdatedAt          time.Time
+}
+
 type JobRun struct {
 	Job        domain.JobName
 	LastRunAt  time.Time
@@ -495,6 +518,30 @@ type Session struct {
 	CreatedAt   time.Time
 }
 
+type Submission struct {
+	ID                  domain.SubmissionID
+	IssueID             domain.IssueID
+	TutorID             domain.UserID
+	RelationshipID      domain.RelationshipID
+	StudentID           domain.UserID
+	Status              domain.SubmissionStatus
+	DeadlineAt          *time.Time
+	IssuedAt            time.Time
+	Version             int64
+	LastSaveID          pgtype.UUID
+	FileBytes           int64
+	FirstSubmittedAt    *time.Time
+	SubmittedAt         *time.Time
+	CheckedAt           *time.Time
+	Late                bool
+	AutoPoints          *int32
+	FinalPoints         *int32
+	ReleasePendingSince *time.Time
+	IssuedBeforeReclaim bool
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
 type Template struct {
 	ID              domain.TemplateID
 	TutorID         domain.UserID
@@ -533,6 +580,7 @@ type TutorProfile struct {
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
 	Code                   domain.TutorCode
+	SnapshotBytesTotal     int64
 }
 
 type UploadCleanupReceipt struct {

@@ -21,6 +21,7 @@ import (
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
 	"ovc/backend/internal/services/files"
+	"ovc/backend/internal/services/homework"
 	"ovc/backend/internal/services/library"
 	"ovc/backend/internal/services/meetings"
 	"ovc/backend/internal/services/notifications"
@@ -92,6 +93,7 @@ type router struct {
 	inbox       *notifications.Inbox
 	chat        *chat.Service
 	library     *library.Service
+	homework    *homework.Service
 	meetings    *meetings.Lifecycle
 	uploads     UploadTiming
 	downloads   DownloadTiming

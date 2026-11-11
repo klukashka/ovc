@@ -754,3 +754,62 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: UserID
+          - column: issues.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: IssueID
+          - column: issues.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: issues.template_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: TemplateID
+          - column: issues.relationship_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: RelationshipID
+              pointer: true
+          - column: issues.group_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: GroupID
+              pointer: true
+          - column: issues.lesson_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: LessonID
+              pointer: true
+          - column: issues.answer_policy
+            go_type:
+              import: ovc/backend/internal/domain
+              type: AnswerPolicy
+          - column: issues.status
+            go_type:
+              import: ovc/backend/internal/domain
+              type: IssueStatus
+          - column: submissions.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: SubmissionID
+          - column: submissions.issue_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: IssueID
+          - column: submissions.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: submissions.relationship_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: RelationshipID
+          - column: submissions.student_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: submissions.status
+            go_type:
+              import: ovc/backend/internal/domain
+              type: SubmissionStatus

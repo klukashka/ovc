@@ -19,13 +19,21 @@ const (
 	NotificationLessonCancelled     NotificationEvent = "lesson.cancelled"
 	NotificationSeriesChanged       NotificationEvent = "lesson.series_changed"
 	NotificationGroupArchived       NotificationEvent = "group.archived"
+	NotificationIssueCreated        NotificationEvent = "issue.created"
+	NotificationIssueWithdrawn      NotificationEvent = "issue.withdrawn"
+	NotificationSubmitted           NotificationEvent = "submission.submitted"
+	NotificationSubmissionChecked   NotificationEvent = "submission.checked"
+	NotificationSubmissionReturned  NotificationEvent = "submission.returned"
+	NotificationReviewUpdated       NotificationEvent = "submission.review_updated"
 )
 
 func NotificationEvents() []NotificationEvent {
 	return []NotificationEvent{
 		NotificationInvitationAccepted, NotificationJoinRequestCreated, NotificationJoinRequestAccepted,
 		NotificationJoinRequestDeclined, NotificationRelationshipEnded, NotificationLessonReminder1h, NotificationLessonMoved,
-		NotificationLessonCancelled, NotificationSeriesChanged, NotificationGroupArchived,
+		NotificationLessonCancelled, NotificationSeriesChanged, NotificationGroupArchived, NotificationIssueCreated,
+		NotificationIssueWithdrawn, NotificationSubmitted, NotificationSubmissionChecked, NotificationSubmissionReturned,
+		NotificationReviewUpdated,
 	}
 }
 
@@ -35,6 +43,8 @@ const (
 	LinkStudentCard  NotificationLinkKind = "student_card"
 	LinkJoinRequests NotificationLinkKind = "join_requests"
 	LinkMyTutors     NotificationLinkKind = "my_tutors"
+	LinkAssignment   NotificationLinkKind = "assignment"
+	LinkReview       NotificationLinkKind = "review"
 )
 
 const (

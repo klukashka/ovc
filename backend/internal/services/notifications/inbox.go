@@ -220,6 +220,8 @@ type subjects struct {
 	requests      map[domain.JoinRequestID]repositories.NotificationJoinRequest
 	lessons       map[domain.LessonID]string
 	groups        map[domain.GroupID]repositories.NotificationGroup
+	titles        map[domain.SubmissionID]string
+	reviews       map[domain.SubmissionID]repositories.ReviewSubmission
 }
 
 func loadSubjects(ctx context.Context, repos repositories.Repositories, principal accounts.Principal, rows []repositories.Notification) (subjects, error) {
@@ -227,7 +229,11 @@ func loadSubjects(ctx context.Context, repos repositories.Repositories, principa
 	var requestIDs []domain.JoinRequestID
 	var lessonIDs []domain.LessonID
 	var groupIDs []domain.GroupID
+	var submissionIDs []domain.SubmissionID
 	for _, row := range rows {
+		if subjectIsSubmission(row.Event) {
+			submissionIDs = append(submissionIDs, domain.SubmissionID(row.SubjectID))
+		}
 		if row.RelationshipID != nil {
 			relationshipIDs = append(relationshipIDs, *row.RelationshipID)
 		}
@@ -246,8 +252,13 @@ func loadSubjects(ctx context.Context, repos repositories.Repositories, principa
 		requests:      map[domain.JoinRequestID]repositories.NotificationJoinRequest{},
 		lessons:       map[domain.LessonID]string{},
 		groups:        map[domain.GroupID]repositories.NotificationGroup{},
+		titles:        map[domain.SubmissionID]string{},
+		reviews:       map[domain.SubmissionID]repositories.ReviewSubmission{},
 	}
 	if err := loaded.loadLessons(ctx, repos, principal, lessonIDs); err != nil {
+		return subjects{}, err
+	}
+	if err := loaded.loadSubmissions(ctx, repos, principal, submissionIDs); err != nil {
 		return subjects{}, err
 	}
 	if principal.Role == domain.RoleStudent && len(groupIDs) > 0 {
@@ -300,12 +311,51 @@ func (s subjects) loadLessons(ctx context.Context, repos repositories.Repositori
 	return nil
 }
 
+func (s subjects) loadSubmissions(ctx context.Context, repos repositories.Repositories, principal accounts.Principal, ids []domain.SubmissionID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if principal.Role == domain.RoleTutor {
+		rows, err := repos.Homework.ReviewSubmissions(ctx, principal.UserID, ids)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			s.reviews[row.ID] = row
+		}
+		return nil
+	}
+	rows, err := repos.Homework.ReadableSubmissionTitles(ctx, principal.UserID, ids)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		s.titles[row.ID] = row.Title
+	}
+	return nil
+}
+
+func subjectIsSubmission(event domain.NotificationEvent) bool {
+	switch event {
+	case domain.NotificationIssueCreated, domain.NotificationIssueWithdrawn, domain.NotificationSubmitted, domain.NotificationSubmissionChecked,
+		domain.NotificationSubmissionReturned, domain.NotificationReviewUpdated:
+		return true
+	case domain.NotificationInvitationAccepted, domain.NotificationJoinRequestCreated, domain.NotificationJoinRequestAccepted,
+		domain.NotificationJoinRequestDeclined, domain.NotificationRelationshipEnded, domain.NotificationLessonReminder1h,
+		domain.NotificationLessonMoved, domain.NotificationLessonCancelled, domain.NotificationSeriesChanged, domain.NotificationGroupArchived:
+		return false
+	}
+	return false
+}
+
 func subjectIsRequest(event domain.NotificationEvent) bool {
 	switch event {
 	case domain.NotificationJoinRequestCreated, domain.NotificationJoinRequestAccepted, domain.NotificationJoinRequestDeclined:
 		return true
 	case domain.NotificationInvitationAccepted, domain.NotificationRelationshipEnded, domain.NotificationLessonReminder1h,
-		domain.NotificationLessonMoved, domain.NotificationLessonCancelled, domain.NotificationSeriesChanged, domain.NotificationGroupArchived:
+		domain.NotificationLessonMoved, domain.NotificationLessonCancelled, domain.NotificationSeriesChanged, domain.NotificationGroupArchived,
+		domain.NotificationIssueCreated, domain.NotificationIssueWithdrawn, domain.NotificationSubmitted, domain.NotificationSubmissionChecked,
+		domain.NotificationSubmissionReturned, domain.NotificationReviewUpdated:
 		return false
 	}
 	return false
@@ -316,7 +366,9 @@ func subjectIsLesson(event domain.NotificationEvent) bool {
 	case domain.NotificationLessonReminder1h, domain.NotificationLessonMoved, domain.NotificationLessonCancelled, domain.NotificationSeriesChanged:
 		return true
 	case domain.NotificationInvitationAccepted, domain.NotificationJoinRequestCreated, domain.NotificationJoinRequestAccepted,
-		domain.NotificationJoinRequestDeclined, domain.NotificationRelationshipEnded, domain.NotificationGroupArchived:
+		domain.NotificationJoinRequestDeclined, domain.NotificationRelationshipEnded, domain.NotificationGroupArchived,
+		domain.NotificationIssueCreated, domain.NotificationIssueWithdrawn, domain.NotificationSubmitted, domain.NotificationSubmissionChecked,
+		domain.NotificationSubmissionReturned, domain.NotificationReviewUpdated:
 		return false
 	}
 	return false
@@ -343,8 +395,36 @@ func (s subjects) item(principal accounts.Principal, row repositories.Notificati
 		s.lessonRow(principal, row, &item)
 	case domain.NotificationGroupArchived:
 		s.archivedGroupRow(principal, row, &item)
+	case domain.NotificationIssueCreated, domain.NotificationIssueWithdrawn, domain.NotificationSubmissionChecked,
+		domain.NotificationSubmissionReturned, domain.NotificationReviewUpdated:
+		s.assignmentRow(principal, row, &item)
+	case domain.NotificationSubmitted:
+		s.reviewRow(principal, row, &item)
 	}
 	return item
+}
+
+func (s subjects) assignmentRow(principal accounts.Principal, row repositories.Notification, item *Item) {
+	if principal.Role != domain.RoleStudent {
+		return
+	}
+	if title, readable := s.titles[domain.SubmissionID(row.SubjectID)]; readable {
+		item.Label = &title
+		item.Link = &Link{Kind: domain.LinkAssignment, ID: row.SubjectID}
+	}
+	s.studentColour(principal.UserID, row, item)
+}
+
+func (s subjects) reviewRow(principal accounts.Principal, row repositories.Notification, item *Item) {
+	submission, found := s.reviews[domain.SubmissionID(row.SubjectID)]
+	if principal.Role != domain.RoleTutor || !found || submission.CardState == domain.RelationshipDiscarded {
+		return
+	}
+	name := submission.DisplayName
+	item.Label = &name
+	if submission.IssueReadable {
+		item.Link = &Link{Kind: domain.LinkReview, ID: row.SubjectID}
+	}
 }
 
 func (s subjects) archivedGroupRow(principal accounts.Principal, row repositories.Notification, item *Item) {

@@ -23,6 +23,7 @@ import { done, useAction } from '../../components/ui/action.ts';
 import { useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { formatAgo, formatDateTime } from '../../lib/format/dates.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import {
   type Notification,
   type NotificationEvent,
@@ -31,6 +32,7 @@ import {
   markNotificationsRead,
   notificationsKey,
 } from './api.ts';
+import { notificationEventTextLoaders } from './texts.ts';
 
 const eventTexts = {
   'invitation.accepted': 'notifications.event.invitationAccepted',
@@ -43,7 +45,25 @@ const eventTexts = {
   'lesson.cancelled': 'notifications.event.lessonCancelled',
   'lesson.series_changed': 'notifications.event.lessonSeriesChanged',
   'group.archived': 'notifications.event.groupArchived',
+  'issue.created': 'notificationEvents.issueCreated',
+  'issue.withdrawn': 'notificationEvents.issueWithdrawn',
+  'submission.submitted': 'notificationEvents.submissionSubmitted',
+  'submission.checked': 'notificationEvents.submissionChecked',
+  'submission.returned': 'notificationEvents.submissionReturned',
+  'submission.review_updated': 'notificationEvents.submissionReviewUpdated',
 } as const satisfies Readonly<Record<NotificationEvent, string>>;
+
+const lazySectionPrefix = 'notificationEvents.';
+
+function useEventText(item: Notification): string {
+  const { t } = useTranslation();
+  const texts = useFeatureTexts('notificationEvents', notificationEventTextLoaders);
+  const key = eventTexts[item.event];
+  if (key.startsWith(lazySectionPrefix) && !texts.ready) {
+    return '';
+  }
+  return t(key);
+}
 
 export function useMarkRead(): (selection: ReadSelection) => Promise<void> {
   const client = useApiClient();
@@ -81,6 +101,7 @@ function Label({ item }: { readonly item: Notification }): ReactElement | null {
 function RowContent({ item, now }: { readonly item: Notification; readonly now: number }): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
+  const eventText = useEventText(item);
   const unread = item.read_at === null;
   return (
     <>
@@ -89,7 +110,7 @@ function RowContent({ item, now }: { readonly item: Notification; readonly now: 
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <Label item={item} />
-        <span>{t(eventTexts[item.event])}</span>
+        <span>{eventText}</span>
         <time
           dateTime={item.created_at}
           title={formatDateTime(item.created_at, me.language, me.timezone)}
@@ -177,9 +198,8 @@ function UnreadMarker({ item }: { readonly item: Notification }): ReactElement |
 }
 
 function EventCell({ item }: { readonly item: Notification }): ReactElement {
-  const { t } = useTranslation();
   const markRead = useMarkRead();
-  const text = t(eventTexts[item.event]);
+  const text = useEventText(item);
   const link = item.link;
   return (
     <th scope="row" className={primaryCellClass}>

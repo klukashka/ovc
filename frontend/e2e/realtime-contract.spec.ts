@@ -63,6 +63,24 @@ function realSubject(deployment: Deployment, tutor: TestAccount): RealtimeContra
     changeChannel: async (): Promise<void> => {
       await createGroup(deployment, tutor, 'Группа для контракта', []);
     },
+    issueAssignment: async (): Promise<void> => {
+      const token = await accessToken(deployment, tutor);
+      const { cardId } = await seedActiveStudent(deployment, tutor, 'Ученик для задания');
+      const template = await callApi(deployment, token, 'POST', '/library/templates', {
+        title: 'Задание для контракта',
+        folder_id: null,
+        blocks: [{ id: '5f0c1a2b-3c4d-4e5f-8a6b-7c8d9e0f1a2b', type: 'instruction', text: 'Прочитайте текст' }],
+      });
+      expect(template.status).toBe(201);
+      const issued = await callApi(deployment, token, 'POST', '/issues', {
+        template_id: textField(template, 'id'),
+        audience: { relationship_id: cardId },
+        lesson_id: null,
+        deadline_at: null,
+        answer_policy: 'never',
+      });
+      expect(issued.status).toBe(201);
+    },
     exchangeMessage: async (): Promise<void> => {
       const token = await accessToken(deployment, tutor);
       const group = await createGroup(deployment, tutor, 'Группа для сообщений', []);
