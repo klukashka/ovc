@@ -68,6 +68,7 @@ func (r *router) registerFileRoutes() {
 		Description: "The file",
 		Content:     map[string]*huma.MediaType{"application/octet-stream": {Schema: &huma.Schema{Type: huma.TypeString, Format: "binary"}}},
 	}}
+	file.Middlewares = append(file.Middlewares, r.recordClientAddress)
 	file.Errors = []int{http.StatusNotFound, http.StatusInternalServerError, http.StatusServiceUnavailable}
 	register(r, file, AudiencePublic, r.file)
 }
@@ -107,6 +108,18 @@ func (r *router) file(ctx context.Context, input *fileInput) (*fileOutput, error
 	if !ok {
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
+	address := clientAddress(ctx)
+	leave, admitted := r.addresses.admit(address)
+	if !admitted {
+		r.logger.LogAttrs(ctx, slog.LevelWarn, "files.get.address_busy")
+		return nil, NewError(ctx, domain.ErrorServiceUnavailable).withHeader("Retry-After", "1")
+	}
+	streaming := false
+	defer func() {
+		if !streaming {
+			leave()
+		}
+	}()
 	download, err := r.files.Download(ctx, id, input.Token)
 	switch {
 	case errors.Is(err, files.ErrNotFound):
@@ -116,15 +129,22 @@ func (r *router) file(ctx context.Context, input *fileInput) (*fileOutput, error
 	case err != nil:
 		return nil, r.internal(ctx, "files.get.failed", err)
 	}
+	streaming = true
 	return &fileOutput{
 		ContentType: download.MediaType, ContentDisposition: download.ContentDisposition, CacheControl: fileCacheControl,
 		Policy: filePolicy, ResourcePolicy: "same-origin", ContentLength: strconv.FormatInt(download.SizeBytes, 10),
 		Body: func(response huma.Context) {
+			defer leave()
 			_, writer := humago.Unwrap(response)
-			if err := http.NewResponseController(writer).SetWriteDeadline(download.Deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			controller := http.NewResponseController(writer)
+			if err := controller.SetWriteDeadline(download.Deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
 				r.logger.LogAttrs(ctx, slog.LevelWarn, "http.deadline.failed", slog.String("kind", "write"))
 			}
-			r.streamObject(ctx, response, download.Body, download.SizeBytes, fileEventsPrefix)
+			guard := r.guardDownloadAgainstStalls(ctx, response.BodyWriter(), controller)
+			defer guard.stop()
+			watch := r.watchLongDownload(ctx, address, guard.refuseCrowded)
+			defer watch.stop()
+			r.streamObjectTo(ctx, response, guard, download.Body, download.SizeBytes, fileEventsPrefix)
 		},
 	}, nil
 }
@@ -145,13 +165,17 @@ func (w *trackedWriter) Write(data []byte) (int, error) {
 }
 
 func (r *router) streamObject(ctx context.Context, response huma.Context, body files.ObjectBody, size int64, events string) {
+	r.streamObjectTo(ctx, response, response.BodyWriter(), body, size, events)
+}
+
+func (r *router) streamObjectTo(ctx context.Context, response huma.Context, destination io.Writer, body files.ObjectBody, size int64, events string) {
 	defer func() {
 		if err := body.Close(); err != nil {
 			r.logger.LogAttrs(ctx, slog.LevelWarn, events+".close_failed", slog.String("kind", core.ErrorKind(err)))
 		}
 	}()
 	response.SetStatus(http.StatusOK)
-	writer := &trackedWriter{Writer: response.BodyWriter()}
+	writer := &trackedWriter{Writer: destination}
 	if _, err := io.CopyN(writer, body, size-1); err != nil {
 		r.abortObject(ctx, writer, err, events)
 	}
@@ -173,6 +197,10 @@ func (r *router) streamObject(ctx context.Context, response huma.Context, body f
 
 func (r *router) abortObject(ctx context.Context, writer *trackedWriter, err error, events string) {
 	switch {
+	case errors.Is(err, errDownloadCrowded):
+		r.logger.LogAttrs(ctx, slog.LevelWarn, events+".address_busy")
+	case errors.Is(err, errDownloadStalled):
+		r.logger.LogAttrs(ctx, slog.LevelWarn, events+".stalled")
 	case writer.failed != nil || ctx.Err() != nil:
 		r.logger.LogAttrs(ctx, slog.LevelDebug, events+".abandoned", slog.String("kind", core.ErrorKind(err)))
 	case errors.Is(err, context.DeadlineExceeded):

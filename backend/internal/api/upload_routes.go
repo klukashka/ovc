@@ -70,11 +70,6 @@ func (t UploadTiming) deadline(bytes int64) time.Duration {
 	return min(max(transfer, t.Floor), domain.UploadDeadlineCeiling)
 }
 
-type deliverySample struct {
-	active    time.Duration
-	delivered int64
-}
-
 type stallGuard struct {
 	body         io.Reader
 	mutex        sync.Mutex
@@ -83,45 +78,22 @@ type stallGuard struct {
 	stalled      bool
 	reading      bool
 	readingSince time.Time
-	active       time.Duration
-	delivered    int64
-	samples      []deliverySample
+	window       deliveryWindow
 	controller   *http.ResponseController
-	timing       UploadTiming
 	ctx          context.Context
 	logger       *slog.Logger
 	now          func() time.Time
 }
 
-func (t UploadTiming) checkEvery() time.Duration {
-	return max(t.StallWindow/stallChecksPerWindow, minimumStallCheck)
-}
-
 func (r *router) guardAgainstStalls(ctx context.Context, body io.Reader, controller *http.ResponseController) *stallGuard {
-	guard := &stallGuard{body: body, controller: controller, timing: r.uploads, ctx: ctx, logger: r.logger, now: r.now}
+	guard := &stallGuard{
+		body: body, controller: controller, window: newDeliveryWindow(r.uploads.StallWindow, r.uploads.StallBytes), ctx: ctx, logger: r.logger,
+		now: r.now,
+	}
 	guard.mutex.Lock()
 	defer guard.mutex.Unlock()
-	guard.timer = time.AfterFunc(r.uploads.checkEvery(), guard.check)
+	guard.timer = time.AfterFunc(guard.window.bucket, guard.check)
 	return guard
-}
-
-func (g *stallGuard) deliveredBy(active time.Duration) int64 {
-	var delivered int64
-	for _, sample := range g.samples {
-		if sample.active > active {
-			break
-		}
-		delivered = sample.delivered
-	}
-	return delivered
-}
-
-func (g *stallGuard) prune(active time.Duration) {
-	keep := 0
-	for keep+1 < len(g.samples) && g.samples[keep+1].active <= active-g.timing.StallWindow {
-		keep++
-	}
-	g.samples = g.samples[keep:]
 }
 
 func (g *stallGuard) check() {
@@ -135,17 +107,14 @@ func (g *stallGuard) check() {
 	if g.stopped {
 		return
 	}
-	if g.reading {
-		active := g.active + g.now().Sub(g.readingSince)
-		if active >= g.timing.StallWindow && g.delivered-g.deliveredBy(active-g.timing.StallWindow) < g.timing.StallBytes {
-			g.stalled = true
-			if err := g.controller.SetReadDeadline(g.now()); err != nil && !errors.Is(err, http.ErrNotSupported) {
-				g.logger.LogAttrs(g.ctx, slog.LevelWarn, "http.deadline.failed", slog.String("kind", "read"))
-			}
-			return
+	if g.reading && g.window.stalled(g.now().Sub(g.readingSince)) {
+		g.stalled = true
+		if err := g.controller.SetReadDeadline(g.now()); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			g.logger.LogAttrs(g.ctx, slog.LevelWarn, "http.deadline.failed", slog.String("kind", "read"))
 		}
+		return
 	}
-	g.timer.Reset(g.timing.checkEvery())
+	g.timer.Reset(g.window.bucket)
 }
 
 func (g *stallGuard) stop() {
@@ -161,17 +130,8 @@ func (g *stallGuard) Read(buffer []byte) (int, error) {
 	g.mutex.Unlock()
 	read, err := g.body.Read(buffer)
 	g.mutex.Lock()
-	g.active += g.now().Sub(g.readingSince)
+	g.window.record(g.now().Sub(g.readingSince), read)
 	g.reading = false
-	g.delivered += int64(read)
-	sample := deliverySample{active: g.active, delivered: g.delivered}
-	bucket := g.timing.checkEvery()
-	if last := len(g.samples) - 1; last >= 0 && g.samples[last].active/bucket == sample.active/bucket {
-		g.samples[last] = sample
-	} else {
-		g.samples = append(g.samples, sample)
-	}
-	g.prune(g.active)
 	stalled := g.stalled
 	g.mutex.Unlock()
 	if err != nil && stalled {

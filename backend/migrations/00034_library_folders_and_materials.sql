@@ -35,5 +35,11 @@ CREATE INDEX materials_tutor_idx ON materials (tutor_id, id);
 CREATE INDEX materials_folder_idx ON materials (folder_id);
 
 -- +goose Down
+ALTER TABLE materials ADD CONSTRAINT materials_empty_before_rollback CHECK (false);
+ALTER TABLE materials DROP CONSTRAINT materials_empty_before_rollback;
+ALTER TABLE folders ADD CONSTRAINT folders_empty_before_rollback CHECK (false);
+ALTER TABLE folders DROP CONSTRAINT folders_empty_before_rollback;
+ALTER TABLE attachment_references ADD CONSTRAINT attachment_references_no_material_kind CHECK (ref_kind <> 'material');
+ALTER TABLE attachment_references DROP CONSTRAINT attachment_references_no_material_kind;
 DROP TABLE materials;
 DROP TABLE folders;

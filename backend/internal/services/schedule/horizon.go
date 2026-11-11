@@ -60,22 +60,15 @@ func (j *Jobs) ExtendHorizons(ctx context.Context, now time.Time) (int64, error)
 func (j *Jobs) retireMaterials(ctx context.Context, deadline time.Time, now time.Time) (int64, error) {
 	var retired int64
 	var failures []error
-	attempted := map[domain.SeriesID]bool{}
-	var tried int32
+	var after domain.SeriesID
 	for j.settings.Wall().Before(deadline) {
-		limit := j.settings.ExtensionBatch + tried
-		batch, err := j.service.deps.Store.Repositories().LessonMaterials.RetiredSeries(ctx, now, limit)
+		limit := j.settings.ExtensionBatch
+		batch, err := j.service.deps.Store.Repositories().LessonMaterials.RetiredSeries(ctx, after, now, limit)
 		if err != nil {
 			return retired, errors.Join(append(failures, err)...)
 		}
-		fresh := 0
 		for _, candidate := range batch {
-			if attempted[candidate.ID] {
-				continue
-			}
-			attempted[candidate.ID] = true
-			tried++
-			fresh++
+			after = candidate.ID
 			var done bool
 			err := j.service.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 				var err error
@@ -92,7 +85,7 @@ func (j *Jobs) retireMaterials(ctx context.Context, deadline time.Time, now time
 				retired++
 			}
 		}
-		if fresh == 0 || len(batch) < int(limit) {
+		if len(batch) < int(limit) {
 			break
 		}
 	}

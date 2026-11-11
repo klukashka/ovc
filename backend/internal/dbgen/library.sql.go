@@ -281,7 +281,7 @@ func (q *Queries) GetMaterialState(ctx context.Context, arg GetMaterialStatePara
 
 const getServableMaterialFile = `-- name: GetServableMaterialFile :one
 SELECT attachments.storage_key, attachments.media_type::text AS media_type, attachments.size_bytes::bigint AS size_bytes,
-    attachments.filename, attachments.width
+    attachments.filename, attachments.width, attachments.context
 FROM attachments
 JOIN attachment_references
     ON attachment_references.attachment_id = attachments.id AND attachment_references.ref_kind = 'material'
@@ -301,6 +301,7 @@ type GetServableMaterialFileRow struct {
 	SizeBytes  int64
 	Filename   string
 	Width      *int32
+	Context    domain.AttachmentContext
 }
 
 func (q *Queries) GetServableMaterialFile(ctx context.Context, arg GetServableMaterialFileParams) (GetServableMaterialFileRow, error) {
@@ -312,6 +313,7 @@ func (q *Queries) GetServableMaterialFile(ctx context.Context, arg GetServableMa
 		&i.SizeBytes,
 		&i.Filename,
 		&i.Width,
+		&i.Context,
 	)
 	return i, err
 }

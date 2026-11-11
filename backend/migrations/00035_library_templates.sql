@@ -30,4 +30,8 @@ CREATE INDEX templates_folder_idx ON templates (folder_id);
 CREATE INDEX templates_budget_idx ON templates (tutor_id) INCLUDE (blocks_bytes) WHERE deleted_at IS NULL;
 
 -- +goose Down
+ALTER TABLE templates ADD CONSTRAINT templates_empty_before_rollback CHECK (false);
+ALTER TABLE templates DROP CONSTRAINT templates_empty_before_rollback;
+ALTER TABLE attachment_references ADD CONSTRAINT attachment_references_no_template_kind CHECK (ref_kind <> 'template');
+ALTER TABLE attachment_references DROP CONSTRAINT attachment_references_no_template_kind;
 DROP TABLE templates;

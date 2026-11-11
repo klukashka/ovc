@@ -344,6 +344,7 @@ func (r *Rooms) dispatch(ctx context.Context, plan roomPlan, guard RoomGuard, pu
 }
 
 func (r *Rooms) create(ctx context.Context, plan roomPlan) (domain.ProviderCreateTime, error) {
+	presentation := r.presentation(ctx, plan.room.Identity.LessonID)
 	now, err := r.deps.Clock.Instant(ctx)
 	if err != nil {
 		return 0, err
@@ -352,7 +353,7 @@ func (r *Rooms) create(ctx context.Context, plan roomPlan) (domain.ProviderCreat
 		r.report(ctx, "meeting.room.dispatch_expired")
 		return 0, errDispatchExpired
 	}
-	return r.deps.Provider.CreateMeeting(ctx, plan.room.Meeting, r.presentation(ctx, plan.room.Identity.LessonID))
+	return r.deps.Provider.CreateMeeting(ctx, plan.room.Meeting, presentation)
 }
 
 func (r *Rooms) presentation(ctx context.Context, lesson domain.LessonID) *meeting.Presentation {

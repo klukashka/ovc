@@ -143,7 +143,7 @@ ORDER BY templates.id;
 
 -- name: GetServableTemplateFile :one
 SELECT attachments.storage_key, attachments.media_type::text AS media_type, attachments.size_bytes::bigint AS size_bytes,
-    attachments.filename, attachments.width
+    attachments.filename, attachments.width, attachments.context
 FROM attachments
 JOIN attachment_references
     ON attachment_references.attachment_id = attachments.id AND attachment_references.ref_kind = 'template'

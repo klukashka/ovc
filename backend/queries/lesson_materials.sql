@@ -114,7 +114,7 @@ ORDER BY lessons.id;
 
 -- name: GetServableLessonFile :one
 SELECT attachments.storage_key, attachments.media_type::text AS media_type, attachments.size_bytes::bigint AS size_bytes,
-    attachments.filename, attachments.width
+    attachments.filename, attachments.width, attachments.context
 FROM attachments
 JOIN attachment_references
     ON attachment_references.attachment_id = attachments.id AND attachment_references.ref_kind = 'lesson'
@@ -157,18 +157,19 @@ WHERE attachment_references.ref_kind = sqlc.arg(ref_kind)::text AND attachment_r
 RETURNING attachment_references.attachment_id;
 
 -- name: ListRetiredSeriesWithMaterials :many
-SELECT DISTINCT lesson_series.id, lesson_series.tutor_id
-FROM series_materials
-JOIN lesson_series ON lesson_series.id = series_materials.series_id
-WHERE (
-    lesson_series.ended_at IS NOT NULL OR lesson_series.end_date IS NULL
-    OR lesson_series.end_date < (sqlc.arg(now)::timestamptz AT TIME ZONE lesson_series.timezone)::date OR NOT EXISTS (
-        SELECT 1 FROM generate_series(0, 6) AS step (days)
-        WHERE extract(isodow FROM greatest(lesson_series.materialised_until + 1, lesson_series.first_date) + step.days)::smallint
-                = ANY (lesson_series.weekdays)
-            AND greatest(lesson_series.materialised_until + 1, lesson_series.first_date) + step.days <= lesson_series.end_date
+SELECT lesson_series.id, lesson_series.tutor_id
+FROM lesson_series
+WHERE lesson_series.id > @after
+    AND EXISTS (SELECT 1 FROM series_materials WHERE series_materials.series_id = lesson_series.id)
+    AND (
+        lesson_series.ended_at IS NOT NULL OR lesson_series.end_date IS NULL
+        OR lesson_series.end_date < (sqlc.arg(now)::timestamptz AT TIME ZONE lesson_series.timezone)::date OR NOT EXISTS (
+            SELECT 1 FROM generate_series(0, 6) AS step (days)
+            WHERE extract(isodow FROM greatest(lesson_series.materialised_until + 1, lesson_series.first_date) + step.days)::smallint
+                    = ANY (lesson_series.weekdays)
+                AND greatest(lesson_series.materialised_until + 1, lesson_series.first_date) + step.days <= lesson_series.end_date
+        )
     )
-)
 ORDER BY lesson_series.id
 LIMIT sqlc.arg(row_limit)::int;
 

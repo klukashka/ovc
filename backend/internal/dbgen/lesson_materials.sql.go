@@ -146,7 +146,7 @@ func (q *Queries) FirstLessonPresentation(ctx context.Context, lessonID domain.L
 
 const getServableLessonFile = `-- name: GetServableLessonFile :one
 SELECT attachments.storage_key, attachments.media_type::text AS media_type, attachments.size_bytes::bigint AS size_bytes,
-    attachments.filename, attachments.width
+    attachments.filename, attachments.width, attachments.context
 FROM attachments
 JOIN attachment_references
     ON attachment_references.attachment_id = attachments.id AND attachment_references.ref_kind = 'lesson'
@@ -165,6 +165,7 @@ type GetServableLessonFileRow struct {
 	SizeBytes  int64
 	Filename   string
 	Width      *int32
+	Context    domain.AttachmentContext
 }
 
 func (q *Queries) GetServableLessonFile(ctx context.Context, arg GetServableLessonFileParams) (GetServableLessonFileRow, error) {
@@ -176,6 +177,7 @@ func (q *Queries) GetServableLessonFile(ctx context.Context, arg GetServableLess
 		&i.SizeBytes,
 		&i.Filename,
 		&i.Width,
+		&i.Context,
 	)
 	return i, err
 }
@@ -435,23 +437,25 @@ func (q *Queries) ListMaterialIDsOfSeries(ctx context.Context, seriesID domain.S
 }
 
 const listRetiredSeriesWithMaterials = `-- name: ListRetiredSeriesWithMaterials :many
-SELECT DISTINCT lesson_series.id, lesson_series.tutor_id
-FROM series_materials
-JOIN lesson_series ON lesson_series.id = series_materials.series_id
-WHERE (
-    lesson_series.ended_at IS NOT NULL OR lesson_series.end_date IS NULL
-    OR lesson_series.end_date < ($1::timestamptz AT TIME ZONE lesson_series.timezone)::date OR NOT EXISTS (
-        SELECT 1 FROM generate_series(0, 6) AS step (days)
-        WHERE extract(isodow FROM greatest(lesson_series.materialised_until + 1, lesson_series.first_date) + step.days)::smallint
-                = ANY (lesson_series.weekdays)
-            AND greatest(lesson_series.materialised_until + 1, lesson_series.first_date) + step.days <= lesson_series.end_date
+SELECT lesson_series.id, lesson_series.tutor_id
+FROM lesson_series
+WHERE lesson_series.id > $1
+    AND EXISTS (SELECT 1 FROM series_materials WHERE series_materials.series_id = lesson_series.id)
+    AND (
+        lesson_series.ended_at IS NOT NULL OR lesson_series.end_date IS NULL
+        OR lesson_series.end_date < ($2::timestamptz AT TIME ZONE lesson_series.timezone)::date OR NOT EXISTS (
+            SELECT 1 FROM generate_series(0, 6) AS step (days)
+            WHERE extract(isodow FROM greatest(lesson_series.materialised_until + 1, lesson_series.first_date) + step.days)::smallint
+                    = ANY (lesson_series.weekdays)
+                AND greatest(lesson_series.materialised_until + 1, lesson_series.first_date) + step.days <= lesson_series.end_date
+        )
     )
-)
 ORDER BY lesson_series.id
-LIMIT $2::int
+LIMIT $3::int
 `
 
 type ListRetiredSeriesWithMaterialsParams struct {
+	After    domain.SeriesID
 	Now      time.Time
 	RowLimit int32
 }
@@ -462,7 +466,7 @@ type ListRetiredSeriesWithMaterialsRow struct {
 }
 
 func (q *Queries) ListRetiredSeriesWithMaterials(ctx context.Context, arg ListRetiredSeriesWithMaterialsParams) ([]ListRetiredSeriesWithMaterialsRow, error) {
-	rows, err := q.db.Query(ctx, listRetiredSeriesWithMaterials, arg.Now, arg.RowLimit)
+	rows, err := q.db.Query(ctx, listRetiredSeriesWithMaterials, arg.After, arg.Now, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}

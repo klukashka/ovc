@@ -34,6 +34,16 @@ func (NullableID) Schema(huma.Registry) *huma.Schema {
 	return &huma.Schema{Type: huma.TypeString, Format: "uuid", Nullable: true}
 }
 
+const strictUUIDPattern = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+
+type StrictNullableID struct {
+	NullableID
+}
+
+func (StrictNullableID) Schema(huma.Registry) *huma.Schema {
+	return &huma.Schema{Type: huma.TypeString, Format: "uuid", Nullable: true, Pattern: strictUUIDPattern}
+}
+
 type ProfilePatch struct {
 	Name     *string          `json:"name,omitempty" maxLength:"400"`
 	Language *domain.Language `json:"language,omitempty" enum:"ru,en"`

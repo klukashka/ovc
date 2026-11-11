@@ -12,8 +12,8 @@ import (
 )
 
 type NewLesson struct {
-	RelationshipID  *string  `json:"relationship_id,omitempty" format:"uuid"`
-	GroupID         *string  `json:"group_id,omitempty" format:"uuid"`
+	RelationshipID  *string  `json:"relationship_id,omitempty" format:"uuid" pattern:"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"`
+	GroupID         *string  `json:"group_id,omitempty" format:"uuid" pattern:"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"`
 	Title           string   `json:"title" minLength:"1" maxLength:"120"`
 	Description     *string  `json:"description,omitempty" maxLength:"2000"`
 	Date            string   `json:"date" pattern:"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
@@ -23,7 +23,7 @@ type NewLesson struct {
 	EndDate         *string  `json:"end_date,omitempty" pattern:"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
 	Count           *int16   `json:"count,omitempty" minimum:"1" maximum:"100"`
 	AllowOverlap    bool     `json:"allow_overlap,omitempty"`
-	MaterialIDs     []string `json:"material_ids,omitempty" format:"uuid" nullable:"false"`
+	MaterialIDs     []string `json:"material_ids,omitempty" format:"uuid" nullable:"false" pattern:"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"`
 }
 
 func (NewLesson) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
@@ -99,7 +99,7 @@ type LessonMaterial struct {
 }
 
 type LessonMaterialsUpdate struct {
-	MaterialIDs []string `json:"material_ids" format:"uuid" nullable:"false"`
+	MaterialIDs []string `json:"material_ids" format:"uuid" nullable:"false" pattern:"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"`
 	Version     int32    `json:"version" minimum:"1"`
 }
 
@@ -168,7 +168,7 @@ type LessonPatch struct {
 	Title           *string             `json:"title,omitempty" minLength:"1" maxLength:"120"`
 	Description     NullableDescription `json:"description,omitempty"`
 	AllowOverlap    bool                `json:"allow_overlap,omitempty"`
-	MaterialIDs     []string            `json:"material_ids,omitempty" format:"uuid" nullable:"false"`
+	MaterialIDs     []string            `json:"material_ids,omitempty" format:"uuid" nullable:"false" pattern:"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"`
 }
 
 type NullableDescription struct {

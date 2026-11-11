@@ -50,6 +50,7 @@ WHERE id = @id AND state <> 'deleted';
 -- name: ClaimExpiredUploads :many
 SELECT id FROM attachments
 WHERE id IN (SELECT candidate.id FROM attachments AS candidate WHERE candidate.state = 'pending' AND candidate.expires_at <= sqlc.arg(now)::timestamptz ORDER BY candidate.expires_at LIMIT sqlc.arg(batch_size))
+    AND state = 'pending' AND expires_at <= sqlc.arg(now)::timestamptz
 ORDER BY id FOR UPDATE SKIP LOCKED;
 
 -- name: DeleteAttachmentRow :execrows
@@ -102,6 +103,7 @@ WHERE tutor_profiles.user_id = @tutor_id;
 -- name: ClaimAgedUploads :many
 SELECT id, storage_key, multipart_upload_id FROM attachments
 WHERE id IN (SELECT candidate.id FROM attachments AS candidate WHERE candidate.state = 'uploading' AND candidate.created_at <= sqlc.arg(cutoff)::timestamptz ORDER BY candidate.created_at, candidate.id LIMIT sqlc.arg(batch_size))
+    AND state = 'uploading' AND created_at <= sqlc.arg(cutoff)::timestamptz
 ORDER BY id FOR UPDATE SKIP LOCKED;
 
 -- name: ClaimUnbindableChatUploads :many
@@ -131,7 +133,7 @@ LIMIT 1;
 
 -- name: GetServableChatAttachment :one
 SELECT attachments.storage_key, attachments.media_type::text AS media_type, attachments.size_bytes::bigint AS size_bytes,
-    attachments.filename, attachments.width
+    attachments.filename, attachments.width, attachments.context
 FROM attachments
 JOIN attachment_references
     ON attachment_references.attachment_id = attachments.id AND attachment_references.ref_kind = 'message'

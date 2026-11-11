@@ -178,9 +178,12 @@ SELECT count(pid) FROM waiting`
 
 const cancelContestedRowDirectWaiters = `
 WITH waiting AS MATERIALIZED (
-    SELECT direct.pid FROM (` + contestedRowDirectWaiters + `) AS direct
+    SELECT direct.pid FROM pg_locks AS direct
     JOIN pg_stat_activity AS activity ON activity.pid = direct.pid
-    WHERE activity.datname = current_database()
+    WHERE NOT direct.granted AND direct.locktype = 'transactionid' AND activity.datname = current_database()
+        AND direct.transactionid IN (
+            SELECT held.transactionid FROM pg_locks AS held WHERE held.pid = $1 AND held.locktype = 'transactionid' AND held.granted)
+        AND pg_blocking_pids(direct.pid) = ARRAY[$1::int4]
 )
 SELECT count(*) FILTER (WHERE cancelled) FROM (SELECT pg_cancel_backend(pid) AS cancelled FROM waiting) AS attempts`
 
@@ -276,7 +279,7 @@ func (h *authHarness) cancelLockWaiters(t *testing.T, expected int64) {
 	cancelling, cancel := context.WithTimeout(context.Background(), pauseDeadline)
 	defer cancel()
 	var cancelled int64
-	if err := h.database.Pool.QueryRow(cancelling, cancelContestedRowDirectWaiters, row.holder, row.relation, row.page, row.tuple).Scan(&cancelled); err != nil {
+	if err := h.database.Pool.QueryRow(cancelling, cancelContestedRowDirectWaiters, row.holder).Scan(&cancelled); err != nil {
 		t.Fatal(err)
 	}
 	if cancelled != expected {

@@ -176,11 +176,14 @@ func (s *Service) Download(ctx context.Context, id domain.AttachmentID, token st
 	if errors.Is(err, errDownloadTokenExpired) {
 		return Download{}, s.refusedDownload(ctx, id, domain.RefusedExpired)
 	}
-	if err != nil || claims.Attachment != id {
+	if err != nil {
 		return Download{}, s.refusedDownload(ctx, id, domain.RefusedToken)
 	}
+	if claims.Attachment != id {
+		return Download{}, s.refusedDownload(ctx, id, domain.RefusedToken, referenceKindAttribute(claims.Reference.Kind))
+	}
 	if _, authorized := s.authorizationOf(claims.Reference.Kind); claims.Reference.Kind != domain.ReferenceMessage && !authorized {
-		return Download{}, s.refusedDownload(ctx, id, domain.RefusedToken)
+		return Download{}, s.refusedDownload(ctx, id, domain.RefusedToken, referenceKindAttribute(claims.Reference.Kind))
 	}
 	opening, cancelCause := context.WithCancelCause(ctx)
 	cancel := func() { cancelCause(context.Canceled) }
@@ -267,20 +270,22 @@ func (b *timedDownloadBody) Close() error {
 }
 
 func (s *Service) openDownload(ctx context.Context, id domain.AttachmentID, claims downloadClaims, cancel context.CancelFunc) (Download, error) {
+	kind := referenceKindAttribute(claims.Reference.Kind)
 	file, err := s.servableFile(ctx, id, claims.Reference)
 	if errors.Is(err, repositories.ErrNotFound) {
-		return Download{}, s.refusedDownload(ctx, id, domain.RefusedUnreferenced)
+		return Download{}, s.refusedDownload(ctx, id, domain.RefusedUnreferenced, kind)
 	}
 	if err != nil {
 		return Download{}, err
 	}
+	stored := slog.String("context", string(file.Context))
 	if claims.Disposition == domain.DispositionInline && file.Width == nil {
-		return Download{}, s.refusedDownload(ctx, id, domain.RefusedToken)
+		return Download{}, s.refusedDownload(ctx, id, domain.RefusedToken, kind, stored)
 	}
 	select {
 	case s.downloads <- struct{}{}:
 	default:
-		s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "download.busy", attachmentAttribute(id))
+		s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "download.busy", attachmentAttribute(id), kind, stored)
 		return Download{}, ErrDownloadsBusy
 	}
 	release := sync.OnceFunc(func() {
@@ -290,7 +295,7 @@ func (s *Service) openDownload(ctx context.Context, id domain.AttachmentID, clai
 	body, err := s.deps.Objects.Open(ctx, file.StorageKey)
 	if errors.Is(err, storage.ErrObjectNotFound) {
 		release()
-		s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "download.object_missing", attachmentAttribute(id))
+		s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "download.object_missing", attachmentAttribute(id), kind, stored)
 		return Download{}, ErrNotFound
 	}
 	if err != nil {
@@ -319,7 +324,12 @@ func (s *Service) servableFile(ctx context.Context, id domain.AttachmentID, refe
 	return authorization.servable(ctx, repos, id, reference.Item)
 }
 
-func (s *Service) refusedDownload(ctx context.Context, id domain.AttachmentID, reason domain.DownloadRefusal) error {
-	s.deps.Logger.LogAttrs(ctx, slog.LevelDebug, "download.refused", attachmentAttribute(id), slog.String("reason", string(reason)))
+func (s *Service) refusedDownload(ctx context.Context, id domain.AttachmentID, reason domain.DownloadRefusal, known ...slog.Attr) error {
+	attributes := append([]slog.Attr{attachmentAttribute(id), slog.String("reason", string(reason))}, known...)
+	s.deps.Logger.LogAttrs(ctx, slog.LevelDebug, "download.refused", attributes...)
 	return ErrNotFound
+}
+
+func referenceKindAttribute(kind domain.ReferenceKind) slog.Attr {
+	return slog.String("ref_kind", string(kind))
 }

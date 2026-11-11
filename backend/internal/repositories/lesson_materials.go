@@ -259,8 +259,8 @@ func (r LessonMaterials) removeReferencePairs(
 
 type RetiredSeries = dbgen.ListRetiredSeriesWithMaterialsRow
 
-func (r LessonMaterials) RetiredSeries(ctx context.Context, now time.Time, limit int32) ([]RetiredSeries, error) {
-	rows, err := r.queries.ListRetiredSeriesWithMaterials(ctx, dbgen.ListRetiredSeriesWithMaterialsParams{Now: now, RowLimit: limit})
+func (r LessonMaterials) RetiredSeries(ctx context.Context, after domain.SeriesID, now time.Time, limit int32) ([]RetiredSeries, error) {
+	rows, err := r.queries.ListRetiredSeriesWithMaterials(ctx, dbgen.ListRetiredSeriesWithMaterialsParams{After: after, Now: now, RowLimit: limit})
 	return one(rows, err, "retired series that still hold materials")
 }
 

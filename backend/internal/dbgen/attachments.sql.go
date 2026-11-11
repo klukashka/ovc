@@ -34,6 +34,7 @@ func (q *Queries) BindAttachment(ctx context.Context, arg BindAttachmentParams) 
 const claimAgedUploads = `-- name: ClaimAgedUploads :many
 SELECT id, storage_key, multipart_upload_id FROM attachments
 WHERE id IN (SELECT candidate.id FROM attachments AS candidate WHERE candidate.state = 'uploading' AND candidate.created_at <= $1::timestamptz ORDER BY candidate.created_at, candidate.id LIMIT $2)
+    AND state = 'uploading' AND created_at <= $1::timestamptz
 ORDER BY id FOR UPDATE SKIP LOCKED
 `
 
@@ -71,6 +72,7 @@ func (q *Queries) ClaimAgedUploads(ctx context.Context, arg ClaimAgedUploadsPara
 const claimExpiredUploads = `-- name: ClaimExpiredUploads :many
 SELECT id FROM attachments
 WHERE id IN (SELECT candidate.id FROM attachments AS candidate WHERE candidate.state = 'pending' AND candidate.expires_at <= $1::timestamptz ORDER BY candidate.expires_at LIMIT $2)
+    AND state = 'pending' AND expires_at <= $1::timestamptz
 ORDER BY id FOR UPDATE SKIP LOCKED
 `
 
@@ -514,7 +516,7 @@ func (q *Queries) GetServableAvatar(ctx context.Context, id domain.AttachmentID)
 
 const getServableChatAttachment = `-- name: GetServableChatAttachment :one
 SELECT attachments.storage_key, attachments.media_type::text AS media_type, attachments.size_bytes::bigint AS size_bytes,
-    attachments.filename, attachments.width
+    attachments.filename, attachments.width, attachments.context
 FROM attachments
 JOIN attachment_references
     ON attachment_references.attachment_id = attachments.id AND attachment_references.ref_kind = 'message'
@@ -538,6 +540,7 @@ type GetServableChatAttachmentRow struct {
 	SizeBytes  int64
 	Filename   string
 	Width      *int32
+	Context    domain.AttachmentContext
 }
 
 func (q *Queries) GetServableChatAttachment(ctx context.Context, arg GetServableChatAttachmentParams) (GetServableChatAttachmentRow, error) {
@@ -549,6 +552,7 @@ func (q *Queries) GetServableChatAttachment(ctx context.Context, arg GetServable
 		&i.SizeBytes,
 		&i.Filename,
 		&i.Width,
+		&i.Context,
 	)
 	return i, err
 }

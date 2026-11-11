@@ -86,3 +86,56 @@ func TestDownloadTokenV2IsRefusedWithoutALiveReferenceOfItsKind(t *testing.T) {
 		t.Fatal("the refused downloads were not recorded with their reasons")
 	}
 }
+
+func TestDownloadRecordsCarryTheReferenceKindAndTheContext(t *testing.T) {
+	t.Parallel()
+	h := newUploadHarness(t)
+	parties := h.activeStudentInAGroup(t)
+	channel := h.directChannel(t, parties.card.ID).ID
+	inlineFile := h.boundUpload(t, parties.studentToken, channel, "essay.txt", plainText(64), 33)
+	missingFile := h.boundUpload(t, parties.studentToken, channel, "draft.txt", plainText(64), 34)
+	inlineID, inlineValid := domain.ParseUUID[domain.AttachmentID](inlineFile)
+	missingID, missingValid := domain.ParseUUID[domain.AttachmentID](missingFile)
+	message, messageValid := domain.ParseUUID[domain.EntityID](messageID(33))
+	if !inlineValid || !missingValid || !messageValid {
+		t.Fatal("a fixture identifier does not parse")
+	}
+	for _, upload := range h.uploadsBy(t, parties.student) {
+		if upload.ID == missingFile {
+			if err := h.objects.Delete(t.Context(), upload.Key); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	inlineText := h.files.MintAddress(inlineID, message, domain.DispositionInline, h.now(t))
+	missing := h.files.MintAddress(missingID, domain.EntityID{0x4d, 0x53, 34}, domain.DispositionAttachment, h.now(t))
+	unreferenced, err := h.files.ReferenceAddress(inlineID, files.DownloadReference{Kind: domain.ReferenceLesson, Item: domain.EntityID{0x6c, 0x65, 3}},
+		domain.DispositionAttachment, h.now(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	refusedInline := h.fetch(t, inlineText.URL, nil)
+	refusedMissing := h.fetch(t, missing.URL, nil)
+	refusedUnreferenced := h.fetch(t, unreferenced.URL, nil)
+
+	for name, refused := range map[string]response{
+		"an inline token for a text file": refusedInline,
+		"a file whose object is missing":  refusedMissing,
+		"a lesson token without the file": refusedUnreferenced,
+	} {
+		if refused.status != http.StatusNotFound {
+			t.Fatalf("%s answered %s", name, describe(refused))
+		}
+	}
+	chat := []string{`"ref_kind":"message"`, `"context":"chat"`}
+	if h.countLogs(append([]string{`"msg":"download.refused"`, `"reason":"token"`}, chat...)...) != 1 {
+		t.Fatal("the inline refusal was not recorded with its reference kind and context")
+	}
+	if h.countLogs(append([]string{`"msg":"download.object_missing"`}, chat...)...) != 1 {
+		t.Fatal("the missing object was not recorded with its reference kind and context")
+	}
+	if h.countLogs(`"msg":"download.refused"`, `"reason":"unreferenced"`, `"ref_kind":"lesson"`) != 1 {
+		t.Fatal("the unreferenced refusal was not recorded with its reference kind")
+	}
+}

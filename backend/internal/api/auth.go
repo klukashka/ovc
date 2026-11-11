@@ -94,6 +94,8 @@ type router struct {
 	library     *library.Service
 	meetings    *meetings.Lifecycle
 	uploads     UploadTiming
+	downloads   DownloadTiming
+	addresses   *addressDownloads
 	now         func() time.Time
 	logger      *slog.Logger
 	operations  []OperationAudience

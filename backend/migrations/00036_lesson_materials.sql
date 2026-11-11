@@ -38,9 +38,14 @@ CREATE INDEX series_materials_material_idx ON series_materials (material_id);
 CREATE INDEX series_materials_tutor_idx ON series_materials (tutor_id, series_id, material_id);
 
 -- +goose Down
+ALTER TABLE series_materials ADD CONSTRAINT series_materials_empty_before_rollback CHECK (false);
+ALTER TABLE series_materials DROP CONSTRAINT series_materials_empty_before_rollback;
+ALTER TABLE lesson_materials ADD CONSTRAINT lesson_materials_empty_before_rollback CHECK (false);
+ALTER TABLE lesson_materials DROP CONSTRAINT lesson_materials_empty_before_rollback;
+ALTER TABLE attachment_references ADD CONSTRAINT attachment_references_no_lesson_kinds CHECK (ref_kind NOT IN ('series', 'lesson'));
+ALTER TABLE attachment_references DROP CONSTRAINT attachment_references_no_lesson_kinds;
 DROP TABLE series_materials;
 DROP TABLE lesson_materials;
-DELETE FROM attachment_references WHERE ref_kind IN ('series', 'lesson');
 ALTER TABLE attachment_references DROP CONSTRAINT attachment_references_ref_kind_check;
 ALTER TABLE attachment_references ADD CONSTRAINT attachment_references_ref_kind_check CHECK (
     ref_kind IN ('message', 'answer', 'review_item', 'material', 'template', 'issue_snapshot', 'lesson', 'avatar')

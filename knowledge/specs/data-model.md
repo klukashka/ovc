@@ -218,6 +218,8 @@ Slice 5 adds the `lesson_series`, `lesson` and `lesson_roster` tables. Series an
 
 From slice 8 `lesson_series` and `lesson` (below) each have a unique `(id, tutor_id)`, which the composite same-tutor keys of series and lesson materials reference.
 
+The rollbacks of the slice 8 library migrations refuse to drop rows, so a rollback stops before any library data is lost (slice 8 review follow-up, pending owner review): 00036 refuses while any `lesson_material` or `series_material` row or any `lesson` or `series` reference remains, 00035 while any template or `template` reference remains, and 00034 while any folder, material or `material` reference remains, each with a `CHECK (false)` or kind check added and dropped again before its tables are dropped, as 00033 does; `TestLibraryRollbacksStopBeforeDroppingLibraryRows` proves it.
+
 **Series material** (slice 8): `series_id`, `material_id`, `tutor_id`, `position`, `created_at`; primary key `(series_id, material_id)`, unique `(series_id, position)`. `(series_id, tutor_id)` references the series' `(id, tutor_id)` with `ON DELETE RESTRICT`, and `(material_id, tutor_id)` the material's `(id, tutor_id)` with `ON DELETE RESTRICT`, so a series can only hold its own tutor's materials ([T-5](../../docs/threat-model.md#threats-and-controls)); indexes on `material_id` and `(tutor_id, series_id)` serve the purge. Each row has a `series` [attachment reference](#attachment-reference-and-quota-charge) for the material's file, charged to the tutor, so a material deleted from the library is still copied into new occurrences ([lesson materials](schedule.md#lesson-materials)). At most 20 rows per series. The table is `series_materials` (change B5).
 
 ### Lesson

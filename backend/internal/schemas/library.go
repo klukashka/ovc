@@ -59,21 +59,21 @@ func (Library) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schem
 
 type NewLibraryFolder struct {
 	Name     string  `json:"name"`
-	ParentID *string `json:"parent_id" format:"uuid" nullable:"true"`
+	ParentID *string `json:"parent_id" format:"uuid" nullable:"true" pattern:"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"`
 }
 
 type LibraryFolderPatch struct {
-	Name     *string    `json:"name,omitempty"`
-	ParentID NullableID `json:"parent_id,omitempty"`
+	Name     *string          `json:"name,omitempty"`
+	ParentID StrictNullableID `json:"parent_id,omitempty"`
 }
 
 type NewLibraryMaterial struct {
-	AttachmentID string  `json:"attachment_id" format:"uuid"`
+	AttachmentID string  `json:"attachment_id" format:"uuid" pattern:"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"`
 	Title        string  `json:"title"`
-	FolderID     *string `json:"folder_id" format:"uuid" nullable:"true"`
+	FolderID     *string `json:"folder_id" format:"uuid" nullable:"true" pattern:"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"`
 }
 
 type LibraryMaterialPatch struct {
-	Title    *string    `json:"title,omitempty"`
-	FolderID NullableID `json:"folder_id,omitempty"`
+	Title    *string          `json:"title,omitempty"`
+	FolderID StrictNullableID `json:"folder_id,omitempty"`
 }

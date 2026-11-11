@@ -686,11 +686,17 @@ func (s *Service) expireAgedUploadingBatch(ctx context.Context, repos repositori
 
 func (s *Service) discardAll(ctx context.Context, repos repositories.Repositories, ids []domain.AttachmentID, now time.Time) error {
 	slices.SortFunc(ids, func(a, b domain.AttachmentID) int { return bytes.Compare(a[:], b[:]) })
+	unbound := make([]domain.AttachmentID, 0, len(ids))
 	for _, id := range ids {
-		if _, err := repos.Attachments.Lock(ctx, id); err != nil {
+		locked, err := repos.Attachments.Lock(ctx, id)
+		if err != nil {
 			return err
 		}
+		if locked.State != domain.AttachmentBound && locked.State != domain.AttachmentDeleted {
+			unbound = append(unbound, id)
+		}
 	}
+	ids = unbound
 	for _, id := range ids {
 		if _, err := repos.UploadIntents.Lock(ctx, id); err != nil && !errors.Is(err, repositories.ErrNotFound) {
 			return err

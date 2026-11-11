@@ -87,6 +87,7 @@ type Options struct {
 	Meetings      *meetings.Lifecycle
 	Realtime      *realtime.Gateway
 	Uploads       UploadTiming
+	Downloads     DownloadTiming
 }
 
 func NewHandler(options Options) (http.Handler, error) {
@@ -97,10 +98,11 @@ func newHandler(options Options, registerExtra func(*router)) (http.Handler, err
 	mux := http.NewServeMux()
 	api := newAPI(mux)
 	readiness := &sharedReadiness{check: options.Readiness, now: options.Now, logger: options.Logger}
+	downloads := options.Downloads.withDefaults()
 	routes := &router{
 		api: api, auth: options.Auth, files: options.Files, tutoring: options.Tutoring, schedule: options.Schedule, preferences: options.Preferences,
 		inbox: options.Inbox, chat: options.Chat, library: options.Library, meetings: options.Meetings, uploads: options.Uploads.withDefaults(),
-		now: options.Now, logger: options.Logger,
+		downloads: downloads, addresses: newAddressDownloads(downloads.PerAddress, downloads.ActivePerAddress), now: options.Now, logger: options.Logger,
 	}
 	routes.registerAll(readiness.run)
 	registerExtra(routes)
