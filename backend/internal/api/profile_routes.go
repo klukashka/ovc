@@ -53,7 +53,7 @@ type deleteAccountInput struct {
 }
 
 type uploadInput struct {
-	Context string `query:"context" enum:"avatar,chat,library,prompt_image" required:"true"`
+	Context string `query:"context" enum:"avatar,chat,library,prompt_image,answer,corrected" required:"true"`
 	Scope   string `query:"scope" maxLength:"100"`
 }
 
@@ -195,7 +195,9 @@ func (r *router) upload(ctx context.Context, input *uploadInput) (*uploadOutput,
 		return r.uploadChat(ctx, input, request)
 	case domain.ContextLibrary, domain.ContextPromptImage:
 		return r.uploadLibrary(ctx, uploaded, request)
-	case domain.ContextAvatar, domain.ContextAnswer, domain.ContextCorrected:
+	case domain.ContextAnswer, domain.ContextCorrected:
+		return r.uploadHomework(ctx, uploaded, request)
+	case domain.ContextAvatar:
 	}
 	mediaType, parameters, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
 	if err != nil || mediaType != "multipart/form-data" || parameters["boundary"] == "" {

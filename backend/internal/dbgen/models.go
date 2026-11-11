@@ -96,6 +96,13 @@ type ChatUploadAccountingActivation struct {
 	ActiveAt  time.Time
 }
 
+type DailyAnswerUploadByte struct {
+	StudentID      domain.UserID
+	TutorID        domain.UserID
+	UploadDay      time.Time
+	CompletedBytes int64
+}
+
 type DailyChatUploadByte struct {
 	StudentID      domain.UserID
 	TutorID        domain.UserID

@@ -132,6 +132,7 @@ type Service struct {
 	downloads      chan struct{}
 	hourly         *hourlyUploads
 	libraryHourly  *hourlyUploads
+	homeworkHourly *hourlyUploads
 	tokens         downloadTokens
 	references     []referenceAuthorization
 	recoveryMutex  sync.Mutex
@@ -147,7 +148,8 @@ func New(dependencies Dependencies) *Service {
 	return &Service{
 		deps: dependencies, gate: newGate(), decodes: newDecodeBudget(decodeBudgetBytes),
 		avatarReads: make(chan struct{}, avatarReadSlots), downloads: make(chan struct{}, downloadSlots),
-		hourly: newHourlyUploads(domain.ChatUploadsPerHour), libraryHourly: newHourlyUploads(domain.LibraryUploadsPerHour), tokens: downloadTokens{keys: dependencies.Keys},
+		hourly: newHourlyUploads(domain.ChatUploadsPerHour), libraryHourly: newHourlyUploads(domain.LibraryUploadsPerHour),
+		homeworkHourly: newHourlyUploads(domain.HomeworkUploadsPerHour), tokens: downloadTokens{keys: dependencies.Keys},
 		references: []referenceAuthorization{materialAuthorization{}, templateAuthorization{}, lessonAuthorization{}, issueSnapshotAuthorization{}},
 	}
 }
@@ -576,7 +578,10 @@ func (s *Service) PurgeUploadsOf(ctx context.Context, repos repositories.Reposit
 	return err
 }
 
-var deletableKeyPrefixes = []string{domain.AvatarKeyPrefix, domain.ChatKeyPrefix, domain.LibraryKeyPrefix, domain.PromptImageKeyPrefix}
+var deletableKeyPrefixes = []string{
+	domain.AvatarKeyPrefix, domain.ChatKeyPrefix, domain.LibraryKeyPrefix, domain.PromptImageKeyPrefix, domain.AnswerKeyPrefix,
+	domain.CorrectedKeyPrefix,
+}
 
 func (s *Service) DeleteObject(ctx context.Context, row repositories.ClaimedOutboxRow, now time.Time) (domain.OutboxDoneReason, error) {
 	var payload domain.AttachmentPayload
@@ -626,7 +631,7 @@ func (s *Service) DeleteObject(ctx context.Context, row repositories.ClaimedOutb
 func (s *Service) ExpirePending(ctx context.Context, now time.Time) (int64, error) {
 	var expired int64
 	sweeps := []func(context.Context, repositories.Repositories, time.Time) (int, error){
-		s.expireBatch, s.expireAgedUploadingBatch, s.expireUnbindableBatch, s.expireUnbindableLibraryBatch,
+		s.expireBatch, s.expireAgedUploadingBatch, s.expireUnbindableBatch, s.expireUnbindableLibraryBatch, s.expireUnbindableHomeworkBatch,
 	}
 	for _, sweep := range sweeps {
 		for range expireRounds {
@@ -666,6 +671,14 @@ func (s *Service) expireUnbindableBatch(ctx context.Context, repos repositories.
 
 func (s *Service) expireUnbindableLibraryBatch(ctx context.Context, repos repositories.Repositories, now time.Time) (int, error) {
 	ids, err := repos.Attachments.ClaimUnbindableLibrary(ctx, expireBatch)
+	if err != nil {
+		return 0, err
+	}
+	return len(ids), s.discardAll(ctx, repos, ids, now)
+}
+
+func (s *Service) expireUnbindableHomeworkBatch(ctx context.Context, repos repositories.Repositories, now time.Time) (int, error) {
+	ids, err := repos.Attachments.ClaimUnbindableHomework(ctx, expireBatch)
 	if err != nil {
 		return 0, err
 	}

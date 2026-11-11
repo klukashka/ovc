@@ -107,6 +107,7 @@ var (
 	chatKinds        = kindPolicy{allowed: slices.Concat(documentKinds, []fileKind{kindPlainText})}
 	libraryKinds     = kindPolicy{allowed: slices.Concat(documentKinds, []fileKind{kindMP4}), video: true}
 	promptImageKinds = kindPolicy{allowed: pictureKinds}
+	correctedKinds   = kindPolicy{allowed: documentKinds}
 )
 
 func (p kindPolicy) detect(head []byte, name string) (fileKind, bool) {

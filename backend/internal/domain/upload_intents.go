@@ -21,8 +21,9 @@ const (
 type UploadCapacityClass string
 
 const (
-	UploadCapacityChat    UploadCapacityClass = "chat"
-	UploadCapacityLibrary UploadCapacityClass = "library"
+	UploadCapacityChat     UploadCapacityClass = "chat"
+	UploadCapacityLibrary  UploadCapacityClass = "library"
+	UploadCapacityHomework UploadCapacityClass = "homework"
 )
 
 type UploadCleanupGeneration int16
@@ -47,6 +48,7 @@ const (
 	UploadRecoveryCandidateBudget         = time.Second
 	UploadIntentCapacity                  = 4096
 	LibraryUploadIntentCapacity           = 1024
+	HomeworkUploadIntentCapacity          = 1024
 	JobUploadsRecover             JobName = "uploads.recover"
 )
 

@@ -64,9 +64,10 @@ DELETE FROM attachments WHERE uploader_id = @user_id OR (quota_tutor_id = @user_
 
 -- name: CreateUploadingAttachment :exec
 INSERT INTO attachments (
-    id, uploader_id, context, scope_kind, scope_id, quota_tutor_id, storage_key, filename, state, reserved_bytes, created_at, updated_at
+    id, uploader_id, context, scope_kind, scope_id, scope_question_id, quota_tutor_id, storage_key, filename, state, reserved_bytes, created_at,
+    updated_at
 ) VALUES (
-    @id, @uploader_id, @context, @scope_kind, @scope_id, @quota_tutor_id, @storage_key, @filename, 'uploading',
+    @id, @uploader_id, @context, @scope_kind, @scope_id, @scope_question_id, @quota_tutor_id, @storage_key, @filename, 'uploading',
     sqlc.arg(reserved_bytes)::bigint, @created_at, @created_at
 );
 

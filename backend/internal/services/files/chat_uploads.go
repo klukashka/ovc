@@ -28,6 +28,7 @@ const (
 var (
 	ErrOutOfScope     = errors.New("the upload scope is outside the caller's channels")
 	ErrReadOnly       = errors.New("the channel is read-only")
+	ErrNotEditable    = errors.New("the submission can no longer be edited by its student")
 	ErrQuotaExceeded  = errors.New("the tutor's file quota has no room")
 	ErrInvalidName    = errors.New("the file name is refused")
 	ErrWebPTooLarge   = errors.New("the WebP picture is larger than one upload part")
@@ -46,14 +47,16 @@ type ChatUpload struct {
 }
 
 type openUpload struct {
-	id       domain.AttachmentID
-	key      string
-	context  domain.AttachmentContext
-	channel  domain.ChannelID
-	tutor    domain.UserID
-	upload   storage.MultipartUploadID
-	created  time.Time
-	uploader accounts.Principal
+	id         domain.AttachmentID
+	key        string
+	context    domain.AttachmentContext
+	channel    domain.ChannelID
+	submission domain.SubmissionID
+	tutor      domain.UserID
+	upload     storage.MultipartUploadID
+	created    time.Time
+	uploader   accounts.Principal
+	kinds      *kindPolicy
 }
 
 type storedContent struct {
@@ -159,17 +162,19 @@ func (s *Service) startUpload(ctx context.Context, target uploadTarget, principa
 		if err != nil {
 			return err
 		}
-		opened.tutor = locked.tutor
-		if locked.readOnly {
-			return s.refuse(ctx, opened, domain.RejectedReadOnly, ErrReadOnly)
+		opened.tutor, opened.kinds = locked.tutor, locked.kinds
+		if locked.closure != nil {
+			return s.refuse(ctx, opened, locked.closure.reason, locked.closure.err)
 		}
-		if err := s.admitUpload(ctx, repos, target, opened, now); err != nil {
+		reserved := reservedBytes(declared, target.policy.maxBytes)
+		if err := s.admitUpload(ctx, repos, target, opened, reserved, now); err != nil {
 			return err
 		}
-		scope, scopeID := target.scope.row()
+		scope := target.scope.row()
 		if err := repos.Attachments.CreateUploading(ctx, repositories.NewUploading{
-			ID: id, UploaderID: uploader, Context: target.policy.context, ScopeKind: scope, ScopeID: scopeID, QuotaTutorID: &opened.tutor,
-			StorageKey: opened.key, Filename: name, ReservedBytes: reservedBytes(declared, target.policy.maxBytes), CreatedAt: now,
+			ID: id, UploaderID: uploader, Context: target.policy.context, ScopeKind: scope.kind, ScopeID: scope.id,
+			ScopeQuestionID: scope.question, QuotaTutorID: &opened.tutor, StorageKey: opened.key, Filename: name, ReservedBytes: reserved,
+			CreatedAt: now,
 		}); err != nil {
 			return err
 		}
@@ -185,7 +190,9 @@ func (s *Service) startUpload(ctx context.Context, target uploadTarget, principa
 	return opened, nil
 }
 
-func (s *Service) admitUpload(ctx context.Context, repos repositories.Repositories, target uploadTarget, opened openUpload, now time.Time) error {
+func (s *Service) admitUpload(
+	ctx context.Context, repos repositories.Repositories, target uploadTarget, opened openUpload, reserved int64, now time.Time,
+) error {
 	uploader := opened.uploader.UserID
 	if err := s.checkDailyActivation(ctx, repos, target.policy, opened, now); err != nil {
 		return err
@@ -202,15 +209,25 @@ func (s *Service) admitUpload(ctx context.Context, repos repositories.Repositori
 		s.rateLimited(ctx, opened, domain.RejectedHourlyCap, domain.LimitHourlyUploads)
 		return &ThrottledError{RetryAfter: retryAfter}
 	}
-	if target.policy.dailyBytes && opened.uploader.Role == domain.RoleStudent {
+	if daily, counted := target.policy.dailyCap(opened); counted {
 		day := utcDay(now)
-		total, err := repos.DailyUploads.Bytes(ctx, uploader, opened.tutor, day)
+		total, err := dailyBytes(ctx, repos, target.policy.daily, opened, day)
 		if err != nil {
 			return err
 		}
-		if total >= domain.ChatDailyBytesPerTutor {
+		if total >= daily {
 			s.rateLimited(ctx, opened, domain.RejectedDailyCap, domain.LimitAttachmentBytes)
 			return &ThrottledError{RetryAfter: day.Add(24 * time.Hour).Sub(now)}
+		}
+	}
+	if target.policy.answerBytes {
+		open, err := repos.Attachments.OpenAnswerBytes(ctx, uploader, opened.tutor, nil, now, uploadingSince(now))
+		if err != nil {
+			return err
+		}
+		if open+reserved > domain.AnswerPendingBytesPerTutor {
+			s.rateLimited(ctx, opened, domain.RejectedPendingBytes, domain.LimitAttachmentBytes)
+			return &ThrottledError{RetryAfter: time.Hour}
 		}
 	}
 	use, err := repos.Attachments.QuotaUse(ctx, opened.tutor, nil, now, uploadingSince(now))
@@ -232,6 +249,9 @@ func (o openUpload) attributes(extra ...slog.Attr) []slog.Attr {
 	attributes := []slog.Attr{userAttribute(o.uploader.UserID), slog.String("context", string(o.context))}
 	if o.channel != (domain.ChannelID{}) {
 		attributes = append(attributes, channelAttribute(o.channel))
+	}
+	if o.submission != (domain.SubmissionID{}) {
+		attributes = append(attributes, slog.String("submission_id", o.submission.String()))
 	}
 	return append(attributes, extra...)
 }
@@ -346,7 +366,11 @@ func (s *Service) streamUpload(ctx context.Context, policy uploadPolicy, opened 
 	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
 		return storedContent{}, false, err
 	}
-	kind, detected := policy.kinds.detect(head, name)
+	kinds := policy.kinds
+	if opened.kinds != nil {
+		kinds = *opened.kinds
+	}
+	kind, detected := kinds.detect(head, name)
 	if !detected || len(head) == 0 {
 		return storedContent{}, false, ErrUnsupported
 	}
@@ -501,8 +525,8 @@ func (s *Service) settleUpload(ctx context.Context, target uploadTarget, opened 
 			refusal = s.refuse(ctx, opened, domain.RejectedScope, ErrOutOfScope)
 			return s.discardLocked(ctx, repos, opened, true, now)
 		}
-		if locked.readOnly {
-			refusal = s.refuse(ctx, opened, domain.RejectedReadOnly, ErrReadOnly)
+		if locked.closure != nil {
+			refusal = s.refuse(ctx, opened, locked.closure.reason, locked.closure.err)
 			return s.discardLocked(ctx, repos, opened, true, now)
 		}
 		checkedAt, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
@@ -530,8 +554,8 @@ func (s *Service) settleUpload(ctx context.Context, target uploadTarget, opened 
 		if content.pixels.previewable() && widthFits && heightFits {
 			completed.Width, completed.Height = &width, &height
 		}
-		if target.policy.dailyBytes && opened.uploader.Role == domain.RoleStudent {
-			if err := repos.DailyUploads.Add(ctx, opened.uploader.UserID, opened.tutor, utcDay(opened.created), content.size); err != nil {
+		if _, counted := target.policy.dailyCap(opened); counted {
+			if err := addDailyBytes(ctx, repos, target.policy.daily, opened, utcDay(opened.created), content.size); err != nil {
 				return err
 			}
 		}
@@ -562,18 +586,28 @@ func (s *Service) settleUpload(ctx context.Context, target uploadTarget, opened 
 }
 
 func (s *Service) exactChecks(ctx context.Context, repos repositories.Repositories, policy uploadPolicy, opened openUpload, size int64, now time.Time) error {
-	if policy.dailyBytes && opened.uploader.Role == domain.RoleStudent {
+	excluded := opened.id
+	if daily, counted := policy.dailyCap(opened); counted {
 		day := utcDay(opened.created)
-		total, err := repos.DailyUploads.Bytes(ctx, opened.uploader.UserID, opened.tutor, day)
+		total, err := dailyBytes(ctx, repos, policy.daily, opened, day)
 		if err != nil {
 			return err
 		}
-		if total+size > domain.ChatDailyBytesPerTutor {
+		if total+size > daily {
 			s.rateLimited(ctx, opened, domain.RejectedDailyCap, domain.LimitAttachmentBytes)
 			return &ThrottledError{RetryAfter: max(day.Add(24*time.Hour).Sub(now), time.Second)}
 		}
 	}
-	excluded := opened.id
+	if policy.answerBytes {
+		open, err := repos.Attachments.OpenAnswerBytes(ctx, opened.uploader.UserID, opened.tutor, &excluded, now, uploadingSince(now))
+		if err != nil {
+			return err
+		}
+		if open+size > domain.AnswerPendingBytesPerTutor {
+			s.rateLimited(ctx, opened, domain.RejectedPendingBytes, domain.LimitAttachmentBytes)
+			return &ThrottledError{RetryAfter: time.Hour}
+		}
+	}
 	use, err := repos.Attachments.QuotaUse(ctx, opened.tutor, &excluded, now, uploadingSince(now))
 	if err != nil {
 		return err

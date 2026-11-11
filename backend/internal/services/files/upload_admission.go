@@ -37,6 +37,17 @@ func (s *Service) BeginLibraryUpload(ctx context.Context, principal accounts.Pri
 	return s.beginUpload(ctx, target, principal, declared)
 }
 
+func (s *Service) BeginHomeworkUpload(
+	ctx context.Context, principal accounts.Principal, uploaded domain.AttachmentContext, submission domain.SubmissionID,
+	question domain.QuestionID, declared int64,
+) (*UploadAdmission, error) {
+	target, err := s.homeworkTarget(uploaded, submission, question)
+	if err != nil {
+		return nil, err
+	}
+	return s.beginUpload(ctx, target, principal, declared)
+}
+
 func (s *Service) beginUpload(ctx context.Context, target uploadTarget, principal accounts.Principal, declared int64) (*UploadAdmission, error) {
 	release, err := s.gate.enter(principal.UserID)
 	if err != nil {

@@ -10,11 +10,17 @@ type IssueID [16]byte
 
 type SubmissionID [16]byte
 
+type QuestionID [16]byte
+
 func (id IssueID) String() string {
 	return formatUUID(id)
 }
 
 func (id SubmissionID) String() string {
+	return formatUUID(id)
+}
+
+func (id QuestionID) String() string {
 	return formatUUID(id)
 }
 
@@ -102,6 +108,17 @@ func ReadableStudentSubmission(status IssueStatus, markedForErasure bool, relati
 		return false
 	}
 	return false
+}
+
+func WritableStudentSubmission(status SubmissionStatus, relationship RelationshipState) bool {
+	if relationship != RelationshipActive && relationship != RelationshipProvisional {
+		return false
+	}
+	return status == SubmissionNotStarted || status == SubmissionDraft || status == SubmissionReturned
+}
+
+func ReviewableSubmission(issue IssueStatus, markedForErasure bool, status SubmissionStatus) bool {
+	return issue == IssueActive && !markedForErasure && (status == SubmissionSubmitted || status == SubmissionChecked)
 }
 
 func IssuableRelationship(state RelationshipState) bool {

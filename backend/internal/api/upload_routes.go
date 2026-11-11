@@ -30,6 +30,8 @@ const (
 	defaultStallBytes       = 16 << 10
 	multipartPeekBytes      = 4096
 	channelScopePrefix      = "channel:"
+	submissionScopePrefix   = "submission:"
+	submissionScopeJoint    = ":"
 	fieldScope              = "query.scope"
 	fieldFile               = "body.file"
 	partHeaderLineOverhead  = 4
@@ -176,6 +178,20 @@ func parseChannelScope(scope string) (domain.ChannelID, bool) {
 	return domain.ParseUUID[domain.ChannelID](text)
 }
 
+func parseSubmissionScope(scope string) (domain.SubmissionID, domain.QuestionID, bool) {
+	text, found := strings.CutPrefix(scope, submissionScopePrefix)
+	if !found {
+		return domain.SubmissionID{}, domain.QuestionID{}, false
+	}
+	submissionText, questionText, found := strings.Cut(text, submissionScopeJoint)
+	if !found {
+		return domain.SubmissionID{}, domain.QuestionID{}, false
+	}
+	submission, submissionValid := domain.ParseUUID[domain.SubmissionID](submissionText)
+	question, questionValid := domain.ParseUUID[domain.QuestionID](questionText)
+	return submission, question, submissionValid && questionValid
+}
+
 func rawFileName(part *multipart.Part) string {
 	_, parameters, err := mime.ParseMediaType(part.Header.Get(contentDispositionField))
 	if err != nil {
@@ -192,7 +208,9 @@ func streamedUploadLimit(uploaded domain.AttachmentContext) (int64, bool) {
 		return domain.LibraryMaxBytes, true
 	case domain.ContextPromptImage:
 		return domain.PromptImageMaxBytes, true
-	case domain.ContextAvatar, domain.ContextAnswer, domain.ContextCorrected:
+	case domain.ContextAnswer, domain.ContextCorrected:
+		return domain.HomeworkMaxBytes, true
+	case domain.ContextAvatar:
 		return 0, false
 	}
 	return 0, false
@@ -229,6 +247,20 @@ func (r *router) uploadLibrary(ctx context.Context, uploaded domain.AttachmentCo
 	}
 	return r.uploadStreamed(ctx, uploaded, request, func(declared int64) (*files.UploadAdmission, error) {
 		return r.files.BeginLibraryUpload(ctx, principalFrom(ctx), uploaded, declared)
+	})
+}
+
+func (r *router) uploadHomework(ctx context.Context, uploaded domain.AttachmentContext, request *http.Request) (*uploadOutput, error) {
+	query := request.URL.Query()
+	if !query.Has("scope") {
+		return nil, fieldError(ctx, fieldScope, domain.FieldRequired)
+	}
+	submission, question, valid := parseSubmissionScope(query.Get("scope"))
+	if !valid {
+		return nil, fieldError(ctx, fieldScope, domain.FieldInvalid)
+	}
+	return r.uploadStreamed(ctx, uploaded, request, func(declared int64) (*files.UploadAdmission, error) {
+		return r.files.BeginHomeworkUpload(ctx, principalFrom(ctx), uploaded, submission, question, declared)
 	})
 }
 
@@ -307,6 +339,8 @@ func (r *router) streamedUploadError(ctx context.Context, err error) error {
 		return NewError(ctx, domain.ErrorNotFound)
 	case errors.Is(err, files.ErrReadOnly):
 		return NewError(ctx, domain.ErrorChannelReadOnly)
+	case errors.Is(err, files.ErrNotEditable):
+		return NewError(ctx, domain.ErrorNotEditable)
 	case errors.Is(err, files.ErrQuotaExceeded):
 		return NewError(ctx, domain.ErrorQuotaExceeded)
 	case errors.Is(err, files.ErrWebPTooLarge):

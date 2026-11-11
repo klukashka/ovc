@@ -13,6 +13,30 @@ import (
 	"ovc/backend/internal/domain"
 )
 
+const addDailyAnswerBytes = `-- name: AddDailyAnswerBytes :exec
+INSERT INTO daily_answer_upload_bytes (student_id, tutor_id, upload_day, completed_bytes)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (student_id, tutor_id, upload_day)
+DO UPDATE SET completed_bytes = daily_answer_upload_bytes.completed_bytes + EXCLUDED.completed_bytes
+`
+
+type AddDailyAnswerBytesParams struct {
+	StudentID      domain.UserID
+	TutorID        domain.UserID
+	UploadDay      time.Time
+	CompletedBytes int64
+}
+
+func (q *Queries) AddDailyAnswerBytes(ctx context.Context, arg AddDailyAnswerBytesParams) error {
+	_, err := q.db.Exec(ctx, addDailyAnswerBytes,
+		arg.StudentID,
+		arg.TutorID,
+		arg.UploadDay,
+		arg.CompletedBytes,
+	)
+	return err
+}
+
 const addDailyChatBytes = `-- name: AddDailyChatBytes :exec
 INSERT INTO daily_chat_upload_bytes (student_id, tutor_id, upload_day, completed_bytes)
 VALUES ($1, $2, $3, $4)
@@ -37,6 +61,32 @@ func (q *Queries) AddDailyChatBytes(ctx context.Context, arg AddDailyChatBytesPa
 	return err
 }
 
+const deletePastDailyAnswerBytes = `-- name: DeletePastDailyAnswerBytes :execrows
+DELETE FROM daily_answer_upload_bytes
+WHERE (student_id, tutor_id, upload_day) IN (
+    SELECT daily.student_id, daily.tutor_id, daily.upload_day FROM daily_answer_upload_bytes AS daily
+    WHERE daily.student_id = ANY($1::uuid[]) AND daily.upload_day < $2
+        AND NOT EXISTS (SELECT 1 FROM attachments
+            WHERE attachments.uploader_id = daily.student_id AND attachments.quota_tutor_id = daily.tutor_id
+                AND attachments.context = 'answer' AND attachments.state = 'uploading'
+                AND attachments.created_at >= daily.upload_day AND attachments.created_at < daily.upload_day + interval '24 hours')
+    ORDER BY daily.student_id, daily.tutor_id, daily.upload_day LIMIT 100 FOR UPDATE OF daily SKIP LOCKED
+)
+`
+
+type DeletePastDailyAnswerBytesParams struct {
+	Students  []pgtype.UUID
+	BeforeDay time.Time
+}
+
+func (q *Queries) DeletePastDailyAnswerBytes(ctx context.Context, arg DeletePastDailyAnswerBytesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deletePastDailyAnswerBytes, arg.Students, arg.BeforeDay)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deletePastDailyChatBytes = `-- name: DeletePastDailyChatBytes :execrows
 DELETE FROM daily_chat_upload_bytes
 WHERE (student_id, tutor_id, upload_day) IN (
@@ -57,6 +107,27 @@ type DeletePastDailyChatBytesParams struct {
 
 func (q *Queries) DeletePastDailyChatBytes(ctx context.Context, arg DeletePastDailyChatBytesParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deletePastDailyChatBytes, arg.Students, arg.BeforeDay)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteTutorDailyAnswerBytesBatch = `-- name: DeleteTutorDailyAnswerBytesBatch :execrows
+DELETE FROM daily_answer_upload_bytes
+WHERE (student_id, tutor_id, upload_day) IN (
+    SELECT daily.student_id, daily.tutor_id, daily.upload_day FROM daily_answer_upload_bytes AS daily
+    WHERE daily.tutor_id = $1 ORDER BY daily.student_id, daily.upload_day LIMIT $2 FOR UPDATE OF daily
+)
+`
+
+type DeleteTutorDailyAnswerBytesBatchParams struct {
+	TutorID   domain.UserID
+	BatchSize int32
+}
+
+func (q *Queries) DeleteTutorDailyAnswerBytesBatch(ctx context.Context, arg DeleteTutorDailyAnswerBytesBatchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTutorDailyAnswerBytesBatch, arg.TutorID, arg.BatchSize)
 	if err != nil {
 		return 0, err
 	}
@@ -108,6 +179,24 @@ func (q *Queries) GetChatUploadAccountingActivation(ctx context.Context) ([]Chat
 	return items, nil
 }
 
+const getDailyAnswerBytes = `-- name: GetDailyAnswerBytes :one
+SELECT COALESCE((SELECT completed_bytes FROM daily_answer_upload_bytes
+WHERE student_id = $1 AND tutor_id = $2 AND upload_day = $3), 0)::bigint
+`
+
+type GetDailyAnswerBytesParams struct {
+	StudentID domain.UserID
+	TutorID   domain.UserID
+	UploadDay time.Time
+}
+
+func (q *Queries) GetDailyAnswerBytes(ctx context.Context, arg GetDailyAnswerBytesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getDailyAnswerBytes, arg.StudentID, arg.TutorID, arg.UploadDay)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getDailyChatBytes = `-- name: GetDailyChatBytes :one
 SELECT COALESCE((SELECT completed_bytes FROM daily_chat_upload_bytes
 WHERE student_id = $1 AND tutor_id = $2 AND upload_day = $3), 0)::bigint
@@ -134,6 +223,13 @@ WHERE EXISTS (
         AND NOT EXISTS (SELECT 1 FROM attachments
             WHERE attachments.uploader_id = daily.student_id AND attachments.quota_tutor_id = daily.tutor_id
                 AND attachments.context = 'chat' AND attachments.state = 'uploading'
+                AND attachments.created_at >= daily.upload_day AND attachments.created_at < daily.upload_day + interval '24 hours')
+) OR EXISTS (
+    SELECT 1 FROM daily_answer_upload_bytes AS daily
+    WHERE daily.student_id = users.id AND daily.upload_day < $1
+        AND NOT EXISTS (SELECT 1 FROM attachments
+            WHERE attachments.uploader_id = daily.student_id AND attachments.quota_tutor_id = daily.tutor_id
+                AND attachments.context = 'answer' AND attachments.state = 'uploading'
                 AND attachments.created_at >= daily.upload_day AND attachments.created_at < daily.upload_day + interval '24 hours')
 )
 ORDER BY users.id LIMIT 100 FOR UPDATE OF users SKIP LOCKED

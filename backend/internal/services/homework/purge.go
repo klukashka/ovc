@@ -19,7 +19,11 @@ type Purge struct {
 }
 
 func (p Purge) TutorSteps() []library.PurgeStep {
-	return []library.PurgeStep{submissionsBatch, p.snapshotReferencesBatch, issuesBatch}
+	return []library.PurgeStep{submissionsBatch, p.snapshotReferencesBatch, issuesBatch, dailyAnswerBytesBatch}
+}
+
+func dailyAnswerBytesBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, _ time.Time) (int64, error) {
+	return repos.DailyUploads.DeleteAnswerBatchOfTutor(ctx, tutor, batch)
 }
 
 func submissionsBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, _ time.Time) (int64, error) {

@@ -94,6 +94,16 @@ const (
 	PromptImageKeyPrefix       = "prompts/"
 )
 
+const (
+	HomeworkMaxBytes           = 25_000_000
+	HomeworkOpenUploadsPerUser = 20
+	HomeworkUploadsPerHour     = 60
+	AnswerPendingBytesPerTutor = 100_000_000
+	AnswerDailyBytesPerTutor   = 200_000_000
+	AnswerKeyPrefix            = "answers/"
+	CorrectedKeyPrefix         = "corrected/"
+)
+
 type Disposition string
 
 const (
@@ -118,6 +128,8 @@ const (
 	RejectedFilename       UploadRejection = "filename"
 	RejectedParts          UploadRejection = "parts"
 	RejectedStalled        UploadRejection = "stalled"
+	RejectedNotEditable    UploadRejection = "not_editable"
+	RejectedPendingBytes   UploadRejection = "pending_bytes"
 )
 
 type ChatLimit string

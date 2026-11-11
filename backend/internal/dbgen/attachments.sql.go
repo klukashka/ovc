@@ -311,24 +311,26 @@ func (q *Queries) CreateAttachmentReference(ctx context.Context, arg CreateAttac
 
 const createUploadingAttachment = `-- name: CreateUploadingAttachment :exec
 INSERT INTO attachments (
-    id, uploader_id, context, scope_kind, scope_id, quota_tutor_id, storage_key, filename, state, reserved_bytes, created_at, updated_at
+    id, uploader_id, context, scope_kind, scope_id, scope_question_id, quota_tutor_id, storage_key, filename, state, reserved_bytes, created_at,
+    updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, 'uploading',
-    $9::bigint, $10, $10
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, 'uploading',
+    $10::bigint, $11, $11
 )
 `
 
 type CreateUploadingAttachmentParams struct {
-	ID            domain.AttachmentID
-	UploaderID    domain.UserID
-	Context       domain.AttachmentContext
-	ScopeKind     *domain.ScopeKind
-	ScopeID       *domain.EntityID
-	QuotaTutorID  *domain.UserID
-	StorageKey    string
-	Filename      string
-	ReservedBytes int64
-	CreatedAt     time.Time
+	ID              domain.AttachmentID
+	UploaderID      domain.UserID
+	Context         domain.AttachmentContext
+	ScopeKind       *domain.ScopeKind
+	ScopeID         *domain.EntityID
+	ScopeQuestionID *domain.EntityID
+	QuotaTutorID    *domain.UserID
+	StorageKey      string
+	Filename        string
+	ReservedBytes   int64
+	CreatedAt       time.Time
 }
 
 func (q *Queries) CreateUploadingAttachment(ctx context.Context, arg CreateUploadingAttachmentParams) error {
@@ -338,6 +340,7 @@ func (q *Queries) CreateUploadingAttachment(ctx context.Context, arg CreateUploa
 		arg.Context,
 		arg.ScopeKind,
 		arg.ScopeID,
+		arg.ScopeQuestionID,
 		arg.QuotaTutorID,
 		arg.StorageKey,
 		arg.Filename,

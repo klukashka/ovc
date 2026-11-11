@@ -378,12 +378,12 @@ func (c *templateChecker) settings(path string, block TemplateBlock) {
 	if block.Scoring != nil && *block.Scoring != ScoringAllOrNothing && *block.Scoring != ScoringPartial {
 		c.refuse(path+".scoring", FieldInvalid)
 	}
-	if block.AllowedKinds != nil && !validAllowedKinds(*block.AllowedKinds) {
+	if block.AllowedKinds != nil && !ValidAllowedKinds(*block.AllowedKinds) {
 		c.refuse(path+".allowed_kinds", FieldInvalid)
 	}
 }
 
-func validAllowedKinds(kinds []AnswerFileKind) bool {
+func ValidAllowedKinds(kinds []AnswerFileKind) bool {
 	if len(kinds) == 0 {
 		return false
 	}

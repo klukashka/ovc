@@ -555,6 +555,14 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: UserID
+          - column: daily_answer_upload_bytes.student_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: daily_answer_upload_bytes.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
           - column: lesson_participants.lesson_id
             go_type:
               import: ovc/backend/internal/domain
