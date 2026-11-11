@@ -6,7 +6,7 @@ Checked 2026-10-21 against the Go module proxy (`go list -m -versions -json`) an
 
 | Component | Version | Published | Where it is pinned |
 |---|---|---|---|
-| Go toolchain | 1.27.3 | — | `toolchain` lines in `tools/go.mod` and `backend/go.mod` |
+| Go toolchain | 1.27.4 | — | `toolchain` lines in `tools/go.mod` and `backend/go.mod`; raised from 1.27.3 on 2026-11-11 for GO-2026-6859 (see below) |
 | huma | 2.39.1 | 2026-07-29 | `backend/go.mod` |
 | pgx | 5.10.0 | 2026-06-03 | `backend/go.mod` (goose 3.28.0 requires at least 5.10.0) |
 | goose | 3.28.0 | 2026-09-02 | `backend/go.mod`; 3.29.0 of 2026-10-11 skipped |
@@ -39,3 +39,7 @@ Overrides in `tools/docs/pnpm-workspace.yaml` raise `smol-toml` to 1.9.0 and `js
 | Advisory | Package | Reason |
 |---|---|---|
 | GHSA-238p-pmpm-9mq7 (low, CVSS 2.1) | `katex` 0.16.47 | Fixed only in the 0.18 line, outside mermaid's 0.16 range; the renderer processes only this repository's diagrams offline. Accepted until 2027-01-21 |
+
+## Toolchain security update of 2026-11-11
+
+Checked 2026-11-11. govulncheck reported GO-2026-6859, an HTTP/1 server crash caused by a race on request headers in `net/http`'s `MaxBytesReader`, found in the standard library of go1.27.3 and fixed in go1.27.4. The backend reaches `net/http` on every request path, so the finding failed every merge gate. The owner approved the upgrade on 2026-11-11. The `toolchain` lines of `backend/go.mod` and `tools/go.mod` now name go1.27.4, set with `go get toolchain@go1.27.4`, and the scanning tools in `bin/` are rebuilt with it; the language version (`go 1.27`) is unchanged. Earlier review and measurement records that name go1.27.3 describe the runs of their dates and stay as they are.
