@@ -25,7 +25,7 @@ import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import { parseStudentView, type StudentAssignment } from '../assignment/studentView.ts';
 import { assignmentTextLoaders } from '../assignment/texts.ts';
-import { fetchFolders, folderTree, libraryFoldersKey } from '../library/api.ts';
+import { fetchFolders, folderTree, libraryFoldersKey, libraryListsKey } from '../library/api.ts';
 import { folderAddress } from '../library/LibraryTable.tsx';
 import { LibraryUpload } from '../library/upload.ts';
 import { fetchStudentView, fetchTemplate, saveTemplate, templateKey } from './api.ts';
@@ -244,6 +244,7 @@ function Editor({
         send: (request): Promise<SaveOutcome> => saveTemplate(client, initial.id, request),
         onSaved: (template): void => {
           queryClient.setQueryData(templateKey(initial.id), template);
+          void queryClient.invalidateQueries({ queryKey: libraryListsKey });
         },
       }),
   );

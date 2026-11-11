@@ -122,12 +122,14 @@ function FolderPath({
 function LibraryListing({
   folder,
   search,
+  listedAtOpening,
   searchField,
   choice,
   onOpenFolder,
 }: {
   readonly folder: string | null;
   readonly search: string | null;
+  readonly listedAtOpening: readonly PickedMaterial[];
   readonly searchField: RefObject<HTMLInputElement | null>;
   readonly choice: Choice;
   readonly onOpenFolder: (step: FolderStep) => void;
@@ -135,6 +137,7 @@ function LibraryListing({
   const { t } = useTranslation();
   const texts = useMaterialTexts();
   const client = useApiClient();
+  const [shownAbove] = useState(() => new Set(listedAtOpening.map((material) => material.id)));
   const listing = useInfiniteQuery({
     queryKey: libraryPickerKey(folder, search),
     queryFn: ({ pageParam, signal }) => fetchLibraryPage(client, { folder, search }, pageParam, signal),
@@ -142,9 +145,10 @@ function LibraryListing({
     getNextPageParam: (page) => page.next_cursor,
     retry: false,
   });
-  const materials = (listing.data?.pages.flatMap((page) => page.items) ?? []).filter(
+  const libraryMaterials = (listing.data?.pages.flatMap((page) => page.items) ?? []).filter(
     (item) => item.kind === 'material',
   );
+  const materials = libraryMaterials.filter((item) => !shownAbove.has(item.id));
   const folders = search === null ? (listing.data?.pages[0]?.folders ?? []) : [];
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     materials.length,
@@ -165,7 +169,7 @@ function LibraryListing({
       />
     );
   }
-  const empty = folders.length === 0 && materials.length === 0 && !listing.hasNextPage;
+  const empty = folders.length === 0 && libraryMaterials.length === 0 && !listing.hasNextPage;
   return (
     <div className="flex flex-col gap-2">
       {empty ? (
@@ -183,7 +187,7 @@ function LibraryListing({
                 onClick={() => {
                   onOpenFolder({ id: child.id, name: child.name });
                 }}
-                className="flex min-h-11 w-full items-center px-1 text-left text-small text-strong hover:bg-hover focus-visible:-outline-offset-2"
+                className="flex min-h-11 w-full items-center px-1 text-start text-small text-strong hover:bg-hover focus-visible:-outline-offset-2"
               >
                 {child.name}
               </button>
@@ -245,7 +249,7 @@ export function MaterialPicker({
   const [trail, setTrail] = useState<readonly FolderStep[]>([]);
   const [listed, setListed] = useState<readonly PickedMaterial[]>(chosen);
   const search = useDebouncedValue(searchTerm(typed), searchDelayMilliseconds);
-  const folder = trail.at(-1)?.id ?? null;
+  const folder = search === null ? (trail.at(-1)?.id ?? null) : null;
 
   useEffect(() => {
     if (focusCurrentStep.current) {
@@ -322,8 +326,10 @@ export function MaterialPicker({
           />
         ) : null}
         <LibraryListing
+          key={`${folder ?? ''}\n${search ?? ''}`}
           folder={folder}
           search={search}
+          listedAtOpening={listed}
           searchField={searchField}
           choice={choice}
           onOpenFolder={(step) => {

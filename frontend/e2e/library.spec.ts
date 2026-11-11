@@ -126,11 +126,6 @@ function menuButton(page: Page): Locator {
   return page.locator('main header').getByRole('button', { name: pageMenu, exact: true });
 }
 
-async function isFocused(locator: Locator): Promise<boolean> {
-  await locator.waitFor();
-  return locator.evaluate((element) => element === document.activeElement);
-}
-
 async function chooseRowAction(page: Page, title: string, action: string): Promise<void> {
   await page.getByRole('button', { name: `Actions for ${title}`, exact: true }).click();
   await page.locator('main [aria-expanded="true"] + div').getByRole('button', { name: action, exact: true }).click();
@@ -151,20 +146,23 @@ async function uploadThroughTheMenu(page: Page, file: UploadFile): Promise<void>
 test.use({ locale: 'en-GB', viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
 
 test.describe('library folders', () => {
-  test('New folder opens on its name field and saving focuses the new row, showing markup as text', async ({
-    page,
-    deployment,
-  }) => {
+  test('New folder opens on its name field', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     await openLibrary(page, tutor);
     await page.getByRole('heading', { name: 'Build your first assignment' }).waitFor();
 
     await chooseFromPageMenu(page, pageMenu, 'New folder');
-    const openedOnName = await isFocused(dialog(page).getByRole('textbox', { name: 'Folder name' }));
-    await dialog(page).getByRole('textbox', { name: 'Folder name' }).fill(markup);
-    await dialog(page).getByRole('button', { name: 'Create', exact: true }).click();
 
-    expect(openedOnName).toBe(true);
+    await expect(dialog(page).getByRole('textbox', { name: 'Folder name' })).toBeFocused();
+  });
+
+  test('saving a new folder focuses the new row, showing markup as text', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await openLibrary(page, tutor);
+    await page.getByRole('heading', { name: 'Build your first assignment' }).waitFor();
+
+    await submitNewFolder(page, markup);
+
     await expect(items(page).getByRole('link', { name: markup, exact: true })).toBeFocused();
     await expect(page.locator('main img')).toHaveCount(0);
   });
@@ -200,41 +198,66 @@ test.describe('library folders', () => {
     await expect(page.getByRole('navigation', { name: 'Folder path' })).toHaveText('Library/Grammar/Verbs/Irregular');
   });
 
-  test('Rename opens on the current name and saving focuses the renamed row', async ({ page, deployment }) => {
+  test('Rename opens on the current name', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     await createFolder(deployment, tutor, 'Grammer');
     await openLibrary(page, tutor);
 
     await chooseRowAction(page, 'Grammer', 'Rename');
-    const field = dialog(page).getByRole('textbox', { name: 'Folder name' });
-    const openedOnName = await isFocused(field);
-    const shownName = await field.inputValue();
-    await field.fill('Grammar');
+
+    await expect(dialog(page).getByRole('textbox', { name: 'Folder name' })).toBeFocused();
+    await expect(dialog(page).getByRole('textbox', { name: 'Folder name' })).toHaveValue('Grammer');
+  });
+
+  test('saving a renamed folder focuses its row', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await createFolder(deployment, tutor, 'Grammer');
+    await openLibrary(page, tutor);
+    await chooseRowAction(page, 'Grammer', 'Rename');
+
+    await dialog(page).getByRole('textbox', { name: 'Folder name' }).fill('Grammar');
     await dialog(page).getByRole('button', { name: 'Save', exact: true }).click();
 
-    expect(openedOnName).toBe(true);
-    expect(shownName).toBe('Grammer');
     await expect(items(page).getByRole('link', { name: 'Grammar', exact: true })).toBeFocused();
   });
 
-  test('Move opens on the destination and moving announces Moved. with focus', async ({ page, deployment }) => {
+  test('Move opens on the destination', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     await createFolder(deployment, tutor, 'Grammar');
     await createFolder(deployment, tutor, 'Vocabulary');
     await openLibrary(page, tutor);
 
     await chooseRowAction(page, 'Vocabulary', 'Move');
-    const destination = dialog(page).getByRole('combobox', { name: 'Destination' });
-    const openedOnDestination = await isFocused(destination);
-    await destination.selectOption({ label: 'Grammar' });
+
+    await expect(dialog(page).getByRole('combobox', { name: 'Destination' })).toBeFocused();
+  });
+
+  test('moving announces Moved. with focus', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await createFolder(deployment, tutor, 'Grammar');
+    await createFolder(deployment, tutor, 'Vocabulary');
+    await openLibrary(page, tutor);
+
+    await chooseRowAction(page, 'Vocabulary', 'Move');
+    await dialog(page).getByRole('combobox', { name: 'Destination' }).selectOption({ label: 'Grammar' });
     await dialog(page).getByRole('button', { name: 'Move', exact: true }).click();
 
-    expect(openedOnDestination).toBe(true);
     await expect(page.getByText('Moved.', { exact: true })).toBeFocused();
     await expect(items(page).getByRole('link')).toHaveText(['Grammar']);
   });
 
-  test('deleting a folder that is not empty shows the refusal in the dialog, which opened on Cancel', async ({
+  test('deleting a folder asks first and opens on Cancel', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await createFolder(deployment, tutor, 'Grammar');
+    await openLibrary(page, tutor);
+
+    await chooseRowAction(page, 'Grammar', 'Delete');
+
+    await expect(dialog(page).getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+    await expect(dialog(page)).toContainText('Delete this folder?');
+  });
+
+  test('deleting a folder that is not empty shows the refusal in the dialog', async ({
     page,
     deployment,
     diagnostics,
@@ -246,12 +269,8 @@ test.describe('library folders', () => {
     diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/library/folders/${grammar}`, status: 409 });
 
     await chooseRowAction(page, 'Grammar', 'Delete');
-    const openedOnCancel = await isFocused(dialog(page).getByRole('button', { name: 'Cancel', exact: true }));
-    const question = await dialog(page).textContent();
     await dialog(page).getByRole('button', { name: 'Delete', exact: true }).click();
 
-    expect(openedOnCancel).toBe(true);
-    expect(question).toContain('Delete this folder?');
     await expect(dialog(page).getByText('Only an empty folder can be deleted.')).toBeFocused();
   });
 
@@ -281,6 +300,39 @@ test.describe('library folders', () => {
     await expect(heading(page)).toBeFocused();
   });
 
+  test('choosing a folder from the breadcrumbs moves focus to the page heading', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const grammar = await createFolder(deployment, tutor, 'Grammar');
+    const verbs = await createFolder(deployment, tutor, 'Verbs', grammar);
+    await openLibrary(page, tutor, `/homework/library?folder=${verbs}`);
+    await page
+      .getByRole('navigation', { name: 'Folder path' })
+      .getByRole('link', { name: 'Grammar', exact: true })
+      .focus();
+
+    await page.keyboard.press('Enter');
+
+    await expect(items(page).getByRole('link', { name: 'Verbs', exact: true })).toBeVisible();
+    await expect(heading(page)).toBeFocused();
+  });
+
+  test('choosing a folder in the tree keeps focus on its tree item', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await createFolder(deployment, tutor, 'Grammar');
+    await createFolder(deployment, tutor, 'Reading');
+    await openLibrary(page, tutor);
+    const treeItem = page
+      .getByRole('navigation', { name: 'Folders' })
+      .getByRole('link', { name: 'Reading', exact: true });
+    await treeItem.focus();
+
+    await page.keyboard.press('Enter');
+
+    await expect(page.getByText('This folder is empty')).toBeVisible();
+    await expect(treeItem).toHaveAttribute('aria-current', 'page');
+    await expect(treeItem).toBeFocused();
+  });
+
   test('an unknown folder shows Not found', async ({ page, deployment, diagnostics }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     await signInThroughTheApi(page, tutor);
@@ -293,22 +345,25 @@ test.describe('library folders', () => {
 });
 
 test.describe('library materials', () => {
-  test('an upload opens on its title from the file name and saving focuses the material row', async ({
-    page,
-    deployment,
-  }) => {
+  test('an upload opens on its title from the file name', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     await openLibrary(page, tutor);
 
     await uploadThroughTheMenu(page, chapterFile);
-    const title = dialog(page).getByRole('textbox', { name: 'Title' });
-    const openedOnTitle = await isFocused(title);
-    const proposedTitle = await title.inputValue();
+
+    await expect(dialog(page).getByRole('textbox', { name: 'Title' })).toBeFocused();
+    await expect(dialog(page).getByRole('textbox', { name: 'Title' })).toHaveValue('Chapter one');
+    await expect(dialog(page).getByText('Uploaded: Chapter one.pdf')).toBeVisible();
+  });
+
+  test('saving an upload focuses the material row', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await openLibrary(page, tutor);
+    await uploadThroughTheMenu(page, chapterFile);
     await dialog(page).getByText('Uploaded: Chapter one.pdf').waitFor();
+
     await dialog(page).getByRole('button', { name: 'Save', exact: true }).click();
 
-    expect(openedOnTitle).toBe(true);
-    expect(proposedTitle).toBe('Chapter one');
     await expect(items(page).getByRole('button', { name: 'Chapter one', exact: true })).toBeFocused();
     await expect(items(page).locator('tbody tr')).toContainText(['Chapter one.pdf']);
   });

@@ -300,6 +300,32 @@ describe('frontend lint configuration', () => {
   });
 
   test.each([
+    ['a literal key', "export const label = t('library.title');\n"],
+    ['a template key', 'export const label = t(`library.${String(1)}`);\n'],
+  ])('refuses %s of the library texts outside the library, builder and student-view folders', async (_name, source) => {
+    const found = await ruleIds(`declare function t(key: string): string;\n${source}`, componentPath);
+
+    expect(found).toContain('no-restricted-syntax');
+  });
+
+  test('accepts a library text key inside the library folder', async () => {
+    const source = "declare function t(key: string): string;\nexport const label = t('library.title');\n";
+
+    const found = await ruleIds(source, resolve(frontendRoot, 'src/features/library/LibraryPage.tsx'));
+
+    expect(found).not.toContain('no-restricted-syntax');
+  });
+
+  test.each([
+    ['a builder module', "import { draft } from '../builder/x.ts';\nexport const shown = draft;\n"],
+    ['the library folder', "import { library } from '../library';\nexport const shown = library;\n"],
+  ])('refuses importing %s into the student view', async (_name, source) => {
+    const found = await ruleIds(source, resolve(frontendRoot, 'src/features/assignment/StudentBlocks.tsx'));
+
+    expect(found).toContain('no-restricted-imports');
+  });
+
+  test.each([
     ['a value import', "import { languages } from './languages.ts';\nexport const ru = { list: languages };\n"],
     ['a dynamic import', "export const ru = { later: import('./languages.ts') };\n"],
     ['a re-export', "export { languages } from './languages.ts';\n"],

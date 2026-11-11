@@ -1,4 +1,4 @@
-import { createContext, useContext, useSyncExternalStore } from 'react';
+import { createContext, useContext, useState, useSyncExternalStore } from 'react';
 
 import { type ApiError, apiErrorFrom } from './client.ts';
 import { type components, meLanguageValues, meRoleValues, meStateValues, meThemeValues } from './schema.ts';
@@ -664,4 +664,28 @@ export function useSignedInAccount(): Me {
     throw new Error('a signed-in page rendered without a signed-in account');
   }
   return state.me;
+}
+
+export type SignOutState = 'idle' | 'busy' | 'failed';
+
+export interface SignOut {
+  readonly state: SignOutState;
+  readonly signOut: () => void;
+}
+
+export function useSignOut(onSignedOut: () => void): SignOut {
+  const session = useSession();
+  const [state, setState] = useState<SignOutState>('idle');
+  return {
+    state,
+    signOut: (): void => {
+      if (state === 'busy') {
+        return;
+      }
+      setState('busy');
+      session.signOut().then(onSignedOut, () => {
+        setState('failed');
+      });
+    },
+  };
 }

@@ -447,6 +447,7 @@ export class FakeAuthServer {
   private cardWriteReceived: () => void = () => undefined;
   private readonly writtenCards: { readonly cardId: string; readonly body: string }[] = [];
   private refreshCount = 0;
+  private signOutCount = 0;
   private reuse = false;
   private readonly sent: string[] = [];
   private readonly addresses: URL[] = [];
@@ -470,6 +471,10 @@ export class FakeAuthServer {
 
   get refreshes(): number {
     return this.refreshCount;
+  }
+
+  get signOuts(): number {
+    return this.signOutCount;
   }
 
   get refreshesGranted(): number {
@@ -995,6 +1000,7 @@ export class FakeAuthServer {
     if (refused !== null) {
       return refused;
     }
+    this.signOutCount += 1;
     this.signOutReceived();
     await this.signOutGate;
     const session = this.sessionOf(token);

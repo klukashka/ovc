@@ -13,8 +13,10 @@ export const libraryFoldersKey = [...libraryKey, 'folders'] as const;
 
 export const librarySummaryKey = [...libraryKey, 'summary'] as const;
 
+export const libraryListsKey = [...libraryKey, 'list'] as const;
+
 export function libraryListKey(folder: string | null, search: string | null): readonly unknown[] {
-  return [...libraryKey, 'list', folder, search];
+  return [...libraryListsKey, folder, search];
 }
 
 export const titleLimit = 200;

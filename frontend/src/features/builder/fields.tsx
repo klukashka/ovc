@@ -167,9 +167,17 @@ export function IntegerField({
   );
 }
 
-export function Group({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement {
+export function Group({
+  label,
+  describedBy,
+  children,
+}: {
+  readonly label: string;
+  readonly describedBy?: string | undefined;
+  readonly children: ReactNode;
+}): ReactElement {
   return (
-    <fieldset className="flex min-w-0 flex-col gap-2">
+    <fieldset aria-describedby={describedBy} className="flex min-w-0 flex-col gap-2">
       <legend className="mb-1 text-strong">{label}</legend>
       {children}
     </fieldset>

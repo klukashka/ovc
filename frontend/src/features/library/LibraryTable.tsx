@@ -147,7 +147,7 @@ function ItemRow({
                 onClick={() => {
                   handlers.onCommand('open', target);
                 }}
-                className={`text-left ${rowLinkClass}`}
+                className={`text-start ${rowLinkClass}`}
               >
                 {item.title}
               </button>

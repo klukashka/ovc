@@ -533,6 +533,18 @@ test.describe('builder order and focus', () => {
     expect(await textareaValues(page, 'Text')).toEqual(['Third', 'First', 'Second']);
   });
 
+  test('a dragged block handle carries no text that a field would take on a drop', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const template = await createTemplate(deployment, tutor, 'Order', [instruction('First'), instruction('Second')]);
+    await openBuilder(page, tutor, template.id);
+    const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+
+    await block(page, '2. Instruction').locator('[data-drag-handle]').dispatchEvent('dragstart', { dataTransfer });
+
+    expect(await dataTransfer.evaluate((transfer) => [...transfer.types])).toEqual(['application/x-ovc-block']);
+    expect(await dataTransfer.evaluate((transfer) => transfer.getData('text/plain'))).toBe('');
+  });
+
   test('Duplicate copies a block with fresh identifiers and focuses the copy', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     const template = await createTemplate(deployment, tutor, 'Copies', [singleChoice('Past of go?', ['went', 'goed'])]);
@@ -745,6 +757,37 @@ test.describe('builder material picker', () => {
     await expect(material.getByRole('button', { name: 'Change material', exact: true })).toBeFocused();
     await expect(material.getByText('Noun table.pdf')).toBeVisible();
   });
+
+  const pickerDismissals: readonly [string, (page: Page) => Promise<void>][] = [
+    ['Cancel', (page): Promise<void> => dialog(page).getByRole('button', { name: 'Cancel', exact: true }).click()],
+    ['Escape', (page): Promise<void> => page.keyboard.press('Escape')],
+  ];
+
+  for (const [dismissal, dismiss] of pickerDismissals) {
+    test(`Change material dismissed with ${dismissal} keeps the material and returns focus to itself`, async ({
+      page,
+      deployment,
+    }) => {
+      const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+      const first = await createMaterial(deployment, tutor, 'Verb table', null);
+      await createMaterial(deployment, tutor, 'Noun table', null);
+      const template = await createTemplate(deployment, tutor, 'Materials', [
+        { id: randomUUID(), type: 'material', material_id: first },
+      ]);
+      await openBuilder(page, tutor, template.id);
+      const material = block(page, '1. Material');
+      await material.getByRole('button', { name: 'Change material', exact: true }).click();
+      await dialog(page)
+        .getByRole('button', { name: /^Noun table/ })
+        .waitFor();
+
+      await dismiss(page);
+
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await expect(material.getByRole('button', { name: 'Change material', exact: true })).toBeFocused();
+      await expect(material.getByText('Verb table.pdf')).toBeVisible();
+    });
+  }
 
   test('cancelling the picker of a new block inserts nothing and returns focus to Add block', async ({
     page,

@@ -31,6 +31,7 @@ export const ru = {
     skipToContent: 'Перейти к содержимому',
     languageNotSaved: 'Не удалось сохранить язык в аккаунте. Попробуйте ещё раз.',
     signOut: 'Выйти',
+    signingOut: 'Выход…',
     signOutFailed: 'Не удалось выйти. Проверьте соединение и попробуйте ещё раз.',
     confirmationLabel: 'Подтверждение email',
     confirmationBody: 'Подтвердите email: мы отправили ссылку на {email}.',

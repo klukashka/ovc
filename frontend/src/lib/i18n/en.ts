@@ -27,6 +27,7 @@ export const en: Resources = {
     skipToContent: 'Skip to content',
     languageNotSaved: 'The language was not saved to your account. Try again.',
     signOut: 'Sign out',
+    signingOut: 'Signing out…',
     signOutFailed: 'Could not sign out. Check your connection and try again.',
     confirmationLabel: 'Email confirmation',
     confirmationBody: 'Confirm your email: we sent a link to {email}.',

@@ -1004,6 +1004,26 @@ test.describe('lesson materials for a tutor in Russian', () => {
     await expect(materialsBlock(page).getByText('Материалов нет')).toBeVisible();
   });
 
+  test('lesson › an attached material shows once in the picker, among the chosen ones', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = await tutorAndStudent(deployment);
+    const lesson = await lessonWithMaterials(deployment, seed, await tomorrow(control.now), ['Рабочий лист']);
+    await createLibraryMaterial(deployment, seed.maria, 'Таблица глаголов');
+    await openLessonAsTutor(page, seed, lesson);
+
+    await attachButton(page).click();
+
+    const dialog = attachDialog(page);
+    await expect(libraryChoice(dialog, 'Таблица глаголов')).toBeVisible();
+    await expect(dialog.getByRole('checkbox', { name: 'Рабочий лист', exact: true })).toHaveCount(1);
+    await expect(
+      dialog.getByRole('list', { name: 'Выбрано' }).getByRole('checkbox', { name: 'Рабочий лист', exact: true }),
+    ).toBeChecked();
+  });
+
   test('lesson › opening a folder in the picker moves focus to its name in the path and lists its materials as text', async ({
     page,
     deployment,

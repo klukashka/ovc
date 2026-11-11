@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router';
 
 import { type Section, type SectionCounts, isCurrent, roleSections, trailingSections } from '../../app/sections.ts';
-import { type Me, useSession } from '../../lib/api/session.ts';
+import { type Me, useSignOut } from '../../lib/api/session.ts';
 import { reachable } from '../../routes/access.ts';
 import { provisionallyLinked, useProvisionalLink } from '../../routes/provisionalLink.ts';
+import { ActionButton } from '../ui/Form.tsx';
 
 interface SidebarProps {
   readonly me: Me;
@@ -56,26 +57,15 @@ function SidebarItem({
 
 function AccountMenu({ me }: { readonly me: Me }): ReactElement {
   const { t } = useTranslation();
-  const session = useSession();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [signOutFailed, setSignOutFailed] = useState(false);
+  const signing = useSignOut(() => {
+    void navigate('/', { replace: true });
+  });
   const menuId = useId();
   const container = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const initial = Array.from(me.name.trim()).at(0) ?? '';
-
-  function signOut(): void {
-    setSignOutFailed(false);
-    session.signOut().then(
-      () => {
-        void navigate('/', { replace: true });
-      },
-      () => {
-        setSignOutFailed(true);
-      },
-    );
-  }
 
   useEffect(() => {
     if (!open) {
@@ -166,14 +156,14 @@ function AccountMenu({ me }: { readonly me: Me }): ReactElement {
           >
             {t('section.settings')}
           </Link>
-          <button
-            type="button"
-            onClick={signOut}
+          <ActionButton
+            busy={signing.state === 'busy'}
+            onClick={signing.signOut}
             className="flex min-h-11 w-full items-center rounded-sm px-2.5 text-left text-small hover:bg-hover desktop:pointer-fine:min-h-8"
           >
-            {t('frame.signOut')}
-          </button>
-          {signOutFailed ? (
+            {signing.state === 'busy' ? t('frame.signingOut') : t('frame.signOut')}
+          </ActionButton>
+          {signing.state === 'failed' ? (
             <p role="alert" className="px-2.5 py-1 text-small text-danger">
               {t('frame.signOutFailed')}
             </p>

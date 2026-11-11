@@ -25,7 +25,7 @@ import { Page } from '../../components/ui/Page.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { components } from '../../lib/api/schema.ts';
-import { type Me, useSession, useSessionState } from '../../lib/api/session.ts';
+import { type Me, useSession, useSessionState, useSignOut } from '../../lib/api/session.ts';
 import { isLanguage } from '../../lib/i18n/resources.ts';
 import { reclaimAddress } from '../../routes/access.ts';
 import { myTutorsKey } from '../tutors/api.ts';
@@ -78,23 +78,13 @@ function TutorProfile({ tutor }: { readonly tutor: PublicTutor }): ReactElement 
 
 function SignOutInPlace({ label }: { readonly label: string }): ReactElement {
   const { t } = useTranslation();
-  const session = useSession();
-  const [state, setState] = useState<'idle' | 'busy' | 'failed'>('idle');
+  const signing = useSignOut(() => undefined);
   return (
     <>
-      <ActionButton
-        busy={state === 'busy'}
-        onClick={() => {
-          setState('busy');
-          session.signOut().catch(() => {
-            setState('failed');
-          });
-        }}
-        className={textButtonClass}
-      >
-        {label}
+      <ActionButton busy={signing.state === 'busy'} onClick={signing.signOut} className={textButtonClass}>
+        {signing.state === 'busy' ? t('frame.signingOut') : label}
       </ActionButton>
-      {state === 'failed' ? <FormAlert>{t('frame.signOutFailed')}</FormAlert> : null}
+      {signing.state === 'failed' ? <FormAlert>{t('frame.signOutFailed')}</FormAlert> : null}
     </>
   );
 }

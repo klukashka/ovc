@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { Link, Outlet, useNavigate } from 'react-router';
 
 import { useApiClient } from '../../lib/api/client.ts';
-import { useSession, useSessionState } from '../../lib/api/session.ts';
+import { useSession, useSessionState, useSignOut } from '../../lib/api/session.ts';
 import type { Language } from '../../lib/i18n/resources.ts';
+import { ActionButton } from '../ui/Form.tsx';
 import { LanguageSwitch } from './LanguageSwitch.tsx';
 import { SkipLink, mainContentId } from './SkipLink.tsx';
 
@@ -14,7 +15,9 @@ export function PublicFrame({ children }: { readonly children?: ReactNode }): Re
   const client = useApiClient();
   const navigate = useNavigate();
   const signedIn = useSessionState().kind === 'signedIn';
-  const [signOutFailed, setSignOutFailed] = useState(false);
+  const signing = useSignOut(() => {
+    void navigate('/', { replace: true });
+  });
   const [languageNotSaved, setLanguageNotSaved] = useState(false);
   const latestLanguageSave = useRef(0);
 
@@ -55,23 +58,13 @@ export function PublicFrame({ children }: { readonly children?: ReactNode }): Re
           }
         />
         {signedIn ? (
-          <button
-            type="button"
-            onClick={() => {
-              setSignOutFailed(false);
-              session.signOut().then(
-                () => {
-                  void navigate('/', { replace: true });
-                },
-                () => {
-                  setSignOutFailed(true);
-                },
-              );
-            }}
+          <ActionButton
+            busy={signing.state === 'busy'}
+            onClick={signing.signOut}
             className="inline-flex min-h-11 items-center px-2 text-small text-accent-text hover:underline"
           >
-            {t('frame.signOut')}
-          </button>
+            {signing.state === 'busy' ? t('frame.signingOut') : t('frame.signOut')}
+          </ActionButton>
         ) : null}
         {signedIn ? null : (
           <nav aria-label={t('frame.navigation')} className="flex items-center gap-1">
@@ -92,7 +85,7 @@ export function PublicFrame({ children }: { readonly children?: ReactNode }): Re
           {t('frame.languageNotSaved')}
         </p>
       ) : null}
-      {signedIn && signOutFailed ? (
+      {signedIn && signing.state === 'failed' ? (
         <p role="alert" className="mx-auto w-full max-w-page px-4 text-small text-danger tablet:px-8 desktop:px-14">
           {t('frame.signOutFailed')}
         </p>

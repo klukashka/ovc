@@ -57,6 +57,8 @@ const optionProblems: readonly ProblemCode[] = [
 ];
 const answerProblems: readonly ProblemCode[] = ['no_accepted_answer', 'accepted_answer_empty'];
 
+const draggedBlockType = 'application/x-ovc-block';
+
 function useProblemText(problems: readonly ProblemCode[]): (codes: readonly ProblemCode[]) => string[] {
   const { t } = useTranslation();
   return (codes) => problems.filter((code) => codes.includes(code)).map((code) => t(`builder.problemCodes.${code}`));
@@ -106,8 +108,8 @@ function OptionsEditor({
 
   const full = block.options.length >= limits.options;
   return (
-    <Group label={t('builder.options')}>
-      <ol className="flex flex-col gap-2" aria-describedby={warnings.length === 0 ? undefined : warningId}>
+    <Group label={t('builder.options')} describedBy={warnings.length === 0 ? undefined : warningId}>
+      <ol className="flex flex-col gap-2">
         {block.options.map((option, index) => {
           const number = index + 1;
           return (
@@ -762,7 +764,7 @@ export function BlockCard({
           data-drag-handle=""
           onDragStart={(event) => {
             event.dataTransfer.effectAllowed = 'move';
-            event.dataTransfer.setData('text/plain', block.id);
+            event.dataTransfer.setData(draggedBlockType, block.id);
             actions.dragStart();
           }}
           className="inline-flex min-h-11 min-w-11 cursor-grab items-center justify-center text-icon select-none"

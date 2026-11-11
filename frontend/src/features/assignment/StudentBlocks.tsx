@@ -182,6 +182,7 @@ function StudentBlockView({
   readonly origin: string;
 }): ReactElement {
   const { t } = useTranslation();
+  const promptId = useId();
   if (block.type === 'instruction') {
     return <Markdown source={block.text} />;
   }
@@ -189,9 +190,11 @@ function StudentBlockView({
     return block.material === null ? <></> : <MaterialEntry material={block.material} origin={origin} />;
   }
   return (
-    <fieldset className="flex min-w-0 flex-col gap-3">
+    <fieldset aria-describedby={promptId} className="flex min-w-0 flex-col gap-3">
       <legend className="mb-2 text-small text-text-muted">{t('assignment.question', { number })}</legend>
-      <Markdown source={block.prompt} />
+      <div id={promptId}>
+        <Markdown source={block.prompt} />
+      </div>
       <Pictures images={block.images} origin={origin} />
       <AnswerField block={block} />
     </fieldset>
