@@ -25,6 +25,8 @@ Browser locale and timezone match each actor's settings, and the browser timezon
 
 Recordings (FR-5.4 to FR-5.6) and analytics (FR-11.2 to FR-11.4) are outside the MVP by the owner's decision of 2026-10-22: scenario 1 steps 12, 14 and 15, scenario 2 step 15, the Recordings suite, the FR-11.3 part of the Progress and onboarding suite, and the FR-5.4 to FR-5.6 and FR-11.2 to FR-11.4 parts of the coverage rows wait until those features are built; the MVP suites end the lesson without recording (step 13 still ends it) and skip the analytics step.
 
+From slice 9 the homework parts are active: scenario 2 steps 6 to 14 and 16, with step 14's Home part read through `GET /assignments` until `GET /home` arrives in slice 10; scenario 3's seeded assignment and the issue, To do and work parts of steps 3 to 5; scenario 4's seeded assignment and step 5; the Homework policies suite; and the Groups suite's member removal with work still submittable. A step or part marked "active from slice 9" runs from then on.
+
 ## Scenario 1: first lesson (with a recording after the MVP)
 
 | # | Actor | Page | Operation | Expected |
@@ -66,17 +68,17 @@ Each question has an explanation.
 | 3 | Maria | Today | `POST /join-requests/{id}/accept` | The request disappears; Boris appears in Students; Boris's bell shows a `join_request.accepted` row labelled with Maria's name |
 | 4 | Maria | Groups | "New group", `POST /groups` | Group "B1 evening" with Anna and Boris; its chat exists |
 | 5 | Maria | Library, Builder | `POST /library/folders`, `POST /uploads?context=library`, `POST /library/materials`, `POST /library/templates`, `PUT /library/templates/{id}`, `GET /library/templates/{id}/student-view` (active from slice 8, pending owner review) | The template above is in the library, shown as ready; the preview shows its five blocks in order without answer keys, explanations or points |
-| 6 | Maria | Issue dialog | `POST /issues` (group, deadline in 2 days, answers after checking) | Both students get the assignment and an email |
-| 7 | Anna | Assignment (phone) | `POST /uploads?context=answer&scope=submission:…`, `PUT /submissions/{id}/answers` ("went", "went", one photo), `POST /submissions/{id}/submit` | The draft saves while she types; after submitting she sees "Submitted", with no points of any kind and no correct answers |
-| 8 | Clock | — | `harness: POST /clock` past the deadline | — |
-| 9 | Boris | Assignment | Answers "goed", "Went ", one PDF; `POST /submissions/{id}/submit` | The submission is marked late; Maria's view shows `homework.auto_points` with 2, Boris's view shows no points |
-| 10 | Maria | Today, Review | `GET /review-queue`, `POST /uploads?context=corrected&scope=submission:…`, `PUT /submissions/{id}/review` (file question 6, overall feedback "**Great work.** Check the word order in sentence 2."), `POST /submissions/{id}/check` | Anna's work is checked with a corrected file attached; the email to Anna is in the sink |
-| 11 | Maria | Review | `PUT /submissions/{id}/review` with a comment on the file question, `POST /submissions/{id}/return` | Boris's work is returned; only the file question is editable for him; the comment is visible |
-| 12 | Boris | Assignment | New upload, `POST /submissions/{id}/submit` | Resubmitted; back in Maria's queue; the resubmission email to Maria is in the sink |
-| 13 | Maria | Review | `PUT /submissions/{id}/review` (file question 4), `POST /submissions/{id}/check` | Boris's work is checked at 6 of 10 |
-| 14 | Anna | Results, Home | `GET /submissions/{id}`, `GET /attachments/{id}`, `GET /home` | Comments, the corrected file downloads, and correct answers with explanations; Home lists the work under recently checked with the feedback excerpt "Great work. Check the word order in sentence 2." (Markdown removed) and the corrected-file note; no points, total or percentage anywhere on either page or in the submission and home responses |
-| 15 | Maria | Issue analytics | `GET /issues/{id}/analytics` | 2 of 2 submitted, 2 checked, 1 late; average 80%; single choice 50% correct, short text 100% correct; options "goed" 1 and "went" 1; top short answer "went" (2) |
-| 16 | Anna | Results | Opens Boris's submission address | Not found |
+| 6 | Maria | Library, Issue dialog | `POST /issues` (group, deadline in 2 days, answers after checking; active from slice 9) | Both students get the assignment and an email |
+| 7 | Anna | Assignment (phone) | `POST /uploads?context=answer&scope=submission:…`, `PUT /submissions/{id}/answers` ("went", "went", one photo), `POST /submissions/{id}/submit` (active from slice 9, in the interim one-column frame) | The draft saves while she types; after submitting she sees "Submitted", with no points of any kind and no correct answers |
+| 8 | Clock | — | `harness: POST /clock` past the deadline (active from slice 9) | — |
+| 9 | Boris | Assignment | Answers "goed", "Went ", one PDF: `PUT /submissions/{id}/answers`, `POST /submissions/{id}/submit` (active from slice 9) | The submission is marked late; Maria's view shows `homework.auto_points` with 2, Boris's view shows no points |
+| 10 | Maria | Today, Review | `GET /review-queue`, `POST /uploads?context=corrected&scope=submission:…`, `PUT /submissions/{id}/review` (file question 6, overall feedback "**Great work.** Check the word order in sentence 2."), `POST /submissions/{id}/check` (active from slice 9) | Anna's work is checked with a corrected file attached; the email to Anna is in the sink |
+| 11 | Maria | Review | `PUT /submissions/{id}/review` with a comment on the file question, `POST /submissions/{id}/return` (active from slice 9) | Boris's work is returned; only the file question is editable for him; the comment is visible |
+| 12 | Boris | Assignment | New upload, `PUT /submissions/{id}/answers`, `POST /submissions/{id}/submit` (active from slice 9) | Resubmitted; back in Maria's queue; the resubmission email to Maria is in the sink |
+| 13 | Maria | Review | `PUT /submissions/{id}/review` (file question 4), `POST /submissions/{id}/check` (active from slice 9) | Boris's work is checked at 6 of 10 |
+| 14 | Anna | Results, Home | `GET /submissions/{id}`, `GET /attachments/{id}`, `GET /assignments?status=checked` (active from slice 9; Home reads `/assignments` until `GET /home` replaces it in slice 10) | Comments, the corrected file downloads, and correct answers with explanations; Home lists the work under recently checked with the feedback excerpt "Great work. Check the word order in sentence 2." (Markdown removed) and the corrected-file note; no points, total or percentage anywhere on either page or in the submission and `/assignments` responses |
+| 15 | Maria | Issue analytics | `GET /issues/{id}/analytics` (after the MVP) | 2 of 2 submitted, 2 checked, 1 late; average 80%; single choice 50% correct, short text 100% correct; options "goed" 1 and "went" 1; top short answer "went" (2) |
+| 16 | Anna | Results | Opens Boris's submission address: `GET /submissions/{id}` (active from slice 9) | Not found (`404`) |
 
 ## Scenario 3: two tutors, chat and email
 
@@ -85,15 +87,15 @@ Seed:
 - Maria and Anna are linked, with a weekly series of 4 one-to-one lessons on Wednesdays at 19:00 Moscow time.
 - Maria and Boris are linked.
 - Anna and Boris are both in Maria's group "B1 evening".
-- Maria has issued an assignment to Anna.
+- Maria has issued an assignment to Anna (from slice 9).
 
 | # | Actor | Page | Operation | Expected |
 |---|---|---|---|---|
 | 1 | Pavel | Sign up, confirm, Students | `POST /auth/register`, `POST /auth/verify-email`, `POST /students` with Anna's email, `POST /students/{id}/invitation/send` | The invitation email to Anna is in the sink |
 | 2 | Anna | Accept invitation (signed in) | `POST /invitations/{token}/accept` | Pavel is added; Anna's My tutors shows both tutors with their colours |
-| 3 | Pavel | Schedule, Builder, Issue dialog | `POST /lessons` (Monday at 10:00 his time), `POST /library/templates`, `POST /issues` (the lesson part from slice 5, the template part from slice 8, pending owner review; the issue `pending implementation` until slice 9) | — |
-| 4 | Anna | Schedule, Home | `GET /calendar`, `GET /tutors` (the Schedule part from slice 5; the Home part from design slice step D2, through the calendar and the tutor list instead of `GET /home`, with the To do part still pending slices 8 and 9, pending owner review) | Schedule shows lessons from both tutors, each with its tutor label; Home lists work and the next seven days' lessons from both, and both tutors in My tutors; filtering by Pavel shows only his items in every section except My tutors |
-| 5 | Pavel | Student card | `GET /students/{id}`, `GET /students/{id}/lessons` (the lesson part from slice 5; the work part `pending implementation` until slice 9) | Only Pavel's lesson and work with Anna; none of Maria's |
+| 3 | Pavel | Schedule, Builder, Issue dialog | `POST /lessons` (Monday at 10:00 his time), `POST /library/templates`, `POST /issues` (the lesson part from slice 5, the template part from slice 8, pending owner review; the issue active from slice 9) | — |
+| 4 | Anna | Schedule, Home | `GET /calendar`, `GET /tutors` (the Schedule part from slice 5; the Home part from design slice step D2, through the calendar and the tutor list instead of `GET /home`, pending owner review; the To do part active from slice 9 through `GET /assignments?status=todo`, also filtered by Pavel) | Schedule shows lessons from both tutors, each with its tutor label; Home lists work and the next seven days' lessons from both, and both tutors in My tutors; filtering by Pavel shows only his items in every section except My tutors |
+| 5 | Pavel | Student card | `GET /students/{id}`, `GET /students/{id}/lessons`, `GET /issues?student={relationship}` (the lesson part from slice 5; the work part, the card's Homework tab and Overview, active from slice 9) | Only Pavel's lesson and work with Anna; none of Maria's |
 | 6 | Anna | Messages | `POST /uploads?context=chat&scope=channel:…`, `POST /channels/{id}/messages` with a picture | Maria sees the message live with a preview; the unread badge on Maria's Messages; Anna shows as online in Maria's chat header |
 | 7 | Boris | Messages | Types in the group chat composer (`typing.start` frames) and sends through the composer: `POST /channels/{id}/messages` | While he types, Maria sees "Boris is typing…" under the card's name and Anna sees the anonymous "Someone is typing…"; then both see the message live |
 | 8 | Anna | — | Closes all her tabs; the test waits until `harness: POST /presence` reports her offline | — |
@@ -112,7 +114,7 @@ Seed:
 - Maria creates a card for Boris; he signs up on the invitation page of the copied link, which links him provisionally, and confirms his email in the same browser, which makes the relationship active.
 - Maria adds him to group "B1 evening" with Anna.
 - Maria schedules a weekly one-to-one series for Boris and a group lesson next week.
-- Maria issues an assignment to the group, which Boris has not started.
+- Maria issues an assignment to the group, which Boris has not started (from slice 9).
 
 | # | Actor | Page | Operation | Expected |
 |---|---|---|---|---|
@@ -120,7 +122,7 @@ Seed:
 | 2 | Clock, Worker | — | `harness: POST /clock` +2 days, `harness: POST /tick` | Horizon extension creates no new lessons for the ended series |
 | 3 | Boris | Messages | — | The private chat with Maria is read-only, with its composer disabled; the group chat is no longer listed |
 | 4 | Boris | Lesson | Opens the group lesson's address | Not found |
-| 5 | Boris | Homework | — | The Closed tab shows the group assignment, which cannot be submitted |
+| 5 | Boris | Homework | `GET /assignments?status=closed`, `GET /submissions/{id}`, `POST /submissions/{id}/submit` (active from slice 9) | The Closed tab shows the group assignment, which cannot be submitted: the page is read-only with no Submit, and the API answers `409 not_editable` |
 | 6 | Boris | Accept invitation | Opens the copied link from the seed again | "This invitation is no longer valid" |
 | 7 | Maria | Student card (Ended) | "Invite again", `POST /students/{id}/invitation`; Boris accepts the new link | The relationship is active again with its history; the chat is writable; Boris is not back in the group; Maria gets an `invitation.accepted` row naming the card |
 | 8 | Anonymous | Any private page | Any private operation | Redirect to `/?next=…`; the API returns 401 |
@@ -133,14 +135,14 @@ Smaller Playwright or integration suites cover what the pilots do not walk throu
 |---|---|---|
 | Account edge cases | Playwright + integration | FR-1.3 role mismatch, FR-1.4 sign out everywhere, FR-1.5 reset and change, FR-1.7 deletion and purge, FR-1.8 throttling, refresh reuse, squatting and cleanup of unverified accounts |
 | Requests and invitations | integration + Playwright | FR-2.3 decline, block and expiry, regeneration, email-bound and student-bound refusal, provisional links, reclaim and races, FR-2.5 notes, FR-2.8 a student stops studying |
-| Groups | Playwright | FR-3.3 member removal with work still submittable, FR-3.4 archive and unarchive |
+| Groups | Playwright | FR-3.3 member removal with work still submittable, FR-3.4 archive and unarchive; the member removal with work still submittable active from slice 9 in `frontend/e2e/assignment.spec.ts` |
 | Schedule edits | integration + Playwright | FR-4.2 daylight-saving gap and overlap, FR-4.3 "this and following" splits (including the first occurrence and concurrent extension), FR-4.4 overlap confirmation beyond the horizon, automatic end and "did not take place", joins after a relationship ends; active from slice 5, and the joins from slice 7 |
 | Video embed | Playwright | FR-5.3 with `harness: POST /settings/embed` on: embedded room, the 15-second hint, switching to a new tab, focus mode, disposal on leave; active from slice 7 in `frontend/e2e/lesson-room.spec.ts` |
 | Recordings | integration | FR-5.6 retention and deletion, quota hold and retry, reconciliation without callbacks, callback replays |
-| Homework policies | integration + Playwright | FR-6.3 template edits after issue, FR-8.4 withdrawal and its races, FR-10.3 return blocked under "after submission", overrides, updated reviews, draft corrected files refused, the answer-key contract test, number-parsing and normalisation units |
+| Homework policies | integration + Playwright | FR-6.3 template edits after issue, FR-8.4 withdrawal and its races, FR-10.3 return blocked under "after submission", overrides, updated reviews, draft corrected files refused, the answer-key contract test, number-parsing and normalisation units; active from slice 9, the integration parts in the backend homework tests and the Playwright parts in `frontend/e2e/homework.spec.ts`, `assignment.spec.ts` and the review screen's spec |
 | Chat edits and presence | Playwright | FR-12.3 edit and delete (the tutor's deletes also in read-only chats), FR-12.4 presence and typing (students see only their tutor's presence and anonymous typing of other students), FR-12.5 read-only channels; active from slice 6 |
-| Files | integration + Playwright | FR-14.1 size and type refusals, FR-14.2 quota refusal, FR-14.3 downloads authorized through references; active from slice 6 for the `chat` context, and from slice 8 for the `library` and `prompt_image` contexts and the downloads of material, template and lesson references (`frontend/e2e/library.spec.ts`, `builder.spec.ts` and the lesson material cases of `lesson.spec.ts`, pending owner review) |
-| Notifications | integration | FR-13.1 list and unread count, every email event, obsolete-at-dispatch rules, idempotency of in-app rows and emails, RFC 8058 unsubscribe; active from slice 4 for FR-13.1, the idempotency of in-app rows and RFC 8058 unsubscribe, and from slice 5 for the lesson emails, their obsolete-at-dispatch rules and one-click unsubscribe from a real email, and from slice 6 for the message digest, with the email events of later slices pending |
+| Files | integration + Playwright | FR-14.1 size and type refusals, FR-14.2 quota refusal, FR-14.3 downloads authorized through references; active from slice 6 for the `chat` context, and from slice 8 for the `library` and `prompt_image` contexts and the downloads of material, template and lesson references (`frontend/e2e/library.spec.ts`, `builder.spec.ts` and the lesson material cases of `lesson.spec.ts`, pending owner review), and from slice 9 for the `answer` and `corrected` contexts and the downloads of issue snapshot, answer and review references |
+| Notifications | integration | FR-13.1 list and unread count, every email event, obsolete-at-dispatch rules, idempotency of in-app rows and emails, RFC 8058 unsubscribe; active from slice 4 for FR-13.1, the idempotency of in-app rows and RFC 8058 unsubscribe, and from slice 5 for the lesson emails, their obsolete-at-dispatch rules and one-click unsubscribe from a real email, and from slice 6 for the message digest, and from slice 9 for the homework emails and rows, their obsolete-at-dispatch rules and daily caps, with the email events of later slices pending |
 | Progress and onboarding | Playwright | FR-11.3 student progress, FR-15.2 checklist dismissal, FR-17 language switch across every page |
 | Realtime resilience | Playwright | WebSocket disconnect and reconnect with refetch, `4401` after sign-out everywhere, `4429` handling; active from slice 4, with the server-side closes driven by `harness: POST /realtime/close` and socket closes awaited through `harness: POST /presence` |
 | Operator command | integration | FR-16.1 list, block, unblock, restore, set quota |

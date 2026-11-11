@@ -102,6 +102,111 @@ The API sends the fixed labels above as codes: `label` is `null` and `label_kind
 | late flag | `warning` | Late | С опозданием |
 | submission with a review draft | `info` | Review in progress | Проверка начата |
 | `closed` | `text-muted` | Closed | Закрыто |
+| issue `withdrawn` (from slice 9) | `text-muted` | Withdrawn | Отозвано |
+
+The late flag of a submitted, returned or checked submission shows "Late" beside its state word, as in the tutor view; a submission flagged as issued before a reclaim shows, in both roles' views, the fixed cue below its title or name, in `text-muted`: "Issued before the account was reclaimed" / "Выдано до восстановления аккаунта", never with the earlier holder's name or other account data (from slice 9).
+
+**Answer visibility policies** (from slice 9), shown in the Issue dialog and on the issue page:
+
+| Policy | English | Русский |
+|---|---|---|
+| `never` | Never | Никогда |
+| `after_submission` | After submission | После сдачи |
+| `after_check` | After checking | После проверки |
+
+## Homework texts
+
+From slice 9. Each table names the text section it belongs to: the global language chunk holds only the first table, and the others load lazily with their pages through feature text sections ([localisation](#localisation)). Titles, comments, feedback and file names are user content and never translated; no text interpolates a name into a position that needs a grammatical case in Russian. The texts the pages share with their own sections (the cue, the state words, the refetch notice) are copied into each section that shows them.
+
+**Global language chunk:**
+
+| Element | English | Русский |
+|---|---|---|
+| Tutor's Homework tabs | Library / Issued / Needs checking | Библиотека / Выданные / На проверке |
+| Student's Homework tabs | To do / Submitted / Checked / Closed | Нужно сделать / Сданные / Проверенные / Закрытые |
+| Tutor's count, accessible name | Homework, {count} to check / Homework, more than 99 to check | Задания, ждут проверки: {count} / Задания, ждут проверки: больше 99 |
+| Student's count, accessible name | Homework, {count} to do / Homework, more than 99 to do | Задания, нужно сделать: {count} / Задания, нужно сделать: больше 99 |
+| Unconfirmed tutor on the Issued and Needs checking tabs | Confirm your email to issue and check assignments. | Подтвердите адрес почты, чтобы выдавать и проверять задания. |
+
+**`homework` section** (the tutor's Issue dialog, issued list, issue page, review queue and review screen, and the homework parts of the student card, the group page and the lesson page), which also holds the score keys `homework.auto_points`, `homework.score`, `homework.not_scored` and `homework.points` of [time and scores](#time-and-scores):
+
+| Element | English | Русский |
+|---|---|---|
+| Action that opens the Issue dialog, and the dialog's heading | Issue assignment | Выдать задание |
+| Dialog fields | Assignment / Student or group / Linked lesson / No linked lesson / Set a deadline / Deadline / Answer visibility | Задание / Ученик или группа / Связанный урок / Без урока / Указать срок / Срок / Когда ученики видят ответы |
+| Note under "After submission" | Students see the correct answers as soon as they submit, so work cannot be returned for revision. | Ученики увидят правильные ответы сразу после сдачи, поэтому вернуть работу на доработку будет нельзя. |
+| Incomplete template in the picker | Only a ready assignment can be issued. | Выдать можно только готовое задание. |
+| Summary | {count, plural, one {# student will receive this} other {# students will receive this}} | {count, plural, one {Задание получит # ученик} few {Задание получат # ученика} many {Задание получат # учеников} other {Задание получат # ученика}} |
+| Submit, and the result notice | Issue / Assignment issued. / Open the issued assignment | Выдать / Задание выдано. / Открыть выданное задание |
+| `not_editable` on issuing | This assignment is no longer ready to issue. Open it in the builder to fix it. / Open in the builder | Задание больше не готово к выдаче. Откройте его в конструкторе и исправьте. / Открыть в конструкторе |
+| `relationship_not_active` on issuing | This student can no longer get assignments. | Этому ученику больше нельзя выдавать задания. |
+| `audience_not_active` on issuing | This group is archived or has no members. | Группа в архиве или в ней нет учеников. |
+| `not_found` on issuing | The assignment, student, group or lesson is no longer available. | Задание, ученик, группа или урок больше недоступны. |
+| Deadline in the past | Choose a time in the future. | Выберите время в будущем. |
+| Lesson link limit | A lesson links at most 20 assignments. | К уроку можно привязать не больше 20 заданий. |
+| Snapshot budget (`too_many` at `body`) | Your issued assignments have reached their storage limit. | Выданные задания заняли всё отведённое им место. |
+| Issued list | Active / Withdrawn / Assignment / Audience / Issued / Deadline / Progress / No deadline | Действующие / Отозванные / Задание / Кому / Выдано / Срок / Ход работы / Без срока |
+| Progress | {submitted}/{total} submitted / {count} checked / {count} late / {count} to check | Сдали {submitted} из {total} / Проверено: {count} / С опозданием: {count} / Ждут проверки: {count} |
+| Empty lists | Nothing issued yet / Open the library / No withdrawn assignments. / No assignments yet. / No open assignments. / No assignments for this group. / No assignments for this lesson | Выданных заданий пока нет / Открыть библиотеку / Отозванных заданий нет. / Заданий пока нет. / Открытых заданий нет. / У группы нет заданий. / К этому уроку нет заданий |
+| Card, group and lesson sections | Homework / Open assignments / All homework / Assignments | Задания / Открытые задания / Все задания / Задания |
+| Issue page | Back to issued work / Assignment actions / About the assignment / Student / State / Points / Contains questions you check by hand / Withdrawn {date} | К выданным заданиям / Действия с заданием / О задании / Ученик / Состояние / Баллы / Есть вопросы, которые вы проверяете сами / Отозвано {date} |
+| Issue actions | Change deadline / Change linked lesson / Withdraw | Изменить срок / Изменить связанный урок / Отозвать |
+| Polite announcements | Deadline changed / Linked lesson changed | Срок изменён / Связанный урок изменён |
+| Changed-meanwhile notice of an issue | This assignment changed in the meantime. Its current state is shown below. | Это задание тем временем изменилось. Ниже показано его текущее состояние. |
+| Withdraw confirmation | Withdraw this assignment? / Students no longer see it, and it leaves their lists. This cannot be undone. / Withdraw | Отозвать задание? / Ученики больше не увидят его, и оно пропадёт из их списков. Отменить это нельзя. / Отозвать |
+| After withdrawing | The assignment is withdrawn. | Задание отозвано. |
+| `issue_has_submissions` | A student has already submitted this assignment, so it can no longer be withdrawn. | Ученик уже сдал это задание, поэтому отозвать его нельзя. |
+| `not_found` on a lesson choice | This lesson is no longer available. | Этот урок больше недоступен. |
+| Review queue | Needs checking / Group / All groups / Assignment: {title} / Student: {name} / Clear filter / Submitted / first {date} | На проверке / Группа / Все группы / Задание: {title} / Ученик: {name} / Сбросить фильтр / Сдано / впервые {date} |
+| Queue filter refused | This filter is not available. / All work to check | Этот фильтр недоступен. / Все работы на проверку |
+| Empty queue | Nothing to check | Проверять нечего |
+| Review screen | Back to the queue / Next submission / Your answer / Correct answer / Normalised: {answer} | К очереди / Следующая работа / Ответ ученика / Правильный ответ / После нормализации: {answer} |
+| Scoring | Points / {count, plural, one {out of # point} other {out of # points}} / Override / Override points / Reason / Remove override / Comment / Attach corrected file / Remove | Баллы / {count, plural, one {из # балла} few {из # баллов} many {из # баллов} other {из # балла}} / Изменить оценку / Новые баллы / Причина / Отменить изменение / Комментарий / Прикрепить исправленный файл / Удалить |
+| Feedback | Overall feedback / Write / Preview / Total | Общий отзыв / Текст / Предпросмотр / Итого |
+| Draft status and actions | Saving… / Saved / Not saved / Retry / Save draft | Сохраняется… / Сохранено / Не сохранено / Повторить / Сохранить черновик |
+| Publishing | Mark checked / Return for revision | Отметить проверенной / Вернуть на доработку |
+| Missing manual points | Enter points for this question / Enter points for every question you check by hand. | Поставьте баллы за этот вопрос / Поставьте баллы за каждый вопрос, который вы проверяете сами. |
+| Return without a comment | Write a comment or feedback before returning the work. | Прежде чем вернуть работу, напишите комментарий или отзыв. |
+| `return_not_allowed` | This work can no longer be returned for revision. | Эту работу больше нельзя вернуть на доработку. |
+| Revision limit (`too_many` at `body`) | This review has reached its limit of revisions. | У этой проверки больше не может быть новых версий. |
+| Stale draft (`conflict`) | This changed elsewhere / Reload | Проверку изменили в другом месте / Обновить |
+| `not_editable` on a review | This work changed in the meantime. Its current state is shown below. | Эта работа тем временем изменилась. Ниже показано её текущее состояние. |
+| After publishing | Checked. The student can see your review. / Returned for revision. | Проверено. Ученик видит вашу проверку. / Возвращено на доработку. |
+| Not reviewable | This work has not been submitted yet. / This work is closed. | Работа ещё не сдана. / Работа закрыта. |
+| Gone submission or issue | This assignment is no longer available. | Это задание больше недоступно. |
+
+**`assignment` section** (the student's Homework list, the assignment page and its results, and the student's part of the lesson page; it extends the slice 8 student view texts):
+
+| Element | English | Русский |
+|---|---|---|
+| List | Back to homework / All homework / No deadline / Submitted {date} / Checked {date} | К заданиям / Все задания / Без срока / Сдано {date} / Проверено {date} |
+| Empty tabs | Nothing to do / Nothing submitted / Nothing checked yet / Nothing closed | Делать нечего / Сданных работ нет / Проверенных работ пока нет / Закрытых заданий нет |
+| Tutor filter refused | This tutor is not available. / All tutors | Этот репетитор недоступен. / Все репетиторы |
+| Progress | {answered}/{total} answered | Отвечено: {answered} из {total} |
+| Save status | Saving… / Saved / Not saved. Trying again… / Try now | Сохраняется… / Сохранено / Не сохранено. Пробуем ещё раз… / Повторить сейчас |
+| Conflict banner | Your answers changed on another device / Load the latest | Ваши ответы изменились на другом устройстве / Загрузить последние |
+| Kept unsaved answer | Your unsaved answer: {answer} / Use this answer | Ваш несохранённый ответ: {answer} / Вернуть этот ответ |
+| Changed-meanwhile notice | This assignment changed in the meantime. Its current state is shown below. | Это задание тем временем изменилось. Ниже показано его текущее состояние. |
+| File answers | Attach files / Take a photo / Remove / Confirm your email to attach files. | Прикрепить файлы / Сфотографировать / Удалить / Подтвердите адрес почты, чтобы прикреплять файлы. |
+| File refusals | Your tutor's storage is full, so this file cannot be added. / Uploads are busy right now. Try again in a minute. / {count, plural, one {At most # file} other {At most # files}} | Хранилище репетитора заполнено, этот файл добавить нельзя. / Сейчас загрузок слишком много. Попробуйте через минуту. / {count, plural, one {Не больше # файла} few {Не больше # файлов} many {Не больше # файлов} other {Не больше # файла}} |
+| Submit | Submit / Submit again | Сдать / Сдать снова |
+| Submit confirmation | Submit your work? / These questions have no answer: / Question {number} / After you submit, you cannot change your answers unless your tutor returns the work. / Submit / Cancel | Сдать работу? / На эти вопросы нет ответа: / Вопрос {number} / После сдачи изменить ответы можно будет, только если репетитор вернёт работу. / Сдать / Отмена |
+| After submitting | Submitted | Сдано |
+| Deadline passed | The deadline has passed. You can still submit; the work will be marked late. | Срок прошёл. Сдать работу ещё можно, но она будет отмечена как сданная с опозданием. |
+| Revealed answers | Correct answer / Accepted answers: {answers} / Correct value: {value} ± {tolerance} / Correct value: {value} / Explanation | Правильный ответ / Правильные ответы: {answers} / Правильное значение: {value} ± {tolerance} / Правильное значение: {value} / Пояснение |
+| Review content | Tutor's comment / Corrected files / Overall feedback / A corrected file came back | Комментарий репетитора / Исправленные файлы / Общий отзыв / Есть исправленный файл |
+| Returned work | Your tutor returned this work for revision. | Репетитор вернул работу на доработку. |
+| Closed work | This assignment is closed and can no longer be submitted. | Задание закрыто, сдать его больше нельзя. |
+| Gone submission | This assignment is no longer available. | Это задание больше недоступно. |
+
+**`homeworkPanels` section** (Today's Needs checking and Upcoming deadlines, Home's To do and Recently checked):
+
+| Element | English | Русский |
+|---|---|---|
+| Today's panels | Needs checking / Open review queue / Nothing to check / Upcoming deadlines / All issued work / No deadlines in the next 3 days / {submitted}/{total} submitted | На проверке / Открыть очередь проверки / Проверять нечего / Ближайшие сроки / Все выданные задания / В ближайшие 3 дня сроков нет / Сдали {submitted} из {total} |
+| Home's panels | To do / Recently checked / Nothing to do / Nothing checked yet / A corrected file came back | Нужно сделать / Недавно проверенные / Делать нечего / Проверенных работ пока нет / Есть исправленный файл |
+| Row actions, with the assignment's title as hidden text for screen readers | Start / Continue | Начать / Продолжить |
+| Link to the list; `{count}` is the number, or "99+" above 99 | All homework, {count} to do | Все задания, нужно сделать: {count} |
 
 ## Library and builder
 
@@ -250,8 +355,16 @@ Slice 4. The texts in this section are a proposal to confirm when F2 (notificati
 | `lesson.cancelled` (slice 5) | student | The lesson was cancelled | Урок отменён |
 | `lesson.series_changed` (slice 5) | student | Lessons of a series changed | Уроки серии изменились |
 | `group.archived` (slice 5) | student | The group was archived | Группа перенесена в архив |
+| `issue.created` (slice 9) | student | New assignment | Новое задание |
+| `issue.withdrawn` (slice 9) | student | An assignment was withdrawn | Задание отозвано |
+| `submission.submitted` (slice 9) | tutor | Work submitted for checking | Работа сдана на проверку |
+| `submission.checked` (slice 9) | student | Your work was checked | Ваша работа проверена |
+| `submission.returned` (slice 9) | student | Your work was returned for revision | Работа возвращена на доработку |
+| `submission.review_updated` (slice 9) | student | Your tutor updated the review | Репетитор обновил проверку |
 
 The slice 5 rows are a proposal to confirm when the notification rows of the lesson events are built; their label is the lesson's title, or the group's label from the [label table](../../specs/schedule.md#labels-per-role), shown beside the text as for the slice 4 rows.
+
+The slice 9 rows are a proposal to confirm when the notification rows of the homework events are built. A student's label is the assignment's title with the tutor's colour while the student can still read the submission, and is otherwise absent, with no link (a withdrawn assignment's row shows its text alone); the tutor's label is the student card's display name while the card is in scope. They load with the notification panel and page in a lazily loaded `notifications` feature section when adding them to the global language chunk would leave less than 1 KB of the `pnpm check:bundle` headroom, and in the global chunk otherwise ([localisation](#localisation)).
 
 | Element | English | Русский |
 |---|---|---|
@@ -307,13 +420,14 @@ In every student view, items carry their tutor's label: an 8 px dot in the relat
 
 ## Time and scores
 
-Strings with fixed keys, so tests assert by key and both languages stay in step. Score strings appear only in tutor views.
+Strings with fixed keys, so tests assert by key and both languages stay in step. Score strings appear only in tutor views. From slice 9 the four `homework.*` keys below belong to the `homework` feature text section ([homework texts](#homework-texts)) and load with the tutor's pages that show them, never with the global language chunk or a student page; the `time.*` keys stay in the global language chunk.
 
 | Key | English | Русский |
 |---|---|---|
 | `homework.auto_points` | {count, plural, one {# automatic point} other {# automatic points}} | {count, plural, one {# балл за автопроверку} few {# балла за автопроверку} many {# баллов за автопроверку} other {# балла за автопроверку}} |
 | `homework.score` | {earned} of {max} ({percent}) | {earned} из {max} ({percent}) |
 | `homework.not_scored` | Not scored | Без оценки |
+| `homework.points` (the student card's Homework tab) | {earned} of {max} | {earned} из {max} |
 | `time.other_zone` | {time} {city} time ({local} your time) | {time} по времени {city} ({local} по вашему) |
 | `time.other_offset` | {time} {offset} ({local} your time) | {time} по {offset} ({local} по вашему) |
 
@@ -326,12 +440,13 @@ The bundled timezone table gives each city in the form the string needs: "Moscow
   - errors persist until dismissed and offer a retry when the action is retryable.
 - **A failed refetch of a loaded page** keeps the page and says: "The latest data could not be loaded. The page shows what was loaded before." / "Не удалось обновить данные. На странице показано то, что загрузилось раньше.", with Retry ("Try again" / "Повторить").
 - **Inline validation** appears below the field after the first blur or submit, in `danger`, with an icon.
-- **Destructive actions** (ending a relationship from either side, removing a provisional student, cancelling a series, deleting a recording, deleting the account) need a confirmation dialog that names the consequence. Deleting the account additionally asks for the password.
+- **Destructive actions** (ending a relationship from either side, removing a provisional student, cancelling a series, withdrawing an issued assignment, deleting a recording, deleting the account) need a confirmation dialog that names the consequence. Deleting the account additionally asks for the password.
 
 ## Localisation
 
 - **Libraries:** frontend strings live in i18next resource files per language (`ru`, `en`) with ICU message format, including plurals. Russian uses one / few / many / other: "1 урок, 2 урока, 5 уроков".
 - **Loading:** each language's resource file is its own chunk. Before the first render the entry loads only the active language: the stored preference, else the browser's language when it is Russian, else English. A language change loads the other language's chunk and applies only once it has loaded, so no untranslated key ever shows; a later choice overtakes an earlier one that is still loading, and a failed load keeps the current language and logs `language_load_failed` with the error kind. The stored preference is written, and a signed-in person's choice on a public page is saved to the account, only once the switch has applied; the account's language applied at sign-in is stored the same way. The language switch is an exception to the busy-state rule of [shared behavior](pages.md#shared-behavior): because a later choice overtakes an earlier one, its buttons stay available while a language loads and show no busy state, and the pressed button changes when the new language applies. `pnpm check:bundle` counts the largest language chunk in the entry and page budgets.
+- **Feature text sections** (from slice 8 change F3, extended in slice 9 by the owner's decision of 2026-11-11): a page's own texts are a feature section that `featureTexts.ts` adds to the catalogue, in both languages, when the page first loads, through `useFeatureTexts`, so they stay out of the language chunk of the first load. Slice 8 has `library`, `builder` and `assignment`; slice 9 adds `homework` (the tutor's Issue dialog, issued and review pages, and the card, group and lesson parts) and `homeworkPanels` (Today's and Home's homework panels), and extends `assignment` with the student's Homework list, assignment page and results ([homework texts](#homework-texts)). From slice 9 every new page's texts load this way: the global language chunk gains only the Homework counts' accessible names and the section and tab names (no score key: the `homework.*` score keys are in the `homework` section), and the homework notification texts unless they need their own `notifications` section; slice 9 adds no API error code and no field code, so refusals specific to these pages are worded in their sections. `pnpm check:bundle` asserts that the review screen's modules and the `homework` texts are absent from the entry and from every student page chunk.
 - **API error codes** map to messages in the resource files; an unknown code shows a generic message with the request identifier.
 - **Formats:**
   - dates and times use `Intl.DateTimeFormat` in the user's language and timezone;
