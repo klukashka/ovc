@@ -27,6 +27,19 @@ type ActiveChannelMember struct {
 	CreatedAt             time.Time
 }
 
+type Answer struct {
+	SubmissionID      domain.SubmissionID
+	QuestionID        domain.QuestionID
+	Value             []byte
+	Normalised        *string
+	NormaliserVersion *int32
+	AutoPoints        *int32
+	AutoCorrect       *bool
+	FrozenAt          *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
 type Attachment struct {
 	ID                domain.AttachmentID
 	UploaderID        domain.UserID

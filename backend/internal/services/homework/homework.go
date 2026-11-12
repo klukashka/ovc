@@ -21,6 +21,8 @@ var (
 	ErrAudienceNotActive     = errors.New("the group cannot receive work")
 	ErrConflict              = errors.New("the item changed since the request was prepared")
 	ErrIssueHasSubmissions   = errors.New("the issue already has submitted work")
+	ErrAnswerFrozen          = errors.New("an automatic answer is frozen once submitted")
+	ErrQuotaExceeded         = errors.New("the tutor's file quota is exceeded")
 )
 
 const (
@@ -63,6 +65,7 @@ func (e *ThrottledError) Error() string {
 
 type Addresses interface {
 	IssueSnapshotAddress(id domain.AttachmentID, issue domain.IssueID, disposition domain.Disposition, now time.Time) (string, time.Time)
+	AnswerAddress(id domain.AttachmentID, submission domain.SubmissionID, disposition domain.Disposition, now time.Time) (string, time.Time)
 }
 
 type Templates interface {

@@ -1,4 +1,20 @@
 export interface paths {
+    "/api/v1/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["assignments-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/attachments/{id}": {
         parameters: {
             query?: never;
@@ -969,6 +985,54 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["students-remove"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/submissions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["submissions-get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/submissions/{id}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["submissions-answers-save"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/submissions/{id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["submissions-submit"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2165,6 +2229,65 @@ export interface components {
         SignedInAcceptance: {
             tutor: components["schemas"]["MyTutor"];
         };
+        StudentAnswer: {
+            files: components["schemas"]["SubmissionFile"][];
+            /** Format: uuid */
+            question_id: string;
+            value: components["schemas"]["StudentAnswerValue"];
+        };
+        StudentAnswerInput: {
+            question_id: string;
+            value: components["schemas"]["StudentAnswerValue"];
+        };
+        StudentAnswerValue: {
+            attachment_ids?: string[];
+            option_ids?: string[];
+            text?: string;
+        };
+        StudentAnswersSave: {
+            answers: components["schemas"]["StudentAnswerInput"][];
+            /** Format: uuid */
+            save_id: string;
+            /** Format: int64 */
+            version: number;
+        };
+        StudentAssignmentCounts: {
+            /** Format: int64 */
+            closed: number;
+            /** Format: int64 */
+            todo: number;
+        };
+        StudentAssignmentItem: {
+            /** Format: date-time */
+            checked_at: string | null;
+            /** Format: date-time */
+            deadline_at: string | null;
+            feedback_excerpt: string | null;
+            has_corrected_files: boolean;
+            /** Format: date-time */
+            issued_at: string;
+            issued_before_reclaim: boolean;
+            late: boolean;
+            /** @enum {string} */
+            status: "not_started" | "draft" | "submitted" | "returned" | "checked" | "closed";
+            /** Format: uuid */
+            submission_id: string;
+            /** Format: date-time */
+            submitted_at: string | null;
+            title: string;
+            tutor: components["schemas"]["StudentAssignmentTutor"];
+        };
+        StudentAssignmentPage: {
+            counts: components["schemas"]["StudentAssignmentCounts"];
+            items: components["schemas"]["StudentAssignmentItem"][];
+            next_cursor: string | null;
+        };
+        StudentAssignmentTutor: {
+            colour: string | null;
+            name: string;
+            /** Format: uuid */
+            relationship_id: string;
+        };
         StudentCard: {
             account: components["schemas"]["CardAccount"] | null;
             /** Format: date-time */
@@ -2236,6 +2359,51 @@ export interface components {
             /** @enum {string} */
             state: "invited" | "provisional" | "reclaim_pending" | "active" | "ended";
         };
+        StudentRevealed: {
+            questions: components["schemas"]["StudentRevealedQuestion"][];
+        };
+        StudentRevealedQuestion: {
+            accepted_answers?: string[];
+            correct_option_ids?: string[];
+            correct_value?: string;
+            explanation?: string;
+            /** Format: uuid */
+            question_id: string;
+            tolerance?: string;
+        };
+        StudentReview: {
+            feedback: string;
+            items: components["schemas"]["StudentReviewItem"][];
+        };
+        StudentReviewItem: {
+            comment: string;
+            corrected_files: components["schemas"]["SubmissionFile"][];
+            /** Format: uuid */
+            question_id: string;
+        };
+        StudentSubmission: {
+            answers: components["schemas"]["StudentAnswer"][];
+            blocks: components["schemas"]["StudentTemplateBlock"][];
+            /** Format: date-time */
+            deadline_at: string | null;
+            editable_question_ids: string[];
+            /** Format: uuid */
+            id: string;
+            issued_before_reclaim: boolean;
+            late: boolean;
+            revealed?: components["schemas"]["StudentRevealed"];
+            review: components["schemas"]["StudentReview"] | null;
+            /** @enum {string} */
+            status: "not_started" | "draft" | "submitted" | "returned" | "checked" | "closed";
+            title: string;
+            tutor: components["schemas"]["StudentAssignmentTutor"];
+            /** Format: int64 */
+            version: number;
+        };
+        StudentSubmit: {
+            /** Format: int64 */
+            version: number;
+        };
         StudentTemplate: {
             blocks: components["schemas"]["StudentTemplateBlock"][];
             title: string;
@@ -2287,6 +2455,22 @@ export interface components {
             /** Format: uuid */
             id: string;
             text: string;
+        };
+        SubmissionDetail: components["schemas"]["StudentSubmission"] | components["schemas"]["TutorSubmission"];
+        SubmissionFile: {
+            /** Format: uuid */
+            attachment_id: string;
+            /** Format: date-time */
+            expires_at: string;
+            filename: string;
+            /** Format: int32 */
+            height: number | null;
+            media_type: string;
+            /** Format: int64 */
+            size_bytes: number;
+            url: string;
+            /** Format: int32 */
+            width: number | null;
         };
         Template: {
             blocks: components["schemas"]["TemplateBlock"][];
@@ -2425,6 +2609,20 @@ export interface components {
             /** Format: int64 */
             version: number;
         };
+        TutorAnswer: {
+            auto_correct: boolean | null;
+            /** Format: int32 */
+            auto_points: number | null;
+            files: components["schemas"]["SubmissionFile"][];
+            /** Format: date-time */
+            frozen_at: string | null;
+            normalised: string | null;
+            /** Format: int32 */
+            normaliser_version: number | null;
+            /** Format: uuid */
+            question_id: string;
+            value: components["schemas"]["StudentAnswerValue"];
+        };
         TutorCode: {
             active: boolean;
             code: string;
@@ -2442,11 +2640,76 @@ export interface components {
             items: components["schemas"]["TutorJoinRequest"][];
             next_cursor: string | null;
         };
+        TutorReviewItem: {
+            comment: string;
+            corrected_files: components["schemas"]["SubmissionFile"][];
+            /** Format: int32 */
+            override_points: number | null;
+            override_reason: string | null;
+            /** Format: int32 */
+            points: number | null;
+            /** Format: uuid */
+            question_id: string;
+        };
+        TutorReviewRevision: {
+            /** @enum {string|null} */
+            action: "check" | "return" | null;
+            feedback: string;
+            items: components["schemas"]["TutorReviewItem"][];
+            /** Format: date-time */
+            published_at: string | null;
+            /** Format: int32 */
+            revision: number;
+            /** @enum {string} */
+            state: "draft" | "published";
+            /** Format: int64 */
+            version: number;
+        };
         TutorSettings: {
             /** Format: int64 */
             file_quota_bytes: number;
             /** Format: int64 */
             file_usage_bytes: number;
+        };
+        TutorSubmission: {
+            /** @enum {string} */
+            answer_policy: "never" | "after_submission" | "after_check";
+            answers: components["schemas"]["TutorAnswer"][];
+            /** Format: int32 */
+            auto_points: number | null;
+            blocks: components["schemas"]["IssueBlock"][];
+            /** Format: date-time */
+            checked_at: string | null;
+            /** Format: date-time */
+            deadline_at: string | null;
+            /** Format: int32 */
+            final_points: number | null;
+            /** Format: date-time */
+            first_submitted_at: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            issue_id: string;
+            issued_before_reclaim: boolean;
+            late: boolean;
+            /** Format: int32 */
+            max_points: number;
+            /** Format: int64 */
+            percentage: number | null;
+            revisions: components["schemas"]["TutorReviewRevision"][];
+            /** @enum {string} */
+            status: "not_started" | "draft" | "submitted" | "returned" | "checked" | "closed";
+            student: components["schemas"]["TutorSubmissionStudent"];
+            /** Format: date-time */
+            submitted_at: string | null;
+            title: string;
+            /** Format: int64 */
+            version: number;
+        };
+        TutorSubmissionStudent: {
+            display_name: string;
+            /** Format: uuid */
+            relationship_id: string;
         };
         UnreadChannels: {
             /** Format: int64 */
@@ -2477,6 +2740,104 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "assignments-list": {
+        parameters: {
+            query?: {
+                status?: "todo" | "submitted" | "checked" | "closed";
+                tutor?: string;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudentAssignmentPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "attachments-get": {
         parameters: {
             query?: {
@@ -10474,6 +10835,357 @@ export interface operations {
             };
         };
     };
+    "submissions-get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "submissions-answers-save": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudentAnswersSave"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudentSubmission"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Insufficient Storage */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "submissions-submit": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudentSubmit"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudentSubmission"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "tutor-blocked-requesters-list": {
         parameters: {
             query?: {
@@ -12166,6 +12878,7 @@ type ReadonlyArray<T> = [
 ] extends [
     unknown[]
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
+export const pathsApiV1AssignmentsGetParametersQueryStatusValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/assignments"]["get"]["parameters"]["query"]["status"]> = ["todo", "submitted", "checked", "closed"];
 export const pathsApiV1IssuesGetParametersQueryStatusValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/issues"]["get"]["parameters"]["query"]["status"]> = ["active", "withdrawn"];
 export const pathsApiV1StudentsGetParametersQueryStateValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/students"]["get"]["parameters"]["query"]["state"]> = ["active", "invited", "ended"];
 export const pathsApiV1UploadsPostParametersQueryContextValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/uploads"]["post"]["parameters"]["query"]["context"]> = ["avatar", "chat", "library", "prompt_image", "answer", "corrected"];
@@ -12235,16 +12948,22 @@ export const reclaimDecidedOutcomeValues: ReadonlyArray<FlattenedDeepRequired<co
 export const registerRequestLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["RegisterRequest"]["language"]> = ["ru", "en"];
 export const registerRequestRoleValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["RegisterRequest"]["role"]> = ["tutor", "student"];
 export const sentJoinRequestStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SentJoinRequest"]["state"]> = ["pending", "accepted", "not_accepted", "expired"];
+export const studentAssignmentItemStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentAssignmentItem"]["status"]> = ["not_started", "draft", "submitted", "returned", "checked", "closed"];
 export const studentCardEnded_byValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCard"]["ended_by"]> = ["tutor", "student", "deletion"];
 export const studentCardStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCard"]["state"]> = ["invited", "provisional", "reclaim_pending", "active", "ended"];
 export const studentCardDetailEnded_byValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardDetail"]["ended_by"]> = ["tutor", "student", "deletion"];
 export const studentCardDetailStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardDetail"]["state"]> = ["invited", "provisional", "reclaim_pending", "active", "ended"];
 export const studentCardSummaryEnded_byValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardSummary"]["ended_by"]> = ["tutor", "student", "deletion"];
 export const studentCardSummaryStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardSummary"]["state"]> = ["invited", "provisional", "reclaim_pending", "active", "ended"];
+export const studentSubmissionStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentSubmission"]["status"]> = ["not_started", "draft", "submitted", "returned", "checked", "closed"];
 export const studentTemplateBlockTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentTemplateBlock"]["type"]> = ["instruction", "material", "single_choice", "multiple_choice", "short_text", "short_number", "long_text", "file"];
 export const templateBlockScoringValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateBlock"]["scoring"]> = ["all_or_nothing", "partial"];
 export const templateBlockTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateBlock"]["type"]> = ["instruction", "material", "single_choice", "multiple_choice", "short_text", "short_number", "long_text", "file"];
 export const templateBlockInputScoringValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateBlockInput"]["scoring"]> = ["all_or_nothing", "partial"];
 export const templateBlockInputTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateBlockInput"]["type"]> = ["instruction", "material", "single_choice", "multiple_choice", "short_text", "short_number", "long_text", "file"];
 export const templateProblemCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateProblem"]["code"]> = ["no_blocks", "text_missing", "prompt_missing", "too_few_options", "option_empty", "correct_count", "no_correct_option", "no_accepted_answer", "accepted_answer_empty", "value_invalid", "tolerance_invalid"];
+export const tutorReviewRevisionActionValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorReviewRevision"]["action"]> = ["check", "return"];
+export const tutorReviewRevisionStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorReviewRevision"]["state"]> = ["draft", "published"];
+export const tutorSubmissionAnswer_policyValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorSubmission"]["answer_policy"]> = ["never", "after_submission", "after_check"];
+export const tutorSubmissionStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorSubmission"]["status"]> = ["not_started", "draft", "submitted", "returned", "checked", "closed"];
 export const unsubscribePreviewGroupValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["UnsubscribePreview"]["group"]> = ["lesson_reminders", "lesson_changes", "homework", "results", "submissions", "message_digest"];

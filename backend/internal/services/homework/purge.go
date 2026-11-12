@@ -19,7 +19,42 @@ type Purge struct {
 }
 
 func (p Purge) TutorSteps() []library.PurgeStep {
-	return []library.PurgeStep{submissionsBatch, p.snapshotReferencesBatch, issuesBatch, dailyAnswerBytesBatch}
+	return []library.PurgeStep{p.answerReferencesBatch, answersBatch, submissionsBatch, p.snapshotReferencesBatch, issuesBatch, dailyAnswerBytesBatch}
+}
+
+func (p Purge) answerReferencesBatch(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, now time.Time,
+) (int64, error) {
+	references, err := repos.Homework.AnswerReferencesBatchOfTutor(ctx, tutor, batch)
+	if err != nil || len(references) == 0 {
+		return 0, err
+	}
+	if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
+		return 0, err
+	}
+	submissions := make([]domain.EntityID, 0, len(references))
+	attachments := make([]domain.AttachmentID, 0, len(references))
+	for _, reference := range references {
+		submissions = append(submissions, reference.RefID)
+		attachments = append(attachments, reference.AttachmentID)
+	}
+	removed, err := repos.Homework.RemoveAnswerReferencesOfTutor(ctx, tutor, submissions, attachments)
+	if err != nil {
+		return 0, err
+	}
+	if err := library.ReleaseReferences(ctx, repos, p.Random, p.Logger, domain.ReferenceAnswer, distinctAttachments(removed), now); err != nil {
+		return 0, err
+	}
+	return int64(len(references)), nil
+}
+
+func answersBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, _ time.Time) (int64, error) {
+	return repos.Homework.DeleteAnswersBatchOfTutor(ctx, tutor, batch)
+}
+
+func distinctAttachments(attachments []domain.AttachmentID) []domain.AttachmentID {
+	slices.SortFunc(attachments, func(a, b domain.AttachmentID) int { return bytes.Compare(a[:], b[:]) })
+	return slices.Compact(attachments)
 }
 
 func dailyAnswerBytesBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, _ time.Time) (int64, error) {
@@ -50,9 +85,7 @@ func (p Purge) snapshotReferencesBatch(
 	if err != nil {
 		return 0, err
 	}
-	slices.SortFunc(removed, func(a, b domain.AttachmentID) int { return bytes.Compare(a[:], b[:]) })
-	removed = slices.Compact(removed)
-	if err := library.ReleaseReferences(ctx, repos, p.Random, p.Logger, domain.ReferenceIssueSnapshot, removed, now); err != nil {
+	if err := library.ReleaseReferences(ctx, repos, p.Random, p.Logger, domain.ReferenceIssueSnapshot, distinctAttachments(removed), now); err != nil {
 		return 0, err
 	}
 	return int64(len(references)), nil
@@ -73,7 +106,7 @@ func issuesBatch(ctx context.Context, repos repositories.Repositories, tutor dom
 	return int64(len(sizes)), nil
 }
 
-func PurgeStudentBatch(ctx context.Context, repos repositories.Repositories, student domain.UserID, batch int32) (int64, error) {
+func (p Purge) StudentBatch(ctx context.Context, repos repositories.Repositories, student domain.UserID, batch int32, now time.Time) (int64, error) {
 	rows, err := repos.Homework.StudentSubmissionsBatch(ctx, student, batch)
 	if err != nil || len(rows) == 0 {
 		return 0, err
@@ -89,6 +122,16 @@ func PurgeStudentBatch(ctx context.Context, repos repositories.Repositories, stu
 		if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
 			return 0, err
 		}
+	}
+	removed, err := repos.Homework.RemoveSubmissionsAnswerReferences(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
+	if err := library.ReleaseReferences(ctx, repos, p.Random, p.Logger, domain.ReferenceAnswer, distinctAttachments(removed), now); err != nil {
+		return 0, err
+	}
+	if _, err := repos.Homework.DeleteSubmissionsAnswers(ctx, ids); err != nil {
+		return 0, err
 	}
 	return repos.Homework.DeleteSubmissions(ctx, ids)
 }

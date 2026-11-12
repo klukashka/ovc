@@ -150,7 +150,9 @@ func New(dependencies Dependencies) *Service {
 		avatarReads: make(chan struct{}, avatarReadSlots), downloads: make(chan struct{}, downloadSlots),
 		hourly: newHourlyUploads(domain.ChatUploadsPerHour), libraryHourly: newHourlyUploads(domain.LibraryUploadsPerHour),
 		homeworkHourly: newHourlyUploads(domain.HomeworkUploadsPerHour), tokens: downloadTokens{keys: dependencies.Keys},
-		references: []referenceAuthorization{materialAuthorization{}, templateAuthorization{}, lessonAuthorization{}, issueSnapshotAuthorization{}},
+		references: []referenceAuthorization{
+			materialAuthorization{}, templateAuthorization{}, lessonAuthorization{}, issueSnapshotAuthorization{}, answerAuthorization{},
+		},
 	}
 }
 

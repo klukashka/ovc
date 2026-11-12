@@ -14,6 +14,7 @@ import (
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
+	"ovc/backend/internal/services/homework"
 )
 
 var errEndedWithoutTime = errors.New("an ended relationship has no ending time")
@@ -28,6 +29,7 @@ type ending struct {
 	by          domain.EndedBy
 	memberships int64
 	lessons     lessonEffects
+	homework    homework.ClosedWork
 	notified    *createdNotification
 }
 
@@ -153,10 +155,14 @@ func (s *Service) endLink(
 	if err != nil {
 		return ending{}, err
 	}
+	closed, err := homework.CloseOnEnding(ctx, repos, ended.TutorID, ended.ID, now)
+	if err != nil {
+		return ending{}, err
+	}
 	if err := relationshipChanged(ctx, repos, ended, true); err != nil {
 		return ending{}, err
 	}
-	done := ending{link: ended, by: transition.EndedBy, memberships: int64(len(groups)), lessons: lessons}
+	done := ending{link: ended, by: transition.EndedBy, memberships: int64(len(groups)), lessons: lessons, homework: closed}
 	if transition.EndedBy.EmailsTheOtherParty() {
 		if err := s.queueEndedEmail(ctx, repos, ended, now); err != nil {
 			return ending{}, err
@@ -216,5 +222,6 @@ func (s *Service) logEnded(ctx context.Context, ended ending) {
 	}
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "relationship.ended", attributes...)
 	s.logLessonEffects(ctx, ended.lessons)
+	homework.LogClosedWork(ctx, s.deps.Logger, ended.link.TutorID, ended.homework, domain.SubmissionCloseCauseEnding)
 	s.logNotified(ctx, ended.notified)
 }

@@ -58,7 +58,11 @@ func NewHomeworkEmails(store *repositories.Store, tokens core.UnsubscribeTokens,
 }
 
 func (h *HomeworkEmails) Builders() map[domain.OutboxKind]Builder {
-	return map[domain.OutboxKind]Builder{domain.EventIssueCreated: issueCreatedEmail{emails: h}}
+	return map[domain.OutboxKind]Builder{
+		domain.EventIssueCreated:        issueCreatedEmail{emails: h},
+		domain.EventSubmissionSubmitted: submittedEmail{emails: h},
+		domain.EventSubmissionChecked:   checkedEmail{emails: h},
+	}
 }
 
 type issueCreatedEmail struct {
@@ -90,28 +94,124 @@ func (b issueCreatedEmail) Build(ctx context.Context, row repositories.ClaimedOu
 	if err != nil || !found {
 		return Composition{Obsolete: !found}, err
 	}
-	optional := &Optional{Recipient: recipient.ID, Group: domain.EmailGroupHomework, Capped: true}
-	composition := Composition{Recipient: AccountRecipient(recipient.State), Optional: optional}
 	text, found := core.IssueCreatedText(recipient.Language)
 	if !found {
 		return Composition{}, domain.PermanentEffect(fmt.Errorf("%w: no %s text in %s", errUnknownKind, row.Kind, recipient.Language))
 	}
-	details := []lessonDetail{{Label: text.Tutor, Value: core.EmailSafeText(submission.TutorName)}}
-	if submission.DeadlineAt != nil {
+	return b.emails.compose(recipient, homeworkMessage{
+		text: text, person: submission.TutorName, deadline: submission.DeadlineAt, title: submission.Title,
+		path: domain.HomeworkAssignmentPagePath + id.String(), group: domain.EmailGroupHomework,
+	}, now)
+}
+
+type homeworkMessage struct {
+	text     core.HomeworkEmailText
+	person   string
+	deadline *time.Time
+	title    string
+	path     string
+	group    domain.EmailGroup
+}
+
+func (h *HomeworkEmails) compose(recipient repositories.User, message homeworkMessage, now time.Time) (Composition, error) {
+	optional := &Optional{Recipient: recipient.ID, Group: message.group, Capped: true}
+	composition := Composition{Recipient: AccountRecipient(recipient.State), Optional: optional}
+	text := message.text
+	details := []lessonDetail{{Label: text.Tutor, Value: core.EmailSafeText(message.person)}}
+	if message.deadline != nil {
 		zone, err := time.LoadLocation(recipient.Timezone)
 		if err != nil {
 			return Composition{}, fmt.Errorf("load the recipient's timezone: %w", err)
 		}
-		details = append(details, lessonDetail{Label: text.Deadline, Value: core.LessonStartText(recipient.Language, *submission.DeadlineAt, zone, nil)})
+		details = append(details, lessonDetail{Label: text.Deadline, Value: core.LessonStartText(recipient.Language, *message.deadline, zone, nil)})
 	}
-	title := core.EmailSafeText(submission.Title)
+	title := core.EmailSafeText(message.title)
 	view := homeworkView{
 		Language: recipient.Language, Subject: text.Subject + ": " + title, Intro: text.Intro, Title: title, Details: details,
-		Action: text.Action, ActionURL: b.emails.publicURL + domain.HomeworkAssignmentPagePath + id.String(), Note: text.Note,
+		Action: text.Action, ActionURL: h.publicURL + message.path, Note: text.Note,
 		Unsubscribe: text.Unsubscribe, UnsubscribeNote: text.UnsubscribeNote,
 	}
-	composition.Email, err = b.emails.execute(view, recipient, optional.Group, now)
+	var err error
+	composition.Email, err = h.execute(view, recipient, optional.Group, now)
 	return composition, err
+}
+
+type submittedEmail struct {
+	emails *HomeworkEmails
+}
+
+func (b submittedEmail) Build(ctx context.Context, row repositories.ClaimedOutboxRow, now time.Time) (Composition, error) {
+	var payload domain.SubmittedPayload
+	if err := decodePayload(row.Payload, &payload); err != nil {
+		return Composition{}, err
+	}
+	id, err := decodeID[domain.SubmissionID](payload.Submission)
+	if err != nil {
+		return Composition{}, err
+	}
+	repos := b.emails.store.Repositories()
+	submission, err := repos.Homework.SubmissionForTutorEmail(ctx, id)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return Composition{Obsolete: true}, nil
+	}
+	if err != nil {
+		return Composition{}, err
+	}
+	stillSubmitted := submission.Status == domain.SubmissionSubmitted && submission.SubmittedAt != nil &&
+		submission.SubmittedAt.UnixMicro() == payload.SubmittedAtMicros
+	if !stillSubmitted || submission.MarkedForErasure || submission.CardState == domain.RelationshipDiscarded {
+		return Composition{Obsolete: true}, nil
+	}
+	recipient, found, err := existingUser(ctx, repos, submission.TutorID)
+	if err != nil || !found {
+		return Composition{Obsolete: !found}, err
+	}
+	text, found := core.SubmittedText(recipient.Language)
+	if !found {
+		return Composition{}, domain.PermanentEffect(fmt.Errorf("%w: no %s text in %s", errUnknownKind, row.Kind, recipient.Language))
+	}
+	return b.emails.compose(recipient, homeworkMessage{
+		text: text, person: submission.DisplayName, deadline: submission.DeadlineAt, title: submission.Title,
+		path: domain.HomeworkReviewPagePath + id.String(), group: domain.EmailGroupSubmissions,
+	}, now)
+}
+
+type checkedEmail struct {
+	emails *HomeworkEmails
+}
+
+func (b checkedEmail) Build(ctx context.Context, row repositories.ClaimedOutboxRow, now time.Time) (Composition, error) {
+	var payload domain.SubmissionCheckedPayload
+	if err := decodePayload(row.Payload, &payload); err != nil {
+		return Composition{}, err
+	}
+	id, err := decodeID[domain.SubmissionID](payload.Submission)
+	if err != nil {
+		return Composition{}, err
+	}
+	repos := b.emails.store.Repositories()
+	submission, err := repos.Homework.SubmissionForEmail(ctx, id)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return Composition{Obsolete: true}, nil
+	}
+	if err != nil {
+		return Composition{}, err
+	}
+	if !domain.ReadableStudentSubmission(submission.IssueStatus, submission.MarkedForErasure, submission.RelationshipState) {
+		return Composition{Obsolete: true}, nil
+	}
+	recipient, found, err := existingUser(ctx, repos, submission.StudentID)
+	if err != nil || !found {
+		return Composition{Obsolete: !found}, err
+	}
+	text, found := core.SubmissionCheckedText(recipient.Language)
+	if !found {
+		return Composition{}, domain.PermanentEffect(fmt.Errorf("%w: no %s text in %s", errUnknownKind, row.Kind, recipient.Language))
+	}
+	return b.emails.compose(recipient, homeworkMessage{
+		text: text, person: submission.TutorName, deadline: submission.DeadlineAt, title: submission.Title,
+		path: domain.HomeworkAssignmentPagePath + id.String(), group: domain.EmailGroupResults,
+	}, now)
 }
 
 func (h *HomeworkEmails) execute(view homeworkView, recipient repositories.User, group domain.EmailGroup, now time.Time) (Email, error) {

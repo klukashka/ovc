@@ -1,0 +1,435 @@
+package api_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"slices"
+	"sort"
+	"strings"
+	"testing"
+
+	"ovc/backend/internal/domain"
+)
+
+const contractGroup = 73
+
+var (
+	sentinelPoints  = []string{"97", "89", "83", "79", "73", "71", "492", "180"}
+	sentinelStrings = []string{"sentinel-accepted-answer", "4321.12345", "0.000917", "sentinel-explanation"}
+	answerFileKeys  = []string{"attachment_id", "filename", "media_type", "size_bytes", "width", "height", "url", "expires_at"}
+	studentFileKeys = []string{"filename", "media_type", "size_bytes", "width", "height", "url", "expires_at"}
+	submissionKeys  = []string{
+		"id", "title", "tutor", "status", "late", "issued_before_reclaim", "deadline_at", "version", "blocks", "answers", "editable_question_ids",
+		"review",
+	}
+	assignmentItemKeys = []string{
+		"submission_id", "title", "tutor", "status", "late", "issued_before_reclaim", "deadline_at", "issued_at", "submitted_at", "checked_at",
+		"feedback_excerpt", "has_corrected_files",
+	}
+	tutorRefKeys     = []string{"relationship_id", "name", "colour"}
+	notificationKeys = []string{"id", "event", "created_at", "read_at", "label", "label_deleted", "label_kind", "colour", "link"}
+	blockKeysByType  = map[string][]string{
+		"instruction": {"id", "type", "text"}, "material": {"id", "type", "material"},
+		"single_choice": {"id", "type", "prompt", "images", "options"}, "multiple_choice": {"id", "type", "prompt", "images", "options"},
+		"short_text": {"id", "type", "prompt", "images"}, "short_number": {"id", "type", "prompt", "images"},
+		"long_text": {"id", "type", "prompt", "images", "max_length"}, "file": {"id", "type", "prompt", "images", "allowed_kinds", "max_files"},
+	}
+	revealedKeysByQuestion = map[string][]string{
+		contractQuestion(2): {"question_id", "correct_option_ids", "explanation"}, contractQuestion(3): {"question_id", "correct_option_ids", "explanation"},
+		contractQuestion(4): {"question_id", "accepted_answers", "explanation"},
+		contractQuestion(5): {"question_id", "correct_value", "tolerance", "explanation"},
+		contractQuestion(6): {"question_id", "explanation"}, contractQuestion(7): {"question_id", "explanation"},
+	}
+)
+
+func contractQuestion(n byte) string {
+	return blockID(contractGroup, n)
+}
+
+func contractOption(n byte) string {
+	return optionID(contractGroup, n)
+}
+
+func contractBlocks(image string, material string) []templateBlockJSON {
+	explanation := func(kind string) *string { return text("sentinel-explanation-" + kind) }
+	single := []templateOptionJSON{{ID: contractOption(1), Text: "Paris", Correct: flag(true)}, {ID: contractOption(2), Text: "Rome", Correct: flag(false)}}
+	multiple := []templateOptionJSON{
+		{ID: contractOption(3), Text: "Red", Correct: flag(true)}, {ID: contractOption(4), Text: "Blue", Correct: flag(false)},
+	}
+	return []templateBlockJSON{
+		instructionBlock(contractQuestion(1), "Read first"),
+		{ID: contractQuestion(2), Type: string(domain.BlockSingleChoice), Prompt: text("Capital"), ImageIDs: textList(image), Options: &single,
+			Points: points(97), Explanation: explanation("single")},
+		{ID: contractQuestion(3), Type: string(domain.BlockMultipleChoice), Prompt: text("Colours"), Options: &multiple,
+			Scoring: text(string(domain.ScoringPartial)), Points: points(89), Explanation: explanation("multiple")},
+		{ID: contractQuestion(4), Type: string(domain.BlockShortText), Prompt: text("Word"), AcceptedAnswers: textList("sentinel-accepted-answer"),
+			Points: points(83), Explanation: explanation("text")},
+		{ID: contractQuestion(5), Type: string(domain.BlockShortNumber), Prompt: text("Number"), Value: text("4321.12345"), Tolerance: text("0.000917"),
+			Points: points(79), Explanation: explanation("number")},
+		{ID: contractQuestion(6), Type: string(domain.BlockLongText), Prompt: text("Essay"), MaxLength: points(500), Points: points(73),
+			Explanation: explanation("long")},
+		{ID: contractQuestion(7), Type: string(domain.BlockFile), Prompt: text("Photo"), AllowedKinds: textList(string(domain.AnswerFilePDF)),
+			MaxFiles: points(2), Points: points(71), Explanation: explanation("file")},
+		materialBlock(contractQuestion(8), material),
+	}
+}
+
+func contractAutomaticBlocks() []templateBlockJSON {
+	blocks := contractBlocks("", "")
+	automatic := []templateBlockJSON{blocks[1], blocks[3]}
+	automatic[0].ImageIDs = nil
+	return automatic
+}
+
+type contractCheck struct {
+	t *testing.T
+}
+
+func (c contractCheck) object(label string, raw json.RawMessage, allowed []string) map[string]json.RawMessage {
+	c.t.Helper()
+	var decoded map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		c.t.Fatalf("%s is not an object: %s", label, raw)
+	}
+	keys := make([]string, 0, len(decoded))
+	for key := range decoded {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	expected := slices.Clone(allowed)
+	sort.Strings(expected)
+	if !slices.Equal(keys, expected) {
+		c.t.Errorf("%s has the keys %v, want %v", label, keys, expected)
+	}
+	return decoded
+}
+
+func (c contractCheck) array(label string, raw json.RawMessage) []json.RawMessage {
+	c.t.Helper()
+	var decoded []json.RawMessage
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		c.t.Fatalf("%s is not an array: %s", label, raw)
+	}
+	return decoded
+}
+
+func (c contractCheck) noSentinel(label string, raw []byte) {
+	c.t.Helper()
+	for _, sentinel := range sentinelStrings {
+		if bytes.Contains(raw, []byte(sentinel)) {
+			c.t.Errorf("%s carries the key sentinel %q", label, sentinel)
+		}
+	}
+	c.noSentinelNumber(label, json.RawMessage(raw))
+}
+
+func (c contractCheck) noSentinelNumber(label string, raw json.RawMessage) {
+	c.t.Helper()
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return
+	}
+	switch trimmed[0] {
+	case '{':
+		var decoded map[string]json.RawMessage
+		if json.Unmarshal(trimmed, &decoded) == nil {
+			for key, value := range decoded {
+				c.noSentinelNumber(label+"."+key, value)
+			}
+		}
+	case '[':
+		var decoded []json.RawMessage
+		if json.Unmarshal(trimmed, &decoded) == nil {
+			for _, value := range decoded {
+				c.noSentinelNumber(label, value)
+			}
+		}
+	default:
+		var number json.Number
+		if json.Unmarshal(trimmed, &number) == nil && slices.Contains(sentinelPoints, number.String()) {
+			c.t.Errorf("%s carries the point sentinel %s", label, number)
+		}
+	}
+}
+
+func (c contractCheck) submission(label string, raw []byte, revealed bool) {
+	c.t.Helper()
+	allowed := slices.Clone(submissionKeys)
+	if revealed {
+		allowed = append(allowed, "revealed")
+	}
+	decoded := c.object(label, raw, allowed)
+	c.object(label+".tutor", decoded["tutor"], tutorRefKeys)
+	for _, block := range c.array(label+".blocks", decoded["blocks"]) {
+		var typed struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(block, &typed); err != nil {
+			c.t.Fatal(err)
+		}
+		fields := c.object(label+".blocks."+typed.Type, block, blockKeysByType[typed.Type])
+		if options, found := fields["options"]; found {
+			for _, option := range c.array(label+".options", options) {
+				c.object(label+".option", option, []string{"id", "text"})
+			}
+		}
+		if images, found := fields["images"]; found {
+			for _, image := range c.array(label+".images", images) {
+				c.object(label+".image", image, studentFileKeys)
+			}
+		}
+		if material, found := fields["material"]; found {
+			c.object(label+".material", material, append([]string{"title"}, studentFileKeys...))
+		}
+	}
+	for _, answer := range c.array(label+".answers", decoded["answers"]) {
+		fields := c.object(label+".answer", answer, []string{"question_id", "value", "files"})
+		value := c.objectKeys(label+".answer.value", fields["value"])
+		if len(value) != 1 || !slices.Contains([]string{"option_ids", "text", "attachment_ids"}, value[0]) {
+			c.t.Errorf("%s holds the answer value keys %v", label, value)
+		}
+		for _, file := range c.array(label+".files", fields["files"]) {
+			c.object(label+".file", file, answerFileKeys)
+		}
+	}
+	if string(decoded["review"]) != "null" {
+		c.t.Errorf("%s carries a review %s before any publication", label, decoded["review"])
+	}
+	if revealed {
+		questions := c.object(label+".revealed", decoded["revealed"], []string{"questions"})
+		for _, question := range c.array(label+".revealed.questions", questions["questions"]) {
+			var identified struct {
+				QuestionID string `json:"question_id"`
+			}
+			if err := json.Unmarshal(question, &identified); err != nil {
+				c.t.Fatal(err)
+			}
+			c.object(label+".revealed."+identified.QuestionID, question, revealedKeysByQuestion[identified.QuestionID])
+		}
+		c.noSentinelNumber(label+".revealed", decoded["revealed"])
+		delete(decoded, "revealed")
+	}
+	stripped, err := json.Marshal(decoded)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	c.noSentinel(label, stripped)
+}
+
+func (c contractCheck) objectKeys(label string, raw json.RawMessage) []string {
+	c.t.Helper()
+	var decoded map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		c.t.Fatalf("%s is not an object: %s", label, raw)
+	}
+	keys := make([]string, 0, len(decoded))
+	for key := range decoded {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func (c contractCheck) assignments(label string, raw []byte) {
+	c.t.Helper()
+	decoded := c.object(label, raw, []string{"items", "next_cursor", "counts"})
+	c.object(label+".counts", decoded["counts"], []string{"todo", "closed"})
+	for _, item := range c.array(label+".items", decoded["items"]) {
+		fields := c.object(label+".item", item, assignmentItemKeys)
+		c.object(label+".item.tutor", fields["tutor"], tutorRefKeys)
+	}
+	c.noSentinel(label, raw)
+}
+
+func (c contractCheck) refusal(label string, raw []byte) {
+	c.t.Helper()
+	decoded := c.object(label, raw, []string{"error"})
+	c.object(label+".error", decoded["error"], []string{"code", "message", "request_id"})
+	c.noSentinel(label, raw)
+}
+
+func (c contractCheck) fieldRefusal(label string, raw []byte) {
+	c.t.Helper()
+	decoded := c.object(label, raw, []string{"error"})
+	body := c.object(label+".error", decoded["error"], []string{"code", "message", "request_id", "fields"})
+	for _, field := range c.array(label+".fields", body["fields"]) {
+		c.object(label+".field", field, []string{"path", "code"})
+	}
+	c.noSentinel(label, raw)
+}
+
+type contractWork struct {
+	full      string
+	automatic string
+	closing   string
+}
+
+func (h *authHarness) contractWork(t *testing.T, parties endingParties, policy string, full string, automatic string) contractWork {
+	t.Helper()
+	card := toCard(parties.card.ID)
+	_, fullWork := h.issueTemplate(t, parties.tutorToken, full, card, policy, nil)
+	_, automaticWork := h.issueTemplate(t, parties.tutorToken, automatic, card, policy, nil)
+	_, closingWork := h.issueTemplate(t, parties.tutorToken, automatic, card, policy, nil)
+	return contractWork{full: fullWork[0].id, automatic: automaticWork[0].id, closing: closingWork[0].id}
+}
+
+func TestAnswerKeyContract(t *testing.T) {
+	t.Parallel()
+	h := newUploadHarness(t)
+	check := contractCheck{t: t}
+	parties := h.activeStudentInAGroup(t)
+	picture := h.libraryUpload(t, parties.tutorToken, domain.ContextPromptImage, "prompt.png", pngBytes(t, 2, 2))
+	h.mustAnswer(t, picture, http.StatusCreated)
+	worksheet := h.libraryUpload(t, parties.tutorToken, domain.ContextLibrary, "worksheet.pdf", pdfFile(100))
+	h.mustAnswer(t, worksheet, http.StatusCreated)
+	material := h.createMaterial(t, parties.tutorToken, uploadedID(t, worksheet), "Worksheet", nil).ID
+	policies := []string{string(domain.AnswerPolicyNever), string(domain.AnswerPolicyAfterSubmission), string(domain.AnswerPolicyAfterCheck)}
+	full := h.workTemplate(t, parties.tutorToken, "Contract", contractBlocks(uploadedID(t, picture), material)...)
+	automatic := h.workTemplate(t, parties.tutorToken, "Automatic", contractAutomaticBlocks()...)
+	works := map[string]contractWork{}
+	for _, policy := range policies {
+		works[policy] = h.contractWork(t, parties, policy, full, automatic)
+	}
+	frames := h.recordFrames(t)
+
+	for _, policy := range policies {
+		work := works[policy]
+		label := policy + " "
+		check.submission(label+"not_started", []byte(h.submissionAnswer(t, parties.studentToken, work.full).body), false)
+		upload := h.homeworkUpload(t, parties.studentToken, homeworkRoute(domain.ContextAnswer, work.full, contractQuestion(7)), "answer.pdf", pdfFile(300))
+		h.mustAnswer(t, upload, http.StatusCreated)
+		check.object(label+"upload", json.RawMessage(upload.body), []string{"id", "filename", "media_type", "size_bytes"})
+		options := h.workOptions(t, parties.studentToken, work.full)
+		draft := h.saveAnswers(t, parties.studentToken, work.full, answersJSON(t, 1, saveID(1),
+			chosen(contractQuestion(2), options[contractQuestion(2)][1]), typedAnswer(contractQuestion(4), "a guess"), typedAnswer(contractQuestion(5), "12"),
+			typedAnswer(contractQuestion(6), "An essay"), attached(contractQuestion(7), uploadedID(t, upload))))
+		h.mustAnswer(t, draft, http.StatusOK)
+		check.submission(label+"draft save", []byte(draft.body), false)
+		check.submission(label+"draft", []byte(h.submissionAnswer(t, parties.studentToken, work.full).body), false)
+		minted, _ := h.addressOf(t, parties.studentToken, uploadedID(t, upload), "?ref=answer:"+work.full)
+		h.mustAnswer(t, minted, http.StatusOK)
+		check.object(label+"mint", json.RawMessage(minted.body), []string{"url", "expires_at"})
+		stale := h.saveAnswers(t, parties.studentToken, work.full, answersJSON(t, 1, saveID(2), typedAnswer(contractQuestion(6), "Late")))
+		check.refusal(label+"conflict", []byte(stale.body))
+		frozenLater := h.submitWork(t, parties.studentToken, work.full, 2)
+		h.mustAnswer(t, frozenLater, http.StatusOK)
+		afterSubmission := policy == string(domain.AnswerPolicyAfterSubmission)
+		check.submission(label+"submit", []byte(frozenLater.body), afterSubmission)
+		check.submission(label+"submitted", []byte(h.submissionAnswer(t, parties.studentToken, work.full).body), afterSubmission)
+		checked := h.submitWork(t, parties.studentToken, work.automatic, 1)
+		h.mustAnswer(t, checked, http.StatusOK)
+		check.submission(label+"checked", []byte(checked.body), policy != string(domain.AnswerPolicyNever))
+		check.assignments(label+"assignments", []byte(h.assignmentsAnswer(t, parties.studentToken, nil).body))
+		snapshotMint, _ := h.addressOf(t, parties.studentToken, uploadedID(t, picture), "?ref=issue_snapshot:"+issueOf(t, h, work.full))
+		h.mustAnswer(t, snapshotMint, http.StatusOK)
+		check.object(label+"snapshot mint", json.RawMessage(snapshotMint.body), []string{"url", "expires_at"})
+		notEditable := h.saveAnswers(t, parties.studentToken, work.automatic, answersJSON(t, 2, saveID(3), typedAnswer(contractQuestion(4), "x")))
+		assertRefused(t, label+"a save of checked work", notEditable, http.StatusConflict, "not_editable")
+		check.refusal(label+"not_editable", []byte(notEditable.body))
+		h.setSubmissionStatus(t, work.full, domain.SubmissionReturned)
+		returned := h.submissionAnswer(t, parties.studentToken, work.full)
+		check.submission(label+"returned", []byte(returned.body), false)
+		returnedVersion := decodeLibrary[studentSubmissionBody](t, returned).Version
+		frozen := h.saveAnswers(t, parties.studentToken, work.full, answersJSON(t, returnedVersion, saveID(4), typedAnswer(contractQuestion(4), "x")))
+		assertRefused(t, label+"a save of a frozen answer", frozen, http.StatusConflict, "answer_frozen")
+		check.refusal(label+"answer_frozen", []byte(frozen.body))
+		unknown := h.saveAnswers(t, parties.studentToken, work.full, answersJSON(t, returnedVersion, saveID(5), typedAnswer(blockID(75, 1), "x")))
+		check.fieldRefusal(label+"validation", []byte(unknown.body))
+		missing := h.submissionAnswer(t, parties.studentToken, randomSubmissionID)
+		check.refusal(label+"not_found", []byte(missing.body))
+	}
+	h.mustAnswer(t, h.endAsTutor(t, parties.tutorToken, parties.card.ID), http.StatusOK)
+	h.tick(t)
+
+	for _, policy := range policies {
+		check.submission(policy+" closed", []byte(h.submissionAnswer(t, parties.studentToken, works[policy].closing).body), false)
+		check.assignments(policy+" closed list", []byte(h.assignmentsAnswer(t, parties.studentToken, map[string][]string{"status": {"closed"}}).body))
+	}
+	result, page := h.notificationPage(t, parties.studentToken, "?limit=100")
+	h.mustAnswer(t, result, http.StatusOK)
+	if len(page.Items) == 0 {
+		t.Fatal("the student got no notification rows")
+	}
+	var rows struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(result.body), &rows); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows.Items {
+		fields := check.object("notification row", row, notificationKeys)
+		if string(fields["link"]) != "null" {
+			check.object("notification link", fields["link"], []string{"kind", "id"})
+		}
+	}
+	check.noSentinel("notification rows", []byte(result.body))
+	for _, message := range h.mailTo(t, studentEmail) {
+		check.noSentinel("email "+message.Subject, []byte(message.Subject+message.Text+message.HTML))
+	}
+	for _, frame := range framesTo(frames.settle(t, h), parties.student) {
+		if strings.ContainsAny(frame.id, " \"{") {
+			t.Errorf("a frame to the student carries more than an identifier: %+v", frame)
+		}
+	}
+}
+
+func TestStudentDownloadsFollowReadability(t *testing.T) {
+	t.Parallel()
+	h := newUploadHarness(t)
+	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	picture := h.libraryUpload(t, tutorToken, domain.ContextPromptImage, "prompt.png", pngBytes(t, 2, 2))
+	h.mustAnswer(t, picture, http.StatusCreated)
+	image := uploadedID(t, picture)
+	blocks := []templateBlockJSON{imageQuestion(blockID(74, 1), image), fileBlock(blockID(74, 2), string(domain.AnswerFilePDF))}
+	type readabilityParty struct {
+		id         byte
+		card       string
+		issue      string
+		submission string
+		file       string
+	}
+	parties := map[string]*readabilityParty{
+		"readable": {id: 10}, "reclaim_pending": {id: 11}, "discarded": {id: 12}, "withdrawn": {id: 13}, "ended": {id: 14}, "marked": {id: 15},
+	}
+	template := h.workTemplate(t, tutorToken, "Pictured", blocks...)
+	for _, party := range parties {
+		party.card = h.linkedCard(t, tutor, party.id, domain.RelationshipActive)
+		issue, submissions := h.issueTemplate(t, tutorToken, template, toCard(party.card), string(domain.AnswerPolicyNever), nil)
+		party.issue, party.submission = issue, submissions[0].id
+		token := h.studentToken(t, party.id)
+		party.file = h.answerFile(t, token, party.submission, blockID(74, 2), "answer.pdf", 64)
+		h.saved(t, token, party.submission, answersJSON(t, 1, saveID(1), attached(blockID(74, 2), party.file)))
+	}
+	pending := parties["reclaim_pending"]
+	_, earlyAddress := h.addressOf(t, h.studentToken(t, pending.id), pending.file, "?ref=answer:"+pending.submission)
+
+	h.setRelationshipState(t, pending.card, domain.RelationshipReclaimPending)
+	h.setRelationshipState(t, parties["discarded"].card, domain.RelationshipDiscarded)
+	h.mustAnswer(t, h.withdrawIssue(t, tutorToken, parties["withdrawn"].issue), http.StatusOK)
+	h.setRelationshipState(t, parties["ended"].card, domain.RelationshipEnded)
+	h.markIssueForErasure(t, parties["marked"].issue)
+
+	for name, party := range parties {
+		token := h.studentToken(t, party.id)
+		snapshot, _ := h.addressOf(t, token, image, "?ref=issue_snapshot:"+party.issue)
+		answer, _ := h.addressOf(t, token, party.file, "?ref=answer:"+party.submission)
+		readable := name == "readable" || name == "ended"
+		if (snapshot.status == http.StatusOK) != readable || (answer.status == http.StatusOK) != readable {
+			t.Errorf("%s: the snapshot mint answered %s and the answer mint %s", name, describe(snapshot), describe(answer))
+		}
+	}
+	tutorAnswer, _ := h.addressOf(t, tutorToken, parties["readable"].file, "?ref=answer:"+parties["readable"].submission)
+	h.mustAnswer(t, tutorAnswer, http.StatusOK)
+	if served := h.fetch(t, earlyAddress.URL, nil); served.status != http.StatusNotFound {
+		t.Fatalf("an answer address minted before the reclaim answered %s", describe(served))
+	}
+}
+
+func issueOf(t *testing.T, h *authHarness, submission string) string {
+	t.Helper()
+	var issue string
+	if err := h.database.Pool.QueryRow(t.Context(), "SELECT issue_id::text FROM submissions WHERE id = $1::uuid", submission).Scan(&issue); err != nil {
+		t.Fatal(err)
+	}
+	return issue
+}

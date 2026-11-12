@@ -175,7 +175,7 @@ func (s *Service) Issue(ctx context.Context, tutor domain.UserID, id domain.Issu
 			return err
 		}
 		issue.IssueItem = items[0]
-		if issue.Blocks, err = s.describeBlocks(ctx, repos, row, now); err != nil {
+		if issue.Blocks, err = s.describeBlocks(ctx, repos, row.ID, row.Snapshot, now); err != nil {
 			return err
 		}
 		issue.Submissions, err = s.issueSubmissions(ctx, repos, tutor, row)
@@ -206,8 +206,10 @@ func (s *Service) issueSubmissions(ctx context.Context, repos repositories.Repos
 	return submissions, nil
 }
 
-func (s *Service) describeBlocks(ctx context.Context, repos repositories.Repositories, row repositories.TutorIssue, now time.Time) ([]IssueBlock, error) {
-	stored, err := decodeSnapshot(row.Snapshot)
+func (s *Service) describeBlocks(
+	ctx context.Context, repos repositories.Repositories, issue domain.IssueID, snapshot []byte, now time.Time,
+) ([]IssueBlock, error) {
+	stored, err := decodeSnapshot(snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +235,7 @@ func (s *Service) describeBlocks(ctx context.Context, repos repositories.Reposit
 			return nil, err
 		}
 		for _, file := range described {
-			url, expiresAt := s.deps.Addresses.IssueSnapshotAddress(file.ID, row.ID, dispositionOf(file.Width), now)
+			url, expiresAt := s.deps.Addresses.IssueSnapshotAddress(file.ID, issue, dispositionOf(file.Width), now)
 			files[file.ID] = IssueFile{
 				Attachment: file.ID, Filename: file.Filename, MediaType: file.MediaType, SizeBytes: file.SizeBytes, Width: file.Width,
 				Height: file.Height, URL: url, ExpiresAt: expiresAt,
@@ -249,7 +251,7 @@ func (s *Service) describeBlocks(ctx context.Context, repos repositories.Reposit
 				image, _ := domain.ParseUUID[domain.AttachmentID](text)
 				file, found := files[image]
 				if !found {
-					return nil, fmt.Errorf("issue %s: %w", row.ID, errStoredFileGone)
+					return nil, fmt.Errorf("issue %s: %w", issue, errStoredFileGone)
 				}
 				described.Images = append(described.Images, file)
 			}
@@ -258,7 +260,7 @@ func (s *Service) describeBlocks(ctx context.Context, repos repositories.Reposit
 			attachment, _ := domain.ParseUUID[domain.AttachmentID](block.Material.AttachmentID)
 			file, found := files[attachment]
 			if !found {
-				return nil, fmt.Errorf("issue %s: %w", row.ID, errStoredFileGone)
+				return nil, fmt.Errorf("issue %s: %w", issue, errStoredFileGone)
 			}
 			described.Material = &IssueMaterial{Title: block.Material.Title, File: file}
 		}

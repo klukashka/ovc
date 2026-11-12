@@ -821,3 +821,11 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: SubmissionStatus
+          - column: answers.submission_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: SubmissionID
+          - column: answers.question_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: QuestionID

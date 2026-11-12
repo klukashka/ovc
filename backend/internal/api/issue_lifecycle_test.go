@@ -163,6 +163,9 @@ func TestTutorPurgeIssues(t *testing.T) {
 	pictured := h.createTemplate(t, parties.tutorToken, "Pictured", nil, imageQuestion(blockID(43, 1), uploadedID(t, upload)))
 	h.issued(t, parties.tutorToken, issueJSON(pictured.ID, toCard(card)))
 	h.issued(t, parties.tutorToken, issueJSON(parties.template.ID, toCard(card)))
+	_, work := h.issueWork(t, parties.tutorToken, toCard(card), "Answered", string(domain.AnswerPolicyNever), nil, workBlocks()...)
+	answerFile := h.answerFile(t, h.studentToken(t, 10), work[0].id, workQuestion(6), "answer.pdf", 64)
+	h.saved(t, h.studentToken(t, 10), work[0].id, answersJSON(t, 1, saveID(1), attached(workQuestion(6), answerFile), typedAnswer(workQuestion(5), "Done")))
 	h.mustAnswer(t, h.deleteMe(t, parties.tutorToken, accountPassword), http.StatusNoContent)
 
 	h.at(t, h.now(t).Add(domain.DeletedAccountRetention))
@@ -170,9 +173,12 @@ func TestTutorPurgeIssues(t *testing.T) {
 
 	tutor := parties.tutor.String()
 	for name, query := range map[string]string{
-		"issues":      "SELECT count(id) FROM issues WHERE tutor_id = $1::uuid",
-		"submissions": "SELECT count(id) FROM submissions WHERE tutor_id = $1::uuid",
-		"references":  "SELECT count(attachment_id) FROM attachment_references WHERE ref_kind = 'issue_snapshot' AND $1::text <> ''",
+		"issues":            "SELECT count(id) FROM issues WHERE tutor_id = $1::uuid",
+		"submissions":       "SELECT count(id) FROM submissions WHERE tutor_id = $1::uuid",
+		"references":        "SELECT count(attachment_id) FROM attachment_references WHERE ref_kind IN ('issue_snapshot', 'answer') AND $1::text <> ''",
+		"answers":           "SELECT count(*) FROM answers WHERE $1::text <> ''",
+		"answer charges":    "SELECT count(*) FROM quota_charges WHERE tutor_id = $1::uuid",
+		"answer attachment": "SELECT count(id) FROM attachments WHERE context = 'answer' AND state <> 'deleted' AND $1::text <> ''",
 	} {
 		if count := h.countRows(t, query, tutor); count != 0 {
 			t.Errorf("the purged tutor keeps %d %s", count, name)
@@ -185,10 +191,14 @@ func TestTutorPurgeIssues(t *testing.T) {
 
 func TestStudentPurgeSubmissions(t *testing.T) {
 	t.Parallel()
-	h := newAuthHarness(t)
+	h := newUploadHarness(t)
 	parties := h.issueParties(t)
 	card := h.linkedCard(t, parties.tutor, 10, domain.RelationshipActive)
 	issue := h.issued(t, parties.tutorToken, issueJSON(parties.template.ID, toCard(card)))
+	_, work := h.issueWork(t, parties.tutorToken, toCard(card), "Answered", string(domain.AnswerPolicyNever), nil, workBlocks()...)
+	answerFile := h.answerFile(t, h.studentToken(t, 10), work[0].id, workQuestion(6), "answer.pdf", 64)
+	h.saved(t, h.studentToken(t, 10), work[0].id, answersJSON(t, 1, saveID(1), attached(workQuestion(6), answerFile)))
+	usage := h.fileUsage(t, parties.tutor)
 	h.mustAnswer(t, h.deleteMe(t, h.studentToken(t, 10), accountPassword), http.StatusNoContent)
 
 	h.at(t, h.now(t).Add(domain.DeletedAccountRetention))
@@ -199,6 +209,10 @@ func TestStudentPurgeSubmissions(t *testing.T) {
 	}
 	if h.userExists(t, memberEmail(10)) {
 		t.Fatal("the student was not purged")
+	}
+	if h.countRows(t, "SELECT count(*) FROM answers WHERE submission_id = $1::uuid", work[0].id) != 0 || h.referencesOf(t, answerFile) != 0 ||
+		usage-h.fileUsage(t, parties.tutor) != 64+pdfHeaderBytes || !h.storageDeleteQueued(t, answerFile) {
+		t.Fatal("the student's purge kept the answers or their file")
 	}
 	if h.countRows(t, "SELECT count(id) FROM issues WHERE id = $1::uuid AND erase_pending_since IS NULL", issue.ID) != 1 {
 		t.Fatal("the student's purge did not keep the tutor's issue")

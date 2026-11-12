@@ -1334,15 +1334,27 @@ func (q *Queries) UpdateIssue(ctx context.Context, arg UpdateIssueParams) error 
 const visibleIssueSnapshotReferences = `-- name: VisibleIssueSnapshotReferences :many
 SELECT issues.id, attachments.width
 FROM attachment_references
-JOIN issues ON issues.id = attachment_references.ref_id AND issues.tutor_id = $1::uuid AND issues.erase_pending_since IS NULL
+JOIN issues ON issues.id = attachment_references.ref_id AND issues.erase_pending_since IS NULL
 JOIN attachments ON attachments.id = attachment_references.attachment_id AND attachments.state = 'bound'
-WHERE attachment_references.attachment_id = $2 AND attachment_references.ref_kind = 'issue_snapshot'
+WHERE attachment_references.attachment_id = $1 AND attachment_references.ref_kind = 'issue_snapshot'
+    AND (
+        issues.tutor_id = $2::uuid
+        OR (
+            issues.status = 'active'
+            AND EXISTS (
+                SELECT 1 FROM submissions
+                JOIN relationships ON relationships.id = submissions.relationship_id
+                WHERE submissions.issue_id = issues.id AND submissions.student_id = $2::uuid
+                    AND relationships.state IN ('active', 'provisional', 'ended')
+            )
+        )
+    )
 ORDER BY issues.id
 `
 
 type VisibleIssueSnapshotReferencesParams struct {
-	Viewer       pgtype.UUID
 	AttachmentID domain.AttachmentID
+	Viewer       pgtype.UUID
 }
 
 type VisibleIssueSnapshotReferencesRow struct {
@@ -1351,7 +1363,7 @@ type VisibleIssueSnapshotReferencesRow struct {
 }
 
 func (q *Queries) VisibleIssueSnapshotReferences(ctx context.Context, arg VisibleIssueSnapshotReferencesParams) ([]VisibleIssueSnapshotReferencesRow, error) {
-	rows, err := q.db.Query(ctx, visibleIssueSnapshotReferences, arg.Viewer, arg.AttachmentID)
+	rows, err := q.db.Query(ctx, visibleIssueSnapshotReferences, arg.AttachmentID, arg.Viewer)
 	if err != nil {
 		return nil, err
 	}

@@ -52,7 +52,9 @@ var referenceKindCodes = []referenceKindCode{
 	{domain.ReferenceReviewItem, 6},
 }
 
-var addressableKinds = []domain.ReferenceKind{domain.ReferenceMaterial, domain.ReferenceTemplate, domain.ReferenceLesson, domain.ReferenceIssueSnapshot}
+var addressableKinds = []domain.ReferenceKind{
+	domain.ReferenceMaterial, domain.ReferenceTemplate, domain.ReferenceLesson, domain.ReferenceIssueSnapshot, domain.ReferenceAnswer,
+}
 
 func codeOfKind(kind domain.ReferenceKind) (byte, bool) {
 	for _, entry := range referenceKindCodes {

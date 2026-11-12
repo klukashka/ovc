@@ -476,7 +476,7 @@ func (s *Service) tutorActive(ctx context.Context, repos repositories.Repositori
 
 func (s *Service) PurgeBatch(ctx context.Context, repos repositories.Repositories, user domain.UserID, role domain.Role, now time.Time) (int64, error) {
 	if role == domain.RoleStudent {
-		deleted, err := homework.PurgeStudentBatch(ctx, repos, user, s.purgeBatchRows())
+		deleted, err := (homework.Purge{Random: s.deps.Random, Logger: s.deps.Logger}).StudentBatch(ctx, repos, user, s.purgeBatchRows(), now)
 		if err != nil || deleted > 0 {
 			return deleted, err
 		}

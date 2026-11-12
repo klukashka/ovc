@@ -197,6 +197,7 @@ func (r *router) registerAll(readiness ReadinessFunc) {
 	r.registerChat()
 	r.registerLibrary()
 	r.registerIssues()
+	r.registerSubmissions()
 	r.registerFileRoutes()
 	r.registerRealtimeAudience()
 }

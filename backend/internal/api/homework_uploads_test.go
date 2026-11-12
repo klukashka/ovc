@@ -135,8 +135,12 @@ func TestAnswerUploadScope(t *testing.T) {
 	_, otherSubmission := h.issueFileWork(t, parties.tutorToken, otherCard)
 	_, unconfirmedToken := h.signedInAs(t, domain.RoleStudent, domain.AccountUnverified, 11, newcomerEmail)
 	photo := homeworkRoute(domain.ContextAnswer, parties.submission, parties.photoQuestion)
+	h.saved(t, parties.studentToken, parties.submission, answersJSON(t, 1, saveID(1), typedAnswer(parties.writtenQuestion, "A draft")))
+	_, closedSubmission := h.issueFileWork(t, parties.tutorToken, parties.card.ID)
+	h.setSubmissionStatus(t, closedSubmission, domain.SubmissionClosed)
 
 	accepted := h.homeworkUpload(t, parties.studentToken, photo, "page one.pdf", pdfFile(256))
+	closed := h.homeworkUpload(t, parties.studentToken, homeworkRoute(domain.ContextAnswer, closedSubmission, parties.photoQuestion), "page.pdf", pdfFile(64))
 	wrongKind := h.homeworkUpload(t, parties.studentToken, photo, "reading.mp3", mp3File())
 	audio := h.homeworkUpload(t, parties.studentToken, homeworkRoute(domain.ContextAnswer, parties.submission, parties.audioQuestion), "reading.mp3", mp3File())
 	video := h.homeworkUpload(t, parties.studentToken, photo, "lecture.mp4", mp4File(t, "isom"))
@@ -151,8 +155,9 @@ func TestAnswerUploadScope(t *testing.T) {
 	uploads := h.uploadsIn(t, parties.student, domain.ContextAnswer)
 
 	if accepted.status != http.StatusCreated || decodeUploaded(t, accepted).MediaType != "application/pdf" {
-		t.Fatalf("the student's answer upload answered %s", describe(accepted))
+		t.Fatalf("the student's answer upload to draft work answered %s", describe(accepted))
 	}
+	assertRefused(t, "an answer upload to closed work", closed, http.StatusConflict, "not_editable")
 	if audio.status != http.StatusCreated || decodeUploaded(t, audio).MediaType != "audio/mpeg" {
 		t.Fatalf("an audio answer to an audio question answered %s", describe(audio))
 	}
@@ -358,6 +363,10 @@ func TestCorrectedUploadScope(t *testing.T) {
 	_, intruderToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 12, "another-tutor@example.org")
 	h.submitStored(t, parties.submission, authStart)
 	corrected := homeworkRoute(domain.ContextCorrected, parties.submission, parties.photoQuestion)
+	_, drafted := h.issueFileWork(t, parties.tutorToken, otherCard)
+	h.saved(t, h.studentToken(t, 10), drafted, answersJSON(t, 1, saveID(1), typedAnswer(parties.writtenQuestion, "A draft")))
+	_, closedSubmission := h.issueFileWork(t, parties.tutorToken, parties.card.ID)
+	h.setSubmissionStatus(t, closedSubmission, domain.SubmissionClosed)
 
 	accepted := h.homeworkUpload(t, parties.tutorToken, corrected, "marked.pdf", pdfFile(256))
 	audio := h.homeworkUpload(t, parties.tutorToken, corrected, "comments.mp3", mp3File())
@@ -366,6 +375,8 @@ func TestCorrectedUploadScope(t *testing.T) {
 	notStarted := h.homeworkUpload(t, parties.tutorToken, homeworkRoute(domain.ContextCorrected, unstarted, parties.photoQuestion), "marked.pdf", pdfFile(64))
 	written := h.homeworkUpload(t, parties.tutorToken, homeworkRoute(domain.ContextCorrected, parties.submission, parties.writtenQuestion), "marked.pdf", pdfFile(64))
 	byStudent := h.homeworkUpload(t, parties.studentToken, corrected, "marked.pdf", pdfFile(64))
+	draft := h.homeworkUpload(t, parties.tutorToken, homeworkRoute(domain.ContextCorrected, drafted, parties.photoQuestion), "marked.pdf", pdfFile(64))
+	closed := h.homeworkUpload(t, parties.tutorToken, homeworkRoute(domain.ContextCorrected, closedSubmission, parties.photoQuestion), "marked.pdf", pdfFile(64))
 
 	for _, created := range []response{accepted, audio} {
 		if created.status != http.StatusCreated {
@@ -375,7 +386,7 @@ func TestCorrectedUploadScope(t *testing.T) {
 	assertRefused(t, "a corrected plain text file", textFile, http.StatusUnsupportedMediaType, "unsupported_media_type")
 	for label, refused := range map[string]response{
 		"another tutor's corrected upload": intruder, "a corrected upload to unstarted work": notStarted, "a corrected file for a written question": written,
-		"the student's corrected upload": byStudent,
+		"the student's corrected upload": byStudent, "a corrected upload to draft work": draft, "a corrected upload to closed work": closed,
 	} {
 		assertRefused(t, label, refused, http.StatusNotFound, "not_found")
 	}

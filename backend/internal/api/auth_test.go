@@ -324,6 +324,7 @@ func newAuthHarnessWithDatabase(
 		{Name: domain.JobNotificationsCleanup, Every: time.Hour, Run: inbox.Cleanup},
 		{Name: domain.JobMessagesDigest, Every: time.Minute, Run: chatService.QueueDigests},
 		{Name: domain.JobEraseChannels, Every: time.Minute, Run: chatService.EraseChannels},
+		{Name: domain.JobHomeworkCleanup, Every: time.Minute, Run: homework.Cleanup{Store: store, Random: random, Logger: logger}.Run},
 		{Name: domain.JobLessonStatus, Every: time.Minute, Run: jobs.run((*schedule.Jobs).EndDue)},
 		{Name: domain.JobLessonReminders, Every: time.Minute, Run: jobs.run((*schedule.Jobs).QueueReminders)},
 		{Name: domain.JobSeriesExtension, Every: time.Hour, OwnLoop: true, Run: jobs.run((*schedule.Jobs).ExtendHorizons)},

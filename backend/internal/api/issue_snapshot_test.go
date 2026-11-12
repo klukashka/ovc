@@ -93,9 +93,11 @@ func TestIssueSnapshotDownloadsFollowTheIssue(t *testing.T) {
 	issue := h.issued(t, parties.tutorToken, issueJSON(template.ID, toCard(card)))
 	reference := "?ref=issue_snapshot:" + issue.ID
 
-	byStudent, _ := h.addressOf(t, h.studentToken(t, 10), image, reference)
+	byStudent, studentAddress := h.addressOf(t, h.studentToken(t, 10), image, reference)
 	random, _ := h.addressOf(t, h.studentToken(t, 10), fixtureID(78, 1), reference)
+	servedStudent := h.fetch(t, studentAddress.URL, nil)
 	h.mustAnswer(t, h.withdrawIssue(t, parties.tutorToken, issue.ID), http.StatusOK)
+	studentWithdrawn, _ := h.addressOf(t, h.studentToken(t, 10), image, reference)
 	afterWithdrawal := h.issueDetail(t, parties.tutorToken, issue.ID)
 	servedWithdrawn := h.fetch(t, afterWithdrawal.Blocks[0].Images[0].URL, nil)
 	mintedWithdrawn, _ := h.addressOf(t, parties.tutorToken, image, reference)
@@ -103,8 +105,11 @@ func TestIssueSnapshotDownloadsFollowTheIssue(t *testing.T) {
 	servedMarked := h.fetch(t, afterWithdrawal.Blocks[0].Images[0].URL, nil)
 	mintedMarked, _ := h.addressOf(t, parties.tutorToken, image, reference)
 
-	if byStudent.status != http.StatusNotFound || refusal(t, byStudent) != refusal(t, random) {
-		t.Fatalf("the student's mint answered %s", describe(byStudent))
+	if byStudent.status != http.StatusOK || servedStudent.status != http.StatusOK {
+		t.Fatalf("the student's mint answered %s and its address %s", describe(byStudent), describe(servedStudent))
+	}
+	if studentWithdrawn.status != http.StatusNotFound || refusal(t, studentWithdrawn) != refusal(t, random) {
+		t.Fatalf("the student's mint on a withdrawn issue answered %s", describe(studentWithdrawn))
 	}
 	if servedWithdrawn.status != http.StatusOK || mintedWithdrawn.status != http.StatusOK {
 		t.Fatalf("the tutor's address on a withdrawn issue answered %s and %s", describe(servedWithdrawn), describe(mintedWithdrawn))
@@ -142,10 +147,12 @@ func TestTheStudentSubmissionReadabilityCopiesAgree(t *testing.T) {
 	h := newAuthHarness(t)
 	parties := h.issueParties(t)
 	cases := readabilityCases()
+	submissions := make([]string, 0, len(cases))
 	for _, testCase := range cases {
 		student := h.seedStudentAccount(t, testCase.student, domain.AccountActive)
 		card := h.seedCard(t, parties.tutor, testCase.student, domain.RelationshipActive, &student)
 		issue := h.issued(t, parties.tutorToken, issueJSON(parties.template.ID, toCard(card)))
+		submissions = append(submissions, h.submissionsOf(t, issue.ID)[0].id)
 		if testCase.issue == domain.IssueWithdrawn {
 			h.mustAnswer(t, h.withdrawIssue(t, parties.tutorToken, issue.ID), http.StatusOK)
 		}
@@ -158,13 +165,16 @@ func TestTheStudentSubmissionReadabilityCopiesAgree(t *testing.T) {
 	h.tick(t)
 
 	readableCount := 0
-	for _, testCase := range cases {
+	for index, testCase := range cases {
 		want := domain.ReadableStudentSubmission(testCase.issue, testCase.marked, testCase.relationship)
-		created := eventsNamed(h.notificationsOf(t, h.studentToken(t, testCase.student)), string(domain.NotificationIssueCreated))
+		token := h.studentToken(t, testCase.student)
+		created := eventsNamed(h.notificationsOf(t, token), string(domain.NotificationIssueCreated))
 		labelled := len(created) == 1 && created[0].Label != nil && created[0].Link != nil
 		emailed := len(h.mailTo(t, memberEmail(testCase.student))) == 1
-		if labelled != want || emailed != want {
-			t.Errorf("%+v: the predicate says %v, the row label %v, the email %v", testCase, want, labelled, emailed)
+		read := h.submissionAnswer(t, token, submissions[index]).status == http.StatusOK
+		listed := h.assignments(t, token, nil).Counts.Todo == 1
+		if labelled != want || emailed != want || read != want || listed != want {
+			t.Errorf("%+v: the predicate says %v, the row label %v, the email %v, the read %v, the list %v", testCase, want, labelled, emailed, read, listed)
 		}
 		if want {
 			readableCount++

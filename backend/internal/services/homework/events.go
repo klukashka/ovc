@@ -74,6 +74,7 @@ func (s *Service) notifyStudents(
 		if !inserted {
 			continue
 		}
+		s.logNotificationAfterCommit(ctx, repos, event, student, id)
 		if err := repos.Signals.Notification(ctx, student, id); err != nil {
 			return err
 		}

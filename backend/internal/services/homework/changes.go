@@ -8,6 +8,7 @@ import (
 
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
+	"ovc/backend/internal/services/library"
 )
 
 type lockedIssue struct {
@@ -160,6 +161,13 @@ func (s *Service) WithdrawIssue(ctx context.Context, actor domain.TutorActor, id
 		}
 		readers, all := readableRecipients(locked.row.Status, locked.states)
 		if err := repos.Homework.WithdrawIssue(ctx, tutor, id, now); err != nil {
+			return err
+		}
+		released, err := repos.Homework.RemoveIssueAnswerReferences(ctx, id)
+		if err != nil {
+			return err
+		}
+		if err := library.ReleaseReferences(ctx, repos, s.deps.Random, s.deps.Logger, domain.ReferenceAnswer, released, now); err != nil {
 			return err
 		}
 		if err := s.notifyStudents(ctx, repos, tutor, domain.NotificationIssueWithdrawn, readers, now); err != nil {
