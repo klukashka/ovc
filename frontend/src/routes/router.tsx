@@ -25,6 +25,8 @@ const groupsPage = lazyPage(async () => (await import('../features/groups/Groups
 const groupPage = lazyPage(async () => (await import('../features/groups/GroupPage.tsx')).GroupPage);
 const libraryPage = lazyPage(async () => (await import('../features/library/LibraryPage.tsx')).LibraryPage);
 const builderPage = lazyPage(async () => (await import('../features/builder/BuilderPage.tsx')).BuilderPage);
+const issuedPage = lazyPage(async () => (await import('../features/homework/IssuedPage.tsx')).IssuedPage);
+const issuePage = lazyPage(async () => (await import('../features/homework/IssuePage.tsx')).IssuePage);
 const teachingSettingsPage = lazyPage(
   async () => (await import('../features/settings/TeachingSettingsPage.tsx')).TeachingSettingsPage,
 );
@@ -68,8 +70,8 @@ export const tutorPages: RouteObject[] = [
   page('/groups/:groupId', 'page.group', groupPage),
   page('/homework/library', 'page.library', libraryPage),
   page('/homework/templates/:templateId', 'page.builder', builderPage),
-  page('/homework/issued', 'page.issued'),
-  page('/homework/issued/:issueId', 'page.issue'),
+  page('/homework/issued', 'page.issued', issuedPage),
+  page('/homework/issued/:issueId', 'page.issue', issuePage),
   page('/homework/review', 'page.review'),
   page('/homework/review/:submissionId', 'page.reviewSubmission'),
   page('/settings/teaching', 'page.settingsTeaching', teachingSettingsPage),

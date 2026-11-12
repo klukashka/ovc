@@ -50,6 +50,7 @@ type StudentCardSummary = components['schemas']['StudentCardSummary'];
 
 const cardPathPrefix = '/api/v1/students/';
 const calendarPath = '/api/v1/calendar';
+const issuesPath = '/api/v1/issues';
 const lessonPathPrefix = '/api/v1/lessons/';
 const joinRequestsPath = '/api/v1/join-requests';
 const notificationsPath = '/api/v1/notifications';
@@ -206,7 +207,8 @@ function fakeAudienceRefusal(method: string, path: string, caller: Me): Response
     path.startsWith(cardPathPrefix) ||
     path === joinRequestsPath ||
     path.startsWith('/api/v1/groups') ||
-    path.startsWith('/api/v1/library');
+    path.startsWith('/api/v1/library') ||
+    path === issuesPath;
   if ((tutorOnly && caller.role !== 'tutor') || (path === '/api/v1/tutors' && caller.role !== 'student')) {
     return refusal(404, 'not_found');
   }
@@ -941,6 +943,9 @@ export class FakeAuthServer {
         next_cursor: null,
         template_count: this.templateCounts.get(caller.id) ?? 0,
       });
+    }
+    if (request.method === 'GET' && path === issuesPath && caller !== undefined) {
+      return json(200, { items: [], next_cursor: null });
     }
     if (path === '/api/v1/uploads' && request.method === 'POST' && caller !== undefined) {
       request.signal.throwIfAborted();

@@ -1,5 +1,6 @@
 import type { assignmentTexts } from '../../features/assignment/texts.en.ts';
 import type { builderTexts } from '../../features/builder/texts.en.ts';
+import type { homeworkTexts } from '../../features/homework/texts.en.ts';
 import type { libraryTexts } from '../../features/library/texts.en.ts';
 import type { notificationEventTexts } from '../../features/notifications/texts.en.ts';
 import type { ru } from './ru.ts';
@@ -13,6 +14,7 @@ export interface FeatureSections {
   readonly builder: Shape<typeof builderTexts>;
   readonly assignment: Shape<typeof assignmentTexts>;
   readonly notificationEvents: Shape<typeof notificationEventTexts>;
+  readonly homework: Shape<typeof homeworkTexts>;
 }
 
 export type FeatureSection = keyof FeatureSections;

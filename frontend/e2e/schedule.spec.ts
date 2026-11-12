@@ -5,6 +5,7 @@ import type { ObservedBrowser } from './browser-diagnostics.ts';
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
+import { createReadyTemplate, issueThroughTheApi } from './homework.ts';
 import { recordShownRegion, shownRegion } from './observers.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import {
@@ -976,7 +977,7 @@ function pavelMonday(seed: PilotThreeSeed): LocalDate {
 test.describe('pilot 3, two tutors in Anna’s schedule', () => {
   test.describe.configure({ mode: 'serial' });
 
-  test('pilot-3 › seed Maria teaches Anna on Wednesdays, Boris, and the group B1 evening', async ({
+  test('pilot-3 › seed Maria teaches Anna on Wednesdays, Boris, and the group B1 evening, and has issued Anna an assignment', async ({
     deployment,
     control,
   }) => {
@@ -996,12 +997,15 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
       weekdays: [3],
       count: 4,
     });
+    const exercises = await createReadyTemplate(deployment, maria, 'Упражнения');
+    const issued = await issueThroughTheApi(deployment, maria, exercises.id, { relationship_id: anna.cardId });
 
     expect(starts).toHaveLength(4);
+    expect(issued).not.toBe('');
     pilotThreeSeed = { maria, anna: anna.student, firstWednesday };
   });
 
-  test('pilot-3 › step 3 Pavel schedules a Monday lesson at 10:00 his time for Anna', async ({
+  test('pilot-3 › step 3 Pavel schedules a Monday lesson at 10:00 his time for Anna and issues her an assignment', async ({
     observedBrowser: browser,
     deployment,
     diagnostics,
@@ -1025,6 +1029,18 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
 
     await expect(dialog).toBeHidden();
     await expect(lessonLinks(page).filter({ hasText: '10:00–11:00' })).toContainText('Lesson');
+    await createReadyTemplate(deployment, pavel, 'Fractions');
+    await page.goto('/homework/library');
+    await page.getByRole('button', { name: 'Actions for Fractions', exact: true }).click();
+    await page
+      .locator('main [aria-expanded="true"] + div')
+      .getByRole('button', { name: 'Issue assignment', exact: true })
+      .click();
+    const issue = page.getByRole('dialog', { name: 'Issue assignment' });
+    await issue.getByRole('button', { name: 'Anna', exact: true }).click();
+    await issue.getByRole('button', { name: 'Issue', exact: true }).click();
+    await expect(issue).toBeHidden();
+    await expect(page.getByText('Assignment issued.', { exact: true })).toBeFocused();
     await diagnostics.closeContext(context);
     pavelOfPilotThree = pavel;
     pavelCardOfPilotThree = card.id;
@@ -1061,7 +1077,7 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
     await diagnostics.closeContext(context);
   });
 
-  test('pilot-3 › step 5 Pavel’s card for Anna lists only his lesson with her, none of Maria’s', async ({
+  test('pilot-3 › step 5 Pavel’s card for Anna lists only his lesson and work with her, none of Maria’s', async ({
     observedBrowser: browser,
     deployment,
     diagnostics,
@@ -1084,6 +1100,17 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
     const next = page.getByRole('list', { name: 'Next lessons', exact: true }).getByRole('listitem');
     await expect(next).toHaveCount(1);
     await expect(next).toContainText('10:00–11:00');
+    const open = page.getByRole('list', { name: 'Open assignments', exact: true }).getByRole('listitem');
+    await expect(open).toHaveCount(1);
+    await expect(open).toContainText('Fractions');
+    await page
+      .getByRole('navigation', { name: 'Card sections' })
+      .getByRole('link', { name: 'Homework', exact: true })
+      .click();
+    const work = page.getByRole('list', { name: 'Homework', exact: true }).getByRole('listitem');
+    await expect(work).toHaveCount(1);
+    await expect(work).toContainText('Fractions');
+    await expect(page.getByText('Упражнения')).toHaveCount(0);
     await diagnostics.closeContext(context);
   });
 

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
-import { type ReactElement, type RefObject, type SyntheticEvent, useId, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, type RefObject, type SyntheticEvent, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router';
 
@@ -35,6 +35,9 @@ import type { components } from '../../lib/api/schema.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import { LessonList } from '../schedule/LessonList.tsx';
 import { ScheduleLessonAction } from '../schedule/ScheduleLessonAction.tsx';
+import { GroupIssues, GroupMemberNote } from '../homework/GroupIssues.tsx';
+import { homeworkTextLoaders } from '../homework/IssueAssignment.tsx';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { studentsKey } from '../students/api.ts';
 import {
   type Group,
@@ -172,6 +175,7 @@ function DetailsDialog({
 
 function AddMembersDialog({
   group,
+  note,
   open,
   returnFocus,
   onClose,
@@ -179,6 +183,7 @@ function AddMembersDialog({
   onChangedElsewhere,
 }: {
   readonly group: Group;
+  readonly note: ReactNode;
   readonly open: boolean;
   readonly returnFocus: RefObject<HTMLElement | null>;
   readonly onClose: () => void;
@@ -245,6 +250,7 @@ function AddMembersDialog({
           {t('groups.addTitle')}
         </h2>
         {refusal === null ? null : <FormAlert key={refusals}>{refusal}</FormAlert>}
+        {note}
         <MemberPicker
           excluded={new Set(group.members.map((member) => member.relationship_id))}
           chosen={chosen}
@@ -271,7 +277,15 @@ function AddMembersDialog({
   );
 }
 
-function Members({ group, handlers }: { readonly group: Group; readonly handlers: GroupHandlers }): ReactElement {
+function Members({
+  group,
+  memberNote,
+  handlers,
+}: {
+  readonly group: Group;
+  readonly memberNote: ReactNode;
+  readonly handlers: GroupHandlers;
+}): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const headingId = useId();
@@ -375,6 +389,7 @@ function Members({ group, handlers }: { readonly group: Group; readonly handlers
       )}
       <AddMembersDialog
         group={group}
+        note={memberNote}
         open={dialogOpen && !archived}
         returnFocus={opener}
         onClose={() => {
@@ -563,9 +578,11 @@ function GroupLessons({ group }: { readonly group: GroupDetail }): ReactElement 
 
 function GroupView({
   group,
+  homework,
   handlers,
 }: {
   readonly group: GroupDetail;
+  readonly homework: boolean;
   readonly handlers: GroupHandlers;
 }): ReactElement {
   const { t } = useTranslation();
@@ -582,8 +599,19 @@ function GroupView({
       </p>
       <PageColumns
         asideLabel={t('lessons.next')}
-        main={<Members group={group} handlers={handlers} />}
-        aside={<GroupLessons group={group} />}
+        main={
+          <Members
+            group={group}
+            memberNote={homework ? <GroupMemberNote groupId={group.id} /> : null}
+            handlers={handlers}
+          />
+        }
+        aside={
+          <>
+            <GroupLessons group={group} />
+            {homework ? <GroupIssues groupId={group.id} /> : null}
+          </>
+        }
       />
     </>
   );
@@ -631,6 +659,8 @@ export function GroupPage(): ReactElement {
   const notFound = error?.code === 'not_found';
 
   const me = useSignedInAccount();
+  const homeworkTexts = useFeatureTexts('homework', homeworkTextLoaders);
+  const homework = me.email_verified && homeworkTexts.ready;
   const [outcome, setOutcome] = useState<{
     readonly id: string;
     readonly count: number;
@@ -681,7 +711,7 @@ export function GroupPage(): ReactElement {
     if (shown === null) {
       return <DelayedLoading />;
     }
-    return <GroupView group={shown} handlers={handlers} />;
+    return <GroupView group={shown} homework={homework} handlers={handlers} />;
   }
 
   return (

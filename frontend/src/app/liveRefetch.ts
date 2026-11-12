@@ -5,6 +5,7 @@ import { evictChannel } from '../features/messages/cache.ts';
 import { chatRefetch } from '../features/messages/refetch.ts';
 
 import { groupsKey, memberChoiceKey } from '../features/groups/api.ts';
+import { issuesKey } from '../features/homework/api.ts';
 import { notificationsKey } from '../features/notifications/api.ts';
 import { calendarKey, lessonKey } from '../features/schedule/keys.ts';
 import { joinRequestsKey, studentCardKey, studentCardsKey, studentListsKey } from '../features/students/api.ts';
@@ -27,7 +28,7 @@ function queriesOf(entity: EntityKind, id: string): readonly QueryKey[] {
       return [calendarKey];
     case 'issue':
     case 'submission':
-      return [];
+      return [issuesKey];
   }
 }
 

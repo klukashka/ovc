@@ -36,6 +36,13 @@ import { downloadAddress } from '../../lib/files/downloadAddress.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import {
+  HomeworkTabs,
+  IssueDialogHost,
+  type IssuePreset,
+  IssuedNotice,
+  homeworkTextLoaders,
+} from '../homework/IssueAssignment.tsx';
+import {
   type FolderNode,
   type Library,
   type LibraryFolder,
@@ -433,6 +440,7 @@ function ListBody({
 export function LibraryPage(): ReactElement {
   const { t } = useTranslation();
   const texts = useFeatureTexts('library', libraryTextLoaders);
+  const homeworkTexts = useFeatureTexts('homework', homeworkTextLoaders);
   const me = useSignedInAccount();
   const session = useSession();
   const client = useApiClient();
@@ -453,6 +461,8 @@ export function LibraryPage(): ReactElement {
   const [focusRequest, setFocusRequest] = useState(0);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [alert, setAlert] = useState<Alert | null>(null);
+  const [issuing, setIssuing] = useState<IssuePreset | null>(null);
+  const [issued, setIssued] = useState<{ readonly issueId: string; readonly count: number } | null>(null);
   const [busyRow, setBusyRow] = useState<string | null>(null);
   const rowAction = useAction();
   const currentUpload = useRef<LibraryUpload | null>(null);
@@ -536,11 +546,13 @@ export function LibraryPage(): ReactElement {
 
   function showNotice(message: Notice['message']): void {
     setAlert(null);
+    setIssued(null);
     setNotice((previous) => ({ message, count: (previous?.count ?? 0) + 1, view: viewKey }));
   }
 
   function showAlert(message: string): void {
     setNotice(null);
+    setIssued(null);
     setAlert((previous) => ({ message, count: (previous?.count ?? 0) + 1, view: viewKey }));
   }
 
@@ -707,6 +719,13 @@ export function LibraryPage(): ReactElement {
       return;
     }
     rememberOpener();
+    if (command === 'issue' && target.kind === 'item') {
+      setNotice(null);
+      setAlert(null);
+      setIssued(null);
+      setIssuing({ template: { id: target.item.id, title: target.item.title } });
+      return;
+    }
     if (command === 'rename') {
       setDialog({ kind: 'name', subject: { kind: 'rename', target } });
     } else if (command === 'move') {
@@ -782,6 +801,8 @@ export function LibraryPage(): ReactElement {
           }
         }}
       />
+      {homeworkTexts.ready ? <HomeworkTabs current="library" /> : null}
+      {issued === null ? null : <IssuedNotice key={issued.count} issueId={issued.issueId} />}
       {notice?.view !== viewKey ? null : (
         <FocusedNotice
           key={notice.count}
@@ -814,7 +835,7 @@ export function LibraryPage(): ReactElement {
                 <EmptyLibrary createButton={createButton} onChoose={chooseUpload} onFile={acceptFile} />
               ) : null
             }
-            handlers={{ busyRow, onCommand }}
+            handlers={{ busyRow, issuable: me.email_verified && homeworkTexts.ready, onCommand }}
           />
         </div>
       </div>
@@ -857,6 +878,20 @@ export function LibraryPage(): ReactElement {
         onSaved={savedTo}
       />
       <UploadPromptDialog open={dialog?.kind === 'uploadPrompt'} returnFocus={opener} onClose={closeDialog} />
+      {homeworkTexts.ready ? (
+        <IssueDialogHost
+          open={issuing !== null}
+          preset={issuing ?? {}}
+          returnFocus={opener}
+          onClose={() => {
+            setIssuing(null);
+          }}
+          onIssued={(issue) => {
+            setIssuing(null);
+            setIssued((previous) => ({ issueId: issue.id, count: (previous?.count ?? 0) + 1 }));
+          }}
+        />
+      ) : null}
     </Page>
   );
 }

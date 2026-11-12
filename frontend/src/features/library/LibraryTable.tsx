@@ -21,10 +21,11 @@ import { formatStorage } from '../settings/storageAmount.ts';
 import type { LibraryFolder, LibraryItem, LibraryPathEntry } from './api.ts';
 import { type LibraryTarget, rowKey } from './LibraryDialogs.tsx';
 
-export type RowCommand = 'open' | 'rename' | 'move' | 'duplicate' | 'delete';
+export type RowCommand = 'open' | 'issue' | 'rename' | 'move' | 'duplicate' | 'delete';
 
 export interface RowHandlers {
   readonly busyRow: string | null;
+  readonly issuable: boolean;
   readonly onCommand: (command: RowCommand, target: LibraryTarget) => void;
 }
 
@@ -63,7 +64,7 @@ function RowMenu({
   const { t } = useTranslation();
   const key = rowKey(target);
   const items: readonly MenuItem[] = commands.map((command) => ({
-    label: t(`library.${command}`),
+    label: command === 'issue' ? t('homework.issue') : t(`library.${command}`),
     onChoose: (): void => {
       handlers.onCommand(command, target);
     },
@@ -117,6 +118,15 @@ function ItemPath({ path }: { readonly path: readonly LibraryPathEntry[] | null 
       <Names names={[t('library.root'), ...path.map((entry) => entry.name)]} />
     </span>
   );
+}
+
+function commandsOf(item: LibraryItem, issuable: boolean): readonly RowCommand[] {
+  if (item.kind === 'material') {
+    return ['open', 'rename', 'move', 'delete'];
+  }
+  return issuable && item.ready === true
+    ? ['open', 'issue', 'duplicate', 'move', 'delete']
+    : ['open', 'duplicate', 'move', 'delete'];
 }
 
 function ItemRow({
@@ -187,7 +197,7 @@ function ItemRow({
         <RowMenu
           target={target}
           label={item.title}
-          commands={material ? ['open', 'rename', 'move', 'delete'] : ['open', 'duplicate', 'move', 'delete']}
+          commands={commandsOf(item, handlers.issuable)}
           handlers={handlers}
         />
       </td>

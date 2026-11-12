@@ -26,6 +26,7 @@ import { formatClock, formatFullDate, formatLongDay, formatWeekdayName } from '.
 import { calendarKey, lessonKey, lessonsKey } from './keys.ts';
 import { CancelLessonDialog, EditLessonDialog } from './LessonDialogs.tsx';
 import { audienceLabel } from './LessonParts.tsx';
+import { IssueAssignmentAction, IssuedNotice } from '../homework/IssueAssignment.tsx';
 import { LessonMaterials } from './LessonMaterials.tsx';
 import { LessonRoom } from './LessonRoom.tsx';
 import { type LessonPhase, dialogOutdated, isEditable, phaseOf, useLessonClock } from './lessonTiming.ts';
@@ -431,6 +432,7 @@ export function LessonPage(): ReactElement {
   const [closedPrefill] = useState<LessonPrefill>(() => nextFullHour(Date.now(), me.timezone));
   const [notice, setNotice] = useState<PageNotice | null>(null);
   const [announcement, setAnnouncement] = useState<string | null>(null);
+  const [issued, setIssued] = useState<{ readonly lessonId: string; readonly count: number } | null>(null);
   const action = useAction();
   const query = useQuery({
     queryKey: key,
@@ -570,6 +572,7 @@ export function LessonPage(): ReactElement {
   }
 
   const tutor = me.role === 'tutor';
+  const issueAudience = lesson === undefined ? null : sameAudience(t, lesson.audience);
   return (
     <Page
       {...headingOf(lesson, notFound)}
@@ -581,6 +584,19 @@ export function LessonPage(): ReactElement {
             </Link>
           ) : null}
           {controlsShown ? <LessonEditButton editButton={editButton} onOpen={open} /> : null}
+          {tutor && me.email_verified && lesson !== undefined && issueAudience !== null ? (
+            <IssueAssignmentAction
+              preset={{
+                audience: issueAudience,
+                lesson: { id: lesson.id, title: lesson.title, startsAt: lesson.starts_at },
+              }}
+              onIssued={() => {
+                setNotice(null);
+                setIssued((previous) => ({ lessonId, count: (previous?.count ?? 0) + 1 }));
+                void queryClient.invalidateQueries({ queryKey: key });
+              }}
+            />
+          ) : null}
         </>
       }
       menu={
@@ -592,6 +608,7 @@ export function LessonPage(): ReactElement {
       {shownNotice === null ? null : (
         <FocusedNotice key={shownNotice.count} message={t(noticeKeys[shownNotice.kind])} />
       )}
+      {issued?.lessonId !== lessonId || notFound ? null : <IssuedNotice key={issued.count} issueId={null} />}
       {refetchError === null ? null : (
         <RefetchFailed
           error={refetchError}

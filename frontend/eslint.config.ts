@@ -200,7 +200,7 @@ const studentViewImports = {
   patterns: [
     ...testOnlyModuleImports.patterns,
     {
-      group: ['**/builder', '**/builder/*', '**/library', '**/library/*'],
+      group: ['**/builder', '**/builder/*', '**/library', '**/library/*', '**/homework', '**/homework/*'],
       message: 'The student view never reaches tutor code, so answer keys cannot enter it',
     },
   ],

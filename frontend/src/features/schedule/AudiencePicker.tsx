@@ -37,8 +37,12 @@ function schedulable(card: StudentCardSummary): boolean {
   return card.state === 'active' || card.state === 'provisional';
 }
 
-function matches(group: GroupSummary, search: string): boolean {
-  return group.archived_at === null && group.name.toLocaleLowerCase().includes(search.toLocaleLowerCase());
+function matches(group: GroupSummary, search: string, withMembers: boolean): boolean {
+  return (
+    group.archived_at === null &&
+    (!withMembers || group.member_count > 0) &&
+    group.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())
+  );
 }
 
 function Choice({
@@ -88,11 +92,13 @@ function isListed(audience: Audience, cards: readonly StudentCardSummary[], grou
 function Choices({
   search,
   preselected,
+  groupsWithMembers,
   searchField,
   onChoose,
 }: {
   readonly search: string;
   readonly preselected: Audience | null;
+  readonly groupsWithMembers: boolean;
   readonly searchField: RefObject<HTMLInputElement | null>;
   readonly onChoose: (audience: Audience) => void;
 }): ReactElement {
@@ -128,7 +134,7 @@ function Choices({
       />
     );
   }
-  const shownGroups = groups.data.filter((group) => matches(group, search));
+  const shownGroups = groups.data.filter((group) => matches(group, search, groupsWithMembers));
   const pinned = preselected !== null && !isListed(preselected, cards, shownGroups) ? preselected : null;
   if (pinned === null && cards.length === 0 && shownGroups.length === 0 && !students.hasNextPage) {
     return <p className="text-small text-text-muted">{t('newLesson.nothingFound')}</p>;
@@ -204,6 +210,7 @@ type PendingFocus = 'search' | 'change' | null;
 export function AudiencePicker({
   chosen,
   preselected,
+  groupsWithMembers = false,
   searchField,
   changeButton,
   error,
@@ -212,6 +219,7 @@ export function AudiencePicker({
 }: {
   readonly chosen: Audience | null;
   readonly preselected: Audience | null;
+  readonly groupsWithMembers?: boolean;
   readonly searchField: RefObject<HTMLInputElement | null>;
   readonly changeButton: RefObject<HTMLButtonElement | null>;
   readonly error: string | undefined;
@@ -295,6 +303,7 @@ export function AudiencePicker({
       <Choices
         search={settledSearch}
         preselected={preselected}
+        groupsWithMembers={groupsWithMembers}
         searchField={searchField}
         onChoose={(audience) => {
           onChoose(audience);

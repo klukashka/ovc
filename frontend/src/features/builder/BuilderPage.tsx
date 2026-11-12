@@ -1,5 +1,15 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { type ReactElement, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  type ReactElement,
+  type RefObject,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router';
@@ -25,6 +35,7 @@ import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import { parseStudentView, type StudentAssignment } from '../assignment/studentView.ts';
 import { assignmentTextLoaders } from '../assignment/texts.ts';
+import { IssueDialogHost, IssuedNotice, homeworkTextLoaders } from '../homework/IssueAssignment.tsx';
 import { fetchFolders, folderTree, libraryFoldersKey, libraryListsKey } from '../library/api.ts';
 import { folderAddress } from '../library/LibraryTable.tsx';
 import { LibraryUpload } from '../library/upload.ts';
@@ -59,6 +70,43 @@ import { focusId } from './fields.tsx';
 import { type ChosenMaterial, MaterialPicker } from './MaterialPicker.tsx';
 import { PreviewDialog } from './PreviewDialog.tsx';
 import { builderTextLoaders } from './texts.ts';
+
+function IssueButton({
+  busy,
+  buttonRef,
+  titleId,
+  onIssue,
+}: {
+  readonly busy: boolean;
+  readonly buttonRef: RefObject<HTMLButtonElement | null>;
+  readonly titleId: string;
+  readonly onIssue: () => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const heldFocus = useRef(false);
+
+  useLayoutEffect(() => {
+    const element = buttonRef.current;
+    return (): void => {
+      heldFocus.current = element !== null && element === document.activeElement;
+    };
+  }, [buttonRef]);
+
+  useEffect(
+    () => (): void => {
+      if (heldFocus.current) {
+        document.getElementById(titleId)?.focus();
+      }
+    },
+    [titleId],
+  );
+
+  return (
+    <ActionButton busy={busy} onClick={onIssue} className={quietButtonClass} ref={buttonRef}>
+      {t('homework.issue')}
+    </ActionButton>
+  );
+}
 
 const expiryMarginMilliseconds = 30_000;
 const minimumRefetchMilliseconds = 5_000;
@@ -229,6 +277,11 @@ function Editor({
   const [previewAlert, setPreviewAlert] = useState<string | null>(null);
   const pickerOpener = useRef<HTMLElement | null>(null);
   const previewButton = useRef<HTMLButtonElement>(null);
+  const issueButton = useRef<HTMLButtonElement>(null);
+  const homeworkTexts = useFeatureTexts('homework', homeworkTextLoaders);
+  const [issueBusy, setIssueBusy] = useState(false);
+  const [issuing, setIssuing] = useState<{ readonly id: string; readonly title: string } | null>(null);
+  const [issued, setIssued] = useState<{ readonly issueId: string; readonly count: number } | null>(null);
   const addBlockButton = useRef<HTMLButtonElement>(null);
   const lastFocusedBlock = useRef<string | null>(null);
   const dragged = useRef<string | null>(null);
@@ -500,6 +553,22 @@ function Editor({
     }
   }
 
+  async function openIssue(): Promise<void> {
+    issueButton.current?.focus();
+    setIssued(null);
+    setIssueBusy(true);
+    try {
+      const clean = await autosave.flush();
+      const saved = queryClient.getQueryData<Template>(templateKey(initial.id));
+      if (clean && saved?.ready === true) {
+        setIssuing({ id: saved.id, title: saved.title });
+      }
+    } finally {
+      setIssueBusy(false);
+    }
+  }
+
+  const issueShown = homeworkTexts.ready && me.email_verified && summary.ready;
   const blankTitle = title.trim() === '';
   const shownStatus = statusText(t, status);
   const failure = failureText(t, status);
@@ -557,7 +626,18 @@ function Editor({
           >
             {t('builder.preview')}
           </ActionButton>
+          {issueShown ? (
+            <IssueButton
+              busy={issueBusy}
+              buttonRef={issueButton}
+              titleId={titleId}
+              onIssue={() => {
+                void openIssue();
+              }}
+            />
+          ) : null}
         </div>
+        {issued === null ? null : <IssuedNotice key={issued.count} issueId={issued.issueId} />}
         {failure === null ? null : <FormAlert key={`${status.kind}:${failure}`}>{failure}</FormAlert>}
         {previewAlert === null ? null : <FormAlert>{previewAlert}</FormAlert>}
         {status.kind === 'conflict' ? <ConflictNotice onReload={onReload} /> : null}
@@ -621,6 +701,20 @@ function Editor({
           setPreview(null);
         }}
       />
+      {homeworkTexts.ready ? (
+        <IssueDialogHost
+          open={issuing !== null}
+          preset={issuing === null ? {} : { template: issuing }}
+          returnFocus={issueButton}
+          onClose={() => {
+            setIssuing(null);
+          }}
+          onIssued={(issue) => {
+            setIssuing(null);
+            setIssued((previous) => ({ issueId: issue.id, count: (previous?.count ?? 0) + 1 }));
+          }}
+        />
+      ) : null}
     </div>
   );
 }

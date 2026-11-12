@@ -46,6 +46,9 @@ import { groupsKey } from '../groups/api.ts';
 import type { CalendarItem } from '../schedule/api.ts';
 import { LessonList } from '../schedule/LessonList.tsx';
 import { ScheduleLessonAction } from '../schedule/ScheduleLessonAction.tsx';
+import { CardHomeworkTab, CardOpenAssignments } from '../homework/CardHomework.tsx';
+import { IssueAssignmentButton, IssuedNotice, homeworkTextLoaders } from '../homework/IssueAssignment.tsx';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import {
   type CardInvitation,
   type RelationshipState,
@@ -840,18 +843,33 @@ export function StudentCardView({
   );
 }
 
-type CardTab = 'overview' | 'lessons';
+type CardTab = 'overview' | 'lessons' | 'homework';
 
 function cardTabOf(value: string | null): CardTab {
-  return value === 'lessons' ? 'lessons' : 'overview';
+  return value === 'lessons' || value === 'homework' ? value : 'overview';
 }
 
-function CardTabs({ cardId, tab }: { readonly cardId: string; readonly tab: CardTab }): ReactElement {
+function cardTabAddress(cardId: string, tab: CardTab): string {
+  const address = `/students/${encodeURIComponent(cardId)}`;
+  return tab === 'overview' ? address : `${address}?tab=${tab}`;
+}
+
+function cardTabLabel(t: TFunction, tab: CardTab): string {
+  return tab === 'homework' ? t('homework.sections.homework') : t(`studentCard.${tab}`);
+}
+
+function CardTabs({
+  cardId,
+  tab,
+  homework,
+}: {
+  readonly cardId: string;
+  readonly tab: CardTab;
+  readonly homework: boolean;
+}): ReactElement {
   const { t } = useTranslation();
-  const tabs: readonly { readonly key: CardTab; readonly to: string }[] = [
-    { key: 'overview', to: `/students/${encodeURIComponent(cardId)}` },
-    { key: 'lessons', to: `/students/${encodeURIComponent(cardId)}?tab=lessons` },
-  ];
+  const keys: readonly CardTab[] = homework ? ['overview', 'lessons', 'homework'] : ['overview', 'lessons'];
+  const tabs = keys.map((key) => ({ key, to: cardTabAddress(cardId, key) }));
   return (
     <nav aria-label={t('studentCard.sections')} className="border-b border-border">
       <ul className="flex flex-wrap gap-6">
@@ -862,7 +880,7 @@ function CardTabs({ cardId, tab }: { readonly cardId: string; readonly tab: Card
               aria-current={entry.key === tab ? 'page' : undefined}
               className={entry.key === tab ? currentTabClass : otherTabClass}
             >
-              {t(`studentCard.${entry.key}`)}
+              {cardTabLabel(t, entry.key)}
             </Link>
           </li>
         ))}
@@ -971,14 +989,41 @@ function schedulable(card: StudentCard): boolean {
   return card.state === 'active' || card.state === 'provisional';
 }
 
+function CardTabContent({
+  card,
+  tab,
+  homework,
+}: {
+  readonly card: StudentCardDetail;
+  readonly tab: CardTab;
+  readonly homework: boolean;
+}): ReactElement {
+  if (tab === 'lessons') {
+    return <CardLessonHistory cardId={card.id} />;
+  }
+  if (tab === 'homework') {
+    return homework ? <CardHomeworkTab relationshipId={card.id} /> : <DelayedLoading />;
+  }
+  return (
+    <>
+      <NextLessons items={card.next_lessons} />
+      {homework ? (
+        <CardOpenAssignments relationshipId={card.id} homeworkAddress={cardTabAddress(card.id, 'homework')} />
+      ) : null}
+    </>
+  );
+}
+
 function CardWithLessons({
   card,
   tab,
+  homework,
   reloads,
   handlers,
 }: {
   readonly card: StudentCardDetail;
   readonly tab: CardTab;
+  readonly homework: boolean;
   readonly reloads: number;
   readonly handlers: CardHandlers;
 }): ReactElement {
@@ -986,8 +1031,8 @@ function CardWithLessons({
     <>
       <CardSummary card={card} />
       <CardColumns card={card} reloads={reloads} handlers={handlers}>
-        <CardTabs cardId={card.id} tab={tab} />
-        {tab === 'lessons' ? <CardLessonHistory cardId={card.id} /> : <NextLessons items={card.next_lessons} />}
+        <CardTabs cardId={card.id} tab={tab} homework={homework} />
+        <CardTabContent card={card} tab={tab} homework={homework} />
       </CardColumns>
     </>
   );
@@ -1022,6 +1067,12 @@ export function StudentCardPage(): ReactElement {
     setSavedCard(null);
   }
   const me = useSignedInAccount();
+  const homeworkTexts = useFeatureTexts('homework', homeworkTextLoaders);
+  const homework = me.email_verified && homeworkTexts.ready;
+  const [issued, setIssued] = useState<{ readonly id: string; readonly count: number } | null>(null);
+  if (issued !== null && issued.id !== studentId) {
+    setIssued(null);
+  }
   const key = studentCardKey(studentId);
   const [reloads, setReloads] = useState(0);
 
@@ -1147,7 +1198,7 @@ export function StudentCardPage(): ReactElement {
     if (shown === null) {
       return <DelayedLoading />;
     }
-    return <CardWithLessons card={shown} tab={tab} reloads={reloads} handlers={handlers} />;
+    return <CardWithLessons card={shown} tab={tab} homework={homework} reloads={reloads} handlers={handlers} />;
   }
 
   return (
@@ -1172,6 +1223,14 @@ export function StudentCardPage(): ReactElement {
                 }}
               />
             ) : null}
+            {homework && schedulable(shown) ? (
+              <IssueAssignmentButton
+                preset={{ audience: { kind: 'one_to_one', id: shown.id, name: shown.display_name } }}
+                onIssued={() => {
+                  setIssued((previous) => ({ id: studentId, count: (previous?.count ?? 0) + 1 }));
+                }}
+              />
+            ) : null}
           </>
         )
       }
@@ -1193,6 +1252,7 @@ export function StudentCardPage(): ReactElement {
       }
     >
       {removedCard === null ? null : <LiveNotice message={t('studentCard.removed')} />}
+      {issued === null || notFound || gone ? null : <IssuedNotice key={issued.count} issueId={null} />}
       {changedCard === null || notFound || gone ? null : (
         <FocusedNotice key={changedCard.count} message={t('studentCard.changedElsewhere')} />
       )}
