@@ -797,6 +797,7 @@ test.describe('builder material picker', () => {
     const template = await createTemplate(deployment, tutor, 'Materials');
     await openBuilder(page, tutor, template.id);
     await addBlock(page, 'Material');
+    await dialog(page).getByText('No materials here').waitFor();
 
     await dialog(page).getByRole('button', { name: 'Cancel', exact: true }).click();
 

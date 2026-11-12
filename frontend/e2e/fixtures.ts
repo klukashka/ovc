@@ -359,14 +359,27 @@ function watchPage(page: Page, deployment: Deployment, registry: DiagnosticRegis
   const closes: number[] = [];
   const startOf = new Map<Request, number>();
   const answeredRequests = new Set<Request>();
+  let documentRequested = false;
   page.on('request', (request) => {
     step += 1;
     if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+      documentRequested = true;
       navigations.push(step);
     } else {
       requests.push(step);
     }
     startOf.set(request, step);
+  });
+  page.on('framenavigated', (frame) => {
+    if (frame !== page.mainFrame()) {
+      return;
+    }
+    if (documentRequested) {
+      documentRequested = false;
+      return;
+    }
+    step += 1;
+    navigations.push(step);
   });
   const failedRequests: FailedAt[] = [];
   page.on('requestfailed', (request) => {
