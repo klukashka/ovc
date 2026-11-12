@@ -335,3 +335,30 @@ func TestIssueChangeRefusesALessonOutsideTheAudience(t *testing.T) {
 		t.Fatalf("a refused change linked the issue: %+v", detail.issueItemBody)
 	}
 }
+
+func TestTheIssueListOfASharedStudentHoldsOnlyTheCallersWork(t *testing.T) {
+	t.Parallel()
+	h := newAuthHarness(t)
+	parties := h.issueParties(t)
+	second, secondToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "another-tutor@example.org")
+	student, _ := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 3, studentEmail)
+	firstCard := h.seedCard(t, parties.tutor, 1, domain.RelationshipActive, &student)
+	secondCard := h.seedCard(t, second, sharedStudentCard, domain.RelationshipActive, &student)
+	secondTemplate := h.readyTemplate(t, secondToken, "Exercises", 41)
+	firstIssue := h.issued(t, parties.tutorToken, issueJSON(parties.template.ID, toCard(firstCard)))
+	secondIssue := h.issued(t, secondToken, issueJSON(secondTemplate.ID, toCard(secondCard)))
+
+	firstList := h.issuesPage(t, parties.tutorToken, url.Values{"student": {firstCard}})
+	secondList := h.issuesPage(t, secondToken, url.Values{"student": {secondCard}})
+	secondUnfiltered := h.issuesPage(t, secondToken, url.Values{})
+
+	if got := issueIDs(secondUnfiltered.Items); !slices.Equal(got, []string{secondIssue.ID}) {
+		t.Fatalf("the second tutor's unfiltered list answered %v", got)
+	}
+	if got := issueIDs(firstList.Items); !slices.Equal(got, []string{firstIssue.ID}) || firstList.Items[0].Submission == nil {
+		t.Fatalf("the first tutor's list of the shared student answered %+v", firstList.Items)
+	}
+	if got := issueIDs(secondList.Items); !slices.Equal(got, []string{secondIssue.ID}) || secondList.Items[0].Submission == nil {
+		t.Fatalf("the second tutor's list of the shared student answered %+v", secondList.Items)
+	}
+}

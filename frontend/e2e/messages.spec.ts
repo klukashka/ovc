@@ -438,26 +438,89 @@ paginationTest.describe('channel pagination', () => {
   }
 });
 
+async function longHistory(
+  deployment: Deployment,
+): Promise<{ readonly tutor: TestAccount; readonly studentToken: string; readonly channel: string }> {
+  const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+  const { student, cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+  const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+  const senders = [await accessToken(deployment, student), await accessToken(deployment, tutor)];
+  for (let index = 1; index <= 12; index += 1) {
+    const lines = Array.from({ length: 5 }, (_, line) => `Line ${String(line + 1)} of a long message`).join('\n');
+    const sent = await callApi(deployment, senders[index % 2] ?? '', 'POST', `/channels/${channel}/messages`, {
+      body: `${lines}\nHistory message ${String(index)}`,
+      attachment_ids: [],
+    });
+    expect(sent.status).toBe(201);
+  }
+  return { tutor, studentToken: senders[0] ?? '', channel };
+}
+
+const historyTest = test.extend<
+  { diagnostics: Diagnostics },
+  { sharedHistory: { readonly tutor: TestAccount; readonly channel: string } }
+>({
+  sharedHistory: [
+    async ({ deployment }, use): Promise<void> => {
+      const { tutor, channel } = await longHistory(deployment);
+      await use({ tutor, channel });
+    },
+    { scope: 'worker' },
+  ],
+});
+
+historyTest.describe('Messages on a computer, with one long history shared by the tests below', () => {
+  historyTest.describe.configure({ mode: 'default' });
+  historyTest.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', viewport: { width: 1440, height: 900 } });
+
+  historyTest(
+    "at 1440 × 900 the composer's bottom edge stays inside the window with a long history",
+    async ({ page, sharedHistory }) => {
+      const { tutor, channel } = sharedHistory;
+      await signInThroughTheApi(page, tutor);
+
+      await page.goto(`/messages/${channel}`);
+      await messages(page)
+        .getByText(/History message 12$/)
+        .waitFor();
+
+      const composerBox = await page.getByRole('textbox', { name: 'Message', exact: true }).boundingBox();
+      const pageScrolls = await page.evaluate(
+        () => document.documentElement.scrollHeight > document.documentElement.clientHeight,
+      );
+      expect(composerBox).not.toBeNull();
+      expect((composerBox?.y ?? 0) + (composerBox?.height ?? 0)).toBeLessThanOrEqual(900);
+      expect(pageScrolls).toBe(false);
+    },
+  );
+
+  historyTest('an opened conversation shows its latest message', async ({ page, sharedHistory }) => {
+    const { tutor, channel } = sharedHistory;
+    await signInThroughTheApi(page, tutor);
+
+    await page.goto(`/messages/${channel}`);
+
+    await expect(messages(page).getByText(/History message 12$/)).toBeInViewport();
+    await expect(page.getByRole('heading', { level: 2, name: 'Anna', exact: true })).toBeFocused();
+  });
+
+  historyTest(
+    'a history shown at its bottom stays at its bottom when the window gets shorter',
+    async ({ page, sharedHistory }) => {
+      const { tutor, channel } = sharedHistory;
+      await signInThroughTheApi(page, tutor);
+      await page.goto(`/messages/${channel}`);
+      await expect(messages(page).getByText(/History message 12$/)).toBeInViewport();
+
+      await page.setViewportSize({ width: 1440, height: 600 });
+
+      await expect(messages(page).getByText(/History message 12$/)).toBeInViewport();
+    },
+  );
+});
+
 test.describe('Messages on a computer', () => {
   test.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', viewport: { width: 1440, height: 900 } });
-
-  async function longHistory(
-    deployment: Deployment,
-  ): Promise<{ readonly tutor: TestAccount; readonly studentToken: string; readonly channel: string }> {
-    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const { student, cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
-    const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
-    const senders = [await accessToken(deployment, student), await accessToken(deployment, tutor)];
-    for (let index = 1; index <= 12; index += 1) {
-      const lines = Array.from({ length: 5 }, (_, line) => `Line ${String(line + 1)} of a long message`).join('\n');
-      const sent = await callApi(deployment, senders[index % 2] ?? '', 'POST', `/channels/${channel}/messages`, {
-        body: `${lines}\nHistory message ${String(index)}`,
-        attachment_ids: [],
-      });
-      expect(sent.status).toBe(201);
-    }
-    return { tutor, studentToken: senders[0] ?? '', channel };
-  }
 
   function isChannelRead(request: Request): boolean {
     return request.method() === 'POST' && /\/channels\/[^/]+\/read$/.test(new URL(request.url()).pathname);
@@ -483,51 +546,6 @@ test.describe('Messages on a computer', () => {
       pane.dispatchEvent(new Event('scroll'));
     }, lastRowBelowPaneEdge);
   }
-
-  test("at 1440 × 900 the composer's bottom edge stays inside the window with a long history", async ({
-    page,
-    deployment,
-  }) => {
-    const { tutor, channel } = await longHistory(deployment);
-    await signInThroughTheApi(page, tutor);
-
-    await page.goto(`/messages/${channel}`);
-    await messages(page)
-      .getByText(/History message 12$/)
-      .waitFor();
-
-    const composerBox = await page.getByRole('textbox', { name: 'Message', exact: true }).boundingBox();
-    const pageScrolls = await page.evaluate(
-      () => document.documentElement.scrollHeight > document.documentElement.clientHeight,
-    );
-    expect(composerBox).not.toBeNull();
-    expect((composerBox?.y ?? 0) + (composerBox?.height ?? 0)).toBeLessThanOrEqual(900);
-    expect(pageScrolls).toBe(false);
-  });
-
-  test('an opened conversation shows its latest message', async ({ page, deployment }) => {
-    const { tutor, channel } = await longHistory(deployment);
-    await signInThroughTheApi(page, tutor);
-
-    await page.goto(`/messages/${channel}`);
-
-    await expect(messages(page).getByText(/History message 12$/)).toBeInViewport();
-    await expect(page.getByRole('heading', { level: 2, name: 'Anna', exact: true })).toBeFocused();
-  });
-
-  test('a history shown at its bottom stays at its bottom when the window gets shorter', async ({
-    page,
-    deployment,
-  }) => {
-    const { tutor, channel } = await longHistory(deployment);
-    await signInThroughTheApi(page, tutor);
-    await page.goto(`/messages/${channel}`);
-    await expect(messages(page).getByText(/History message 12$/)).toBeInViewport();
-
-    await page.setViewportSize({ width: 1440, height: 600 });
-
-    await expect(messages(page).getByText(/History message 12$/)).toBeInViewport();
-  });
 
   test('a message that arrives below the history pane edge stays unread until it is scrolled into view', async ({
     page,

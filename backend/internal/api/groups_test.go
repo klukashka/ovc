@@ -178,6 +178,11 @@ func (h *authHarness) studentsInGroup(t *testing.T, token string, group string) 
 	return h.send(t, http.MethodGet, "/api/v1/students?group="+group, "", jsonCall(token))
 }
 
+func (h *authHarness) activeStudentsInGroup(t *testing.T, token string, group string) response {
+	t.Helper()
+	return h.send(t, http.MethodGet, "/api/v1/students?state=active&group="+group, "", jsonCall(token))
+}
+
 func relationshipIDsOf(t *testing.T, result response) []string {
 	t.Helper()
 	var decoded struct {
@@ -303,7 +308,12 @@ func TestTutorCannotReachAnotherTutorsGroup(t *testing.T) {
 	filteredOutOfScope := h.studentsInGroup(t, intruder, group.ID)
 	filteredRandom := h.studentsInGroup(t, intruder, randomCardID)
 	if filteredOutOfScope.status != http.StatusNotFound || refusal(t, filteredOutOfScope) != refusal(t, filteredRandom) {
-		t.Fatalf("filtering by another tutor's group answered %d %s", filteredOutOfScope.status, filteredOutOfScope.body)
+		t.Errorf("filtering by another tutor's group answered %d %s", filteredOutOfScope.status, filteredOutOfScope.body)
+	}
+	activeOutOfScope := h.activeStudentsInGroup(t, intruder, group.ID)
+	activeRandom := h.activeStudentsInGroup(t, intruder, randomCardID)
+	if activeOutOfScope.status != http.StatusNotFound || refusal(t, activeOutOfScope) != refusal(t, activeRandom) {
+		t.Fatalf("filtering active students by another tutor's group answered %d %s", activeOutOfScope.status, activeOutOfScope.body)
 	}
 	if listed := h.listGroups(t, intruder); len(listed) != 0 {
 		t.Fatalf("another tutor lists %+v", listed)

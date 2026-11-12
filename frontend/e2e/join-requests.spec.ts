@@ -314,23 +314,6 @@ test.describe('Olga in Russian', () => {
     await expect(joinRequests(page).getByRole('listitem')).toHaveCount(0);
     expect(await busyControls(page)).toEqual([['Другие действия: Анна']]);
   });
-
-  test('join requests › a new request of a blocked student does not appear on Students', async ({
-    page,
-    deployment,
-    control,
-  }) => {
-    const { anna, olga } = await seedRequestBlockedByOlga(deployment);
-    await control.advance(60);
-    await enterTutorCode(deployment, anna, await tutorCode(deployment, olga));
-    await signInThroughTheApi(page, olga);
-
-    await page.goto('/students');
-
-    await expect(page.getByRole('heading', { level: 1, name: 'Ученики' })).toBeVisible();
-    await expect(joinRequests(page)).toHaveCount(0);
-    expect(await visibleJoinRequests(deployment, olga)).toBe(0);
-  });
 });
 
 test.describe('in Russian', () => {

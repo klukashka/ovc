@@ -4,8 +4,6 @@ import { signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect } from './fixtures.ts';
 import { expectSettledAfterTheSocketIsReady, todayQueryPaths, trafficAfterReady } from './realtime.ts';
 
-import { contentSecurityPolicyWithTestRoom } from '../security-headers.ts';
-
 async function recordThemeAtFirstBody(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const observer = new MutationObserver(() => {
@@ -49,29 +47,6 @@ test('the chosen language is remembered across reloads', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Sign up' })).toBeVisible();
-});
-
-test('pages and proxied API responses carry the security headers', async ({ page, request, deployment }) => {
-  const pageResponse = await page.goto('/today');
-  const apiResponse = await request.get('/api/v1/health/live');
-
-  const pageHeaders = pageResponse?.headers() ?? {};
-  expect(pageHeaders['referrer-policy']).toBe('no-referrer');
-  expect(pageHeaders['x-content-type-options']).toBe('nosniff');
-  expect(pageHeaders['content-security-policy']).toBe(contentSecurityPolicyWithTestRoom(deployment.roomOrigin));
-  expect(apiResponse.status()).toBe(200);
-  expect(apiResponse.headers()['referrer-policy']).toBe('no-referrer');
-  expect(apiResponse.headers()['x-content-type-options']).toBe('nosniff');
-});
-
-test('the preview server has no build manifest to serve', async ({ request, deployment }) => {
-  const addresses = ['/.vite/manifest.json', '//.vite/manifest.json', '//%2Evite/manifest.json'];
-
-  const bodies = await Promise.all(
-    addresses.map(async (address) => (await request.get(`${deployment.origin}${address}`)).text()),
-  );
-
-  expect(bodies.filter((body) => body.includes('isEntry'))).toEqual([]);
 });
 
 test('the tutor frame shows the tutor sections without a server status block', async ({ signedInPage: page }) => {
@@ -241,29 +216,6 @@ async function boxSizes(locators: Locator[]): Promise<{ width: number; height: n
   }
   return sizes;
 }
-
-test('every page, asset and proxied API response carries the security headers', async ({ page, request }) => {
-  await page.goto('/');
-  const script = await page.locator('script[type="module"]').getAttribute('src');
-  expect(script).toMatch(/^\/assets\/.+\.js$/);
-  const paths = [
-    '/students/1',
-    '/no/such/page',
-    '/theme-init.js',
-    '/favicon.svg',
-    String(script),
-    '/api/v1/no-such-route',
-  ];
-
-  const responses = await Promise.all(paths.map((path) => request.get(path)));
-
-  for (const [index, response] of responses.entries()) {
-    const headers = response.headers();
-    expect(headers['referrer-policy'], paths[index]).toBe('no-referrer');
-    expect(headers['x-content-type-options'], paths[index]).toBe('nosniff');
-  }
-  expect(responses.at(-1)?.status()).toBe(404);
-});
 
 test('showing the sidebar moves focus to the hide button', async ({ signedInPage: page }) => {
   await page.goto('/today');

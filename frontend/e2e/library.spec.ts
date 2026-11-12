@@ -679,15 +679,4 @@ test.describe('library checklist step', () => {
     const step = page.getByRole('region', { name: 'Getting started' }).locator('[data-step="assignment"]');
     await expect(step).toHaveAttribute('data-done', 'true');
   });
-
-  test('deleting every assignment makes the step undone again', async ({ page, deployment }) => {
-    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
-    await deleteTemplate(deployment, tutor, await createTemplate(deployment, tutor, 'First quiz'));
-    await signInThroughTheApi(page, tutor);
-
-    await page.goto('/today');
-
-    const step = page.getByRole('region', { name: 'Getting started' }).locator('[data-step="assignment"]');
-    await expect(step).toHaveAttribute('data-done', 'false');
-  });
 });

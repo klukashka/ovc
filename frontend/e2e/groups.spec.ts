@@ -40,15 +40,6 @@ import {
 
 const unknownGroupId = '00000000-0000-4000-8000-00000000abcd';
 
-async function seedForeignGroup(
-  deployment: Deployment,
-): Promise<{ readonly olga: TestAccount; readonly groupId: string }> {
-  const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-  const anna = await seedActiveStudent(deployment, pavel, 'Anna');
-  const groupId = await createGroup(deployment, pavel, 'Secret algebra', [anna.cardId]);
-  return { olga: await seedVerifiedUser(deployment, 'Olga', 'en'), groupId };
-}
-
 async function cardBeyondTheFirstPage(
   deployment: Deployment,
   tutor: TestAccount,
@@ -651,51 +642,29 @@ test.describe('in English, refusals', () => {
     await expect(dialog).toBeVisible();
   });
 
-  test('students › another tutor’s group and an unknown group in the filter are not available and show nothing of the group', async ({
-    page,
-    deployment,
-    diagnostics,
-  }) => {
-    const { olga, groupId } = await seedForeignGroup(deployment);
-    const unknownPage = await page.context().newPage();
-    const unknownDiagnostics = await diagnostics.watch(unknownPage);
-    diagnostics.expectFailure({ method: 'GET', path: `/api/v1/students?state=active&group=${groupId}`, status: 404 });
-    unknownDiagnostics.expectFailure({
+  test('students › an unknown group in the filter is not available', async ({ page, deployment, diagnostics }) => {
+    const olga = await seedVerifiedUser(deployment, 'Olga', 'en');
+    diagnostics.expectFailure({
       method: 'GET',
       path: `/api/v1/students?state=active&group=${unknownGroupId}`,
       status: 404,
     });
     await signInThroughTheApi(page, olga);
 
-    await page.goto(`/students?group=${groupId}`);
-    await unknownPage.goto(`/students?group=${unknownGroupId}`);
+    await page.goto(`/students?group=${unknownGroupId}`);
 
-    for (const shown of [page, unknownPage]) {
-      await expect(shown.getByText('This group is not available.')).toBeVisible();
-      await expect(shown.getByRole('main').getByRole('link', { name: 'All groups' })).toBeVisible();
-      await expect(shown.getByText('Secret algebra')).toHaveCount(0);
-    }
+    await expect(page.getByText('This group is not available.')).toBeVisible();
+    await expect(page.getByRole('main').getByRole('link', { name: 'All groups' })).toBeVisible();
   });
 
-  test('groups › another tutor’s group and an unknown group are not found and show nothing of the group', async ({
-    page,
-    deployment,
-    diagnostics,
-  }) => {
-    const { olga, groupId } = await seedForeignGroup(deployment);
-    const unknownPage = await page.context().newPage();
-    const unknownDiagnostics = await diagnostics.watch(unknownPage);
-    diagnostics.expectFailure({ method: 'GET', path: `/api/v1/groups/${groupId}`, status: 404 });
-    unknownDiagnostics.expectFailure({ method: 'GET', path: `/api/v1/groups/${unknownGroupId}`, status: 404 });
+  test('groups › an unknown group is not found', async ({ page, deployment, diagnostics }) => {
+    const olga = await seedVerifiedUser(deployment, 'Olga', 'en');
+    diagnostics.expectFailure({ method: 'GET', path: `/api/v1/groups/${unknownGroupId}`, status: 404 });
     await signInThroughTheApi(page, olga);
 
-    await page.goto(`/groups/${groupId}`);
-    await unknownPage.goto(`/groups/${unknownGroupId}`);
+    await page.goto(`/groups/${unknownGroupId}`);
 
-    for (const shown of [page, unknownPage]) {
-      await expect(shown.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
-      await expect(shown.getByText('Secret algebra')).toHaveCount(0);
-    }
+    await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
   });
 });
 

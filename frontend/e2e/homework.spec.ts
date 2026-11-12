@@ -26,7 +26,7 @@ import {
 } from './homework.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { addDays, localDate, scheduleLessonsWithIds } from './schedule.ts';
-import { acceptSignedIn, createCard, createGroup, seedActiveStudent } from './tutoring.ts';
+import { createGroup, seedActiveStudent } from './tutoring.ts';
 
 const moscow = 'Europe/Moscow';
 const dayMilliseconds = 86_400_000;
@@ -40,16 +40,6 @@ async function pavelWithAnna(deployment: Deployment): Promise<PavelAndAnna> {
   const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
   const anna = await seedActiveStudent(deployment, pavel, 'Anna');
   return { pavel, annaCard: anna.cardId };
-}
-
-async function seedActiveStudentOfAnotherTutor(
-  deployment: Deployment,
-  tutor: TestAccount,
-  student: TestAccount,
-): Promise<string> {
-  const card = await createCard(deployment, tutor, 'Анна', student.email);
-  await acceptSignedIn(deployment, student, card.link);
-  return card.id;
 }
 
 async function lessonTomorrow(
@@ -711,26 +701,6 @@ test.describe('the issued work and the issue page', () => {
 });
 
 test.describe('homework on the student card and the group page', () => {
-  test('the card’s Homework tab lists only this tutor’s work with the student', async ({ page, deployment }) => {
-    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const maria = await seedVerifiedUser(deployment, 'Мария');
-    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
-    const mariaCard = await seedActiveStudentOfAnotherTutor(deployment, maria, anna.student);
-    const mariaTemplate = await createReadyTemplate(deployment, maria, 'Упражнения');
-    await issueThroughTheApi(deployment, maria, mariaTemplate.id, { relationship_id: mariaCard });
-    const template = await createReadyTemplate(deployment, pavel, 'Fractions');
-    await issueThroughTheApi(deployment, pavel, template.id, { relationship_id: anna.cardId });
-    await signInThroughTheApi(page, pavel);
-
-    await page.goto(`/students/${anna.cardId}?tab=homework`);
-
-    const rows = page.getByRole('list', { name: 'Homework', exact: true }).getByRole('listitem');
-    await expect(rows).toHaveCount(1);
-    await expect(rows).toContainText('Fractions');
-    await expect(rows).toContainText('Not submitted');
-    await expect(page.getByText('Упражнения')).toHaveCount(0);
-  });
-
   test('the group page lists its issued work and the Add students dialog notes that it does not reach new members', async ({
     page,
     deployment,
@@ -786,6 +756,8 @@ test.describe('homework on the student card and the group page', () => {
 
     await expect(rows).toHaveCount(21);
     await expect(rows.nth(20).locator('[data-row-focus]')).toBeFocused();
+    await expect(rows.first()).toContainText('Fractions');
+    await expect(rows.first()).toContainText('Not submitted');
   });
 
   test('Show more in the group’s assignments moves focus to the first new row', async ({ page, deployment }) => {

@@ -6,7 +6,7 @@ import { type Diagnostics, diagnosedTest as test, expect, seedVerifiedUser } fro
 import { accountId, expectReadyForNavigation, todayQueryPaths, trafficAfterReady, waitForSockets } from './realtime.ts';
 import { channelOf } from './messages.ts';
 import { addDays, cancelThisLesson, localClock, localDate, scheduleLessonsWithIds } from './schedule.ts';
-import { acceptSignedIn, accessToken, callApi, createCard, createGroup, seedActiveStudent } from './tutoring.ts';
+import { accessToken, callApi, createCard, createGroup, seedActiveStudent } from './tutoring.ts';
 
 const markup = '<img src=x onerror="document.title=1"><b>Bold</b>';
 const daytimeZones = [
@@ -341,42 +341,6 @@ test.describe('Today', () => {
     await expect(page.getByRole('main').locator('img, b')).toHaveCount(0);
     await expect(page).toHaveTitle('Today · OVC');
   });
-
-  for (const viewer of ['Maria', 'Pavel'] as const) {
-    test(`one tutor's Today never shows another tutor's lessons, for a student they share, seen by ${viewer}`, async ({
-      page,
-      deployment,
-      control,
-    }) => {
-      const now = await control.now();
-      const when = laterToday(now);
-      const maria = await seedVerifiedUser(deployment, 'Maria', 'en');
-      const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-      await setTimezone(deployment, maria, when.zone);
-      await setTimezone(deployment, pavel, when.zone);
-      const anna = await seedActiveStudent(deployment, maria, 'Anna', 'en');
-      const pavelCard = await createCard(deployment, pavel, 'Anna', anna.student.email);
-      await acceptSignedIn(deployment, anna.student, pavelCard.link);
-      for (const [tutor, relationship, title] of [
-        [maria, anna.cardId, 'Maria lesson'],
-        [pavel, pavelCard.id, 'Pavel lesson'],
-      ] as const) {
-        await scheduleLessonsWithIds(deployment, tutor, {
-          relationship_id: relationship,
-          title,
-          date: when.date,
-          start: when.start,
-          duration_minutes: 60,
-        });
-      }
-      await signInThroughTheApi(page, viewer === 'Maria' ? maria : pavel);
-
-      await openToday(page, now);
-
-      await expect(lessons(page).getByRole('link')).toHaveText([new RegExp(`${viewer} lesson`)]);
-      await expect(page.getByRole('main')).not.toContainText(viewer === 'Maria' ? 'Pavel lesson' : 'Maria lesson');
-    });
-  }
 
   test("an account change inside the app clears Today's lessons", async ({ page, deployment, control }) => {
     const now = await control.now();

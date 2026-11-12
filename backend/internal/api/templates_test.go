@@ -840,3 +840,18 @@ func TestDeletedTemplateAddressesStopWhileItsDuplicateServes(t *testing.T) {
 		t.Fatalf("the duplicate's address answered %s", describe(served))
 	}
 }
+
+func TestTheTemplateCountReturnsToZeroAfterEveryTemplateIsDeleted(t *testing.T) {
+	t.Parallel()
+	h := newFlowHarness(t)
+	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	first := h.createTemplate(t, token, "First quiz", nil)
+	counted := h.libraryPage(t, token, url.Values{})
+
+	h.mustAnswer(t, h.deleteTemplate(t, token, first.ID), http.StatusNoContent)
+	emptied := h.libraryPage(t, token, url.Values{})
+
+	if counted.TemplateCount != 1 || emptied.TemplateCount != 0 {
+		t.Fatalf("the template count was %d and became %d", counted.TemplateCount, emptied.TemplateCount)
+	}
+}

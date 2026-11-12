@@ -420,7 +420,11 @@ func TestLessonRoutesDenyASecondTutorSharingTheStudent(t *testing.T) {
 	groupCreation := h.createLessons(t, secondToken, groupLessonFor(parties.group, "2030-03-13", "18:00"), "")
 	randomCreation := h.createLessons(t, secondToken, oneOffFor(randomCardID, "2030-03-13", "18:00"), "")
 	calendar := h.calendarOf(t, secondToken, calendarFrom, calendarTo)
+	firstCalendar := h.calendarOf(t, parties.tutorToken, calendarFrom, calendarTo)
 
+	if !slices.Contains(calendarIDs(firstCalendar), lesson.ID) || slices.Contains(calendarIDs(firstCalendar), ownLesson.ID) {
+		t.Fatalf("the first tutor's calendar lists %v", calendarIDs(firstCalendar))
+	}
 	if page.status != http.StatusNotFound || refusal(t, page) != refusal(t, randomPage) {
 		t.Fatalf("the second tutor's lesson page answered %d %s", page.status, page.body)
 	}

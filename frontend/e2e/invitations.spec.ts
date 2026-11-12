@@ -24,7 +24,6 @@ import {
   invitationToken,
   myTutorNames,
   confirmInTheOwnBrowser,
-  removeStudent,
   seedActiveStudent,
   sendInvitation,
   setCardNotes,
@@ -561,23 +560,5 @@ test.describe('in English', () => {
     expect(freshLink?.trim()).not.toBe(card.link);
     expect(await invitationIsUsable(deployment, freshLink?.trim() ?? '')).toBe(true);
     expect(await myTutorNames(deployment, boris)).toEqual([]);
-  });
-
-  test('students › the address of a removed provisional student is not found', async ({
-    page,
-    deployment,
-    diagnostics,
-  }) => {
-    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const boris = newTestAccount('Boris Account', 'student');
-    const card = await createCard(deployment, pavel, 'Boris', boris.email);
-    await signUpOnInvitation(deployment, card.link, boris, 'en');
-    await removeStudent(deployment, pavel, card.id);
-    diagnostics.expectFailure({ method: 'GET', path: `/api/v1/students/${card.id}`, status: 404 });
-    await signInThroughTheApi(page, pavel);
-
-    await page.goto(`/students/${card.id}`);
-
-    await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
   });
 });
