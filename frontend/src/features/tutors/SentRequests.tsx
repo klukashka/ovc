@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { quietButtonClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
-import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
+import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { type Tone, StatusWord } from '../../components/ui/StatusWord.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
@@ -78,7 +78,7 @@ export function SentRequests(): ReactElement | null {
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     requests.length,
     ':scope > li',
-    query.isFetchingNextPage,
+    query.isFetching,
   );
   useFocusAfterRemovedRow(
     listRef,
@@ -120,7 +120,7 @@ export function SentRequests(): ReactElement | null {
               onClick={() => {
                 if (!query.isFetchingNextPage) {
                   loadingMore();
-                  void query.fetchNextPage();
+                  void loadNextPage(query);
                 }
               }}
               className={quietButtonClass}

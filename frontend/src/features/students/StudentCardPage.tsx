@@ -33,7 +33,7 @@ import {
 import { MoreIcon } from '../../components/ui/icons.tsx';
 import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
-import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
+import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
 import { PageColumns } from '../../components/ui/PageColumns.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
@@ -923,7 +923,7 @@ function CardLessonHistory({ cardId }: { readonly cardId: string }): ReactElemen
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     items.length,
     ':scope > li > a',
-    query.isFetchingNextPage,
+    query.isFetching,
   );
   const cardGone = query.isError && asApiError(query.error).code === 'not_found';
 
@@ -949,7 +949,7 @@ function CardLessonHistory({ cardId }: { readonly cardId: string }): ReactElemen
       <RefetchFailed
         error={asApiError(query.error)}
         onRetry={() => {
-          void (query.isFetchNextPageError ? query.fetchNextPage() : query.refetch());
+          void (query.isFetchNextPageError ? loadNextPage(query) : query.refetch());
         }}
       />
     ) : null;
@@ -973,7 +973,7 @@ function CardLessonHistory({ cardId }: { readonly cardId: string }): ReactElemen
           onClick={() => {
             if (!query.isFetchingNextPage) {
               loadingMore();
-              void query.fetchNextPage();
+              void loadNextPage(query);
             }
           }}
           className={quietButtonClass}

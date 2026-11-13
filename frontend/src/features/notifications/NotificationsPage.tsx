@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { quietButtonClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
-import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
+import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type NotificationPage, fetchNotifications, notificationPagesKey } from './api.ts';
@@ -18,7 +18,7 @@ function NotificationPages({ query }: { readonly query: PagesQuery }): ReactElem
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLTableSectionElement>(
     items.length,
     notificationRowSelector,
-    query.isFetchingNextPage,
+    query.isFetching,
   );
 
   if (query.isPending) {
@@ -56,7 +56,7 @@ function NotificationPages({ query }: { readonly query: PagesQuery }): ReactElem
           onRetry={() => {
             if (!query.isFetchingNextPage) {
               loadingMore();
-              void query.fetchNextPage();
+              void loadNextPage(query);
             }
           }}
         />
@@ -70,7 +70,7 @@ function NotificationPages({ query }: { readonly query: PagesQuery }): ReactElem
             onClick={() => {
               if (!query.isFetchingNextPage) {
                 loadingMore();
-                void query.fetchNextPage();
+                void loadNextPage(query);
               }
             }}
             className={quietButtonClass}

@@ -6,7 +6,7 @@ import { Link } from 'react-router';
 import { linkClass, quietButtonClass } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
-import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
+import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDate } from '../../lib/format/dates.ts';
@@ -56,7 +56,7 @@ export function CardHomeworkTab({ relationshipId }: { readonly relationshipId: s
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     items.length,
     ':scope > li [data-row-focus]',
-    query.isFetchingNextPage,
+    query.isFetching,
   );
   useFocusAfterRemovedRow(
     listRef,
@@ -79,7 +79,7 @@ export function CardHomeworkTab({ relationshipId }: { readonly relationshipId: s
     <RefetchFailed
       error={asApiError(query.error)}
       onRetry={() => {
-        void (query.isFetchNextPageError ? query.fetchNextPage() : query.refetch());
+        void (query.isFetchNextPageError ? loadNextPage(query) : query.refetch());
       }}
     />
   ) : null;
@@ -115,7 +115,7 @@ export function CardHomeworkTab({ relationshipId }: { readonly relationshipId: s
           onClick={() => {
             if (!query.isFetchingNextPage) {
               loadingMore();
-              void query.fetchNextPage();
+              void loadNextPage(query);
             }
           }}
           className={quietButtonClass}

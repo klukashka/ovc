@@ -20,7 +20,7 @@ import {
 import { MoreIcon } from '../../components/ui/icons.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
-import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
+import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Refusal } from '../../components/ui/Refusal.tsx';
 import { useSettledOnce } from '../../components/ui/settledOnce.ts';
 import { StatusWord } from '../../components/ui/StatusWord.tsx';
@@ -174,7 +174,7 @@ export function JoinRequests({
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     requests.length,
     ':scope > li [data-first-in-row]',
-    query.isFetchingNextPage,
+    query.isFetching,
   );
   useFocusAfterRemovedRow(
     listRef,
@@ -270,7 +270,7 @@ export function JoinRequests({
               onClick={() => {
                 if (!query.isFetchingNextPage) {
                   loadingMore();
-                  void query.fetchNextPage();
+                  void loadNextPage(query);
                 }
               }}
               className={quietButtonClass}

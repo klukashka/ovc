@@ -28,7 +28,7 @@ import {
 import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
-import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
+import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
 import { useAddressValue } from '../../components/ui/serverValue.ts';
 import { type ApiError, asApiError, useApiClient } from '../../lib/api/client.ts';
@@ -305,7 +305,7 @@ function StudentList({ view }: { readonly view: ListView }): ReactElement {
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLTableSectionElement>(
     cards.length,
     `:scope > tr ${rowLinkSelector}`,
-    query.isFetchingNextPage,
+    query.isFetching,
   );
   useFocusAfterRemovedRow(
     listRef,
@@ -361,7 +361,7 @@ function StudentList({ view }: { readonly view: ListView }): ReactElement {
           onClick={() => {
             if (!query.isFetchingNextPage) {
               loadingMore();
-              void query.fetchNextPage();
+              void loadNextPage(query);
             }
           }}
           className={quietButtonClass}

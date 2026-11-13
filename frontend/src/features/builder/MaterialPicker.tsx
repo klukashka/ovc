@@ -6,6 +6,7 @@ import { useDebouncedValue } from '../../app/clock.ts';
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import { ActionButton, fieldClass, quietButtonClass, textButtonClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
+import { loadNextPage } from '../../components/ui/moreRows.ts';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type LibraryItem, fetchLibraryPage, searchTerm } from '../library/api.ts';
 
@@ -68,7 +69,7 @@ function PickerContent({
 
   useEffect(() => {
     const shown = pendingMore.current;
-    if (shown === null || list.isFetchingNextPage) {
+    if (shown === null || list.isFetching) {
       return;
     }
     pendingMore.current = null;
@@ -80,7 +81,7 @@ function PickerContent({
     if (document.activeElement === null || document.activeElement === document.body) {
       (document.getElementById(`${headingId}-material-${String(shown - 1)}`) ?? searchField.current)?.focus();
     }
-  }, [list.data, list.isFetchingNextPage, headingId, searchField]);
+  }, [list.data, list.isFetching, headingId, searchField]);
 
   function rowId(index: number): string {
     return `${headingId}-material-${String(index)}`;
@@ -223,7 +224,7 @@ function PickerContent({
             busy={list.isFetchingNextPage}
             onClick={() => {
               pendingMore.current = materials.length;
-              void list.fetchNextPage();
+              void loadNextPage(list);
             }}
             className={quietButtonClass}
           >

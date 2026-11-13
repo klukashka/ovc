@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { fieldClass, quietButtonClass, stringField } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
-import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
+import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { StudentCardSummary } from '../students/api.ts';
 import { activeStudentsKey, fetchActiveStudentsPage } from './api.ts';
@@ -107,7 +107,7 @@ function StudentChoices({
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     students.length,
     ':scope > li input',
-    query.isFetchingNextPage,
+    query.isFetching,
     searchField,
   );
   if (query.isPending) {
@@ -144,7 +144,7 @@ function StudentChoices({
             onClick={() => {
               if (!query.isFetchingNextPage) {
                 loadingMore();
-                void query.fetchNextPage();
+                void loadNextPage(query);
               }
             }}
             className={quietButtonClass}

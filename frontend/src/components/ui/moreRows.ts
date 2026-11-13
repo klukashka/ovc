@@ -11,6 +11,30 @@ function pageHeading(): HTMLElement | null {
   return document.querySelector<HTMLElement>('main h1');
 }
 
+interface LoadedPages<Page> {
+  readonly pages: readonly Page[];
+}
+
+interface PageLoad<Page> {
+  readonly data: LoadedPages<Page> | undefined;
+  readonly hasNextPage: boolean;
+  readonly isError: boolean;
+}
+
+export interface PagedQuery<Page> {
+  readonly data: LoadedPages<Page> | undefined;
+  readonly fetchNextPage: (options: { readonly cancelRefetch: boolean }) => Promise<PageLoad<Page>>;
+}
+
+export async function loadNextPage<Page>(query: PagedQuery<Page>): Promise<void> {
+  const loadedBefore = query.data?.pages.length ?? 0;
+  const first = await query.fetchNextPage({ cancelRefetch: false });
+  const joinedRefetch = (first.data?.pages.length ?? 0) <= loadedBefore;
+  if (joinedRefetch && first.hasNextPage && !first.isError) {
+    await query.fetchNextPage({ cancelRefetch: false });
+  }
+}
+
 export function useFocusOnFirstNewRow<Element extends HTMLElement>(
   rowCount: number,
   selector: string,

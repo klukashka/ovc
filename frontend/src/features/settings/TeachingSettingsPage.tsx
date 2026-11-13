@@ -15,7 +15,7 @@ import {
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
 import { ActionButton, FormAlert, FormNotice, quietButtonClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
-import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
+import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
 import { type ApiClient, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
@@ -217,7 +217,7 @@ function BlockedStudentsSection(): ReactElement {
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLTableSectionElement>(
     students.length,
     ':scope > tr button',
-    query.isFetchingNextPage,
+    query.isFetching,
   );
 
   function unblock(studentId: string): void {
@@ -291,7 +291,7 @@ function BlockedStudentsSection(): ReactElement {
               onClick={() => {
                 if (!query.isFetchingNextPage) {
                   loadingMore();
-                  void query.fetchNextPage();
+                  void loadNextPage(query);
                 }
               }}
               className={quietButtonClass}

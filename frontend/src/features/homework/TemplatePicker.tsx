@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useDebouncedValue } from '../../app/clock.ts';
 import { fieldClass, quietButtonClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
-import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
+import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { StatusWord } from '../../components/ui/StatusWord.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type LibraryItem, fetchLibraryPage, libraryKey, searchLimit, searchTerm } from '../library/api.ts';
@@ -139,7 +139,7 @@ function Listing({
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     templates.length,
     ':scope > li button',
-    listing.isFetchingNextPage,
+    listing.isFetching,
     searchField,
   );
   if (listing.isPending) {
@@ -202,7 +202,7 @@ function Listing({
             onClick={() => {
               if (!listing.isFetchingNextPage) {
                 loadingMore();
-                void listing.fetchNextPage();
+                void loadNextPage(listing);
               }
             }}
             className={quietButtonClass}

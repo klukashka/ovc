@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useDebouncedValue } from '../../app/clock.ts';
 import { fieldClass, quietButtonClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
-import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
+import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { paletteDotClass } from '../../components/ui/palette.ts';
 import { type ApiClient, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type GroupSummary, fetchGroups, groupsKey } from '../groups/api.ts';
@@ -117,7 +117,7 @@ function Choices({
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     cards.length,
     ':scope > li button',
-    students.isFetchingNextPage,
+    students.isFetching,
     searchField,
   );
   if (students.isPending || groups.isPending) {
@@ -177,7 +177,7 @@ function Choices({
             onClick={() => {
               if (!students.isFetchingNextPage) {
                 loadingMore();
-                void students.fetchNextPage();
+                void loadNextPage(students);
               }
             }}
             className={quietButtonClass}

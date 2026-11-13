@@ -6,7 +6,7 @@ import { Link } from 'react-router';
 import { quietButtonClass } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
-import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
+import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type IssueFilter, type IssuePage, fetchIssuePage, issueAddress, issueListKey } from './api.ts';
 import { DeadlineText, ProgressText, ToCheckBadge } from './IssueParts.tsx';
@@ -41,7 +41,7 @@ export function GroupIssues({ groupId }: { readonly groupId: string }): ReactEle
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     items.length,
     ':scope > li a',
-    query.isFetchingNextPage,
+    query.isFetching,
     heading,
   );
   useFocusAfterRemovedRow(
@@ -70,7 +70,7 @@ export function GroupIssues({ groupId }: { readonly groupId: string }): ReactEle
           <RefetchFailed
             error={asApiError(query.error)}
             onRetry={() => {
-              void (query.isFetchNextPageError ? query.fetchNextPage() : query.refetch());
+              void (query.isFetchNextPageError ? loadNextPage(query) : query.refetch());
             }}
           />
         ) : null}
@@ -115,7 +115,7 @@ export function GroupIssues({ groupId }: { readonly groupId: string }): ReactEle
           onClick={() => {
             if (!query.isFetchingNextPage) {
               loadingMore();
-              void query.fetchNextPage();
+              void loadNextPage(query);
             }
           }}
           className={quietButtonClass}

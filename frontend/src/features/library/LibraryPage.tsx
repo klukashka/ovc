@@ -27,7 +27,7 @@ import { MoreIcon } from '../../components/ui/icons.tsx';
 import { FocusedNotice } from '../../components/ui/LiveNotice.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed, RefetchFailed, focusHeadingIfLost } from '../../components/ui/LoadState.tsx';
-import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
+import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
 import { refusalText } from '../../components/ui/Refusal.tsx';
 import { type ApiError, asApiError, useApiClient } from '../../lib/api/client.ts';
@@ -386,7 +386,7 @@ function ListBody({
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLTableSectionElement>(
     rowKeys.length,
     '[data-row-link]',
-    list.isFetchingNextPage,
+    list.isFetching,
   );
   useFocusAfterRemovedRow(listRef, rowKeys, '[data-row-link]');
 
@@ -425,7 +425,7 @@ function ListBody({
             busy={list.isFetchingNextPage}
             onClick={() => {
               loadingMore();
-              void list.fetchNextPage();
+              void loadNextPage(list);
             }}
             className={quietButtonClass}
           >
