@@ -422,6 +422,7 @@ test.describe('Home', () => {
     const { anna } = await studentWithTwoTutors(deployment, now);
     await signInThroughTheApi(page, anna);
     const requested: string[] = [];
+    const queries: string[] = [];
     page.on('request', (request) => {
       const url = new URL(request.url());
       if (
@@ -430,6 +431,7 @@ test.describe('Home', () => {
         !url.pathname.startsWith('/api/v1/auth/')
       ) {
         requested.push(url.pathname);
+        queries.push(url.pathname === '/api/v1/assignments' ? `${url.pathname}${url.search}` : url.pathname);
       }
     });
     const ready = trafficAfterReady(page, homeQueryPaths);
@@ -440,10 +442,11 @@ test.describe('Home', () => {
     await expect(weekRows(page)).toHaveCount(2);
 
     const counts = Object.fromEntries(
-      [...new Set(requested)].map((path) => [path, requested.filter((entry) => entry === path).length]),
+      [...new Set(queries)].map((query) => [query, queries.filter((entry) => entry === query).length]),
     );
-    expect(Object.keys(counts).sort()).toEqual(
+    expect([...new Set(requested)].sort()).toEqual(
       [
+        '/api/v1/assignments',
         '/api/v1/calendar',
         '/api/v1/channels/unread',
         '/api/v1/join-requests/sent',

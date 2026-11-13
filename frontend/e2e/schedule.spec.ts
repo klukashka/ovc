@@ -1046,7 +1046,7 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
     pavelCardOfPilotThree = card.id;
   });
 
-  test('pilot-3 › step 4 Anna’s Schedule shows both tutors with their labels, and the filter leaves Pavel’s', async ({
+  test('pilot-3 › step 4 Anna’s Schedule and Home’s To do show both tutors’ items, and the filter leaves Pavel’s', async ({
     observedBrowser: browser,
     deployment,
     diagnostics,
@@ -1074,6 +1074,14 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
     await expect(lessons).toHaveCount(1);
     await expect(lessons).toContainText('Pavel');
     await expect(lessons).toContainText('Индивидуальный урок');
+    await page.goto('/home');
+    const toDo = page.getByRole('region', { name: 'Нужно сделать' }).locator('[data-row-link]');
+    await expect(toDo).toHaveCount(2);
+    await expect(toDo.filter({ hasText: 'Упражнения' })).toHaveCount(1);
+    await expect(toDo.filter({ hasText: 'Fractions' })).toHaveCount(1);
+    await page.getByRole('button', { name: 'Pavel', exact: true }).click();
+    await expect(page).toHaveURL(/tutor=/);
+    await expect(toDo).toHaveText(['Fractions']);
     await diagnostics.closeContext(context);
   });
 

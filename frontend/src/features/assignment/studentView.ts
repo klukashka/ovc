@@ -16,6 +16,7 @@ export interface StudentFile {
   readonly width: number | null;
   readonly height: number | null;
   readonly url: string;
+  readonly expiresAt: string;
 }
 
 export interface StudentMaterial extends StudentFile {
@@ -75,6 +76,7 @@ function file(entry: StudentFileResponse): StudentFile {
     width: entry.width,
     height: entry.height,
     url: entry.url,
+    expiresAt: entry.expires_at,
   };
 }
 
@@ -118,6 +120,10 @@ function block(entry: StudentBlockResponse): StudentBlock {
   }
 }
 
+export function parseStudentBlocks(blocks: readonly StudentBlockResponse[]): readonly StudentBlock[] {
+  return blocks.map(block);
+}
+
 export function parseStudentView(response: StudentTemplateResponse): StudentAssignment {
-  return { title: response.title, blocks: response.blocks.map(block) };
+  return { title: response.title, blocks: parseStudentBlocks(response.blocks) };
 }

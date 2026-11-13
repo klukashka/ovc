@@ -20,6 +20,8 @@ export const ru = {
     reason: 'Нет соединения',
   },
   frame: {
+    homeworkToDo: 'Задания, нужно сделать: {count}',
+    homeworkToDoOverCap: 'Задания, нужно сделать: больше 99',
     messagesWithCount: 'Сообщения, непрочитанных чатов: {count}',
     messagesOverCap: 'Сообщения, более 99 непрочитанных чатов',
     navigation: 'Основная навигация',

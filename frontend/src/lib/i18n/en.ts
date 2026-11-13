@@ -16,6 +16,8 @@ export const en: Resources = {
   },
   connection: { offline: 'No connection — reconnecting…', recovered: 'Connection restored', reason: 'No connection' },
   frame: {
+    homeworkToDo: 'Homework, {count} to do',
+    homeworkToDoOverCap: 'Homework, more than 99 to do',
     messagesWithCount: 'Messages, {count} unread chats',
     messagesOverCap: 'Messages, 99+ unread chats',
     navigation: 'Main navigation',

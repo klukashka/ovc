@@ -27,6 +27,8 @@ const libraryPage = lazyPage(async () => (await import('../features/library/Libr
 const builderPage = lazyPage(async () => (await import('../features/builder/BuilderPage.tsx')).BuilderPage);
 const issuedPage = lazyPage(async () => (await import('../features/homework/IssuedPage.tsx')).IssuedPage);
 const issuePage = lazyPage(async () => (await import('../features/homework/IssuePage.tsx')).IssuePage);
+const homeworkPage = lazyPage(async () => (await import('../features/assignment/HomeworkPage.tsx')).HomeworkPage);
+const assignmentPage = lazyPage(async () => (await import('../features/assignment/AssignmentPage.tsx')).AssignmentPage);
 const teachingSettingsPage = lazyPage(
   async () => (await import('../features/settings/TeachingSettingsPage.tsx')).TeachingSettingsPage,
 );
@@ -79,8 +81,8 @@ export const tutorPages: RouteObject[] = [
 
 export const studentPages: RouteObject[] = [
   page('/home', 'page.home', homePage),
-  page('/homework', 'page.homework'),
-  page('/homework/:submissionId', 'page.assignment'),
+  page('/homework', 'page.homework', homeworkPage),
+  page('/homework/:submissionId', 'page.assignment', assignmentPage),
   page('/tutors', 'page.tutors', myTutorsPage),
 ];
 

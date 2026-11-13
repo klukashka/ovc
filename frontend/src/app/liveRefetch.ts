@@ -4,6 +4,7 @@ import { type Scheduler, browserScheduler } from '../lib/api/session.ts';
 import { evictChannel } from '../features/messages/cache.ts';
 import { chatRefetch } from '../features/messages/refetch.ts';
 
+import { assignmentsKey } from '../features/assignment/keys.ts';
 import { groupsKey, memberChoiceKey } from '../features/groups/api.ts';
 import { issuesKey } from '../features/homework/api.ts';
 import { notificationsKey } from '../features/notifications/api.ts';
@@ -28,7 +29,7 @@ function queriesOf(entity: EntityKind, id: string): readonly QueryKey[] {
       return [calendarKey];
     case 'issue':
     case 'submission':
-      return [issuesKey];
+      return [issuesKey, assignmentsKey];
   }
 }
 

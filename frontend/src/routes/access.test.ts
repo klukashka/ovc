@@ -181,7 +181,9 @@ describe('route access for signed-in accounts', () => {
   test.each<[Me['role'], Me['state'], string, boolean]>([
     ['student', 'unverified', '/schedule', true],
     ['student', 'unverified', '/lessons', true],
-    ['student', 'unverified', '/homework', false],
+    ['student', 'unverified', '/homework', true],
+    ['student', 'unverified', '/homework/3f1c2a9e-0b7d-4c55-9a21-5d2e8f4a6b70', true],
+    ['student', 'unverified', '/groups', false],
     ['student', 'unverified', '/messages', true],
   ])('with a provisional link, for a %s (%s) the address %s is reachable: %s', (role, state, pathname, expected) => {
     const me = account(role, state);

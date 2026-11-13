@@ -12,6 +12,7 @@ import { useMediaQuery, usePreferences, wideLayoutQuery } from '../../app/contex
 import { preferenceKeys } from '../../lib/preferences/store.ts';
 import { useRouteTitle } from '../../app/handles.ts';
 import { type SectionCounts, hasNews } from '../../app/sections.ts';
+import { useToDoCount } from '../../features/assignment/count.ts';
 import type { Me } from '../../lib/api/session.ts';
 import { reachable } from '../../routes/access.ts';
 import { SidebarIcon } from '../ui/icons.tsx';
@@ -226,7 +227,12 @@ export function SignedInFrame({
   const unread = useUnreadCount(withBell);
   const linked = provisionallyLinked(useProvisionalLink(me));
   const chatUnread = useUnreadChannels(reachable(me, '/messages', linked));
-  const counts: SectionCounts = { notifications: withBell ? unread : 0, messages: chatUnread };
+  const toDo = useToDoCount(me.role === 'student' && reachable(me, '/homework', linked));
+  const counts: SectionCounts = {
+    notifications: withBell ? unread : 0,
+    messages: chatUnread,
+    homework: toDo,
+  };
   const news = hasNews(counts);
 
   const rememberSidebar = useCallback(

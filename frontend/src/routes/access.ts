@@ -19,7 +19,7 @@ export type Access =
 const confirmationAddress = '/verify-email';
 export const reclaimAddress = '/reclaim';
 const unconfirmedStudentSections: readonly string[] = ['/home', '/tutors', '/settings'];
-const provisionalLessonSections: readonly string[] = ['/schedule', '/lessons', '/messages'];
+const provisionalLessonSections: readonly string[] = ['/schedule', '/lessons', '/messages', '/homework'];
 
 export function homeOf(me: Me): string {
   return me.role === 'tutor' ? '/today' : '/home';

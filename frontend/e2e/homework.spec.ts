@@ -24,6 +24,7 @@ import {
   readIssue,
   withdrawThroughTheApi,
 } from './homework.ts';
+import { onlySubmission, submitThroughTheApi } from './assignment.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { addDays, localDate, scheduleLessonsWithIds } from './schedule.ts';
 import { createGroup, seedActiveStudent } from './tutoring.ts';
@@ -677,6 +678,32 @@ test.describe('the issued work and the issue page', () => {
 
     await expect(pageMenuButton(page, 'Assignment actions')).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1, name: 'Fractions' })).toBeFocused();
+  });
+
+  test('a withdrawal refused because a student submitted meanwhile shows the focused alert', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { student: anna, cardId } = await seedActiveStudent(deployment, pavel, 'Anna');
+    const template = await createReadyTemplate(deployment, pavel, 'Fractions');
+    const issueId = await issueThroughTheApi(deployment, pavel, template.id, { relationship_id: cardId });
+    await openIssuePage(page, pavel, issueId, 'Fractions');
+    await chooseFromPageMenu(page, 'Assignment actions', 'Withdraw');
+    const dialog = page.getByRole('dialog', { name: 'Withdraw this assignment?' });
+    await dialog.waitFor();
+    await submitThroughTheApi(deployment, anna, await onlySubmission(deployment, anna));
+    diagnostics.expectFailure({ method: 'POST', path: `/api/v1/issues/${issueId}/withdraw`, status: 409 });
+
+    await dialog.getByRole('button', { name: 'Withdraw', exact: true }).click();
+
+    await expect(dialog).toBeHidden();
+    const alert = page.getByText('A student has already submitted this assignment, so it can no longer be withdrawn.', {
+      exact: true,
+    });
+    await expect(alert).toBeFocused();
+    expect((await readIssue(deployment, pavel, issueId)).status).toBe('active');
   });
 
   test('withdrawing closes the confirmation onto the focused notice and removes the actions', async ({

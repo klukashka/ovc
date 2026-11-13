@@ -206,14 +206,19 @@ const studentViewImports = {
   ],
 };
 
-const featureTextFolders = ['src/features/library/**', 'src/features/builder/**', 'src/features/assignment/**'];
+const featureTextFolders = [
+  'src/features/library/**',
+  'src/features/builder/**',
+  'src/features/assignment/**',
+  'src/features/home/TodoPanel.tsx',
+];
 
 const featureTextMessage =
   'Library, builder and student-view texts load only with their own pages, so other code cannot read them';
 
 const forbiddenFeatureTextKeys = [
-  "CallExpression[callee.name='t'] > Literal[value=/^(library|builder|assignment)\\./]",
-  "CallExpression[callee.name='t'] > TemplateLiteral[quasis.0.value.raw=/^(library|builder|assignment)\\./]",
+  "CallExpression[callee.name='t'] > Literal[value=/^(library|builder|assignment|homeworkPanels)\\./]",
+  "CallExpression[callee.name='t'] > TemplateLiteral[quasis.0.value.raw=/^(library|builder|assignment|homeworkPanels)\\./]",
 ].map((selector) => ({ selector, message: featureTextMessage }));
 
 const languageTextsMessage =
@@ -343,7 +348,7 @@ export default defineConfig(
     rules: { 'no-restricted-imports': ['error', testOnlyModuleImports] },
   },
   {
-    files: ['src/features/assignment/**/*.{ts,tsx}'],
+    files: ['src/features/assignment/**/*.{ts,tsx}', 'src/features/home/TodoPanel.tsx'],
     ignores: ['src/**/*.test.{ts,tsx}'],
     rules: { 'no-restricted-imports': ['error', studentViewImports] },
   },

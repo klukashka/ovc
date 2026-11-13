@@ -36,11 +36,17 @@ function SidebarItem({
         onClick={onNavigate}
         aria-current={current ? 'page' : undefined}
         aria-label={
-          section.key === 'messages' && count > 0
-            ? count > 99
-              ? t('frame.messagesOverCap')
-              : t('frame.messagesWithCount', { count })
-            : undefined
+          count <= 0
+            ? undefined
+            : section.key === 'messages'
+              ? count > 99
+                ? t('frame.messagesOverCap')
+                : t('frame.messagesWithCount', { count })
+              : section.key === 'homework'
+                ? count > 99
+                  ? t('frame.homeworkToDoOverCap')
+                  : t('frame.homeworkToDo', { count })
+                : undefined
         }
         data-sidebar-item=""
         className={`flex min-h-11 items-center gap-2.5 rounded-sm px-2.5 text-small transition-colors duration-(--duration-press) ease-quiet hover:bg-hover hover:text-text desktop:pointer-fine:min-h-8 ${current ? 'bg-hover font-medium text-text' : 'text-text-muted'}`}

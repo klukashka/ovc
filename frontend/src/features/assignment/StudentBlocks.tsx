@@ -1,27 +1,35 @@
-import { type ReactElement, useId } from 'react';
+import { type ReactElement, type ReactNode, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { fieldClass, linkClass } from '../../components/ui/Form.tsx';
 import { studentFileAddress } from '../../lib/files/downloadAddress.ts';
 import { Markdown } from '../../lib/markdown/Markdown.tsx';
 import { formatStorage } from '../settings/storageAmount.ts';
+import { type Answer, type QuestionBlock, emptyAnswer, isQuestion } from './api.ts';
+import { acceptList } from './fileKinds.ts';
 import type { StudentAssignment, StudentBlock, StudentFile, StudentMaterial } from './studentView.ts';
 
 const shortAnswerLimit = 500;
 
-const acceptedFileTypes: Readonly<Record<string, string>> = {
-  images: 'image/jpeg,image/png,image/webp,image/gif',
-  pdf: 'application/pdf',
-  office: '.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp',
-  audio: 'audio/*',
-};
+const shortNumberLimit = 64;
+
+export interface Answering {
+  readonly answers: ReadonlyMap<string, Answer>;
+  readonly editable: ReadonlySet<string>;
+  readonly onChange: (block: QuestionBlock, answer: Answer) => void;
+  readonly fileControl: (block: Extract<QuestionBlock, { readonly type: 'file' }>, answer: Answer) => ReactNode;
+  readonly below: (block: QuestionBlock) => ReactNode;
+  readonly invalid: ReadonlySet<string>;
+}
 
 function Pictures({
   images,
   origin,
+  onAddressFailed,
 }: {
   readonly images: readonly StudentFile[];
   readonly origin: string;
+  readonly onAddressFailed: ((address: string) => void) | null;
 }): ReactElement | null {
   if (images.length === 0) {
     return null;
@@ -42,6 +50,9 @@ function Pictures({
             width={image.width ?? undefined}
             height={image.height ?? undefined}
             referrerPolicy="no-referrer"
+            onError={() => {
+              onAddressFailed?.(address);
+            }}
             className="h-auto max-h-80 max-w-full rounded-md border border-border"
           />
         );
@@ -86,25 +97,82 @@ function MaterialEntry({
   );
 }
 
-function AnswerField({ block }: { readonly block: StudentBlock }): ReactElement | null {
+function ChoiceField({
+  block,
+  answer,
+  editable,
+  onChange,
+}: {
+  readonly block: Extract<QuestionBlock, { readonly type: 'single_choice' | 'multiple_choice' }>;
+  readonly answer: Answer | null;
+  readonly editable: boolean;
+  readonly onChange: (answer: Answer) => void;
+}): ReactElement {
+  const single = block.type === 'single_choice';
+  return (
+    <div className="flex flex-col gap-2">
+      {block.options.map((option) => (
+        <label key={option.id} className="flex min-h-11 items-center gap-3">
+          <input
+            type={single ? 'radio' : 'checkbox'}
+            name={block.id}
+            value={option.id}
+            {...(answer === null
+              ? {}
+              : {
+                  checked: answer.optionIds.includes(option.id),
+                  disabled: !editable,
+                  onChange: (event: { readonly currentTarget: HTMLInputElement }): void => {
+                    const checked = event.currentTarget.checked;
+                    const optionIds = single
+                      ? [option.id]
+                      : checked
+                        ? [...answer.optionIds.filter((id) => id !== option.id), option.id]
+                        : answer.optionIds.filter((id) => id !== option.id);
+                    onChange({ ...answer, optionIds });
+                  },
+                })}
+          />
+          <span dir="auto" className="break-words">
+            {option.text}
+          </span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function AnswerField({
+  block,
+  answering,
+}: {
+  readonly block: QuestionBlock;
+  readonly answering: Answering | null;
+}): ReactElement | null {
   const { t } = useTranslation();
   const fieldId = useId();
   const hintId = useId();
+  const answer = answering === null ? null : (answering.answers.get(block.id) ?? emptyAnswer);
+  const editable = answering?.editable.has(block.id) ?? true;
+  const invalid = answering?.invalid.has(block.id) === true;
+  const change = (next: Answer): void => {
+    answering?.onChange(block, next);
+  };
+  const textProps =
+    answer === null
+      ? {}
+      : {
+          value: answer.text,
+          readOnly: !editable,
+          'aria-invalid': invalid ? true : undefined,
+          onChange: (event: { readonly currentTarget: HTMLInputElement | HTMLTextAreaElement }): void => {
+            change({ ...answer, text: event.currentTarget.value });
+          },
+        };
   switch (block.type) {
     case 'single_choice':
     case 'multiple_choice':
-      return (
-        <div className="flex flex-col gap-2">
-          {block.options.map((option) => (
-            <label key={option.id} className="flex min-h-11 items-center gap-3">
-              <input type={block.type === 'single_choice' ? 'radio' : 'checkbox'} name={block.id} value={option.id} />
-              <span dir="auto" className="break-words">
-                {option.text}
-              </span>
-            </label>
-          ))}
-        </div>
-      );
+      return <ChoiceField block={block} answer={answer} editable={editable} onChange={change} />;
     case 'short_text':
     case 'short_number':
       return (
@@ -114,9 +182,10 @@ function AnswerField({ block }: { readonly block: StudentBlock }): ReactElement 
             id={fieldId}
             type="text"
             inputMode={block.type === 'short_number' ? 'decimal' : 'text'}
-            maxLength={shortAnswerLimit}
+            maxLength={block.type === 'short_number' ? shortNumberLimit : shortAnswerLimit}
             dir="auto"
             className={fieldClass}
+            {...textProps}
           />
         </div>
       );
@@ -131,6 +200,7 @@ function AnswerField({ block }: { readonly block: StudentBlock }): ReactElement 
             dir="auto"
             aria-describedby={hintId}
             className={`${fieldClass} py-2`}
+            {...textProps}
           />
           <p id={hintId} className="text-small text-text-muted">
             {t('assignment.lengthHint', { count: block.maxLength })}
@@ -138,6 +208,9 @@ function AnswerField({ block }: { readonly block: StudentBlock }): ReactElement 
         </div>
       );
     case 'file':
+      if (answering !== null && answer !== null) {
+        return <>{answering.fileControl(block, answer)}</>;
+      }
       return (
         <div className="flex flex-col gap-1">
           <label htmlFor={fieldId}>{t('assignment.attach')}</label>
@@ -145,7 +218,7 @@ function AnswerField({ block }: { readonly block: StudentBlock }): ReactElement 
             id={fieldId}
             type="file"
             multiple={block.maxFiles > 1}
-            accept={block.allowedKinds.map((kind) => acceptedFileTypes[kind] ?? '').join(',')}
+            accept={acceptList(block.allowedKinds)}
             aria-describedby={hintId}
           />
           <p id={hintId} className="text-small text-text-muted">
@@ -156,16 +229,13 @@ function AnswerField({ block }: { readonly block: StudentBlock }): ReactElement 
           </p>
         </div>
       );
-    case 'instruction':
-    case 'material':
-      return null;
   }
 }
 
-function questionNumbers(blocks: readonly StudentBlock[]): ReadonlyMap<string, number> {
+export function questionNumbers(blocks: readonly StudentBlock[]): ReadonlyMap<string, number> {
   const numbers = new Map<string, number>();
   for (const block of blocks) {
-    if (block.type !== 'instruction' && block.type !== 'material') {
+    if (isQuestion(block)) {
       numbers.set(block.id, numbers.size + 1);
     }
   }
@@ -176,10 +246,14 @@ function StudentBlockView({
   block,
   number,
   origin,
+  answering,
+  onAddressFailed,
 }: {
   readonly block: StudentBlock;
   readonly number: number;
   readonly origin: string;
+  readonly answering: Answering | null;
+  readonly onAddressFailed: ((address: string) => void) | null;
 }): ReactElement {
   const { t } = useTranslation();
   const promptId = useId();
@@ -190,13 +264,14 @@ function StudentBlockView({
     return block.material === null ? <></> : <MaterialEntry material={block.material} origin={origin} />;
   }
   return (
-    <fieldset aria-describedby={promptId} className="flex min-w-0 flex-col gap-3">
+    <fieldset aria-describedby={promptId} data-question={block.id} className="flex min-w-0 flex-col gap-3">
       <legend className="mb-2 text-small text-text-muted">{t('assignment.question', { number })}</legend>
       <div id={promptId}>
         <Markdown source={block.prompt} />
       </div>
-      <Pictures images={block.images} origin={origin} />
-      <AnswerField block={block} />
+      <Pictures images={block.images} origin={origin} onAddressFailed={onAddressFailed} />
+      <AnswerField block={block} answering={answering} />
+      {answering === null ? null : answering.below(block)}
     </fieldset>
   );
 }
@@ -204,20 +279,34 @@ function StudentBlockView({
 export function StudentBlocks({
   assignment,
   origin,
+  answering = null,
+  showTitle = true,
+  onAddressFailed = null,
 }: {
   readonly assignment: StudentAssignment;
   readonly origin: string;
+  readonly answering?: Answering | null;
+  readonly showTitle?: boolean;
+  readonly onAddressFailed?: ((address: string) => void) | null;
 }): ReactElement {
   const numbers = questionNumbers(assignment.blocks);
   return (
     <div className="flex flex-col gap-6">
-      <h3 dir="auto" className="font-serif text-title break-words">
-        {assignment.title}
-      </h3>
+      {showTitle ? (
+        <h3 dir="auto" className="font-serif text-title break-words">
+          {assignment.title}
+        </h3>
+      ) : null}
       <ol className="flex flex-col gap-6">
         {assignment.blocks.map((block) => (
           <li key={block.id} className="border-t border-border pt-4">
-            <StudentBlockView block={block} number={numbers.get(block.id) ?? 0} origin={origin} />
+            <StudentBlockView
+              block={block}
+              number={numbers.get(block.id) ?? 0}
+              origin={origin}
+              answering={answering}
+              onAddressFailed={onAddressFailed}
+            />
           </li>
         ))}
       </ol>

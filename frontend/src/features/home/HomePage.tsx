@@ -9,11 +9,14 @@ import { PageColumns } from '../../components/ui/PageColumns.tsx';
 import { asApiError } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { localDateOf } from '../../lib/time/localDates.ts';
+import { reachable } from '../../routes/access.ts';
+import { provisionallyLinked, useProvisionalLink } from '../../routes/provisionalLink.ts';
 import { currentTutors } from '../tutors/api.ts';
 import { CodeEntry } from '../tutors/CodeEntry.tsx';
 import { type SentRequestsQuery, hasPendingRequest, useSentRequests } from '../tutors/SentRequests.tsx';
 import { TutorList, TutorsLoadFailed, useMyTutors } from '../tutors/TutorList.tsx';
 import { NextLesson, NextSevenDays } from './HomeLessons.tsx';
+import { TodoPanel } from './TodoPanel.tsx';
 import { TutorFilter } from './TutorFilter.tsx';
 import { useUpcomingLessons } from './upcoming.ts';
 
@@ -95,6 +98,7 @@ export function HomePage(): ReactElement {
         ).length;
   const matched = current.find((tutor) => tutor.relationship_id === requested)?.relationship_id;
   const tutorsFailed = requested !== null && tutorsQuery.data === undefined && tutorsQuery.isError;
+  const homeworkShown = reachable(me, '/homework', provisionallyLinked(useProvisionalLink(me)));
   const scheduleAddress =
     me.state !== 'active' && current.length === 0
       ? null
@@ -133,6 +137,9 @@ export function HomePage(): ReactElement {
             ) : (
               <NextLesson me={me} query={query} />
             )}
+            {homeworkShown && !unavailable && !tutorsFailed && (requested === null || matched !== undefined) ? (
+              <TodoPanel tutor={matched ?? null} />
+            ) : null}
           </>
         }
         aside={

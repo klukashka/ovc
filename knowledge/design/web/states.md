@@ -118,11 +118,10 @@ The late flag of a submitted, returned or checked submission shows "Late" beside
 
 From slice 9. Each table names the text section it belongs to: the global language chunk holds only the first table, and the others load lazily with their pages through feature text sections ([localisation](#localisation)). Titles, comments, feedback and file names are user content and never translated; no text interpolates a name into a position that needs a grammatical case in Russian. The texts the pages share with their own sections (the cue, the state words, the refetch notice) are copied into each section that shows them.
 
-**Global language chunk** (the tutor's tab names and the unconfirmed-tutor prompt moved to the `homework` section, which every page showing them already loads, to keep the first load within `pnpm check:bundle`; agent change pending owner review):
+**Global language chunk** (the tutor's tab names and the unconfirmed-tutor prompt moved to the `homework` section, and the student's tab names to the `assignment` section, which every page showing them already loads, to keep the first load within `pnpm check:bundle`; agent changes pending owner review):
 
 | Element | English | Русский |
 |---|---|---|
-| Student's Homework tabs | To do / Submitted / Checked / Closed | Нужно сделать / Сданные / Проверенные / Закрытые |
 | Tutor's count, accessible name | Homework, {count} to check / Homework, more than 99 to check | Задания, ждут проверки: {count} / Задания, ждут проверки: больше 99 |
 | Student's count, accessible name | Homework, {count} to do / Homework, more than 99 to do | Задания, нужно сделать: {count} / Задания, нужно сделать: больше 99 |
 
@@ -186,6 +185,8 @@ From slice 9. Each table names the text section it belongs to: the global langua
 | Element | English | Русский |
 |---|---|---|
 | List | Back to homework / All homework / No deadline / Submitted {date} / Checked {date} | К заданиям / Все задания / Без срока / Сдано {date} / Проверено {date} |
+| Student's Homework tabs (moved from the global language chunk; agent change pending owner review) | To do / Submitted / Checked / Closed | Нужно сделать / Сданные / Проверенные / Закрытые |
+| List labels (agent addition pending owner review) | Homework lists (tab list) / Assignments (table) / Assignment / Tutor / State / Date / Show more | Списки заданий / Задания / Задание / Репетитор / Состояние / Дата / Показать ещё |
 | Empty tabs | Nothing to do / Nothing submitted / Nothing checked yet / Nothing closed | Делать нечего / Сданных работ нет / Проверенных работ пока нет / Закрытых заданий нет |
 | Tutor filter refused | This tutor is not available. / All tutors | Этот репетитор недоступен. / Все репетиторы |
 | Progress | {answered}/{total} answered | Отвечено: {answered} из {total} |
@@ -195,6 +196,7 @@ From slice 9. Each table names the text section it belongs to: the global langua
 | Changed-meanwhile notice | This assignment changed in the meantime. Its current state is shown below. | Это задание тем временем изменилось. Ниже показано его текущее состояние. |
 | File answers | Attach files / Take a photo / Remove / Confirm your email to attach files. | Прикрепить файлы / Сфотографировать / Удалить / Подтвердите адрес почты, чтобы прикреплять файлы. |
 | File refusals | Your tutor's storage is full, so this file cannot be added. / Uploads are busy right now. Try again in a minute. / {count, plural, one {At most # file} other {At most # files}} | Хранилище репетитора заполнено, этот файл добавить нельзя. / Сейчас загрузок слишком много. Попробуйте через минуту. / {count, plural, one {Не больше # файла} few {Не больше # файлов} many {Не больше # файлов} other {Не больше # файла}} |
+| File answer details (agent addition pending owner review) | Remove {name} (accessible name) / Uploading {percent} / File is larger than 25 MB / WebP pictures can be at most 8 MB / This file type is not allowed here / The file could not be uploaded. Try again. / This file is no longer available. Attach it again. | Удалить {name} / Загрузка {percent} / Файл больше 25 МБ / Изображения WebP могут быть не больше 8 МБ / Файлы этого типа здесь нельзя прикреплять / Не удалось загрузить файл. Попробуйте ещё раз. / Этот файл больше недоступен. Прикрепите его снова. |
 | Submit | Submit / Submit again | Сдать / Сдать снова |
 | Submit confirmation | Submit your work? / These questions have no answer: / Question {number} / After you submit, you cannot change your answers unless your tutor returns the work. / Submit / Cancel | Сдать работу? / На эти вопросы нет ответа: / Вопрос {number} / После сдачи изменить ответы можно будет, только если репетитор вернёт работу. / Сдать / Отмена |
 | After submitting | Submitted | Сдано |
