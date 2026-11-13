@@ -1834,6 +1834,22 @@ export interface components {
             /** Format: int32 */
             version: number;
         };
+        LessonIssue: {
+            /** Format: date-time */
+            deadline_at: string | null;
+            /** Format: uuid */
+            issue_id?: string;
+            late?: boolean;
+            /** @enum {string} */
+            status?: "not_started" | "draft" | "submitted" | "returned" | "checked" | "closed";
+            /** Format: int64 */
+            students?: number;
+            /** Format: uuid */
+            submission_id?: string;
+            /** Format: int64 */
+            submitted?: number;
+            title: string;
+        };
         LessonJoin: {
             embed_allowed: boolean;
             url: string;
@@ -1897,6 +1913,40 @@ export interface components {
             /** @enum {string|null} */
             colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink" | null;
             name: string;
+        };
+        LessonView: {
+            audience: components["schemas"]["LessonAudience"];
+            /** Format: date-time */
+            cancelled_at: string | null;
+            /** Format: uuid */
+            channel_id: string | null;
+            description: string | null;
+            /** Format: int64 */
+            duration_minutes: number;
+            embed_allowed: boolean;
+            /** Format: date-time */
+            ends_at: string;
+            /** Format: uuid */
+            id: string;
+            issues: components["schemas"]["LessonIssue"][];
+            materials: components["schemas"]["LessonMaterial"][];
+            /** Format: date */
+            occurrence_date?: string;
+            other_timezone: string | null;
+            room_open: boolean;
+            series: components["schemas"]["LessonSeries"] | null;
+            /** Format: uuid */
+            series_id: string | null;
+            /** Format: date-time */
+            starts_at: string;
+            /** @enum {string} */
+            status: "scheduled" | "live" | "ended" | "cancelled";
+            timezone: string;
+            title: string;
+            took_place: boolean;
+            tutor: components["schemas"]["LessonTutor"] | null;
+            /** Format: int32 */
+            version: number;
         };
         Library: {
             folder: components["schemas"]["LibraryFolder"] | null;
@@ -6914,7 +6964,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LessonDetail"];
+                    "application/json": components["schemas"]["LessonView"];
                 };
             };
             /** @description Bad Request */
@@ -13529,9 +13579,11 @@ export const lessonAudienceKindValues: ReadonlyArray<FlattenedDeepRequired<compo
 export const lessonAudienceLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonAudience"]["label_kind"]> = ["individual", "group", "removed_student"];
 export const lessonCancellationScopeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonCancellation"]["scope"]> = ["this", "following"];
 export const lessonDetailStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonDetail"]["status"]> = ["scheduled", "live", "ended", "cancelled"];
+export const lessonIssueStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonIssue"]["status"]> = ["not_started", "draft", "submitted", "returned", "checked", "closed"];
 export const lessonMemberLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonMember"]["label_kind"]> = ["deleted_account"];
 export const lessonPatchScopeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonPatch"]["scope"]> = ["this", "following"];
 export const lessonTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonTutor"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
+export const lessonViewStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonView"]["status"]> = ["scheduled", "live", "ended", "cancelled"];
 export const libraryItemKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LibraryItem"]["kind"]> = ["material", "template"];
 export const liveStatusStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LiveStatus"]["status"]> = ["ok"];
 export const meLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Me"]["language"]> = ["ru", "en"];

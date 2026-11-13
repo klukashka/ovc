@@ -3,6 +3,7 @@ package api_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"slices"
 	"sort"
@@ -268,15 +269,51 @@ type contractWork struct {
 	full      string
 	automatic string
 	closing   string
+	lesson    string
 }
 
-func (h *authHarness) contractWork(t *testing.T, parties endingParties, policy string, full string, automatic string) contractWork {
+var studentLessonKeys = []string{
+	"id", "title", "description", "starts_at", "ends_at", "duration_minutes", "status", "took_place", "timezone", "series_id", "series", "version",
+	"cancelled_at", "other_timezone", "audience", "tutor", "channel_id", "room_open", "embed_allowed", "materials", "issues",
+}
+
+func (h *authHarness) contractWork(t *testing.T, parties endingParties, policy string, full string, automatic string, start string) contractWork {
 	t.Helper()
 	card := toCard(parties.card.ID)
-	_, fullWork := h.issueTemplate(t, parties.tutorToken, full, card, policy, nil)
-	_, automaticWork := h.issueTemplate(t, parties.tutorToken, automatic, card, policy, nil)
-	_, closingWork := h.issueTemplate(t, parties.tutorToken, automatic, card, policy, nil)
-	return contractWork{full: fullWork[0].id, automatic: automaticWork[0].id, closing: closingWork[0].id}
+	lesson := h.scheduled(t, parties.tutorToken, oneOffFor(parties.card.ID, "2030-03-12", start)).Lessons[0].ID
+	fullWork := h.issued(t, parties.tutorToken, issueJSONWith(full, card, &lesson, nil, policy))
+	automaticWork := h.issued(t, parties.tutorToken, issueJSONWith(automatic, card, &lesson, nil, policy))
+	closingWork := h.issued(t, parties.tutorToken, issueJSONWith(automatic, card, &lesson, nil, policy))
+	return contractWork{
+		full: h.submissionsOf(t, fullWork.ID)[0].id, automatic: h.submissionsOf(t, automaticWork.ID)[0].id, closing: h.submissionsOf(t, closingWork.ID)[0].id,
+		lesson: lesson,
+	}
+}
+
+func (c contractCheck) lessonWork(label string, raw []byte) []string {
+	c.t.Helper()
+	decoded := c.object(label, raw, studentLessonKeys)
+	items := c.array(label+".issues", decoded["issues"])
+	if len(items) != 3 {
+		c.t.Errorf("%s lists %d linked submissions, want 3", label, len(items))
+	}
+	statuses := make([]string, 0, len(items))
+	for _, item := range items {
+		fields := c.object(label+".issue", item, []string{"submission_id", "title", "deadline_at", "status", "late"})
+		var status string
+		if err := json.Unmarshal(fields["status"], &status); err != nil {
+			c.t.Fatalf("%s carries a status that is not a string: %s", label, item)
+		}
+		statuses = append(statuses, status)
+	}
+	c.noSentinel(label, raw)
+	return statuses
+}
+
+func observeStatuses(seen map[string]bool, statuses []string) {
+	for _, status := range statuses {
+		seen[status] = true
+	}
 }
 
 func TestAnswerKeyContract(t *testing.T) {
@@ -293,15 +330,17 @@ func TestAnswerKeyContract(t *testing.T) {
 	full := h.workTemplate(t, parties.tutorToken, "Contract", contractBlocks(uploadedID(t, picture), material)...)
 	automatic := h.workTemplate(t, parties.tutorToken, "Automatic", contractAutomaticBlocks()...)
 	works := map[string]contractWork{}
-	for _, policy := range policies {
-		works[policy] = h.contractWork(t, parties, policy, full, automatic)
+	for index, policy := range policies {
+		works[policy] = h.contractWork(t, parties, policy, full, automatic, fmt.Sprintf("%02d:00", 10+index))
 	}
 	frames := h.recordFrames(t)
+	seen := map[string]bool{}
 
 	for _, policy := range policies {
 		work := works[policy]
 		label := policy + " "
 		check.submission(label+"not_started", []byte(h.submissionAnswer(t, parties.studentToken, work.full).body), false)
+		observeStatuses(seen, check.lessonWork(label+"lesson not_started", []byte(h.lessonPage(t, parties.studentToken, work.lesson).body)))
 		upload := h.homeworkUpload(t, parties.studentToken, homeworkRoute(domain.ContextAnswer, work.full, contractQuestion(7)), "answer.pdf", pdfFile(300))
 		h.mustAnswer(t, upload, http.StatusCreated)
 		check.object(label+"upload", json.RawMessage(upload.body), []string{"id", "filename", "media_type", "size_bytes"})
@@ -312,6 +351,7 @@ func TestAnswerKeyContract(t *testing.T) {
 		h.mustAnswer(t, draft, http.StatusOK)
 		check.submission(label+"draft save", []byte(draft.body), false)
 		check.submission(label+"draft", []byte(h.submissionAnswer(t, parties.studentToken, work.full).body), false)
+		observeStatuses(seen, check.lessonWork(label+"lesson draft", []byte(h.lessonPage(t, parties.studentToken, work.lesson).body)))
 		minted, _ := h.addressOf(t, parties.studentToken, uploadedID(t, upload), "?ref=answer:"+work.full)
 		h.mustAnswer(t, minted, http.StatusOK)
 		check.object(label+"mint", json.RawMessage(minted.body), []string{"url", "expires_at"})
@@ -322,11 +362,14 @@ func TestAnswerKeyContract(t *testing.T) {
 		afterSubmission := policy == string(domain.AnswerPolicyAfterSubmission)
 		check.submission(label+"submit", []byte(frozenLater.body), afterSubmission)
 		check.submission(label+"submitted", []byte(h.submissionAnswer(t, parties.studentToken, work.full).body), afterSubmission)
+		observeStatuses(seen, check.lessonWork(label+"lesson submitted", []byte(h.lessonPage(t, parties.studentToken, work.lesson).body)))
 		published := h.contractReview(t, check, parties, work, label, afterSubmission)
+		observeStatuses(seen, check.lessonWork(label+"lesson after the review", []byte(h.lessonPage(t, parties.studentToken, work.lesson).body)))
 		checked := h.submitWork(t, parties.studentToken, work.automatic, 1)
 		h.mustAnswer(t, checked, http.StatusOK)
 		check.submission(label+"checked", []byte(checked.body), policy != string(domain.AnswerPolicyNever))
 		check.assignments(label+"assignments", []byte(h.assignmentsAnswer(t, parties.studentToken, nil).body))
+		observeStatuses(seen, check.lessonWork(label+"lesson checked", []byte(h.lessonPage(t, parties.studentToken, work.lesson).body)))
 		snapshotMint, _ := h.addressOf(t, parties.studentToken, uploadedID(t, picture), "?ref=issue_snapshot:"+issueOf(t, h, work.full))
 		h.mustAnswer(t, snapshotMint, http.StatusOK)
 		check.object(label+"snapshot mint", json.RawMessage(snapshotMint.body), []string{"url", "expires_at"})
@@ -342,6 +385,8 @@ func TestAnswerKeyContract(t *testing.T) {
 			check.fieldRefusal(label+"validation", []byte(unknown.body))
 			h.contractRecheck(t, check, parties, work, label, policy != string(domain.AnswerPolicyNever), published)
 		}
+		observeStatuses(seen, check.lessonWork(label+"lesson reviewed", []byte(h.lessonPage(t, parties.studentToken, work.lesson).body)))
+		h.cancelWithRoster(t, work.lesson, parties.student)
 		missing := h.submissionAnswer(t, parties.studentToken, randomSubmissionID)
 		check.refusal(label+"not_found", []byte(missing.body))
 	}
@@ -352,6 +397,12 @@ func TestAnswerKeyContract(t *testing.T) {
 	for _, policy := range policies {
 		check.submission(policy+" closed", []byte(h.submissionAnswer(t, parties.studentToken, works[policy].closing).body), false)
 		check.assignments(policy+" closed list", []byte(h.assignmentsAnswer(t, parties.studentToken, map[string][]string{"status": {"closed"}}).body))
+		observeStatuses(seen, check.lessonWork(policy+" lesson closed", []byte(h.lessonPage(t, parties.studentToken, works[policy].lesson).body)))
+	}
+	for _, status := range []string{"not_started", "draft", "submitted", "returned", "checked", "closed"} {
+		if !seen[status] {
+			t.Errorf("the lesson detail's linked work never showed the status %s: %v", status, seen)
+		}
 	}
 	result, page := h.notificationPage(t, parties.studentToken, "?limit=100")
 	h.mustAnswer(t, result, http.StatusOK)

@@ -25,6 +25,8 @@ type (
 	IssueSubmission          = dbgen.ListTutorIssueSubmissionsRow
 	VisibleIssueSnapshot     = dbgen.VisibleIssueSnapshotReferencesRow
 	SubmissionTitle          = dbgen.ReadableStudentSubmissionTitlesRow
+	LessonIssue              = dbgen.ListLessonIssuesRow
+	LessonSubmission         = dbgen.ListStudentLessonSubmissionsRow
 	ReviewSubmission         = dbgen.TutorReviewSubmissionsRow
 	SubmissionForEmail       = dbgen.GetSubmissionForEmailRow
 	ReclaimedSubmission      = dbgen.FlagReclaimedSubmissionsRow
@@ -248,6 +250,18 @@ func (r Homework) ServableSnapshotFile(ctx context.Context, attachment domain.At
 func (r Homework) ReadableSubmissionTitles(ctx context.Context, student domain.UserID, ids []domain.SubmissionID) ([]SubmissionTitle, error) {
 	rows, err := r.queries.ReadableStudentSubmissionTitles(ctx, dbgen.ReadableStudentSubmissionTitlesParams{StudentID: student, Ids: uuids(ids)})
 	return one(rows, err, "readable submission titles")
+}
+
+func (r Homework) LessonIssues(ctx context.Context, tutor domain.UserID, lesson domain.LessonID) ([]LessonIssue, error) {
+	rows, err := r.queries.ListLessonIssues(ctx, dbgen.ListLessonIssuesParams{TutorID: tutor, LessonID: &lesson, PageSize: domain.IssuesPerLesson})
+	return one(rows, err, "the lesson's linked issues")
+}
+
+func (r Homework) StudentLessonSubmissions(ctx context.Context, student domain.UserID, lesson domain.LessonID) ([]LessonSubmission, error) {
+	rows, err := r.queries.ListStudentLessonSubmissions(ctx, dbgen.ListStudentLessonSubmissionsParams{
+		StudentID: student, LessonID: &lesson, PageSize: domain.IssuesPerLesson,
+	})
+	return one(rows, err, "the student's submissions linked to a lesson")
 }
 
 func (r Homework) ReviewSubmissions(ctx context.Context, tutor domain.UserID, ids []domain.SubmissionID) ([]ReviewSubmission, error) {

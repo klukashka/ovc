@@ -85,6 +85,22 @@ type LessonDetail struct {
 	Materials       []LessonMaterial    `json:"materials" nullable:"false"`
 }
 
+type LessonView struct {
+	LessonDetail
+	Issues []LessonIssue `json:"issues" nullable:"false" maxItems:"20"`
+}
+
+type LessonIssue struct {
+	IssueID      *string                  `json:"issue_id,omitempty" format:"uuid"`
+	SubmissionID *string                  `json:"submission_id,omitempty" format:"uuid"`
+	Title        string                   `json:"title"`
+	DeadlineAt   *time.Time               `json:"deadline_at" nullable:"true"`
+	Students     *int64                   `json:"students,omitempty"`
+	Submitted    *int64                   `json:"submitted,omitempty"`
+	Status       *domain.SubmissionStatus `json:"status,omitempty" enum:"not_started,draft,submitted,returned,checked,closed"`
+	Late         *bool                    `json:"late,omitempty"`
+}
+
 type LessonMaterial struct {
 	MaterialID   *string   `json:"material_id,omitempty" format:"uuid"`
 	AttachmentID string    `json:"attachment_id" format:"uuid"`

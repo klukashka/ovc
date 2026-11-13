@@ -68,6 +68,11 @@ type lessonOutput struct {
 	Body         schemas.LessonDetail
 }
 
+type lessonPageOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         schemas.LessonView
+}
+
 func (r *router) registerSchedule() {
 	calendar := operation("calendar-get", http.MethodGet, calendarPath)
 	calendar.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound)
@@ -178,17 +183,36 @@ func (r *router) createLessons(ctx context.Context, input *createLessonsInput) (
 	return &createdLessonsOutput{CacheControl: noStore, Body: createdBody(created)}, nil
 }
 
-func (r *router) lesson(ctx context.Context, input *lessonInput) (*lessonOutput, error) {
+func (r *router) lesson(ctx context.Context, input *lessonInput) (*lessonPageOutput, error) {
 	id, valid := domain.ParseUUID[domain.LessonID](input.ID)
 	if !valid {
 		return nil, NewError(ctx, domain.ErrorNotFound)
 	}
 	principal := principalFrom(ctx)
-	lesson, err := r.schedule.Lesson(ctx, principal.UserID, principal.Role, id)
+	page, err := r.schedule.LessonWithWork(ctx, principal.UserID, principal.Role, id)
 	if err != nil {
 		return nil, r.scheduleError(ctx, "lessons.get.failed", err)
 	}
-	return &lessonOutput{CacheControl: noStore, Body: lessonBody(lesson)}, nil
+	return &lessonPageOutput{CacheControl: noStore, Body: schemas.LessonView{LessonDetail: lessonBody(page.Lesson), Issues: linkedIssuesBody(page.Issues)}}, nil
+}
+
+func linkedIssuesBody(issues []schedule.LinkedIssue) []schemas.LessonIssue {
+	body := make([]schemas.LessonIssue, 0, len(issues))
+	for _, issue := range issues {
+		item := schemas.LessonIssue{Title: issue.Title, DeadlineAt: utc(issue.DeadlineAt)}
+		if issue.Tutor != nil {
+			id := issue.Tutor.IssueID.String()
+			students, submitted := issue.Tutor.Students, issue.Tutor.Submitted
+			item.IssueID, item.Students, item.Submitted = &id, &students, &submitted
+		}
+		if issue.Student != nil {
+			id := issue.Student.SubmissionID.String()
+			status, late := issue.Student.Status, issue.Student.Late
+			item.SubmissionID, item.Status, item.Late = &id, &status, &late
+		}
+		body = append(body, item)
+	}
+	return body
 }
 
 func (r *router) editLesson(ctx context.Context, input *editLessonInput) (*createdLessonsOutput, error) {

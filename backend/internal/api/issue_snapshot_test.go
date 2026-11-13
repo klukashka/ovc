@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"slices"
 	"testing"
@@ -148,11 +149,15 @@ func TestTheStudentSubmissionReadabilityCopiesAgree(t *testing.T) {
 	parties := h.issueParties(t)
 	cases := readabilityCases()
 	submissions := make([]string, 0, len(cases))
-	for _, testCase := range cases {
+	lessons := make([]string, 0, len(cases))
+	for index, testCase := range cases {
 		student := h.seedStudentAccount(t, testCase.student, domain.AccountActive)
 		card := h.seedCard(t, parties.tutor, testCase.student, domain.RelationshipActive, &student)
-		issue := h.issued(t, parties.tutorToken, issueJSON(parties.template.ID, toCard(card)))
+		lesson := h.scheduled(t, parties.tutorToken, oneOffFor(card, "2030-03-12", fmt.Sprintf("%02d:00", 5+index))).Lessons[0].ID
+		issue := h.issued(t, parties.tutorToken, issueJSONWith(parties.template.ID, toCard(card), &lesson, nil, string(domain.AnswerPolicyAfterCheck)))
+		h.cancelWithRoster(t, lesson, student)
 		submissions = append(submissions, h.submissionsOf(t, issue.ID)[0].id)
+		lessons = append(lessons, lesson)
 		if testCase.issue == domain.IssueWithdrawn {
 			h.mustAnswer(t, h.withdrawIssue(t, parties.tutorToken, issue.ID), http.StatusOK)
 		}
@@ -173,8 +178,10 @@ func TestTheStudentSubmissionReadabilityCopiesAgree(t *testing.T) {
 		emailed := len(h.mailTo(t, memberEmail(testCase.student))) == 1
 		read := h.submissionAnswer(t, token, submissions[index]).status == http.StatusOK
 		listed := h.assignments(t, token, nil).Counts.Todo == 1
-		if labelled != want || emailed != want || read != want || listed != want {
-			t.Errorf("%+v: the predicate says %v, the row label %v, the email %v, the read %v, the list %v", testCase, want, labelled, emailed, read, listed)
+		linked := slices.Contains(h.linkedWorkAs(t, token, lessons[index]).submissionIDs(), submissions[index])
+		if labelled != want || emailed != want || read != want || listed != want || linked != want {
+			t.Errorf("%+v: the predicate says %v, the row label %v, the email %v, the read %v, the list %v, the lesson's linked work %v",
+				testCase, want, labelled, emailed, read, listed, linked)
 		}
 		if want {
 			readableCount++

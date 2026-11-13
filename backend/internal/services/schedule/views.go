@@ -53,6 +53,30 @@ type Lesson struct {
 	Materials       []LessonMaterial
 }
 
+type LessonWithWork struct {
+	Lesson
+	Issues []LinkedIssue
+}
+
+type LinkedIssue struct {
+	Title      string
+	DeadlineAt *time.Time
+	Tutor      *TutorLinkedIssue
+	Student    *StudentLinkedWork
+}
+
+type TutorLinkedIssue struct {
+	IssueID   domain.IssueID
+	Students  int64
+	Submitted int64
+}
+
+type StudentLinkedWork struct {
+	SubmissionID domain.SubmissionID
+	Status       domain.SubmissionStatus
+	Late         bool
+}
+
 func (l Lesson) EndsAt() time.Time {
 	return l.StartsAt.Add(time.Duration(l.DurationMinutes) * time.Minute)
 }
@@ -247,61 +271,132 @@ func (source studentLabelSource) labels() (Audience, *TutorLabel) {
 func (s *Service) Lesson(ctx context.Context, viewer domain.UserID, role domain.Role, id domain.LessonID) (Lesson, error) {
 	var lesson Lesson
 	err := s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
-		account, err := repos.Users.ByID(ctx, viewer)
-		if err != nil {
-			return err
-		}
-		if role == domain.RoleTutor {
-			views, err := s.tutorViews(ctx, repos, account, []domain.LessonID{id})
-			if err != nil {
-				return err
-			}
-			if len(views) == 0 {
-				return ErrNotFound
-			}
-			lesson = views[0]
-			return nil
-		}
-		row, err := repos.Lessons.StudentView(ctx, viewer, id)
-		if errors.Is(err, repositories.ErrNotFound) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		source := studentLabelSource{
-			group: row.GroupID, groupName: row.GroupName, currentMember: row.CurrentMember, tutorName: row.TutorName,
-			myState: row.MyState, myColour: row.MyColour,
-		}
-		audience, tutor := source.labels()
-		lesson = Lesson{
-			ID: row.ID, Title: row.Title, Description: row.Description, StartsAt: row.StartsAt.UTC(), DurationMinutes: int(row.DurationMinutes),
-			Status: row.Status, TookPlace: row.TookPlace, Timezone: row.Timezone, SeriesID: row.SeriesID, Version: row.Version, CancelledAt: row.CancelledAt,
-			Audience: audience, Tutor: tutor, RoomOpen: row.RoomOpen, EmbedAllowed: s.deps.Embed.On(),
-		}
-		if row.Timezone != account.Timezone {
-			other := row.Timezone
-			lesson.OtherTimezone = &other
-		}
-		withChannel := []Lesson{lesson}
-		if err := withChannels(ctx, repos, viewer, withChannel); err != nil {
-			return err
-		}
-		if err := s.withMaterials(ctx, repos, withChannel, false); err != nil {
-			return err
-		}
-		lesson = withChannel[0]
-		seenOnlyThroughRoster := !row.CurrentMember && !row.CurrentLink
-		if seenOnlyThroughRoster {
-			lesson.SeriesID = nil
-			return nil
-		}
-		withSeriesView, err := withSeries(ctx, repos, []Lesson{lesson})
-		if err != nil {
-			return err
-		}
-		lesson = withSeriesView[0]
-		return nil
+		found, err := s.visibleLesson(ctx, repos, viewer, role, id)
+		lesson = found
+		return err
 	})
 	return lesson, err
+}
+
+func (s *Service) LessonWithWork(ctx context.Context, viewer domain.UserID, role domain.Role, id domain.LessonID) (LessonWithWork, error) {
+	var page LessonWithWork
+	err := s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
+		lesson, err := s.visibleLesson(ctx, repos, viewer, role, id)
+		if err != nil {
+			return err
+		}
+		issues, err := linkedWork(ctx, repos, viewer, role, id)
+		if err != nil {
+			return err
+		}
+		page = LessonWithWork{Lesson: lesson, Issues: issues}
+		return nil
+	})
+	return page, err
+}
+
+func linkedWork(ctx context.Context, repos repositories.Repositories, viewer domain.UserID, role domain.Role, id domain.LessonID) ([]LinkedIssue, error) {
+	if role == domain.RoleTutor {
+		return tutorLinkedIssues(ctx, repos, viewer, id)
+	}
+	rows, err := repos.Homework.StudentLessonSubmissions(ctx, viewer, id)
+	if err != nil {
+		return nil, err
+	}
+	issues := make([]LinkedIssue, 0, len(rows))
+	for _, row := range rows {
+		issues = append(issues, LinkedIssue{
+			Title: row.Title, DeadlineAt: row.DeadlineAt, Student: &StudentLinkedWork{SubmissionID: row.ID, Status: row.Status, Late: row.Late},
+		})
+	}
+	return issues, nil
+}
+
+func tutorLinkedIssues(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.LessonID) ([]LinkedIssue, error) {
+	rows, err := repos.Homework.LessonIssues(ctx, tutor, id)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]domain.IssueID, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+	progress, err := repos.Homework.Progress(ctx, tutor, ids)
+	if err != nil {
+		return nil, err
+	}
+	counts := make(map[domain.IssueID]repositories.IssueProgress, len(progress))
+	for _, row := range progress {
+		counts[row.IssueID] = row
+	}
+	issues := make([]LinkedIssue, 0, len(rows))
+	for _, row := range rows {
+		count := counts[row.ID]
+		issues = append(issues, LinkedIssue{
+			Title: row.Title, DeadlineAt: row.DeadlineAt, Tutor: &TutorLinkedIssue{IssueID: row.ID, Students: count.Students, Submitted: count.Submitted},
+		})
+	}
+	return issues, nil
+}
+
+func (s *Service) visibleLesson(
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, role domain.Role, id domain.LessonID,
+) (Lesson, error) {
+	account, err := repos.Users.ByID(ctx, viewer)
+	if err != nil {
+		return Lesson{}, err
+	}
+	if role == domain.RoleTutor {
+		views, err := s.tutorViews(ctx, repos, account, []domain.LessonID{id})
+		if err != nil {
+			return Lesson{}, err
+		}
+		if len(views) == 0 {
+			return Lesson{}, ErrNotFound
+		}
+		return views[0], nil
+	}
+	return s.studentLesson(ctx, repos, account, id)
+}
+
+func (s *Service) studentLesson(ctx context.Context, repos repositories.Repositories, account repositories.User, id domain.LessonID) (Lesson, error) {
+	row, err := repos.Lessons.StudentView(ctx, account.ID, id)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return Lesson{}, ErrNotFound
+	}
+	if err != nil {
+		return Lesson{}, err
+	}
+	source := studentLabelSource{
+		group: row.GroupID, groupName: row.GroupName, currentMember: row.CurrentMember, tutorName: row.TutorName,
+		myState: row.MyState, myColour: row.MyColour,
+	}
+	audience, tutor := source.labels()
+	lesson := Lesson{
+		ID: row.ID, Title: row.Title, Description: row.Description, StartsAt: row.StartsAt.UTC(), DurationMinutes: int(row.DurationMinutes),
+		Status: row.Status, TookPlace: row.TookPlace, Timezone: row.Timezone, SeriesID: row.SeriesID, Version: row.Version, CancelledAt: row.CancelledAt,
+		Audience: audience, Tutor: tutor, RoomOpen: row.RoomOpen, EmbedAllowed: s.deps.Embed.On(),
+	}
+	if row.Timezone != account.Timezone {
+		other := row.Timezone
+		lesson.OtherTimezone = &other
+	}
+	withChannel := []Lesson{lesson}
+	if err := withChannels(ctx, repos, account.ID, withChannel); err != nil {
+		return Lesson{}, err
+	}
+	if err := s.withMaterials(ctx, repos, withChannel, false); err != nil {
+		return Lesson{}, err
+	}
+	lesson = withChannel[0]
+	seenOnlyThroughRoster := !row.CurrentMember && !row.CurrentLink
+	if seenOnlyThroughRoster {
+		lesson.SeriesID = nil
+		return lesson, nil
+	}
+	withSeriesView, err := withSeries(ctx, repos, []Lesson{lesson})
+	if err != nil {
+		return Lesson{}, err
+	}
+	return withSeriesView[0], nil
 }

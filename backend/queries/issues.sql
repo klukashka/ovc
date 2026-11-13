@@ -218,6 +218,23 @@ WHERE submissions.student_id = @student_id AND submissions.id = ANY (sqlc.arg(id
     AND issues.status = 'active' AND issues.erase_pending_since IS NULL
     AND relationships.state IN ('active', 'provisional', 'ended');
 
+-- name: ListLessonIssues :many
+SELECT id, title, deadline_at FROM issues
+WHERE tutor_id = @tutor_id AND lesson_id = @lesson_id AND status = 'active' AND erase_pending_since IS NULL
+ORDER BY issued_at, id
+LIMIT sqlc.arg(page_size);
+
+-- name: ListStudentLessonSubmissions :many
+SELECT submissions.id, issues.title, submissions.deadline_at, submissions.status, submissions.late
+FROM submissions
+JOIN issues ON issues.id = submissions.issue_id
+JOIN relationships ON relationships.id = submissions.relationship_id
+WHERE submissions.student_id = @student_id AND issues.lesson_id = @lesson_id
+    AND issues.status = 'active' AND issues.erase_pending_since IS NULL
+    AND relationships.state IN ('active', 'provisional', 'ended')
+ORDER BY issues.issued_at, issues.id
+LIMIT sqlc.arg(page_size);
+
 -- name: TutorReviewSubmissions :many
 SELECT submissions.id, card.display_name, card.state AS card_state, (issues.erase_pending_since IS NULL)::boolean AS issue_readable
 FROM submissions

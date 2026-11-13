@@ -654,6 +654,45 @@ func (q *Queries) ListIssueSubmissionStates(ctx context.Context, issueID domain.
 	return items, nil
 }
 
+const listLessonIssues = `-- name: ListLessonIssues :many
+SELECT id, title, deadline_at FROM issues
+WHERE tutor_id = $1 AND lesson_id = $2 AND status = 'active' AND erase_pending_since IS NULL
+ORDER BY issued_at, id
+LIMIT $3
+`
+
+type ListLessonIssuesParams struct {
+	TutorID  domain.UserID
+	LessonID *domain.LessonID
+	PageSize int32
+}
+
+type ListLessonIssuesRow struct {
+	ID         domain.IssueID
+	Title      string
+	DeadlineAt *time.Time
+}
+
+func (q *Queries) ListLessonIssues(ctx context.Context, arg ListLessonIssuesParams) ([]ListLessonIssuesRow, error) {
+	rows, err := q.db.Query(ctx, listLessonIssues, arg.TutorID, arg.LessonID, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLessonIssuesRow
+	for rows.Next() {
+		var i ListLessonIssuesRow
+		if err := rows.Scan(&i.ID, &i.Title, &i.DeadlineAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRelationshipIssueSubmissions = `-- name: ListRelationshipIssueSubmissions :many
 SELECT id, issue_id, status, late, final_points, issued_before_reclaim FROM submissions
 WHERE tutor_id = $1 AND relationship_id = $2 AND issue_id = ANY ($3::uuid[])
@@ -690,6 +729,58 @@ func (q *Queries) ListRelationshipIssueSubmissions(ctx context.Context, arg List
 			&i.Late,
 			&i.FinalPoints,
 			&i.IssuedBeforeReclaim,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStudentLessonSubmissions = `-- name: ListStudentLessonSubmissions :many
+SELECT submissions.id, issues.title, submissions.deadline_at, submissions.status, submissions.late
+FROM submissions
+JOIN issues ON issues.id = submissions.issue_id
+JOIN relationships ON relationships.id = submissions.relationship_id
+WHERE submissions.student_id = $1 AND issues.lesson_id = $2
+    AND issues.status = 'active' AND issues.erase_pending_since IS NULL
+    AND relationships.state IN ('active', 'provisional', 'ended')
+ORDER BY issues.issued_at, issues.id
+LIMIT $3
+`
+
+type ListStudentLessonSubmissionsParams struct {
+	StudentID domain.UserID
+	LessonID  *domain.LessonID
+	PageSize  int32
+}
+
+type ListStudentLessonSubmissionsRow struct {
+	ID         domain.SubmissionID
+	Title      string
+	DeadlineAt *time.Time
+	Status     domain.SubmissionStatus
+	Late       bool
+}
+
+func (q *Queries) ListStudentLessonSubmissions(ctx context.Context, arg ListStudentLessonSubmissionsParams) ([]ListStudentLessonSubmissionsRow, error) {
+	rows, err := q.db.Query(ctx, listStudentLessonSubmissions, arg.StudentID, arg.LessonID, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStudentLessonSubmissionsRow
+	for rows.Next() {
+		var i ListStudentLessonSubmissionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.DeadlineAt,
+			&i.Status,
+			&i.Late,
 		); err != nil {
 			return nil, err
 		}

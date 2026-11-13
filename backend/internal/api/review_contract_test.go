@@ -90,12 +90,17 @@ func (h *authHarness) contractChecked(
 func (h *authHarness) contractOverridesOnly(t *testing.T, check contractCheck, parties endingParties, work contractWork, label string, revealed bool) {
 	t.Helper()
 	before := h.submissionAnswer(t, parties.studentToken, work.automatic)
+	lessonBefore := h.lessonPage(t, parties.studentToken, work.lesson)
 	h.reviewSaved(t, parties.tutorToken, work.automatic, reviewJSON(t, 1, 0, saveID(30), "", overridden(contractQuestion(2), 0, "Copied")))
 	h.published(t, parties.tutorToken, work.automatic, domain.ReviewCheck, 1)
 	after := h.submissionAnswer(t, parties.studentToken, work.automatic)
+	lessonAfter := h.lessonPage(t, parties.studentToken, work.lesson)
 	check.submission(label+"overrides only", []byte(after.body), revealed)
 	if addresslessBody(t, before.body) != addresslessBody(t, after.body) || !strings.Contains(after.body, `"review":null`) {
 		t.Errorf("%sa revision of overrides only changed the student's view: %s", label, after.body)
+	}
+	if lessonBefore.status != http.StatusOK || lessonBefore.body != lessonAfter.body {
+		t.Errorf("%sa revision of overrides only changed the student's lesson detail: %s then %s", label, lessonBefore.body, lessonAfter.body)
 	}
 }
 
