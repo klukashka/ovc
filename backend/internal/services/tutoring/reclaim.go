@@ -423,6 +423,13 @@ func (s *Service) apply(
 func (s *Service) settleDecided(
 	ctx context.Context, repos repositories.Repositories, path domain.MembershipPath, decision *reclaimDecision, now time.Time,
 ) error {
+	if err := s.settleDecidedLessons(ctx, repos, path, decision, now); err != nil {
+		return err
+	}
+	return homework.ApplyLifecycle(ctx, repos, s.deps.Logger, decision.removed, nil, false, "removal", now)
+}
+
+func (s *Service) settleDecidedLessons(ctx context.Context, repos repositories.Repositories, path domain.MembershipPath, decision *reclaimDecision, now time.Time) error {
 	if len(decision.channels) > 0 {
 		if err := s.mirror(ctx, repos, path, directAudience(decision.channels...), now); err != nil {
 			return err

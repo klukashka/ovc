@@ -14,7 +14,17 @@ import (
 )
 
 const countOwnNotifications = `-- name: CountOwnNotifications :one
-SELECT count(*) FROM notifications WHERE user_id = $1 AND id = ANY ($2::uuid[])
+SELECT count(*) FROM notifications WHERE user_id = $1 AND (
+    notifications.user_id IS DISTINCT FROM notifications.student_id
+    OR notifications.event NOT IN ('issue.created', 'issue.withdrawn', 'submission.submitted', 'submission.checked', 'submission.returned', 'submission.review_updated')
+    OR EXISTS (
+        SELECT 1 FROM submissions
+        JOIN issues ON issues.id = submissions.issue_id
+        JOIN relationships ON relationships.id = submissions.relationship_id
+        WHERE submissions.id = notifications.subject_id AND submissions.student_id = notifications.user_id
+            AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    )
+) AND notifications.id = ANY ($2::uuid[])
 `
 
 type CountOwnNotificationsParams struct {
@@ -31,7 +41,17 @@ func (q *Queries) CountOwnNotifications(ctx context.Context, arg CountOwnNotific
 
 const countUnreadNotifications = `-- name: CountUnreadNotifications :one
 SELECT count(*) FROM (
-    SELECT 1 FROM notifications WHERE user_id = $1 AND read_at IS NULL LIMIT $2::int
+    SELECT 1 FROM notifications WHERE user_id = $1 AND (
+    notifications.user_id IS DISTINCT FROM notifications.student_id
+    OR notifications.event NOT IN ('issue.created', 'issue.withdrawn', 'submission.submitted', 'submission.checked', 'submission.returned', 'submission.review_updated')
+    OR EXISTS (
+        SELECT 1 FROM submissions
+        JOIN issues ON issues.id = submissions.issue_id
+        JOIN relationships ON relationships.id = submissions.relationship_id
+        WHERE submissions.id = notifications.subject_id AND submissions.student_id = notifications.user_id
+            AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    )
+) AND read_at IS NULL LIMIT $2::int
 ) AS unread
 `
 
@@ -118,7 +138,17 @@ func (q *Queries) DeleteNotificationsNamingBatch(ctx context.Context, arg Delete
 }
 
 const getOwnNotification = `-- name: GetOwnNotification :one
-SELECT id, created_at FROM notifications WHERE user_id = $1 AND id = $2
+SELECT notifications.id, notifications.created_at FROM notifications WHERE user_id = $1 AND (
+    notifications.user_id IS DISTINCT FROM notifications.student_id
+    OR notifications.event NOT IN ('issue.created', 'issue.withdrawn', 'submission.submitted', 'submission.checked', 'submission.returned', 'submission.review_updated')
+    OR EXISTS (
+        SELECT 1 FROM submissions
+        JOIN issues ON issues.id = submissions.issue_id
+        JOIN relationships ON relationships.id = submissions.relationship_id
+        WHERE submissions.id = notifications.subject_id AND submissions.student_id = notifications.user_id
+            AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    )
+) AND notifications.id = $2
 `
 
 type GetOwnNotificationParams struct {
@@ -275,7 +305,17 @@ func (q *Queries) ListNotificationRelationships(ctx context.Context, ids []pgtyp
 const listNotifications = `-- name: ListNotifications :many
 SELECT id, event, tutor_id, student_id, subject_id, relationship_id, created_at, read_at
 FROM notifications
-WHERE user_id = $1
+WHERE user_id = $1 AND (
+    notifications.user_id IS DISTINCT FROM notifications.student_id
+    OR notifications.event NOT IN ('issue.created', 'issue.withdrawn', 'submission.submitted', 'submission.checked', 'submission.returned', 'submission.review_updated')
+    OR EXISTS (
+        SELECT 1 FROM submissions
+        JOIN issues ON issues.id = submissions.issue_id
+        JOIN relationships ON relationships.id = submissions.relationship_id
+        WHERE submissions.id = notifications.subject_id AND submissions.student_id = notifications.user_id
+            AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    )
+)
     AND ($2::timestamptz IS NULL
         OR (created_at, id) < ($2::timestamptz, $3::uuid))
 ORDER BY created_at DESC, id DESC
@@ -336,7 +376,17 @@ func (q *Queries) ListNotifications(ctx context.Context, arg ListNotificationsPa
 
 const markNotificationsRead = `-- name: MarkNotificationsRead :execrows
 UPDATE notifications SET read_at = $1::timestamptz
-WHERE user_id = $2 AND id = ANY ($3::uuid[]) AND read_at IS NULL
+WHERE user_id = $2 AND (
+    notifications.user_id IS DISTINCT FROM notifications.student_id
+    OR notifications.event NOT IN ('issue.created', 'issue.withdrawn', 'submission.submitted', 'submission.checked', 'submission.returned', 'submission.review_updated')
+    OR EXISTS (
+        SELECT 1 FROM submissions
+        JOIN issues ON issues.id = submissions.issue_id
+        JOIN relationships ON relationships.id = submissions.relationship_id
+        WHERE submissions.id = notifications.subject_id AND submissions.student_id = notifications.user_id
+            AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    )
+) AND notifications.id = ANY ($3::uuid[]) AND read_at IS NULL
 `
 
 type MarkNotificationsReadParams struct {
@@ -355,7 +405,17 @@ func (q *Queries) MarkNotificationsRead(ctx context.Context, arg MarkNotificatio
 
 const markNotificationsReadThrough = `-- name: MarkNotificationsReadThrough :execrows
 UPDATE notifications SET read_at = $1::timestamptz
-WHERE user_id = $2 AND read_at IS NULL
+WHERE user_id = $2 AND (
+    notifications.user_id IS DISTINCT FROM notifications.student_id
+    OR notifications.event NOT IN ('issue.created', 'issue.withdrawn', 'submission.submitted', 'submission.checked', 'submission.returned', 'submission.review_updated')
+    OR EXISTS (
+        SELECT 1 FROM submissions
+        JOIN issues ON issues.id = submissions.issue_id
+        JOIN relationships ON relationships.id = submissions.relationship_id
+        WHERE submissions.id = notifications.subject_id AND submissions.student_id = notifications.user_id
+            AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    )
+) AND read_at IS NULL
     AND (created_at, id) <= ($3::timestamptz, $4::uuid)
 `
 

@@ -128,7 +128,7 @@ func (r Messages) LockBindable(
 		return nil, nil
 	}
 	rows, err := r.queries.LockBindableUploads(ctx, dbgen.LockBindableUploadsParams{
-		Ids: uuids(ids), UploaderID: uploader, ChannelID: pgtype.UUID{Bytes: channel, Valid: true}, Now: now,
+		Ids: uuids(ids), UploaderID: &uploader, ChannelID: pgtype.UUID{Bytes: channel, Valid: true}, Now: now,
 	})
 	return one(rows, err, "lock bindable uploads")
 }

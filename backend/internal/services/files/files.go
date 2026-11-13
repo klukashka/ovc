@@ -366,7 +366,7 @@ func (s *Service) store(ctx context.Context, principal accounts.Principal, encod
 			return ErrBusy
 		}
 		return repos.Attachments.Create(ctx, repositories.NewAttachment{
-			ID: id, UploaderID: uploader, Context: domain.ContextAvatar, StorageKey: key, Filename: storedName, MediaType: mediaType,
+			ID: id, UploaderID: &uploader, Context: domain.ContextAvatar, StorageKey: key, Filename: storedName, MediaType: mediaType,
 			SizeBytes: int64(len(encoded)), Sha256: sum[:], ExpiresAt: &expires, CreatedAt: now,
 		})
 	})
@@ -430,7 +430,7 @@ func (s *Service) BindAvatar(ctx context.Context, repos repositories.Repositorie
 			return err
 		}
 		expired := attachment.ExpiresAt == nil || !attachment.ExpiresAt.After(now)
-		if attachment.UploaderID != user || attachment.Context != domain.ContextAvatar || attachment.State != domain.AttachmentPending || expired {
+		if attachment.UploaderID == nil || *attachment.UploaderID != user || attachment.Context != domain.ContextAvatar || attachment.State != domain.AttachmentPending || expired {
 			return domain.ErrInvalidAvatar
 		}
 	}

@@ -104,7 +104,7 @@ func TestPreCutoverStudentIntentsCannotCompleteOrPublishAfterActivation(t *testi
 	opened := h.intent(t, domain.AttachmentID{0x71}, false)
 	opened.uploader, opened.tutor, opened.channel, opened.created = student, tutor, channel, activation.Add(-time.Minute)
 	scope, scopeID := domain.ScopeChannel, domain.EntityID(channel)
-	if err := h.service.deps.Store.Repositories().Attachments.CreateUploading(context.Background(), repositories.NewUploading{ID: opened.id, UploaderID: student.UserID, Context: domain.ContextChat, ScopeKind: &scope, ScopeID: &scopeID, QuotaTutorID: &tutor, StorageKey: opened.key, Filename: "old.txt", ReservedBytes: 5, CreatedAt: opened.created}); err != nil {
+	if err := h.service.deps.Store.Repositories().Attachments.CreateUploading(context.Background(), repositories.NewUploading{ID: opened.id, UploaderID: &student.UserID, Context: domain.ContextChat, ScopeKind: &scope, ScopeID: &scopeID, QuotaTutorID: &tutor, StorageKey: opened.key, Filename: "old.txt", ReservedBytes: 5, CreatedAt: opened.created}); err != nil {
 		t.Fatal(err)
 	}
 	if allowed, err := h.service.recordUploadID(context.Background(), opened, h.now); err != nil || !allowed {

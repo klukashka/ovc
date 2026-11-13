@@ -199,3 +199,9 @@ func SubmittedKey(submission SubmissionID, submittedAt time.Time) string {
 func SubmissionCheckedKey(submission SubmissionID, revision int32) string {
 	return fmt.Sprintf("%s:%s:%d", NotificationSubmissionChecked, hex.EncodeToString(submission[:]), revision)
 }
+
+type HomeworkCleanupCounts struct {
+	IssuesErased        int64
+	SubmissionsReleased int64
+	ReferencesRemoved   int64
+}

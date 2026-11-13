@@ -275,7 +275,10 @@ WHERE id IN (
 RETURNING snapshot_bytes;
 
 -- name: ListStudentSubmissionsBatch :many
-SELECT id, tutor_id FROM submissions WHERE student_id = @student_id ORDER BY id LIMIT sqlc.arg(batch_size);
+SELECT submissions.id, submissions.tutor_id FROM submissions
+JOIN relationships ON relationships.id = submissions.relationship_id
+WHERE submissions.student_id = @student_id AND relationships.state NOT IN ('provisional', 'reclaim_pending')
+ORDER BY submissions.id LIMIT sqlc.arg(batch_size);
 
 -- name: DeleteSubmissions :execrows
 DELETE FROM submissions WHERE id = ANY (sqlc.arg(ids)::uuid[]);

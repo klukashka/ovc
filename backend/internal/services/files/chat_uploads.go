@@ -172,7 +172,7 @@ func (s *Service) startUpload(ctx context.Context, target uploadTarget, principa
 		}
 		scope := target.scope.row()
 		if err := repos.Attachments.CreateUploading(ctx, repositories.NewUploading{
-			ID: id, UploaderID: uploader, Context: target.policy.context, ScopeKind: scope.kind, ScopeID: scope.id,
+			ID: id, UploaderID: &uploader, Context: target.policy.context, ScopeKind: scope.kind, ScopeID: scope.id,
 			ScopeQuestionID: scope.question, QuotaTutorID: &opened.tutor, StorageKey: opened.key, Filename: name, ReservedBytes: reserved,
 			CreatedAt: now,
 		}); err != nil {

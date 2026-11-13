@@ -85,7 +85,7 @@ func (r *router) registerProfileRoutes() {
 
 	remove := operation("users-me-delete", http.MethodDelete, "/api/v1/users/me")
 	remove.DefaultStatus = http.StatusNoContent
-	remove.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests)
+	remove.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable)
 	register(r, remove, AudienceUnverifiedOK, r.deleteMe)
 
 	upload := operation("uploads-create", http.MethodPost, "/api/v1/uploads")

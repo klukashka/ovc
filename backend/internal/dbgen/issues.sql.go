@@ -702,7 +702,10 @@ func (q *Queries) ListRelationshipIssueSubmissions(ctx context.Context, arg List
 }
 
 const listStudentSubmissionsBatch = `-- name: ListStudentSubmissionsBatch :many
-SELECT id, tutor_id FROM submissions WHERE student_id = $1 ORDER BY id LIMIT $2
+SELECT submissions.id, submissions.tutor_id FROM submissions
+JOIN relationships ON relationships.id = submissions.relationship_id
+WHERE submissions.student_id = $1 AND relationships.state NOT IN ('provisional', 'reclaim_pending')
+ORDER BY submissions.id LIMIT $2
 `
 
 type ListStudentSubmissionsBatchParams struct {

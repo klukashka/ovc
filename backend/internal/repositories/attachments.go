@@ -14,6 +14,7 @@ import (
 
 var (
 	ErrUndescribedAttachment = errors.New("a stored attachment has no recorded media type or size")
+	ErrMissingUploader       = errors.New("an upload requires an uploader")
 	ErrNoCountedContexts     = errors.New("an open upload count names no context")
 )
 
@@ -36,6 +37,9 @@ type (
 )
 
 func (r Attachments) CreateUploading(ctx context.Context, upload NewUploading) error {
+	if upload.UploaderID == nil {
+		return ErrMissingUploader
+	}
 	return done(r.queries.CreateUploadingAttachment(ctx, upload), "create uploading attachment")
 }
 
@@ -59,7 +63,7 @@ func (r Attachments) CountOpenUploads(
 	for _, counted := range contexts {
 		names = append(names, string(counted))
 	}
-	count, err := r.queries.CountOpenUploads(ctx, dbgen.CountOpenUploadsParams{UploaderID: uploader, Contexts: names, Now: now, UploadingSince: uploadingSince})
+	count, err := r.queries.CountOpenUploads(ctx, dbgen.CountOpenUploadsParams{UploaderID: &uploader, Contexts: names, Now: now, UploadingSince: uploadingSince})
 	return one(count, err, "count open uploads")
 }
 
@@ -111,7 +115,7 @@ func (r Channels) LockOfMemberForShare(ctx context.Context, id domain.ChannelID,
 }
 
 func (r Attachments) CountPending(ctx context.Context, uploader domain.UserID, context domain.AttachmentContext, now time.Time) (int64, error) {
-	count, err := r.queries.CountPendingUploads(ctx, dbgen.CountPendingUploadsParams{UploaderID: uploader, Context: context, Now: now})
+	count, err := r.queries.CountPendingUploads(ctx, dbgen.CountPendingUploadsParams{UploaderID: &uploader, Context: context, Now: now})
 	return one(count, err, "count pending uploads")
 }
 
@@ -177,12 +181,12 @@ type (
 )
 
 func (r Attachments) UploadsOf(ctx context.Context, uploader domain.UserID) ([]Upload, error) {
-	uploads, err := r.queries.ListUploadsOf(ctx, uploader)
+	uploads, err := r.queries.ListUploadsOf(ctx, &uploader)
 	return one(uploads, err, "uploads of user")
 }
 
 func (r Attachments) DeleteUploadsOf(ctx context.Context, uploader domain.UserID) (int64, error) {
-	rows, err := r.queries.DeleteUploadsOf(ctx, uploader)
+	rows, err := r.queries.DeleteUploadsOf(ctx, &uploader)
 	return counted(rows, err, "delete uploads of user")
 }
 

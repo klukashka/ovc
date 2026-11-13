@@ -71,7 +71,7 @@ func (s *Service) applyTutorDeletion(ctx context.Context, repos repositories.Rep
 		}
 		deletion.discarded++
 		if card.PreviousState != domain.RelationshipInvited {
-			deletion.removed = append(deletion.removed, repositories.Relationship{ID: card.ID, TutorID: card.TutorID, StudentID: card.StudentID})
+			deletion.removed = append(deletion.removed, repositories.Relationship{ID: card.ID, TutorID: card.TutorID, StudentID: card.StudentID, State: card.PreviousState})
 			if card.StudentID != nil {
 				discardedLinks = append(discardedLinks, repositories.LinkStudent{Relationship: card.ID, Student: *card.StudentID})
 			}
@@ -106,6 +106,13 @@ func (s *Service) applyTutorDeletion(ctx context.Context, repos repositories.Rep
 		return tutorDeletion{}, err
 	}
 	if deletion.lessons, err = s.cancelTutorLessons(ctx, repos, tutor, discardedLinks, audience, now); err != nil {
+		return tutorDeletion{}, err
+	}
+	endedLinks := make([]repositories.Relationship, 0, len(deletion.ended))
+	for _, item := range deletion.ended {
+		endedLinks = append(endedLinks, item.link)
+	}
+	if err := homework.ApplyLifecycle(ctx, repos, s.deps.Logger, deletion.removed, endedLinks, false, "tutor_deleted", now); err != nil {
 		return tutorDeletion{}, err
 	}
 	if err := signalTutorDeletion(ctx, repos, deletion); err != nil {
@@ -288,7 +295,7 @@ func (s *Service) applyStudentDeletion(ctx context.Context, repos repositories.R
 	if err := s.lockStudentChannels(ctx, repos, student, links, now); err != nil {
 		return nil, err
 	}
-	if err := s.settleDecided(ctx, repos, domain.PathRemoval, &decision, now); err != nil {
+	if err := s.settleDecidedLessons(ctx, repos, domain.PathRemoval, &decision, now); err != nil {
 		return nil, err
 	}
 	var ended []ending
@@ -296,11 +303,18 @@ func (s *Service) applyStudentDeletion(ctx context.Context, repos repositories.R
 		if link.State != domain.RelationshipActive {
 			continue
 		}
-		done, err := s.endLink(ctx, repos, link, domain.CauseStudentDeleted, now)
+		done, err := s.endLinkWithTiming(ctx, repos, link, domain.CauseStudentDeleted, now, settleEffectsLater)
 		if err != nil {
 			return nil, err
 		}
 		ended = append(ended, done)
+	}
+	endedLinks := make([]repositories.Relationship, 0, len(ended))
+	for _, item := range ended {
+		endedLinks = append(endedLinks, item.link)
+	}
+	if err := homework.ApplyLifecycle(ctx, repos, s.deps.Logger, decision.removed, endedLinks, false, "student_deleted", now); err != nil {
+		return nil, err
 	}
 	if _, err := repos.Users.ClearReclaimDeadline(ctx, student, now); err != nil {
 		return nil, err
@@ -403,17 +417,24 @@ func (s *Service) OnAccountPurged(
 	if err := s.lockStudentChannels(ctx, repos, user, links, now); err != nil {
 		return nil, err
 	}
-	if err := s.settleDecided(ctx, repos, domain.PathRemoval, &removals, now); err != nil {
+	if err := s.settleDecidedLessons(ctx, repos, domain.PathRemoval, &removals, now); err != nil {
 		return nil, err
 	}
 	lessons := removals.lessons
 	var ended []ending
 	for _, link := range active {
-		done, err := s.endLink(ctx, repos, link, domain.CauseStudentDeleted, now)
+		done, err := s.endLinkWithTiming(ctx, repos, link, domain.CauseStudentDeleted, now, settleEffectsLater)
 		if err != nil {
 			return nil, err
 		}
 		ended = append(ended, done)
+	}
+	endedLinks := make([]repositories.Relationship, 0, len(ended))
+	for _, item := range ended {
+		endedLinks = append(endedLinks, item.link)
+	}
+	if err := homework.ApplyLifecycle(ctx, repos, s.deps.Logger, removed, endedLinks, true, "student_purged", now); err != nil {
+		return nil, err
 	}
 	if err := repos.Relationships.ForgetPurgedStudent(ctx, user, now); err != nil {
 		return nil, err
@@ -486,6 +507,9 @@ func (s *Service) PurgeBatch(ctx context.Context, repos repositories.Repositorie
 }
 
 func (s *Service) PurgeTutorBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, now time.Time) (int64, error) {
+	if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
+		return 0, err
+	}
 	steps := []func(context.Context, domain.UserID, int32) (int64, error){
 		repos.Lessons.DeleteRosterBatchOfTutor,
 		repos.Lessons.DeleteBatchOfTutor,
@@ -541,4 +565,8 @@ func (s *Service) lockStudentChannels(ctx context.Context, repos repositories.Re
 		audiences.Relationships = append(audiences.Relationships, link.ID)
 	}
 	return s.channels().LockForStudentDeletion(ctx, repos, student, audiences, now)
+}
+
+func (s *Service) PurgeStudentHomeworkBatch(ctx context.Context, repos repositories.Repositories, student domain.UserID, now time.Time) (int64, error) {
+	return (homework.Purge{Random: s.deps.Random, Logger: s.deps.Logger}).StudentBatch(ctx, repos, student, s.purgeBatchRows(), now)
 }

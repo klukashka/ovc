@@ -12,6 +12,7 @@ import (
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
+	"ovc/backend/internal/services/homework"
 )
 
 var (
@@ -359,7 +360,15 @@ func (s *Service) removeLink(
 	if err := cardChanged(ctx, repos, link.TutorID, fresh.ID); err != nil {
 		return repositories.Relationship{}, lessonEffects{}, err
 	}
-	return fresh, lessons, s.issueInvitation(ctx, repos, fresh, now)
+	if err := s.issueInvitation(ctx, repos, fresh, now); err != nil {
+		return repositories.Relationship{}, lessonEffects{}, err
+	}
+	if timing == settleEffectsNow {
+		if err := homework.ApplyLifecycle(ctx, repos, s.deps.Logger, []repositories.Relationship{link}, nil, false, "removal", now); err != nil {
+			return repositories.Relationship{}, lessonEffects{}, err
+		}
+	}
+	return fresh, lessons, nil
 }
 
 func (s *Service) logRemoved(ctx context.Context, link repositories.Relationship, cause removalCause) {

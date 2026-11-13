@@ -230,6 +230,8 @@ func (r *router) flowError(ctx context.Context, event string, err error) error {
 	case errors.As(err, &throttled):
 		seconds := int64(math.Ceil(throttled.RetryAfter.Seconds()))
 		return NewError(ctx, domain.ErrorRateLimited).withHeader("Retry-After", strconv.FormatInt(max(seconds, 1), 10))
+	case errors.Is(err, accounts.ErrPurgeIncomplete):
+		return NewError(ctx, domain.ErrorServiceUnavailable).withHeader("Retry-After", "1")
 	case errors.Is(err, core.ErrHashingBusy), errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return NewError(ctx, domain.ErrorServiceUnavailable)
 	}

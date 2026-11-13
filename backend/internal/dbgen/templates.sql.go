@@ -615,7 +615,7 @@ FOR UPDATE
 
 type LockBindablePromptImagesParams struct {
 	Ids        []pgtype.UUID
-	UploaderID domain.UserID
+	UploaderID *domain.UserID
 	Now        time.Time
 }
 

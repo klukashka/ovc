@@ -62,7 +62,7 @@ func (r Homework) LockUploadSubmission(ctx context.Context, id domain.Submission
 func (r Attachments) OpenAnswerBytes(
 	ctx context.Context, student domain.UserID, tutor domain.UserID, excluded *domain.AttachmentID, now time.Time, uploadingSince time.Time,
 ) (int64, error) {
-	params := dbgen.SumOpenAnswerBytesParams{StudentID: student, TutorID: &tutor, Now: now, UploadingSince: uploadingSince}
+	params := dbgen.SumOpenAnswerBytesParams{StudentID: &student, TutorID: &tutor, Now: now, UploadingSince: uploadingSince}
 	if excluded != nil {
 		params.Excluded = pgtype.UUID{Bytes: *excluded, Valid: true}
 	}

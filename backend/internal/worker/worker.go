@@ -40,10 +40,11 @@ type Lane struct {
 }
 
 type Job struct {
-	Name    domain.JobName
-	Every   time.Duration
-	OwnLoop bool
-	Run     func(ctx context.Context, now time.Time) (int64, error)
+	RunHomeworkCleanup func(context.Context, time.Time) (domain.HomeworkCleanupCounts, error)
+	Name               domain.JobName
+	Every              time.Duration
+	OwnLoop            bool
+	Run                func(ctx context.Context, now time.Time) (int64, error)
 }
 
 type Worker struct {
@@ -56,6 +57,11 @@ type Worker struct {
 }
 
 func New(logger *slog.Logger, source clock.Source, service *outbox.Service, lanes []Lane, jobs []Job, timing Timing) *Worker {
+	for _, job := range jobs {
+		if (job.Run == nil) == (job.RunHomeworkCleanup == nil) {
+			panic("a worker job requires exactly one run function")
+		}
+	}
 	return &Worker{logger: logger, clock: source, outbox: service, lanes: lanes, jobs: jobs, timing: timing}
 }
 
@@ -171,7 +177,15 @@ func (w *Worker) runJob(ctx context.Context, job Job, now time.Time) error {
 	}
 	started := w.timing.Wall()
 	result := domain.JobResultOK
-	processed, runErr := job.Run(ctx, now)
+	var processed int64
+	var cleanup domain.HomeworkCleanupCounts
+	var runErr error
+	if job.RunHomeworkCleanup != nil {
+		cleanup, runErr = job.RunHomeworkCleanup(ctx, now)
+		processed = cleanup.IssuesErased + cleanup.SubmissionsReleased
+	} else {
+		processed, runErr = job.Run(ctx, now)
+	}
 	if runErr != nil {
 		result = domain.JobResultFailed
 	}
@@ -183,6 +197,9 @@ func (w *Worker) runJob(ctx context.Context, job Job, now time.Time) error {
 		slog.String("result", string(result)),
 		slog.Int64("batch_size", processed),
 		slog.Int64("duration_ms", w.timing.Wall().Sub(started).Milliseconds()),
+	}
+	if job.RunHomeworkCleanup != nil {
+		attributes = append(attributes, slog.Int64("issues_erased", cleanup.IssuesErased), slog.Int64("submissions_released", cleanup.SubmissionsReleased), slog.Int64("references_removed", cleanup.ReferencesRemoved))
 	}
 	level := slog.LevelInfo
 	if runErr != nil {

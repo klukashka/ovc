@@ -768,7 +768,7 @@ FOR UPDATE
 
 type LockBindableUploadsParams struct {
 	Ids        []pgtype.UUID
-	UploaderID domain.UserID
+	UploaderID *domain.UserID
 	ChannelID  pgtype.UUID
 	Now        time.Time
 }

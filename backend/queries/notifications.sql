@@ -6,7 +6,17 @@ ON CONFLICT (idempotency_key) DO NOTHING;
 -- name: ListNotifications :many
 SELECT id, event, tutor_id, student_id, subject_id, relationship_id, created_at, read_at
 FROM notifications
-WHERE user_id = @user_id
+WHERE user_id = @user_id AND (
+    notifications.user_id IS DISTINCT FROM notifications.student_id
+    OR notifications.event NOT IN ('issue.created', 'issue.withdrawn', 'submission.submitted', 'submission.checked', 'submission.returned', 'submission.review_updated')
+    OR EXISTS (
+        SELECT 1 FROM submissions
+        JOIN issues ON issues.id = submissions.issue_id
+        JOIN relationships ON relationships.id = submissions.relationship_id
+        WHERE submissions.id = notifications.subject_id AND submissions.student_id = notifications.user_id
+            AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    )
+)
     AND (sqlc.narg(after_created_at)::timestamptz IS NULL
         OR (created_at, id) < (sqlc.narg(after_created_at)::timestamptz, sqlc.narg(after_id)::uuid))
 ORDER BY created_at DESC, id DESC
@@ -14,22 +24,72 @@ LIMIT sqlc.arg(row_limit)::int;
 
 -- name: CountUnreadNotifications :one
 SELECT count(*) FROM (
-    SELECT 1 FROM notifications WHERE user_id = @user_id AND read_at IS NULL LIMIT sqlc.arg(cap)::int
+    SELECT 1 FROM notifications WHERE user_id = @user_id AND (
+    notifications.user_id IS DISTINCT FROM notifications.student_id
+    OR notifications.event NOT IN ('issue.created', 'issue.withdrawn', 'submission.submitted', 'submission.checked', 'submission.returned', 'submission.review_updated')
+    OR EXISTS (
+        SELECT 1 FROM submissions
+        JOIN issues ON issues.id = submissions.issue_id
+        JOIN relationships ON relationships.id = submissions.relationship_id
+        WHERE submissions.id = notifications.subject_id AND submissions.student_id = notifications.user_id
+            AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    )
+) AND read_at IS NULL LIMIT sqlc.arg(cap)::int
 ) AS unread;
 
 -- name: CountOwnNotifications :one
-SELECT count(*) FROM notifications WHERE user_id = @user_id AND id = ANY (sqlc.arg(ids)::uuid[]);
+SELECT count(*) FROM notifications WHERE user_id = @user_id AND (
+    notifications.user_id IS DISTINCT FROM notifications.student_id
+    OR notifications.event NOT IN ('issue.created', 'issue.withdrawn', 'submission.submitted', 'submission.checked', 'submission.returned', 'submission.review_updated')
+    OR EXISTS (
+        SELECT 1 FROM submissions
+        JOIN issues ON issues.id = submissions.issue_id
+        JOIN relationships ON relationships.id = submissions.relationship_id
+        WHERE submissions.id = notifications.subject_id AND submissions.student_id = notifications.user_id
+            AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    )
+) AND notifications.id = ANY (sqlc.arg(ids)::uuid[]);
 
 -- name: GetOwnNotification :one
-SELECT id, created_at FROM notifications WHERE user_id = @user_id AND id = @id;
+SELECT notifications.id, notifications.created_at FROM notifications WHERE user_id = @user_id AND (
+    notifications.user_id IS DISTINCT FROM notifications.student_id
+    OR notifications.event NOT IN ('issue.created', 'issue.withdrawn', 'submission.submitted', 'submission.checked', 'submission.returned', 'submission.review_updated')
+    OR EXISTS (
+        SELECT 1 FROM submissions
+        JOIN issues ON issues.id = submissions.issue_id
+        JOIN relationships ON relationships.id = submissions.relationship_id
+        WHERE submissions.id = notifications.subject_id AND submissions.student_id = notifications.user_id
+            AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    )
+) AND notifications.id = @id;
 
 -- name: MarkNotificationsRead :execrows
 UPDATE notifications SET read_at = sqlc.arg(now)::timestamptz
-WHERE user_id = @user_id AND id = ANY (sqlc.arg(ids)::uuid[]) AND read_at IS NULL;
+WHERE user_id = @user_id AND (
+    notifications.user_id IS DISTINCT FROM notifications.student_id
+    OR notifications.event NOT IN ('issue.created', 'issue.withdrawn', 'submission.submitted', 'submission.checked', 'submission.returned', 'submission.review_updated')
+    OR EXISTS (
+        SELECT 1 FROM submissions
+        JOIN issues ON issues.id = submissions.issue_id
+        JOIN relationships ON relationships.id = submissions.relationship_id
+        WHERE submissions.id = notifications.subject_id AND submissions.student_id = notifications.user_id
+            AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    )
+) AND notifications.id = ANY (sqlc.arg(ids)::uuid[]) AND read_at IS NULL;
 
 -- name: MarkNotificationsReadThrough :execrows
 UPDATE notifications SET read_at = sqlc.arg(now)::timestamptz
-WHERE user_id = @user_id AND read_at IS NULL
+WHERE user_id = @user_id AND (
+    notifications.user_id IS DISTINCT FROM notifications.student_id
+    OR notifications.event NOT IN ('issue.created', 'issue.withdrawn', 'submission.submitted', 'submission.checked', 'submission.returned', 'submission.review_updated')
+    OR EXISTS (
+        SELECT 1 FROM submissions
+        JOIN issues ON issues.id = submissions.issue_id
+        JOIN relationships ON relationships.id = submissions.relationship_id
+        WHERE submissions.id = notifications.subject_id AND submissions.student_id = notifications.user_id
+            AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    )
+) AND read_at IS NULL
     AND (created_at, id) <= (sqlc.arg(through_created_at)::timestamptz, sqlc.arg(through_id)::uuid);
 
 -- name: DeleteNotificationsNaming :execrows

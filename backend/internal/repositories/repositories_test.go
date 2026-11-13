@@ -421,7 +421,7 @@ func TestAUserHasAtMostOneAvatarReference(t *testing.T) {
 	for id := byte(1); id <= 2; id++ {
 		expires := instant.Add(time.Hour)
 		if err := attachments.Create(context.Background(), repositories.NewAttachment{
-			ID: domain.AttachmentID{id}, UploaderID: domain.UserID{1}, Context: domain.ContextAvatar, StorageKey: string(rune('a' + id)),
+			ID: domain.AttachmentID{id}, UploaderID: &domain.UserID{1}, Context: domain.ContextAvatar, StorageKey: string(rune('a' + id)),
 			Filename: "avatar.png", MediaType: "image/png", SizeBytes: 10, Sha256: hash("avatar"), ExpiresAt: &expires, CreatedAt: instant,
 		}); err != nil {
 			t.Fatal(err)

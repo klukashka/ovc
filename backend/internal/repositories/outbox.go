@@ -45,6 +45,9 @@ type Attachments struct {
 }
 
 func (r Attachments) Create(ctx context.Context, attachment NewAttachment) error {
+	if attachment.UploaderID == nil {
+		return ErrMissingUploader
+	}
 	return done(r.queries.CreateAttachment(ctx, attachment), "create attachment")
 }
 

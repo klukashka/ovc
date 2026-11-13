@@ -13,11 +13,14 @@ import (
 )
 
 const (
-	unverifiedLifetime      = 7 * 24 * time.Hour
-	purgeBatch              = 100
-	purgeRounds             = 20
-	tutorPurgeBatchesPerRun = 100
+	unverifiedLifetime               = 7 * 24 * time.Hour
+	purgeBatch                       = 100
+	purgeRounds                      = 20
+	tutorPurgeBatchesPerRun          = 100
+	unverifiedPurgeBatchesPerRequest = 20
 )
+
+var ErrPurgeIncomplete = errors.New("account purge exhausted its request batch budget")
 
 type UploadPurger interface {
 	PurgeUploadsOf(ctx context.Context, repos repositories.Repositories, user domain.UserID, now time.Time) error
@@ -34,37 +37,52 @@ func (s *Service) DeleteAccount(ctx context.Context, principal Principal, passwo
 	}
 	immediate := false
 	announce := Announce(Silent)
-	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		locked, err := repos.Users.LockCredentials(ctx, principal.UserID)
+	for batches := 0; ; batches++ {
+		if batches == unverifiedPurgeBatchesPerRequest {
+			return ErrPurgeIncomplete
+		}
+		var progressed int64
+		err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+			locked, err := repos.Users.LockCredentials(ctx, principal.UserID)
+			if err != nil {
+				return err
+			}
+			if subtle.ConstantTimeCompare([]byte(locked.PasswordHash), []byte(user.PasswordHash)) != 1 {
+				return invalid(fieldPassword, domain.FieldIncorrect)
+			}
+			switch locked.State {
+			case domain.AccountUnverified:
+				if user.Role == domain.RoleStudent {
+					progressed, err = s.deps.Tutoring.PurgeStudentHomeworkBatch(ctx, repos, user.ID, now)
+					if err != nil || progressed > 0 {
+						return err
+					}
+				}
+				immediate = true
+				announce, err = s.purger().purge(ctx, repos, principal.UserID, now, 0)
+				return err
+			case domain.AccountActive:
+				if _, err := repos.Users.MarkDeleted(ctx, principal.UserID, now); err != nil {
+					return err
+				}
+				if err := closeEmailRequests(ctx, repos, principal.UserID); err != nil {
+					return err
+				}
+				if _, err := repos.Sessions.RevokeAllOf(ctx, principal.UserID, now); err != nil {
+					return err
+				}
+				announce, err = s.deps.Tutoring.OnAccountDeleted(ctx, repos, principal.UserID, principal.Role, now)
+				return err
+			case domain.AccountBlocked, domain.AccountDeleted:
+			}
+			return ErrUnauthenticated
+		})
 		if err != nil {
 			return err
 		}
-		if subtle.ConstantTimeCompare([]byte(locked.PasswordHash), []byte(user.PasswordHash)) != 1 {
-			return invalid(fieldPassword, domain.FieldIncorrect)
+		if progressed == 0 {
+			break
 		}
-		switch locked.State {
-		case domain.AccountUnverified:
-			immediate = true
-			announce, err = s.purger().purge(ctx, repos, principal.UserID, now, 0)
-			return err
-		case domain.AccountActive:
-			if _, err := repos.Users.MarkDeleted(ctx, principal.UserID, now); err != nil {
-				return err
-			}
-			if err := closeEmailRequests(ctx, repos, principal.UserID); err != nil {
-				return err
-			}
-			if _, err := repos.Sessions.RevokeAllOf(ctx, principal.UserID, now); err != nil {
-				return err
-			}
-			announce, err = s.deps.Tutoring.OnAccountDeleted(ctx, repos, principal.UserID, principal.Role, now)
-			return err
-		case domain.AccountBlocked, domain.AccountDeleted:
-		}
-		return ErrUnauthenticated
-	})
-	if err != nil {
-		return err
 	}
 	purge := "scheduled"
 	if immediate {

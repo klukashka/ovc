@@ -15,7 +15,7 @@ import (
 
 const bindAttachment = `-- name: BindAttachment :execrows
 UPDATE attachments SET state = 'bound', expires_at = NULL, updated_at = $1::timestamptz
-WHERE id = $2 AND state = 'pending'
+WHERE id = $2 AND state = 'pending' AND uploader_id IS NOT NULL
 `
 
 type BindAttachmentParams struct {
@@ -208,7 +208,7 @@ WHERE uploader_id = $1 AND context = ANY ($2::text[])
 `
 
 type CountOpenUploadsParams struct {
-	UploaderID     domain.UserID
+	UploaderID     *domain.UserID
 	Contexts       []string
 	Now            time.Time
 	UploadingSince time.Time
@@ -232,7 +232,7 @@ WHERE uploader_id = $1 AND context = $2 AND state = 'pending' AND expires_at > $
 `
 
 type CountPendingUploadsParams struct {
-	UploaderID domain.UserID
+	UploaderID *domain.UserID
 	Context    domain.AttachmentContext
 	Now        time.Time
 }
@@ -256,7 +256,7 @@ INSERT INTO attachments (
 
 type CreateAttachmentParams struct {
 	ID           domain.AttachmentID
-	UploaderID   domain.UserID
+	UploaderID   *domain.UserID
 	Context      domain.AttachmentContext
 	QuotaTutorID *domain.UserID
 	StorageKey   string
@@ -321,7 +321,7 @@ INSERT INTO attachments (
 
 type CreateUploadingAttachmentParams struct {
 	ID              domain.AttachmentID
-	UploaderID      domain.UserID
+	UploaderID      *domain.UserID
 	Context         domain.AttachmentContext
 	ScopeKind       *domain.ScopeKind
 	ScopeID         *domain.EntityID
@@ -363,10 +363,11 @@ func (q *Queries) DeleteAttachmentRow(ctx context.Context, id domain.AttachmentI
 }
 
 const deleteUploadsOf = `-- name: DeleteUploadsOf :execrows
-DELETE FROM attachments WHERE uploader_id = $1 OR (quota_tutor_id = $1 AND state <> 'bound')
+DELETE FROM attachments WHERE (uploader_id = $1 OR (quota_tutor_id = $1 AND state <> 'bound'))
+    AND NOT (context = 'answer' AND state = 'bound')
 `
 
-func (q *Queries) DeleteUploadsOf(ctx context.Context, userID domain.UserID) (int64, error) {
+func (q *Queries) DeleteUploadsOf(ctx context.Context, userID *domain.UserID) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteUploadsOf, userID)
 	if err != nil {
 		return 0, err
@@ -561,7 +562,8 @@ func (q *Queries) GetServableChatAttachment(ctx context.Context, arg GetServable
 }
 
 const listUploadsOf = `-- name: ListUploadsOf :many
-SELECT id, storage_key, multipart_upload_id FROM attachments WHERE uploader_id = $1 OR (quota_tutor_id = $1 AND state <> 'bound') ORDER BY id
+SELECT id, storage_key, multipart_upload_id FROM attachments WHERE (uploader_id = $1 OR (quota_tutor_id = $1 AND state <> 'bound'))
+    AND NOT (context = 'answer' AND state = 'bound') ORDER BY id
 `
 
 type ListUploadsOfRow struct {
@@ -570,7 +572,7 @@ type ListUploadsOfRow struct {
 	MultipartUploadID *string
 }
 
-func (q *Queries) ListUploadsOf(ctx context.Context, userID domain.UserID) ([]ListUploadsOfRow, error) {
+func (q *Queries) ListUploadsOf(ctx context.Context, userID *domain.UserID) ([]ListUploadsOfRow, error) {
 	rows, err := q.db.Query(ctx, listUploadsOf, userID)
 	if err != nil {
 		return nil, err

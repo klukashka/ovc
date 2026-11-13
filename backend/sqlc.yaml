@@ -212,6 +212,7 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: UserID
+              pointer: true
           - column: attachments.context
             go_type:
               import: ovc/backend/internal/domain

@@ -170,7 +170,7 @@ func (r Homework) LockBindableCorrectedUploads(
 		return nil, nil
 	}
 	rows, err := r.queries.LockBindableCorrectedUploads(ctx, dbgen.LockBindableCorrectedUploadsParams{
-		Ids: uuids(ids), UploaderID: tutor, SubmissionID: pgtype.UUID{Bytes: submission, Valid: true}, Now: now,
+		Ids: uuids(ids), UploaderID: &tutor, SubmissionID: pgtype.UUID{Bytes: submission, Valid: true}, Now: now,
 	})
 	return one(rows, err, "lock bindable corrected uploads")
 }

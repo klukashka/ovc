@@ -154,7 +154,7 @@ WHERE uploader_id = $1 AND quota_tutor_id = $2 AND context = 'answer'
 `
 
 type SumOpenAnswerBytesParams struct {
-	StudentID      domain.UserID
+	StudentID      *domain.UserID
 	TutorID        *domain.UserID
 	Excluded       pgtype.UUID
 	Now            time.Time

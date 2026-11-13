@@ -23,7 +23,7 @@ SELECT * FROM attachments WHERE id = @id FOR UPDATE;
 
 -- name: BindAttachment :execrows
 UPDATE attachments SET state = 'bound', expires_at = NULL, updated_at = sqlc.arg(now)::timestamptz
-WHERE id = @id AND state = 'pending';
+WHERE id = @id AND state = 'pending' AND uploader_id IS NOT NULL;
 
 -- name: RemoveAvatarReference :many
 DELETE FROM attachment_references
@@ -57,10 +57,12 @@ ORDER BY id FOR UPDATE SKIP LOCKED;
 DELETE FROM attachments WHERE id = @id AND state = 'deleted';
 
 -- name: ListUploadsOf :many
-SELECT id, storage_key, multipart_upload_id FROM attachments WHERE uploader_id = @user_id OR (quota_tutor_id = @user_id AND state <> 'bound') ORDER BY id;
+SELECT id, storage_key, multipart_upload_id FROM attachments WHERE (uploader_id = @user_id OR (quota_tutor_id = @user_id AND state <> 'bound'))
+    AND NOT (context = 'answer' AND state = 'bound') ORDER BY id;
 
 -- name: DeleteUploadsOf :execrows
-DELETE FROM attachments WHERE uploader_id = @user_id OR (quota_tutor_id = @user_id AND state <> 'bound');
+DELETE FROM attachments WHERE (uploader_id = @user_id OR (quota_tutor_id = @user_id AND state <> 'bound'))
+    AND NOT (context = 'answer' AND state = 'bound');
 
 -- name: CreateUploadingAttachment :exec
 INSERT INTO attachments (

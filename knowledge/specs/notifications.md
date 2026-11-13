@@ -109,6 +109,8 @@ The notification `event` check widens with the six events below. Each row's `sub
 - Autosaves, draft review saves, deadline and linked-lesson changes, closures, erasures, the reclaim's flag and points-only publications produce no row.
 - A student who cannot read the submission at that moment gets no row, so a publication or an issue reaching a `reclaim_pending` link produces nothing for its student.
 
+Historical student homework rows are filtered before pagination, unread counting and read-marker writes while the relationship is `reclaim_pending` or `discarded`, the issue is marked for erasure, or the submission no longer exists. The lifecycle filter deliberately does not require an active issue: `issue.withdrawn` stays visible, with neither title nor link. Reclaim keeps stored rows and their `read_at`; a keep restores them without another `notification.new`. Erasure deletes every homework event row naming the submission, for both recipients, before deleting the submission.
+
 ### Labels and links
 
 `GET /notifications` resolves each row's label and link at read time, under the rules every other route applies to the caller:
@@ -166,7 +168,7 @@ The notification `event` check widens with the six events below. Each row's `sub
 
 ## Dispatch-time checks
 
-Each **email** is decided again when the worker sends it, not only when it is queued (in-app rows are not re-checked). The worker loads the recipients, preferences and subjects of each claimed row in its own queries, row by row (the owner accepted row-by-row reads on 2026-10-27, and a measurement at the slice 5 review decides whether batching per claimed batch is needed; pending owner review). It drops a row, marking it `done` with reason `obsolete`, when:
+Each **email** is decided again when the worker sends it, not only when it is queued (historical in-app homework rows use the lifecycle filter above). The worker loads the recipients, preferences and subjects of each claimed row in its own queries, row by row (the owner accepted row-by-row reads on 2026-10-27, and a measurement at the slice 5 review decides whether batching per claimed batch is needed; pending owner review). It drops a row, marking it `done` with reason `obsolete`, when:
 
 - the recipient is `blocked` or `deleted`, or the address is undeliverable for an optional email;
 - the recipient is `unverified` and the email is neither an account email (confirmation, reset, duplicate sign-up notice) nor an invitation email; each email builder reports the state of the recipient's account (for an invitation, the account that holds the card's email, if any), and the dispatcher applies the account-state parts of this rule and the previous one (blocked, deleted and unverified recipients) to every kind; the undeliverable check for optional emails lands with the bounce intake in slice 10;

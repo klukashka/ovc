@@ -157,7 +157,7 @@ func (r Library) LockBindablePromptImages(
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	locked, err := r.queries.LockBindablePromptImages(ctx, dbgen.LockBindablePromptImagesParams{Ids: uuids(ids), UploaderID: tutor, Now: now})
+	locked, err := r.queries.LockBindablePromptImages(ctx, dbgen.LockBindablePromptImagesParams{Ids: uuids(ids), UploaderID: &tutor, Now: now})
 	return one(locked, err, "lock bindable prompt images")
 }
 

@@ -140,43 +140,42 @@ func issuesBatch(ctx context.Context, repos repositories.Repositories, tutor dom
 }
 
 func (p Purge) StudentBatch(ctx context.Context, repos repositories.Repositories, student domain.UserID, batch int32, now time.Time) (int64, error) {
+	if batch <= 0 || batch > domain.HomeworkCleanupBatch {
+		batch = domain.HomeworkCleanupBatch
+	}
 	rows, err := repos.Homework.StudentSubmissionsBatch(ctx, student, batch)
 	if err != nil || len(rows) == 0 {
 		return 0, err
 	}
 	tutors := make([]domain.UserID, 0, len(rows))
-	ids := make([]domain.SubmissionID, 0, len(rows))
+	submissions := make([]domain.SubmissionID, 0, len(rows))
 	for _, row := range rows {
 		tutors = append(tutors, row.TutorID)
-		ids = append(ids, row.ID)
+		submissions = append(submissions, row.ID)
 	}
-	slices.SortFunc(tutors, func(a, b domain.UserID) int { return bytes.Compare(a[:], b[:]) })
-	for _, tutor := range slices.Compact(tutors) {
-		if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
+	if err := repos.TutorProfiles.LockAll(ctx, tutors); err != nil {
+		return 0, err
+	}
+	locked, revisions, err := repos.Homework.LockStudentPurge(ctx, submissions)
+	if err != nil {
+		return 0, err
+	}
+	pending := studentPurgeBatch{limit: int64(batch), revisions: make(map[domain.SubmissionID][]domain.ReviewRevisionID)}
+	for _, revision := range revisions {
+		pending.revisions[revision.SubmissionID] = append(pending.revisions[revision.SubmissionID], revision.ID)
+	}
+	for _, id := range locked {
+		if err := pending.erase(ctx, repos, id); err != nil {
 			return 0, err
 		}
+		if pending.full() {
+			break
+		}
 	}
-	corrected, err := repos.Homework.RemoveSubmissionsReviewItemReferences(ctx, ids)
-	if err != nil {
+	if err := pending.release(ctx, repos, p, now); err != nil {
 		return 0, err
 	}
-	if err := library.ReleaseReferences(ctx, repos, p.Random, p.Logger, domain.ReferenceReviewItem, distinctAttachments(corrected), now); err != nil {
-		return 0, err
-	}
-	if _, err := repos.Homework.DeleteSubmissionsReviewRevisions(ctx, ids); err != nil {
-		return 0, err
-	}
-	removed, err := repos.Homework.RemoveSubmissionsAnswerReferences(ctx, ids)
-	if err != nil {
-		return 0, err
-	}
-	if err := library.ReleaseReferences(ctx, repos, p.Random, p.Logger, domain.ReferenceAnswer, distinctAttachments(removed), now); err != nil {
-		return 0, err
-	}
-	if _, err := repos.Homework.DeleteSubmissionsAnswers(ctx, ids); err != nil {
-		return 0, err
-	}
-	return repos.Homework.DeleteSubmissions(ctx, ids)
+	return int64(len(rows)), nil
 }
 
 func FlagReclaimedWork(ctx context.Context, repos repositories.Repositories, relationships []domain.RelationshipID, now time.Time) error {

@@ -553,7 +553,7 @@ FOR UPDATE
 
 type LockBindableLibraryUploadParams struct {
 	ID         domain.AttachmentID
-	UploaderID domain.UserID
+	UploaderID *domain.UserID
 	Now        time.Time
 }
 

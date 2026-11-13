@@ -110,7 +110,7 @@ func (r Library) CountMaterials(ctx context.Context, tutor domain.UserID) (Mater
 }
 
 func (r Library) LockBindableUpload(ctx context.Context, tutor domain.UserID, id domain.AttachmentID, now time.Time) (BindableLibrary, error) {
-	upload, err := r.queries.LockBindableLibraryUpload(ctx, dbgen.LockBindableLibraryUploadParams{ID: id, UploaderID: tutor, Now: now})
+	upload, err := r.queries.LockBindableLibraryUpload(ctx, dbgen.LockBindableLibraryUploadParams{ID: id, UploaderID: &tutor, Now: now})
 	return one(upload, err, "lock a bindable library upload")
 }
 

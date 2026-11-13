@@ -189,7 +189,7 @@ func TestTutorPurgeIssues(t *testing.T) {
 	}
 }
 
-func TestStudentPurgeSubmissions(t *testing.T) {
+func TestStudentPurgeKeepsTutorIssues(t *testing.T) {
 	t.Parallel()
 	h := newUploadHarness(t)
 	parties := h.issueParties(t)
@@ -198,6 +198,12 @@ func TestStudentPurgeSubmissions(t *testing.T) {
 	_, work := h.issueWork(t, parties.tutorToken, toCard(card), "Answered", string(domain.AnswerPolicyNever), nil, workBlocks()...)
 	answerFile := h.answerFile(t, h.studentToken(t, 10), work[0].id, workQuestion(6), "answer.pdf", 64)
 	h.saved(t, h.studentToken(t, 10), work[0].id, answersJSON(t, 1, saveID(1), attached(workQuestion(6), answerFile)))
+	picture := h.libraryUpload(t, parties.tutorToken, domain.ContextPromptImage, "retained.png", pngBytes(t, 2, 2))
+	h.mustAnswer(t, picture, http.StatusCreated)
+	attachment := uploadedID(t, picture)
+	template := h.createTemplate(t, parties.tutorToken, "Retained snapshot", nil, imageQuestion(blockID(43, 1), attachment))
+	retained := h.issued(t, parties.tutorToken, issueJSON(template.ID, toCard(card)))
+	snapshotBytes := h.countRows(t, "SELECT snapshot_bytes_total FROM tutor_profiles WHERE user_id = $1::uuid", parties.tutor.String())
 	usage := h.fileUsage(t, parties.tutor)
 	h.mustAnswer(t, h.deleteMe(t, h.studentToken(t, 10), accountPassword), http.StatusNoContent)
 
@@ -206,6 +212,9 @@ func TestStudentPurgeSubmissions(t *testing.T) {
 
 	if count := h.countRows(t, "SELECT count(id) FROM submissions WHERE student_id = $1::uuid", (domain.UserID{10}).String()); count != 0 {
 		t.Fatalf("the purged student keeps %d submissions", count)
+	}
+	if h.countRows(t, "SELECT snapshot_bytes_total FROM tutor_profiles WHERE user_id = $1::uuid", parties.tutor.String()) != snapshotBytes || h.countRows(t, "SELECT count(*) FROM attachment_references WHERE ref_kind = 'issue_snapshot' AND ref_id = $1::uuid", retained.ID) != 1 || h.chargesOf(t, attachment) != 1 {
+		t.Fatal("student purge removed tutor snapshot references or accounting")
 	}
 	if h.userExists(t, memberEmail(10)) {
 		t.Fatal("the student was not purged")

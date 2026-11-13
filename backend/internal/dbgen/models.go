@@ -42,7 +42,7 @@ type Answer struct {
 
 type Attachment struct {
 	ID                domain.AttachmentID
-	UploaderID        domain.UserID
+	UploaderID        *domain.UserID
 	Context           domain.AttachmentContext
 	ScopeKind         *domain.ScopeKind
 	ScopeID           *domain.EntityID

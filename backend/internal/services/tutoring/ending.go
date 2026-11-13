@@ -131,6 +131,10 @@ func (s *Service) StopStudying(ctx context.Context, principal accounts.Principal
 func (s *Service) endLink(
 	ctx context.Context, repos repositories.Repositories, link repositories.Relationship, cause domain.RelationshipCause, now time.Time,
 ) (ending, error) {
+	return s.endLinkWithTiming(ctx, repos, link, cause, now, settleEffectsNow)
+}
+
+func (s *Service) endLinkWithTiming(ctx context.Context, repos repositories.Repositories, link repositories.Relationship, cause domain.RelationshipCause, now time.Time, timing effectTiming) (ending, error) {
 	transition, allowed := domain.NextRelationshipState(link.State, cause)
 	if !allowed || transition.To != domain.RelationshipEnded || link.StudentID == nil {
 		return ending{}, ErrRelationshipNotActive
@@ -155,9 +159,12 @@ func (s *Service) endLink(
 	if err != nil {
 		return ending{}, err
 	}
-	closed, err := homework.CloseOnEnding(ctx, repos, ended.TutorID, ended.ID, now)
-	if err != nil {
-		return ending{}, err
+	var closed homework.ClosedWork
+	if timing == settleEffectsNow {
+		closed, err = homework.CloseOnEnding(ctx, repos, ended.TutorID, ended.ID, now)
+		if err != nil {
+			return ending{}, err
+		}
 	}
 	if err := relationshipChanged(ctx, repos, ended, true); err != nil {
 		return ending{}, err
