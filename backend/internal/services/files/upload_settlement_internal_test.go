@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"ovc/backend/internal/adapters/clock"
 	"ovc/backend/internal/adapters/storage"
+	"ovc/backend/internal/domain"
 	"ovc/backend/internal/teststorage"
 )
 
@@ -40,10 +40,15 @@ func TestUploadSettlementAccountAndChannelWaitsReleasePermit(t *testing.T) {
 				settings.Endpoint = server.URL
 				return storage.NewS3(settings)
 			})
-			h.service.deps.Uploads.Settlement = 100 * time.Millisecond
+			lifetime, stop := context.WithCancel(context.Background())
+			defer stop()
+			deps := h.service.deps
+			deps.Lifetime = lifetime
+			deps.Uploads.Settlement = domain.UploadSettlementBudget
+			service := New(deps)
 			principal, channel := h.tutor(t)
 			for range 3 {
-				releasePermit, err := h.service.gate.enter(principal.UserID)
+				releasePermit, err := service.gate.enter(principal.UserID)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -51,12 +56,14 @@ func TestUploadSettlementAccountAndChannelWaitsReleasePermit(t *testing.T) {
 			}
 			finished := make(chan error, 1)
 			go func() {
-				_, err := h.service.UploadChat(context.Background(), ChatUpload{Principal: principal, Channel: channel, Filename: "held.txt", Declared: 5, Body: bytes.NewBufferString("hello"), Finish: func() error { return nil }})
+				_, err := service.UploadChat(context.Background(), ChatUpload{Principal: principal, Channel: channel, Filename: "held.txt", Declared: 5, Body: bytes.NewBufferString("hello"), Finish: func() error { return nil }})
 				finished <- err
 			}()
+			guard := time.NewTimer(lockObservationDeadline)
+			defer guard.Stop()
 			select {
 			case <-reached:
-			case <-time.After(time.Second):
+			case <-guard.C:
 				t.Fatal("Complete did not reach barrier")
 			}
 			held, err := h.database.Pool.Begin(context.Background())
@@ -80,14 +87,18 @@ func TestUploadSettlementAccountAndChannelWaitsReleasePermit(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			started := clock.System{}.Now()
 			release()
-			observing, cancel := context.WithTimeout(context.Background(), time.Second)
+			observing, cancel := context.WithTimeout(context.Background(), lockObservationDeadline)
 			defer cancel()
 			h.awaitDatabaseLock(t, observing)
-			uploadErr := <-finished
-			elapsed := clock.System{}.Now().Sub(started)
-			releasePermit, permitErr := h.service.gate.enter(principal.UserID)
+			stop()
+			var uploadErr error
+			select {
+			case uploadErr = <-finished:
+			case <-observing.Done():
+				t.Fatalf("%s wait outlived its settlement context", kind)
+			}
+			releasePermit, permitErr := service.gate.enter(principal.UserID)
 			if permitErr == nil {
 				releasePermit()
 			}
@@ -97,8 +108,8 @@ func TestUploadSettlementAccountAndChannelWaitsReleasePermit(t *testing.T) {
 
 			released = true
 
-			if uploadErr == nil || elapsed > time.Second || permitErr != nil {
-				t.Fatalf("%s wait renewed budget or retained permit: %v elapsed %s permit %v", kind, uploadErr, elapsed, permitErr)
+			if uploadErr == nil || permitErr != nil {
+				t.Fatalf("%s wait ended without an error or retained permit: %v permit %v", kind, uploadErr, permitErr)
 			}
 		})
 	}

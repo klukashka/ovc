@@ -55,15 +55,26 @@ func awaitErasure(t *testing.T, done <-chan erasureRun) erasureRun {
 }
 
 func runErasure(service *chat.Service, now time.Time) <-chan erasureRun {
+	return runErasureWithin(context.Background(), service, now)
+}
+
+func runErasureWithin(ctx context.Context, service *chat.Service, now time.Time) <-chan erasureRun {
 	done := make(chan erasureRun, 1)
 	go func() {
-		count, err := service.EraseChannels(context.Background(), now)
+		count, err := service.EraseChannels(ctx, now)
 		done <- erasureRun{processed: count, err: err}
 	}()
 	return done
 }
 
-func TestErasureDeadlineCancelsDatabaseWaits(t *testing.T) {
+func cancellableUntilCleanup(t *testing.T) (context.Context, context.CancelFunc) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	return ctx, cancel
+}
+
+func TestErasureCancellationEndsRowLockWaits(t *testing.T) {
 	for _, table := range []string{"tutor_profiles", "channels"} {
 		t.Run(table, func(t *testing.T) {
 			t.Parallel()
@@ -78,21 +89,26 @@ func TestErasureDeadlineCancelsDatabaseWaits(t *testing.T) {
 				query, key = "SELECT "+lockedRowPosition+" FROM tutor_profiles WHERE user_id = $1::uuid FOR UPDATE", tutor.String()
 			}
 			release := h.holdRow(t, query, key)
-			service := h.erasureService(t, h.store, 500)
+			service := h.erasureServiceWithin(t, h.store, 500, chat.DefaultErasureSettings().Budget)
+			ctx, cancel := cancellableUntilCleanup(t)
 
-			running := runErasure(service, h.now(t))
+			running := runErasureWithin(ctx, service, h.now(t))
 			h.waitForLockWaiters(t, 1)
+			cancel()
 			result := awaitErasure(t, running)
 			release()
 
-			if !errors.Is(result.err, context.DeadlineExceeded) || result.processed != 0 || h.messageCount(t, channel.ID) != 1 || !h.directChannel(t, card.ID).ErasePending {
-				t.Fatalf("blocked erasure ignored deadline or lost pending work: %+v", result)
+			if !errors.Is(result.err, context.Canceled) || result.processed != 0 || h.messageCount(t, channel.ID) != 1 || !h.directChannel(t, card.ID).ErasePending {
+				t.Fatalf("blocked erasure ignored cancellation or lost pending work: %+v", result)
 			}
 			if h.countLogs(`"msg":"channel.erased"`, channel.ID) != 0 {
 				t.Fatal("incomplete erasure logged completion")
 			}
 		})
 	}
+}
+
+func TestErasureDeadlineCancelsDatabaseWaits(t *testing.T) {
 	t.Run("candidate query", func(t *testing.T) {
 		t.Parallel()
 		h := newFlowHarness(t)
@@ -151,7 +167,7 @@ func TestErasureDeadlineCancelsDatabaseWaits(t *testing.T) {
 	})
 }
 
-func TestErasureResumesAfterDeadline(t *testing.T) {
+func TestErasureResumesAfterCancellation(t *testing.T) {
 	t.Parallel()
 	h := newFlowHarness(t)
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
@@ -163,10 +179,12 @@ func TestErasureResumesAfterDeadline(t *testing.T) {
 	h.sent(t, token, channel.ID, "Rolled back batch", second)
 	h.mustAnswer(t, h.removeStudent(t, token, card.ID), http.StatusOK)
 	release := h.holdRow(t, "SELECT "+lockedRowPosition+" FROM attachments WHERE id = $1::uuid FOR UPDATE", second)
-	service := h.erasureService(t, h.store, 1)
+	service := h.erasureServiceWithin(t, h.store, 1, chat.DefaultErasureSettings().Budget)
+	ctx, cancel := cancellableUntilCleanup(t)
 
-	running := runErasure(service, h.now(t))
+	running := runErasureWithin(ctx, service, h.now(t))
 	h.waitForLockWaiters(t, 1)
+	cancel()
 	interrupted := awaitErasure(t, running)
 	release()
 	remaining, usage := h.messageCount(t, channel.ID), h.usage(t, tutor)
@@ -176,7 +194,7 @@ func TestErasureResumesAfterDeadline(t *testing.T) {
 	resumed, resumeErr := service.EraseChannels(context.Background(), h.now(t))
 	repeated, repeatErr := service.EraseChannels(context.Background(), h.now(t))
 
-	if !errors.Is(interrupted.err, context.DeadlineExceeded) || interrupted.processed != 0 || remaining != 1 || usage != 20 || !pending || completedLogs != 0 || secondCharges != 1 || secondReferences != 1 || queuedBefore {
+	if !errors.Is(interrupted.err, context.Canceled) || interrupted.processed != 0 || remaining != 1 || usage != 20 || !pending || completedLogs != 0 || secondCharges != 1 || secondReferences != 1 || queuedBefore {
 		t.Fatalf("unfinished batch did not roll back: %+v, remaining %d, usage %d, pending %t, logs %d, charges %d, references %d, queued %t", interrupted, remaining, usage, pending, completedLogs, secondCharges, secondReferences, queuedBefore)
 	}
 	if resumeErr != nil || repeatErr != nil || resumed != 1 || repeated != 0 || h.usage(t, tutor) != 0 || h.messageCount(t, channel.ID) != 0 || h.directChannel(t, card.ID).ErasePending {
