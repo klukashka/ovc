@@ -70,6 +70,8 @@ type HomeworkCaps struct {
 	SnapshotBudgetBytes int64
 	IssuesPerLesson     int64
 	SubmissionFileBytes int64
+	RevisionsPerReview  int64
+	ReviewQueueCount    int32
 }
 
 func (c HomeworkCaps) WithDefaults() HomeworkCaps {
@@ -87,6 +89,12 @@ func (c HomeworkCaps) WithDefaults() HomeworkCaps {
 	}
 	if c.SubmissionFileBytes <= 0 {
 		c.SubmissionFileBytes = SubmissionFileBytesCap
+	}
+	if c.RevisionsPerReview <= 0 {
+		c.RevisionsPerReview = ReviewRevisionsPerSubmission
+	}
+	if c.ReviewQueueCount <= 0 {
+		c.ReviewQueueCount = ReviewQueueCountCap
 	}
 	return c
 }

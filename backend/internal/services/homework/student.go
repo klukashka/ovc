@@ -85,6 +85,17 @@ type RevealedQuestion struct {
 	Explanation      *string
 }
 
+type StudentReviewItem struct {
+	Question       string
+	Comment        string
+	CorrectedFiles []AnswerFileView
+}
+
+type StudentReview struct {
+	Feedback string
+	Items    []StudentReviewItem
+}
+
 type StudentWork struct {
 	ID                  domain.SubmissionID
 	Title               string
@@ -97,6 +108,7 @@ type StudentWork struct {
 	Blocks              []library.StudentBlock
 	Answers             []StudentAnswer
 	Editable            []string
+	Review              *StudentReview
 	Revealed            *[]RevealedQuestion
 }
 
@@ -126,12 +138,22 @@ func (s *Service) Assignments(ctx context.Context, student domain.UserID, query 
 			next := encodeAssignmentCursor(query.Group, rows[len(rows)-1])
 			page.NextCursor = &next
 		}
+		summaries, err := publishedSummaries(ctx, repos, rows)
+		if err != nil {
+			return err
+		}
 		for _, row := range rows {
-			page.Items = append(page.Items, AssignmentItem{
+			item := AssignmentItem{
 				Submission: row.ID, Title: row.Title, Tutor: TutorRef{Relationship: row.RelationshipID, Name: row.TutorName, Colour: row.Colour},
 				Status: row.Status, Late: row.Late, IssuedBeforeReclaim: row.IssuedBeforeReclaim, Deadline: row.DeadlineAt,
 				IssuedAt: row.IssuedAt, SubmittedAt: row.SubmittedAt, CheckedAt: row.CheckedAt,
-			})
+			}
+			if row.PublishedRevisionID.Valid {
+				if summary, found := summaries[domain.ReviewRevisionID(row.PublishedRevisionID.Bytes)]; found {
+					item.FeedbackExcerpt, item.HasCorrectedFiles = domain.FeedbackExcerpt(summary.Feedback), summary.HasCorrectedFiles
+				}
+			}
+			page.Items = append(page.Items, item)
 		}
 		counts, err := repos.Homework.AssignmentCounts(ctx, student, domain.AssignmentCountCap)
 		page.Counts = AssignmentCounts{Todo: counts.Todo, Closed: counts.Closed}
@@ -190,11 +212,71 @@ func (s *Service) studentWork(
 	for _, answer := range answers {
 		work.Answers = append(work.Answers, StudentAnswer{Question: answer.question, Value: answer.value, Files: answer.files})
 	}
+	if row.PublishedRevisionID.Valid {
+		work.Review, err = s.studentReview(ctx, repos, domain.ReviewRevisionID(row.PublishedRevisionID.Bytes), stored, now)
+		if err != nil {
+			return StudentWork{}, err
+		}
+	}
 	if domain.AnswersRevealed(row.AnswerPolicy, row.Status) {
 		revealed := revealedOf(stored)
 		work.Revealed = &revealed
 	}
 	return work, nil
+}
+
+func publishedSummaries(
+	ctx context.Context, repos repositories.Repositories, rows []repositories.AssignmentRow,
+) (map[domain.ReviewRevisionID]repositories.PublishedReviewSummary, error) {
+	var revisions []domain.ReviewRevisionID
+	for _, row := range rows {
+		if row.PublishedRevisionID.Valid {
+			revisions = append(revisions, domain.ReviewRevisionID(row.PublishedRevisionID.Bytes))
+		}
+	}
+	found, err := repos.Homework.PublishedReviewSummaries(ctx, revisions)
+	if err != nil {
+		return nil, err
+	}
+	summaries := make(map[domain.ReviewRevisionID]repositories.PublishedReviewSummary, len(found))
+	for _, summary := range found {
+		summaries[summary.ID] = summary
+	}
+	return summaries, nil
+}
+
+func (s *Service) studentReview(
+	ctx context.Context, repos repositories.Repositories, id domain.ReviewRevisionID, blocks []domain.IssueBlock, now time.Time,
+) (*StudentReview, error) {
+	revision, err := repos.Homework.PublishedRevision(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	items, err := decodeReviewItems(revision.Items)
+	if err != nil {
+		return nil, err
+	}
+	visible := domain.VisibleReview{Feedback: revision.Feedback, Items: items}
+	if visible.Empty() {
+		return nil, nil
+	}
+	files, err := s.correctedFiles(ctx, repos, []domain.ReviewRevisionID{id}, now)
+	if err != nil {
+		return nil, err
+	}
+	shown := map[string]domain.ReviewItem{}
+	for _, item := range visible.Shown() {
+		shown[item.QuestionID] = item
+	}
+	review := &StudentReview{Feedback: revision.Feedback, Items: []StudentReviewItem{}}
+	for _, block := range blocks {
+		item, found := shown[block.ID]
+		if !found {
+			continue
+		}
+		review.Items = append(review.Items, StudentReviewItem{Question: item.QuestionID, Comment: item.Comment, CorrectedFiles: files.of(id, item.QuestionID)})
+	}
+	return review, nil
 }
 
 type answerView struct {

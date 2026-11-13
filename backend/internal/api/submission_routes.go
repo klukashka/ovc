@@ -185,6 +185,15 @@ func studentSubmissionBody(work homework.StudentWork) schemas.StudentSubmission 
 			QuestionID: answer.Question, Value: answerValueBody(answer.Value), Files: submissionFilesBody(answer.Files),
 		})
 	}
+	if work.Review != nil {
+		review := schemas.StudentReview{Feedback: work.Review.Feedback, Items: make([]schemas.StudentReviewItem, 0, len(work.Review.Items))}
+		for _, item := range work.Review.Items {
+			review.Items = append(review.Items, schemas.StudentReviewItem{
+				QuestionID: item.Question, Comment: item.Comment, CorrectedFiles: submissionFilesBody(item.CorrectedFiles),
+			})
+		}
+		body.Review = &review
+	}
 	if work.Revealed != nil {
 		revealed := schemas.StudentRevealed{Questions: make([]schemas.StudentRevealedQuestion, 0, len(*work.Revealed))}
 		for _, question := range *work.Revealed {
@@ -205,7 +214,7 @@ func tutorSubmissionBody(work homework.TutorWork) schemas.TutorSubmission {
 		Status:  work.Status, Late: work.Late, IssuedBeforeReclaim: work.IssuedBeforeReclaim, DeadlineAt: utcInstant(work.Deadline),
 		FirstSubmittedAt: utcInstant(work.FirstSubmittedAt), SubmittedAt: utcInstant(work.SubmittedAt), CheckedAt: utcInstant(work.CheckedAt),
 		Version: work.Version, AnswerPolicy: work.Policy, Blocks: make([]schemas.IssueBlock, 0, len(work.Blocks)),
-		Answers: make([]schemas.TutorAnswer, 0, len(work.Answers)), Revisions: []schemas.TutorReviewRevision{},
+		Answers: make([]schemas.TutorAnswer, 0, len(work.Answers)), Revisions: make([]schemas.TutorReviewRevision, 0, len(work.Revisions)),
 		AutoPoints: work.AutoPoints, FinalPoints: work.FinalPoints, MaxPoints: work.MaxPoints, Percentage: work.Percentage,
 	}
 	for _, block := range work.Blocks {
@@ -217,6 +226,24 @@ func tutorSubmissionBody(work homework.TutorWork) schemas.TutorSubmission {
 			NormaliserVersion: answer.NormaliserVersion, AutoPoints: answer.AutoPoints, AutoCorrect: answer.AutoCorrect,
 			FrozenAt: utcInstant(answer.FrozenAt), Files: submissionFilesBody(answer.Files),
 		})
+	}
+	for _, revision := range work.Revisions {
+		var action *string
+		if revision.Action != nil {
+			text := string(*revision.Action)
+			action = &text
+		}
+		view := schemas.TutorReviewRevision{
+			Revision: revision.Revision, State: string(revision.State), Action: action, Feedback: revision.Feedback,
+			Items: make([]schemas.TutorReviewItem, 0, len(revision.Items)), Version: revision.Version, PublishedAt: utcInstant(revision.PublishedAt),
+		}
+		for _, item := range revision.Items {
+			view.Items = append(view.Items, schemas.TutorReviewItem{
+				QuestionID: item.Question, Points: item.Points, OverridePoints: item.OverridePoints, OverrideReason: item.OverrideReason,
+				Comment: item.Comment, CorrectedFiles: submissionFilesBody(item.CorrectedFiles),
+			})
+		}
+		body.Revisions = append(body.Revisions, view)
 	}
 	return body
 }

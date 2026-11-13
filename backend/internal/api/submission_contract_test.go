@@ -194,7 +194,13 @@ func (c contractCheck) submission(label string, raw []byte, revealed bool) {
 		}
 	}
 	if string(decoded["review"]) != "null" {
-		c.t.Errorf("%s carries a review %s before any publication", label, decoded["review"])
+		review := c.object(label+".review", decoded["review"], []string{"feedback", "items"})
+		for _, item := range c.array(label+".review.items", review["items"]) {
+			fields := c.object(label+".review.item", item, []string{"question_id", "comment", "corrected_files"})
+			for _, file := range c.array(label+".review.files", fields["corrected_files"]) {
+				c.object(label+".review.file", file, answerFileKeys)
+			}
+		}
 	}
 	if revealed {
 		questions := c.object(label+".revealed", decoded["revealed"], []string{"questions"})
@@ -316,6 +322,7 @@ func TestAnswerKeyContract(t *testing.T) {
 		afterSubmission := policy == string(domain.AnswerPolicyAfterSubmission)
 		check.submission(label+"submit", []byte(frozenLater.body), afterSubmission)
 		check.submission(label+"submitted", []byte(h.submissionAnswer(t, parties.studentToken, work.full).body), afterSubmission)
+		published := h.contractReview(t, check, parties, work, label, afterSubmission)
 		checked := h.submitWork(t, parties.studentToken, work.automatic, 1)
 		h.mustAnswer(t, checked, http.StatusOK)
 		check.submission(label+"checked", []byte(checked.body), policy != string(domain.AnswerPolicyNever))
@@ -326,18 +333,19 @@ func TestAnswerKeyContract(t *testing.T) {
 		notEditable := h.saveAnswers(t, parties.studentToken, work.automatic, answersJSON(t, 2, saveID(3), typedAnswer(contractQuestion(4), "x")))
 		assertRefused(t, label+"a save of checked work", notEditable, http.StatusConflict, "not_editable")
 		check.refusal(label+"not_editable", []byte(notEditable.body))
-		h.setSubmissionStatus(t, work.full, domain.SubmissionReturned)
-		returned := h.submissionAnswer(t, parties.studentToken, work.full)
-		check.submission(label+"returned", []byte(returned.body), false)
-		returnedVersion := decodeLibrary[studentSubmissionBody](t, returned).Version
-		frozen := h.saveAnswers(t, parties.studentToken, work.full, answersJSON(t, returnedVersion, saveID(4), typedAnswer(contractQuestion(4), "x")))
-		assertRefused(t, label+"a save of a frozen answer", frozen, http.StatusConflict, "answer_frozen")
-		check.refusal(label+"answer_frozen", []byte(frozen.body))
-		unknown := h.saveAnswers(t, parties.studentToken, work.full, answersJSON(t, returnedVersion, saveID(5), typedAnswer(blockID(75, 1), "x")))
-		check.fieldRefusal(label+"validation", []byte(unknown.body))
+		h.contractOverridesOnly(t, check, parties, work, label, policy != string(domain.AnswerPolicyNever))
+		if published.returnedVersion != 0 {
+			frozen := h.saveAnswers(t, parties.studentToken, work.full, answersJSON(t, published.returnedVersion, saveID(4), typedAnswer(contractQuestion(4), "x")))
+			assertRefused(t, label+"a save of a frozen answer", frozen, http.StatusConflict, "answer_frozen")
+			check.refusal(label+"answer_frozen", []byte(frozen.body))
+			unknown := h.saveAnswers(t, parties.studentToken, work.full, answersJSON(t, published.returnedVersion, saveID(5), typedAnswer(blockID(75, 1), "x")))
+			check.fieldRefusal(label+"validation", []byte(unknown.body))
+			h.contractRecheck(t, check, parties, work, label, policy != string(domain.AnswerPolicyNever), published)
+		}
 		missing := h.submissionAnswer(t, parties.studentToken, randomSubmissionID)
 		check.refusal(label+"not_found", []byte(missing.body))
 	}
+	h.contractLimitRefusals(t, check, parties, works[string(domain.AnswerPolicyNever)].closing, full)
 	h.mustAnswer(t, h.endAsTutor(t, parties.tutorToken, parties.card.ID), http.StatusOK)
 	h.tick(t)
 
@@ -363,8 +371,15 @@ func TestAnswerKeyContract(t *testing.T) {
 		}
 	}
 	check.noSentinel("notification rows", []byte(result.body))
+	scanned := map[string]bool{}
 	for _, message := range h.mailTo(t, studentEmail) {
 		check.noSentinel("email "+message.Subject, []byte(message.Subject+message.Text+message.HTML))
+		for _, subject := range []string{"Assignment returned", "Review updated", "Assignment checked"} {
+			scanned[subject] = scanned[subject] || strings.HasPrefix(message.Subject, subject)
+		}
+	}
+	if len(scanned) != 3 || !scanned["Assignment returned"] || !scanned["Review updated"] || !scanned["Assignment checked"] {
+		t.Fatalf("the sentinel scan missed a results email: %v", scanned)
 	}
 	for _, frame := range framesTo(frames.settle(t, h), parties.student) {
 		if strings.ContainsAny(frame.id, " \"{") {

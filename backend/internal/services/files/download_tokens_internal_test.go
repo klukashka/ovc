@@ -250,6 +250,7 @@ func TestReferenceParameterNamesOneAddressableKindAndAUUID(t *testing.T) {
 		"lesson:" + item.String():         {Kind: domain.ReferenceLesson, Item: item},
 		"issue_snapshot:" + item.String(): {Kind: domain.ReferenceIssueSnapshot, Item: item},
 		"answer:" + item.String():         {Kind: domain.ReferenceAnswer, Item: item},
+		"review_item:" + item.String():    {Kind: domain.ReferenceReviewItem, Item: item},
 	}
 	refused := [][]string{
 		nil,
@@ -261,7 +262,6 @@ func TestReferenceParameterNamesOneAddressableKindAndAUUID(t *testing.T) {
 		{"Material:" + item.String()},
 		{"message:" + item.String()},
 		{"avatar:" + item.String()},
-		{"review_item:" + item.String()},
 		{"series:" + item.String()},
 		{"material:" + item.String() + ":extra"},
 		{" material:" + item.String()},

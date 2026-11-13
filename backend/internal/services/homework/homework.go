@@ -23,6 +23,7 @@ var (
 	ErrIssueHasSubmissions   = errors.New("the issue already has submitted work")
 	ErrAnswerFrozen          = errors.New("an automatic answer is frozen once submitted")
 	ErrQuotaExceeded         = errors.New("the tutor's file quota is exceeded")
+	ErrReturnNotAllowed      = errors.New("the work cannot be returned for revision")
 )
 
 const (
@@ -66,6 +67,7 @@ func (e *ThrottledError) Error() string {
 type Addresses interface {
 	IssueSnapshotAddress(id domain.AttachmentID, issue domain.IssueID, disposition domain.Disposition, now time.Time) (string, time.Time)
 	AnswerAddress(id domain.AttachmentID, submission domain.SubmissionID, disposition domain.Disposition, now time.Time) (string, time.Time)
+	ReviewItemAddress(id domain.AttachmentID, revision domain.ReviewRevisionID, disposition domain.Disposition, now time.Time) (string, time.Time)
 }
 
 type Templates interface {

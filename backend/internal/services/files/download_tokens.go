@@ -54,6 +54,7 @@ var referenceKindCodes = []referenceKindCode{
 
 var addressableKinds = []domain.ReferenceKind{
 	domain.ReferenceMaterial, domain.ReferenceTemplate, domain.ReferenceLesson, domain.ReferenceIssueSnapshot, domain.ReferenceAnswer,
+	domain.ReferenceReviewItem,
 }
 
 func codeOfKind(kind domain.ReferenceKind) (byte, bool) {

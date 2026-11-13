@@ -19,7 +19,40 @@ type Purge struct {
 }
 
 func (p Purge) TutorSteps() []library.PurgeStep {
-	return []library.PurgeStep{p.answerReferencesBatch, answersBatch, submissionsBatch, p.snapshotReferencesBatch, issuesBatch, dailyAnswerBytesBatch}
+	return []library.PurgeStep{
+		p.reviewItemReferencesBatch, p.answerReferencesBatch, reviewRevisionsBatch, answersBatch, submissionsBatch, p.snapshotReferencesBatch,
+		issuesBatch, dailyAnswerBytesBatch,
+	}
+}
+
+func (p Purge) reviewItemReferencesBatch(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, now time.Time,
+) (int64, error) {
+	references, err := repos.Homework.ReviewItemReferencesBatchOfTutor(ctx, tutor, batch)
+	if err != nil || len(references) == 0 {
+		return 0, err
+	}
+	if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
+		return 0, err
+	}
+	revisions := make([]domain.EntityID, 0, len(references))
+	attachments := make([]domain.AttachmentID, 0, len(references))
+	for _, reference := range references {
+		revisions = append(revisions, reference.RefID)
+		attachments = append(attachments, reference.AttachmentID)
+	}
+	removed, err := repos.Homework.RemoveReviewItemReferencesOfTutor(ctx, tutor, revisions, attachments)
+	if err != nil {
+		return 0, err
+	}
+	if err := library.ReleaseReferences(ctx, repos, p.Random, p.Logger, domain.ReferenceReviewItem, distinctAttachments(removed), now); err != nil {
+		return 0, err
+	}
+	return int64(len(references)), nil
+}
+
+func reviewRevisionsBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, _ time.Time) (int64, error) {
+	return repos.Homework.DeleteReviewRevisionsBatchOfTutor(ctx, tutor, batch)
 }
 
 func (p Purge) answerReferencesBatch(
@@ -122,6 +155,16 @@ func (p Purge) StudentBatch(ctx context.Context, repos repositories.Repositories
 		if err := repos.TutorProfiles.Lock(ctx, tutor); err != nil {
 			return 0, err
 		}
+	}
+	corrected, err := repos.Homework.RemoveSubmissionsReviewItemReferences(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
+	if err := library.ReleaseReferences(ctx, repos, p.Random, p.Logger, domain.ReferenceReviewItem, distinctAttachments(corrected), now); err != nil {
+		return 0, err
+	}
+	if _, err := repos.Homework.DeleteSubmissionsReviewRevisions(ctx, ids); err != nil {
+		return 0, err
 	}
 	removed, err := repos.Homework.RemoveSubmissionsAnswerReferences(ctx, ids)
 	if err != nil {

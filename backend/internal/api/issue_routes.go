@@ -247,6 +247,8 @@ func (r *router) homeworkError(ctx context.Context, event string, err error) err
 		return NewError(ctx, domain.ErrorAnswerFrozen)
 	case errors.Is(err, homework.ErrQuotaExceeded):
 		return NewError(ctx, domain.ErrorQuotaExceeded)
+	case errors.Is(err, homework.ErrReturnNotAllowed):
+		return NewError(ctx, domain.ErrorReturnNotAllowed)
 	case errors.As(err, &invalid):
 		fields := make([]schemas.FieldError, 0, len(invalid.Fields))
 		for _, field := range invalid.Fields {

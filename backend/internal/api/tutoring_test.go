@@ -425,6 +425,9 @@ var denialCases = map[string]denialCase{
 	"PUT /api/v1/submissions/{id}/answers": anotherStudentsSubmission(http.MethodPut, "/answers",
 		`{"version":1,"save_id":"0d8f2a1c-5b4e-4c3a-9e7f-1a2b3c4d5e6f","answers":[]}`),
 	"POST /api/v1/submissions/{id}/submit": anotherStudentsSubmission(http.MethodPost, "/submit", `{"version":1}`),
+	"PUT /api/v1/submissions/{id}/review":  anotherTutorsReviewSave,
+	"POST /api/v1/submissions/{id}/check":  anotherTutorsReviewWrite("/check", `{"revision":1}`),
+	"POST /api/v1/submissions/{id}/return": anotherTutorsReviewWrite("/return", `{"revision":1}`),
 }
 
 var bodyIdentifierDenialCases = map[string]denialCase{
@@ -437,6 +440,7 @@ var bodyIdentifierDenialCases = map[string]denialCase{
 	"POST /api/v1/issues":             anotherTutorsIssueTemplate,
 	"GET /api/v1/issues":              anotherTutorsIssueFilter,
 	"GET /api/v1/assignments":         anotherStudentsTutorFilter,
+	"GET /api/v1/review-queue":        anotherTutorsQueueFilter,
 }
 
 var denialStatuses = map[string]int{

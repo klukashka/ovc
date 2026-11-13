@@ -18,7 +18,7 @@ const cursorSeparator = "_"
 var errStoredFileGone = errors.New("a file named by a stored snapshot is gone")
 
 func (s *Service) Issues(ctx context.Context, tutor domain.UserID, query IssueListQuery) (IssuePage, error) {
-	after, afterID, err := parseCursor(query.Cursor)
+	after, afterID, err := parseCursor[domain.IssueID](query.Cursor)
 	if err != nil {
 		return IssuePage{}, err
 	}
@@ -195,6 +195,7 @@ func (s *Service) issueSubmissions(ctx context.Context, repos repositories.Repos
 			ID: submission.ID, Relationship: submission.RelationshipID, DisplayName: submission.DisplayName, Status: submission.Status,
 			Late: submission.Late, FirstSubmittedAt: submission.FirstSubmittedAt, SubmittedAt: submission.SubmittedAt,
 			CheckedAt: submission.CheckedAt, FinalPoints: submission.FinalPoints, IssuedBeforeReclaim: submission.IssuedBeforeReclaim,
+			HasDraft: submission.HasDraft,
 		}
 		if submission.FinalPoints != nil {
 			if percentage, scored := domain.ScorePercentage(int64(*submission.FinalPoints), int64(row.MaxPoints)); scored {
@@ -276,31 +277,37 @@ func dispositionOf(width *int32) domain.Disposition {
 	return domain.DispositionAttachment
 }
 
-func encodeCursor(instant time.Time, id domain.IssueID) string {
+type cursorID interface {
+	~[16]byte
+	String() string
+}
+
+func encodeCursor[ID cursorID](instant time.Time, id ID) string {
 	text := strconv.FormatInt(instant.UnixMicro(), 10) + cursorSeparator + id.String()
 	return base64.RawURLEncoding.EncodeToString([]byte(text))
 }
 
-func parseCursor(text string) (*time.Time, domain.IssueID, error) {
+func parseCursor[ID cursorID](text string) (*time.Time, ID, error) {
+	var none ID
 	if text == "" {
-		return nil, domain.IssueID{}, nil
+		return nil, none, nil
 	}
 	refused := invalid(fieldCursor, domain.FieldInvalid)
 	decoded, err := base64.RawURLEncoding.Strict().DecodeString(text)
 	if err != nil {
-		return nil, domain.IssueID{}, refused
+		return nil, none, refused
 	}
 	micros, idText, found := strings.Cut(string(decoded), cursorSeparator)
 	if !found {
-		return nil, domain.IssueID{}, refused
+		return nil, none, refused
 	}
 	value, err := strconv.ParseInt(micros, 10, 64)
 	if err != nil {
-		return nil, domain.IssueID{}, refused
+		return nil, none, refused
 	}
-	id, valid := domain.ParseUUID[domain.IssueID](idText)
+	id, valid := domain.ParseUUID[ID](idText)
 	if !valid {
-		return nil, domain.IssueID{}, refused
+		return nil, none, refused
 	}
 	instant := time.UnixMicro(value).UTC()
 	return &instant, id, nil

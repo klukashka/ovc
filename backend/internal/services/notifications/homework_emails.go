@@ -61,7 +61,9 @@ func (h *HomeworkEmails) Builders() map[domain.OutboxKind]Builder {
 	return map[domain.OutboxKind]Builder{
 		domain.EventIssueCreated:        issueCreatedEmail{emails: h},
 		domain.EventSubmissionSubmitted: submittedEmail{emails: h},
-		domain.EventSubmissionChecked:   checkedEmail{emails: h},
+		domain.EventSubmissionChecked:   resultEmail{emails: h, text: core.SubmissionCheckedText},
+		domain.EventSubmissionReturned:  resultEmail{emails: h, text: core.SubmissionReturnedText},
+		domain.EventReviewUpdated:       resultEmail{emails: h, text: core.ReviewUpdatedText},
 	}
 }
 
@@ -176,11 +178,12 @@ func (b submittedEmail) Build(ctx context.Context, row repositories.ClaimedOutbo
 	}, now)
 }
 
-type checkedEmail struct {
+type resultEmail struct {
 	emails *HomeworkEmails
+	text   func(domain.Language) (core.HomeworkEmailText, bool)
 }
 
-func (b checkedEmail) Build(ctx context.Context, row repositories.ClaimedOutboxRow, now time.Time) (Composition, error) {
+func (b resultEmail) Build(ctx context.Context, row repositories.ClaimedOutboxRow, now time.Time) (Composition, error) {
 	var payload domain.SubmissionCheckedPayload
 	if err := decodePayload(row.Payload, &payload); err != nil {
 		return Composition{}, err
@@ -204,7 +207,7 @@ func (b checkedEmail) Build(ctx context.Context, row repositories.ClaimedOutboxR
 	if err != nil || !found {
 		return Composition{Obsolete: !found}, err
 	}
-	text, found := core.SubmissionCheckedText(recipient.Language)
+	text, found := b.text(recipient.Language)
 	if !found {
 		return Composition{}, domain.PermanentEffect(fmt.Errorf("%w: no %s text in %s", errUnknownKind, row.Kind, recipient.Language))
 	}

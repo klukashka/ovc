@@ -96,3 +96,59 @@ func SubmissionCheckedText(language domain.Language) (HomeworkEmailText, bool) {
 	text, found := checkedCatalogue[language]
 	return text, found
 }
+
+var returnedCatalogue = map[domain.Language]HomeworkEmailText{
+	domain.LanguageEnglish: {
+		Subject:         "Assignment returned",
+		Intro:           "Your tutor returned your assignment for revision.",
+		Tutor:           "Tutor",
+		Deadline:        "Due",
+		Action:          "Open the assignment",
+		Note:            "The tutor's comments are on the assignment's page in OVC.",
+		Unsubscribe:     "Turn off these emails",
+		UnsubscribeNote: "You receive this email because emails about results are turned on in your OVC email settings.",
+	},
+	domain.LanguageRussian: {
+		Subject:         "Задание возвращено",
+		Intro:           "Преподаватель вернул задание на доработку.",
+		Tutor:           "Преподаватель",
+		Deadline:        "Срок",
+		Action:          "Открыть задание",
+		Note:            "Комментарии преподавателя — на странице задания в OVC.",
+		Unsubscribe:     "Отключить эти письма",
+		UnsubscribeNote: "Вы получили это письмо, потому что в настройках писем OVC включены письма о результатах.",
+	},
+}
+
+var reviewUpdatedCatalogue = map[domain.Language]HomeworkEmailText{
+	domain.LanguageEnglish: {
+		Subject:         "Review updated",
+		Intro:           "Your tutor updated the review of your assignment.",
+		Tutor:           "Tutor",
+		Deadline:        "Due",
+		Action:          "Open the assignment",
+		Note:            "The updated review is on the assignment's page in OVC.",
+		Unsubscribe:     "Turn off these emails",
+		UnsubscribeNote: "You receive this email because emails about results are turned on in your OVC email settings.",
+	},
+	domain.LanguageRussian: {
+		Subject:         "Отзыв обновлён",
+		Intro:           "Преподаватель обновил отзыв о вашем задании.",
+		Tutor:           "Преподаватель",
+		Deadline:        "Срок",
+		Action:          "Открыть задание",
+		Note:            "Обновлённый отзыв — на странице задания в OVC.",
+		Unsubscribe:     "Отключить эти письма",
+		UnsubscribeNote: "Вы получили это письмо, потому что в настройках писем OVC включены письма о результатах.",
+	},
+}
+
+func SubmissionReturnedText(language domain.Language) (HomeworkEmailText, bool) {
+	text, found := returnedCatalogue[language]
+	return text, found
+}
+
+func ReviewUpdatedText(language domain.Language) (HomeworkEmailText, bool) {
+	text, found := reviewUpdatedCatalogue[language]
+	return text, found
+}

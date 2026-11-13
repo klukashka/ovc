@@ -259,7 +259,7 @@ const getStudentSubmission = `-- name: GetStudentSubmission :one
 SELECT submissions.id, submissions.issue_id, submissions.tutor_id, submissions.relationship_id, submissions.status, submissions.late,
     submissions.issued_before_reclaim, submissions.deadline_at, submissions.version, issues.title, issues.snapshot, issues.answer_policy,
     issues.status AS issue_status, (issues.erase_pending_since IS NOT NULL)::boolean AS marked_for_erasure,
-    relationships.state AS relationship_state, relationships.colour, tutor.name AS tutor_name
+    relationships.state AS relationship_state, relationships.colour, tutor.name AS tutor_name, submissions.published_revision_id
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -290,6 +290,7 @@ type GetStudentSubmissionRow struct {
 	RelationshipState   domain.RelationshipState
 	Colour              *domain.Colour
 	TutorName           string
+	PublishedRevisionID pgtype.UUID
 }
 
 func (q *Queries) GetStudentSubmission(ctx context.Context, arg GetStudentSubmissionParams) (GetStudentSubmissionRow, error) {
@@ -313,6 +314,7 @@ func (q *Queries) GetStudentSubmission(ctx context.Context, arg GetStudentSubmis
 		&i.RelationshipState,
 		&i.Colour,
 		&i.TutorName,
+		&i.PublishedRevisionID,
 	)
 	return i, err
 }
@@ -537,7 +539,7 @@ func (q *Queries) ListReleasePendingSubmissions(ctx context.Context, batchSize i
 const listStudentCheckedAssignments = `-- name: ListStudentCheckedAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at
+    submissions.checked_at, submissions.published_revision_id
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -574,6 +576,7 @@ type ListStudentCheckedAssignmentsRow struct {
 	IssuedAt            time.Time
 	SubmittedAt         *time.Time
 	CheckedAt           *time.Time
+	PublishedRevisionID pgtype.UUID
 }
 
 func (q *Queries) ListStudentCheckedAssignments(ctx context.Context, arg ListStudentCheckedAssignmentsParams) ([]ListStudentCheckedAssignmentsRow, error) {
@@ -604,6 +607,7 @@ func (q *Queries) ListStudentCheckedAssignments(ctx context.Context, arg ListStu
 			&i.IssuedAt,
 			&i.SubmittedAt,
 			&i.CheckedAt,
+			&i.PublishedRevisionID,
 		); err != nil {
 			return nil, err
 		}
@@ -618,7 +622,7 @@ func (q *Queries) ListStudentCheckedAssignments(ctx context.Context, arg ListStu
 const listStudentClosedAssignments = `-- name: ListStudentClosedAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at
+    submissions.checked_at, submissions.published_revision_id
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -655,6 +659,7 @@ type ListStudentClosedAssignmentsRow struct {
 	IssuedAt            time.Time
 	SubmittedAt         *time.Time
 	CheckedAt           *time.Time
+	PublishedRevisionID pgtype.UUID
 }
 
 func (q *Queries) ListStudentClosedAssignments(ctx context.Context, arg ListStudentClosedAssignmentsParams) ([]ListStudentClosedAssignmentsRow, error) {
@@ -685,6 +690,7 @@ func (q *Queries) ListStudentClosedAssignments(ctx context.Context, arg ListStud
 			&i.IssuedAt,
 			&i.SubmittedAt,
 			&i.CheckedAt,
+			&i.PublishedRevisionID,
 		); err != nil {
 			return nil, err
 		}
@@ -699,7 +705,7 @@ func (q *Queries) ListStudentClosedAssignments(ctx context.Context, arg ListStud
 const listStudentSubmittedAssignments = `-- name: ListStudentSubmittedAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at
+    submissions.checked_at, submissions.published_revision_id
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -736,6 +742,7 @@ type ListStudentSubmittedAssignmentsRow struct {
 	IssuedAt            time.Time
 	SubmittedAt         *time.Time
 	CheckedAt           *time.Time
+	PublishedRevisionID pgtype.UUID
 }
 
 func (q *Queries) ListStudentSubmittedAssignments(ctx context.Context, arg ListStudentSubmittedAssignmentsParams) ([]ListStudentSubmittedAssignmentsRow, error) {
@@ -766,6 +773,7 @@ func (q *Queries) ListStudentSubmittedAssignments(ctx context.Context, arg ListS
 			&i.IssuedAt,
 			&i.SubmittedAt,
 			&i.CheckedAt,
+			&i.PublishedRevisionID,
 		); err != nil {
 			return nil, err
 		}
@@ -780,7 +788,7 @@ func (q *Queries) ListStudentSubmittedAssignments(ctx context.Context, arg ListS
 const listStudentTodoAssignments = `-- name: ListStudentTodoAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at
+    submissions.checked_at, submissions.published_revision_id
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -831,6 +839,7 @@ type ListStudentTodoAssignmentsRow struct {
 	IssuedAt            time.Time
 	SubmittedAt         *time.Time
 	CheckedAt           *time.Time
+	PublishedRevisionID pgtype.UUID
 }
 
 func (q *Queries) ListStudentTodoAssignments(ctx context.Context, arg ListStudentTodoAssignmentsParams) ([]ListStudentTodoAssignmentsRow, error) {
@@ -863,6 +872,7 @@ func (q *Queries) ListStudentTodoAssignments(ctx context.Context, arg ListStuden
 			&i.IssuedAt,
 			&i.SubmittedAt,
 			&i.CheckedAt,
+			&i.PublishedRevisionID,
 		); err != nil {
 			return nil, err
 		}

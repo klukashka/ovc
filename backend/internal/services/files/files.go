@@ -151,7 +151,7 @@ func New(dependencies Dependencies) *Service {
 		hourly: newHourlyUploads(domain.ChatUploadsPerHour), libraryHourly: newHourlyUploads(domain.LibraryUploadsPerHour),
 		homeworkHourly: newHourlyUploads(domain.HomeworkUploadsPerHour), tokens: downloadTokens{keys: dependencies.Keys},
 		references: []referenceAuthorization{
-			materialAuthorization{}, templateAuthorization{}, lessonAuthorization{}, issueSnapshotAuthorization{}, answerAuthorization{},
+			materialAuthorization{}, templateAuthorization{}, lessonAuthorization{}, issueSnapshotAuthorization{}, answerAuthorization{}, reviewItemAuthorization{},
 		},
 	}
 }

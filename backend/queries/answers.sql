@@ -1,7 +1,7 @@
 -- name: ListStudentTodoAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at
+    submissions.checked_at, submissions.published_revision_id
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -31,7 +31,7 @@ LIMIT sqlc.arg(page_size);
 -- name: ListStudentSubmittedAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at
+    submissions.checked_at, submissions.published_revision_id
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -49,7 +49,7 @@ LIMIT sqlc.arg(page_size);
 -- name: ListStudentCheckedAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at
+    submissions.checked_at, submissions.published_revision_id
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -67,7 +67,7 @@ LIMIT sqlc.arg(page_size);
 -- name: ListStudentClosedAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at
+    submissions.checked_at, submissions.published_revision_id
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -108,7 +108,7 @@ SELECT id FROM relationships WHERE id = @id AND student_id = @student_id AND sta
 SELECT submissions.id, submissions.issue_id, submissions.tutor_id, submissions.relationship_id, submissions.status, submissions.late,
     submissions.issued_before_reclaim, submissions.deadline_at, submissions.version, issues.title, issues.snapshot, issues.answer_policy,
     issues.status AS issue_status, (issues.erase_pending_since IS NOT NULL)::boolean AS marked_for_erasure,
-    relationships.state AS relationship_state, relationships.colour, tutor.name AS tutor_name
+    relationships.state AS relationship_state, relationships.colour, tutor.name AS tutor_name, submissions.published_revision_id
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id

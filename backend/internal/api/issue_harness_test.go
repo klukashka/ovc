@@ -72,6 +72,7 @@ type issueSubmissionBody struct {
 	Status              string                     `json:"status"`
 	Late                bool                       `json:"late"`
 	IssuedBeforeReclaim bool                       `json:"issued_before_reclaim"`
+	HasDraft            bool                       `json:"has_draft"`
 }
 
 type issueDetailBody struct {

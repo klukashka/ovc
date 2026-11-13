@@ -165,7 +165,9 @@ WHERE tutor_id = @tutor_id AND relationship_id = @relationship_id AND issue_id =
 
 -- name: ListTutorIssueSubmissions :many
 SELECT submissions.id, submissions.relationship_id, card.display_name, submissions.status, submissions.late, submissions.first_submitted_at,
-    submissions.submitted_at, submissions.checked_at, submissions.final_points, submissions.issued_before_reclaim
+    submissions.submitted_at, submissions.checked_at, submissions.final_points, submissions.issued_before_reclaim,
+    EXISTS (SELECT 1 FROM review_revisions WHERE review_revisions.submission_id = submissions.id AND review_revisions.state = 'draft')::boolean
+        AS has_draft
 FROM submissions
 JOIN relationships AS card ON card.id = submissions.relationship_id
 WHERE submissions.issue_id = @issue_id AND submissions.tutor_id = @tutor_id

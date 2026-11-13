@@ -78,6 +78,10 @@ func (s *Service) submitLocked(
 	for _, answer := range stored {
 		answers[answer.QuestionID] = answer
 	}
+	reviewed, err := publishedItems(ctx, repos, id)
+	if err != nil {
+		return submitOutcome{}, err
+	}
 	scores := make([]domain.QuestionScore, 0, len(locked.blocks))
 	var autoPoints int32
 	for _, block := range locked.blocks {
@@ -89,6 +93,9 @@ func (s *Service) submitLocked(
 			return submitOutcome{}, fmt.Errorf("issue %s: %w", locked.parties.IssueID, errStoredSnapshotInvalid)
 		}
 		score := domain.QuestionScore{Type: block.Type, MaxPoints: *block.Points}
+		if item, found := reviewed[block.ID]; found {
+			score.ManualPoints, score.OverridePoints = item.Points, item.OverridePoints
+		}
 		if block.Type.Automatic() {
 			points, err := s.scoreAutomatic(ctx, repos, id, question, block, answers[question], locked.now)
 			if err != nil {
@@ -125,6 +132,25 @@ func (s *Service) submitLocked(
 		return submitOutcome{}, err
 	}
 	return submitOutcome{changed: true, late: result.Late, autoChecked: next == domain.SubmissionChecked, resubmission: result.Resubmission}, nil
+}
+
+func publishedItems(ctx context.Context, repos repositories.Repositories, id domain.SubmissionID) (map[string]domain.ReviewItem, error) {
+	published, err := repos.Homework.LatestPublishedRevision(ctx, id)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return map[string]domain.ReviewItem{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	items, err := decodeReviewItems(published.Items)
+	if err != nil {
+		return nil, err
+	}
+	reviewed := make(map[string]domain.ReviewItem, len(items))
+	for _, item := range items {
+		reviewed[item.QuestionID] = item
+	}
+	return reviewed, nil
 }
 
 func (s *Service) scoreAutomatic(

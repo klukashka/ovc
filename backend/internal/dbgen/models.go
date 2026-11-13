@@ -519,6 +519,22 @@ type Relationship struct {
 	UpdatedAt     time.Time
 }
 
+type ReviewRevision struct {
+	ID           domain.ReviewRevisionID
+	SubmissionID domain.SubmissionID
+	TutorID      domain.UserID
+	Revision     int32
+	State        domain.ReviewState
+	Action       *domain.ReviewAction
+	Feedback     string
+	Items        []byte
+	Version      int64
+	LastSaveID   pgtype.UUID
+	PublishedAt  *time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
 type SeriesMaterial struct {
 	SeriesID   domain.SeriesID
 	MaterialID domain.MaterialID
@@ -560,6 +576,7 @@ type Submission struct {
 	IssuedBeforeReclaim bool
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+	PublishedRevisionID pgtype.UUID
 }
 
 type Template struct {

@@ -829,3 +829,24 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: QuestionID
+          - column: review_revisions.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ReviewRevisionID
+          - column: review_revisions.submission_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: SubmissionID
+          - column: review_revisions.tutor_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: review_revisions.state
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ReviewState
+          - column: review_revisions.action
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ReviewAction
+              pointer: true
