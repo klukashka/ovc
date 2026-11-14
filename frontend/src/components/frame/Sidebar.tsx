@@ -29,6 +29,7 @@ function SidebarItem({
 }): ReactElement {
   const { t } = useTranslation();
   const { Icon } = section;
+  const toCheck = section.to !== '/homework';
   return (
     <li>
       <Link
@@ -44,8 +45,8 @@ function SidebarItem({
                 : t('frame.messagesWithCount', { count })
               : section.key === 'homework'
                 ? count > 99
-                  ? t('frame.homeworkToDoOverCap')
-                  : t('frame.homeworkToDo', { count })
+                  ? t(toCheck ? 'frame.homeworkToCheckOverCap' : 'frame.homeworkToDoOverCap')
+                  : t(toCheck ? 'frame.homeworkToCheck' : 'frame.homeworkToDo', { count })
                 : undefined
         }
         data-sidebar-item=""

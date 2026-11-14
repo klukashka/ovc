@@ -5,16 +5,20 @@ import { gzipSync } from 'node:zlib';
 
 import {
   buildManifestPath,
-  checkBuilderChunk,
+  checkPageChunk,
+  checkStudentReach,
   checkBundle,
   type CommittedPublicFiles,
   committedPublicFiles,
   manifestNamedFiles,
   moduleGraphPath,
   parseManifest,
+  ownedPages,
   parseModuleGraph,
   type ServedEntry,
   type ServedEntryKind,
+  studentPages,
+  tutorOnlyFolders,
   unexpectedServedEntries,
 } from './bundle-budget.ts';
 
@@ -108,8 +112,16 @@ if (pages.length === 0) {
   process.exit(1);
 }
 const budget = checkBundle(manifest, pages, gzipSize);
-const builder = checkBuilderChunk(manifest, parseModuleGraph(moduleGraphJson()), pages, gzipSize);
-const report = { lines: [...budget.lines, ...builder.lines], failures: [...budget.failures, ...builder.failures] };
+const graph = parseModuleGraph(moduleGraphJson());
+const reports = [
+  budget,
+  ...ownedPages.map((owned) => checkPageChunk(manifest, graph, pages, gzipSize, owned)),
+  checkStudentReach(graph, studentPages, tutorOnlyFolders),
+];
+const report = {
+  lines: reports.flatMap((entry) => entry.lines),
+  failures: reports.flatMap((entry) => entry.failures),
+};
 process.stdout.write(`${report.lines.join('\n')}\n`);
 if (report.failures.length > 0) {
   process.stderr.write(`The bundle is outside its budget:\n${report.failures.join('\n')}\n`);

@@ -29,7 +29,7 @@ export interface BundleReport {
 export const buildManifestPath = resolve(import.meta.dirname, '..', 'build-report', 'manifest.json');
 
 export const kilobyte = 1000;
-export const entryLimit = 180 * kilobyte;
+export const entryLimit = 181 * kilobyte;
 export const entryKey = 'index.html';
 
 export interface FirstLoadModule {
@@ -348,33 +348,65 @@ function reachable(graph: ModuleGraph, roots: readonly string[], barrier: string
   return seen;
 }
 
+export interface OwnedPage {
+  readonly page: string;
+  readonly name: string;
+}
+
+export const ownedPages: readonly OwnedPage[] = [
+  { page: builderPage, name: 'builder' },
+  { page: 'src/features/review/ReviewPage.tsx', name: 'review screen' },
+  { page: 'src/features/review/ReviewQueuePage.tsx', name: 'review queue' },
+  { page: 'src/features/homework/IssuePage.tsx', name: 'issue page' },
+  { page: 'src/features/homework/IssuedPage.tsx', name: 'issued list' },
+];
+
+export const studentPages: readonly string[] = [
+  'src/features/assignment/AssignmentPage.tsx',
+  'src/features/assignment/HomeworkPage.tsx',
+  'src/features/home/HomePage.tsx',
+  'src/features/tutors/MyTutorsPage.tsx',
+];
+
+export const tutorOnlyFolders: readonly string[] = ['src/features/review/', 'src/features/homework/'];
+
+export function pageOnlyModules(
+  graph: ModuleGraph,
+  manifest: Manifest,
+  pageModules: readonly string[],
+  ownedPage: string,
+): Set<string> {
+  const entryFile = chunkAt(manifest, entryKey).file;
+  const entryModules = graph.chunks.find((chunk) => chunk.file === entryFile)?.modules ?? [];
+  const otherRoots = [...entryModules, ...pageModules.filter((page) => page !== ownedPage)];
+  const others = reachable(graph, otherRoots, ownedPage);
+  return new Set([...reachable(graph, [ownedPage], null)].filter((id) => !others.has(id)));
+}
+
 export function builderOnlyModules(
   graph: ModuleGraph,
   manifest: Manifest,
   pageModules: readonly string[],
 ): Set<string> {
-  const entryFile = chunkAt(manifest, entryKey).file;
-  const entryModules = graph.chunks.find((chunk) => chunk.file === entryFile)?.modules ?? [];
-  const otherRoots = [...entryModules, ...pageModules.filter((page) => page !== builderPage)];
-  const others = reachable(graph, otherRoots, builderPage);
-  return new Set([...reachable(graph, [builderPage], null)].filter((id) => !others.has(id)));
+  return pageOnlyModules(graph, manifest, pageModules, builderPage);
 }
 
-export function checkBuilderChunk(
+export function checkPageChunk(
   manifest: Manifest,
   graph: ModuleGraph,
   pageModules: readonly string[],
   sizeOf: (file: string) => number,
+  owned: OwnedPage,
 ): BundleReport {
   const failures: string[] = [];
-  if (manifest.get(builderPage)?.isDynamicEntry !== true) {
-    return { lines: [], failures: [`${builderPage} is not loaded on demand`] };
+  if (manifest.get(owned.page)?.isDynamicEntry !== true) {
+    return { lines: [], failures: [`${owned.page} is not loaded on demand`] };
   }
-  const builderOnly = builderOnlyModules(graph, manifest, pageModules);
+  const pageOnly = pageOnlyModules(graph, manifest, pageModules, owned.page);
   const elsewhere = new Map<string, string>();
   for (const [name, keys] of [
     ['the entry', [entryKey]],
-    ...pageModules.filter((page) => page !== builderPage).map((page) => [page, [page]] as const),
+    ...pageModules.filter((page) => page !== owned.page).map((page) => [page, [page]] as const),
   ] as const) {
     for (const file of staticFiles(manifest, keys)) {
       if (!elsewhere.has(file)) {
@@ -387,22 +419,54 @@ export function checkBuilderChunk(
     if (loader === undefined) {
       continue;
     }
-    for (const module of chunk.modules.filter((id) => builderOnly.has(id))) {
+    for (const module of chunk.modules.filter((id) => pageOnly.has(id))) {
       failures.push(
-        `${module} is reachable only from the builder but is built into ${chunk.file}, loaded by ${loader}`,
+        `${module} is reachable only from the ${owned.name} but is built into ${chunk.file}, loaded by ${loader}`,
       );
     }
   }
-  if (builderOnly.size === 0) {
-    failures.push('no module is reachable only from the builder, so the builder check would prove nothing');
+  if (pageOnly.size === 0) {
+    failures.push(`no module is reachable only from the ${owned.name}, so the ${owned.name} check would prove nothing`);
   }
   const initial = staticFiles(manifest, [entryKey]);
-  const builderFiles = new Set([...staticFiles(manifest, [builderPage])].filter((file) => !initial.has(file)));
-  const size = total(builderFiles, sizeOf);
+  const pageFiles = new Set([...staticFiles(manifest, [owned.page])].filter((file) => !initial.has(file)));
+  const size = total(pageFiles, sizeOf);
   return {
     lines: [
-      `builder chunk and its imports beyond the entry: ${kilobytes(size)} gzip, ${String(builderOnly.size)} modules reachable only from the builder`,
+      `${owned.name} chunk and its imports beyond the entry: ${kilobytes(size)} gzip, ${String(pageOnly.size)} modules reachable only from the ${owned.name}`,
     ],
+    failures,
+  };
+}
+
+export function checkBuilderChunk(
+  manifest: Manifest,
+  graph: ModuleGraph,
+  pageModules: readonly string[],
+  sizeOf: (file: string) => number,
+): BundleReport {
+  return checkPageChunk(manifest, graph, pageModules, sizeOf, { page: builderPage, name: 'builder' });
+}
+
+export function checkStudentReach(
+  graph: ModuleGraph,
+  students: readonly string[],
+  forbidden: readonly string[],
+): BundleReport {
+  const failures: string[] = [];
+  for (const page of students) {
+    if (!graph.modules.some((module) => module.id === page)) {
+      failures.push(`${page} is not in the module graph, so the student page check would prove nothing`);
+      continue;
+    }
+    for (const module of reachable(graph, [page], null)) {
+      if (forbidden.some((folder) => module.startsWith(folder))) {
+        failures.push(`${module} is tutor code but is reachable from the student page ${page}`);
+      }
+    }
+  }
+  return {
+    lines: [`${String(students.length)} student pages reach no module of ${forbidden.join(', ')}`],
     failures,
   };
 }

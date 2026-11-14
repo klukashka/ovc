@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { assignmentCountKey } from './count.ts';
+import { assignmentCountKey } from '../../app/homeworkCount.ts';
 import { assignmentsKey } from './keys.ts';
 
 describe('student homework query keys', () => {

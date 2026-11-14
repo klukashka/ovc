@@ -211,14 +211,16 @@ const featureTextFolders = [
   'src/features/builder/**',
   'src/features/assignment/**',
   'src/features/home/TodoPanel.tsx',
+  'src/features/home/TutorHomeworkPanels.tsx',
+  'src/features/auth/ReclaimPage.tsx',
 ];
 
 const featureTextMessage =
   'Library, builder and student-view texts load only with their own pages, so other code cannot read them';
 
 const forbiddenFeatureTextKeys = [
-  "CallExpression[callee.name='t'] > Literal[value=/^(library|builder|assignment|homeworkPanels)\\./]",
-  "CallExpression[callee.name='t'] > TemplateLiteral[quasis.0.value.raw=/^(library|builder|assignment|homeworkPanels)\\./]",
+  "CallExpression[callee.name='t'] > Literal[value=/^(library|builder|assignment|homeworkPanels|reclaim)\\./]",
+  "CallExpression[callee.name='t'] > TemplateLiteral[quasis.0.value.raw=/^(library|builder|assignment|homeworkPanels|reclaim)\\./]",
 ].map((selector) => ({ selector, message: featureTextMessage }));
 
 const languageTextsMessage =

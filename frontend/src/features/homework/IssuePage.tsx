@@ -10,6 +10,7 @@ import {
   type TableColumn,
   cellClass,
   primaryCellClass,
+  rowLinkClass,
   tableRowClass,
 } from '../../components/ui/DataTable.tsx';
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
@@ -625,9 +626,14 @@ function Submissions({ issue }: { readonly issue: Issue }): ReactElement {
         {issue.submissions.map((submission) => (
           <tr key={submission.id} data-row={submission.id} className={tableRowClass}>
             <th scope="row" className={primaryCellClass}>
-              <span dir="auto" className="font-medium">
+              <Link
+                data-row-link=""
+                to={`/homework/review/${encodeURIComponent(submission.id)}?issue=${encodeURIComponent(issue.id)}`}
+                dir="auto"
+                className={rowLinkClass}
+              >
                 {submission.student.display_name}
-              </span>
+              </Link>
               {submission.issued_before_reclaim ? <ReclaimCue /> : null}
             </th>
             <td className={cellClass}>

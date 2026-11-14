@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, type RefObject, useEffect, useRef } from 'react';
+import { type ReactElement, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } from 'react';
 
 import { focusHeadingIfLost } from './LoadState.tsx';
 
@@ -39,6 +39,15 @@ export function ModalDialog({
 }): ReactElement {
   const dialog = useRef<HTMLDialogElement>(null);
   const focusReturnedOnClose = useRef(false);
+
+  useLayoutEffect(() => {
+    const element = dialog.current;
+    return (): void => {
+      if (element?.open === true) {
+        element.close();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const element = dialog.current;

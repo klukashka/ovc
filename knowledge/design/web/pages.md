@@ -374,6 +374,15 @@ FR-10. Built in slice 9 on `GET /review-queue`, `GET /submissions/{id}` (the tut
 - **Not reviewable:** for `not_started`, `draft` and `closed` work the screen shows the answers read-only with "This work has not been submitted yet." or "This work is closed.", and no scoring controls.
 - **Live:** the screen refetches on `entity.changed` of kind `submission` for its identifier, keeping every field the tutor has changed since it last showed a stored value; when the refetch finds the submission gone, the screen shows "This assignment is no longer available." with the link "Back to the queue", which takes focus when focus was lost or a dialog was open.
 - **Phone:** below 1024 px the interim one-column frame, with scoring under each answer.
+- **As built in slice 9 change F3** (agent changes pending owner review):
+  - the total shows `homework.score` from the submission's `final_points` and `percentage`, which the API stores at a publication, so it reflects the last publication and is absent before the first one (or before the automatic check of work without manual questions); the tutor schema carries no total of a draft, and the browser computes none (owner's decision of 2026-11-13);
+  - the screen lists the snapshot's questions only, numbered "Question {n}", each a region named by its number; instruction and material blocks are not repeated beside the answers;
+  - a refetch (address renewal, live, reconnect) that shows a different draft revision, or a newer `version` of the same draft, than the screen's draft stops saving and shows "This changed elsewhere" with Reload, so a draft saved in another tab is never overwritten; the draft's position is taken only from the first load, the screen's own saves and Reload;
+  - a save refused with `404` while the submission still exists means a corrected file that is no longer bindable: the files not yet held by the stored draft are removed from the draft, the alert "A corrected file is no longer available. Attach it again." takes focus under that question's files, and the draft is saved again; a save refused with `507` removes those files the same way under "Storage is full", `403 email_not_verified` shows "Confirm your email to issue and check assignments." and any other refusal (`413`) shows its error message, each as an alert that takes focus; a typed change made while a publication runs is kept and saved as the next draft;
+  - an override is sent only once its points are entered; an override without points stays local;
+  - "Save draft" sends the pending changes at once; "Mark checked" and "Return for revision" first save, creating the draft as a copy of the latest publication when none exists;
+  - returned work shows the published comments read-only;
+  - the issue page's student names link to the review screen with `issue` set, and the student card's Homework rows link to their submission's review screen with `student` set.
 
 ### Messages
 

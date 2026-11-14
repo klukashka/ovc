@@ -1,4 +1,5 @@
 import type { assignmentTexts } from '../../features/assignment/texts.en.ts';
+import type { reclaimTexts } from '../../features/auth/reclaimTexts.en.ts';
 import type { builderTexts } from '../../features/builder/texts.en.ts';
 import type { homeworkPanelTexts } from '../../features/home/panelTexts.en.ts';
 import type { homeworkTexts } from '../../features/homework/texts.en.ts';
@@ -17,6 +18,7 @@ export interface FeatureSections {
   readonly notificationEvents: Shape<typeof notificationEventTexts>;
   readonly homework: Shape<typeof homeworkTexts>;
   readonly homeworkPanels: Shape<typeof homeworkPanelTexts>;
+  readonly reclaim: Shape<typeof reclaimTexts>;
 }
 
 export type FeatureSection = keyof FeatureSections;

@@ -94,9 +94,20 @@ export function CardHomeworkTab({ relationshipId }: { readonly relationshipId: s
       >
         {items.map((item) => (
           <li key={item.id} data-row={item.id} className="flex flex-col gap-1 py-3">
-            <span data-row-focus="" tabIndex={-1} dir="auto" className="font-medium outline-none">
-              {item.title}
-            </span>
+            {item.submission === undefined ? (
+              <span data-row-focus="" tabIndex={-1} dir="auto" className="font-medium outline-none">
+                {item.title}
+              </span>
+            ) : (
+              <Link
+                data-row-focus=""
+                to={`/homework/review/${encodeURIComponent(item.submission.id)}?student=${encodeURIComponent(relationshipId)}`}
+                dir="auto"
+                className={`${linkClass} min-h-0 break-words`}
+              >
+                {item.title}
+              </Link>
+            )}
             {item.submission?.issued_before_reclaim === true ? <ReclaimCue /> : null}
             <span className="text-small text-text-muted">
               {formatDate(item.issued_at, me.language, me.timezone)}

@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { type RouteObject, createBrowserRouter } from 'react-router';
+import { type RouteObject, type RouterNavigateOptions, type To, createBrowserRouter } from 'react-router';
 
 import { RouteFocus } from '../components/frame/RouteFocus.tsx';
 import { PlaceholderPage } from '../components/ui/Page.tsx';
@@ -27,6 +27,8 @@ const libraryPage = lazyPage(async () => (await import('../features/library/Libr
 const builderPage = lazyPage(async () => (await import('../features/builder/BuilderPage.tsx')).BuilderPage);
 const issuedPage = lazyPage(async () => (await import('../features/homework/IssuedPage.tsx')).IssuedPage);
 const issuePage = lazyPage(async () => (await import('../features/homework/IssuePage.tsx')).IssuePage);
+const reviewQueuePage = lazyPage(async () => (await import('../features/review/ReviewQueuePage.tsx')).ReviewQueuePage);
+const reviewPage = lazyPage(async () => (await import('../features/review/ReviewPage.tsx')).ReviewPage);
 const homeworkPage = lazyPage(async () => (await import('../features/assignment/HomeworkPage.tsx')).HomeworkPage);
 const assignmentPage = lazyPage(async () => (await import('../features/assignment/AssignmentPage.tsx')).AssignmentPage);
 const teachingSettingsPage = lazyPage(
@@ -74,8 +76,8 @@ export const tutorPages: RouteObject[] = [
   page('/homework/templates/:templateId', 'page.builder', builderPage),
   page('/homework/issued', 'page.issued', issuedPage),
   page('/homework/issued/:issueId', 'page.issue', issuePage),
-  page('/homework/review', 'page.review'),
-  page('/homework/review/:submissionId', 'page.reviewSubmission'),
+  page('/homework/review', 'page.review', reviewQueuePage),
+  page('/homework/review/:submissionId', 'page.reviewSubmission', reviewPage),
   page('/settings/teaching', 'page.settingsTeaching', teachingSettingsPage),
 ];
 
@@ -155,6 +157,15 @@ const frames: RouteObject[] = [
 
 export const routes: RouteObject[] = [{ element: <RouteFocus />, children: frames }];
 
-export function createRouter(): ReturnType<typeof createBrowserRouter> {
-  return createBrowserRouter(routes);
+type BrowserRouter = ReturnType<typeof createBrowserRouter>;
+
+export function withSynchronousNavigation(router: BrowserRouter): BrowserRouter {
+  const navigate = router.navigate.bind(router);
+  router.navigate = (to: number | To | null, options?: RouterNavigateOptions): Promise<void> =>
+    typeof to === 'number' ? navigate(to) : navigate(to, { ...options, flushSync: true });
+  return router;
+}
+
+export function createRouter(): BrowserRouter {
+  return withSynchronousNavigation(createBrowserRouter(routes));
 }

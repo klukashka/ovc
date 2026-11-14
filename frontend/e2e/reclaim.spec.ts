@@ -287,3 +287,35 @@ test('reclaim › keeping a request whose tutor is no longer active says that th
   await expect(page.getByRole('status')).toHaveText('Этот код больше не действует — введите новый.');
   await expect(page.getByRole('status')).toBeFocused();
 });
+
+test('reclaim › the choices appear only once the page’s texts have loaded', async ({
+  page,
+  deployment,
+  control,
+  diagnostics,
+}) => {
+  diagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/verify-email', status: 422 });
+  const maria = await seedVerifiedUser(deployment, 'Мария');
+  const { owner } = await squatOnTheInvitation(deployment, control, maria, null);
+  let releaseTexts: () => void = () => undefined;
+  const textsReleased = new Promise<void>((resolve) => {
+    releaseTexts = resolve;
+  });
+  const textsRequested = page.waitForRequest((request) => new URL(request.url()).pathname.includes('/reclaimTexts.'));
+  await page.route('**/assets/reclaimTexts.*', async (route) => {
+    await textsReleased;
+    await route.continue();
+  });
+  await confirmWithANewPassword(page, control, owner);
+  await textsRequested;
+  await expect(page.getByRole('heading', { level: 1, name: 'Оставить или удалить прежние связи' })).toBeVisible();
+  const radiosWhileLoading = await page.getByRole('radio').count();
+  const saveWhileLoading = await page.getByRole('button', { name: 'Сохранить выбор' }).count();
+
+  releaseTexts();
+
+  expect(radiosWhileLoading).toBe(0);
+  expect(saveWhileLoading).toBe(0);
+  await expect(linksBeforeConfirmation(page).getByRole('radio', { name: 'Оставить' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Сохранить выбор' })).toBeVisible();
+});

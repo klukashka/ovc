@@ -453,6 +453,8 @@ export const todayQueryPaths: readonly string[] = [
   '/api/v1/students',
   '/api/v1/channels',
   '/api/v1/library',
+  '/api/v1/review-queue',
+  '/api/v1/issues',
 ];
 
 export const unverifiedTutorTodayQueryPaths: readonly string[] = [

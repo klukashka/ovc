@@ -5,6 +5,8 @@ import {
   builderPage,
   checkBuilderChunk,
   checkBundle,
+  checkPageChunk,
+  checkStudentReach,
   committedPublicFiles,
   kilobyte,
   languageChunkContentProblems,
@@ -82,12 +84,12 @@ describe('bundle check', () => {
     const report = checkBundle(
       manifest,
       pageModules,
-      sizes({ ...withinBudget, 'assets/index.js': 41, 'assets/HomePage.js': 60 }),
+      sizes({ ...withinBudget, 'assets/index.js': 42, 'assets/HomePage.js': 60 }),
     );
 
     expect(report.failures).toEqual([
-      'the entry and its static imports with the largest language chunk are 181.0 KB gzip of JavaScript, above 180.0 KB',
-      "the first load of a student's Home is 256.0 KB gzip, above 250.0 KB",
+      'the entry and its static imports with the largest language chunk are 182.0 KB gzip of JavaScript, above 181.0 KB',
+      "the first load of a student's Home is 257.0 KB gzip, above 250.0 KB",
     ]);
   });
 
@@ -98,17 +100,17 @@ describe('bundle check', () => {
     const report = checkBundle(
       manifest,
       pageModules,
-      sizes({ ...withinBudget, ...languageSizes, 'assets/index.js': 35 }),
+      sizes({ ...withinBudget, ...languageSizes, 'assets/index.js': 36 }),
     );
 
     expect(report.lines).toEqual([
-      'entry and its static imports: 175.0 KB gzip of JavaScript, with the largest language chunk 6.0 KB: 181.0 KB (limit 180.0 KB)',
-      "first load of a student's Home: 196.0 KB gzip (limit 250.0 KB)",
-      "first load of a tutor's Today: 191.0 KB gzip (limit 400.0 KB)",
+      'entry and its static imports: 176.0 KB gzip of JavaScript, with the largest language chunk 6.0 KB: 182.0 KB (limit 181.0 KB)',
+      "first load of a student's Home: 197.0 KB gzip (limit 250.0 KB)",
+      "first load of a tutor's Today: 192.0 KB gzip (limit 400.0 KB)",
       '2 page modules load on demand',
     ]);
     expect(report.failures).toEqual([
-      'the entry and its static imports with the largest language chunk are 181.0 KB gzip of JavaScript, above 180.0 KB',
+      'the entry and its static imports with the largest language chunk are 182.0 KB gzip of JavaScript, above 181.0 KB',
     ]);
   });
 
@@ -473,5 +475,108 @@ describe('builder chunk', () => {
     const report = checkBuilderChunk(manifest, graphWith([]), [homePage, builderPage], sizes({}));
 
     expect(report.failures).toEqual([`${builderPage} is not loaded on demand`]);
+  });
+});
+
+describe('review screen chunk', () => {
+  const reviewPage = 'src/features/review/ReviewPage.tsx';
+  const assignmentPage = 'src/features/assignment/AssignmentPage.tsx';
+  const reviewManifest = parseManifest({
+    'index.html': {
+      file: 'assets/index.js',
+      isEntry: true,
+      imports: ['_vendor'],
+      dynamicImports: [assignmentPage, reviewPage],
+    },
+    _vendor: { file: 'assets/vendor.js' },
+    [assignmentPage]: { file: 'assets/AssignmentPage.js', isDynamicEntry: true, imports: ['_vendor'] },
+    [reviewPage]: { file: 'assets/ReviewPage.js', isDynamicEntry: true, imports: ['_vendor'] },
+  });
+
+  function graphWith(
+    vendorModules: readonly string[],
+    assignmentImports: readonly string[] = [],
+  ): ReturnType<typeof parseModuleGraph> {
+    return parseModuleGraph({
+      chunks: [
+        { file: 'assets/index.js', modules: ['index.html', 'src/main.tsx'] },
+        { file: 'assets/vendor.js', modules: ['node_modules/react/index.js', ...vendorModules] },
+        { file: 'assets/AssignmentPage.js', modules: [assignmentPage] },
+        { file: 'assets/ReviewPage.js', modules: [reviewPage, 'src/features/review/draftSave.ts'] },
+      ],
+      modules: [
+        { id: 'index.html', imports: ['src/main.tsx'], dynamicImports: [] },
+        {
+          id: 'src/main.tsx',
+          imports: ['node_modules/react/index.js'],
+          dynamicImports: [assignmentPage, reviewPage],
+        },
+        { id: assignmentPage, imports: ['node_modules/react/index.js', ...assignmentImports], dynamicImports: [] },
+        {
+          id: reviewPage,
+          imports: ['node_modules/react/index.js', 'src/features/review/draftSave.ts'],
+          dynamicImports: [],
+        },
+        { id: 'src/features/review/draftSave.ts', imports: [], dynamicImports: [] },
+        { id: 'node_modules/react/index.js', imports: [], dynamicImports: [] },
+      ],
+    });
+  }
+
+  const owned = { page: reviewPage, name: 'review screen' };
+
+  test('accepts review modules kept in chunks that only the review screen loads and reports their size', () => {
+    const graph = graphWith([]);
+
+    const report = checkPageChunk(
+      reviewManifest,
+      graph,
+      [assignmentPage, reviewPage],
+      sizes({ 'assets/ReviewPage.js': 9, 'assets/vendor.js': 140 }),
+      owned,
+    );
+
+    expect(report.failures).toEqual([]);
+    expect(report.lines).toEqual([
+      'review screen chunk and its imports beyond the entry: 9.0 KB gzip, 2 modules reachable only from the review screen',
+    ]);
+  });
+
+  test('fails when a module reachable only from the review screen is built into a chunk the entry loads', () => {
+    const graph = graphWith(['src/features/review/draftSave.ts']);
+
+    const report = checkPageChunk(reviewManifest, graph, [assignmentPage, reviewPage], sizes({}), owned);
+
+    expect(report.failures).toEqual([
+      'src/features/review/draftSave.ts is reachable only from the review screen but is built into assets/vendor.js, loaded by the entry',
+    ]);
+  });
+
+  test('accepts student pages that reach no tutor module', () => {
+    const graph = graphWith([]);
+
+    const report = checkStudentReach(graph, [assignmentPage], ['src/features/review/']);
+
+    expect(report.failures).toEqual([]);
+  });
+
+  test('fails when a student page reaches a review module', () => {
+    const graph = graphWith([], ['src/features/review/draftSave.ts']);
+
+    const report = checkStudentReach(graph, [assignmentPage], ['src/features/review/']);
+
+    expect(report.failures).toEqual([
+      `src/features/review/draftSave.ts is tutor code but is reachable from the student page ${assignmentPage}`,
+    ]);
+  });
+
+  test('fails when a student page is missing from the module graph', () => {
+    const graph = graphWith([]);
+
+    const report = checkStudentReach(graph, ['src/features/home/HomePage.tsx'], ['src/features/review/']);
+
+    expect(report.failures).toEqual([
+      'src/features/home/HomePage.tsx is not in the module graph, so the student page check would prove nothing',
+    ]);
   });
 });

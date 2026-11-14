@@ -12,7 +12,7 @@ import { useMediaQuery, usePreferences, wideLayoutQuery } from '../../app/contex
 import { preferenceKeys } from '../../lib/preferences/store.ts';
 import { useRouteTitle } from '../../app/handles.ts';
 import { type SectionCounts, hasNews } from '../../app/sections.ts';
-import { useToDoCount } from '../../features/assignment/count.ts';
+import { useHomeworkCount } from '../../app/homeworkCount.ts';
 import type { Me } from '../../lib/api/session.ts';
 import { reachable } from '../../routes/access.ts';
 import { SidebarIcon } from '../ui/icons.tsx';
@@ -227,11 +227,14 @@ export function SignedInFrame({
   const unread = useUnreadCount(withBell);
   const linked = provisionallyLinked(useProvisionalLink(me));
   const chatUnread = useUnreadChannels(reachable(me, '/messages', linked));
-  const toDo = useToDoCount(me.role === 'student' && reachable(me, '/homework', linked));
+  const homework = useHomeworkCount(
+    me.role,
+    me.role === 'tutor' ? me.email_verified : reachable(me, '/homework', linked),
+  );
   const counts: SectionCounts = {
     notifications: withBell ? unread : 0,
     messages: chatUnread,
-    homework: toDo,
+    homework,
   };
   const news = hasNews(counts);
 

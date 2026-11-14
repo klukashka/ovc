@@ -13,8 +13,10 @@ import { type ApiClient, apiErrorFrom, asApiError, useApiClient } from '../../li
 import type { components } from '../../lib/api/schema.ts';
 import { type Me, useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDateTime } from '../../lib/format/dates.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { homeOf } from '../../routes/access.ts';
 import { type Decision, type ReclaimList, decisions, linkField, reclaimChoice, requestField } from './reclaimChoice.ts';
+import { reclaimTextLoaders } from './reclaimTexts.ts';
 
 type ReclaimTutor = components['schemas']['ReclaimTutor'];
 type Outcome = components['schemas']['ReclaimDecided']['outcome'];
@@ -176,7 +178,7 @@ function ChoiceForm({
   );
 }
 
-export function ReclaimPage(): ReactElement {
+function ReclaimChoice(): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
   const client = useApiClient();
@@ -242,5 +244,20 @@ export function ReclaimPage(): ReactElement {
     );
   }
 
-  return <Page width="reading">{body()}</Page>;
+  return body();
+}
+
+export function ReclaimPage(): ReactElement {
+  const texts = useFeatureTexts('reclaim', reclaimTextLoaders);
+  return (
+    <Page width="reading">
+      {texts.ready ? (
+        <ReclaimChoice />
+      ) : texts.failed ? (
+        <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} />
+      ) : (
+        <DelayedLoading />
+      )}
+    </Page>
+  );
 }

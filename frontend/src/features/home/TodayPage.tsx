@@ -15,6 +15,7 @@ import { formatLongDay } from '../schedule/calendarFormat.ts';
 import { JoinRequests, useJoinRequestsSettled } from '../students/JoinRequests.tsx';
 import { FirstRunChecklist } from './FirstRunChecklist.tsx';
 import { TodayLessons } from './TodayLessons.tsx';
+import { NeedsCheckingPanel, UpcomingDeadlinesPanel } from './TutorHomeworkPanels.tsx';
 import { UnreadMessages } from './UnreadMessages.tsx';
 import { useUpcomingLessons } from './upcoming.ts';
 
@@ -111,6 +112,7 @@ export function TodayPage(): ReactElement {
           <>
             <FirstRunChecklist me={me} lessons={lessons} />
             <TodayLessons me={me} today={today} query={lessons} />
+            {me.email_verified ? <NeedsCheckingPanel /> : null}
           </>
         }
         aside={
@@ -121,6 +123,7 @@ export function TodayPage(): ReactElement {
                 <TutorCode />
               </div>
             </JoinRequests>
+            {me.email_verified ? <UpcomingDeadlinesPanel /> : null}
             <UnreadMessages />
           </>
         }

@@ -28,6 +28,7 @@ import {
 } from './fixtures.ts';
 import { localDate } from './schedule.ts';
 import { issueManyThroughTheApi, issueThroughTheApi, withdrawThroughTheApi } from './homework.ts';
+import { storedReview, studentSubmissionText } from './review.ts';
 import {
   createCard,
   createGroup,
@@ -833,5 +834,84 @@ test.describe('pilot 2, group homework from the library', () => {
     const stored = await storedAnswers(deployment, seed.boris, submissionId);
     expect(stored.late).toBe(true);
     expect(stored.status).toBe('submitted');
+  });
+
+  test('pilot-2 › step 9 Maria’s view of Boris’s late work shows 2 automatic points for “Went ”', async ({
+    page,
+    deployment,
+  }) => {
+    const seed = pilotTwo();
+    const [work] = await studentWork(deployment, seed.boris, 'submitted');
+    if (work === undefined) {
+      throw new Error('Boris has no submitted work');
+    }
+    await signInThroughTheApi(page, seed.maria);
+
+    await page.goto(`/homework/review/${work.submissionId}`);
+
+    await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
+    await expect(page.getByRole('region', { name: 'Вопрос 2' })).toContainText('2 балла за автопроверку');
+    await expect(page.locator('main')).toContainText('С опозданием');
+  });
+
+  test('pilot-2 › step 10 Maria opens Anna’s work from Today, attaches a corrected file, gives 6 points, writes the feedback and marks it checked', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = pilotTwo();
+    const [annaWork] = await studentWork(deployment, seed.anna, 'submitted');
+    if (annaWork === undefined) {
+      throw new Error('Anna has no submitted work');
+    }
+    const mailBefore = (await control.mail(seed.anna.email)).length;
+    const corrected = { ...pdfFile, name: 'Исправления.pdf' };
+    const fileQuestion = page.getByRole('region', { name: 'Вопрос 3' });
+    const saved = page.getByRole('status').filter({ hasText: /^Сохранено$/ });
+    await signInThroughTheApi(page, seed.maria);
+    await page.goto('/today');
+    await page
+      .getByRole('region', { name: /^На проверке/ })
+      .getByRole('link', { name: 'Анна' })
+      .click();
+    await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
+    const chooser = page.waitForEvent('filechooser');
+    await fileQuestion.getByRole('button', { name: 'Прикрепить исправленный файл' }).click();
+    await (await chooser).setFiles(corrected);
+    await expect(fileQuestion.getByRole('button', { name: `Удалить ${corrected.name}` })).toBeVisible();
+    await expect(saved).toBeVisible();
+    await control.advance(1);
+    await fileQuestion.getByRole('spinbutton', { name: 'Баллы' }).fill('6');
+    await expect(saved).toBeVisible();
+    await control.advance(1);
+    await page
+      .getByRole('textbox', { name: 'Общий отзыв' })
+      .fill('**Great work.** Check the word order in sentence 2.');
+    await expect(saved).toBeVisible();
+    await control.advance(1);
+    await page.getByRole('button', { name: 'Предпросмотр' }).click();
+    await expect(page.locator('[data-feedback-preview] strong')).toHaveText('Great work.');
+
+    await page.getByRole('button', { name: 'Отметить проверенной' }).click();
+
+    await expect(page.getByRole('status').filter({ hasText: 'Проверено. Ученик видит вашу проверку.' })).toBeFocused();
+    const review = await storedReview(deployment, seed.maria, annaWork.submissionId);
+    expect(review.status).toBe('checked');
+    const published = review.revisions.find((revision) => revision.state === 'published');
+    expect(published?.feedback).toBe('**Great work.** Check the word order in sentence 2.');
+    expect(published?.items.flatMap((item) => item.correctedFiles)).toEqual([corrected.name]);
+    expect(await studentSubmissionText(deployment, seed.anna, annaWork.submissionId)).not.toMatch(
+      /"(points|final_points|score|percentage|max_points)"/,
+    );
+    await control.tick();
+    const mail = await control.mail(seed.anna.email);
+    expect(mail.length).toBeGreaterThan(mailBefore);
+    expect(
+      mail
+        .slice(mailBefore)
+        .some((message) =>
+          message.links.some((link) => new URL(link).pathname === `/homework/${annaWork.submissionId}`),
+        ),
+    ).toBe(true);
   });
 });

@@ -1,0 +1,18 @@
+export const reclaimTexts = {
+  explanation: 'Someone used this email before it was confirmed. Nothing they started continues unless you keep it.',
+  account: 'Your account',
+  accountHint: 'Check the name and photo before keeping anything: someone else may have set them.',
+  editAccount: 'Edit the name and photo',
+  links: 'Tutors joined before the confirmation',
+  requests: 'Requests sent before the confirmation',
+  keep: 'Keep',
+  drop: 'Drop',
+  dropHint: 'Dropped items are removed, and their tutors are not told.',
+  deadline: 'Choose by {date}; anything not kept by then is dropped.',
+  save: 'Save choices',
+  changed: 'The list has changed. Check your choices and save again.',
+  nothing: 'Nothing is waiting for your choice.',
+  saved: 'Your choices are saved.',
+  continue: 'Continue',
+  reloadFailed: 'Your choices are saved, but the account could not be refreshed. Reload the page.',
+};

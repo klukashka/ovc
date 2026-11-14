@@ -8,6 +8,7 @@ import { assignmentsKey } from '../features/assignment/keys.ts';
 import { groupsKey, memberChoiceKey } from '../features/groups/api.ts';
 import { issuesKey } from '../features/homework/api.ts';
 import { notificationsKey } from '../features/notifications/api.ts';
+import { reviewKey } from '../features/review/keys.ts';
 import { calendarKey, lessonKey } from '../features/schedule/keys.ts';
 import { joinRequestsKey, studentCardKey, studentCardsKey, studentListsKey } from '../features/students/api.ts';
 import { myTutorsKey, sentRequestsKey } from '../features/tutors/api.ts';
@@ -29,7 +30,7 @@ function queriesOf(entity: EntityKind, id: string): readonly QueryKey[] {
       return [calendarKey];
     case 'issue':
     case 'submission':
-      return [issuesKey, assignmentsKey];
+      return [issuesKey, assignmentsKey, reviewKey];
   }
 }
 

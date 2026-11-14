@@ -164,11 +164,12 @@ const tabClass = 'inline-flex min-h-11 items-center border-b-2 px-1 text-small';
 const currentTabClass = `${tabClass} border-accent font-medium text-text`;
 const otherTabClass = `${tabClass} border-transparent text-text-muted hover:text-text`;
 
-export type HomeworkTab = 'library' | 'issued';
+export type HomeworkTab = 'library' | 'issued' | 'review';
 
 const tabs: readonly { readonly key: HomeworkTab; readonly to: string }[] = [
   { key: 'library', to: '/homework/library' },
   { key: 'issued', to: '/homework/issued' },
+  { key: 'review', to: '/homework/review' },
 ];
 
 export function HomeworkTabs({ current }: { readonly current: HomeworkTab }): ReactElement {

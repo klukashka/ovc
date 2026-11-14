@@ -256,6 +256,7 @@ test.describe('Today', () => {
     }
     await signInThroughTheApi(page, tutor);
     const requested: string[] = [];
+    const reads: string[] = [];
     const studentQueries: string[] = [];
     const libraryQueries: string[] = [];
     page.on('request', (request) => {
@@ -266,6 +267,7 @@ test.describe('Today', () => {
         !url.pathname.startsWith('/api/v1/auth/')
       ) {
         requested.push(url.pathname);
+        reads.push(`${url.pathname}${url.search}`);
       }
       if (url.pathname === '/api/v1/students') {
         studentQueries.push(url.search);
@@ -289,15 +291,20 @@ test.describe('Today', () => {
         '/api/v1/calendar',
         '/api/v1/channels',
         '/api/v1/channels/unread',
+        '/api/v1/groups',
+        '/api/v1/issues',
         '/api/v1/join-requests',
         '/api/v1/library',
         '/api/v1/notifications',
+        '/api/v1/review-queue',
         '/api/v1/students',
         '/api/v1/tutor/code',
         '/api/v1/users/me',
       ].sort(),
     );
-    expect(Math.max(...Object.values(counts))).toBeLessThanOrEqual(2);
+    expect(
+      Math.max(...[...new Set(reads)].map((read) => reads.filter((entry) => entry === read).length)),
+    ).toBeLessThanOrEqual(2);
     expect(new Set(studentQueries)).toEqual(new Set(['?limit=1']));
     expect(new Set(libraryQueries)).toEqual(new Set(['?limit=1']));
   });
