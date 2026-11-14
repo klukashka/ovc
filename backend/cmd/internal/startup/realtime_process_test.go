@@ -77,6 +77,7 @@ func TestRealtimeTestRoutesAreAbsentWithoutTestControl(t *testing.T) {
 			})
 			base := "http://" + address
 			waitForStatus(t, ctx, base+"/api/v1/health/ready")
+			waitForLogged(t, ctx, output, "realtime.listener.connected")
 			signedIn := call(t, ctx, http.MethodPost, base+"/api/v1/auth/login", `{"email":"tutor@example.org","password":"correct horse battery"}`,
 				map[string]string{"Content-Type": "application/json", "Origin": "https://ovc.example"})
 			var token struct {

@@ -433,17 +433,17 @@ func drainLines(t *testing.T, ctx context.Context, lines <-chan string) {
 	}
 }
 
-func startServer(t *testing.T, ctx context.Context, env []string) (*exec.Cmd, *bytes.Buffer) {
+func startServer(t *testing.T, ctx context.Context, env []string) (*exec.Cmd, *processOutput) {
 	t.Helper()
 	server := exec.CommandContext(ctx, filepath.Join(binaries, "api"))
 	server.Env = withPublicURL(env)
-	var stdout bytes.Buffer
-	server.Stdout = &stdout
-	server.Stderr = &stdout
+	output := newProcessOutput()
+	server.Stdout = output
+	server.Stderr = output
 	if err := server.Start(); err != nil {
 		t.Fatal(err)
 	}
-	return server, &stdout
+	return server, output
 }
 
 func TestTestControlRoutesExistOnlyWithTheFlag(t *testing.T) {
