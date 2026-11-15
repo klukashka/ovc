@@ -1,4 +1,4 @@
-import type { BrowserContext, Locator, Page } from '@playwright/test';
+import type { BrowserContext, Locator, Page, Request, Response } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, registerTutor, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
@@ -25,6 +25,55 @@ import {
   seedInvitedCards,
   signUpOnInvitation,
 } from './tutoring.ts';
+
+interface HeldCardIssueReads {
+  readonly held: Promise<void>;
+  readonly sent: () => number;
+  readonly release: () => Promise<Response>;
+}
+
+function isCardIssueRead(address: URL, cardId: string): boolean {
+  return address.pathname === '/api/v1/issues' && address.searchParams.get('student') === cardId;
+}
+
+async function holdCardIssueReads(page: Page, cardId: string): Promise<HeldCardIssueReads> {
+  let resume: () => void = () => undefined;
+  const resumed = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  let reach: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    reach = resolve;
+  });
+  const sent: Request[] = [];
+  page.on('request', (request) => {
+    if (isCardIssueRead(new URL(request.url()), cardId)) {
+      sent.push(request);
+    }
+  });
+  const matches = (address: URL): boolean => isCardIssueRead(address, cardId);
+  await page.route(matches, async (route) => {
+    reach();
+    await resumed;
+    await route.continue();
+  });
+  return {
+    held,
+    sent: () => sent.length,
+    release: async (): Promise<Response> => {
+      const answered = page.waitForResponse((response) => isCardIssueRead(new URL(response.url()), cardId));
+      resume();
+      const response = await answered;
+      await page.unroute(matches);
+      return response;
+    },
+  };
+}
+
+async function chooseTabUntilCurrent(tab: Locator): Promise<void> {
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-current', 'page');
+}
 
 const knownPreferenceKeys = ['ovc.language', 'ovc.sidebar', 'ovc.theme'];
 
@@ -602,6 +651,36 @@ test.describe('in English with the dark theme', () => {
 
       await expect(tab).toHaveAttribute('aria-current', 'page');
       await expect(tab).toBeFocused();
+    });
+  }
+
+  for (const { chosen, shown } of [
+    { chosen: 'Lessons', shown: 'No lessons yet.' },
+    { chosen: 'Homework', shown: 'No assignments yet.' },
+  ] as const) {
+    test(`student card › choosing ${chosen} while Overview's homework is loading lets that read finish and sends it once`, async ({
+      page,
+      deployment,
+    }) => {
+      const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+      const { cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
+      await signInThroughTheApi(page, pavel);
+      const traffic = trafficAfterReady(page, [`/api/v1/students/${cardId}`]);
+      await traffic.initialize();
+      await page.goto(`/students/${cardId}?tab=lessons`);
+      await expectRefetchedAfterTheSocketIsReady(traffic);
+      const reads = await holdCardIssueReads(page, cardId);
+      const sections = page.getByRole('navigation', { name: 'Card sections' });
+      await sections.getByRole('link', { name: 'Overview' }).click();
+      await reads.held;
+      const tab = sections.getByRole('link', { name: chosen });
+
+      await chooseTabUntilCurrent(tab);
+      const answer = await reads.release();
+
+      expect(answer.status()).toBe(200);
+      expect(reads.sent()).toBe(1);
+      await expect(page.getByRole('main').getByText(shown)).toBeVisible();
     });
   }
 

@@ -20,7 +20,7 @@ function useCardIssues(relationshipId: string): UseInfiniteQueryResult<InfiniteD
   const filter: IssueFilter = { status: 'active', student: relationshipId };
   return useInfiniteQuery({
     queryKey: issueListKey(filter),
-    queryFn: ({ pageParam, signal }) => fetchIssuePage(client, filter, pageParam, signal),
+    queryFn: ({ pageParam }) => fetchIssuePage(client, filter, pageParam, null),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.next_cursor,
     retry: false,

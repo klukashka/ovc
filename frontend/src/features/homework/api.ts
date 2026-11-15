@@ -49,7 +49,7 @@ export async function fetchIssuePage(
   client: ApiClient,
   filter: IssueFilter,
   cursor: string | null,
-  signal: AbortSignal,
+  signal: AbortSignal | null,
 ): Promise<IssuePage> {
   const { data, error, response } = await client.GET('/api/v1/issues', {
     params: {
