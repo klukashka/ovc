@@ -233,6 +233,14 @@ const forbiddenFeatureTextKeys = [
   "CallExpression[callee.name='t'] > TemplateLiteral[quasis.0.value.raw=/^(library|builder|assignment|homeworkPanels|reclaim)\\./]",
 ].map((selector) => ({ selector, message: featureTextMessage }));
 
+const bareNextPageMessage =
+  'Load the next page with loadNextPage from components/ui/moreRows.ts, which never cancels a refetch in flight.';
+
+const forbiddenBareNextPage = [
+  "CallExpression[callee.property.name='fetchNextPage']:not(:has(Property[key.name='cancelRefetch'][value.value=false]))",
+  "CallExpression[callee.name='fetchNextPage']",
+].map((selector) => ({ selector, message: bareNextPageMessage }));
+
 const languageTextsMessage =
   'A language file holds only its texts: it loads before the first render, so it imports only types and runs no code.';
 
@@ -383,6 +391,7 @@ export default defineConfig(
         ...forbiddenReflectSyntax,
         ...forbiddenDomSyntax,
         ...forbiddenStorageSyntax,
+        ...forbiddenBareNextPage,
       ],
       'no-restricted-globals': [
         'error',
@@ -403,6 +412,7 @@ export default defineConfig(
         ...forbiddenReflectSyntax,
         ...forbiddenDomSyntax,
         ...forbiddenStorageSyntax,
+        ...forbiddenBareNextPage,
         ...forbiddenFeatureTextKeys,
       ],
     },

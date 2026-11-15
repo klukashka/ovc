@@ -2,6 +2,7 @@ import type { Locator, Page, Response } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import {
+  answerSentinelsAndSubmit,
   createPastSimpleTemplate,
   onlySubmission,
   pastSimple,
@@ -126,6 +127,62 @@ async function holdAnswerSaves(page: Page): Promise<() => Promise<void>> {
   };
 }
 
+async function questionNumbered(deployment: Deployment, work: IssuedWork, number: number): Promise<string> {
+  const id = (await questionIds(deployment, work.anna, work.submissionId))[number - 1];
+  if (id === undefined) {
+    throw new Error(`the assignment has no question ${String(number)}`);
+  }
+  return id;
+}
+
+async function holdSubmit(page: Page, submissionId: string): Promise<() => Promise<void>> {
+  let resume: () => void = () => undefined;
+  const resumed = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  const address = `**/api/v1/submissions/${submissionId}/submit`;
+  await page.route(address, async (route) => {
+    await resumed;
+    await route.continue();
+  });
+  return async () => {
+    const answered = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === `/api/v1/submissions/${submissionId}/submit`,
+    );
+    resume();
+    await answered;
+    await page.unroute(address);
+  };
+}
+
+interface HeldSubmit extends IssuedWork {
+  readonly dialog: Locator;
+  readonly sent: Promise<unknown>;
+  readonly release: () => Promise<void>;
+}
+
+async function confirmationWithHeldSubmit(
+  page: Page,
+  deployment: Deployment,
+  control: TestControl,
+  diagnostics: Diagnostics,
+): Promise<HeldSubmit> {
+  const work = await issuedToAnna(deployment);
+  await openAssignment(page, work.anna, work.submissionId);
+  await textAnswer(page).fill('went');
+  await expect(saveStatus(page)).toHaveText('Saved');
+  await control.advance(1);
+  await page.getByRole('button', { name: 'Submit', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Submit your work?' });
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).waitFor();
+  const release = await holdSubmit(page, work.submissionId);
+  const sent = page.waitForRequest(
+    (request) => new URL(request.url()).pathname === `/api/v1/submissions/${work.submissionId}/submit`,
+  );
+  diagnostics.expectFailure({ method: 'POST', path: `/api/v1/submissions/${work.submissionId}/submit`, status: 409 });
+  return { ...work, dialog, sent, release };
+}
+
 async function attach(
   page: Page,
   number: number,
@@ -223,6 +280,27 @@ function expectNoAnswerKeys(texts: readonly string[]): void {
     expect(text).not.toContain(sentinel.explanation);
     expect(text).not.toMatch(sentinelNumber);
     for (const key of ['"points"', '"score"', '"correct"', '"accepted_answers"', '"explanation"', '"revealed"']) {
+      expect(text).not.toContain(key);
+    }
+  }
+}
+
+function expectNoPoints(texts: readonly string[], values: readonly number[]): void {
+  for (const text of texts) {
+    for (const value of values) {
+      expect(text).not.toMatch(new RegExp(`(^|[^0-9a-f:.-])${String(value)}($|[^0-9a-f:.-])`));
+      expect(text).not.toMatch(new RegExp(`:${String(value)}[,}\\]]`));
+    }
+    for (const key of [
+      '"points"',
+      '"score"',
+      '"auto_points"',
+      '"final_points"',
+      '"max_points"',
+      '"percentage"',
+      '"override_points"',
+      '"override_reason"',
+    ]) {
       expect(text).not.toContain(key);
     }
   }
@@ -472,6 +550,44 @@ test.describe('answering an assignment', () => {
     await expect(submit).toBeFocused();
   });
 
+  test('a submission refused because the answers changed on another device closes onto the focused conflict banner', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const held = await confirmationWithHeldSubmit(page, deployment, control, diagnostics);
+    const textQuestion = await questionNumbered(deployment, held, 2);
+
+    await held.dialog.getByRole('button', { name: 'Submit', exact: true }).click();
+    await held.sent;
+    await saveTextFromAnotherDevice(deployment, held.anna, held.submissionId, textQuestion, 'gone');
+    await held.release();
+
+    await expect(held.dialog).toBeHidden();
+    await expect(conflictBanner(page)).toBeFocused();
+    expect((await storedAnswers(deployment, held.anna, held.submissionId)).status).toBe('draft');
+  });
+
+  test('a submission refused because the work closed meanwhile closes onto the focused changed notice', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const held = await confirmationWithHeldSubmit(page, deployment, control, diagnostics);
+
+    await held.dialog.getByRole('button', { name: 'Submit', exact: true }).click();
+    await held.sent;
+    await endRelationship(deployment, held.pavel, held.annaCard);
+    await held.release();
+
+    await expect(held.dialog).toBeHidden();
+    await expect(
+      page.getByText('This assignment changed in the meantime. Its current state is shown below.', { exact: true }),
+    ).toBeFocused();
+  });
+
   test('submitting shows the focused Submitted notice, with no points, accepted answers or explanations anywhere', async ({
     page,
     deployment,
@@ -689,6 +805,30 @@ test.describe('Home’s To do panel and the Homework count', () => {
     ).toBeVisible();
   });
 
+  test('when a focused To do row that is not the last goes, focus moves to the row that took its place', async ({
+    page,
+    deployment,
+  }) => {
+    const { pavel, anna, annaCard } = await pavelWithAnna(deployment);
+    const first = await createPastSimpleTemplate(deployment, pavel, { texts: { ...pastSimple, title: 'Week 1' } });
+    const second = await createPastSimpleTemplate(deployment, pavel, { texts: { ...pastSimple, title: 'Week 2' } });
+    const firstIssue = await issueThroughTheApi(deployment, pavel, first, { relationship_id: annaCard });
+    const secondIssue = await issueThroughTheApi(deployment, pavel, second, { relationship_id: annaCard });
+    await signInThroughTheApi(page, anna);
+    await page.goto('/home');
+    const panel = page.getByRole('region', { name: 'To do' });
+    const rows = panel.locator('[data-row-link]');
+    await expect(rows).toHaveCount(2);
+    const firstIsWeek1 = (await rows.first().innerText()).includes('Week 1');
+    const remaining = firstIsWeek1 ? 'Week 2' : 'Week 1';
+    await rows.first().focus();
+
+    await withdrawThroughTheApi(deployment, pavel, firstIsWeek1 ? firstIssue : secondIssue);
+
+    await expect(rows).toHaveCount(1);
+    await expect(rows.filter({ hasText: remaining })).toBeFocused();
+  });
+
   test('when the last row of To do goes while focused, focus moves to the panel’s heading', async ({
     page,
     deployment,
@@ -791,11 +931,50 @@ test.describe('results of checked and returned work', () => {
     const link = question(page, 3).getByRole('link', { name: correctedPdf.name, exact: true });
     await expect(link).toHaveAttribute('referrerpolicy', 'no-referrer');
     await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
-    const download = page.waitForEvent('download');
-    await link.click();
-    expect((await download).suggestedFilename()).toBe(correctedPdf.name);
     await expectNoScoreText(page);
     expectStudentSubmissionKeys(await studentRead(deployment, work.anna, `/submissions/${work.submissionId}`));
+  });
+
+  test('the corrected file of checked work downloads under its name', async ({ page, deployment }) => {
+    const work = await submittedByAnna(deployment);
+    const item = await correctedReview(deployment, work, 'Line one.', 5);
+    await publishReview(deployment, work.pavel, work.submissionId, 'check', 'Well done.', [item]);
+    await openAssignment(page, work.anna, work.submissionId);
+    const link = question(page, 3).getByRole('link', { name: correctedPdf.name, exact: true });
+    await link.waitFor();
+    const download = page.waitForEvent('download');
+
+    await link.click();
+
+    expect((await download).suggestedFilename()).toBe(correctedPdf.name);
+  });
+
+  test('checked work’s results show no points: the points sentinel and every total stay out of the page and its responses', async ({
+    page,
+    deployment,
+  }) => {
+    const work = await issuedToAnna(deployment, true);
+    const fileQuestion = await questionNumbered(deployment, work, 3);
+    await answerSentinelsAndSubmit(deployment, work.anna, work.submissionId);
+    await publishReview(deployment, work.pavel, work.submissionId, 'check', 'Checked.', [
+      { questionId: fileQuestion, points: 5 },
+    ]);
+    const total = sentinel.points + 2 + 5;
+    const finalPoints = await tutorFinalPoints(deployment, work.pavel, work.submissionId);
+    const bodies = collectStudentResponses(page);
+
+    await openAssignment(page, work.anna, work.submissionId);
+
+    await expect(question(page, 1)).toContainText('Correct answer');
+    await expect(feedbackSection(page)).toContainText('Checked.');
+    const responses = await bodies();
+    expect(responses.length).toBeGreaterThan(0);
+    expect(finalPoints).toBe(total);
+    expectNoPoints(
+      [await page.locator('body').innerText(), ...responses],
+      [sentinel.points, sentinel.points + 2, total, sentinel.points + 2 + 6],
+    );
+    await expectNoScoreText(page);
   });
 
   test('answers are revealed only as the policy and state allow', async ({ page, deployment }) => {

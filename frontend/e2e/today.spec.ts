@@ -267,6 +267,7 @@ test.describe('Today', () => {
         !url.pathname.startsWith('/api/v1/auth/')
       ) {
         requested.push(url.pathname);
+        url.searchParams.delete('deadline_before');
         reads.push(`${url.pathname}${url.search}`);
       }
       if (url.pathname === '/api/v1/students') {

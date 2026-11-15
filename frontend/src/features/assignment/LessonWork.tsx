@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { linkClass } from '../../components/ui/Form.tsx';
+import { LoadFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
+import { asApiError } from '../../lib/api/client.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import type { StudentLessonWork } from '../schedule/lessonIssues.ts';
 import { assignmentAddress } from './api.ts';
@@ -65,7 +67,10 @@ function LessonWorkWithTexts(props: {
   readonly now: number;
 }): ReactElement | null {
   const texts = useFeatureTexts('assignment', assignmentTextLoaders);
-  return texts.ready ? <LessonWorkList {...props} /> : null;
+  if (texts.ready) {
+    return <LessonWorkList {...props} />;
+  }
+  return texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : null;
 }
 
 export function LessonWork(props: {

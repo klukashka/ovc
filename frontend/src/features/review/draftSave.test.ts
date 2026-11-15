@@ -66,6 +66,7 @@ interface Setup {
   readonly server: ReviewServer;
   readonly save: DraftSave;
   readonly saved: ReviewSubmission[];
+  readonly savedAfterLeaving: ReviewSubmission[];
   readonly refused: DraftRefusal[];
 }
 
@@ -73,6 +74,7 @@ function setup(position: DraftPosition = { revision: 1, version: 0 }): Setup {
   const scheduler = manualScheduler();
   const server = new ReviewServer();
   const saved: ReviewSubmission[] = [];
+  const savedAfterLeaving: ReviewSubmission[] = [];
   const refused: DraftRefusal[] = [];
   let ids = 0;
   const save = new DraftSave({
@@ -89,11 +91,14 @@ function setup(position: DraftPosition = { revision: 1, version: 0 }): Setup {
     onSaved: (submission) => {
       saved.push(submission);
     },
+    onSavedAfterLeaving: (submission) => {
+      savedAfterLeaving.push(submission);
+    },
     onRefused: (refusal) => {
       refused.push(refusal);
     },
   });
-  return { scheduler, server, save, saved, refused };
+  return { scheduler, server, save, saved, savedAfterLeaving, refused };
 }
 
 const networkError = apiErrorFrom(0, undefined);
@@ -129,6 +134,19 @@ describe('review draft autosave', () => {
       saveId: 'save-2',
       body: body('first and more'),
     });
+  });
+
+  test('a save that answers after the page was left reports the saved submission for the cache', async () => {
+    const { scheduler, server, save, saved, savedAfterLeaving } = setup();
+    save.changed(body('first'));
+    scheduler.pass(draftSaveDelayMilliseconds);
+    save.leave();
+    const stored = submissionAt({ revision: 1, version: 1 });
+
+    await server.pending(0).answer({ kind: 'saved', submission: stored });
+
+    expect(savedAfterLeaving).toEqual([stored]);
+    expect(saved).toEqual([]);
   });
 
   test('a failed save is retried with the same save identifier and the same body', async () => {

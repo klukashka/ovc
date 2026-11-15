@@ -23,6 +23,7 @@ export interface DraftSaveOptions {
 
 export interface DraftSaveHandlers {
   readonly onSaved: (submission: ReviewSubmission) => void;
+  readonly onSavedAfterLeaving: (submission: ReviewSubmission) => void;
   readonly onRefused: (refusal: DraftRefusal) => void;
 }
 
@@ -35,7 +36,11 @@ export class DraftSave {
   private readonly options: DraftSaveOptions;
   private position: DraftPosition;
   private latest: DraftBody;
-  private handlers: DraftSaveHandlers = { onSaved: () => undefined, onRefused: () => undefined };
+  private handlers: DraftSaveHandlers = {
+    onSaved: () => undefined,
+    onSavedAfterLeaving: () => undefined,
+    onRefused: () => undefined,
+  };
   private dirty = false;
   private forced = false;
   private retained: Attempt | null = null;
@@ -256,6 +261,7 @@ export class DraftSave {
       this.retained = outcome.kind === 'retry' ? this.retained : null;
       if (outcome.kind === 'saved') {
         this.adoptSaved(outcome.submission);
+        this.handlers.onSavedAfterLeaving(outcome.submission);
         const next = this.nextAttempt();
         if (next !== null) {
           this.send(next);

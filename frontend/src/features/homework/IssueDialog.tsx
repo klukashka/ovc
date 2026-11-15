@@ -17,8 +17,7 @@ import {
   selectClass,
   textButtonClass,
 } from '../../components/ui/Form.tsx';
-import { refusalText } from '../../components/ui/Refusal.tsx';
-import { type ApiClient, type ApiError, useApiClient } from '../../lib/api/client.ts';
+import { type ApiClient, useApiClient } from '../../lib/api/client.ts';
 import { type Me, useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDateTime } from '../../lib/format/dates.ts';
 import { addDays, isLocalDate, localDateOf, localInstant, utcOffsetText } from '../../lib/time/localDates.ts';
@@ -28,7 +27,8 @@ import { libraryKey } from '../library/api.ts';
 import type { CalendarItem } from '../schedule/api.ts';
 import { type Audience, AudiencePicker } from '../schedule/AudiencePicker.tsx';
 import { fetchStudentCard, studentCardKey, studentsKey } from '../students/api.ts';
-import { type AnswerPolicy, type IssueItem, type NewIssue, answerPolicies, builderAddress, issuesKey } from './api.ts';
+import { type AnswerPolicy, type IssueItem, type NewIssue, answerPolicies, issuesKey } from './api.ts';
+import { type Problem, problemOf } from './issueProblems.ts';
 import { ConfirmEmailPrompt } from './IssueAssignment.tsx';
 import { type ChosenTemplate, TemplatePicker } from './TemplatePicker.tsx';
 
@@ -47,12 +47,6 @@ export interface IssuePreset {
 const deadlineDays = 7;
 const endOfDay = '23:59';
 const minutesPerHour = 60;
-
-type Problem =
-  | { readonly kind: 'alert'; readonly message: string; readonly builderLink: string | null }
-  | { readonly kind: 'confirmation' }
-  | { readonly kind: 'deadline' }
-  | { readonly kind: 'lesson' };
 
 interface LessonChoice {
   readonly id: string;
@@ -135,42 +129,6 @@ async function sendIssue(client: ApiClient, body: NewIssue, idempotencyKey: stri
 
 function isIssue(value: IssueItem | ActionState): value is IssueItem {
   return 'id' in value;
-}
-
-function problemOf(t: TFunction, state: ActionState, template: ChosenTemplate | null): Problem | null {
-  if (state.kind !== 'refused') {
-    return null;
-  }
-  const error: ApiError = state.error;
-  const alert = (message: string, builderLink: string | null = null): Problem => ({
-    kind: 'alert',
-    message,
-    builderLink,
-  });
-  switch (error.code) {
-    case 'not_editable':
-      return alert(t('homework.refusals.notEditable'), template === null ? null : builderAddress(template.id));
-    case 'relationship_not_active':
-      return alert(t('homework.refusals.relationshipNotActive'));
-    case 'audience_not_active':
-      return alert(t('homework.refusals.audienceNotActive'));
-    case 'not_found':
-      return alert(t('homework.refusals.notFound'));
-    case 'email_not_verified':
-      return { kind: 'confirmation' };
-    default:
-      break;
-  }
-  if (error.fieldCode('deadline_at') !== undefined) {
-    return { kind: 'deadline' };
-  }
-  if (error.fieldCode('lesson_id') === 'too_many') {
-    return { kind: 'lesson' };
-  }
-  if (error.fieldCode('body') === 'too_many') {
-    return alert(t('homework.refusals.storageLimit'));
-  }
-  return alert(refusalText(t, error, state.retryAfter, undefined));
 }
 
 function ConfirmationAlert(): ReactElement {

@@ -15,7 +15,7 @@ import {
 import { linkClass, quietButtonClass } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
-import { useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
+import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
@@ -166,7 +166,7 @@ function AssignmentList({
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLTableSectionElement>(
     items.length,
     ':scope > tr [data-row-link]',
-    list.isFetchingNextPage,
+    list.isFetching,
   );
   useFocusAfterRemovedRow(
     listRef,
@@ -189,7 +189,7 @@ function AssignmentList({
     <RefetchFailed
       error={asApiError(list.error)}
       onRetry={() => {
-        void (list.isFetchNextPageError ? list.fetchNextPage() : list.refetch());
+        void (list.isFetchNextPageError ? loadNextPage(list) : list.refetch());
       }}
     />
   ) : null;
@@ -223,7 +223,7 @@ function AssignmentList({
           onClick={() => {
             if (!list.isFetchingNextPage) {
               loadingMore();
-              void list.fetchNextPage();
+              void loadNextPage(list);
             }
           }}
           className={quietButtonClass}

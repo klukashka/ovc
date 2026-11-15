@@ -128,11 +128,13 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
 
     await page.getByRole('button', { name: 'Добавить учеников' }).click();
     await page.getByRole('dialog', { name: 'Добавить учеников' }).getByRole('checkbox', { name: 'Boris' }).check();
-    await page.getByRole('dialog', { name: 'Добавить учеников' }).getByRole('button', { name: 'Добавить' }).click();
+    const added = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PATCH' && new URL(response.url()).pathname === `/api/v1/groups/${groupId}`,
+    );
 
-    await expect(page.getByRole('status').filter({ hasText: 'Ученики добавлены в группу.' })).toBeFocused();
-    await expectRowsNamed(rowsOf(page, 'Ученики'), ['Анна', 'Boris']);
-    expect(await cardState(deployment, maria, card.id)).toEqual({ state: 'active', groups: ['B1 evening'] });
+    await page.getByRole('dialog', { name: 'Добавить учеников' }).getByRole('button', { name: 'Добавить' }).click();
+    await added;
     const tomorrow = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
     const series = await scheduleLessonsWithIds(deployment, maria, {
       relationship_id: card.id,
@@ -154,6 +156,10 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
     await issueThroughTheApi(deployment, maria, exercises.id, { group_id: groupId });
     await control.tick();
     await control.advance(1);
+
+    await expect(page.getByRole('status').filter({ hasText: 'Ученики добавлены в группу.' })).toBeFocused();
+    await expectRowsNamed(rowsOf(page, 'Ученики'), ['Анна', 'Boris']);
+    expect(await cardState(deployment, maria, card.id)).toEqual({ state: 'active', groups: ['B1 evening'] });
     expect(series.length).toBeGreaterThan(emailListLimit);
     expect(groupLesson).toHaveLength(1);
     expect((await studentWork(deployment, boris, 'todo')).map((work) => work.title)).toEqual(['Упражнения']);

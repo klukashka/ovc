@@ -25,7 +25,7 @@ import {
 import { DelayedLoading, LoadFailed, RefetchFailed, focusIsLost } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { type ApiError, asApiError, useApiClient } from '../../lib/api/client.ts';
-import { useSignedInAccount } from '../../lib/api/session.ts';
+import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { Markdown } from '../../lib/markdown/Markdown.tsx';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
@@ -83,6 +83,21 @@ function reviewable(submission: ReviewSubmission): boolean {
 
 function storedFiles(submission: ReviewSubmission, question: string): readonly ReviewFile[] {
   return baseRevision(submission)?.items.get(question)?.correctedFiles ?? [];
+}
+
+function newerDraft(cached: ReviewSubmission | undefined, saved: ReviewSubmission): ReviewSubmission | undefined {
+  const savedDraft = saved.draft;
+  const cachedDraft = cached?.draft ?? null;
+  if (cached === undefined || cachedDraft === null) {
+    return saved;
+  }
+  if (savedDraft === null) {
+    return cached;
+  }
+  const newer =
+    savedDraft.revision > cachedDraft.revision ||
+    (savedDraft.revision === cachedDraft.revision && savedDraft.version > cachedDraft.version);
+  return newer ? saved : cached;
 }
 
 function earliestExpiry(submission: ReviewSubmission): number | null {
@@ -511,6 +526,8 @@ function ReviewForm({
   const me = useSignedInAccount();
   const client = useApiClient();
   const queryClient = useQueryClient();
+  const session = useSession();
+  const [sessionEpoch] = useState(() => session.currentEpoch());
   const scheduler = useScheduler();
   const key = reviewSubmissionKey(submission.id);
   const [draft, setDraft] = useState<Draft>(() => draftFrom(submission));
@@ -704,6 +721,12 @@ function ReviewForm({
         queryClient.setQueryData(key, saved);
         setErrors(new Map());
         setFeedbackError(undefined);
+      },
+      onSavedAfterLeaving: (saved) => {
+        if (session.currentEpoch() !== sessionEpoch) {
+          return;
+        }
+        queryClient.setQueryData<ReviewSubmission>(key, (cached) => newerDraft(cached, saved));
       },
       onRefused: (refusal) => {
         switch (refusal.kind) {

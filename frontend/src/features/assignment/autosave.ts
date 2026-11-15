@@ -26,6 +26,7 @@ export interface AnswerAutosaveOptions {
   readonly collect: (questions: readonly string[]) => readonly SentAnswer[];
   readonly send: (request: SaveRequest) => Promise<SaveOutcome>;
   readonly onSaved: (submission: Submission, sent: readonly SentAnswer[]) => void;
+  readonly onSavedAfterLeaving: (submission: Submission) => void;
   readonly onRefused: (refusal: Refusal, sent: readonly SentAnswer[]) => void;
 }
 
@@ -241,6 +242,7 @@ export class AnswerAutosave {
       const next = outcome.kind === 'saved' ? this.nextAttempt() : null;
       if (outcome.kind === 'saved') {
         this.version = outcome.submission.version;
+        this.options.onSavedAfterLeaving(outcome.submission);
       }
       if (next !== null) {
         this.send(next);

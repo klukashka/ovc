@@ -28,7 +28,7 @@ import { onlySubmission, studentWork as studentWorkTitles, submitThroughTheApi }
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { studentLessonIssues } from './results.ts';
 import { addDays, localDate, scheduleLessonsWithIds } from './schedule.ts';
-import { createGroup, seedActiveStudent } from './tutoring.ts';
+import { createGroup, endRelationship, seedActiveStudent } from './tutoring.ts';
 
 const moscow = 'Europe/Moscow';
 const dayMilliseconds = 86_400_000;
@@ -132,6 +132,33 @@ async function openIssuePage(page: Page, tutor: TestAccount, issueId: string, ti
   await expectRefetchedAfterTheSocketIsReady(traffic);
 }
 
+async function holdIssueChanges(page: Page, issueId: string): Promise<() => Promise<void>> {
+  let resume: () => void = () => undefined;
+  const resumed = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  const address = `**/api/v1/issues/${issueId}`;
+  await page.route(address, async (route) => {
+    if (route.request().method() === 'PATCH') {
+      await resumed;
+    }
+    await route.continue();
+  });
+  return async () => {
+    const answered = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PATCH' && new URL(response.url()).pathname === `/api/v1/issues/${issueId}`,
+    );
+    resume();
+    await answered;
+    await page.unroute(address);
+  };
+}
+
+function changedMeanwhileNotice(page: Page): Locator {
+  return page.getByText('This assignment changed in the meantime. Its current state is shown below.', { exact: true });
+}
+
 async function fillDeadline(dialog: Locator, instant: number): Promise<void> {
   await dialog.getByLabel('Date', { exact: true }).fill(localDate(instant, moscow));
   await dialog.getByLabel('Time', { exact: true }).fill('12:00');
@@ -224,6 +251,42 @@ test.describe('issuing from the library', () => {
     );
     expect(await issueTitles(deployment, pavel, 'status=active')).toEqual([]);
   });
+
+  test('choosing a student in the dialog moves focus to the audience’s Change button', async ({ page, deployment }) => {
+    const { pavel } = await pavelWithAnna(deployment);
+    await createReadyTemplate(deployment, pavel, 'Fractions');
+    await openLibrary(page, pavel);
+    await chooseRowAction(page, 'Fractions', 'Issue assignment');
+    await audienceSearch(page).waitFor();
+
+    await issueDialog(page).getByRole('button', { name: 'Anna', exact: true }).click();
+
+    await expect(issueDialog(page).getByRole('button', { name: 'Change', exact: true }).last()).toBeFocused();
+    await expect(issueDialog(page).getByText('1 student will receive this', { exact: true })).toBeVisible();
+  });
+
+  test('a student whose relationship ended meanwhile is refused in the dialog with an alert that takes focus', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    const { pavel, annaCard } = await pavelWithAnna(deployment);
+    await createReadyTemplate(deployment, pavel, 'Fractions');
+    await openLibrary(page, pavel);
+    await chooseRowAction(page, 'Fractions', 'Issue assignment');
+    await issueDialog(page).getByRole('button', { name: 'Anna', exact: true }).click();
+    await issueDialog(page).getByText('1 student will receive this', { exact: true }).waitFor();
+    await endRelationship(deployment, pavel, annaCard);
+    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/issues', status: 409 });
+
+    await issueDialog(page).getByRole('button', { name: 'Issue', exact: true }).click();
+
+    const alert = issueDialog(page).getByRole('alert');
+    await expect(alert).toHaveText('This student can no longer get assignments.');
+    await expect(alert).toBeFocused();
+    expect(await issueTitles(deployment, pavel, 'status=active')).toEqual([]);
+  });
+
   test('a past deadline in the dialog is refused under the deadline, whose date field takes focus', async ({
     page,
     deployment,
@@ -777,6 +840,65 @@ test.describe('the issued work and the issue page', () => {
     ).toBeFocused();
   });
 
+  test('a deadline change refused because the assignment changed meanwhile closes onto the focused notice', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const { pavel, annaCard } = await pavelWithAnna(deployment);
+    const template = await createReadyTemplate(deployment, pavel, 'Fractions');
+    const issueId = await issueThroughTheApi(deployment, pavel, template.id, { relationship_id: annaCard });
+    const now = await control.now();
+    await openIssuePage(page, pavel, issueId, 'Fractions');
+    await chooseFromPageMenu(page, 'Assignment actions', 'Change deadline');
+    const dialog = page.getByRole('dialog', { name: 'Change deadline' });
+    await fillDeadline(dialog, now + 3 * dayMilliseconds);
+    const release = await holdIssueChanges(page, issueId);
+    const sent = page.waitForRequest(
+      (request) => request.method() === 'PATCH' && new URL(request.url()).pathname === `/api/v1/issues/${issueId}`,
+    );
+    diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/issues/${issueId}`, status: 409 });
+
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    await sent;
+    await changeDeadlineThroughTheApi(deployment, pavel, issueId, new Date(now + 2 * dayMilliseconds).toISOString());
+    await release();
+
+    await expect(dialog).toBeHidden();
+    await expect(changedMeanwhileNotice(page)).toBeFocused();
+  });
+
+  test('a linked lesson change refused because the assignment changed meanwhile closes onto the focused notice', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const { pavel, annaCard } = await pavelWithAnna(deployment);
+    const template = await createReadyTemplate(deployment, pavel, 'Fractions');
+    const now = await control.now();
+    const lesson = await lessonTomorrow(deployment, pavel, annaCard, now);
+    const issueId = await issueThroughTheApi(deployment, pavel, template.id, { relationship_id: annaCard });
+    await openIssuePage(page, pavel, issueId, 'Fractions');
+    await chooseFromPageMenu(page, 'Assignment actions', 'Change linked lesson');
+    const dialog = page.getByRole('dialog', { name: 'Change linked lesson' });
+    await dialog.getByRole('combobox', { name: 'Linked lesson' }).selectOption({ value: lesson });
+    const release = await holdIssueChanges(page, issueId);
+    const sent = page.waitForRequest(
+      (request) => request.method() === 'PATCH' && new URL(request.url()).pathname === `/api/v1/issues/${issueId}`,
+    );
+    diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/issues/${issueId}`, status: 409 });
+
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    await sent;
+    await changeDeadlineThroughTheApi(deployment, pavel, issueId, new Date(now + 2 * dayMilliseconds).toISOString());
+    await release();
+
+    await expect(dialog).toBeHidden();
+    await expect(changedMeanwhileNotice(page)).toBeFocused();
+  });
+
   test('each issue action’s dialog opens on its first field', async ({ page, deployment }) => {
     const { pavel, annaCard } = await pavelWithAnna(deployment);
     const template = await createReadyTemplate(deployment, pavel, 'Fractions');
@@ -950,6 +1072,75 @@ test.describe('homework on the student card and the group page', () => {
         .getByRole('dialog', { name: 'Add students' })
         .getByText('Students you add now do not get assignments issued earlier.', { exact: true }),
     ).toBeVisible();
+  });
+
+  test('a withdrawal that removes the focused row of the card’s Homework tab moves focus to the row that took its place', async ({
+    page,
+    deployment,
+  }) => {
+    const { pavel, annaCard } = await pavelWithAnna(deployment);
+    const fractions = await issueThroughTheApi(
+      deployment,
+      pavel,
+      (await createReadyTemplate(deployment, pavel, 'Fractions')).id,
+      { relationship_id: annaCard },
+    );
+    const decimals = await issueThroughTheApi(
+      deployment,
+      pavel,
+      (await createReadyTemplate(deployment, pavel, 'Decimals')).id,
+      { relationship_id: annaCard },
+    );
+    await signInThroughTheApi(page, pavel);
+    const traffic = trafficAfterReady(page, ['/api/v1/issues']);
+    await traffic.initialize();
+    await page.goto(`/students/${annaCard}?tab=homework`);
+    const rows = page.getByRole('list', { name: 'Homework', exact: true }).getByRole('listitem');
+    await expect(rows).toHaveCount(2);
+    await expectRefetchedAfterTheSocketIsReady(traffic);
+    const firstIsFractions = (await rows.first().innerText()).includes('Fractions');
+    const remaining = firstIsFractions ? 'Decimals' : 'Fractions';
+    await rows.first().locator('[data-row-focus]').focus();
+
+    await withdrawThroughTheApi(deployment, pavel, firstIsFractions ? fractions : decimals);
+
+    await expect(rows).toHaveCount(1);
+    await expect(rows.filter({ hasText: remaining }).locator('[data-row-focus]')).toBeFocused();
+  });
+
+  test('a withdrawal that removes the focused row of the group’s assignments moves focus to the row that took its place', async ({
+    page,
+    deployment,
+  }) => {
+    const { pavel, annaCard } = await pavelWithAnna(deployment);
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [annaCard]);
+    const fractions = await issueThroughTheApi(
+      deployment,
+      pavel,
+      (await createReadyTemplate(deployment, pavel, 'Fractions')).id,
+      { group_id: groupId },
+    );
+    const decimals = await issueThroughTheApi(
+      deployment,
+      pavel,
+      (await createReadyTemplate(deployment, pavel, 'Decimals')).id,
+      { group_id: groupId },
+    );
+    await signInThroughTheApi(page, pavel);
+    const traffic = trafficAfterReady(page, ['/api/v1/issues']);
+    await traffic.initialize();
+    await page.goto(`/groups/${groupId}`);
+    const rows = page.getByRole('list', { name: 'Assignments', exact: true }).getByRole('listitem');
+    await expect(rows).toHaveCount(2);
+    await expectRefetchedAfterTheSocketIsReady(traffic);
+    const firstIsFractions = (await rows.first().innerText()).includes('Fractions');
+    const remaining = firstIsFractions ? 'Decimals' : 'Fractions';
+    await rows.first().getByRole('link').focus();
+
+    await withdrawThroughTheApi(deployment, pavel, firstIsFractions ? fractions : decimals);
+
+    await expect(rows).toHaveCount(1);
+    await expect(rows.getByRole('link', { name: remaining })).toBeFocused();
   });
 
   test('Show more on the Issued tab moves focus to the first new row', async ({ page, deployment }) => {

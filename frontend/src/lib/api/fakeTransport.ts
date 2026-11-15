@@ -126,6 +126,8 @@ export interface FakeAccountSeed {
   readonly bio?: string;
 }
 
+const homeworkUploadContexts: ReadonlySet<string> = new Set(['answer', 'corrected']);
+
 const defaultPageLimit = 30;
 const maximumPageLimit = 100;
 const unreadCountCap = 100;
@@ -418,6 +420,7 @@ export class FakeAuthServer {
   private readonly tutors = new Map<string, components['schemas']['MyTutor'][]>();
   private readonly templateCounts = new Map<string, number>();
   private readonly libraryUploadRefusals: Response[] = [];
+  private readonly homeworkUploadRefusals: Response[] = [];
   private libraryUploads = 0;
   private readonly accounts = new Map<string, FakeAccount>();
   private readonly sessions = new Map<number, FakeSession>();
@@ -682,6 +685,10 @@ export class FakeAuthServer {
 
   refuseNextLibraryUpload(status: number, code: string): void {
     this.libraryUploadRefusals.push(refusal(status, code));
+  }
+
+  refuseNextHomeworkUpload(status: number, code: string): void {
+    this.homeworkUploadRefusals.push(refusal(status, code));
   }
 
   refuseNextLibraryUploadAsTooLarge(fieldCode: string): void {
@@ -949,6 +956,12 @@ export class FakeAuthServer {
     }
     if (path === '/api/v1/uploads' && request.method === 'POST' && caller !== undefined) {
       request.signal.throwIfAborted();
+      const homeworkRefusal = homeworkUploadContexts.has(address.searchParams.get('context') ?? '')
+        ? this.homeworkUploadRefusals.shift()
+        : undefined;
+      if (homeworkRefusal !== undefined) {
+        return homeworkRefusal;
+      }
       const body = upload?.body ?? (await request.formData());
       const file = body.get('file');
       if (upload !== undefined && file !== null && typeof file !== 'string') upload.progress(file.size, file.size);

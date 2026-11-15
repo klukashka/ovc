@@ -88,6 +88,7 @@ interface Setup {
   readonly autosave: AnswerAutosave;
   readonly values: Map<string, string>;
   readonly saved: (readonly SentAnswer[])[];
+  readonly savedAfterLeaving: number[];
   readonly refused: Refusal[];
 }
 
@@ -96,6 +97,7 @@ function setUp(version = 1): Setup {
   const server = new AnswerServer(version);
   const values = new Map<string, string>();
   const saved: (readonly SentAnswer[])[] = [];
+  const savedAfterLeaving: number[] = [];
   const refused: Refusal[] = [];
   let counter = 0;
   const autosave = new AnswerAutosave({
@@ -113,11 +115,14 @@ function setUp(version = 1): Setup {
     onSaved: (_submission, sent): void => {
       saved.push(sent);
     },
+    onSavedAfterLeaving: (submission): void => {
+      savedAfterLeaving.push(submission.version);
+    },
     onRefused: (refusal): void => {
       refused.push(refusal);
     },
   });
-  return { scheduler, server, autosave, values, saved, refused };
+  return { scheduler, server, autosave, values, saved, savedAfterLeaving, refused };
 }
 
 function type(setup: Setup, question: QuestionBlock, text: string): void {
@@ -310,6 +315,22 @@ describe('answer autosave', () => {
 
     expect(setup.server.received.map(sentTexts)).toEqual([['went'], ['saw']]);
     expect(setup.server.pending(1).request.version).toBe(2);
+  });
+
+  test('every save answering after the page was left reports the saved submission for the cache', async () => {
+    const setup = setUp();
+    type(setup, firstQuestion, 'went');
+    setup.scheduler.pass(autosaveDelayMilliseconds);
+    type(setup, secondQuestion, 'saw');
+    setup.autosave.leave();
+    const first = setup.server.pending(0);
+    await first.answer(setup.server.apply(first.request));
+
+    const second = setup.server.pending(1);
+    await second.answer(setup.server.apply(second.request));
+
+    expect(setup.savedAfterLeaving).toEqual([2, 3]);
+    expect(setup.saved).toEqual([]);
   });
 
   test('leaving and resuming at once, as React does when it remounts in development, keeps saving', () => {

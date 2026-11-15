@@ -27,7 +27,7 @@ import {
 import { DelayedLoading, LoadFailed, RefetchFailed, focusIsLost } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { type ApiError, asApiError, useApiClient } from '../../lib/api/client.ts';
-import { useSignedInAccount } from '../../lib/api/session.ts';
+import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import {
@@ -290,6 +290,8 @@ function AssignmentForm({
   const { t } = useTranslation();
   const client = useApiClient();
   const queryClient = useQueryClient();
+  const session = useSession();
+  const [sessionEpoch] = useState(() => session.currentEpoch());
   const scheduler = useScheduler();
   const me = useSignedInAccount();
   const now = useNow();
@@ -401,6 +403,14 @@ function AssignmentForm({
             }
             return next;
           });
+        },
+        onSavedAfterLeaving: (saved): void => {
+          if (session.currentEpoch() !== sessionEpoch) {
+            return;
+          }
+          queryClient.setQueryData<Submission>(key, (cached) =>
+            cached === undefined || cached.version < saved.version ? saved : cached,
+          );
         },
         onRefused: (refusal: Refusal, sent): void => {
           refusalHandler.current(refusal, sent);

@@ -269,6 +269,31 @@ export async function saveTextFromAnotherDevice(
   }
 }
 
+export async function answerSentinelsAndSubmit(
+  deployment: Deployment,
+  student: TestAccount,
+  submissionId: string,
+): Promise<void> {
+  const token = await accessToken(deployment, student);
+  const read = await callApi(deployment, token, 'GET', `/submissions/${submissionId}`);
+  const blocks = listField(read.body, 'blocks');
+  const choice = blocks.find((block) => textField(block, 'type') === 'single_choice');
+  const text = blocks.find((block) => textField(block, 'type') === 'short_text');
+  const option = listField(choice, 'options').find((entry) => textField(entry, 'text') === sentinel.correctOption);
+  const saved = await callApi(deployment, token, 'PUT', `/submissions/${submissionId}/answers`, {
+    version: numberField(read.body, 'version'),
+    save_id: randomUUID(),
+    answers: [
+      { question_id: textField(choice, 'id'), value: { option_ids: [textField(option, 'id')] } },
+      { question_id: textField(text, 'id'), value: { text: sentinel.accepted } },
+    ],
+  });
+  if (saved.status !== 200) {
+    throw new Error(`saving the sentinel answers answered ${String(saved.status)}`);
+  }
+  await submitThroughTheApi(deployment, student, submissionId);
+}
+
 export async function submitThroughTheApi(
   deployment: Deployment,
   student: TestAccount,

@@ -18,7 +18,7 @@ import {
   seedVerifiedUser,
   tableRows,
 } from './fixtures.ts';
-import { issueThroughTheApi } from './homework.ts';
+import { createReadyTemplate, issueThroughTheApi, withdrawThroughTheApi } from './homework.ts';
 import {
   answerTextAndSubmit,
   draftOf,
@@ -95,6 +95,29 @@ async function secondStudentSubmits(deployment: Deployment, work: ReviewWork, na
   return submissionId;
 }
 
+interface UpcomingDeadlines {
+  readonly pavel: TestAccount;
+  readonly issues: readonly string[];
+  readonly now: number;
+}
+
+async function deadlinesForAnna(
+  deployment: Deployment,
+  control: TestControl,
+  titles: readonly string[],
+): Promise<UpcomingDeadlines> {
+  const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+  const { cardId } = await seedActiveStudent(deployment, pavel, 'Anna', 'en');
+  const now = await control.now();
+  const issues: string[] = [];
+  for (const [index, title] of titles.entries()) {
+    const template = await createReadyTemplate(deployment, pavel, title);
+    const deadlineAt = new Date(now + (index + 1) * 86_400_000).toISOString();
+    issues.push(await issueThroughTheApi(deployment, pavel, template.id, { relationship_id: cardId }, { deadlineAt }));
+  }
+  return { pavel, issues, now };
+}
+
 function expectConflictSave(diagnostics: Diagnostics, submissionId: string): void {
   diagnostics.expectFailure({ method: 'PUT', path: `/api/v1/submissions/${submissionId}/review`, status: 409 });
 }
@@ -156,6 +179,25 @@ test.describe('the review queue', () => {
     await expect(page.getByRole('alert')).toHaveText('This filter is not available.');
     await expect(page.getByRole('link', { name: 'All work to check' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Retry' })).toHaveCount(0);
+  });
+
+  test('when a focused queue row goes, focus moves to the row that took its place', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const work = await submittedByAnna(deployment);
+    await control.advance(60);
+    await secondStudentSubmits(deployment, work, 'Boris');
+    await signInThroughTheApi(page, work.pavel);
+    await page.goto('/homework/review');
+    await expect(queueRows(page).getByRole('link')).toHaveText(['Anna', 'Boris']);
+    await queueRows(page).getByRole('link', { name: 'Anna' }).focus();
+
+    await returnFromAnotherTab(deployment, work.pavel, work.submissionId);
+
+    await expect(queueRows(page).getByRole('link')).toHaveText(['Boris']);
+    await expect(queueRows(page).getByRole('link', { name: 'Boris' })).toBeFocused();
   });
 
   test('Show more moves focus to the first new row', async ({ page, deployment }) => {
@@ -294,6 +336,28 @@ test.describe('the review screen', () => {
     await expect(question(page, 3).getByRole('button', { name: `Remove ${second.name}` })).toBeFocused();
   });
 
+  test('Remove on the last of two corrected files moves focus to the previous file’s Remove', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const work = await submittedByAnna(deployment);
+    const second = { ...pdfFile, name: 'Second.pdf' };
+    await openReview(page, work.pavel, work.submissionId);
+    await attachCorrected(page, pdfFile);
+    await expect(question(page, 3).getByRole('button', { name: `Remove ${pdfFile.name}` })).toBeVisible();
+    await savedAndTicked(page, control);
+    await attachCorrected(page, second);
+    await expect(question(page, 3).getByRole('button', { name: `Remove ${second.name}` })).toBeVisible();
+    await savedAndTicked(page, control);
+
+    await question(page, 3)
+      .getByRole('button', { name: `Remove ${second.name}` })
+      .click();
+
+    await expect(question(page, 3).getByRole('button', { name: `Remove ${pdfFile.name}` })).toBeFocused();
+  });
+
   test('Return for revision on a relationship that has ended shows the focused refusal', async ({
     page,
     deployment,
@@ -348,11 +412,7 @@ test.describe('the review screen', () => {
     await expect(question(page, 3)).toContainText('Enter points for this question');
   });
 
-  test('Mark checked publishes the review with the focused notice, and the queue no longer lists the work', async ({
-    page,
-    deployment,
-    control,
-  }) => {
+  test('Mark checked publishes the review with the focused notice', async ({ page, deployment, control }) => {
     const work = await submittedByAnna(deployment);
     await openReview(page, work.pavel, work.submissionId);
     await enterPoints(page, '6');
@@ -364,7 +424,18 @@ test.describe('the review screen', () => {
       page.getByRole('status').filter({ hasText: 'Checked. The student can see your review.' }),
     ).toBeFocused();
     expect((await storedReview(deployment, work.pavel, work.submissionId)).status).toBe('checked');
+  });
+
+  test('after Mark checked, Back to the queue no longer lists the work', async ({ page, deployment, control }) => {
+    const work = await submittedByAnna(deployment);
+    await openReview(page, work.pavel, work.submissionId);
+    await enterPoints(page, '6');
+    await savedAndTicked(page, control);
+    await page.getByRole('button', { name: 'Mark checked' }).click();
+    await page.getByRole('status').filter({ hasText: 'Checked. The student can see your review.' }).waitFor();
+
     await page.getByRole('link', { name: 'Back to the queue' }).click();
+
     await expect(page.getByText('Nothing to check')).toBeVisible();
   });
 
@@ -529,5 +600,62 @@ test.describe('Today’s homework panels', () => {
 
     await expect(checking.getByRole('heading', { level: 2 })).toBeFocused();
     await expect(checking.getByText('Nothing to check')).toBeVisible();
+  });
+
+  test('when a focused Needs checking row that is not the last goes, focus moves to the row that took its place', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const work = await submittedByAnna(deployment);
+    await control.advance(60);
+    await secondStudentSubmits(deployment, work, 'Boris');
+    await signInThroughTheApi(page, work.pavel);
+    await page.goto('/today');
+    const checking = page.getByRole('region', { name: /^Needs checking/ });
+    await expect(checking.locator('[data-row-link]')).toHaveText(['Anna', 'Boris']);
+    await checking.getByRole('link', { name: 'Anna' }).focus();
+
+    await returnFromAnotherTab(deployment, work.pavel, work.submissionId);
+
+    await expect(checking.locator('[data-row-link]')).toHaveText(['Boris']);
+    await expect(checking.getByRole('link', { name: 'Boris' })).toBeFocused();
+  });
+
+  test('when a focused Upcoming deadlines row that is not the last goes, focus moves to the row that took its place', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, issues, now } = await deadlinesForAnna(deployment, control, ['Fractions', 'Decimals']);
+    await page.clock.install({ time: now });
+    await signInThroughTheApi(page, pavel);
+    await page.goto('/today');
+    const deadlines = page.getByRole('region', { name: 'Upcoming deadlines' });
+    await expect(deadlines.locator('[data-row-link]')).toHaveText(['Fractions', 'Decimals']);
+    await deadlines.getByRole('link', { name: 'Fractions' }).focus();
+
+    await withdrawThroughTheApi(deployment, pavel, issues[0] ?? '');
+
+    await expect(deadlines.locator('[data-row-link]')).toHaveText(['Decimals']);
+    await expect(deadlines.getByRole('link', { name: 'Decimals' })).toBeFocused();
+  });
+
+  test('when the focused last Upcoming deadlines row goes, focus moves to the panel heading', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, issues, now } = await deadlinesForAnna(deployment, control, ['Fractions']);
+    await page.clock.install({ time: now });
+    await signInThroughTheApi(page, pavel);
+    await page.goto('/today');
+    const deadlines = page.getByRole('region', { name: 'Upcoming deadlines' });
+    await deadlines.getByRole('link', { name: 'Fractions' }).focus();
+
+    await withdrawThroughTheApi(deployment, pavel, issues[0] ?? '');
+
+    await expect(deadlines.locator('[data-row-link]')).toHaveCount(0);
+    await expect(deadlines.getByRole('heading', { level: 2, name: 'Upcoming deadlines' })).toBeFocused();
   });
 });

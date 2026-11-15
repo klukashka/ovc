@@ -588,6 +588,7 @@ test.describe('in English with the dark theme', () => {
   for (const { chosen, from } of [
     { chosen: 'Lessons', from: '' },
     { chosen: 'Overview', from: '?tab=lessons' },
+    { chosen: 'Homework', from: '' },
   ] as const) {
     test(`student card › choosing ${chosen} keeps focus on it`, async ({ page, deployment }) => {
       const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');

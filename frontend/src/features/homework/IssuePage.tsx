@@ -699,16 +699,22 @@ function IssueActions({
   );
 }
 
-function NextFrameAlert({ message }: { readonly message: string }): ReactElement {
+function FocusedAlert({
+  message,
+  onShown,
+}: {
+  readonly message: string;
+  readonly onShown: (alert: HTMLElement) => void;
+}): ReactElement {
   const element = useRef<HTMLParagraphElement>(null);
+  const onShownValue = useRef(onShown);
 
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      element.current?.focus();
-    });
-    return (): void => {
-      window.cancelAnimationFrame(frame);
-    };
+    const alert = element.current;
+    if (alert !== null) {
+      onShownValue.current(alert);
+      alert.focus();
+    }
   }, []);
 
   return (
@@ -733,6 +739,7 @@ function IssueContent({ issueId }: { readonly issueId: string }): ReactElement {
   const client = useApiClient();
   const queryClient = useQueryClient();
   const menuButton = useRef<HTMLButtonElement>(null);
+  const withdrawReturn = useRef<HTMLElement | null>(null);
   const [dialog, setDialog] = useState<OpenDialog | null>(null);
   const [openings, setOpenings] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -852,6 +859,7 @@ function IssueContent({ issueId }: { readonly issueId: string }): ReactElement {
               setNotice(null);
               setAnnouncement(null);
               setOpenings((count) => count + 1);
+              withdrawReturn.current = menuButton.current;
               setDialog({ kind, version: issue.version });
             }}
           />
@@ -864,7 +872,13 @@ function IssueContent({ issueId }: { readonly issueId: string }): ReactElement {
         </Link>
       </p>
       {notice === null || gone ? null : notice.kind === 'hasSubmissions' ? (
-        <NextFrameAlert key={notice.count} message={t('homework.hasSubmissions')} />
+        <FocusedAlert
+          key={notice.count}
+          message={t('homework.hasSubmissions')}
+          onShown={(alert) => {
+            withdrawReturn.current = alert;
+          }}
+        />
       ) : (
         <FocusedNotice
           key={notice.count}
@@ -901,7 +915,7 @@ function IssueContent({ issueId }: { readonly issueId: string }): ReactElement {
             issue={issue}
             key={`withdraw-${String(openings)}`}
             open={dialog?.kind === 'withdraw'}
-            returnFocus={menuButton}
+            returnFocus={withdrawReturn}
             onDismiss={handlers.onDismiss}
             onBusy={setSaving}
             onWithdrawn={() => {
