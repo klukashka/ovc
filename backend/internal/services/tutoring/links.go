@@ -364,7 +364,7 @@ func (s *Service) removeLink(
 		return repositories.Relationship{}, lessonEffects{}, err
 	}
 	if timing == settleEffectsNow {
-		if err := homework.ApplyLifecycle(ctx, repos, s.deps.Logger, []repositories.Relationship{link}, nil, false, "removal", now); err != nil {
+		if err := homework.ApplyLifecycle(ctx, repos, s.deps.Logger, []repositories.Relationship{link}, nil, false, domain.SubmissionCloseCauseRemoval, now); err != nil {
 			return repositories.Relationship{}, lessonEffects{}, err
 		}
 	}

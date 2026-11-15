@@ -344,7 +344,9 @@ Ending an `ended` relationship again returns it unchanged and queues no second e
 
 The seven-day cleanup marks current provisional issues only in the final purge transaction. Preliminary student batches preserve those submissions, so confirmation before the final transaction keeps the link and work. The immediate unverified `DeleteAccount -> purge(..., 0)` path first drains any earlier discarded homework through separately committed `StudentBatch` stages under the user lock, rechecking the password and `unverified` state. When a batch finds no historical submissions, the same transaction performs the final purge without releasing the user lock, so waiting removal and request-decision operations cannot run between that check and deletion. Current provisional work is marked only by final removal and may outlive the user until cleanup. Cleanup does not require a user row.
 
-Immediate unverified deletion drains historical homework in at most 20 batch transactions per request. If that budget is exhausted, it answers `503 service_unavailable` with `Retry-After: 1`; committed batches survive, and retries recheck credentials and account state before continuing.
+For an unconfirmed tutor, the same immediate path first runs the tutor purge batches that the seven-day cleanup runs (`PurgeBatch`: homework, library, lessons, chat, groups, invitations, relationships and notifications), each in its own transaction under the user lock with the password and `unverified` state rechecked, and performs the final purge in the transaction whose batch deletes nothing, so a tutor who created library folders, materials or templates can delete the account at once (amended 2026-11-15 by the slice 9 review backend follow-up, agent change pending owner review).
+
+Immediate unverified deletion drains historical homework, or an unconfirmed tutor's purge batches, in at most 20 batch transactions per request. If that budget is exhausted, it answers `503 service_unavailable` with `Retry-After: 1`; committed batches survive, and retries recheck credentials and account state before continuing.
 
 ## Locks and the session re-check
 

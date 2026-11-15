@@ -125,6 +125,56 @@ func (c contractCheck) noSentinel(label string, raw []byte) {
 	c.noSentinelNumber(label, json.RawMessage(raw))
 }
 
+func (c contractCheck) noSentinelInText(label string, text string) {
+	c.t.Helper()
+	for _, sentinel := range sentinelStrings {
+		if strings.Contains(text, sentinel) {
+			c.t.Errorf("%s carries the key sentinel %q", label, sentinel)
+		}
+	}
+	for _, found := range pointSentinelsIn(text) {
+		c.t.Errorf("%s carries the point sentinel %s", label, found)
+	}
+}
+
+func pointSentinelsIn(text string) []string {
+	var found []string
+	for _, word := range strings.FieldsFunc(text, isOutsideSentinelWord) {
+		if slices.Contains(sentinelPoints, word) {
+			found = append(found, word)
+		}
+	}
+	return found
+}
+
+const sentinelWordRunes = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-"
+
+func isOutsideSentinelWord(r rune) bool {
+	return !strings.ContainsRune(sentinelWordRunes, r)
+}
+
+func TestPointSentinelTextScan(t *testing.T) {
+	t.Parallel()
+	caught := []string{"Score: 492", "492", "<b>180</b>", "Points 97.", "(71)"}
+	ignored := []string{"14920", "a492b", "Q492z_", "id 0f492a3c-4920-4b92-8492-c0ffee492000", "#a49210", "order-97", "1971"}
+
+	var missed, flagged []string
+	for _, text := range caught {
+		if len(pointSentinelsIn(text)) != 1 {
+			missed = append(missed, text)
+		}
+	}
+	for _, text := range ignored {
+		if len(pointSentinelsIn(text)) != 0 {
+			flagged = append(flagged, text)
+		}
+	}
+
+	if len(missed) > 0 || len(flagged) > 0 {
+		t.Fatalf("the point sentinel scan missed %q and flagged %q", missed, flagged)
+	}
+}
+
 func (c contractCheck) noSentinelNumber(label string, raw json.RawMessage) {
 	c.t.Helper()
 	trimmed := bytes.TrimSpace(raw)
@@ -424,7 +474,7 @@ func TestAnswerKeyContract(t *testing.T) {
 	check.noSentinel("notification rows", []byte(result.body))
 	scanned := map[string]bool{}
 	for _, message := range h.mailTo(t, studentEmail) {
-		check.noSentinel("email "+message.Subject, []byte(message.Subject+message.Text+message.HTML))
+		check.noSentinelInText("email "+message.Subject, message.Subject+"\n"+message.Text+"\n"+message.HTML)
 		for _, subject := range []string{"Assignment returned", "Review updated", "Assignment checked"} {
 			scanned[subject] = scanned[subject] || strings.HasPrefix(message.Subject, subject)
 		}
@@ -468,6 +518,17 @@ func TestStudentDownloadsFollowReadability(t *testing.T) {
 	}
 	pending := parties["reclaim_pending"]
 	_, earlyAddress := h.addressOf(t, h.studentToken(t, pending.id), pending.file, "?ref=answer:"+pending.submission)
+	readableParty := parties["readable"]
+	classmateCard := h.linkedCard(t, tutor, 16, domain.RelationshipActive)
+	h.issueTemplate(t, tutorToken, template, toCard(classmateCard), string(domain.AnswerPolicyNever), nil)
+	sharedStudent := domain.UserID{readableParty.id}
+	secondTutor, secondTutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, memberEmail(2))
+	h.seedCard(t, secondTutor, 30, domain.RelationshipActive, &sharedStudent)
+	crossParty := []crossPartyMint{
+		{label: "a classmate's answer mint", token: h.studentToken(t, 16), attachment: readableParty.file, reference: "answer:" + readableParty.submission},
+		{label: "a second tutor's answer mint", token: secondTutorToken, attachment: readableParty.file, reference: "answer:" + readableParty.submission},
+		{label: "a snapshot mint by a student without a submission", token: h.studentToken(t, 16), attachment: image, reference: "issue_snapshot:" + readableParty.issue},
+	}
 
 	h.setRelationshipState(t, pending.card, domain.RelationshipReclaimPending)
 	h.setRelationshipState(t, parties["discarded"].card, domain.RelationshipDiscarded)
@@ -475,6 +536,7 @@ func TestStudentDownloadsFollowReadability(t *testing.T) {
 	h.setRelationshipState(t, parties["ended"].card, domain.RelationshipEnded)
 	h.markIssueForErasure(t, parties["marked"].issue)
 
+	crossAnswers := h.crossPartyMints(t, crossParty)
 	for name, party := range parties {
 		token := h.studentToken(t, party.id)
 		snapshot, _ := h.addressOf(t, token, image, "?ref=issue_snapshot:"+party.issue)
@@ -486,8 +548,42 @@ func TestStudentDownloadsFollowReadability(t *testing.T) {
 	}
 	tutorAnswer, _ := h.addressOf(t, tutorToken, parties["readable"].file, "?ref=answer:"+parties["readable"].submission)
 	h.mustAnswer(t, tutorAnswer, http.StatusOK)
+	assertCrossPartyMintsRefused(t, crossAnswers)
 	if served := h.fetch(t, earlyAddress.URL, nil); served.status != http.StatusNotFound {
 		t.Fatalf("an answer address minted before the reclaim answered %s", describe(served))
+	}
+}
+
+type crossPartyMint struct {
+	label      string
+	token      string
+	attachment string
+	reference  string
+}
+
+type crossPartyAnswer struct {
+	label  string
+	minted response
+	random response
+}
+
+func (h *authHarness) crossPartyMints(t *testing.T, mints []crossPartyMint) []crossPartyAnswer {
+	t.Helper()
+	answers := make([]crossPartyAnswer, 0, len(mints))
+	for _, mint := range mints {
+		minted, _ := h.addressOf(t, mint.token, mint.attachment, "?ref="+mint.reference)
+		random, _ := h.addressOf(t, mint.token, fixtureID(79, 1), "?ref="+mint.reference)
+		answers = append(answers, crossPartyAnswer{label: mint.label, minted: minted, random: random})
+	}
+	return answers
+}
+
+func assertCrossPartyMintsRefused(t *testing.T, answers []crossPartyAnswer) {
+	t.Helper()
+	for _, answer := range answers {
+		if answer.minted.status != http.StatusNotFound || refusal(t, answer.minted) != refusal(t, answer.random) {
+			t.Errorf("%s answered %s, want the refusal of a random identifier %s", answer.label, describe(answer.minted), describe(answer.random))
+		}
 	}
 }
 

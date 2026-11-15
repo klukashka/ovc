@@ -312,8 +312,11 @@ func (q *Queries) LockCleanupSubmission(ctx context.Context, arg LockCleanupSubm
 }
 
 const lockLifecycleIssues = `-- name: LockLifecycleIssues :many
-SELECT id FROM issues WHERE relationship_id = ANY($1::uuid[])
-    OR id IN (SELECT issue_id FROM submissions WHERE relationship_id = ANY($1::uuid[]))
+SELECT id FROM issues WHERE id IN (
+    SELECT linked.id FROM issues AS linked WHERE linked.relationship_id = ANY($1::uuid[])
+    UNION
+    SELECT submissions.issue_id FROM submissions WHERE submissions.relationship_id = ANY($1::uuid[])
+)
 ORDER BY id FOR UPDATE
 `
 

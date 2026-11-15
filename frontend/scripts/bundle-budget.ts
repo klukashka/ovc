@@ -453,7 +453,7 @@ export function checkStudentReach(
   students: readonly string[],
   forbidden: readonly string[],
 ): BundleReport {
-  const failures: string[] = [];
+  const failures: string[] = absentFolders(graph, forbidden, 'student page');
   for (const page of students) {
     if (!graph.modules.some((module) => module.id === page)) {
       failures.push(`${page} is not in the module graph, so the student page check would prove nothing`);
@@ -467,6 +467,65 @@ export function checkStudentReach(
   }
   return {
     lines: [`${String(students.length)} student pages reach no module of ${forbidden.join(', ')}`],
+    failures,
+  };
+}
+
+function absentFolders(graph: ModuleGraph, folders: readonly string[], check: string): string[] {
+  return folders
+    .filter((folder) => !graph.modules.some((module) => module.id.startsWith(folder)))
+    .map((folder) => `no module of ${folder} is in the module graph, so the ${check} check would prove nothing`);
+}
+
+export interface SharedPage {
+  readonly page: string;
+  readonly forbidden: readonly string[];
+  readonly pinnedFolder: string;
+  readonly pinned: readonly string[];
+}
+
+export const sharedLessonPage: SharedPage = {
+  page: 'src/features/schedule/LessonPage.tsx',
+  forbidden: ['src/features/review/'],
+  pinnedFolder: 'src/features/homework/',
+  pinned: [
+    'src/features/homework/IssueAssignment.tsx',
+    'src/features/homework/IssueDialog.tsx',
+    'src/features/homework/LessonIssues.tsx',
+    'src/features/homework/TemplatePicker.tsx',
+    'src/features/homework/api.ts',
+    'src/features/homework/issueProblems.ts',
+    'src/features/homework/texts.en.ts',
+    'src/features/homework/texts.ru.ts',
+  ],
+};
+
+export function checkSharedPage(graph: ModuleGraph, shared: SharedPage): BundleReport {
+  const failures = absentFolders(graph, [...shared.forbidden, shared.pinnedFolder], 'shared page');
+  if (!graph.modules.some((module) => module.id === shared.page)) {
+    return {
+      lines: [],
+      failures: [
+        ...failures,
+        `${shared.page} is not in the module graph, so the shared page check would prove nothing`,
+      ],
+    };
+  }
+  const reached = reachable(graph, [shared.page], null);
+  for (const module of reached) {
+    if (shared.forbidden.some((folder) => module.startsWith(folder))) {
+      failures.push(`${module} is tutor code but is reachable from the shared page ${shared.page}`);
+    } else if (module.startsWith(shared.pinnedFolder) && !shared.pinned.includes(module)) {
+      failures.push(`${module} is reachable from the shared page ${shared.page} but is not in its pinned list`);
+    }
+  }
+  for (const module of shared.pinned.filter((pinned) => !reached.has(pinned))) {
+    failures.push(`${module} is pinned for the shared page ${shared.page} but is no longer reachable from it`);
+  }
+  return {
+    lines: [
+      `the shared page ${shared.page} reaches no module of ${shared.forbidden.join(', ')} and only its ${String(shared.pinned.length)} pinned modules of ${shared.pinnedFolder}`,
+    ],
     failures,
   };
 }

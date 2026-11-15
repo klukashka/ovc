@@ -6,6 +6,7 @@ import {
   checkBuilderChunk,
   checkBundle,
   checkPageChunk,
+  checkSharedPage,
   checkStudentReach,
   committedPublicFiles,
   kilobyte,
@@ -570,6 +571,16 @@ describe('review screen chunk', () => {
     ]);
   });
 
+  test('fails when a forbidden folder has no module in the graph', () => {
+    const graph = graphWith([]);
+
+    const report = checkStudentReach(graph, [assignmentPage], ['src/features/review/', 'src/features/renamed/']);
+
+    expect(report.failures).toEqual([
+      'no module of src/features/renamed/ is in the module graph, so the student page check would prove nothing',
+    ]);
+  });
+
   test('fails when a student page is missing from the module graph', () => {
     const graph = graphWith([]);
 
@@ -577,6 +588,65 @@ describe('review screen chunk', () => {
 
     expect(report.failures).toEqual([
       'src/features/home/HomePage.tsx is not in the module graph, so the student page check would prove nothing',
+    ]);
+  });
+});
+
+describe('the shared lesson page', () => {
+  const lessonPage = 'src/features/schedule/LessonPage.tsx';
+  const shared = {
+    page: lessonPage,
+    forbidden: ['src/features/review/'],
+    pinnedFolder: 'src/features/homework/',
+    pinned: ['src/features/homework/LessonIssues.tsx'],
+  };
+
+  function lessonGraph(lessonImports: readonly string[]): ReturnType<typeof parseModuleGraph> {
+    return parseModuleGraph({
+      chunks: [{ file: 'assets/LessonPage.js', modules: [lessonPage] }],
+      modules: [
+        { id: lessonPage, imports: lessonImports, dynamicImports: [] },
+        { id: 'src/features/homework/LessonIssues.tsx', imports: [], dynamicImports: [] },
+        { id: 'src/features/homework/IssuePage.tsx', imports: [], dynamicImports: [] },
+        { id: 'src/features/review/ReviewPage.tsx', imports: [], dynamicImports: [] },
+      ],
+    });
+  }
+
+  test('accepts a lesson page that reaches exactly its pinned tutor modules', () => {
+    const graph = lessonGraph(['src/features/homework/LessonIssues.tsx']);
+
+    const report = checkSharedPage(graph, shared);
+
+    expect(report.failures).toEqual([]);
+  });
+
+  test('fails when the lesson page reaches a review module, an unpinned homework module or loses a pinned one', () => {
+    const graph = lessonGraph(['src/features/review/ReviewPage.tsx', 'src/features/homework/IssuePage.tsx']);
+
+    const report = checkSharedPage(graph, shared);
+
+    expect(report.failures.toSorted()).toEqual(
+      [
+        `src/features/review/ReviewPage.tsx is tutor code but is reachable from the shared page ${lessonPage}`,
+        `src/features/homework/IssuePage.tsx is reachable from the shared page ${lessonPage} but is not in its pinned list`,
+        `src/features/homework/LessonIssues.tsx is pinned for the shared page ${lessonPage} but is no longer reachable from it`,
+      ].toSorted(),
+    );
+  });
+
+  test('fails when a checked folder or the page is missing from the module graph', () => {
+    const graph = lessonGraph([]);
+
+    const report = checkSharedPage(graph, {
+      ...shared,
+      page: 'src/features/schedule/Renamed.tsx',
+      forbidden: ['src/features/gone/'],
+    });
+
+    expect(report.failures).toEqual([
+      'no module of src/features/gone/ is in the module graph, so the shared page check would prove nothing',
+      'src/features/schedule/Renamed.tsx is not in the module graph, so the shared page check would prove nothing',
     ]);
   });
 });

@@ -35,10 +35,10 @@ func CloseOnEnding(
 	return ClosedWork{Relationship: relationship, Count: len(closed)}, repos.Signals.Entities(ctx, signals)
 }
 
-func LogClosedWork(ctx context.Context, logger *slog.Logger, tutor domain.UserID, closed ClosedWork, cause string) {
+func LogClosedWork(ctx context.Context, logger *slog.Logger, tutor domain.UserID, closed ClosedWork, cause domain.SubmissionCloseCause) {
 	if closed.Count == 0 {
 		return
 	}
 	logger.LogAttrs(ctx, slog.LevelInfo, "homework.submissions.closed", tutorAttribute(tutor),
-		slog.String("relationship_id", closed.Relationship.String()), slog.Int("count", closed.Count), slog.String("cause", cause))
+		slog.String("relationship_id", closed.Relationship.String()), slog.Int("count", closed.Count), slog.String("cause", string(cause)))
 }

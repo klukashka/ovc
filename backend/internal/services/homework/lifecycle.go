@@ -9,7 +9,7 @@ import (
 	"ovc/backend/internal/repositories"
 )
 
-func ApplyLifecycle(ctx context.Context, repos repositories.Repositories, logger *slog.Logger, removed, ended []repositories.Relationship, purged bool, cause string, now time.Time) error {
+func ApplyLifecycle(ctx context.Context, repos repositories.Repositories, logger *slog.Logger, removed, ended []repositories.Relationship, purged bool, cause domain.SubmissionCloseCause, now time.Time) error {
 	relationships := make([]domain.RelationshipID, 0, len(removed)+len(ended))
 	dropped := make([]domain.RelationshipID, 0, len(removed))
 	closing := make([]domain.RelationshipID, 0, len(ended))

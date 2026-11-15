@@ -52,11 +52,9 @@ func (s *Service) DeleteAccount(ctx context.Context, principal Principal, passwo
 			}
 			switch locked.State {
 			case domain.AccountUnverified:
-				if user.Role == domain.RoleStudent {
-					progressed, err = s.deps.Tutoring.PurgeStudentHomeworkBatch(ctx, repos, user.ID, now)
-					if err != nil || progressed > 0 {
-						return err
-					}
+				progressed, err = s.unverifiedPurgeBatch(ctx, repos, user, now)
+				if err != nil || progressed > 0 {
+					return err
 				}
 				immediate = true
 				announce, err = s.purger().purge(ctx, repos, principal.UserID, now, 0)
@@ -91,6 +89,13 @@ func (s *Service) DeleteAccount(ctx context.Context, principal Principal, passwo
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "account.deleted", userAttribute(principal.UserID), slog.String("purge", purge))
 	announce(ctx)
 	return nil
+}
+
+func (s *Service) unverifiedPurgeBatch(ctx context.Context, repos repositories.Repositories, user repositories.User, now time.Time) (int64, error) {
+	if user.Role == domain.RoleStudent {
+		return s.deps.Tutoring.PurgeStudentHomeworkBatch(ctx, repos, user.ID, now)
+	}
+	return s.deps.Tutoring.PurgeBatch(ctx, repos, user.ID, user.Role, now)
 }
 
 func (s *Service) verifyCurrentPassword(ctx context.Context, id domain.UserID, password string, field string, now time.Time) (repositories.User, error) {

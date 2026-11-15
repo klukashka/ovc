@@ -112,7 +112,7 @@ func (s *Service) applyTutorDeletion(ctx context.Context, repos repositories.Rep
 	for _, item := range deletion.ended {
 		endedLinks = append(endedLinks, item.link)
 	}
-	if err := homework.ApplyLifecycle(ctx, repos, s.deps.Logger, deletion.removed, endedLinks, false, "tutor_deleted", now); err != nil {
+	if err := homework.ApplyLifecycle(ctx, repos, s.deps.Logger, deletion.removed, endedLinks, false, domain.SubmissionCloseCauseTutorDeleted, now); err != nil {
 		return tutorDeletion{}, err
 	}
 	if err := signalTutorDeletion(ctx, repos, deletion); err != nil {
@@ -313,7 +313,7 @@ func (s *Service) applyStudentDeletion(ctx context.Context, repos repositories.R
 	for _, item := range ended {
 		endedLinks = append(endedLinks, item.link)
 	}
-	if err := homework.ApplyLifecycle(ctx, repos, s.deps.Logger, decision.removed, endedLinks, false, "student_deleted", now); err != nil {
+	if err := homework.ApplyLifecycle(ctx, repos, s.deps.Logger, decision.removed, endedLinks, false, domain.SubmissionCloseCauseStudentDeleted, now); err != nil {
 		return nil, err
 	}
 	if _, err := repos.Users.ClearReclaimDeadline(ctx, student, now); err != nil {
@@ -433,7 +433,7 @@ func (s *Service) OnAccountPurged(
 	for _, item := range ended {
 		endedLinks = append(endedLinks, item.link)
 	}
-	if err := homework.ApplyLifecycle(ctx, repos, s.deps.Logger, removed, endedLinks, true, "student_purged", now); err != nil {
+	if err := homework.ApplyLifecycle(ctx, repos, s.deps.Logger, removed, endedLinks, true, domain.SubmissionCloseCauseStudentPurged, now); err != nil {
 		return nil, err
 	}
 	if err := repos.Relationships.ForgetPurgedStudent(ctx, user, now); err != nil {

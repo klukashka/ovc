@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
+	"ovc/backend/internal/adapters/mail"
 	"ovc/backend/internal/domain"
 )
 
@@ -143,28 +145,78 @@ func readabilityCases() []readabilityCase {
 	return cases
 }
 
+type readableWork struct {
+	issue      string
+	submission string
+	lesson     string
+	answer     string
+	corrected  string
+	revision   string
+}
+
+func (h *authHarness) readableWork(t *testing.T, tutorToken string, template string, testCase readabilityCase, hour int) readableWork {
+	t.Helper()
+	student := h.seedStudentAccount(t, testCase.student, domain.AccountActive)
+	card := h.seedCard(t, domain.UserID{1}, testCase.student, domain.RelationshipActive, &student)
+	token := h.studentToken(t, testCase.student)
+	var work readableWork
+	work.lesson = h.scheduled(t, tutorToken, oneOffFor(card, "2030-03-12", fmt.Sprintf("%02d:00", hour))).Lessons[0].ID
+	work.issue = h.issued(t, tutorToken, issueJSONWith(template, toCard(card), &work.lesson, nil, string(domain.AnswerPolicyAfterCheck))).ID
+	work.submission = h.submissionsOf(t, work.issue)[0].id
+	work.answer = h.answerFile(t, token, work.submission, workQuestion(6), "answer.pdf", 48)
+	draft := h.saved(t, token, work.submission, answersJSON(t, 1, saveID(1), attached(workQuestion(6), work.answer), typedAnswer(workQuestion(5), "We saw the tower")))
+	if testCase.issue != domain.IssueWithdrawn {
+		h.submitted(t, token, work.submission, draft.Version)
+		work.corrected = h.correctedFile(t, tutorToken, work.submission, workQuestion(6), "corrected.pdf", 40)
+		h.reviewSaved(t, tutorToken, work.submission, reviewJSON(t, 1, 0, saveID(1), "Good", fullyScored("Nice", work.corrected)...))
+		h.published(t, tutorToken, work.submission, domain.ReviewReturn, 1)
+		work.revision = h.revisionID(t, work.submission, 1)
+	}
+	h.cancelWithRoster(t, work.lesson, student)
+	if testCase.issue == domain.IssueWithdrawn {
+		h.mustAnswer(t, h.withdrawIssue(t, tutorToken, work.issue), http.StatusOK)
+	}
+	if testCase.marked {
+		h.markIssueForErasure(t, work.issue)
+	}
+	h.setRelationshipState(t, card, testCase.relationship)
+	return work
+}
+
+func (h *authHarness) mintsAs(t *testing.T, token string, image string, work readableWork) (bool, bool, bool) {
+	t.Helper()
+	snapshot, _ := h.addressOf(t, token, image, "?ref=issue_snapshot:"+work.issue)
+	answer, _ := h.addressOf(t, token, work.answer, "?ref=answer:"+work.submission)
+	corrected := false
+	if work.revision != "" {
+		minted, _ := h.addressOf(t, token, work.corrected, "?ref=review_item:"+work.revision)
+		corrected = minted.status == http.StatusOK
+	}
+	return snapshot.status == http.StatusOK, answer.status == http.StatusOK, corrected
+}
+
+func issueCreatedEmails(messages []mail.SinkMessage) int {
+	count := 0
+	for _, message := range messages {
+		if !strings.HasPrefix(message.Subject, "Assignment returned") {
+			count++
+		}
+	}
+	return count
+}
+
 func TestTheStudentSubmissionReadabilityCopiesAgree(t *testing.T) {
 	t.Parallel()
-	h := newAuthHarness(t)
-	parties := h.issueParties(t)
+	h := newUploadHarness(t)
+	_, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	picture := h.libraryUpload(t, tutorToken, domain.ContextPromptImage, "prompt.png", pngBytes(t, 2, 2))
+	h.mustAnswer(t, picture, http.StatusCreated)
+	image := uploadedID(t, picture)
+	template := h.workTemplate(t, tutorToken, "Readable", append(workBlocks(), imageQuestion(blockID(76, 1), image))...)
 	cases := readabilityCases()
-	submissions := make([]string, 0, len(cases))
-	lessons := make([]string, 0, len(cases))
+	works := make([]readableWork, 0, len(cases))
 	for index, testCase := range cases {
-		student := h.seedStudentAccount(t, testCase.student, domain.AccountActive)
-		card := h.seedCard(t, parties.tutor, testCase.student, domain.RelationshipActive, &student)
-		lesson := h.scheduled(t, parties.tutorToken, oneOffFor(card, "2030-03-12", fmt.Sprintf("%02d:00", 5+index))).Lessons[0].ID
-		issue := h.issued(t, parties.tutorToken, issueJSONWith(parties.template.ID, toCard(card), &lesson, nil, string(domain.AnswerPolicyAfterCheck)))
-		h.cancelWithRoster(t, lesson, student)
-		submissions = append(submissions, h.submissionsOf(t, issue.ID)[0].id)
-		lessons = append(lessons, lesson)
-		if testCase.issue == domain.IssueWithdrawn {
-			h.mustAnswer(t, h.withdrawIssue(t, parties.tutorToken, issue.ID), http.StatusOK)
-		}
-		if testCase.marked {
-			h.markIssueForErasure(t, issue.ID)
-		}
-		h.setRelationshipState(t, card, testCase.relationship)
+		works = append(works, h.readableWork(t, tutorToken, template, testCase, 5+index))
 	}
 
 	h.tick(t)
@@ -172,16 +224,22 @@ func TestTheStudentSubmissionReadabilityCopiesAgree(t *testing.T) {
 	readableCount := 0
 	for index, testCase := range cases {
 		want := domain.ReadableStudentSubmission(testCase.issue, testCase.marked, testCase.relationship)
+		work := works[index]
 		token := h.studentToken(t, testCase.student)
 		created := eventsNamed(h.notificationsOf(t, token), string(domain.NotificationIssueCreated))
 		labelled := len(created) == 1 && created[0].Label != nil && created[0].Link != nil
-		emailed := len(h.mailTo(t, memberEmail(testCase.student))) == 1
-		read := h.submissionAnswer(t, token, submissions[index]).status == http.StatusOK
+		emailed := issueCreatedEmails(h.mailTo(t, memberEmail(testCase.student))) == 1
+		read := h.submissionAnswer(t, token, work.submission).status == http.StatusOK
 		listed := h.assignments(t, token, nil).Counts.Todo == 1
-		linked := slices.Contains(h.linkedWorkAs(t, token, lessons[index]).submissionIDs(), submissions[index])
-		if labelled != want || emailed != want || read != want || listed != want || linked != want {
-			t.Errorf("%+v: the predicate says %v, the row label %v, the email %v, the read %v, the list %v, the lesson's linked work %v",
-				testCase, want, labelled, emailed, read, listed, linked)
+		linked := slices.Contains(h.linkedWorkAs(t, token, work.lesson).submissionIDs(), work.submission)
+		snapshot, answer, corrected := h.mintsAs(t, token, image, work)
+		correctedWant := want && work.revision != ""
+		if labelled != want || emailed != want || read != want || listed != want || linked != want || snapshot != want || answer != want || corrected != correctedWant {
+			t.Errorf("%+v: the predicate says %v, the row label %v, the email %v, the read %v, the list %v, the lesson's linked work %v, "+
+				"the snapshot mint %v, the answer mint %v, the corrected file mint %v", testCase, want, labelled, emailed, read, listed, linked, snapshot, answer, corrected)
+		}
+		if (work.revision == "") != (testCase.issue == domain.IssueWithdrawn) {
+			t.Errorf("%+v: a reviewed revision exists %v", testCase, work.revision != "")
 		}
 		if want {
 			readableCount++

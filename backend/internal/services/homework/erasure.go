@@ -216,7 +216,13 @@ func (c Cleanup) removeReferences(ctx context.Context, repos repositories.Reposi
 		return 0, err
 	}
 	count := int64(len(removed))
-	if err := library.ReleaseReferences(ctx, repos, c.Random, c.Logger, kind, distinctAttachments(removed), now); err != nil {
+	attachments := distinctAttachments(removed)
+	for _, attachment := range attachments {
+		if _, err := repos.Attachments.Lock(ctx, attachment); err != nil {
+			return 0, err
+		}
+	}
+	if err := library.ReleaseReferences(ctx, repos, c.Random, c.Logger, kind, attachments, now); err != nil {
 		return 0, err
 	}
 	return count, nil

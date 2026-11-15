@@ -9,23 +9,32 @@ import (
 )
 
 const (
-	AnswerSavesPerSecond       = 2
-	AnswerSavesPerHour         = 3_600
-	AnswerSaveSecondWindow     = time.Second
-	AnswerSaveHourWindow       = time.Hour
-	SubmissionFileBytesCap     = 250_000_000
-	AnswerShortTextMaxRunes    = 500
-	AnswerNumberMaxRunes       = 64
-	AssignmentCountCap         = 100
-	HomeworkCleanupBudget      = 20 * time.Second
-	HomeworkCleanupBatch       = 500
-	PurposeAnswerSavesSecond   = RateLimitPurpose("answer_saves_second")
-	PurposeAnswerSavesHour     = RateLimitPurpose("answer_saves_hour")
-	JobHomeworkCleanup         = JobName("homework.cleanup")
-	EventSubmissionSubmitted   = OutboxKind("submission.submitted")
-	EventSubmissionChecked     = OutboxKind("submission.checked")
-	AutomaticReviewRevision    = 0
-	SubmissionCloseCauseEnding = "ending"
+	AnswerSavesPerSecond     = 2
+	AnswerSavesPerHour       = 3_600
+	AnswerSaveSecondWindow   = time.Second
+	AnswerSaveHourWindow     = time.Hour
+	SubmissionFileBytesCap   = 250_000_000
+	AnswerShortTextMaxRunes  = 500
+	AnswerNumberMaxRunes     = 64
+	AssignmentCountCap       = 100
+	HomeworkCleanupBudget    = 20 * time.Second
+	HomeworkCleanupBatch     = 500
+	PurposeAnswerSavesSecond = RateLimitPurpose("answer_saves_second")
+	PurposeAnswerSavesHour   = RateLimitPurpose("answer_saves_hour")
+	JobHomeworkCleanup       = JobName("homework.cleanup")
+	EventSubmissionSubmitted = OutboxKind("submission.submitted")
+	EventSubmissionChecked   = OutboxKind("submission.checked")
+	AutomaticReviewRevision  = 0
+)
+
+type SubmissionCloseCause string
+
+const (
+	SubmissionCloseCauseEnding         SubmissionCloseCause = "ending"
+	SubmissionCloseCauseRemoval        SubmissionCloseCause = "removal"
+	SubmissionCloseCauseTutorDeleted   SubmissionCloseCause = "tutor_deleted"
+	SubmissionCloseCauseStudentDeleted SubmissionCloseCause = "student_deleted"
+	SubmissionCloseCauseStudentPurged  SubmissionCloseCause = "student_purged"
 )
 
 var ErrAnswerShapeInvalid = errors.New("the answer value does not fit the question type")

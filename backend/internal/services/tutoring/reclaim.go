@@ -426,7 +426,7 @@ func (s *Service) settleDecided(
 	if err := s.settleDecidedLessons(ctx, repos, path, decision, now); err != nil {
 		return err
 	}
-	return homework.ApplyLifecycle(ctx, repos, s.deps.Logger, decision.removed, nil, false, "removal", now)
+	return homework.ApplyLifecycle(ctx, repos, s.deps.Logger, decision.removed, nil, false, domain.SubmissionCloseCauseRemoval, now)
 }
 
 func (s *Service) settleDecidedLessons(ctx context.Context, repos repositories.Repositories, path domain.MembershipPath, decision *reclaimDecision, now time.Time) error {

@@ -56,8 +56,11 @@ DELETE FROM submissions WHERE id = @id;
 DELETE FROM issues WHERE id = @id AND erase_pending_since IS NOT NULL;
 
 -- name: LockLifecycleIssues :many
-SELECT id FROM issues WHERE relationship_id = ANY(sqlc.arg(relationships)::uuid[])
-    OR id IN (SELECT issue_id FROM submissions WHERE relationship_id = ANY(sqlc.arg(relationships)::uuid[]))
+SELECT id FROM issues WHERE id IN (
+    SELECT linked.id FROM issues AS linked WHERE linked.relationship_id = ANY(sqlc.arg(relationships)::uuid[])
+    UNION
+    SELECT submissions.issue_id FROM submissions WHERE submissions.relationship_id = ANY(sqlc.arg(relationships)::uuid[])
+)
 ORDER BY id FOR UPDATE;
 
 -- name: LockLifecycleSubmissions :many

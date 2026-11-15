@@ -36,6 +36,12 @@ var pinnedRevealedFields = map[string][]string{
 	revealedItem:      {"question_id", "correct_option_ids", "accepted_answers", "correct_value", "tolerance", "explanation"},
 }
 
+var pinnedStudentEmbeddings = map[string]string{
+	"StudentCard":        "CardFields",
+	"StudentCardDetail":  "StudentCard",
+	"StudentCardSummary": "CardFields",
+}
+
 type schemaField struct {
 	name     string
 	key      string
@@ -128,25 +134,56 @@ func referencedNames(expression ast.Expr) []string {
 	return names
 }
 
+func studentReach(structs map[string][]schemaField) map[string]string {
+	reached := map[string]string{}
+	var queue []string
+	for name := range structs {
+		if _, exempt := pinnedRevealedFields[name]; strings.HasPrefix(name, studentPrefix) && !exempt {
+			reached[name] = name
+			queue = append(queue, name)
+		}
+	}
+	slices.Sort(queue)
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+		for _, field := range structs[name] {
+			for _, referred := range field.refers {
+				_, known := structs[referred]
+				_, exempt := pinnedRevealedFields[referred]
+				if _, seen := reached[referred]; seen || !known || exempt {
+					continue
+				}
+				reached[referred] = reached[name] + "." + field.name + " -> " + referred
+				queue = append(queue, referred)
+			}
+		}
+	}
+	return reached
+}
+
 func studentSchemaProblems(structs map[string][]schemaField) []string {
 	var problems []string
 	for name, fields := range structs {
-		if !strings.HasPrefix(name, studentPrefix) {
+		pinned, exempt := pinnedRevealedFields[name]
+		if !strings.HasPrefix(name, studentPrefix) || !exempt {
 			continue
 		}
-		if pinned, exempt := pinnedRevealedFields[name]; exempt {
-			var keys []string
-			for _, field := range fields {
-				keys = append(keys, field.key)
-			}
-			if !slices.Equal(keys, pinned) {
-				problems = append(problems, name+" declares "+strings.Join(keys, ", ")+" instead of its pinned fields")
-			}
-			continue
-		}
+		var keys []string
 		for _, field := range fields {
+			keys = append(keys, field.key)
+		}
+		if !slices.Equal(keys, pinned) {
+			problems = append(problems, name+" declares "+strings.Join(keys, ", ")+" instead of its pinned fields")
+		}
+	}
+	for name, path := range studentReach(structs) {
+		for _, field := range structs[name] {
+			if field.embedded && !slices.Equal(field.refers, []string{pinnedStudentEmbeddings[name]}) {
+				problems = append(problems, path+" embeds "+strings.Join(field.refers, "."))
+			}
 			if slices.Contains(forbiddenStudentGoNames, field.name) || slices.Contains(forbiddenStudentJSONKeys, field.key) {
-				problems = append(problems, name+" declares the forbidden field "+field.name+" ("+field.key+")")
+				problems = append(problems, path+" declares the forbidden field "+field.name+" ("+field.key+")")
 			}
 		}
 	}
@@ -194,6 +231,12 @@ func TestStudentSchemaCheckRejectsKeyFieldsAndStrayReferences(t *testing.T) {
 		revealedContainer: {{name: "Questions", key: "questions", refers: []string{revealedItem}}},
 		revealedItem:      {{name: "QuestionID", key: "question_id"}, {name: "Points", key: "points"}},
 		"TutorView":       {{embedded: true, refers: []string{revealedItem}}},
+		"StudentEmbeds":   {{embedded: true, refers: []string{"TutorWork"}}},
+		"StudentCard":     {{embedded: true, refers: []string{"TutorWork"}}},
+		"TutorWork":       {{name: "AutoCorrect", key: "auto_correct"}},
+		"StudentHolder":   {{name: "Detail", key: "detail", refers: []string{"Shared"}}},
+		"Shared":          {{name: "Files", key: "files", refers: []string{"map", "string", "Nested"}}},
+		"Nested":          {{name: "Points", key: "points"}},
 	}
 
 	problems := strings.Join(studentSchemaProblems(structs), "\n")
@@ -201,6 +244,8 @@ func TestStudentSchemaCheckRejectsKeyFieldsAndStrayReferences(t *testing.T) {
 	for _, expected := range []string{
 		"StudentLeak declares the forbidden field Points", "StudentOther.Revealed refers to the revealed struct StudentRevealed",
 		"StudentRevealedQuestion declares question_id, points instead of its pinned fields", "TutorView. refers to the revealed struct StudentRevealedQuestion",
+		"StudentEmbeds embeds TutorWork", "StudentCard embeds TutorWork", ". -> TutorWork declares the forbidden field AutoCorrect (auto_correct)",
+		"StudentHolder.Detail -> Shared.Files -> Nested declares the forbidden field Points (points)",
 	} {
 		if !strings.Contains(problems, expected) {
 			t.Fatalf("expected %q among:\n%s", expected, problems)

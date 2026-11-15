@@ -583,11 +583,22 @@ func TestCorrectedFileMintsFollowReadability(t *testing.T) {
 		party.revision = h.revisionID(t, party.submission, 1)
 	}
 
+	readableParty := parties["readable"]
+	h.linkedCard(t, tutor, 16, domain.RelationshipActive)
+	sharedStudent := domain.UserID{readableParty.id}
+	secondTutor, secondTutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, memberEmail(2))
+	h.seedCard(t, secondTutor, 30, domain.RelationshipActive, &sharedStudent)
+	crossParty := []crossPartyMint{
+		{label: "a classmate's corrected file mint", token: h.studentToken(t, 16), attachment: readableParty.file, reference: "review_item:" + readableParty.revision},
+		{label: "a second tutor's corrected file mint", token: secondTutorToken, attachment: readableParty.file, reference: "review_item:" + readableParty.revision},
+	}
+
 	h.setRelationshipState(t, parties["reclaim_pending"].card, domain.RelationshipReclaimPending)
 	h.setRelationshipState(t, parties["discarded"].card, domain.RelationshipDiscarded)
 	h.setRelationshipState(t, parties["ended"].card, domain.RelationshipEnded)
 	h.markIssueForErasure(t, parties["marked"].issue)
 
+	crossAnswers := h.crossPartyMints(t, crossParty)
 	minted, read := map[string]response{}, map[string]response{}
 	for name, party := range parties {
 		token := h.studentToken(t, party.id)
@@ -597,6 +608,7 @@ func TestCorrectedFileMintsFollowReadability(t *testing.T) {
 	tutorMint, _ := h.addressOf(t, tutorToken, parties["discarded"].file, "?ref=review_item:"+parties["discarded"].revision)
 
 	h.mustAnswer(t, tutorMint, http.StatusOK)
+	assertCrossPartyMintsRefused(t, crossAnswers)
 	for name := range parties {
 		minted, read := minted[name], read[name]
 		readable := name == "readable" || name == "ended"

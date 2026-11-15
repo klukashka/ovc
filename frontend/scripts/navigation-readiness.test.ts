@@ -347,7 +347,14 @@ test('coherent readiness requires a current socket after all reads complete', ()
 });
 
 test('retired request cancellation requires unanswered exact action ordering', () => {
-  const failed = { description: 'GET', reason: 'net::ERR_ABORTED', answered: false, started: 1, failed: 3 };
+  const failed = {
+    method: 'GET',
+    description: 'GET',
+    reason: 'net::ERR_ABORTED',
+    answered: false,
+    started: 1,
+    failed: 3,
+  };
 
   const outcomes = [
     cancellationAfterNavigationAction(failed, 2),

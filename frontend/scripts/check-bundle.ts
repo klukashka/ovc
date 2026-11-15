@@ -6,6 +6,7 @@ import { gzipSync } from 'node:zlib';
 import {
   buildManifestPath,
   checkPageChunk,
+  checkSharedPage,
   checkStudentReach,
   checkBundle,
   type CommittedPublicFiles,
@@ -17,6 +18,7 @@ import {
   parseModuleGraph,
   type ServedEntry,
   type ServedEntryKind,
+  sharedLessonPage,
   studentPages,
   tutorOnlyFolders,
   unexpectedServedEntries,
@@ -117,6 +119,7 @@ const reports = [
   budget,
   ...ownedPages.map((owned) => checkPageChunk(manifest, graph, pages, gzipSize, owned)),
   checkStudentReach(graph, studentPages, tutorOnlyFolders),
+  checkSharedPage(graph, sharedLessonPage),
 ];
 const report = {
   lines: reports.flatMap((entry) => entry.lines),

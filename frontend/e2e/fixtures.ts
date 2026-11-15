@@ -29,7 +29,7 @@ import {
 import { type Deployment, readE2ESettings, startDeployment } from './deployment.ts';
 import { redactAddress, redactPath } from './diagnostic-redaction.ts';
 import { type SocketSlotHolder, socketSlotHolder } from './realtime.ts';
-import { type FailedRequest, unexpectedFailures } from './request-failures.ts';
+import { type FailedRequest, PageActivityRecorder, unexpectedFailures } from './request-failures.ts';
 import { createGroup, seedActiveStudent, seedActiveStudentsThroughCode, seedJoinRequests } from './tutoring.ts';
 
 export interface SentMail {
@@ -353,44 +353,28 @@ function watchPage(page: Page, deployment: Deployment, registry: DiagnosticRegis
   const failures: string[] = [];
   const expected: string[] = [];
   const abortedPaths = consoleExpectation.abortedPaths;
-  let step = 0;
-  const navigations: number[] = [];
-  const requests: number[] = [];
-  const closes: number[] = [];
+  const recorder = new PageActivityRecorder();
   const startOf = new Map<Request, number>();
   const answeredRequests = new Set<Request>();
-  let documentRequested = false;
   page.on('request', (request) => {
-    step += 1;
-    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
-      documentRequested = true;
-      navigations.push(step);
-    } else {
-      requests.push(step);
-    }
-    startOf.set(request, step);
+    startOf.set(request, recorder.request(request.isNavigationRequest() && request.frame() === page.mainFrame()));
   });
   page.on('framenavigated', (frame) => {
-    if (frame !== page.mainFrame()) {
-      return;
+    if (frame === page.mainFrame()) {
+      recorder.mainFrameNavigated(frame.url());
     }
-    if (documentRequested) {
-      documentRequested = false;
-      return;
-    }
-    step += 1;
-    navigations.push(step);
   });
   const failedRequests: FailedAt[] = [];
   page.on('requestfailed', (request) => {
-    step += 1;
+    const started = startOf.get(request) ?? Number.POSITIVE_INFINITY;
     failedRequests.push({
       failed: {
+        method: request.method(),
         description: request.method(),
         reason: request.failure()?.errorText ?? '',
         answered: answeredRequests.has(request),
-        started: startOf.get(request) ?? Number.POSITIVE_INFINITY,
-        failed: step,
+        started,
+        failed: recorder.failed(),
       },
       path: pathOf(request.url()),
     });
@@ -405,8 +389,7 @@ function watchPage(page: Page, deployment: Deployment, registry: DiagnosticRegis
   return {
     page,
     markClose: (): void => {
-      step += 1;
-      closes.push(step);
+      recorder.close();
     },
     expectFailure: (failure): void => {
       registry.console(page).expectHttp(page, {
@@ -432,7 +415,7 @@ function watchPage(page: Page, deployment: Deployment, registry: DiagnosticRegis
     },
     verify: (): void => {
       expect([
-        ...unexpectedFailures(unexpectedAborts(failedRequests, abortedPaths), { navigations, requests, closes }).map(
+        ...unexpectedFailures(unexpectedAborts(failedRequests, abortedPaths), recorder.activity()).map(
           () => 'request_failure',
         ),
         ...unseenAborts(failedRequests, abortedPaths),

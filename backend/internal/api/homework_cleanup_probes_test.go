@@ -1,6 +1,11 @@
 package api_test
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -10,9 +15,8 @@ import (
 	"ovc/backend/internal/testdb"
 )
 
-func TestHomeworkCleanupIdleUsesTwoMarkedRowProbes(t *testing.T) {
-	t.Parallel()
-	f := newErasureFixture(t)
+func (f erasureFixture) seedManyIssues(t *testing.T) {
+	t.Helper()
 	h := f.h
 	if _, err := h.database.Pool.Exec(t.Context(), `INSERT INTO issues (id, tutor_id, template_id, relationship_id, title, snapshot, snapshot_bytes, max_points, has_manual_questions, answer_policy, status, version, issued_at, updated_at)
  SELECT gen_random_uuid(), tutor_id, template_id, relationship_id, title, snapshot, snapshot_bytes, max_points, has_manual_questions, answer_policy, status, version, issued_at, updated_at
@@ -27,35 +31,111 @@ func TestHomeworkCleanupIdleUsesTwoMarkedRowProbes(t *testing.T) {
 	if _, err := h.database.Pool.Exec(t.Context(), "ANALYZE issues; ANALYZE submissions"); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func generatedQuery(t *testing.T, file string, name string) string {
+	t.Helper()
+	parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join("..", "dbgen", file), nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range parsed.Decls {
+		general, isGeneral := declaration.(*ast.GenDecl)
+		if !isGeneral || general.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range general.Specs {
+			value, isValue := spec.(*ast.ValueSpec)
+			if !isValue || len(value.Names) != 1 || value.Names[0].Name != name || len(value.Values) != 1 {
+				continue
+			}
+			literal, isLiteral := value.Values[0].(*ast.BasicLit)
+			if !isLiteral {
+				t.Fatalf("%s is not a string literal", name)
+			}
+			query, err := strconv.Unquote(literal.Value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return query
+		}
+	}
+	t.Fatalf("%s is not declared in %s", name, file)
+	return ""
+}
+
+func TestHomeworkCleanupIdleUsesTwoMarkedRowProbes(t *testing.T) {
+	t.Parallel()
+	f := newErasureFixture(t)
+	h := f.h
+	f.seedManyIssues(t)
 	now := h.now(t)
-	pool, trace := testdb.NewHomeworkProbePool(t, h.database)
-	cleanup := homework.Cleanup{Store: repositories.NewStore(pool), Random: h.random, Logger: h.logger}
+	cleanup := homework.Cleanup{Store: repositories.NewStore(h.database.Pool), Random: h.random, Logger: h.logger}
+	window := testdb.WatchStatements(t, h.database)
 
 	counts, runErr := cleanup.Run(t.Context(), now)
-	probes := trace.Take()
+	executed := window.Executed(t)
 
-	if runErr != nil || counts != (domain.HomeworkCleanupCounts{}) || len(probes) != 2 {
-		t.Fatalf("idle cleanup: counts=%+v error=%v queries=%d", counts, runErr, len(probes))
+	if runErr != nil || counts != (domain.HomeworkCleanupCounts{}) || len(executed) != 2 {
+		t.Fatalf("idle cleanup: counts=%+v error=%v statements=%+v", counts, runErr, executed)
 	}
-	var begins, commits, autocommitStatements int
-	for _, probe := range probes {
-		switch strings.ToUpper(strings.TrimSpace(probe.SQL())) {
-		case "BEGIN":
-			begins++
-		case "COMMIT":
-			commits++
+	probes := map[string]string{}
+	for _, statement := range executed {
+		upper := strings.ToUpper(statement.Query)
+		if statement.Calls != 1 || strings.Contains(upper, "BEGIN") || strings.Contains(upper, "COMMIT") {
+			t.Fatalf("the idle cleanup ran %+v", statement)
+		}
+		switch {
+		case strings.Contains(statement.Query, "FROM issues") && strings.Contains(statement.Query, "erase_pending_since IS NOT NULL"):
+			probes["issues_erase_pending_idx"] = statement.Query
+		case strings.Contains(statement.Query, "FROM submissions") && strings.Contains(statement.Query, "release_pending_since IS NOT NULL"):
+			probes["submissions_release_pending_idx"] = statement.Query
 		default:
-			autocommitStatements++
+			t.Fatalf("unexpected idle statement: %s", statement.Query)
 		}
 	}
-	if begins != 0 || commits != 0 || autocommitStatements != 2 {
-		t.Fatalf("idle transaction statements: begin=%d commit=%d autocommit=%d", begins, commits, autocommitStatements)
+	if len(probes) != 2 {
+		t.Fatalf("the idle cleanup did not run both marked-row probes: %v", probes)
 	}
-	for index, probe := range probes {
-		expected := []string{"issues_erase_pending_idx", "submissions_release_pending_idx"}[index]
-		if !strings.HasPrefix(probe.SQL(), "-- name: List") || !strings.Contains(probe.SQL(), "pending_since IS NOT NULL") {
-			t.Fatalf("unexpected idle query: %s", probe.SQL())
+	for index, query := range probes {
+		if plan := testdb.GenericPlan(t, h.database, query); !strings.Contains(plan, index) {
+			t.Fatalf("the probe does not use %s:\n%s", index, plan)
 		}
-		testdb.AssertHomeworkProbeIndex(t, pool, probe, expected)
+	}
+}
+
+func (f erasureFixture) spreadIssuesOverCards(t *testing.T) {
+	t.Helper()
+	h := f.h
+	if _, err := h.database.Pool.Exec(t.Context(), `INSERT INTO relationships (id, tutor_id, state, display_name, email, notes, created_at, updated_at)
+ SELECT gen_random_uuid(), $1, 'invited', 'Spread ' || n, 'spread-' || n || '@example.org', '', $2, $2 FROM generate_series(1, 2000) AS n`,
+		f.tutor, h.now(t)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.database.Pool.Exec(t.Context(), `WITH cards AS (SELECT id, row_number() OVER (ORDER BY id) AS n FROM relationships WHERE display_name LIKE 'Spread %'),
+ work AS (SELECT id, row_number() OVER (ORDER BY id) AS n FROM issues WHERE id <> $1::uuid)
+ UPDATE issues SET relationship_id = cards.id FROM work JOIN cards ON cards.n = work.n WHERE issues.id = work.id`, f.issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.database.Pool.Exec(t.Context(), `UPDATE submissions SET relationship_id = issues.relationship_id FROM issues
+ WHERE submissions.issue_id = issues.id AND issues.id <> $1::uuid`, f.issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.database.Pool.Exec(t.Context(), "ANALYZE relationships; ANALYZE issues; ANALYZE submissions"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLockLifecycleIssuesUsesIndexes(t *testing.T) {
+	t.Parallel()
+	f := newErasureFixture(t)
+	f.seedManyIssues(t)
+	f.spreadIssuesOverCards(t)
+	query := generatedQuery(t, "homework_cleanup.sql.go", "lockLifecycleIssues")
+
+	plan := testdb.GenericPlan(t, f.h.database, query)
+
+	if strings.Contains(plan, "Seq Scan") || !strings.Contains(plan, "issues_relationship_idx") || !strings.Contains(plan, "submissions_relationship_idx") {
+		t.Fatalf("the lifecycle issue lock does not use the relationship indexes:\n%s", plan)
 	}
 }

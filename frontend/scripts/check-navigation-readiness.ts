@@ -451,6 +451,7 @@ function nativeActivity(page: Page): {
   const failure = (request: Request): void => {
     if (!advance()) return;
     failed.set(request, {
+      method: request.method(),
       description: request.method(),
       reason: request.failure()?.errorText ?? '',
       answered: answered.has(request),
@@ -465,7 +466,7 @@ function nativeActivity(page: Page): {
   page.on('requestfinished', complete);
   page.on('response', response);
   page.on('requestfailed', failure);
-  const activity = (): PageActivity => ({ navigations, requests, closes: [] });
+  const activity = (): PageActivity => ({ documents: navigations, routeChanges: [], requests, closes: [] });
   return {
     failureFor: (request) => (request === null ? undefined : failed.get(request)),
     terminalFor: (request) =>
