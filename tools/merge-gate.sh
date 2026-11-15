@@ -104,6 +104,7 @@ refused_environment_variables=(
 
 allowed_changed_go_settings=" GOPATH GOMODCACHE GOCACHE GOTMPDIR GOBIN GOTELEMETRY GOPROXY GOAMD64 GOARM64 "
 tool_probes=yes
+power_log=yes
 go_setting_folders=(. backend tools)
 reported_go_settings=(GOVERSION GOTOOLCHAIN GOFLAGS GOWORK GOENV)
 
@@ -125,8 +126,8 @@ influential_ignored_files=(
 
 usage() {
   printf '%s\n' \
-    'usage: merge-gate.sh gate --ff-only [--change BRANCH] [--repo PATH] [--lock-dir PATH] [--checks full|self-test|self-test-lanes] [--lane-grace SECONDS] [--skip-tool-probes]' \
-    '       merge-gate.sh gate --squash --change BRANCH [--repo PATH] [--lock-dir PATH] [--checks full|self-test|self-test-lanes] [--lane-grace SECONDS] [--skip-tool-probes]' \
+    'usage: merge-gate.sh gate --ff-only [--change BRANCH] [--repo PATH] [--lock-dir PATH] [--checks full|self-test|self-test-lanes] [--lane-grace SECONDS] [--skip-tool-probes] [--skip-power-log]' \
+    '       merge-gate.sh gate --squash --change BRANCH [--repo PATH] [--lock-dir PATH] [--checks full|self-test|self-test-lanes] [--lane-grace SECONDS] [--skip-tool-probes] [--skip-power-log]' \
     '       merge-gate.sh finish [--repo PATH] [--lock-dir PATH]' \
     '       merge-gate.sh release [--repo PATH] [--lock-dir PATH]' >&2
   exit 2
@@ -800,6 +801,118 @@ elapsed_seconds() {
   awk -v start="$1" -v end="$2" 'BEGIN { printf "%.1f", end - start }'
 }
 
+power_from_pmset_batt() {
+  local first_line=""
+  IFS= read -r first_line || true
+  case "$first_line" in
+    "Now drawing from 'AC Power'"*) printf 'mains' ;;
+    "Now drawing from 'Battery Power'"*) printf 'battery' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
+power_from_online_values() {
+  local value offline=no
+  while IFS= read -r value; do
+    case "$value" in
+      1)
+        printf 'mains'
+        return 0
+        ;;
+      0) offline=yes ;;
+    esac
+  done
+  if [[ "$offline" == yes ]]; then
+    printf 'battery'
+  else
+    printf 'unknown'
+  fi
+}
+
+load_from_fields() {
+  local text one="" five="" fifteen="" rest="" value
+  text="$(tr -d '{}')"
+  read -r one five fifteen rest <<<"$text" || true
+  for value in "$one" "$five" "$fifteen"; do
+    if [[ ! "$value" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+      printf 'unknown'
+      return 0
+    fi
+  done
+  printf '%s %s %s' "$one" "$five" "$fifteen"
+}
+
+run_fields_from_power_log() {
+  awk -v start="$1" -v end="$2" '
+    $1 ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/ && $2 ~ /^[0-9][0-9]:[0-9][0-9]:[0-9][0-9]$/ {
+      stamp = $1 " " $2
+      if (stamp < start || stamp > end) next
+      if ($0 ~ /Using B(att|ATT)/) battery = 1
+      if ($4 == "Sleep") slept = 1
+    }
+    END { printf "battery-during-run: %s; sleep: %s", battery ? "yes" : "no", slept ? "yes" : "no" }
+  '
+}
+
+linux_online_values() {
+  local file
+  for file in /sys/class/power_supply/*/online; do
+    [[ -f "$file" && -r "$file" ]] || continue
+    head -n 1 "$file" 2>/dev/null || true
+  done
+}
+
+power_source() {
+  local text
+  case "$(uname -s)" in
+    Darwin)
+      text="$(LC_ALL=C pmset -g batt 2>/dev/null)" || text=""
+      power_from_pmset_batt <<<"$text"
+      ;;
+    Linux) linux_online_values | power_from_online_values ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
+load_averages() {
+  local text
+  case "$(uname -s)" in
+    Darwin) text="$(LC_ALL=C sysctl -n vm.loadavg 2>/dev/null)" || text="" ;;
+    Linux) text="$(head -n 1 /proc/loadavg 2>/dev/null)" || text="" ;;
+    *) text="" ;;
+  esac
+  load_from_fields <<<"$text"
+}
+
+run_power_fields() {
+  local fields
+  if [[ "$power_log" == yes && "$(uname -s)" == Darwin ]] &&
+    fields="$(LC_ALL=C env -u TZ pmset -g log 2>/dev/null | run_fields_from_power_log "$1" "$2")"; then
+    printf '%s' "$fields"
+  else
+    printf 'battery-during-run: unknown; sleep: unknown'
+  fi
+}
+
+local_stamp() {
+  env -u TZ date '+%Y-%m-%d %H:%M:%S'
+}
+
+record_gate_start() {
+  power_log_started="$(local_stamp)"
+  gate_start_line="gate start: power: $(power_source); load: $(load_averages)"
+  printf 'merge gate: %s\n' "$gate_start_line" >&2
+  prepare_log
+  printf '%s\n' "$gate_start_line" >>"$log_path"
+}
+
+record_gate_end() {
+  [[ -n "$gate_start_line" && -z "$gate_end_line" ]] || return 0
+  gate_end_line="gate end: power: $(power_source); load: $(load_averages); $(run_power_fields "$power_log_started" "$(local_stamp)")"
+  prepare_log
+  printf '%s\n' "$gate_end_line" >>"$log_path"
+}
+
 split_checks() {
   local entry rest tag earlier index=0
   entry_tags=()
@@ -1276,6 +1389,9 @@ print_report() {
   printf 'tested tree: %s\n' "$tree"
   printf 'scope: %s\n' "$scope"
   printf 'check list: %s\n' "$check_list"
+  for line in "$gate_start_line" "$gate_end_line"; do
+    [[ -z "$line" ]] || printf '%s\n' "$line"
+  done
   for line in ${environment_lines[@]+"${environment_lines[@]}"}; do
     printf '%s\n' "$line"
   done
@@ -1300,6 +1416,7 @@ print_report() {
 }
 
 gate_failed() {
+  record_gate_end
   print_report "failed: $1"
   attempt_logged=yes
   append_log failed
@@ -1332,6 +1449,9 @@ gate() {
   phase_times=""
   phase_started=""
   attempt_logged=no
+  power_log_started=""
+  gate_start_line=""
+  gate_end_line=""
   environment_lines=()
   run_lock_held=no
   run_lock_path=""
@@ -1363,6 +1483,7 @@ gate() {
   holding=yes
   prepare_log
   attempts="$(earlier_attempts)"
+  record_gate_start
   if laned_list; then
     take_run_lock
     run_laned_checks
@@ -1374,6 +1495,7 @@ gate() {
     gate_failed "the checkout changed during the gate: $changed"
   fi
   release_run_lock || gate_failed "the end-to-end run lock $run_lock_path no longer held this gate at its end"
+  record_gate_end
   attempt_logged=yes
   append_log passed
   mark_passed
@@ -1494,6 +1616,7 @@ main() {
         shift
         ;;
       --skip-tool-probes) tool_probes=no ;;
+      --skip-power-log) power_log=no ;;
       --lane-grace)
         [[ $# -ge 2 && "$2" =~ ^[1-9][0-9]?$ ]] || usage
         lane_grace="$2"
@@ -1510,6 +1633,10 @@ main() {
   if [[ "$tool_probes" == no ]]; then
     [[ "$subcommand" == gate && ( "$requested_checks" == self-test || "$requested_checks" == self-test-lanes ) ]] ||
       fail "--skip-tool-probes is accepted only by a gate with --checks self-test or self-test-lanes"
+  fi
+  if [[ "$power_log" == no ]]; then
+    [[ "$subcommand" == gate && ( "$requested_checks" == self-test || "$requested_checks" == self-test-lanes ) ]] ||
+      fail "--skip-power-log is accepted only by a gate with --checks self-test or self-test-lanes"
   fi
   if [[ -n "$lane_grace" ]]; then
     [[ "$subcommand" == gate && ( "$requested_checks" == self-test || "$requested_checks" == self-test-lanes ) ]] ||

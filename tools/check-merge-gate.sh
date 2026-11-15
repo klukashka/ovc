@@ -30,6 +30,10 @@ contains() {
   echo "ok: $3"
 }
 
+count_matching() {
+  printf '%s\n' "$output" | awk -v pattern="$1" '$0 ~ pattern { found++ } END { print found + 0 }'
+}
+
 in_repo() {
   git -C "$repo" "$@"
 }
@@ -40,10 +44,15 @@ commit_file() {
   in_repo commit --quiet -m "$3"
 }
 
+power_log_reads=no
+
 run_gate() {
   local probes=()
   if [[ "$1" == gate ]]; then
     probes=(--skip-tool-probes)
+    if [[ "$power_log_reads" == no ]]; then
+      probes+=(--skip-power-log)
+    fi
   fi
   set +e
   output="$(bash "$gate_script" "$@" ${probes[@]+"${probes[@]}"} --repo "$repo" --lock-dir "$lock_dir" 2>&1)"
@@ -123,7 +132,9 @@ check "$status" "1" "the self-test list is refused on the gate script's own repo
 contains "$output" "refuses the repository the gate script belongs to" "the refusal names the script's repository"
 check "$(lock_state)" "released" "a refused self-test takes no lock"
 
+power_log_reads=yes
 run_gate gate --ff-only --checks self-test
+power_log_reads=no
 check "$status" "0" "a clean fast-forward gate passes"
 contains "$output" "scope: docs-only" "a Markdown-only change under docs/ is docs-only"
 contains "$output" "check list: self-test" "the report names the self-test check list"
@@ -133,6 +144,14 @@ contains "$output" "exit 0: .: git rev-parse --verify HEAD" "the report lists ea
 contains "$(cat "$lock")" "checks=self-test" "the lock records the check list"
 contains "$(cat "$lock")" "scope=docs-only" "the lock records the scope"
 check "$(file_mode "$lock_dir")|$(file_mode "$lock")|$(file_mode "$log")" "700|600|600" "the lock folder, lock and log are readable only by the owner"
+check "$(count_matching '^gate start: power: (mains|battery|unknown); load: [0-9.]+ [0-9.]+ [0-9.]+$')" "1" "the report prints one start line with the power source and the load"
+check "$(count_matching '^gate end: power: (mains|battery|unknown); load: [0-9.]+ [0-9.]+ [0-9.]+; battery-during-run: (yes|no|unknown); sleep: (yes|no|unknown)$')" "1" \
+  "the report prints one end line with the power source, the load, battery during the run and sleep"
+check "$(count_matching '^merge gate: gate start: power: ')" "1" "the gate prints its start line when it starts"
+check "$(awk '/^gate start: power: /{ starts++ } /^gate end: power: /{ ends++ } END { print starts + 0 "|" ends + 0 }' "$log")" "1|1" \
+  "the attempt log holds the start and the end line of the gate"
+check "$(tail -n 3 "$log" | sed -E 's/^(gate start|gate end|time)[:=].*/\1/' | tr '\n' '|')" "gate start|gate end|time|" \
+  "the attempt log holds the start line, the end line and the result in that order"
 
 held="$(cat "$lock")"
 run_gate gate --ff-only --checks self-test
@@ -260,12 +279,17 @@ in_repo commit --quiet -a -m "Keep the changed guide"
 
 start_change fix/failing
 commit_file gate-self-test.sh "exit 1" "Fail the self-test check"
+power_log_reads=yes
 run_gate gate --ff-only --checks self-test
+power_log_reads=no
 check "$status" "1" "a failing check fails the gate"
 contains "$output" "result: failed: a check failed" "the report names the failed check"
 contains "$output" "earlier attempts for this tree: none" "the first attempt has no earlier attempts"
+check "$(count_matching '^gate end: power: (mains|battery|unknown); load: [0-9.]+ [0-9.]+ [0-9.]+; battery-during-run: (yes|no|unknown); sleep: (yes|no|unknown)$')" "1" "a failed gate prints its end line"
 run_gate gate --ff-only --checks self-test
 contains "$output" "result=failed" "a rerun lists the earlier failed attempt for the same tree"
+check "$(count_matching '^gate end: power: (mains|battery|unknown); load: ([0-9.]+ [0-9.]+ [0-9.]+|unknown); battery-during-run: unknown; sleep: unknown$')" "1" \
+  "a self-test gate that skips the power log reports battery during the run and sleep as unknown"
 check "$(file_mode "$log")" "600" "the attempt log stays readable only by the owner"
 
 start_change docs/mode
@@ -427,10 +451,6 @@ $(without_line 'A|1|0|0.1' | awk '$0 != "A|4|0|0.1"')")" "failed=yes" \
 
 slot_order() {
   printf '%s\n' "$output" | awk -F': ' '/^(exit [0-9]+|not run|no record|[0-9]+ records): / { printf "%s ", $2 }'
-}
-
-count_matching() {
-  printf '%s\n' "$output" | awk -v pattern="$1" '$0 ~ pattern { found++ } END { print found + 0 }'
 }
 
 result_line() {
@@ -698,8 +718,8 @@ read_until() {
 
 start_background_gate() {
   exec 7<>"$work/fifo-gate-errors"
-  bash "$gate_script" gate --ff-only --checks self-test-lanes --skip-tool-probes "$@" --repo "$repo" --lock-dir "$lock_dir" \
-    >"$work/background.out" 2>"$work/fifo-gate-errors" &
+  bash "$gate_script" gate --ff-only --checks self-test-lanes --skip-tool-probes --skip-power-log "$@" --repo "$repo" \
+    --lock-dir "$lock_dir" >"$work/background.out" 2>"$work/fifo-gate-errors" &
   gate_pid=$!
 }
 
@@ -776,6 +796,7 @@ check "$(kill -0 "$(cat "$work/stubborn-pid")" 2>/dev/null && echo alive || echo
 check "$(lock_state)" "released" "the interrupted gate releases its lock after KILL ended the lane"
 check "$(run_lock_state)" "released" "the interrupted gate releases the end-to-end run lock after KILL ended the lane"
 contains "$(tail -n 1 "$log")" "result=interrupted" "an interrupted gate appends its attempt to the attempt log"
+check "$(tail -n 2 "$log" | head -n 1 | cut -c1-12)" "gate start: " "an interrupted gate leaves its start line and no end line before its attempt"
 
 lane_change fix/lane-interrupted a1 "$(
   printf '%s\n' \
@@ -911,6 +932,9 @@ run_gate_in_environment() {
   done
   shift
   set +e
+  if [[ " $* " == *" --checks self-test "* ]]; then
+    set -- "$@" --skip-power-log
+  fi
   output="$(env -u XDG_CONFIG_HOME "${assignments[@]}" bash "$gate_script" "$@" --repo "$repo" --lock-dir "$lock_dir" 2>&1)"
   status=$?
   set -e
@@ -974,6 +998,7 @@ check "$(cat "$run_lock")" "$held_run_lock" "the busy run lock is left alone"
 check "$(find "$lock_dir" -name '.run-lock.*' | wc -l | tr -d ' ')" "0" "a gate refused by a busy run lock leaves no candidate lock behind"
 check "$(lock_state)" "released" "a gate refused by a busy run lock releases its lock"
 contains "$(tail -n 1 "$log")" "result=e2e-run-lock-busy" "the attempt log records the busy run lock"
+check "$(tail -n 2 "$log" | head -n 1 | cut -c1-12)" "gate start: " "a gate refused by the busy run lock leaves its start line and no end line"
 kill -TERM "$run_holder"
 run_holder_status=0
 wait "$run_holder" 2>/dev/null || run_holder_status=$?
@@ -1007,6 +1032,11 @@ run_unchecked bash "$gate_script" gate --ff-only --skip-tool-probes --repo "$rep
 check "$status" "1" "the full check list refuses to skip the tool probes"
 contains "$output" "--skip-tool-probes is accepted only by a gate with --checks self-test or self-test-lanes" \
   "the refusal names the self-test lists"
+run_unchecked bash "$gate_script" gate --ff-only --skip-power-log --repo "$repo" --lock-dir "$lock_dir"
+check "$status" "1" "the full check list refuses to skip the power log"
+contains "$output" "--skip-power-log is accepted only by a gate with --checks self-test or self-test-lanes" \
+  "the power log refusal names the self-test lists"
+check "$(lock_state)" "released" "the refused power log skip takes no lock"
 
 start_change docs/environment
 commit_file docs/environment.md "environment" "Add a document for the environment checks"
@@ -1096,3 +1126,41 @@ check "$(count_matching '^go environment in [.]: GOVERSION=go[0-9.]+ GOTOOLCHAIN
 check "$(count_matching '^node environment: node v[0-9.]+, pnpm [0-9.]+, pnpm node-options, script-shell and shell-emulator: defaults$')" "1" \
   "the report prints the effective Node and pnpm settings"
 run_gate release
+
+parse_with_gate() {
+  (
+    source "$gate_script"
+    "$@"
+  )
+}
+
+check "$(printf '%s\n' "Now drawing from 'AC Power'" " -InternalBattery-0 (id=1)	100%; charged" | parse_with_gate power_from_pmset_batt)" \
+  "mains" "pmset reporting AC power reads as mains"
+check "$(printf '%s\n' "Now drawing from 'Battery Power'" | parse_with_gate power_from_pmset_batt)" "battery" \
+  "pmset reporting battery power reads as battery"
+check "$(printf '%s\n' "Now drawing from 'UPS Power'" | parse_with_gate power_from_pmset_batt)" "unknown" \
+  "another pmset power source reads as unknown"
+check "$(printf '' | parse_with_gate power_from_pmset_batt)" "unknown" "missing pmset output reads as unknown"
+check "$(printf '0\n1\n' | parse_with_gate power_from_online_values)" "mains" "an online power supply reads as mains"
+check "$(printf '0\n0\n' | parse_with_gate power_from_online_values)" "battery" "only offline power supplies read as battery"
+check "$(printf '' | parse_with_gate power_from_online_values)" "unknown" "no power supply reads as unknown"
+check "$(printf '{ 3.35 4.18 4.46 }\n' | parse_with_gate load_from_fields)" "3.35 4.18 4.46" "the macOS load averages are read"
+check "$(printf '0.52 0.58 0.59 1/389 12345\n' | parse_with_gate load_from_fields)" "0.52 0.58 0.59" "the Linux load averages are read"
+check "$(printf '{ 3,35 4,18 4,46 }\n' | parse_with_gate load_from_fields)" "unknown" "unreadable load averages read as unknown"
+check "$(printf '' | parse_with_gate load_from_fields)" "unknown" "missing load averages read as unknown"
+power_log_sample="$(
+  printf '%s\n' \
+    '2026-11-16 09:59:59 +0300 Sleep               	Entering Sleep state due to '"'"'Idle Sleep'"'"' Using Batt (Charge:90%) 60 secs' \
+    '2026-11-16 10:00:05 +0300 Assertions          	Summary- [System: DeclUser] Using AC(Charge: 90)' \
+    '2026-11-16 10:05:00 +0300 Assertions          	Summary- [System: DeclUser] Using BATT (Charge:89%)' \
+    '2026-11-16 10:06:00 +0300 Sleep               	Entering Sleep state due to '"'"'Clamshell Sleep'"'"' Using AC (Charge:89%) 30 secs' \
+    '2026-11-16 10:20:01 +0300 Sleep               	Entering Sleep state due to '"'"'Idle Sleep'"'"' Using Batt (Charge:88%) 60 secs'
+)"
+check "$(printf '%s\n' "$power_log_sample" | parse_with_gate run_fields_from_power_log '2026-11-16 10:00:00' '2026-11-16 10:04:59')" \
+  "battery-during-run: no; sleep: no" "a run on mains without sleep reads as no battery and no sleep"
+check "$(printf '%s\n' "$power_log_sample" | parse_with_gate run_fields_from_power_log '2026-11-16 10:00:00' '2026-11-16 10:05:30')" \
+  "battery-during-run: yes; sleep: no" "a battery entry inside the run reads as battery during the run"
+check "$(printf '%s\n' "$power_log_sample" | parse_with_gate run_fields_from_power_log '2026-11-16 10:05:30' '2026-11-16 10:20:00')" \
+  "battery-during-run: no; sleep: yes" "a sleep entry inside the run reads as sleep, entries outside it are ignored"
+check "$(printf 'garbage\n' | parse_with_gate run_fields_from_power_log '2026-11-16 10:00:00' '2026-11-16 10:20:00')" \
+  "battery-during-run: no; sleep: no" "a readable power log without entries in the run reads as no battery and no sleep"
