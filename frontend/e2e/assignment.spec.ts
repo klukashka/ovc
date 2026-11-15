@@ -27,8 +27,20 @@ import {
   signUpAndConfirmTutor,
 } from './fixtures.ts';
 import { localDate } from './schedule.ts';
-import { issueManyThroughTheApi, issueThroughTheApi, withdrawThroughTheApi } from './homework.ts';
-import { storedReview, studentSubmissionText } from './review.ts';
+import { type AnswerPolicy, issueManyThroughTheApi, issueThroughTheApi, withdrawThroughTheApi } from './homework.ts';
+import {
+  type ReviewItemSeed,
+  expectAssignmentListKeys,
+  expectStudentSubmissionKeys,
+  publishReview,
+  reviewQueueIds,
+  saveReviewDraft,
+  scoreFormsIn,
+  studentRead,
+  tutorFinalPoints,
+  uploadCorrectedFile,
+} from './results.ts';
+import { answerTextAndSubmit, storedReview, studentSubmissionText } from './review.ts';
 import {
   createCard,
   createGroup,
@@ -56,10 +68,20 @@ interface IssuedWork extends TutorWithStudent {
   readonly submissionId: string;
 }
 
-async function issuedToAnna(deployment: Deployment, withSentinels = false): Promise<IssuedWork> {
+async function issuedToAnna(
+  deployment: Deployment,
+  withSentinels = false,
+  policy: AnswerPolicy = 'after_check',
+): Promise<IssuedWork> {
   const actors = await pavelWithAnna(deployment);
   const template = await createPastSimpleTemplate(deployment, actors.pavel, { withSentinels });
-  const issueId = await issueThroughTheApi(deployment, actors.pavel, template, { relationship_id: actors.annaCard });
+  const issueId = await issueThroughTheApi(
+    deployment,
+    actors.pavel,
+    template,
+    { relationship_id: actors.annaCard },
+    { policy },
+  );
   return { ...actors, issueId, submissionId: await onlySubmission(deployment, actors.anna) };
 }
 
@@ -684,6 +706,322 @@ test.describe('Home’s To do panel and the Homework count', () => {
   });
 });
 
+interface SubmittedWork extends IssuedWork {
+  readonly choiceQuestion: string;
+  readonly textQuestion: string;
+  readonly fileQuestion: string;
+}
+
+async function submittedByAnna(deployment: Deployment, policy: AnswerPolicy = 'after_check'): Promise<SubmittedWork> {
+  const work = await issuedToAnna(deployment, false, policy);
+  const [choiceQuestion, textQuestion, fileQuestion] = await questionIds(deployment, work.anna, work.submissionId);
+  if (choiceQuestion === undefined || textQuestion === undefined || fileQuestion === undefined) {
+    throw new Error('the assignment lacks its three questions');
+  }
+  await answerTextAndSubmit(deployment, work.anna, work.submissionId, 'went');
+  return { ...work, choiceQuestion, textQuestion, fileQuestion };
+}
+
+const correctedPdf = { ...pdfFile, name: 'Corrections.pdf' };
+
+async function correctedReview(
+  deployment: Deployment,
+  work: SubmittedWork,
+  comment: string,
+  points: number | null,
+): Promise<ReviewItemSeed> {
+  const corrected = await uploadCorrectedFile(
+    deployment,
+    work.pavel,
+    work.submissionId,
+    work.fileQuestion,
+    correctedPdf,
+  );
+  return {
+    questionId: work.fileQuestion,
+    comment,
+    correctedIds: [corrected],
+    ...(points === null ? {} : { points }),
+  };
+}
+
+function feedbackSection(page: Page): Locator {
+  return page.getByRole('region', { name: 'Overall feedback' });
+}
+
+function optionLabel(page: Page, text: string): Locator {
+  return question(page, 1).locator('label').filter({ hasText: text });
+}
+
+async function expectNoScoreText(page: Page): Promise<void> {
+  expect(scoreFormsIn(await page.locator('main').innerText(), 'en')).toEqual([]);
+}
+
+async function shownResults(page: Page, student: TestAccount, submissionId: string): Promise<string> {
+  await openAssignment(page, student, submissionId);
+  await question(page, 3).waitFor();
+  return page.locator('main').innerText();
+}
+
+function withoutAddresses(body: string): string {
+  return body.replace(/"url":"[^"]*"/g, '"url":""').replace(/"expires_at":"[^"]*"/g, '"expires_at":""');
+}
+
+test.describe('results of checked and returned work', () => {
+  test('checked work shows the comment, the corrected file, the feedback and the revealed answers, and no points', async ({
+    page,
+    deployment,
+  }) => {
+    const work = await submittedByAnna(deployment);
+    const item = await correctedReview(deployment, work, 'Line one.\nLine two.', 5);
+    await publishReview(deployment, work.pavel, work.submissionId, 'check', '**Well done.** Mind the spelling.', [
+      item,
+    ]);
+
+    await openAssignment(page, work.anna, work.submissionId);
+
+    await expect(optionLabel(page, 'went')).toContainText('Correct answer');
+    await expect(optionLabel(page, 'goed')).not.toContainText('Correct answer');
+    await expect(question(page, 1)).toContainText('Go is irregular: go, went, gone.');
+    await expect(question(page, 2)).toContainText('Accepted answers: went');
+    await expect(question(page, 2)).toContainText('The past form of go is went.');
+    await expect(question(page, 3)).toContainText('Tutor’s comment');
+    await expect(question(page, 3).locator('[data-review-item] p[dir="auto"]')).toHaveText('Line one.\nLine two.');
+    await expect(feedbackSection(page).locator('strong')).toHaveText('Well done.');
+    const link = question(page, 3).getByRole('link', { name: correctedPdf.name, exact: true });
+    await expect(link).toHaveAttribute('referrerpolicy', 'no-referrer');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    const download = page.waitForEvent('download');
+    await link.click();
+    expect((await download).suggestedFilename()).toBe(correctedPdf.name);
+    await expectNoScoreText(page);
+    expectStudentSubmissionKeys(await studentRead(deployment, work.anna, `/submissions/${work.submissionId}`));
+  });
+
+  test('answers are revealed only as the policy and state allow', async ({ page, deployment }) => {
+    const never = await submittedByAnna(deployment, 'never');
+    await publishReview(deployment, never.pavel, never.submissionId, 'check', 'Checked.', [
+      { questionId: never.fileQuestion, points: 4 },
+    ]);
+    const afterCheck = await submittedByAnna(deployment, 'after_check');
+    const afterSubmission = await submittedByAnna(deployment, 'after_submission');
+
+    const neverText = await shownResults(page, never.anna, never.submissionId);
+    const afterCheckText = await shownResults(page, afterCheck.anna, afterCheck.submissionId);
+    await shownResults(page, afterSubmission.anna, afterSubmission.submissionId);
+
+    expect(neverText).toContain('Checked.');
+    expect(neverText).not.toMatch(/Correct answer|Accepted answers|Explanation/);
+    expect(afterCheckText).not.toMatch(/Correct answer|Accepted answers|Explanation/);
+    await expect(optionLabel(page, 'went')).toContainText('Correct answer');
+    await expect(question(page, 2)).toContainText('Accepted answers: went');
+    await expectNoScoreText(page);
+  });
+
+  test('returned work shows the banner and the whole review, with only the file question open', async ({
+    page,
+    deployment,
+  }) => {
+    const work = await submittedByAnna(deployment);
+    const item = await correctedReview(deployment, work, 'Your photo is blurred.', null);
+    await publishReview(deployment, work.pavel, work.submissionId, 'return', 'Please **redo** the photo.', [item]);
+
+    await openAssignment(page, work.anna, work.submissionId);
+
+    await expect(page.getByText('Your tutor returned this work for revision.', { exact: true })).toBeVisible();
+    await expect(feedbackSection(page).locator('strong')).toHaveText('redo');
+    await expect(question(page, 3).locator('[data-review-item]')).toContainText('Your photo is blurred.');
+    await expect(question(page, 3).getByRole('link', { name: correctedPdf.name })).toBeVisible();
+    await expect(question(page, 1).getByRole('radio', { name: 'went' })).toBeDisabled();
+    await expect(textAnswer(page)).not.toBeEditable();
+    await expect(question(page, 3).getByRole('button', { name: 'Attach files', exact: true })).toBeVisible();
+    expect(await page.locator('main').innerText()).not.toMatch(/Correct answer|Explanation/);
+  });
+
+  test('returned work resubmits with a new file and keeps the comment shown', async ({ page, deployment, control }) => {
+    const work = await submittedByAnna(deployment);
+    await publishReview(deployment, work.pavel, work.submissionId, 'return', 'Redo it.', [
+      { questionId: work.fileQuestion, comment: 'Your photo is blurred.' },
+    ]);
+    await control.advance(1);
+    await openAssignment(page, work.anna, work.submissionId);
+    await attach(page, 3, secondPdf);
+    await expect(removeButton(page, secondPdf.name)).toBeVisible();
+    await expect(saveStatus(page)).toHaveText('Saved');
+    await control.advance(1);
+
+    await page.getByRole('button', { name: 'Submit again', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Submit your work?' }).getByRole('button', { name: 'Submit' }).click();
+
+    await expect(submittedNotice(page)).toBeFocused();
+    expect((await storedAnswers(deployment, work.anna, work.submissionId)).status).toBe('submitted');
+    await expect(question(page, 3).locator('[data-review-item]')).toContainText('Your photo is blurred.');
+  });
+
+  test('a points-only publication changes nothing the student sees, and a later draft stays hidden', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const work = await submittedByAnna(deployment);
+    const item = await correctedReview(deployment, work, 'Mind the word order.', 5);
+    await publishReview(deployment, work.pavel, work.submissionId, 'check', 'Good effort.', [item]);
+    const before = withoutAddresses(await studentSubmissionText(deployment, work.anna, work.submissionId));
+    await control.advance(1);
+    await publishReview(deployment, work.pavel, work.submissionId, 'check', 'Good effort.', [{ ...item, points: 6 }]);
+    await control.advance(1);
+    const extra = await uploadCorrectedFile(deployment, work.pavel, work.submissionId, work.fileQuestion, {
+      ...pdfFile,
+      name: 'Draft only.pdf',
+    });
+    await saveReviewDraft(deployment, work.pavel, work.submissionId, 'Draft feedback.', [
+      { questionId: work.fileQuestion, points: 6, comment: 'Draft comment.', correctedIds: [extra] },
+    ]);
+
+    await openAssignment(page, work.anna, work.submissionId);
+
+    expect(withoutAddresses(await studentSubmissionText(deployment, work.anna, work.submissionId))).toBe(before);
+    await expect(question(page, 3).locator('[data-review-item]')).toContainText('Mind the word order.');
+    await expect(feedbackSection(page)).toContainText('Good effort.');
+    await expect(page.locator('main')).not.toContainText('Draft');
+    await expectNoScoreText(page);
+  });
+
+  test('closed work shows its published review read-only', async ({ page, deployment }) => {
+    const work = await submittedByAnna(deployment);
+    await publishReview(deployment, work.pavel, work.submissionId, 'return', 'Try again.', [
+      { questionId: work.fileQuestion, comment: 'Add a second photo.' },
+    ]);
+    await endRelationship(deployment, work.pavel, work.annaCard);
+
+    await openAssignment(page, work.anna, work.submissionId);
+
+    await expect(page.getByText('This assignment is closed and can no longer be submitted.')).toBeVisible();
+    await expect(question(page, 3).locator('[data-review-item]')).toContainText('Add a second photo.');
+    await expect(feedbackSection(page)).toContainText('Try again.');
+    await expect(page.getByRole('button', { name: /^Submit/ })).toHaveCount(0);
+  });
+
+  test('a review published while the page is open appears without a reload', async ({ page, deployment }) => {
+    const work = await submittedByAnna(deployment);
+    await openAssignment(page, work.anna, work.submissionId);
+    await expect(page.locator('main')).toContainText('Submitted');
+
+    await publishReview(deployment, work.pavel, work.submissionId, 'check', 'Published live.', [
+      { questionId: work.fileQuestion, points: 3 },
+    ]);
+
+    await expect(feedbackSection(page)).toContainText('Published live.');
+    await expect(optionLabel(page, 'went')).toContainText('Correct answer');
+  });
+});
+
+test.describe('Home’s Recently checked panel', () => {
+  test('lists checked work with the excerpt and the corrected-file note, and no points', async ({
+    page,
+    deployment,
+  }) => {
+    const work = await submittedByAnna(deployment);
+    const item = await correctedReview(deployment, work, 'Fine.', 5);
+    await publishReview(deployment, work.pavel, work.submissionId, 'check', '**Nice.** Keep going.', [item]);
+    await signInThroughTheApi(page, work.anna);
+
+    await page.goto('/home');
+
+    const panel = page.getByRole('region', { name: 'Recently checked' });
+    await expect(panel.getByRole('listitem')).toHaveCount(1);
+    await expect(panel.getByRole('link', { name: pastSimple.title })).toHaveAttribute(
+      'href',
+      `/homework/${work.submissionId}`,
+    );
+    await expect(panel.locator('[data-excerpt]')).toHaveText('Nice. Keep going.');
+    await expect(panel).toContainText('A corrected file came back');
+    await expect(panel).toContainText('Checked ');
+    expect(scoreFormsIn(await panel.innerText(), 'en')).toEqual([]);
+    expectAssignmentListKeys(await studentRead(deployment, work.anna, '/assignments?status=checked&limit=5'));
+  });
+
+  test('without checked work it says so, and work checked meanwhile appears without a reload', async ({
+    page,
+    deployment,
+  }) => {
+    const work = await submittedByAnna(deployment);
+    await signInThroughTheApi(page, work.anna);
+    await page.goto('/home');
+    const panel = page.getByRole('region', { name: 'Recently checked' });
+    await expect(panel).toContainText('Nothing checked yet');
+
+    await publishReview(deployment, work.pavel, work.submissionId, 'check', '', [
+      { questionId: work.fileQuestion, points: 6 },
+    ]);
+
+    await expect(panel.getByRole('listitem')).toHaveCount(1);
+    await expect(panel.locator('[data-excerpt]')).toHaveCount(0);
+  });
+
+  test('a newer check pushing the focused last row out moves focus to the row that took its place', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, anna, annaCard } = await pavelWithAnna(deployment);
+    const weeks = ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6'];
+    const submissions: string[] = [];
+    for (const title of weeks) {
+      const template = await createPastSimpleTemplate(deployment, pavel, { texts: { ...pastSimple, title } });
+      await issueThroughTheApi(deployment, pavel, template, { relationship_id: annaCard });
+      const submissionId = await onlySubmission(deployment, anna);
+      await answerTextAndSubmit(deployment, anna, submissionId, 'went');
+      submissions.push(submissionId);
+    }
+    const checkWeek = async (index: number): Promise<void> => {
+      await control.advance(60);
+      const submissionId = submissions[index] ?? '';
+      const [, , fileQuestion] = await questionIds(deployment, anna, submissionId);
+      await publishReview(deployment, pavel, submissionId, 'check', weeks[index] ?? '', [
+        { questionId: fileQuestion ?? '', points: 6 },
+      ]);
+    };
+    for (const index of [0, 1, 2, 3, 4]) {
+      await checkWeek(index);
+    }
+    await signInThroughTheApi(page, anna);
+    await page.goto('/home');
+    const links = page.getByRole('region', { name: 'Recently checked' }).locator('[data-row-link]');
+    await expect(links).toHaveCount(5);
+    await expect(links.last()).toHaveText('Week 1');
+    await links.last().focus();
+
+    await checkWeek(5);
+
+    await expect(links.first()).toHaveText('Week 6');
+    await expect(links).toHaveText(['Week 6', 'Week 5', 'Week 4', 'Week 3', 'Week 2']);
+    await expect(links.last()).toBeFocused();
+  });
+
+  test('an unconfirmed student on a provisional link sees their checked work', async ({ page, deployment }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = newTestAccount('Anna', 'student');
+    const card = await createCard(deployment, pavel, 'Anna', anna.email);
+    await signUpOnInvitation(deployment, card.link, anna, 'en');
+    const template = await createPastSimpleTemplate(deployment, pavel);
+    await issueThroughTheApi(deployment, pavel, template, { relationship_id: card.id });
+    const submissionId = await onlySubmission(deployment, anna);
+    await answerTextAndSubmit(deployment, anna, submissionId, 'went');
+    const [, , fileQuestion] = await questionIds(deployment, anna, submissionId);
+    await publishReview(deployment, pavel, submissionId, 'check', 'Provisional work checked.', [
+      { questionId: fileQuestion ?? '', points: 6 },
+    ]);
+    await signInThroughTheApi(page, anna);
+
+    await page.goto('/home');
+
+    await expect(page.getByRole('region', { name: 'Recently checked' }).locator('[data-excerpt]')).toHaveText(
+      'Provisional work checked.',
+    );
+  });
+});
+
 interface PilotTwoSeed {
   readonly maria: TestAccount;
   readonly anna: TestAccount;
@@ -691,6 +1029,14 @@ interface PilotTwoSeed {
 }
 
 let pilotTwoSeed: PilotTwoSeed | null = null;
+let pilotTwoBorisWork: string | null = null;
+
+function pilotTwoBoris(): string {
+  if (pilotTwoBorisWork === null) {
+    throw new Error('pilot 2 step 11 has not run');
+  }
+  return pilotTwoBorisWork;
+}
 
 function pilotTwo(): PilotTwoSeed {
   if (pilotTwoSeed === null) {
@@ -913,5 +1259,143 @@ test.describe('pilot 2, group homework from the library', () => {
           message.links.some((link) => new URL(link).pathname === `/homework/${annaWork.submissionId}`),
         ),
     ).toBe(true);
+  });
+  test('pilot-2 › step 11 Maria comments on Boris’s file question and returns his work', async ({
+    page,
+    deployment,
+  }) => {
+    const seed = pilotTwo();
+    const [borisWork] = await studentWork(deployment, seed.boris, 'submitted');
+    if (borisWork === undefined) {
+      throw new Error('Boris has no submitted work');
+    }
+    const fileQuestion = page.getByRole('region', { name: 'Вопрос 3' });
+    await signInThroughTheApi(page, seed.maria);
+    await page.goto(`/homework/review/${borisWork.submissionId}`);
+    await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
+    await fileQuestion.getByRole('textbox', { name: 'Комментарий' }).fill('Сфотографируйте все предложения.');
+    await expect(page.getByRole('status').filter({ hasText: /^Сохранено$/ })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Вернуть на доработку' }).click();
+
+    await expect(page.getByRole('status').filter({ hasText: 'Возвращено на доработку.' })).toBeFocused();
+    expect((await storedAnswers(deployment, seed.boris, borisWork.submissionId)).status).toBe('returned');
+    pilotTwoBorisWork = borisWork.submissionId;
+  });
+
+  test('pilot-2 › step 12 Boris sees the comment with only the file question open, uploads a new file and submits again', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = pilotTwo();
+    const submissionId = pilotTwoBoris();
+    const mailBefore = (await control.mail(seed.maria.email)).length;
+    await signInThroughTheApi(page, seed.boris);
+    await page.goto(`/homework/${submissionId}`);
+    await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
+    await expect(page.getByText('Репетитор вернул работу на доработку.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Вопрос 3' }).locator('[data-review-item]')).toContainText(
+      'Сфотографируйте все предложения.',
+    );
+    await expect(page.getByRole('group', { name: 'Вопрос 1' }).getByRole('radio', { name: 'goed' })).toBeDisabled();
+    await expect(
+      page.getByRole('group', { name: 'Вопрос 2' }).getByRole('textbox', { name: 'Ваш ответ' }),
+    ).not.toBeEditable();
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('group', { name: 'Вопрос 3' }).getByRole('button', { name: 'Прикрепить файлы' }).click();
+    await (await chooser).setFiles(pictureFile);
+    await expect(
+      page.getByRole('group', { name: 'Вопрос 3' }).getByRole('button', { name: `Удалить ${pictureFile.name}` }),
+    ).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: /^Сохранено$/ })).toBeVisible();
+    await control.advance(1);
+
+    await page.getByRole('button', { name: 'Сдать снова', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Сдать работу?' })
+      .getByRole('button', { name: 'Сдать', exact: true })
+      .click();
+
+    await expect(page.getByRole('status').filter({ hasText: /^Сдано$/ })).toBeFocused();
+    expect((await storedAnswers(deployment, seed.boris, submissionId)).status).toBe('submitted');
+    expect(await reviewQueueIds(deployment, seed.maria)).toContain(submissionId);
+    await control.tick();
+    const mail = await control.mail(seed.maria.email);
+    expect(
+      mail
+        .slice(mailBefore)
+        .some((message) => message.links.some((link) => new URL(link).pathname.endsWith(submissionId))),
+    ).toBe(true);
+  });
+
+  test('pilot-2 › step 13 Maria gives the file question 4 points and checks Boris’s work at 6 of 10', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const seed = pilotTwo();
+    const submissionId = pilotTwoBoris();
+    const fileQuestion = page.getByRole('region', { name: 'Вопрос 3' });
+    await signInThroughTheApi(page, seed.maria);
+    await page.goto(`/homework/review/${submissionId}`);
+    await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
+    await fileQuestion.getByRole('spinbutton', { name: 'Баллы' }).fill('4');
+    await expect(page.getByRole('status').filter({ hasText: /^Сохранено$/ })).toBeVisible();
+    await control.advance(1);
+
+    await page.getByRole('button', { name: 'Отметить проверенной' }).click();
+
+    await expect(page.getByRole('status').filter({ hasText: 'Проверено. Ученик видит вашу проверку.' })).toBeFocused();
+    expect((await storedReview(deployment, seed.maria, submissionId)).status).toBe('checked');
+    expect(await tutorFinalPoints(deployment, seed.maria, submissionId)).toBe(6);
+  });
+
+  test('pilot-2 › step 14 Anna reads her results and Home’s Recently checked on her phone, with no points anywhere', async ({
+    page,
+    deployment,
+  }) => {
+    const seed = pilotTwo();
+    const [annaWork] = await studentWork(deployment, seed.anna, 'checked');
+    if (annaWork === undefined) {
+      throw new Error('Anna has no checked work');
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signInThroughTheApi(page, seed.anna);
+    await page.goto(`/homework/${annaWork.submissionId}`);
+    await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
+    await expect(page.getByRole('region', { name: 'Общий отзыв' }).locator('strong')).toHaveText('Great work.');
+    await expect(
+      page.getByRole('group', { name: 'Вопрос 1' }).locator('label').filter({ hasText: 'went' }),
+    ).toContainText('Правильный ответ');
+    await expect(page.getByRole('group', { name: 'Вопрос 2' })).toContainText('Правильные ответы: went');
+    await expect(page.getByRole('group', { name: 'Вопрос 2' })).toContainText('Пояснение');
+    await expect(page.getByRole('group', { name: 'Вопрос 3' })).toContainText('Check the word order.');
+    const download = page.waitForEvent('download');
+
+    await page.getByRole('group', { name: 'Вопрос 3' }).getByRole('link', { name: 'Исправления.pdf' }).click();
+
+    expect((await download).suggestedFilename()).toBe('Исправления.pdf');
+    expect(scoreFormsIn(await page.locator('main').innerText(), 'ru')).toEqual([]);
+    expect(await page.locator('main').innerText()).not.toMatch(/(?<!\d)60(?!\d)/);
+    expectStudentSubmissionKeys(await studentRead(deployment, seed.anna, `/submissions/${annaWork.submissionId}`));
+    await page.goto('/home');
+    const panel = page.getByRole('region', { name: 'Недавно проверенные' });
+    await expect(panel.locator('[data-excerpt]')).toHaveText('Great work. Check the word order in sentence 2.');
+    await expect(panel).toContainText('Есть исправленный файл');
+    expect(scoreFormsIn(await page.locator('main').innerText(), 'ru')).toEqual([]);
+    expectAssignmentListKeys(await studentRead(deployment, seed.anna, '/assignments?status=checked&limit=5'));
+  });
+
+  test('pilot-2 › step 16 Anna opens Boris’s submission address and it is not found', async ({ page, diagnostics }) => {
+    const seed = pilotTwo();
+    const submissionId = pilotTwoBoris();
+    diagnostics.expectFailure({ method: 'GET', path: `/api/v1/submissions/${submissionId}`, status: 404 });
+    await signInThroughTheApi(page, seed.anna);
+
+    await page.goto(`/homework/${submissionId}`);
+
+    await expect(page.getByRole('heading', { level: 1, name: 'Страница не найдена' })).toBeVisible();
+    await expect(page.locator('main')).not.toContainText(pastSimple.choicePrompt);
   });
 });

@@ -38,6 +38,7 @@ function answering(): Answering {
     onChange: () => undefined,
     fileControl: () => null,
     below: () => null,
+    correctOptions: () => new Set(),
   };
 }
 

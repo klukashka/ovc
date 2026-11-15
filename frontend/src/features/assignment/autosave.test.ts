@@ -74,6 +74,8 @@ class AnswerServer {
       editable: new Set(blocks.map((block) => block.id)),
       blocks,
       answers: new Map(),
+      review: null,
+      revealed: null,
     };
   }
 }

@@ -216,6 +216,7 @@ From slice 9. Each table names the text section it belongs to: the global langua
 | Today's panels | Needs checking / Open review queue / Nothing to check / Upcoming deadlines / All issued work / No deadlines in the next 3 days / {submitted}/{total} submitted | На проверке / Открыть очередь проверки / Проверять нечего / Ближайшие сроки / Все выданные задания / В ближайшие 3 дня сроков нет / Сдали {submitted} из {total} |
 | Today's row words (agent addition pending owner review) | Late / Review in progress / Issued before the account was reclaimed | С опозданием / Проверка начата / Выдано до восстановления аккаунта |
 | Home's panels | To do / Recently checked / Nothing to do / Nothing checked yet / A corrected file came back | Нужно сделать / Недавно проверенные / Делать нечего / Проверенных работ пока нет / Есть исправленный файл |
+| Recently checked row date (agent addition pending owner review) | Checked {date} | Проверено {date} |
 | Row actions, with the assignment's title as hidden text for screen readers | Start / Continue | Начать / Продолжить |
 | Link to the list; `{count}` is the number, or "99+" above 99 | All homework, {count} to do | Все задания, нужно сделать: {count} |
 

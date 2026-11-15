@@ -200,7 +200,16 @@ const studentViewImports = {
   patterns: [
     ...testOnlyModuleImports.patterns,
     {
-      group: ['**/builder', '**/builder/*', '**/library', '**/library/*', '**/homework', '**/homework/*'],
+      group: [
+        '**/builder',
+        '**/builder/*',
+        '**/library',
+        '**/library/*',
+        '**/homework',
+        '**/homework/*',
+        '**/review',
+        '**/review/*',
+      ],
       message: 'The student view never reaches tutor code, so answer keys cannot enter it',
     },
   ],
@@ -211,6 +220,7 @@ const featureTextFolders = [
   'src/features/builder/**',
   'src/features/assignment/**',
   'src/features/home/TodoPanel.tsx',
+  'src/features/home/CheckedPanel.tsx',
   'src/features/home/TutorHomeworkPanels.tsx',
   'src/features/auth/ReclaimPage.tsx',
 ];
@@ -350,7 +360,11 @@ export default defineConfig(
     rules: { 'no-restricted-imports': ['error', testOnlyModuleImports] },
   },
   {
-    files: ['src/features/assignment/**/*.{ts,tsx}', 'src/features/home/TodoPanel.tsx'],
+    files: [
+      'src/features/assignment/**/*.{ts,tsx}',
+      'src/features/home/TodoPanel.tsx',
+      'src/features/home/CheckedPanel.tsx',
+    ],
     ignores: ['src/**/*.test.{ts,tsx}'],
     rules: { 'no-restricted-imports': ['error', studentViewImports] },
   },

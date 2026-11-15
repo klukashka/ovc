@@ -24,8 +24,9 @@ import {
   readIssue,
   withdrawThroughTheApi,
 } from './homework.ts';
-import { onlySubmission, submitThroughTheApi } from './assignment.ts';
+import { onlySubmission, studentWork as studentWorkTitles, submitThroughTheApi } from './assignment.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
+import { studentLessonIssues } from './results.ts';
 import { addDays, localDate, scheduleLessonsWithIds } from './schedule.ts';
 import { createGroup, seedActiveStudent } from './tutoring.ts';
 
@@ -447,19 +448,215 @@ test.describe('issuing from the builder, the card and the lesson', () => {
     const { pavel, annaCard } = await pavelWithAnna(deployment);
     const template = await createReadyTemplate(deployment, pavel, 'Fractions');
     const lesson = await lessonTomorrow(deployment, pavel, annaCard, await control.now());
-    await issueManyThroughTheApi(deployment, pavel, template.id, { relationship_id: annaCard }, 20, {
+    await issueManyThroughTheApi(deployment, pavel, template.id, { relationship_id: annaCard }, 19, {
       lessonId: lesson,
     });
     await signInThroughTheApi(page, pavel);
     await page.goto(`/lessons/${lesson}`);
     await page.getByRole('button', { name: 'Issue assignment', exact: true }).click();
     await issueDialog(page).getByRole('button', { name: 'Fractions' }).click();
+    await issueThroughTheApi(deployment, pavel, template.id, { relationship_id: annaCard }, { lessonId: lesson });
     diagnostics.expectFailure({ method: 'POST', path: '/api/v1/issues', status: 422 });
 
     await issueDialog(page).getByRole('button', { name: 'Issue', exact: true }).click();
 
     await expect(issueDialog(page).getByText('A lesson links at most 20 assignments.', { exact: true })).toBeVisible();
     await expect(issueDialog(page).getByRole('combobox', { name: 'Linked lesson' })).toBeFocused();
+  });
+});
+
+function assignmentsSection(page: Page): Locator {
+  return page.getByRole('region', { name: 'Assignments', exact: true });
+}
+
+function assignmentRows(page: Page): Locator {
+  return assignmentsSection(page).getByRole('listitem');
+}
+
+async function lessonWithAnna(
+  deployment: Deployment,
+  now: number,
+): Promise<{
+  readonly pavel: TestAccount;
+  readonly anna: TestAccount;
+  readonly annaCard: string;
+  readonly lesson: string;
+}> {
+  const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+  const { student, cardId } = await seedActiveStudent(deployment, pavel, 'Anna', 'en');
+  const lesson = await lessonTomorrow(deployment, pavel, cardId, now);
+  return { pavel, anna: student, annaCard: cardId, lesson };
+}
+
+test.describe('the lesson page’s assignments', () => {
+  test('the tutor sees each linked assignment with its deadline and progress', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, anna, annaCard, lesson } = await lessonWithAnna(deployment, await control.now());
+    const fractions = await createReadyTemplate(deployment, pavel, 'Fractions');
+    const decimals = await createReadyTemplate(deployment, pavel, 'Decimals');
+    const deadline = new Date((await control.now()) + 3 * dayMilliseconds).toISOString();
+    await issueThroughTheApi(deployment, pavel, fractions.id, { relationship_id: annaCard }, { lessonId: lesson });
+    await issueThroughTheApi(
+      deployment,
+      pavel,
+      decimals.id,
+      { relationship_id: annaCard },
+      { lessonId: lesson, deadlineAt: deadline },
+    );
+    const [decimalsWork] = (await studentWorkTitles(deployment, anna, 'todo')).filter(
+      (work) => work.title === 'Decimals',
+    );
+    await submitThroughTheApi(deployment, anna, decimalsWork?.submissionId ?? '');
+    await signInThroughTheApi(page, pavel);
+
+    await page.goto(`/lessons/${lesson}`);
+
+    await expect(assignmentRows(page)).toHaveCount(2);
+    await expect(assignmentRows(page).filter({ hasText: 'Fractions' })).toContainText('No deadline');
+    await expect(assignmentRows(page).filter({ hasText: 'Fractions' })).toContainText('0/1 submitted');
+    await expect(assignmentRows(page).filter({ hasText: 'Decimals' })).toContainText('1/1 submitted');
+    await expect(assignmentsSection(page).getByRole('link', { name: 'Fractions' })).toHaveAttribute(
+      'href',
+      /^\/homework\/issued\//,
+    );
+  });
+
+  test('a lesson without linked assignments says so to the tutor and shows no section to the student', async ({
+    observedBrowser: browser,
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const { pavel, anna, lesson } = await lessonWithAnna(deployment, await control.now());
+    await signInThroughTheApi(page, pavel);
+    const studentContext = await browser.newContext({ baseURL: deployment.origin, ignoreHTTPSErrors: true });
+    const studentPage = await studentContext.newPage();
+    await diagnostics.watch(studentPage);
+    await signInThroughTheApi(studentPage, anna);
+
+    await page.goto(`/lessons/${lesson}`);
+    await studentPage.goto(`/lessons/${lesson}`);
+
+    await expect(assignmentsSection(page)).toContainText('No assignments for this lesson');
+    await studentPage.getByRole('heading', { level: 1, name: 'Algebra' }).waitFor();
+    await expect(studentPage.getByRole('heading', { name: 'Assignments' })).toHaveCount(0);
+    await diagnostics.closeContext(studentContext);
+  });
+
+  test('with 20 linked assignments Issue assignment is unavailable and says why', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, annaCard, lesson } = await lessonWithAnna(deployment, await control.now());
+    const template = await createReadyTemplate(deployment, pavel, 'Fractions');
+    await issueManyThroughTheApi(deployment, pavel, template.id, { relationship_id: annaCard }, 20, {
+      lessonId: lesson,
+    });
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/lessons/${lesson}`);
+    const opener = page.getByRole('button', { name: 'Issue assignment', exact: true });
+    await opener.focus();
+
+    await page.keyboard.press('Enter');
+
+    await expect(opener).toHaveAttribute('aria-disabled', 'true');
+    await expect(opener).toHaveAccessibleDescription('A lesson links at most 20 assignments.');
+    await expect(issueDialog(page)).toHaveCount(0);
+  });
+
+  test('the student sees their own work for the lesson with its state and opens it', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, anna, annaCard, lesson } = await lessonWithAnna(deployment, await control.now());
+    const template = await createReadyTemplate(deployment, pavel, 'Fractions');
+    await issueThroughTheApi(deployment, pavel, template.id, { relationship_id: annaCard }, { lessonId: lesson });
+    const submissionId = await onlySubmission(deployment, anna);
+    await signInThroughTheApi(page, anna);
+
+    await page.goto(`/lessons/${lesson}`);
+
+    await expect(assignmentRows(page)).toHaveCount(1);
+    await expect(assignmentRows(page)).toContainText('To do');
+    await expect(assignmentRows(page)).toContainText('No deadline');
+    await expect(assignmentsSection(page).getByRole('link', { name: 'Fractions' })).toHaveAttribute(
+      'href',
+      `/homework/${submissionId}`,
+    );
+    expect(await studentLessonIssues(deployment, anna, lesson)).toHaveLength(1);
+  });
+
+  test('work linked while the student’s lesson page is open appears, and its withdrawal moves focus to the heading', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, anna, annaCard, lesson } = await lessonWithAnna(deployment, await control.now());
+    const template = await createReadyTemplate(deployment, pavel, 'Fractions');
+    await signInThroughTheApi(page, anna);
+    const traffic = trafficAfterReady(page, [`/api/v1/lessons/${lesson}`]);
+    await traffic.initialize();
+    await page.goto(`/lessons/${lesson}`);
+    await page.getByRole('heading', { level: 1, name: 'Algebra' }).waitFor();
+    await expectRefetchedAfterTheSocketIsReady(traffic);
+    const issueId = await issueThroughTheApi(
+      deployment,
+      pavel,
+      template.id,
+      { relationship_id: annaCard },
+      { lessonId: lesson },
+    );
+    await assignmentsSection(page).getByRole('link', { name: 'Fractions' }).focus();
+
+    await withdrawThroughTheApi(deployment, pavel, issueId);
+
+    await expect(assignmentsSection(page)).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: 'Algebra' })).toBeFocused();
+  });
+
+  test('a withdrawn assignment leaves the tutor’s list and focus moves to the row that took its place', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, annaCard, lesson } = await lessonWithAnna(deployment, await control.now());
+    const fractions = await createReadyTemplate(deployment, pavel, 'Fractions');
+    const decimals = await createReadyTemplate(deployment, pavel, 'Decimals');
+    const first = await issueThroughTheApi(
+      deployment,
+      pavel,
+      fractions.id,
+      { relationship_id: annaCard },
+      { lessonId: lesson },
+    );
+    const second = await issueThroughTheApi(
+      deployment,
+      pavel,
+      decimals.id,
+      { relationship_id: annaCard },
+      { lessonId: lesson },
+    );
+    await signInThroughTheApi(page, pavel);
+    const traffic = trafficAfterReady(page, [`/api/v1/lessons/${lesson}`]);
+    await traffic.initialize();
+    await page.goto(`/lessons/${lesson}`);
+    await expect(assignmentRows(page)).toHaveCount(2);
+    await expectRefetchedAfterTheSocketIsReady(traffic);
+    const firstTitle = (await assignmentRows(page).first().getByRole('link').innerText()).trim();
+    const firstId = firstTitle === 'Fractions' ? first : second;
+    const remaining = firstTitle === 'Fractions' ? 'Decimals' : 'Fractions';
+    await assignmentRows(page).first().getByRole('link').focus();
+
+    await withdrawThroughTheApi(deployment, pavel, firstId);
+
+    await expect(assignmentRows(page)).toHaveCount(1);
+    await expect(assignmentsSection(page).getByRole('link', { name: remaining })).toBeFocused();
   });
 });
 

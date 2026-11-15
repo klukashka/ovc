@@ -17,6 +17,10 @@ export const homeworkPanelTexts: HomeworkPanelTexts = {
   allIssued: 'Все выданные задания',
   noDeadlines: 'В ближайшие 3 дня сроков нет',
   cue: 'Выдано до восстановления аккаунта',
+  recentlyChecked: 'Недавно проверенные',
+  nothingChecked: 'Проверенных работ пока нет',
+  correctedFile: 'Есть исправленный файл',
+  checkedOn: 'Проверено {date}',
   states: {
     todo: 'Нужно сделать',
     dueSoon: 'Скоро срок',

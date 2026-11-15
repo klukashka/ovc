@@ -20,13 +20,17 @@ import { formatDate, localeOf } from '../../lib/format/dates.ts';
 import { type LocalDate, isLocalDate, localDateOf, utcOffsetText } from '../../lib/time/localDates.ts';
 import { cityOf } from '../../lib/time/timezoneCities.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
-import { type ChangedLessons, type LessonDetail, type LessonSeries, fetchLesson } from './api.ts';
+import { type ChangedLessons, type LessonDetail, type LessonSeries, type LessonView, fetchLesson } from './api.ts';
 import type { Audience } from './AudiencePicker.tsx';
 import { formatClock, formatFullDate, formatLongDay, formatWeekdayName } from './calendarFormat.ts';
 import { calendarKey, lessonKey, lessonsKey } from './keys.ts';
 import { CancelLessonDialog, EditLessonDialog } from './LessonDialogs.tsx';
 import { audienceLabel } from './LessonParts.tsx';
-import { IssueAssignmentAction, IssuedNotice } from '../homework/IssueAssignment.tsx';
+import { LessonWork } from '../assignment/LessonWork.tsx';
+import { IssuedNotice } from '../homework/IssueAssignment.tsx';
+import { LessonIssues } from '../homework/LessonIssues.tsx';
+import { withIssuesOf } from './lessonCache.ts';
+import { studentWorkOf, tutorIssuesOf } from './lessonIssues.ts';
 import { LessonMaterials } from './LessonMaterials.tsx';
 import { LessonRoom } from './LessonRoom.tsx';
 import { type LessonPhase, dialogOutdated, isEditable, phaseOf, useLessonClock } from './lessonTiming.ts';
@@ -258,12 +262,14 @@ export function LessonView({
   now,
   room = null,
   materials = null,
+  assignments = null,
 }: {
   readonly lesson: LessonDetail;
   readonly me: Me;
   readonly now: number;
   readonly room?: ReactNode;
   readonly materials?: ReactNode;
+  readonly assignments?: ReactNode;
 }): ReactElement {
   const { t } = useTranslation();
   const phase = phaseOf(lesson, now);
@@ -290,6 +296,7 @@ export function LessonView({
               </p>
             )}
             {materials}
+            {assignments}
           </>
         }
         aside={<AboutLesson lesson={lesson} me={me} />}
@@ -482,7 +489,7 @@ export function LessonPage(): ReactElement {
   function saved(kind: DialogKind, changed: ChangedLessons): void {
     const updated = changed.lessons.find((candidate) => candidate.id === lessonId);
     if (updated !== undefined) {
-      queryClient.setQueryData(key, updated);
+      queryClient.setQueryData(key, (previous: LessonView | undefined) => withIssuesOf(previous, updated));
     }
     void queryClient.invalidateQueries({ queryKey: calendarKey });
     void queryClient.invalidateQueries({ queryKey: lessonsKey, refetchType: 'none' });
@@ -524,6 +531,15 @@ export function LessonPage(): ReactElement {
     setDialog(null);
   }
 
+  function issuedFromLesson(): void {
+    setNotice(null);
+    setIssued((previous) => ({ lessonId, count: (previous?.count ?? 0) + 1 }));
+    void queryClient.invalidateQueries({ queryKey: key });
+  }
+
+  const tutor = me.role === 'tutor';
+  const issueAudience = lesson === undefined ? null : sameAudience(t, lesson.audience);
+
   function body(): ReactElement {
     if (error !== null) {
       return notFound ? (
@@ -561,18 +577,35 @@ export function LessonPage(): ReactElement {
             me={me}
             handlers={{
               onSaved: (updated) => {
-                queryClient.setQueryData(key, updated);
+                queryClient.setQueryData(key, (previous: LessonView | undefined) => withIssuesOf(previous, updated));
               },
               onStale: stale,
             }}
           />
         }
+        assignments={
+          tutor ? (
+            <LessonIssues
+              issues={tutorIssuesOf(lesson.issues)}
+              now={now}
+              preset={
+                me.email_verified && issueAudience !== null
+                  ? {
+                      audience: issueAudience,
+                      lesson: { id: lesson.id, title: lesson.title, startsAt: lesson.starts_at },
+                    }
+                  : null
+              }
+              onIssued={issuedFromLesson}
+            />
+          ) : (
+            <LessonWork work={studentWorkOf(lesson.issues)} now={now} />
+          )
+        }
       />
     );
   }
 
-  const tutor = me.role === 'tutor';
-  const issueAudience = lesson === undefined ? null : sameAudience(t, lesson.audience);
   return (
     <Page
       {...headingOf(lesson, notFound)}
@@ -584,19 +617,6 @@ export function LessonPage(): ReactElement {
             </Link>
           ) : null}
           {controlsShown ? <LessonEditButton editButton={editButton} onOpen={open} /> : null}
-          {tutor && me.email_verified && lesson !== undefined && issueAudience !== null ? (
-            <IssueAssignmentAction
-              preset={{
-                audience: issueAudience,
-                lesson: { id: lesson.id, title: lesson.title, startsAt: lesson.starts_at },
-              }}
-              onIssued={() => {
-                setNotice(null);
-                setIssued((previous) => ({ lessonId, count: (previous?.count ?? 0) + 1 }));
-                void queryClient.invalidateQueries({ queryKey: key });
-              }}
-            />
-          ) : null}
         </>
       }
       menu={

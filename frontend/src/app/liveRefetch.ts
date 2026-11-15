@@ -9,7 +9,7 @@ import { groupsKey, memberChoiceKey } from '../features/groups/api.ts';
 import { issuesKey } from '../features/homework/api.ts';
 import { notificationsKey } from '../features/notifications/api.ts';
 import { reviewKey } from '../features/review/keys.ts';
-import { calendarKey, lessonKey } from '../features/schedule/keys.ts';
+import { calendarKey, lessonKey, lessonsKey } from '../features/schedule/keys.ts';
 import { joinRequestsKey, studentCardKey, studentCardsKey, studentListsKey } from '../features/students/api.ts';
 import { myTutorsKey, sentRequestsKey } from '../features/tutors/api.ts';
 import type { RealtimeEvent } from '../lib/realtime/client.ts';
@@ -30,7 +30,7 @@ function queriesOf(entity: EntityKind, id: string): readonly QueryKey[] {
       return [calendarKey];
     case 'issue':
     case 'submission':
-      return [issuesKey, assignmentsKey, reviewKey];
+      return [issuesKey, assignmentsKey, reviewKey, lessonsKey];
   }
 }
 

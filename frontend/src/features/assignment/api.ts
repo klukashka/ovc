@@ -7,6 +7,8 @@ export { assignmentListKey, assignmentsKey, submissionKey } from './keys.ts';
 
 type StudentSubmissionResponse = components['schemas']['StudentSubmission'];
 type SubmissionFileResponse = components['schemas']['SubmissionFile'];
+type StudentReviewResponse = components['schemas']['StudentReview'];
+type StudentRevealedResponse = components['schemas']['StudentRevealed'];
 
 export type AssignmentItem = components['schemas']['StudentAssignmentItem'];
 export type AssignmentPage = components['schemas']['StudentAssignmentPage'];
@@ -48,6 +50,24 @@ export interface AssignmentTutor {
   readonly relationshipId: string;
 }
 
+export interface ReviewItem {
+  readonly comment: string;
+  readonly correctedFiles: readonly AnswerFile[];
+}
+
+export interface Review {
+  readonly feedback: string;
+  readonly items: ReadonlyMap<string, ReviewItem>;
+}
+
+export interface RevealedAnswer {
+  readonly correctOptionIds: readonly string[];
+  readonly acceptedAnswers: readonly string[];
+  readonly correctValue: string | null;
+  readonly tolerance: string | null;
+  readonly explanation: string;
+}
+
 export interface Submission {
   readonly id: string;
   readonly title: string;
@@ -60,6 +80,8 @@ export interface Submission {
   readonly editable: ReadonlySet<string>;
   readonly blocks: readonly StudentBlock[];
   readonly answers: ReadonlyMap<string, Answer>;
+  readonly review: Review | null;
+  readonly revealed: ReadonlyMap<string, RevealedAnswer> | null;
 }
 
 export type QuestionBlock = Exclude<StudentBlock, { readonly type: 'instruction' | 'material' }>;
@@ -77,6 +99,39 @@ function answerFile(entry: SubmissionFileResponse): AnswerFile {
     url: entry.url,
     expiresAt: entry.expires_at,
   };
+}
+
+function parseReview(review: StudentReviewResponse | null): Review | null {
+  if (review === null) {
+    return null;
+  }
+  return {
+    feedback: review.feedback,
+    items: new Map(
+      review.items.map((item) => [
+        item.question_id,
+        { comment: item.comment, correctedFiles: item.corrected_files.map(answerFile) },
+      ]),
+    ),
+  };
+}
+
+function parseRevealed(revealed: StudentRevealedResponse | undefined): ReadonlyMap<string, RevealedAnswer> | null {
+  if (revealed === undefined) {
+    return null;
+  }
+  return new Map(
+    revealed.questions.map((question) => [
+      question.question_id,
+      {
+        correctOptionIds: question.correct_option_ids ?? [],
+        acceptedAnswers: question.accepted_answers ?? [],
+        correctValue: question.correct_value ?? null,
+        tolerance: question.tolerance ?? null,
+        explanation: question.explanation ?? '',
+      },
+    ]),
+  );
 }
 
 export function parseSubmission(response: StudentSubmissionResponse): Submission {
@@ -105,6 +160,8 @@ export function parseSubmission(response: StudentSubmissionResponse): Submission
         },
       ]),
     ),
+    review: parseReview(response.review),
+    revealed: parseRevealed(response.revealed),
   };
 }
 

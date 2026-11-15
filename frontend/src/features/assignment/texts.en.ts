@@ -85,4 +85,13 @@ export const assignmentTexts = {
   deadlinePassed: 'The deadline has passed. You can still submit; the work will be marked late.',
   closed: 'This assignment is closed and can no longer be submitted.',
   gone: 'This assignment is no longer available.',
+  revealed: {
+    correct: 'Correct answer',
+    accepted: 'Accepted answers: {answers}',
+    valueWithTolerance: 'Correct value: {value} ± {tolerance}',
+    value: 'Correct value: {value}',
+    explanation: 'Explanation',
+  },
+  review: { comment: 'Tutor’s comment', correctedFiles: 'Corrected files', feedback: 'Overall feedback' },
+  returnedBanner: 'Your tutor returned this work for revision.',
 };

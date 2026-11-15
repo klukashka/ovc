@@ -51,6 +51,7 @@ import { AnswerAutosave, type Refusal } from './autosave.ts';
 import { firstFieldOf } from './focusQuestion.ts';
 import { SaveStatus } from './SaveStatus.tsx';
 import { DeadlineHint, ReclaimCue, StateLabel, TutorName, useNow } from './parts.tsx';
+import { OverallFeedback, QuestionReview, RevealedPart } from './ReviewParts.tsx';
 import { type Answering, StudentBlocks, questionNumbers } from './StudentBlocks.tsx';
 import { assignmentTextLoaders } from './texts.ts';
 
@@ -83,6 +84,9 @@ function earliestExpiry(submission: Submission): number | null {
   }
   for (const answer of submission.answers.values()) {
     instants.push(...answer.files.map((file) => file.expiresAt));
+  }
+  for (const item of submission.review?.items.values() ?? []) {
+    instants.push(...item.correctedFiles.map((file) => file.expiresAt));
   }
   const times = instants.map((instant) => Date.parse(instant)).filter((time) => Number.isFinite(time));
   return times.length === 0 ? null : Math.min(...times);
@@ -617,8 +621,18 @@ function AssignmentForm({
     const fileRefusal = fileRefusals.get(block.id);
     const problem = invalid.get(block.id);
     const mine = kept.get(block.id);
+    const revealed = submission.revealed?.get(block.id);
+    const reviewItem = submission.review?.items.get(block.id);
     return (
       <>
+        {revealed === undefined ? null : <RevealedPart block={block} revealed={revealed} />}
+        {reviewItem === undefined ? null : (
+          <QuestionReview
+            item={reviewItem}
+            highlighted={submission.status === 'returned'}
+            origin={window.location.origin}
+          />
+        )}
         {fileRefusal === undefined ? null : (
           <FormAlert key={fileRefusal.count}>{t(`assignment.files.${fileRefusal.reason}`)}</FormAlert>
         )}
@@ -654,6 +668,7 @@ function AssignmentForm({
     invalid: new Set(invalid.keys()),
     onChange: change,
     below,
+    correctOptions: (block) => new Set(submission.revealed?.get(block.id)?.correctOptionIds ?? []),
     fileControl: (block, answer) => (
       <AnswerFiles
         submissionId={submission.id}
@@ -707,6 +722,12 @@ function AssignmentForm({
           }}
         />
       ) : null}
+      {submission.status === 'returned' ? (
+        <p className="rounded-md border border-warning p-4 text-strong">{t('assignment.returnedBanner')}</p>
+      ) : null}
+      {submission.review === null || submission.review.feedback === '' ? null : (
+        <OverallFeedback feedback={submission.review.feedback} />
+      )}
       {writable ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-small">{t('assignment.progress', { answered: answeredCount, total })}</p>

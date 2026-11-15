@@ -10,7 +10,7 @@ import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
 import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
-import type { LessonDetail } from './api.ts';
+import type { LessonView } from './api.ts';
 import { LessonPage } from './LessonPage.tsx';
 import { embedLoadHintMilliseconds } from './LessonRoom.tsx';
 import { type OpenRoomTab, RoomTabContext } from './roomTab.ts';
@@ -35,7 +35,7 @@ const tutorEmail = 'maria@example.org';
 const studentEmail = 'anna@example.org';
 const minute = 60_000;
 
-const scheduledLesson: LessonDetail = {
+const scheduledLesson: LessonView = {
   id: '00000000-0000-4000-8000-000000000004',
   title: 'Разговорная практика',
   description: null,
@@ -56,10 +56,11 @@ const scheduledLesson: LessonDetail = {
   room_open: false,
   embed_allowed: false,
   materials: [],
+  issues: [],
 };
 
-const liveLesson: LessonDetail = { ...scheduledLesson, status: 'live', took_place: true, room_open: true };
-const secondLesson: LessonDetail = { ...scheduledLesson, id: '00000000-0000-4000-8000-000000000005', title: 'Второй' };
+const liveLesson: LessonView = { ...scheduledLesson, status: 'live', took_place: true, room_open: true };
+const secondLesson: LessonView = { ...scheduledLesson, id: '00000000-0000-4000-8000-000000000005', title: 'Второй' };
 
 class RecordedTab {
   readonly visited: string[] = [];
@@ -109,7 +110,7 @@ interface ShownRoom {
 
 interface RoomSetup {
   readonly role?: 'tutor' | 'student';
-  readonly lesson?: LessonDetail;
+  readonly lesson?: LessonView;
   readonly wide?: boolean;
   readonly minutesBeforeStart?: number;
 }
@@ -498,7 +499,7 @@ describe('what each role sees', () => {
 });
 
 describe('the embedded room', () => {
-  const embeddable: LessonDetail = { ...liveLesson, embed_allowed: true };
+  const embeddable: LessonView = { ...liveLesson, embed_allowed: true };
 
   async function embeddedRoom(): Promise<ShownRoom & { readonly frame: HTMLElement }> {
     const shown = await showRoom({ lesson: embeddable });

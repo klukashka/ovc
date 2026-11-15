@@ -4,7 +4,7 @@ import { Link } from 'react-router';
 
 import { linkClass, quietButtonClass } from '../../components/ui/Form.tsx';
 import { ModuleLoadFailed } from '../../components/ui/LoadState.tsx';
-import { type TextLoaders, useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
+import type { TextLoaders } from '../../lib/i18n/featureTexts.ts';
 import { type IssueItem, issueAddress } from './api.ts';
 import type { IssueDialog, IssuePreset } from './IssueDialog.tsx';
 
@@ -114,9 +114,11 @@ export function IssuedNotice({ issueId }: { readonly issueId: string | null }): 
 export function IssueAssignmentButton({
   preset,
   onIssued,
+  unavailableReason = null,
 }: {
   readonly preset: IssuePreset;
   readonly onIssued: (issue: IssueItem) => void;
+  readonly unavailableReason?: string | null;
 }): ReactElement {
   const { t } = useTranslation();
   const opener = useRef<HTMLButtonElement>(null);
@@ -126,8 +128,12 @@ export function IssueAssignmentButton({
       <button
         ref={opener}
         type="button"
+        aria-disabled={unavailableReason === null ? undefined : true}
+        aria-describedby={unavailableReason ?? undefined}
         onClick={() => {
-          setOpen(true);
+          if (unavailableReason === null) {
+            setOpen(true);
+          }
         }}
         className={quietButtonClass}
       >
@@ -147,17 +153,6 @@ export function IssueAssignmentButton({
       />
     </>
   );
-}
-
-export function IssueAssignmentAction({
-  preset,
-  onIssued,
-}: {
-  readonly preset: IssuePreset;
-  readonly onIssued: (issue: IssueItem) => void;
-}): ReactElement | null {
-  const texts = useFeatureTexts('homework', homeworkTextLoaders);
-  return texts.ready ? <IssueAssignmentButton preset={preset} onIssued={onIssued} /> : null;
 }
 
 const tabClass = 'inline-flex min-h-11 items-center border-b-2 px-1 text-small';

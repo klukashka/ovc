@@ -4,6 +4,8 @@ import type { ObservedBrowser } from './browser-diagnostics.ts';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
+import { storedAnswers, studentWork } from './assignment.ts';
+import { createReadyTemplate, issueThroughTheApi } from './homework.ts';
 import { channelOf } from './messages.ts';
 import { notificationRows, bellIn, panelRowsIn } from './notifications.ts';
 import { addDays, cardLessonStatuses, isoWeekday, localDate, scheduleLessonsWithIds } from './schedule.ts';
@@ -148,8 +150,13 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
       start: '19:00',
       duration_minutes: 90,
     });
+    const exercises = await createReadyTemplate(deployment, maria, 'Упражнения');
+    await issueThroughTheApi(deployment, maria, exercises.id, { group_id: groupId });
+    await control.tick();
+    await control.advance(1);
     expect(series.length).toBeGreaterThan(emailListLimit);
     expect(groupLesson).toHaveLength(1);
+    expect((await studentWork(deployment, boris, 'todo')).map((work) => work.title)).toEqual(['Упражнения']);
     const [firstOfSeries] = series;
     const [theGroupLesson] = groupLesson;
     if (firstOfSeries === undefined || theGroupLesson === undefined) {
@@ -258,6 +265,45 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
 
     await expect(borisPage.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
     await expect(borisPage.getByRole('main').getByText('Урок B1 evening')).toHaveCount(0);
+    await diagnostics.closeContext(borisContext);
+  });
+
+  test('pilot-4 › step 5 the Closed tab shows the group assignment, which is read-only and cannot be submitted', async ({
+    observedBrowser: browser,
+    deployment,
+    diagnostics,
+  }) => {
+    const { boris } = pilotFour();
+    const [closed] = await studentWork(deployment, boris, 'closed');
+    if (closed === undefined) {
+      throw new Error('Boris has no closed work');
+    }
+    const borisContext = await englishContext(browser, deployment);
+    const borisPage = await borisContext.newPage();
+    await diagnostics.watch(borisPage);
+    await signInThroughTheApi(borisPage, boris);
+
+    await borisPage.goto('/homework?status=closed');
+
+    const table = borisPage.getByRole('table', { name: 'Assignments' });
+    await expect(table.locator('[data-row-link]')).toHaveText(['Упражнения']);
+    await expect(table).toContainText('Closed');
+    await table.getByRole('link', { name: 'Упражнения' }).click();
+    await borisPage.getByRole('heading', { level: 1, name: 'Упражнения' }).waitFor();
+    await expect(
+      borisPage.getByText('This assignment is closed and can no longer be submitted.', { exact: true }),
+    ).toBeVisible();
+    await expect(borisPage.getByRole('button', { name: /^Submit/ })).toHaveCount(0);
+    await expect(borisPage.getByRole('textbox').first()).not.toBeEditable();
+    const refused = await callApi(
+      deployment,
+      await accessToken(deployment, boris),
+      'POST',
+      `/submissions/${closed.submissionId}/submit`,
+      { version: (await storedAnswers(deployment, boris, closed.submissionId)).version },
+    );
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ error: { code: 'not_editable' } });
     await diagnostics.closeContext(borisContext);
   });
 

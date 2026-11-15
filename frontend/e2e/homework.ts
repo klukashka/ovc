@@ -11,9 +11,12 @@ export interface SavedTemplate {
 
 export type IssueAudienceSeed = { readonly relationship_id: string } | { readonly group_id: string };
 
+export type AnswerPolicy = 'never' | 'after_submission' | 'after_check';
+
 export interface IssueSeed {
   readonly lessonId?: string;
   readonly deadlineAt?: string;
+  readonly policy?: AnswerPolicy;
 }
 
 function field(value: unknown, name: string): unknown {
@@ -134,7 +137,7 @@ export async function issueThroughTheApi(
     audience,
     lesson_id: seed.lessonId ?? null,
     deadline_at: seed.deadlineAt ?? null,
-    answer_policy: 'after_check',
+    answer_policy: seed.policy ?? 'after_check',
   });
   return textField(created, 'id');
 }

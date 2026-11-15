@@ -32,12 +32,13 @@ export async function fetchCalendar(client: ApiClient, range: CalendarSpan, tuto
 }
 
 export type LessonDetail = components['schemas']['LessonDetail'];
+export type LessonView = components['schemas']['LessonView'];
 export type LessonSeries = components['schemas']['LessonSeries'];
 export type LessonPatch = components['schemas']['LessonPatch'];
 export type LessonScope = LessonPatch['scope'];
 export type ChangedLessons = components['schemas']['CreatedLessons'];
 
-export async function fetchLesson(client: ApiClient, id: string): Promise<LessonDetail> {
+export async function fetchLesson(client: ApiClient, id: string): Promise<LessonView> {
   const { data, error, response } = await client.GET('/api/v1/lessons/{id}', { params: { path: { id } } });
   if (data === undefined) {
     throw apiErrorFrom(response.status, error);

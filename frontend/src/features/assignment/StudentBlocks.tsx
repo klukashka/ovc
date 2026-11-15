@@ -13,6 +13,8 @@ const shortAnswerLimit = 500;
 
 const shortNumberLimit = 64;
 
+const noOptions: ReadonlySet<string> = new Set();
+
 export interface Answering {
   readonly answers: ReadonlyMap<string, Answer>;
   readonly editable: ReadonlySet<string>;
@@ -20,6 +22,7 @@ export interface Answering {
   readonly fileControl: (block: Extract<QuestionBlock, { readonly type: 'file' }>, answer: Answer) => ReactNode;
   readonly below: (block: QuestionBlock) => ReactNode;
   readonly invalid: ReadonlySet<string>;
+  readonly correctOptions: (block: QuestionBlock) => ReadonlySet<string>;
 }
 
 function Pictures({
@@ -101,13 +104,16 @@ function ChoiceField({
   block,
   answer,
   editable,
+  correct,
   onChange,
 }: {
   readonly block: Extract<QuestionBlock, { readonly type: 'single_choice' | 'multiple_choice' }>;
   readonly answer: Answer | null;
   readonly editable: boolean;
+  readonly correct: ReadonlySet<string>;
   readonly onChange: (answer: Answer) => void;
 }): ReactElement {
+  const { t } = useTranslation();
   const single = block.type === 'single_choice';
   return (
     <div className="flex flex-col gap-2">
@@ -136,6 +142,11 @@ function ChoiceField({
           <span dir="auto" className="break-words">
             {option.text}
           </span>
+          {correct.has(option.id) ? (
+            <span data-correct-option="" className="text-small font-medium text-success">
+              {t('assignment.revealed.correct')}
+            </span>
+          ) : null}
         </label>
       ))}
     </div>
@@ -172,7 +183,15 @@ function AnswerField({
   switch (block.type) {
     case 'single_choice':
     case 'multiple_choice':
-      return <ChoiceField block={block} answer={answer} editable={editable} onChange={change} />;
+      return (
+        <ChoiceField
+          block={block}
+          answer={answer}
+          editable={editable}
+          correct={answering?.correctOptions(block) ?? noOptions}
+          onChange={change}
+        />
+      );
     case 'short_text':
     case 'short_number':
       return (

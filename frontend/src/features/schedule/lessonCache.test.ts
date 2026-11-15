@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 
 import type { LessonDetail } from './api.ts';
 import { lessonKey } from './keys.ts';
-import { replaceLessonDetail } from './lessonCache.ts';
+import { replaceLessonDetail, withIssuesOf } from './lessonCache.ts';
 
 const liveLesson: LessonDetail = {
   id: '00000000-0000-4000-8000-000000000004',
@@ -26,6 +26,14 @@ const liveLesson: LessonDetail = {
   room_open: true,
   embed_allowed: false,
   materials: [],
+};
+
+const linkedIssue = {
+  issue_id: '00000000-0000-4000-8000-000000000009',
+  title: 'Fractions',
+  deadline_at: null,
+  submitted: 0,
+  students: 1,
 };
 
 const endedLesson: LessonDetail = { ...liveLesson, status: 'ended', room_open: false, version: 3 };
@@ -54,6 +62,14 @@ test('a lesson read that started before the replacement cannot bring the older d
   const staleOutcome = await reading;
 
   expect(staleOutcome).toBeInstanceOf(CancelledError);
-  expect(queryClient.getQueryData(lessonKey(liveLesson.id))).toEqual(endedLesson);
+  expect(queryClient.getQueryData(lessonKey(liveLesson.id))).toEqual({ ...endedLesson, issues: [] });
   expect(queryClient.getQueryState(lessonKey(liveLesson.id))?.fetchStatus).toBe('idle');
+});
+
+test('a lesson write keeps the linked issues the page already holds', () => {
+  const previous = { ...liveLesson, issues: [linkedIssue] };
+
+  const written = withIssuesOf(previous, endedLesson);
+
+  expect(written).toEqual({ ...endedLesson, issues: [linkedIssue] });
 });

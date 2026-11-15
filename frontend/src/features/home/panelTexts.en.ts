@@ -15,6 +15,10 @@ export const homeworkPanelTexts = {
   allIssued: 'All issued work',
   noDeadlines: 'No deadlines in the next 3 days',
   cue: 'Issued before the account was reclaimed',
+  recentlyChecked: 'Recently checked',
+  nothingChecked: 'Nothing checked yet',
+  correctedFile: 'A corrected file came back',
+  checkedOn: 'Checked {date}',
   states: {
     todo: 'To do',
     dueSoon: 'Due soon',

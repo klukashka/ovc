@@ -16,6 +16,7 @@ import { CodeEntry } from '../tutors/CodeEntry.tsx';
 import { type SentRequestsQuery, hasPendingRequest, useSentRequests } from '../tutors/SentRequests.tsx';
 import { TutorList, TutorsLoadFailed, useMyTutors } from '../tutors/TutorList.tsx';
 import { NextLesson, NextSevenDays } from './HomeLessons.tsx';
+import { CheckedPanel } from './CheckedPanel.tsx';
 import { TodoPanel } from './TodoPanel.tsx';
 import { TutorFilter } from './TutorFilter.tsx';
 import { useUpcomingLessons } from './upcoming.ts';
@@ -138,7 +139,10 @@ export function HomePage(): ReactElement {
               <NextLesson me={me} query={query} />
             )}
             {homeworkShown && !unavailable && !tutorsFailed && (requested === null || matched !== undefined) ? (
-              <TodoPanel tutor={matched ?? null} />
+              <>
+                <TodoPanel tutor={matched ?? null} />
+                <CheckedPanel tutor={matched ?? null} />
+              </>
             ) : null}
           </>
         }

@@ -88,4 +88,13 @@ export const assignmentTexts: AssignmentTexts = {
   deadlinePassed: 'Срок прошёл. Сдать работу ещё можно, но она будет отмечена как сданная с опозданием.',
   closed: 'Задание закрыто, сдать его больше нельзя.',
   gone: 'Это задание больше недоступно.',
+  revealed: {
+    correct: 'Правильный ответ',
+    accepted: 'Правильные ответы: {answers}',
+    valueWithTolerance: 'Правильное значение: {value} ± {tolerance}',
+    value: 'Правильное значение: {value}',
+    explanation: 'Пояснение',
+  },
+  review: { comment: 'Комментарий репетитора', correctedFiles: 'Исправленные файлы', feedback: 'Общий отзыв' },
+  returnedBanner: 'Репетитор вернул работу на доработку.',
 };
