@@ -96,6 +96,9 @@ func (b issueCreatedEmail) Build(ctx context.Context, row repositories.ClaimedOu
 	if err != nil || !found {
 		return Composition{Obsolete: !found}, err
 	}
+	if submission.TutorState != domain.AccountActive {
+		return tutorInactive(recipient, domain.EmailGroupHomework), nil
+	}
 	text, found := core.IssueCreatedText(recipient.Language)
 	if !found {
 		return Composition{}, domain.PermanentEffect(fmt.Errorf("%w: no %s text in %s", errUnknownKind, row.Kind, recipient.Language))
@@ -104,6 +107,14 @@ func (b issueCreatedEmail) Build(ctx context.Context, row repositories.ClaimedOu
 		text: text, person: submission.TutorName, deadline: submission.DeadlineAt, title: submission.Title,
 		path: domain.HomeworkAssignmentPagePath + id.String(), group: domain.EmailGroupHomework,
 	}, now)
+}
+
+func tutorInactive(recipient repositories.User, group domain.EmailGroup) Composition {
+	return Composition{
+		Recipient: AccountRecipient(recipient.State),
+		Optional:  &Optional{Recipient: recipient.ID, Group: group, Capped: true},
+		Drop:      domain.DropTutorInactive,
+	}
 }
 
 type homeworkMessage struct {
@@ -206,6 +217,9 @@ func (b resultEmail) Build(ctx context.Context, row repositories.ClaimedOutboxRo
 	recipient, found, err := existingUser(ctx, repos, submission.StudentID)
 	if err != nil || !found {
 		return Composition{Obsolete: !found}, err
+	}
+	if submission.TutorState != domain.AccountActive {
+		return tutorInactive(recipient, domain.EmailGroupResults), nil
 	}
 	text, found := b.text(recipient.Language)
 	if !found {

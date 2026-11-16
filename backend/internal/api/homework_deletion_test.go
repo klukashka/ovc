@@ -2,7 +2,6 @@ package api_test
 
 import (
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -76,10 +75,12 @@ func TestTutorDeletionClosesWork(t *testing.T) {
 		}
 	}
 	for _, subject := range []string{"Assignment checked", "Assignment returned", "Review updated"} {
-		messages := eventsWithSubject(h.mailTo(t, studentEmail), subject)
-		if len(messages) != 1 || !strings.Contains(messages[0].Text, endingTutorAccountName) {
-			t.Fatalf("queued %s did not retain the tutor name after deletion", subject)
+		if messages := eventsWithSubject(h.mailTo(t, studentEmail), subject); len(messages) != 0 {
+			t.Fatalf("queued %s reached the student after the tutor's deletion", subject)
 		}
+	}
+	if dropped := h.countLogs(`"msg":"email.dropped"`, `"group":"results"`, `"reason":"tutor_inactive"`); dropped != 3 {
+		t.Fatalf("the deletion dropped %d results emails as tutor_inactive, want 3", dropped)
 	}
 	if afterEnding != usage {
 		t.Fatalf("the ending released charges itself: %d before, %d after", usage, afterEnding)
