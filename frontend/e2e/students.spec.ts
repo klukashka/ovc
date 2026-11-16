@@ -12,7 +12,13 @@ import {
   signUpAndConfirmTutor,
   tableRows,
 } from './fixtures.ts';
-import { apiRequestsInFlight, busyControls, recordBusyControls } from './observers.ts';
+import {
+  apiRequestsInFlight,
+  busyControls,
+  headingsAtPopstate,
+  recordBusyControls,
+  recordHeadingsAtPopstate,
+} from './observers.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { addDays, cancelThisLesson, localDate, scheduleLessons, scheduleLessonsWithIds } from './schedule.ts';
 import {
@@ -26,7 +32,7 @@ import {
   signUpOnInvitation,
 } from './tutoring.ts';
 
-interface HeldCardIssueReads {
+interface HeldReads {
   readonly held: Promise<void>;
   readonly sent: () => number;
   readonly release: () => Promise<Response>;
@@ -36,7 +42,7 @@ function isCardIssueRead(address: URL, cardId: string): boolean {
   return address.pathname === '/api/v1/issues' && address.searchParams.get('student') === cardId;
 }
 
-async function holdCardIssueReads(page: Page, cardId: string): Promise<HeldCardIssueReads> {
+async function holdCardIssueReads(page: Page, cardId: string): Promise<HeldReads> {
   let resume: () => void = () => undefined;
   const resumed = new Promise<void>((resolve) => {
     resume = resolve;
@@ -65,6 +71,46 @@ async function holdCardIssueReads(page: Page, cardId: string): Promise<HeldCardI
       resume();
       const response = await answered;
       await page.unroute(matches);
+      return response;
+    },
+  };
+}
+
+function isCardRead(request: Request, cardId: string): boolean {
+  return request.method() === 'GET' && new URL(request.url()).pathname === `/api/v1/students/${cardId}`;
+}
+
+async function holdCardRead(page: Page, cardId: string): Promise<HeldReads> {
+  let resume: () => void = () => undefined;
+  const resumed = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  let reach: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    reach = resolve;
+  });
+  let sent = 0;
+  page.on('request', (request) => {
+    if (isCardRead(request, cardId)) {
+      sent += 1;
+    }
+  });
+  const address = `**/api/v1/students/${cardId}`;
+  await page.route(address, async (route) => {
+    if (isCardRead(route.request(), cardId)) {
+      reach();
+      await resumed;
+    }
+    await route.continue();
+  });
+  return {
+    held,
+    sent: () => sent,
+    release: async (): Promise<Response> => {
+      const answered = page.waitForResponse((response) => isCardRead(response.request(), cardId));
+      resume();
+      const response = await answered;
+      await page.unroute(address);
       return response;
     },
   };
@@ -906,6 +952,31 @@ test.describe('in English with the dark theme', () => {
 
     await expect(page.getByRole('link', { name: /Vera Active/ })).toBeVisible();
     await expect(page.getByLabel('Name or email')).toHaveValue('vera');
+  });
+
+  test('students › Back while the card is still loading commits the student list at the address change', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
+    await signInThroughTheApi(page, pavel);
+    await page.goto('/students');
+    await expect(page.getByRole('heading', { level: 1, name: 'Students' })).toBeVisible();
+    const cardRead = await holdCardRead(page, cardId);
+    await tableRows(page, 'Active').getByRole('link', { name: 'Boris' }).click();
+    await expect(page).toHaveURL(`/students/${cardId}`);
+    await cardRead.held;
+    await recordHeadingsAtPopstate(page);
+
+    await page.goBack();
+    const cardAnswer = await cardRead.release();
+
+    await expect(page).toHaveURL('/students');
+    await expect(page.getByRole('heading', { level: 1, name: 'Students' })).toBeVisible();
+    expect(await headingsAtPopstate(page)).toEqual(['Students']);
+    expect(cardAnswer.status()).toBe(200);
+    expect(cardRead.sent()).toBe(1);
   });
 
   test.describe('Pavel with one empty group, shared by the tests below', () => {

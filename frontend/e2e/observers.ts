@@ -7,6 +7,7 @@ declare global {
     ovcBusyControls?: string[][];
     ovcFirstOffsets?: Map<string, number>;
     ovcFirstBodyTheme?: string;
+    ovcHeadingsAtPopstate?: string[];
     ovcSchemeChanges?: number;
     ovcShownRegion?: ShownRegion;
   }
@@ -49,6 +50,24 @@ export async function shownRegion(page: Page): Promise<ShownRegion> {
     throw new Error('no shown region was recorded on this page');
   }
   return { busy: recorded.busy, replaced: recorded.replaced };
+}
+
+export async function recordHeadingsAtPopstate(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const headings: string[] = [];
+    window.ovcHeadingsAtPopstate = headings;
+    window.addEventListener('popstate', () => {
+      headings.push(document.querySelector('h1')?.textContent ?? '');
+    });
+  });
+}
+
+export async function headingsAtPopstate(page: Page): Promise<string[]> {
+  const recorded: unknown = await page.evaluate((): unknown => window.ovcHeadingsAtPopstate);
+  if (!Array.isArray(recorded) || !recorded.every((heading): heading is string => typeof heading === 'string')) {
+    throw new Error('no headings at popstate were recorded on this page');
+  }
+  return recorded;
 }
 
 export async function recordBusyControls(page: Page): Promise<void> {

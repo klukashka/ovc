@@ -158,11 +158,24 @@ const frames: RouteObject[] = [
 export const routes: RouteObject[] = [{ element: <RouteFocus />, children: frames }];
 
 type BrowserRouter = ReturnType<typeof createBrowserRouter>;
+type RouterSubscriber = Parameters<BrowserRouter['subscribe']>[0];
+
+function committingLocationChangesSynchronously(router: BrowserRouter, subscriber: RouterSubscriber): RouterSubscriber {
+  let deliveredLocation = router.state.location;
+  return (state, options) => {
+    const locationChanged = state.location !== deliveredLocation;
+    deliveredLocation = state.location;
+    subscriber(state, locationChanged ? { ...options, flushSync: true } : options);
+  };
+}
 
 export function withSynchronousNavigation(router: BrowserRouter): BrowserRouter {
   const navigate = router.navigate.bind(router);
+  const subscribe = router.subscribe.bind(router);
   router.navigate = (to: number | To | null, options?: RouterNavigateOptions): Promise<void> =>
     typeof to === 'number' ? navigate(to) : navigate(to, { ...options, flushSync: true });
+  router.subscribe = (subscriber: RouterSubscriber): (() => void) =>
+    subscribe(committingLocationChangesSynchronously(router, subscriber));
   return router;
 }
 
