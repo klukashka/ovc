@@ -385,7 +385,10 @@ test.describe('builder blocks', () => {
       .click();
     await skipSaveDelay(page);
     await page.getByText('Ready to issue', { exact: true }).waitFor();
-    await page.getByRole('status').filter({ hasText: 'Saved' }).waitFor();
+    await page
+      .getByRole('status')
+      .filter({ hasText: /^Saved$/ })
+      .waitFor();
 
     const blocks = await savedBlocks(deployment, tutor, template.id);
     expect(blocks.map((saved) => saved.type)).toEqual([
@@ -413,7 +416,7 @@ test.describe('builder blocks', () => {
     await page.getByRole('status').filter({ hasText: 'Saving…' }).waitFor();
     await release();
 
-    await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: /^Saved$/ })).toBeVisible();
     await expect(page.getByRole('status').filter({ hasText: 'Saving…' })).toHaveCount(0);
   });
 
@@ -1045,7 +1048,7 @@ test.describe('Maria in Russian', () => {
     await skipSaveDelay(page);
 
     await expect(page.getByText('Готово к выдаче', { exact: true })).toBeVisible();
-    await expect(page.getByRole('status').filter({ hasText: 'Сохранено' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: /^Сохранено$/ })).toBeVisible();
     const templateId = new URL(page.url()).pathname.split('/').at(-1) ?? '';
     const studentView = page.waitForResponse(
       (response) => new URL(response.url()).pathname === `/api/v1/library/templates/${templateId}/student-view`,

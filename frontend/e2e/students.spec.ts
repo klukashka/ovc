@@ -573,7 +573,7 @@ test.describe('in English with the dark theme', () => {
     await form.getByRole('status').filter({ hasText: 'Notes were not saved.' }).waitFor();
 
     await notes.fill('Prefers mornings.');
-    await form.getByRole('status').filter({ hasText: 'Saved.' }).waitFor();
+    await expect(form.getByRole('status')).toHaveText('Saved.');
 
     await expect(form.getByRole('button', { name: 'Try again' })).toHaveCount(0);
     expect(await storedNotes(deployment, pavel, cardId)).toBe('Prefers mornings.');
