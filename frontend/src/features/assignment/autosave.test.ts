@@ -135,6 +135,18 @@ function sentTexts(save: PendingSave): readonly string[] {
 }
 
 describe('answer autosave', () => {
+  test('the delay before a save is exactly 1000 milliseconds', () => {
+    const setup = setUp();
+
+    type(setup, firstQuestion, 'went');
+    setup.scheduler.pass(999);
+    const beforeOneSecond = setup.server.received.length;
+    setup.scheduler.pass(1);
+
+    expect(beforeOneSecond).toBe(0);
+    expect(setup.server.received).toHaveLength(1);
+  });
+
   test('one second after the last change it sends only the changed answers', () => {
     const setup = setUp();
 

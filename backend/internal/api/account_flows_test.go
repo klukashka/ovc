@@ -702,6 +702,24 @@ func TestAccountEmailsFollowTheLanguageAndCarryNoUserText(t *testing.T) {
 	}
 }
 
+func TestTheResetEmailFollowsTheLanguageSavedInTheSettings(t *testing.T) {
+	t.Parallel()
+	h := newFlowHarness(t)
+	h.seedUser(t, 1, tutorEmail, "correct horse battery", currentHash)
+	token := accessToken(t, h.login(t, tutorEmail, "correct horse battery"))
+
+	saved := h.send(t, http.MethodPatch, "/api/v1/users/me", `{"language":"ru"}`, jsonCall(token))
+	h.forgot(t, tutorEmail)
+	h.tick(t)
+
+	if saved.status != http.StatusOK {
+		t.Fatalf("saving the language answered %d %s", saved.status, saved.body)
+	}
+	if got := subjects(h.mailTo(t, tutorEmail)); !slices.Equal(got, []string{"Сброс пароля в OVC"}) {
+		t.Fatalf("subjects %v", got)
+	}
+}
+
 func (h *authHarness) obsoleteRows(t *testing.T, kind domain.OutboxKind) int64 {
 	t.Helper()
 	return h.countRows(t, "SELECT count(id) FROM outbox WHERE kind = $1 AND status = 'done' AND done_reason = 'obsolete'", string(kind))

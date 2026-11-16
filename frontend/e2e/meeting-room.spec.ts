@@ -233,44 +233,6 @@ test.describe('the fake meeting room', () => {
     await expect(page.locator('body')).not.toContainText(tutorName);
   });
 
-  test('after a restart the old link is refused and the new link opens in the same page', async ({
-    page,
-    context,
-    deployment,
-    control,
-    diagnostics,
-  }) => {
-    const { tutor, lesson } = await lessonFor(deployment, control, { tutor: tutorName, student: studentName });
-    const stale = await joinLink(deployment, tutor, lesson);
-    await page.goto(stale);
-    await expectInRoom(page, tutorName, 'moderator');
-    const fresh = await joinLink(deployment, tutor, lesson, 'restart-room');
-    await roomReaches(page, 'ended');
-    const stalePage = await context.newPage();
-    await diagnostics.watch(stalePage);
-
-    await stalePage.goto(stale);
-    await page.goto(fresh);
-
-    await expectRoomState(stalePage, 'refused');
-    await expectInRoom(page, tutorName, 'moderator');
-    await leaveRoom(page);
-  });
-
-  test('ending the lesson through the API ends the room', async ({ page, deployment, control }) => {
-    const { tutor, lesson } = await lessonFor(deployment, control, { tutor: tutorName, student: studentName });
-    const link = await joinLink(deployment, tutor, lesson);
-    await page.goto(link);
-    await expectInRoom(page, tutorName, 'moderator');
-
-    const ended = await lessonAction(deployment, tutor, lesson, 'end');
-    await control.tick();
-
-    expect(ended.status).toBe(200);
-    await expectRoomState(page, 'ended');
-    await expect(page.locator('#participant-name')).toHaveText('');
-  });
-
   test('the fake end control ends the room for its participant', async ({ page, deployment, control }) => {
     const { tutor, lesson } = await lessonFor(deployment, control, { tutor: tutorName, student: studentName });
     const link = await joinLink(deployment, tutor, lesson);

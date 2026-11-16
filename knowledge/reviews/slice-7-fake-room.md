@@ -34,6 +34,8 @@ T-36: routes registered only with `OVC_TEST_CONTROL=1`, loopback `Host` on every
 | No-referrer, cache and framing headers | "the room is served with the no-store, no-referrer and framing headers", `TestFakeRoomContract/the_page_and_its_assets_carry_the_room_headers` |
 | Timer and resource cleanup | "refreshing runs once a second", "refreshing stops on leave", "refreshing resumes after entering again", "refreshing stops on disposal", "refreshing stops when the room ends", under a paused page clock |
 
+Note of 2026-11-16 (slice 10's end-to-end consolidation): "after a restart the old link is refused and the new link opens in the same page" and "ending the lesson through the API ends the room" were removed. Their evidence is now `testRestartRevokes` and `testRestartRevokesRemovedMember` (`backend/internal/api/meeting_lifecycle_test.go`), `testRoomStaleGeneration` (`backend/internal/testcontrol/fake_room_test.go`) and the iframe restart test of `frontend/e2e/lesson-room.spec.ts` for the restart, and `testEndClosesAndCleans` with `TestMeetingRecoveryRuntime` (`backend/cmd/internal/startup/meeting_recovery_process_test.go`, the production cleanup lane in a built server process) for the end; `TestFakeRoomAcrossProcesses` ends the room through the fake provider's end control, not the API. The [consolidation record](../analysis/e2e-consolidation-2026-11-16.md) maps each assertion.
+
 Not covered here: a positive iframe journey needs `frame-src` on an OVC page, which the lesson UI stage adds with its test-only override; this change proves the headers and the HTTPS origin it will frame.
 
 ## Observability

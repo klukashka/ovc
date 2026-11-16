@@ -456,24 +456,6 @@ test.describe('account edge cases', () => {
     await diagnostics.finishHttpPhase();
   });
 
-  test('email language follows the account', async ({ page, deployment, control }) => {
-    const account = await seedVerifiedUser(deployment, 'Tutor switching to English');
-    await control.advance(61);
-    await signedInAt(page, account, '/settings/account');
-    await preferencesForm(page).getByLabel('Язык', { exact: true }).selectOption('en');
-    await preferencesForm(page).getByRole('button', { name: 'Сохранить' }).click();
-    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-    await page.goto('/forgot-password');
-    await page.getByLabel('Email').fill(account.email);
-    await page.getByRole('button', { name: 'Send link' }).click();
-    await expect(page.getByRole('status')).toContainText(account.email);
-
-    await control.tick();
-
-    const subjects = (await control.mail(account.email)).map((message) => message.subject);
-    expect(subjects).toContain('Reset your OVC password');
-  });
-
   test('the timezone is saved', async ({ page, deployment }) => {
     const account = await seedVerifiedUser(deployment, 'Tutor moving to Berlin');
     await signedInAt(page, account, '/settings/account');

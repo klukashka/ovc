@@ -28,6 +28,7 @@ import { onlySubmission, studentWork as studentWorkTitles, submitThroughTheApi }
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { studentLessonIssues } from './results.ts';
 import { addDays, localDate, scheduleLessonsWithIds } from './schedule.ts';
+import { installPageClock, skipSaveDelay } from './save-delay.ts';
 import { createGroup, endRelationship, seedActiveStudent } from './tutoring.ts';
 
 const moscow = 'Europe/Moscow';
@@ -447,6 +448,7 @@ test.describe('issuing from the builder, the card and the lesson', () => {
   }) => {
     const { pavel } = await pavelWithAnna(deployment);
     const template = await createReadyTemplate(deployment, pavel, 'Fractions');
+    await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, pavel);
     await page.goto(`/homework/templates/${template.id}`);
     const opener = page.getByRole('button', { name: 'Issue assignment', exact: true });
@@ -457,6 +459,7 @@ test.describe('issuing from the builder, the card and the lesson', () => {
         request.method() === 'PUT' && new URL(request.url()).pathname === `/api/v1/library/templates/${template.id}`,
     );
     await page.getByRole('textbox', { name: 'Question', exact: true }).fill('');
+    await skipSaveDelay(page);
     await held;
     await opener.click();
 

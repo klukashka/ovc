@@ -9,7 +9,6 @@ import {
   pdfFile,
   pictureFile,
   questionIds,
-  removeGroupMember,
   saveTextFromAnotherDevice,
   sentinel,
   bindAndDropFromAnotherDevice,
@@ -35,13 +34,13 @@ import {
   expectStudentSubmissionKeys,
   publishReview,
   reviewQueueIds,
-  saveReviewDraft,
   scoreFormsIn,
   studentRead,
   tutorFinalPoints,
   uploadCorrectedFile,
 } from './results.ts';
 import { answerTextAndSubmit, storedReview, studentSubmissionText } from './review.ts';
+import { type PageClockOption, installPageClock, skipVisibleSaveDelay } from './save-delay.ts';
 import {
   createCard,
   createGroup,
@@ -90,7 +89,13 @@ function submittedNotice(page: Page): Locator {
   return page.getByRole('status').filter({ hasText: /^Submitted$/ });
 }
 
-async function openAssignment(page: Page, student: TestAccount, submissionId: string): Promise<void> {
+async function openAssignment(
+  page: Page,
+  student: TestAccount,
+  submissionId: string,
+  option: PageClockOption = {},
+): Promise<void> {
+  await installPageClock(page, option);
   await signInThroughTheApi(page, student);
   await page.goto(`/homework/${submissionId}`);
   await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
@@ -168,8 +173,9 @@ async function confirmationWithHeldSubmit(
   diagnostics: Diagnostics,
 ): Promise<HeldSubmit> {
   const work = await issuedToAnna(deployment);
-  await openAssignment(page, work.anna, work.submissionId);
+  await openAssignment(page, work.anna, work.submissionId, { pageClock: true });
   await textAnswer(page).fill('went');
+  await skipVisibleSaveDelay(page);
   await expect(saveStatus(page)).toHaveText('Saved');
   await control.advance(1);
   await page.getByRole('button', { name: 'Submit', exact: true }).click();
@@ -219,7 +225,7 @@ async function holdConflictingSave(
   if (textQuestion === undefined) {
     throw new Error('the assignment has no text question');
   }
-  await openAssignment(page, work.anna, work.submissionId);
+  await openAssignment(page, work.anna, work.submissionId, { pageClock: true });
   const release = await holdAnswerSaves(page);
   const firstSave = page.waitForRequest((request) => request.method() === 'PUT');
   diagnostics.expectFailure({ method: 'PUT', path: `/api/v1/submissions/${work.submissionId}/answers`, status: 409 });
@@ -227,6 +233,7 @@ async function holdConflictingSave(
     await question(page, 1).getByRole('radio', { name: mine.choice }).check();
   }
   await textAnswer(page).fill(mine.text);
+  await skipVisibleSaveDelay(page);
   await firstSave;
   await saveTextFromAnotherDevice(deployment, work.anna, work.submissionId, textQuestion, theirs);
   return { ...work, release };
@@ -247,12 +254,14 @@ async function reachConflict(
 
 async function twoFilesAttached(page: Page, deployment: Deployment, control: TestControl): Promise<IssuedWork> {
   const work = await issuedToAnna(deployment);
-  await openAssignment(page, work.anna, work.submissionId);
+  await openAssignment(page, work.anna, work.submissionId, { pageClock: true });
   await attach(page, 3, pdfFile);
+  await skipVisibleSaveDelay(page);
   await expect(saveStatus(page)).toHaveText('Saved');
   await control.advance(1);
   await attach(page, 3, secondPdf);
   await expect(removeButton(page, secondPdf.name)).toBeVisible();
+  await skipVisibleSaveDelay(page);
   await expect(saveStatus(page)).toHaveText('Saved');
   await control.advance(1);
   return work;
@@ -321,10 +330,11 @@ test.describe('answering an assignment', () => {
 
   test('a save answering after newer typing keeps that typing and saves it next', async ({ page, deployment }) => {
     const { anna, submissionId } = await issuedToAnna(deployment);
-    await openAssignment(page, anna, submissionId);
+    await openAssignment(page, anna, submissionId, { pageClock: true });
     const release = await holdAnswerSaves(page);
     const firstSave = page.waitForRequest((request) => request.method() === 'PUT');
     await textAnswer(page).fill('went');
+    await skipVisibleSaveDelay(page);
     await firstSave;
 
     await textAnswer(page).fill('went away');
@@ -388,6 +398,7 @@ test.describe('answering an assignment', () => {
     await control.advance(1);
 
     await use.click();
+    await skipVisibleSaveDelay(page);
 
     await expect(textAnswer(page)).toHaveValue('went');
     await expect(textAnswer(page)).toBeFocused();
@@ -414,9 +425,10 @@ test.describe('answering an assignment', () => {
 
   test('a file answer uploads and is saved', async ({ page, deployment }) => {
     const { anna, submissionId } = await issuedToAnna(deployment);
-    await openAssignment(page, anna, submissionId);
+    await openAssignment(page, anna, submissionId, { pageClock: true });
 
     await attach(page, 3, pdfFile);
+    await skipVisibleSaveDelay(page);
 
     await expect(removeButton(page, pdfFile.name)).toBeVisible();
     await expect(saveStatus(page)).toHaveText('Saved');
@@ -429,12 +441,14 @@ test.describe('answering an assignment', () => {
     control,
   }) => {
     const { anna, submissionId } = await issuedToAnna(deployment);
-    await openAssignment(page, anna, submissionId);
+    await openAssignment(page, anna, submissionId, { pageClock: true });
     await attach(page, 3, pdfFile);
+    await skipVisibleSaveDelay(page);
     await expect(saveStatus(page)).toHaveText('Saved');
     await control.advance(1);
 
     await removeButton(page, pdfFile.name).click();
+    await skipVisibleSaveDelay(page);
 
     await expect(question(page, 3).getByRole('button', { name: 'Attach files', exact: true })).toBeFocused();
     await expect(saveStatus(page)).toHaveText('Saved');
@@ -445,6 +459,7 @@ test.describe('answering an assignment', () => {
     const { anna, submissionId } = await twoFilesAttached(page, deployment, control);
 
     await removeButton(page, pdfFile.name).click();
+    await skipVisibleSaveDelay(page);
 
     await expect(removeButton(page, secondPdf.name)).toBeFocused();
     await expect
@@ -456,6 +471,7 @@ test.describe('answering an assignment', () => {
     const { anna, submissionId } = await twoFilesAttached(page, deployment, control);
 
     await removeButton(page, secondPdf.name).click();
+    await skipVisibleSaveDelay(page);
 
     await expect(removeButton(page, pdfFile.name)).toBeFocused();
     await expect.poll(async () => (await storedAnswers(deployment, anna, submissionId)).files).toEqual([pdfFile.name]);
@@ -472,7 +488,7 @@ test.describe('answering an assignment', () => {
     if (fileQuestion === undefined) {
       throw new Error('the assignment has no file question');
     }
-    await openAssignment(page, anna, submissionId);
+    await openAssignment(page, anna, submissionId, { pageClock: true });
     const release = await holdAnswerSaves(page);
     const firstSave = page.waitForRequest((request) => request.method() === 'PUT');
     const uploaded = page.waitForResponse(
@@ -482,6 +498,7 @@ test.describe('answering an assignment', () => {
     diagnostics.expectFailure({ method: 'PUT', path: `/api/v1/submissions/${submissionId}/answers`, status: 404 });
     await attach(page, 3, pdfFile);
     const attachment = await uploadedId(await uploaded);
+    await skipVisibleSaveDelay(page);
     await firstSave;
     await bindAndDropFromAnotherDevice(deployment, anna, submissionId, fileQuestion, attachment);
     await control.advance(1);
@@ -595,9 +612,10 @@ test.describe('answering an assignment', () => {
   }) => {
     const { anna, submissionId } = await issuedToAnna(deployment, true);
     const bodies = collectStudentResponses(page);
-    await openAssignment(page, anna, submissionId);
+    await openAssignment(page, anna, submissionId, { pageClock: true });
     await question(page, 1).getByRole('radio', { name: 'goed' }).check();
     await textAnswer(page).fill('went');
+    await skipVisibleSaveDelay(page);
     await expect(saveStatus(page)).toHaveText('Saved');
     await control.advance(1);
 
@@ -635,26 +653,6 @@ test.describe('answering an assignment', () => {
     expect(responses.length).toBeGreaterThan(0);
   });
 
-  test('a student removed from the group still submits the group’s work', async ({ page, deployment }) => {
-    const { pavel, anna, annaCard } = await pavelWithAnna(deployment);
-    const groupId = await createGroup(deployment, pavel, 'B1 evening', [annaCard]);
-    const template = await createPastSimpleTemplate(deployment, pavel);
-    await issueThroughTheApi(deployment, pavel, template, { group_id: groupId });
-    await removeGroupMember(deployment, pavel, groupId, annaCard);
-    const submissionId = await onlySubmission(deployment, anna);
-    await openAssignment(page, anna, submissionId);
-    await textAnswer(page).fill('went');
-
-    await page.getByRole('button', { name: 'Submit', exact: true }).click();
-    await page
-      .getByRole('dialog', { name: 'Submit your work?' })
-      .getByRole('button', { name: 'Submit', exact: true })
-      .click();
-
-    await expect(submittedNotice(page)).toBeFocused();
-    expect((await storedAnswers(deployment, anna, submissionId)).status).toBe('submitted');
-  });
-
   test('an unconfirmed student of a provisional link reaches Homework, answers, and cannot attach files', async ({
     page,
     deployment,
@@ -665,6 +663,7 @@ test.describe('answering an assignment', () => {
     await signUpOnInvitation(deployment, card.link, anna, 'en');
     const template = await createPastSimpleTemplate(deployment, pavel);
     await issueThroughTheApi(deployment, pavel, template, { relationship_id: card.id });
+    await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, anna);
     await page.goto('/home');
 
@@ -674,6 +673,7 @@ test.describe('answering an assignment', () => {
       .click();
     await page.getByRole('table', { name: 'Assignments' }).getByRole('link', { name: pastSimple.title }).click();
     await textAnswer(page).fill('went');
+    await skipVisibleSaveDelay(page);
 
     await expect(saveStatus(page)).toHaveText('Saved');
     await expect(question(page, 3).getByText('Confirm your email to attach files.', { exact: true })).toBeVisible();
@@ -686,11 +686,12 @@ test.describe('answering an assignment', () => {
     diagnostics,
   }) => {
     const { pavel, anna, annaCard, submissionId } = await issuedToAnna(deployment);
-    await openAssignment(page, anna, submissionId);
+    await openAssignment(page, anna, submissionId, { pageClock: true });
     const release = await holdAnswerSaves(page);
     const firstSave = page.waitForRequest((request) => request.method() === 'PUT');
     diagnostics.expectFailure({ method: 'PUT', path: `/api/v1/submissions/${submissionId}/answers`, status: 409 });
     await textAnswer(page).fill('went');
+    await skipVisibleSaveDelay(page);
     await firstSave;
 
     await endRelationship(deployment, pavel, annaCard);
@@ -903,10 +904,6 @@ async function shownResults(page: Page, student: TestAccount, submissionId: stri
   return page.locator('main').innerText();
 }
 
-function withoutAddresses(body: string): string {
-  return body.replace(/"url":"[^"]*"/g, '"url":""').replace(/"expires_at":"[^"]*"/g, '"expires_at":""');
-}
-
 test.describe('results of checked and returned work', () => {
   test('checked work shows the comment, the corrected file, the feedback and the revealed answers, and no points', async ({
     page,
@@ -1023,9 +1020,10 @@ test.describe('results of checked and returned work', () => {
       { questionId: work.fileQuestion, comment: 'Your photo is blurred.' },
     ]);
     await control.advance(1);
-    await openAssignment(page, work.anna, work.submissionId);
+    await openAssignment(page, work.anna, work.submissionId, { pageClock: true });
     await attach(page, 3, secondPdf);
     await expect(removeButton(page, secondPdf.name)).toBeVisible();
+    await skipVisibleSaveDelay(page);
     await expect(saveStatus(page)).toHaveText('Saved');
     await control.advance(1);
 
@@ -1035,35 +1033,6 @@ test.describe('results of checked and returned work', () => {
     await expect(submittedNotice(page)).toBeFocused();
     expect((await storedAnswers(deployment, work.anna, work.submissionId)).status).toBe('submitted');
     await expect(question(page, 3).locator('[data-review-item]')).toContainText('Your photo is blurred.');
-  });
-
-  test('a points-only publication changes nothing the student sees, and a later draft stays hidden', async ({
-    page,
-    deployment,
-    control,
-  }) => {
-    const work = await submittedByAnna(deployment);
-    const item = await correctedReview(deployment, work, 'Mind the word order.', 5);
-    await publishReview(deployment, work.pavel, work.submissionId, 'check', 'Good effort.', [item]);
-    const before = withoutAddresses(await studentSubmissionText(deployment, work.anna, work.submissionId));
-    await control.advance(1);
-    await publishReview(deployment, work.pavel, work.submissionId, 'check', 'Good effort.', [{ ...item, points: 6 }]);
-    await control.advance(1);
-    const extra = await uploadCorrectedFile(deployment, work.pavel, work.submissionId, work.fileQuestion, {
-      ...pdfFile,
-      name: 'Draft only.pdf',
-    });
-    await saveReviewDraft(deployment, work.pavel, work.submissionId, 'Draft feedback.', [
-      { questionId: work.fileQuestion, points: 6, comment: 'Draft comment.', correctedIds: [extra] },
-    ]);
-
-    await openAssignment(page, work.anna, work.submissionId);
-
-    expect(withoutAddresses(await studentSubmissionText(deployment, work.anna, work.submissionId))).toBe(before);
-    await expect(question(page, 3).locator('[data-review-item]')).toContainText('Mind the word order.');
-    await expect(feedbackSection(page)).toContainText('Good effort.');
-    await expect(page.locator('main')).not.toContainText('Draft');
-    await expectNoScoreText(page);
   });
 
   test('closed work shows its published review read-only', async ({ page, deployment }) => {
@@ -1289,6 +1258,7 @@ test.describe('pilot 2, group homework from the library', () => {
     const seed = pilotTwo();
     const submissionId = await onlySubmission(deployment, seed.anna);
     await page.setViewportSize({ width: 390, height: 844 });
+    await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, seed.anna);
     await page.goto('/home');
     await page
@@ -1299,6 +1269,7 @@ test.describe('pilot 2, group homework from the library', () => {
 
     await page.getByRole('group', { name: 'Вопрос 1' }).getByRole('radio', { name: 'went' }).check();
     await page.getByRole('group', { name: 'Вопрос 2' }).getByRole('textbox', { name: 'Ваш ответ' }).fill('went');
+    await skipVisibleSaveDelay(page);
     await expect(page.getByRole('status').filter({ hasText: /^Сохранено$/ })).toBeVisible();
     await control.advance(1);
     const chooser = page.waitForEvent('filechooser');
@@ -1307,6 +1278,7 @@ test.describe('pilot 2, group homework from the library', () => {
     await expect(
       page.getByRole('group', { name: 'Вопрос 3' }).getByRole('button', { name: `Удалить ${pictureFile.name}` }),
     ).toBeVisible();
+    await skipVisibleSaveDelay(page);
     await expect(page.getByRole('status').filter({ hasText: /^Сохранено$/ })).toBeVisible();
     await control.advance(1);
     await page.getByRole('button', { name: 'Сдать', exact: true }).click();
@@ -1331,12 +1303,14 @@ test.describe('pilot 2, group homework from the library', () => {
     const seed = pilotTwo();
     await control.advance(3 * 86_400);
     const submissionId = await onlySubmission(deployment, seed.boris);
+    await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, seed.boris);
     await page.goto(`/homework/${submissionId}`);
     await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
 
     await page.getByRole('group', { name: 'Вопрос 1' }).getByRole('radio', { name: 'goed' }).check();
     await page.getByRole('group', { name: 'Вопрос 2' }).getByRole('textbox', { name: 'Ваш ответ' }).fill('Went ');
+    await skipVisibleSaveDelay(page);
     await expect(page.getByRole('status').filter({ hasText: /^Сохранено$/ })).toBeVisible();
     await control.advance(1);
     const chooser = page.waitForEvent('filechooser');
@@ -1345,6 +1319,7 @@ test.describe('pilot 2, group homework from the library', () => {
     await expect(
       page.getByRole('group', { name: 'Вопрос 3' }).getByRole('button', { name: `Удалить ${pdfFile.name}` }),
     ).toBeVisible();
+    await skipVisibleSaveDelay(page);
     await expect(page.getByRole('status').filter({ hasText: /^Сохранено$/ })).toBeVisible();
     await control.advance(1);
     await page.getByRole('button', { name: 'Сдать', exact: true }).click();
@@ -1393,6 +1368,7 @@ test.describe('pilot 2, group homework from the library', () => {
     const corrected = { ...pdfFile, name: 'Исправления.pdf' };
     const fileQuestion = page.getByRole('region', { name: 'Вопрос 3' });
     const saved = page.getByRole('status').filter({ hasText: /^Сохранено$/ });
+    await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, seed.maria);
     await page.goto('/today');
     await page
@@ -1404,14 +1380,17 @@ test.describe('pilot 2, group homework from the library', () => {
     await fileQuestion.getByRole('button', { name: 'Прикрепить исправленный файл' }).click();
     await (await chooser).setFiles(corrected);
     await expect(fileQuestion.getByRole('button', { name: `Удалить ${corrected.name}` })).toBeVisible();
+    await skipVisibleSaveDelay(page);
     await expect(saved).toBeVisible();
     await control.advance(1);
     await fileQuestion.getByRole('spinbutton', { name: 'Баллы' }).fill('6');
+    await skipVisibleSaveDelay(page);
     await expect(saved).toBeVisible();
     await control.advance(1);
     await page
       .getByRole('textbox', { name: 'Общий отзыв' })
       .fill('**Great work.** Check the word order in sentence 2.');
+    await skipVisibleSaveDelay(page);
     await expect(saved).toBeVisible();
     await control.advance(1);
     await page.getByRole('button', { name: 'Предпросмотр' }).click();
@@ -1449,10 +1428,12 @@ test.describe('pilot 2, group homework from the library', () => {
       throw new Error('Boris has no submitted work');
     }
     const fileQuestion = page.getByRole('region', { name: 'Вопрос 3' });
+    await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, seed.maria);
     await page.goto(`/homework/review/${borisWork.submissionId}`);
     await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
     await fileQuestion.getByRole('textbox', { name: 'Комментарий' }).fill('Сфотографируйте все предложения.');
+    await skipVisibleSaveDelay(page);
     await expect(page.getByRole('status').filter({ hasText: /^Сохранено$/ })).toBeVisible();
 
     await page.getByRole('button', { name: 'Вернуть на доработку' }).click();
@@ -1470,6 +1451,7 @@ test.describe('pilot 2, group homework from the library', () => {
     const seed = pilotTwo();
     const submissionId = pilotTwoBoris();
     const mailBefore = (await control.mail(seed.maria.email)).length;
+    await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, seed.boris);
     await page.goto(`/homework/${submissionId}`);
     await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
@@ -1487,6 +1469,7 @@ test.describe('pilot 2, group homework from the library', () => {
     await expect(
       page.getByRole('group', { name: 'Вопрос 3' }).getByRole('button', { name: `Удалить ${pictureFile.name}` }),
     ).toBeVisible();
+    await skipVisibleSaveDelay(page);
     await expect(page.getByRole('status').filter({ hasText: /^Сохранено$/ })).toBeVisible();
     await control.advance(1);
 
@@ -1516,10 +1499,12 @@ test.describe('pilot 2, group homework from the library', () => {
     const seed = pilotTwo();
     const submissionId = pilotTwoBoris();
     const fileQuestion = page.getByRole('region', { name: 'Вопрос 3' });
+    await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, seed.maria);
     await page.goto(`/homework/review/${submissionId}`);
     await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
     await fileQuestion.getByRole('spinbutton', { name: 'Баллы' }).fill('4');
+    await skipVisibleSaveDelay(page);
     await expect(page.getByRole('status').filter({ hasText: /^Сохранено$/ })).toBeVisible();
     await control.advance(1);
 

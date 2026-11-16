@@ -112,6 +112,18 @@ function setUp(version = 1): {
 }
 
 describe('template autosave', () => {
+  test('the delay before a save is exactly 1000 milliseconds', () => {
+    const { scheduler, server, autosave } = setUp();
+
+    autosave.changed(body('Past simple'));
+    scheduler.pass(999);
+    const beforeOneSecond = server.received.length;
+    scheduler.pass(1);
+
+    expect(beforeOneSecond).toBe(0);
+    expect(server.received).toHaveLength(1);
+  });
+
   test('a save is sent one second after the last change, with the latest text only', () => {
     const { scheduler, server, autosave } = setUp();
 

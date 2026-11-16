@@ -11,7 +11,8 @@ import {
   seedVerifiedUser,
   signUpAndConfirmTutor,
 } from './fixtures.ts';
-import { accessToken, callApi } from './tutoring.ts';
+import { type PageClockOption, installPageClock, skipSaveDelay } from './save-delay.ts';
+import { accessToken, callApi, inSeedBatches } from './tutoring.ts';
 
 const documentBytes = Buffer.from(
   '%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n',
@@ -201,7 +202,8 @@ function shortText(prompt: string, answers: readonly string[]): BlockSeed {
   return { id: randomUUID(), type: 'short_text', prompt, points: 1, accepted_answers: answers };
 }
 
-async function openBuilder(page: Page, tutor: TestAccount, id: string): Promise<void> {
+async function openBuilder(page: Page, tutor: TestAccount, id: string, option: PageClockOption = {}): Promise<void> {
+  await installPageClock(page, option);
   await signInThroughTheApi(page, tutor);
   await page.goto(`/homework/templates/${id}`);
   await titleField(page).waitFor();
@@ -339,7 +341,7 @@ test.describe('builder blocks', () => {
     const folderId = await createFolder(deployment, tutor, 'Grammar');
     await createMaterial(deployment, tutor, 'Irregular verbs', folderId);
     const template = await createTemplate(deployment, tutor, 'New assignment');
-    await openBuilder(page, tutor, template.id);
+    await openBuilder(page, tutor, template.id, { pageClock: true });
 
     await titleField(page).fill('Past simple');
     await addBlock(page, 'Instruction');
@@ -381,6 +383,7 @@ test.describe('builder blocks', () => {
     await dialog(page)
       .getByRole('button', { name: /^Irregular verbs/ })
       .click();
+    await skipSaveDelay(page);
     await page.getByText('Ready to issue', { exact: true }).waitFor();
     await page.getByRole('status').filter({ hasText: 'Saved' }).waitFor();
 
@@ -422,11 +425,12 @@ test.describe('builder blocks', () => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     const template = await createTemplate(deployment, tutor, 'Verbs');
     const folderId = await createFolder(deployment, tutor, 'Archive');
-    await openBuilder(page, tutor, template.id);
+    await openBuilder(page, tutor, template.id, { pageClock: true });
     await moveTemplate(deployment, tutor, template, folderId);
     diagnostics.expectFailure({ method: 'PUT', path: `/api/v1/library/templates/${template.id}`, status: 409 });
 
     await titleField(page).fill('Verbs typed here');
+    await skipSaveDelay(page);
 
     await expect(page.getByRole('status').filter({ hasText: 'This changed elsewhere' })).toBeFocused();
     await expect(titleField(page)).toHaveValue('Verbs typed here');
@@ -440,10 +444,11 @@ test.describe('builder blocks', () => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     const template = await createTemplate(deployment, tutor, 'Verbs');
     const folderId = await createFolder(deployment, tutor, 'Archive');
-    await openBuilder(page, tutor, template.id);
+    await openBuilder(page, tutor, template.id, { pageClock: true });
     await moveTemplate(deployment, tutor, template, folderId);
     diagnostics.expectFailure({ method: 'PUT', path: `/api/v1/library/templates/${template.id}`, status: 409 });
     await titleField(page).fill('Verbs typed here');
+    await skipSaveDelay(page);
     await page.getByRole('status').filter({ hasText: 'This changed elsewhere' }).waitFor();
 
     await page.getByRole('button', { name: 'Reload', exact: true }).click();
@@ -524,10 +529,11 @@ test.describe('builder order and focus', () => {
       instruction('Second'),
       instruction('Third'),
     ]);
-    await openBuilder(page, tutor, template.id);
+    await openBuilder(page, tutor, template.id, { pageClock: true });
     const saved = page.waitForResponse((response) => isTemplateSave(response, template.id));
 
     await dragOnto(page, block(page, '3. Instruction').locator('[data-drag-handle]'), block(page, '1. Instruction'));
+    await skipSaveDelay(page);
     await saved;
 
     expect(await textareaValues(page, 'Text')).toEqual(['Third', 'First', 'Second']);
@@ -548,10 +554,11 @@ test.describe('builder order and focus', () => {
   test('Duplicate copies a block with fresh identifiers and focuses the copy', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     const template = await createTemplate(deployment, tutor, 'Copies', [singleChoice('Past of go?', ['went', 'goed'])]);
-    await openBuilder(page, tutor, template.id);
+    await openBuilder(page, tutor, template.id, { pageClock: true });
     const saved = page.waitForResponse((response) => isTemplateSave(response, template.id));
 
     await block(page, '1. Single choice').getByRole('button', { name: 'Duplicate', exact: true }).click();
+    await skipSaveDelay(page);
     await saved;
 
     await expect(block(page, '2. Single choice').getByRole('textbox', { name: 'Question', exact: true })).toBeFocused();
@@ -726,9 +733,9 @@ test.describe('builder material picker', () => {
 
   test('Show more in the picker focuses the first new material', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
-    for (let index = 1; index <= 30; index += 1) {
-      await createTemplate(deployment, tutor, `A quiz ${String(index).padStart(2, '0')}`);
-    }
+    await inSeedBatches(30, (index) =>
+      createTemplate(deployment, tutor, `A quiz ${String(index + 1).padStart(2, '0')}`),
+    );
     await createMaterial(deployment, tutor, 'Zebra notes', null);
     const template = await createTemplate(deployment, tutor, 'B builder');
     await openBuilder(page, tutor, template.id);
@@ -975,6 +982,7 @@ test.describe('Maria in Russian', () => {
     deployment,
   }) => {
     const maria = await signUpAndConfirmTutor(deployment, 'Мария', 'ru');
+    await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, maria);
     await page.goto('/homework/library');
     await page.getByRole('heading', { level: 1, name: 'Библиотека' }).waitFor();
@@ -1034,6 +1042,7 @@ test.describe('Maria in Russian', () => {
     await file.getByRole('textbox', { name: 'Баллы', exact: true }).fill('6');
     await file.getByRole('button', { name: 'Пояснение', exact: true }).click();
     await file.getByRole('textbox', { name: 'Пояснение', exact: true }).fill('Проверьте порядок слов.');
+    await skipSaveDelay(page);
 
     await expect(page.getByText('Готово к выдаче', { exact: true })).toBeVisible();
     await expect(page.getByRole('status').filter({ hasText: 'Сохранено' })).toBeVisible();

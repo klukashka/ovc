@@ -104,6 +104,18 @@ function setup(position: DraftPosition = { revision: 1, version: 0 }): Setup {
 const networkError = apiErrorFrom(0, undefined);
 
 describe('review draft autosave', () => {
+  test('the delay before a draft save is exactly 1000 milliseconds', () => {
+    const { scheduler, server, save } = setup();
+
+    save.changed(body('a'));
+    scheduler.pass(999);
+    const beforeOneSecond = server.received.length;
+    scheduler.pass(1);
+
+    expect(beforeOneSecond).toBe(0);
+    expect(server.received).toHaveLength(1);
+  });
+
   test('saves the latest draft one second after the last change at the draft position', () => {
     const { scheduler, server, save } = setup();
     save.changed(body('a'));

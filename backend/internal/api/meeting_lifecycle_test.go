@@ -1207,6 +1207,7 @@ func testConcurrentRestartAfterEnd(t *testing.T) {
 
 func TestMeetingRestartRevocation(t *testing.T) {
 	t.Run("the old link stops working and the fresh one enters", testRestartRevokes)
+	t.Run("a member removed from the group loses the old room and gets none of the replacement", testRestartRevokesRemovedMember)
 	t.Run("an unconfirmed End publishes no replacement", testRestartUnavailable)
 	t.Run("restart needs a live lesson", testRestartNeedsLive)
 	t.Run("restart past the grace keeps the room", testRestartPastGrace)
@@ -1246,6 +1247,44 @@ func testRestartRevokes(t *testing.T) {
 	}
 	if h.unsettled(t) != 1 {
 		t.Fatalf("cleanup left %d unsettled", h.unsettled(t))
+	}
+}
+
+func testRestartRevokesRemovedMember(t *testing.T) {
+	t.Parallel()
+	h := newMeetingHarness(t)
+	parties := h.visibilityParties(t)
+	lesson := groupLesson(t, h, parties)
+	h.joined(t, parties.tutorToken, lesson)
+	otherToken := h.studentToken(t, 11)
+	oldOther := h.joined(t, otherToken, lesson)
+	oldRoom := h.currentRoom(t, lesson)
+	if err := h.enter(t, oldOther, oldRoom, lesson, parties.otherStudent, domain.ParticipantViewer); err != nil {
+		t.Fatalf("the member did not enter the old room: %v", err)
+	}
+	participant := h.participantOf(t, lesson, parties.otherStudent)
+	h.changeGroupMembers(t, parties.tutorToken, parties.group, nil, []string{parties.other})
+	frames := h.recordFrames(t)
+
+	decodeJoin(t, h.restartCall(t, parties.tutorToken, lesson))
+	sent := frames.settle(t, h)
+	room := h.currentRoom(t, lesson)
+	h.at(t, h.now(t).Add(time.Minute))
+	h.tick(t)
+	rejoin := h.joinCall(t, otherToken, lesson)
+
+	if err := h.enter(t, oldOther, oldRoom, lesson, parties.otherStudent, domain.ParticipantViewer); !errors.Is(err, meeting.FailureNotFound) {
+		t.Fatalf("the removed member's old link answered %v", err)
+	}
+	if err := h.enter(t, oldOther, room, lesson, parties.otherStudent, domain.ParticipantViewer); err == nil {
+		t.Fatal("the removed member's old link entered the replacement")
+	}
+	if hasFrame(sent, parties.otherStudent, domain.EntityLesson, lesson) {
+		t.Fatalf("the removed member learned of the replacement: %v", sent)
+	}
+	expectRefusal(t, "a join of the removed member after the restart", rejoin, http.StatusNotFound, "not_found")
+	if h.countRows(t, "SELECT count(room_id) FROM fake_meeting_participants WHERE participant_id = $1::uuid", participant.String()) != 0 {
+		t.Fatal("the ended room kept the removed member's participant and name")
 	}
 }
 

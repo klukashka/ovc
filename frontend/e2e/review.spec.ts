@@ -19,15 +19,9 @@ import {
   tableRows,
 } from './fixtures.ts';
 import { createReadyTemplate, issueThroughTheApi, withdrawThroughTheApi } from './homework.ts';
-import {
-  answerTextAndSubmit,
-  draftOf,
-  returnFromAnotherTab,
-  saveDraftFromAnotherTab,
-  storedReview,
-  studentSubmissionText,
-} from './review.ts';
-import { endRelationship, seedActiveStudent } from './tutoring.ts';
+import { answerTextAndSubmit, draftOf, returnFromAnotherTab, saveDraftFromAnotherTab, storedReview } from './review.ts';
+import { type PageClockOption, installPageClock, skipVisibleSaveDelay } from './save-delay.ts';
+import { endRelationship, inSeedBatches, seedActiveStudent } from './tutoring.ts';
 
 interface ReviewWork {
   readonly pavel: TestAccount;
@@ -52,7 +46,13 @@ async function submittedByAnna(deployment: Deployment): Promise<ReviewWork> {
   return work;
 }
 
-async function openReview(page: Page, tutor: TestAccount, submissionId: string): Promise<void> {
+async function openReview(
+  page: Page,
+  tutor: TestAccount,
+  submissionId: string,
+  option: PageClockOption = {},
+): Promise<void> {
+  await installPageClock(page, option);
   await signInThroughTheApi(page, tutor);
   await page.goto(`/homework/review/${submissionId}`);
   await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
@@ -71,6 +71,7 @@ async function enterPoints(page: Page, value: string): Promise<void> {
 }
 
 async function savedAndTicked(page: Page, control: TestControl): Promise<void> {
+  await skipVisibleSaveDelay(page);
   await expect(saveStatus(page)).toHaveText('Saved');
   await control.advance(1);
 }
@@ -202,12 +203,17 @@ test.describe('the review queue', () => {
 
   test('Show more moves focus to the first new row', async ({ page, deployment }) => {
     const work = await issuedToAnna(deployment);
-    for (let index = 0; index < 20; index += 1) {
-      await issueThroughTheApi(deployment, work.pavel, work.templateId, { relationship_id: work.annaCard });
-    }
-    for (const item of await studentWork(deployment, work.anna, 'todo')) {
+    await inSeedBatches(20, () =>
+      issueThroughTheApi(deployment, work.pavel, work.templateId, { relationship_id: work.annaCard }),
+    );
+    const todo = await studentWork(deployment, work.anna, 'todo');
+    await inSeedBatches(todo.length, async (index) => {
+      const item = todo[index];
+      if (item === undefined) {
+        throw new Error(`no work ${String(index)}`);
+      }
       await submitThroughTheApi(deployment, work.anna, item.submissionId);
-    }
+    });
     await signInThroughTheApi(page, work.pavel);
     await page.goto('/homework/review');
     await expect(queueRows(page)).toHaveCount(20);
@@ -260,12 +266,13 @@ test.describe('the review screen', () => {
     deployment,
   }) => {
     const work = await submittedByAnna(deployment);
-    await openReview(page, work.pavel, work.submissionId);
+    await openReview(page, work.pavel, work.submissionId, { pageClock: true });
     await expect(question(page, 2)).toContainText('went');
     await expect(question(page, 2)).toContainText('2 automatic points');
 
     await enterPoints(page, '5');
     await question(page, 3).getByRole('textbox', { name: 'Comment' }).fill('Check the word order.');
+    await skipVisibleSaveDelay(page);
 
     await expect(saveStatus(page)).toHaveText('Saved');
     const draft = draftOf(await storedReview(deployment, work.pavel, work.submissionId));
@@ -280,7 +287,7 @@ test.describe('the review screen', () => {
     control,
   }) => {
     const work = await submittedByAnna(deployment);
-    await openReview(page, work.pavel, work.submissionId);
+    await openReview(page, work.pavel, work.submissionId, { pageClock: true });
     await question(page, 2).getByRole('button', { name: 'Override' }).click();
     await expect(question(page, 2).getByRole('spinbutton', { name: 'Override points' })).toBeFocused();
 
@@ -300,7 +307,7 @@ test.describe('the review screen', () => {
     control,
   }) => {
     const work = await submittedByAnna(deployment);
-    await openReview(page, work.pavel, work.submissionId);
+    await openReview(page, work.pavel, work.submissionId, { pageClock: true });
     await attachCorrected(page, pdfFile);
     await expect(question(page, 3).getByRole('button', { name: `Remove ${pdfFile.name}` })).toBeVisible();
     await savedAndTicked(page, control);
@@ -321,7 +328,7 @@ test.describe('the review screen', () => {
   }) => {
     const work = await submittedByAnna(deployment);
     const second = { ...pdfFile, name: 'Second.pdf' };
-    await openReview(page, work.pavel, work.submissionId);
+    await openReview(page, work.pavel, work.submissionId, { pageClock: true });
     await attachCorrected(page, pdfFile);
     await expect(question(page, 3).getByRole('button', { name: `Remove ${pdfFile.name}` })).toBeVisible();
     await savedAndTicked(page, control);
@@ -343,7 +350,7 @@ test.describe('the review screen', () => {
   }) => {
     const work = await submittedByAnna(deployment);
     const second = { ...pdfFile, name: 'Second.pdf' };
-    await openReview(page, work.pavel, work.submissionId);
+    await openReview(page, work.pavel, work.submissionId, { pageClock: true });
     await attachCorrected(page, pdfFile);
     await expect(question(page, 3).getByRole('button', { name: `Remove ${pdfFile.name}` })).toBeVisible();
     await savedAndTicked(page, control);
@@ -414,7 +421,7 @@ test.describe('the review screen', () => {
 
   test('Mark checked publishes the review with the focused notice', async ({ page, deployment, control }) => {
     const work = await submittedByAnna(deployment);
-    await openReview(page, work.pavel, work.submissionId);
+    await openReview(page, work.pavel, work.submissionId, { pageClock: true });
     await enterPoints(page, '6');
     await savedAndTicked(page, control);
 
@@ -428,7 +435,7 @@ test.describe('the review screen', () => {
 
   test('after Mark checked, Back to the queue no longer lists the work', async ({ page, deployment, control }) => {
     const work = await submittedByAnna(deployment);
-    await openReview(page, work.pavel, work.submissionId);
+    await openReview(page, work.pavel, work.submissionId, { pageClock: true });
     await enterPoints(page, '6');
     await savedAndTicked(page, control);
     await page.getByRole('button', { name: 'Mark checked' }).click();
@@ -439,24 +446,6 @@ test.describe('the review screen', () => {
     await expect(page.getByText('Nothing to check')).toBeVisible();
   });
 
-  test('a saved draft comment does not reach the student until it is published', async ({
-    page,
-    deployment,
-    control,
-  }) => {
-    const work = await submittedByAnna(deployment);
-    const comment = 'Draft comment sentinel 7c1e';
-    await openReview(page, work.pavel, work.submissionId);
-
-    await question(page, 3).getByRole('textbox', { name: 'Comment' }).fill(comment);
-    await savedAndTicked(page, control);
-
-    expect(
-      draftOf(await storedReview(deployment, work.pavel, work.submissionId))?.items.map((item) => item.comment),
-    ).toContain(comment);
-    expect(await studentSubmissionText(deployment, work.anna, work.submissionId)).not.toContain(comment);
-  });
-
   test('Return for revision first asks for a comment, then returns with the focused notice onto a read-only screen', async ({
     page,
     deployment,
@@ -465,7 +454,7 @@ test.describe('the review screen', () => {
   }) => {
     const work = await submittedByAnna(deployment);
     diagnostics.expectFailure({ method: 'POST', path: `/api/v1/submissions/${work.submissionId}/return`, status: 422 });
-    await openReview(page, work.pavel, work.submissionId);
+    await openReview(page, work.pavel, work.submissionId, { pageClock: true });
     await page.getByRole('button', { name: 'Return for revision' }).click();
     await expect(
       page.getByRole('alert').filter({ hasText: 'Write a comment or feedback before returning the work.' }),
@@ -489,10 +478,11 @@ test.describe('the review screen', () => {
   }) => {
     const work = await submittedByAnna(deployment);
     expectConflictSave(diagnostics, work.submissionId);
-    await openReview(page, work.pavel, work.submissionId);
+    await openReview(page, work.pavel, work.submissionId, { pageClock: true });
     await saveDraftFromAnotherTab(deployment, work.pavel, work.submissionId, 'From the other tab');
     await control.advance(1);
     await enterPoints(page, '4');
+    await skipVisibleSaveDelay(page);
     const notice = page.getByRole('alert').filter({ hasText: 'This changed elsewhere' });
     await expect(notice).toBeFocused();
     await expect(question(page, 3).getByRole('spinbutton', { name: 'Points' })).toHaveValue('4');

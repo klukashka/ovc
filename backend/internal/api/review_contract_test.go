@@ -29,7 +29,9 @@ func (h *authHarness) contractReview(
 		commented(scored(contractQuestion(7), 71), "See the marks", corrected),
 	}
 	h.reviewSaved(t, parties.tutorToken, work.full, reviewJSON(t, 1, 0, saveID(1), "Overall good", items...))
-	if drafted := h.submissionAnswer(t, parties.studentToken, work.full).body; !strings.Contains(drafted, `"review":null`) {
+	drafted := h.submissionAnswer(t, parties.studentToken, work.full).body
+	check.submission(label+"drafted", []byte(drafted), afterSubmission)
+	if !strings.Contains(drafted, `"review":null`) || containsAny(drafted, "Well argued", "See the marks", "Overall good", "Generous") {
 		t.Errorf("%sa draft review reached the student: %s", label, drafted)
 	}
 	publication := contractPublication{revision: 1, items: items, corrected: corrected}

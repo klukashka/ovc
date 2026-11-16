@@ -859,6 +859,8 @@ test.describe('lesson page for a student in Russian', () => {
     await expect(main.getByText('Комната откроется в 17:50')).toBeVisible();
     await expect(editButton(page)).toHaveCount(0);
     await expect(lessonActions(page)).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Разговорная практика');
+    await expect(materialsBlock(page)).toHaveCount(0);
   });
 
   test('lesson › at 1440 × 900 the join block is the first content of the main column and in view for a student in a live lesson', async ({
@@ -1295,17 +1297,6 @@ test.describe('lesson materials for a tutor in Russian', () => {
 
 test.describe('lesson materials for a student in Russian', () => {
   test.use({ locale: 'ru-RU', timezoneId: moscow, viewport: { width: 1280, height: 800 } });
-
-  test('lesson › a student without materials sees no Materials block', async ({ page, deployment, control }) => {
-    const seed = await tutorAndStudent(deployment);
-    const lesson = await oneLesson(deployment, seed, await tomorrow(control.now));
-    await signInThroughTheApi(page, seed.anna);
-
-    await page.goto(lessonAddress(lesson));
-
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Разговорная практика');
-    await expect(materialsBlock(page)).toHaveCount(0);
-  });
 
   test('lesson › a student downloads a material and sees one attached meanwhile without reload', async ({
     page,

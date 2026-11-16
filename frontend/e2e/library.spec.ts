@@ -6,7 +6,7 @@ import { type TestAccount, newTestAccount, registerTutor, signInThroughTheApi, t
 import type { Deployment } from './deployment.ts';
 import { chooseFromPageMenu, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
-import { accessToken, callApi } from './tutoring.ts';
+import { accessToken, callApi, inSeedBatches } from './tutoring.ts';
 
 const unknownFolderId = '00000000-0000-4000-8000-00000000f01d';
 const documentBytes = Buffer.from(
@@ -519,9 +519,9 @@ test.describe('library templates', () => {
   test('Show more focuses the first new row', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     const unit = await createFolder(deployment, tutor, 'Unit 1');
-    for (let index = 1; index <= 31; index += 1) {
-      await createTemplate(deployment, tutor, `Quiz ${String(index).padStart(2, '0')}`, unit);
-    }
+    await inSeedBatches(31, (index) =>
+      createTemplate(deployment, tutor, `Quiz ${String(index + 1).padStart(2, '0')}`, unit),
+    );
     await openLibrary(page, tutor, `/homework/library?folder=${unit}`);
     await items(page).locator('tbody tr').nth(29).waitFor();
 

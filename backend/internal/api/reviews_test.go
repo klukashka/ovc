@@ -189,9 +189,12 @@ func TestPointsOnlyRevisionInvisible(t *testing.T) {
 	rows, mails := len(h.notificationsOf(t, parties.studentToken)), len(h.mailTo(t, studentEmail))
 	frames := h.recordFrames(t)
 	changedPoints := []reviewItemJSON{commented(scored(workQuestion(5), 1), "Nice"), commented(scored(workQuestion(6), 5), "", corrected, later)}
+	draftOnly := h.correctedFile(t, parties.tutorToken, parties.submission, workQuestion(6), "draft-only.pdf", 70)
+	laterDraft := []reviewItemJSON{commented(scored(workQuestion(5), 1), "Draft comment sentinel"), commented(scored(workQuestion(6), 5), "", corrected, later, draftOnly)}
 
 	h.reviewSaved(t, parties.tutorToken, parties.submission, reviewJSON(t, 2, 0, saveID(2), "Good", changedPoints...))
 	pointsOnly := h.published(t, parties.tutorToken, parties.submission, domain.ReviewCheck, 2)
+	h.reviewSaved(t, parties.tutorToken, parties.submission, reviewJSON(t, 3, 0, saveID(6), "Draft feedback sentinel", laterDraft...))
 	h.reviewSaved(t, parties.tutorToken, automatic[0].id, reviewJSON(t, 1, 0, saveID(3), "", overridden(workQuestion(1), 0, "Copied")))
 	h.published(t, parties.tutorToken, automatic[0].id, domain.ReviewCheck, 1)
 	h.tick(t)
@@ -200,15 +203,21 @@ func TestPointsOnlyRevisionInvisible(t *testing.T) {
 	after := addresslessBody(t, h.submissionAnswer(t, parties.studentToken, parties.submission).body)
 	afterAutomatic := addresslessBody(t, h.submissionAnswer(t, parties.studentToken, automatic[0].id).body)
 	if before != after || beforeAutomatic != afterAutomatic || !strings.Contains(afterAutomatic, `"review":null`) {
-		t.Fatalf("a points-only publication changed the student's view:\n%s\n%s", before, after)
+		t.Fatalf("a points-only publication or a later draft changed the student's view:\n%s\n%s", before, after)
+	}
+	if containsAny(after, "Draft comment sentinel", "Draft feedback sentinel", "draft-only.pdf") {
+		t.Fatalf("the later draft reached the student: %s", after)
 	}
 	if len(quiet) != 0 || len(h.notificationsOf(t, parties.studentToken)) != rows || len(h.mailTo(t, studentEmail)) != mails {
 		t.Fatalf("a points-only publication reached the student: %+v", quiet)
 	}
-	keptOrder := h.countRows(t, `SELECT count(*) FROM attachment_references AS copied
+	var keptOrder int64
+	if err := h.database.Pool.QueryRow(t.Context(), `SELECT count(*) FROM attachment_references AS copied
 JOIN attachment_references AS original ON original.attachment_id = copied.attachment_id AND original.ref_kind = 'review_item'
-    AND original.ref_id <> copied.ref_id AND original.created_at = copied.created_at
-WHERE copied.ref_kind = 'review_item' AND copied.ref_id = $1::uuid`, h.revisionID(t, parties.submission, 2))
+    AND original.ref_id = $2::uuid AND original.created_at = copied.created_at
+WHERE copied.ref_kind = 'review_item' AND copied.ref_id = $1::uuid`, h.revisionID(t, parties.submission, 2), h.revisionID(t, parties.submission, 1)).Scan(&keptOrder); err != nil {
+		t.Fatal(err)
+	}
 	if keptOrder != 2 {
 		t.Fatalf("the copied corrected files keep the order of %d of 2 files", keptOrder)
 	}

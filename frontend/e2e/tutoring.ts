@@ -293,12 +293,26 @@ async function seedRequesters(
   );
 }
 
+const seedBatchSize = 5;
+
+export async function inSeedBatches(count: number, create: (index: number) => Promise<unknown>): Promise<void> {
+  for (let first = 0; first < count; first += seedBatchSize) {
+    await Promise.all(
+      Array.from({ length: Math.min(seedBatchSize, count - first) }, (_, offset) => create(first + offset)),
+    );
+  }
+}
+
 export async function seedBlockedStudents(deployment: Deployment, tutor: TestAccount, count: number): Promise<void> {
   const tutorToken = await accessToken(deployment, tutor);
   const students = await seedRequesters(deployment, await tutorCodeWith(deployment, tutorToken), count, 'Blocked');
-  for (const student of students) {
-    await declineWithBlock(deployment, tutorToken, student);
-  }
+  await inSeedBatches(students.length, (index) => {
+    const student = students[index];
+    if (student === undefined) {
+      throw new Error(`no requester ${String(index)}`);
+    }
+    return declineWithBlock(deployment, tutorToken, student);
+  });
 }
 
 export async function seedJoinRequests(
@@ -370,12 +384,12 @@ export async function confirmInTheOwnBrowser(
 
 export async function seedInvitedCards(deployment: Deployment, tutor: TestAccount, count: number): Promise<void> {
   const tutorToken = await accessToken(deployment, tutor);
-  for (let index = 1; index <= count; index += 1) {
+  await inSeedBatches(count, async (index) => {
     const created = await callApi(deployment, tutorToken, 'POST', '/students', {
-      display_name: `Invited ${String(index).padStart(2, '0')}`,
+      display_name: `Invited ${String(index + 1).padStart(2, '0')}`,
     });
     expectStatus(created, 201, 'creating a card');
-  }
+  });
 }
 
 export async function endRelationship(deployment: Deployment, tutor: TestAccount, cardId: string): Promise<void> {

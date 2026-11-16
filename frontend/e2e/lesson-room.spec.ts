@@ -740,24 +740,6 @@ test.describe('ending the lesson and restarting the room', () => {
     await expect(room.annaPage.getByRole('heading', { level: 1 })).toBeFocused();
     await expect(room.annaRoom.locator('#room')).toHaveAttribute('data-state', 'entered');
   });
-
-  test('lesson room › a restart ends the old room of a student removed from the group', async ({
-    page,
-    observedBrowser,
-    deployment,
-    control,
-    diagnostics,
-  }) => {
-    const room = await studentRemovedFromGroupRoom(page, observedBrowser, deployment, control, diagnostics);
-    const opened = page.context().waitForEvent('page');
-    await roomButton(page, 'Перезапустить комнату').click();
-
-    await page.getByRole('dialog').getByRole('button', { name: 'Перезапустить комнату' }).click();
-    await diagnostics.watch(await opened);
-
-    await expect(room.annaRoom.locator('#room')).toHaveAttribute('data-state', 'ended');
-    await expect(room.annaRoom.locator('body')).not.toContainText(studentName);
-  });
 });
 
 test.describe('the embedded room under the test override', () => {
