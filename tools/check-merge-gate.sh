@@ -30,6 +30,19 @@ contains() {
   echo "ok: $3"
 }
 
+since_last_gate_start() {
+  awk '/^gate start: / { buffer = "" } { buffer = buffer $0 "\n" } END { printf "%s", buffer }' "$log"
+}
+
+line_kinds_since_last_gate_start() {
+  since_last_gate_start | sed -E \
+    -e 's/^(gate start|gate end): .*/\1/' \
+    -e 's/^gate phase ([A-Za-z0-9]+) (start|end): load: [0-9.]+ [0-9.]+ [0-9.]+$/phase \1 \2/' \
+    -e 's/^time=.* (result=[a-z0-9-]+)( wall=[0-9]+[.][0-9])?( phases=[A-Za-z0-9:.,]+)?$/\1\2\3/' \
+    -e 's/wall=[0-9]+[.][0-9]/wall=W/' -e 's/:[0-9]+[.][0-9]/:W/g' |
+    tr '\n' '|'
+}
+
 count_matching() {
   printf '%s\n' "$output" | awk -v pattern="$1" '$0 ~ pattern { found++ } END { print found + 0 }'
 }
@@ -144,7 +157,8 @@ contains "$output" "exit 0: .: git rev-parse --verify HEAD" "the report lists ea
 contains "$(cat "$lock")" "checks=self-test" "the lock records the check list"
 contains "$(cat "$lock")" "scope=docs-only" "the lock records the scope"
 check "$(file_mode "$lock_dir")|$(file_mode "$lock")|$(file_mode "$log")" "700|600|600" "the lock folder, lock and log are readable only by the owner"
-check "$(count_matching '^gate start: power: (mains|battery|unknown); load: [0-9.]+ [0-9.]+ [0-9.]+$')" "1" "the report prints one start line with the power source and the load"
+check "$(count_matching '^gate start: power: (mains|battery|unknown); load: [0-9.]+ [0-9.]+ [0-9.]+; other containers: ([0-9]+|unknown)$')" "1" \
+  "the report prints one start line with the power source, the load and the count of other containers"
 check "$(count_matching '^gate end: power: (mains|battery|unknown); load: [0-9.]+ [0-9.]+ [0-9.]+; battery-during-run: (yes|no|unknown); sleep: (yes|no|unknown)$')" "1" \
   "the report prints one end line with the power source, the load, battery during the run and sleep"
 check "$(count_matching '^merge gate: gate start: power: ')" "1" "the gate prints its start line when it starts"
@@ -152,6 +166,10 @@ check "$(awk '/^gate start: power: /{ starts++ } /^gate end: power: /{ ends++ } 
   "the attempt log holds the start and the end line of the gate"
 check "$(tail -n 3 "$log" | sed -E 's/^(gate start|gate end|time)[:=].*/\1/' | tr '\n' '|')" "gate start|gate end|time|" \
   "the attempt log holds the start line, the end line and the result in that order"
+check "$(line_kinds_since_last_gate_start)" "gate start|gate end|result=passed wall=W|" \
+  "a gate of a list without lanes logs its wall time and no phases"
+check "$(sed -n 's/^name: //p' "$own_repo/docker-compose.yml")" "$(sed -n 's/^compose_project=//p' "$gate_script")" \
+  "the gate counts other containers against the Compose project the repository names"
 
 held="$(cat "$lock")"
 run_gate gate --ff-only --checks self-test
@@ -525,6 +543,13 @@ for phase in pre "A B C" e2e; do
 done
 check "$(count_matching '^summed command seconds: [0-9]+[.][0-9]$')" "1" "the report gives the summed command seconds"
 check "$(count_matching '^gate wall time: [0-9]+[.][0-9] s$')" "1" "the report gives the gate's wall time"
+check "$(line_kinds_since_last_gate_start)" \
+  "gate start|phase pre start|phase pre end|phase ABC start|phase ABC end|phase e2e start|phase e2e end|gate end|result=passed wall=W phases=pre:W,ABC:W,e2e:W|" \
+  "a passed laned gate logs each phase's start and end load, its wall time and each phase's wall time in order"
+check "$(count_matching '^merge gate: gate phase (pre|ABC|e2e) (start|end): load: [0-9.]+ [0-9.]+ [0-9.]+$')" "6" \
+  "the gate prints each phase's start and end line when it reaches them"
+check "$(tail -n 1 "$log" | sed -nE 's/.* wall=([0-9]+[.][0-9]) .*/\1/p')" "$(printf '%s\n' "$output" | sed -n 's/^gate wall time: \(.*\) s$/\1/p')" \
+  "the attempt log and the report give the same gate wall time"
 check "$(count_matching '^cores: [1-9][0-9]*$')" "1" "the report gives the machine's core count"
 logs="$(printf '%s\n' "$output" | sed -n 's/^command logs: //p')"
 check "${logs%/logs.*}" "$lock_dir" "the command logs lie in a folder inside the lock folder"
@@ -558,6 +583,9 @@ for lane in a b c; do
   contains "$output" "${lane}1 failed on purpose" "the report prints the end of the failed command's log in lane $slot"
   contains "$output" "result: failed: a check failed" "the result names the failed check of lane $slot"
   check "$(lock_state)" "released" "the gate releases its lock after lane $slot failed"
+  check "$(line_kinds_since_last_gate_start)" \
+    "gate start|phase pre start|phase pre end|phase ABC start|phase ABC end|gate end|result=failed wall=W phases=pre:W,ABC:W|" \
+    "a gate that failed in lane $slot logs its wall time and only the phases that ran"
   check "$(run_lock_state)" "released" "the gate releases the end-to-end run lock after lane $slot failed"
 done
 
@@ -692,6 +720,8 @@ contains "$output" "/e2e-started." "the stop names the end-to-end start marker"
 check "$(count_matching '^merge gate: running e2e')" "0" "the gate stops before it starts the end-to-end phase"
 check "$(test -e "$work/marker-e2e" && echo ran || echo "not run")" "not run" "the end-to-end entry does not run without its start marker"
 contains "$(tail -n 1 "$log")" "result=stopped" "the attempt log records the stopped gate"
+check "$(line_kinds_since_last_gate_start)" "gate start|phase pre start|phase pre end|phase ABC start|phase ABC end|result=stopped wall=W phases=pre:W,ABC:W|" \
+  "a gate stopped before the end-to-end phase logs its wall time and the phases that completed"
 check "$(lock_state)" "released" "the gate releases its lock after the marker could not be created"
 check "$(run_lock_state)" "released" "the gate releases the end-to-end run lock after the marker could not be created"
 
@@ -796,7 +826,8 @@ check "$(kill -0 "$(cat "$work/stubborn-pid")" 2>/dev/null && echo alive || echo
 check "$(lock_state)" "released" "the interrupted gate releases its lock after KILL ended the lane"
 check "$(run_lock_state)" "released" "the interrupted gate releases the end-to-end run lock after KILL ended the lane"
 contains "$(tail -n 1 "$log")" "result=interrupted" "an interrupted gate appends its attempt to the attempt log"
-check "$(tail -n 2 "$log" | head -n 1 | cut -c1-12)" "gate start: " "an interrupted gate leaves its start line and no end line before its attempt"
+check "$(line_kinds_since_last_gate_start)" "gate start|phase pre start|phase pre end|phase ABC start|result=interrupted wall=W phases=pre:W|" \
+  "an interrupted gate leaves its start line, the start line of the interrupted phase and no end line before its attempt"
 
 lane_change fix/lane-interrupted a1 "$(
   printf '%s\n' \
@@ -998,6 +1029,8 @@ check "$(cat "$run_lock")" "$held_run_lock" "the busy run lock is left alone"
 check "$(find "$lock_dir" -name '.run-lock.*' | wc -l | tr -d ' ')" "0" "a gate refused by a busy run lock leaves no candidate lock behind"
 check "$(lock_state)" "released" "a gate refused by a busy run lock releases its lock"
 contains "$(tail -n 1 "$log")" "result=e2e-run-lock-busy" "the attempt log records the busy run lock"
+check "$(line_kinds_since_last_gate_start)" "gate start|result=e2e-run-lock-busy wall=W|" \
+  "a gate refused by the busy run lock logs its wall time and no phases"
 check "$(tail -n 2 "$log" | head -n 1 | cut -c1-12)" "gate start: " "a gate refused by the busy run lock leaves its start line and no end line"
 kill -TERM "$run_holder"
 run_holder_status=0

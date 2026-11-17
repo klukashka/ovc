@@ -10,6 +10,8 @@ run_lock_descriptor_variable=E2E_HARNESS_GATE_RUN_LOCK_FD
 run_lock_held=no
 run_lock_path=""
 run_lock_candidate=""
+compose_project=ovc
+docker_probe_seconds=5
 
 full_checks=(
   "pre|.|tools/check-tool-binaries.sh"
@@ -395,10 +397,44 @@ prepare_log() {
   chmod 600 "$log_path"
 }
 
-append_log() {
+gate_wall_seconds() {
+  elapsed_seconds "$gate_started" "${gate_finished:-$(now_seconds)}"
+}
+
+phase_fields() {
+  local phase names=""
+  while IFS= read -r phase; do
+    [[ -n "$phase" ]] || continue
+    names="$names${names:+,}$(phase_label "${phase%%|*}"):${phase#*|}"
+  done <<<"$phase_times"
+  printf '%s' "$names"
+}
+
+phase_label() {
+  printf '%s' "${1// /}"
+}
+
+attempt_line() {
+  local line phases
+  line="$(printf 'time=%s base=%s tree=%s checks=%s scope=%s result=%s' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$base" "$tree" "$check_list" "$scope" "$1")"
+  if [[ -n "$gate_started" ]]; then
+    line="$line wall=$(gate_wall_seconds)"
+  fi
+  phases="$(phase_fields)"
+  if [[ -n "$phases" ]]; then
+    line="$line phases=$phases"
+  fi
+  printf '%s' "$line"
+}
+
+write_attempt() {
   prepare_log
-  printf 'time=%s base=%s tree=%s checks=%s scope=%s result=%s\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$base" "$tree" "$check_list" "$scope" "$1" >>"$log_path"
+  printf '%s\n' "$1" >>"$log_path"
+}
+
+append_log() {
+  write_attempt "$(attempt_line "$1")"
 }
 
 earlier_attempts() {
@@ -606,8 +642,10 @@ run_lock_holder_description() {
 }
 
 fail_run_lock_busy() {
+  local line
+  line="$(attempt_line e2e-run-lock-busy)"
   attempt_logged=yes
-  append_log e2e-run-lock-busy
+  write_attempt "$line"
   fail "the end-to-end run lock $run_lock_path is busy: $(run_lock_holder_description "$@") holds it; the gate ran no check; wait for it to end, then start the gate again"
 }
 
@@ -898,9 +936,46 @@ local_stamp() {
   env -u TZ date '+%Y-%m-%d %H:%M:%S'
 }
 
+compose_project_labels() {
+  local docker_pid watchdog_pid status=0
+  docker ps --format 'project={{.Label "com.docker.compose.project"}}' </dev/null 2>/dev/null &
+  docker_pid=$!
+  (sleep "$docker_probe_seconds" && kill -TERM "$docker_pid" && sleep 1 && kill -KILL "$docker_pid") </dev/null >/dev/null 2>&1 &
+  watchdog_pid=$!
+  wait "$docker_pid" || status=$?
+  kill -TERM "$watchdog_pid" 2>/dev/null || true
+  wait "$watchdog_pid" 2>/dev/null || true
+  return "$status"
+}
+
+other_containers() {
+  local labels
+  if ! command -v docker >/dev/null 2>&1 || ! labels="$(compose_project_labels)"; then
+    printf 'unknown'
+    return 0
+  fi
+  if [[ -z "$labels" ]]; then
+    printf '0'
+    return 0
+  fi
+  printf '%s\n' "$labels" | awk -v own="project=$compose_project" '
+    $0 !~ /^project=/ { unreadable = 1 }
+    $0 != own { others++ }
+    END { if (unreadable) print "unknown"; else print others + 0 }
+  '
+}
+
+record_phase_line() {
+  local line
+  line="gate phase $(phase_label "$1") $2: load: $(load_averages)"
+  printf 'merge gate: %s\n' "$line" >&2
+  prepare_log
+  printf '%s\n' "$line" >>"$log_path"
+}
+
 record_gate_start() {
   power_log_started="$(local_stamp)"
-  gate_start_line="gate start: power: $(power_source); load: $(load_averages)"
+  gate_start_line="gate start: power: $(power_source); load: $(load_averages); other containers: $(other_containers)"
   printf 'merge gate: %s\n' "$gate_start_line" >&2
   prepare_log
   printf '%s\n' "$gate_start_line" >>"$log_path"
@@ -1154,6 +1229,9 @@ stop_lanes() {
 
 on_exit() {
   local exit_status=$? stopped=yes
+  if [[ "$holding" == yes && "$attempt_logged" == no && -n "$gate_started" ]]; then
+    gate_finished="$(now_seconds)" || gate_finished=""
+  fi
   remove_run_lock_candidate
   stop_lanes || stopped=no
   if [[ "$holding" == yes && "$attempt_logged" == no ]]; then
@@ -1246,11 +1324,13 @@ check_lane_records() {
 
 run_phase() {
   printf 'merge gate: running %s, command logs in %s\n' "$*" "$log_folder" >&2
+  record_phase_line "$*" start
   start_lanes "$@"
   wait_lanes
   collect_lane_records
   end_lanes
   phase_times="$phase_times$*|$(elapsed_seconds "$phase_started" "$(now_seconds)")"$'\n'
+  record_phase_line "$*" end
   check_lane_records "$@"
   if [[ "$failed_check" == yes ]]; then
     laned_failure="a check failed"
@@ -1323,7 +1403,7 @@ print_laned_results() {
     printf 'phase %s wall time with the wait for its processes: %s s\n' "${phase%%|*}" "${phase#*|}"
   done <<<"$phase_times"
   printf 'summed command seconds: %s\n' "$(printf '%s' "$timings" | awk '{ total += $2 } END { printf "%.1f", total }')"
-  printf 'gate wall time: %s s\n' "$(elapsed_seconds "$gate_started" "$(now_seconds)")"
+  printf 'gate wall time: %s s\n' "$(gate_wall_seconds)"
   printf 'cores: %s\n' "$(getconf _NPROCESSORS_ONLN)"
   printf 'command logs: %s\n' "${log_folder:-none}"
   if [[ -n "$kept_results" ]]; then
@@ -1416,15 +1496,18 @@ print_report() {
 }
 
 gate_failed() {
+  local line
   record_gate_end
+  gate_finished="$(now_seconds)"
+  line="$(attempt_line failed)"
   print_report "failed: $1"
   attempt_logged=yes
-  append_log failed
+  write_attempt "$line"
   exit 1
 }
 
 gate() {
-  local changed
+  local changed line
   holding=no
   started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   change=""
@@ -1444,6 +1527,7 @@ gate() {
   laned_failure=""
   entry_count=0
   gate_started=""
+  gate_finished=""
   record_lines=""
   phase_records=""
   phase_times=""
@@ -1477,8 +1561,8 @@ gate() {
   esac
   if laned_list; then
     split_checks
-    gate_started="$(now_seconds)"
   fi
+  gate_started="$(now_seconds)"
   take_lock
   holding=yes
   prepare_log
@@ -1496,8 +1580,10 @@ gate() {
   fi
   release_run_lock || gate_failed "the end-to-end run lock $run_lock_path no longer held this gate at its end"
   record_gate_end
+  gate_finished="$(now_seconds)"
+  line="$(attempt_line passed)"
   attempt_logged=yes
-  append_log passed
+  write_attempt "$line"
   mark_passed
   print_report passed
   case "$mode" in
