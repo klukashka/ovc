@@ -186,11 +186,9 @@ func FlagReclaimedWork(ctx context.Context, repos repositories.Repositories, rel
 	if err != nil || len(flagged) == 0 {
 		return err
 	}
-	signals := make([]domain.EntitySignal, 0, len(flagged))
+	var batch frameBatch
 	for _, submission := range flagged {
-		signals = append(signals, domain.EntitySignal{
-			Users: []domain.UserID{submission.TutorID}, Entity: domain.EntitySubmission, ID: domain.EntityID(submission.ID),
-		})
+		batch.tutorSubmissionOfIssue(submission.TutorID, submission.ID, submission.IssueID, lessonsOf(submission.LessonID))
 	}
-	return repos.Signals.Entities(ctx, signals)
+	return batch.send(ctx, repos)
 }

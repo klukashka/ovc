@@ -128,7 +128,7 @@ func (s *Service) applyChange(
 		}
 	}
 	readers, all := readableRecipients(locked.row.Status, locked.states)
-	return s.signal(ctx, repos, tutor, locked.row.ID, all, readers)
+	return signalIssue(ctx, repos, tutor, locked.row.ID, lessonsOf(locked.row.LessonID, lesson), all, readers)
 }
 
 func (s *Service) WithdrawIssue(ctx context.Context, actor domain.TutorActor, id domain.IssueID) (IssueItem, error) {
@@ -173,7 +173,7 @@ func (s *Service) WithdrawIssue(ctx context.Context, actor domain.TutorActor, id
 		if err := s.notifyStudents(ctx, repos, tutor, domain.NotificationIssueWithdrawn, readers, now); err != nil {
 			return err
 		}
-		if err := s.signal(ctx, repos, tutor, id, all, readers); err != nil {
+		if err := signalIssue(ctx, repos, tutor, id, lessonsOf(locked.row.LessonID), all, readers); err != nil {
 			return err
 		}
 		changed = true

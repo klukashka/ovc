@@ -1,9 +1,10 @@
 import { type UseQueryResult, useQuery } from '@tanstack/react-query';
-import { type ReactElement, type ReactNode, type RefObject, useId, useRef } from 'react';
+import { type ReactElement, type ReactNode, type RefObject, useEffect, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { useScheduler } from '../../app/clock.ts';
+import type { Scheduler } from '../../lib/api/session.ts';
 import { linkClass } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
@@ -15,7 +16,7 @@ import { relativeHint } from '../../lib/format/relative.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { useNow } from '../assignment/parts.tsx';
 import { fetchGroups, groupsKey } from '../groups/api.ts';
-import { type IssuePage, issueAddress, issuesKey } from '../homework/api.ts';
+import { type IssueItem, type IssuePage, issueAddress, issuesKey } from '../homework/api.ts';
 import { AudienceLabel } from '../homework/IssueParts.tsx';
 import { type QueuePage, fetchQueuePage, reviewAddress } from '../review/api.ts';
 import { queuePanelKey } from '../review/keys.ts';
@@ -24,6 +25,57 @@ import { homeworkPanelTextLoaders } from './panelTexts.ts';
 const panelSize = 5;
 const deadlineWindowMilliseconds = 3 * 86_400_000;
 const noFilter = { issue: null, group: null, student: null };
+const deadlineMarginMilliseconds = 1_000;
+const passedDeadlineRetryMilliseconds = 30_000;
+const passedDeadlineRetryCapMilliseconds = 600_000;
+
+function earliestDeadline(items: readonly IssueItem[]): string | null {
+  let earliest: string | null = null;
+  for (const item of items) {
+    if (item.deadline_at !== null && (earliest === null || Date.parse(item.deadline_at) < Date.parse(earliest))) {
+      earliest = item.deadline_at;
+    }
+  }
+  return earliest;
+}
+
+interface DeadlineRefetch {
+  readonly deadline: string;
+  readonly delay: number;
+  readonly afterDeadline: boolean;
+}
+
+function nextDeadlineRefetch(deadline: string, now: number, previous: DeadlineRefetch | null): DeadlineRefetch {
+  const due = Date.parse(deadline) - now;
+  if (due > 0) {
+    return { deadline, delay: due + deadlineMarginMilliseconds, afterDeadline: false };
+  }
+  if (previous?.deadline !== deadline || !previous.afterDeadline) {
+    return { deadline, delay: deadlineMarginMilliseconds, afterDeadline: true };
+  }
+  const delay = Math.min(
+    Math.max(previous.delay * 2, passedDeadlineRetryMilliseconds),
+    passedDeadlineRetryCapMilliseconds,
+  );
+  return { deadline, delay, afterDeadline: true };
+}
+
+function useRefetchAtEarliestDeadline(query: UseQueryResult<IssuePage>, scheduler: Scheduler): void {
+  const deadline = earliestDeadline(query.data?.items ?? []);
+  const previous = useRef<DeadlineRefetch | null>(null);
+  const { refetch, dataUpdatedAt: loadedAt } = query;
+  useEffect(() => {
+    if (deadline === null) {
+      previous.current = null;
+      return undefined;
+    }
+    const next = nextDeadlineRefetch(deadline, scheduler.wallClock(), previous.current);
+    previous.current = next;
+    return scheduler.schedule(next.delay, () => {
+      void refetch();
+    });
+  }, [deadline, loadedAt, refetch, scheduler]);
+}
 
 function Panel<Data>({
   title,
@@ -164,6 +216,7 @@ function UpcomingDeadlines(): ReactElement {
     },
     retry: false,
   });
+  useRefetchAtEarliestDeadline(query, scheduler);
   const groups = useQuery({ queryKey: groupsKey, queryFn: () => fetchGroups(client), retry: false });
   const items = query.data?.items ?? [];
   const now = useNow();

@@ -43,7 +43,8 @@ WITH closed AS (
     WHERE submissions.relationship_id = $2 AND submissions.status IN ('not_started', 'draft', 'returned')
     RETURNING submissions.id, submissions.issue_id, submissions.student_id
 )
-SELECT closed.id, closed.student_id, issues.status AS issue_status, (issues.erase_pending_since IS NOT NULL)::boolean AS marked_for_erasure
+SELECT closed.id, closed.student_id, closed.issue_id, issues.lesson_id, issues.status AS issue_status,
+    (issues.erase_pending_since IS NOT NULL)::boolean AS marked_for_erasure
 FROM closed
 JOIN issues ON issues.id = closed.issue_id
 ORDER BY closed.id
@@ -57,6 +58,8 @@ type CloseRelationshipSubmissionsParams struct {
 type CloseRelationshipSubmissionsRow struct {
 	ID               pgtype.UUID
 	StudentID        pgtype.UUID
+	IssueID          pgtype.UUID
+	LessonID         *domain.LessonID
 	IssueStatus      domain.IssueStatus
 	MarkedForErasure bool
 }
@@ -73,6 +76,8 @@ func (q *Queries) CloseRelationshipSubmissions(ctx context.Context, arg CloseRel
 		if err := rows.Scan(
 			&i.ID,
 			&i.StudentID,
+			&i.IssueID,
+			&i.LessonID,
 			&i.IssueStatus,
 			&i.MarkedForErasure,
 		); err != nil {
@@ -1134,7 +1139,7 @@ func (q *Queries) LockSubmission(ctx context.Context, arg LockSubmissionParams) 
 }
 
 const lockSubmissionIssue = `-- name: LockSubmissionIssue :one
-SELECT status, (erase_pending_since IS NOT NULL)::boolean AS marked_for_erasure, snapshot, has_manual_questions, max_points, answer_policy
+SELECT status, (erase_pending_since IS NOT NULL)::boolean AS marked_for_erasure, snapshot, has_manual_questions, max_points, answer_policy, lesson_id
 FROM issues WHERE id = $1 AND tutor_id = $2 FOR SHARE
 `
 
@@ -1150,6 +1155,7 @@ type LockSubmissionIssueRow struct {
 	HasManualQuestions bool
 	MaxPoints          int32
 	AnswerPolicy       domain.AnswerPolicy
+	LessonID           *domain.LessonID
 }
 
 func (q *Queries) LockSubmissionIssue(ctx context.Context, arg LockSubmissionIssueParams) (LockSubmissionIssueRow, error) {
@@ -1162,6 +1168,7 @@ func (q *Queries) LockSubmissionIssue(ctx context.Context, arg LockSubmissionIss
 		&i.HasManualQuestions,
 		&i.MaxPoints,
 		&i.AnswerPolicy,
+		&i.LessonID,
 	)
 	return i, err
 }

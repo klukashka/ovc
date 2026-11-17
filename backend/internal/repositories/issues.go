@@ -29,7 +29,6 @@ type (
 	LessonSubmission         = dbgen.ListStudentLessonSubmissionsRow
 	ReviewSubmission         = dbgen.TutorReviewSubmissionsRow
 	SubmissionForEmail       = dbgen.GetSubmissionForEmailRow
-	ReclaimedSubmission      = dbgen.FlagReclaimedSubmissionsRow
 	IssueSnapshotReference   = dbgen.ListTutorIssueSnapshotReferencesBatchRow
 	StudentSubmissionOfTutor = dbgen.ListStudentSubmissionsBatchRow
 )
@@ -274,9 +273,26 @@ func (r Homework) SubmissionForEmail(ctx context.Context, id domain.SubmissionID
 	return one(row, err, "submission for an email")
 }
 
+type ReclaimedSubmission struct {
+	ID       domain.SubmissionID
+	TutorID  domain.UserID
+	IssueID  domain.IssueID
+	LessonID *domain.LessonID
+}
+
 func (r Homework) FlagReclaimed(ctx context.Context, relationships []domain.RelationshipID, now time.Time) ([]ReclaimedSubmission, error) {
 	rows, err := r.queries.FlagReclaimedSubmissions(ctx, dbgen.FlagReclaimedSubmissionsParams{Now: now, RelationshipIds: uuids(relationships)})
-	return one(rows, err, "flag the submissions of reclaimed links")
+	if err != nil {
+		return nil, done(err, "flag the submissions of reclaimed links")
+	}
+	flagged := make([]ReclaimedSubmission, 0, len(rows))
+	for _, row := range rows {
+		flagged = append(flagged, ReclaimedSubmission{
+			ID: domain.SubmissionID(row.ID.Bytes), TutorID: domain.UserID(row.TutorID.Bytes), IssueID: domain.IssueID(row.IssueID.Bytes),
+			LessonID: row.LessonID,
+		})
+	}
+	return flagged, nil
 }
 
 func (r Homework) SnapshotReferencesBatchOfTutor(ctx context.Context, tutor domain.UserID, batch int32) ([]IssueSnapshotReference, error) {

@@ -19,6 +19,7 @@ type erasureFixture struct {
 	studentToken string
 	card         string
 	issue        string
+	lesson       string
 	submission   string
 	file         string
 	address      string
@@ -32,6 +33,8 @@ func newErasureFixture(t *testing.T) erasureFixture {
 	card := h.linkedCard(t, parties.tutor, 10, domain.RelationshipActive)
 	token := h.studentToken(t, 10)
 	issue, work := h.issueWork(t, parties.tutorToken, toCard(card), "Erasure sentinel title", string(domain.AnswerPolicyNever), nil, workBlocks()...)
+	lesson := h.lessonWith(t, parties.tutorToken, card)
+	h.mustAnswer(t, h.patchIssue(t, parties.tutorToken, issue, `{"lesson_id":"`+lesson+`","version":1}`), http.StatusOK)
 	file := h.answerFile(t, token, work[0].id, workQuestion(6), "erasure sentinel.pdf", 64)
 	saved := h.saved(t, token, work[0].id, answersJSON(t, 1, saveID(1), attached(workQuestion(6), file), typedAnswer(workQuestion(5), "erasure sentinel answer")))
 	answer, found := answerTo(saved.Answers, workQuestion(6))
@@ -40,7 +43,7 @@ func newErasureFixture(t *testing.T) erasureFixture {
 	}
 	h.setRelationshipState(t, card, domain.RelationshipProvisional)
 	return erasureFixture{h: h, tutor: parties.tutor, tutorToken: parties.tutorToken, student: domain.UserID{10}, studentToken: token, card: card,
-		issue: issue, submission: work[0].id, file: file, address: answer.Files[0].URL, usage: h.fileUsage(t, parties.tutor)}
+		issue: issue, lesson: lesson, submission: work[0].id, file: file, address: answer.Files[0].URL, usage: h.fileUsage(t, parties.tutor)}
 }
 
 func (f erasureFixture) cleanup(t *testing.T) domain.HomeworkCleanupCounts {
@@ -161,6 +164,10 @@ func TestDroppedProvisionalWorkErased(t *testing.T) {
 			if !hasFrame(sent, f.tutor, domain.EntitySubmission, f.submission) {
 				t.Fatal("the tutor received no erasure hint")
 			}
+			if tutorFrames := homeworkFramesTo(sent, f.tutor); len(tutorFrames) != 1 || tutorFrames[0].issue != f.issue || tutorFrames[0].lessons != f.lesson {
+				t.Fatalf("the tutor's erasure frames are %+v", tutorFrames)
+			}
+			checkStudentHomeworkFrames(t, sent, f.student)
 			assertRefused(t, "a pre-mark answer address", denied, http.StatusNotFound, "not_found")
 			if result.IssuesErased != 1 || result.ReferencesRemoved != 1 || h.referencesOf(t, f.file) != 0 || h.chargesOf(t, f.file) != 0 || h.fileUsage(t, f.tutor) != f.usage-64-pdfHeaderBytes {
 				t.Fatalf("incorrect erasure: %+v", result)

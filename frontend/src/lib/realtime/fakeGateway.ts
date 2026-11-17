@@ -206,8 +206,13 @@ export class FakeGateway {
     this.deliver(accountId, { type: 'notification.new', payload: { id } });
   }
 
-  changed(accountId: string, kind: EntityKind, id: string): void {
-    this.deliver(accountId, { type: 'entity.changed', payload: { kind, id } });
+  changed(
+    accountId: string,
+    kind: EntityKind,
+    id: string,
+    identifiers: { readonly issue_id?: string; readonly lesson_ids?: readonly string[] } = {},
+  ): void {
+    this.deliver(accountId, { type: 'entity.changed', payload: { kind, id, ...identifiers } });
   }
 
   messageExchanged(accountId: string, channelId: string, messageId: string, seq: number): void {

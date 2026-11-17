@@ -43,10 +43,17 @@ function fakeSubject(): RealtimeContractSubject {
       await Promise.resolve();
     },
     issueAssignment: async (): Promise<void> => {
-      gateway.changed(tutor.id, 'issue', 'issue-1');
+      gateway.changed(tutor.id, 'issue', 'issue-1', { lesson_ids: ['lesson-1'] });
       gateway.changed(tutor.id, 'submission', 'submission-1');
       await Promise.resolve();
     },
+    assignmentStudent: async (): Promise<{ readonly token: string; readonly submit: () => Promise<void> }> => ({
+      token: await tokenOf(server, other),
+      submit: async (): Promise<void> => {
+        gateway.changed(other.id, 'submission', 'submission-1', { lesson_ids: ['lesson-1'] });
+        await Promise.resolve();
+      },
+    }),
     exchangeMessage: async (): Promise<void> => {
       gateway.messageExchanged(tutor.id, 'channel-1', 'message-1', 1);
       await Promise.resolve();

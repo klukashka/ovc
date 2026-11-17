@@ -25,6 +25,8 @@ func TestIssueFramesRecipients(t *testing.T) {
 	issue := h.issued(t, parties.tutorToken, issueJSON(parties.template.ID, toGroup(group.ID)))
 
 	sent := frames.settle(t, h)
+	checkStudentHomeworkFrames(t, sent, first)
+	checkStudentHomeworkFrames(t, sent, second)
 	stored := h.submissionsOf(t, issue.ID)
 	if len(stored) != 2 || outsider == "" {
 		t.Fatalf("the issue holds %d submissions", len(stored))
@@ -65,7 +67,8 @@ func TestWithdrawNotifiesReadableStudents(t *testing.T) {
 	parties := h.issueParties(t)
 	cards := h.activeCards(t, parties.tutor, 10, 3)
 	group := h.newGroup(t, parties.tutorToken, "Evening club", cards)
-	issue := h.issued(t, parties.tutorToken, issueJSON(parties.template.ID, toGroup(group.ID)))
+	lesson := h.scheduled(t, parties.tutorToken, groupLessonFor(group.ID, "2030-03-12", "10:00")).Lessons[0].ID
+	issue := h.issued(t, parties.tutorToken, issueJSONWith(parties.template.ID, toGroup(group.ID), &lesson, nil, "after_check"))
 	h.setRelationshipState(t, cards[2], domain.RelationshipReclaimPending)
 	frames := h.recordFrames(t)
 	readable, hidden := domain.UserID{10}, domain.UserID{12}
@@ -79,6 +82,13 @@ func TestWithdrawNotifiesReadableStudents(t *testing.T) {
 		t.Fatalf("the withdrawal answered %s then %s", withdrawn.body, repeated.body)
 	}
 	sent := frames.settle(t, h)
+	checkStudentHomeworkFrames(t, sent, readable, lesson)
+	if issueFrame := onlyFrame(t, framesOfKind(homeworkFramesTo(sent, parties.tutor), domain.EntityIssue), "the tutor's issue frame"); issueFrame.lessons != lesson {
+		t.Fatalf("the tutor's withdrawal frame is %+v", issueFrame)
+	}
+	if studentFrame := onlyFrame(t, homeworkFramesTo(sent, readable), "the readable student's frame"); studentFrame.lessons != lesson {
+		t.Fatalf("the readable student's withdrawal frame is %+v", studentFrame)
+	}
 	submissions := h.submissionsOf(t, issue.ID)
 	if !hasFrame(sent, readable, domain.EntitySubmission, submissions[0].id) || notificationFrames(sent, readable) != 1 {
 		t.Fatalf("the readable student got frames %v", framesTo(sent, readable))

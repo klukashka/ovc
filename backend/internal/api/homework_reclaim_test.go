@@ -98,6 +98,7 @@ func TestReclaimPendingHidesWork(t *testing.T) {
 	h.published(t, parties.tutorToken, reviewSubmission, domain.ReviewCheck, 1)
 	h.tick(t)
 	hiddenFrames := frames.settle(t, h)
+	checkStudentHomeworkFrames(t, hiddenFrames, student)
 	hiddenMails := len(h.mailTo(t, newcomerEmail))
 	keepFrames := h.recordFrames(t)
 	h.mustAnswer(t, h.decideReclaim(t, owner, reclaimChoice{KeepLinks: []string{card.ID}}), http.StatusOK)

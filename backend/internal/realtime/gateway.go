@@ -419,7 +419,8 @@ func (g *Gateway) Signal(signal domain.Signal) {
 		sockets := g.deliver([]domain.UserID{typed.User}, frame)
 		g.logDelivery(domain.SignalNotification, 1, sockets, started)
 	case domain.EntitySignal:
-		frame := encode(domain.FrameEntityChanged, nil, &schemas.EntityChangedPayload{Kind: typed.Entity, ID: typed.ID.String()})
+		payload := EntityPayload(typed)
+		frame := encode(domain.FrameEntityChanged, nil, &payload)
 		sockets := g.deliver(typed.Users, frame)
 		g.logDelivery(domain.SignalEntity, len(typed.Users), sockets, started)
 	case domain.TypingSignal:
@@ -456,6 +457,18 @@ func (g *Gateway) logDelivery(kind domain.SignalKind, recipients int, sockets in
 	g.deps.Logger.LogAttrs(context.Background(), slog.LevelDebug, "realtime.delivery",
 		slog.String("kind", string(kind)), slog.Int("recipients", recipients), slog.Int("sockets", sockets),
 		slog.Int64("duration_ms", g.deps.Now().Sub(started).Milliseconds()))
+}
+
+func EntityPayload(signal domain.EntitySignal) schemas.EntityChangedPayload {
+	payload := schemas.EntityChangedPayload{Kind: signal.Entity, ID: signal.ID.String()}
+	if signal.Issue != nil {
+		issue := signal.Issue.String()
+		payload.IssueID = &issue
+	}
+	for _, lesson := range signal.Lessons {
+		payload.LessonIDs = append(payload.LessonIDs, lesson.String())
+	}
+	return payload
 }
 
 func encode[Payload any](kind domain.FrameType, ref *string, payload *Payload) []byte {

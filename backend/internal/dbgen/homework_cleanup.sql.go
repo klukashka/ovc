@@ -214,7 +214,8 @@ func (q *Queries) ListErasePendingIssues(ctx context.Context, skipped []pgtype.U
 }
 
 const listLifecycleSubmissions = `-- name: ListLifecycleSubmissions :many
-SELECT submissions.id, submissions.student_id, submissions.relationship_id, submissions.tutor_id, issues.status AS issue_status
+SELECT submissions.id, submissions.student_id, submissions.relationship_id, submissions.tutor_id, issues.status AS issue_status,
+    submissions.issue_id, issues.lesson_id
 FROM submissions JOIN issues ON issues.id = submissions.issue_id
 WHERE submissions.issue_id = ANY($1::uuid[]) ORDER BY submissions.id
 `
@@ -225,6 +226,8 @@ type ListLifecycleSubmissionsRow struct {
 	RelationshipID domain.RelationshipID
 	TutorID        domain.UserID
 	IssueStatus    domain.IssueStatus
+	IssueID        domain.IssueID
+	LessonID       *domain.LessonID
 }
 
 func (q *Queries) ListLifecycleSubmissions(ctx context.Context, issues []pgtype.UUID) ([]ListLifecycleSubmissionsRow, error) {
@@ -242,6 +245,8 @@ func (q *Queries) ListLifecycleSubmissions(ctx context.Context, issues []pgtype.
 			&i.RelationshipID,
 			&i.TutorID,
 			&i.IssueStatus,
+			&i.IssueID,
+			&i.LessonID,
 		); err != nil {
 			return nil, err
 		}

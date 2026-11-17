@@ -13,7 +13,13 @@ export type EntityKind = (typeof entityKinds)[number];
 export type ServerFrame =
   | { readonly type: 'ready' }
   | { readonly type: 'notification.new'; readonly id: string }
-  | { readonly type: 'entity.changed'; readonly kind: EntityKind; readonly id: string }
+  | {
+      readonly type: 'entity.changed';
+      readonly kind: EntityKind;
+      readonly id: string;
+      readonly issueId?: string;
+      readonly lessonIds?: readonly string[];
+    }
   | { readonly type: 'message.new'; readonly channelId: string; readonly messageId: string; readonly seq: number }
   | { readonly type: 'message.updated' | 'message.deleted'; readonly channelId: string; readonly messageId: string }
   | { readonly type: 'read.updated'; readonly channelId: string }
@@ -83,6 +89,51 @@ function idFrame(frame: Fields): string | null {
   return payload === null || !hasOnly(frame, ['type', 'payload']) ? null : textOf(payload, 'id');
 }
 
+const maxLessonIds = 2;
+
+function lessonIdsOf(value: unknown): readonly string[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > maxLessonIds) {
+    return null;
+  }
+  const lessons: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string' || item === '' || lessons.includes(item)) {
+      return null;
+    }
+    lessons.push(item);
+  }
+  return lessons;
+}
+
+function entityFrame(frame: Fields): ServerFrame | null {
+  const payload = payloadOf(frame, ['kind', 'id', 'issue_id', 'lesson_ids']);
+  if (payload === null || !hasOnly(frame, ['type', 'payload'])) {
+    return null;
+  }
+  const id = textOf(payload, 'id');
+  const kind = payload.kind;
+  if (id === null || !isEntityKind(kind)) {
+    return null;
+  }
+  const hasIssue = 'issue_id' in payload;
+  const hasLessons = 'lesson_ids' in payload;
+  if ((hasIssue && kind !== 'submission') || (hasLessons && kind !== 'issue' && kind !== 'submission')) {
+    return null;
+  }
+  const issueId = hasIssue ? textOf(payload, 'issue_id') : null;
+  const lessonIds = hasLessons ? lessonIdsOf(payload.lesson_ids) : null;
+  if ((hasIssue && issueId === null) || (hasLessons && lessonIds === null)) {
+    return null;
+  }
+  return {
+    type: 'entity.changed',
+    kind,
+    id,
+    ...(issueId === null ? {} : { issueId }),
+    ...(lessonIds === null ? {} : { lessonIds }),
+  };
+}
+
 function seqOf(value: Fields, key: string): number | null {
   const field = value[key];
   return typeof field === 'number' && Number.isSafeInteger(field) && field > 0 ? field : null;
@@ -131,14 +182,8 @@ function parseFields(frame: Fields): ServerFrame | null {
       const id = idFrame(frame);
       return id === null ? null : { type: 'notification.new', id };
     }
-    case 'entity.changed': {
-      const payload = payloadOf(frame, ['kind', 'id']);
-      const id = payload === null ? null : textOf(payload, 'id');
-      if (payload === null || id === null || !isEntityKind(payload.kind) || !hasOnly(frame, ['type', 'payload'])) {
-        return null;
-      }
-      return { type: 'entity.changed', kind: payload.kind, id };
-    }
+    case 'entity.changed':
+      return entityFrame(frame);
     case 'message.new': {
       const payload = payloadOf(frame, ['channel_id', 'message_id', 'seq']);
       if (payload === null || !hasOnly(frame, ['type', 'payload'])) {

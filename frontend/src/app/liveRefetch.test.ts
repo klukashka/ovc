@@ -1,7 +1,11 @@
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { describe, expect, test } from 'vitest';
 
+import { assignmentListKey, submissionKey } from '../features/assignment/keys.ts';
+import { issueKey, issueListKey } from '../features/homework/api.ts';
 import { channelsKey, unreadChannelsKey, messagesKey } from '../features/messages/keys.ts';
+import { queuePanelKey, reviewSubmissionKey } from '../features/review/keys.ts';
+import { lessonKey } from '../features/schedule/keys.ts';
 import { manualScheduler } from '../lib/api/fakeTransport.ts';
 import { latestNotificationsKey } from '../features/notifications/api.ts';
 import { eventually } from '../lib/eventually.ts';
@@ -175,4 +179,116 @@ test('channel changes evict inactive private data and previews from every cached
   });
   onEvent.cancel();
   client.clear();
+});
+
+describe('homework frame refetches', () => {
+  const watched: readonly (readonly unknown[])[] = [
+    submissionKey('submission-a'),
+    submissionKey('submission-b'),
+    assignmentListKey('todo', null, 5),
+    reviewSubmissionKey('submission-a'),
+    reviewSubmissionKey('submission-b'),
+    queuePanelKey(5),
+    issueKey('issue-a'),
+    issueKey('issue-b'),
+    issueListKey({ status: 'active' }),
+    lessonKey('lesson-a'),
+    lessonKey('lesson-b'),
+  ];
+
+  async function watchAll(
+    client: QueryClient,
+  ): Promise<{ readonly fetched: () => string[]; readonly stop: () => void }> {
+    const counts = new Map<string, number>();
+    const observers = watched.map(
+      (queryKey) =>
+        new QueryObserver(client, {
+          queryKey,
+          queryFn: (): Promise<number> => {
+            const name = JSON.stringify(queryKey);
+            const next = (counts.get(name) ?? 0) + 1;
+            counts.set(name, next);
+            return Promise.resolve(next);
+          },
+        }),
+    );
+    const unsubscribes = observers.map((observer) => observer.subscribe(() => undefined));
+    await eventually(() => {
+      expect(observers.every((observer) => observer.getCurrentResult().status === 'success')).toBe(true);
+    });
+    return {
+      fetched: (): string[] =>
+        [...counts.entries()]
+          .filter(([, count]) => count > 1)
+          .map(([name]) => name)
+          .sort(),
+      stop: (): void => {
+        for (const unsubscribe of unsubscribes) {
+          unsubscribe();
+        }
+      },
+    };
+  }
+
+  function names(...keys: readonly (readonly unknown[])[]): string[] {
+    return keys.map((key) => JSON.stringify(key)).sort();
+  }
+
+  test('a student submission frame refetches the lists and only its own assignment page and lessons', async () => {
+    const client = new QueryClient();
+    const queries = await watchAll(client);
+    const onEvent = liveRefetch(client, new NotificationArrivals());
+
+    onEvent({ kind: 'entity', entity: 'submission', id: 'submission-a', lessonIds: ['lesson-a'] });
+
+    await eventually(() => {
+      expect(queries.fetched()).toEqual(
+        names(
+          submissionKey('submission-a'),
+          assignmentListKey('todo', null, 5),
+          reviewSubmissionKey('submission-a'),
+          queuePanelKey(5),
+          lessonKey('lesson-a'),
+        ),
+      );
+    });
+    queries.stop();
+  });
+
+  test('a tutor submission frame refetches its issue but no other issue page and no lesson it does not name', async () => {
+    const client = new QueryClient();
+    const queries = await watchAll(client);
+    const onEvent = liveRefetch(client, new NotificationArrivals());
+
+    onEvent({ kind: 'entity', entity: 'submission', id: 'submission-b', issueId: 'issue-a' });
+
+    await eventually(() => {
+      expect(queries.fetched()).toEqual(
+        names(
+          submissionKey('submission-b'),
+          assignmentListKey('todo', null, 5),
+          reviewSubmissionKey('submission-b'),
+          queuePanelKey(5),
+          issueKey('issue-a'),
+          issueListKey({ status: 'active' }),
+        ),
+      );
+    });
+    queries.stop();
+  });
+
+  test('an issue frame refetches the issue lists, its own page and the lessons it names', async () => {
+    const client = new QueryClient();
+    const queries = await watchAll(client);
+    const onEvent = liveRefetch(client, new NotificationArrivals());
+
+    onEvent({ kind: 'entity', entity: 'issue', id: 'issue-b', lessonIds: ['lesson-a', 'lesson-b'] });
+
+    await eventually(() => {
+      expect(queries.fetched()).toEqual(
+        names(issueKey('issue-b'), issueListKey({ status: 'active' }), lessonKey('lesson-a'), lessonKey('lesson-b')),
+      );
+    });
+    queries.stop();
+  });
 });

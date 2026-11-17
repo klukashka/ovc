@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { pastSimpleQuestions, pastSimpleSubmission } from './fakeSubmissions.ts';
+import { pastSimpleQuestions, pastSimpleReview, pastSimpleSubmission } from './fakeSubmissions.ts';
 import { AccountResponseBodies, FakeAuthServer, SignalAwareRefreshBodies } from './fakeTransport.ts';
 import type { components } from './schema.ts';
 import {
@@ -77,6 +77,7 @@ function fakeSubject(): ContractSubject {
       await Promise.resolve();
       const submissionId = '4c3b2a19-0f8e-4d7c-9b6a-5f4e3d2c1b0a';
       server.addSubmission('s@example.org', 'a@example.org', pastSimpleSubmission(submissionId));
+      server.addReviewedSubmission('a@example.org', pastSimpleReview(submissionId));
       return {
         email: 's@example.org',
         password: 'a student password',

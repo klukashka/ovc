@@ -158,7 +158,7 @@ func (s *Service) issue(ctx context.Context, repos repositories.Repositories, tu
 	if err := repos.Homework.InsertSubmissions(ctx, id, tutor, request.Deadline, audience.recipients, now); err != nil {
 		return IssueItem{}, err
 	}
-	if err := s.announceCreated(ctx, repos, tutor, id, audience.recipients, now); err != nil {
+	if err := s.announceCreated(ctx, repos, tutor, id, request.Lesson, audience.recipients, now); err != nil {
 		return IssueItem{}, err
 	}
 	item, err := s.itemOf(ctx, repos, tutor, id)

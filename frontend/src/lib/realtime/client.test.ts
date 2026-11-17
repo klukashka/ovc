@@ -3,6 +3,8 @@ import { describe, expect, test } from 'vitest';
 
 import { liveRefetch } from '../../app/liveRefetch.ts';
 import { NotificationArrivals } from '../../app/notificationArrivals.ts';
+import { submissionKey } from '../../features/assignment/keys.ts';
+import { lessonKey } from '../../features/schedule/keys.ts';
 import { studentsKey } from '../../features/students/api.ts';
 import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../api/fakeTransport.ts';
 import { Session } from '../api/session.ts';
@@ -188,6 +190,59 @@ describe('realtime client', () => {
     expect(rig.gateway.socketsOpened).toBe(opened);
     expect(rig.gateway.readySockets(tutor.id)).toBe(1);
     rig.disconnect();
+  });
+
+  test('a homework frame reaches the refetch with its identifiers and refetches only the pages it names', async () => {
+    const queryClient = new QueryClient();
+    const watched = [
+      submissionKey('submission-a'),
+      submissionKey('submission-b'),
+      lessonKey('lesson-a'),
+      lessonKey('lesson-b'),
+    ];
+    const counts = watched.map(() => ({ value: 0 }));
+    const unsubscribes = watched.map((queryKey, index) =>
+      new QueryObserver(queryClient, {
+        queryKey,
+        queryFn: (): Promise<number> => {
+          const count = counts[index];
+          if (count === undefined) {
+            throw new Error('missing counter');
+          }
+          count.value += 1;
+          return Promise.resolve(count.value);
+        },
+      }).subscribe(() => undefined),
+    );
+    await eventually(() => {
+      expect(counts.map((count) => count.value)).toEqual([1, 1, 1, 1]);
+    });
+    const events: RealtimeEvent[] = [];
+    const refetch = liveRefetch(queryClient, new NotificationArrivals());
+    const rig = await connectedRig((event) => {
+      events.push(event);
+      refetch(event);
+    });
+    await eventually(() => {
+      expect(counts.map((count) => count.value)).toEqual([2, 2, 2, 2]);
+    });
+
+    rig.gateway.changed(tutor.id, 'submission', 'submission-b', { issue_id: 'issue-a', lesson_ids: ['lesson-a'] });
+
+    await eventually(() => {
+      expect(counts.map((count) => count.value)).toEqual([2, 3, 3, 2]);
+    });
+    expect(events).toContainEqual({
+      kind: 'entity',
+      entity: 'submission',
+      id: 'submission-b',
+      issueId: 'issue-a',
+      lessonIds: ['lesson-a'],
+    });
+    rig.disconnect();
+    for (const unsubscribe of unsubscribes) {
+      unsubscribe();
+    }
   });
 
   test("refreshes once on 4401 and reconnects, or signs out with the refresh's reason", async () => {

@@ -29,8 +29,10 @@ type NotificationNewPayload struct {
 }
 
 type EntityChangedPayload struct {
-	Kind domain.EntityKind `json:"kind"`
-	ID   string            `json:"id"`
+	Kind      domain.EntityKind `json:"kind"`
+	ID        string            `json:"id"`
+	IssueID   *string           `json:"issue_id,omitempty"`
+	LessonIDs []string          `json:"lesson_ids,omitempty"`
 }
 
 type MessageNewPayload struct {

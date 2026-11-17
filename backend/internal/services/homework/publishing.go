@@ -213,9 +213,9 @@ func (s *Service) announcePublished(
 	id := locked.parties.ID
 	tutor, student, relationship := locked.tutor, locked.parties.StudentID, locked.parties.RelationshipID
 	readable := domain.ReadableStudentSubmission(locked.issue.Status, locked.issue.MarkedForErasure, locked.relationship)
-	users := []domain.UserID{tutor}
+	var reader *domain.UserID
 	if visible && readable {
-		users = append(users, student)
+		reader = &student
 		payload, err := json.Marshal(domain.SubmissionCheckedPayload{Submission: hex.EncodeToString(id[:]), Revision: revision})
 		if err != nil {
 			return fmt.Errorf("encode the review payload: %w", err)
@@ -228,5 +228,5 @@ func (s *Service) announcePublished(
 			return err
 		}
 	}
-	return repos.Signals.Entities(ctx, []domain.EntitySignal{{Users: users, Entity: domain.EntitySubmission, ID: domain.EntityID(id)}})
+	return signalSubmission(ctx, repos, tutor, locked.parties.IssueID, locked.issue.LessonID, id, reader)
 }

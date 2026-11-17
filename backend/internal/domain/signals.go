@@ -78,9 +78,35 @@ type NotificationSignal struct {
 }
 
 type EntitySignal struct {
-	Users  []UserID
-	Entity EntityKind
-	ID     EntityID
+	Users   []UserID
+	Entity  EntityKind
+	ID      EntityID
+	Issue   *IssueID
+	Lessons []LessonID
+}
+
+const MaxSignalLessons = 2
+
+func (s EntitySignal) extrasWellFormed() bool {
+	if s.Issue == nil && s.Lessons == nil {
+		return true
+	}
+	if len(s.Users) != 1 {
+		return false
+	}
+	if s.Issue != nil && s.Entity != EntitySubmission {
+		return false
+	}
+	if s.Lessons == nil {
+		return true
+	}
+	if s.Entity != EntityIssue && s.Entity != EntitySubmission {
+		return false
+	}
+	if len(s.Lessons) == 0 || len(s.Lessons) > MaxSignalLessons {
+		return false
+	}
+	return len(s.Lessons) == 1 || s.Lessons[0] != s.Lessons[1]
 }
 
 type HeartbeatSignal struct {
@@ -136,6 +162,7 @@ const (
 	SignalBadRecipients    SignalProblem = "recipients"
 	SignalBadIdentifier    SignalProblem = "identifier"
 	SignalUnknownEntity    SignalProblem = "entity"
+	SignalEntityExtras     SignalProblem = "entity_extras"
 	SignalUnknownEvent     SignalProblem = "event"
 	SignalNotEncodableKind SignalProblem = "not_encodable"
 )
@@ -170,6 +197,8 @@ type signalWire struct {
 	Users   []string   `json:"u,omitempty"`
 	Entity  EntityKind `json:"e,omitempty"`
 	ID      string     `json:"i,omitempty"`
+	Issue   string     `json:"p,omitempty"`
+	Lessons []string   `json:"l,omitempty"`
 }
 
 type chatSignalWire struct {
@@ -227,7 +256,16 @@ func EncodeSignal(signal Signal) ([]byte, error) {
 		if !typed.Entity.Valid() {
 			return nil, signalError(SignalUnknownEntity)
 		}
+		if !typed.extrasWellFormed() {
+			return nil, signalError(SignalEntityExtras)
+		}
 		wire.Users, wire.Entity, wire.ID = users, typed.Entity, typed.ID.String()
+		if typed.Issue != nil {
+			wire.Issue = typed.Issue.String()
+		}
+		for _, lesson := range typed.Lessons {
+			wire.Lessons = append(wire.Lessons, lesson.String())
+		}
 	case HeartbeatSignal:
 		wire.ID = typed.Instance.String()
 	default:
@@ -326,11 +364,13 @@ const (
 	signalFieldHidden  = "n"
 	signalFieldAccount = "a"
 	signalFieldOnline  = "o"
+	signalFieldIssue   = "p"
+	signalFieldLessons = "l"
 )
 
 var signalFields = []string{
 	signalFieldVersion, signalFieldKind, signalFieldUsers, signalFieldEntity, signalFieldID, signalFieldChannel, signalFieldSeq, signalFieldHidden,
-	signalFieldAccount, signalFieldOnline,
+	signalFieldAccount, signalFieldOnline, signalFieldIssue, signalFieldLessons,
 }
 
 var errSignalSyntax = errors.New("signal syntax")
@@ -458,7 +498,13 @@ func parseNotification(fields map[string]json.RawMessage) (Signal, error) {
 }
 
 func parseEntity(fields map[string]json.RawMessage) (Signal, error) {
-	if err := requireFields(fields, signalFieldUsers, signalFieldEntity, signalFieldID); err != nil {
+	present := []string{signalFieldUsers, signalFieldEntity, signalFieldID}
+	for _, optional := range []string{signalFieldIssue, signalFieldLessons} {
+		if _, ok := fields[optional]; ok {
+			present = append(present, optional)
+		}
+	}
+	if err := requireFields(fields, present...); err != nil {
 		return nil, err
 	}
 	users, err := parseRecipients(fields[signalFieldUsers])
@@ -473,7 +519,41 @@ func parseEntity(fields map[string]json.RawMessage) (Signal, error) {
 	if err != nil {
 		return nil, err
 	}
-	return EntitySignal{Users: users, Entity: entity, ID: id}, nil
+	signal := EntitySignal{Users: users, Entity: entity, ID: id}
+	if raw, ok := fields[signalFieldIssue]; ok {
+		issue, err := parseIdentifier[IssueID](raw)
+		if err != nil {
+			return nil, err
+		}
+		signal.Issue = &issue
+	}
+	if raw, ok := fields[signalFieldLessons]; ok {
+		lessons, err := parseLessons(raw)
+		if err != nil {
+			return nil, err
+		}
+		signal.Lessons = lessons
+	}
+	if !signal.extrasWellFormed() {
+		return nil, signalError(SignalEntityExtras)
+	}
+	return signal, nil
+}
+
+func parseLessons(raw json.RawMessage) ([]LessonID, error) {
+	var texts []string
+	if err := json.Unmarshal(raw, &texts); err != nil || len(texts) == 0 || len(texts) > MaxSignalLessons {
+		return nil, signalError(SignalEntityExtras)
+	}
+	lessons := make([]LessonID, 0, len(texts))
+	for _, text := range texts {
+		lesson, ok := canonicalUUID[LessonID](text)
+		if !ok {
+			return nil, signalError(SignalEntityExtras)
+		}
+		lessons = append(lessons, lesson)
+	}
+	return lessons, nil
 }
 
 func parseHeartbeat(fields map[string]json.RawMessage) (Signal, error) {

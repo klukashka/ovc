@@ -441,6 +441,10 @@ func TestAnswerKeyContract(t *testing.T) {
 		check.refusal(label+"not_found", []byte(missing.body))
 	}
 	h.contractLimitRefusals(t, check, parties, works[string(domain.AnswerPolicyNever)].closing, full)
+	movedTo := h.scheduled(t, parties.tutorToken, oneOffFor(parties.card.ID, "2030-03-20", "10:00")).Lessons[0].ID
+	movedIssue := issueOf(t, h, works[string(domain.AnswerPolicyNever)].closing)
+	h.mustAnswer(t, h.patchIssue(t, parties.tutorToken, movedIssue, `{"lesson_id":"`+movedTo+`","version":1}`), http.StatusOK)
+	h.mustAnswer(t, h.patchIssue(t, parties.tutorToken, movedIssue, `{"lesson_id":"`+works[string(domain.AnswerPolicyNever)].lesson+`","version":2}`), http.StatusOK)
 	h.mustAnswer(t, h.endAsTutor(t, parties.tutorToken, parties.card.ID), http.StatusOK)
 	h.tick(t)
 
@@ -482,10 +486,19 @@ func TestAnswerKeyContract(t *testing.T) {
 	if len(scanned) != 3 || !scanned["Assignment returned"] || !scanned["Review updated"] || !scanned["Assignment checked"] {
 		t.Fatalf("the sentinel scan missed a results email: %v", scanned)
 	}
-	for _, frame := range framesTo(frames.settle(t, h), parties.student) {
-		if strings.ContainsAny(frame.id, " \"{") {
-			t.Errorf("a frame to the student carries more than an identifier: %+v", frame)
-		}
+	settled := frames.settle(t, h)
+	visible := []string{movedTo}
+	for _, work := range works {
+		visible = append(visible, work.lesson)
+	}
+	checkStudentHomeworkFrames(t, settled, parties.student, visible...)
+	checkStudentFrameKeys(t, settled, parties.student)
+	namedBoth := false
+	for _, frame := range homeworkFramesTo(settled, parties.student) {
+		namedBoth = namedBoth || frame.lessons == lessonList(works[string(domain.AnswerPolicyNever)].lesson, movedTo)
+	}
+	if !namedBoth {
+		t.Error("no frame to the student named both the previous and the new lesson")
 	}
 }
 

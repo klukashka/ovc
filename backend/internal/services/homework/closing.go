@@ -24,15 +24,15 @@ func CloseOnEnding(
 	if err != nil || len(closed) == 0 {
 		return ClosedWork{Relationship: relationship}, err
 	}
-	signals := make([]domain.EntitySignal, 0, len(closed))
+	var batch frameBatch
 	for _, submission := range closed {
-		users := []domain.UserID{tutor}
+		lessons := lessonsOf(submission.Lesson)
+		batch.tutorSubmissionOfIssue(tutor, submission.ID, submission.Issue, lessons)
 		if domain.ReadableStudentSubmission(submission.IssueStatus, submission.MarkedForErasure, domain.RelationshipEnded) {
-			users = append(users, submission.Student)
+			batch.studentSubmission(submission.Student, submission.ID, lessons)
 		}
-		signals = append(signals, domain.EntitySignal{Users: users, Entity: domain.EntitySubmission, ID: domain.EntityID(submission.ID)})
 	}
-	return ClosedWork{Relationship: relationship, Count: len(closed)}, repos.Signals.Entities(ctx, signals)
+	return ClosedWork{Relationship: relationship, Count: len(closed)}, batch.send(ctx, repos)
 }
 
 func LogClosedWork(ctx context.Context, logger *slog.Logger, tutor domain.UserID, closed ClosedWork, cause domain.SubmissionCloseCause) {

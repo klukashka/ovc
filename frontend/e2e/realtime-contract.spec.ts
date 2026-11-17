@@ -44,6 +44,44 @@ async function connectAndType(deployment: Deployment, token: string, channel: st
   });
 }
 
+async function issueLinkedAssignment(
+  deployment: Deployment,
+  tutor: TestAccount,
+  displayName: string,
+): Promise<{ readonly student: TestAccount; readonly issueId: string }> {
+  const token = await accessToken(deployment, tutor);
+  const { student, cardId } = await seedActiveStudent(deployment, tutor, displayName);
+  const scheduled = await callApi(deployment, token, 'POST', '/lessons', {
+    relationship_id: cardId,
+    title: 'Урок для контракта',
+    date: '2030-03-12',
+    start: '10:00',
+    duration_minutes: 60,
+    allow_overlap: true,
+  });
+  expect(scheduled.status).toBe(201);
+  const lessons = (scheduled.body as { readonly lessons?: readonly { readonly id?: unknown }[] }).lessons;
+  const lesson = lessons?.[0]?.id;
+  if (typeof lesson !== 'string') {
+    throw new Error('scheduling created no lesson');
+  }
+  const template = await callApi(deployment, token, 'POST', '/library/templates', {
+    title: 'Задание для контракта',
+    folder_id: null,
+    blocks: [{ id: '5f0c1a2b-3c4d-4e5f-8a6b-7c8d9e0f1a2b', type: 'instruction', text: 'Прочитайте текст' }],
+  });
+  expect(template.status).toBe(201);
+  const issued = await callApi(deployment, token, 'POST', '/issues', {
+    template_id: textField(template, 'id'),
+    audience: { relationship_id: cardId },
+    lesson_id: lesson,
+    deadline_at: null,
+    answer_policy: 'never',
+  });
+  expect(issued.status).toBe(201);
+  return { student, issueId: textField(issued, 'id') };
+}
+
 function realSubject(deployment: Deployment, tutor: TestAccount): RealtimeContractSubject {
   return {
     sockets: nodeSocketFactory(deployment),
@@ -64,22 +102,28 @@ function realSubject(deployment: Deployment, tutor: TestAccount): RealtimeContra
       await createGroup(deployment, tutor, 'Группа для контракта', []);
     },
     issueAssignment: async (): Promise<void> => {
-      const token = await accessToken(deployment, tutor);
-      const { cardId } = await seedActiveStudent(deployment, tutor, 'Ученик для задания');
-      const template = await callApi(deployment, token, 'POST', '/library/templates', {
-        title: 'Задание для контракта',
-        folder_id: null,
-        blocks: [{ id: '5f0c1a2b-3c4d-4e5f-8a6b-7c8d9e0f1a2b', type: 'instruction', text: 'Прочитайте текст' }],
-      });
-      expect(template.status).toBe(201);
-      const issued = await callApi(deployment, token, 'POST', '/issues', {
-        template_id: textField(template, 'id'),
-        audience: { relationship_id: cardId },
-        lesson_id: null,
-        deadline_at: null,
-        answer_policy: 'never',
-      });
-      expect(issued.status).toBe(201);
+      await issueLinkedAssignment(deployment, tutor, 'Ученик для задания');
+    },
+    assignmentStudent: async (): Promise<{ readonly token: string; readonly submit: () => Promise<void> }> => {
+      const { student, issueId } = await issueLinkedAssignment(deployment, tutor, 'Ученица для сдачи');
+      const studentToken = await accessToken(deployment, student);
+      const issue = await callApi(deployment, await accessToken(deployment, tutor), 'GET', `/issues/${issueId}`);
+      const submissions = (issue.body as { readonly submissions?: readonly { readonly id?: unknown }[] }).submissions;
+      const submission = submissions?.[0]?.id;
+      if (typeof submission !== 'string') {
+        throw new Error('the issue lists no submission');
+      }
+      return {
+        token: studentToken,
+        submit: async (): Promise<void> => {
+          const work = await callApi(deployment, studentToken, 'GET', `/submissions/${submission}`);
+          const version = (work.body as { readonly version?: unknown }).version;
+          const submitted = await callApi(deployment, studentToken, 'POST', `/submissions/${submission}/submit`, {
+            version,
+          });
+          expect(submitted.status).toBe(200);
+        },
+      };
     },
     exchangeMessage: async (): Promise<void> => {
       const token = await accessToken(deployment, tutor);

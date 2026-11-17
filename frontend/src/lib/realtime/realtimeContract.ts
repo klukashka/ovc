@@ -10,6 +10,7 @@ export interface RealtimeContractSubject {
   readonly changeRelationship: () => Promise<void>;
   readonly changeChannel: () => Promise<void>;
   readonly issueAssignment: () => Promise<void>;
+  readonly assignmentStudent: () => Promise<{ readonly token: string; readonly submit: () => Promise<void> }>;
   readonly exchangeMessage: () => Promise<void>;
   readonly readChannel: () => Promise<void>;
   readonly memberConnectsAndTypes: () => Promise<() => void>;
@@ -355,7 +356,9 @@ export const realtimeContract: Readonly<Record<string, RealtimeContractScenario>
       const frame = await connection.frameOfType('entity.changed');
       check(frame.type === 'entity.changed' && frame.kind === 'channel', 'expected a channel change');
     }),
-  'an issued assignment arrives as entity.changed of kinds issue and submission': (subject) =>
+  'an issued assignment arrives as entity.changed of kinds issue and submission, the issue naming its lesson': (
+    subject,
+  ) =>
     withConnection(subject, async (connection) => {
       await connection.authenticated(await subject.token());
 
@@ -363,9 +366,38 @@ export const realtimeContract: Readonly<Record<string, RealtimeContractScenario>
 
       const issue = await connection.changeOfKind('issue');
       const submission = await connection.changeOfKind('submission');
-      check(issue.type === 'entity.changed' && issue.id !== '', 'expected an issue change');
-      check(submission.type === 'entity.changed' && submission.id !== '', 'expected a submission change');
+      check(
+        issue.type === 'entity.changed' &&
+          issue.id !== '' &&
+          issue.lessonIds?.length === 1 &&
+          issue.issueId === undefined,
+        'expected an issue change naming one lesson',
+      );
+      check(
+        submission.type === 'entity.changed' &&
+          submission.id !== '' &&
+          submission.issueId === undefined &&
+          submission.lessonIds === undefined,
+        'expected a submission change carrying only its identifier',
+      );
     }),
+  'a submitted assignment reaches the student naming its lesson and no issue': async (subject) => {
+    const student = await subject.assignmentStudent();
+    await withConnection(subject, async (connection) => {
+      await connection.authenticated(student.token);
+
+      await student.submit();
+
+      const submission = await connection.changeOfKind('submission');
+      check(
+        submission.type === 'entity.changed' &&
+          submission.id !== '' &&
+          submission.issueId === undefined &&
+          submission.lessonIds?.length === 1,
+        'expected a submission change naming its lesson and no issue',
+      );
+    });
+  },
   'a message, its edit and its deletion arrive as message.new, message.updated and message.deleted': (subject) =>
     withConnection(subject, async (connection) => {
       await connection.authenticated(await subject.token());

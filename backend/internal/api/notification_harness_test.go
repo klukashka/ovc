@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"ovc/backend/internal/adapters/listener"
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
+	"ovc/backend/internal/realtime"
 	"ovc/backend/internal/repositories"
 )
 
@@ -22,13 +24,25 @@ const notificationsPath = "/api/v1/notifications"
 var sentinelUser = domain.UserID{0xee, 0xee}
 
 type sentFrame struct {
-	to   domain.UserID
-	kind string
-	id   string
+	to      domain.UserID
+	kind    string
+	id      string
+	issue   string
+	lessons string
+	payload string
 }
 
-func entityFrame(to domain.UserID, kind domain.EntityKind, id string) sentFrame {
-	return sentFrame{to: to, kind: string(kind), id: id}
+func renderedEntityFrame(to domain.UserID, signal domain.EntitySignal) sentFrame {
+	payload := realtime.EntityPayload(signal)
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		panic("an entity payload could not be encoded")
+	}
+	frame := sentFrame{to: to, kind: string(signal.Entity), id: payload.ID, lessons: strings.Join(payload.LessonIDs, ","), payload: string(encoded)}
+	if payload.IssueID != nil {
+		frame.issue = *payload.IssueID
+	}
+	return frame
 }
 
 type frameLog struct {
@@ -93,7 +107,7 @@ func (l *frameLog) Signal(signal domain.Signal) {
 				return
 			}
 			for _, user := range typed.Users {
-				l.frames = append(l.frames, entityFrame(user, typed.Entity, typed.ID.String()))
+				l.frames = append(l.frames, renderedEntityFrame(user, typed))
 			}
 		})
 	}
@@ -287,4 +301,72 @@ func (h *authHarness) seedNotifications(t *testing.T, recipient domain.UserID, t
 		ids = append(ids, id.String())
 	}
 	return ids
+}
+
+func homeworkFramesTo(frames []sentFrame, user domain.UserID) []sentFrame {
+	var addressed []sentFrame
+	for _, frame := range frames {
+		if frame.to == user && (frame.kind == string(domain.EntityIssue) || frame.kind == string(domain.EntitySubmission)) {
+			addressed = append(addressed, frame)
+		}
+	}
+	return addressed
+}
+
+func lessonList(lessons ...string) string {
+	return strings.Join(lessons, ",")
+}
+
+func checkStudentHomeworkFrames(t *testing.T, frames []sentFrame, student domain.UserID, visible ...string) {
+	t.Helper()
+	for _, frame := range homeworkFramesTo(frames, student) {
+		if frame.kind != string(domain.EntitySubmission) || frame.issue != "" {
+			t.Errorf("a frame to the student names an issue: %+v", frame)
+		}
+		for _, lesson := range strings.Split(frame.lessons, ",") {
+			if lesson != "" && !slices.Contains(visible, lesson) {
+				t.Errorf("a frame to the student names the lesson %s it cannot see: %+v", lesson, frame)
+			}
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(frame.payload), &fields); err != nil {
+			t.Fatal(err)
+		}
+		keys := make([]string, 0, len(fields))
+		for key := range fields {
+			keys = append(keys, key)
+		}
+		slices.Sort(keys)
+		if !slices.Equal(keys, []string{"id", "kind"}) && !slices.Equal(keys, []string{"id", "kind", "lesson_ids"}) {
+			t.Errorf("a frame to the student carries the keys %v", keys)
+		}
+	}
+}
+
+func checkStudentFrameKeys(t *testing.T, frames []sentFrame, student domain.UserID) {
+	t.Helper()
+	for _, frame := range frames {
+		if frame.to != student {
+			continue
+		}
+		if frame.payload == "" {
+			if strings.ContainsAny(frame.id, " \"{") {
+				t.Errorf("a frame to the student carries more than an identifier: %+v", frame)
+			}
+			continue
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(frame.payload), &fields); err != nil {
+			t.Fatal(err)
+		}
+		keys := make([]string, 0, len(fields))
+		for key := range fields {
+			keys = append(keys, key)
+		}
+		slices.Sort(keys)
+		withLessons := frame.kind == string(domain.EntitySubmission) && slices.Equal(keys, []string{"id", "kind", "lesson_ids"})
+		if !slices.Equal(keys, []string{"id", "kind"}) && !withLessons {
+			t.Errorf("an entity frame to the student carries the keys %v: %+v", keys, frame)
+		}
+	}
 }

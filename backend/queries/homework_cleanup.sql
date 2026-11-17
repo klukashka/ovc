@@ -72,7 +72,8 @@ WHERE relationship_id = ANY(sqlc.arg(relationships)::uuid[]) AND erase_pending_s
 RETURNING id, tutor_id, relationship_id;
 
 -- name: ListLifecycleSubmissions :many
-SELECT submissions.id, submissions.student_id, submissions.relationship_id, submissions.tutor_id, issues.status AS issue_status
+SELECT submissions.id, submissions.student_id, submissions.relationship_id, submissions.tutor_id, issues.status AS issue_status,
+    submissions.issue_id, issues.lesson_id
 FROM submissions JOIN issues ON issues.id = submissions.issue_id
 WHERE submissions.issue_id = ANY(sqlc.arg(issues)::uuid[]) ORDER BY submissions.id;
 

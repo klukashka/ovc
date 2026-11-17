@@ -19,8 +19,8 @@ type recipient struct {
 }
 
 func (s *Service) announceCreated(
-	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, issue domain.IssueID, submissions []repositories.NewSubmission,
-	now time.Time,
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, issue domain.IssueID, lesson *domain.LessonID,
+	submissions []repositories.NewSubmission, now time.Time,
 ) error {
 	recipients := make([]recipient, 0, len(submissions))
 	emails := make([]repositories.QueuedOutboxRow, 0, len(submissions))
@@ -48,7 +48,7 @@ func (s *Service) announceCreated(
 	for _, recipient := range recipients {
 		all = append(all, recipient.submission)
 	}
-	return s.signal(ctx, repos, tutor, issue, all, recipients)
+	return signalIssue(ctx, repos, tutor, issue, lessonsOf(lesson), all, recipients)
 }
 
 func (s *Service) notifyStudents(
@@ -82,23 +82,36 @@ func (s *Service) notifyStudents(
 	return nil
 }
 
-func (s *Service) signal(
-	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, issue domain.IssueID, submissions []domain.SubmissionID,
-	readers []recipient,
+func signalIssue(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, issue domain.IssueID, lessons []domain.LessonID,
+	submissions []domain.SubmissionID, readers []recipient,
 ) error {
-	signals := []domain.EntitySignal{{Users: []domain.UserID{tutor}, Entity: domain.EntityIssue, ID: domain.EntityID(issue)}}
+	var batch frameBatch
+	batch.tutorIssue(tutor, issue, lessons)
 	students := make(map[domain.SubmissionID]domain.UserID, len(readers))
 	for _, reader := range readers {
 		students[reader.submission] = reader.student
 	}
 	for _, submission := range submissions {
-		users := []domain.UserID{tutor}
+		batch.tutorSubmission(tutor, submission)
 		if student, readable := students[submission]; readable {
-			users = append(users, student)
+			batch.studentSubmission(student, submission, lessons)
 		}
-		signals = append(signals, domain.EntitySignal{Users: users, Entity: domain.EntitySubmission, ID: domain.EntityID(submission)})
 	}
-	return repos.Signals.Entities(ctx, signals)
+	return batch.send(ctx, repos)
+}
+
+func signalSubmission(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, issue domain.IssueID, lesson *domain.LessonID,
+	submission domain.SubmissionID, reader *domain.UserID,
+) error {
+	var batch frameBatch
+	lessons := lessonsOf(lesson)
+	batch.tutorSubmissionOfIssue(tutor, submission, issue, lessons)
+	if reader != nil {
+		batch.studentSubmission(*reader, submission, lessons)
+	}
+	return batch.send(ctx, repos)
 }
 
 func readableRecipients(status domain.IssueStatus, states []repositories.IssueSubmissionState) ([]recipient, []domain.SubmissionID) {

@@ -60,6 +60,7 @@ func TestWithdrawRacesReclaim(t *testing.T) {
 		h.mustAnswer(t, awaitAnswer(t, withdrawal), http.StatusOK)
 
 		sent := frames.settle(t, h)
+		checkStudentHomeworkFrames(t, sent, domain.UserID{10})
 		if got := framesTo(sent, domain.UserID{10}); len(got) != 0 {
 			t.Fatalf("the reclaimed student got frames %v", got)
 		}
@@ -87,6 +88,7 @@ func TestWithdrawRacesReclaim(t *testing.T) {
 		}
 
 		sent := frames.settle(t, h)
+		checkStudentHomeworkFrames(t, sent, domain.UserID{10})
 		submission := h.submissionsOf(t, issue.ID)[0].id
 		if !hasFrame(sent, domain.UserID{10}, domain.EntitySubmission, submission) || notificationFrames(sent, domain.UserID{10}) != 1 {
 			t.Fatalf("the student withdrawn first got frames %v", framesTo(sent, domain.UserID{10}))
@@ -141,6 +143,9 @@ func TestReclaimFlagsSubmissions(t *testing.T) {
 	h.reclaimed(t, memberEmail(30))
 
 	sent := frames.settle(t, h)
+	if tutorFrame := onlyFrame(t, homeworkFramesTo(sent, parties.tutor), "the reclaimed work"); tutorFrame.issue != issue.ID || tutorFrame.lessons != "" {
+		t.Fatalf("the reclaim frame is %+v", tutorFrame)
+	}
 	submission := h.submissionsOf(t, issue.ID)[0].id
 	if !hasFrame(sent, parties.tutor, domain.EntitySubmission, submission) {
 		t.Fatalf("the tutor got frames %v", framesTo(sent, parties.tutor))

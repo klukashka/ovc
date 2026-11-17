@@ -429,6 +429,9 @@ export class FakeAuthServer {
   private readonly tokens = new Map<string, FakeAccessToken>();
   private storedRefresh: RefreshCookie | null = null;
   private nowSeconds = 0;
+  private readonly issueItems = new Map<string, components['schemas']['IssueItem'][]>();
+  private deadlineListReads = 0;
+  private readonly lessonDetailReads = new Map<string, number>();
   private issued = 0;
   private refreshGate: Promise<void> | null = null;
   private refreshReceived: () => void = () => undefined;
@@ -680,6 +683,23 @@ export class FakeAuthServer {
     this.failingStudentListReads += 1;
   }
 
+  addIssue(email: string, item: components['schemas']['IssueItem']): void {
+    const accountId = this.account(email).me.id;
+    this.issueItems.set(accountId, [...(this.issueItems.get(accountId) ?? []), item]);
+  }
+
+  lessonReads(id: string): number {
+    return this.lessonDetailReads.get(id) ?? 0;
+  }
+
+  deadlineReads(): number {
+    return this.deadlineListReads;
+  }
+
+  serverNow(): number {
+    return Date.UTC(2026, 10, 1) + this.nowSeconds * 1_000;
+  }
+
   addTemplates(email: string, count: number): void {
     const accountId = this.account(email).me.id;
     this.templateCounts.set(accountId, (this.templateCounts.get(accountId) ?? 0) + count);
@@ -699,6 +719,14 @@ export class FakeAuthServer {
     submission: components['schemas']['StudentSubmission'],
   ): void {
     this.submissions.add(this.account(studentEmail).me.id, this.account(tutorEmail).me.id, submission);
+  }
+
+  addReviewedSubmission(tutorEmail: string, submission: components['schemas']['TutorSubmission']): void {
+    this.submissions.addReviewed(this.account(tutorEmail).me.id, submission);
+  }
+
+  submissionReads(id: string): number {
+    return this.submissions.readsOf(id);
   }
 
   refuseNextAnswerSave(status: number, code: string, fields: readonly FieldProblem[] = []): void {
@@ -970,7 +998,18 @@ export class FakeAuthServer {
       });
     }
     if (request.method === 'GET' && path === issuesPath && caller !== undefined) {
-      return json(200, { items: [], next_cursor: null });
+      const bound = address.searchParams.get('deadline_before');
+      const items = this.issueItems.get(caller.id) ?? [];
+      if (bound === null) {
+        return json(200, { items, next_cursor: null });
+      }
+      this.deadlineListReads += 1;
+      const now = this.serverNow();
+      const ahead = items
+        .filter((item) => item.deadline_at !== null && Date.parse(item.deadline_at) > now)
+        .filter((item) => item.deadline_at !== null && Date.parse(item.deadline_at) < Date.parse(bound))
+        .sort((first, second) => Date.parse(first.deadline_at ?? '') - Date.parse(second.deadline_at ?? ''));
+      return json(200, { items: ahead, next_cursor: null });
     }
     if (path === '/api/v1/uploads' && request.method === 'POST' && caller !== undefined) {
       request.signal.throwIfAborted();
@@ -1177,6 +1216,7 @@ export class FakeAuthServer {
       return refusal(404, 'not_found');
     }
     if (method === 'GET' && action === undefined) {
+      this.lessonDetailReads.set(id, this.lessonReads(id) + 1);
       return json(200, lesson.detail);
     }
     if (method !== 'POST' || (action !== 'join' && action !== 'end' && action !== 'restart-room')) {

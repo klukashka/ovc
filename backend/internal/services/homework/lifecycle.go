@@ -56,7 +56,7 @@ func ApplyLifecycle(ctx context.Context, repos repositories.Repositories, logger
 	if err != nil {
 		return err
 	}
-	signals := make([]domain.EntitySignal, 0, len(rows))
+	var batch frameBatch
 	for _, submission := range rows {
 		state, removing := previous[submission.RelationshipID]
 		if !removing && !closedIDs[submission.ID] {
@@ -65,13 +65,13 @@ func ApplyLifecycle(ctx context.Context, repos repositories.Repositories, logger
 		if !removing {
 			state = domain.RelationshipEnded
 		}
-		users := []domain.UserID{submission.TutorID}
+		lessons := lessonsOf(submission.LessonID)
+		batch.tutorSubmissionOfIssue(submission.TutorID, submission.ID, submission.IssueID, lessons)
 		if !purged && domain.ReadableStudentSubmission(submission.IssueStatus, false, state) {
-			users = append(users, submission.StudentID)
+			batch.studentSubmission(submission.StudentID, submission.ID, lessons)
 		}
-		signals = append(signals, domain.EntitySignal{Users: users, Entity: domain.EntitySubmission, ID: domain.EntityID(submission.ID)})
 	}
-	if err := repos.Signals.Entities(ctx, signals); err != nil {
+	if err := batch.send(ctx, repos); err != nil {
 		return err
 	}
 	repos.AfterCommit(ctx, func(ctx context.Context) {

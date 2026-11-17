@@ -279,6 +279,7 @@ func TestHomeworkLifecycleRacesIssuingSubmissionAndPublication(t *testing.T) {
 					release()
 					result, changed := awaitAnswer(t, written), awaitAnswer(t, ended)
 					sent := frames.settle(t, h)
+					checkStudentHomeworkFrames(t, sent, f.student, f.lesson)
 
 					expected := http.StatusOK
 					if deletion {
@@ -361,6 +362,7 @@ func TestHomeworkLifecycleRacesHeldUploadCompletion(t *testing.T) {
 				result := upload.answer(t)
 				writeErr := <-written
 				sent := frames.settle(t, h)
+				checkStudentHomeworkFrames(t, sent, parties.student)
 
 				expected := http.StatusOK
 				if deletion {

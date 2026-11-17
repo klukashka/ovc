@@ -235,8 +235,7 @@ func (s *Service) announceSubmitted(
 			return err
 		}
 	}
-	return s.signal(ctx, repos, tutor, locked.parties.IssueID, []domain.SubmissionID{id},
-		[]recipient{{submission: id, relationship: relationship, student: student}})
+	return signalSubmission(ctx, repos, tutor, locked.parties.IssueID, locked.issue.LessonID, id, &student)
 }
 
 func (s *Service) notify(

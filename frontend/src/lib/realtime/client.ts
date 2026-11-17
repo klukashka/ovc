@@ -34,7 +34,13 @@ export type RealtimeEvent =
       readonly change: 'updated' | 'deleted';
     }
   | { readonly kind: 'read'; readonly channelId: string }
-  | { readonly kind: 'entity'; readonly entity: EntityKind; readonly id: string }
+  | {
+      readonly kind: 'entity';
+      readonly entity: EntityKind;
+      readonly id: string;
+      readonly issueId?: string;
+      readonly lessonIds?: readonly string[];
+    }
   | { readonly kind: 'connected'; readonly reconnect: boolean };
 
 export type ChatSignal = Extract<ServerFrame, { readonly type: 'presence' | 'typing' }>;
@@ -200,7 +206,13 @@ export class RealtimeClient {
         this.deps.onEvent({ kind: 'notification', id: frame.id });
         return;
       case 'entity.changed':
-        this.deps.onEvent({ kind: 'entity', entity: frame.kind, id: frame.id });
+        this.deps.onEvent({
+          kind: 'entity',
+          entity: frame.kind,
+          id: frame.id,
+          ...(frame.issueId === undefined ? {} : { issueId: frame.issueId }),
+          ...(frame.lessonIds === undefined ? {} : { lessonIds: frame.lessonIds }),
+        });
         return;
       case 'message.new':
         this.deps.onEvent({

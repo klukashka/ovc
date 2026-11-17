@@ -751,6 +751,21 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
     const leaked = answerKeyFields.filter((field) => keys.includes(field));
     check(leaked.length === 0, `expected no answer key, points or scores, found ${leaked.join(', ')}`);
   },
+  'the tutor who issued a submission reads it in the tutor schema': async (subject) => {
+    const seeded = await subject.seedSubmission();
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+
+    const response = await subject.transport.send(submissionRequest(subject, token, seeded.submissionId));
+
+    check(response.status === 200, `expected the tutor's submission, got ${String(response.status)}`);
+    const body: unknown = await response.json();
+    const topLevel = typeof body === 'object' && body !== null ? Object.keys(body) : [];
+    check(
+      ['id', 'answer_policy', 'revisions', 'max_points', 'student'].every((field) => topLevel.includes(field)),
+      `expected the tutor schema, got ${topLevel.join(', ')}`,
+    );
+    check(!topLevel.includes('editable_question_ids'), 'expected no student-only field in the tutor schema');
+  },
   "a submission outside the student's work is refused as not_found on read and save": async (subject) => {
     const { token } = await studentSubmission(subject);
 

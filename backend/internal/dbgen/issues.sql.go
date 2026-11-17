@@ -132,9 +132,14 @@ func (q *Queries) DeleteTutorSubmissionsBatch(ctx context.Context, arg DeleteTut
 }
 
 const flagReclaimedSubmissions = `-- name: FlagReclaimedSubmissions :many
-UPDATE submissions SET issued_before_reclaim = true, updated_at = $1
-WHERE relationship_id = ANY ($2::uuid[]) AND NOT issued_before_reclaim
-RETURNING id, tutor_id
+WITH flagged AS (
+    UPDATE submissions SET issued_before_reclaim = true, updated_at = $1
+    WHERE relationship_id = ANY ($2::uuid[]) AND NOT issued_before_reclaim
+    RETURNING id, tutor_id, issue_id
+)
+SELECT flagged.id, flagged.tutor_id, flagged.issue_id, issues.lesson_id
+FROM flagged JOIN issues ON issues.id = flagged.issue_id
+ORDER BY flagged.id
 `
 
 type FlagReclaimedSubmissionsParams struct {
@@ -143,8 +148,10 @@ type FlagReclaimedSubmissionsParams struct {
 }
 
 type FlagReclaimedSubmissionsRow struct {
-	ID      domain.SubmissionID
-	TutorID domain.UserID
+	ID       pgtype.UUID
+	TutorID  pgtype.UUID
+	IssueID  pgtype.UUID
+	LessonID *domain.LessonID
 }
 
 func (q *Queries) FlagReclaimedSubmissions(ctx context.Context, arg FlagReclaimedSubmissionsParams) ([]FlagReclaimedSubmissionsRow, error) {
@@ -156,7 +163,12 @@ func (q *Queries) FlagReclaimedSubmissions(ctx context.Context, arg FlagReclaime
 	var items []FlagReclaimedSubmissionsRow
 	for rows.Next() {
 		var i FlagReclaimedSubmissionsRow
-		if err := rows.Scan(&i.ID, &i.TutorID); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.TutorID,
+			&i.IssueID,
+			&i.LessonID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

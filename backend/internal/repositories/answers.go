@@ -44,6 +44,8 @@ type AssignmentQuery struct {
 type ClosedSubmission struct {
 	ID               domain.SubmissionID
 	Student          domain.UserID
+	Issue            domain.IssueID
+	Lesson           *domain.LessonID
 	IssueStatus      domain.IssueStatus
 	MarkedForErasure bool
 }
@@ -259,7 +261,8 @@ func (r Homework) CloseRelationshipSubmissions(ctx context.Context, relationship
 	closed := make([]ClosedSubmission, 0, len(rows))
 	for _, row := range rows {
 		closed = append(closed, ClosedSubmission{
-			ID: domain.SubmissionID(row.ID.Bytes), Student: domain.UserID(row.StudentID.Bytes), IssueStatus: row.IssueStatus,
+			ID: domain.SubmissionID(row.ID.Bytes), Student: domain.UserID(row.StudentID.Bytes), Issue: domain.IssueID(row.IssueID.Bytes),
+			Lesson: row.LessonID, IssueStatus: row.IssueStatus,
 			MarkedForErasure: row.MarkedForErasure,
 		})
 	}

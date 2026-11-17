@@ -1,4 +1,4 @@
-import type { QueryClient, QueryKey } from '@tanstack/react-query';
+import type { Query, QueryClient, QueryKey } from '@tanstack/react-query';
 
 import { type Scheduler, browserScheduler } from '../lib/api/session.ts';
 import { evictChannel } from '../features/messages/cache.ts';
@@ -30,8 +30,31 @@ function queriesOf(entity: EntityKind, id: string): readonly QueryKey[] {
       return [calendarKey];
     case 'issue':
     case 'submission':
-      return [issuesKey, assignmentsKey, reviewKey, lessonsKey];
+      return [];
   }
+}
+
+type HomeworkEvent = Extract<RealtimeEvent, { readonly kind: 'entity' }>;
+
+function inFamily(key: QueryKey, family: readonly unknown[], detail: string, id: string): boolean {
+  return key[0] === family[0] && (key[1] !== detail || key[2] === id);
+}
+
+function homeworkQuery(event: HomeworkEvent, key: QueryKey): boolean {
+  if (key[0] === lessonsKey[0]) {
+    return typeof key[1] === 'string' && (event.lessonIds ?? []).includes(key[1]);
+  }
+  if (event.entity === 'issue') {
+    return inFamily(key, issuesKey, 'detail', event.id);
+  }
+  if (event.entity !== 'submission') {
+    return false;
+  }
+  return (
+    inFamily(key, assignmentsKey, 'submission', event.id) ||
+    inFamily(key, reviewKey, 'submission', event.id) ||
+    (event.issueId !== undefined && inFamily(key, issuesKey, 'detail', event.issueId))
+  );
 }
 
 export function liveRefetch(
@@ -73,6 +96,9 @@ export function liveRefetch(
         }
         for (const queryKey of queriesOf(event.entity, event.id)) {
           void queryClient.invalidateQueries({ queryKey });
+        }
+        if (event.entity === 'issue' || event.entity === 'submission') {
+          void queryClient.invalidateQueries({ predicate: (query: Query) => homeworkQuery(event, query.queryKey) });
         }
     }
   };

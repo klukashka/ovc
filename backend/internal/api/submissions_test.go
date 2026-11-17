@@ -222,6 +222,7 @@ func TestSubmitWithoutManualQuestionsChecks(t *testing.T) {
 		t.Fatalf("the student got the emails %v", subjects(mail))
 	}
 	sent := frames.settle(t, h)
+	checkStudentHomeworkFrames(t, sent, parties.student)
 	if !hasFrame(sent, parties.student, domain.EntitySubmission, parties.submission) || !hasFrame(sent, parties.tutor, domain.EntitySubmission, parties.submission) {
 		t.Fatalf("the submission sent the frames %v", sent)
 	}

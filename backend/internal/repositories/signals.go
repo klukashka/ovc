@@ -25,7 +25,9 @@ func (r Signals) Entities(ctx context.Context, signals []domain.EntitySignal) er
 	var payloads []string
 	for _, signal := range signals {
 		for _, recipients := range domain.SplitRecipients(signal.Users) {
-			payload, err := domain.EncodeSignal(domain.EntitySignal{Users: recipients, Entity: signal.Entity, ID: signal.ID})
+			chunk := signal
+			chunk.Users = recipients
+			payload, err := domain.EncodeSignal(chunk)
 			if err != nil {
 				return fmt.Errorf("entity signal: %w", err)
 			}

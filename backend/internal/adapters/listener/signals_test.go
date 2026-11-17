@@ -271,6 +271,8 @@ func TestMalformedSignalsAreRejectedAndLogged(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	user := "aaaaaaaa-2222-4333-8444-55555555555b"
+	other := "aaaaaaaa-2222-4333-8444-55555555555c"
+	third := "aaaaaaaa-2222-4333-8444-55555555555d"
 	malformed := map[string]string{
 		"not JSON":                     "not json",
 		"an array":                     `[1]`,
@@ -288,6 +290,17 @@ func TestMalformedSignalsAreRejectedAndLogged(t *testing.T) {
 		"a notification for two":       `{"v":1,"k":"notification","u":["` + user + `","aaaaaaaa-2222-4333-8444-55555555555c"],"i":"` + user + `"}`,
 		"an entity of an unknown kind": `{"v":1,"k":"entity","u":["` + user + `"],"e":"no_such_kind","i":"` + user + `"}`,
 		"a heartbeat with recipients":  `{"v":1,"k":"heartbeat","u":["` + user + `"],"i":"` + user + `"}`,
+		"an issue on an issue frame":   `{"v":1,"k":"entity","u":["` + user + `"],"e":"issue","i":"` + user + `","p":"` + user + `"}`,
+		"lessons on a lesson frame":    `{"v":1,"k":"entity","u":["` + user + `"],"e":"lesson","i":"` + user + `","l":["` + user + `"]}`,
+		"a null issue":                 `{"v":1,"k":"entity","u":["` + user + `"],"e":"submission","i":"` + user + `","p":null}`,
+		"null lessons":                 `{"v":1,"k":"entity","u":["` + user + `"],"e":"submission","i":"` + user + `","l":null}`,
+		"empty lessons":                `{"v":1,"k":"entity","u":["` + user + `"],"e":"submission","i":"` + user + `","l":[]}`,
+		"three lessons":                `{"v":1,"k":"entity","u":["` + user + `"],"e":"issue","i":"` + user + `","l":["` + user + `","` + other + `","` + third + `"]}`,
+		"a repeated lesson":            `{"v":1,"k":"entity","u":["` + user + `"],"e":"issue","i":"` + user + `","l":["` + user + `","` + user + `"]}`,
+		"a numeric lesson":             `{"v":1,"k":"entity","u":["` + user + `"],"e":"issue","i":"` + user + `","l":[1]}`,
+		"an uppercase lesson":          `{"v":1,"k":"entity","u":["` + user + `"],"e":"issue","i":"` + user + `","l":["` + strings.ToUpper(other) + `"]}`,
+		"an issue for two recipients":  `{"v":1,"k":"entity","u":["` + user + `","` + other + `"],"e":"submission","i":"` + user + `","p":"` + user + `"}`,
+		"lessons for two recipients":   `{"v":1,"k":"entity","u":["` + user + `","` + other + `"],"e":"submission","i":"` + user + `","l":["` + user + `"]}`,
 		"an oversized payload":         `{"v":1,"k":"recheck","u":["` + user + `"],"pad":"` + strings.Repeat("x", domain.MaxSignalBytes) + `"}`,
 	}
 	for _, payload := range malformed {
@@ -361,6 +374,70 @@ func TestSignalPayloadsCarryNoTokenOrPersonalData(t *testing.T) {
 			if strings.Contains(payload, secret) {
 				t.Fatal("a payload carries personal data")
 			}
+		}
+	}
+}
+
+func TestHomeworkEntitySignalsKeepTheirIssueAndLessons(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	issue := domain.IssueID{9, 1}
+	sent := []domain.EntitySignal{
+		{Users: []domain.UserID{{9, 1}}, Entity: domain.EntityIssue, ID: domain.EntityID{9, 2}, Lessons: []domain.LessonID{{9, 3}, {9, 4}}},
+		{Users: []domain.UserID{{9, 1}}, Entity: domain.EntitySubmission, ID: domain.EntityID{9, 5}, Issue: &issue, Lessons: []domain.LessonID{{9, 3}}},
+		{Users: []domain.UserID{{9, 6}}, Entity: domain.EntitySubmission, ID: domain.EntityID{9, 7}, Lessons: []domain.LessonID{{9, 4}}},
+		{Users: []domain.UserID{{9, 1}, {9, 6}}, Entity: domain.EntitySubmission, ID: domain.EntityID{9, 8}},
+	}
+
+	err := f.store.Repositories().Signals.Entities(context.Background(), sent)
+	events := f.recorder.waitFor(t, "four homework entity signals", func(events []event) bool {
+		return slices.Contains(entityIDs(signalsOf(events)), domain.EntityID{9, 8})
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	var received []domain.EntitySignal
+	for _, signal := range signalsOf(events) {
+		if entity, ok := signal.(domain.EntitySignal); ok && entity.ID[0] == 9 {
+			received = append(received, entity)
+		}
+	}
+	if len(received) != len(sent) {
+		t.Fatalf("received %d of %d signals", len(received), len(sent))
+	}
+	for index, want := range sent {
+		got := received[index]
+		sameIssue := (got.Issue == nil && want.Issue == nil) || (got.Issue != nil && want.Issue != nil && *got.Issue == *want.Issue)
+		if got.Entity != want.Entity || got.ID != want.ID || !sameIssue || !slices.Equal(got.Lessons, want.Lessons) || !slices.Equal(got.Users, want.Users) {
+			t.Fatalf("signal %d arrived as %+v, sent %+v", index, got, want)
+		}
+	}
+}
+
+func TestHomeworkEntitySignalsRefuseExtrasOutsideTheirShape(t *testing.T) {
+	t.Parallel()
+	issue := domain.IssueID{1}
+	refused := map[string]domain.EntitySignal{
+		"an issue on a lesson":      {Users: []domain.UserID{{1}}, Entity: domain.EntityLesson, ID: domain.EntityID{1}, Issue: &issue},
+		"an issue on an issue":      {Users: []domain.UserID{{1}}, Entity: domain.EntityIssue, ID: domain.EntityID{1}, Issue: &issue},
+		"lessons on a relationship": {Users: []domain.UserID{{1}}, Entity: domain.EntityRelationship, ID: domain.EntityID{1}, Lessons: []domain.LessonID{{1}}},
+		"empty lessons":             {Users: []domain.UserID{{1}}, Entity: domain.EntitySubmission, ID: domain.EntityID{1}, Lessons: []domain.LessonID{}},
+		"three lessons":             {Users: []domain.UserID{{1}}, Entity: domain.EntityIssue, ID: domain.EntityID{1}, Lessons: []domain.LessonID{{1}, {2}, {3}}},
+		"a repeated lesson":         {Users: []domain.UserID{{1}}, Entity: domain.EntityIssue, ID: domain.EntityID{1}, Lessons: []domain.LessonID{{1}, {1}}},
+		"an issue for two":          {Users: []domain.UserID{{1}, {2}}, Entity: domain.EntitySubmission, ID: domain.EntityID{1}, Issue: &issue},
+		"lessons for two":           {Users: []domain.UserID{{1}, {2}}, Entity: domain.EntitySubmission, ID: domain.EntityID{1}, Lessons: []domain.LessonID{{1}}},
+	}
+
+	problems := map[string]error{}
+	for name, signal := range refused {
+		_, problems[name] = domain.EncodeSignal(signal)
+	}
+
+	for name, err := range problems {
+		var invalid *domain.SignalError
+		if !errors.As(err, &invalid) || invalid.Problem != domain.SignalEntityExtras {
+			t.Errorf("%s: encoding answered %v", name, err)
 		}
 	}
 }

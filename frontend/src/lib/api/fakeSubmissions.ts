@@ -2,6 +2,7 @@ import type { components } from './schema.ts';
 import type { Me } from './session.ts';
 
 type StudentSubmission = components['schemas']['StudentSubmission'];
+type TutorSubmission = components['schemas']['TutorSubmission'];
 type StudentAnswer = components['schemas']['StudentAnswer'];
 type StudentAnswerValue = components['schemas']['StudentAnswerValue'];
 type StudentTemplateBlock = components['schemas']['StudentTemplateBlock'];
@@ -214,6 +215,8 @@ function structuralProblem(submission: StudentSubmission, answers: readonly Sent
 
 export class FakeSubmissionServer {
   private readonly submissions = new Map<string, StoredSubmission>();
+  private readonly reviewed = new Map<string, { readonly tutorId: string; readonly submission: TutorSubmission }>();
+  private readonly detailReads = new Map<string, number>();
   private readonly pendingUploads = new Map<string, PendingAnswerUpload>();
   private readonly fullQuotas = new Set<string>();
   private readonly saveRefusals: Response[] = [];
@@ -226,6 +229,14 @@ export class FakeSubmissionServer {
 
   add(studentId: string, tutorId: string, submission: StudentSubmission): void {
     this.submissions.set(submission.id, { studentId, tutorId, submission, lastSaveId: null });
+  }
+
+  addReviewed(tutorId: string, submission: TutorSubmission): void {
+    this.reviewed.set(submission.id, { tutorId, submission });
+  }
+
+  readsOf(id: string): number {
+    return this.detailReads.get(id) ?? 0;
   }
 
   refuseNextSave(status: number, code: string, fields: readonly FieldProblem[] = []): void {
@@ -244,6 +255,13 @@ export class FakeSubmissionServer {
     const address = new URL(request.url);
     const [id = '', action, ...rest] = address.pathname.slice(submissionPathPrefix.length).split('/');
     const stored = this.submissions.get(id);
+    const reviewed = this.reviewed.get(id);
+    if (request.method === 'GET' && action === undefined && rest.length === 0) {
+      this.detailReads.set(id, this.readsOf(id) + 1);
+      if (reviewed?.tutorId === caller.id) {
+        return answer(200, reviewed.submission);
+      }
+    }
     if (stored?.studentId !== caller.id || rest.length > 0) {
       return fakeRefusal(404, 'not_found');
     }
@@ -434,5 +452,44 @@ export function pastSimpleSubmission(id: string): StudentSubmission {
     ],
     answers: [],
     review: null,
+  };
+}
+
+export function pastSimpleReview(id: string): TutorSubmission {
+  return {
+    id,
+    issue_id: '6d5c4b3a-2f1e-4d0c-9b8a-7f6e5d4c3b2a',
+    title: 'Past simple',
+    student: { display_name: 'Anna', relationship_id: '5b4a3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d' },
+    status: 'submitted',
+    answer_policy: 'after_check',
+    deadline_at: null,
+    late: false,
+    issued_before_reclaim: false,
+    first_submitted_at: '2026-11-01T10:00:00Z',
+    submitted_at: '2026-11-01T10:00:00Z',
+    checked_at: null,
+    version: 3,
+    max_points: 4,
+    auto_points: 0,
+    final_points: null,
+    percentage: null,
+    blocks: [
+      { id: '9c8b7a6f-5e4d-4c3b-8a2f-1e0d9c8b7a69', type: 'instruction', text: 'Answer every question.' },
+      { id: pastSimpleQuestions.text, type: 'long_text', prompt: 'Describe your weekend.', points: 4 },
+    ],
+    answers: [
+      {
+        question_id: pastSimpleQuestions.text,
+        value: { text: 'I went to the sea.' },
+        files: [],
+        frozen_at: '2026-11-01T10:00:00Z',
+        normalised: null,
+        normaliser_version: null,
+        auto_correct: null,
+        auto_points: null,
+      },
+    ],
+    revisions: [],
   };
 }

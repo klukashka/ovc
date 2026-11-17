@@ -183,6 +183,7 @@ func TestEndingClosesOpenWork(t *testing.T) {
 		t.Fatalf("the closed work lists %+v", closedWork.Answers)
 	}
 	sent := frames.settle(t, h)
+	checkStudentHomeworkFrames(t, sent, parties.student)
 	for _, submission := range []string{unstarted[0].id, drafted[0].id, returned[0].id} {
 		if !hasFrame(sent, parties.student, domain.EntitySubmission, submission) || !hasFrame(sent, parties.tutor, domain.EntitySubmission, submission) {
 			t.Errorf("closing %s sent the frames %v", submission, sent)

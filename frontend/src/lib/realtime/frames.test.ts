@@ -37,6 +37,42 @@ describe('frames', () => {
     expect(refusals).toEqual(refused.map(() => null));
   });
 
+  test('parses entity frames with the identifiers each kind may carry', () => {
+    const accepted = [
+      '{"type":"entity.changed","payload":{"kind":"lesson","id":"lesson-1"}}',
+      '{"type":"entity.changed","payload":{"kind":"issue","id":"issue-1","lesson_ids":["lesson-1","lesson-2"]}}',
+      '{"type":"entity.changed","payload":{"kind":"submission","id":"submission-1","issue_id":"issue-1","lesson_ids":["lesson-1"]}}',
+      '{"type":"entity.changed","payload":{"kind":"submission","id":"submission-1","lesson_ids":["lesson-1"]}}',
+      '{"type":"entity.changed","payload":{"kind":"submission","id":"submission-1"}}',
+    ];
+    const refused = [
+      '{"type":"entity.changed","payload":{"kind":"issue","id":"issue-1","issue_id":"issue-2"}}',
+      '{"type":"entity.changed","payload":{"kind":"lesson","id":"lesson-1","lesson_ids":["lesson-1"]}}',
+      '{"type":"entity.changed","payload":{"kind":"relationship","id":"card-1","issue_id":"issue-1"}}',
+      '{"type":"entity.changed","payload":{"kind":"submission","id":"submission-1","issue_id":""}}',
+      '{"type":"entity.changed","payload":{"kind":"submission","id":"submission-1","issue_id":null}}',
+      '{"type":"entity.changed","payload":{"kind":"submission","id":"submission-1","lesson_ids":[]}}',
+      '{"type":"entity.changed","payload":{"kind":"submission","id":"submission-1","lesson_ids":null}}',
+      '{"type":"entity.changed","payload":{"kind":"issue","id":"issue-1","lesson_ids":["a","b","c"]}}',
+      '{"type":"entity.changed","payload":{"kind":"issue","id":"issue-1","lesson_ids":["a","a"]}}',
+      '{"type":"entity.changed","payload":{"kind":"issue","id":"issue-1","lesson_ids":[7]}}',
+      '{"type":"entity.changed","payload":{"kind":"issue","id":"issue-1","lesson_ids":"lesson-1"}}',
+      '{"type":"entity.changed","payload":{"kind":"submission","id":"submission-1","points":3}}',
+    ];
+
+    const parsed = accepted.map((text) => parseServerFrame(text));
+    const refusals = refused.map((text) => parseServerFrame(text));
+
+    expect(parsed).toEqual([
+      { type: 'entity.changed', kind: 'lesson', id: 'lesson-1' },
+      { type: 'entity.changed', kind: 'issue', id: 'issue-1', lessonIds: ['lesson-1', 'lesson-2'] },
+      { type: 'entity.changed', kind: 'submission', id: 'submission-1', issueId: 'issue-1', lessonIds: ['lesson-1'] },
+      { type: 'entity.changed', kind: 'submission', id: 'submission-1', lessonIds: ['lesson-1'] },
+      { type: 'entity.changed', kind: 'submission', id: 'submission-1' },
+    ]);
+    expect(refusals).toEqual(refused.map(() => null));
+  });
+
   test('parses typing and presence strictly', () => {
     const accepted = [
       '{"type":"typing","payload":{"channel_id":"channel-1","user_id":"user-1"}}',

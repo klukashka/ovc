@@ -144,7 +144,7 @@ SELECT id, issue_id, tutor_id, relationship_id FROM submissions WHERE id = @id A
 SELECT state FROM relationships WHERE id = @id AND tutor_id = @tutor_id FOR SHARE;
 
 -- name: LockSubmissionIssue :one
-SELECT status, (erase_pending_since IS NOT NULL)::boolean AS marked_for_erasure, snapshot, has_manual_questions, max_points, answer_policy
+SELECT status, (erase_pending_since IS NOT NULL)::boolean AS marked_for_erasure, snapshot, has_manual_questions, max_points, answer_policy, lesson_id
 FROM issues WHERE id = @id AND tutor_id = @tutor_id FOR SHARE;
 
 -- name: LockSubmission :one
@@ -236,7 +236,8 @@ WITH closed AS (
     WHERE submissions.relationship_id = @relationship_id AND submissions.status IN ('not_started', 'draft', 'returned')
     RETURNING submissions.id, submissions.issue_id, submissions.student_id
 )
-SELECT closed.id, closed.student_id, issues.status AS issue_status, (issues.erase_pending_since IS NOT NULL)::boolean AS marked_for_erasure
+SELECT closed.id, closed.student_id, closed.issue_id, issues.lesson_id, issues.status AS issue_status,
+    (issues.erase_pending_since IS NOT NULL)::boolean AS marked_for_erasure
 FROM closed
 JOIN issues ON issues.id = closed.issue_id
 ORDER BY closed.id;

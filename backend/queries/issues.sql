@@ -253,9 +253,14 @@ JOIN users AS tutor ON tutor.id = submissions.tutor_id
 WHERE submissions.id = @id;
 
 -- name: FlagReclaimedSubmissions :many
-UPDATE submissions SET issued_before_reclaim = true, updated_at = @now
-WHERE relationship_id = ANY (sqlc.arg(relationship_ids)::uuid[]) AND NOT issued_before_reclaim
-RETURNING id, tutor_id;
+WITH flagged AS (
+    UPDATE submissions SET issued_before_reclaim = true, updated_at = @now
+    WHERE relationship_id = ANY (sqlc.arg(relationship_ids)::uuid[]) AND NOT issued_before_reclaim
+    RETURNING id, tutor_id, issue_id
+)
+SELECT flagged.id, flagged.tutor_id, flagged.issue_id, issues.lesson_id
+FROM flagged JOIN issues ON issues.id = flagged.issue_id
+ORDER BY flagged.id;
 
 -- name: ListTutorIssueSnapshotReferencesBatch :many
 SELECT attachment_references.attachment_id, attachment_references.ref_id

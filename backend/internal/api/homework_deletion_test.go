@@ -103,6 +103,7 @@ func TestTutorDeletionClosesWork(t *testing.T) {
 		t.Fatal("tutor deletion changed another tutor's work")
 	}
 	sent := frames.settle(t, h)
+	checkStudentHomeworkFrames(t, sent, parties.student)
 	if hasFrame(sent, otherTutor, domain.EntitySubmission, otherWork[0].id) {
 		t.Fatal("another tutor received a closure frame")
 	}
