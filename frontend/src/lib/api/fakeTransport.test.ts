@@ -1,8 +1,14 @@
 import { describe, expect, test } from 'vitest';
 
+import { pastSimpleQuestions, pastSimpleSubmission } from './fakeSubmissions.ts';
 import { AccountResponseBodies, FakeAuthServer, SignalAwareRefreshBodies } from './fakeTransport.ts';
 import type { components } from './schema.ts';
-import { type ContractSubject, type SeededLessons, authTransportContract } from './transportContract.ts';
+import {
+  type ContractSubject,
+  type SeededLessons,
+  type SeededSubmission,
+  authTransportContract,
+} from './transportContract.ts';
 
 type CalendarItem = components['schemas']['CalendarItem'];
 
@@ -66,6 +72,22 @@ function fakeSubject(): ContractSubject {
         laterStart: '2026-11-03T09:00:00Z',
         earlierStart: '2026-11-03T06:00:00Z',
       };
+    },
+    seedSubmission: async (): Promise<SeededSubmission> => {
+      await Promise.resolve();
+      const submissionId = '4c3b2a19-0f8e-4d7c-9b6a-5f4e3d2c1b0a';
+      server.addSubmission('s@example.org', 'a@example.org', pastSimpleSubmission(submissionId));
+      return {
+        email: 's@example.org',
+        password: 'a student password',
+        submissionId,
+        textQuestionId: pastSimpleQuestions.text,
+        fileQuestionId: pastSimpleQuestions.file,
+      };
+    },
+    fillTutorFileQuota: async (): Promise<void> => {
+      await Promise.resolve();
+      server.fillFileQuota('a@example.org');
     },
   };
 }

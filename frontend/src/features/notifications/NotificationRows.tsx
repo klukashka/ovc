@@ -17,13 +17,14 @@ import {
 import { ActionButton, quietButtonClass } from '../../components/ui/Form.tsx';
 import { BellIcon } from '../../components/ui/icons.tsx';
 import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
+import { LoadFailed, focusHeadingIfLost } from '../../components/ui/LoadState.tsx';
 import { paletteDotClass } from '../../components/ui/palette.ts';
 import { Refusal } from '../../components/ui/Refusal.tsx';
 import { done, useAction } from '../../components/ui/action.ts';
-import { useApiClient } from '../../lib/api/client.ts';
+import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { formatAgo, formatDateTime } from '../../lib/format/dates.ts';
-import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
+import { type TextLoaders, useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import {
   type Notification,
   type NotificationEvent,
@@ -55,14 +56,44 @@ const eventTexts = {
 
 const lazySectionPrefix = 'notificationEvents.';
 
-function useEventText(item: Notification): string {
+export type EventTextLoaders = TextLoaders<'notificationEvents'>;
+
+type EventText = (item: Notification) => string;
+
+interface EventTexts {
+  readonly textOf: EventText;
+  readonly failed: boolean;
+  readonly retry: () => void;
+}
+
+function needsLazyText(item: Notification): boolean {
+  return eventTexts[item.event].startsWith(lazySectionPrefix);
+}
+
+function useEventTexts(loaders: EventTextLoaders): EventTexts {
   const { t } = useTranslation();
-  const texts = useFeatureTexts('notificationEvents', notificationEventTextLoaders);
-  const key = eventTexts[item.event];
-  if (key.startsWith(lazySectionPrefix) && !texts.ready) {
-    return '';
+  const texts = useFeatureTexts('notificationEvents', loaders);
+  return {
+    textOf: (item) =>
+      needsLazyText(item) && !texts.ready ? t('notifications.event.homework') : t(eventTexts[item.event]),
+    failed: texts.failed,
+    retry: texts.retry,
+  };
+}
+
+function EventTextsFailed({
+  items,
+  texts,
+  focusIfLost,
+}: {
+  readonly items: readonly Notification[];
+  readonly texts: EventTexts;
+  readonly focusIfLost: () => void;
+}): ReactElement | null {
+  if (!texts.failed || !items.some(needsLazyText)) {
+    return null;
   }
-  return t(key);
+  return <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} focusIfLost={focusIfLost} />;
 }
 
 export function useMarkRead(): (selection: ReadSelection) => Promise<void> {
@@ -98,10 +129,17 @@ function Label({ item }: { readonly item: Notification }): ReactElement | null {
   );
 }
 
-function RowContent({ item, now }: { readonly item: Notification; readonly now: number }): ReactElement {
+function RowContent({
+  item,
+  now,
+  eventText,
+}: {
+  readonly item: Notification;
+  readonly now: number;
+  readonly eventText: string;
+}): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
-  const eventText = useEventText(item);
   const unread = item.read_at === null;
   return (
     <>
@@ -134,10 +172,12 @@ const rowClass = 'flex gap-3 px-3 py-3 outline-none';
 function NotificationRow({
   item,
   now,
+  eventText,
   onChoose,
 }: {
   readonly item: Notification;
   readonly now: number;
+  readonly eventText: string;
   readonly onChoose: () => void;
 }): ReactElement {
   const markRead = useMarkRead();
@@ -145,7 +185,7 @@ function NotificationRow({
   if (link === null) {
     return (
       <li data-row={item.id} tabIndex={-1} className={`${rowClass} border-t border-border`}>
-        <RowContent item={item} now={now} />
+        <RowContent item={item} now={now} eventText={eventText} />
       </li>
     );
   }
@@ -161,7 +201,7 @@ function NotificationRow({
         }}
         className={`${rowClass} rounded-sm hover:bg-hover focus-visible:bg-hover`}
       >
-        <RowContent item={item} now={now} />
+        <RowContent item={item} now={now} eventText={eventText} />
       </Link>
     </li>
   );
@@ -197,9 +237,8 @@ function UnreadMarker({ item }: { readonly item: Notification }): ReactElement |
   );
 }
 
-function EventCell({ item }: { readonly item: Notification }): ReactElement {
+function EventCell({ item, text }: { readonly item: Notification; readonly text: string }): ReactElement {
   const markRead = useMarkRead();
-  const text = useEventText(item);
   const link = item.link;
   return (
     <th scope="row" className={primaryCellClass}>
@@ -242,39 +281,45 @@ export function NotificationTable({
   items,
   label,
   bodyRef,
+  textLoaders = notificationEventTextLoaders,
 }: {
   readonly items: readonly Notification[];
   readonly label: string;
   readonly bodyRef: RefObject<HTMLTableSectionElement | null>;
+  readonly textLoaders?: EventTextLoaders;
 }): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
   const now = useNow(items);
+  const texts = useEventTexts(textLoaders);
   const columns: readonly TableColumn[] = [
     { key: 'event', label: t('notifications.columns.event'), width: 'w-2/3 tablet:w-6/12' },
     { key: 'from', label: t('notifications.columns.from'), secondary: true, width: 'w-3/12' },
     { key: 'time', label: t('notifications.columns.time'), width: 'w-1/3 tablet:w-3/12' },
   ];
   return (
-    <DataTable label={label} columns={columns} bodyRef={bodyRef}>
-      {items.map((item) => (
-        <tr key={item.id} data-row={item.id} className={tableRowClass}>
-          <EventCell item={item} />
-          <td className={secondaryCellClass}>
-            <Label item={item} />
-          </td>
-          <td className={cellClass}>
-            <time
-              dateTime={item.created_at}
-              title={formatDateTime(item.created_at, me.language, me.timezone)}
-              className="tabular text-small text-text-muted"
-            >
-              {formatAgo(item.created_at, me.language, me.timezone, now)}
-            </time>
-          </td>
-        </tr>
-      ))}
-    </DataTable>
+    <>
+      <EventTextsFailed items={items} texts={texts} focusIfLost={focusHeadingIfLost} />
+      <DataTable label={label} columns={columns} bodyRef={bodyRef}>
+        {items.map((item) => (
+          <tr key={item.id} data-row={item.id} className={tableRowClass}>
+            <EventCell item={item} text={texts.textOf(item)} />
+            <td className={secondaryCellClass}>
+              <Label item={item} />
+            </td>
+            <td className={cellClass}>
+              <time
+                dateTime={item.created_at}
+                title={formatDateTime(item.created_at, me.language, me.timezone)}
+                className="tabular text-small text-text-muted"
+              >
+                {formatAgo(item.created_at, me.language, me.timezone, now)}
+              </time>
+            </td>
+          </tr>
+        ))}
+      </DataTable>
+    </>
   );
 }
 
@@ -283,19 +328,27 @@ export function NotificationList({
   label,
   listRef,
   onChoose,
+  focusIfLost,
+  textLoaders = notificationEventTextLoaders,
 }: {
   readonly items: readonly Notification[];
   readonly label: string;
   readonly listRef?: Ref<HTMLUListElement>;
   readonly onChoose: () => void;
+  readonly focusIfLost: () => void;
+  readonly textLoaders?: EventTextLoaders;
 }): ReactElement {
   const now = useNow(items);
+  const texts = useEventTexts(textLoaders);
   return (
-    <ul ref={listRef} aria-label={label} className="border-b border-border">
-      {items.map((item) => (
-        <NotificationRow key={item.id} item={item} now={now} onChoose={onChoose} />
-      ))}
-    </ul>
+    <>
+      <EventTextsFailed items={items} texts={texts} focusIfLost={focusIfLost} />
+      <ul ref={listRef} aria-label={label} className="border-b border-border">
+        {items.map((item) => (
+          <NotificationRow key={item.id} item={item} now={now} eventText={texts.textOf(item)} onChoose={onChoose} />
+        ))}
+      </ul>
+    </>
   );
 }
 

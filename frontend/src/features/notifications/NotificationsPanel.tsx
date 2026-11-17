@@ -50,7 +50,12 @@ function PanelBody({
   return (
     <>
       <MarkAllRead newest={newest} />
-      <NotificationList items={items} label={t('notifications.list')} onChoose={onChoose} />
+      <NotificationList
+        items={items}
+        label={t('notifications.list')}
+        onChoose={onChoose}
+        focusIfLost={focusPanelIfLost}
+      />
       {showAll}
     </>
   );

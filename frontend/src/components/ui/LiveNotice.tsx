@@ -31,13 +31,44 @@ export function FocusedNotice({
   const element = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      if (!whenFocusIsLost || focusIsLost()) {
-        element.current?.focus();
+    const notice = element.current;
+    if (notice === null) {
+      return undefined;
+    }
+    const takeFocus = (): void => {
+      if (notice.isConnected && (!whenFocusIsLost || focusIsLost())) {
+        notice.focus();
+      }
+    };
+    const closingDialogs = [...document.querySelectorAll('dialog[open]')];
+    takeFocus();
+    if (closingDialogs.length === 0 || document.activeElement === notice) {
+      return undefined;
+    }
+    const stopped = new AbortController();
+    queueMicrotask(() => {
+      if (stopped.signal.aborted || closingDialogs.some((dialog) => dialog.hasAttribute('open'))) {
+        return;
+      }
+      takeFocus();
+      const left = document.activeElement;
+      if (left === notice) {
+        return;
+      }
+      for (const dialog of closingDialogs) {
+        dialog.addEventListener(
+          'close',
+          () => {
+            if (document.activeElement === left || focusIsLost()) {
+              takeFocus();
+            }
+          },
+          { once: true, signal: stopped.signal },
+        );
       }
     });
     return (): void => {
-      window.cancelAnimationFrame(frame);
+      stopped.abort();
     };
   }, [whenFocusIsLost]);
 

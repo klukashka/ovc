@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 
-import { type TestAccount, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import {
   chooseFromPageMenu,
@@ -29,7 +29,14 @@ import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realt
 import { studentLessonIssues } from './results.ts';
 import { addDays, localDate, scheduleLessonsWithIds } from './schedule.ts';
 import { installPageClock, skipSaveDelay } from './save-delay.ts';
-import { createGroup, endRelationship, seedActiveStudent } from './tutoring.ts';
+import {
+  createCard,
+  createGroup,
+  endRelationship,
+  removeStudent,
+  seedActiveStudent,
+  signUpOnInvitation,
+} from './tutoring.ts';
 
 const moscow = 'Europe/Moscow';
 const dayMilliseconds = 86_400_000;
@@ -1046,6 +1053,27 @@ test.describe('the issued work and the issue page', () => {
     await expect(pageMenuButton(page, 'Assignment actions')).toHaveCount(0);
     await expect(page.locator('main header')).toContainText('Withdrawn');
     expect((await readIssue(deployment, pavel, issueId)).status).toBe('withdrawn');
+  });
+
+  test('an open assignment marked for erasure when its provisional student is removed shows the focused gone notice', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = newTestAccount('Anna', 'student');
+    const card = await createCard(deployment, pavel, 'Anna', anna.email);
+    await signUpOnInvitation(deployment, card.link, anna, 'en');
+    const template = await createReadyTemplate(deployment, pavel, 'Fractions');
+    const issueId = await issueThroughTheApi(deployment, pavel, template.id, { relationship_id: card.id });
+    await openIssuePage(page, pavel, issueId, 'Fractions');
+    await page.getByRole('main').getByRole('link', { name: 'Anna' }).focus();
+    diagnostics.expectFailure({ method: 'GET', path: `/api/v1/issues/${issueId}`, status: 404 });
+
+    await removeStudent(deployment, pavel, card.id);
+
+    await expect(page.getByText('This assignment is no longer available.', { exact: true })).toBeFocused();
+    await expect(page.getByRole('main').getByRole('link', { name: 'Anna' })).toHaveCount(0);
   });
 });
 

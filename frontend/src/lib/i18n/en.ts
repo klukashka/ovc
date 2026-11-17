@@ -658,6 +658,7 @@ export const en: Resources = {
       lessonCancelled: 'The lesson was cancelled',
       lessonSeriesChanged: 'Lessons of a series changed',
       groupArchived: 'The group was archived',
+      homework: 'Homework',
     },
   },
   lessons: {

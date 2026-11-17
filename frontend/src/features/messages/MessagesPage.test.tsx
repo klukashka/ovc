@@ -551,6 +551,23 @@ describe('Messages', () => {
     expect(cache.getQueryData(messagesKey(channel.id))).toBeUndefined();
   });
 
+  test('a history read refused as not found clears the conversation and focuses its notice', async () => {
+    const { server, cache } = await fixture();
+    const field = await screen.findByRole('textbox', { name: 'Message' });
+    field.focus();
+
+    server.chat.removeMember(channel.id, tutor.id);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: messagesKey(channel.id) });
+    });
+    const notice = await screen.findByText('This chat is no longer available.');
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(notice);
+    });
+    expect(screen.queryByText('Message 1')).toBeNull();
+  });
+
   test('live history removal moves focus to the next message', async () => {
     const { cache } = await fixture(3);
     const middle = await screen.findByText('Message 2');

@@ -671,6 +671,7 @@ export const ru = {
       lessonCancelled: 'Урок отменён',
       lessonSeriesChanged: 'Уроки серии изменились',
       groupArchived: 'Группа перенесена в архив',
+      homework: 'Домашнее задание',
     },
   },
   lessons: {

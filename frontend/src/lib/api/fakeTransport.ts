@@ -1,4 +1,5 @@
 import { FakeChatServer } from './fakeChat.ts';
+import { FakeSubmissionServer, type FieldProblem } from './fakeSubmissions.ts';
 
 import type { components } from './schema.ts';
 import type { LockManagerLike, Me, Scheduler } from './session.ts';
@@ -417,6 +418,7 @@ export class FakeAuthServer {
     this.refreshBodies = options.refreshBodies ?? null;
   }
   readonly chat = new FakeChatServer();
+  readonly submissions = new FakeSubmissionServer();
   private readonly tutors = new Map<string, components['schemas']['MyTutor'][]>();
   private readonly templateCounts = new Map<string, number>();
   private readonly libraryUploadRefusals: Response[] = [];
@@ -689,6 +691,22 @@ export class FakeAuthServer {
 
   refuseNextHomeworkUpload(status: number, code: string): void {
     this.homeworkUploadRefusals.push(refusal(status, code));
+  }
+
+  addSubmission(
+    studentEmail: string,
+    tutorEmail: string,
+    submission: components['schemas']['StudentSubmission'],
+  ): void {
+    this.submissions.add(this.account(studentEmail).me.id, this.account(tutorEmail).me.id, submission);
+  }
+
+  refuseNextAnswerSave(status: number, code: string, fields: readonly FieldProblem[] = []): void {
+    this.submissions.refuseNextSave(status, code, fields);
+  }
+
+  fillFileQuota(tutorEmail: string): void {
+    this.submissions.fillQuota(this.account(tutorEmail).me.id);
   }
 
   refuseNextLibraryUploadAsTooLarge(fieldCode: string): void {
@@ -965,6 +983,9 @@ export class FakeAuthServer {
       const body = upload?.body ?? (await request.formData());
       const file = body.get('file');
       if (upload !== undefined && file !== null && typeof file !== 'string') upload.progress(file.size, file.size);
+      if (address.searchParams.get('context') === 'answer') {
+        return this.submissions.upload(request, caller, body, Date.UTC(2026, 10, 1) + this.nowSeconds * 1_000);
+      }
       return this.chat.upload(request, caller, body, Date.UTC(2026, 10, 1) + this.nowSeconds * 1_000);
     }
     if (path === '/api/v1/channels' || path.startsWith('/api/v1/channels/') || path.startsWith('/api/v1/messages/')) {
@@ -976,6 +997,12 @@ export class FakeAuthServer {
         return refusal(401, 'unauthenticated');
       }
       return this.chat.handle(request, caller, Date.UTC(2026, 10, 1) + this.nowSeconds * 1_000);
+    }
+    if (this.submissions.handles(path)) {
+      if (caller === undefined) {
+        return refusal(401, 'unauthenticated');
+      }
+      return this.submissions.handle(request, caller);
     }
     if (path === '/api/v1/tutors' && request.method === 'GET') {
       const invalid = this.refusedToken(token);

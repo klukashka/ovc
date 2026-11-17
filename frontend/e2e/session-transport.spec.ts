@@ -1,8 +1,10 @@
-import { type SeededLessons, authTransportContract } from '../src/lib/api/transportContract.ts';
+import { type SeededLessons, type SeededSubmission, authTransportContract } from '../src/lib/api/transportContract.ts';
 import { httpAuthTransport } from '../src/lib/api/transport.ts';
 import { testNetAddress } from './accounts.ts';
+import { createPastSimpleTemplate, onlySubmission, questionIds } from './assignment.ts';
 import type { Deployment } from './deployment.ts';
 import { expect, seedVerifiedUser, test } from './fixtures.ts';
+import { issueThroughTheApi } from './homework.ts';
 import { addDays, localDate, scheduleLessons } from './schedule.ts';
 import { seedActiveStudent } from './tutoring.ts';
 import { unsubscribeTokenFromAReminder } from './unsubscribe.ts';
@@ -74,6 +76,21 @@ test.describe('the HTTP authentication transport against the real backend', () =
             laterStart,
             earlierStart,
           };
+        },
+        seedSubmission: async (): Promise<SeededSubmission> => {
+          const { student, cardId } = await seedActiveStudent(deployment, account, 'Contract student');
+          const templateId = await createPastSimpleTemplate(deployment, account);
+          await issueThroughTheApi(deployment, account, templateId, { relationship_id: cardId });
+          const submissionId = await onlySubmission(deployment, student);
+          const [, textQuestionId, fileQuestionId] = await questionIds(deployment, student, submissionId);
+          if (textQuestionId === undefined || fileQuestionId === undefined) {
+            throw new Error('the seeded submission has no text and file questions');
+          }
+          return { email: student.email, password: student.password, submissionId, textQuestionId, fileQuestionId };
+        },
+        fillTutorFileQuota: (): Promise<void> => {
+          deployment.administer(['tutors', 'set-quota', account.email, '--files', '1', '--recordings', '1']);
+          return Promise.resolve();
         },
       };
 

@@ -12,6 +12,16 @@ export interface ContractSubject {
   readonly blockAccount: () => Promise<void>;
   readonly unsubscribeToken: () => Promise<string>;
   readonly seedTwoLessons: () => Promise<SeededLessons>;
+  readonly seedSubmission: () => Promise<SeededSubmission>;
+  readonly fillTutorFileQuota: () => Promise<void>;
+}
+
+export interface SeededSubmission {
+  readonly email: string;
+  readonly password: string;
+  readonly submissionId: string;
+  readonly textQuestionId: string;
+  readonly fileQuestionId: string;
 }
 
 export interface SeededLessons {
@@ -161,6 +171,127 @@ function cardFields(value: unknown): { id: unknown; name: unknown; state: unknow
     state: 'state' in card ? card.state : undefined,
     url: invitation !== null && 'url' in invitation ? invitation.url : undefined,
   };
+}
+
+function submissionRequest(subject: ContractSubject, token: string, id: string): Request {
+  return new Request(`${subject.origin}/api/v1/submissions/${encodeURIComponent(id)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+interface SentAnswerValue {
+  readonly question_id: string;
+  readonly value: Readonly<Record<string, unknown>>;
+}
+
+function answersRequest(
+  subject: ContractSubject,
+  token: string,
+  id: string,
+  version: number,
+  answers: readonly SentAnswerValue[],
+): Request {
+  return new Request(`${subject.origin}/api/v1/submissions/${encodeURIComponent(id)}/answers`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ version, save_id: crypto.randomUUID(), answers }),
+  });
+}
+
+function answerUploadRequest(subject: ContractSubject, token: string, seeded: SeededSubmission): Request {
+  const scope = `submission:${seeded.submissionId}:${seeded.fileQuestionId}`;
+  const body = new FormData();
+  body.append(
+    'file',
+    new File(['%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n'], 'Essay.pdf', {
+      type: 'application/pdf',
+    }),
+  );
+  return new Request(
+    `${subject.origin}/api/v1/uploads?${new URLSearchParams({ context: 'answer', scope }).toString()}`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body,
+    },
+  );
+}
+
+const randomSubmissionId = '6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b';
+
+const studentSubmissionFields: readonly string[] = [
+  'id',
+  'title',
+  'tutor',
+  'status',
+  'late',
+  'issued_before_reclaim',
+  'deadline_at',
+  'version',
+  'blocks',
+  'answers',
+  'editable_question_ids',
+  'review',
+];
+
+const answerKeyFields: readonly string[] = [
+  'points',
+  'max_points',
+  'auto_points',
+  'override_points',
+  'final_points',
+  'percentage',
+  'correct',
+  'auto_correct',
+  'correct_option_ids',
+  'accepted_answers',
+  'correct_value',
+  'tolerance',
+  'explanation',
+  'revealed',
+];
+
+function keysOf(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    const entries: unknown[] = value;
+    return entries.flatMap(keysOf);
+  }
+  if (typeof value !== 'object' || value === null) {
+    return [];
+  }
+  return Object.entries(value).flatMap(([key, entry]) => [key, ...keysOf(entry)]);
+}
+
+function versionOf(body: unknown): number {
+  return typeof body === 'object' && body !== null && 'version' in body && typeof body.version === 'number'
+    ? body.version
+    : Number.NaN;
+}
+
+function fileAnswerCount(body: unknown, questionId: string): number {
+  if (typeof body !== 'object' || body === null || !('answers' in body) || !Array.isArray(body.answers)) {
+    return Number.NaN;
+  }
+  const answers: unknown[] = body.answers;
+  const found = answers.find(
+    (entry) =>
+      typeof entry === 'object' && entry !== null && 'question_id' in entry && entry.question_id === questionId,
+  );
+  return typeof found === 'object' && found !== null && 'files' in found && Array.isArray(found.files)
+    ? found.files.length
+    : 0;
+}
+
+async function studentSubmission(subject: ContractSubject): Promise<{ seeded: SeededSubmission; token: string }> {
+  const seeded = await subject.seedSubmission();
+  const token = await accessToken(await subject.transport.login(seeded.email, seeded.password));
+  return { seeded, token };
+}
+
+async function currentVersion(subject: ContractSubject, token: string, seeded: SeededSubmission): Promise<number> {
+  const read = await subject.transport.send(submissionRequest(subject, token, seeded.submissionId));
+  check(read.status === 200, `expected the student's submission, got ${String(read.status)}`);
+  return versionOf(await read.json());
 }
 
 const headersThatVary: ReadonlySet<string> = new Set(['date', 'content-length', 'x-request-id']);
@@ -602,6 +733,93 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
     check(bodyFailed, 'expected the aborted unread response body to fail');
     check(next.status === 200, 'expected the already rotated cookie to remain usable');
     await accessToken(next);
+  },
+  'a student reads their own submission without answer keys, points or scores': async (subject) => {
+    const { seeded, token } = await studentSubmission(subject);
+
+    const response = await subject.transport.send(submissionRequest(subject, token, seeded.submissionId));
+
+    check(response.status === 200, `expected the student's submission, got ${String(response.status)}`);
+    const body: unknown = await response.json();
+    const keys = keysOf(body);
+    check(keys.includes('editable_question_ids'), 'expected the student schema with editable_question_ids');
+    const topLevel = typeof body === 'object' && body !== null ? Object.keys(body).sort() : [];
+    check(
+      JSON.stringify(topLevel) === JSON.stringify([...studentSubmissionFields].sort()),
+      `expected exactly the unrevealed student schema fields, got ${topLevel.join(', ')}`,
+    );
+    const leaked = answerKeyFields.filter((field) => keys.includes(field));
+    check(leaked.length === 0, `expected no answer key, points or scores, found ${leaked.join(', ')}`);
+  },
+  "a submission outside the student's work is refused as not_found on read and save": async (subject) => {
+    const { token } = await studentSubmission(subject);
+
+    const read = await subject.transport.send(submissionRequest(subject, token, randomSubmissionId));
+    const save = await subject.transport.send(answersRequest(subject, token, randomSubmissionId, 1, []));
+
+    check(read.status === 404 && (await errorCode(read)) === 'not_found', 'expected a read out of scope refused');
+    check(save.status === 404 && (await errorCode(save)) === 'not_found', 'expected a save out of scope refused');
+  },
+  'a saved answer advances the version and a save at the old version is refused as conflict': async (subject) => {
+    const { seeded, token } = await studentSubmission(subject);
+    const version = await currentVersion(subject, token, seeded);
+    const answer = [{ question_id: seeded.textQuestionId, value: { text: 'went' } }];
+
+    const saved = await subject.transport.send(answersRequest(subject, token, seeded.submissionId, version, answer));
+    const stale = await subject.transport.send(answersRequest(subject, token, seeded.submissionId, version, answer));
+
+    check(saved.status === 200, `expected the answer saved, got ${String(saved.status)}`);
+    check(versionOf(await saved.json()) > version, 'expected the saved submission at a later version');
+    check(stale.status === 409 && (await errorCode(stale)) === 'conflict', 'expected the stale save refused');
+  },
+  'answers outside the question limits are refused as validation_failed naming the field': async (subject) => {
+    const { seeded, token } = await studentSubmission(subject);
+    const version = await currentVersion(subject, token, seeded);
+    const tooLong = [{ question_id: seeded.textQuestionId, value: { text: 'a'.repeat(501) } }];
+    const unknown = [{ question_id: randomSubmissionId, value: { text: 'went' } }];
+
+    const long = await subject.transport.send(answersRequest(subject, token, seeded.submissionId, version, tooLong));
+    const stranger = await subject.transport.send(
+      answersRequest(subject, token, seeded.submissionId, version, unknown),
+    );
+
+    const longProblems = await fieldProblems(long);
+    const strangerProblems = await fieldProblems(stranger);
+    check(
+      long.status === 422 && longProblems === 'validation_failed body.answers[0].value.text:too_long',
+      `expected a too long text refused, got ${String(long.status)} ${longProblems}`,
+    );
+    check(
+      stranger.status === 422 && strangerProblems === 'validation_failed body.answers[0].question_id:invalid',
+      `expected an unknown question refused, got ${String(stranger.status)} ${strangerProblems}`,
+    );
+  },
+  "binding an answer file over the tutor's full quota is refused as quota_exceeded and binds nothing": async (
+    subject,
+  ) => {
+    const { seeded, token } = await studentSubmission(subject);
+    const uploaded = await subject.transport.send(answerUploadRequest(subject, token, seeded));
+    check(uploaded.status === 201, `expected the answer file uploaded, got ${String(uploaded.status)}`);
+    const uploadBody: unknown = await uploaded.json();
+    const attachmentId =
+      typeof uploadBody === 'object' && uploadBody !== null && 'id' in uploadBody && typeof uploadBody.id === 'string'
+        ? uploadBody.id
+        : '';
+    const version = await currentVersion(subject, token, seeded);
+    await subject.fillTutorFileQuota();
+
+    const bound = await subject.transport.send(
+      answersRequest(subject, token, seeded.submissionId, version, [
+        { question_id: seeded.fileQuestionId, value: { attachment_ids: [attachmentId] } },
+      ]),
+    );
+
+    check(bound.status === 507, `expected the binding refused over the quota, got ${String(bound.status)}`);
+    check((await errorCode(bound)) === 'quota_exceeded', 'expected quota_exceeded');
+    const read = await subject.transport.send(submissionRequest(subject, token, seeded.submissionId));
+    const after: unknown = await read.json();
+    check(versionOf(after) === version, 'expected the refused binding to leave the version');
+    check(fileAnswerCount(after, seeded.fileQuestionId) === 0, 'expected the refused binding to bind no file');
   },
   'account me and send retain abort ownership after headers and release cancelled readers': async (subject) => {
     const token = await accessToken(await subject.transport.login(subject.email, subject.password));
