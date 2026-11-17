@@ -123,6 +123,7 @@ export async function signUpOnInvitation(
   link: string,
   student: TestAccount,
   language: 'ru' | 'en',
+  timezone = 'Europe/Moscow',
 ): Promise<void> {
   const accepted = await callApi(
     deployment,
@@ -134,11 +135,32 @@ export async function signUpOnInvitation(
       email: student.email,
       password: student.password,
       language,
-      timezone: 'Europe/Moscow',
+      timezone,
       consent: true,
     },
   );
   expectStatus(accepted, 202, 'sign-up on the invitation');
+}
+
+export interface AccountPreferences {
+  readonly language: string;
+  readonly timezone: string;
+  readonly theme: string;
+}
+
+export async function saveTheme(deployment: Deployment, account: TestAccount, theme: 'light' | 'dark'): Promise<void> {
+  const saved = await callApi(deployment, await accessToken(deployment, account), 'PATCH', '/users/me', { theme });
+  expectStatus(saved, 200, 'saving the theme');
+}
+
+export async function accountPreferences(deployment: Deployment, account: TestAccount): Promise<AccountPreferences> {
+  const answer = await callApi(deployment, await accessToken(deployment, account), 'GET', '/users/me');
+  expectStatus(answer, 200, 'reading the account');
+  return {
+    language: text(answer.body, 'language'),
+    timezone: text(answer.body, 'timezone'),
+    theme: text(answer.body, 'theme'),
+  };
 }
 
 export async function myTutorNames(deployment: Deployment, student: TestAccount): Promise<string[]> {
@@ -365,10 +387,11 @@ export async function signUpActiveStudentOnInvitation(
   tutor: TestAccount,
   displayName: string,
   language: 'ru' | 'en' = 'en',
+  timezone = 'Europe/Moscow',
 ): Promise<{ readonly student: TestAccount; readonly cardId: string }> {
   const student = newTestAccount(displayName, 'student');
   const card = await createCard(deployment, tutor, displayName, student.email);
-  await signUpOnInvitation(deployment, card.link, student, language);
+  await signUpOnInvitation(deployment, card.link, student, language, timezone);
   await confirmInTheOwnBrowser(deployment, control, student);
   return { student, cardId: card.id };
 }

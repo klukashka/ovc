@@ -1,4 +1,4 @@
-import type { Locator, Page, Response } from '@playwright/test';
+import type { BrowserContext, Locator, Page, Response } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import {
@@ -17,9 +17,11 @@ import {
   studentWork,
   submitThroughTheApi,
 } from './assignment.ts';
+import type { ObservedBrowser } from './browser-diagnostics.ts';
 import type { Deployment } from './deployment.ts';
 import {
   type Diagnostics,
+  type PageDiagnostics,
   type TestControl,
   diagnosedTest as test,
   expect,
@@ -42,9 +44,11 @@ import {
 import { answerTextAndSubmit, storedReview, studentSubmissionText } from './review.ts';
 import { type PageClockOption, installPageClock, skipVisibleSaveDelay } from './save-delay.ts';
 import {
+  accountPreferences,
   createCard,
   createGroup,
   endRelationship,
+  saveTheme,
   seedActiveStudent,
   signUpActiveStudentOnInvitation,
   signUpOnInvitation,
@@ -1178,6 +1182,14 @@ interface PilotTwoSeed {
 
 let pilotTwoSeed: PilotTwoSeed | null = null;
 let pilotTwoBorisWork: string | null = null;
+let pilotTwoDeadlineDate: string | null = null;
+
+function pilotTwoDeadline(): string {
+  if (pilotTwoDeadlineDate === null) {
+    throw new Error('pilot 2 step 6 has not run');
+  }
+  return pilotTwoDeadlineDate;
+}
 
 function pilotTwoBoris(): string {
   if (pilotTwoBorisWork === null) {
@@ -1194,6 +1206,66 @@ function pilotTwo(): PilotTwoSeed {
 }
 
 const pilotTimezone = 'Europe/Moscow';
+const annaTimezone = 'Europe/Berlin';
+
+interface ActorBrowser {
+  readonly locale: string;
+  readonly timezoneId: string;
+  readonly colorScheme: 'light' | 'dark';
+  readonly viewport: { readonly width: number; readonly height: number };
+}
+
+const annaBrowser: ActorBrowser = {
+  locale: 'ru-RU',
+  timezoneId: annaTimezone,
+  colorScheme: 'light',
+  viewport: { width: 390, height: 844 },
+};
+
+const borisBrowser: ActorBrowser = {
+  locale: 'en-GB',
+  timezoneId: pilotTimezone,
+  colorScheme: 'dark',
+  viewport: { width: 1280, height: 800 },
+};
+
+interface ActorPage {
+  readonly context: BrowserContext;
+  readonly page: Page;
+  readonly watched: PageDiagnostics;
+}
+
+async function openActorPage(
+  browser: ObservedBrowser,
+  deployment: Deployment,
+  diagnostics: Diagnostics,
+  actor: ActorBrowser,
+): Promise<ActorPage> {
+  const context = await browser.newContext({
+    baseURL: deployment.origin,
+    ignoreHTTPSErrors: true,
+    locale: actor.locale,
+    timezoneId: actor.timezoneId,
+    colorScheme: actor.colorScheme,
+    viewport: { ...actor.viewport },
+  });
+  const page = await context.newPage();
+  return { context, page, watched: await diagnostics.watch(page) };
+}
+
+function deadlineInBerlin(moscowDate: string): string {
+  const instant = Date.parse(`${moscowDate}T23:59:00+03:00`);
+  const day = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', timeZone: annaTimezone }).format(
+    instant,
+  );
+  const clock = new Intl.DateTimeFormat('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZone: annaTimezone,
+  }).format(instant);
+  return `${day}, ${clock}`;
+}
 
 test.describe('pilot 2, group homework from the library', () => {
   test.describe.configure({ mode: 'serial' });
@@ -1204,14 +1276,25 @@ test.describe('pilot 2, group homework from the library', () => {
     control,
   }) => {
     const maria = await signUpAndConfirmTutor(deployment, 'Мария');
-    const anna = await signUpActiveStudentOnInvitation(deployment, control, maria, 'Анна', 'ru');
-    const boris = await signUpStudentThroughCode(deployment, control, maria, 'Борис', 'ru');
+    const anna = await signUpActiveStudentOnInvitation(deployment, control, maria, 'Анна', 'ru', annaTimezone);
+    const boris = await signUpStudentThroughCode(deployment, control, maria, 'Борис', 'en');
 
+    await saveTheme(deployment, boris.student, 'dark');
     const groupId = await createGroup(deployment, maria, 'B1 evening', [anna.cardId, boris.cardId]);
     const templateId = await createPastSimpleTemplate(deployment, maria, { withMaterial: true });
 
     expect(groupId).not.toBe('');
     expect(templateId).not.toBe('');
+    expect(await accountPreferences(deployment, anna.student)).toEqual({
+      language: 'ru',
+      timezone: annaTimezone,
+      theme: 'system',
+    });
+    expect(await accountPreferences(deployment, boris.student)).toEqual({
+      language: 'en',
+      timezone: pilotTimezone,
+      theme: 'dark',
+    });
     pilotTwoSeed = { maria, anna: anna.student, boris: boris.student };
   });
 
@@ -1232,7 +1315,8 @@ test.describe('pilot 2, group homework from the library', () => {
     const dialog = page.getByRole('dialog', { name: 'Выдать задание' });
     await dialog.getByRole('button', { name: 'B1 evening', exact: true }).click();
     await dialog.getByRole('checkbox', { name: 'Указать срок' }).check();
-    await dialog.getByLabel('Дата', { exact: true }).fill(localDate(deadline, pilotTimezone));
+    pilotTwoDeadlineDate = localDate(deadline, pilotTimezone);
+    await dialog.getByLabel('Дата', { exact: true }).fill(pilotTwoDeadlineDate);
     await dialog.getByRole('radio', { name: 'После проверки' }).check();
 
     await dialog.getByRole('button', { name: 'Выдать', exact: true }).click();
@@ -1251,13 +1335,14 @@ test.describe('pilot 2, group homework from the library', () => {
   });
 
   test('pilot-2 › step 7 Anna answers on her phone, the draft saves while she types, and after submitting she sees Submitted with no points or correct answers', async ({
-    page,
+    observedBrowser: browser,
     deployment,
+    diagnostics,
     control,
   }) => {
     const seed = pilotTwo();
     const submissionId = await onlySubmission(deployment, seed.anna);
-    await page.setViewportSize({ width: 390, height: 844 });
+    const { context, page } = await openActorPage(browser, deployment, diagnostics, annaBrowser);
     await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, seed.anna);
     await page.goto('/home');
@@ -1290,50 +1375,57 @@ test.describe('pilot 2, group homework from the library', () => {
     await expect(page.getByRole('status').filter({ hasText: /^Сдано$/ })).toBeFocused();
     const text = await page.locator('main').innerText();
     expect(text).not.toMatch(/балл|Правильн|Пояснение/);
+    expect(text).toContain(deadlineInBerlin(pilotTwoDeadline()));
+    expect(text).not.toContain('23:59');
     const stored = await storedAnswers(deployment, seed.anna, submissionId);
     expect(stored.status).toBe('submitted');
     expect(stored.files).toEqual([pictureFile.name]);
+    await diagnostics.closeContext(context);
   });
 
   test('pilot-2 › steps 8–9 after the deadline Boris submits goed, Went and a PDF, and his work is marked late without points', async ({
-    page,
+    observedBrowser: browser,
     deployment,
+    diagnostics,
     control,
   }) => {
     const seed = pilotTwo();
     await control.advance(3 * 86_400);
     const submissionId = await onlySubmission(deployment, seed.boris);
+    const { context, page } = await openActorPage(browser, deployment, diagnostics, borisBrowser);
     await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, seed.boris);
     await page.goto(`/homework/${submissionId}`);
     await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
 
-    await page.getByRole('group', { name: 'Вопрос 1' }).getByRole('radio', { name: 'goed' }).check();
-    await page.getByRole('group', { name: 'Вопрос 2' }).getByRole('textbox', { name: 'Ваш ответ' }).fill('Went ');
+    await page.getByRole('group', { name: 'Question 1' }).getByRole('radio', { name: 'goed' }).check();
+    await page.getByRole('group', { name: 'Question 2' }).getByRole('textbox', { name: 'Your answer' }).fill('Went ');
     await skipVisibleSaveDelay(page);
-    await expect(page.getByRole('status').filter({ hasText: /^Сохранено$/ })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: /^Saved$/ })).toBeVisible();
     await control.advance(1);
     const chooser = page.waitForEvent('filechooser');
-    await page.getByRole('group', { name: 'Вопрос 3' }).getByRole('button', { name: 'Прикрепить файлы' }).click();
+    await page.getByRole('group', { name: 'Question 3' }).getByRole('button', { name: 'Attach files' }).click();
     await (await chooser).setFiles(pdfFile);
     await expect(
-      page.getByRole('group', { name: 'Вопрос 3' }).getByRole('button', { name: `Удалить ${pdfFile.name}` }),
+      page.getByRole('group', { name: 'Question 3' }).getByRole('button', { name: `Remove ${pdfFile.name}` }),
     ).toBeVisible();
     await skipVisibleSaveDelay(page);
-    await expect(page.getByRole('status').filter({ hasText: /^Сохранено$/ })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: /^Saved$/ })).toBeVisible();
     await control.advance(1);
-    await page.getByRole('button', { name: 'Сдать', exact: true }).click();
+    await page.getByRole('button', { name: 'Submit', exact: true }).click();
     await page
-      .getByRole('dialog', { name: 'Сдать работу?' })
-      .getByRole('button', { name: 'Сдать', exact: true })
+      .getByRole('dialog', { name: 'Submit your work?' })
+      .getByRole('button', { name: 'Submit', exact: true })
       .click();
 
-    await expect(page.getByRole('status').filter({ hasText: /^Сдано$/ })).toBeFocused();
-    await expect(page.locator('main')).toContainText('Сдано с опозданием');
-    expect(await page.locator('main').innerText()).not.toMatch(/балл/);
+    await expect(page.getByRole('status').filter({ hasText: /^Submitted$/ })).toBeFocused();
+    await expect(page.locator('main')).toContainText('Submitted late');
+    expect(await page.locator('main').innerText()).not.toMatch(/\bpoints?\b/i);
     const stored = await storedAnswers(deployment, seed.boris, submissionId);
     expect(stored.late).toBe(true);
     expect(stored.status).toBe('submitted');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await diagnostics.closeContext(context);
   });
 
   test('pilot-2 › step 9 Maria’s view of Boris’s late work shows 2 automatic points for “Went ”', async ({
@@ -1444,42 +1536,44 @@ test.describe('pilot 2, group homework from the library', () => {
   });
 
   test('pilot-2 › step 12 Boris sees the comment with only the file question open, uploads a new file and submits again', async ({
-    page,
+    observedBrowser: browser,
     deployment,
+    diagnostics,
     control,
   }) => {
     const seed = pilotTwo();
     const submissionId = pilotTwoBoris();
     const mailBefore = (await control.mail(seed.maria.email)).length;
+    const { context, page } = await openActorPage(browser, deployment, diagnostics, borisBrowser);
     await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, seed.boris);
     await page.goto(`/homework/${submissionId}`);
     await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
-    await expect(page.getByText('Репетитор вернул работу на доработку.', { exact: true })).toBeVisible();
-    await expect(page.getByRole('group', { name: 'Вопрос 3' }).locator('[data-review-item]')).toContainText(
+    await expect(page.getByText('Your tutor returned this work for revision.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Question 3' }).locator('[data-review-item]')).toContainText(
       'Сфотографируйте все предложения.',
     );
-    await expect(page.getByRole('group', { name: 'Вопрос 1' }).getByRole('radio', { name: 'goed' })).toBeDisabled();
+    await expect(page.getByRole('group', { name: 'Question 1' }).getByRole('radio', { name: 'goed' })).toBeDisabled();
     await expect(
-      page.getByRole('group', { name: 'Вопрос 2' }).getByRole('textbox', { name: 'Ваш ответ' }),
+      page.getByRole('group', { name: 'Question 2' }).getByRole('textbox', { name: 'Your answer' }),
     ).not.toBeEditable();
     const chooser = page.waitForEvent('filechooser');
-    await page.getByRole('group', { name: 'Вопрос 3' }).getByRole('button', { name: 'Прикрепить файлы' }).click();
+    await page.getByRole('group', { name: 'Question 3' }).getByRole('button', { name: 'Attach files' }).click();
     await (await chooser).setFiles(pictureFile);
     await expect(
-      page.getByRole('group', { name: 'Вопрос 3' }).getByRole('button', { name: `Удалить ${pictureFile.name}` }),
+      page.getByRole('group', { name: 'Question 3' }).getByRole('button', { name: `Remove ${pictureFile.name}` }),
     ).toBeVisible();
     await skipVisibleSaveDelay(page);
-    await expect(page.getByRole('status').filter({ hasText: /^Сохранено$/ })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: /^Saved$/ })).toBeVisible();
     await control.advance(1);
 
-    await page.getByRole('button', { name: 'Сдать снова', exact: true }).click();
+    await page.getByRole('button', { name: 'Submit again', exact: true }).click();
     await page
-      .getByRole('dialog', { name: 'Сдать работу?' })
-      .getByRole('button', { name: 'Сдать', exact: true })
+      .getByRole('dialog', { name: 'Submit your work?' })
+      .getByRole('button', { name: 'Submit', exact: true })
       .click();
 
-    await expect(page.getByRole('status').filter({ hasText: /^Сдано$/ })).toBeFocused();
+    await expect(page.getByRole('status').filter({ hasText: /^Submitted$/ })).toBeFocused();
     expect((await storedAnswers(deployment, seed.boris, submissionId)).status).toBe('submitted');
     expect(await reviewQueueIds(deployment, seed.maria)).toContain(submissionId);
     await control.tick();
@@ -1489,6 +1583,7 @@ test.describe('pilot 2, group homework from the library', () => {
         .slice(mailBefore)
         .some((message) => message.links.some((link) => new URL(link).pathname.endsWith(submissionId))),
     ).toBe(true);
+    await diagnostics.closeContext(context);
   });
 
   test('pilot-2 › step 13 Maria gives the file question 4 points and checks Boris’s work at 6 of 10', async ({
@@ -1516,15 +1611,16 @@ test.describe('pilot 2, group homework from the library', () => {
   });
 
   test('pilot-2 › step 14 Anna reads her results and Home’s Recently checked on her phone, with no points anywhere', async ({
-    page,
+    observedBrowser: browser,
     deployment,
+    diagnostics,
   }) => {
     const seed = pilotTwo();
     const [annaWork] = await studentWork(deployment, seed.anna, 'checked');
     if (annaWork === undefined) {
       throw new Error('Anna has no checked work');
     }
-    await page.setViewportSize({ width: 390, height: 844 });
+    const { context, page } = await openActorPage(browser, deployment, diagnostics, annaBrowser);
     await signInThroughTheApi(page, seed.anna);
     await page.goto(`/homework/${annaWork.submissionId}`);
     await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
@@ -1549,17 +1645,24 @@ test.describe('pilot 2, group homework from the library', () => {
     await expect(panel).toContainText('Есть исправленный файл');
     expect(scoreFormsIn(await page.locator('main').innerText(), 'ru')).toEqual([]);
     expectAssignmentListKeys(await studentRead(deployment, seed.anna, '/assignments?status=checked&limit=5'));
+    await diagnostics.closeContext(context);
   });
 
-  test('pilot-2 › step 16 Anna opens Boris’s submission address and it is not found', async ({ page, diagnostics }) => {
+  test('pilot-2 › step 16 Anna opens Boris’s submission address and it is not found', async ({
+    observedBrowser: browser,
+    deployment,
+    diagnostics,
+  }) => {
     const seed = pilotTwo();
     const submissionId = pilotTwoBoris();
-    diagnostics.expectFailure({ method: 'GET', path: `/api/v1/submissions/${submissionId}`, status: 404 });
+    const { context, page, watched } = await openActorPage(browser, deployment, diagnostics, annaBrowser);
+    watched.expectFailure({ method: 'GET', path: `/api/v1/submissions/${submissionId}`, status: 404 });
     await signInThroughTheApi(page, seed.anna);
 
     await page.goto(`/homework/${submissionId}`);
 
     await expect(page.getByRole('heading', { level: 1, name: 'Страница не найдена' })).toBeVisible();
     await expect(page.locator('main')).not.toContainText(pastSimple.choicePrompt);
+    await diagnostics.closeContext(context);
   });
 });
