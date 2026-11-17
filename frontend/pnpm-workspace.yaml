@@ -1,4 +1,7 @@
 allowBuilds: {}
+auditConfig:
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf
 strictDepBuilds: true
 peerDependencyRules:
   allowedVersions:

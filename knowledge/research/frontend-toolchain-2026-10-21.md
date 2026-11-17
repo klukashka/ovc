@@ -58,3 +58,5 @@ Node 26 runs the TypeScript build scripts in `frontend/scripts/` and `frontend/e
 ### Accepted findings
 
 None since 2026-10-26: OSV-Scanner and `pnpm audit` over `frontend/pnpm-lock.yaml` report nothing after undici resolved to 8.12.3 (published 2026-10-19) through jsdom 30.1.2, which fixes the three undici advisories accepted until then; `frontend/osv-scanner.toml` is empty and `pnpm-workspace.yaml` has no `auditConfig`. The earlier entries were accepted until that upgrade, rechecked 2026-10-24. From 2026-10-31 to 2026-11-10 the file also held the minimatch acceptance recorded in [its triage](minimatch-advisory-2026-10-31.md), removed when the version-10 consumer moved to minimatch 11.
+
+Since 2026-11-17 `frontend/osv-scanner.toml` accepts GHSA-fc5q-39xc-vjpf (picomatch 4.0.7, High, every published release affected, no fix) until 2026-12-01, and `pnpm-workspace.yaml` lists it in `auditConfig.ignoreGhsas`, both decided by the owner on 2026-11-17; picomatch reaches only vite, vitest and typescript-eslint, and the [triage](picomatch-advisory-2026-11-17.md) records the evidence and the removal.

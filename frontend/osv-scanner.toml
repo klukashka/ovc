@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf"
+ignoreUntil = 2026-12-01T00:00:00Z
+reason = "picomatch ReDoS needs an attacker-controlled extglob pattern; picomatch 4.0.7 reaches only development tooling (vite and vitest directly and through tinyglobby, typescript-eslint through tinyglobby), whose patterns come from repository or package configuration, and no fixed release exists. Accepted by the owner on 2026-11-17. Triage: knowledge/research/picomatch-advisory-2026-11-17.md"

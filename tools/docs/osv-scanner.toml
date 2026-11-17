@@ -2,3 +2,8 @@
 id = "GHSA-238p-pmpm-9mq7"
 ignoreUntil = 2027-01-21T00:00:00Z
 reason = "Low-severity katex 0.16.47 inside the diagram renderer; the fix is in the 0.18 line, outside mermaid's declared 0.16 range. The renderer processes only this repository's own diagrams, offline, and its output is discarded."
+
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf"
+ignoreUntil = 2026-12-01T00:00:00Z
+reason = "picomatch ReDoS needs an attacker-controlled extglob pattern; picomatch 4.0.7 reaches only markdownlint-cli through tinyglobby, which receives repository Markdown paths, and no fixed release exists. Accepted by the owner on 2026-11-17. Triage: knowledge/research/picomatch-advisory-2026-11-17.md"
