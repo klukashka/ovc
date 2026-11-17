@@ -20,15 +20,30 @@ export function PublicFrame({ children }: { readonly children?: ReactNode }): Re
   });
   const [languageNotSaved, setLanguageNotSaved] = useState(false);
   const latestLanguageSave = useRef(0);
+  const previousLanguageSave = useRef<Promise<void>>(Promise.resolve());
 
-  async function saveLanguage(language: Language): Promise<void> {
+  function saveLanguageAfterPrevious(language: Language): Promise<void> {
     latestLanguageSave.current += 1;
     const attempt = latestLanguageSave.current;
+    const sessionEpoch = session.currentEpoch();
+    const save = previousLanguageSave.current.then(async () => saveLanguage(language, attempt, sessionEpoch));
+    previousLanguageSave.current = save.catch(() => undefined);
+    return save;
+  }
+
+  function isLatestChoiceOfSession(attempt: number, sessionEpoch: number): boolean {
+    return attempt === latestLanguageSave.current && sessionEpoch === session.currentEpoch();
+  }
+
+  async function saveLanguage(language: Language, attempt: number, sessionEpoch: number): Promise<void> {
+    if (!isLatestChoiceOfSession(attempt, sessionEpoch)) {
+      return;
+    }
     const saved = await client.PATCH('/api/v1/users/me', { body: { language } }).then(
       ({ data }) => data,
       () => undefined,
     );
-    if (attempt !== latestLanguageSave.current) {
+    if (!isLatestChoiceOfSession(attempt, sessionEpoch)) {
       return;
     }
     if (saved === undefined) {
@@ -50,7 +65,7 @@ export function PublicFrame({ children }: { readonly children?: ReactNode }): Re
             signedIn
               ? (language): void => {
                   setLanguageNotSaved(false);
-                  saveLanguage(language).catch(() => {
+                  saveLanguageAfterPrevious(language).catch(() => {
                     setLanguageNotSaved(true);
                   });
                 }

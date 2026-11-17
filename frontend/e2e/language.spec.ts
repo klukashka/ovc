@@ -1,7 +1,9 @@
-import type { Page } from '@playwright/test';
+import type { Page, Request, Response } from '@playwright/test';
 
-import { signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, signInThroughTheApi } from './accounts.ts';
+import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { accessToken, callApi } from './tutoring.ts';
 
 import { languageOfChunkFile } from '../scripts/bundle-budget.ts';
 import type { Language } from '../src/lib/i18n/languages.ts';
@@ -76,6 +78,65 @@ async function storedLanguage(page: Page): Promise<string | null> {
   return page.evaluate(() => globalThis.localStorage.getItem('ovc.language'));
 }
 
+interface HeldFirstAccountSave {
+  readonly savedLanguages: readonly string[];
+  readonly firstArrived: Promise<void>;
+  readonly releaseFirst: () => void;
+}
+
+function isAccountSave(request: Request): boolean {
+  return request.method() === 'PATCH' && new URL(request.url()).pathname === '/api/v1/users/me';
+}
+
+function savedLanguageOf(request: Request): string {
+  const body: unknown = request.postDataJSON();
+  if (typeof body !== 'object' || body === null || !('language' in body) || typeof body.language !== 'string') {
+    throw new Error('the account save carries no language');
+  }
+  return body.language;
+}
+
+async function holdFirstAccountSave(page: Page): Promise<HeldFirstAccountSave> {
+  const savedLanguages: string[] = [];
+  let markArrived = (): void => undefined;
+  let releaseFirst = (): void => undefined;
+  const firstArrived = new Promise<void>((resolve) => {
+    markArrived = resolve;
+  });
+  const released = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  await page.route(
+    (address) => address.pathname === '/api/v1/users/me',
+    async (route) => {
+      if (!isAccountSave(route.request())) {
+        await route.fallback();
+        return;
+      }
+      savedLanguages.push(savedLanguageOf(route.request()));
+      if (savedLanguages.length === 1) {
+        markArrived();
+        await released;
+      }
+      await route.continue();
+    },
+  );
+  return { savedLanguages, firstArrived, releaseFirst };
+}
+
+function accountSaveAnswered(page: Page, language: string): Promise<Response> {
+  return page.waitForResponse(
+    (response) => isAccountSave(response.request()) && savedLanguageOf(response.request()) === language,
+  );
+}
+
+async function accountLanguage(deployment: Deployment, account: TestAccount): Promise<unknown> {
+  const answer = await callApi(deployment, await accessToken(deployment, account), 'GET', '/users/me');
+  expect(answer.status).toBe(200);
+  const body = answer.body;
+  return typeof body === 'object' && body !== null && 'language' in body ? body.language : undefined;
+}
+
 test.describe('language', () => {
   test('switching the language loads the other texts before they show', async ({ page }) => {
     const languageChunks = await routeLanguageChunks(page, otherLanguage, 'hold');
@@ -131,6 +192,32 @@ test.describe('language', () => {
     expect(storedBefore).toBe(interfaceLanguage);
     expect(accountSaves).toEqual([]);
     await expect(page.getByRole('button', { name: 'Русский' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('two quick language choices on a public page are saved in the order made and the later one wins', async ({
+    page,
+    deployment,
+  }) => {
+    const account = await seedVerifiedUser(deployment, 'Два выбора языка');
+    await signInThroughTheApi(page, account);
+    await page.goto('/privacy');
+    await expect(page.getByRole('button', { name: 'Русский' })).toHaveAttribute('aria-pressed', 'true');
+    const accountSaves = await holdFirstAccountSave(page);
+    const laterSaveAnswered = accountSaveAnswered(page, interfaceLanguage);
+
+    await page.getByRole('button', { name: 'English' }).click();
+    await accountSaves.firstArrived;
+    await expect(page.locator('html')).toHaveAttribute('lang', otherLanguage);
+    await page.getByRole('button', { name: 'Русский' }).click();
+    await expect(page.locator('html')).toHaveAttribute('lang', interfaceLanguage);
+    accountSaves.releaseFirst();
+    await laterSaveAnswered;
+
+    expect(accountSaves.savedLanguages).toEqual([otherLanguage, interfaceLanguage]);
+    expect(await accountLanguage(deployment, account)).toBe(interfaceLanguage);
+    await expect(page.getByRole('button', { name: 'Русский' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('html')).toHaveAttribute('lang', interfaceLanguage);
+    await expect(page.getByRole('alert')).toHaveCount(0);
   });
 });
 

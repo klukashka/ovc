@@ -6,7 +6,7 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 
 ## Frames
 
-- **Public frame:** logo, language switch (Русский / English), and sign-in or sign-up links. Used for every page reachable without a session. For a signed-in person on a public page the language switch also saves the account's language, and says so when that save fails, so the next start-up and the emails keep the choice.
+- **Public frame:** logo, language switch (Русский / English), and sign-in or sign-up links. Used for every page reachable without a session. For a signed-in person on a public page the language switch also saves the account's language, and says so when that save fails, so the next start-up and the emails keep the choice. These saves run one after another in the order the choices were made, a choice overtaken by a later one, or by a sign-out or a change of account, before its turn is not sent, and only the latest choice's answer updates the account shown or the failure message, so the latest choice is the one the account keeps (from slice 10).
 - **Signed-in frame (both roles)**, styled per [tokens](tokens.md#components) and decided in [ADR-0010](../../../docs/decisions/0010-quiet-visual-language.md):
   - a 248 px left sidebar on the `sidebar` background, full height, scrolling on its own;
   - at the top, the user's avatar initial and name; clicking it opens the account menu (Settings, Sign out); next to it, a "Hide sidebar" icon button;
