@@ -207,8 +207,10 @@ func (r Relationships) ActivateLinked(ctx context.Context, link Relationship, no
 	return applied(rows, err, "activate linked relationship")
 }
 
-func (r Relationships) TutorsOfStudent(ctx context.Context, student domain.UserID, only *domain.RelationshipID) ([]StudentTutor, error) {
-	params := dbgen.ListStudentTutorsParams{StudentID: &student}
+func (r Relationships) TutorsOfStudent(
+	ctx context.Context, student domain.UserID, only *domain.RelationshipID, now time.Time,
+) ([]StudentTutor, error) {
+	params := dbgen.ListStudentTutorsParams{StudentID: &student, TutorDeletedAfter: domain.ReadableTutorWorkCutoff(now)}
 	if only != nil {
 		params.RelationshipID = pgtype.UUID{Bytes: *only, Valid: true}
 	}

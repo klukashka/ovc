@@ -68,8 +68,10 @@ FOR SHARE;
 SELECT id, archived_at FROM groups WHERE id = @id AND tutor_id = @tutor_id FOR SHARE;
 
 -- name: GetStudentListedRelationship :one
-SELECT tutor_id FROM relationships
-WHERE id = @id AND student_id = @student_id AND state IN ('active', 'provisional', 'ended');
+SELECT relationships.tutor_id FROM relationships
+JOIN users AS tutor ON tutor.id = relationships.tutor_id
+WHERE relationships.id = @id AND relationships.student_id = @student_id AND relationships.state IN ('active', 'provisional', 'ended')
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz);
 
 -- name: ListTutorLessonViews :many
 SELECT

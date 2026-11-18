@@ -177,13 +177,15 @@ JOIN attachment_references
 JOIN review_revisions ON review_revisions.id = attachment_references.ref_id
 JOIN submissions ON submissions.id = review_revisions.submission_id
 JOIN issues ON issues.id = submissions.issue_id AND issues.erase_pending_since IS NULL
-WHERE attachments.id = $2 AND attachments.state = 'bound'
+JOIN users AS tutor ON tutor.id = submissions.tutor_id
+WHERE attachments.id = $2 AND attachments.state = 'bound' AND (tutor.state <> 'deleted' OR tutor.deleted_at > $3::timestamptz)
 LIMIT 1
 `
 
 type GetServableReviewItemFileParams struct {
-	RevisionID pgtype.UUID
-	ID         domain.AttachmentID
+	RevisionID        pgtype.UUID
+	ID                domain.AttachmentID
+	TutorDeletedAfter time.Time
 }
 
 type GetServableReviewItemFileRow struct {
@@ -196,7 +198,7 @@ type GetServableReviewItemFileRow struct {
 }
 
 func (q *Queries) GetServableReviewItemFile(ctx context.Context, arg GetServableReviewItemFileParams) (GetServableReviewItemFileRow, error) {
-	row := q.db.QueryRow(ctx, getServableReviewItemFile, arg.RevisionID, arg.ID)
+	row := q.db.QueryRow(ctx, getServableReviewItemFile, arg.RevisionID, arg.ID, arg.TutorDeletedAfter)
 	var i GetServableReviewItemFileRow
 	err := row.Scan(
 		&i.StorageKey,
@@ -873,20 +875,22 @@ JOIN review_revisions ON review_revisions.id = attachment_references.ref_id
 JOIN submissions ON submissions.id = review_revisions.submission_id
 JOIN issues ON issues.id = submissions.issue_id AND issues.erase_pending_since IS NULL
 JOIN relationships ON relationships.id = submissions.relationship_id
+JOIN users AS tutor ON tutor.id = submissions.tutor_id
 JOIN attachments ON attachments.id = attachment_references.attachment_id AND attachments.state = 'bound'
 WHERE attachment_references.attachment_id = $1 AND attachment_references.ref_kind = 'review_item'
     AND (
         submissions.tutor_id = $2::uuid
         OR (submissions.student_id = $2::uuid AND issues.status = 'active'
-            AND relationships.state IN ('active', 'provisional', 'ended')
+            AND relationships.state IN ('active', 'provisional', 'ended') AND (tutor.state <> 'deleted' OR tutor.deleted_at > $3::timestamptz)
             AND review_revisions.state = 'published' AND submissions.published_revision_id = review_revisions.id)
     )
 ORDER BY review_revisions.id
 `
 
 type VisibleReviewItemReferencesParams struct {
-	AttachmentID domain.AttachmentID
-	Viewer       pgtype.UUID
+	AttachmentID      domain.AttachmentID
+	Viewer            pgtype.UUID
+	TutorDeletedAfter time.Time
 }
 
 type VisibleReviewItemReferencesRow struct {
@@ -895,7 +899,7 @@ type VisibleReviewItemReferencesRow struct {
 }
 
 func (q *Queries) VisibleReviewItemReferences(ctx context.Context, arg VisibleReviewItemReferencesParams) ([]VisibleReviewItemReferencesRow, error) {
-	rows, err := q.db.Query(ctx, visibleReviewItemReferences, arg.AttachmentID, arg.Viewer)
+	rows, err := q.db.Query(ctx, visibleReviewItemReferences, arg.AttachmentID, arg.Viewer, arg.TutorDeletedAfter)
 	if err != nil {
 		return nil, err
 	}

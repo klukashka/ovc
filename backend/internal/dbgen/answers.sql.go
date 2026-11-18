@@ -97,23 +97,28 @@ SELECT
         SELECT 1 FROM submissions
         JOIN issues ON issues.id = submissions.issue_id
         JOIN relationships ON relationships.id = submissions.relationship_id
+        JOIN users AS tutor ON tutor.id = submissions.tutor_id
         WHERE submissions.student_id = $1 AND submissions.status IN ('not_started', 'draft', 'returned')
             AND issues.status = 'active' AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
-        LIMIT $2
+            AND (tutor.state <> 'deleted' OR tutor.deleted_at > $2::timestamptz)
+        LIMIT $3
     ) AS todo)::bigint AS todo,
     (SELECT count(*) FROM (
         SELECT 1 FROM submissions
         JOIN issues ON issues.id = submissions.issue_id
         JOIN relationships ON relationships.id = submissions.relationship_id
+        JOIN users AS tutor ON tutor.id = submissions.tutor_id
         WHERE submissions.student_id = $1 AND submissions.status = 'closed'
             AND issues.status = 'active' AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
-        LIMIT $2
+            AND (tutor.state <> 'deleted' OR tutor.deleted_at > $2::timestamptz)
+        LIMIT $3
     ) AS closed)::bigint AS closed
 `
 
 type CountStudentAssignmentsParams struct {
-	StudentID domain.UserID
-	CountCap  int32
+	StudentID         domain.UserID
+	TutorDeletedAfter time.Time
+	CountCap          int32
 }
 
 type CountStudentAssignmentsRow struct {
@@ -122,7 +127,7 @@ type CountStudentAssignmentsRow struct {
 }
 
 func (q *Queries) CountStudentAssignments(ctx context.Context, arg CountStudentAssignmentsParams) (CountStudentAssignmentsRow, error) {
-	row := q.db.QueryRow(ctx, countStudentAssignments, arg.StudentID, arg.CountCap)
+	row := q.db.QueryRow(ctx, countStudentAssignments, arg.StudentID, arg.TutorDeletedAfter, arg.CountCap)
 	var i CountStudentAssignmentsRow
 	err := row.Scan(&i.Todo, &i.Closed)
 	return i, err
@@ -213,12 +218,14 @@ JOIN attachment_references
 JOIN submissions ON submissions.id = attachment_references.ref_id
 JOIN issues ON issues.id = submissions.issue_id AND issues.erase_pending_since IS NULL
 JOIN relationships ON relationships.id = submissions.relationship_id AND relationships.state NOT IN ('reclaim_pending', 'discarded')
-WHERE attachments.id = $2 AND attachments.state = 'bound'
+JOIN users AS tutor ON tutor.id = submissions.tutor_id
+WHERE attachments.id = $2 AND attachments.state = 'bound' AND (tutor.state <> 'deleted' OR tutor.deleted_at > $3::timestamptz)
 `
 
 type GetServableAnswerFileParams struct {
-	SubmissionID pgtype.UUID
-	ID           domain.AttachmentID
+	SubmissionID      pgtype.UUID
+	ID                domain.AttachmentID
+	TutorDeletedAfter time.Time
 }
 
 type GetServableAnswerFileRow struct {
@@ -231,7 +238,7 @@ type GetServableAnswerFileRow struct {
 }
 
 func (q *Queries) GetServableAnswerFile(ctx context.Context, arg GetServableAnswerFileParams) (GetServableAnswerFileRow, error) {
-	row := q.db.QueryRow(ctx, getServableAnswerFile, arg.SubmissionID, arg.ID)
+	row := q.db.QueryRow(ctx, getServableAnswerFile, arg.SubmissionID, arg.ID, arg.TutorDeletedAfter)
 	var i GetServableAnswerFileRow
 	err := row.Scan(
 		&i.StorageKey,
@@ -245,16 +252,20 @@ func (q *Queries) GetServableAnswerFile(ctx context.Context, arg GetServableAnsw
 }
 
 const getStudentAssignmentTutor = `-- name: GetStudentAssignmentTutor :one
-SELECT id FROM relationships WHERE id = $1 AND student_id = $2 AND state IN ('active', 'provisional', 'ended')
+SELECT relationships.id FROM relationships
+JOIN users AS tutor ON tutor.id = relationships.tutor_id
+WHERE relationships.id = $1 AND relationships.student_id = $2 AND relationships.state IN ('active', 'provisional', 'ended')
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > $3::timestamptz)
 `
 
 type GetStudentAssignmentTutorParams struct {
-	ID        domain.RelationshipID
-	StudentID *domain.UserID
+	ID                domain.RelationshipID
+	StudentID         *domain.UserID
+	TutorDeletedAfter time.Time
 }
 
 func (q *Queries) GetStudentAssignmentTutor(ctx context.Context, arg GetStudentAssignmentTutorParams) (domain.RelationshipID, error) {
-	row := q.db.QueryRow(ctx, getStudentAssignmentTutor, arg.ID, arg.StudentID)
+	row := q.db.QueryRow(ctx, getStudentAssignmentTutor, arg.ID, arg.StudentID, arg.TutorDeletedAfter)
 	var id domain.RelationshipID
 	err := row.Scan(&id)
 	return id, err
@@ -264,7 +275,8 @@ const getStudentSubmission = `-- name: GetStudentSubmission :one
 SELECT submissions.id, submissions.issue_id, submissions.tutor_id, submissions.relationship_id, submissions.status, submissions.late,
     submissions.issued_before_reclaim, submissions.deadline_at, submissions.version, issues.title, issues.snapshot, issues.answer_policy,
     issues.status AS issue_status, (issues.erase_pending_since IS NOT NULL)::boolean AS marked_for_erasure,
-    relationships.state AS relationship_state, relationships.colour, tutor.name AS tutor_name, submissions.published_revision_id
+    relationships.state AS relationship_state, relationships.colour, tutor.name AS tutor_name, submissions.published_revision_id,
+    tutor.state AS tutor_state, tutor.deleted_at AS tutor_deleted_at
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -296,6 +308,8 @@ type GetStudentSubmissionRow struct {
 	Colour              *domain.Colour
 	TutorName           string
 	PublishedRevisionID pgtype.UUID
+	TutorState          domain.AccountState
+	TutorDeletedAt      *time.Time
 }
 
 func (q *Queries) GetStudentSubmission(ctx context.Context, arg GetStudentSubmissionParams) (GetStudentSubmissionRow, error) {
@@ -320,6 +334,8 @@ func (q *Queries) GetStudentSubmission(ctx context.Context, arg GetStudentSubmis
 		&i.Colour,
 		&i.TutorName,
 		&i.PublishedRevisionID,
+		&i.TutorState,
+		&i.TutorDeletedAt,
 	)
 	return i, err
 }
@@ -551,21 +567,23 @@ JOIN relationships ON relationships.id = submissions.relationship_id
 JOIN users AS tutor ON tutor.id = submissions.tutor_id
 WHERE submissions.student_id = $1 AND submissions.status = 'checked'
     AND issues.status = 'active' AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
-    AND ($2::uuid IS NULL OR submissions.relationship_id = $2::uuid)
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > $2::timestamptz)
+    AND ($3::uuid IS NULL OR submissions.relationship_id = $3::uuid)
     AND (
-        $3::timestamptz IS NULL
-        OR (submissions.checked_at, submissions.id) < ($3::timestamptz, $4::uuid)
+        $4::timestamptz IS NULL
+        OR (submissions.checked_at, submissions.id) < ($4::timestamptz, $5::uuid)
     )
 ORDER BY submissions.checked_at DESC, submissions.id DESC
-LIMIT $5
+LIMIT $6
 `
 
 type ListStudentCheckedAssignmentsParams struct {
-	StudentID      domain.UserID
-	RelationshipID pgtype.UUID
-	AfterInstant   *time.Time
-	AfterID        pgtype.UUID
-	PageSize       int32
+	StudentID         domain.UserID
+	TutorDeletedAfter time.Time
+	RelationshipID    pgtype.UUID
+	AfterInstant      *time.Time
+	AfterID           pgtype.UUID
+	PageSize          int32
 }
 
 type ListStudentCheckedAssignmentsRow struct {
@@ -587,6 +605,7 @@ type ListStudentCheckedAssignmentsRow struct {
 func (q *Queries) ListStudentCheckedAssignments(ctx context.Context, arg ListStudentCheckedAssignmentsParams) ([]ListStudentCheckedAssignmentsRow, error) {
 	rows, err := q.db.Query(ctx, listStudentCheckedAssignments,
 		arg.StudentID,
+		arg.TutorDeletedAfter,
 		arg.RelationshipID,
 		arg.AfterInstant,
 		arg.AfterID,
@@ -634,21 +653,23 @@ JOIN relationships ON relationships.id = submissions.relationship_id
 JOIN users AS tutor ON tutor.id = submissions.tutor_id
 WHERE submissions.student_id = $1 AND submissions.status = 'closed'
     AND issues.status = 'active' AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
-    AND ($2::uuid IS NULL OR submissions.relationship_id = $2::uuid)
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > $2::timestamptz)
+    AND ($3::uuid IS NULL OR submissions.relationship_id = $3::uuid)
     AND (
-        $3::timestamptz IS NULL
-        OR (submissions.issued_at, submissions.id) < ($3::timestamptz, $4::uuid)
+        $4::timestamptz IS NULL
+        OR (submissions.issued_at, submissions.id) < ($4::timestamptz, $5::uuid)
     )
 ORDER BY submissions.issued_at DESC, submissions.id DESC
-LIMIT $5
+LIMIT $6
 `
 
 type ListStudentClosedAssignmentsParams struct {
-	StudentID      domain.UserID
-	RelationshipID pgtype.UUID
-	AfterInstant   *time.Time
-	AfterID        pgtype.UUID
-	PageSize       int32
+	StudentID         domain.UserID
+	TutorDeletedAfter time.Time
+	RelationshipID    pgtype.UUID
+	AfterInstant      *time.Time
+	AfterID           pgtype.UUID
+	PageSize          int32
 }
 
 type ListStudentClosedAssignmentsRow struct {
@@ -670,6 +691,7 @@ type ListStudentClosedAssignmentsRow struct {
 func (q *Queries) ListStudentClosedAssignments(ctx context.Context, arg ListStudentClosedAssignmentsParams) ([]ListStudentClosedAssignmentsRow, error) {
 	rows, err := q.db.Query(ctx, listStudentClosedAssignments,
 		arg.StudentID,
+		arg.TutorDeletedAfter,
 		arg.RelationshipID,
 		arg.AfterInstant,
 		arg.AfterID,
@@ -717,21 +739,23 @@ JOIN relationships ON relationships.id = submissions.relationship_id
 JOIN users AS tutor ON tutor.id = submissions.tutor_id
 WHERE submissions.student_id = $1 AND submissions.status = 'submitted'
     AND issues.status = 'active' AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
-    AND ($2::uuid IS NULL OR submissions.relationship_id = $2::uuid)
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > $2::timestamptz)
+    AND ($3::uuid IS NULL OR submissions.relationship_id = $3::uuid)
     AND (
-        $3::timestamptz IS NULL
-        OR (submissions.submitted_at, submissions.id) < ($3::timestamptz, $4::uuid)
+        $4::timestamptz IS NULL
+        OR (submissions.submitted_at, submissions.id) < ($4::timestamptz, $5::uuid)
     )
 ORDER BY submissions.submitted_at DESC, submissions.id DESC
-LIMIT $5
+LIMIT $6
 `
 
 type ListStudentSubmittedAssignmentsParams struct {
-	StudentID      domain.UserID
-	RelationshipID pgtype.UUID
-	AfterInstant   *time.Time
-	AfterID        pgtype.UUID
-	PageSize       int32
+	StudentID         domain.UserID
+	TutorDeletedAfter time.Time
+	RelationshipID    pgtype.UUID
+	AfterInstant      *time.Time
+	AfterID           pgtype.UUID
+	PageSize          int32
 }
 
 type ListStudentSubmittedAssignmentsRow struct {
@@ -753,6 +777,7 @@ type ListStudentSubmittedAssignmentsRow struct {
 func (q *Queries) ListStudentSubmittedAssignments(ctx context.Context, arg ListStudentSubmittedAssignmentsParams) ([]ListStudentSubmittedAssignmentsRow, error) {
 	rows, err := q.db.Query(ctx, listStudentSubmittedAssignments,
 		arg.StudentID,
+		arg.TutorDeletedAfter,
 		arg.RelationshipID,
 		arg.AfterInstant,
 		arg.AfterID,
@@ -800,35 +825,37 @@ JOIN relationships ON relationships.id = submissions.relationship_id
 JOIN users AS tutor ON tutor.id = submissions.tutor_id
 WHERE submissions.student_id = $1 AND submissions.status IN ('not_started', 'draft', 'returned')
     AND issues.status = 'active' AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
-    AND ($2::uuid IS NULL OR submissions.relationship_id = $2::uuid)
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > $2::timestamptz)
+    AND ($3::uuid IS NULL OR submissions.relationship_id = $3::uuid)
     AND (
-        NOT $3::boolean
+        NOT $4::boolean
         OR (
-            $4::timestamptz IS NOT NULL
+            $5::timestamptz IS NOT NULL
             AND (
                 submissions.deadline_at IS NULL
-                OR submissions.deadline_at > $4::timestamptz
-                OR (submissions.deadline_at = $4::timestamptz
-                    AND (submissions.issued_at, submissions.id) > ($5::timestamptz, $6::uuid))
+                OR submissions.deadline_at > $5::timestamptz
+                OR (submissions.deadline_at = $5::timestamptz
+                    AND (submissions.issued_at, submissions.id) > ($6::timestamptz, $7::uuid))
             )
         )
         OR (
-            $4::timestamptz IS NULL AND submissions.deadline_at IS NULL
-            AND (submissions.issued_at, submissions.id) > ($5::timestamptz, $6::uuid)
+            $5::timestamptz IS NULL AND submissions.deadline_at IS NULL
+            AND (submissions.issued_at, submissions.id) > ($6::timestamptz, $7::uuid)
         )
     )
 ORDER BY submissions.deadline_at NULLS LAST, submissions.issued_at, submissions.id
-LIMIT $7
+LIMIT $8
 `
 
 type ListStudentTodoAssignmentsParams struct {
-	StudentID       domain.UserID
-	RelationshipID  pgtype.UUID
-	After           bool
-	AfterDeadlineAt *time.Time
-	AfterIssuedAt   time.Time
-	AfterID         pgtype.UUID
-	PageSize        int32
+	StudentID         domain.UserID
+	TutorDeletedAfter time.Time
+	RelationshipID    pgtype.UUID
+	After             bool
+	AfterDeadlineAt   *time.Time
+	AfterIssuedAt     time.Time
+	AfterID           pgtype.UUID
+	PageSize          int32
 }
 
 type ListStudentTodoAssignmentsRow struct {
@@ -850,6 +877,7 @@ type ListStudentTodoAssignmentsRow struct {
 func (q *Queries) ListStudentTodoAssignments(ctx context.Context, arg ListStudentTodoAssignmentsParams) ([]ListStudentTodoAssignmentsRow, error) {
 	rows, err := q.db.Query(ctx, listStudentTodoAssignments,
 		arg.StudentID,
+		arg.TutorDeletedAfter,
 		arg.RelationshipID,
 		arg.After,
 		arg.AfterDeadlineAt,
@@ -1450,19 +1478,21 @@ FROM attachment_references
 JOIN submissions ON submissions.id = attachment_references.ref_id
 JOIN issues ON issues.id = submissions.issue_id AND issues.erase_pending_since IS NULL
 JOIN relationships ON relationships.id = submissions.relationship_id
+JOIN users AS tutor ON tutor.id = submissions.tutor_id
 JOIN attachments ON attachments.id = attachment_references.attachment_id AND attachments.state = 'bound'
 WHERE attachment_references.attachment_id = $1 AND attachment_references.ref_kind = 'answer'
     AND (
         submissions.tutor_id = $2::uuid
         OR (submissions.student_id = $2::uuid AND issues.status = 'active'
-            AND relationships.state IN ('active', 'provisional', 'ended'))
+            AND relationships.state IN ('active', 'provisional', 'ended') AND (tutor.state <> 'deleted' OR tutor.deleted_at > $3::timestamptz))
     )
 ORDER BY submissions.id
 `
 
 type VisibleAnswerReferencesParams struct {
-	AttachmentID domain.AttachmentID
-	Viewer       pgtype.UUID
+	AttachmentID      domain.AttachmentID
+	Viewer            pgtype.UUID
+	TutorDeletedAfter time.Time
 }
 
 type VisibleAnswerReferencesRow struct {
@@ -1471,7 +1501,7 @@ type VisibleAnswerReferencesRow struct {
 }
 
 func (q *Queries) VisibleAnswerReferences(ctx context.Context, arg VisibleAnswerReferencesParams) ([]VisibleAnswerReferencesRow, error) {
-	rows, err := q.db.Query(ctx, visibleAnswerReferences, arg.AttachmentID, arg.Viewer)
+	rows, err := q.db.Query(ctx, visibleAnswerReferences, arg.AttachmentID, arg.Viewer, arg.TutorDeletedAfter)
 	if err != nil {
 		return nil, err
 	}

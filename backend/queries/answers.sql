@@ -8,6 +8,7 @@ JOIN relationships ON relationships.id = submissions.relationship_id
 JOIN users AS tutor ON tutor.id = submissions.tutor_id
 WHERE submissions.student_id = @student_id AND submissions.status IN ('not_started', 'draft', 'returned')
     AND issues.status = 'active' AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz)
     AND (sqlc.narg(relationship_id)::uuid IS NULL OR submissions.relationship_id = sqlc.narg(relationship_id)::uuid)
     AND (
         NOT sqlc.arg(after)::boolean
@@ -38,6 +39,7 @@ JOIN relationships ON relationships.id = submissions.relationship_id
 JOIN users AS tutor ON tutor.id = submissions.tutor_id
 WHERE submissions.student_id = @student_id AND submissions.status = 'submitted'
     AND issues.status = 'active' AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz)
     AND (sqlc.narg(relationship_id)::uuid IS NULL OR submissions.relationship_id = sqlc.narg(relationship_id)::uuid)
     AND (
         sqlc.narg(after_instant)::timestamptz IS NULL
@@ -56,6 +58,7 @@ JOIN relationships ON relationships.id = submissions.relationship_id
 JOIN users AS tutor ON tutor.id = submissions.tutor_id
 WHERE submissions.student_id = @student_id AND submissions.status = 'checked'
     AND issues.status = 'active' AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz)
     AND (sqlc.narg(relationship_id)::uuid IS NULL OR submissions.relationship_id = sqlc.narg(relationship_id)::uuid)
     AND (
         sqlc.narg(after_instant)::timestamptz IS NULL
@@ -74,6 +77,7 @@ JOIN relationships ON relationships.id = submissions.relationship_id
 JOIN users AS tutor ON tutor.id = submissions.tutor_id
 WHERE submissions.student_id = @student_id AND submissions.status = 'closed'
     AND issues.status = 'active' AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz)
     AND (sqlc.narg(relationship_id)::uuid IS NULL OR submissions.relationship_id = sqlc.narg(relationship_id)::uuid)
     AND (
         sqlc.narg(after_instant)::timestamptz IS NULL
@@ -88,27 +92,35 @@ SELECT
         SELECT 1 FROM submissions
         JOIN issues ON issues.id = submissions.issue_id
         JOIN relationships ON relationships.id = submissions.relationship_id
+        JOIN users AS tutor ON tutor.id = submissions.tutor_id
         WHERE submissions.student_id = @student_id AND submissions.status IN ('not_started', 'draft', 'returned')
             AND issues.status = 'active' AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+            AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz)
         LIMIT sqlc.arg(count_cap)
     ) AS todo)::bigint AS todo,
     (SELECT count(*) FROM (
         SELECT 1 FROM submissions
         JOIN issues ON issues.id = submissions.issue_id
         JOIN relationships ON relationships.id = submissions.relationship_id
+        JOIN users AS tutor ON tutor.id = submissions.tutor_id
         WHERE submissions.student_id = @student_id AND submissions.status = 'closed'
             AND issues.status = 'active' AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+            AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz)
         LIMIT sqlc.arg(count_cap)
     ) AS closed)::bigint AS closed;
 
 -- name: GetStudentAssignmentTutor :one
-SELECT id FROM relationships WHERE id = @id AND student_id = @student_id AND state IN ('active', 'provisional', 'ended');
+SELECT relationships.id FROM relationships
+JOIN users AS tutor ON tutor.id = relationships.tutor_id
+WHERE relationships.id = @id AND relationships.student_id = @student_id AND relationships.state IN ('active', 'provisional', 'ended')
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz);
 
 -- name: GetStudentSubmission :one
 SELECT submissions.id, submissions.issue_id, submissions.tutor_id, submissions.relationship_id, submissions.status, submissions.late,
     submissions.issued_before_reclaim, submissions.deadline_at, submissions.version, issues.title, issues.snapshot, issues.answer_policy,
     issues.status AS issue_status, (issues.erase_pending_since IS NOT NULL)::boolean AS marked_for_erasure,
-    relationships.state AS relationship_state, relationships.colour, tutor.name AS tutor_name, submissions.published_revision_id
+    relationships.state AS relationship_state, relationships.colour, tutor.name AS tutor_name, submissions.published_revision_id,
+    tutor.state AS tutor_state, tutor.deleted_at AS tutor_deleted_at
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -300,12 +312,13 @@ FROM attachment_references
 JOIN submissions ON submissions.id = attachment_references.ref_id
 JOIN issues ON issues.id = submissions.issue_id AND issues.erase_pending_since IS NULL
 JOIN relationships ON relationships.id = submissions.relationship_id
+JOIN users AS tutor ON tutor.id = submissions.tutor_id
 JOIN attachments ON attachments.id = attachment_references.attachment_id AND attachments.state = 'bound'
 WHERE attachment_references.attachment_id = @attachment_id AND attachment_references.ref_kind = 'answer'
     AND (
         submissions.tutor_id = sqlc.arg(viewer)::uuid
         OR (submissions.student_id = sqlc.arg(viewer)::uuid AND issues.status = 'active'
-            AND relationships.state IN ('active', 'provisional', 'ended'))
+            AND relationships.state IN ('active', 'provisional', 'ended') AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz))
     )
 ORDER BY submissions.id;
 
@@ -319,7 +332,8 @@ JOIN attachment_references
 JOIN submissions ON submissions.id = attachment_references.ref_id
 JOIN issues ON issues.id = submissions.issue_id AND issues.erase_pending_since IS NULL
 JOIN relationships ON relationships.id = submissions.relationship_id AND relationships.state NOT IN ('reclaim_pending', 'discarded')
-WHERE attachments.id = @id AND attachments.state = 'bound';
+JOIN users AS tutor ON tutor.id = submissions.tutor_id
+WHERE attachments.id = @id AND attachments.state = 'bound' AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz);
 
 -- name: GetSubmissionForTutorEmail :one
 SELECT submissions.id, submissions.tutor_id, submissions.status, submissions.submitted_at, submissions.deadline_at, issues.title,

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"ovc/backend/internal/adapters/mail"
 	"ovc/backend/internal/domain"
@@ -124,9 +125,17 @@ func TestIssueSnapshotDownloadsFollowTheIssue(t *testing.T) {
 
 type readabilityCase struct {
 	student      byte
+	tutor        byte
 	relationship domain.RelationshipState
 	issue        domain.IssueStatus
 	marked       bool
+}
+
+func (c readabilityCase) tutorID() domain.UserID {
+	if c.tutor == 0 {
+		return domain.UserID{1}
+	}
+	return domain.UserID{c.tutor}
 }
 
 func readabilityCases() []readabilityCase {
@@ -146,6 +155,7 @@ func readabilityCases() []readabilityCase {
 }
 
 type readableWork struct {
+	image      string
 	issue      string
 	submission string
 	lesson     string
@@ -154,14 +164,28 @@ type readableWork struct {
 	revision   string
 }
 
-func (h *authHarness) readableWork(t *testing.T, tutorToken string, template string, testCase readabilityCase, hour int) readableWork {
+type readableTemplate struct {
+	image    string
+	template string
+}
+
+func (h *authHarness) readableTemplate(t *testing.T, tutorToken string, block byte) readableTemplate {
+	t.Helper()
+	picture := h.libraryUpload(t, tutorToken, domain.ContextPromptImage, "prompt.png", pngBytes(t, 2, 2))
+	h.mustAnswer(t, picture, http.StatusCreated)
+	image := uploadedID(t, picture)
+	template := h.workTemplate(t, tutorToken, "Readable", append(workBlocks(), imageQuestion(blockID(block, 1), image))...)
+	return readableTemplate{image: image, template: template}
+}
+
+func (h *authHarness) readableWork(t *testing.T, tutorToken string, template readableTemplate, testCase readabilityCase, hour int) readableWork {
 	t.Helper()
 	student := h.seedStudentAccount(t, testCase.student, domain.AccountActive)
-	card := h.seedCard(t, domain.UserID{1}, testCase.student, domain.RelationshipActive, &student)
+	card := h.seedCard(t, testCase.tutorID(), testCase.student, domain.RelationshipActive, &student)
 	token := h.studentToken(t, testCase.student)
-	var work readableWork
+	work := readableWork{image: template.image}
 	work.lesson = h.scheduled(t, tutorToken, oneOffFor(card, "2030-03-12", fmt.Sprintf("%02d:00", hour))).Lessons[0].ID
-	work.issue = h.issued(t, tutorToken, issueJSONWith(template, toCard(card), &work.lesson, nil, string(domain.AnswerPolicyAfterCheck))).ID
+	work.issue = h.issued(t, tutorToken, issueJSONWith(template.template, toCard(card), &work.lesson, nil, string(domain.AnswerPolicyAfterCheck))).ID
 	work.submission = h.submissionsOf(t, work.issue)[0].id
 	work.answer = h.answerFile(t, token, work.submission, workQuestion(6), "answer.pdf", 48)
 	draft := h.saved(t, token, work.submission, answersJSON(t, 1, saveID(1), attached(workQuestion(6), work.answer), typedAnswer(workQuestion(5), "We saw the tower")))
@@ -183,9 +207,9 @@ func (h *authHarness) readableWork(t *testing.T, tutorToken string, template str
 	return work
 }
 
-func (h *authHarness) mintsAs(t *testing.T, token string, image string, work readableWork) (bool, bool, bool) {
+func (h *authHarness) mintsAs(t *testing.T, token string, work readableWork) (bool, bool, bool) {
 	t.Helper()
-	snapshot, _ := h.addressOf(t, token, image, "?ref=issue_snapshot:"+work.issue)
+	snapshot, _ := h.addressOf(t, token, work.image, "?ref=issue_snapshot:"+work.issue)
 	answer, _ := h.addressOf(t, token, work.answer, "?ref=answer:"+work.submission)
 	corrected := false
 	if work.revision != "" {
@@ -205,25 +229,33 @@ func issueCreatedEmails(messages []mail.SinkMessage) int {
 	return count
 }
 
-func TestTheStudentSubmissionReadabilityCopiesAgree(t *testing.T) {
-	t.Parallel()
-	h := newUploadHarness(t)
-	_, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
-	picture := h.libraryUpload(t, tutorToken, domain.ContextPromptImage, "prompt.png", pngBytes(t, 2, 2))
-	h.mustAnswer(t, picture, http.StatusCreated)
-	image := uploadedID(t, picture)
-	template := h.workTemplate(t, tutorToken, "Readable", append(workBlocks(), imageQuestion(blockID(76, 1), image))...)
-	cases := readabilityCases()
-	works := make([]readableWork, 0, len(cases))
-	for index, testCase := range cases {
-		works = append(works, h.readableWork(t, tutorToken, template, testCase, 5+index))
-	}
+type homeTodo struct {
+	Count int64                `json:"count"`
+	Items []assignmentItemBody `json:"items"`
+}
 
-	h.tick(t)
+func (h *authHarness) homeTodoHolds(t *testing.T, token string, submission string) bool {
+	t.Helper()
+	todo := decodedAs[homeTodo](t, h.home(t, token, "")["todo"])
+	return todo.Count == 1 && len(todo.Items) == 1 && todo.Items[0].SubmissionID == submission
+}
 
-	readableCount := 0
+type readabilityAgreement struct {
+	readable int
+	wrong    []string
+}
+
+func (h *authHarness) readabilityAgreement(t *testing.T, cases []readabilityCase, works []readableWork, now time.Time) readabilityAgreement {
+	t.Helper()
+	var agreement readabilityAgreement
 	for index, testCase := range cases {
-		want := domain.ReadableStudentSubmission(testCase.issue, testCase.marked, testCase.relationship)
+		standing := domain.TutorStanding{State: domain.AccountActive}
+		if testCase.tutorID() == closingTutor {
+			deletedAt := h.deletedAtOf(t, testCase.tutorID())
+			standing = domain.TutorStanding{State: domain.AccountDeleted, DeletedAt: &deletedAt}
+		}
+		want := domain.ReadableStudentSubmissionAt(testCase.issue, testCase.marked, testCase.relationship, standing, now)
+		emailWant := domain.ReadableStudentSubmission(testCase.issue, testCase.marked, testCase.relationship)
 		work := works[index]
 		token := h.studentToken(t, testCase.student)
 		created := eventsNamed(h.notificationsOf(t, token), string(domain.NotificationIssueCreated))
@@ -231,21 +263,60 @@ func TestTheStudentSubmissionReadabilityCopiesAgree(t *testing.T) {
 		emailed := issueCreatedEmails(h.mailTo(t, memberEmail(testCase.student))) == 1
 		read := h.submissionAnswer(t, token, work.submission).status == http.StatusOK
 		listed := h.assignments(t, token, nil).Counts.Todo == 1
+		homed := h.homeTodoHolds(t, token, work.submission)
 		linked := slices.Contains(h.linkedWorkAs(t, token, work.lesson).submissionIDs(), work.submission)
-		snapshot, answer, corrected := h.mintsAs(t, token, image, work)
+		snapshot, answer, corrected := h.mintsAs(t, token, work)
 		correctedWant := want && work.revision != ""
-		if labelled != want || emailed != want || read != want || listed != want || linked != want || snapshot != want || answer != want || corrected != correctedWant {
-			t.Errorf("%+v: the predicate says %v, the row label %v, the email %v, the read %v, the list %v, the lesson's linked work %v, "+
-				"the snapshot mint %v, the answer mint %v, the corrected file mint %v", testCase, want, labelled, emailed, read, listed, linked, snapshot, answer, corrected)
+		if labelled != want || emailed != emailWant || read != want || listed != want || homed != want || linked != want || snapshot != want ||
+			answer != want || corrected != correctedWant {
+			agreement.wrong = append(agreement.wrong, fmt.Sprintf("%+v: the predicate says %v, the row label %v, the email %v, the read %v, the list %v, "+
+				"Home's to-do %v, the lesson's linked work %v, the snapshot mint %v, the answer mint %v, the corrected file mint %v",
+				testCase, want, labelled, emailed, read, listed, homed, linked, snapshot, answer, corrected))
 		}
 		if (work.revision == "") != (testCase.issue == domain.IssueWithdrawn) {
-			t.Errorf("%+v: a reviewed revision exists %v", testCase, work.revision != "")
+			agreement.wrong = append(agreement.wrong, fmt.Sprintf("%+v: a reviewed revision exists %v", testCase, work.revision != ""))
 		}
 		if want {
-			readableCount++
+			agreement.readable++
 		}
 	}
-	if readableCount != 3 {
-		t.Fatalf("%d cases are readable, want the active, provisional and ended links of an active issue", readableCount)
+	return agreement
+}
+
+const closingTutorEmail = "closing-tutor@example.org"
+
+var closingTutor = domain.UserID{2}
+
+func TestTheStudentSubmissionReadabilityCopiesAgree(t *testing.T) {
+	t.Parallel()
+	h := newUploadHarness(t)
+	_, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	_, closingToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, closingTutor[0], closingTutorEmail)
+	template := h.readableTemplate(t, tutorToken, 76)
+	closingTemplate := h.readableTemplate(t, closingToken, 77)
+	cases := readabilityCases()
+	works := make([]readableWork, 0, len(cases)+1)
+	for index, testCase := range cases {
+		works = append(works, h.readableWork(t, tutorToken, template, testCase, 5+index))
+	}
+	closing := readabilityCase{student: 40, tutor: closingTutor[0], relationship: domain.RelationshipEnded, issue: domain.IssueActive}
+	works = append(works, h.readableWork(t, closingToken, closingTemplate, closing, 5+len(cases)))
+	cases = append(cases, closing)
+	h.tick(t)
+	h.mustAnswer(t, h.deleteMe(t, closingToken, accountPassword), http.StatusNoContent)
+	closedUntil := h.deletedAtOf(t, closingTutor).Add(domain.DeletedAccountRetention)
+	h.tick(t)
+	h.at(t, closedUntil.Add(-time.Minute))
+
+	before := h.readabilityAgreement(t, cases, works, h.now(t))
+	h.at(t, closedUntil)
+	after := h.readabilityAgreement(t, cases, works, h.now(t))
+
+	if len(before.wrong) != 0 || len(after.wrong) != 0 {
+		t.Fatalf("the copies disagree before account_closed_until: %v; and from it: %v", before.wrong, after.wrong)
+	}
+	if before.readable != 4 || after.readable != 3 {
+		t.Fatalf("%d and %d cases are readable, want the active, provisional and ended links of an active issue and, before "+
+			"account_closed_until, the deleted tutor's ended link", before.readable, after.readable)
 	}
 }

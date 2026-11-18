@@ -213,16 +213,20 @@ func (r Homework) PublishedReviewSummaries(ctx context.Context, revisions []doma
 	return one(rows, err, "summaries of published review revisions")
 }
 
-func (r Homework) VisibleReviewItems(ctx context.Context, viewer domain.UserID, attachment domain.AttachmentID) ([]VisibleReviewItem, error) {
+func (r Homework) VisibleReviewItems(
+	ctx context.Context, viewer domain.UserID, attachment domain.AttachmentID, now time.Time,
+) ([]VisibleReviewItem, error) {
 	rows, err := r.queries.VisibleReviewItemReferences(ctx, dbgen.VisibleReviewItemReferencesParams{
-		AttachmentID: attachment, Viewer: pgtype.UUID{Bytes: viewer, Valid: true},
+		AttachmentID: attachment, Viewer: pgtype.UUID{Bytes: viewer, Valid: true}, TutorDeletedAfter: domain.ReadableTutorWorkCutoff(now),
 	})
 	return one(rows, err, "visible corrected file references")
 }
 
-func (r Homework) ServableReviewItemFile(ctx context.Context, attachment domain.AttachmentID, revision domain.EntityID) (ServableFile, error) {
+func (r Homework) ServableReviewItemFile(
+	ctx context.Context, attachment domain.AttachmentID, revision domain.EntityID, now time.Time,
+) (ServableFile, error) {
 	row, err := r.queries.GetServableReviewItemFile(ctx, dbgen.GetServableReviewItemFileParams{
-		RevisionID: pgtype.UUID{Bytes: revision, Valid: true}, ID: attachment,
+		RevisionID: pgtype.UUID{Bytes: revision, Valid: true}, ID: attachment, TutorDeletedAfter: domain.ReadableTutorWorkCutoff(now),
 	})
 	return one(ServableFile(row), err, "a servable corrected file")
 }

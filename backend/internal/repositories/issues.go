@@ -253,22 +253,30 @@ func (r Homework) StudentInScope(ctx context.Context, tutor domain.UserID, id do
 	return err
 }
 
-func (r Homework) VisibleSnapshots(ctx context.Context, viewer domain.UserID, attachment domain.AttachmentID) ([]VisibleIssueSnapshot, error) {
+func (r Homework) VisibleSnapshots(
+	ctx context.Context, viewer domain.UserID, attachment domain.AttachmentID, now time.Time,
+) ([]VisibleIssueSnapshot, error) {
 	rows, err := r.queries.VisibleIssueSnapshotReferences(ctx, dbgen.VisibleIssueSnapshotReferencesParams{
-		Viewer: pgtype.UUID{Bytes: viewer, Valid: true}, AttachmentID: attachment,
+		Viewer: pgtype.UUID{Bytes: viewer, Valid: true}, AttachmentID: attachment, TutorDeletedAfter: domain.ReadableTutorWorkCutoff(now),
 	})
 	return one(rows, err, "visible issue snapshot references")
 }
 
-func (r Homework) ServableSnapshotFile(ctx context.Context, attachment domain.AttachmentID, issue domain.EntityID) (ServableFile, error) {
+func (r Homework) ServableSnapshotFile(
+	ctx context.Context, attachment domain.AttachmentID, issue domain.EntityID, now time.Time,
+) (ServableFile, error) {
 	row, err := r.queries.GetServableIssueSnapshotFile(ctx, dbgen.GetServableIssueSnapshotFileParams{
-		IssueID: pgtype.UUID{Bytes: issue, Valid: true}, ID: attachment,
+		IssueID: pgtype.UUID{Bytes: issue, Valid: true}, ID: attachment, TutorDeletedAfter: domain.ReadableTutorWorkCutoff(now),
 	})
 	return one(ServableFile(row), err, "servable issue snapshot file")
 }
 
-func (r Homework) ReadableSubmissionTitles(ctx context.Context, student domain.UserID, ids []domain.SubmissionID) ([]SubmissionTitle, error) {
-	rows, err := r.queries.ReadableStudentSubmissionTitles(ctx, dbgen.ReadableStudentSubmissionTitlesParams{StudentID: student, Ids: uuids(ids)})
+func (r Homework) ReadableSubmissionTitles(
+	ctx context.Context, student domain.UserID, ids []domain.SubmissionID, now time.Time,
+) ([]SubmissionTitle, error) {
+	rows, err := r.queries.ReadableStudentSubmissionTitles(ctx, dbgen.ReadableStudentSubmissionTitlesParams{
+		StudentID: student, Ids: uuids(ids), TutorDeletedAfter: domain.ReadableTutorWorkCutoff(now),
+	})
 	return one(rows, err, "readable submission titles")
 }
 
@@ -277,9 +285,11 @@ func (r Homework) LessonIssues(ctx context.Context, tutor domain.UserID, lesson 
 	return one(rows, err, "the lesson's linked issues")
 }
 
-func (r Homework) StudentLessonSubmissions(ctx context.Context, student domain.UserID, lesson domain.LessonID) ([]LessonSubmission, error) {
+func (r Homework) StudentLessonSubmissions(
+	ctx context.Context, student domain.UserID, lesson domain.LessonID, now time.Time,
+) ([]LessonSubmission, error) {
 	rows, err := r.queries.ListStudentLessonSubmissions(ctx, dbgen.ListStudentLessonSubmissionsParams{
-		StudentID: student, LessonID: &lesson, PageSize: domain.IssuesPerLesson,
+		StudentID: student, LessonID: &lesson, PageSize: domain.IssuesPerLesson, TutorDeletedAfter: domain.ReadableTutorWorkCutoff(now),
 	})
 	return one(rows, err, "the student's submissions linked to a lesson")
 }

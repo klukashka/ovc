@@ -59,6 +59,11 @@ func (r Users) ReplacePassword(ctx context.Context, id domain.UserID, passwordHa
 	return applied(rows, err, "replace user password")
 }
 
+func (r Users) TutorStanding(ctx context.Context, tutor domain.UserID) (domain.TutorStanding, error) {
+	row, err := r.queries.GetTutorStanding(ctx, tutor)
+	return one(domain.TutorStanding{State: row.State, DeletedAt: row.DeletedAt}, err, "a tutor's standing")
+}
+
 func (r Users) ByID(ctx context.Context, id domain.UserID) (User, error) {
 	user, err := r.queries.GetUserByID(ctx, id)
 	return one(user, err, "user by id")

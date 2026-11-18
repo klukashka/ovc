@@ -359,17 +359,20 @@ func (q *Queries) GetStudentLessonView(ctx context.Context, arg GetStudentLesson
 }
 
 const getStudentListedRelationship = `-- name: GetStudentListedRelationship :one
-SELECT tutor_id FROM relationships
-WHERE id = $1 AND student_id = $2 AND state IN ('active', 'provisional', 'ended')
+SELECT relationships.tutor_id FROM relationships
+JOIN users AS tutor ON tutor.id = relationships.tutor_id
+WHERE relationships.id = $1 AND relationships.student_id = $2 AND relationships.state IN ('active', 'provisional', 'ended')
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > $3::timestamptz)
 `
 
 type GetStudentListedRelationshipParams struct {
-	ID        domain.RelationshipID
-	StudentID *domain.UserID
+	ID                domain.RelationshipID
+	StudentID         *domain.UserID
+	TutorDeletedAfter time.Time
 }
 
 func (q *Queries) GetStudentListedRelationship(ctx context.Context, arg GetStudentListedRelationshipParams) (domain.UserID, error) {
-	row := q.db.QueryRow(ctx, getStudentListedRelationship, arg.ID, arg.StudentID)
+	row := q.db.QueryRow(ctx, getStudentListedRelationship, arg.ID, arg.StudentID, arg.TutorDeletedAfter)
 	var tutor_id domain.UserID
 	err := row.Scan(&tutor_id)
 	return tutor_id, err

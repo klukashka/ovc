@@ -285,7 +285,7 @@ func (s *Service) LessonWithWork(ctx context.Context, viewer domain.UserID, role
 		if err != nil {
 			return err
 		}
-		issues, err := linkedWork(ctx, repos, viewer, role, id)
+		issues, err := s.linkedWork(ctx, repos, viewer, role, id)
 		if err != nil {
 			return err
 		}
@@ -295,11 +295,17 @@ func (s *Service) LessonWithWork(ctx context.Context, viewer domain.UserID, role
 	return page, err
 }
 
-func linkedWork(ctx context.Context, repos repositories.Repositories, viewer domain.UserID, role domain.Role, id domain.LessonID) ([]LinkedIssue, error) {
+func (s *Service) linkedWork(
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, role domain.Role, id domain.LessonID,
+) ([]LinkedIssue, error) {
 	if role == domain.RoleTutor {
 		return tutorLinkedIssues(ctx, repos, viewer, id)
 	}
-	rows, err := repos.Homework.StudentLessonSubmissions(ctx, viewer, id)
+	now, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := repos.Homework.StudentLessonSubmissions(ctx, viewer, id, now)
 	if err != nil {
 		return nil, err
 	}

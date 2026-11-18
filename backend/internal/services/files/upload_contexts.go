@@ -3,6 +3,7 @@ package files
 import (
 	"context"
 	"errors"
+	"time"
 
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
@@ -50,7 +51,7 @@ type scopeRow struct {
 
 type uploadScope interface {
 	row() scopeRow
-	lock(ctx context.Context, repos repositories.Repositories, uploader accounts.Principal) (lockedScope, error)
+	lock(ctx context.Context, repos repositories.Repositories, uploader accounts.Principal, now time.Time) (lockedScope, error)
 	describe(opened *openUpload)
 }
 
@@ -69,7 +70,7 @@ func (c channelScope) row() scopeRow {
 	return scopeRow{kind: &kind, id: &id}
 }
 
-func (c channelScope) lock(ctx context.Context, repos repositories.Repositories, uploader accounts.Principal) (lockedScope, error) {
+func (c channelScope) lock(ctx context.Context, repos repositories.Repositories, uploader accounts.Principal, _ time.Time) (lockedScope, error) {
 	channel, err := repos.Channels.LockOfMemberForShare(ctx, c.channel, uploader.UserID)
 	if err != nil {
 		return lockedScope{}, err
@@ -91,7 +92,7 @@ func (ownLibraryScope) row() scopeRow {
 	return scopeRow{}
 }
 
-func (ownLibraryScope) lock(_ context.Context, _ repositories.Repositories, uploader accounts.Principal) (lockedScope, error) {
+func (ownLibraryScope) lock(_ context.Context, _ repositories.Repositories, uploader accounts.Principal, _ time.Time) (lockedScope, error) {
 	if uploader.Role != domain.RoleTutor {
 		return lockedScope{}, repositories.ErrNotFound
 	}
@@ -111,7 +112,9 @@ func (c submissionScope) row() scopeRow {
 	return scopeRow{kind: &kind, id: &id, question: &question}
 }
 
-func (c submissionScope) lock(ctx context.Context, repos repositories.Repositories, uploader accounts.Principal) (lockedScope, error) {
+func (c submissionScope) lock(
+	ctx context.Context, repos repositories.Repositories, uploader accounts.Principal, now time.Time,
+) (lockedScope, error) {
 	asStudent := c.context == domain.ContextAnswer
 	if asStudent != (uploader.Role == domain.RoleStudent) {
 		return lockedScope{}, repositories.ErrNotFound
@@ -141,7 +144,11 @@ func (c submissionScope) lock(ctx context.Context, repos repositories.Repositori
 		}
 		return lockedScope{tutor: submission.TutorID}, nil
 	}
-	if !domain.ReadableStudentSubmission(issue.Status, issue.MarkedForErasure, relationship) {
+	tutor, err := repos.Users.TutorStanding(ctx, submission.TutorID)
+	if err != nil {
+		return lockedScope{}, err
+	}
+	if !domain.ReadableStudentSubmissionAt(issue.Status, issue.MarkedForErasure, relationship, tutor, now) {
 		return lockedScope{}, repositories.ErrNotFound
 	}
 	kinds := answerKinds(issue.AllowedKinds)

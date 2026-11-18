@@ -256,8 +256,12 @@ func (r Lessons) LockGroup(ctx context.Context, tutor domain.UserID, id domain.G
 	return row.ArchivedAt, nil
 }
 
-func (r Lessons) ListedRelationshipTutor(ctx context.Context, student domain.UserID, id domain.RelationshipID) (domain.UserID, error) {
-	tutor, err := r.queries.GetStudentListedRelationship(ctx, dbgen.GetStudentListedRelationshipParams{ID: id, StudentID: &student})
+func (r Lessons) ListedRelationshipTutor(
+	ctx context.Context, student domain.UserID, id domain.RelationshipID, now time.Time,
+) (domain.UserID, error) {
+	tutor, err := r.queries.GetStudentListedRelationship(ctx, dbgen.GetStudentListedRelationshipParams{
+		ID: id, StudentID: &student, TutorDeletedAfter: domain.ReadableTutorWorkCutoff(now),
+	})
 	return one(tutor, err, "a relationship the student lists")
 }
 

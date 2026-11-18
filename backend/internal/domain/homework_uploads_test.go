@@ -3,6 +3,7 @@ package domain_test
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"ovc/backend/internal/domain"
 )
@@ -45,5 +46,39 @@ func TestOnlySubmittedOrCheckedWorkOfALiveIssueIsReviewable(t *testing.T) {
 
 	if len(wrong) != 0 {
 		t.Fatalf("the reviewability rule disagrees for %v", wrong)
+	}
+}
+
+func TestADeletedTutorsWorkIsReadableUntilAccountClosedUntil(t *testing.T) {
+	t.Parallel()
+	deletedAt := time.Date(2030, time.March, 1, 9, 30, 0, 0, time.UTC)
+	closedUntil := deletedAt.Add(domain.DeletedAccountRetention)
+	cases := []struct {
+		name  string
+		tutor domain.TutorStanding
+		now   time.Time
+		want  bool
+	}{
+		{"an active tutor long after", domain.TutorStanding{State: domain.AccountActive}, closedUntil.Add(time.Hour), true},
+		{"a blocked tutor", domain.TutorStanding{State: domain.AccountBlocked}, closedUntil.Add(time.Hour), true},
+		{"a deleted tutor at the deletion", domain.TutorStanding{State: domain.AccountDeleted, DeletedAt: &deletedAt}, deletedAt, true},
+		{"a deleted tutor a minute before", domain.TutorStanding{State: domain.AccountDeleted, DeletedAt: &deletedAt}, closedUntil.Add(-time.Minute), true},
+		{"a deleted tutor a microsecond before", domain.TutorStanding{State: domain.AccountDeleted, DeletedAt: &deletedAt}, closedUntil.Add(-time.Microsecond), true},
+		{"a deleted tutor at the instant", domain.TutorStanding{State: domain.AccountDeleted, DeletedAt: &deletedAt}, closedUntil, false},
+		{"a deleted tutor after", domain.TutorStanding{State: domain.AccountDeleted, DeletedAt: &deletedAt}, closedUntil.Add(time.Hour), false},
+		{"a deleted tutor without a deletion time", domain.TutorStanding{State: domain.AccountDeleted}, deletedAt, false},
+	}
+	var wrong []string
+
+	for _, testCase := range cases {
+		cutoffSays := testCase.tutor.State != domain.AccountDeleted ||
+			(testCase.tutor.DeletedAt != nil && testCase.tutor.DeletedAt.After(domain.ReadableTutorWorkCutoff(testCase.now)))
+		if testCase.tutor.ReadableAt(testCase.now) != testCase.want || cutoffSays != testCase.want {
+			wrong = append(wrong, testCase.name)
+		}
+	}
+
+	if len(wrong) != 0 {
+		t.Fatalf("the readability of a deleted tutor's work disagrees for %v", wrong)
 	}
 }

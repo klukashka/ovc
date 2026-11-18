@@ -201,8 +201,10 @@ WHERE attachment_references.attachment_id = @attachment_id AND attachment_refere
             AND EXISTS (
                 SELECT 1 FROM submissions
                 JOIN relationships ON relationships.id = submissions.relationship_id
+                JOIN users AS tutor ON tutor.id = submissions.tutor_id
                 WHERE submissions.issue_id = issues.id AND submissions.student_id = sqlc.arg(viewer)::uuid
                     AND relationships.state IN ('active', 'provisional', 'ended')
+                    AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz)
             )
         )
     )
@@ -216,16 +218,19 @@ JOIN attachment_references
     ON attachment_references.attachment_id = attachments.id AND attachment_references.ref_kind = 'issue_snapshot'
         AND attachment_references.ref_id = sqlc.arg(issue_id)::uuid
 JOIN issues ON issues.id = attachment_references.ref_id AND issues.erase_pending_since IS NULL
-WHERE attachments.id = @id AND attachments.state = 'bound';
+JOIN users AS tutor ON tutor.id = issues.tutor_id
+WHERE attachments.id = @id AND attachments.state = 'bound' AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz);
 
 -- name: ReadableStudentSubmissionTitles :many
 SELECT submissions.id, issues.title
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
+JOIN users AS tutor ON tutor.id = submissions.tutor_id
 WHERE submissions.student_id = @student_id AND submissions.id = ANY (sqlc.arg(ids)::uuid[])
     AND issues.status = 'active' AND issues.erase_pending_since IS NULL
-    AND relationships.state IN ('active', 'provisional', 'ended');
+    AND relationships.state IN ('active', 'provisional', 'ended')
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz);
 
 -- name: ListLessonIssues :many
 SELECT id, title, deadline_at FROM issues
@@ -238,9 +243,11 @@ SELECT submissions.id, issues.title, submissions.deadline_at, submissions.status
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
+JOIN users AS tutor ON tutor.id = submissions.tutor_id
 WHERE submissions.student_id = @student_id AND issues.lesson_id = @lesson_id
     AND issues.status = 'active' AND issues.erase_pending_since IS NULL
     AND relationships.state IN ('active', 'provisional', 'ended')
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz)
 ORDER BY issues.issued_at, issues.id
 LIMIT sqlc.arg(page_size);
 

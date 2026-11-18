@@ -122,6 +122,28 @@ func ReadableStudentSubmission(status IssueStatus, markedForErasure bool, relati
 	return false
 }
 
+type TutorStanding struct {
+	State     AccountState
+	DeletedAt *time.Time
+}
+
+func (t TutorStanding) ReadableAt(now time.Time) bool {
+	if t.State != AccountDeleted {
+		return true
+	}
+	return t.DeletedAt != nil && now.Before(t.DeletedAt.Add(DeletedAccountRetention))
+}
+
+func ReadableTutorWorkCutoff(now time.Time) time.Time {
+	return now.Add(-DeletedAccountRetention)
+}
+
+func ReadableStudentSubmissionAt(
+	status IssueStatus, markedForErasure bool, relationship RelationshipState, tutor TutorStanding, now time.Time,
+) bool {
+	return ReadableStudentSubmission(status, markedForErasure, relationship) && tutor.ReadableAt(now)
+}
+
 func WritableStudentSubmission(status SubmissionStatus, relationship RelationshipState) bool {
 	if relationship != RelationshipActive && relationship != RelationshipProvisional {
 		return false

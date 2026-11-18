@@ -141,12 +141,13 @@ JOIN review_revisions ON review_revisions.id = attachment_references.ref_id
 JOIN submissions ON submissions.id = review_revisions.submission_id
 JOIN issues ON issues.id = submissions.issue_id AND issues.erase_pending_since IS NULL
 JOIN relationships ON relationships.id = submissions.relationship_id
+JOIN users AS tutor ON tutor.id = submissions.tutor_id
 JOIN attachments ON attachments.id = attachment_references.attachment_id AND attachments.state = 'bound'
 WHERE attachment_references.attachment_id = @attachment_id AND attachment_references.ref_kind = 'review_item'
     AND (
         submissions.tutor_id = sqlc.arg(viewer)::uuid
         OR (submissions.student_id = sqlc.arg(viewer)::uuid AND issues.status = 'active'
-            AND relationships.state IN ('active', 'provisional', 'ended')
+            AND relationships.state IN ('active', 'provisional', 'ended') AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz)
             AND review_revisions.state = 'published' AND submissions.published_revision_id = review_revisions.id)
     )
 ORDER BY review_revisions.id;
@@ -161,7 +162,8 @@ JOIN attachment_references
 JOIN review_revisions ON review_revisions.id = attachment_references.ref_id
 JOIN submissions ON submissions.id = review_revisions.submission_id
 JOIN issues ON issues.id = submissions.issue_id AND issues.erase_pending_since IS NULL
-WHERE attachments.id = @id AND attachments.state = 'bound'
+JOIN users AS tutor ON tutor.id = submissions.tutor_id
+WHERE attachments.id = @id AND attachments.state = 'bound' AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz)
 LIMIT 1;
 
 -- name: ListTutorReviewItemReferencesBatch :many

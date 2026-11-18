@@ -15,9 +15,9 @@ func (reviewItemAuthorization) kind() domain.ReferenceKind {
 }
 
 func (reviewItemAuthorization) visible(
-	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID,
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID, now time.Time,
 ) ([]visibleReference, error) {
-	revisions, err := repos.Homework.VisibleReviewItems(ctx, viewer, attachment)
+	revisions, err := repos.Homework.VisibleReviewItems(ctx, viewer, attachment, now)
 	if err != nil {
 		return nil, err
 	}
@@ -31,9 +31,9 @@ func (reviewItemAuthorization) visible(
 }
 
 func (reviewItemAuthorization) servable(
-	ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID,
+	ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID, now time.Time,
 ) (repositories.ServableFile, error) {
-	return repos.Homework.ServableReviewItemFile(ctx, attachment, item)
+	return repos.Homework.ServableReviewItemFile(ctx, attachment, item, now)
 }
 
 func (s *Service) ReviewItemAddress(

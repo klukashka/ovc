@@ -115,7 +115,7 @@ RETURNING id;
 
 -- name: ListNotificationRelationships :many
 SELECT relationships.id, relationships.tutor_id, relationships.student_id, relationships.state, relationships.display_name,
-    relationships.colour, tutors.name AS tutor_name
+    relationships.colour, tutors.name AS tutor_name, tutors.state AS tutor_state, tutors.deleted_at AS tutor_deleted_at
 FROM relationships
 JOIN users AS tutors ON tutors.id = relationships.tutor_id
 WHERE relationships.id = ANY (sqlc.arg(ids)::uuid[]);

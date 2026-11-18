@@ -150,7 +150,14 @@ func (s *Service) lockStudentWork(
 	if err != nil {
 		return studentLocks{}, err
 	}
-	if !domain.ReadableStudentSubmission(issue.Status, issue.MarkedForErasure, relationship) {
+	tutor, err := repos.Users.TutorStanding(ctx, parties.TutorID)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return studentLocks{}, ErrNotFound
+	}
+	if err != nil {
+		return studentLocks{}, err
+	}
+	if !domain.ReadableStudentSubmissionAt(issue.Status, issue.MarkedForErasure, relationship, tutor, now) {
 		return studentLocks{}, ErrNotFound
 	}
 	submission, err := repos.Homework.LockSubmission(ctx, parties.IssueID, id)

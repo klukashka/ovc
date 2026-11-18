@@ -155,7 +155,7 @@ func (s *Service) startUpload(ctx context.Context, target uploadTarget, principa
 			return err
 		}
 		now, opened.created = checkedAt, checkedAt
-		locked, err := target.scope.lock(ctx, repos, principal)
+		locked, err := target.scope.lock(ctx, repos, principal, now)
 		if errors.Is(err, repositories.ErrNotFound) {
 			return s.refuse(ctx, opened, domain.RejectedScope, ErrOutOfScope)
 		}
@@ -504,7 +504,7 @@ func (s *Service) settleUpload(ctx context.Context, target uploadTarget, opened 
 		} else if err != nil {
 			return err
 		}
-		locked, err := target.scope.lock(ctx, repos, opened.uploader)
+		locked, err := target.scope.lock(ctx, repos, opened.uploader, now)
 		if errors.Is(err, repositories.ErrNotFound) {
 			refusal = s.refuse(ctx, opened, domain.RejectedScope, ErrOutOfScope)
 			return s.discardLocked(ctx, repos, opened, true, now)

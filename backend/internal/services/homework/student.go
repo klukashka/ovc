@@ -117,10 +117,14 @@ func (s *Service) Assignments(ctx context.Context, student domain.UserID, query 
 	if err != nil {
 		return AssignmentPage{}, err
 	}
+	now, err := s.deps.Clock.Instant(ctx)
+	if err != nil {
+		return AssignmentPage{}, err
+	}
 	page := AssignmentPage{Items: []AssignmentItem{}}
 	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
 		if query.Tutor != nil {
-			if err := repos.Homework.StudentTutorInScope(ctx, student, *query.Tutor); errors.Is(err, repositories.ErrNotFound) {
+			if err := repos.Homework.StudentTutorInScope(ctx, student, *query.Tutor, now); errors.Is(err, repositories.ErrNotFound) {
 				return ErrNotFound
 			} else if err != nil {
 				return err
@@ -129,7 +133,7 @@ func (s *Service) Assignments(ctx context.Context, student domain.UserID, query 
 		rows, err := repos.Homework.Assignments(ctx, repositories.AssignmentQuery{
 			Student: student, Group: query.Group, Relationship: query.Tutor, After: cursor.set, AfterDeadlineAt: cursor.deadline,
 			AfterInstant: cursor.instant, AfterID: cursor.id, PageSize: query.Limit + 1,
-		})
+		}, now)
 		if err != nil {
 			return err
 		}
@@ -155,7 +159,7 @@ func (s *Service) Assignments(ctx context.Context, student domain.UserID, query 
 			}
 			page.Items = append(page.Items, item)
 		}
-		counts, err := repos.Homework.AssignmentCounts(ctx, student, domain.AssignmentCountCap)
+		counts, err := repos.Homework.AssignmentCounts(ctx, student, domain.AssignmentCountCap, now)
 		page.Counts = AssignmentCounts{Todo: counts.Todo, Closed: counts.Closed}
 		return err
 	})
@@ -185,7 +189,8 @@ func (s *Service) studentWork(
 	if err != nil {
 		return StudentWork{}, err
 	}
-	if !domain.ReadableStudentSubmission(row.IssueStatus, row.MarkedForErasure, row.RelationshipState) {
+	tutor := domain.TutorStanding{State: row.TutorState, DeletedAt: row.TutorDeletedAt}
+	if !domain.ReadableStudentSubmissionAt(row.IssueStatus, row.MarkedForErasure, row.RelationshipState, tutor, now) {
 		return StudentWork{}, ErrNotFound
 	}
 	stored, err := decodeSnapshot(row.Snapshot)

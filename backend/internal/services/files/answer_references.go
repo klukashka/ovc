@@ -15,9 +15,9 @@ func (answerAuthorization) kind() domain.ReferenceKind {
 }
 
 func (answerAuthorization) visible(
-	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID,
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID, now time.Time,
 ) ([]visibleReference, error) {
-	submissions, err := repos.Homework.VisibleAnswers(ctx, viewer, attachment)
+	submissions, err := repos.Homework.VisibleAnswers(ctx, viewer, attachment, now)
 	if err != nil {
 		return nil, err
 	}
@@ -31,9 +31,9 @@ func (answerAuthorization) visible(
 }
 
 func (answerAuthorization) servable(
-	ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID,
+	ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID, now time.Time,
 ) (repositories.ServableFile, error) {
-	return repos.Homework.ServableAnswerFile(ctx, attachment, item)
+	return repos.Homework.ServableAnswerFile(ctx, attachment, item, now)
 }
 
 func (s *Service) AnswerAddress(id domain.AttachmentID, submission domain.SubmissionID, disposition domain.Disposition, now time.Time) (string, time.Time) {

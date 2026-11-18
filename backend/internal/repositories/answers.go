@@ -75,8 +75,9 @@ type BoundAnswerFile struct {
 	Question   domain.QuestionID
 }
 
-func (r Homework) Assignments(ctx context.Context, query AssignmentQuery) ([]AssignmentRow, error) {
+func (r Homework) Assignments(ctx context.Context, query AssignmentQuery, now time.Time) ([]AssignmentRow, error) {
 	relationship := optionalUUID(query.Relationship)
+	cutoff := domain.ReadableTutorWorkCutoff(now)
 	afterID := pgtype.UUID{Bytes: query.AfterID, Valid: true}
 	switch query.Group {
 	case domain.AssignmentsTodo:
@@ -86,22 +87,22 @@ func (r Homework) Assignments(ctx context.Context, query AssignmentQuery) ([]Ass
 		}
 		rows, err := r.queries.ListStudentTodoAssignments(ctx, dbgen.ListStudentTodoAssignmentsParams{
 			StudentID: query.Student, RelationshipID: relationship, After: query.After, AfterDeadlineAt: query.AfterDeadlineAt,
-			AfterIssuedAt: issuedAt, AfterID: afterID, PageSize: query.PageSize,
+			AfterIssuedAt: issuedAt, AfterID: afterID, PageSize: query.PageSize, TutorDeletedAfter: cutoff,
 		})
 		return one(rows, err, "the student's work to do")
 	case domain.AssignmentsSubmitted:
 		rows, err := r.queries.ListStudentSubmittedAssignments(ctx, dbgen.ListStudentSubmittedAssignmentsParams{
-			StudentID: query.Student, RelationshipID: relationship, AfterInstant: query.AfterInstant, AfterID: afterID, PageSize: query.PageSize,
+			StudentID: query.Student, RelationshipID: relationship, AfterInstant: query.AfterInstant, AfterID: afterID, PageSize: query.PageSize, TutorDeletedAfter: cutoff,
 		})
 		return one(assignmentRows(rows), err, "the student's submitted work")
 	case domain.AssignmentsChecked:
 		rows, err := r.queries.ListStudentCheckedAssignments(ctx, dbgen.ListStudentCheckedAssignmentsParams{
-			StudentID: query.Student, RelationshipID: relationship, AfterInstant: query.AfterInstant, AfterID: afterID, PageSize: query.PageSize,
+			StudentID: query.Student, RelationshipID: relationship, AfterInstant: query.AfterInstant, AfterID: afterID, PageSize: query.PageSize, TutorDeletedAfter: cutoff,
 		})
 		return one(assignmentRows(rows), err, "the student's checked work")
 	case domain.AssignmentsClosed:
 		rows, err := r.queries.ListStudentClosedAssignments(ctx, dbgen.ListStudentClosedAssignmentsParams{
-			StudentID: query.Student, RelationshipID: relationship, AfterInstant: query.AfterInstant, AfterID: afterID, PageSize: query.PageSize,
+			StudentID: query.Student, RelationshipID: relationship, AfterInstant: query.AfterInstant, AfterID: afterID, PageSize: query.PageSize, TutorDeletedAfter: cutoff,
 		})
 		return one(assignmentRows(rows), err, "the student's closed work")
 	}
@@ -118,13 +119,13 @@ func assignmentRows[Row dbgen.ListStudentSubmittedAssignmentsRow | dbgen.ListStu
 	return converted
 }
 
-func (r Homework) AssignmentCounts(ctx context.Context, student domain.UserID, countCap int32) (AssignmentCounts, error) {
-	row, err := r.queries.CountStudentAssignments(ctx, dbgen.CountStudentAssignmentsParams{StudentID: student, CountCap: countCap})
+func (r Homework) AssignmentCounts(ctx context.Context, student domain.UserID, countCap int32, now time.Time) (AssignmentCounts, error) {
+	row, err := r.queries.CountStudentAssignments(ctx, dbgen.CountStudentAssignmentsParams{StudentID: student, CountCap: countCap, TutorDeletedAfter: domain.ReadableTutorWorkCutoff(now)})
 	return one(row, err, "count the student's work")
 }
 
-func (r Homework) StudentTutorInScope(ctx context.Context, student domain.UserID, relationship domain.RelationshipID) error {
-	_, err := r.queries.GetStudentAssignmentTutor(ctx, dbgen.GetStudentAssignmentTutorParams{ID: relationship, StudentID: &student})
+func (r Homework) StudentTutorInScope(ctx context.Context, student domain.UserID, relationship domain.RelationshipID, now time.Time) error {
+	_, err := r.queries.GetStudentAssignmentTutor(ctx, dbgen.GetStudentAssignmentTutorParams{ID: relationship, StudentID: &student, TutorDeletedAfter: domain.ReadableTutorWorkCutoff(now)})
 	_, err = one(relationship, err, "the student's tutor for work")
 	return err
 }
@@ -321,16 +322,18 @@ func (r Homework) DeleteSubmissionsAnswers(ctx context.Context, submissions []do
 	return counted(deleted, err, "delete the answers of submissions")
 }
 
-func (r Homework) VisibleAnswers(ctx context.Context, viewer domain.UserID, attachment domain.AttachmentID) ([]VisibleAnswer, error) {
+func (r Homework) VisibleAnswers(ctx context.Context, viewer domain.UserID, attachment domain.AttachmentID, now time.Time) ([]VisibleAnswer, error) {
 	rows, err := r.queries.VisibleAnswerReferences(ctx, dbgen.VisibleAnswerReferencesParams{
-		AttachmentID: attachment, Viewer: pgtype.UUID{Bytes: viewer, Valid: true},
+		AttachmentID: attachment, Viewer: pgtype.UUID{Bytes: viewer, Valid: true}, TutorDeletedAfter: domain.ReadableTutorWorkCutoff(now),
 	})
 	return one(rows, err, "visible answer references")
 }
 
-func (r Homework) ServableAnswerFile(ctx context.Context, attachment domain.AttachmentID, submission domain.EntityID) (ServableFile, error) {
+func (r Homework) ServableAnswerFile(
+	ctx context.Context, attachment domain.AttachmentID, submission domain.EntityID, now time.Time,
+) (ServableFile, error) {
 	row, err := r.queries.GetServableAnswerFile(ctx, dbgen.GetServableAnswerFileParams{
-		SubmissionID: pgtype.UUID{Bytes: submission, Valid: true}, ID: attachment,
+		SubmissionID: pgtype.UUID{Bytes: submission, Valid: true}, ID: attachment, TutorDeletedAfter: domain.ReadableTutorWorkCutoff(now),
 	})
 	return one(ServableFile(row), err, "a servable answer file")
 }

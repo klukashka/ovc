@@ -85,7 +85,7 @@ func (s *Service) StudentLessons(ctx context.Context, student domain.UserID, tut
 		if err != nil {
 			return err
 		}
-		calendar, err := studentCalendar(ctx, repos, student, CalendarQuery{From: day.start, To: lookaheadEnd(day), Tutor: tutor})
+		calendar, err := s.studentCalendar(ctx, repos, student, CalendarQuery{From: day.start, To: lookaheadEnd(day), Tutor: tutor})
 		if err != nil {
 			return err
 		}

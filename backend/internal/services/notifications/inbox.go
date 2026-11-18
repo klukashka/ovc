@@ -92,7 +92,7 @@ func (i *Inbox) List(ctx context.Context, principal accounts.Principal, query Pa
 			next := encodeCursor(last.CreatedAt, last.ID)
 			page.NextCursor = &next
 		}
-		subjects, err := loadSubjects(ctx, repos, principal, rows)
+		subjects, err := loadSubjects(ctx, repos, principal, rows, now)
 		if err != nil {
 			return err
 		}
@@ -224,7 +224,9 @@ type subjects struct {
 	reviews       map[domain.SubmissionID]repositories.ReviewSubmission
 }
 
-func loadSubjects(ctx context.Context, repos repositories.Repositories, principal accounts.Principal, rows []repositories.Notification) (subjects, error) {
+func loadSubjects(
+	ctx context.Context, repos repositories.Repositories, principal accounts.Principal, rows []repositories.Notification, now time.Time,
+) (subjects, error) {
 	var relationshipIDs []domain.RelationshipID
 	var requestIDs []domain.JoinRequestID
 	var lessonIDs []domain.LessonID
@@ -258,7 +260,7 @@ func loadSubjects(ctx context.Context, repos repositories.Repositories, principa
 	if err := loaded.loadLessons(ctx, repos, principal, lessonIDs); err != nil {
 		return subjects{}, err
 	}
-	if err := loaded.loadSubmissions(ctx, repos, principal, submissionIDs); err != nil {
+	if err := loaded.loadSubmissions(ctx, repos, principal, submissionIDs, now); err != nil {
 		return subjects{}, err
 	}
 	if principal.Role == domain.RoleStudent && len(groupIDs) > 0 {
@@ -276,6 +278,10 @@ func loadSubjects(ctx context.Context, repos repositories.Repositories, principa
 			return subjects{}, err
 		}
 		for _, relationship := range relationships {
+			tutor := domain.TutorStanding{State: relationship.TutorState, DeletedAt: relationship.TutorDeletedAt}
+			if principal.Role == domain.RoleStudent && !tutor.ReadableAt(now) {
+				continue
+			}
 			loaded.relationships[relationship.ID] = relationship
 		}
 	}
@@ -311,7 +317,9 @@ func (s subjects) loadLessons(ctx context.Context, repos repositories.Repositori
 	return nil
 }
 
-func (s subjects) loadSubmissions(ctx context.Context, repos repositories.Repositories, principal accounts.Principal, ids []domain.SubmissionID) error {
+func (s subjects) loadSubmissions(
+	ctx context.Context, repos repositories.Repositories, principal accounts.Principal, ids []domain.SubmissionID, now time.Time,
+) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -325,7 +333,7 @@ func (s subjects) loadSubmissions(ctx context.Context, repos repositories.Reposi
 		}
 		return nil
 	}
-	rows, err := repos.Homework.ReadableSubmissionTitles(ctx, principal.UserID, ids)
+	rows, err := repos.Homework.ReadableSubmissionTitles(ctx, principal.UserID, ids, now)
 	if err != nil {
 		return err
 	}

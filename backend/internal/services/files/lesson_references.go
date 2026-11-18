@@ -15,7 +15,7 @@ func (lessonAuthorization) kind() domain.ReferenceKind {
 }
 
 func (lessonAuthorization) visible(
-	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID,
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID, _ time.Time,
 ) ([]visibleReference, error) {
 	lessons, err := repos.LessonMaterials.Visible(ctx, viewer, attachment)
 	if err != nil {
@@ -31,7 +31,7 @@ func (lessonAuthorization) visible(
 }
 
 func (lessonAuthorization) servable(
-	ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID,
+	ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID, _ time.Time,
 ) (repositories.ServableFile, error) {
 	return repos.LessonMaterials.ServableFile(ctx, attachment, item)
 }

@@ -166,3 +166,6 @@ WHERE tutor_profiles.code = @code;
 
 -- name: ListConfirmedUsers :many
 SELECT id FROM users WHERE id = ANY (sqlc.arg(ids)::uuid[]) AND email_verified_at IS NOT NULL ORDER BY id;
+
+-- name: GetTutorStanding :one
+SELECT state, deleted_at FROM users WHERE id = @id;

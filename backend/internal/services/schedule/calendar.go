@@ -66,7 +66,7 @@ func (s *Service) Calendar(ctx context.Context, viewer domain.UserID, role domai
 			calendar, err = tutorCalendar(ctx, repos, viewer, query)
 			return err
 		}
-		calendar, err = studentCalendar(ctx, repos, viewer, query)
+		calendar, err = s.studentCalendar(ctx, repos, viewer, query)
 		return err
 	})
 	return calendar, err
@@ -105,10 +105,14 @@ func tutorItem(row repositories.TutorCalendarItem) CalendarItem {
 	}
 }
 
-func studentCalendar(ctx context.Context, repos repositories.Repositories, student domain.UserID, query CalendarQuery) (Calendar, error) {
+func (s *Service) studentCalendar(ctx context.Context, repos repositories.Repositories, student domain.UserID, query CalendarQuery) (Calendar, error) {
 	var tutor *domain.UserID
 	if query.Tutor != nil {
-		listed, err := repos.Lessons.ListedRelationshipTutor(ctx, student, *query.Tutor)
+		now, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
+		if err != nil {
+			return Calendar{}, err
+		}
+		listed, err := repos.Lessons.ListedRelationshipTutor(ctx, student, *query.Tutor, now)
 		if errors.Is(err, repositories.ErrNotFound) {
 			return Calendar{}, ErrNotFound
 		}

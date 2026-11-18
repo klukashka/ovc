@@ -258,20 +258,22 @@ func (q *Queries) ListNotificationJoinRequests(ctx context.Context, ids []pgtype
 
 const listNotificationRelationships = `-- name: ListNotificationRelationships :many
 SELECT relationships.id, relationships.tutor_id, relationships.student_id, relationships.state, relationships.display_name,
-    relationships.colour, tutors.name AS tutor_name
+    relationships.colour, tutors.name AS tutor_name, tutors.state AS tutor_state, tutors.deleted_at AS tutor_deleted_at
 FROM relationships
 JOIN users AS tutors ON tutors.id = relationships.tutor_id
 WHERE relationships.id = ANY ($1::uuid[])
 `
 
 type ListNotificationRelationshipsRow struct {
-	ID          domain.RelationshipID
-	TutorID     domain.UserID
-	StudentID   *domain.UserID
-	State       domain.RelationshipState
-	DisplayName string
-	Colour      *domain.Colour
-	TutorName   string
+	ID             domain.RelationshipID
+	TutorID        domain.UserID
+	StudentID      *domain.UserID
+	State          domain.RelationshipState
+	DisplayName    string
+	Colour         *domain.Colour
+	TutorName      string
+	TutorState     domain.AccountState
+	TutorDeletedAt *time.Time
 }
 
 func (q *Queries) ListNotificationRelationships(ctx context.Context, ids []pgtype.UUID) ([]ListNotificationRelationshipsRow, error) {
@@ -291,6 +293,8 @@ func (q *Queries) ListNotificationRelationships(ctx context.Context, ids []pgtyp
 			&i.DisplayName,
 			&i.Colour,
 			&i.TutorName,
+			&i.TutorState,
+			&i.TutorDeletedAt,
 		); err != nil {
 			return nil, err
 		}

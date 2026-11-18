@@ -49,7 +49,11 @@ func (s *Service) myTutor(ctx context.Context, repos repositories.Repositories, 
 func (s *Service) tutorsOf(
 	ctx context.Context, repos repositories.Repositories, student domain.UserID, only *domain.RelationshipID,
 ) ([]MyTutor, error) {
-	rows, err := repos.Relationships.TutorsOfStudent(ctx, student, only)
+	now, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := repos.Relationships.TutorsOfStudent(ctx, student, only, now)
 	if err != nil {
 		return nil, err
 	}

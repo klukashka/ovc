@@ -757,13 +757,15 @@ JOIN users AS tutors ON tutors.id = relationships.tutor_id
 JOIN tutor_profiles ON tutor_profiles.user_id = relationships.tutor_id
 WHERE relationships.student_id = $1
     AND relationships.state IN ('active', 'provisional', 'ended')
-    AND ($2::uuid IS NULL OR relationships.id = $2::uuid)
+    AND (tutors.state <> 'deleted' OR tutors.deleted_at > $2::timestamptz)
+    AND ($3::uuid IS NULL OR relationships.id = $3::uuid)
 ORDER BY relationships.state = 'ended', relationships.linked_at, relationships.id
 `
 
 type ListStudentTutorsParams struct {
-	StudentID      *domain.UserID
-	RelationshipID pgtype.UUID
+	StudentID         *domain.UserID
+	TutorDeletedAfter time.Time
+	RelationshipID    pgtype.UUID
 }
 
 type ListStudentTutorsRow struct {
@@ -781,7 +783,7 @@ type ListStudentTutorsRow struct {
 }
 
 func (q *Queries) ListStudentTutors(ctx context.Context, arg ListStudentTutorsParams) ([]ListStudentTutorsRow, error) {
-	rows, err := q.db.Query(ctx, listStudentTutors, arg.StudentID, arg.RelationshipID)
+	rows, err := q.db.Query(ctx, listStudentTutors, arg.StudentID, arg.TutorDeletedAfter, arg.RelationshipID)
 	if err != nil {
 		return nil, err
 	}

@@ -15,9 +15,9 @@ func (issueSnapshotAuthorization) kind() domain.ReferenceKind {
 }
 
 func (issueSnapshotAuthorization) visible(
-	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID,
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID, now time.Time,
 ) ([]visibleReference, error) {
-	issues, err := repos.Homework.VisibleSnapshots(ctx, viewer, attachment)
+	issues, err := repos.Homework.VisibleSnapshots(ctx, viewer, attachment, now)
 	if err != nil {
 		return nil, err
 	}
@@ -31,9 +31,9 @@ func (issueSnapshotAuthorization) visible(
 }
 
 func (issueSnapshotAuthorization) servable(
-	ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID,
+	ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID, now time.Time,
 ) (repositories.ServableFile, error) {
-	return repos.Homework.ServableSnapshotFile(ctx, attachment, item)
+	return repos.Homework.ServableSnapshotFile(ctx, attachment, item, now)
 }
 
 func (s *Service) IssueSnapshotAddress(id domain.AttachmentID, issue domain.IssueID, disposition domain.Disposition, now time.Time) (string, time.Time) {

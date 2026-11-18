@@ -276,12 +276,14 @@ JOIN attachment_references
     ON attachment_references.attachment_id = attachments.id AND attachment_references.ref_kind = 'issue_snapshot'
         AND attachment_references.ref_id = $1::uuid
 JOIN issues ON issues.id = attachment_references.ref_id AND issues.erase_pending_since IS NULL
-WHERE attachments.id = $2 AND attachments.state = 'bound'
+JOIN users AS tutor ON tutor.id = issues.tutor_id
+WHERE attachments.id = $2 AND attachments.state = 'bound' AND (tutor.state <> 'deleted' OR tutor.deleted_at > $3::timestamptz)
 `
 
 type GetServableIssueSnapshotFileParams struct {
-	IssueID pgtype.UUID
-	ID      domain.AttachmentID
+	IssueID           pgtype.UUID
+	ID                domain.AttachmentID
+	TutorDeletedAfter time.Time
 }
 
 type GetServableIssueSnapshotFileRow struct {
@@ -294,7 +296,7 @@ type GetServableIssueSnapshotFileRow struct {
 }
 
 func (q *Queries) GetServableIssueSnapshotFile(ctx context.Context, arg GetServableIssueSnapshotFileParams) (GetServableIssueSnapshotFileRow, error) {
-	row := q.db.QueryRow(ctx, getServableIssueSnapshotFile, arg.IssueID, arg.ID)
+	row := q.db.QueryRow(ctx, getServableIssueSnapshotFile, arg.IssueID, arg.ID, arg.TutorDeletedAfter)
 	var i GetServableIssueSnapshotFileRow
 	err := row.Scan(
 		&i.StorageKey,
@@ -825,17 +827,20 @@ SELECT submissions.id, issues.title, submissions.deadline_at, submissions.status
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
+JOIN users AS tutor ON tutor.id = submissions.tutor_id
 WHERE submissions.student_id = $1 AND issues.lesson_id = $2
     AND issues.status = 'active' AND issues.erase_pending_since IS NULL
     AND relationships.state IN ('active', 'provisional', 'ended')
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > $3::timestamptz)
 ORDER BY issues.issued_at, issues.id
-LIMIT $3
+LIMIT $4
 `
 
 type ListStudentLessonSubmissionsParams struct {
-	StudentID domain.UserID
-	LessonID  *domain.LessonID
-	PageSize  int32
+	StudentID         domain.UserID
+	LessonID          *domain.LessonID
+	TutorDeletedAfter time.Time
+	PageSize          int32
 }
 
 type ListStudentLessonSubmissionsRow struct {
@@ -847,7 +852,12 @@ type ListStudentLessonSubmissionsRow struct {
 }
 
 func (q *Queries) ListStudentLessonSubmissions(ctx context.Context, arg ListStudentLessonSubmissionsParams) ([]ListStudentLessonSubmissionsRow, error) {
-	rows, err := q.db.Query(ctx, listStudentLessonSubmissions, arg.StudentID, arg.LessonID, arg.PageSize)
+	rows, err := q.db.Query(ctx, listStudentLessonSubmissions,
+		arg.StudentID,
+		arg.LessonID,
+		arg.TutorDeletedAfter,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1337,14 +1347,17 @@ SELECT submissions.id, issues.title
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
+JOIN users AS tutor ON tutor.id = submissions.tutor_id
 WHERE submissions.student_id = $1 AND submissions.id = ANY ($2::uuid[])
     AND issues.status = 'active' AND issues.erase_pending_since IS NULL
     AND relationships.state IN ('active', 'provisional', 'ended')
+    AND (tutor.state <> 'deleted' OR tutor.deleted_at > $3::timestamptz)
 `
 
 type ReadableStudentSubmissionTitlesParams struct {
-	StudentID domain.UserID
-	Ids       []pgtype.UUID
+	StudentID         domain.UserID
+	Ids               []pgtype.UUID
+	TutorDeletedAfter time.Time
 }
 
 type ReadableStudentSubmissionTitlesRow struct {
@@ -1353,7 +1366,7 @@ type ReadableStudentSubmissionTitlesRow struct {
 }
 
 func (q *Queries) ReadableStudentSubmissionTitles(ctx context.Context, arg ReadableStudentSubmissionTitlesParams) ([]ReadableStudentSubmissionTitlesRow, error) {
-	rows, err := q.db.Query(ctx, readableStudentSubmissionTitles, arg.StudentID, arg.Ids)
+	rows, err := q.db.Query(ctx, readableStudentSubmissionTitles, arg.StudentID, arg.Ids, arg.TutorDeletedAfter)
 	if err != nil {
 		return nil, err
 	}
@@ -1522,8 +1535,10 @@ WHERE attachment_references.attachment_id = $1 AND attachment_references.ref_kin
             AND EXISTS (
                 SELECT 1 FROM submissions
                 JOIN relationships ON relationships.id = submissions.relationship_id
+                JOIN users AS tutor ON tutor.id = submissions.tutor_id
                 WHERE submissions.issue_id = issues.id AND submissions.student_id = $2::uuid
                     AND relationships.state IN ('active', 'provisional', 'ended')
+                    AND (tutor.state <> 'deleted' OR tutor.deleted_at > $3::timestamptz)
             )
         )
     )
@@ -1531,8 +1546,9 @@ ORDER BY issues.id
 `
 
 type VisibleIssueSnapshotReferencesParams struct {
-	AttachmentID domain.AttachmentID
-	Viewer       pgtype.UUID
+	AttachmentID      domain.AttachmentID
+	Viewer            pgtype.UUID
+	TutorDeletedAfter time.Time
 }
 
 type VisibleIssueSnapshotReferencesRow struct {
@@ -1541,7 +1557,7 @@ type VisibleIssueSnapshotReferencesRow struct {
 }
 
 func (q *Queries) VisibleIssueSnapshotReferences(ctx context.Context, arg VisibleIssueSnapshotReferencesParams) ([]VisibleIssueSnapshotReferencesRow, error) {
-	rows, err := q.db.Query(ctx, visibleIssueSnapshotReferences, arg.AttachmentID, arg.Viewer)
+	rows, err := q.db.Query(ctx, visibleIssueSnapshotReferences, arg.AttachmentID, arg.Viewer, arg.TutorDeletedAfter)
 	if err != nil {
 		return nil, err
 	}

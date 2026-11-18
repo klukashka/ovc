@@ -67,8 +67,8 @@ type visibleReference struct {
 
 type referenceAuthorization interface {
 	kind() domain.ReferenceKind
-	visible(ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID) ([]visibleReference, error)
-	servable(ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID) (repositories.ServableFile, error)
+	visible(ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID, now time.Time) ([]visibleReference, error)
+	servable(ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID, now time.Time) (repositories.ServableFile, error)
 }
 
 func (s *Service) authorizationOf(kind domain.ReferenceKind) (referenceAuthorization, bool) {
@@ -103,10 +103,14 @@ func (s *Service) DownloadAddress(ctx context.Context, viewer domain.UserID, id 
 }
 
 func (s *Service) referencedAddress(ctx context.Context, viewer domain.UserID, id domain.AttachmentID, request AddressRequest) (DownloadAddress, error) {
+	now, err := s.deps.Clock.Instant(ctx)
+	if err != nil {
+		return DownloadAddress{}, err
+	}
 	repos := s.deps.Store.Repositories()
 	var visible []visibleReference
 	for _, authorization := range s.references {
-		found, err := authorization.visible(ctx, repos, viewer, id)
+		found, err := authorization.visible(ctx, repos, viewer, id, now)
 		if err != nil {
 			return DownloadAddress{}, err
 		}
@@ -126,10 +130,6 @@ func (s *Service) referencedAddress(ctx context.Context, viewer domain.UserID, i
 	disposition, valid := request.disposition(visible[index].width)
 	if !valid {
 		return DownloadAddress{}, ErrInvalidDisposition
-	}
-	now, err := s.deps.Clock.Instant(ctx)
-	if err != nil {
-		return DownloadAddress{}, err
 	}
 	return s.ReferenceAddress(id, reference, disposition, now)
 }
@@ -188,7 +188,7 @@ func (s *Service) Download(ctx context.Context, id domain.AttachmentID, token st
 	opening, cancelCause := context.WithCancelCause(ctx)
 	cancel := func() { cancelCause(context.Canceled) }
 	deadline := time.AfterFunc(s.deps.Downloads.Open, func() { cancelCause(context.DeadlineExceeded) })
-	download, err := s.openDownload(opening, id, claims, cancel)
+	download, err := s.openDownload(opening, id, claims, cancel, now)
 	if err != nil {
 		deadline.Stop()
 		cause := context.Cause(opening)
@@ -269,9 +269,11 @@ func (b *timedDownloadBody) Close() error {
 	return b.close()
 }
 
-func (s *Service) openDownload(ctx context.Context, id domain.AttachmentID, claims downloadClaims, cancel context.CancelFunc) (Download, error) {
+func (s *Service) openDownload(
+	ctx context.Context, id domain.AttachmentID, claims downloadClaims, cancel context.CancelFunc, now time.Time,
+) (Download, error) {
 	kind := referenceKindAttribute(claims.Reference.Kind)
-	file, err := s.servableFile(ctx, id, claims.Reference)
+	file, err := s.servableFile(ctx, id, claims.Reference, now)
 	if errors.Is(err, repositories.ErrNotFound) {
 		return Download{}, s.refusedDownload(ctx, id, domain.RefusedUnreferenced, kind)
 	}
@@ -312,7 +314,9 @@ func (s *Service) openDownload(ctx context.Context, id domain.AttachmentID, clai
 	}, nil
 }
 
-func (s *Service) servableFile(ctx context.Context, id domain.AttachmentID, reference DownloadReference) (repositories.ServableFile, error) {
+func (s *Service) servableFile(
+	ctx context.Context, id domain.AttachmentID, reference DownloadReference, now time.Time,
+) (repositories.ServableFile, error) {
 	repos := s.deps.Store.Repositories()
 	if reference.Kind == domain.ReferenceMessage {
 		return repos.Attachments.ServableChat(ctx, id, reference.Item)
@@ -321,7 +325,7 @@ func (s *Service) servableFile(ctx context.Context, id domain.AttachmentID, refe
 	if !authorized {
 		return repositories.ServableFile{}, repositories.ErrNotFound
 	}
-	return authorization.servable(ctx, repos, id, reference.Item)
+	return authorization.servable(ctx, repos, id, reference.Item, now)
 }
 
 func (s *Service) refusedDownload(ctx context.Context, id domain.AttachmentID, reason domain.DownloadRefusal, known ...slog.Attr) error {

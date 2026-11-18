@@ -15,7 +15,7 @@ func (templateAuthorization) kind() domain.ReferenceKind {
 }
 
 func (templateAuthorization) visible(
-	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID,
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID, _ time.Time,
 ) ([]visibleReference, error) {
 	templates, err := repos.Library.VisibleTemplates(ctx, viewer, attachment)
 	if err != nil {
@@ -31,7 +31,7 @@ func (templateAuthorization) visible(
 }
 
 func (templateAuthorization) servable(
-	ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID,
+	ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID, _ time.Time,
 ) (repositories.ServableFile, error) {
 	return repos.Library.ServableTemplateFile(ctx, attachment, item)
 }

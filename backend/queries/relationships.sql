@@ -139,6 +139,7 @@ JOIN users AS tutors ON tutors.id = relationships.tutor_id
 JOIN tutor_profiles ON tutor_profiles.user_id = relationships.tutor_id
 WHERE relationships.student_id = @student_id
     AND relationships.state IN ('active', 'provisional', 'ended')
+    AND (tutors.state <> 'deleted' OR tutors.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz)
     AND (sqlc.narg(relationship_id)::uuid IS NULL OR relationships.id = sqlc.narg(relationship_id)::uuid)
 ORDER BY relationships.state = 'ended', relationships.linked_at, relationships.id;
 

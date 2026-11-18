@@ -47,6 +47,7 @@ import {
   accountPreferences,
   createCard,
   createGroup,
+  deleteAccount,
   endRelationship,
   saveTheme,
   seedActiveStudent,
@@ -948,6 +949,23 @@ test.describe('results of checked and returned work', () => {
     await link.click();
 
     expect((await download).suggestedFilename()).toBe(correctedPdf.name);
+  });
+
+  test('checked work of a tutor who deleted their account stays readable and read-only', async ({
+    page,
+    deployment,
+  }) => {
+    const work = await submittedByAnna(deployment);
+    const item = await correctedReview(deployment, work, 'Line one.', 5);
+    await publishReview(deployment, work.pavel, work.submissionId, 'check', 'Well done.', [item]);
+    await deleteAccount(deployment, work.pavel);
+
+    await openAssignment(page, work.anna, work.submissionId);
+
+    await expect(feedbackSection(page)).toContainText('Well done.');
+    await expect(question(page, 3).getByRole('link', { name: correctedPdf.name, exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Submit', exact: true })).toHaveCount(0);
+    await expect(textAnswer(page)).not.toBeEditable();
   });
 
   test('checked work’s results show no points: the points sentinel and every total stay out of the page and its responses', async ({

@@ -276,6 +276,22 @@ func (q *Queries) GetTutorProfile(ctx context.Context, userID domain.UserID) (Tu
 	return i, err
 }
 
+const getTutorStanding = `-- name: GetTutorStanding :one
+SELECT state, deleted_at FROM users WHERE id = $1
+`
+
+type GetTutorStandingRow struct {
+	State     domain.AccountState
+	DeletedAt *time.Time
+}
+
+func (q *Queries) GetTutorStanding(ctx context.Context, id domain.UserID) (GetTutorStandingRow, error) {
+	row := q.db.QueryRow(ctx, getTutorStanding, id)
+	var i GetTutorStandingRow
+	err := row.Scan(&i.State, &i.DeletedAt)
+	return i, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, role, state, state_before_block, email, email_verified_at, password_hash, name, language, timezone, theme, consent_version, consent_at, unverified_since, deleted_at, created_at, updated_at, reclaim_until FROM users WHERE email = $1
 `

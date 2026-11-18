@@ -15,7 +15,7 @@ func (materialAuthorization) kind() domain.ReferenceKind {
 }
 
 func (materialAuthorization) visible(
-	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID,
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, attachment domain.AttachmentID, _ time.Time,
 ) ([]visibleReference, error) {
 	materials, err := repos.Library.VisibleMaterials(ctx, viewer, attachment)
 	if err != nil {
@@ -31,7 +31,7 @@ func (materialAuthorization) visible(
 }
 
 func (materialAuthorization) servable(
-	ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID,
+	ctx context.Context, repos repositories.Repositories, attachment domain.AttachmentID, item domain.EntityID, _ time.Time,
 ) (repositories.ServableFile, error) {
 	return repos.Library.ServableMaterialFile(ctx, attachment, item)
 }
