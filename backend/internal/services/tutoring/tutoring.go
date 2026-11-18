@@ -2,6 +2,7 @@ package tutoring
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -13,13 +14,15 @@ import (
 )
 
 const (
-	dailyWindow = 24 * time.Hour
+	dailyWindow  = 24 * time.Hour
+	hourlyWindow = time.Hour
 
 	purposeCodeRegeneration domain.RateLimitPurpose = "tutor_code_regeneration_day"
 	purposeCardCreation     domain.RateLimitPurpose = "card_creation_day"
 	purposeCardEmailChange  domain.RateLimitPurpose = "card_email_change_day"
 
 	purposeInvitationRegeneration domain.RateLimitPurpose = "invitation_regeneration_day"
+	purposeSettingsWrites         domain.RateLimitPurpose = "tutor_settings_writes_hour"
 )
 
 type rateLimit struct {
@@ -37,6 +40,9 @@ var (
 	cardCreationLimit     = daily(purposeCardCreation, 50)
 	cardEmailChangeLimit  = daily(purposeCardEmailChange, 50)
 	regenerationLimit     = daily(purposeInvitationRegeneration, 50)
+	settingsWriteLimit    = rateLimit{purpose: purposeSettingsWrites, window: hourlyWindow, limit: 60}
+
+	settingsWriters = []domain.AccountState{domain.AccountActive, domain.AccountUnverified}
 )
 
 type ThrottledError struct {
@@ -53,8 +59,9 @@ type TutorCode struct {
 }
 
 type TutorSettings struct {
-	FileQuotaBytes int64
-	FileUsageBytes int64
+	FileQuotaBytes      int64
+	FileUsageBytes      int64
+	OnboardingDismissed bool
 }
 
 type Dependencies struct {
@@ -101,11 +108,53 @@ func (s *Service) Code(ctx context.Context, tutor domain.UserID) (TutorCode, err
 }
 
 func (s *Service) Settings(ctx context.Context, tutor domain.UserID) (TutorSettings, error) {
-	profile, err := s.deps.Store.Repositories().TutorProfiles.ByUser(ctx, tutor)
+	return settingsOf(ctx, s.deps.Store.Repositories(), tutor)
+}
+
+func settingsOf(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) (TutorSettings, error) {
+	profile, err := repos.TutorProfiles.ByUser(ctx, tutor)
 	if err != nil {
 		return TutorSettings{}, err
 	}
-	return TutorSettings{FileQuotaBytes: profile.FileQuotaBytes, FileUsageBytes: profile.FileUsageBytes}, nil
+	return TutorSettings{
+		FileQuotaBytes: profile.FileQuotaBytes, FileUsageBytes: profile.FileUsageBytes, OnboardingDismissed: profile.OnboardingDismissedAt != nil,
+	}, nil
+}
+
+func (s *Service) DismissOnboarding(ctx context.Context, actor domain.TutorActor) (TutorSettings, error) {
+	tutor := actor.UserID
+	var settings TutorSettings
+	dismissed := false
+	err := s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+		now, err := s.lockActingTutorIn(ctx, repos, actor, settingsWriters)
+		if err != nil {
+			return err
+		}
+		if err := s.reserve(ctx, repos, settingsWriteLimit, tutor, now); err != nil {
+			s.logSettingsThrottled(ctx, err)
+			return err
+		}
+		dismissed, err = repos.TutorProfiles.DismissOnboarding(ctx, tutor, now)
+		if err != nil {
+			return err
+		}
+		settings, err = settingsOf(ctx, repos, tutor)
+		return err
+	})
+	if err != nil {
+		return TutorSettings{}, err
+	}
+	if dismissed {
+		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "onboarding.dismissed", slog.String("tutor_id", tutor.String()))
+	}
+	return settings, nil
+}
+
+func (s *Service) logSettingsThrottled(ctx context.Context, err error) {
+	var throttled *ThrottledError
+	if errors.As(err, &throttled) {
+		s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "tutor.settings.rate_limited", slog.String("limit", string(purposeSettingsWrites)))
+	}
 }
 
 func (s *Service) RegenerateCode(ctx context.Context, actor domain.TutorActor) (TutorCode, error) {

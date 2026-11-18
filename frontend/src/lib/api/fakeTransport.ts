@@ -175,6 +175,7 @@ function summaryOf(card: StudentCard): StudentCardSummary {
     ended_by: card.ended_by,
     created_at: card.created_at,
     next_lesson: null,
+    open_assignments: 0,
   };
 }
 

@@ -197,6 +197,24 @@ func (q *Queries) DeleteUser(ctx context.Context, id domain.UserID) (int64, erro
 	return result.RowsAffected(), nil
 }
 
+const dismissTutorOnboarding = `-- name: DismissTutorOnboarding :execrows
+UPDATE tutor_profiles SET onboarding_dismissed_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE user_id = $2 AND onboarding_dismissed_at IS NULL
+`
+
+type DismissTutorOnboardingParams struct {
+	Now    time.Time
+	UserID domain.UserID
+}
+
+func (q *Queries) DismissTutorOnboarding(ctx context.Context, arg DismissTutorOnboardingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, dismissTutorOnboarding, arg.Now, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getTutorByCode = `-- name: GetTutorByCode :one
 SELECT tutor_profiles.user_id, users.state FROM tutor_profiles
 JOIN users ON users.id = tutor_profiles.user_id

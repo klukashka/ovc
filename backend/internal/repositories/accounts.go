@@ -139,6 +139,11 @@ func (r TutorProfiles) Lock(ctx context.Context, tutor domain.UserID) error {
 	return err
 }
 
+func (r TutorProfiles) DismissOnboarding(ctx context.Context, tutor domain.UserID, now time.Time) (bool, error) {
+	rows, err := r.queries.DismissTutorOnboarding(ctx, dbgen.DismissTutorOnboardingParams{Now: now, UserID: tutor})
+	return applied(rows, err, "dismiss the tutor's onboarding")
+}
+
 func (r TutorProfiles) LockCode(ctx context.Context, tutor domain.UserID) (domain.TutorCode, error) {
 	code, err := r.queries.LockTutorProfile(ctx, tutor)
 	return one(code, err, "lock tutor profile")

@@ -102,8 +102,9 @@ type CardQuery struct {
 }
 
 type CardPage struct {
-	Items      []Card
-	NextCursor *string
+	Items           []Card
+	NextCursor      *string
+	OpenAssignments map[domain.RelationshipID]int64
 }
 
 type NewCard struct {
@@ -163,6 +164,14 @@ func (s *Service) ListCards(ctx context.Context, tutor domain.UserID, query Card
 			page.NextCursor = &next
 		}
 		page.Items, err = s.cardViews(ctx, repos, tutor, rows)
+		if err != nil {
+			return err
+		}
+		ids := make([]domain.RelationshipID, 0, len(rows))
+		for _, row := range rows {
+			ids = append(ids, row.ID)
+		}
+		page.OpenAssignments, err = repos.Homework.OpenAssignments(ctx, tutor, ids)
 		return err
 	})
 	return page, err

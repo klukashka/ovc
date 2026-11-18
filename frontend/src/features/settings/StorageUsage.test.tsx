@@ -17,7 +17,11 @@ const fiveGigabytes = 5_000_000_000;
 async function tutorWithUsage(usedBytes: number): Promise<Session> {
   const server = new FakeAuthServer();
   server.addAccount({ id: 'tutor-1', name: 'A tutor', email: tutorEmail, password: 'a long password', role: 'tutor' });
-  server.setTutorSettings(tutorEmail, { file_usage_bytes: usedBytes, file_quota_bytes: fiveGigabytes });
+  server.setTutorSettings(tutorEmail, {
+    file_usage_bytes: usedBytes,
+    file_quota_bytes: fiveGigabytes,
+    onboarding_dismissed: false,
+  });
   const session = new Session({
     origin,
     transport: server.transport(),

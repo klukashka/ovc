@@ -213,6 +213,20 @@ func (r Homework) Progress(ctx context.Context, tutor domain.UserID, issues []do
 	return one(rows, err, "the progress of issues")
 }
 
+func (r Homework) OpenAssignments(
+	ctx context.Context, tutor domain.UserID, relationships []domain.RelationshipID,
+) (map[domain.RelationshipID]int64, error) {
+	rows, err := r.queries.CountOpenAssignments(ctx, dbgen.CountOpenAssignmentsParams{TutorID: tutor, RelationshipIds: uuids(relationships)})
+	if _, err := one(rows, err, "the open assignments of cards"); err != nil {
+		return nil, err
+	}
+	counts := make(map[domain.RelationshipID]int64, len(rows))
+	for _, row := range rows {
+		counts[row.RelationshipID] = row.OpenAssignments
+	}
+	return counts, nil
+}
+
 func (r Homework) RelationshipSubmissions(
 	ctx context.Context, tutor domain.UserID, relationship domain.RelationshipID, issues []domain.IssueID,
 ) ([]RelationshipSubmission, error) {

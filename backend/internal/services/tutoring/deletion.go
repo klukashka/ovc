@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"ovc/backend/internal/core"
@@ -454,37 +455,44 @@ func (s *Service) OnAccountPurged(
 }
 
 func (s *Service) lockActingTutor(ctx context.Context, repos repositories.Repositories, actor domain.TutorActor) error {
+	_, err := s.lockActingTutorIn(ctx, repos, actor, []domain.AccountState{domain.AccountActive})
+	return err
+}
+
+func (s *Service) lockActingTutorIn(
+	ctx context.Context, repos repositories.Repositories, actor domain.TutorActor, accepted []domain.AccountState,
+) (time.Time, error) {
 	tutor := actor.UserID
 	err := repos.TutorProfiles.Lock(ctx, tutor)
 	if errors.Is(err, repositories.ErrNotFound) {
-		return accounts.ErrUnauthenticated
+		return time.Time{}, accounts.ErrUnauthenticated
 	}
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 
 	checkedAt, err := s.deps.Clock.InstantWithin(ctx, repos.TestClock)
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 	session, err := repos.Sessions.ByID(ctx, actor.SessionID)
 	if errors.Is(err, repositories.ErrNotFound) {
-		return accounts.ErrUnauthenticated
+		return time.Time{}, accounts.ErrUnauthenticated
 	}
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 	if session.UserID != actor.UserID || session.RevokedAt != nil || !checkedAt.Before(session.ExpiresAt) {
-		return accounts.ErrUnauthenticated
+		return time.Time{}, accounts.ErrUnauthenticated
 	}
-	active, err := s.tutorActive(ctx, repos, tutor)
+	account, err := repos.Users.ByID(ctx, tutor)
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
-	if !active {
-		return accounts.ErrUnauthenticated
+	if !slices.Contains(accepted, account.State) {
+		return time.Time{}, accounts.ErrUnauthenticated
 	}
-	return nil
+	return checkedAt, nil
 }
 
 func (s *Service) tutorActive(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) (bool, error) {

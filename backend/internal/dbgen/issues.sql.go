@@ -61,6 +61,46 @@ func (q *Queries) CountLessonIssues(ctx context.Context, arg CountLessonIssuesPa
 	return count, err
 }
 
+const countOpenAssignments = `-- name: CountOpenAssignments :many
+SELECT submissions.relationship_id, count(submissions.id) AS open_assignments
+FROM submissions
+JOIN issues ON issues.id = submissions.issue_id
+WHERE submissions.tutor_id = $1 AND issues.tutor_id = $1 AND issues.status = 'active' AND issues.erase_pending_since IS NULL
+    AND submissions.status IN ('not_started', 'draft', 'returned', 'submitted')
+    AND submissions.relationship_id = ANY ($2::uuid[])
+GROUP BY submissions.relationship_id
+`
+
+type CountOpenAssignmentsParams struct {
+	TutorID         domain.UserID
+	RelationshipIds []pgtype.UUID
+}
+
+type CountOpenAssignmentsRow struct {
+	RelationshipID  domain.RelationshipID
+	OpenAssignments int64
+}
+
+func (q *Queries) CountOpenAssignments(ctx context.Context, arg CountOpenAssignmentsParams) ([]CountOpenAssignmentsRow, error) {
+	rows, err := q.db.Query(ctx, countOpenAssignments, arg.TutorID, arg.RelationshipIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountOpenAssignmentsRow
+	for rows.Next() {
+		var i CountOpenAssignmentsRow
+		if err := rows.Scan(&i.RelationshipID, &i.OpenAssignments); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countTutorIssuesByDeadline = `-- name: CountTutorIssuesByDeadline :one
 SELECT count(*)::bigint FROM (
     SELECT 1 FROM issues

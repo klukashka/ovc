@@ -19,7 +19,10 @@ import (
 	"ovc/backend/internal/services/tutoring"
 )
 
-const studentsPath = "/api/v1/students"
+const (
+	studentsPath             = "/api/v1/students"
+	fieldOnboardingDismissed = "body.onboarding_dismissed"
+)
 
 type tutorCodeOutput struct {
 	CacheControl string `header:"Cache-Control"`
@@ -29,6 +32,11 @@ type tutorCodeOutput struct {
 type tutorSettingsOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         schemas.TutorSettings
+}
+
+type tutorSettingsPatchInput struct {
+	ContentType string `header:"Content-Type"`
+	Body        schemas.TutorSettingsPatch
 }
 
 type studentListInput struct {
@@ -142,6 +150,10 @@ func (r *router) registerTutoring() {
 	settings := operation("tutor-settings", http.MethodGet, "/api/v1/tutor/settings")
 	settings.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
 	register(r, settings, AudienceTutorUnverifiedOK, r.tutorSettings)
+
+	updateSettings := operation("tutor-settings-update", http.MethodPatch, "/api/v1/tutor/settings")
+	updateSettings.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusTooManyRequests)
+	register(r, updateSettings, AudienceTutorUnverifiedOK, r.updateTutorSettings)
 
 	r.registerStudentCards()
 
@@ -266,9 +278,31 @@ func (r *router) tutorSettings(ctx context.Context, _ *struct{}) (*tutorSettings
 	if err != nil {
 		return nil, r.tutoringError(ctx, "tutor.settings.failed", err)
 	}
+	return tutorSettingsBody(settings), nil
+}
+
+func (r *router) updateTutorSettings(ctx context.Context, input *tutorSettingsPatchInput) (*tutorSettingsOutput, error) {
+	if err := requireJSON(ctx, input.ContentType); err != nil {
+		return nil, err
+	}
+	flag := input.Body.OnboardingDismissed
+	if !flag.Set {
+		return nil, validationRefusal(ctx, fieldOnboardingDismissed, domain.FieldRequired)
+	}
+	if flag.Value == nil || !*flag.Value {
+		return nil, validationRefusal(ctx, fieldOnboardingDismissed, domain.FieldInvalid)
+	}
+	settings, err := r.tutoring.DismissOnboarding(ctx, tutorActorFrom(ctx))
+	if err != nil {
+		return nil, r.tutoringError(ctx, "tutor.settings.update.failed", err)
+	}
+	return tutorSettingsBody(settings), nil
+}
+
+func tutorSettingsBody(settings tutoring.TutorSettings) *tutorSettingsOutput {
 	return &tutorSettingsOutput{CacheControl: noStore, Body: schemas.TutorSettings{
-		FileQuotaBytes: settings.FileQuotaBytes, FileUsageBytes: settings.FileUsageBytes,
-	}}, nil
+		FileQuotaBytes: settings.FileQuotaBytes, FileUsageBytes: settings.FileUsageBytes, OnboardingDismissed: settings.OnboardingDismissed,
+	}}
 }
 
 func tutorCodeBody(code tutoring.TutorCode) *tutorCodeOutput {
@@ -300,7 +334,7 @@ func (r *router) listCards(ctx context.Context, input *studentListInput) (*stude
 	}
 	body := schemas.StudentCardPage{Items: make([]schemas.StudentCardSummary, 0, len(page.Items)), NextCursor: page.NextCursor}
 	for _, card := range page.Items {
-		summary := schemas.StudentCardSummary{CardFields: cardFieldsBody(card)}
+		summary := schemas.StudentCardSummary{CardFields: cardFieldsBody(card), OpenAssignments: page.OpenAssignments[card.ID]}
 		if lesson, found := next[card.ID]; found {
 			item := calendarItemBody(lesson)
 			summary.NextLesson = &item

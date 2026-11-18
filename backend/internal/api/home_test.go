@@ -92,6 +92,8 @@ func TestHomeTutorParts(t *testing.T) {
 	parts := h.home(t, token, "")
 	h.mustAnswer(t, h.patchMe(t, token, `{"bio":"Teaches French"}`), http.StatusOK)
 	described := h.home(t, token, "")
+	h.dismissed(t, token)
+	dismissedParts := h.home(t, token, "")
 
 	assertTutorHomeShape(t, parts)
 	calendar, items := h.calendarItems(t, token, dayStart, dayStart.Add(24*time.Hour), "")
@@ -147,6 +149,10 @@ func TestHomeTutorParts(t *testing.T) {
 	wantDescribed := `{"onboarding_dismissed":false,"steps":{"profile":true,"student":true,"lesson":true,"assignment":true}}`
 	if got := compactValue(t, described["checklist"]); got != wantDescribed {
 		t.Errorf("the checklist after the bio is %s, want %s", got, wantDescribed)
+	}
+	wantDismissed := `{"onboarding_dismissed":true,"steps":{"profile":true,"student":true,"lesson":true,"assignment":true}}`
+	if got := compactValue(t, dismissedParts["checklist"]); got != wantDismissed {
+		t.Errorf("the checklist after the dismissal is %s, want %s", got, wantDismissed)
 	}
 }
 

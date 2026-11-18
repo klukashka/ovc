@@ -159,6 +159,15 @@ JOIN issues ON issues.id = submissions.issue_id
 WHERE submissions.tutor_id = @tutor_id AND submissions.issue_id = ANY (sqlc.arg(issue_ids)::uuid[])
 GROUP BY submissions.issue_id;
 
+-- name: CountOpenAssignments :many
+SELECT submissions.relationship_id, count(submissions.id) AS open_assignments
+FROM submissions
+JOIN issues ON issues.id = submissions.issue_id
+WHERE submissions.tutor_id = @tutor_id AND issues.tutor_id = @tutor_id AND issues.status = 'active' AND issues.erase_pending_since IS NULL
+    AND submissions.status IN ('not_started', 'draft', 'returned', 'submitted')
+    AND submissions.relationship_id = ANY (sqlc.arg(relationship_ids)::uuid[])
+GROUP BY submissions.relationship_id;
+
 -- name: ListRelationshipIssueSubmissions :many
 SELECT id, issue_id, status, late, final_points, issued_before_reclaim FROM submissions
 WHERE tutor_id = @tutor_id AND relationship_id = @relationship_id AND issue_id = ANY (sqlc.arg(issue_ids)::uuid[]);

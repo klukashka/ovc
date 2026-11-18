@@ -17,8 +17,36 @@ type TutorCode struct {
 }
 
 type TutorSettings struct {
-	FileQuotaBytes int64 `json:"file_quota_bytes" minimum:"0"`
-	FileUsageBytes int64 `json:"file_usage_bytes" minimum:"0"`
+	FileQuotaBytes      int64 `json:"file_quota_bytes" minimum:"0"`
+	FileUsageBytes      int64 `json:"file_usage_bytes" minimum:"0"`
+	OnboardingDismissed bool  `json:"onboarding_dismissed"`
+}
+
+type TutorSettingsPatch struct {
+	OnboardingDismissed NullableFlag `json:"onboarding_dismissed,omitempty"`
+}
+
+type NullableFlag struct {
+	Set   bool
+	Value *bool
+}
+
+func (n *NullableFlag) UnmarshalJSON(data []byte) error {
+	n.Set = true
+	if bytes.Equal(data, []byte("null")) {
+		n.Value = nil
+		return nil
+	}
+	var value bool
+	if err := json.Unmarshal(data, &value); err != nil {
+		return fmt.Errorf("decode a flag: %w", err)
+	}
+	n.Value = &value
+	return nil
+}
+
+func (NullableFlag) Schema(huma.Registry) *huma.Schema {
+	return &huma.Schema{Type: huma.TypeBoolean, Nullable: true}
 }
 
 type CardAccount struct {
@@ -61,7 +89,8 @@ type CardFields struct {
 
 type StudentCardSummary struct {
 	CardFields
-	NextLesson *CalendarItem `json:"next_lesson"`
+	NextLesson      *CalendarItem `json:"next_lesson"`
+	OpenAssignments int64         `json:"open_assignments" minimum:"0"`
 }
 
 func (StudentCardSummary) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {

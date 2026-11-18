@@ -26,6 +26,10 @@ SELECT tutor_profiles.code, users.state FROM tutor_profiles
 JOIN users ON users.id = tutor_profiles.user_id
 WHERE tutor_profiles.user_id = @user_id;
 
+-- name: DismissTutorOnboarding :execrows
+UPDATE tutor_profiles SET onboarding_dismissed_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+WHERE user_id = @user_id AND onboarding_dismissed_at IS NULL;
+
 -- name: LockTutorProfile :one
 SELECT code FROM tutor_profiles WHERE user_id = @user_id FOR NO KEY UPDATE;
 
