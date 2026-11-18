@@ -74,6 +74,29 @@ func (q *Queries) CloseUnblockedJoinRequestsOfStudent(ctx context.Context, arg C
 	return result.RowsAffected(), nil
 }
 
+const countTutorJoinRequests = `-- name: CountTutorJoinRequests :one
+SELECT count(*)::bigint FROM (
+    SELECT 1 FROM join_requests
+    JOIN users AS students ON students.id = join_requests.student_id
+    WHERE join_requests.tutor_id = $1 AND join_requests.state = 'pending' AND join_requests.suppressed = 'none'
+        AND students.state <> 'blocked' AND join_requests.expires_at > $2::timestamptz
+    LIMIT $3
+) AS visible
+`
+
+type CountTutorJoinRequestsParams struct {
+	TutorID  domain.UserID
+	Now      time.Time
+	CountCap int32
+}
+
+func (q *Queries) CountTutorJoinRequests(ctx context.Context, arg CountTutorJoinRequestsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTutorJoinRequests, arg.TutorID, arg.Now, arg.CountCap)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countVisiblePendingJoinRequests = `-- name: CountVisiblePendingJoinRequests :one
 SELECT count(join_requests.id) FROM join_requests
 JOIN users AS students ON students.id = join_requests.student_id

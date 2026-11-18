@@ -1489,3 +1489,23 @@ func (q *Queries) LockTutorRelationshipsForLesson(ctx context.Context, arg LockT
 	}
 	return items, nil
 }
+
+const tutorHasLessonStarting = `-- name: TutorHasLessonStarting :one
+SELECT EXISTS (
+    SELECT 1 FROM lessons
+    WHERE tutor_id = $1 AND starts_at >= $2::timestamptz AND starts_at < $3::timestamptz
+)::boolean
+`
+
+type TutorHasLessonStartingParams struct {
+	TutorID    domain.UserID
+	RangeStart time.Time
+	RangeEnd   time.Time
+}
+
+func (q *Queries) TutorHasLessonStarting(ctx context.Context, arg TutorHasLessonStartingParams) (bool, error) {
+	row := q.db.QueryRow(ctx, tutorHasLessonStarting, arg.TutorID, arg.RangeStart, arg.RangeEnd)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}

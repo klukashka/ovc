@@ -89,18 +89,23 @@ func (r *router) assignments(ctx context.Context, input *assignmentsInput) (*ass
 		return nil, r.homeworkError(ctx, "homework.assignments.list.failed", err)
 	}
 	body := schemas.StudentAssignmentPage{
-		Items: make([]schemas.StudentAssignmentItem, 0, len(page.Items)), NextCursor: page.NextCursor,
+		Items: assignmentItemsBody(page.Items), NextCursor: page.NextCursor,
 		Counts: schemas.StudentAssignmentCounts{Todo: page.Counts.Todo, Closed: page.Counts.Closed},
 	}
-	for _, item := range page.Items {
-		body.Items = append(body.Items, schemas.StudentAssignmentItem{
+	return &assignmentPageOutput{CacheControl: noStore, Body: body}, nil
+}
+
+func assignmentItemsBody(items []homework.AssignmentItem) []schemas.StudentAssignmentItem {
+	body := make([]schemas.StudentAssignmentItem, 0, len(items))
+	for _, item := range items {
+		body = append(body, schemas.StudentAssignmentItem{
 			SubmissionID: item.Submission.String(), Title: item.Title, Tutor: assignmentTutorBody(item.Tutor), Status: item.Status,
 			Late: item.Late, IssuedBeforeReclaim: item.IssuedBeforeReclaim, DeadlineAt: utcInstant(item.Deadline),
 			IssuedAt: item.IssuedAt.UTC(), SubmittedAt: utcInstant(item.SubmittedAt), CheckedAt: utcInstant(item.CheckedAt),
 			FeedbackExcerpt: item.FeedbackExcerpt, HasCorrectedFiles: item.HasCorrectedFiles,
 		})
 	}
-	return &assignmentPageOutput{CacheControl: noStore, Body: body}, nil
+	return body
 }
 
 func (r *router) submission(ctx context.Context, input *submissionInput) (*submissionDetailOutput, error) {

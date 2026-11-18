@@ -1386,6 +1386,17 @@ func (q *Queries) StudentHoldsProvisionalRelationship(ctx context.Context, stude
 	return exists, err
 }
 
+const tutorHasCard = `-- name: TutorHasCard :one
+SELECT EXISTS (SELECT 1 FROM relationships WHERE tutor_id = $1 AND state <> 'discarded')::boolean
+`
+
+func (q *Queries) TutorHasCard(ctx context.Context, tutorID domain.UserID) (bool, error) {
+	row := q.db.QueryRow(ctx, tutorHasCard, tutorID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const updateCardText = `-- name: UpdateCardText :execrows
 UPDATE relationships
 SET display_name = $1, email = $2, notes = $3, updated_at = $4::timestamptz

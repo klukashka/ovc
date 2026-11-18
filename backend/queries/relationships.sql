@@ -247,3 +247,6 @@ WHERE id IN (
 
 -- name: LockStudentDeletionRelationships :many
 SELECT * FROM relationships WHERE student_id = @student_id ORDER BY id FOR UPDATE;
+
+-- name: TutorHasCard :one
+SELECT EXISTS (SELECT 1 FROM relationships WHERE tutor_id = @tutor_id AND state <> 'discarded')::boolean;

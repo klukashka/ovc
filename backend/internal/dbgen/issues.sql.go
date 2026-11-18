@@ -61,6 +61,34 @@ func (q *Queries) CountLessonIssues(ctx context.Context, arg CountLessonIssuesPa
 	return count, err
 }
 
+const countTutorIssuesByDeadline = `-- name: CountTutorIssuesByDeadline :one
+SELECT count(*)::bigint FROM (
+    SELECT 1 FROM issues
+    WHERE issues.tutor_id = $1 AND issues.erase_pending_since IS NULL AND issues.status = 'active'
+        AND issues.deadline_at > $2::timestamptz AND issues.deadline_at < $3::timestamptz
+    LIMIT $4
+) AS upcoming
+`
+
+type CountTutorIssuesByDeadlineParams struct {
+	TutorID        domain.UserID
+	Now            time.Time
+	DeadlineBefore time.Time
+	CountCap       int32
+}
+
+func (q *Queries) CountTutorIssuesByDeadline(ctx context.Context, arg CountTutorIssuesByDeadlineParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTutorIssuesByDeadline,
+		arg.TutorID,
+		arg.Now,
+		arg.DeadlineBefore,
+		arg.CountCap,
+	)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const deleteSubmissions = `-- name: DeleteSubmissions :execrows
 DELETE FROM submissions WHERE id = ANY ($1::uuid[])
 `

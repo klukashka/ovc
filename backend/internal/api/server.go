@@ -200,6 +200,7 @@ func (r *router) registerAll(readiness ReadinessFunc) {
 	r.registerSubmissions()
 	r.registerReviews()
 	r.registerFileRoutes()
+	r.registerHome()
 	r.registerRealtimeAudience()
 }
 

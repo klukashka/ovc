@@ -187,3 +187,12 @@ WHERE id IN (
 
 -- name: DeleteJoinRequestsOfStudent :execrows
 DELETE FROM join_requests WHERE student_id = @student_id;
+
+-- name: CountTutorJoinRequests :one
+SELECT count(*)::bigint FROM (
+    SELECT 1 FROM join_requests
+    JOIN users AS students ON students.id = join_requests.student_id
+    WHERE join_requests.tutor_id = @tutor_id AND join_requests.state = 'pending' AND join_requests.suppressed = 'none'
+        AND students.state <> 'blocked' AND join_requests.expires_at > sqlc.arg(now)::timestamptz
+    LIMIT sqlc.arg(count_cap)
+) AS visible;

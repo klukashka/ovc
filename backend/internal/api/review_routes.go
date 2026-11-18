@@ -74,14 +74,18 @@ func (r *router) reviewQueue(ctx context.Context, input *reviewQueueInput) (*rev
 	}
 	body := schemas.ReviewQueuePage{Items: make([]schemas.ReviewQueueItem, 0, len(page.Items)), NextCursor: page.NextCursor, Count: page.Count}
 	for _, item := range page.Items {
-		body.Items = append(body.Items, schemas.ReviewQueueItem{
-			SubmissionID: item.Submission.String(), IssueID: item.Issue.String(), Title: item.Title,
-			Student:     schemas.TutorSubmissionStudent{RelationshipID: item.Relationship.String(), DisplayName: item.DisplayName},
-			SubmittedAt: utcInstant(item.SubmittedAt), FirstSubmittedAt: utcInstant(item.FirstSubmittedAt), Late: item.Late,
-			HasDraft: item.HasDraft, IssuedBeforeReclaim: item.IssuedBeforeReclaim,
-		})
+		body.Items = append(body.Items, reviewQueueItemBody(item))
 	}
 	return &reviewQueueOutput{CacheControl: noStore, Body: body}, nil
+}
+
+func reviewQueueItemBody(item homework.ReviewQueueItem) schemas.ReviewQueueItem {
+	return schemas.ReviewQueueItem{
+		SubmissionID: item.Submission.String(), IssueID: item.Issue.String(), Title: item.Title,
+		Student:     schemas.TutorSubmissionStudent{RelationshipID: item.Relationship.String(), DisplayName: item.DisplayName},
+		SubmittedAt: utcInstant(item.SubmittedAt), FirstSubmittedAt: utcInstant(item.FirstSubmittedAt), Late: item.Late,
+		HasDraft: item.HasDraft, IssuedBeforeReclaim: item.IssuedBeforeReclaim,
+	}
 }
 
 func (r *router) saveReview(ctx context.Context, input *saveReviewInput) (*tutorSubmissionOutput, error) {

@@ -201,6 +201,13 @@ func (r Homework) Issues(ctx context.Context, query IssueListQuery) ([]IssueList
 	return one(rows, err, "the tutor's issues")
 }
 
+func (r Homework) IssuesByDeadlineCount(ctx context.Context, tutor domain.UserID, now time.Time, before time.Time, countCap int32) (int64, error) {
+	count, err := r.queries.CountTutorIssuesByDeadline(ctx, dbgen.CountTutorIssuesByDeadlineParams{
+		TutorID: tutor, Now: now, DeadlineBefore: before, CountCap: countCap,
+	})
+	return one(count, err, "count the tutor's issues by deadline")
+}
+
 func (r Homework) Progress(ctx context.Context, tutor domain.UserID, issues []domain.IssueID) ([]IssueProgress, error) {
 	rows, err := r.queries.IssueProgress(ctx, dbgen.IssueProgressParams{TutorID: tutor, IssueIds: uuids(issues)})
 	return one(rows, err, "the progress of issues")

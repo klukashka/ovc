@@ -419,6 +419,15 @@ func TestAnswerKeyContract(t *testing.T) {
 		h.mustAnswer(t, checked, http.StatusOK)
 		check.submission(label+"checked", []byte(checked.body), policy != string(domain.AnswerPolicyNever))
 		check.assignments(label+"assignments", []byte(h.assignmentsAnswer(t, parties.studentToken, nil).body))
+		home := h.homeAnswer(t, parties.studentToken, "")
+		check.studentHome(label+"home", []byte(home.body))
+		if listed := decodedAs[struct {
+			RecentlyChecked []json.RawMessage `json:"recently_checked"`
+		}](t, json.RawMessage(home.body)); len(listed.RecentlyChecked) == 0 {
+			t.Errorf("%shome lists no checked work", label)
+		}
+		check.object(label+"tutor home", json.RawMessage(h.homeAnswer(t, parties.tutorToken, "").body), tutorHomeKeys)
+		check.studentHome(label+"filtered home", []byte(h.homeAnswer(t, parties.studentToken, homeQuery(parties.card.ID)).body))
 		observeStatuses(seen, check.lessonWork(label+"lesson checked", []byte(h.lessonPage(t, parties.studentToken, work.lesson).body)))
 		snapshotMint, _ := h.addressOf(t, parties.studentToken, uploadedID(t, picture), "?ref=issue_snapshot:"+issueOf(t, h, work.full))
 		h.mustAnswer(t, snapshotMint, http.StatusOK)
@@ -451,6 +460,7 @@ func TestAnswerKeyContract(t *testing.T) {
 	for _, policy := range policies {
 		check.submission(policy+" closed", []byte(h.submissionAnswer(t, parties.studentToken, works[policy].closing).body), false)
 		check.assignments(policy+" closed list", []byte(h.assignmentsAnswer(t, parties.studentToken, map[string][]string{"status": {"closed"}}).body))
+		check.studentHome(policy+" home after the ending", []byte(h.homeAnswer(t, parties.studentToken, "").body))
 		observeStatuses(seen, check.lessonWork(policy+" lesson closed", []byte(h.lessonPage(t, parties.studentToken, works[policy].lesson).body)))
 	}
 	for _, status := range []string{"not_started", "draft", "submitted", "returned", "checked", "closed"} {

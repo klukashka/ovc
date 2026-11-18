@@ -274,6 +274,11 @@ func (r Lessons) TutorCalendar(ctx context.Context, tutor domain.UserID, from ti
 	return one(rows, err, "calendar of a tutor")
 }
 
+func (r Lessons) TutorHasLessonStarting(ctx context.Context, tutor domain.UserID, from time.Time, to time.Time) (bool, error) {
+	found, err := r.queries.TutorHasLessonStarting(ctx, dbgen.TutorHasLessonStartingParams{TutorID: tutor, RangeStart: from, RangeEnd: to})
+	return one(found, err, "whether a tutor has a lesson in a range")
+}
+
 func (r Lessons) GroupMembers(ctx context.Context, tutor domain.UserID, groups []domain.GroupID) ([]GroupLessonMember, error) {
 	if len(groups) == 0 {
 		return nil, nil

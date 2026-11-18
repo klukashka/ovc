@@ -415,6 +415,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/home": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["home-get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/integrations/bbb/{routing_key}/ended": {
         parameters: {
             query?: never;
@@ -1577,6 +1593,7 @@ export interface components {
             name: string;
             next_lesson: components["schemas"]["CalendarItem"] | null;
         };
+        Home: components["schemas"]["StudentHome"] | components["schemas"]["TutorHome"];
         InvitationAcceptRequest: {
             consent?: boolean;
             email?: string;
@@ -2518,6 +2535,38 @@ export interface components {
             /** @enum {string} */
             state: "invited" | "provisional" | "reclaim_pending" | "active" | "ended";
         };
+        StudentHome: {
+            next_lesson: components["schemas"]["CalendarItem"] | null;
+            next_seven_days: components["schemas"]["CalendarItem"][];
+            /** Format: int64 */
+            next_seven_days_count: number;
+            recently_checked: components["schemas"]["StudentAssignmentItem"][];
+            /** Format: int64 */
+            today_lessons_count: number;
+            todo: components["schemas"]["StudentHomeTodo"];
+            tutors: components["schemas"]["StudentHomeTutor"][];
+            /** Format: int64 */
+            tutors_count: number;
+        };
+        StudentHomeTodo: {
+            /** Format: int64 */
+            count: number;
+            items: components["schemas"]["StudentAssignmentItem"][];
+        };
+        StudentHomeTutor: {
+            /** Format: uuid */
+            avatar_id: string | null;
+            /** Format: uuid */
+            channel_id: string | null;
+            /** @enum {string} */
+            colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink";
+            name: string;
+            /** Format: uuid */
+            relationship_id: string;
+            /** @enum {string} */
+            state: "active" | "provisional";
+            subjects: string[];
+        };
         StudentRevealed: {
             questions: components["schemas"]["StudentRevealedQuestion"][];
         };
@@ -2785,6 +2834,59 @@ export interface components {
         TutorCode: {
             active: boolean;
             code: string;
+        };
+        TutorHome: {
+            checklist: components["schemas"]["TutorHomeChecklist"];
+            join_requests: components["schemas"]["TutorHomeJoinRequests"] | null;
+            needs_checking: components["schemas"]["TutorHomeNeedsChecking"] | null;
+            today_lessons: components["schemas"]["CalendarItem"][];
+            /** Format: int64 */
+            today_lessons_count: number;
+            tutor_code: components["schemas"]["TutorCode"];
+            unread_channels: components["schemas"]["TutorHomeUnreadChannels"];
+            upcoming_deadlines: components["schemas"]["TutorHomeDeadlines"] | null;
+        };
+        TutorHomeChannel: {
+            /** Format: uuid */
+            channel_id: string;
+            /** @enum {string|null} */
+            colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink" | null;
+            label: string | null;
+            /** @enum {string|null} */
+            label_kind: "deleted_user" | null;
+            /** Format: int64 */
+            unread_count: number;
+        };
+        TutorHomeChecklist: {
+            onboarding_dismissed: boolean;
+            steps: components["schemas"]["TutorHomeSteps"];
+        };
+        TutorHomeDeadlines: {
+            /** Format: int64 */
+            count: number;
+            items: components["schemas"]["IssueItem"][];
+        };
+        TutorHomeJoinRequests: {
+            /** Format: int64 */
+            count: number;
+            items: components["schemas"]["TutorJoinRequest"][];
+            next_cursor: string | null;
+        };
+        TutorHomeNeedsChecking: {
+            /** Format: int64 */
+            count: number;
+            items: components["schemas"]["ReviewQueueItem"][];
+        };
+        TutorHomeSteps: {
+            assignment: boolean;
+            lesson: boolean;
+            profile: boolean;
+            student: boolean | null;
+        };
+        TutorHomeUnreadChannels: {
+            items: components["schemas"]["TutorHomeChannel"][];
+            /** Format: int64 */
+            unread_total: number;
         };
         TutorJoinRequest: {
             /** Format: date-time */
@@ -5440,6 +5542,101 @@ export interface operations {
             };
             /** @description Error */
             default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "home-get": {
+        parameters: {
+            query?: {
+                tutor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Home"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13617,6 +13814,8 @@ export const studentCardDetailEnded_byValues: ReadonlyArray<FlattenedDeepRequire
 export const studentCardDetailStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardDetail"]["state"]> = ["invited", "provisional", "reclaim_pending", "active", "ended"];
 export const studentCardSummaryEnded_byValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardSummary"]["ended_by"]> = ["tutor", "student", "deletion"];
 export const studentCardSummaryStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardSummary"]["state"]> = ["invited", "provisional", "reclaim_pending", "active", "ended"];
+export const studentHomeTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentHomeTutor"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
+export const studentHomeTutorStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentHomeTutor"]["state"]> = ["active", "provisional"];
 export const studentSubmissionStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentSubmission"]["status"]> = ["not_started", "draft", "submitted", "returned", "checked", "closed"];
 export const studentTemplateBlockTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentTemplateBlock"]["type"]> = ["instruction", "material", "single_choice", "multiple_choice", "short_text", "short_number", "long_text", "file"];
 export const templateBlockScoringValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateBlock"]["scoring"]> = ["all_or_nothing", "partial"];
@@ -13624,6 +13823,8 @@ export const templateBlockTypeValues: ReadonlyArray<FlattenedDeepRequired<compon
 export const templateBlockInputScoringValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateBlockInput"]["scoring"]> = ["all_or_nothing", "partial"];
 export const templateBlockInputTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateBlockInput"]["type"]> = ["instruction", "material", "single_choice", "multiple_choice", "short_text", "short_number", "long_text", "file"];
 export const templateProblemCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateProblem"]["code"]> = ["no_blocks", "text_missing", "prompt_missing", "too_few_options", "option_empty", "correct_count", "no_correct_option", "no_accepted_answer", "accepted_answer_empty", "value_invalid", "tolerance_invalid"];
+export const tutorHomeChannelColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorHomeChannel"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
+export const tutorHomeChannelLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorHomeChannel"]["label_kind"]> = ["deleted_user"];
 export const tutorReviewRevisionActionValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorReviewRevision"]["action"]> = ["check", "return"];
 export const tutorReviewRevisionStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorReviewRevision"]["state"]> = ["draft", "published"];
 export const tutorSubmissionAnswer_policyValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorSubmission"]["answer_policy"]> = ["never", "after_submission", "after_check"];

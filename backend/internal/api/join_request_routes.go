@@ -113,13 +113,17 @@ func (r *router) tutorRequests(ctx context.Context, input *pageInput) (*tutorReq
 	}
 	body := schemas.TutorJoinRequestPage{Items: make([]schemas.TutorJoinRequest, 0, len(page.Items)), NextCursor: page.NextCursor}
 	for _, item := range page.Items {
-		body.Items = append(body.Items, schemas.TutorJoinRequest{
-			ID:        item.ID.String(),
-			Student:   schemas.RequestingStudent{Name: item.Student.Name, Email: item.Student.Email, AvatarID: optionalID(item.Student.AvatarID)},
-			CreatedAt: item.CreatedAt.UTC(), ExpiresAt: item.ExpiresAt.UTC(),
-		})
+		body.Items = append(body.Items, tutorJoinRequestBody(item))
 	}
 	return &tutorRequestsOutput{CacheControl: noStore, Body: body}, nil
+}
+
+func tutorJoinRequestBody(item tutoring.TutorJoinRequest) schemas.TutorJoinRequest {
+	return schemas.TutorJoinRequest{
+		ID:        item.ID.String(),
+		Student:   schemas.RequestingStudent{Name: item.Student.Name, Email: item.Student.Email, AvatarID: optionalID(item.Student.AvatarID)},
+		CreatedAt: item.CreatedAt.UTC(), ExpiresAt: item.ExpiresAt.UTC(),
+	}
 }
 
 func (r *router) sentRequests(ctx context.Context, input *pageInput) (*sentRequestsOutput, error) {

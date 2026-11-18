@@ -304,3 +304,11 @@ ORDER BY submissions.id LIMIT sqlc.arg(batch_size);
 
 -- name: DeleteSubmissions :execrows
 DELETE FROM submissions WHERE id = ANY (sqlc.arg(ids)::uuid[]);
+
+-- name: CountTutorIssuesByDeadline :one
+SELECT count(*)::bigint FROM (
+    SELECT 1 FROM issues
+    WHERE issues.tutor_id = @tutor_id AND issues.erase_pending_since IS NULL AND issues.status = 'active'
+        AND issues.deadline_at > sqlc.arg(now)::timestamptz AND issues.deadline_at < sqlc.arg(deadline_before)::timestamptz
+    LIMIT sqlc.arg(count_cap)
+) AS upcoming;

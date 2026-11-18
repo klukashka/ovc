@@ -440,6 +440,7 @@ var bodyIdentifierDenialCases = map[string]denialCase{
 	"POST /api/v1/issues":             anotherTutorsIssueTemplate,
 	"GET /api/v1/issues":              anotherTutorsIssueFilter,
 	"GET /api/v1/assignments":         anotherStudentsTutorFilter,
+	"GET /api/v1/home":                anotherStudentsHomeFilter,
 	"GET /api/v1/review-queue":        anotherTutorsQueueFilter,
 }
 

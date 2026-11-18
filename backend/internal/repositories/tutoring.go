@@ -216,6 +216,11 @@ func (r Relationships) TutorsOfStudent(ctx context.Context, student domain.UserI
 	return one(tutors, err, "tutors of a student")
 }
 
+func (r Relationships) TutorHasCard(ctx context.Context, tutor domain.UserID) (bool, error) {
+	found, err := r.queries.TutorHasCard(ctx, tutor)
+	return one(found, err, "whether a tutor has a student card")
+}
+
 func (r Relationships) ForgetPurgedStudent(ctx context.Context, student domain.UserID, now time.Time) error {
 	if _, err := r.queries.DeleteStudentMemberships(ctx, &student); err != nil {
 		return fmt.Errorf("delete memberships of a purged student: %w", err)
@@ -546,6 +551,11 @@ func (r JoinRequests) VisibleOf(ctx context.Context, tutor domain.UserID, after 
 	}
 	requests, err := r.queries.ListTutorJoinRequests(ctx, params)
 	return one(requests, err, "visible join requests of a tutor")
+}
+
+func (r JoinRequests) VisibleCount(ctx context.Context, tutor domain.UserID, now time.Time, countCap int32) (int64, error) {
+	count, err := r.queries.CountTutorJoinRequests(ctx, dbgen.CountTutorJoinRequestsParams{TutorID: tutor, Now: now, CountCap: countCap})
+	return one(count, err, "count the visible join requests of a tutor")
 }
 
 func (r JoinRequests) SentBy(ctx context.Context, student domain.UserID, after *JoinRequestCursor, limit int32) ([]JoinRequest, error) {

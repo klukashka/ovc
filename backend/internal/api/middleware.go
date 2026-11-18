@@ -42,7 +42,7 @@ type outermost struct {
 func (m *outermost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := m.now()
 	requestID := m.requestID(r)
-	ctx := core.WithRequestActor(core.WithRequestID(r.Context(), requestID))
+	ctx := withAccessCounts(core.WithRequestActor(core.WithRequestID(r.Context(), requestID)))
 	r = r.WithContext(ctx)
 	setBaseHeaders(w.Header(), requestID)
 	recorder := &responseRecorder{ResponseWriter: w, status: http.StatusOK, ctx: ctx, logger: m.logger}
@@ -108,12 +108,13 @@ func (m *outermost) logAccess(ctx context.Context, r *http.Request, recorder *re
 	if strings.HasPrefix(route, healthPrefix) {
 		level = slog.LevelDebug
 	}
-	m.logger.LogAttrs(ctx, level, "http.request.completed",
+	attributes := append([]slog.Attr{
 		slog.String("method", loggedMethod(r.Method)),
 		slog.String("route", route),
 		slog.Int("status", recorder.status),
 		slog.Int64("duration_ms", m.now().Sub(start).Milliseconds()),
-	)
+	}, accessCountAttributes(ctx)...)
+	m.logger.LogAttrs(ctx, level, "http.request.completed", attributes...)
 }
 
 func loggedMethod(method string) string {

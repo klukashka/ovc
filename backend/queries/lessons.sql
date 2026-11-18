@@ -401,3 +401,9 @@ SELECT EXISTS (
         ))
     )
 );
+
+-- name: TutorHasLessonStarting :one
+SELECT EXISTS (
+    SELECT 1 FROM lessons
+    WHERE tutor_id = @tutor_id AND starts_at >= sqlc.arg(range_start)::timestamptz AND starts_at < sqlc.arg(range_end)::timestamptz
+)::boolean;
