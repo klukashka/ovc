@@ -203,6 +203,7 @@ test.describe('language', () => {
     await page.goto('/privacy');
     await expect(page.getByRole('button', { name: 'Русский' })).toHaveAttribute('aria-pressed', 'true');
     const accountSaves = await holdFirstAccountSave(page);
+    const firstSaveAnswered = accountSaveAnswered(page, otherLanguage);
     const laterSaveAnswered = accountSaveAnswered(page, interfaceLanguage);
 
     await page.getByRole('button', { name: 'English' }).click();
@@ -211,7 +212,7 @@ test.describe('language', () => {
     await page.getByRole('button', { name: 'Русский' }).click();
     await expect(page.locator('html')).toHaveAttribute('lang', interfaceLanguage);
     accountSaves.releaseFirst();
-    await laterSaveAnswered;
+    await Promise.all([firstSaveAnswered, laterSaveAnswered]);
 
     expect(accountSaves.savedLanguages).toEqual([otherLanguage, interfaceLanguage]);
     expect(await accountLanguage(deployment, account)).toBe(interfaceLanguage);

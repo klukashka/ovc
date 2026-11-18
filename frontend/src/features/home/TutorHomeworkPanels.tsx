@@ -63,7 +63,7 @@ function nextDeadlineRefetch(deadline: string, now: number, previous: DeadlineRe
 function useRefetchAtEarliestDeadline(query: UseQueryResult<IssuePage>, scheduler: Scheduler): void {
   const deadline = earliestDeadline(query.data?.items ?? []);
   const previous = useRef<DeadlineRefetch | null>(null);
-  const { refetch, dataUpdatedAt: loadedAt } = query;
+  const { refetch, dataUpdatedAt: loadedAt, errorUpdatedAt: failedAt } = query;
   useEffect(() => {
     if (deadline === null) {
       previous.current = null;
@@ -74,7 +74,7 @@ function useRefetchAtEarliestDeadline(query: UseQueryResult<IssuePage>, schedule
     return scheduler.schedule(next.delay, () => {
       void refetch();
     });
-  }, [deadline, loadedAt, refetch, scheduler]);
+  }, [deadline, loadedAt, failedAt, refetch, scheduler]);
 }
 
 function Panel<Data>({

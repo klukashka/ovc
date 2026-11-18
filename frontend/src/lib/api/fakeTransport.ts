@@ -431,6 +431,7 @@ export class FakeAuthServer {
   private nowSeconds = 0;
   private readonly issueItems = new Map<string, components['schemas']['IssueItem'][]>();
   private deadlineListReads = 0;
+  private failingDeadlineReads = 0;
   private readonly lessonDetailReads = new Map<string, number>();
   private issued = 0;
   private refreshGate: Promise<void> | null = null;
@@ -460,6 +461,10 @@ export class FakeAuthServer {
   private signOutCount = 0;
   private reuse = false;
   private readonly sent: string[] = [];
+  private accountWriteGate: Promise<void> | null = null;
+  private accountWriteReceived: () => void = () => undefined;
+  private readonly writtenAccounts: FakeAccountWrite[] = [];
+  private answeredAccountWrites = 0;
   private readonly addresses: URL[] = [];
   private readonly calendarItems = new Map<string, CalendarItem[]>();
   private readonly tutorSettings = new Map<string, components['schemas']['TutorSettings']>();
@@ -501,6 +506,31 @@ export class FakeAuthServer {
 
   get sentAddresses(): readonly URL[] {
     return this.addresses;
+  }
+
+  get accountWrites(): readonly FakeAccountWrite[] {
+    return this.writtenAccounts;
+  }
+
+  get accountWritesAnswered(): number {
+    return this.answeredAccountWrites;
+  }
+
+  pauseAccountWrites(): PausedReads {
+    let resume = (): void => undefined;
+    let notifyReceived = (): void => undefined;
+    this.accountWriteGate = new Promise((resolve) => {
+      resume = (): void => {
+        this.accountWriteGate = null;
+        this.accountWriteReceived = (): void => undefined;
+        resolve();
+      };
+    });
+    const received = new Promise<void>((resolve) => {
+      notifyReceived = resolve;
+    });
+    this.accountWriteReceived = notifyReceived;
+    return { resume, received };
   }
 
   get cardWrites(): readonly string[] {
@@ -690,6 +720,10 @@ export class FakeAuthServer {
 
   lessonReads(id: string): number {
     return this.lessonDetailReads.get(id) ?? 0;
+  }
+
+  failDeadlineReads(count: number): void {
+    this.failingDeadlineReads = count;
   }
 
   deadlineReads(): number {
@@ -960,6 +994,9 @@ export class FakeAuthServer {
     const address = new URL(request.url);
     this.addresses.push(address);
     const path = address.pathname;
+    if (path === '/api/v1/users/me' && request.method === 'PATCH') {
+      return this.writeAccount(token, request);
+    }
     if (path === '/api/v1/users/me') {
       return this.readAccount(token, request.signal);
     }
@@ -1004,6 +1041,10 @@ export class FakeAuthServer {
         return json(200, { items, next_cursor: null });
       }
       this.deadlineListReads += 1;
+      if (this.failingDeadlineReads > 0) {
+        this.failingDeadlineReads -= 1;
+        return refusal(503, 'service_unavailable');
+      }
       const now = this.serverNow();
       const ahead = items
         .filter((item) => item.deadline_at !== null && Date.parse(item.deadline_at) > now)
@@ -1393,6 +1434,18 @@ export class FakeAuthServer {
     this.disabledGroups.set(accountId, disabled);
   }
 
+  private async writeAccount(token: string, request: Request): Promise<Response> {
+    const accountId = this.sessionOf(token)?.accountId ?? null;
+    const body: unknown = await request.clone().json();
+    const language = typeof body === 'object' && body !== null && 'language' in body ? body.language : null;
+    this.writtenAccounts.push({ accountId, language: typeof language === 'string' ? language : null });
+    this.accountWriteReceived();
+    await this.accountWriteGate;
+    const answer = await this.readAccount(token, request.signal);
+    this.answeredAccountWrites += 1;
+    return answer;
+  }
+
   private async readAccount(token: string, signal: AbortSignal): Promise<Response> {
     const answer = this.failingAccountReads > 0 ? this.failAccountRead() : this.answerMe(token);
     this.accountReadReceived();
@@ -1444,6 +1497,11 @@ export class FakeAuthServer {
 export interface PausedAnswers {
   readonly resume: () => void;
   readonly answered: Promise<void>;
+}
+
+export interface FakeAccountWrite {
+  readonly accountId: string | null;
+  readonly language: string | null;
 }
 
 export interface PausedReads {

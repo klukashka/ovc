@@ -240,7 +240,7 @@ func (s *Service) replayedGroup(ctx context.Context, repos repositories.Reposito
 func (s *Service) insertGroup(
 	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, request NewGroup, members []domain.RelationshipID, now time.Time,
 ) (repositories.Group, error) {
-	candidates, err := lockCandidates(ctx, repos, tutor, members)
+	candidates, err := lockCandidates(ctx, repos.Relationships.LockForGroup, tutor, members)
 	if err != nil {
 		return repositories.Group{}, err
 	}
@@ -275,10 +275,12 @@ func (s *Service) insertGroup(
 	return repos.Groups.ForTutor(ctx, tutor, id)
 }
 
+type candidateLock func(ctx context.Context, tutor domain.UserID, ids []domain.RelationshipID) ([]repositories.GroupCandidate, error)
+
 func lockCandidates(
-	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, ids []domain.RelationshipID,
+	ctx context.Context, lock candidateLock, tutor domain.UserID, ids []domain.RelationshipID,
 ) (map[domain.RelationshipID]domain.RelationshipState, error) {
-	rows, err := repos.Relationships.LockForGroup(ctx, tutor, ids)
+	rows, err := lock(ctx, tutor, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +380,7 @@ func (s *Service) lockGroupForChange(
 	if _, err := repos.Groups.ForTutor(ctx, tutor, id); err != nil {
 		return repositories.Group{}, groupScope(err)
 	}
-	states, err := lockCandidates(ctx, repos, tutor, distinctRelationships(append(slices.Clone(change.Add), change.Remove...)))
+	states, err := lockCandidates(ctx, repos.Relationships.LockForGroupChange, tutor, distinctRelationships(append(slices.Clone(change.Add), change.Remove...)))
 	if err != nil {
 		return repositories.Group{}, err
 	}

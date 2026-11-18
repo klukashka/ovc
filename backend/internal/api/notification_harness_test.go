@@ -343,6 +343,20 @@ func checkStudentHomeworkFrames(t *testing.T, frames []sentFrame, student domain
 	}
 }
 
+func expectStudentHomeworkFrames(t *testing.T, frames []sentFrame, student domain.UserID, lessons string) {
+	t.Helper()
+	addressed := homeworkFramesTo(frames, student)
+	if len(addressed) == 0 {
+		t.Fatalf("the student %s got no homework frame", student)
+	}
+	for _, frame := range addressed {
+		if frame.lessons != lessons {
+			t.Errorf("a frame to the student names the lessons %q, want %q: %+v", frame.lessons, lessons, frame)
+		}
+	}
+	checkStudentHomeworkFrames(t, frames, student, strings.Split(lessons, ",")...)
+}
+
 func checkStudentFrameKeys(t *testing.T, frames []sentFrame, student domain.UserID) {
 	t.Helper()
 	for _, frame := range frames {

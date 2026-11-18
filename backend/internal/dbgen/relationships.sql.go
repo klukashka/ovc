@@ -1243,6 +1243,43 @@ func (q *Queries) LockTutorRelationshipsForGroup(ctx context.Context, arg LockTu
 	return items, nil
 }
 
+const lockTutorRelationshipsForGroupChange = `-- name: LockTutorRelationshipsForGroupChange :many
+SELECT id, state FROM relationships
+WHERE tutor_id = $1 AND id = ANY ($2::uuid[]) AND state <> 'discarded'
+ORDER BY id
+FOR NO KEY UPDATE
+`
+
+type LockTutorRelationshipsForGroupChangeParams struct {
+	TutorID domain.UserID
+	Ids     []pgtype.UUID
+}
+
+type LockTutorRelationshipsForGroupChangeRow struct {
+	ID    domain.RelationshipID
+	State domain.RelationshipState
+}
+
+func (q *Queries) LockTutorRelationshipsForGroupChange(ctx context.Context, arg LockTutorRelationshipsForGroupChangeParams) ([]LockTutorRelationshipsForGroupChangeRow, error) {
+	rows, err := q.db.Query(ctx, lockTutorRelationshipsForGroupChange, arg.TutorID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LockTutorRelationshipsForGroupChangeRow
+	for rows.Next() {
+		var i LockTutorRelationshipsForGroupChangeRow
+		if err := rows.Scan(&i.ID, &i.State); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const mergeInvitedCard = `-- name: MergeInvitedCard :execrows
 UPDATE relationships
 SET state = 'discarded', discard_reason = 'merged', discarded_at = $1::timestamptz, updated_at = $1::timestamptz

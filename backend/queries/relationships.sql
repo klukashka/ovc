@@ -170,6 +170,12 @@ WHERE tutor_id = @tutor_id AND id = ANY (sqlc.arg(ids)::uuid[]) AND state <> 'di
 ORDER BY id
 FOR SHARE;
 
+-- name: LockTutorRelationshipsForGroupChange :many
+SELECT id, state FROM relationships
+WHERE tutor_id = @tutor_id AND id = ANY (sqlc.arg(ids)::uuid[]) AND state <> 'discarded'
+ORDER BY id
+FOR NO KEY UPDATE;
+
 -- name: GetTutorRelationshipOfStudent :one
 SELECT * FROM relationships WHERE tutor_id = @tutor_id AND student_id = @student_id AND state <> 'discarded';
 

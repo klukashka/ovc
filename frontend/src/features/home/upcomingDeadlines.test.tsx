@@ -57,7 +57,7 @@ async function showDeadlines(clientAheadBy: number): Promise<ShownDeadlines> {
   await session.signIn(tutorEmail, password);
   const client = createApiClient(origin, session.authorizedFetch);
   const i18n = await createI18n('ru');
-  const queryClient = new QueryClient();
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const router = createMemoryRouter([{ path: '/', element: <UpcomingDeadlinesPanel /> }], { initialEntries: ['/'] });
   render(
     <SchedulerContext value={scheduler}>
@@ -96,6 +96,18 @@ describe('Upcoming deadlines', () => {
     const next = await screen.findByRole('link', { name: 'Грамматика' });
     expect(screen.queryByRole('link', { name: 'Эссе о поездке' })).toBeNull();
     expect(document.activeElement).toBe(next);
+  });
+
+  test('keeps scheduling the deadline refetch after a scheduled refetch fails', async () => {
+    const shown = await showDeadlines(0);
+    shown.server.failDeadlineReads(1);
+    await passBoth(shown, 2 * hour + 1_000);
+    await screen.findByRole('link', { name: 'Эссе о поездке' });
+
+    await passBoth(shown, 30_000);
+
+    await screen.findByRole('link', { name: 'Грамматика' });
+    expect(screen.queryByRole('link', { name: 'Эссе о поездке' })).toBeNull();
   });
 
   test('backs off instead of refetching in a loop while the client clock runs ahead of the server', async () => {

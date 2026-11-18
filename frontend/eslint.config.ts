@@ -189,7 +189,7 @@ const testOnlyModuleImports = {
   patterns: [
     ...forbiddenTestDoubleImports.patterns,
     {
-      group: ['**/fakeTransport*', '**/transportContract*', '**/fakeGateway*', '**/realtimeContract*'],
+      group: ['**/fake*', '**/*Contract*'],
       message: 'Fakes and contracts are for tests; production code uses the real adapter',
     },
   ],
@@ -364,7 +364,13 @@ export default defineConfig(
   },
   {
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/**/*.test.{ts,tsx}', 'src/lib/api/fakeTransport.ts', 'src/lib/realtime/fakeGateway.ts'],
+    ignores: [
+      'src/**/*.test.{ts,tsx}',
+      'src/lib/api/fakeTransport.ts',
+      'src/lib/api/fakeSubmissions.ts',
+      'src/lib/api/fakeChat.ts',
+      'src/lib/realtime/fakeGateway.ts',
+    ],
     rules: { 'no-restricted-imports': ['error', testOnlyModuleImports] },
   },
   {

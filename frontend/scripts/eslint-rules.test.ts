@@ -293,6 +293,20 @@ describe('frontend lint configuration', () => {
     expect(messages).toContain('no-restricted-imports');
   });
 
+  test.each([
+    [
+      "import { FakeSubmissionServer } from '../lib/api/fakeSubmissions.ts';\nexport const submissions = FakeSubmissionServer;\n",
+    ],
+    ["import { FakeChatServer } from '../lib/api/fakeChat.ts';\nexport const chat = FakeChatServer;\n"],
+    ["import { uploadContract } from '../lib/api/uploadContract.ts';\nexport const contract = uploadContract;\n"],
+  ])('refuses every fake and contract module outside tests and allows it in tests: %s', async (source) => {
+    const inProduction = await ruleIds(source, componentPath);
+    const inTest = await ruleIds(source, resolve(frontendRoot, 'src/routes/access.test.ts'));
+
+    expect(inProduction).toContain('no-restricted-imports');
+    expect(inTest).not.toContain('no-restricted-imports');
+  });
+
   test('accepts plain typed code', async () => {
     const found = await ruleIds('export function double(value: number): number {\n  return value * 2;\n}\n');
 

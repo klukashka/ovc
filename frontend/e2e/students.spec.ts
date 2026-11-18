@@ -615,7 +615,6 @@ test.describe('in English with the dark theme', () => {
       field.setRangeText(value, 0, field.value.length, 'end');
       field.dispatchEvent(new Event('input', { bubbles: true }));
     }, refused);
-
     await form.getByRole('status').filter({ hasText: 'Notes were not saved.' }).waitFor();
 
     await notes.fill('Prefers mornings.');

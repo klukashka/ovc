@@ -124,6 +124,22 @@ func (r Relationships) LockForGroup(ctx context.Context, tutor domain.UserID, id
 	return one(candidates, err, "lock relationships for a group")
 }
 
+func (r Relationships) LockForGroupChange(ctx context.Context, tutor domain.UserID, ids []domain.RelationshipID) ([]GroupCandidate, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	locked, err := r.queries.LockTutorRelationshipsForGroupChange(ctx, dbgen.LockTutorRelationshipsForGroupChangeParams{TutorID: tutor, Ids: uuids(ids)})
+	rows, err := one(locked, err, "lock relationships for a group change")
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]GroupCandidate, 0, len(rows))
+	for _, row := range rows {
+		candidates = append(candidates, GroupCandidate(row))
+	}
+	return candidates, nil
+}
+
 func (r Groups) ArchiveAllOfTutor(ctx context.Context, tutor domain.UserID, now time.Time) ([]domain.GroupID, error) {
 	archived, err := r.queries.ArchiveTutorGroups(ctx, dbgen.ArchiveTutorGroupsParams{Now: now, TutorID: tutor})
 	return one(archived, err, "archive the groups of a tutor")
