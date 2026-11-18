@@ -135,6 +135,7 @@ From slice 9. Each table names the text section it belongs to: the global langua
 | Dialog fields | Assignment / Student or group / Linked lesson / No linked lesson / Set a deadline / Deadline / Answer visibility | Задание / Ученик или группа / Связанный урок / Без урока / Указать срок / Срок / Когда ученики видят ответы |
 | Note under "After submission" | Students see the correct answers as soon as they submit, so work cannot be returned for revision. | Ученики увидят правильные ответы сразу после сдачи, поэтому вернуть работу на доработку будет нельзя. |
 | Incomplete template in the picker | Only a ready assignment can be issued. | Выдать можно только готовое задание. |
+| Hint under "After checking" for a template with no manual question (from slice 10, pending owner review) | This assignment has no questions you check by hand, so students see the answers right after submitting. | В этом задании нет вопросов, которые вы проверяете вручную, поэтому ученики увидят ответы сразу после отправки. |
 | Summary | {count, plural, one {# student will receive this} other {# students will receive this}} | {count, plural, one {Задание получит # ученик} few {Задание получат # ученика} many {Задание получат # учеников} other {Задание получат # ученика}} |
 | Submit, and the result notice | Issue / Assignment issued. / Open the issued assignment | Выдать / Задание выдано. / Открыть выданное задание |
 | `not_editable` on issuing | This assignment is no longer ready to issue. Open it in the builder to fix it. / Open in the builder | Задание больше не готово к выдаче. Откройте его в конструкторе и исправьте. / Открыть в конструкторе |
@@ -217,8 +218,18 @@ From slice 9. Each table names the text section it belongs to: the global langua
 | Today's row words (agent addition pending owner review) | Late / Review in progress / Issued before the account was reclaimed | С опозданием / Проверка начата / Выдано до восстановления аккаунта |
 | Home's panels | To do / Recently checked / Nothing to do / Nothing checked yet / A corrected file came back | Нужно сделать / Недавно проверенные / Делать нечего / Проверенных работ пока нет / Есть исправленный файл |
 | Recently checked row date (agent addition pending owner review) | Checked {date} | Проверено {date} |
+| Recently checked badge for new feedback, and its accessible name (from slice 10, pending owner review) | New / New feedback | Новое / Новый отзыв |
 | Row actions, with the assignment's title as hidden text for screen readers | Start / Continue | Начать / Продолжить |
 | Link to the list; `{count}` is the number, or "99+" above 99 | All homework, {count} to do | Все задания, нужно сделать: {count} |
+
+## Home pages and the Students list
+
+From slice 10 (pending owner review). Today's checklist and the Students list load with the global language chunk, as their other texts do, unless `pnpm check:bundle` requires a feature section; the refusal of a dismissal shows its error code's message.
+
+| Element | English | Русский |
+|---|---|---|
+| Today's checklist action | Dismiss | Скрыть |
+| Students list column, and the row's value shown under the name below 768 px | Open assignments / Open assignments: {count} | Открытые задания / Открытые задания: {count} |
 
 ## Library and builder
 
