@@ -32,6 +32,7 @@ type StudentAssignmentItem struct {
 	CheckedAt           *time.Time              `json:"checked_at" nullable:"true"`
 	FeedbackExcerpt     *string                 `json:"feedback_excerpt" nullable:"true"`
 	HasCorrectedFiles   bool                    `json:"has_corrected_files"`
+	FeedbackNew         bool                    `json:"feedback_new"`
 }
 
 type StudentAssignmentCounts struct {
@@ -125,6 +126,10 @@ type StudentAnswersSave struct {
 
 type StudentSubmit struct {
 	Version int64 `json:"version" minimum:"1"`
+}
+
+type StudentFeedbackSeen struct {
+	Version int64 `json:"version" minimum:"0"`
 }
 
 type TutorSubmissionStudent struct {

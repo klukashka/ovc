@@ -119,6 +119,11 @@ func assignmentRows[Row dbgen.ListStudentSubmittedAssignmentsRow | dbgen.ListStu
 	return converted
 }
 
+func (r Homework) MarkFeedbackSeen(ctx context.Context, id domain.SubmissionID, version int64) (bool, error) {
+	rows, err := r.queries.MarkFeedbackSeen(ctx, dbgen.MarkFeedbackSeenParams{ID: id, Version: version})
+	return applied(rows, err, "mark a submission's feedback as seen")
+}
+
 func (r Homework) AssignmentCounts(ctx context.Context, student domain.UserID, countCap int32, now time.Time) (AssignmentCounts, error) {
 	row, err := r.queries.CountStudentAssignments(ctx, dbgen.CountStudentAssignmentsParams{StudentID: student, CountCap: countCap, TutorDeletedAfter: domain.ReadableTutorWorkCutoff(now)})
 	return one(row, err, "count the student's work")

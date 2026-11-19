@@ -21,11 +21,21 @@ const (
 	HomeworkCleanupBatch     = 500
 	PurposeAnswerSavesSecond = RateLimitPurpose("answer_saves_second")
 	PurposeAnswerSavesHour   = RateLimitPurpose("answer_saves_hour")
+	FeedbackMarksPerHour     = 600
+	FeedbackMarkHourWindow   = time.Hour
+	PurposeFeedbackMarksHour = RateLimitPurpose("feedback_marks_hour")
 	JobHomeworkCleanup       = JobName("homework.cleanup")
 	EventSubmissionSubmitted = OutboxKind("submission.submitted")
 	EventSubmissionChecked   = OutboxKind("submission.checked")
 	AutomaticReviewRevision  = 0
 )
+
+func FeedbackNew(reviewShown bool, feedbackVersion, seenVersion *int64) bool {
+	if !reviewShown || feedbackVersion == nil {
+		return false
+	}
+	return seenVersion == nil || *seenVersion < *feedbackVersion
+}
 
 type SubmissionCloseCause string
 

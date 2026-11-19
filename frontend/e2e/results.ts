@@ -187,6 +187,7 @@ const assignmentListKeys: Readonly<Record<string, readonly string[]>> = {
     'checked_at',
     'feedback_excerpt',
     'has_corrected_files',
+    'feedback_new',
   ],
   'items[].tutor': ['relationship_id', 'name', 'colour'],
 };

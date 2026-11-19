@@ -266,12 +266,13 @@ func (h *authHarness) readabilityAgreement(t *testing.T, cases []readabilityCase
 		homed := h.homeTodoHolds(t, token, work.submission)
 		linked := slices.Contains(h.linkedWorkAs(t, token, work.lesson).submissionIDs(), work.submission)
 		snapshot, answer, corrected := h.mintsAs(t, token, work)
+		marked := h.markFeedbackSeen(t, token, work.submission, h.storedVersionOr(t, work.submission, 1)).status == http.StatusNoContent
 		correctedWant := want && work.revision != ""
 		if labelled != want || emailed != emailWant || read != want || listed != want || homed != want || linked != want || snapshot != want ||
-			answer != want || corrected != correctedWant {
+			answer != want || corrected != correctedWant || marked != want {
 			agreement.wrong = append(agreement.wrong, fmt.Sprintf("%+v: the predicate says %v, the row label %v, the email %v, the read %v, the list %v, "+
-				"Home's to-do %v, the lesson's linked work %v, the snapshot mint %v, the answer mint %v, the corrected file mint %v",
-				testCase, want, labelled, emailed, read, listed, homed, linked, snapshot, answer, corrected))
+				"Home's to-do %v, the lesson's linked work %v, the snapshot mint %v, the answer mint %v, the corrected file mint %v, "+
+				"the feedback-seen mark %v", testCase, want, labelled, emailed, read, listed, homed, linked, snapshot, answer, corrected, marked))
 		}
 		if (work.revision == "") != (testCase.issue == domain.IssueWithdrawn) {
 			agreement.wrong = append(agreement.wrong, fmt.Sprintf("%+v: a reviewed revision exists %v", testCase, work.revision != ""))

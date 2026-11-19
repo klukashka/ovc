@@ -186,6 +186,11 @@ func TestPointsOnlyRevisionInvisible(t *testing.T) {
 	h.tick(t)
 	before := addresslessBody(t, h.submissionAnswer(t, parties.studentToken, parties.submission).body)
 	beforeAutomatic := addresslessBody(t, h.submissionAnswer(t, parties.studentToken, automatic[0].id).body)
+	checkedQuery := url.Values{"status": {string(domain.AssignmentsChecked)}}
+	checkedBefore := h.assignmentsAnswer(t, parties.studentToken, checkedQuery).body
+	homeBefore := string(h.home(t, parties.studentToken, "")["recently_checked"])
+	versionBefore := decodeLibrary[studentSubmissionBody](t, h.submissionAnswer(t, parties.studentToken, parties.submission)).Version
+	automaticVersion := decodeLibrary[studentSubmissionBody](t, h.submissionAnswer(t, parties.studentToken, automatic[0].id)).Version
 	rows, mails := len(h.notificationsOf(t, parties.studentToken)), len(h.mailTo(t, studentEmail))
 	frames := h.recordFrames(t)
 	changedPoints := []reviewItemJSON{commented(scored(workQuestion(5), 1), "Nice"), commented(scored(workQuestion(6), 5), "", corrected, later)}
@@ -199,6 +204,10 @@ func TestPointsOnlyRevisionInvisible(t *testing.T) {
 	h.published(t, parties.tutorToken, automatic[0].id, domain.ReviewCheck, 1)
 	h.tick(t)
 	quiet := framesTo(frames.settle(t, h), parties.student)
+	checkedAfter := h.assignmentsAnswer(t, parties.studentToken, checkedQuery).body
+	homeAfter := string(h.home(t, parties.studentToken, "")["recently_checked"])
+	seenAfter := h.markFeedbackSeen(t, parties.studentToken, parties.submission, versionBefore)
+	seenAutomatic := h.markFeedbackSeen(t, parties.studentToken, automatic[0].id, automaticVersion)
 
 	after := addresslessBody(t, h.submissionAnswer(t, parties.studentToken, parties.submission).body)
 	afterAutomatic := addresslessBody(t, h.submissionAnswer(t, parties.studentToken, automatic[0].id).body)
@@ -220,6 +229,12 @@ WHERE copied.ref_kind = 'review_item' AND copied.ref_id = $1::uuid`, h.revisionI
 	}
 	if keptOrder != 2 {
 		t.Fatalf("the copied corrected files keep the order of %d of 2 files", keptOrder)
+	}
+	if checkedBefore != checkedAfter || homeBefore != homeAfter || !strings.Contains(checkedAfter, `"feedback_new":true`) {
+		t.Fatalf("a points-only publication changed the checked list or Home:\n%s\n%s\n%s\n%s", checkedBefore, checkedAfter, homeBefore, homeAfter)
+	}
+	if seenAfter.status != http.StatusNoContent || seenAutomatic.status != http.StatusNoContent {
+		t.Fatalf("the marks with the versions from before the points-only publications answered %s and %s", describe(seenAfter), describe(seenAutomatic))
 	}
 	if pointsOnly.FinalPoints == nil || *pointsOnly.FinalPoints != 2+1+5 {
 		t.Fatalf("the points-only revision stored %v", pointsOnly.FinalPoints)

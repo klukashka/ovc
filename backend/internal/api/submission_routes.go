@@ -46,6 +46,16 @@ type submitInput struct {
 	Body        schemas.StudentSubmit
 }
 
+type feedbackSeenInput struct {
+	ID          string `path:"id"`
+	ContentType string `header:"Content-Type"`
+	Body        schemas.StudentFeedbackSeen
+}
+
+type feedbackSeenOutput struct {
+	CacheControl string `header:"Cache-Control"`
+}
+
 type studentSubmissionOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         schemas.StudentSubmission
@@ -69,6 +79,11 @@ func (r *router) registerSubmissions() {
 	submit := operation("submissions-submit", http.MethodPost, submissionsPath+"/{id}/submit")
 	submit.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests)
 	register(r, submit, AudienceStudentUnverifiedOK, r.submit)
+
+	seen := operation("submissions-feedback-seen", http.MethodPost, submissionsPath+"/{id}/feedback-seen")
+	seen.DefaultStatus = http.StatusNoContent
+	seen.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests)
+	register(r, seen, AudienceStudentUnverifiedOK, r.feedbackSeen)
 
 	get := operation("submissions-get", http.MethodGet, submissionsPath+"/{id}")
 	get.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
@@ -102,7 +117,7 @@ func assignmentItemsBody(items []homework.AssignmentItem) []schemas.StudentAssig
 			SubmissionID: item.Submission.String(), Title: item.Title, Tutor: assignmentTutorBody(item.Tutor), Status: item.Status,
 			Late: item.Late, IssuedBeforeReclaim: item.IssuedBeforeReclaim, DeadlineAt: utcInstant(item.Deadline),
 			IssuedAt: item.IssuedAt.UTC(), SubmittedAt: utcInstant(item.SubmittedAt), CheckedAt: utcInstant(item.CheckedAt),
-			FeedbackExcerpt: item.FeedbackExcerpt, HasCorrectedFiles: item.HasCorrectedFiles,
+			FeedbackExcerpt: item.FeedbackExcerpt, HasCorrectedFiles: item.HasCorrectedFiles, FeedbackNew: item.FeedbackNew,
 		})
 	}
 	return body
@@ -172,6 +187,20 @@ func (r *router) submit(ctx context.Context, input *submitInput) (*studentSubmis
 		return nil, r.homeworkError(ctx, "homework.submissions.submit.failed", err)
 	}
 	return &studentSubmissionOutput{CacheControl: noStore, Body: studentSubmissionBody(work)}, nil
+}
+
+func (r *router) feedbackSeen(ctx context.Context, input *feedbackSeenInput) (*feedbackSeenOutput, error) {
+	if err := requireJSON(ctx, input.ContentType); err != nil {
+		return nil, err
+	}
+	id, valid := domain.ParseUUID[domain.SubmissionID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	if err := r.homework.MarkFeedbackSeen(ctx, principalFrom(ctx), id, input.Body.Version); err != nil {
+		return nil, r.homeworkError(ctx, "submissions.feedback_seen.failed", err)
+	}
+	return &feedbackSeenOutput{CacheControl: noStore}, nil
 }
 
 func assignmentTutorBody(tutor homework.TutorRef) schemas.StudentAssignmentTutor {

@@ -26,7 +26,7 @@ var (
 	}
 	assignmentItemKeys = []string{
 		"submission_id", "title", "tutor", "status", "late", "issued_before_reclaim", "deadline_at", "issued_at", "submitted_at", "checked_at",
-		"feedback_excerpt", "has_corrected_files",
+		"feedback_excerpt", "has_corrected_files", "feedback_new",
 	}
 	tutorRefKeys     = []string{"relationship_id", "name", "colour"}
 	notificationKeys = []string{"id", "event", "created_at", "read_at", "label", "label_deleted", "label_kind", "colour", "link"}

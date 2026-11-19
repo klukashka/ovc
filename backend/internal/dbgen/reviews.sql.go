@@ -338,7 +338,7 @@ func (q *Queries) ListDraftSubmissions(ctx context.Context, submissionIds []pgty
 }
 
 const listPublishedReviewSummaries = `-- name: ListPublishedReviewSummaries :many
-SELECT review_revisions.id, review_revisions.feedback,
+SELECT review_revisions.id, review_revisions.feedback, review_revisions.items,
     EXISTS (
         SELECT 1 FROM attachment_references
         JOIN attachments ON attachments.id = attachment_references.attachment_id AND attachments.state = 'bound'
@@ -351,6 +351,7 @@ WHERE review_revisions.id = ANY ($1::uuid[]) AND review_revisions.state = 'publi
 type ListPublishedReviewSummariesRow struct {
 	ID                domain.ReviewRevisionID
 	Feedback          string
+	Items             []byte
 	HasCorrectedFiles bool
 }
 
@@ -363,7 +364,12 @@ func (q *Queries) ListPublishedReviewSummaries(ctx context.Context, revisionIds 
 	var items []ListPublishedReviewSummariesRow
 	for rows.Next() {
 		var i ListPublishedReviewSummariesRow
-		if err := rows.Scan(&i.ID, &i.Feedback, &i.HasCorrectedFiles); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Feedback,
+			&i.Items,
+			&i.HasCorrectedFiles,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -722,7 +728,8 @@ UPDATE submissions
 SET status = $1,
     checked_at = CASE WHEN $2::boolean THEN COALESCE(checked_at, $3::timestamptz) ELSE checked_at END,
     final_points = $4::integer, published_revision_id = $5::uuid,
-    version = version + CASE WHEN $6::boolean THEN 1 ELSE 0 END, updated_at = $3::timestamptz
+    version = version + CASE WHEN $6::boolean THEN 1 ELSE 0 END,
+    feedback_version = CASE WHEN $6::boolean THEN version + 1 ELSE feedback_version END, updated_at = $3::timestamptz
 WHERE id = $7
 `
 

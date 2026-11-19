@@ -86,7 +86,24 @@ func (h *authHarness) contractChecked(
 	}
 	h.reviewSaved(t, parties.tutorToken, work.full, reviewJSON(t, next+1, 0, saveID(pointsOnlySave[next+1]), "Overall better", changed...))
 	h.published(t, parties.tutorToken, work.full, domain.ReviewCheck, next+1)
-	check.submission(label+"updated", []byte(h.submissionAnswer(t, parties.studentToken, work.full).body), revealed)
+	updated := h.submissionAnswer(t, parties.studentToken, work.full)
+	check.submission(label+"updated", []byte(updated.body), revealed)
+	h.contractFeedbackSeen(t, check, parties, work.full, decodeLibrary[studentSubmissionBody](t, updated).Version, label)
+}
+
+func (h *authHarness) contractFeedbackSeen(t *testing.T, check contractCheck, parties endingParties, submission string, version int64, label string) {
+	t.Helper()
+	stale := h.markFeedbackSeen(t, parties.studentToken, submission, version-1)
+	assertRefused(t, label+"a stale feedback-seen mark", stale, http.StatusConflict, "conflict")
+	check.refusal(label+"feedback-seen conflict", []byte(stale.body))
+	invalid := h.send(t, http.MethodPost, feedbackSeenRoute(submission), `{"version":-1}`, jsonCall(parties.studentToken))
+	assertRefused(t, label+"an invalid feedback-seen mark", invalid, http.StatusUnprocessableEntity, "validation_failed")
+	check.fieldRefusal(label+"feedback-seen validation", []byte(invalid.body))
+	seen := h.markFeedbackSeen(t, parties.studentToken, submission, version)
+	if seen.status != http.StatusNoContent || seen.body != "" {
+		t.Errorf("%sthe feedback-seen mark answered %d %s", label, seen.status, seen.body)
+	}
+	check.noSentinel(label+"feedback-seen", []byte(seen.body))
 }
 
 func (h *authHarness) contractOverridesOnly(t *testing.T, check contractCheck, parties endingParties, work contractWork, label string, revealed bool) {

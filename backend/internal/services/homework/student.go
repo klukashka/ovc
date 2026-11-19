@@ -39,6 +39,7 @@ type AssignmentItem struct {
 	CheckedAt           *time.Time
 	FeedbackExcerpt     *string
 	HasCorrectedFiles   bool
+	FeedbackNew         bool
 }
 
 type AssignmentCounts struct {
@@ -155,6 +156,12 @@ func (s *Service) Assignments(ctx context.Context, student domain.UserID, query 
 			if row.PublishedRevisionID.Valid {
 				if summary, found := summaries[domain.ReviewRevisionID(row.PublishedRevisionID.Bytes)]; found {
 					item.FeedbackExcerpt, item.HasCorrectedFiles = domain.FeedbackExcerpt(summary.Feedback), summary.HasCorrectedFiles
+					items, err := decodeReviewItems(summary.Items)
+					if err != nil {
+						return err
+					}
+					shown := !domain.VisibleReview{Feedback: summary.Feedback, Items: items}.Empty()
+					item.FeedbackNew = domain.FeedbackNew(shown, row.FeedbackVersion, row.FeedbackSeenVersion)
 				}
 			}
 			page.Items = append(page.Items, item)

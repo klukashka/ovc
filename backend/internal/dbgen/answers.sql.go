@@ -560,7 +560,7 @@ func (q *Queries) ListReleasePendingSubmissions(ctx context.Context, batchSize i
 const listStudentCheckedAssignments = `-- name: ListStudentCheckedAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at, submissions.published_revision_id
+    submissions.checked_at, submissions.published_revision_id, submissions.feedback_version, submissions.feedback_seen_version
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -600,6 +600,8 @@ type ListStudentCheckedAssignmentsRow struct {
 	SubmittedAt         *time.Time
 	CheckedAt           *time.Time
 	PublishedRevisionID pgtype.UUID
+	FeedbackVersion     *int64
+	FeedbackSeenVersion *int64
 }
 
 func (q *Queries) ListStudentCheckedAssignments(ctx context.Context, arg ListStudentCheckedAssignmentsParams) ([]ListStudentCheckedAssignmentsRow, error) {
@@ -632,6 +634,8 @@ func (q *Queries) ListStudentCheckedAssignments(ctx context.Context, arg ListStu
 			&i.SubmittedAt,
 			&i.CheckedAt,
 			&i.PublishedRevisionID,
+			&i.FeedbackVersion,
+			&i.FeedbackSeenVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -646,7 +650,7 @@ func (q *Queries) ListStudentCheckedAssignments(ctx context.Context, arg ListStu
 const listStudentClosedAssignments = `-- name: ListStudentClosedAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at, submissions.published_revision_id
+    submissions.checked_at, submissions.published_revision_id, submissions.feedback_version, submissions.feedback_seen_version
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -686,6 +690,8 @@ type ListStudentClosedAssignmentsRow struct {
 	SubmittedAt         *time.Time
 	CheckedAt           *time.Time
 	PublishedRevisionID pgtype.UUID
+	FeedbackVersion     *int64
+	FeedbackSeenVersion *int64
 }
 
 func (q *Queries) ListStudentClosedAssignments(ctx context.Context, arg ListStudentClosedAssignmentsParams) ([]ListStudentClosedAssignmentsRow, error) {
@@ -718,6 +724,8 @@ func (q *Queries) ListStudentClosedAssignments(ctx context.Context, arg ListStud
 			&i.SubmittedAt,
 			&i.CheckedAt,
 			&i.PublishedRevisionID,
+			&i.FeedbackVersion,
+			&i.FeedbackSeenVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -732,7 +740,7 @@ func (q *Queries) ListStudentClosedAssignments(ctx context.Context, arg ListStud
 const listStudentSubmittedAssignments = `-- name: ListStudentSubmittedAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at, submissions.published_revision_id
+    submissions.checked_at, submissions.published_revision_id, submissions.feedback_version, submissions.feedback_seen_version
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -772,6 +780,8 @@ type ListStudentSubmittedAssignmentsRow struct {
 	SubmittedAt         *time.Time
 	CheckedAt           *time.Time
 	PublishedRevisionID pgtype.UUID
+	FeedbackVersion     *int64
+	FeedbackSeenVersion *int64
 }
 
 func (q *Queries) ListStudentSubmittedAssignments(ctx context.Context, arg ListStudentSubmittedAssignmentsParams) ([]ListStudentSubmittedAssignmentsRow, error) {
@@ -804,6 +814,8 @@ func (q *Queries) ListStudentSubmittedAssignments(ctx context.Context, arg ListS
 			&i.SubmittedAt,
 			&i.CheckedAt,
 			&i.PublishedRevisionID,
+			&i.FeedbackVersion,
+			&i.FeedbackSeenVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -818,7 +830,7 @@ func (q *Queries) ListStudentSubmittedAssignments(ctx context.Context, arg ListS
 const listStudentTodoAssignments = `-- name: ListStudentTodoAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at, submissions.published_revision_id
+    submissions.checked_at, submissions.published_revision_id, submissions.feedback_version, submissions.feedback_seen_version
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -872,6 +884,8 @@ type ListStudentTodoAssignmentsRow struct {
 	SubmittedAt         *time.Time
 	CheckedAt           *time.Time
 	PublishedRevisionID pgtype.UUID
+	FeedbackVersion     *int64
+	FeedbackSeenVersion *int64
 }
 
 func (q *Queries) ListStudentTodoAssignments(ctx context.Context, arg ListStudentTodoAssignmentsParams) ([]ListStudentTodoAssignmentsRow, error) {
@@ -906,6 +920,8 @@ func (q *Queries) ListStudentTodoAssignments(ctx context.Context, arg ListStuden
 			&i.SubmittedAt,
 			&i.CheckedAt,
 			&i.PublishedRevisionID,
+			&i.FeedbackVersion,
+			&i.FeedbackSeenVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -1215,6 +1231,24 @@ func (q *Queries) LockSubmissionRelationship(ctx context.Context, arg LockSubmis
 	var state domain.RelationshipState
 	err := row.Scan(&state)
 	return state, err
+}
+
+const markFeedbackSeen = `-- name: MarkFeedbackSeen :execrows
+UPDATE submissions SET feedback_seen_version = feedback_version
+WHERE id = $1 AND version = $2 AND feedback_seen_version IS DISTINCT FROM feedback_version
+`
+
+type MarkFeedbackSeenParams struct {
+	ID      domain.SubmissionID
+	Version int64
+}
+
+func (q *Queries) MarkFeedbackSeen(ctx context.Context, arg MarkFeedbackSeenParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markFeedbackSeen, arg.ID, arg.Version)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const refreshSubmissionFileBytes = `-- name: RefreshSubmissionFileBytes :one

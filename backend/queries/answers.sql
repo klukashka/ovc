@@ -1,7 +1,7 @@
 -- name: ListStudentTodoAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at, submissions.published_revision_id
+    submissions.checked_at, submissions.published_revision_id, submissions.feedback_version, submissions.feedback_seen_version
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -32,7 +32,7 @@ LIMIT sqlc.arg(page_size);
 -- name: ListStudentSubmittedAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at, submissions.published_revision_id
+    submissions.checked_at, submissions.published_revision_id, submissions.feedback_version, submissions.feedback_seen_version
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -51,7 +51,7 @@ LIMIT sqlc.arg(page_size);
 -- name: ListStudentCheckedAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at, submissions.published_revision_id
+    submissions.checked_at, submissions.published_revision_id, submissions.feedback_version, submissions.feedback_seen_version
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -70,7 +70,7 @@ LIMIT sqlc.arg(page_size);
 -- name: ListStudentClosedAssignments :many
 SELECT submissions.id, issues.title, submissions.relationship_id, tutor.name AS tutor_name, relationships.colour, submissions.status,
     submissions.late, submissions.issued_before_reclaim, submissions.deadline_at, submissions.issued_at, submissions.submitted_at,
-    submissions.checked_at, submissions.published_revision_id
+    submissions.checked_at, submissions.published_revision_id, submissions.feedback_version, submissions.feedback_seen_version
 FROM submissions
 JOIN issues ON issues.id = submissions.issue_id
 JOIN relationships ON relationships.id = submissions.relationship_id
@@ -158,6 +158,10 @@ SELECT state FROM relationships WHERE id = @id AND tutor_id = @tutor_id FOR SHAR
 -- name: LockSubmissionIssue :one
 SELECT status, (erase_pending_since IS NOT NULL)::boolean AS marked_for_erasure, snapshot, has_manual_questions, max_points, answer_policy, lesson_id
 FROM issues WHERE id = @id AND tutor_id = @tutor_id FOR SHARE;
+
+-- name: MarkFeedbackSeen :execrows
+UPDATE submissions SET feedback_seen_version = feedback_version
+WHERE id = @id AND version = @version AND feedback_seen_version IS DISTINCT FROM feedback_version;
 
 -- name: LockSubmission :one
 SELECT status, version, last_save_id, file_bytes, deadline_at, first_submitted_at, submitted_at

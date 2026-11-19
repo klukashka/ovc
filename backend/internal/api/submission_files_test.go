@@ -272,13 +272,25 @@ func TestSubmissionRecordsCarryNoContent(t *testing.T) {
 		typedAnswer(workQuestion(5), "an intimate essay"), attached(workQuestion(6), file)))
 	h.submitted(t, parties.studentToken, submission, draft.Version)
 	h.tutorWork(t, parties.tutorToken, submission)
+	h.reviewSaved(t, parties.tutorToken, submission, reviewJSON(t, 1, 0, saveID(2), "a private remark", fullyScored("a hidden comment")...))
+	checked := h.published(t, parties.tutorToken, submission, domain.ReviewCheck, 1)
+	h.mustAnswer(t, h.markFeedbackSeen(t, parties.studentToken, submission, checked.Version), http.StatusNoContent)
+	h.fillFeedbackMarks(t, parties.student, feedbackMarksPerHour)
+	h.markFeedbackSeen(t, parties.studentToken, submission, checked.Version)
 	h.mustAnswer(t, h.endAsTutor(t, parties.tutorToken, parties.card.ID), http.StatusOK)
 	h.tick(t)
 
 	if h.countLogs(`"msg":"homework.submission.saved"`) != 1 || h.countLogs(`"msg":"homework.submission.submitted"`, `"submission_id":"`+submission+`"`) != 1 {
 		t.Fatal("the save and the submission were not recorded")
 	}
-	for _, secret := range []string{"Confidential voyage", "whispered", "intimate essay", "private-diary", "Name the tree", "Ёлка", "елка", "/api/v1/files/"} {
+	if h.countLogs(feedbackSeenRecord, `"submission_id":"`+submission+`"`) != 1 || h.countLogs(feedbackThrottledLimit) != 1 ||
+		h.countLogs(feedbackSeenRecord, `"version"`) != 0 || h.countLogs(feedbackThrottledLimit, `"version"`) != 0 {
+		t.Fatal("the feedback-seen mark and its throttling were not recorded once each without a version")
+	}
+	for _, secret := range []string{
+		"Confidential voyage", "whispered", "intimate essay", "private-diary", "Name the tree", "Ёлка", "елка", "/api/v1/files/", "a private remark",
+		"a hidden comment",
+	} {
 		if h.countLogs(secret) != 0 {
 			t.Errorf("a record carries %q", secret)
 		}

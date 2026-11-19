@@ -577,6 +577,8 @@ type Submission struct {
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 	PublishedRevisionID pgtype.UUID
+	FeedbackVersion     *int64
+	FeedbackSeenVersion *int64
 }
 
 type Template struct {

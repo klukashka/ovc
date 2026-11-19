@@ -83,7 +83,8 @@ UPDATE submissions
 SET status = @status,
     checked_at = CASE WHEN sqlc.arg(checked)::boolean THEN COALESCE(checked_at, sqlc.arg(now)::timestamptz) ELSE checked_at END,
     final_points = sqlc.arg(final_points)::integer, published_revision_id = sqlc.arg(revision_id)::uuid,
-    version = version + CASE WHEN sqlc.arg(visible)::boolean THEN 1 ELSE 0 END, updated_at = sqlc.arg(now)::timestamptz
+    version = version + CASE WHEN sqlc.arg(visible)::boolean THEN 1 ELSE 0 END,
+    feedback_version = CASE WHEN sqlc.arg(visible)::boolean THEN version + 1 ELSE feedback_version END, updated_at = sqlc.arg(now)::timestamptz
 WHERE id = @id;
 
 -- name: ListReviewQueue :many
@@ -125,7 +126,7 @@ SELECT id FROM issues WHERE id = @id AND tutor_id = @tutor_id AND erase_pending_
 SELECT submission_id FROM review_revisions WHERE state = 'draft' AND submission_id = ANY (sqlc.arg(submission_ids)::uuid[]);
 
 -- name: ListPublishedReviewSummaries :many
-SELECT review_revisions.id, review_revisions.feedback,
+SELECT review_revisions.id, review_revisions.feedback, review_revisions.items,
     EXISTS (
         SELECT 1 FROM attachment_references
         JOIN attachments ON attachments.id = attachment_references.attachment_id AND attachments.state = 'bound'
