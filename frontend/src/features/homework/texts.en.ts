@@ -16,6 +16,8 @@ export const homeworkTexts = {
   },
   afterSubmissionNote:
     'Students see the correct answers as soon as they submit, so work cannot be returned for revision.',
+  noManualQuestionHint:
+    'This assignment has no questions you check by hand, so students see the answers right after submitting.',
   notReady: 'Only a ready assignment can be issued.',
   summary: '{count, plural, one {# student will receive this} other {# students will receive this}}',
   submit: 'Issue',

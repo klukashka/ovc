@@ -52,6 +52,7 @@ type StudentCardSummary = components['schemas']['StudentCardSummary'];
 const cardPathPrefix = '/api/v1/students/';
 const calendarPath = '/api/v1/calendar';
 const issuesPath = '/api/v1/issues';
+const templatePathPrefix = '/api/v1/library/templates/';
 const lessonPathPrefix = '/api/v1/lessons/';
 const joinRequestsPath = '/api/v1/join-requests';
 const notificationsPath = '/api/v1/notifications';
@@ -422,6 +423,8 @@ export class FakeAuthServer {
   readonly submissions = new FakeSubmissionServer();
   private readonly tutors = new Map<string, components['schemas']['MyTutor'][]>();
   private readonly templateCounts = new Map<string, number>();
+  private readonly templates = new Map<string, Map<string, components['schemas']['Template']>>();
+  private failingTemplateReads = 0;
   private readonly libraryUploadRefusals: Response[] = [];
   private readonly homeworkUploadRefusals: Response[] = [];
   private libraryUploads = 0;
@@ -735,6 +738,17 @@ export class FakeAuthServer {
     return Date.UTC(2026, 10, 1) + this.nowSeconds * 1_000;
   }
 
+  addTemplate(email: string, template: components['schemas']['Template']): void {
+    const accountId = this.account(email).me.id;
+    const owned = this.templates.get(accountId) ?? new Map<string, components['schemas']['Template']>();
+    owned.set(template.id, template);
+    this.templates.set(accountId, owned);
+  }
+
+  failNextTemplateRead(): void {
+    this.failingTemplateReads += 1;
+  }
+
   addTemplates(email: string, count: number): void {
     const accountId = this.account(email).me.id;
     this.templateCounts.set(accountId, (this.templateCounts.get(accountId) ?? 0) + count);
@@ -1035,6 +1049,9 @@ export class FakeAuthServer {
         template_count: this.templateCounts.get(caller.id) ?? 0,
       });
     }
+    if (request.method === 'GET' && path.startsWith(templatePathPrefix) && caller !== undefined) {
+      return this.readTemplate(caller, decodeURIComponent(path.slice(templatePathPrefix.length)));
+    }
     if (request.method === 'GET' && path === issuesPath && caller !== undefined) {
       const bound = address.searchParams.get('deadline_before');
       const items = this.issueItems.get(caller.id) ?? [];
@@ -1324,6 +1341,18 @@ export class FakeAuthServer {
       .filter((item) => Date.parse(item.ends_at) > from && Date.parse(item.starts_at) < to)
       .sort((left, right) => Date.parse(left.starts_at) - Date.parse(right.starts_at));
     return json(200, { items, truncated: false });
+  }
+
+  private readTemplate(caller: Me, id: string): Response {
+    if (caller.role !== 'tutor') {
+      return refusal(404, 'not_found');
+    }
+    if (this.failingTemplateReads > 0) {
+      this.failingTemplateReads -= 1;
+      return refusal(503, 'service_unavailable');
+    }
+    const template = this.templates.get(caller.id)?.get(id);
+    return template === undefined ? refusal(404, 'not_found') : json(200, template);
   }
 
   private async uploadToLibrary(request: Request, caller: Me, upload: UploadTransfer | undefined): Promise<Response> {

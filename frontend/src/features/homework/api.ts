@@ -10,6 +10,8 @@ export type IssueAudience = components['schemas']['IssueAudience'];
 export type NewIssue = components['schemas']['NewIssue'];
 export type IssuePatch = components['schemas']['IssuePatch'];
 export type AnswerPolicy = NewIssue['answer_policy'];
+export type IssueTemplate = components['schemas']['Template'];
+type TemplateBlock = IssueTemplate['blocks'][number];
 export type IssueStatus = (typeof pathsApiV1IssuesGetParametersQueryStatusValues)[number];
 export type SubmissionStatus = IssueSubmission['status'];
 
@@ -31,6 +33,10 @@ export function issueListKey(filter: IssueFilter): readonly unknown[] {
 
 export function issueKey(id: string): readonly unknown[] {
   return [...issuesKey, 'detail', id];
+}
+
+export function issueTemplateKey(id: string): readonly unknown[] {
+  return [...issuesKey, 'template', id];
 }
 
 export function isIssueStatus(value: string | null): value is IssueStatus {
@@ -79,4 +85,20 @@ export async function fetchIssue(client: ApiClient, id: string, signal: AbortSig
 
 export function audienceName(audience: IssueAudience): string {
   return audience.display_name ?? audience.name ?? '';
+}
+
+export async function fetchIssueTemplate(client: ApiClient, id: string): Promise<IssueTemplate> {
+  const { data, error, response } = await client.GET('/api/v1/library/templates/{id}', { params: { path: { id } } });
+  if (data === undefined) {
+    throw apiErrorFrom(response.status, error);
+  }
+  return data;
+}
+
+function isManualBlock(block: TemplateBlock): boolean {
+  return block.type === 'long_text' || block.type === 'file';
+}
+
+export function hasManualQuestion(template: IssueTemplate): boolean {
+  return template.blocks.some(isManualBlock);
 }

@@ -27,7 +27,16 @@ import { libraryKey } from '../library/api.ts';
 import type { CalendarItem } from '../schedule/api.ts';
 import { type Audience, AudiencePicker } from '../schedule/AudiencePicker.tsx';
 import { fetchStudentCard, studentCardKey, studentsKey } from '../students/api.ts';
-import { type AnswerPolicy, type IssueItem, type NewIssue, answerPolicies, issuesKey } from './api.ts';
+import {
+  type AnswerPolicy,
+  type IssueItem,
+  type NewIssue,
+  answerPolicies,
+  fetchIssueTemplate,
+  hasManualQuestion,
+  issueTemplateKey,
+  issuesKey,
+} from './api.ts';
 import { type Problem, problemOf } from './issueProblems.ts';
 import { ConfirmEmailPrompt } from './IssueAssignment.tsx';
 import { type ChosenTemplate, TemplatePicker } from './TemplatePicker.tsx';
@@ -356,44 +365,97 @@ function DeadlineField({
   );
 }
 
-function PolicyField({
+function noteOf(
+  option: AnswerPolicy,
+  showNoManualHint: boolean,
+): 'homework.afterSubmissionNote' | 'homework.noManualQuestionHint' | null {
+  if (option === 'after_submission') {
+    return 'homework.afterSubmissionNote';
+  }
+  return option === 'after_check' && showNoManualHint ? 'homework.noManualQuestionHint' : null;
+}
+
+function PolicyOption({
+  option,
+  name,
+  policy,
+  showNoManualHint,
+  onChange,
+}: {
+  readonly option: AnswerPolicy;
+  readonly name: string;
+  readonly policy: AnswerPolicy;
+  readonly showNoManualHint: boolean;
+  readonly onChange: (policy: AnswerPolicy) => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const noteId = useId();
+  const note = noteOf(option, showNoManualHint);
+  return (
+    <div className="flex flex-col">
+      <label className="inline-flex min-h-11 items-center gap-2 text-small">
+        <input
+          type="radio"
+          name={name}
+          value={option}
+          checked={policy === option}
+          aria-describedby={note === null ? undefined : noteId}
+          onChange={() => {
+            onChange(option);
+          }}
+          className="size-4 accent-accent"
+        />
+        {t(`homework.policies.${option}`)}
+      </label>
+      {note === null ? null : (
+        <p id={noteId} className="pl-6 text-small text-text-muted">
+          {t(note)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function useNoManualQuestion(template: ChosenTemplate | null): boolean {
+  const client = useApiClient();
+  const templateId = template?.id ?? '';
+  const read = useQuery({
+    queryKey: issueTemplateKey(templateId),
+    queryFn: () => fetchIssueTemplate(client, templateId),
+    enabled: template !== null,
+    staleTime: 0,
+    gcTime: 0,
+  });
+  return template !== null && read.data?.id === templateId && !hasManualQuestion(read.data);
+}
+
+export function PolicyField({
+  template,
   policy,
   onChange,
 }: {
+  readonly template: ChosenTemplate | null;
   readonly policy: AnswerPolicy;
   readonly onChange: (policy: AnswerPolicy) => void;
 }): ReactElement {
   const { t } = useTranslation();
   const legendId = useId();
-  const noteId = useId();
   const name = useId();
+  const noManualQuestion = useNoManualQuestion(template);
   return (
     <fieldset aria-labelledby={legendId} className="flex flex-col gap-1">
       <legend id={legendId} className="text-label">
         {t('homework.fields.policy')}
       </legend>
       {answerPolicies.map((option) => (
-        <div key={option} className="flex flex-col">
-          <label className="inline-flex min-h-11 items-center gap-2 text-small">
-            <input
-              type="radio"
-              name={name}
-              value={option}
-              checked={policy === option}
-              aria-describedby={option === 'after_submission' ? noteId : undefined}
-              onChange={() => {
-                onChange(option);
-              }}
-              className="size-4 accent-accent"
-            />
-            {t(`homework.policies.${option}`)}
-          </label>
-          {option === 'after_submission' ? (
-            <p id={noteId} className="pl-6 text-small text-text-muted">
-              {t('homework.afterSubmissionNote')}
-            </p>
-          ) : null}
-        </div>
+        <PolicyOption
+          key={option}
+          option={option}
+          name={name}
+          policy={policy}
+          showNoManualHint={policy === 'after_check' && noManualQuestion}
+          onChange={onChange}
+        />
       ))}
     </fieldset>
   );
@@ -582,7 +644,7 @@ function IssueForm({
         onDate={setDeadlineDate}
         onClock={setDeadlineClock}
       />
-      <PolicyField policy={policy} onChange={setPolicy} />
+      <PolicyField template={template} policy={policy} onChange={setPolicy} />
       {detail.students === null ? null : (
         <p className="text-small text-text-muted">{t('homework.summary', { count: detail.students })}</p>
       )}
