@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { linkClass, quietButtonClass } from '../../components/ui/Form.tsx';
+import { useFocusOnMount } from '../../components/ui/LiveNotice.tsx';
 import { ModuleLoadFailed } from '../../components/ui/LoadState.tsx';
 import type { TextLoaders } from '../../lib/i18n/featureTexts.ts';
 import { type IssueItem, issueAddress } from './api.ts';
@@ -87,15 +88,7 @@ export function IssueDialogHost(props: IssueDialogProps): ReactElement | null {
 export function IssuedNotice({ issueId }: { readonly issueId: string | null }): ReactElement {
   const { t } = useTranslation();
   const element = useRef<HTMLParagraphElement>(null);
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      element.current?.focus();
-    });
-    return (): void => {
-      window.cancelAnimationFrame(frame);
-    };
-  }, []);
+  useFocusOnMount(element);
 
   return (
     <div className="flex flex-wrap items-center gap-x-3">

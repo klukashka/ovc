@@ -43,7 +43,7 @@ export function useFocusAfterRemovedRow(
         return;
       }
       focused.current = null;
-      window.requestAnimationFrame(() => {
+      queueMicrotask(() => {
         if (focusIsLost()) {
           pageHeading()?.focus();
         }

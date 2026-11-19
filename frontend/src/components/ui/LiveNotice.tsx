@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, type RefObject, useEffect, useRef, useState } from 'react';
 
 import { focusIsLost } from './LoadState.tsx';
 
@@ -21,15 +21,7 @@ export function LiveNotice({ message }: { readonly message: string | null }): Re
   );
 }
 
-export function FocusedNotice({
-  message,
-  whenFocusIsLost = false,
-}: {
-  readonly message: string;
-  readonly whenFocusIsLost?: boolean;
-}): ReactElement {
-  const element = useRef<HTMLParagraphElement>(null);
-
+export function useFocusOnMount(element: RefObject<HTMLElement | null>, whenFocusIsLost = false): void {
   useEffect(() => {
     const notice = element.current;
     if (notice === null) {
@@ -70,7 +62,18 @@ export function FocusedNotice({
     return (): void => {
       stopped.abort();
     };
-  }, [whenFocusIsLost]);
+  }, [element, whenFocusIsLost]);
+}
+
+export function FocusedNotice({
+  message,
+  whenFocusIsLost = false,
+}: {
+  readonly message: string;
+  readonly whenFocusIsLost?: boolean;
+}): ReactElement {
+  const element = useRef<HTMLParagraphElement>(null);
+  useFocusOnMount(element, whenFocusIsLost);
 
   return (
     <p ref={element} role="status" tabIndex={-1} className="text-text outline-none">
