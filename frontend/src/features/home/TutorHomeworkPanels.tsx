@@ -1,4 +1,4 @@
-import { type UseQueryResult, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { type ReactElement, type ReactNode, type RefObject, useEffect, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
@@ -7,23 +7,31 @@ import { useScheduler } from '../../app/clock.ts';
 import type { Scheduler } from '../../lib/api/session.ts';
 import { linkClass } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
-import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
+import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { StatusWord } from '../../components/ui/StatusWord.tsx';
-import { apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
+import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDateTime } from '../../lib/format/dates.ts';
 import { relativeHint } from '../../lib/format/relative.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { useNow } from '../assignment/parts.tsx';
 import { fetchGroups, groupsKey } from '../groups/api.ts';
-import { type IssueItem, type IssuePage, issueAddress, issuesKey } from '../homework/api.ts';
+import { type IssueItem, issueAddress } from '../homework/api.ts';
 import { AudienceLabel } from '../homework/IssueParts.tsx';
-import { type QueuePage, fetchQueuePage, reviewAddress } from '../review/api.ts';
-import { queuePanelKey } from '../review/keys.ts';
+import { reviewAddress } from '../review/api.ts';
+import type { TutorHome } from './api.ts';
+import { shownCount } from './api.ts';
 import { homeworkPanelTextLoaders } from './panelTexts.ts';
 
-const panelSize = 5;
-const deadlineWindowMilliseconds = 3 * 86_400_000;
+type NeedsCheckingPart = NonNullable<TutorHome['needs_checking']>;
+type DeadlinesPart = NonNullable<TutorHome['upcoming_deadlines']>;
+
+export interface HomeRefetch {
+  readonly refetch: () => unknown;
+  readonly loadedAt: number;
+  readonly failedAt: number;
+}
+
 const noFilter = { issue: null, group: null, student: null };
 const deadlineMarginMilliseconds = 1_000;
 const passedDeadlineRetryMilliseconds = 30_000;
@@ -60,10 +68,13 @@ function nextDeadlineRefetch(deadline: string, now: number, previous: DeadlineRe
   return { deadline, delay, afterDeadline: true };
 }
 
-function useRefetchAtEarliestDeadline(query: UseQueryResult<IssuePage>, scheduler: Scheduler): void {
-  const deadline = earliestDeadline(query.data?.items ?? []);
+function useRefetchAtEarliestDeadline(
+  items: readonly IssueItem[],
+  { refetch, loadedAt, failedAt }: HomeRefetch,
+  scheduler: Scheduler,
+): void {
+  const deadline = earliestDeadline(items);
   const previous = useRef<DeadlineRefetch | null>(null);
-  const { refetch, dataUpdatedAt: loadedAt, errorUpdatedAt: failedAt } = query;
   useEffect(() => {
     if (deadline === null) {
       previous.current = null;
@@ -77,16 +88,14 @@ function useRefetchAtEarliestDeadline(query: UseQueryResult<IssuePage>, schedule
   }, [deadline, loadedAt, failedAt, refetch, scheduler]);
 }
 
-function Panel<Data>({
+function Panel({
   title,
   count,
-  query,
   rowKeys,
   children,
 }: {
   readonly title: string;
   readonly count: ReactNode;
-  readonly query: UseQueryResult<Data>;
   readonly rowKeys: readonly string[];
   readonly children: (listRef: RefObject<HTMLUListElement | null>) => ReactNode;
 }): ReactElement {
@@ -99,54 +108,19 @@ function Panel<Data>({
       <h2 ref={heading} id={headingId} tabIndex={-1} className="text-heading outline-none">
         {title} {count}
       </h2>
-      {query.data === undefined ? (
-        query.isError ? (
-          <LoadFailed
-            error={asApiError(query.error)}
-            onRetry={() => {
-              void query.refetch();
-            }}
-          />
-        ) : (
-          <DelayedLoading />
-        )
-      ) : (
-        <>
-          {query.isError ? (
-            <RefetchFailed
-              error={asApiError(query.error)}
-              onRetry={() => {
-                void query.refetch();
-              }}
-            />
-          ) : null}
-          {children(listRef)}
-        </>
-      )}
+      {children(listRef)}
     </section>
   );
 }
 
-function NeedsChecking(): ReactElement {
+function NeedsChecking({ part }: { readonly part: NeedsCheckingPart }): ReactElement {
   const { t } = useTranslation();
-  const client = useApiClient();
   const me = useSignedInAccount();
-  const query = useQuery<QueuePage>({
-    queryKey: queuePanelKey(panelSize),
-    queryFn: ({ signal }) => fetchQueuePage(client, noFilter, panelSize, null, signal),
-    retry: false,
-  });
-  const items = query.data?.items ?? [];
-  const count = query.data?.count ?? 0;
+  const { items, count } = part;
   return (
     <Panel
       title={t('homeworkPanels.needsChecking')}
-      count={
-        query.data === undefined ? null : (
-          <span className="tabular text-text-muted">{count > 99 ? '99+' : String(count)}</span>
-        )
-      }
-      query={query}
+      count={<span className="tabular text-text-muted">{shownCount(count)}</span>}
       rowKeys={items.map((item) => item.submission_id)}
     >
       {(listRef) => (
@@ -196,32 +170,28 @@ function NeedsChecking(): ReactElement {
   );
 }
 
-function UpcomingDeadlines(): ReactElement {
+function UpcomingDeadlines({
+  part,
+  homeRefetch,
+}: {
+  readonly part: DeadlinesPart;
+  readonly homeRefetch: HomeRefetch;
+}): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const me = useSignedInAccount();
   const scheduler = useScheduler();
-  const query = useQuery<IssuePage>({
-    queryKey: [...issuesKey, 'deadlines', panelSize],
-    queryFn: async ({ signal }) => {
-      const bound = new Date(scheduler.wallClock() + deadlineWindowMilliseconds).toISOString();
-      const { data, error, response } = await client.GET('/api/v1/issues', {
-        params: { query: { status: 'active', deadline_before: bound, limit: panelSize } },
-        signal,
-      });
-      if (data === undefined) {
-        throw apiErrorFrom(response.status, error);
-      }
-      return data;
-    },
+  const { items } = part;
+  useRefetchAtEarliestDeadline(items, homeRefetch, scheduler);
+  const groups = useQuery({
+    queryKey: groupsKey,
+    queryFn: () => fetchGroups(client),
+    enabled: items.some((item) => item.audience.group_id !== undefined),
     retry: false,
   });
-  useRefetchAtEarliestDeadline(query, scheduler);
-  const groups = useQuery({ queryKey: groupsKey, queryFn: () => fetchGroups(client), retry: false });
-  const items = query.data?.items ?? [];
   const now = useNow();
   return (
-    <Panel title={t('homeworkPanels.deadlines')} count={null} query={query} rowKeys={items.map((item) => item.id)}>
+    <Panel title={t('homeworkPanels.deadlines')} count={null} rowKeys={items.map((item) => item.id)}>
       {(listRef) => (
         <>
           {items.length === 0 ? <p className="text-text-muted">{t('homeworkPanels.noDeadlines')}</p> : null}
@@ -273,18 +243,24 @@ function PanelTexts({ children }: { readonly children: ReactNode }): ReactElemen
   return <>{children}</>;
 }
 
-export function NeedsCheckingPanel(): ReactElement {
+export function NeedsCheckingPanel({ part }: { readonly part: NeedsCheckingPart }): ReactElement {
   return (
     <PanelTexts>
-      <NeedsChecking />
+      <NeedsChecking part={part} />
     </PanelTexts>
   );
 }
 
-export function UpcomingDeadlinesPanel(): ReactElement {
+export function UpcomingDeadlinesPanel({
+  part,
+  homeRefetch,
+}: {
+  readonly part: DeadlinesPart;
+  readonly homeRefetch: HomeRefetch;
+}): ReactElement {
   return (
     <PanelTexts>
-      <UpcomingDeadlines />
+      <UpcomingDeadlines part={part} homeRefetch={homeRefetch} />
     </PanelTexts>
   );
 }

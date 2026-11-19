@@ -9,11 +9,20 @@ export interface ContractSubject {
   readonly otherTutorPassword: string;
   readonly student: () => Promise<{ readonly email: string; readonly password: string }>;
   readonly expireAccessTokens: () => Promise<void>;
+  readonly passSeconds: (seconds: number) => Promise<void>;
   readonly blockAccount: () => Promise<void>;
   readonly unsubscribeToken: () => Promise<string>;
   readonly seedTwoLessons: () => Promise<SeededLessons>;
   readonly seedSubmission: () => Promise<SeededSubmission>;
   readonly fillTutorFileQuota: () => Promise<void>;
+  readonly seedUpcomingDeadline: () => Promise<SeededDeadline>;
+  readonly seedStudentHome: () => Promise<SeededStudentHome>;
+  readonly unconfirmedTutor: () => Promise<{ readonly email: string; readonly password: string }>;
+  readonly seedSharedStudentIssues: () => Promise<SeededSharedStudent>;
+  readonly seedCheckedSubmission: () => Promise<SeededSubmission>;
+  readonly seedOtherStudentSubmission: () => Promise<SeededSubmission>;
+  readonly returnSeededSubmission: (seeded: SeededSubmission) => Promise<void>;
+  readonly endSeededRelationship: (seeded: SeededSubmission) => Promise<void>;
 }
 
 export interface SeededSubmission {
@@ -22,6 +31,24 @@ export interface SeededSubmission {
   readonly submissionId: string;
   readonly textQuestionId: string;
   readonly fileQuestionId: string;
+  readonly relationshipId: string;
+}
+
+export interface SeededDeadline {
+  readonly issueId: string;
+}
+
+export interface SeededStudentHome {
+  readonly email: string;
+  readonly password: string;
+  readonly relationshipId: string;
+  readonly endedRelationshipId: string;
+  readonly otherStudentRelationshipId: string;
+}
+
+export interface SeededSharedStudent {
+  readonly cardId: string;
+  readonly otherTutorCardId: string;
 }
 
 export interface SeededLessons {
@@ -218,6 +245,188 @@ function answerUploadRequest(subject: ContractSubject, token: string, seeded: Se
 }
 
 const randomSubmissionId = '6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b';
+const randomRelationshipId = '2a1b0c9d-8e7f-4a6b-9c5d-4e3f2a1b0c9d';
+
+const tutorHomeKeys: readonly string[] = [
+  'today_lessons',
+  'today_lessons_count',
+  'needs_checking',
+  'upcoming_deadlines',
+  'unread_channels',
+  'join_requests',
+  'tutor_code',
+  'checklist',
+];
+
+const studentHomeKeys: readonly string[] = [
+  'next_lesson',
+  'today_lessons_count',
+  'todo',
+  'recently_checked',
+  'next_seven_days',
+  'next_seven_days_count',
+  'tutors',
+  'tutors_count',
+];
+
+const assignmentItemKeys: readonly string[] = [
+  'submission_id',
+  'title',
+  'tutor',
+  'status',
+  'late',
+  'issued_before_reclaim',
+  'deadline_at',
+  'issued_at',
+  'submitted_at',
+  'checked_at',
+  'feedback_excerpt',
+  'has_corrected_files',
+  'feedback_new',
+];
+
+const assignmentTutorKeys: readonly string[] = ['relationship_id', 'name', 'colour'];
+
+const calendarItemKeys: readonly string[] = [
+  'id',
+  'title',
+  'starts_at',
+  'ends_at',
+  'status',
+  'took_place',
+  'timezone',
+  'audience',
+  'tutor',
+];
+
+const calendarAudienceKeys: readonly string[] = ['kind', 'label', 'label_kind', 'colour'];
+
+const homeTutorKeys: readonly string[] = [
+  'relationship_id',
+  'state',
+  'name',
+  'avatar_id',
+  'colour',
+  'subjects',
+  'channel_id',
+];
+
+const issueItemKeys: readonly string[] = [
+  'id',
+  'title',
+  'audience',
+  'lesson_id',
+  'deadline_at',
+  'answer_policy',
+  'status',
+  'issued_at',
+  'withdrawn_at',
+  'has_manual_questions',
+  'max_points',
+  'version',
+  'progress',
+];
+
+const tutorSettingsKeys: readonly string[] = ['file_quota_bytes', 'file_usage_bytes', 'onboarding_dismissed'];
+
+function homeRequest(subject: ContractSubject, token: string, query: Record<string, string> = {}): Request {
+  const search = new URLSearchParams(query).toString();
+  return new Request(`${subject.origin}/api/v1/home${search === '' ? '' : `?${search}`}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+function tutorSettingsRequest(subject: ContractSubject, token: string, body?: unknown): Request {
+  return new Request(`${subject.origin}/api/v1/tutor/settings`, {
+    method: body === undefined ? 'GET' : 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+}
+
+function submissionActionRequest(
+  subject: ContractSubject,
+  token: string,
+  id: string,
+  action: 'submit' | 'feedback-seen',
+  body: unknown,
+): Request {
+  return new Request(`${subject.origin}/api/v1/submissions/${encodeURIComponent(id)}/${action}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+async function bodyOf(response: Response): Promise<unknown> {
+  const body: unknown = await response.json();
+  return body;
+}
+
+function property(value: unknown, name: string): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  return Object.entries(value).find(([key]) => key === name)?.[1];
+}
+
+function listOf(value: unknown): unknown[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const entries: unknown[] = value;
+  return entries;
+}
+
+function keySet(value: unknown): string {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? Object.keys(value).sort().join(',')
+    : `not an object: ${JSON.stringify(value)}`;
+}
+
+function expectedKeys(keys: readonly string[]): string {
+  return [...keys].sort().join(',');
+}
+
+function checkKeys(value: unknown, keys: readonly string[], label: string): void {
+  check(keySet(value) === expectedKeys(keys), `expected exactly the keys of ${label}, got ${keySet(value)}`);
+}
+
+function checkEachKeys(values: readonly unknown[], keys: readonly string[], label: string): void {
+  for (const value of values) {
+    checkKeys(value, keys, label);
+  }
+}
+
+function checkCalendarItems(values: readonly unknown[], label: string): void {
+  checkEachKeys(values, calendarItemKeys, label);
+  checkEachKeys(
+    values.map((value) => property(value, 'audience')),
+    calendarAudienceKeys,
+    `${label} audience`,
+  );
+}
+
+function checkAssignmentItems(values: readonly unknown[], label: string): void {
+  checkEachKeys(values, assignmentItemKeys, label);
+  checkEachKeys(
+    values.map((value) => property(value, 'tutor')),
+    assignmentTutorKeys,
+    `${label} tutor`,
+  );
+}
+
+function feedbackNewOf(home: unknown, submissionId: string): unknown {
+  const checked = listOf(property(home, 'recently_checked'));
+  const item = checked.find((entry) => property(entry, 'submission_id') === submissionId);
+  return property(item, 'feedback_new');
+}
+
+async function studentListRow(subject: ContractSubject, token: string, cardId: string): Promise<unknown> {
+  const read = await subject.transport.send(cardRequest(subject, token, ''));
+  check(read.status === 200, `expected the tutor's student list, got ${String(read.status)}`);
+  return listOf(property(await bodyOf(read), 'items')).find((item) => property(item, 'id') === cardId);
+}
 
 const studentSubmissionFields: readonly string[] = [
   'id',
@@ -768,12 +977,23 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
   },
   "a submission outside the student's work is refused as not_found on read and save": async (subject) => {
     const { token } = await studentSubmission(subject);
+    const other = await subject.seedOtherStudentSubmission();
 
     const read = await subject.transport.send(submissionRequest(subject, token, randomSubmissionId));
     const save = await subject.transport.send(answersRequest(subject, token, randomSubmissionId, 1, []));
+    const foreignRead = await subject.transport.send(submissionRequest(subject, token, other.submissionId));
+    const foreignSave = await subject.transport.send(answersRequest(subject, token, other.submissionId, 1, []));
 
     check(read.status === 404 && (await errorCode(read)) === 'not_found', 'expected a read out of scope refused');
     check(save.status === 404 && (await errorCode(save)) === 'not_found', 'expected a save out of scope refused');
+    check(
+      foreignRead.status === 404 && (await errorCode(foreignRead)) === 'not_found',
+      `expected a read of another student's submission refused, got ${String(foreignRead.status)}`,
+    );
+    check(
+      foreignSave.status === 404 && (await errorCode(foreignSave)) === 'not_found',
+      `expected a save of another student's submission refused, got ${String(foreignSave.status)}`,
+    );
   },
   'a saved answer advances the version and a save at the old version is refused as conflict': async (subject) => {
     const { seeded, token } = await studentSubmission(subject);
@@ -835,6 +1055,270 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
     const after: unknown = await read.json();
     check(versionOf(after) === version, 'expected the refused binding to leave the version');
     check(fileAnswerCount(after, seeded.fileQuestionId) === 0, 'expected the refused binding to bind no file');
+  },
+  'an automatic answer of returned work is refused as answer_frozen after the first submission': async (subject) => {
+    const { seeded, token } = await studentSubmission(subject);
+    const text = [{ question_id: seeded.textQuestionId, value: { text: 'went' } }];
+    const saved = await subject.transport.send(
+      answersRequest(subject, token, seeded.submissionId, await currentVersion(subject, token, seeded), text),
+    );
+    check(saved.status === 200, `expected the answer saved, got ${String(saved.status)}`);
+    const savedVersion = versionOf(await saved.json());
+    const submitted = await subject.transport.send(
+      submissionActionRequest(subject, token, seeded.submissionId, 'submit', { version: savedVersion }),
+    );
+    check(submitted.status === 200, `expected the work submitted, got ${String(submitted.status)}`);
+    const submittedBody = await bodyOf(submitted);
+    await subject.passSeconds(1);
+
+    const whileSubmitted = await subject.transport.send(
+      answersRequest(subject, token, seeded.submissionId, versionOf(submittedBody), text),
+    );
+    await subject.returnSeededSubmission(seeded);
+    const returnedVersion = await currentVersion(subject, token, seeded);
+    await subject.passSeconds(1);
+    const frozen = await subject.transport.send(
+      answersRequest(subject, token, seeded.submissionId, returnedVersion, text),
+    );
+    await subject.passSeconds(1);
+    const manual = await subject.transport.send(
+      answersRequest(subject, token, seeded.submissionId, returnedVersion, [
+        { question_id: seeded.fileQuestionId, value: { attachment_ids: [] } },
+      ]),
+    );
+
+    check(property(submittedBody, 'status') === 'submitted', 'expected work with a file question to wait for checking');
+    check(
+      whileSubmitted.status === 409 && (await errorCode(whileSubmitted)) === 'not_editable',
+      `expected a save of submitted work refused as not_editable, got ${String(whileSubmitted.status)}`,
+    );
+    check(
+      frozen.status === 409 && (await errorCode(frozen)) === 'answer_frozen',
+      `expected a save of an automatic answer of returned work refused as answer_frozen, got ${String(frozen.status)}`,
+    );
+    check(manual.status === 200, `expected the manual answer of returned work saved, got ${String(manual.status)}`);
+  },
+  "a save on an ended relationship's submission is refused as not_editable": async (subject) => {
+    const { seeded, token } = await studentSubmission(subject);
+    await subject.endSeededRelationship(seeded);
+    const version = await currentVersion(subject, token, seeded);
+
+    const save = await subject.transport.send(
+      answersRequest(subject, token, seeded.submissionId, version, [
+        { question_id: seeded.textQuestionId, value: { text: 'went' } },
+      ]),
+    );
+
+    check(
+      save.status === 409 && (await errorCode(save)) === 'not_editable',
+      `expected the save refused as not_editable, got ${String(save.status)}`,
+    );
+  },
+  'marking checked feedback as seen clears feedback_new at the current version only and only for the own submission':
+    async (subject) => {
+      const seeded = await subject.seedCheckedSubmission();
+      const other = await subject.seedOtherStudentSubmission();
+      const token = await accessToken(await subject.transport.login(seeded.email, seeded.password));
+      const version = await currentVersion(subject, token, seeded);
+      const before = feedbackNewOf(
+        await bodyOf(await subject.transport.send(homeRequest(subject, token))),
+        seeded.submissionId,
+      );
+
+      const stale = await subject.transport.send(
+        submissionActionRequest(subject, token, seeded.submissionId, 'feedback-seen', { version: version + 1 }),
+      );
+      const malformed = await subject.transport.send(
+        submissionActionRequest(subject, token, seeded.submissionId, 'feedback-seen', { version: -1 }),
+      );
+      const foreign = await subject.transport.send(
+        submissionActionRequest(subject, token, other.submissionId, 'feedback-seen', { version: 1 }),
+      );
+      const seen = await subject.transport.send(
+        submissionActionRequest(subject, token, seeded.submissionId, 'feedback-seen', { version }),
+      );
+      const repeated = await subject.transport.send(
+        submissionActionRequest(subject, token, seeded.submissionId, 'feedback-seen', { version }),
+      );
+      const after = feedbackNewOf(
+        await bodyOf(await subject.transport.send(homeRequest(subject, token))),
+        seeded.submissionId,
+      );
+
+      const malformedProblems = await fieldProblems(malformed);
+      check(before === true, `expected the checked feedback new on the home page, got ${String(before)}`);
+      check(
+        stale.status === 409 && (await errorCode(stale)) === 'conflict',
+        `expected a stale version refused as conflict, got ${String(stale.status)}`,
+      );
+      check(
+        malformed.status === 422 && malformedProblems === 'validation_failed body.version:invalid',
+        `expected a negative version refused at body.version, got ${String(malformed.status)} ${malformedProblems}`,
+      );
+      check(
+        foreign.status === 404 && (await errorCode(foreign)) === 'not_found',
+        `expected another student's submission refused as not_found, got ${String(foreign.status)}`,
+      );
+      check(seen.status === 204, `expected 204, got ${String(seen.status)}`);
+      check(repeated.status === 204, `expected a repeated mark to answer 204, got ${String(repeated.status)}`);
+      check(after === false, `expected the feedback no longer new on the home page, got ${String(after)}`);
+    },
+  'the tutor home holds exactly the tutor parts and lists an issue due within three days': async (subject) => {
+    const seeded = await subject.seedUpcomingDeadline();
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+
+    const read = await subject.transport.send(homeRequest(subject, token));
+
+    check(read.status === 200, `expected the tutor home, got ${String(read.status)}`);
+    const body = await bodyOf(read);
+    checkKeys(body, tutorHomeKeys, 'the tutor home');
+    const deadlines = property(body, 'upcoming_deadlines');
+    const items = listOf(property(deadlines, 'items'));
+    check(
+      property(deadlines, 'count') === 1 && items.length === 1 && property(items[0], 'id') === seeded.issueId,
+      `expected the seeded issue as the only upcoming deadline, got ${JSON.stringify(deadlines)}`,
+    );
+    checkEachKeys(items, issueItemKeys, 'an upcoming deadline');
+  },
+  'the student home holds exactly the student parts without points, and a tutor filter outside the current tutors is not_found':
+    async (subject) => {
+      const seeded = await subject.seedStudentHome();
+      const student = await accessToken(await subject.transport.login(seeded.email, seeded.password));
+      const tutor = await accessToken(await subject.transport.login(subject.email, subject.password));
+
+      const read = await subject.transport.send(homeRequest(subject, student));
+      const own = await subject.transport.send(homeRequest(subject, student, { tutor: seeded.relationshipId }));
+      const random = await refusalShape(
+        await subject.transport.send(homeRequest(subject, student, { tutor: randomRelationshipId })),
+      );
+      const refusals = {
+        "another student's relationship": seeded.otherStudentRelationshipId,
+        'an ended relationship': seeded.endedRelationshipId,
+        'a malformed value': 'not-a-uuid',
+      };
+      const refused = await Promise.all(
+        Object.entries(refusals).map(async ([name, value]) => ({
+          name,
+          shape: await refusalShape(await subject.transport.send(homeRequest(subject, student, { tutor: value }))),
+        })),
+      );
+      const fromTutor = await subject.transport.send(homeRequest(subject, tutor, { tutor: seeded.relationshipId }));
+
+      check(read.status === 200, `expected the student home, got ${String(read.status)}`);
+      const body = await bodyOf(read);
+      checkKeys(body, studentHomeKeys, 'the student home');
+      const todo = property(body, 'todo');
+      checkKeys(todo, ['count', 'items'], 'the to-do part');
+      const todoItems = listOf(property(todo, 'items'));
+      const checked = listOf(property(body, 'recently_checked'));
+      const week = listOf(property(body, 'next_seven_days'));
+      const tutors = listOf(property(body, 'tutors'));
+      check(
+        todoItems.length > 0 && checked.length > 0 && week.length > 0 && tutors.length === 1,
+        `expected seeded work, lessons and one current tutor, got ${JSON.stringify(body)}`,
+      );
+      checkAssignmentItems(todoItems, 'a to-do item');
+      checkAssignmentItems(checked, 'a recently checked item');
+      checkCalendarItems([property(body, 'next_lesson')], 'the next lesson');
+      checkCalendarItems(week, 'a lesson of the next seven days');
+      checkEachKeys(tutors, homeTutorKeys, 'a current tutor');
+      check(property(tutors[0], 'relationship_id') === seeded.relationshipId, 'expected the current tutor');
+      const leaked = answerKeyFields.filter((field) => keysOf(body).includes(field));
+      check(leaked.length === 0, `expected no answer key, points or scores, found ${leaked.join(', ')}`);
+      check(own.status === 200, `expected the own tutor filter to answer 200, got ${String(own.status)}`);
+      check(random.status === 404 && random.code === 'not_found', `expected not_found, got ${random.describe()}`);
+      for (const { name, shape } of refused) {
+        check(shape.same(random), `expected ${name} refused as a random identifier: ${shape.describe()}`);
+      }
+      check(fromTutor.status === 422, `expected a tutor filter from a tutor refused, got ${String(fromTutor.status)}`);
+      const tutorProblems = await fieldProblems(fromTutor);
+      check(
+        tutorProblems === 'validation_failed query.tutor:not_allowed',
+        `expected query.tutor not_allowed, got ${tutorProblems}`,
+      );
+    },
+  'dismissing the checklist is final and shows on the settings and the tutor home, and every other body names the field':
+    async (subject) => {
+      const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+      const before = property(
+        await bodyOf(await subject.transport.send(tutorSettingsRequest(subject, token))),
+        'onboarding_dismissed',
+      );
+      const bodies = [
+        { body: { onboarding_dismissed: false }, expected: 'validation_failed body.onboarding_dismissed:invalid' },
+        { body: { onboarding_dismissed: null }, expected: 'validation_failed body.onboarding_dismissed:invalid' },
+        { body: {}, expected: 'validation_failed body.onboarding_dismissed:required' },
+        {
+          body: { onboarding_dismissed: true, recording_retention_days: 30 },
+          expected: 'validation_failed body:unexpected_property',
+        },
+      ];
+
+      const refused: { readonly status: number; readonly problems: string; readonly expected: string }[] = [];
+      for (const { body, expected } of bodies) {
+        const response = await subject.transport.send(tutorSettingsRequest(subject, token, body));
+        refused.push({ status: response.status, problems: await fieldProblems(response), expected });
+      }
+      const dismissal = { onboarding_dismissed: true };
+      const dismissed = await subject.transport.send(tutorSettingsRequest(subject, token, dismissal));
+      const repeated = await subject.transport.send(tutorSettingsRequest(subject, token, dismissal));
+      const settings = await bodyOf(await subject.transport.send(tutorSettingsRequest(subject, token)));
+      const home = await bodyOf(await subject.transport.send(homeRequest(subject, token)));
+
+      check(before === false, `expected a new tutor's checklist shown, got ${String(before)}`);
+      for (const { status, problems, expected } of refused) {
+        check(status === 422 && problems === expected, `expected ${expected}, got ${String(status)} ${problems}`);
+      }
+      check(dismissed.status === 200, `expected the dismissal to answer 200, got ${String(dismissed.status)}`);
+      const dismissedBody = await bodyOf(dismissed);
+      checkKeys(dismissedBody, tutorSettingsKeys, 'the tutor settings');
+      check(property(dismissedBody, 'onboarding_dismissed') === true, 'expected the dismissal answered as dismissed');
+      check(repeated.status === 200, `expected a repeated dismissal to answer 200, got ${String(repeated.status)}`);
+      check(property(settings, 'onboarding_dismissed') === true, 'expected the settings to show the dismissal');
+      check(
+        property(property(home, 'checklist'), 'onboarding_dismissed') === true,
+        `expected the tutor home to show the dismissal, got ${JSON.stringify(property(home, 'checklist'))}`,
+      );
+    },
+  'an unconfirmed tutor home has no parts the API refuses to an unconfirmed tutor': async (subject) => {
+    const { email, password } = await subject.unconfirmedTutor();
+    const token = await accessToken(await subject.transport.login(email, password));
+
+    const read = await subject.transport.send(homeRequest(subject, token));
+
+    check(read.status === 200, `expected the unconfirmed tutor home, got ${String(read.status)}`);
+    const body = await bodyOf(read);
+    checkKeys(body, tutorHomeKeys, 'the tutor home');
+    check(
+      property(body, 'needs_checking') === null &&
+        property(body, 'upcoming_deadlines') === null &&
+        property(body, 'join_requests') === null &&
+        property(property(property(body, 'checklist'), 'steps'), 'student') === null,
+      `expected the confirmed-only parts null, got ${JSON.stringify(body)}`,
+    );
+    check(
+      property(property(body, 'tutor_code'), 'active') === false,
+      'expected the tutor code inactive while the email is unconfirmed',
+    );
+  },
+  "open_assignments counts the calling tutor's open work for a shared student and never another tutor's": async (
+    subject,
+  ) => {
+    const seeded = await subject.seedSharedStudentIssues();
+    const own = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const other = await accessToken(await subject.transport.login(subject.otherTutorEmail, subject.otherTutorPassword));
+
+    const ownRow = await studentListRow(subject, own, seeded.cardId);
+    const otherRow = await studentListRow(subject, other, seeded.otherTutorCardId);
+
+    check(
+      property(ownRow, 'open_assignments') === 1,
+      `expected the tutor's one open submission, got ${JSON.stringify(ownRow)}`,
+    );
+    check(
+      property(otherRow, 'open_assignments') === 2,
+      `expected the other tutor's two open submissions, got ${JSON.stringify(otherRow)}`,
+    );
   },
   'account me and send retain abort ownership after headers and release cancelled readers': async (subject) => {
     const token = await accessToken(await subject.transport.login(subject.email, subject.password));

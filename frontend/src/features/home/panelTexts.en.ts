@@ -19,6 +19,8 @@ export const homeworkPanelTexts = {
   nothingChecked: 'Nothing checked yet',
   correctedFile: 'A corrected file came back',
   checkedOn: 'Checked {date}',
+  newFeedback: 'New',
+  newFeedbackName: 'New feedback',
   states: {
     todo: 'To do',
     dueSoon: 'Due soon',

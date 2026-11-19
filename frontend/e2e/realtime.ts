@@ -445,25 +445,9 @@ export async function expectRefetchedAfterTheSocketIsReady(traffic: TrafficAfter
 
 export const accessTokenExpiredWithinSocketGrace = 15 * 60 + 10;
 
-export const todayQueryPaths: readonly string[] = [
-  '/api/v1/notifications',
-  '/api/v1/tutor/code',
-  '/api/v1/join-requests',
-  '/api/v1/calendar',
-  '/api/v1/students',
-  '/api/v1/channels',
-  '/api/v1/library',
-  '/api/v1/review-queue',
-  '/api/v1/issues',
-];
+export const todayQueryPaths: readonly string[] = ['/api/v1/notifications', '/api/v1/home', '/api/v1/review-queue'];
 
-export const unverifiedTutorTodayQueryPaths: readonly string[] = [
-  '/api/v1/notifications',
-  '/api/v1/tutor/code',
-  '/api/v1/calendar',
-  '/api/v1/channels',
-  '/api/v1/library',
-];
+export const unverifiedTutorTodayQueryPaths: readonly string[] = ['/api/v1/notifications', '/api/v1/home'];
 
 export async function expectSettledAfterTheSocketIsReady(page: Page, traffic: TrafficAfterReady): Promise<void> {
   await expectRefetchedAfterTheSocketIsReady(traffic);

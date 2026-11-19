@@ -6,12 +6,13 @@ import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { SettingsSection } from './SettingsRow.tsx';
 import { formatStorage } from './storageAmount.ts';
+import { tutorSettingsKey } from './tutorSettings.ts';
 
 export function StorageUsage(): ReactElement {
   const { t, i18n } = useTranslation();
   const client = useApiClient();
   const query = useQuery({
-    queryKey: ['tutor', 'settings'],
+    queryKey: tutorSettingsKey,
     queryFn: async ({ signal }) => {
       const { data, error, response } = await client.GET('/api/v1/tutor/settings', { signal });
       if (data === undefined) throw apiErrorFrom(response.status, error);

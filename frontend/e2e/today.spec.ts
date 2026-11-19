@@ -1,12 +1,23 @@
 import type { Page } from '@playwright/test';
 
-import { type TestAccount, newTestAccount, registerTutor, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, newTestAccount, registerTutor, seedAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { type Diagnostics, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { accountId, expectReadyForNavigation, todayQueryPaths, trafficAfterReady, waitForSockets } from './realtime.ts';
+import { createPastSimpleTemplate, onlySubmission, pastSimple } from './assignment.ts';
+import { issueThroughTheApi } from './homework.ts';
 import { channelOf } from './messages.ts';
-import { addDays, cancelThisLesson, localClock, localDate, scheduleLessonsWithIds } from './schedule.ts';
-import { accessToken, callApi, createCard, createGroup, seedActiveStudent } from './tutoring.ts';
+import { answerTextAndSubmit } from './review.ts';
+import { addDays, cancelThisLesson, isoWeekday, localClock, localDate, scheduleLessonsWithIds } from './schedule.ts';
+import {
+  accessToken,
+  callApi,
+  createCard,
+  createGroup,
+  enterTutorCode,
+  seedActiveStudent,
+  tutorCode,
+} from './tutoring.ts';
 
 const markup = '<img src=x onerror="document.title=1"><b>Bold</b>';
 const daytimeZones = [
@@ -189,10 +200,17 @@ test.describe('Today', () => {
     const account = newTestAccount('Unconfirmed tutor');
     await registerTutor(deployment, account, 'en');
     await signInThroughTheApi(page, account);
+    const closedPaths = [
+      '/api/v1/students',
+      '/api/v1/join-requests',
+      '/api/v1/groups',
+      '/api/v1/issues',
+      '/api/v1/review-queue',
+    ];
     const closedRequests: string[] = [];
     page.on('request', (request) => {
       const path = new URL(request.url()).pathname;
-      if (path === '/api/v1/students' || path === '/api/v1/join-requests') {
+      if (closedPaths.includes(path)) {
         closedRequests.push(path);
       }
     });
@@ -203,6 +221,32 @@ test.describe('Today', () => {
     await expect(checklist(page).getByText('Confirm your email to schedule lessons.')).toBeVisible();
     await expect(page.getByRole('region', { name: 'Unread messages' }).getByText('No unread messages')).toBeVisible();
     expect(closedRequests).toEqual([]);
+  });
+
+  test('Dismiss hides the checklist for good and moves focus to the heading of today’s lessons', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Dismissing tutor', 'en');
+    await signInThroughTheApi(page, tutor);
+    let dismissals = 0;
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname === '/api/v1/tutor/settings' && request.method() === 'PATCH') {
+        dismissals += 1;
+      }
+    });
+    await page.goto('/today');
+    const dismiss = checklist(page).getByRole('button', { name: 'Dismiss' });
+
+    await dismiss.click();
+    await expect(checklist(page)).toHaveCount(0);
+    await page.reload();
+    await page.getByRole('heading', { name: 'Today’s lessons' }).waitFor();
+
+    await expect(checklist(page)).toHaveCount(0);
+    expect(dismissals).toBe(1);
+    const settings = await callApi(deployment, await accessToken(deployment, tutor), 'GET', '/tutor/settings');
+    expect(settings.body).toMatchObject({ onboarding_dismissed: true });
   });
 
   test('unread messages show the channel name and count without a preview', async ({ page, deployment }) => {
@@ -256,9 +300,6 @@ test.describe('Today', () => {
     }
     await signInThroughTheApi(page, tutor);
     const requested: string[] = [];
-    const reads: string[] = [];
-    const studentQueries: string[] = [];
-    const libraryQueries: string[] = [];
     page.on('request', (request) => {
       const url = new URL(request.url());
       if (
@@ -266,15 +307,7 @@ test.describe('Today', () => {
         url.pathname !== '/api/v1/ws' &&
         !url.pathname.startsWith('/api/v1/auth/')
       ) {
-        requested.push(url.pathname);
-        url.searchParams.delete('deadline_before');
-        reads.push(`${url.pathname}${url.search}`);
-      }
-      if (url.pathname === '/api/v1/students') {
-        studentQueries.push(url.search);
-      }
-      if (url.pathname === '/api/v1/library') {
-        libraryQueries.push(url.search);
+        requested.push(`${url.pathname}${url.search}`);
       }
     });
     const ready = trafficAfterReady(page, todayQueryPaths);
@@ -284,30 +317,62 @@ test.describe('Today', () => {
     await expectReadyForNavigation(page, ready);
     await expect(lessons(page).getByRole('link')).toHaveCount(3);
 
-    const counts = Object.fromEntries(
-      [...new Set(requested)].map((path) => [path, requested.filter((entry) => entry === path).length]),
-    );
-    expect(Object.keys(counts).sort()).toEqual(
+    const paths = requested.map((read) => new URL(read, 'https://ovc.invalid').pathname);
+    expect([...new Set(paths)].sort()).toEqual(
       [
-        '/api/v1/calendar',
-        '/api/v1/channels',
         '/api/v1/channels/unread',
-        '/api/v1/groups',
-        '/api/v1/issues',
-        '/api/v1/join-requests',
-        '/api/v1/library',
+        '/api/v1/home',
         '/api/v1/notifications',
         '/api/v1/review-queue',
-        '/api/v1/students',
-        '/api/v1/tutor/code',
         '/api/v1/users/me',
       ].sort(),
     );
+    expect(requested.filter((read) => read === '/api/v1/home').length).toBeGreaterThanOrEqual(1);
     expect(
-      Math.max(...[...new Set(reads)].map((read) => reads.filter((entry) => entry === read).length)),
+      Math.max(...[...new Set(requested)].map((read) => requested.filter((entry) => entry === read).length)),
     ).toBeLessThanOrEqual(2);
-    expect(new Set(studentQueries)).toEqual(new Set(['?limit=1']));
-    expect(new Set(libraryQueries)).toEqual(new Set(['?limit=1']));
+  });
+
+  test('a weekly series of three lessons, whose three lesson frames commit together, costs at most two /home reads on an open Today', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const now = await control.now();
+    const when = laterToday(now);
+    const { tutor, cardId } = await tutorWithLessonToday(deployment, now, {
+      tutor: 'Tutor',
+      student: 'Vera Student',
+      title: 'First lesson',
+    });
+    await signInThroughTheApi(page, tutor);
+    const ready = trafficAfterReady(page, todayQueryPaths);
+    await ready.initialize();
+    await openToday(page, now);
+    await expectReadyForNavigation(page, ready);
+    await lessons(page).getByRole('link').first().waitFor();
+    let started = 0;
+    let finished = 0;
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname === '/api/v1/home') started += 1;
+    });
+    page.on('requestfinished', (request) => {
+      if (new URL(request.url()).pathname === '/api/v1/home') finished += 1;
+    });
+
+    await scheduleLessonsWithIds(deployment, tutor, {
+      relationship_id: cardId,
+      title: 'Series lesson',
+      date: when.date,
+      start: `${String(Number(when.start.slice(0, 2)) + 1).padStart(2, '0')}:00`,
+      duration_minutes: 60,
+      weekdays: [isoWeekday(when.date)],
+      count: 3,
+    });
+    await lessons(page).getByRole('link').nth(1).waitFor();
+
+    await expect.poll(() => started > 0 && started === finished).toBe(true);
+    expect(started).toBeLessThanOrEqual(2);
   });
 
   test('a lesson title, group name, student name and channel label with markup show as text on Today', async ({
@@ -340,12 +405,26 @@ test.describe('Today', () => {
       },
     );
     expect(sent.status).toBe(201);
+    const template = await createPastSimpleTemplate(deployment, tutor, { texts: { ...pastSimple, title: markup } });
+    await issueThroughTheApi(
+      deployment,
+      tutor,
+      template,
+      { relationship_id: cardId },
+      { deadlineAt: new Date(now + 2 * 24 * 60 * 60 * 1_000).toISOString() },
+    );
+    await answerTextAndSubmit(deployment, student, await onlySubmission(deployment, student), 'went');
+    const requester = await seedAccount(deployment, markup, 'student', 'en');
+    await enterTutorCode(deployment, requester, await tutorCode(deployment, tutor));
     await signInThroughTheApi(page, tutor);
 
     await openToday(page, now);
 
     await expect(lessons(page).getByRole('link')).toContainText(markup);
     await expect(page.getByRole('region', { name: 'Unread messages' }).getByRole('listitem')).toContainText(markup);
+    await expect(page.getByRole('region', { name: /^Needs checking/ }).getByRole('listitem')).toContainText(markup);
+    await expect(page.getByRole('region', { name: 'Upcoming deadlines' }).getByRole('listitem')).toContainText(markup);
+    await expect(page.getByRole('region', { name: 'Join requests' }).getByRole('listitem')).toContainText(markup);
     await expect(page.getByRole('main').locator('img, b')).toHaveCount(0);
     await expect(page).toHaveTitle('Today · OVC');
   });
@@ -570,5 +649,24 @@ test.describe('Join on Today', () => {
     await expect(lessons(page).getByRole('button')).toHaveCount(0);
     await expect(lessonRow(page, 'Cancelled lesson')).not.toContainText('Room opens at');
     await expect(lessonRow(page, 'Last lesson')).not.toContainText('Room opens at');
+  });
+});
+
+test.describe('Dismiss on a phone', () => {
+  test.use({ locale: 'en-GB', viewport: { width: 360, height: 780 }, colorScheme: 'light' });
+
+  test('focus moves to the heading of today’s lessons when the checklist is dismissed', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Focused tutor', 'en');
+    await signInThroughTheApi(page, tutor);
+    await page.goto('/today');
+    const dismiss = checklist(page).getByRole('button', { name: 'Dismiss' });
+
+    await dismiss.click();
+
+    await expect(page.getByRole('heading', { name: 'Today’s lessons' })).toBeFocused();
+    await expect(checklist(page)).toHaveCount(0);
   });
 });

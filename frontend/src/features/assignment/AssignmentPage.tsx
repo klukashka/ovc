@@ -54,6 +54,7 @@ import { DeadlineHint, ReclaimCue, StateLabel, TutorName, useNow } from './parts
 import { OverallFeedback, QuestionReview, RevealedPart } from './ReviewParts.tsx';
 import { type Answering, StudentBlocks, questionNumbers } from './StudentBlocks.tsx';
 import { assignmentTextLoaders } from './texts.ts';
+import { useSeenMarker } from './seenMarker.ts';
 
 const expiryMarginMilliseconds = 30_000;
 const minimumRefetchMilliseconds = 30_000;
@@ -813,6 +814,7 @@ function AssignmentContent({ submissionId }: { readonly submissionId: string }):
   const notFound = queryError?.status === 404 && query.data === undefined;
   const refetchError = queryError !== null && queryError.status !== 404 && query.data !== undefined;
   const submission = gone || notFound ? undefined : query.data;
+  useSeenMarker(submission);
 
   if (notFound) {
     return (

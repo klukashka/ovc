@@ -1,54 +1,32 @@
-import type { UseQueryResult } from '@tanstack/react-query';
-import { type ReactElement, useId } from 'react';
+import { type ReactElement, type RefObject, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { useScheduler } from '../../app/clock.ts';
 import { linkClass } from '../../components/ui/Form.tsx';
-import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
-import { asApiError } from '../../lib/api/client.ts';
 import type { Me } from '../../lib/api/session.ts';
-import { type LocalDate, localDateOf } from '../../lib/time/localDates.ts';
-import type { Calendar, CalendarItem } from '../schedule/api.ts';
+import type { CalendarItem } from '../schedule/api.ts';
 import { JoinControl } from '../schedule/JoinControl.tsx';
 import { LessonList } from '../schedule/LessonList.tsx';
 import { phaseOf, useLessonClock } from '../schedule/lessonTiming.ts';
 
-function lessonsOn(items: readonly CalendarItem[], day: LocalDate, timeZone: string): CalendarItem[] {
-  return items.filter((item) => localDateOf(Date.parse(item.starts_at), timeZone) === day);
-}
-
 export function TodayLessons({
   me,
-  today,
-  query,
+  lessons,
+  headingRef,
 }: {
   readonly me: Me;
-  readonly today: LocalDate;
-  readonly query: UseQueryResult<Calendar>;
+  readonly lessons: readonly CalendarItem[];
+  readonly headingRef: RefObject<HTMLHeadingElement | null>;
 }): ReactElement {
   const { t } = useTranslation();
   const headingId = useId();
   const scheduler = useScheduler();
-  const lessons = query.data === undefined ? [] : lessonsOn(query.data.items, today, me.timezone);
   const now = scheduler.wallClock();
   const nextBeforeWindow = lessons.find((item) => phaseOf(item, now) === 'before');
   useLessonClock(nextBeforeWindow);
 
   function body(): ReactElement {
-    if (query.isPending) {
-      return <DelayedLoading />;
-    }
-    if (query.data === undefined) {
-      return (
-        <LoadFailed
-          error={asApiError(query.error)}
-          onRetry={() => {
-            void query.refetch();
-          }}
-        />
-      );
-    }
     if (lessons.length === 0) {
       return (
         <div className="flex flex-col items-start gap-2">
@@ -85,17 +63,9 @@ export function TodayLessons({
 
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 id={headingId} className="text-heading">
+      <h2 ref={headingRef} id={headingId} tabIndex={-1} className="text-heading outline-none">
         {t('today.lessons')}
       </h2>
-      {query.data !== undefined && query.isError ? (
-        <RefetchFailed
-          error={asApiError(query.error)}
-          onRetry={() => {
-            void query.refetch();
-          }}
-        />
-      ) : null}
       {body()}
     </section>
   );

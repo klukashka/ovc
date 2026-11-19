@@ -25,6 +25,7 @@ import {
 
 const codePattern = /^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/;
 const pageSize = 30;
+const todayRequestRows = 5;
 
 async function tutorContext(browser: ObservedBrowser, deployment: Deployment): Promise<BrowserContext> {
   return browser.newContext({
@@ -328,12 +329,12 @@ test.describe('in Russian', () => {
     await signInThroughTheApi(page, maria);
     await page.goto('/today');
     const accepts = joinRequests(page).getByRole('button', { name: /^Принять: / });
-    await expect(accepts).toHaveCount(pageSize);
+    await expect(accepts).toHaveCount(todayRequestRows);
 
     await joinRequests(page).getByRole('button', { name: 'Показать ещё' }).click();
 
     await expect(accepts).toHaveCount(pageSize + 1);
-    await expect(accepts.nth(pageSize)).toBeFocused();
+    await expect(accepts.nth(todayRequestRows)).toBeFocused();
     expect(await busyControls(page)).toEqual([['Показать ещё']]);
   });
 

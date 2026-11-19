@@ -2,6 +2,7 @@ import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { describe, expect, test } from 'vitest';
 
 import { assignmentListKey, submissionKey } from '../features/assignment/keys.ts';
+import { studentHomeKey, tutorHomeKey } from '../features/home/api.ts';
 import { issueKey, issueListKey } from '../features/homework/api.ts';
 import { channelsKey, unreadChannelsKey, messagesKey } from '../features/messages/keys.ts';
 import { queuePanelKey, reviewSubmissionKey } from '../features/review/keys.ts';
@@ -10,6 +11,7 @@ import { manualScheduler } from '../lib/api/fakeTransport.ts';
 import { latestNotificationsKey } from '../features/notifications/api.ts';
 import { eventually } from '../lib/eventually.ts';
 import { liveRefetch } from './liveRefetch.ts';
+import { FollowingQueryClient } from './queryClient.ts';
 import { NotificationArrivals } from './notificationArrivals.ts';
 
 function countFailingFirst(fetches: { count: number }): () => Promise<number> {
@@ -290,5 +292,105 @@ describe('homework frame refetches', () => {
       );
     });
     queries.stop();
+  });
+});
+
+type EntityEvent = Extract<Parameters<ReturnType<typeof liveRefetch>>[0], { readonly kind: 'entity' }>;
+
+function homeInvalidations(event: Parameters<ReturnType<typeof liveRefetch>>[0]): {
+  readonly tutor: boolean;
+  readonly student: boolean;
+} {
+  const client = new QueryClient();
+  const scheduler = manualScheduler();
+  client.setQueryData(tutorHomeKey, 'tutor home');
+  client.setQueryData(studentHomeKey(null), 'student home');
+  const onEvent = liveRefetch(client, new NotificationArrivals(), scheduler);
+  onEvent(event);
+  scheduler.pass(1_000);
+  const invalidated = {
+    tutor: client.getQueryState(tutorHomeKey)?.isInvalidated === true,
+    student: client.getQueryState(studentHomeKey(null))?.isInvalidated === true,
+  };
+  onEvent.cancel();
+  client.clear();
+  return invalidated;
+}
+
+describe('the /home live refetch rows', () => {
+  test('each frame kind invalidates the home read of the roles the mapping lists', () => {
+    const entity = (kind: EntityEvent['entity']): EntityEvent => ({ kind: 'entity', entity: kind, id: 'x' });
+
+    const answers = {
+      relationship: homeInvalidations(entity('relationship')),
+      joinRequest: homeInvalidations(entity('join_request')),
+      notification: homeInvalidations(entity('notification')),
+      notificationNew: homeInvalidations({ kind: 'notification', id: 'x' }),
+      channel: homeInvalidations(entity('channel')),
+      lesson: homeInvalidations(entity('lesson')),
+      issue: homeInvalidations(entity('issue')),
+      submission: homeInvalidations(entity('submission')),
+      message: homeInvalidations({ kind: 'message', change: 'new', channelId: 'a', messageId: 'one', seq: 1 }),
+      read: homeInvalidations({ kind: 'read', channelId: 'a' }),
+    };
+
+    const both = { tutor: true, student: true };
+    const tutorOnly = { tutor: true, student: false };
+    const neither = { tutor: false, student: false };
+    expect(answers).toEqual({
+      relationship: both,
+      joinRequest: tutorOnly,
+      notification: neither,
+      notificationNew: neither,
+      channel: both,
+      lesson: both,
+      issue: tutorOnly,
+      submission: both,
+      message: tutorOnly,
+      read: tutorOnly,
+    });
+  });
+
+  test('three frames in one burst while a home read is in flight cost at most two home reads', async () => {
+    const client = new FollowingQueryClient();
+    const reads: { readonly resolve: (value: number) => void }[] = [];
+    const observer = new QueryObserver(client, {
+      queryKey: tutorHomeKey,
+      queryFn: (): Promise<number> =>
+        new Promise<number>((resolve) => {
+          reads.push({ resolve });
+        }),
+      retry: false,
+    });
+    const unsubscribe = observer.subscribe(() => undefined);
+    await eventually(() => {
+      expect(reads).toHaveLength(1);
+    });
+    reads[0]?.resolve(1);
+    await eventually(() => {
+      expect(observer.getCurrentResult().status).toBe('success');
+    });
+    const onEvent = liveRefetch(client, new NotificationArrivals(), manualScheduler());
+    const lesson = (id: string): EntityEvent => ({ kind: 'entity', entity: 'lesson', id });
+
+    onEvent(lesson('a'));
+    await eventually(() => {
+      expect(reads).toHaveLength(2);
+    });
+    onEvent(lesson('b'));
+    onEvent(lesson('c'));
+    reads[1]?.resolve(2);
+    await eventually(() => {
+      expect(reads).toHaveLength(3);
+    });
+    reads[2]?.resolve(3);
+    await eventually(() => {
+      expect(observer.getCurrentResult().data).toBe(3);
+    });
+
+    expect(reads).toHaveLength(3);
+    onEvent.cancel();
+    unsubscribe();
+    client.clear();
   });
 });

@@ -1,5 +1,5 @@
 import { FakeChatServer } from './fakeChat.ts';
-import { FakeSubmissionServer, type FieldProblem } from './fakeSubmissions.ts';
+import { type FeedbackSeenRequest, FakeSubmissionServer, type FieldProblem, fakeRefusal } from './fakeSubmissions.ts';
 
 import type { components } from './schema.ts';
 import type { LockManagerLike, Me, Scheduler } from './session.ts';
@@ -48,6 +48,21 @@ type CalendarItem = components['schemas']['CalendarItem'];
 type LessonDetail = components['schemas']['LessonDetail'];
 type Notification = components['schemas']['Notification'];
 type StudentCardSummary = components['schemas']['StudentCardSummary'];
+type IssueItem = components['schemas']['IssueItem'];
+type MyTutor = components['schemas']['MyTutor'];
+type ReviewQueueItem = components['schemas']['ReviewQueueItem'];
+type StudentAssignmentItem = components['schemas']['StudentAssignmentItem'];
+type StudentHome = components['schemas']['StudentHome'];
+type StudentHomeTutor = components['schemas']['StudentHomeTutor'];
+type TutorCode = components['schemas']['TutorCode'];
+type TutorHome = components['schemas']['TutorHome'];
+type TutorJoinRequest = components['schemas']['TutorJoinRequest'];
+type TutorSettings = components['schemas']['TutorSettings'];
+type CurrentTutor = MyTutor & { readonly state: 'active' | 'provisional' };
+
+interface HomeFilter {
+  readonly relationshipId: string | null;
+}
 
 const cardPathPrefix = '/api/v1/students/';
 const calendarPath = '/api/v1/calendar';
@@ -57,6 +72,9 @@ const lessonPathPrefix = '/api/v1/lessons/';
 const joinRequestsPath = '/api/v1/join-requests';
 const notificationsPath = '/api/v1/notifications';
 const tutorSettingsPath = '/api/v1/tutor/settings';
+const tutorCodePath = '/api/v1/tutor/code';
+const homePath = '/api/v1/home';
+const submissionPathPrefix = '/api/v1/submissions/';
 const invitationPathPrefix = '/api/v1/invitations/';
 const fakeTokenPrefix = 'fake-';
 const emailPreferencesPath = '/api/v1/users/me/email-preferences';
@@ -134,7 +152,27 @@ const defaultPageLimit = 30;
 const maximumPageLimit = 100;
 const unreadCountCap = 100;
 const cursorPrefix = 'fake-cursor-';
-const supportedStudentListParameters: ReadonlySet<string> = new Set(['limit', 'cursor']);
+const supportedStudentListParameters: ReadonlySet<string> = new Set(['limit', 'cursor', 'state']);
+const studentListStates: Readonly<Record<string, ReadonlySet<StudentCard['state']>>> = {
+  active: new Set(['active', 'provisional', 'reclaim_pending']),
+  invited: new Set(['invited']),
+  ended: new Set(['ended']),
+};
+const homeListLimit = 50;
+const homePanelLimit = 5;
+const homeCountCap = 100;
+const homeLookaheadDays = 63;
+const hourMilliseconds = 60 * 60 * 1_000;
+const homeDeadlineWindowMilliseconds = 72 * hourMilliseconds;
+const homeWeekMilliseconds = 7 * 24 * hourMilliseconds;
+const defaultTutorCode = 'K7M2-QX4P';
+const defaultTutorSettings: TutorSettings = {
+  file_quota_bytes: 1_073_741_824,
+  file_usage_bytes: 0,
+  onboarding_dismissed: false,
+};
+const todoStatuses: ReadonlySet<StudentAssignmentItem['status']> = new Set(['not_started', 'draft', 'returned']);
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface KeysetPage<Item> {
   readonly items: Item[];
@@ -163,7 +201,126 @@ function pageOf<Item>(items: readonly Item[], query: URLSearchParams): KeysetPag
   };
 }
 
-function summaryOf(card: StudentCard): StudentCardSummary {
+function zoneOffset(instant: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date(instant));
+  const part = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((candidate) => candidate.type === type)?.value ?? '0');
+  const local = Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'), part('second'));
+  return local - Math.floor(instant / 1_000) * 1_000;
+}
+
+function localDayStart(instant: number, timeZone: string, daysAhead: number): number {
+  const local = new Date(instant + zoneOffset(instant, timeZone));
+  const midnight = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + daysAhead);
+  return midnight - zoneOffset(midnight - zoneOffset(instant, timeZone), timeZone);
+}
+
+function startsWithin(from: number, to: number): (item: CalendarItem) => boolean {
+  return (item) => Date.parse(item.starts_at) >= from && Date.parse(item.starts_at) < to;
+}
+
+function byStart(items: readonly CalendarItem[]): CalendarItem[] {
+  return [...items].sort(
+    (left, right) => Date.parse(left.starts_at) - Date.parse(right.starts_at) || left.id.localeCompare(right.id),
+  );
+}
+
+function instantOrLast(value: string | null): number {
+  return value === null ? Number.POSITIVE_INFINITY : Date.parse(value);
+}
+
+function todoOrder(left: StudentAssignmentItem, right: StudentAssignmentItem): number {
+  return (
+    instantOrLast(left.deadline_at) - instantOrLast(right.deadline_at) ||
+    Date.parse(left.issued_at) - Date.parse(right.issued_at) ||
+    left.submission_id.localeCompare(right.submission_id)
+  );
+}
+
+function checkedOrder(left: StudentAssignmentItem, right: StudentAssignmentItem): number {
+  return (
+    Date.parse(right.checked_at ?? '') - Date.parse(left.checked_at ?? '') ||
+    right.submission_id.localeCompare(left.submission_id)
+  );
+}
+
+function queueOrder(left: ReviewQueueItem, right: ReviewQueueItem): number {
+  return (
+    instantOrLast(left.first_submitted_at) - instantOrLast(right.first_submitted_at) ||
+    left.submission_id.localeCompare(right.submission_id)
+  );
+}
+
+function issueListItem(issue: IssueItem): IssueItem {
+  const item: IssueItem = { ...issue };
+  delete item.submission;
+  return item;
+}
+
+function isCurrentTutor(tutor: MyTutor): tutor is CurrentTutor {
+  return tutor.state === 'active' || tutor.state === 'provisional';
+}
+
+function homeTutor(tutor: CurrentTutor): StudentHomeTutor {
+  return {
+    relationship_id: tutor.relationship_id,
+    state: tutor.state,
+    name: tutor.tutor.name,
+    avatar_id: tutor.tutor.avatar_id,
+    colour: tutor.colour,
+    subjects: [...tutor.tutor.subjects],
+    channel_id: tutor.channel_id,
+  };
+}
+
+function homeFilter(current: readonly CurrentTutor[], values: readonly string[]): HomeFilter | null {
+  if (values.length === 0) {
+    return { relationshipId: null };
+  }
+  const [value = ''] = values;
+  if (values.length !== 1 || !uuidPattern.test(value)) {
+    return null;
+  }
+  const found = current.find((tutor) => tutor.relationship_id.toLowerCase() === value.toLowerCase());
+  return found === undefined ? null : { relationshipId: found.relationship_id };
+}
+
+function settingsPatchRefusal(text: string): Response | null {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return refusal(400, 'bad_request');
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return fieldRefusal('body', 'invalid');
+  }
+  const flag: unknown = 'onboarding_dismissed' in body ? body.onboarding_dismissed : undefined;
+  const problems: FieldProblem[] = Object.keys(body)
+    .filter((key) => key !== 'onboarding_dismissed')
+    .map(() => ({ path: 'body', code: 'unexpected_property' }));
+  if (flag !== undefined && flag !== null && typeof flag !== 'boolean') {
+    problems.unshift({ path: 'body.onboarding_dismissed', code: 'invalid' });
+  }
+  if (problems.length > 0) {
+    return fakeRefusal(422, 'validation_failed', problems);
+  }
+  if (!('onboarding_dismissed' in body)) {
+    return fieldRefusal('body.onboarding_dismissed', 'required');
+  }
+  return flag === true ? null : fieldRefusal('body.onboarding_dismissed', 'invalid');
+}
+
+function summaryOf(card: StudentCard, openAssignments: number): StudentCardSummary {
   return {
     id: card.id,
     state: card.state,
@@ -176,7 +333,7 @@ function summaryOf(card: StudentCard): StudentCardSummary {
     ended_by: card.ended_by,
     created_at: card.created_at,
     next_lesson: null,
-    open_assignments: 0,
+    open_assignments: openAssignments,
   };
 }
 
@@ -213,6 +370,7 @@ function fakeAudienceRefusal(method: string, path: string, caller: Me): Response
     path === joinRequestsPath ||
     path.startsWith('/api/v1/groups') ||
     path.startsWith('/api/v1/library') ||
+    path.startsWith('/api/v1/tutor/') ||
     path === issuesPath;
   if ((tutorOnly && caller.role !== 'tutor') || (path === '/api/v1/tutors' && caller.role !== 'student')) {
     return refusal(404, 'not_found');
@@ -221,7 +379,14 @@ function fakeAudienceRefusal(method: string, path: string, caller: Me): Response
     path === '/api/v1/users/me' ||
     path === '/api/v1/auth/logout' ||
     path === emailPreferencesPath ||
-    (method === 'GET' && (path === notificationsPath || path === calendarPath || path === '/api/v1/tutors')) ||
+    path === tutorSettingsPath ||
+    (path.startsWith(submissionPathPrefix) && caller.role === 'student') ||
+    (method === 'GET' &&
+      (path === notificationsPath ||
+        path === calendarPath ||
+        path === '/api/v1/tutors' ||
+        path === homePath ||
+        path === tutorCodePath)) ||
     path.startsWith('/api/v1/library') ||
     (method === 'GET' &&
       (path === '/api/v1/channels' ||
@@ -420,7 +585,9 @@ export class FakeAuthServer {
     this.refreshBodies = options.refreshBodies ?? null;
   }
   readonly chat = new FakeChatServer();
-  readonly submissions = new FakeSubmissionServer();
+  readonly submissions = new FakeSubmissionServer((studentId, submissionId) => {
+    this.clearFeedbackNew(studentId, submissionId);
+  });
   private readonly tutors = new Map<string, components['schemas']['MyTutor'][]>();
   private readonly templateCounts = new Map<string, number>();
   private readonly templates = new Map<string, Map<string, components['schemas']['Template']>>();
@@ -434,8 +601,21 @@ export class FakeAuthServer {
   private storedRefresh: RefreshCookie | null = null;
   private nowSeconds = 0;
   private readonly issueItems = new Map<string, components['schemas']['IssueItem'][]>();
-  private deadlineListReads = 0;
-  private failingDeadlineReads = 0;
+  private readonly queueItems = new Map<string, ReviewQueueItem[]>();
+  private readonly joinRequests = new Map<string, TutorJoinRequest[]>();
+  private readonly tutorCodes = new Map<string, TutorCode>();
+  private readonly assignments = new Map<string, StudentAssignmentItem[]>();
+  private readonly lessonRelationships = new WeakMap<CalendarItem, string>();
+  private readonly openAssignmentCounts = new Map<string, number>();
+  private homeReadCount = 0;
+  private readonly homeReadQueries: string[] = [];
+  private failingHomeReads = 0;
+  private homeReadGate: Promise<void> | null = null;
+  private homeReadReceived: () => void = () => undefined;
+  private readonly writtenSettings: string[] = [];
+  private readonly settingsWriteRefusals: Response[] = [];
+  private settingsWriteGate: Promise<void> | null = null;
+  private settingsWriteReceived: () => void = () => undefined;
   private readonly lessonDetailReads = new Map<string, number>();
   private issued = 0;
   private refreshGate: Promise<void> | null = null;
@@ -642,9 +822,118 @@ export class FakeAuthServer {
     this.tutorSettings.set(this.account(email).me.id, settings);
   }
 
-  addCalendarItem(email: string, item: CalendarItem): void {
+  addCalendarItem(email: string, item: CalendarItem, relationshipId?: string): void {
     const accountId = this.account(email).me.id;
     this.calendarItems.set(accountId, [...(this.calendarItems.get(accountId) ?? []), item]);
+    if (relationshipId !== undefined) {
+      this.lessonRelationships.set(item, relationshipId);
+    }
+  }
+
+  addQueueItem(tutorEmail: string, item: ReviewQueueItem): void {
+    const accountId = this.account(tutorEmail).me.id;
+    this.queueItems.set(accountId, [...(this.queueItems.get(accountId) ?? []), item]);
+  }
+
+  addJoinRequest(tutorEmail: string, request: TutorJoinRequest): void {
+    const accountId = this.account(tutorEmail).me.id;
+    this.joinRequests.set(accountId, [...(this.joinRequests.get(accountId) ?? []), request]);
+  }
+
+  setTutorCode(email: string, code: TutorCode): void {
+    this.tutorCodes.set(this.account(email).me.id, code);
+  }
+
+  addAssignment(studentEmail: string, item: StudentAssignmentItem): void {
+    const accountId = this.account(studentEmail).me.id;
+    this.assignments.set(accountId, [...(this.assignments.get(accountId) ?? []), item]);
+  }
+
+  setOpenAssignments(cardId: string, count: number): void {
+    this.openAssignmentCounts.set(cardId, count);
+  }
+
+  homeReads(): number {
+    return this.homeReadCount;
+  }
+
+  homeQueries(): readonly string[] {
+    return this.homeReadQueries;
+  }
+
+  failNextHomeRead(): void {
+    this.failingHomeReads += 1;
+  }
+
+  pauseHomeReads(): PausedReads {
+    let resume = (): void => undefined;
+    let notifyReceived = (): void => undefined;
+    this.homeReadGate = new Promise((resolve) => {
+      resume = (): void => {
+        this.homeReadGate = null;
+        this.homeReadReceived = (): void => undefined;
+        resolve();
+      };
+    });
+    const received = new Promise<void>((resolve) => {
+      notifyReceived = resolve;
+    });
+    this.homeReadReceived = notifyReceived;
+    return { resume, received };
+  }
+
+  settingsWrites(): readonly string[] {
+    return this.writtenSettings;
+  }
+
+  refuseNextSettingsWrite(status: number, code: string): void {
+    this.settingsWriteRefusals.push(refusal(status, code));
+  }
+
+  pauseSettingsWrites(): PausedReads {
+    let resume = (): void => undefined;
+    let notifyReceived = (): void => undefined;
+    this.settingsWriteGate = new Promise((resolve) => {
+      resume = (): void => {
+        this.settingsWriteGate = null;
+        this.settingsWriteReceived = (): void => undefined;
+        resolve();
+      };
+    });
+    const received = new Promise<void>((resolve) => {
+      notifyReceived = resolve;
+    });
+    this.settingsWriteReceived = notifyReceived;
+    return { resume, received };
+  }
+
+  feedbackSeenRequests(): readonly FeedbackSeenRequest[] {
+    return this.submissions.feedbackSeenRequests;
+  }
+
+  refuseNextFeedbackSeen(status: number, code: string): void {
+    this.submissions.refuseNextFeedbackSeen(status, code);
+  }
+
+  returnSubmission(submissionId: string): void {
+    this.submissions.returnSubmission(submissionId);
+  }
+
+  endRelationshipOf(submissionId: string): void {
+    const ended = this.submissions.endRelationshipOf(submissionId);
+    const tutors = this.tutors.get(ended.studentId);
+    if (tutors === undefined) {
+      return;
+    }
+    const endedAt = new Date(this.serverNow()).toISOString();
+    this.tutors.set(
+      ended.studentId,
+      tutors.map((tutor): MyTutor =>
+        tutor.relationship_id === ended.relationshipId
+          ? { ...tutor, state: 'ended', ended_at: endedAt, ended_by: 'tutor' }
+          : tutor,
+      ),
+    );
   }
 
   addLesson(detail: LessonDetail, emails: readonly string[]): void {
@@ -724,14 +1013,6 @@ export class FakeAuthServer {
 
   lessonReads(id: string): number {
     return this.lessonDetailReads.get(id) ?? 0;
-  }
-
-  failDeadlineReads(count: number): void {
-    this.failingDeadlineReads = count;
-  }
-
-  deadlineReads(): number {
-    return this.deadlineListReads;
   }
 
   serverNow(): number {
@@ -1053,22 +1334,16 @@ export class FakeAuthServer {
       return this.readTemplate(caller, decodeURIComponent(path.slice(templatePathPrefix.length)));
     }
     if (request.method === 'GET' && path === issuesPath && caller !== undefined) {
-      const bound = address.searchParams.get('deadline_before');
-      const items = this.issueItems.get(caller.id) ?? [];
-      if (bound === null) {
-        return json(200, { items, next_cursor: null });
-      }
-      this.deadlineListReads += 1;
-      if (this.failingDeadlineReads > 0) {
-        this.failingDeadlineReads -= 1;
-        return refusal(503, 'service_unavailable');
-      }
-      const now = this.serverNow();
-      const ahead = items
-        .filter((item) => item.deadline_at !== null && Date.parse(item.deadline_at) > now)
-        .filter((item) => item.deadline_at !== null && Date.parse(item.deadline_at) < Date.parse(bound))
-        .sort((first, second) => Date.parse(first.deadline_at ?? '') - Date.parse(second.deadline_at ?? ''));
-      return json(200, { items: ahead, next_cursor: null });
+      return json(200, { items: this.issueItems.get(caller.id) ?? [], next_cursor: null });
+    }
+    if (request.method === 'GET' && path === homePath && caller !== undefined) {
+      return this.readHome(caller, address);
+    }
+    if (path === tutorSettingsPath && caller !== undefined) {
+      return this.answerTutorSettings(request, caller);
+    }
+    if (request.method === 'GET' && path === tutorCodePath && caller !== undefined) {
+      return json(200, this.codeOf(caller));
     }
     if (path === '/api/v1/uploads' && request.method === 'POST' && caller !== undefined) {
       request.signal.throwIfAborted();
@@ -1116,13 +1391,10 @@ export class FakeAuthServer {
       return this.answerInvitation(decodeURIComponent(path.slice(invitationPathPrefix.length)));
     }
     if (request.method === 'GET' && path === joinRequestsPath) {
-      return this.readJoinRequests(token);
+      return this.readJoinRequests(token, address.searchParams);
     }
     if (request.method === 'GET' && path === notificationsPath) {
       return this.readNotifications(token, address.searchParams);
-    }
-    if (request.method === 'GET' && path === tutorSettingsPath) {
-      return this.readTutorSettings(accountId ?? '');
     }
     if (request.method === 'GET' && path === calendarPath) {
       return this.readCalendar(token, address.searchParams);
@@ -1181,7 +1453,12 @@ export class FakeAuthServer {
       return json(201, card);
     }
     if (request.method === 'GET' && path === '/api/v1/students') {
-      if ([...address.searchParams.keys()].some((name) => !supportedStudentListParameters.has(name))) {
+      const requestedState = address.searchParams.get('state');
+      const listedStates = requestedState === null ? null : studentListStates[requestedState];
+      if (
+        [...address.searchParams.keys()].some((name) => !supportedStudentListParameters.has(name)) ||
+        listedStates === undefined
+      ) {
         return refusal(422, 'validation_failed');
       }
       if (this.failingStudentListReads > 0) {
@@ -1190,7 +1467,8 @@ export class FakeAuthServer {
       }
       const newestFirst = [...this.cards.values()]
         .filter((found) => found.tutorId === tutorId)
-        .map((found) => summaryOf(found.card))
+        .filter((found) => listedStates === null || listedStates.has(found.card.state))
+        .map((found) => summaryOf(found.card, this.openAssignmentsOf(tutorId, found.card.id)))
         .reverse();
       const page = pageOf(newestFirst, address.searchParams);
       return page === null ? refusal(422, 'validation_failed') : json(200, page);
@@ -1244,7 +1522,7 @@ export class FakeAuthServer {
     return json(200, { tutor: { name: tutor.me.name, avatar_id: tutor.me.avatar_id, subjects: [] } });
   }
 
-  private async readJoinRequests(token: string): Promise<Response> {
+  private async readJoinRequests(token: string, query: URLSearchParams): Promise<Response> {
     const refused = this.refusedToken(token);
     this.joinRequestReadReceived();
     await this.joinRequestReadGate;
@@ -1260,7 +1538,164 @@ export class FakeAuthServer {
       this.failingJoinRequestReads -= 1;
       return refusal(500, 'internal');
     }
-    return json(200, { items: [], next_cursor: null });
+    const page = pageOf(this.visibleJoinRequests(callerId), query);
+    return page === null ? refusal(422, 'validation_failed') : json(200, page);
+  }
+
+  private visibleJoinRequests(tutorId: string): TutorJoinRequest[] {
+    const now = this.serverNow();
+    return (this.joinRequests.get(tutorId) ?? [])
+      .filter((request) => Date.parse(request.expires_at) > now)
+      .sort(
+        (left, right) => Date.parse(left.created_at) - Date.parse(right.created_at) || left.id.localeCompare(right.id),
+      );
+  }
+
+  private openAssignmentsOf(tutorId: string, cardId: string): number {
+    return this.openAssignmentCounts.get(cardId) ?? this.submissions.openCount(tutorId, cardId);
+  }
+
+  private clearFeedbackNew(studentId: string, submissionId: string): void {
+    const items = this.assignments.get(studentId);
+    if (items !== undefined) {
+      this.assignments.set(
+        studentId,
+        items.map((item) => (item.submission_id === submissionId ? { ...item, feedback_new: false } : item)),
+      );
+    }
+  }
+
+  private settingsOf(tutorId: string): TutorSettings {
+    return this.tutorSettings.get(tutorId) ?? defaultTutorSettings;
+  }
+
+  private codeOf(caller: Me): TutorCode {
+    return this.tutorCodes.get(caller.id) ?? { code: defaultTutorCode, active: caller.state === 'active' };
+  }
+
+  private async answerTutorSettings(request: Request, caller: Me): Promise<Response> {
+    if (request.method === 'GET') {
+      return json(200, this.settingsOf(caller.id));
+    }
+    if (request.method !== 'PATCH') {
+      return refusal(405, 'method_not_allowed');
+    }
+    const body = await request.text();
+    this.writtenSettings.push(body);
+    this.settingsWriteReceived();
+    await this.settingsWriteGate;
+    const refused = settingsPatchRefusal(body) ?? this.settingsWriteRefusals.shift();
+    if (refused !== undefined) {
+      return refused;
+    }
+    const settings: TutorSettings = { ...this.settingsOf(caller.id), onboarding_dismissed: true };
+    this.tutorSettings.set(caller.id, settings);
+    return json(200, settings);
+  }
+
+  private async readHome(caller: Me, address: URL): Promise<Response> {
+    this.homeReadCount += 1;
+    this.homeReadQueries.push(address.search);
+    this.homeReadReceived();
+    await this.homeReadGate;
+    if (this.failingHomeReads > 0) {
+      this.failingHomeReads -= 1;
+      return refusal(503, 'service_unavailable');
+    }
+    if (caller.role === 'tutor') {
+      return address.searchParams.has('tutor')
+        ? fieldRefusal('query.tutor', 'not_allowed')
+        : json(200, this.tutorHome(caller));
+    }
+    const current = (this.tutors.get(caller.id) ?? []).filter(isCurrentTutor);
+    const filter = homeFilter(current, address.searchParams.getAll('tutor'));
+    return filter === null ? refusal(404, 'not_found') : json(200, this.studentHome(caller, current, filter));
+  }
+
+  private tutorHome(caller: Me): TutorHome {
+    const now = this.serverNow();
+    const unconfirmed = caller.state === 'unverified';
+    const dayStart = localDayStart(now, caller.timezone, 0);
+    const calendar = byStart(this.calendarItems.get(caller.id) ?? []);
+    const today = calendar.filter(startsWithin(dayStart, localDayStart(now, caller.timezone, 1)));
+    const queue = [...(this.queueItems.get(caller.id) ?? [])].sort(queueOrder);
+    const deadlines = (this.issueItems.get(caller.id) ?? [])
+      .filter((issue) => issue.status === 'active' && issue.deadline_at !== null)
+      .filter((issue) => {
+        const deadline = Date.parse(issue.deadline_at ?? '');
+        return deadline > now && deadline <= now + homeDeadlineWindowMilliseconds;
+      })
+      .sort(
+        (left, right) =>
+          Date.parse(left.deadline_at ?? '') - Date.parse(right.deadline_at ?? '') || left.id.localeCompare(right.id),
+      );
+    const requests = this.visibleJoinRequests(caller.id);
+    return {
+      today_lessons: today.slice(0, homeListLimit),
+      today_lessons_count: today.length,
+      needs_checking: unconfirmed
+        ? null
+        : { count: Math.min(queue.length, homeCountCap), items: queue.slice(0, homePanelLimit) },
+      upcoming_deadlines: unconfirmed
+        ? null
+        : {
+            count: Math.min(deadlines.length, homeCountCap),
+            items: deadlines.slice(0, homePanelLimit).map(issueListItem),
+          },
+      unread_channels: this.chat.homeUnreadChannels(caller),
+      join_requests: unconfirmed
+        ? null
+        : {
+            count: Math.min(requests.length, homeCountCap),
+            items: requests.slice(0, homePanelLimit),
+            next_cursor: requests.length > homePanelLimit ? `${cursorPrefix}${String(homePanelLimit)}` : null,
+          },
+      tutor_code: this.codeOf(caller),
+      checklist: {
+        onboarding_dismissed: this.settingsOf(caller.id).onboarding_dismissed,
+        steps: {
+          profile: (caller.bio ?? '') !== '' || (caller.subjects ?? []).length > 0,
+          student: unconfirmed ? null : [...this.cards.values()].some((found) => found.tutorId === caller.id),
+          lesson: calendar.some(startsWithin(dayStart, localDayStart(now, caller.timezone, homeLookaheadDays))),
+          assignment: (this.templateCounts.get(caller.id) ?? 0) > 0,
+        },
+      },
+    };
+  }
+
+  private studentHome(caller: Me, current: readonly CurrentTutor[], filter: HomeFilter): StudentHome {
+    const now = this.serverNow();
+    const dayStart = localDayStart(now, caller.timezone, 0);
+    const lookaheadEnd = localDayStart(now, caller.timezone, homeLookaheadDays);
+    const lessons = byStart(this.calendarItems.get(caller.id) ?? []).filter(
+      (item) =>
+        item.status !== 'cancelled' &&
+        Date.parse(item.ends_at) > dayStart &&
+        Date.parse(item.starts_at) < lookaheadEnd &&
+        this.lessonInFilter(item, filter),
+    );
+    const upcoming = lessons.filter((item) => Date.parse(item.ends_at) > now);
+    const nextSevenDays = upcoming.filter((item) => Date.parse(item.starts_at) < now + homeWeekMilliseconds);
+    const work = this.assignments.get(caller.id) ?? [];
+    const inFilter = (item: StudentAssignmentItem): boolean =>
+      filter.relationshipId === null || item.tutor.relationship_id === filter.relationshipId;
+    const todo = work.filter((item) => todoStatuses.has(item.status)).sort(todoOrder);
+    const checked = work.filter((item) => item.status === 'checked').sort(checkedOrder);
+    return {
+      next_lesson: upcoming[0] ?? null,
+      today_lessons_count: lessons.filter(startsWithin(dayStart, localDayStart(now, caller.timezone, 1))).length,
+      todo: { count: Math.min(todo.length, homeCountCap), items: todo.filter(inFilter).slice(0, homePanelLimit) },
+      recently_checked: checked.filter(inFilter).slice(0, homePanelLimit),
+      next_seven_days: nextSevenDays.slice(0, homeListLimit),
+      next_seven_days_count: nextSevenDays.length,
+      tutors: current.slice(0, homeListLimit).map(homeTutor),
+      tutors_count: current.length,
+    };
+  }
+
+  private lessonInFilter(item: CalendarItem, filter: HomeFilter): boolean {
+    const relationshipId = this.lessonRelationships.get(item);
+    return filter.relationshipId === null || relationshipId === undefined || relationshipId === filter.relationshipId;
   }
 
   private async answerLesson(method: string, route: string, token: string): Promise<Response> {
@@ -1380,11 +1815,6 @@ export class FakeAuthServer {
       media_type: file.type,
       size_bytes: file.size,
     });
-  }
-
-  private readTutorSettings(accountId: string): Response {
-    const settings = this.tutorSettings.get(accountId);
-    return settings === undefined ? refusal(404, 'not_found') : json(200, settings);
   }
 
   private readNotifications(token: string, query: URLSearchParams): Response {

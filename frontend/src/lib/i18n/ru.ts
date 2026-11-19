@@ -81,6 +81,7 @@ export const ru = {
     checklistNotDone: 'ещё не выполнено',
     checklistAssignment: 'Создайте задание',
     checklistAssignmentAction: 'Открыть библиотеку',
+    checklistDismiss: 'Скрыть',
   },
   home: {
     aside: 'Неделя и мои репетиторы',
@@ -442,7 +443,9 @@ export const ru = {
       state: 'Статус',
       groups: 'Группы',
       nextLesson: 'Следующий урок',
+      openAssignments: 'Открытые задания',
     },
+    openAssignments: 'Открытые задания: {count}',
     group: 'Группа',
     allGroups: 'Все группы',
     archivedGroup: '{name} (в архиве)',

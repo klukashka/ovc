@@ -32,17 +32,17 @@ function socketAddresses(page: Page): string[] {
 interface ReconnectRecord {
   readonly openSockets: () => number;
   readonly socketCounts: readonly number[];
-  readonly joinRequestReads: () => number;
+  readonly homeReads: () => number;
   readonly readsBeforeSocket: readonly number[];
 }
 
-function recordSocketsAndJoinRequestReads(page: Page): ReconnectRecord {
+function recordSocketsAndHomeReads(page: Page): ReconnectRecord {
   const socketCounts: number[] = [];
   const readsBeforeSocket: number[] = [];
   let open = 0;
   let reads = 0;
   page.on('request', (request) => {
-    if (new URL(request.url()).pathname === '/api/v1/join-requests' && request.method() === 'GET') {
+    if (new URL(request.url()).pathname === '/api/v1/home' && request.method() === 'GET') {
       reads += 1;
     }
   });
@@ -55,7 +55,7 @@ function recordSocketsAndJoinRequestReads(page: Page): ReconnectRecord {
       socketCounts.push(open);
     });
   });
-  return { openSockets: () => open, socketCounts, joinRequestReads: () => reads, readsBeforeSocket };
+  return { openSockets: () => open, socketCounts, homeReads: () => reads, readsBeforeSocket };
 }
 
 for (const code of [4429, 1012] as const) {
@@ -66,7 +66,7 @@ for (const code of [4429, 1012] as const) {
     const maria = await seedVerifiedUser(deployment, 'Мария');
     const user = await accountId(deployment, maria);
     await signInThroughTheApi(page, maria);
-    const record = recordSocketsAndJoinRequestReads(page);
+    const record = recordSocketsAndHomeReads(page);
     await page.goto('/today');
     await expect(page.getByRole('region', { name: 'Заявки на занятия' })).toBeVisible();
     await waitForSockets(deployment, user, 1);
@@ -76,7 +76,7 @@ for (const code of [4429, 1012] as const) {
     await expect.poll(() => record.socketCounts.length).toBe(3);
     await waitForSockets(deployment, user, 1);
     const readsBeforeReconnect = record.readsBeforeSocket[1] ?? Number.POSITIVE_INFINITY;
-    await expect.poll(() => record.joinRequestReads()).toBeGreaterThan(readsBeforeReconnect);
+    await expect.poll(() => record.homeReads()).toBeGreaterThan(readsBeforeReconnect);
     expect(closed).toBe(1);
     expect(record.socketCounts).toEqual([1, 0, 1]);
     expect(record.openSockets()).toBe(1);

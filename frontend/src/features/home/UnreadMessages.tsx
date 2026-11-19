@@ -4,49 +4,32 @@ import { Link } from 'react-router';
 
 import { linkClass } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
-import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { paletteDotClass } from '../../components/ui/palette.ts';
-import { asApiError } from '../../lib/api/client.ts';
-import { useFirstChannelPage } from '../messages/firstPage.ts';
-
-const shownChannels = 5;
+import type { TutorHome } from './api.ts';
 
 function unreadCount(count: number): string {
   return count > 99 ? '99+' : String(count);
 }
 
-export function UnreadMessages(): ReactElement {
+export function UnreadMessages({ part }: { readonly part: TutorHome['unread_channels'] }): ReactElement {
   const { t } = useTranslation();
   const headingId = useId();
-  const query = useFirstChannelPage('');
   const listRef = useRef<HTMLUListElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const unread = (query.data?.items ?? []).filter((channel) => channel.unread_count > 0).slice(0, shownChannels);
-  useFocusAfterRemovedRow(listRef, query.isError ? [] : unread.map((channel) => channel.id), ':scope > a', headingRef);
+  const unread = part.items;
+  useFocusAfterRemovedRow(
+    listRef,
+    unread.map((channel) => channel.channel_id),
+    ':scope > a',
+    headingRef,
+  );
 
   function body(): ReactElement {
-    if (query.isPending) {
-      return <DelayedLoading />;
-    }
-    const allMessages =
-      query.data === undefined ? null : (
-        <Link to="/messages" className={linkClass}>
-          {t('today.allMessages', { count: query.data.unread_channels })}
-        </Link>
-      );
-    if (query.isError) {
-      return (
-        <>
-          <LoadFailed
-            error={asApiError(query.error)}
-            onRetry={() => {
-              void query.refetch();
-            }}
-          />
-          {allMessages}
-        </>
-      );
-    }
+    const allMessages = (
+      <Link to="/messages" className={linkClass}>
+        {t('today.allMessages', { count: part.unread_total })}
+      </Link>
+    );
     return (
       <>
         {unread.length === 0 ? (
@@ -54,9 +37,13 @@ export function UnreadMessages(): ReactElement {
         ) : (
           <ul ref={listRef} aria-labelledby={headingId} className="flex flex-col border-y border-border">
             {unread.map((channel) => (
-              <li key={channel.id} data-row={channel.id} className="border-t border-border first:border-t-0">
+              <li
+                key={channel.channel_id}
+                data-row={channel.channel_id}
+                className="border-t border-border first:border-t-0"
+              >
                 <Link
-                  to={`/messages/${encodeURIComponent(channel.id)}`}
+                  to={`/messages/${encodeURIComponent(channel.channel_id)}`}
                   className="flex min-h-11 items-center justify-between gap-3 px-1 py-2 hover:bg-surface"
                 >
                   <span className="flex min-w-0 items-center gap-2">
@@ -67,7 +54,9 @@ export function UnreadMessages(): ReactElement {
                       />
                     )}
                     <span dir="auto" className="truncate">
-                      {channel.label ?? t('today.deletedUser')}
+                      {channel.label_kind === 'deleted_user' || channel.label === null
+                        ? t('today.deletedUser')
+                        : channel.label}
                     </span>
                   </span>
                   <span className="shrink-0 rounded-full bg-hover px-2 text-caption tabular">

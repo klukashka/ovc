@@ -4,7 +4,7 @@ import {
   useInfiniteQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { type ReactElement, type ReactNode, useId, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { type ActionState, done, refusedBy, showsStaleData, useAction } from '../../components/ui/action.ts';
@@ -28,6 +28,7 @@ import { type ApiClient, apiErrorFrom, asApiError, useApiClient } from '../../li
 import type { components } from '../../lib/api/schema.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDate } from '../../lib/format/dates.ts';
+import { homeKey } from '../home/api.ts';
 import { joinRequestsKey, studentsKey } from './api.ts';
 
 type TutorJoinRequest = components['schemas']['TutorJoinRequest'];
@@ -41,9 +42,14 @@ const decisionNotice = {
   block: 'joinRequests.blocked',
 } as const;
 
-async function fetchJoinRequestsPage(client: ApiClient, cursor: string | null): Promise<TutorJoinRequestPage> {
+async function fetchJoinRequestsPage(
+  client: ApiClient,
+  cursor: string | null,
+  signal: AbortSignal | null = null,
+): Promise<TutorJoinRequestPage> {
   const { data, error, response } = await client.GET('/api/v1/join-requests', {
     params: { query: cursor === null ? {} : { cursor } },
+    signal,
   });
   if (data === undefined) {
     throw apiErrorFrom(response.status, error);
@@ -152,29 +158,41 @@ function RequestRow({
   );
 }
 
-export function JoinRequests({
+interface RequestSource {
+  readonly state: 'pending' | 'failed' | 'ready' | 'closed';
+  readonly error: unknown;
+  readonly retry: () => void;
+  readonly requests: readonly TutorJoinRequest[];
+  readonly fetching: boolean;
+  readonly hasMore: boolean;
+  readonly loadingMore: boolean;
+  readonly moreFailed: unknown;
+  readonly loadMore: () => void;
+  readonly afterDecision: () => Promise<unknown>;
+}
+
+function JoinRequestList({
+  source,
   hideWhenEmpty,
   children,
 }: {
+  readonly source: RequestSource;
   readonly hideWhenEmpty: boolean;
   readonly children?: ReactNode;
 }): ReactElement | null {
   const { t } = useTranslation();
   const client = useApiClient();
-  const queryClient = useQueryClient();
-  const me = useSignedInAccount();
   const headingId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
   const [decided, setDecided] = useState<{ readonly decision: Decision; readonly count: number } | null>(null);
   const [deciding, setDeciding] = useState<{ readonly id: string; readonly decision: Decision } | null>(null);
   const [refusals, setRefusals] = useState(0);
   const action = useAction();
-  const query = useReceivedJoinRequests();
-  const requests = query.data?.pages.flatMap((page) => page.items) ?? [];
+  const { requests } = source;
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     requests.length,
     ':scope > li [data-first-in-row]',
-    query.isFetching,
+    source.fetching,
   );
   useFocusAfterRemovedRow(
     listRef,
@@ -198,10 +216,7 @@ export function JoinRequests({
         setRefusals((count) => count + 1);
       }
       if (settled.kind === 'done' || showsStaleData(settled)) {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: joinRequestsKey }),
-          queryClient.invalidateQueries({ queryKey: studentsKey }),
-        ]);
+        await source.afterDecision();
       }
       return settled;
     });
@@ -220,21 +235,14 @@ export function JoinRequests({
   }
 
   function body(): ReactElement | null {
-    if (me.state !== 'active') {
+    if (source.state === 'closed') {
       return null;
     }
-    if (query.isPending) {
+    if (source.state === 'pending') {
       return <DelayedLoading />;
     }
-    if (query.isError) {
-      return (
-        <LoadFailed
-          error={asApiError(query.error)}
-          onRetry={() => {
-            void query.refetch();
-          }}
-        />
-      );
+    if (source.state === 'failed') {
+      return <LoadFailed error={asApiError(source.error)} onRetry={source.retry} />;
     }
     return (
       <>
@@ -261,16 +269,19 @@ export function JoinRequests({
             ))}
           </ul>
         )}
-        {query.hasNextPage ? (
+        {source.moreFailed === null ? null : (
+          <LoadFailed error={asApiError(source.moreFailed)} onRetry={source.loadMore} />
+        )}
+        {source.hasMore && source.moreFailed === null ? (
           <p>
             <button
               type="button"
-              aria-disabled={query.isFetchingNextPage}
-              aria-busy={query.isFetchingNextPage}
+              aria-disabled={source.loadingMore}
+              aria-busy={source.loadingMore}
               onClick={() => {
-                if (!query.isFetchingNextPage) {
+                if (!source.loadingMore) {
                   loadingMore();
-                  void loadNextPage(query);
+                  source.loadMore();
                 }
               }}
               className={quietButtonClass}
@@ -284,9 +295,9 @@ export function JoinRequests({
   }
 
   const nothingToShow =
-    me.state !== 'active' ||
-    query.isPending ||
-    (query.isSuccess && requests.length === 0 && decided === null && action.state.kind !== 'refused');
+    source.state === 'closed' ||
+    source.state === 'pending' ||
+    (source.state === 'ready' && requests.length === 0 && decided === null && action.state.kind !== 'refused');
   if (hideWhenEmpty && nothingToShow) {
     return null;
   }
@@ -298,5 +309,143 @@ export function JoinRequests({
       {body()}
       {children}
     </section>
+  );
+}
+
+export function JoinRequests({
+  hideWhenEmpty,
+  children,
+}: {
+  readonly hideWhenEmpty: boolean;
+  readonly children?: ReactNode;
+}): ReactElement | null {
+  const queryClient = useQueryClient();
+  const me = useSignedInAccount();
+  const query = useReceivedJoinRequests();
+  const source: RequestSource = {
+    state: me.state !== 'active' ? 'closed' : query.isPending ? 'pending' : query.isError ? 'failed' : 'ready',
+    error: query.error,
+    retry: (): void => {
+      void query.refetch();
+    },
+    requests: query.data?.pages.flatMap((page) => page.items) ?? [],
+    fetching: query.isFetching,
+    hasMore: query.hasNextPage,
+    loadingMore: query.isFetchingNextPage,
+    moreFailed: null,
+    loadMore: (): void => {
+      void loadNextPage(query);
+    },
+    afterDecision: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: joinRequestsKey }),
+        queryClient.invalidateQueries({ queryKey: studentsKey }),
+        queryClient.invalidateQueries({ queryKey: homeKey }),
+      ]),
+  };
+  return (
+    <JoinRequestList source={source} hideWhenEmpty={hideWhenEmpty}>
+      {children}
+    </JoinRequestList>
+  );
+}
+
+export type HomeJoinRequests = components['schemas']['TutorHomeJoinRequests'];
+
+interface MorePages {
+  readonly loadedAt: number;
+  readonly pages: readonly TutorJoinRequestPage[];
+}
+
+function uniqueRequests(requests: readonly TutorJoinRequest[]): TutorJoinRequest[] {
+  const seen = new Set<string>();
+  return requests.filter((request) => {
+    if (seen.has(request.id)) {
+      return false;
+    }
+    seen.add(request.id);
+    return true;
+  });
+}
+
+export function HomeJoinRequestList({
+  part,
+  loadedAt,
+  children,
+}: {
+  readonly part: HomeJoinRequests | null;
+  readonly loadedAt: number;
+  readonly children?: ReactNode;
+}): ReactElement | null {
+  const client = useApiClient();
+  const queryClient = useQueryClient();
+  const [more, setMore] = useState<MorePages>({ loadedAt, pages: [] });
+  const [loading, setLoading] = useState(false);
+  const [moreFailed, setMoreFailed] = useState<unknown>(null);
+  const currentLoad = useRef(loadedAt);
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => {
+    currentLoad.current = loadedAt;
+  }, [loadedAt]);
+  useEffect(
+    () => (): void => {
+      controller.current?.abort();
+    },
+    [],
+  );
+  const pages = more.loadedAt === loadedAt ? more.pages : [];
+  const cursor = pages.length === 0 ? (part?.next_cursor ?? null) : (pages.at(-1)?.next_cursor ?? null);
+  const shownFailure = more.loadedAt === loadedAt ? moreFailed : null;
+
+  function loadMore(): void {
+    if (cursor === null || loading) {
+      return;
+    }
+    const startedAt = loadedAt;
+    const abort = new AbortController();
+    controller.current = abort;
+    setLoading(true);
+    setMoreFailed(null);
+    fetchJoinRequestsPage(client, cursor, abort.signal).then(
+      (page) => {
+        setLoading(false);
+        if (currentLoad.current === startedAt) {
+          setMore((previous) => ({
+            loadedAt: startedAt,
+            pages: [...(previous.loadedAt === startedAt ? previous.pages : []), page],
+          }));
+        }
+      },
+      (thrown: unknown) => {
+        setLoading(false);
+        if (currentLoad.current === startedAt && !abort.signal.aborted) {
+          setMore((previous) => (previous.loadedAt === startedAt ? previous : { loadedAt: startedAt, pages: [] }));
+          setMoreFailed(thrown);
+        }
+      },
+    );
+  }
+
+  const source: RequestSource = {
+    state: part === null ? 'closed' : 'ready',
+    error: null,
+    retry: (): void => undefined,
+    requests: part === null ? [] : uniqueRequests([...part.items, ...pages.flatMap((page) => page.items)]),
+    fetching: loading,
+    hasMore: cursor !== null,
+    loadingMore: loading,
+    moreFailed: shownFailure,
+    loadMore,
+    afterDecision: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: homeKey }),
+        queryClient.invalidateQueries({ queryKey: joinRequestsKey }),
+        queryClient.invalidateQueries({ queryKey: studentsKey }),
+      ]),
+  };
+  return (
+    <JoinRequestList source={source} hideWhenEmpty={false}>
+      {children}
+    </JoinRequestList>
   );
 }

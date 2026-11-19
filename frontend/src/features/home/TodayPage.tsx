@@ -1,65 +1,40 @@
-import { type UseQueryResult, useQuery } from '@tanstack/react-query';
-import { type ReactElement, useId, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { type ReactElement, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useLocalToday } from '../../app/clock.ts';
 import { FormAlert, FormNotice, quietButtonClass } from '../../components/ui/Form.tsx';
-import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { PageColumns } from '../../components/ui/PageColumns.tsx';
-import { useSettledOnce } from '../../components/ui/settledOnce.ts';
-import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { type CopyResult, copyText } from '../../lib/clipboard.ts';
-import { type TutorCode as TutorCodeValue, fetchTutorCode, tutorCodeKey } from '../settings/tutorCode.ts';
+import type { TutorCode as TutorCodeValue } from '../settings/tutorCode.ts';
 import { formatLongDay } from '../schedule/calendarFormat.ts';
-import { JoinRequests, useJoinRequestsSettled } from '../students/JoinRequests.tsx';
+import { HomeJoinRequestList } from '../students/JoinRequests.tsx';
+import { tutorHomeKey, useTutorHome } from './api.ts';
 import { FirstRunChecklist } from './FirstRunChecklist.tsx';
+import { HomeFirstLoad, HomeRefetchNotice } from './HomeLoadState.tsx';
 import { TodayLessons } from './TodayLessons.tsx';
 import { NeedsCheckingPanel, UpcomingDeadlinesPanel } from './TutorHomeworkPanels.tsx';
 import { UnreadMessages } from './UnreadMessages.tsx';
-import { useUpcomingLessons } from './upcoming.ts';
 
 type CopyNotice = { readonly result: CopyResult; readonly count: number } | null;
 
-function useTutorCode(): UseQueryResult<TutorCodeValue> {
-  const client = useApiClient();
-  return useQuery({
-    queryKey: tutorCodeKey,
-    queryFn: () => fetchTutorCode(client),
-    retry: false,
-  });
-}
-
-function TutorCode(): ReactElement {
+function TutorCode({ code }: { readonly code: TutorCodeValue }): ReactElement {
   const { t } = useTranslation();
   const headingId = useId();
   const [notice, setNotice] = useState<CopyNotice>(null);
-  const query = useTutorCode();
 
-  function copy(code: string): void {
+  function copy(value: string): void {
     function show(result: CopyResult): void {
       setNotice((previous) => ({ result, count: (previous?.count ?? 0) + 1 }));
     }
-    copyText(navigator.clipboard, code).then(show, () => {
+    copyText(navigator.clipboard, value).then(show, () => {
       show('failed');
     });
   }
 
   function body(): ReactElement {
-    if (query.isPending) {
-      return <DelayedLoading />;
-    }
-    if (query.isError) {
-      return (
-        <LoadFailed
-          error={asApiError(query.error)}
-          onRetry={() => {
-            void query.refetch();
-          }}
-        />
-      );
-    }
-    const code = query.data;
     return (
       <>
         <p className="font-mono text-heading tracking-wider">{code.code}</p>
@@ -99,35 +74,60 @@ function TutorCode(): ReactElement {
 export function TodayPage(): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
-  const requestsSettled = useJoinRequestsSettled();
-  const code = useTutorCode();
-  const settled = useSettledOnce(requestsSettled && !code.isPending);
-  const { today, query: lessons } = useUpcomingLessons(me, null);
+  const today = useLocalToday(me.timezone);
+  const query = useTutorHome();
+  const queryClient = useQueryClient();
+  const lessonsHeading = useRef<HTMLHeadingElement>(null);
+  const [dismissals, setDismissals] = useState(0);
+  useEffect(() => {
+    if (dismissals > 0) {
+      lessonsHeading.current?.focus();
+    }
+  }, [dismissals]);
+  const home = query.data;
+  const homeRefetch = {
+    refetch: query.refetch,
+    loadedAt: query.dataUpdatedAt,
+    failedAt: query.errorUpdatedAt,
+  };
   return (
     <Page titleSize="display">
       <p className="-mt-4 text-text-muted">{formatLongDay(today, me.language)}</p>
-      <PageColumns
-        asideLabel={t('today.aside')}
-        main={
-          <>
-            <FirstRunChecklist me={me} lessons={lessons} />
-            <TodayLessons me={me} today={today} query={lessons} />
-            {me.email_verified ? <NeedsCheckingPanel /> : null}
-          </>
-        }
-        aside={
-          <>
-            <JoinRequests hideWhenEmpty={false}>
-              {requestsSettled && !settled ? <DelayedLoading /> : null}
-              <div hidden={!settled} className="contents">
-                <TutorCode />
-              </div>
-            </JoinRequests>
-            {me.email_verified ? <UpcomingDeadlinesPanel /> : null}
-            <UnreadMessages />
-          </>
-        }
-      />
+      {home === undefined ? (
+        <HomeFirstLoad query={query} />
+      ) : (
+        <PageColumns
+          asideLabel={t('today.aside')}
+          main={
+            <>
+              <HomeRefetchNotice query={query} />
+              <FirstRunChecklist
+                me={me}
+                checklist={home.checklist}
+                onDismissed={() => {
+                  setDismissals((count) => count + 1);
+                }}
+              />
+              <TodayLessons me={me} lessons={home.today_lessons} headingRef={lessonsHeading} />
+              {home.needs_checking === null ? null : <NeedsCheckingPanel part={home.needs_checking} />}
+            </>
+          }
+          aside={
+            <>
+              <HomeJoinRequestList
+                part={home.join_requests}
+                loadedAt={queryClient.getQueryState(tutorHomeKey)?.dataUpdateCount ?? 0}
+              >
+                <TutorCode code={home.tutor_code} />
+              </HomeJoinRequestList>
+              {home.upcoming_deadlines === null ? null : (
+                <UpcomingDeadlinesPanel part={home.upcoming_deadlines} homeRefetch={homeRefetch} />
+              )}
+              <UnreadMessages part={home.unread_channels} />
+            </>
+          }
+        />
+      )}
     </Page>
   );
 }

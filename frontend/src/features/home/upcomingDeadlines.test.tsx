@@ -1,16 +1,18 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { SchedulerContext } from '../../app/clock.ts';
+import type { RouteHandle } from '../../app/handles.ts';
+import { FollowingQueryClient } from '../../app/queryClient.ts';
 import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
 import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import type { IssueItem } from '../homework/api.ts';
-import { UpcomingDeadlinesPanel } from './TutorHomeworkPanels.tsx';
+import { TodayPage } from './TodayPage.tsx';
 
 afterEach(() => {
   cleanup();
@@ -42,7 +44,7 @@ function issueDue(id: string, title: string, deadline: number): IssueItem {
 interface ShownDeadlines {
   readonly server: FakeAuthServer;
   readonly scheduler: ManualScheduler;
-  readonly queryClient: QueryClient;
+  readonly queryClient: FollowingQueryClient;
 }
 
 async function showDeadlines(clientAheadBy: number): Promise<ShownDeadlines> {
@@ -57,8 +59,11 @@ async function showDeadlines(clientAheadBy: number): Promise<ShownDeadlines> {
   await session.signIn(tutorEmail, password);
   const client = createApiClient(origin, session.authorizedFetch);
   const i18n = await createI18n('ru');
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const router = createMemoryRouter([{ path: '/', element: <UpcomingDeadlinesPanel /> }], { initialEntries: ['/'] });
+  const queryClient = new FollowingQueryClient({ defaultOptions: { queries: { retry: false } } });
+  const router = createMemoryRouter(
+    [{ path: '/', element: <TodayPage />, handle: { title: 'page.today' } satisfies RouteHandle }],
+    { initialEntries: ['/'] },
+  );
   render(
     <SchedulerContext value={scheduler}>
       <SessionContext value={session}>
@@ -76,51 +81,61 @@ async function showDeadlines(clientAheadBy: number): Promise<ShownDeadlines> {
   return { server, scheduler, queryClient };
 }
 
-async function passBoth(shown: ShownDeadlines, milliseconds: number): Promise<void> {
+async function passBoth(shown: ShownDeadlines, milliseconds: number, expectsRead = false): Promise<void> {
+  const readsBefore = shown.server.homeReads();
   shown.server.advance(milliseconds / 1_000);
   act(() => {
     shown.scheduler.pass(milliseconds);
   });
   await waitFor(() => {
+    expect(expectsRead ? shown.server.homeReads() > readsBefore : true).toBe(true);
     expect(shown.queryClient.isFetching()).toBe(0);
   });
 }
 
-describe('Upcoming deadlines', () => {
+describe('Upcoming deadlines on GET /home', () => {
   test('drops an issue whose deadline passed without a reload and moves focus from it to the next row', async () => {
     const shown = await showDeadlines(0);
     screen.getByRole('link', { name: 'Эссе о поездке' }).focus();
 
-    await passBoth(shown, 2 * hour + 1_000);
+    await passBoth(shown, 2 * hour + 1_000, true);
+    await waitFor(() => {
+      expect(screen.queryByRole('link', { name: 'Эссе о поездке' })).toBeNull();
+    });
 
-    const next = await screen.findByRole('link', { name: 'Грамматика' });
-    expect(screen.queryByRole('link', { name: 'Эссе о поездке' })).toBeNull();
-    expect(document.activeElement).toBe(next);
+    const next = screen.getByRole('link', { name: 'Грамматика' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(next);
+    });
   });
 
-  test('keeps scheduling the deadline refetch after a scheduled refetch fails', async () => {
+  test('keeps scheduling the deadline refetch of /home after a scheduled refetch fails', async () => {
     const shown = await showDeadlines(0);
-    shown.server.failDeadlineReads(1);
-    await passBoth(shown, 2 * hour + 1_000);
+    shown.server.failNextHomeRead();
+    await passBoth(shown, 2 * hour + 1_000, true);
     await screen.findByRole('link', { name: 'Эссе о поездке' });
 
-    await passBoth(shown, 30_000);
+    await passBoth(shown, 30_000, true);
 
-    await screen.findByRole('link', { name: 'Грамматика' });
-    expect(screen.queryByRole('link', { name: 'Эссе о поездке' })).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByRole('link', { name: 'Эссе о поездке' })).toBeNull();
+    });
+    expect(screen.getByRole('link', { name: 'Грамматика' })).toBeTruthy();
   });
 
   test('backs off instead of refetching in a loop while the client clock runs ahead of the server', async () => {
     const shown = await showDeadlines(10 * 60_000);
-    const readsBefore = shown.server.deadlineReads();
+    const readsBefore = shown.server.homeReads();
 
     await passBoth(shown, 2 * hour - 10 * 60_000 + 1_000);
     for (let step = 0; step < 120; step += 1) {
       await passBoth(shown, 10_000);
     }
 
-    expect(shown.server.deadlineReads() - readsBefore).toBeLessThanOrEqual(8);
-    await screen.findByRole('link', { name: 'Грамматика' });
-    expect(screen.queryByRole('link', { name: 'Эссе о поездке' })).toBeNull();
+    expect(shown.server.homeReads() - readsBefore).toBeLessThanOrEqual(8);
+    await waitFor(() => {
+      expect(screen.queryByRole('link', { name: 'Эссе о поездке' })).toBeNull();
+    });
+    expect(screen.getByRole('link', { name: 'Грамматика' })).toBeTruthy();
   });
 });

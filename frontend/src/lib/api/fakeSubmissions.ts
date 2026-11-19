@@ -18,7 +18,24 @@ interface StoredSubmission {
   readonly tutorId: string;
   submission: StudentSubmission;
   lastSaveId: string | null;
+  firstSubmitted: boolean;
+  ended: boolean;
 }
+
+export interface FeedbackSeenRequest {
+  readonly id: string;
+  readonly version: number;
+}
+
+export interface EndedRelationship {
+  readonly studentId: string;
+  readonly relationshipId: string;
+}
+
+type FeedbackSeenBody =
+  | { readonly kind: 'malformed' }
+  | { readonly kind: 'invalid'; readonly problems: readonly FieldProblem[] }
+  | { readonly kind: 'parsed'; readonly version: number };
 
 interface PendingAnswerUpload {
   readonly studentId: string;
@@ -41,6 +58,20 @@ interface SaveBody {
 const submissionPathPrefix = '/api/v1/submissions/';
 const answerScopePrefix = 'submission:';
 const editableStatuses: ReadonlySet<StudentSubmission['status']> = new Set(['not_started', 'draft', 'returned']);
+const submittedStatuses: ReadonlySet<StudentSubmission['status']> = new Set(['submitted', 'returned', 'checked']);
+const openStatuses: ReadonlySet<StudentSubmission['status']> = new Set([
+  'not_started',
+  'draft',
+  'returned',
+  'submitted',
+]);
+const automaticTypes: ReadonlySet<StudentTemplateBlock['type']> = new Set([
+  'single_choice',
+  'multiple_choice',
+  'short_text',
+  'short_number',
+]);
+const manualTypes: ReadonlySet<StudentTemplateBlock['type']> = new Set(['long_text', 'file']);
 const shortTextLimit = 500;
 const numberTextLimit = 64;
 const answerUploadLimitBytes = 25_000_000;
@@ -126,6 +157,42 @@ function saveBody(body: unknown): SaveBody | null {
     answers.push({ questionId: entry.question_id, value });
   }
   return { version: body.version, saveId: body.save_id, answers };
+}
+
+function feedbackSeenBody(text: string): FeedbackSeenBody {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return { kind: 'malformed' };
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return { kind: 'invalid', problems: [{ path: 'body', code: 'invalid' }] };
+  }
+  const sent: unknown = 'version' in body ? body.version : undefined;
+  const version = typeof sent === 'number' && Number.isInteger(sent) && sent >= 0 ? sent : null;
+  const problems: FieldProblem[] = [];
+  if (!('version' in body)) {
+    problems.push({ path: 'body', code: 'invalid' });
+  } else if (version === null) {
+    problems.push({ path: 'body.version', code: 'invalid' });
+  }
+  for (const key of Object.keys(body)) {
+    if (key !== 'version') {
+      problems.push({ path: 'body', code: 'unexpected_property' });
+    }
+  }
+  return problems.length > 0 || version === null ? { kind: 'invalid', problems } : { kind: 'parsed', version };
+}
+
+function sentVersion(body: unknown): number | null {
+  return typeof body === 'object' &&
+    body !== null &&
+    'version' in body &&
+    typeof body.version === 'number' &&
+    Number.isInteger(body.version)
+    ? body.version
+    : null;
 }
 
 function isQuestion(block: StudentTemplateBlock): boolean {
@@ -214,6 +281,7 @@ function structuralProblem(submission: StudentSubmission, answers: readonly Sent
 }
 
 export class FakeSubmissionServer {
+  private readonly feedbackSeenListener: (studentId: string, submissionId: string) => void;
   private readonly submissions = new Map<string, StoredSubmission>();
   private readonly reviewed = new Map<string, { readonly tutorId: string; readonly submission: TutorSubmission }>();
   private readonly detailReads = new Map<string, number>();
@@ -222,13 +290,70 @@ export class FakeSubmissionServer {
   private readonly saveRefusals: Response[] = [];
   private uploaded = 0;
   private readonly savedBodies: string[] = [];
+  private readonly feedbackSeenLog: FeedbackSeenRequest[] = [];
+  private readonly feedbackSeenRefusals: Response[] = [];
+
+  constructor(feedbackSeenListener: (studentId: string, submissionId: string) => void = () => undefined) {
+    this.feedbackSeenListener = feedbackSeenListener;
+  }
 
   get saves(): readonly string[] {
     return this.savedBodies;
   }
 
+  get feedbackSeenRequests(): readonly FeedbackSeenRequest[] {
+    return this.feedbackSeenLog;
+  }
+
   add(studentId: string, tutorId: string, submission: StudentSubmission): void {
-    this.submissions.set(submission.id, { studentId, tutorId, submission, lastSaveId: null });
+    this.submissions.set(submission.id, {
+      studentId,
+      tutorId,
+      submission,
+      lastSaveId: null,
+      firstSubmitted: submittedStatuses.has(submission.status),
+      ended: false,
+    });
+  }
+
+  refuseNextFeedbackSeen(status: number, code: string): void {
+    this.feedbackSeenRefusals.push(fakeRefusal(status, code));
+  }
+
+  returnSubmission(id: string): void {
+    const stored = this.required(id);
+    if (stored.submission.status !== 'submitted') {
+      throw new Error('only submitted fake work can be returned');
+    }
+    stored.firstSubmitted = true;
+    stored.submission = {
+      ...stored.submission,
+      status: 'returned',
+      version: stored.submission.version + 1,
+      editable_question_ids: stored.submission.blocks
+        .filter((block) => manualTypes.has(block.type))
+        .map((block) => block.id),
+    };
+  }
+
+  endRelationshipOf(id: string): EndedRelationship {
+    const target = this.required(id);
+    const relationshipId = target.submission.tutor.relationship_id;
+    for (const stored of this.submissions.values()) {
+      if (stored.studentId === target.studentId && stored.submission.tutor.relationship_id === relationshipId) {
+        stored.ended = true;
+      }
+    }
+    return { studentId: target.studentId, relationshipId };
+  }
+
+  openCount(tutorId: string, relationshipId: string): number {
+    return [...this.submissions.values()].filter(
+      (stored) =>
+        stored.tutorId === tutorId &&
+        stored.submission.tutor.relationship_id === relationshipId &&
+        openStatuses.has(stored.submission.status),
+    ).length;
   }
 
   addReviewed(tutorId: string, submission: TutorSubmission): void {
@@ -262,6 +387,9 @@ export class FakeSubmissionServer {
         return answer(200, reviewed.submission);
       }
     }
+    if (request.method === 'POST' && action === 'feedback-seen' && rest.length === 0 && caller.role === 'student') {
+      return this.markFeedbackSeen(id, stored, caller, await request.text());
+    }
     if (stored?.studentId !== caller.id || rest.length > 0) {
       return fakeRefusal(404, 'not_found');
     }
@@ -270,6 +398,9 @@ export class FakeSubmissionServer {
     }
     if (request.method === 'PUT' && action === 'answers') {
       return this.save(stored, await request.json().catch(() => null));
+    }
+    if (request.method === 'POST' && action === 'submit') {
+      return this.submit(stored, await request.json().catch(() => null));
     }
     return fakeRefusal(405, 'method_not_allowed');
   }
@@ -284,7 +415,7 @@ export class FakeSubmissionServer {
     if (stored?.studentId !== caller.id || block?.type !== 'file') {
       return fakeRefusal(404, 'not_found');
     }
-    if (!editableStatuses.has(stored.submission.status)) {
+    if (!this.writable(stored)) {
       return fakeRefusal(409, 'not_editable');
     }
     const file = body.get('file');
@@ -318,6 +449,66 @@ export class FakeSubmissionServer {
     return answer(201, { id: attachmentId, filename: file.name, media_type: file.type, size_bytes: file.size });
   }
 
+  private required(id: string): StoredSubmission {
+    const stored = this.submissions.get(id);
+    if (stored === undefined) {
+      throw new Error('no fake submission has this id');
+    }
+    return stored;
+  }
+
+  private writable(stored: StoredSubmission): boolean {
+    return editableStatuses.has(stored.submission.status) && !stored.ended;
+  }
+
+  private markFeedbackSeen(id: string, stored: StoredSubmission | undefined, caller: Me, text: string): Response {
+    const parsed = feedbackSeenBody(text);
+    if (parsed.kind === 'malformed') {
+      return fakeRefusal(400, 'bad_request');
+    }
+    if (parsed.kind === 'invalid') {
+      return fakeRefusal(422, 'validation_failed', parsed.problems);
+    }
+    this.feedbackSeenLog.push({ id, version: parsed.version });
+    const planned = this.feedbackSeenRefusals.shift();
+    if (planned !== undefined) {
+      return planned;
+    }
+    if (stored?.studentId !== caller.id) {
+      return fakeRefusal(404, 'not_found');
+    }
+    if (parsed.version !== stored.submission.version) {
+      return fakeRefusal(409, 'conflict');
+    }
+    this.feedbackSeenListener(caller.id, id);
+    return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
+  }
+
+  private submit(stored: StoredSubmission, body: unknown): Response {
+    const version = sentVersion(body);
+    if (version === null) {
+      return fakeRefusal(422, 'validation_failed', [{ path: 'body.version', code: 'invalid' }]);
+    }
+    const submission = stored.submission;
+    if (submission.status === 'submitted' || submission.status === 'checked') {
+      return answer(200, submission);
+    }
+    if (!this.writable(stored)) {
+      return fakeRefusal(409, 'not_editable');
+    }
+    if (version !== submission.version) {
+      return fakeRefusal(409, 'conflict');
+    }
+    stored.firstSubmitted = true;
+    stored.submission = {
+      ...submission,
+      status: submission.blocks.some((block) => manualTypes.has(block.type)) ? 'submitted' : 'checked',
+      version: submission.version + 1,
+      editable_question_ids: [],
+    };
+    return answer(200, stored.submission);
+  }
+
   private save(stored: StoredSubmission, body: unknown): Response {
     this.savedBodies.push(JSON.stringify(body));
     const planned = this.saveRefusals.shift();
@@ -332,11 +523,19 @@ export class FakeSubmissionServer {
     if (parsed.saveId === stored.lastSaveId) {
       return answer(200, submission);
     }
-    if (!editableStatuses.has(submission.status)) {
+    if (!this.writable(stored)) {
       return fakeRefusal(409, 'not_editable');
     }
     if (parsed.version !== submission.version) {
       return fakeRefusal(409, 'conflict');
+    }
+    const frozen =
+      stored.firstSubmitted &&
+      parsed.answers.some((sent) =>
+        submission.blocks.some((block) => block.id === sent.questionId && automaticTypes.has(block.type)),
+      );
+    if (frozen) {
+      return fakeRefusal(409, 'answer_frozen');
     }
     const problem = structuralProblem(submission, parsed.answers);
     if (problem !== null) {

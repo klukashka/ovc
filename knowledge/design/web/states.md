@@ -224,7 +224,7 @@ From slice 9. Each table names the text section it belongs to: the global langua
 
 ## Home pages and the Students list
 
-From slice 10 (pending owner review). Today's checklist and the Students list load with the global language chunk, as their other texts do, unless `pnpm check:bundle` requires a feature section; the refusal of a dismissal shows its error code's message.
+From slice 10 (pending owner review). Today's checklist and the Students list load with the global language chunk, as their other texts do, unless `pnpm check:bundle` requires a feature section; the refusal of a dismissal shows its error code's message. F1 placed both texts in the global language chunk (owner's decision of 2026-11-19 on F1's task plan); the badge "New" and its accessible name load with the `homeworkPanels` feature section, as the rest of Recently checked does.
 
 | Element | English | Русский |
 |---|---|---|

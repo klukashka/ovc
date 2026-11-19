@@ -10,7 +10,6 @@ import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
 import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
-import { TodayPage } from '../home/TodayPage.tsx';
 import { StudentsPage } from './StudentsPage.tsx';
 
 const origin = 'https://ovc.example';
@@ -28,10 +27,7 @@ async function showFailingJoinRequests(address: string): Promise<FakeAuthServer>
   await session.signIn('maria@example.org', 'a long password');
   const i18n = await createI18n('en');
   const router = createMemoryRouter(
-    [
-      { path: '/students', element: <StudentsPage />, handle: { title: 'page.students' } satisfies RouteHandle },
-      { path: '/today', element: <TodayPage />, handle: { title: 'page.today' } satisfies RouteHandle },
-    ],
+    [{ path: '/students', element: <StudentsPage />, handle: { title: 'page.students' } satisfies RouteHandle }],
     { initialEntries: [address] },
   );
   const page: ReactElement = (
@@ -56,11 +52,6 @@ async function showFailingJoinRequests(address: string): Promise<FakeAuthServer>
 
 function sectionHiddenWhileWaiting(): void {
   expect(screen.queryByRole('region', { name: 'Join requests' })).toBeNull();
-}
-
-function sectionBusyWhileWaiting(): void {
-  const waiting = screen.getByRole('region', { name: 'Join requests' });
-  expect(waiting.querySelector('[role="status"][aria-busy="true"]')).not.toBeNull();
 }
 
 async function retryJoinRequestsWhileItWaits(server: FakeAuthServer, waiting: () => void): Promise<() => void> {
@@ -89,16 +80,6 @@ describe('content shown once the join requests have settled', () => {
 
     expect(field.closest('[hidden]')).toBeNull();
     expect(document.activeElement).toBe(field);
-    resume();
-  });
-
-  test('keeps the tutor code shown on Today while a failed request list is retried', async () => {
-    const server = await showFailingJoinRequests('/today');
-    const code = await screen.findByRole('heading', { name: 'Your tutor code' });
-
-    const resume = await retryJoinRequestsWhileItWaits(server, sectionBusyWhileWaiting);
-
-    expect(code.closest('[hidden]')).toBeNull();
     resume();
   });
 });

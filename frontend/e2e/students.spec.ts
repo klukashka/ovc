@@ -19,6 +19,8 @@ import {
   recordBusyControls,
   recordHeadingsAtPopstate,
 } from './observers.ts';
+import { createPastSimpleTemplate } from './assignment.ts';
+import { issueThroughTheApi } from './homework.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { addDays, cancelThisLesson, localDate, scheduleLessons, scheduleLessonsWithIds } from './schedule.ts';
 import {
@@ -1146,5 +1148,38 @@ test.describe('in English with the dark theme', () => {
     await expect(page.getByRole('form', { name: 'Name and email' }).getByLabel('Name', { exact: true })).toHaveValue(
       'Boris Petrov',
     );
+  });
+});
+
+test.describe('the open assignments column', () => {
+  test.use({ locale: 'en-GB', viewport: { width: 1440, height: 900 }, colorScheme: 'light' });
+
+  test('shows each student’s open work in a column, and under the name on a phone', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Tutor', 'en');
+    const { cardId } = await seedActiveStudent(deployment, tutor, 'Vera Student', 'en');
+    await seedActiveStudent(deployment, tutor, 'Oleg Student', 'en');
+    const template = await createPastSimpleTemplate(deployment, tutor);
+    await issueThroughTheApi(deployment, tutor, template, { relationship_id: cardId });
+    await signInThroughTheApi(page, tutor);
+    await page.goto('/students');
+    const vera = page.getByRole('row', { name: /Vera Student/ });
+    await vera.waitFor();
+
+    const wide = {
+      header: await page.getByRole('columnheader', { name: 'Open assignments' }).isVisible(),
+      vera: (await vera.getByRole('cell').last().innerText()).trim(),
+      oleg: (
+        await page
+          .getByRole('row', { name: /Oleg Student/ })
+          .getByRole('cell')
+          .last()
+          .innerText()
+      ).trim(),
+    };
+    await page.setViewportSize({ width: 360, height: 780 });
+
+    expect(wide).toEqual({ header: true, vera: '1', oleg: '0' });
+    await expect(vera.getByText('Open assignments: 1')).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Open assignments' })).toBeHidden();
   });
 });

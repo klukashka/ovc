@@ -3,6 +3,10 @@ import type { Me } from './session.ts';
 
 type Channel = components['schemas']['ChannelDetail'];
 type Message = components['schemas']['Message'];
+type TutorHomeUnreadChannels = components['schemas']['TutorHomeUnreadChannels'];
+
+const firstChannelPage = 30;
+const homeChannelLimit = 5;
 
 export type FakeInitialReadTarget = 'unread' | 'list' | 'current_channel';
 export interface FakeInitialReadSnapshot {
@@ -418,6 +422,39 @@ export class FakeChatServer {
     return channel;
   }
 
+  homeUnreadChannels(caller: Me): TutorHomeUnreadChannels {
+    const visible = this.visibleChannels(caller);
+    return {
+      items: this.byActivity(visible)
+        .slice(0, firstChannelPage)
+        .map((channel) => this.detail(channel, caller))
+        .filter((detail) => detail.unread_count > 0)
+        .slice(0, homeChannelLimit)
+        .map((detail) => ({
+          channel_id: detail.id,
+          label: detail.label,
+          label_kind: detail.label_kind,
+          colour: detail.colour,
+          unread_count: detail.unread_count,
+        })),
+      unread_total: this.unreadTotal(visible, caller),
+    };
+  }
+
+  private visibleChannels(caller: Me): StoredChannel[] {
+    return [...this.channels.values()].filter((channel) => this.visible(channel, caller));
+  }
+
+  private unreadTotal(visible: readonly StoredChannel[], caller: Me): number {
+    return Math.min(100, visible.filter((channel) => this.detail(channel, caller).unread_count > 0).length);
+  }
+
+  private byActivity(channels: readonly StoredChannel[]): StoredChannel[] {
+    return [...channels].sort(
+      (left, right) => right.activity - left.activity || left.channel.id.localeCompare(right.channel.id),
+    );
+  }
+
   private visible(channel: StoredChannel, caller: Me): boolean {
     const member = channel.members.get(caller.id);
     return (
@@ -486,8 +523,8 @@ export class FakeChatServer {
       return response;
     }
     if (request.method === 'GET' && (id === '' || id === 'unread')) {
-      const visible = [...this.channels.values()].filter((channel) => this.visible(channel, caller));
-      const unread = Math.min(100, visible.filter((channel) => this.detail(channel, caller).unread_count > 0).length);
+      const visible = this.visibleChannels(caller);
+      const unread = this.unreadTotal(visible, caller);
       if (id === 'unread') {
         return answer(200, { unread_channels: unread });
       }
@@ -496,9 +533,9 @@ export class FakeChatServer {
         return refused(503, 'service_unavailable');
       }
       const q = (address.searchParams.get('q') ?? '').toLocaleLowerCase();
-      const sorted = visible
-        .filter((channel) => (this.detail(channel, caller).label ?? '').toLocaleLowerCase().includes(q))
-        .sort((left, right) => right.activity - left.activity || left.channel.id.localeCompare(right.channel.id));
+      const sorted = this.byActivity(
+        visible.filter((channel) => (this.detail(channel, caller).label ?? '').toLocaleLowerCase().includes(q)),
+      );
       const cursor = address.searchParams.get('cursor');
       const offset = cursor === null ? 0 : sorted.findIndex((channel) => channel.channel.id === cursor) + 1;
       const limit = Math.min(100, Math.max(1, Number(address.searchParams.get('limit') ?? 30)));

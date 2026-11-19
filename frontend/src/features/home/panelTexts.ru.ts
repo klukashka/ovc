@@ -21,6 +21,8 @@ export const homeworkPanelTexts: HomeworkPanelTexts = {
   nothingChecked: 'Проверенных работ пока нет',
   correctedFile: 'Есть исправленный файл',
   checkedOn: 'Проверено {date}',
+  newFeedback: 'Новое',
+  newFeedbackName: 'Новый отзыв',
   states: {
     todo: 'Нужно сделать',
     dueSoon: 'Скоро срок',

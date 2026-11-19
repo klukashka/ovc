@@ -84,7 +84,7 @@ test.describe('desktop layout', () => {
     const headerTops = await Promise.all(
       (await table.getByRole('columnheader').all()).map(async (header) => (await boxOf(header)).top),
     );
-    expect(headerTops).toHaveLength(5);
+    expect(headerTops).toHaveLength(6);
     expect(Math.max(...headerTops) - Math.min(...headerTops)).toBeLessThanOrEqual(1);
     const tableTop = (await boxOf(table)).top;
     expect((await boxOf(page.getByRole('searchbox', { name: 'Name or email' }))).bottom).toBeLessThan(tableTop);

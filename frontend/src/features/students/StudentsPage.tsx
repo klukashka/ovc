@@ -214,6 +214,9 @@ function StudentRow({ card }: { readonly card: StudentCardSummary }): ReactEleme
             </Link>
             <span className={`text-small text-text-muted ${narrowOnlyClass}`}>{email ?? t('students.noEmail')}</span>
             {lesson === null ? null : <span className={narrowOnlyClass}>{lesson}</span>}
+            <span className={`text-small text-text-muted ${narrowOnlyClass}`}>
+              {t('students.openAssignments', { count: card.open_assignments })}
+            </span>
           </span>
         </span>
       </th>
@@ -227,6 +230,9 @@ function StudentRow({ card }: { readonly card: StudentCardSummary }): ReactEleme
         <GroupDots groups={card.groups} />
       </td>
       <td className={secondaryCellClass}>{lesson}</td>
+      <td className={secondaryCellClass}>
+        <span className="tabular">{card.open_assignments}</span>
+      </td>
     </tr>
   );
 }
@@ -297,10 +303,11 @@ function StudentList({ view }: { readonly view: ListView }): ReactElement {
   const cards = query.data?.pages.flatMap((page) => page.items) ?? [];
   const columns: readonly TableColumn[] = [
     { key: 'name', label: t('students.columns.name'), width: 'w-1/2 tablet:w-3/12' },
-    { key: 'email', label: t('students.columns.email'), secondary: true, width: 'w-3/12' },
+    { key: 'email', label: t('students.columns.email'), secondary: true, width: 'w-2/12' },
     { key: 'state', label: t('students.columns.state'), width: 'w-1/4 tablet:w-2/12' },
     { key: 'groups', label: t('students.columns.groups'), width: 'w-1/4 tablet:w-2/12' },
     { key: 'lesson', label: t('students.columns.nextLesson'), secondary: true, width: 'w-2/12' },
+    { key: 'open', label: t('students.columns.openAssignments'), secondary: true, width: 'w-1/12' },
   ];
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLTableSectionElement>(
     cards.length,

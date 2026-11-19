@@ -3,7 +3,11 @@ import type { Locator, Page, Route } from '@playwright/test';
 import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { type Diagnostics, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { createPastSimpleTemplate, onlySubmission, pastSimple, questionIds } from './assignment.ts';
+import { issueThroughTheApi } from './homework.ts';
 import { accountId, expectReadyForNavigation, trafficAfterReady, waitForSockets } from './realtime.ts';
+import { publishReview } from './results.ts';
+import { answerTextAndSubmit } from './review.ts';
 import { addDays, cancelThisLesson, localClock, localDate, scheduleLessonsWithIds } from './schedule.ts';
 import {
   acceptSignedIn,
@@ -16,7 +20,7 @@ import {
 } from './tutoring.ts';
 
 const markup = '<img src=x onerror="document.title=1"><b>Bold</b>';
-const homeQueryPaths = ['/api/v1/tutors', '/api/v1/join-requests/sent', '/api/v1/calendar'];
+const homeQueryPaths = ['/api/v1/home'];
 
 interface TwoTutors {
   readonly maria: TestAccount;
@@ -132,10 +136,11 @@ test.describe('Home', () => {
     ).toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('a tutor value no current tutor holds shows that the tutor is not available and never reaches the calendar', async ({
+  test('a refused tutor value shows that the tutor is not available and reaches /home once per first load', async ({
     page,
     deployment,
     control,
+    diagnostics,
   }) => {
     const now = await control.now();
     const { anna } = await studentWithTwoTutors(deployment, now);
@@ -143,11 +148,18 @@ test.describe('Home', () => {
     const { cardId: otherCard } = await seedActiveStudent(deployment, other, 'Boris', 'en');
     await signInThroughTheApi(page, anna);
     const values = [otherCard, 'not-an-identifier'];
-    const calendarQueries: string[] = [];
+    for (const value of values) {
+      diagnostics.expectFailure({
+        method: 'GET',
+        path: `/api/v1/home?${new URLSearchParams({ tutor: value }).toString()}`,
+        status: 404,
+      });
+    }
+    const homeQueries: string[] = [];
     page.on('request', (request) => {
       const url = new URL(request.url());
-      if (url.pathname === '/api/v1/calendar') {
-        calendarQueries.push(url.search);
+      if (url.pathname === '/api/v1/home') {
+        homeQueries.push(url.search);
       }
     });
 
@@ -155,17 +167,17 @@ test.describe('Home', () => {
     for (const value of values) {
       await openHome(page, now, `/home?${new URLSearchParams({ tutor: value }).toString()}`);
       await expect(region(page, 'My tutors').getByRole('listitem')).toHaveCount(2);
+      await expect(page.getByRole('main')).toContainText('This tutor is not available.');
       shown.push((await page.getByRole('main').textContent()) ?? '');
     }
 
     for (const [index, value] of values.entries()) {
-      expect(shown[index]).toContain('This tutor is not available.');
       expect(shown[index]).not.toContain(value);
       expect(shown[index]).not.toContain('Maria lesson');
+      expect(
+        homeQueries.filter((query) => query === `?${new URLSearchParams({ tutor: value }).toString()}`),
+      ).toHaveLength(1);
     }
-    expect(
-      calendarQueries.filter((query) => values.some((value) => query.includes(encodeURIComponent(value)))),
-    ).toEqual([]);
     await expect(page.getByRole('main').getByRole('link', { name: 'All tutors' })).toHaveAttribute('href', '/home');
   });
 
@@ -232,6 +244,7 @@ test.describe('Home', () => {
       start: '10:00',
       duration_minutes: 60,
     });
+    diagnostics.expectFailure({ method: 'GET', path: `/api/v1/home?tutor=${card.id}`, status: 404 });
     await control.tick();
     await page.goto(emailedLinkTo(await control.mail(owner.email), '/verify-email'));
     await page.getByLabel('New password').fill(`${owner.password} reclaimed`);
@@ -422,7 +435,6 @@ test.describe('Home', () => {
     const { anna } = await studentWithTwoTutors(deployment, now);
     await signInThroughTheApi(page, anna);
     const requested: string[] = [];
-    const queries: string[] = [];
     page.on('request', (request) => {
       const url = new URL(request.url());
       if (
@@ -430,8 +442,7 @@ test.describe('Home', () => {
         url.pathname !== '/api/v1/ws' &&
         !url.pathname.startsWith('/api/v1/auth/')
       ) {
-        requested.push(url.pathname);
-        queries.push(url.pathname === '/api/v1/assignments' ? `${url.pathname}${url.search}` : url.pathname);
+        requested.push(`${url.pathname}${url.search}`);
       }
     });
     const ready = trafficAfterReady(page, homeQueryPaths);
@@ -441,24 +452,26 @@ test.describe('Home', () => {
     await expectReadyForNavigation(page, ready);
     await expect(weekRows(page)).toHaveCount(2);
 
-    const counts = Object.fromEntries(
-      [...new Set(queries)].map((query) => [query, queries.filter((entry) => entry === query).length]),
-    );
-    expect([...new Set(requested)].sort()).toEqual(
+    const paths = requested.map((read) => new URL(read, 'https://ovc.invalid').pathname);
+    expect([...new Set(paths)].sort()).toEqual(
       [
         '/api/v1/assignments',
-        '/api/v1/calendar',
         '/api/v1/channels/unread',
-        '/api/v1/join-requests/sent',
+        '/api/v1/home',
         '/api/v1/notifications',
-        '/api/v1/tutors',
         '/api/v1/users/me',
       ].sort(),
     );
-    expect(Math.max(...Object.values(counts))).toBeLessThanOrEqual(2);
+    expect(requested.filter((read) => read.startsWith('/api/v1/assignments'))).toEqual(
+      requested.filter((read) => read === '/api/v1/assignments?status=todo&limit=1'),
+    );
+    expect(requested.filter((read) => read === '/api/v1/home').length).toBeGreaterThanOrEqual(1);
+    expect(
+      Math.max(...[...new Set(requested)].map((read) => requested.filter((entry) => entry === read).length)),
+    ).toBeLessThanOrEqual(2);
   });
 
-  test('a lesson title, group name and tutor name with markup show as text on Home', async ({
+  test('a lesson title, group name, tutor name, assignment titles and feedback with markup show as text on Home', async ({
     page,
     deployment,
     control,
@@ -476,10 +489,22 @@ test.describe('Home', () => {
       start: '12:00',
       duration_minutes: 60,
     });
+    const template = await createPastSimpleTemplate(deployment, maria, { texts: { ...pastSimple, title: markup } });
+    await issueThroughTheApi(deployment, maria, template, { relationship_id: mariaCard });
+    const checked = await onlySubmission(deployment, anna);
+    await answerTextAndSubmit(deployment, anna, checked, 'went');
+    const [, , fileQuestion] = await questionIds(deployment, anna, checked);
+    await publishReview(deployment, maria, checked, 'check', `**${markup}**`, [
+      { questionId: fileQuestion ?? '', points: 6 },
+    ]);
+    await issueThroughTheApi(deployment, maria, template, { relationship_id: mariaCard });
     await signInThroughTheApi(page, anna);
 
     await openHome(page, now);
 
+    await expect(region(page, 'To do').getByRole('listitem')).toContainText(markup);
+    await expect(region(page, 'Recently checked').getByRole('listitem')).toContainText(markup);
+    await expect(region(page, 'Recently checked').locator('[data-excerpt]')).toContainText(markup);
     await expect(weekRows(page).first()).toContainText(markup);
     await expect(page.getByRole('group', { name: 'Tutor' }).getByRole('button', { name: markup })).toBeVisible();
     await expect(page.getByRole('main').locator('img, b')).toHaveCount(0);

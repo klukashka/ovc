@@ -276,7 +276,7 @@ function collectStudentResponses(page: Page): () => Promise<string[]> {
   const bodies: Promise<string>[] = [];
   const collect = (response: Response): void => {
     const path = new URL(response.url()).pathname;
-    if (path.startsWith('/api/v1/submissions/') || path === '/api/v1/assignments') {
+    if ((path.startsWith('/api/v1/submissions/') || path === '/api/v1/assignments') && response.status() !== 204) {
       bodies.push(response.text());
     }
   };
@@ -1189,6 +1189,40 @@ test.describe('Home’s Recently checked panel', () => {
     await expect(page.getByRole('region', { name: 'Recently checked' }).locator('[data-excerpt]')).toHaveText(
       'Provisional work checked.',
     );
+  });
+});
+
+test.describe('the New marker on Home’s Recently checked panel on a phone', () => {
+  test.use({ viewport: { width: 360, height: 780 } });
+
+  test('shows until the results are opened, which sends one feedback-seen, and is gone back on Home', async ({
+    page,
+    deployment,
+  }) => {
+    const work = await submittedByAnna(deployment);
+    await publishReview(deployment, work.pavel, work.submissionId, 'check', 'Well done.', [
+      { questionId: work.fileQuestion, points: 6 },
+    ]);
+    await signInThroughTheApi(page, work.anna);
+    const seen: string[] = [];
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname === `/api/v1/submissions/${work.submissionId}/feedback-seen`) {
+        seen.push(request.method());
+      }
+    });
+    await page.goto('/home');
+    const panel = page.getByRole('region', { name: 'Recently checked' });
+    await panel.getByRole('img', { name: 'New feedback' }).waitFor();
+
+    await panel.getByRole('link', { name: pastSimple.title }).click();
+    await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
+    await expect.poll(() => seen.length).toBe(1);
+    await page.goBack();
+    await panel.getByRole('link', { name: pastSimple.title }).waitFor();
+
+    await expect(panel.getByRole('img', { name: 'New feedback' })).toHaveCount(0);
+    expect(seen).toEqual(['POST']);
+    expect(scoreFormsIn(await panel.innerText(), 'en')).toEqual([]);
   });
 });
 

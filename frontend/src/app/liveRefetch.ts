@@ -6,6 +6,7 @@ import { chatRefetch } from '../features/messages/refetch.ts';
 
 import { assignmentsKey } from '../features/assignment/keys.ts';
 import { groupsKey, memberChoiceKey } from '../features/groups/api.ts';
+import { homeKey, tutorHomeKey } from '../features/home/api.ts';
 import { issuesKey } from '../features/homework/api.ts';
 import { notificationsKey } from '../features/notifications/api.ts';
 import { reviewKey } from '../features/review/keys.ts';
@@ -19,18 +20,19 @@ import type { NotificationArrivals } from './notificationArrivals.ts';
 function queriesOf(entity: EntityKind, id: string): readonly QueryKey[] {
   switch (entity) {
     case 'relationship':
-      return [studentListsKey, studentCardKey(id), groupsKey, memberChoiceKey, myTutorsKey, calendarKey];
+      return [studentListsKey, studentCardKey(id), groupsKey, memberChoiceKey, myTutorsKey, calendarKey, homeKey];
     case 'join_request':
-      return [joinRequestsKey, sentRequestsKey];
+      return [joinRequestsKey, sentRequestsKey, tutorHomeKey];
     case 'notification':
       return [notificationsKey];
     case 'lesson':
-      return [calendarKey, lessonKey(id), studentListsKey, studentCardsKey, groupsKey];
+      return [calendarKey, lessonKey(id), studentListsKey, studentCardsKey, groupsKey, homeKey];
     case 'channel':
-      return [calendarKey];
+      return [calendarKey, homeKey];
     case 'issue':
+      return [tutorHomeKey];
     case 'submission':
-      return [];
+      return [homeKey];
   }
 }
 

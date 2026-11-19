@@ -2,6 +2,7 @@ import type { QueryClient } from '@tanstack/react-query';
 
 import type { Scheduler } from '../../lib/api/session.ts';
 import type { RealtimeEvent } from '../../lib/realtime/client.ts';
+import { tutorHomeKey } from '../home/api.ts';
 import { channelsKey, unreadChannelsKey } from './keys.ts';
 
 export type HistoryIntent =
@@ -45,6 +46,7 @@ export function chatRefetch(queryClient: QueryClient, scheduler: Scheduler): Cha
         predicate: (query) =>
           changed.has(query.queryHash) ||
           query.queryKey[0] === unreadChannelsKey[0] ||
+          (query.queryKey[0] === tutorHomeKey[0] && query.queryKey[1] === tutorHomeKey[1]) ||
           (query.queryKey[0] === channelsKey[0] && query.queryKey.at(-1) === null),
       });
     });

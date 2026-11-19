@@ -5,14 +5,130 @@ import { AccountResponseBodies, FakeAuthServer, SignalAwareRefreshBodies } from 
 import type { components } from './schema.ts';
 import {
   type ContractSubject,
+  type SeededDeadline,
   type SeededLessons,
+  type SeededSharedStudent,
+  type SeededStudentHome,
   type SeededSubmission,
   authTransportContract,
 } from './transportContract.ts';
 
 type CalendarItem = components['schemas']['CalendarItem'];
+type IssueItem = components['schemas']['IssueItem'];
+type MyTutor = components['schemas']['MyTutor'];
+type StudentAssignmentItem = components['schemas']['StudentAssignmentItem'];
+type StudentSubmission = components['schemas']['StudentSubmission'];
 
 const origin = 'https://ovc.example';
+const pastSimpleRelationship = '5b4a3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d';
+const homeRelationship = '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f';
+const endedRelationship = '2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a';
+const otherStudentRelationship = '3e4f5a6b-7c8d-4e9f-8a1b-2c3d4e5f6a7b';
+const dayMilliseconds = 24 * 60 * 60 * 1_000;
+
+function relatedSubmission(id: string, relationshipId: string): StudentSubmission {
+  const submission = pastSimpleSubmission(id);
+  return { ...submission, tutor: { ...submission.tutor, relationship_id: relationshipId } };
+}
+
+function seededSubmission(submissionId: string): SeededSubmission {
+  return {
+    email: 's@example.org',
+    password: 'a student password',
+    submissionId,
+    textQuestionId: pastSimpleQuestions.text,
+    fileQuestionId: pastSimpleQuestions.file,
+    relationshipId: pastSimpleRelationship,
+  };
+}
+
+function currentTutor(relationshipId: string, state: MyTutor['state']): MyTutor {
+  return {
+    relationship_id: relationshipId,
+    state,
+    colour: 'moss',
+    channel_id: null,
+    account_closed_until: null,
+    ended_at: state === 'ended' ? '2026-10-30T10:00:00Z' : null,
+    ended_by: state === 'ended' ? 'tutor' : null,
+    tutor: { name: 'A tutor', avatar_id: null, bio: '', subjects: ['English'] },
+  };
+}
+
+function assignmentItem(
+  submissionId: string,
+  status: StudentAssignmentItem['status'],
+  relationshipId: string,
+): StudentAssignmentItem {
+  const checked = status === 'checked';
+  return {
+    submission_id: submissionId,
+    title: 'Past simple',
+    tutor: { relationship_id: relationshipId, name: 'A tutor', colour: 'moss' },
+    status,
+    late: false,
+    issued_before_reclaim: false,
+    deadline_at: null,
+    issued_at: '2026-10-30T10:00:00Z',
+    submitted_at: checked ? '2026-10-31T10:00:00Z' : null,
+    checked_at: checked ? '2026-10-31T12:00:00Z' : null,
+    feedback_excerpt: checked ? 'Well done.' : null,
+    has_corrected_files: false,
+    feedback_new: checked,
+  };
+}
+
+function issueDue(id: string, deadline: number): IssueItem {
+  return {
+    id,
+    title: 'Past simple',
+    audience: { relationship_id: homeRelationship, display_name: 'A student' },
+    lesson_id: null,
+    deadline_at: new Date(deadline).toISOString(),
+    answer_policy: 'after_check',
+    status: 'active',
+    issued_at: '2026-10-30T10:00:00Z',
+    withdrawn_at: null,
+    has_manual_questions: true,
+    max_points: 10,
+    version: 1,
+    progress: { students: 1, submitted: 0, checked: 0, returned: 0, late: 0, needs_checking: 0 },
+  };
+}
+
+function studentLesson(startsAt: number): CalendarItem {
+  return {
+    id: '4f5a6b7c-8d9e-4f0a-9b1c-2d3e4f5a6b7c',
+    title: 'Lesson',
+    starts_at: new Date(startsAt).toISOString(),
+    ends_at: new Date(startsAt + 60 * 60 * 1_000).toISOString(),
+    status: 'scheduled',
+    took_place: false,
+    timezone: 'Europe/Moscow',
+    audience: { kind: 'one_to_one', label: 'A tutor', label_kind: null, colour: 'moss' },
+    tutor: { name: 'A tutor', colour: 'moss' },
+  };
+}
+
+async function createdCardId(server: FakeAuthServer, email: string, password: string): Promise<string> {
+  const login: unknown = await (await server.transport().login(email, password)).json();
+  const token =
+    typeof login === 'object' && login !== null && 'access_token' in login && typeof login.access_token === 'string'
+      ? login.access_token
+      : '';
+  const response = await server.transport().send(
+    new Request(`${origin}/api/v1/students`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_name: 'Shared student' }),
+    }),
+  );
+  const created: unknown = await response.json();
+  if (typeof created !== 'object' || created === null || !('id' in created) || typeof created.id !== 'string') {
+    throw new Error('the fake server created no card');
+  }
+  return created.id;
+}
 
 function fakeSubject(): ContractSubject {
   const server = new FakeAuthServer({
@@ -28,6 +144,20 @@ function fakeSubject(): ContractSubject {
     password: 'a student password',
     role: 'student',
   });
+  server.addAccount({
+    id: 'student-b',
+    name: 'B student',
+    email: 's2@example.org',
+    password: 'another student password',
+    role: 'student',
+  });
+  server.addAccount({
+    id: 'tutor-u',
+    name: 'Unconfirmed tutor',
+    email: 'u@example.org',
+    password: 'an unconfirmed password',
+    state: 'unverified',
+  });
   return {
     transport: server.transport(),
     origin,
@@ -41,6 +171,10 @@ function fakeSubject(): ContractSubject {
     },
     expireAccessTokens: async (): Promise<void> => {
       server.advance(16 * 60);
+      await Promise.resolve();
+    },
+    passSeconds: async (seconds: number): Promise<void> => {
+      server.advance(seconds);
       await Promise.resolve();
     },
     blockAccount: async (): Promise<void> => {
@@ -78,17 +212,92 @@ function fakeSubject(): ContractSubject {
       const submissionId = '4c3b2a19-0f8e-4d7c-9b6a-5f4e3d2c1b0a';
       server.addSubmission('s@example.org', 'a@example.org', pastSimpleSubmission(submissionId));
       server.addReviewedSubmission('a@example.org', pastSimpleReview(submissionId));
-      return {
-        email: 's@example.org',
-        password: 'a student password',
-        submissionId,
-        textQuestionId: pastSimpleQuestions.text,
-        fileQuestionId: pastSimpleQuestions.file,
-      };
+      return seededSubmission(submissionId);
     },
     fillTutorFileQuota: async (): Promise<void> => {
       await Promise.resolve();
       server.fillFileQuota('a@example.org');
+    },
+    seedUpcomingDeadline: async (): Promise<SeededDeadline> => {
+      await Promise.resolve();
+      const issueId = '6a7b8c9d-0e1f-4a2b-8c3d-4e5f6a7b8c9d';
+      server.addIssue('a@example.org', issueDue(issueId, server.serverNow() + 2 * dayMilliseconds));
+      return { issueId };
+    },
+    seedStudentHome: async (): Promise<SeededStudentHome> => {
+      await Promise.resolve();
+      server.seedTutors('s@example.org', [
+        currentTutor(homeRelationship, 'active'),
+        currentTutor(endedRelationship, 'ended'),
+      ]);
+      server.seedTutors('s2@example.org', [currentTutor(otherStudentRelationship, 'active')]);
+      server.addAssignment(
+        's@example.org',
+        assignmentItem('7b8c9d0e-1f2a-4b3c-9d4e-5f6a7b8c9d0e', 'not_started', homeRelationship),
+      );
+      server.addAssignment(
+        's@example.org',
+        assignmentItem('8c9d0e1f-2a3b-4c4d-8e5f-6a7b8c9d0e1f', 'checked', homeRelationship),
+      );
+      server.addCalendarItem('s@example.org', studentLesson(server.serverNow() + dayMilliseconds), homeRelationship);
+      return {
+        email: 's@example.org',
+        password: 'a student password',
+        relationshipId: homeRelationship,
+        endedRelationshipId: endedRelationship,
+        otherStudentRelationshipId: otherStudentRelationship,
+      };
+    },
+    unconfirmedTutor: async (): Promise<{ readonly email: string; readonly password: string }> => {
+      await Promise.resolve();
+      return { email: 'u@example.org', password: 'an unconfirmed password' };
+    },
+    seedSharedStudentIssues: async (): Promise<SeededSharedStudent> => {
+      const cardId = await createdCardId(server, 'a@example.org', 'a long enough password');
+      const otherTutorCardId = await createdCardId(server, 'b@example.org', 'another long password');
+      server.addSubmission(
+        's@example.org',
+        'a@example.org',
+        relatedSubmission('9d0e1f2a-3b4c-4d5e-9f6a-7b8c9d0e1f2a', cardId),
+      );
+      server.addSubmission(
+        's@example.org',
+        'b@example.org',
+        relatedSubmission('0e1f2a3b-4c5d-4e6f-8a7b-8c9d0e1f2a3b', otherTutorCardId),
+      );
+      server.addSubmission(
+        's@example.org',
+        'b@example.org',
+        relatedSubmission('1f2a3b4c-5d6e-4f7a-9b8c-9d0e1f2a3b4c', otherTutorCardId),
+      );
+      return { cardId, otherTutorCardId };
+    },
+    seedCheckedSubmission: async (): Promise<SeededSubmission> => {
+      await Promise.resolve();
+      const submissionId = '5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a';
+      server.addSubmission('s@example.org', 'a@example.org', {
+        ...pastSimpleSubmission(submissionId),
+        status: 'checked',
+        version: 4,
+        editable_question_ids: [],
+        review: { feedback: 'Well done.', items: [] },
+      });
+      server.addAssignment('s@example.org', assignmentItem(submissionId, 'checked', pastSimpleRelationship));
+      return seededSubmission(submissionId);
+    },
+    seedOtherStudentSubmission: async (): Promise<SeededSubmission> => {
+      await Promise.resolve();
+      const submissionId = '7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d';
+      server.addSubmission('s2@example.org', 'a@example.org', pastSimpleSubmission(submissionId));
+      return { ...seededSubmission(submissionId), email: 's2@example.org', password: 'another student password' };
+    },
+    returnSeededSubmission: async (seeded: SeededSubmission): Promise<void> => {
+      await Promise.resolve();
+      server.returnSubmission(seeded.submissionId);
+    },
+    endSeededRelationship: async (seeded: SeededSubmission): Promise<void> => {
+      await Promise.resolve();
+      server.endRelationshipOf(seeded.submissionId);
     },
   };
 }

@@ -1,14 +1,14 @@
-import { type UseQueryResult, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { type ReactElement, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { useScheduler } from '../../app/clock.ts';
 import { linkClass } from '../../components/ui/Form.tsx';
-import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
+import { LoadFailed } from '../../components/ui/LoadState.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { Me } from '../../lib/api/session.ts';
-import { type Calendar, type CalendarItem, fetchLesson } from '../schedule/api.ts';
+import { type CalendarItem, fetchLesson } from '../schedule/api.ts';
 import { type JoinLesson, JoinControl } from '../schedule/JoinControl.tsx';
 import { lessonKey } from '../schedule/keys.ts';
 import { LessonList } from '../schedule/LessonList.tsx';
@@ -18,43 +18,6 @@ const weekMilliseconds = 7 * 24 * 60 * 60 * 1000;
 
 function upcoming(items: readonly CalendarItem[], now: number): CalendarItem[] {
   return items.filter((item) => item.status !== 'cancelled' && Date.parse(item.ends_at) > now);
-}
-
-function Loaded({
-  query,
-  reportsRefetchFailure,
-  render,
-}: {
-  readonly query: UseQueryResult<Calendar>;
-  readonly reportsRefetchFailure: boolean;
-  readonly render: (calendar: Calendar) => ReactElement;
-}): ReactElement {
-  if (query.isPending) {
-    return <DelayedLoading />;
-  }
-  if (query.data === undefined) {
-    return (
-      <LoadFailed
-        error={asApiError(query.error)}
-        onRetry={() => {
-          void query.refetch();
-        }}
-      />
-    );
-  }
-  return (
-    <>
-      {reportsRefetchFailure && query.isError ? (
-        <RefetchFailed
-          error={asApiError(query.error)}
-          onRetry={() => {
-            void query.refetch();
-          }}
-        />
-      ) : null}
-      {render(query.data)}
-    </>
-  );
 }
 
 function NextLessonJoin({ item, me }: { readonly item: CalendarItem; readonly me: Me }): ReactElement {
@@ -97,70 +60,56 @@ function NextLessonJoin({ item, me }: { readonly item: CalendarItem; readonly me
   return <JoinControl key={item.id} lesson={lesson} me={me} showsOpensAt />;
 }
 
-export function NextLesson({ me, query }: { readonly me: Me; readonly query: UseQueryResult<Calendar> }): ReactElement {
+export function NextLesson({ me, item }: { readonly me: Me; readonly item: CalendarItem | null }): ReactElement {
   const { t } = useTranslation();
   const headingId = useId();
   const scheduler = useScheduler();
+  const next = item === null ? undefined : upcoming([item], scheduler.wallClock()).at(0);
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
       <h2 id={headingId} className="text-heading">
         {t('home.nextLesson')}
       </h2>
-      <Loaded
-        query={query}
-        reportsRefetchFailure
-        render={(calendar) => {
-          const next = upcoming(calendar.items, scheduler.wallClock()).at(0);
-          return next === undefined ? (
-            <p className="text-text-muted">{t('home.noNextLesson')}</p>
-          ) : (
-            <LessonList
-              items={[next]}
-              label={t('home.nextLesson')}
-              me={me}
-              showAudience
-              showTutor
-              rowAction={(item) => <NextLessonJoin key={item.id} item={item} me={me} />}
-            />
-          );
-        }}
-      />
+      {next === undefined ? (
+        <p className="text-text-muted">{t('home.noNextLesson')}</p>
+      ) : (
+        <LessonList
+          items={[next]}
+          label={t('home.nextLesson')}
+          me={me}
+          showAudience
+          showTutor
+          rowAction={(row) => <NextLessonJoin key={row.id} item={row} me={me} />}
+        />
+      )}
     </section>
   );
 }
 
 export function NextSevenDays({
   me,
-  query,
+  items,
   scheduleAddress,
 }: {
   readonly me: Me;
-  readonly query: UseQueryResult<Calendar>;
+  readonly items: readonly CalendarItem[];
   readonly scheduleAddress: string | null;
 }): ReactElement {
   const { t } = useTranslation();
   const headingId = useId();
   const scheduler = useScheduler();
+  const now = scheduler.wallClock();
+  const week = upcoming(items, now).filter((item) => Date.parse(item.starts_at) < now + weekMilliseconds);
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
       <h2 id={headingId} className="text-heading">
         {t('home.nextSevenDays')}
       </h2>
-      <Loaded
-        query={query}
-        reportsRefetchFailure={false}
-        render={(calendar) => {
-          const now = scheduler.wallClock();
-          const week = upcoming(calendar.items, now).filter(
-            (item) => Date.parse(item.starts_at) < now + weekMilliseconds,
-          );
-          return week.length === 0 ? (
-            <p className="text-text-muted">{t('home.noLessonsThisWeek')}</p>
-          ) : (
-            <LessonList items={week} label={t('home.nextSevenDays')} me={me} showAudience={false} showTutor />
-          );
-        }}
-      />
+      {week.length === 0 ? (
+        <p className="text-text-muted">{t('home.noLessonsThisWeek')}</p>
+      ) : (
+        <LessonList items={week} label={t('home.nextSevenDays')} me={me} showAudience={false} showTutor />
+      )}
       {scheduleAddress === null ? null : (
         <Link to={scheduleAddress} className={linkClass}>
           {t('home.openSchedule')}

@@ -75,6 +75,7 @@ export const en: Resources = {
     checklistNotDone: 'not done yet',
     checklistAssignment: 'Create an assignment',
     checklistAssignmentAction: 'Open the library',
+    checklistDismiss: 'Dismiss',
   },
   home: {
     aside: 'This week and my tutors',
@@ -431,7 +432,9 @@ export const en: Resources = {
       state: 'State',
       groups: 'Groups',
       nextLesson: 'Next lesson',
+      openAssignments: 'Open assignments',
     },
+    openAssignments: 'Open assignments: {count}',
     group: 'Group',
     allGroups: 'All groups',
     archivedGroup: '{name} (archived)',

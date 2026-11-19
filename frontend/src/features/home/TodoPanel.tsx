@@ -1,23 +1,21 @@
-import { useQuery } from '@tanstack/react-query';
 import { type ReactElement, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { linkClass } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
-import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
+import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { StatusWord } from '../../components/ui/StatusWord.tsx';
-import { asApiError, useApiClient } from '../../lib/api/client.ts';
+import { asApiError } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDateTime } from '../../lib/format/dates.ts';
 import { relativeHint } from '../../lib/format/relative.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
-import { type AssignmentItem, assignmentAddress, assignmentListKey, fetchAssignmentPage } from '../assignment/api.ts';
+import { type AssignmentItem, assignmentAddress } from '../assignment/api.ts';
 import { TutorName, useNow } from '../assignment/parts.tsx';
 import { stateTones, studentStateWord } from '../assignment/states.ts';
+import { type StudentHome, shownCount } from './api.ts';
 import { homeworkPanelTextLoaders } from './panelTexts.ts';
-
-const panelSize = 5;
 
 type PanelWord = 'todo' | 'dueSoon' | 'overdue' | 'inProgress' | 'returned';
 
@@ -72,75 +70,51 @@ function TodoRow({ item, now }: { readonly item: AssignmentItem; readonly now: n
   );
 }
 
-function TodoRows({ tutor }: { readonly tutor: string | null }): ReactElement {
+function TodoRows({ part }: { readonly part: StudentHome['todo'] }): ReactElement {
   const { t } = useTranslation();
-  const client = useApiClient();
   const now = useNow();
   const headingId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
-  const query = useQuery({
-    queryKey: assignmentListKey('todo', tutor, panelSize),
-    queryFn: () => fetchAssignmentPage(client, 'todo', tutor, panelSize, null),
-    retry: false,
-  });
-  const items = query.data?.items ?? [];
+  const { items, count } = part;
   useFocusAfterRemovedRow(
     listRef,
     items.map((item) => item.submission_id),
     '[data-row-link]',
     heading,
   );
-  const count = query.data?.counts.todo ?? 0;
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
       <h2 ref={heading} id={headingId} tabIndex={-1} className="text-heading outline-none">
         {t('homeworkPanels.todo')}
       </h2>
-      {query.data === undefined ? (
-        query.isError ? (
-          <LoadFailed
-            error={asApiError(query.error)}
-            onRetry={() => {
-              void query.refetch();
-            }}
-          />
-        ) : (
-          <DelayedLoading />
-        )
-      ) : (
-        <>
-          {query.isError ? (
-            <RefetchFailed
-              error={asApiError(query.error)}
-              onRetry={() => {
-                void query.refetch();
-              }}
-            />
-          ) : null}
-          {items.length === 0 ? <p className="text-text-muted">{t('homeworkPanels.nothingToDo')}</p> : null}
-          <ul ref={listRef} className={items.length === 0 ? 'hidden' : 'flex flex-col border-b border-border'}>
-            {items.map((item) => (
-              <TodoRow key={item.submission_id} item={item} now={now} />
-            ))}
-          </ul>
-          {count > 0 ? (
-            <p>
-              <Link to="/homework" className={linkClass}>
-                {t('homeworkPanels.allHomework', { count: count > 99 ? '99+' : String(count) })}
-              </Link>
-            </p>
-          ) : null}
-        </>
-      )}
+      {items.length === 0 ? <p className="text-text-muted">{t('homeworkPanels.nothingToDo')}</p> : null}
+      <ul ref={listRef} className={items.length === 0 ? 'hidden' : 'flex flex-col border-b border-border'}>
+        {items.map((item) => (
+          <TodoRow key={item.submission_id} item={item} now={now} />
+        ))}
+      </ul>
+      {count > 0 ? (
+        <p>
+          <Link to="/homework" className={linkClass}>
+            {t('homeworkPanels.allHomework', { count: shownCount(count) })}
+          </Link>
+        </p>
+      ) : null}
     </section>
   );
 }
 
-export function TodoPanel({ tutor }: { readonly tutor: string | null }): ReactElement | null {
+export function TodoPanel({
+  part,
+  tutor,
+}: {
+  readonly part: StudentHome['todo'];
+  readonly tutor: string | null;
+}): ReactElement | null {
   const texts = useFeatureTexts('homeworkPanels', homeworkPanelTextLoaders);
   if (!texts.ready) {
     return texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />;
   }
-  return <TodoRows key={tutor ?? ''} tutor={tutor} />;
+  return <TodoRows key={tutor ?? ''} part={part} />;
 }
