@@ -52,7 +52,7 @@ Each listed test installs `page.clock` without a fixed time, through an explicit
 - for answers and review drafts, once the status shows "Saving…" ("Сохраняется…"), the state in which the save timer is armed, or "Saved" ("Сохранено"), when the save already landed while an earlier step ran, so the wait can never outlast a successful save that has passed (a save that ends in a conflict leaves no status, so the tests that expect a conflict wait right after their edit);
 - for templates, at once, since the builder arms its timer in the edit's event handler.
 
-A fast-forward that lands before the timer is armed, or after the save, changes nothing, and the test then waits for the save as before. No other test installs a clock.
+A fast-forward that lands before the timer is armed, or after the save, changes nothing, and the test then waits for the save as before. No other autosave test installs a clock.
 
 The tests:
 
