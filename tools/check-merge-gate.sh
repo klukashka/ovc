@@ -59,6 +59,19 @@ commit_file() {
 
 power_log_reads=no
 
+macos_power_log_readable() {
+  [[ "$(uname -s)" == Darwin ]] && LC_ALL=C env -u TZ pmset -g log >/dev/null 2>&1
+}
+
+if macos_power_log_readable; then
+  run_field_values='(yes|no)'
+  run_field_rule='battery during the run and sleep are yes or no because the macOS power log is readable'
+else
+  run_field_values='(yes|no|unknown)'
+  run_field_rule='battery during the run and sleep may be unknown because no readable macOS power log exists'
+  echo "note: macOS power log unreadable or not macOS; battery during the run and sleep may be unknown"
+fi
+
 run_gate() {
   local probes=()
   if [[ "$1" == gate ]]; then
@@ -159,8 +172,8 @@ contains "$(cat "$lock")" "scope=docs-only" "the lock records the scope"
 check "$(file_mode "$lock_dir")|$(file_mode "$lock")|$(file_mode "$log")" "700|600|600" "the lock folder, lock and log are readable only by the owner"
 check "$(count_matching '^gate start: power: (mains|battery|unknown); load: [0-9.]+ [0-9.]+ [0-9.]+; other containers: ([0-9]+|unknown)$')" "1" \
   "the report prints one start line with the power source, the load and the count of other containers"
-check "$(count_matching '^gate end: power: (mains|battery|unknown); load: [0-9.]+ [0-9.]+ [0-9.]+; battery-during-run: (yes|no|unknown); sleep: (yes|no|unknown)$')" "1" \
-  "the report prints one end line with the power source, the load, battery during the run and sleep"
+check "$(count_matching '^gate end: power: (mains|battery|unknown); load: [0-9.]+ [0-9.]+ [0-9.]+; battery-during-run: '"$run_field_values"'; sleep: '"$run_field_values"'$')" "1" \
+  "the report prints one end line with the power source, the load, battery during the run and sleep; $run_field_rule"
 check "$(count_matching '^merge gate: gate start: power: ')" "1" "the gate prints its start line when it starts"
 check "$(awk '/^gate start: power: /{ starts++ } /^gate end: power: /{ ends++ } END { print starts + 0 "|" ends + 0 }' "$log")" "1|1" \
   "the attempt log holds the start and the end line of the gate"
@@ -303,7 +316,8 @@ power_log_reads=no
 check "$status" "1" "a failing check fails the gate"
 contains "$output" "result: failed: a check failed" "the report names the failed check"
 contains "$output" "earlier attempts for this tree: none" "the first attempt has no earlier attempts"
-check "$(count_matching '^gate end: power: (mains|battery|unknown); load: [0-9.]+ [0-9.]+ [0-9.]+; battery-during-run: (yes|no|unknown); sleep: (yes|no|unknown)$')" "1" "a failed gate prints its end line"
+check "$(count_matching '^gate end: power: (mains|battery|unknown); load: [0-9.]+ [0-9.]+ [0-9.]+; battery-during-run: '"$run_field_values"'; sleep: '"$run_field_values"'$')" "1" \
+  "a failed gate prints its end line; $run_field_rule"
 run_gate gate --ff-only --checks self-test
 contains "$output" "result=failed" "a rerun lists the earlier failed attempt for the same tree"
 check "$(count_matching '^gate end: power: (mains|battery|unknown); load: ([0-9.]+ [0-9.]+ [0-9.]+|unknown); battery-during-run: unknown; sleep: unknown$')" "1" \
