@@ -7,6 +7,7 @@ import type { Deployment } from './deployment.ts';
 import { bellIn, panelRowsIn } from './notifications.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor, tableRows } from './fixtures.ts';
 import { busyControls, offsetsBelowHeading, recordBusyControls, recordFirstOffsets } from './observers.ts';
+import { expectReadyForNavigation, todayQueryPaths, trafficAfterReady } from './realtime.ts';
 import {
   acceptSignedIn,
   createCard,
@@ -327,7 +328,10 @@ test.describe('in Russian', () => {
     const { maria } = mariaWithJoinRequests;
     await recordBusyControls(page);
     await signInThroughTheApi(page, maria);
+    const ready = trafficAfterReady(page, todayQueryPaths);
+    await ready.initialize();
     await page.goto('/today');
+    await expectReadyForNavigation(page, ready);
     const accepts = joinRequests(page).getByRole('button', { name: /^Принять: / });
     await expect(accepts).toHaveCount(todayRequestRows);
 

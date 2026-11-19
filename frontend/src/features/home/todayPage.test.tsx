@@ -374,4 +374,30 @@ describe('Today on GET /home', () => {
     ).toBe(5);
     expect(requestedPaths(shown.server).filter((path) => path === '/api/v1/join-requests')).toHaveLength(1);
   });
+
+  test('a /home refetch that started before Show more and answers after it drops the extra rows and keeps focus in the list', async () => {
+    const shown = await showToday({ joinRequests: 7 });
+    const region = screen.getByRole('region', { name: 'Join requests' });
+    const held = shown.server.pauseHomeReads();
+    const refetching = shown.queryClient.invalidateQueries({ queryKey: tutorHomeKey });
+    await held.received;
+    fireEvent.click(within(region).getByRole('button', { name: 'Show more' }));
+    const sixth = await within(region).findByRole('button', { name: 'Accept Requester 6' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(sixth);
+    });
+
+    held.resume();
+    await act(async () => {
+      await refetching;
+    });
+    await waitFor(() => {
+      expect(within(region).getAllByRole('listitem')).toHaveLength(5);
+    });
+
+    const rows = within(region).getAllByRole('listitem');
+    expect(new Set(rows.map((row) => row.textContent)).size).toBe(5);
+    expect(within(region).getByRole('button', { name: 'Show more' })).toBeTruthy();
+    expect(document.activeElement).toBe(within(region).getByRole('button', { name: 'Accept Requester 5' }));
+  });
 });
