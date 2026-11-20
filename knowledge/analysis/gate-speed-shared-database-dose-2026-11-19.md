@@ -1,6 +1,6 @@
 # Lane A of the merge gate: the marginal cost of a test database, measured for proposal 0005
 
-Recorded on 2026-11-19 for the consolidation that the owner inserted into sub-slice 10.2 after the 10.1 slice review: a measured pilot of [proposal 0005](../../docs/proposals/0005-shared-test-database-for-subtests.md), under which the subtests of one integration test would share a test database. The measurement says the target cannot be reached, so this record is the only file the change adds. No code, policy or test changed.
+Recorded on 2026-11-19 for the consolidation that the owner inserted into sub-slice 10.2 after the 10.1 slice review: a measured pilot of [proposal 0005](../../docs/proposals/0005-shared-test-database-for-subtests.md), under which the subtests of one integration test would share a test database. The measurement says the target cannot be reached, so this record is the only file the change adds. No code, policy or test changed. The projection was corrected on 2026-11-20 after the sub-slice 10.2 slice review found its overhead outside the gate's phases taken from mismatched gates; see [Projection](#projection).
 
 ## Why this was measured first
 
@@ -91,33 +91,34 @@ Every one of the 18 runs passed (rc 0, no failed test), on AC power at start and
 
 ## Projection
 
-The figures for the gate are restated from the revision of 2026-11-17 of the gate-speed task plan, which was not committed, so this record is their source in the repository. They come from the last three passing gates before that date: in-gate lane A median 202.3 s, end-to-end median 404.0 s, and about 363 s in night gates. Lanes B and C take at most 111 s, so lane A cannot count below that.
+Corrected on 2026-11-20. The first version of this record took the gate's figures from the revision of 2026-11-17 of the gate-speed task plan, which was not committed: an in-gate lane A median of 202.3 s and an end-to-end median of 404.0 s from gates before that date, and an overhead outside the lanes of 8.6 s, the median gate of 614.9 s minus those two medians. The 10.2 slice review found that the overhead came from mismatched gates: the attempt log's phase times of the three gates behind the 614.9 s median give 1.7 to 1.8 s.
 
-The overhead outside the lanes is 8.6 s: the median gate of 614.9 s minus 202.3 + 404.0 s. The in-gate lane A scales by the standalone ratio of `internal/api`, taken against the `main` mean of the window, 160.9 s.
+The corrected projection takes every figure outside the end-to-end phase from one gate of `merge-gate.log`: the median gate of those three, B2's 614.9 s (`pre:0.3,ABC:195.9,e2e:417.0`, 1.7 s outside the phases). The lanes' phase is bounded by lane A, which scales by the standalone ratio of `internal/api`, taken against the `main` mean of the window, 160.9 s. The end-to-end phase is set to the 404 s median or to the 363 s of night gates, as before. Lanes B and C take at most 111 s, so the lanes' phase cannot count below that.
 
-| Clones removed | Standalone saving at 0.031 s (0.038 s) | Projected in-gate lane A | Projected gate, 404 s end-to-end | Projected gate, 363 s end-to-end |
+| Clones removed | Standalone saving at 0.031 s (0.038 s) | Projected lanes' phase | Projected gate, 404 s end-to-end | Projected gate, 363 s end-to-end |
 |---|---|---|---|---|
-| 250, the planning estimate of qualifying subtests | 7.8 s (9.5 s) | 192.6 s (190.4 s) | 605.2 s (603.0 s) | 564.2 s (562.0 s) |
-| 518, every subtest of today's parents | 16.1 s (19.7 s) | 182.1 s (177.6 s) | 594.7 s (590.2 s) | 553.7 s (549.2 s) |
+| 250, the planning estimate of qualifying subtests | 7.8 s (9.5 s) | 186.5 s (184.3 s) | 592.5 s (590.3 s) | 551.5 s (549.3 s) |
+| 518, every subtest of today's parents | 16.1 s (19.7 s) | 176.3 s (171.9 s) | 582.3 s (577.9 s) | 541.3 s (536.9 s) |
 
-- **Neither projection reaches 540 s, even if every subtest of today's parents shared its parent's database.**
-- **The quiet-machine variant** would need lane A at 168.4 s in the gate. That is a standalone saving of about 27 s, or about 870 clones at the measured cost: more than the 518 subtests that today's parents hold.
-- **The 404 s variant** would need about 1,900 clones removed: more than the leaf tests that exist.
+- **The reachable projection misses 540 s in every variant.** At 250 clones the gate projects 549 to 552 s even with the 363 s night end-to-end time.
+- **One cell falls below 540 s: 518 clones at the convex 0.038 s with the 363 s end-to-end time, 536.9 s.** It is an upper bound that today's tests cannot reach: it needs every subtest of today's parents to share its parent's database, while the families the planning excluded remove many of them, and real subtests save less per clone than the minimal throwaway ones (see below). The first version of this record put that cell at 549.2 s; under the owner's rule of 2026-11-19, a quiet-machine projection that reached 540 s would have meant asking before building the pilot. The owner was told of the correction at the 10.2 slice review on 2026-11-20 and kept the conclusion below.
+- **The quiet-machine variant** needs the lanes' phase at 175.0 s in the gate. That is a standalone saving of about 17.2 s: about 450 clones at the convex 0.038 s, nearly all of the 518 subtests that today's parents hold before any family is excluded, or about 550 at 0.031 s, more than they hold.
+- **The 404 s variant** needs the lanes' phase at 134.0 s: about 1,350 to 1,650 clones removed, against at most 518 that today's parents allow.
 - **The proposal's own go criterion is missed too.** It asked for 5 % of `internal/api` per 100 clones removed. The measured saving is about 3.1 s per 100, or 2 %.
 
 ## Conclusions
 
 - **On this machine a test database costs `internal/api` about 0.03 to 0.04 s of wall time.** Most of the fixed cost of a leaf test overlaps across the twelve parallel slots.
 - **The checkpoint-bound picture of the earlier records holds,** but at the margin a database is cheap. Lane A is long because it runs about 1,500 tests, not because each clone is expensive.
-- **Proposal 0005 cannot bring the gate to 540 s.** By the owner's decision of 2026-11-19, it stays deferred: no shared fixture, conventions test, decision record, `AGENTS.md` amendment or T-41 amendment is written. The next consolidation comes from the end-to-end run, which is about 400 s of the gate.
+- **Proposal 0005 cannot bring the gate to 540 s with any sharing today's tests can reach.** By the owner's decision of 2026-11-19, it stays deferred: no shared fixture, conventions test, decision record, `AGENTS.md` amendment or T-41 amendment is written. The next consolidation comes from the end-to-end run, which is about 400 s of the gate.
 - **What remains for lane A:** fewer tests, which would move or merge coverage, and the machine.
 
 ## What this record does not cover
 
 - **Lane A was not measured inside a gate.** The in-gate figures are scaled from standalone ratios, which earlier records found to understate lane A inside a gate by a factor of 1.1 to 1.4.
-  - If the in-gate saving were 1.4 times the scaled saving, every cell would stay above 540 s except one. At 518 clones and the convex 0.038 s, the quiet-machine variant would project 539.3 s; the 0.031 s cost of that row projects 545.6 s.
-  - Even that one cell is an upper bound that cannot be reached. It needs every subtest of today's parents to share, while the excluded families remove many of them. It needs real subtests to save as much as the minimal throwaway ones, and they save less (below). It assumes the night end-to-end time rather than the gate median.
-  - The 404 s variant stays above 580 s in every case.
+  - If the in-gate saving were 1.4 times the scaled saving, the 250-clone row would still project 547.7 s (544.7 s) with the 363 s end-to-end time, and the 518-clone row would fall to 533.5 s (527.3 s).
+  - Those two cells are the upper bound described above, which cannot be reached. They need every subtest of today's parents to share, while the excluded families remove many of them. They need real subtests to save as much as the minimal throwaway ones, and they save less (below). They assume the night end-to-end time rather than the gate median.
+  - The 404 s variant stays above 565 s in every case.
 - **The leftover check is unverified.** After the window, the query listing `ovc_%_test` databases that are not templates was not run, because `psql` inside the container asks for a password, and the measurement does not read credentials.
 - **The test bodies were minimal.** Each throwaway subtest sends one request that does not touch the database. Real subtests write rows, which a shared database would keep until the parent ends, so their saving per clone could only be smaller.
 - **Throwaway commits.** The throwaway commits had no branch or tag, and their worktrees were removed after the window.
@@ -132,4 +133,4 @@ On 2026-11-19 the owner took the recommended option on every question of the pil
 - enforce sharing by an allowlist of harness methods with method traversal;
 - approve the policy texts only after this measurement.
 
-The third case applies.
+The third case applies. With the corrected projection, only the unreachable upper bound of 518 clones reaches 540 s, in the quiet-machine variant; the owner kept the third case on 2026-11-20.
