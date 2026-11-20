@@ -52,6 +52,7 @@ type resultsView struct {
 	corrected   response
 	write       response
 	upload      response
+	stop        response
 }
 
 func (h *authHarness) resultsViewOf(t *testing.T, results closingResults) resultsView {
@@ -73,6 +74,7 @@ func (h *authHarness) resultsViewOf(t *testing.T, results closingResults) result
 		corrected:   corrected,
 		write:       h.saveAnswersNow(t, token, results.work.submission, answersJSON(t, 2, saveID(2), typedAnswer(workQuestion(5), "Later"))),
 		upload:      h.homeworkUpload(t, token, homeworkRoute(domain.ContextAnswer, results.work.submission, workQuestion(6)), "late.pdf", pdfFile(16)),
+		stop:        h.stopStudying(t, token, results.card),
 	}
 }
 
@@ -81,6 +83,7 @@ func (h *authHarness) closedResultsProblems(t *testing.T, view resultsView, serv
 	token := h.studentToken(t, 10)
 	randomRead := h.submissionAnswer(t, token, randomSubmissionID)
 	randomMint, _ := h.addressOf(t, token, fixtureID(81, 9), "?ref=answer:"+randomSubmissionID)
+	randomStop := h.stopStudying(t, token, randomCardID)
 	var problems []string
 	for name, refused := range map[string]response{
 		"the read": view.read, "the tutor filter": view.tutorFilter, "the calendar filter": view.calendar, "the write": view.write,
@@ -95,6 +98,9 @@ func (h *authHarness) closedResultsProblems(t *testing.T, view resultsView, serv
 		if refused.status != http.StatusNotFound || refusal(t, refused) != refusal(t, randomMint) {
 			problems = append(problems, name+" answered "+describe(refused))
 		}
+	}
+	if view.stop.status != http.StatusNotFound || refusal(t, view.stop) != refusal(t, randomStop) {
+		problems = append(problems, "stopping the ended link answered "+describe(view.stop))
 	}
 	if view.upload.status != http.StatusNotFound {
 		problems = append(problems, "the answer upload answered "+describe(view.upload))
@@ -123,7 +129,7 @@ func TestResultsReadableUntilAccountClosedUntil(t *testing.T) {
 
 	for name, ok := range map[string]response{
 		"the read": before.read, "the tutor filter": before.tutorFilter, "the calendar filter": before.calendar, "the snapshot mint": before.snapshot,
-		"the answer mint": before.answer, "the corrected file mint": before.corrected, "the earlier address": servedBefore,
+		"the answer mint": before.answer, "the corrected file mint": before.corrected, "the earlier address": servedBefore, "stopping the ended link": before.stop,
 	} {
 		if ok.status != http.StatusOK {
 			t.Errorf("a minute before account_closed_until %s answered %s", name, describe(ok))

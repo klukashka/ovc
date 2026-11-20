@@ -113,6 +113,9 @@ func (s *Service) StopStudying(ctx context.Context, principal accounts.Principal
 			return ErrCardNotFound
 		}
 		result.Tutor, err = s.myTutor(ctx, repos, principal.UserID, id)
+		if errors.Is(err, repositories.ErrNotFound) {
+			return ErrCardNotFound
+		}
 		return err
 	})
 	if err != nil {
