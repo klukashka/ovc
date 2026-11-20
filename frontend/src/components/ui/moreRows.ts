@@ -56,6 +56,7 @@ export function useFocusOnFirstNewRow<Element extends HTMLElement>(
       return;
     }
     if (fetching) {
+      firstNewRow.current = Math.min(index, rowCount);
       return;
     }
     firstNewRow.current = null;

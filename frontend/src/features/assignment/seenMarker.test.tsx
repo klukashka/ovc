@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 
 import { SchedulerContext } from '../../app/clock.ts';
 import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
-import { pastSimpleSubmission } from '../../lib/api/fakeSubmissions.ts';
+import { pastSimpleQuestions, pastSimpleSubmission } from '../../lib/api/fakeSubmissions.ts';
 import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import type { components } from '../../lib/api/schema.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
@@ -20,20 +20,71 @@ afterEach(() => {
 });
 
 type StudentSubmission = components['schemas']['StudentSubmission'];
+type StudentReview = components['schemas']['StudentReview'];
 
 const origin = 'https://ovc.example';
 const submissionId = '4c3b2a19-0f8e-4d7c-9b6a-5f4e3d2c1b0a';
 const tutor = { id: 'tutor-1', name: 'Maria', email: 'maria@example.org', password: 'a long password' };
 const student = { id: 'student-1', name: 'Anna', email: 'anna@example.org', password: 'another long password' };
 
-function checked(version: number): StudentSubmission {
+function checked(version: number, feedback = 'Well done.'): StudentSubmission {
   return {
     ...pastSimpleSubmission(submissionId),
     status: 'checked',
     version,
     editable_question_ids: [],
-    review: { feedback: 'Well done.', items: [] },
+    review: { feedback, items: [] },
   };
+}
+
+const firstAttachment = '6d5c4b3a-2f1e-4d0c-9b8a-7f6e5d4c3b2a';
+const secondAttachment = '7e6d5c4b-3a2f-4e1d-8c9b-0a7f6e5d4c3b';
+
+function correctedFile(address: string, attachmentId = firstAttachment): components['schemas']['SubmissionFile'] {
+  return {
+    attachment_id: attachmentId,
+    filename: 'corrected.pdf',
+    media_type: 'application/pdf',
+    size_bytes: 2048,
+    width: null,
+    height: null,
+    url: `https://storage.example/${address}`,
+    expires_at: '2026-11-01T00:05:00Z',
+  };
+}
+
+function reviewed(version: number, status: StudentSubmission['status'], review: StudentReview): StudentSubmission {
+  return { ...checked(version), status, review };
+}
+
+function commented(comment: string, address = 'first', attachmentId = firstAttachment): StudentReview {
+  return {
+    feedback: '',
+    items: [
+      { question_id: pastSimpleQuestions.file, comment, corrected_files: [correctedFile(address, attachmentId)] },
+    ],
+  };
+}
+
+async function markersAfterRefetchShowing(
+  first: StudentSubmission,
+  second: StudentSubmission,
+): Promise<readonly { readonly id: string; readonly version: number }[]> {
+  const shown = await showResults(first);
+  await waitFor(() => {
+    expect(shown.server.feedbackSeenRequests()).toHaveLength(1);
+  });
+  shown.server.addSubmission(student.email, tutor.email, second);
+  await refetchSubmission(shown);
+  await waitFor(() => {
+    expect(shown.queryClient.getQueryData<{ version: number }>(submissionKey(submissionId))?.version).toBe(
+      second.version,
+    );
+  });
+  await waitFor(() => {
+    expect(shown.queryClient.isFetching() + shown.queryClient.isMutating()).toBe(0);
+  });
+  return shown.server.feedbackSeenRequests();
 }
 
 interface ShownResults {
@@ -129,12 +180,12 @@ describe('the seen marker on the assignment page', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  test('a refetch showing a newer version with a review sends the marker again', async () => {
+  test('a refetch showing a newly published review sends the marker again with its version', async () => {
     const shown = await showResults(checked(4));
     await waitFor(() => {
       expect(shown.server.feedbackSeenRequests()).toHaveLength(1);
     });
-    shown.server.addSubmission(student.email, tutor.email, checked(6));
+    shown.server.addSubmission(student.email, tutor.email, checked(6, 'Better now.'));
 
     await refetchSubmission(shown);
     await waitFor(() => {
@@ -142,6 +193,86 @@ describe('the seen marker on the assignment page', () => {
     });
 
     expect(shown.server.feedbackSeenRequests()).toEqual([
+      { id: submissionId, version: 4 },
+      { id: submissionId, version: 6 },
+    ]);
+  });
+
+  test('newer versions that keep the shown review, as autosaves do, send no further marker', async () => {
+    const shown = await showResults(checked(4));
+    await waitFor(() => {
+      expect(shown.server.feedbackSeenRequests()).toHaveLength(1);
+    });
+
+    shown.server.addSubmission(student.email, tutor.email, checked(5));
+    await refetchSubmission(shown);
+    shown.server.addSubmission(student.email, tutor.email, checked(6));
+    await refetchSubmission(shown);
+    await waitFor(() => {
+      expect(shown.queryClient.getQueryData<StudentSubmission>(submissionKey(submissionId))?.version).toBe(6);
+    });
+
+    expect(shown.server.feedbackSeenRequests()).toEqual([{ id: submissionId, version: 4 }]);
+  });
+
+  test('a marker refused with a conflict is sent again at the next version that shows the same review', async () => {
+    const server = new FakeAuthServer();
+    server.refuseNextFeedbackSeen(409, 'conflict');
+    const shown = await showResultsOn(server, checked(4));
+    await waitFor(() => {
+      expect(shown.server.feedbackSeenRequests()).toHaveLength(1);
+    });
+    shown.server.addSubmission(student.email, tutor.email, checked(5));
+
+    await refetchSubmission(shown);
+    await waitFor(() => {
+      expect(shown.server.feedbackSeenRequests()).toHaveLength(2);
+    });
+
+    expect(shown.server.feedbackSeenRequests()).toEqual([
+      { id: submissionId, version: 4 },
+      { id: submissionId, version: 5 },
+    ]);
+  });
+  test('a newly published review that changes only an item comment sends the marker again', async () => {
+    const first = reviewed(4, 'checked', commented('Check the spelling.'));
+    const second = reviewed(6, 'checked', commented('Better now.'));
+
+    const markers = await markersAfterRefetchShowing(first, second);
+
+    expect(markers).toEqual([
+      { id: submissionId, version: 4 },
+      { id: submissionId, version: 6 },
+    ]);
+  });
+
+  test('a check after a return that keeps the returned review sends the marker again', async () => {
+    const first = reviewed(4, 'returned', commented('Check the spelling.'));
+    const second = reviewed(6, 'checked', commented('Check the spelling.'));
+
+    const markers = await markersAfterRefetchShowing(first, second);
+
+    expect(markers).toEqual([
+      { id: submissionId, version: 4 },
+      { id: submissionId, version: 6 },
+    ]);
+  });
+
+  test('a newer version whose corrected file only has a fresh download address sends no further marker', async () => {
+    const first = reviewed(4, 'returned', commented('Check the spelling.', 'first'));
+    const second = reviewed(5, 'returned', commented('Check the spelling.', 'renewed'));
+
+    const markers = await markersAfterRefetchShowing(first, second);
+
+    expect(markers).toEqual([{ id: submissionId, version: 4 }]);
+  });
+  test('a newly published review that changes only a corrected file sends the marker again', async () => {
+    const first = reviewed(4, 'checked', commented('Check the spelling.', 'first', firstAttachment));
+    const second = reviewed(6, 'checked', commented('Check the spelling.', 'second', secondAttachment));
+
+    const markers = await markersAfterRefetchShowing(first, second);
+
+    expect(markers).toEqual([
       { id: submissionId, version: 4 },
       { id: submissionId, version: 6 },
     ]);

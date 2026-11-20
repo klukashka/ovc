@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { afterEach, describe, expect, test } from 'vitest';
@@ -8,7 +8,7 @@ import { SchedulerContext } from '../../app/clock.ts';
 import type { RouteHandle } from '../../app/handles.ts';
 import { FollowingQueryClient } from '../../app/queryClient.ts';
 import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
-import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
+import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import type { components } from '../../lib/api/schema.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
@@ -69,6 +69,16 @@ const liveItem: CalendarItem = {
   tutor: { name: 'Maria', colour: 'moss' },
 };
 
+const followingItem: CalendarItem = {
+  ...liveItem,
+  id: '00000000-0000-4000-8000-000000000022',
+  title: 'Reading club',
+  starts_at: '2026-11-01T10:00:00Z',
+  ends_at: '2026-11-01T11:00:00Z',
+  status: 'scheduled',
+  took_place: false,
+};
+
 class RoomTabs {
   readonly opened: { closed: boolean }[] = [];
 
@@ -123,6 +133,7 @@ function work(
 interface HomeSetup {
   readonly address?: string;
   readonly language?: Language;
+  readonly followingLesson?: boolean;
 }
 
 interface ShownHome {
@@ -130,9 +141,14 @@ interface ShownHome {
   readonly queryClient: FollowingQueryClient;
   readonly navigate: (address: string) => Promise<void>;
   readonly tabs: RoomTabs;
+  readonly scheduler: ManualScheduler;
 }
 
-async function showHome({ address = '/home', language = 'en' }: HomeSetup = {}): Promise<ShownHome> {
+async function showHome({
+  address = '/home',
+  language = 'en',
+  followingLesson = false,
+}: HomeSetup = {}): Promise<ShownHome> {
   const server = new FakeAuthServer();
   server.addAccount({ id: 'student-1', name: 'Anna', email: studentEmail, password, role: 'student' });
   server.seedTutors(studentEmail, [tutor(mariaLink, 'Maria'), tutor(pavelLink, 'Pavel')]);
@@ -141,6 +157,9 @@ async function showHome({ address = '/home', language = 'en' }: HomeSetup = {}):
   server.addAssignment(studentEmail, work('83', 'Articles', 'checked', false));
   server.addLesson(liveLesson, [studentEmail]);
   server.addCalendarItem(studentEmail, liveItem, mariaLink);
+  if (followingLesson) {
+    server.addCalendarItem(studentEmail, followingItem, mariaLink);
+  }
   const session = new Session({
     origin,
     transport: server.transport(),
@@ -179,6 +198,7 @@ async function showHome({ address = '/home', language = 'en' }: HomeSetup = {}):
     server,
     queryClient,
     tabs,
+    scheduler,
     navigate: async (to: string): Promise<void> => {
       await act(async () => {
         await router.navigate(to);
@@ -196,7 +216,55 @@ async function refetchHome(shown: ShownHome): Promise<void> {
   });
 }
 
+function nextLessonRegion(): HTMLElement {
+  return screen.getByRole('region', { name: 'Next lesson' });
+}
+
 describe('Home on GET /home', () => {
+  test("Home reads /home again at the next lesson's end and shows the following lesson", async () => {
+    const shown = await showHome({ followingLesson: true });
+    const untilRefetch = Date.parse(liveItem.ends_at) - shown.server.serverNow() + 1_000;
+    const readsBefore = shown.server.homeReads();
+
+    shown.server.advance(untilRefetch / 1_000);
+    act(() => {
+      shown.scheduler.pass(untilRefetch);
+    });
+    const following = await within(nextLessonRegion()).findByText(followingItem.title);
+
+    expect(shown.server.homeReads()).toBe(readsBefore + 1);
+    expect(following).toBeTruthy();
+    expect(within(nextLessonRegion()).queryByText('No lesson scheduled')).toBeNull();
+  });
+
+  test('the next lesson stays shown after its end until /home is read again at that end, which shows the following lesson', async () => {
+    const shown = await showHome({ followingLesson: true });
+    const untilEnd = Date.parse(liveItem.ends_at) - shown.server.serverNow();
+    shown.server.advance((untilEnd + 500) / 1_000);
+    act(() => {
+      shown.scheduler.pass(untilEnd + 500);
+    });
+    shown.server.failNextHomeRead();
+    await refetchHome(shown);
+    await screen.findByText(refetchFailedText);
+    const afterEnd = {
+      shown: within(nextLessonRegion()).queryByText(liveItem.title) !== null,
+      noLesson: within(nextLessonRegion()).queryByText('No lesson scheduled') !== null,
+    };
+    const readsBefore = shown.server.homeReads();
+
+    shown.server.advance(1);
+    act(() => {
+      shown.scheduler.pass(1_000);
+    });
+    const following = await within(nextLessonRegion()).findByText(followingItem.title);
+
+    expect(afterEnd).toEqual({ shown: true, noLesson: false });
+    expect(shown.server.homeReads()).toBe(readsBefore + 1);
+    expect(following).toBeTruthy();
+    expect(within(nextLessonRegion()).queryByText(liveItem.title)).toBeNull();
+  });
+
   test('sends one GET /home on load and none of the reads it replaced', async () => {
     const shown = await showHome();
 

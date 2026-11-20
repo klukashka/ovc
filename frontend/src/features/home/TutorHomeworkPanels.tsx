@@ -1,10 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { type ReactElement, type ReactNode, type RefObject, useEffect, useId, useRef } from 'react';
+import { type ReactElement, type ReactNode, type RefObject, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
-import { useScheduler } from '../../app/clock.ts';
-import type { Scheduler } from '../../lib/api/session.ts';
 import { linkClass } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
@@ -22,20 +20,12 @@ import { reviewAddress } from '../review/api.ts';
 import type { TutorHome } from './api.ts';
 import { shownCount } from './api.ts';
 import { homeworkPanelTextLoaders } from './panelTexts.ts';
+import { type HomeRefetch, useRefetchAt } from './refetchAt.ts';
 
 type NeedsCheckingPart = NonNullable<TutorHome['needs_checking']>;
 type DeadlinesPart = NonNullable<TutorHome['upcoming_deadlines']>;
 
-export interface HomeRefetch {
-  readonly refetch: () => unknown;
-  readonly loadedAt: number;
-  readonly failedAt: number;
-}
-
 const noFilter = { issue: null, group: null, student: null };
-const deadlineMarginMilliseconds = 1_000;
-const passedDeadlineRetryMilliseconds = 30_000;
-const passedDeadlineRetryCapMilliseconds = 600_000;
 
 function earliestDeadline(items: readonly IssueItem[]): string | null {
   let earliest: string | null = null;
@@ -45,47 +35,6 @@ function earliestDeadline(items: readonly IssueItem[]): string | null {
     }
   }
   return earliest;
-}
-
-interface DeadlineRefetch {
-  readonly deadline: string;
-  readonly delay: number;
-  readonly afterDeadline: boolean;
-}
-
-function nextDeadlineRefetch(deadline: string, now: number, previous: DeadlineRefetch | null): DeadlineRefetch {
-  const due = Date.parse(deadline) - now;
-  if (due > 0) {
-    return { deadline, delay: due + deadlineMarginMilliseconds, afterDeadline: false };
-  }
-  if (previous?.deadline !== deadline || !previous.afterDeadline) {
-    return { deadline, delay: deadlineMarginMilliseconds, afterDeadline: true };
-  }
-  const delay = Math.min(
-    Math.max(previous.delay * 2, passedDeadlineRetryMilliseconds),
-    passedDeadlineRetryCapMilliseconds,
-  );
-  return { deadline, delay, afterDeadline: true };
-}
-
-function useRefetchAtEarliestDeadline(
-  items: readonly IssueItem[],
-  { refetch, loadedAt, failedAt }: HomeRefetch,
-  scheduler: Scheduler,
-): void {
-  const deadline = earliestDeadline(items);
-  const previous = useRef<DeadlineRefetch | null>(null);
-  useEffect(() => {
-    if (deadline === null) {
-      previous.current = null;
-      return undefined;
-    }
-    const next = nextDeadlineRefetch(deadline, scheduler.wallClock(), previous.current);
-    previous.current = next;
-    return scheduler.schedule(next.delay, () => {
-      void refetch();
-    });
-  }, [deadline, loadedAt, failedAt, refetch, scheduler]);
 }
 
 function Panel({
@@ -180,9 +129,8 @@ function UpcomingDeadlines({
   const { t } = useTranslation();
   const client = useApiClient();
   const me = useSignedInAccount();
-  const scheduler = useScheduler();
   const { items } = part;
-  useRefetchAtEarliestDeadline(items, homeRefetch, scheduler);
+  useRefetchAt(earliestDeadline(items), homeRefetch);
   const groups = useQuery({
     queryKey: groupsKey,
     queryFn: () => fetchGroups(client),

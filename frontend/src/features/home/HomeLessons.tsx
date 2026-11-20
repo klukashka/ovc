@@ -13,6 +13,7 @@ import { type JoinLesson, JoinControl } from '../schedule/JoinControl.tsx';
 import { lessonKey } from '../schedule/keys.ts';
 import { LessonList } from '../schedule/LessonList.tsx';
 import { phaseOf, useLessonClock } from '../schedule/lessonTiming.ts';
+import { type HomeRefetch, useRefetchAt } from './refetchAt.ts';
 
 const weekMilliseconds = 7 * 24 * 60 * 60 * 1000;
 
@@ -60,11 +61,19 @@ function NextLessonJoin({ item, me }: { readonly item: CalendarItem; readonly me
   return <JoinControl key={item.id} lesson={lesson} me={me} showsOpensAt />;
 }
 
-export function NextLesson({ me, item }: { readonly me: Me; readonly item: CalendarItem | null }): ReactElement {
+export function NextLesson({
+  me,
+  item,
+  homeRefetch,
+}: {
+  readonly me: Me;
+  readonly item: CalendarItem | null;
+  readonly homeRefetch: HomeRefetch;
+}): ReactElement {
   const { t } = useTranslation();
   const headingId = useId();
-  const scheduler = useScheduler();
-  const next = item === null ? undefined : upcoming([item], scheduler.wallClock()).at(0);
+  const next = item === null || item.status === 'cancelled' ? undefined : item;
+  useRefetchAt(next?.ends_at ?? null, homeRefetch);
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
       <h2 id={headingId} className="text-heading">

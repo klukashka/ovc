@@ -177,7 +177,15 @@ export function HomePage(): ReactElement {
                 <HomeFirstLoad query={query} />
               ) : (
                 <>
-                  <NextLesson me={me} item={home.next_lesson} />
+                  <NextLesson
+                    me={me}
+                    item={home.next_lesson}
+                    homeRefetch={{
+                      refetch: query.refetch,
+                      loadedAt: query.dataUpdatedAt,
+                      failedAt: query.errorUpdatedAt,
+                    }}
+                  />
                   {homeworkShown ? (
                     <>
                       <TodoPanel part={home.todo} tutor={matched} />

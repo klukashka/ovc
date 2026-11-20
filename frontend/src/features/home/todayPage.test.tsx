@@ -375,29 +375,78 @@ describe('Today on GET /home', () => {
     expect(requestedPaths(shown.server).filter((path) => path === '/api/v1/join-requests')).toHaveLength(1);
   });
 
-  test('a /home refetch that started before Show more and answers after it drops the extra rows and keeps focus in the list', async () => {
+  test('Show more during an in-flight /home refetch waits for it, continues from the refreshed rows and focuses the first new row', async () => {
     const shown = await showToday({ joinRequests: 7 });
     const region = screen.getByRole('region', { name: 'Join requests' });
     const held = shown.server.pauseHomeReads();
     const refetching = shown.queryClient.invalidateQueries({ queryKey: tutorHomeKey });
     await held.received;
+    shown.server.addJoinRequest(tutorEmail, joinRequest(0));
+    const showMore = within(region).getByRole('button', { name: 'Show more' });
+    showMore.focus();
+
+    fireEvent.click(showMore);
+    await waitFor(() => {
+      expect(showMore.getAttribute('aria-busy')).toBe('true');
+    });
+    const pageReadsWhileHeld = requestedPaths(shown.server).filter((path) => path === '/api/v1/join-requests').length;
+    held.resume();
+    await act(async () => {
+      await refetching;
+    });
+    await within(region).findByRole('button', { name: 'Accept Requester 7' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(within(region).getByRole('button', { name: 'Accept Requester 5' }));
+    });
+
+    const rows = within(region).getAllByRole('listitem');
+    expect(pageReadsWhileHeld).toBe(0);
+    expect(rows).toHaveLength(8);
+    expect(new Set(rows.map((row) => row.textContent)).size).toBe(8);
+    expect(within(region).getByRole('button', { name: 'Accept Requester 0' })).toBeTruthy();
+    expect(within(region).getByRole('button', { name: 'Accept Requester 7' })).toBeTruthy();
+    expect(requestedPaths(shown.server).filter((path) => path === '/api/v1/join-requests')).toHaveLength(1);
+  });
+
+  test('Show more during an in-flight /home refetch that fails loads nothing and shows the refetch notice', async () => {
+    const shown = await showToday({ joinRequests: 7 });
+    const region = screen.getByRole('region', { name: 'Join requests' });
+    const held = shown.server.pauseHomeReads();
+    shown.server.failNextHomeRead();
+    const refetching = shown.queryClient.invalidateQueries({ queryKey: tutorHomeKey });
+    await held.received;
+    const showMore = within(region).getByRole('button', { name: 'Show more' });
+    showMore.focus();
+
+    fireEvent.click(showMore);
+    held.resume();
+    await act(async () => {
+      await refetching;
+    });
+    await screen.findByText(refetchFailedText);
+    await waitFor(() => {
+      expect(within(region).getByRole('button', { name: 'Show more' }).getAttribute('aria-busy')).toBe('false');
+    });
+
+    expect(within(region).getAllByRole('listitem')).toHaveLength(5);
+    expect(document.activeElement).toBe(within(region).getByRole('button', { name: 'Show more' }));
+    expect(requestedPaths(shown.server).filter((path) => path === '/api/v1/join-requests')).toHaveLength(0);
+  });
+
+  test('Retry of a failed Show more page loads it and focuses the first new row', async () => {
+    const shown = await showToday({ joinRequests: 7 });
+    const region = screen.getByRole('region', { name: 'Join requests' });
+    shown.server.failJoinRequestReads(1);
     fireEvent.click(within(region).getByRole('button', { name: 'Show more' }));
+    const retry = await within(region).findByRole('button', { name: 'Try again' });
+
+    fireEvent.click(retry);
     const sixth = await within(region).findByRole('button', { name: 'Accept Requester 6' });
     await waitFor(() => {
       expect(document.activeElement).toBe(sixth);
     });
 
-    held.resume();
-    await act(async () => {
-      await refetching;
-    });
-    await waitFor(() => {
-      expect(within(region).getAllByRole('listitem')).toHaveLength(5);
-    });
-
-    const rows = within(region).getAllByRole('listitem');
-    expect(new Set(rows.map((row) => row.textContent)).size).toBe(5);
-    expect(within(region).getByRole('button', { name: 'Show more' })).toBeTruthy();
-    expect(document.activeElement).toBe(within(region).getByRole('button', { name: 'Accept Requester 5' }));
+    expect(within(region).getAllByRole('listitem')).toHaveLength(7);
+    expect(within(region).queryByText(loadFailedText)).toBeNull();
   });
 });

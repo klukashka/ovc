@@ -28,7 +28,7 @@ import { type ApiClient, apiErrorFrom, asApiError, useApiClient } from '../../li
 import type { components } from '../../lib/api/schema.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDate } from '../../lib/format/dates.ts';
-import { homeKey } from '../home/api.ts';
+import { type TutorHome, homeKey, tutorHomeKey } from '../home/api.ts';
 import { joinRequestsKey, studentsKey } from './api.ts';
 
 type TutorJoinRequest = components['schemas']['TutorJoinRequest'];
@@ -270,7 +270,13 @@ function JoinRequestList({
           </ul>
         )}
         {source.moreFailed === null ? null : (
-          <LoadFailed error={asApiError(source.moreFailed)} onRetry={source.loadMore} />
+          <LoadFailed
+            error={asApiError(source.moreFailed)}
+            onRetry={() => {
+              loadingMore();
+              source.loadMore();
+            }}
+          />
         )}
         {source.hasMore && source.moreFailed === null ? (
           <p>
@@ -352,6 +358,11 @@ export function JoinRequests({
 
 export type HomeJoinRequests = components['schemas']['TutorHomeJoinRequests'];
 
+interface HomeAfterRefetch {
+  readonly kind: 'unchanged' | 'refetched' | 'failed';
+  readonly loads: number;
+}
+
 interface MorePages {
   readonly loadedAt: number;
   readonly pages: readonly TutorJoinRequestPage[];
@@ -382,11 +393,7 @@ export function HomeJoinRequestList({
   const [more, setMore] = useState<MorePages>({ loadedAt, pages: [] });
   const [loading, setLoading] = useState(false);
   const [moreFailed, setMoreFailed] = useState<unknown>(null);
-  const currentLoad = useRef(loadedAt);
   const controller = useRef<AbortController | null>(null);
-  useEffect(() => {
-    currentLoad.current = loadedAt;
-  }, [loadedAt]);
   useEffect(
     () => (): void => {
       controller.current?.abort();
@@ -397,33 +404,65 @@ export function HomeJoinRequestList({
   const cursor = pages.length === 0 ? (part?.next_cursor ?? null) : (pages.at(-1)?.next_cursor ?? null);
   const shownFailure = more.loadedAt === loadedAt ? moreFailed : null;
 
-  function loadMore(): void {
+  async function homeAfterRefetch(): Promise<HomeAfterRefetch> {
+    let refetched = false;
+    for (;;) {
+      const query = queryClient.getQueryCache().find<TutorHome>({ queryKey: tutorHomeKey, exact: true });
+      const inFlight = query?.state.fetchStatus === 'fetching' ? query.promise : undefined;
+      if (inFlight === undefined) {
+        return { kind: refetched ? 'refetched' : 'unchanged', loads: query?.state.dataUpdateCount ?? 0 };
+      }
+      const answered = await inFlight.then(
+        () => true,
+        () => false,
+      );
+      if (!answered) {
+        return { kind: 'failed', loads: query?.state.dataUpdateCount ?? 0 };
+      }
+      refetched = true;
+    }
+  }
+
+  async function loadMore(): Promise<void> {
     if (cursor === null || loading) {
       return;
     }
-    const startedAt = loadedAt;
     const abort = new AbortController();
     controller.current = abort;
     setLoading(true);
     setMoreFailed(null);
-    fetchJoinRequestsPage(client, cursor, abort.signal).then(
-      (page) => {
-        setLoading(false);
-        if (currentLoad.current === startedAt) {
-          setMore((previous) => ({
-            loadedAt: startedAt,
-            pages: [...(previous.loadedAt === startedAt ? previous.pages : []), page],
-          }));
-        }
-      },
-      (thrown: unknown) => {
-        setLoading(false);
-        if (currentLoad.current === startedAt && !abort.signal.aborted) {
-          setMore((previous) => (previous.loadedAt === startedAt ? previous : { loadedAt: startedAt, pages: [] }));
-          setMoreFailed(thrown);
-        }
-      },
-    );
+    const home = await homeAfterRefetch();
+    const startedAt = home.loads;
+    const from =
+      home.kind === 'refetched'
+        ? (queryClient.getQueryData<TutorHome>(tutorHomeKey)?.join_requests?.next_cursor ?? null)
+        : home.kind === 'unchanged'
+          ? cursor
+          : null;
+    if (from === null) {
+      setLoading(false);
+      return;
+    }
+    try {
+      const page = await fetchJoinRequestsPage(client, from, abort.signal);
+      setLoading(false);
+      if (currentHomeLoads() === startedAt) {
+        setMore((previous) => ({
+          loadedAt: startedAt,
+          pages: [...(previous.loadedAt === startedAt ? previous.pages : []), page],
+        }));
+      }
+    } catch (thrown: unknown) {
+      setLoading(false);
+      if (currentHomeLoads() === startedAt && !abort.signal.aborted) {
+        setMore((previous) => (previous.loadedAt === startedAt ? previous : { loadedAt: startedAt, pages: [] }));
+        setMoreFailed(thrown);
+      }
+    }
+  }
+
+  function currentHomeLoads(): number {
+    return queryClient.getQueryState(tutorHomeKey)?.dataUpdateCount ?? 0;
   }
 
   const source: RequestSource = {
@@ -431,11 +470,13 @@ export function HomeJoinRequestList({
     error: null,
     retry: (): void => undefined,
     requests: part === null ? [] : uniqueRequests([...part.items, ...pages.flatMap((page) => page.items)]),
-    fetching: loading,
+    fetching: loading || more.loadedAt > loadedAt,
     hasMore: cursor !== null,
     loadingMore: loading,
     moreFailed: shownFailure,
-    loadMore,
+    loadMore: (): void => {
+      void loadMore();
+    },
     afterDecision: () =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: homeKey }),
