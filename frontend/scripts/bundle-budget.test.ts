@@ -85,12 +85,12 @@ describe('bundle check', () => {
     const report = checkBundle(
       manifest,
       pageModules,
-      sizes({ ...withinBudget, 'assets/index.js': 42, 'assets/HomePage.js': 60 }),
+      sizes({ ...withinBudget, 'assets/index.js': 45, 'assets/HomePage.js': 60 }),
     );
 
     expect(report.failures).toEqual([
-      'the entry and its static imports with the largest language chunk are 182.0 KB gzip of JavaScript, above 181.0 KB',
-      "the first load of a student's Home is 257.0 KB gzip, above 250.0 KB",
+      'the entry and its static imports with the largest language chunk are 185.0 KB gzip of JavaScript, above 184.0 KB',
+      "the first load of a student's Home is 260.0 KB gzip, above 250.0 KB",
     ]);
   });
 
@@ -101,17 +101,17 @@ describe('bundle check', () => {
     const report = checkBundle(
       manifest,
       pageModules,
-      sizes({ ...withinBudget, ...languageSizes, 'assets/index.js': 36 }),
+      sizes({ ...withinBudget, ...languageSizes, 'assets/index.js': 39 }),
     );
 
     expect(report.lines).toEqual([
-      'entry and its static imports: 176.0 KB gzip of JavaScript, with the largest language chunk 6.0 KB: 182.0 KB (limit 181.0 KB)',
-      "first load of a student's Home: 197.0 KB gzip (limit 250.0 KB)",
-      "first load of a tutor's Today: 192.0 KB gzip (limit 400.0 KB)",
+      'entry and its static imports: 179.0 KB gzip of JavaScript, with the largest language chunk 6.0 KB: 185.0 KB (limit 184.0 KB)',
+      "first load of a student's Home: 200.0 KB gzip (limit 250.0 KB)",
+      "first load of a tutor's Today: 195.0 KB gzip (limit 400.0 KB)",
       '2 page modules load on demand',
     ]);
     expect(report.failures).toEqual([
-      'the entry and its static imports with the largest language chunk are 182.0 KB gzip of JavaScript, above 181.0 KB',
+      'the entry and its static imports with the largest language chunk are 185.0 KB gzip of JavaScript, above 184.0 KB',
     ]);
   });
 

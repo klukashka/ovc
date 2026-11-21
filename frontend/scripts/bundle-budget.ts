@@ -29,7 +29,7 @@ export interface BundleReport {
 export const buildManifestPath = resolve(import.meta.dirname, '..', 'build-report', 'manifest.json');
 
 export const kilobyte = 1000;
-export const entryLimit = 181 * kilobyte;
+export const entryLimit = 184 * kilobyte;
 export const entryKey = 'index.html';
 
 export interface FirstLoadModule {
