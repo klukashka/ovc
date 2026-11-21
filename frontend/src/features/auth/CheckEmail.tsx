@@ -7,6 +7,7 @@ import {
   FormAlert,
   errorMessage,
   linkClass,
+  phoneFullWidthClass,
   primaryButtonClass,
   retryAfterSeconds,
   retryMinutes,
@@ -98,7 +99,7 @@ export function CheckEmail({
       ) : null}
       <LiveNotice message={state.kind === 'sent' ? t('checkEmail.sent') : null} />
       {state.kind === 'failed' ? <FormAlert>{errorMessage(t, state.error, state.retryAfter)}</FormAlert> : null}
-      <p>
+      <p className={phoneFullWidthClass}>
         <ActionButton
           busy={state.kind === 'sending'}
           unavailable={remaining > 0}

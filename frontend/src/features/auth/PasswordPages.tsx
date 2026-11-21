@@ -10,6 +10,7 @@ import {
   errorMessage,
   fieldMessage,
   linkClass,
+  phoneFullWidthClass,
   retryAfterSeconds,
   stringField,
 } from '../../components/ui/Form.tsx';
@@ -46,7 +47,7 @@ export function ForgotPasswordPage(): ReactElement {
     return (
       <Page width="reading">
         <FormNotice takeFocus>{t('forgotPassword.sent', { email: request.email })}</FormNotice>
-        <p>
+        <p className={phoneFullWidthClass}>
           <Link to="/" className={linkClass}>
             {t('forgotPassword.backToSignIn')}
           </Link>
@@ -79,7 +80,7 @@ export function ForgotPasswordPage(): ReactElement {
           error={fieldMessage(t, error, 'email')}
         />
         <SubmitButton busy={request.kind === 'sending'}>{t('forgotPassword.submit')}</SubmitButton>
-        <p>
+        <p className={phoneFullWidthClass}>
           <Link to="/" className={linkClass}>
             {t('forgotPassword.backToSignIn')}
           </Link>
@@ -126,7 +127,7 @@ export function ResetPasswordPage(): ReactElement {
     return (
       <Page width="reading">
         <p>{t('resetPassword.openLinkAgain')}</p>
-        <p>
+        <p className={phoneFullWidthClass}>
           <Link to="/forgot-password" className={linkClass}>
             {t('resetPassword.requestAgain')}
           </Link>
@@ -143,7 +144,7 @@ export function ResetPasswordPage(): ReactElement {
           <FormAlert>{t('errors.token_invalid')}</FormAlert>
         )}
         {reset.kind === 'done' && reset.choiceRequired ? <p>{t('resetPassword.choiceAfterSignIn')}</p> : null}
-        <p>
+        <p className={phoneFullWidthClass}>
           <Link to={reset.kind === 'done' ? '/' : '/forgot-password'} className={linkClass}>
             {reset.kind === 'done' ? t('resetPassword.signIn') : t('resetPassword.requestAgain')}
           </Link>

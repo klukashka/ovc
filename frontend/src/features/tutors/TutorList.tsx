@@ -79,9 +79,11 @@ function TutorRow({
     <li data-row={tutor.relationship_id} className="flex items-start gap-3 border-t border-border py-3">
       <Avatar name={profile.name} avatarId={profile.avatar_id} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <p className="inline-flex items-center gap-2 text-strong">
+        <p className="flex min-w-0 items-center gap-2 text-strong">
           <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${paletteDotClass[tutor.colour]}`} />
-          <span dir="auto">{profile.name}</span>
+          <span dir="auto" className="min-w-0 break-words">
+            {profile.name}
+          </span>
         </p>
         {profile.subjects.length === 0 ? null : (
           <p dir="auto" className="text-small text-text-muted">

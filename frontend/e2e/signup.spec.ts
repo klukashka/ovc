@@ -446,16 +446,24 @@ test('the confirmation link opened in a signed-in browser asks for no password a
   await diagnostics.closeContext(elsewhere);
 });
 
-test('the resend button waits 60 seconds after sign-up', async ({ page }) => {
-  await page.clock.install();
-  await signUpThroughTheForm(page, newTestAccount('Patient tutor'));
-  await expect(page.getByRole('button', { name: 'Отправить ещё раз' })).toBeDisabled();
-  await expect(page.getByText(/^Можно отправить через \d+ с\.$/)).toBeVisible();
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 360, height: 780 } });
 
-  await page.clock.runFor('01:01');
-  await page.getByRole('button', { name: 'Отправить ещё раз' }).click();
+  test('the resend button waits 60 seconds after sign-up', async ({ page }) => {
+    await page.clock.install();
+    await signUpThroughTheForm(page, newTestAccount('Patient tutor'));
+    await expect(page.getByRole('button', { name: 'Отправить ещё раз' })).toBeDisabled();
+    await expect(page.getByText(/^Можно отправить через \d+ с\.$/)).toBeVisible();
+    const resendWidth = (await page.getByRole('button', { name: 'Отправить ещё раз' }).boundingBox())?.width;
+    const columnWidth = (await page.locator('main article').first().boundingBox())?.width;
 
-  await expect(page.getByRole('status')).toHaveText('Письмо отправлено ещё раз.');
+    await page.clock.runFor('01:01');
+    await page.getByRole('button', { name: 'Отправить ещё раз' }).click();
+
+    await expect(page.getByRole('status')).toHaveText('Письмо отправлено ещё раз.');
+    expect(resendWidth).toBeDefined();
+    expect(Math.abs((resendWidth ?? 0) - (columnWidth ?? 0))).toBeLessThanOrEqual(1);
+  });
 });
 
 test('a resend starts the 60-second countdown again and it counts down each second', async ({ page }) => {

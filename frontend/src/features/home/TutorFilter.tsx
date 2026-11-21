@@ -6,7 +6,7 @@ import { paletteDotClass } from '../../components/ui/palette.ts';
 import type { MyTutor } from '../tutors/api.ts';
 
 const segmentClass =
-  'inline-flex min-h-11 items-center gap-2 rounded-sm border border-transparent px-3 text-small text-text-muted hover:text-text aria-pressed:border-border-strong aria-pressed:bg-field aria-pressed:font-medium aria-pressed:text-text desktop:pointer-fine:min-h-10';
+  'inline-flex min-h-11 max-w-full min-w-0 grow items-center justify-center gap-2 rounded-sm border border-transparent px-3 text-small text-text-muted hover:text-text aria-pressed:border-border-strong aria-pressed:bg-field aria-pressed:font-medium aria-pressed:text-text tablet:grow-0 desktop:pointer-fine:min-h-10';
 
 export function TutorFilter({
   tutors,
@@ -26,7 +26,7 @@ export function TutorFilter({
     [],
   );
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-col gap-2 tablet:flex-row tablet:flex-wrap tablet:items-center tablet:gap-3">
       <span id={labelId} className="text-label text-text-muted">
         {t('home.filter')}
       </span>
@@ -52,7 +52,9 @@ export function TutorFilter({
             className={segmentClass}
           >
             <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${paletteDotClass[tutor.colour]}`} />
-            <span dir="auto">{tutor.tutor.name}</span>
+            <span dir="auto" className="min-w-0 wrap-anywhere">
+              {tutor.tutor.name}
+            </span>
           </button>
         ))}
       </div>

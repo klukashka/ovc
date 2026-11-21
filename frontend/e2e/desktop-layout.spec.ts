@@ -3,7 +3,7 @@ import type { Locator, Page } from '@playwright/test';
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser, tableRows } from './fixtures.ts';
-import { createGroup, seedActiveStudent } from './tutoring.ts';
+import { acceptSignedIn, createCard, createGroup, seedActiveStudent } from './tutoring.ts';
 
 const computer = { width: 1440, height: 900 } as const;
 const smallComputer = { width: 1024, height: 768 } as const;
@@ -80,15 +80,22 @@ function firstTableRow(page: Page): Locator {
   return page.locator('main table > tbody > tr').first();
 }
 
+type LayoutFacts = Readonly<Record<string, boolean>>;
+
 interface SweptPage {
   readonly path: string;
   readonly ready: (page: Page) => Locator;
+  readonly measure?: (page: Page) => Promise<LayoutFacts>;
 }
 
-async function pagesScrollingSideways(page: Page, pages: readonly SweptPage[]): Promise<string[]> {
+async function pagesScrollingSideways(
+  page: Page,
+  pages: readonly SweptPage[],
+  measured: Record<string, boolean> = {},
+): Promise<string[]> {
   await page.setViewportSize(phone);
   const sideways: string[] = [];
-  for (const { path, ready } of pages) {
+  for (const { path, ready, measure } of pages) {
     await page.goto(path);
     await ready(page).waitFor();
     await page.evaluate(async () => {
@@ -97,8 +104,65 @@ async function pagesScrollingSideways(page: Page, pages: readonly SweptPage[]): 
     if (await scrollsSideways(page)) {
       sideways.push(path);
     }
+    Object.assign(measured, (await measure?.(page)) ?? {});
   }
   return sideways;
+}
+
+function allTrue(facts: LayoutFacts): LayoutFacts {
+  return Object.fromEntries(Object.keys(facts).map((fact) => [fact, true]));
+}
+
+async function sizeOf(locator: Locator): Promise<{ readonly width: number; readonly height: number }> {
+  const box = await locator.boundingBox();
+  if (box === null) {
+    throw new Error('the element has no layout box');
+  }
+  return { width: box.width, height: box.height };
+}
+
+async function atFullWidth(control: Locator, column: Locator): Promise<boolean> {
+  return Math.abs((await sizeOf(control)).width - (await sizeOf(column)).width) <= 1;
+}
+
+async function isTarget(control: Locator): Promise<boolean> {
+  const size = await sizeOf(control);
+  return size.width >= 44 && size.height >= 44;
+}
+
+async function allAtLeast44High(controls: Locator): Promise<boolean> {
+  const heights = await Promise.all((await controls.all()).map(async (control) => (await sizeOf(control)).height));
+  return heights.length > 0 && heights.every((height) => height >= 44);
+}
+
+async function bothAtLeast44High(controls: Locator): Promise<boolean> {
+  return (await controls.count()) === 2 && allAtLeast44High(controls);
+}
+
+async function isBelow(lower: Locator, upper: Locator): Promise<boolean> {
+  return (await boxOf(lower)).top >= (await boxOf(upper)).bottom - 0.5;
+}
+
+function pageColumn(page: Page): Locator {
+  return page.locator('main article').first();
+}
+
+async function studentSettingsFacts(page: Page): Promise<LayoutFacts> {
+  const path = new URL(page.url()).pathname;
+  const row = page.locator('main [data-settings-value]').first();
+  return {
+    [`${path}: every section link is 44 px high`]: await allAtLeast44High(
+      page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link'),
+    ),
+    ...(path === '/settings/notifications'
+      ? {}
+      : {
+          [`${path}: a row puts its control under its label`]: await isBelow(
+            row,
+            page.locator('main [data-settings-label]').first(),
+          ),
+        }),
+  };
 }
 
 function notificationsReady(page: Page): Locator {
@@ -148,30 +212,182 @@ test.describe('the 360 px sweeps', () => {
     expect(sideways).toEqual([]);
   });
 
-  test('the student’s pages group: My tutors does not scroll sideways and shows its side column below the main column', async ({
+  test('the student’s pages group: Home, Schedule, My tutors, Keep or drop and Settings do not scroll sideways and keep their phone layout', async ({
     page,
     deployment,
   }) => {
     const { student } = await tutorWithStudentInGroup(deployment, longWord, longWord);
+    const secondTutor = await seedVerifiedUser(deployment, longWord, 'en');
+    await acceptSignedIn(
+      deployment,
+      student,
+      (await createCard(deployment, secondTutor, longWord, student.email)).link,
+    );
     await signInThroughTheApi(page, student);
+    const measured: Record<string, boolean> = {};
 
-    const sideways = await pagesScrollingSideways(page, [{ path: '/tutors', ready: firstTableRow }]);
+    const sideways = await pagesScrollingSideways(
+      page,
+      [
+        {
+          path: '/home',
+          ready: (shown: Page): Locator =>
+            shown.getByRole('main').getByRole('heading', { level: 2, name: 'My tutors' }),
+          measure: async (shown: Page): Promise<LayoutFacts> => ({
+            'Home: the side column follows the main column': await isBelow(
+              shown.locator('[data-column="aside"]'),
+              shown.locator('[data-column="main"]'),
+            ),
+            'Home: the tutor filter is at the full width': await atFullWidth(
+              shown.getByRole('group', { name: 'Tutor' }),
+              pageColumn(shown),
+            ),
+          }),
+        },
+        {
+          path: '/schedule',
+          ready: (shown: Page): Locator => shown.getByLabel('Tutor', { exact: true }),
+          measure: async (shown: Page): Promise<LayoutFacts> => ({
+            'Schedule: the tutor filter is at the full width': await atFullWidth(
+              shown.getByLabel('Tutor', { exact: true }),
+              pageColumn(shown),
+            ),
+            'Schedule: the toolbar follows the tutor filter': await isBelow(
+              shown.getByRole('group', { name: 'Calendar view' }),
+              shown.getByLabel('Tutor', { exact: true }),
+            ),
+          }),
+        },
+        { path: '/reclaim', ready: (shown: Page): Locator => shown.getByText('Nothing is waiting for your choice.') },
+        ...['/settings/profile', '/settings/account', '/settings/notifications'].map((path): SweptPage => ({
+          path,
+          ready: settingsReady,
+          measure: studentSettingsFacts,
+        })),
+        {
+          path: '/tutors',
+          ready: firstTableRow,
+          measure: async (shown: Page): Promise<LayoutFacts> => ({
+            'My tutors: Message is a 44 px target': await isTarget(
+              firstTableRow(shown).getByRole('link', { name: 'Messages' }),
+            ),
+            'My tutors: the row menu is a 44 px target': await isTarget(
+              firstTableRow(shown).getByRole('button', { name: /^More actions for/ }),
+            ),
+            'My tutors: Send request is at the full width of its field': await atFullWidth(
+              shown.getByRole('button', { name: 'Send request' }),
+              shown.getByRole('textbox', { name: 'Tutor code', exact: true }),
+            ),
+          }),
+        },
+      ],
+      measured,
+    );
 
     expect(sideways).toEqual([]);
+    expect(measured).toEqual(allTrue(measured));
+    expect(Object.keys(measured)).toHaveLength(12);
     const main = await boxOf(page.locator('[data-column="main"]'));
     const aside = await boxOf(page.locator('[data-column="aside"]'));
     expect(aside.top).toBeGreaterThanOrEqual(main.bottom);
   });
 
-  test('the public pages group: Sign in and Sign up do not scroll sideways', async ({ page }) => {
+  test('the public pages group: Sign in, Sign up and the token pages do not scroll sideways and keep their phone layout', async ({
+    page,
+  }) => {
     const heading = (shown: Page): Locator => shown.locator('main h1');
+    const measured: Record<string, boolean> = {};
 
-    const sideways = await pagesScrollingSideways(page, [
-      { path: '/', ready: heading },
-      { path: '/signup', ready: heading },
-    ]);
+    const sideways = await pagesScrollingSideways(
+      page,
+      [
+        {
+          path: '/',
+          ready: heading,
+          measure: async (shown: Page): Promise<LayoutFacts> => ({
+            'Sign in: Sign in is at the full width': await atFullWidth(
+              shown.getByRole('button', { name: 'Sign in', exact: true }),
+              shown.getByLabel('Email'),
+            ),
+            'Sign in: Forgot password and Sign up are 44 px high': await bothAtLeast44High(
+              shown.getByRole('main').getByRole('link', { name: /^(Forgot password\?|Sign up)$/ }),
+            ),
+          }),
+        },
+        {
+          path: '/signup',
+          ready: heading,
+          measure: async (shown: Page): Promise<LayoutFacts> => {
+            const choices = shown.getByRole('navigation', { name: 'Who you are' }).getByRole('link');
+            return {
+              'Sign up: I teach is at the full width': await atFullWidth(choices.first(), pageColumn(shown)),
+              'Sign up: I study is at the full width': await atFullWidth(choices.nth(1), pageColumn(shown)),
+              'Sign up: I study follows I teach': await isBelow(choices.nth(1), choices.first()),
+            };
+          },
+        },
+        { path: '/signup/tutor', ready: heading },
+        {
+          path: '/signup/student',
+          ready: heading,
+          measure: async (shown: Page): Promise<LayoutFacts> => {
+            const fields = shown.getByRole('main').locator('input:not([type="checkbox"])');
+            return {
+              'Sign up as a student: the tutor code comes first':
+                (await fields.first().getAttribute('name')) === 'tutor_code',
+              'Sign up as a student: the consent checkbox has a 44 px target': await allAtLeast44High(
+                shown.getByRole('main').locator('label:has(input[type="checkbox"])'),
+              ),
+              'Sign up as a student: Sign up is at the full width': await atFullWidth(
+                shown.getByRole('button', { name: 'Sign up' }),
+                fields.first(),
+              ),
+            };
+          },
+        },
+        {
+          path: '/forgot-password',
+          ready: heading,
+          measure: async (shown: Page): Promise<LayoutFacts> => ({
+            'Forgot password: Send link is at the full width': await atFullWidth(
+              shown.getByRole('button', { name: 'Send link' }),
+              pageColumn(shown),
+            ),
+            'Forgot password: Back to sign-in is at the full width': await atFullWidth(
+              shown.getByRole('main').getByRole('link', { name: 'Back to sign-in' }),
+              pageColumn(shown),
+            ),
+          }),
+        },
+        {
+          path: '/verify-email',
+          ready: heading,
+          measure: async (shown: Page): Promise<LayoutFacts> => ({
+            'Confirmation without a link: its next step is at the full width': await atFullWidth(
+              shown.getByRole('main').getByRole('link', { name: 'Go to sign-in' }),
+              pageColumn(shown),
+            ),
+          }),
+        },
+        {
+          path: '/reset-password',
+          ready: heading,
+          measure: async (shown: Page): Promise<LayoutFacts> => ({
+            'Reset without a link: its next step is at the full width': await atFullWidth(
+              shown.getByRole('main').getByRole('link', { name: 'Request a new link' }),
+              pageColumn(shown),
+            ),
+          }),
+        },
+        { path: '/invite', ready: heading },
+        { path: '/unsubscribe', ready: heading },
+      ],
+      measured,
+    );
 
     expect(sideways).toEqual([]);
+    expect(measured).toEqual(allTrue(measured));
+    expect(Object.keys(measured)).toHaveLength(12);
   });
 });
 

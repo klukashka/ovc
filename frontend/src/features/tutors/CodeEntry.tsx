@@ -10,6 +10,7 @@ import {
   SubmitButton,
   TextField,
   fieldMessage,
+  phoneFullWidthClass,
   stringField,
 } from '../../components/ui/Form.tsx';
 import { refusalText } from '../../components/ui/Refusal.tsx';
@@ -101,7 +102,7 @@ export function CodeEntry({
         hint={t('tutors.codeHint')}
         error={fieldMessage(t, error, 'code')}
       />
-      <div>
+      <div className={phoneFullWidthClass}>
         <SubmitButton busy={action.busy}>{t('tutors.sendRequest')}</SubmitButton>
       </div>
     </form>

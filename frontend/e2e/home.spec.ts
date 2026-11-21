@@ -844,3 +844,81 @@ test.describe('Join on Home', () => {
     await expect(page.getByRole('main').getByRole('button', { name: 'Join', exact: true })).toHaveCount(0);
   });
 });
+
+async function widthOf(locator: Locator): Promise<number> {
+  const box = await locator.boundingBox();
+  if (box === null) {
+    throw new Error('the element has no layout box');
+  }
+  return box.width;
+}
+
+async function topOf(locator: Locator): Promise<number> {
+  const box = await locator.boundingBox();
+  if (box === null) {
+    throw new Error('the element has no layout box');
+  }
+  return box.y;
+}
+
+test.describe('Home on a phone', () => {
+  test.use({
+    locale: 'en-GB',
+    timezoneId: moscow,
+    viewport: { width: 360, height: 780 },
+    colorScheme: 'light',
+  });
+
+  test('Home stacks its panels in order with the tutor filter and Join at the full width and shows markup as text', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const now = await control.now();
+    const { anna, maria, mariaCard } = await studentWithTwoTutors(deployment, now, { maria: markup, pavel: 'Pavel' });
+    const lessonId = await lessonSoon(deployment, maria, { relationship_id: mariaCard }, markup, now + 5 * 60_000);
+    await tutorJoins(deployment, maria, lessonId);
+    const template = await createPastSimpleTemplate(deployment, maria, { texts: { ...pastSimple, title: markup } });
+    await issueThroughTheApi(deployment, maria, template, { relationship_id: mariaCard });
+    const checked = await onlySubmission(deployment, anna);
+    await answerTextAndSubmit(deployment, anna, checked, 'went');
+    const [, , fileQuestion] = await questionIds(deployment, anna, checked);
+    await publishReview(deployment, maria, checked, 'check', `**${markup}**`, [
+      { questionId: fileQuestion ?? '', points: 6 },
+    ]);
+    await issueThroughTheApi(deployment, maria, template, { relationship_id: mariaCard });
+    await signInThroughTheApi(page, anna);
+    const filter = page.getByRole('group', { name: 'Tutor' });
+    const panels = [
+      filter,
+      nextLessonRegion(page),
+      region(page, 'To do'),
+      region(page, 'Recently checked'),
+      region(page, 'Next seven days'),
+      region(page, 'My tutors'),
+    ];
+
+    await openHome(page, now);
+    await homeJoinButton(page, 'Join').waitFor();
+    await region(page, 'Recently checked').locator('[data-excerpt]').waitFor();
+    const column = await widthOf(page.locator('main article').first());
+    const tops = await Promise.all(panels.map(topOf));
+    const filterWidth = await widthOf(filter);
+    const joinWidth = await widthOf(homeJoinButton(page, 'Join'));
+    const nextLessonWidth = await widthOf(nextLessonRegion(page));
+
+    expect(tops).toEqual([...tops].sort((first, second) => first - second));
+    expect(Math.abs(filterWidth - column)).toBeLessThanOrEqual(1);
+    expect(Math.abs(joinWidth - nextLessonWidth)).toBeLessThanOrEqual(1);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+    ).toBe(true);
+    await expect(nextLessonRegion(page)).toContainText(markup);
+    await expect(region(page, 'To do').getByRole('listitem')).toContainText(markup);
+    await expect(region(page, 'Recently checked').locator('[data-excerpt]')).toContainText(markup);
+    await expect(filter.getByRole('button', { name: markup })).toBeVisible();
+    await expect(page.getByRole('main').locator('img, b')).toHaveCount(0);
+    await expect(page.getByRole('main')).not.toContainText(/\d+\s*(points?|pts)\b/);
+    await expect(page).toHaveTitle('Home · OVC');
+  });
+});

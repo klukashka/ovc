@@ -18,6 +18,7 @@ export const textButtonClass =
   'inline-flex min-h-11 items-center px-3 text-small text-accent-text underline aria-disabled:opacity-60';
 export const selectClass =
   'h-11 w-full appearance-none rounded-md border border-border-strong bg-field pr-9 pl-3 text-text aria-invalid:border-danger';
+export const phoneFullWidthClass = 'flex flex-col tablet:block';
 
 export function SelectChevron(): ReactElement {
   return (

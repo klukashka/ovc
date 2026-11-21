@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
@@ -73,33 +73,49 @@ test("settings › email switches show the role's groups and save", async ({ pag
   expect(await enabledGroups(deployment, account)).toBe(submissionsOff);
 });
 
-test('unsubscribe › the page names the group and changes nothing until confirmed', async ({
-  page,
-  deployment,
-  control,
-}) => {
-  const account = await seedVerifiedUser(deployment, 'Отписка');
-  const token = await unsubscribeTokenFromAReminder(deployment, control, account);
-  const confirm = page.getByRole('button', { name: 'Turn off these emails' });
-  const result = page.getByRole('status').filter({ hasText: 'These emails are turned off' });
+async function atColumnWidth(page: Page, control: Locator): Promise<boolean> {
+  const column = await page.locator('main article').first().boundingBox();
+  const box = await control.boundingBox();
+  if (column === null || box === null) {
+    throw new Error('the element has no layout box');
+  }
+  return Math.abs(box.width - column.width) <= 1;
+}
 
-  await page.goto(`/unsubscribe?token=${token}`);
-  await confirm.waitFor();
-  const groupLineBeforeConfirming = await page.getByText('Emails: Lesson reminders').count();
-  const preferencesBeforeConfirming = await enabledGroups(deployment, account);
-  await confirm.click();
-  await result.waitFor();
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 360, height: 780 } });
 
-  expect(groupLineBeforeConfirming).toBe(1);
-  expect(preferencesBeforeConfirming).toBe(tutorGroupsOn);
-  await expect(result).toBeFocused();
-  await expect(confirm).toHaveCount(0);
-  await expect(page.getByText('Emails: Lesson reminders')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'All email settings' })).toHaveAttribute(
-    'href',
-    '/settings/notifications',
-  );
-  expect(await enabledGroups(deployment, account)).toBe(lessonRemindersOff);
+  test('unsubscribe › the page names the group and changes nothing until confirmed', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const account = await seedVerifiedUser(deployment, 'Отписка');
+    const token = await unsubscribeTokenFromAReminder(deployment, control, account);
+    const confirm = page.getByRole('button', { name: 'Turn off these emails' });
+    const result = page.getByRole('status').filter({ hasText: 'These emails are turned off' });
+
+    await page.goto(`/unsubscribe?token=${token}`);
+    await confirm.waitFor();
+    const confirmAtFullWidth = await atColumnWidth(page, confirm);
+    const groupLineBeforeConfirming = await page.getByText('Emails: Lesson reminders').count();
+    const preferencesBeforeConfirming = await enabledGroups(deployment, account);
+    await confirm.click();
+    await result.waitFor();
+
+    expect(confirmAtFullWidth).toBe(true);
+    expect(await atColumnWidth(page, page.getByRole('link', { name: 'All email settings' }))).toBe(true);
+    expect(groupLineBeforeConfirming).toBe(1);
+    expect(preferencesBeforeConfirming).toBe(tutorGroupsOn);
+    await expect(result).toBeFocused();
+    await expect(confirm).toHaveCount(0);
+    await expect(page.getByText('Emails: Lesson reminders')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'All email settings' })).toHaveAttribute(
+      'href',
+      '/settings/notifications',
+    );
+    expect(await enabledGroups(deployment, account)).toBe(lessonRemindersOff);
+  });
 });
 
 test('unsubscribe › the token leaves the address and never appears in next', async ({ page, deployment, control }) => {

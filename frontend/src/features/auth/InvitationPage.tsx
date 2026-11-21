@@ -62,16 +62,16 @@ function TutorProfile({ tutor }: { readonly tutor: PublicTutor }): ReactElement 
   const { t } = useTranslation();
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex items-center gap-4">
+      <div className="flex flex-col items-start gap-4 tablet:flex-row tablet:items-center">
         <Avatar name={tutor.name} avatarId={tutor.avatar_id} size="large" />
         <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="text-heading">{tutor.name}</h2>
+          <h2 className="text-heading wrap-anywhere">{tutor.name}</h2>
           {tutor.subjects.length === 0 ? null : (
             <p className="text-small text-text-muted">{tutor.subjects.join(', ')}</p>
           )}
         </div>
       </div>
-      <p>{t('invitationPage.invites', { name: tutor.name })}</p>
+      <p className="wrap-anywhere">{t('invitationPage.invites', { name: tutor.name })}</p>
     </section>
   );
 }
@@ -297,7 +297,7 @@ function SignedOutPanel({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-col gap-3 tablet:flex-row tablet:flex-wrap">
         <button
           ref={firstChoice}
           type="button"
@@ -416,7 +416,7 @@ function AcceptPanel({
         </p>
       ) : null}
       {refusalMessage()}
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex w-full flex-col gap-3 tablet:w-auto tablet:flex-row tablet:flex-wrap tablet:items-center tablet:gap-4">
         {refusal === 'email_not_verified' || refusal === 'invitation_email_mismatch' ? null : (
           <ActionButton busy={action.busy} onClick={accept} className={primaryButtonClass}>
             {t('invitationPage.accept')}

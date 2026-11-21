@@ -5,7 +5,7 @@ import { Link } from 'react-router';
 
 import { type ActionState, done, refusedBy, useAction } from '../../components/ui/action.ts';
 import { Avatar } from '../../components/ui/Avatar.tsx';
-import { FormAlert, FormNotice, SubmitButton, linkClass } from '../../components/ui/Form.tsx';
+import { FormAlert, FormNotice, SubmitButton, linkClass, phoneFullWidthClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
@@ -70,16 +70,19 @@ function ItemChoice({ field, tutor }: { readonly field: string; readonly tutor: 
         <legend className="sr-only">{tutor.name}</legend>
         <Avatar name={tutor.name} avatarId={tutor.avatar_id} />
         <div className="flex min-w-0 flex-col">
-          <span aria-hidden="true" className="text-strong">
+          <span aria-hidden="true" className="text-strong wrap-anywhere">
             {tutor.name}
           </span>
           {tutor.subjects.length === 0 ? null : (
             <span className="text-small text-text-muted">{tutor.subjects.join(', ')}</span>
           )}
         </div>
-        <div className="col-start-2 flex gap-4 tablet:col-start-auto">
+        <div className="col-span-2 flex flex-col gap-2 tablet:col-span-1 tablet:flex-row tablet:gap-4">
           {decisions.map((decision: Decision) => (
-            <label key={decision} className="inline-flex min-h-11 items-center gap-2">
+            <label
+              key={decision}
+              className="flex min-h-11 w-full items-center gap-2 rounded-md border border-border px-3 tablet:w-auto tablet:border-0 tablet:px-0"
+            >
               <input type="radio" name={field} value={decision} required className="size-4 accent-accent" />
               {t(`reclaim.${decision}`)}
             </label>
@@ -171,7 +174,7 @@ function ChoiceForm({
         items={list.requests.map((request) => ({ field: requestField(request.request_id), tutor: request.tutor }))}
       />
       <p className="text-small text-text-muted">{t('reclaim.dropHint')}</p>
-      <p>
+      <p className={phoneFullWidthClass}>
         <SubmitButton busy={action.busy}>{t('reclaim.save')}</SubmitButton>
       </p>
     </form>

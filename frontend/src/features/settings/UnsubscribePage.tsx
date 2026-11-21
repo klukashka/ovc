@@ -8,6 +8,7 @@ import {
   FormNotice,
   errorMessage,
   linkClass,
+  phoneFullWidthClass,
   primaryButtonClass,
   retryAfterSeconds,
 } from '../../components/ui/Form.tsx';
@@ -60,7 +61,7 @@ async function turnOff(client: ApiClient, token: string, group: EmailGroup): Pro
 function SettingsLink(): ReactElement {
   const { t } = useTranslation();
   return (
-    <p>
+    <p className={phoneFullWidthClass}>
       <Link to={settingsAddress} className={linkClass}>
         {t('unsubscribe.allSettings')}
       </Link>
@@ -140,7 +141,7 @@ function Confirmation({ token }: { readonly token: string }): ReactElement {
           {state.refusal === null ? null : (
             <FormAlert>{errorMessage(t, state.refusal.error, state.refusal.retryAfter)}</FormAlert>
           )}
-          <p>
+          <p className={phoneFullWidthClass}>
             <ActionButton
               busy={state.sending}
               onClick={() => {

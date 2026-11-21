@@ -87,7 +87,7 @@ function OpenJoinControl({ lesson, me, showsOpensAt }: JoinControlProps): ReactE
           ? t(offer.label)
           : t('lesson.join');
   return (
-    <div ref={container} className="mt-2 flex flex-col items-start gap-2" data-part="join">
+    <div ref={container} className="mt-2 flex flex-col items-stretch gap-2 tablet:items-start" data-part="join">
       {text === null ? null : <p className="text-small text-strong">{text}</p>}
       {session === 'inTab' ? <p className="text-small text-text-muted">{t('lesson.openInAnotherTab')}</p> : null}
       {showsButton ? (

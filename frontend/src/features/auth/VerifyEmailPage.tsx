@@ -10,6 +10,7 @@ import {
   errorMessage,
   fieldMessage,
   linkClass,
+  phoneFullWidthClass,
   primaryButtonClass,
   stringField,
 } from '../../components/ui/Form.tsx';
@@ -60,7 +61,7 @@ function NoToken({ state }: { readonly state: SessionState }): ReactElement {
     return (
       <Page width="reading">
         <p>{t('verifyEmail.alreadyConfirmed')}</p>
-        <p>
+        <p className={phoneFullWidthClass}>
           <Link to="/" className={linkClass}>
             {t('verifyEmail.continue')}
           </Link>
@@ -71,7 +72,7 @@ function NoToken({ state }: { readonly state: SessionState }): ReactElement {
   return (
     <Page width="reading">
       <p>{t('verifyEmail.openLinkAgain')}</p>
-      <p>
+      <p className={phoneFullWidthClass}>
         <Link to="/" className={linkClass}>
           {t('verifyEmail.signIn')}
         </Link>
@@ -154,7 +155,7 @@ export function VerifyEmailPage(): ReactElement {
       return (
         <Page width="reading">
           <FormNotice takeFocus>{t(`outcome.${confirmation.outcome}`)}</FormNotice>
-          <p>
+          <p className={phoneFullWidthClass}>
             <Link to="/" className={linkClass}>
               {t('verifyEmail.continue')}
             </Link>
@@ -165,7 +166,7 @@ export function VerifyEmailPage(): ReactElement {
       return (
         <Page width="reading">
           <FormAlert>{t('errors.token_invalid')}</FormAlert>
-          <p>
+          <p className={phoneFullWidthClass}>
             <Link to="/" className={linkClass}>
               {t('verifyEmail.signIn')}
             </Link>
@@ -179,7 +180,7 @@ export function VerifyEmailPage(): ReactElement {
           <FormAlert>
             {confirmation.kind === 'failed' ? errorMessage(t, confirmation.error, null) : t('frame.signOutFailed')}
           </FormAlert>
-          <p>
+          <p className={phoneFullWidthClass}>
             <button
               type="button"
               onClick={() => {

@@ -562,3 +562,85 @@ test.describe('in English', () => {
     expect(await myTutorNames(deployment, boris)).toEqual([]);
   });
 });
+
+async function boxOf(
+  locator: Locator,
+): Promise<{ readonly top: number; readonly bottom: number; readonly width: number }> {
+  const box = await locator.boundingBox();
+  if (box === null) {
+    throw new Error('the element has no layout box');
+  }
+  return { top: box.y, bottom: box.y + box.height, width: box.width };
+}
+
+async function stackedAtFullWidth(page: Page, first: Locator, second: Locator): Promise<boolean> {
+  const column = await boxOf(page.locator('main article').first());
+  const upper = await boxOf(first);
+  const lower = await boxOf(second);
+  return (
+    Math.abs(upper.width - column.width) <= 1 &&
+    Math.abs(lower.width - column.width) <= 1 &&
+    lower.top >= upper.bottom - 0.5
+  );
+}
+
+async function scrollsSideways(page: Page): Promise<boolean> {
+  return page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+}
+
+test.describe('an invitation on a phone in Russian', () => {
+  test.use({ locale: 'ru-RU', viewport: { width: 360, height: 780 }, colorScheme: 'dark' });
+
+  test('invitations › on a phone the tutor stacks above the invitation, the choices and Accept are full width and the token stays out', async ({
+    page,
+    deployment,
+  }) => {
+    const markup = '<img src=x onerror="document.title=1"><b>Bold</b>';
+    const tutorName = `${markup} Длинноеимяпреподавателябезпробеловдляширины`;
+    const maria = await seedVerifiedUser(deployment, tutorName, 'ru');
+    const pavel = await seedVerifiedUser(deployment, 'Павел', 'ru');
+    const { student } = await seedActiveStudent(deployment, pavel, 'Борис', 'ru');
+    const card = await createCard(deployment, maria, 'Борис', null);
+    const token = invitationToken(card.link);
+    const tutorHeading = page.getByRole('heading', { level: 2, name: tutorName });
+    const opened = await page.goto(card.link);
+    await tutorHeading.waitFor();
+    const signedOutLayout = {
+      avatarAboveName: await boxOf(tutorHeading.locator('xpath=../preceding-sibling::*[1]')).then(
+        async (avatar) => avatar.bottom <= (await boxOf(tutorHeading)).top + 0.5,
+      ),
+      choicesStacked: await stackedAtFullWidth(
+        page,
+        page.getByRole('button', { name: 'Создать аккаунт' }),
+        page.getByRole('button', { name: 'Войти и принять' }),
+      ),
+      sideways: await scrollsSideways(page),
+    };
+    await page.getByRole('button', { name: 'Войти и принять' }).click();
+    const signIn = page.getByRole('form', { name: 'Войти и принять' });
+    await signIn.getByLabel('Email').fill(student.email);
+    await signIn.getByLabel('Пароль', { exact: true }).fill(student.password);
+    await signIn.getByRole('button', { name: 'Войти' }).click();
+    await expect(page.getByRole('status')).toBeFocused();
+    const acceptLayout = {
+      acceptStacked: await stackedAtFullWidth(
+        page,
+        page.getByRole('button', { name: 'Принять' }),
+        page.getByRole('button', { name: 'Войти под другим аккаунтом' }),
+      ),
+      sideways: await scrollsSideways(page),
+    };
+
+    await page.getByRole('button', { name: 'Принять' }).click();
+
+    await expect(page).toHaveURL('/tutors');
+    await expect(page.getByRole('heading', { level: 1, name: 'Мои репетиторы' })).toBeFocused();
+    expect(opened?.headers()['referrer-policy']).toBe('no-referrer');
+    expect(signedOutLayout).toEqual({ avatarAboveName: true, choicesStacked: true, sideways: false });
+    expect(acceptLayout).toEqual({ acceptStacked: true, sideways: false });
+    await expectTokenNowhere(page, token);
+    await expectTutors(myTutorRows(page), ['Павел', tutorName]);
+    await expect(page.getByRole('main').locator('img, b')).toHaveCount(0);
+    await expect(page).not.toHaveTitle('1');
+  });
+});

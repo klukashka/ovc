@@ -493,34 +493,41 @@ test.describe('Anna in Russian', () => {
 test.describe('Boris in English', () => {
   test.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', colorScheme: 'dark' });
 
-  test('my tutors › stop studying before the email is confirmed removes the link silently', async ({
-    page,
-    deployment,
-    control,
-  }) => {
-    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const boris = newTestAccount('Boris', 'student');
-    const card = await createCard(deployment, pavel, 'Boris', boris.email);
-    await signUpOnInvitation(deployment, card.link, boris, 'en');
-    await control.tick();
-    const mailBefore = (await control.mail(pavel.email)).length;
-    await signInThroughTheApi(page, boris);
-    await page.goto('/tutors');
-    await page.getByRole('button', { name: 'More actions for Pavel' }).click();
-    await page.getByRole('button', { name: 'Stop studying' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Stop studying with this tutor?' });
-    await expect(dialog).toContainText('Your email is not confirmed yet, so the link to this tutor is simply removed.');
-    await expect(dialog.getByRole('button', { name: 'Stop studying' })).toHaveAttribute('aria-disabled', 'false');
+  test.describe('on a phone', () => {
+    test.use({ viewport: { width: 360, height: 780 } });
 
-    await dialog.getByRole('button', { name: 'Stop studying' }).click();
+    test('my tutors › stop studying before the email is confirmed removes the link silently', async ({
+      page,
+      deployment,
+      control,
+    }) => {
+      const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+      const boris = newTestAccount('Boris', 'student');
+      const card = await createCard(deployment, pavel, 'Boris', boris.email);
+      await signUpOnInvitation(deployment, card.link, boris, 'en');
+      await control.tick();
+      const mailBefore = (await control.mail(pavel.email)).length;
+      await signInThroughTheApi(page, boris);
+      await page.goto('/tutors');
+      await page.getByRole('button', { name: 'More actions for Pavel' }).click();
+      await page.getByRole('button', { name: 'Stop studying' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Stop studying with this tutor?' });
+      await expect(dialog).toContainText(
+        'Your email is not confirmed yet, so the link to this tutor is simply removed.',
+      );
+      await expect(dialog.getByRole('button', { name: 'Stop studying' })).toHaveAttribute('aria-disabled', 'false');
+      await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
 
-    await expect(page.getByRole('status').filter({ hasText: 'The link to the tutor was removed.' })).toBeFocused();
-    await expect(page.getByRole('main').getByText('No tutor yet.')).toBeVisible();
-    await expect(page.getByRole('list', { name: 'Past tutors', exact: true })).toHaveCount(0);
-    expect(await myTutorNames(deployment, boris)).toEqual([]);
-    expect(await cardStatesNamed(deployment, pavel, 'Boris')).toEqual(['invited']);
-    await control.tick();
-    expect(await control.mail(pavel.email)).toHaveLength(mailBefore);
+      await dialog.getByRole('button', { name: 'Stop studying' }).click();
+
+      await expect(page.getByRole('status').filter({ hasText: 'The link to the tutor was removed.' })).toBeFocused();
+      await expect(page.getByRole('main').getByText('No tutor yet.')).toBeVisible();
+      await expect(page.getByRole('list', { name: 'Past tutors', exact: true })).toHaveCount(0);
+      expect(await myTutorNames(deployment, boris)).toEqual([]);
+      expect(await cardStatesNamed(deployment, pavel, 'Boris')).toEqual(['invited']);
+      await control.tick();
+      expect(await control.mail(pavel.email)).toHaveLength(mailBefore);
+    });
   });
 
   test('my tutors › stopping a link the tutor removed meanwhile closes the dialog and shows the current list', async ({

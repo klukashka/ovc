@@ -88,27 +88,78 @@ async function resetThroughTheApi(
   expect(reset.status).toBe(200);
 }
 
-test('reclaim › a confirmation from another browser asks to keep or drop the link', async ({
-  page,
-  deployment,
-  control,
-  diagnostics,
-}) => {
-  diagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/verify-email', status: 422 });
-  const maria = await seedVerifiedUser(deployment, 'Мария');
-  const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
-  const { owner } = await squatOnTheInvitation(deployment, control, maria, pavel);
+async function phoneChoiceLayout(page: Page): Promise<{
+  readonly fullWidthOptions: number;
+  readonly tallOptions: number;
+  readonly optionsUnderName: number;
+  readonly saveAtFullWidth: boolean;
+  readonly sideways: boolean;
+}> {
+  return page.evaluate(() => {
+    const form = document.querySelector('main form');
+    const save = form?.querySelector('button[type="submit"]');
+    if (!(form instanceof HTMLElement) || !(save instanceof HTMLElement)) {
+      throw new Error('the choice form is missing');
+    }
+    const options = [...form.querySelectorAll('fieldset label')].map((label) => label.getBoundingClientRect());
+    const optionsUnderName = [...form.querySelectorAll('fieldset')].filter((fieldset) => {
+      const name = fieldset.querySelector('legend + * + div')?.getBoundingClientRect();
+      return (
+        name !== undefined &&
+        [...fieldset.querySelectorAll('label')].every((label) => label.getBoundingClientRect().top >= name.bottom - 0.5)
+      );
+    }).length;
+    const rows = [...form.querySelectorAll('fieldset')].map((fieldset) => fieldset.getBoundingClientRect().width);
+    const formWidth = form.getBoundingClientRect().width;
+    return {
+      fullWidthOptions: options.filter((option) => rows.some((row) => Math.abs(option.width - row) <= 1)).length,
+      tallOptions: options.filter((option) => option.height >= 44).length,
+      optionsUnderName,
+      saveAtFullWidth: Math.abs(save.getBoundingClientRect().width - formWidth) <= 1,
+      sideways: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    };
+  });
+}
 
-  await confirmWithANewPassword(page, control, owner);
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 360, height: 780 } });
 
-  await expect(page).toHaveURL('/reclaim');
-  await expect(page.getByRole('heading', { level: 1, name: 'Оставить или удалить прежние связи' })).toBeVisible();
-  const account = page.getByRole('region', { name: 'Ваш аккаунт' });
-  await expect(account).toContainText('Самозванец');
-  await expect(account.getByRole('link', { name: 'Изменить имя и фото' })).toHaveAttribute('href', '/settings/profile');
-  await expect(page.getByText(/^Выберите до \d{1,2} [а-я]+\.?, \d{2}:\d{2}: всё, что вы не оставите/)).toBeVisible();
-  await expect(linksBeforeConfirmation(page).getByRole('group')).toHaveCount(1);
-  await expect(requestsBeforeConfirmation(page).getByRole('group')).toHaveCount(1);
+  test('reclaim › a confirmation from another browser asks to keep or drop the link', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/verify-email', status: 422 });
+    const maria = await seedVerifiedUser(deployment, 'Мария');
+    const pavel = await seedVerifiedUser(
+      deployment,
+      'Длиннаяфамилияпреподавателябезединогопробеладлятесташирины',
+      'en',
+    );
+    const { owner } = await squatOnTheInvitation(deployment, control, maria, pavel);
+
+    await confirmWithANewPassword(page, control, owner);
+
+    await expect(page).toHaveURL('/reclaim');
+    await expect(page.getByRole('heading', { level: 1, name: 'Оставить или удалить прежние связи' })).toBeVisible();
+    const account = page.getByRole('region', { name: 'Ваш аккаунт' });
+    await expect(account).toContainText('Самозванец');
+    await expect(account.getByRole('link', { name: 'Изменить имя и фото' })).toHaveAttribute(
+      'href',
+      '/settings/profile',
+    );
+    await expect(page.getByText(/^Выберите до \d{1,2} [а-я]+\.?, \d{2}:\d{2}: всё, что вы не оставите/)).toBeVisible();
+    await expect(linksBeforeConfirmation(page).getByRole('group')).toHaveCount(1);
+    await expect(requestsBeforeConfirmation(page).getByRole('group')).toHaveCount(1);
+    expect(await phoneChoiceLayout(page)).toEqual({
+      fullWidthOptions: 4,
+      tallOptions: 4,
+      optionsUnderName: 2,
+      saveAtFullWidth: true,
+      sideways: false,
+    });
+  });
 });
 
 test('reclaim › the tutors see the squatter neither before nor after the choice, and the kept link becomes the student’s', async ({
