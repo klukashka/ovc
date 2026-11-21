@@ -423,7 +423,7 @@ C|frontend|pnpm check:classes
 C|frontend|pnpm check:bundle
 C|frontend|pnpm api:check
 C|frontend|pnpm audit --audit-level high
-e2e|frontend|../tools/dev-env.sh pnpm e2e --max-failures=10
+e2e|frontend|../tools/dev-env.sh pnpm e2e --max-failures=10 --trace=off
 C|.|python3 .claude/hooks/check_guard_secrets.py
 C|.|tools/check-dev-env.sh
 B|.|tools/check-merge-gate.sh
