@@ -2,7 +2,14 @@ import { createHash } from 'node:crypto';
 
 import { describe, expect, test } from 'vitest';
 
-import { redactAddress, redactMethod, redactPath, redactText, redactedTextLimit } from './diagnostic-redaction.ts';
+import {
+  redactAddress,
+  redactFailedRequest,
+  redactMethod,
+  redactPath,
+  redactText,
+  redactedTextLimit,
+} from './diagnostic-redaction.ts';
 
 const origin = 'https://127.0.0.1:4300';
 const tokenShaped = (seed: string): string => createHash('sha256').update(seed).digest('base64url');
@@ -223,5 +230,94 @@ describe('the redaction of browser diagnostics details', () => {
     const redacted = methods.map((method) => redactMethod(method));
 
     expect(redacted).toEqual(['GET', 'PATCH', 'OTHER', 'OTHER']);
+  });
+});
+
+const confirmationToken = tokenShaped('email confirmation');
+const unsubscribeToken = tokenShaped('unsubscribe');
+const conferencingKey = tokenShaped('conferencing routing key');
+const engineError = 'net::ERR_CONNECTION_REFUSED';
+
+function expectNoneOf(record: object, secrets: readonly string[]): void {
+  const serialized = JSON.stringify(record);
+  for (const secret of secrets) expect(serialized).not.toContain(secret);
+}
+
+describe('the redaction of a failed request record', () => {
+  test('a token segment of each token route is replaced in the recorded path', () => {
+    const addresses = [
+      `${origin}/invite/${invitationToken}`,
+      `${origin}/api/v1/invitations/${invitationToken}/accept`,
+      `${origin}/verify-email/${confirmationToken}`,
+      `${origin}/reset-password/${resetToken}`,
+      `${origin}/api/v1/unsubscribe/${unsubscribeToken}`,
+      `${origin}/api/v1/integrations/bbb/${conferencingKey}/ended`,
+    ];
+
+    const records = addresses.map((address) => redactFailedRequest('POST', address, engineError));
+
+    expect(records.map((record) => record.path)).toEqual([
+      '/invite/:redacted',
+      '/api/v1/invitations/:redacted/accept',
+      '/verify-email/:redacted',
+      '/reset-password/:redacted',
+      '/api/v1/unsubscribe/:redacted',
+      '/api/v1/integrations/bbb/:redacted/ended',
+    ]);
+    expectNoneOf(records, [invitationToken, confirmationToken, resetToken, unsubscribeToken, conferencingKey]);
+  });
+
+  test('the query string and fragment are dropped from the recorded path', () => {
+    const address = `${origin}/unsubscribe?token=${unsubscribeToken}#confirm=${resetToken}`;
+
+    const record = redactFailedRequest('GET', address, 'net::ERR_ABORTED');
+
+    expect(record).toEqual({ method: 'GET', path: '/unsubscribe', failure: 'cancellation' });
+  });
+
+  test('an address that is not absolute drops its query string and fragment and redacts its path', () => {
+    const address = `/invite/${invitationToken}?token=${resetToken}#code=${confirmationToken}`;
+
+    const record = redactFailedRequest('GET', address, engineError);
+
+    expect(record).toEqual({ method: 'GET', path: '/invite/:redacted', failure: 'other' });
+  });
+
+  test('a JSON Web Token, a bearer token, a cookie and an email address in the path are replaced', () => {
+    const address = `${origin}/api/v1/${jsonWebTokenValue}/${encodeURIComponent(`Bearer ${signature}`)}/ovc_refresh=${shortSecret}/${email}`;
+
+    const record = redactFailedRequest('GET', address, engineError);
+
+    expect(record.path).toBe('/api/v1/:redacted/:redacted/:redacted/:redacted');
+    expectNoneOf(record, [jsonWebTokenValue, signature, shortSecret, email, 'Bearer', 'ovc_refresh']);
+  });
+
+  test('every cancellation text of the request-failure rule is recorded as a cancellation', () => {
+    const reasons = [
+      'net::ERR_ABORTED',
+      'NS_BINDING_ABORTED',
+      'cancelled',
+      'Load request cancelled',
+      'Provisional navigation canceled.',
+    ];
+
+    const failures = reasons.map((reason) => redactFailedRequest('GET', `${origin}/today`, reason).failure);
+
+    expect(failures).toEqual(reasons.map(() => 'cancellation'));
+  });
+
+  test("any other failure is recorded as other, never with the engine's error text", () => {
+    const reasons = [engineError, `NS_ERROR_FAILURE ${email}`, ''];
+
+    const records = reasons.map((reason) => redactFailedRequest('GET', `${origin}/today`, reason));
+
+    expect(records.map((record) => record.failure)).toEqual(['other', 'other', 'other']);
+    expectNoneOf(records, [engineError, 'NS_ERROR_FAILURE', email]);
+  });
+
+  test('a method outside the plain upper-case form is recorded as OTHER', () => {
+    const record = redactFailedRequest('X-Secret-Method-Name', `${origin}/today`, engineError);
+
+    expect(record.method).toBe('OTHER');
   });
 });

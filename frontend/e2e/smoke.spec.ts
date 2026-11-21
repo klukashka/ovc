@@ -1,7 +1,12 @@
+import { randomBytes } from 'node:crypto';
+import { once } from 'node:events';
+import { readFile, rm } from 'node:fs/promises';
+import { type Server, createServer } from 'node:http';
+
 import { type Locator, type Page } from '@playwright/test';
 
 import { signInThroughTheApi } from './accounts.ts';
-import { diagnosedTest as test, expect } from './fixtures.ts';
+import { diagnosedTest as test, diagnosticRegistry, expect, watchPage } from './fixtures.ts';
 import { expectSettledAfterTheSocketIsReady, todayQueryPaths, trafficAfterReady } from './realtime.ts';
 
 async function recordThemeAtFirstBody(page: Page): Promise<void> {
@@ -300,4 +305,144 @@ test.describe('at 900 px', () => {
     await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeVisible();
     await expect(page.getByRole('dialog')).toBeHidden();
   });
+});
+
+interface HoldingServer {
+  readonly origin: string;
+  readonly reached: Promise<void>;
+  readonly close: () => Promise<void>;
+}
+
+async function closeServer(server: Server): Promise<void> {
+  server.closeAllConnections();
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error === undefined) resolve();
+      else reject(error);
+    });
+  });
+}
+
+function htmlPage(body: string): string {
+  return `<!DOCTYPE html><html><head><link rel="icon" href="data:,"></head><body>${body}</body></html>`;
+}
+
+async function startHoldingServer(heldAddress: string): Promise<HoldingServer> {
+  const heldPath = new URL(heldAddress, 'http://127.0.0.1').pathname;
+  let markReached: () => void = () => undefined;
+  const reached = new Promise<void>((resolve) => {
+    markReached = resolve;
+  });
+  const server = createServer((request, response) => {
+    const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+    if (path === heldPath) {
+      markReached();
+      return;
+    }
+    response.setHeader('Content-Type', 'text/html; charset=utf-8');
+    response.end(
+      path === '/frame'
+        ? htmlPage(`<script>fetch(${JSON.stringify(heldAddress)}).catch(() => undefined)</script>`)
+        : htmlPage('<iframe src="/frame"></iframe>'),
+    );
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('the holding server has no port');
+  return {
+    origin: `http://127.0.0.1:${String(address.port)}`,
+    reached,
+    close: () => closeServer(server),
+  };
+}
+
+async function removeFrame(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    document.querySelector('iframe')?.remove();
+  });
+}
+
+async function thrownBy(action: () => unknown): Promise<string> {
+  try {
+    await action();
+  } catch (error) {
+    return error instanceof Error ? error.message : 'not an error';
+  }
+  return 'nothing thrown';
+}
+
+test('the diagnostics fixture records an unexpected request failure in the redacted details', async ({
+  browser,
+  browserName,
+}, testInfo) => {
+  const invitationToken = randomBytes(32).toString('base64url');
+  const queryToken = randomBytes(32).toString('base64url');
+  const server = await startHoldingServer(
+    `/api/v1/invitations/${invitationToken}?token=${queryToken}#token=${queryToken}`,
+  );
+  const context = await browser.newContext();
+  const registry = diagnosticRegistry(browserName);
+  await registry.watch(context);
+  const page = await context.newPage();
+  const watched = watchPage(page, server.origin, registry);
+  const failed = page.waitForEvent('requestfailed');
+  await page.goto(`${server.origin}/diagnostics`);
+  await server.reached;
+  let pageFailure: string;
+  let registryFailure: string;
+  let attached: string;
+
+  try {
+    await removeFrame(page);
+    await failed;
+    watched.recordUnexpected();
+    pageFailure = await thrownBy(() => {
+      watched.verify();
+    });
+    registryFailure = await thrownBy(() => registry.verify(testInfo));
+    const attachment = testInfo.attachments.find((entry) => entry.name === 'browser-diagnostics');
+    attached = attachment?.path === undefined ? 'no attachment' : await readFile(attachment.path, 'utf8');
+  } finally {
+    await context.close();
+    await server.close();
+  }
+
+  expect(pageFailure).toContain('request_failure');
+  expect(pageFailure).not.toContain('/api/v1/invitations');
+  expect(registryFailure).not.toBe('nothing thrown');
+  expect(JSON.parse(registryFailure)).toEqual({
+    event: 'browser.diagnostics_failed',
+    records: [
+      {
+        category: 'request_failure',
+        classification: 'unknown',
+        engine: browserName,
+        stage: 'journey',
+        route: 'unknown',
+        count: 1,
+      },
+    ],
+    missingExpectedErrors: 0,
+  });
+  expect(JSON.parse(attached)).toEqual({
+    details: [
+      {
+        category: 'request_failure',
+        engine: browserName,
+        stage: 'journey',
+        route: 'unknown',
+        page: `${server.origin}/diagnostics`,
+        method: 'GET',
+        path: '/api/v1/invitations/:redacted',
+        failure: 'cancellation',
+      },
+    ],
+    omitted: 0,
+  });
+  for (const evidence of [pageFailure, registryFailure, attached]) {
+    expect(evidence).not.toContain(invitationToken);
+    expect(evidence).not.toContain(queryToken);
+  }
+  await rm(testInfo.outputPath(), { recursive: true, force: true });
 });

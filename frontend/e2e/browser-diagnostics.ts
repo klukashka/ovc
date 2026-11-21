@@ -1,6 +1,12 @@
 import type { ReadinessFailure, ReadinessPhase } from './navigation-readiness.ts';
 import { HttpNegativePhase, LanguageFailurePhase, type HttpNegative } from './diagnostic-expectations.ts';
-import { redactAddress, redactMethod, redactText } from './diagnostic-redaction.ts';
+import {
+  type RedactedFailedRequest,
+  redactAddress,
+  redactFailedRequest,
+  redactMethod,
+  redactText,
+} from './diagnostic-redaction.ts';
 import { test } from '@playwright/test';
 import type { Browser, BrowserContext, BrowserContextOptions, Page, Request } from '@playwright/test';
 
@@ -32,7 +38,7 @@ export function emitBoundedDiagnostic(evidence: BoundedDiagnosticEvidence): void
 }
 
 export type DiagnosticCategory =
-  'console_warning' | 'console_error' | 'page_error' | 'http_error' | 'expectation_failure';
+  'console_warning' | 'console_error' | 'page_error' | 'http_error' | 'request_failure' | 'expectation_failure';
 export type DiagnosticRoute = 'messages' | 'settings' | 'authentication' | 'unknown';
 export interface DiagnosticRecord {
   readonly category: DiagnosticCategory;
@@ -42,25 +48,36 @@ export interface DiagnosticRecord {
   readonly route: DiagnosticRoute;
   readonly count: number;
 }
+export interface FailedRequestEvidence {
+  readonly method: string;
+  readonly address: string;
+  readonly reason: string;
+}
 export type DiagnosticEvidence =
   | { readonly text: string; readonly source: string }
-  | { readonly method: string; readonly path: string; readonly status: number };
+  | { readonly method: string; readonly path: string; readonly status: number }
+  | FailedRequestEvidence;
+type RedactedEvidence =
+  | { readonly text: string; readonly source: string }
+  | { readonly method: string; readonly path: string; readonly status: number }
+  | RedactedFailedRequest;
 export type DiagnosticDetail = {
   readonly category: DiagnosticCategory;
   readonly engine: string;
   readonly stage: string;
   readonly route: DiagnosticRoute;
   readonly page: string;
-} & (DiagnosticEvidence | { readonly evidence: 'counted_only' });
+} & (RedactedEvidence | { readonly evidence: 'counted_only' });
 export interface DiagnosticDetails {
   readonly details: readonly DiagnosticDetail[];
   readonly omitted: number;
 }
 const detailLimit = 50;
 
-function redactedEvidence(evidence: DiagnosticEvidence | undefined): DiagnosticEvidence | { evidence: 'counted_only' } {
+function redactedEvidence(evidence: DiagnosticEvidence | undefined): RedactedEvidence | { evidence: 'counted_only' } {
   if (evidence === undefined) return { evidence: 'counted_only' };
   if ('text' in evidence) return { text: redactText(evidence.text), source: redactAddress(evidence.source) };
+  if ('reason' in evidence) return redactFailedRequest(evidence.method, evidence.address, evidence.reason);
   return { method: redactMethod(evidence.method), path: redactAddress(evidence.path), status: evidence.status };
 }
 
@@ -96,6 +113,7 @@ export function observeBrowserContext(
   readonly finishHttp: (page: Page) => Promise<void>;
   readonly beginLanguageFailure: (page: Page, origin: string, language: 'en' | 'ru') => void;
   readonly finishLanguageFailure: (page: Page) => Promise<void>;
+  readonly requestFailure: (page: Page, pageAddress: string, request: FailedRequestEvidence) => void;
   readonly verify: () => void;
   readonly warnings: () => number;
   readonly errors: () => number;
@@ -104,15 +122,20 @@ export function observeBrowserContext(
   const details: DiagnosticDetail[] = [];
   let omittedDetails = 0;
   const expectations = new Map<Page, ConsoleExpectation>();
-  const record = (category: DiagnosticCategory, page: Page | null, evidence?: DiagnosticEvidence): void => {
-    const route = diagnosticRoute(page?.url() ?? '');
+  const record = (
+    category: DiagnosticCategory,
+    page: Page | null,
+    evidence?: DiagnosticEvidence,
+    pageAddress: string | undefined = page?.url(),
+  ): void => {
+    const route = diagnosticRoute(pageAddress ?? '');
     if (details.length < detailLimit) {
       details.push({
         category,
         engine,
         stage,
         route,
-        page: page === null ? 'unknown' : redactAddress(page.url()),
+        page: pageAddress === undefined ? 'unknown' : redactAddress(pageAddress),
         ...redactedEvidence(evidence),
       });
     } else {
@@ -299,6 +322,9 @@ export function observeBrowserContext(
       if (phase === undefined) throw new Error('language_failure_phase_missing');
       languages.delete(page);
       finishLanguage(page, phase);
+    },
+    requestFailure: (page: Page, pageAddress: string, request: FailedRequestEvidence): void => {
+      record('request_failure', page, request, pageAddress);
     },
     warnings: (): number =>
       [...records.values()]

@@ -1,3 +1,5 @@
+import { isCancellationText } from './request-failures.ts';
+
 export const redactedTextLimit = 400;
 const scannedTextLimit = 8000;
 const redacted = ':redacted';
@@ -98,4 +100,26 @@ export function redactText(text: string): string {
 
 export function redactMethod(method: string): string {
   return /^[A-Z]{1,10}$/u.test(method) ? method : 'OTHER';
+}
+
+export type RequestFailureKind = 'cancellation' | 'other';
+
+export interface RedactedFailedRequest {
+  readonly method: string;
+  readonly path: string;
+  readonly failure: RequestFailureKind;
+}
+
+function pathWithoutQuery(address: string): string {
+  if (URL.canParse(address)) return new URL(address).pathname;
+  const end = address.search(/[?#]/u);
+  return end === -1 ? address : address.slice(0, end);
+}
+
+export function redactFailedRequest(method: string, address: string, reason: string): RedactedFailedRequest {
+  return {
+    method: redactMethod(method),
+    path: redactPath(pathWithoutQuery(address)),
+    failure: isCancellationText(reason) ? 'cancellation' : 'other',
+  };
 }

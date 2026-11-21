@@ -29,7 +29,7 @@ import {
 import { type Deployment, readE2ESettings, startDeployment } from './deployment.ts';
 import { redactAddress, redactPath } from './diagnostic-redaction.ts';
 import { type SocketSlotHolder, socketSlotHolder } from './realtime.ts';
-import { type FailedRequest, PageActivityRecorder, unexpectedFailures } from './request-failures.ts';
+import { type FailedRequest, PageActivityRecorder, isUnexpectedFailure } from './request-failures.ts';
 import { createGroup, seedActiveStudent, seedActiveStudentsThroughCode, seedJoinRequests } from './tutoring.ts';
 
 export interface SentMail {
@@ -271,9 +271,10 @@ export interface Diagnostics extends PageDiagnostics {
   readonly closeContext: (context: BrowserContext) => Promise<void>;
 }
 
-interface WatchedPage extends PageDiagnostics {
+export interface WatchedPage extends PageDiagnostics {
   readonly page: Page;
   readonly markClose: () => void;
+  readonly recordUnexpected: () => void;
   readonly verify: () => void;
 }
 
@@ -281,7 +282,7 @@ function describeFailure(failure: ExpectedFailure): string {
   return `${failure.method} ${failure.path} ${String(failure.status)}`;
 }
 
-interface DiagnosticRegistry {
+export interface DiagnosticRegistry {
   readonly watch: (context: BrowserContext) => Promise<void>;
   readonly console: (page: Page) => ReturnType<typeof observeBrowserContext>;
   readonly verify: (testInfo: TestInfo) => Promise<void>;
@@ -293,7 +294,7 @@ async function attachDiagnosticDetails(testInfo: TestInfo, details: DiagnosticDe
   await testInfo.attach('browser-diagnostics', { path, contentType: 'application/json' });
 }
 
-function diagnosticRegistry(engine: string): DiagnosticRegistry {
+export function diagnosticRegistry(engine: string): DiagnosticRegistry {
   const watched = new Map<BrowserContext, ReturnType<typeof observeBrowserContext>>();
   return {
     watch: async (context): Promise<void> => {
@@ -334,12 +335,12 @@ function pathOf(address: string): string {
 interface FailedAt {
   readonly failed: FailedRequest;
   readonly path: string;
+  readonly address: string;
+  readonly pageAddress: string;
 }
 
-function unexpectedAborts(failures: readonly FailedAt[], abortedPaths: readonly RegExp[]): FailedRequest[] {
-  return failures
-    .filter((failure) => !abortedPaths.some((path) => path.test(failure.path)))
-    .map((failure) => failure.failed);
+function unexpectedAborts(failures: readonly FailedAt[], abortedPaths: readonly RegExp[]): FailedAt[] {
+  return failures.filter((failure) => !abortedPaths.some((path) => path.test(failure.path)));
 }
 
 function unseenAborts(failures: readonly FailedAt[], abortedPaths: readonly RegExp[]): string[] {
@@ -348,7 +349,7 @@ function unseenAborts(failures: readonly FailedAt[], abortedPaths: readonly RegE
     .map(() => 'expected_aborted_request_missing');
 }
 
-function watchPage(page: Page, deployment: Deployment, registry: DiagnosticRegistry): WatchedPage {
+export function watchPage(page: Page, origin: string, registry: DiagnosticRegistry): WatchedPage {
   const consoleExpectation = registry.console(page).expect(page);
   const failures: string[] = [];
   const expected: string[] = [];
@@ -377,12 +378,19 @@ function watchPage(page: Page, deployment: Deployment, registry: DiagnosticRegis
         failed: recorder.failed(),
       },
       path: pathOf(request.url()),
+      address: request.url(),
+      pageAddress: page.url(),
     });
   });
+  const unexpectedRequests = (): FailedAt[] =>
+    unexpectedAborts(failedRequests, abortedPaths).filter((failure) =>
+      isUnexpectedFailure(failure.failed, recorder.activity()),
+    );
+  let recorded = false;
   page.on('response', (response) => {
     answeredRequests.add(response.request());
     const url = new URL(response.url());
-    if (response.status() >= 400 && url.origin === deployment.origin) {
+    if (response.status() >= 400 && url.origin === origin) {
       failures.push(`${response.request().method()} ${url.pathname}${url.search} ${String(response.status())}`);
     }
   });
@@ -394,14 +402,14 @@ function watchPage(page: Page, deployment: Deployment, registry: DiagnosticRegis
     expectFailure: (failure): void => {
       registry.console(page).expectHttp(page, {
         method: failure.method,
-        address: new URL(failure.path, deployment.origin).href,
+        address: new URL(failure.path, origin).href,
         status: failure.status,
       });
       expected.push(describeFailure(failure));
     },
     finishHttpPhase: (): Promise<void> => registry.console(page).finishHttp(page),
     beginLanguageFailure: (language): void => {
-      registry.console(page).beginLanguageFailure(page, deployment.origin, language);
+      registry.console(page).beginLanguageFailure(page, origin, language);
     },
     finishLanguageFailure: (): Promise<void> => registry.console(page).finishLanguageFailure(page),
     expectAbortedRequest: (path): void => {
@@ -413,11 +421,20 @@ function watchPage(page: Page, deployment: Deployment, registry: DiagnosticRegis
     expectConsoleWarning: (fragment): void => {
       consoleExpectation.expectedWarnings.set(fragment, 0);
     },
+    recordUnexpected: (): void => {
+      if (recorded) return;
+      recorded = true;
+      for (const failure of unexpectedRequests()) {
+        registry.console(page).requestFailure(page, failure.pageAddress, {
+          method: failure.failed.method,
+          address: failure.address,
+          reason: failure.failed.reason,
+        });
+      }
+    },
     verify: (): void => {
       expect([
-        ...unexpectedFailures(unexpectedAborts(failedRequests, abortedPaths), recorder.activity()).map(
-          () => 'request_failure',
-        ),
+        ...unexpectedRequests().map(() => 'request_failure'),
         ...unseenAborts(failedRequests, abortedPaths),
       ]).toEqual([]);
       expect(
@@ -431,7 +448,7 @@ function watchPage(page: Page, deployment: Deployment, registry: DiagnosticRegis
 export const diagnosedTest = test.extend<{ diagnostics: Diagnostics }>({
   diagnostics: [
     async ({ page, deployment, diagnosticRegistry }, use): Promise<void> => {
-      const main = watchPage(page, deployment, diagnosticRegistry);
+      const main = watchPage(page, deployment.origin, diagnosticRegistry);
       const others: WatchedPage[] = [];
       const pages = new Map<Page, WatchedPage>([[page, main]]);
       await use({
@@ -445,7 +462,7 @@ export const diagnosedTest = test.extend<{ diagnostics: Diagnostics }>({
         watch: (other): Promise<PageDiagnostics> => {
           const existing = pages.get(other);
           if (existing !== undefined) return Promise.resolve(existing);
-          const watched = watchPage(other, deployment, diagnosticRegistry);
+          const watched = watchPage(other, deployment.origin, diagnosticRegistry);
           others.push(watched);
           pages.set(other, watched);
           return Promise.resolve(watched);
@@ -459,6 +476,9 @@ export const diagnosedTest = test.extend<{ diagnostics: Diagnostics }>({
           await context.close();
         },
       });
+      for (const watched of [main, ...others]) {
+        watched.recordUnexpected();
+      }
       main.verify();
       for (const watched of others) {
         watched.verify();

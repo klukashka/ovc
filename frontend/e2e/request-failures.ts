@@ -72,13 +72,16 @@ function leftByClose(failed: FailedRequest, activity: PageActivity): boolean {
   return stepDuring(activity.closes, failed);
 }
 
+export function isUnexpectedFailure(failed: FailedRequest, activity: PageActivity): boolean {
+  return (
+    !failed.answered &&
+    !(isCancellation(failed) && (leftByNavigation(failed, activity) || leftByClose(failed, activity)))
+  );
+}
+
 export function unexpectedFailures(failures: readonly FailedRequest[], activity: PageActivity): string[] {
   return failures
-    .filter(
-      (failed) =>
-        !failed.answered &&
-        !(isCancellation(failed) && (leftByNavigation(failed, activity) || leftByClose(failed, activity))),
-    )
+    .filter((failed) => isUnexpectedFailure(failed, activity))
     .map((failed) => `request failed: ${failed.description} ${failed.reason}`);
 }
 
