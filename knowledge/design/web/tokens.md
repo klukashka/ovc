@@ -109,6 +109,8 @@ Group colours use the same palette.
 ## Components
 
 - **Sidebar item:** 16 px outline icon in `icon`, label in `text-small`, optional count in `text-caption` `text-muted` aligned right; `radius-s`; `hover` background on hover and for the current page, where the label turns `text` and weight 500. Unavailable items are never shown.
+- **Bottom bar** (slice 10 change G0, pending owner review; phones below 768 px, [navigation](navigation.md#frames)): 56 px plus the bottom safe area, `sidebar` background, a 1 px `border` rule above; equal-width items, each a 20 px outline icon in `icon` above a label in `text-caption` `text-muted`, at least 44 × 44 px; the current item's icon and label in `text`, the label at weight 600, on a 32 × 24 px `hover` pill behind the icon; a count is a badge at the icon's top right in `text-caption` `text` on `surface` with a 1 px `border-strong` outline and `radius-full`.
+- **Sheet** (slice 10 change G0, pending owner review): a modal dialog anchored to the bottom edge, `surface` background, `radius-l` on its top corners only, `shadow-raised` (a `border-strong` outline in the dark theme), at most 80 % of the window's height, over the same dimmed page as the sidebar overlay; rows at least 48 px high with a 20 px icon and a label in `text-body-phone`, separated by 1 px `border` hairlines.
 - **Row:** a grid of columns on one baseline, 1 px `border` above, the last row also closed by a rule below. A whole-row link highlights with `surface` on hover.
 - **Page header** (design slice step L, pending owner review): one line with the title on the left and, on the right, the page's main action and a menu for its rare actions; it wraps below the title when the line is too narrow.
 - **Table** (design slice step L, pending owner review): lists of people and things are semantic tables with column headers in `text-label` `text-muted`, rows separated by 1 px `border` hairlines with no striping, the name cell as the row header holding the row's link when it has one, and row actions in the last cell, so a row never nests buttons inside a link. A row highlights with `surface` on hover. Long words wrap inside their cell, except a name that is the row's link in Students and Groups, which is cut with an ellipsis on one line. Below 768 px secondary columns are hidden and their content is shown under the name in the first cell, so the table never scrolls sideways and keeps its table semantics.
@@ -127,7 +129,7 @@ Group colours use the same palette.
 
 ## Illustration and iconography
 
-- **Icons:** one outline icon set with rounded joins and 1.3 px strokes at 16 px (20 px on phones), using `currentColor`. No emoji or typographic symbols stand in for icons.
+- **Icons:** one outline icon set with rounded joins and 1.3 px strokes at 16 px (20 px on phones, that is below 768 px, in the frame and on every page, from slice 10 change G1; the stroke stays 1.3 px at both sizes), using `currentColor`. No emoji or typographic symbols stand in for icons.
 - **Empty states:** a short heading in `text-heading`, one sentence and a primary action. Illustrations, if added later, are single-colour line drawings in `icon`, at most 160 px tall, decorative (`alt=""`).
 
 ## Motion

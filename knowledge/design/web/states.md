@@ -437,6 +437,20 @@ The slice 9 rows are a proposal to confirm when the notification rows of the hom
 
 `{group}` is the group's name from the table above, which stands after a colon and needs no case.
 
+## Phone frame
+
+Texts of the [phone frame](navigation.md#frames) (slice 10 change G0, owner's decisions of 2026-11-21, pending owner review; built in change G1). Every other text of the phone frame and of the phone rules in [pages](pages.md) is an existing text: the bottom bar's other labels are the section names, the Homework count's accessible names are the sidebar's, and the More sheet reuses Notifications, Settings, Sign out, "Signing out…" and the sign-out failure. No page's **Phone** rule adds a text.
+
+| Key | English | Russian | Chunk | Added gzip bytes (Russian / English chunk) |
+|---|---|---|---|---|
+| `section.chats` | Chats | Чаты | global language chunk | 15 / 13 |
+| `frame.chatsWithCount` | Chats, {count} unread | Чаты, непрочитанных: {count} | global language chunk | 22 / 17, with `frame.chatsOverCap` |
+| `frame.chatsOverCap` | Chats, more than 99 unread | Чаты, непрочитанных: больше 99 | global language chunk | (counted with `frame.chatsWithCount`) |
+| `frame.more` | More | Ещё | global language chunk | 24 / 13, with `frame.moreClose` |
+| `frame.moreClose` | Close | Закрыть | global language chunk | (counted with `frame.more`) |
+
+The counted names of Chats begin with its visible label, as WCAG 2.5.3 requires; the Homework item keeps the sidebar's names, which already begin with "Homework" / "Задания". The five keys add 61 bytes to the gzip size of the Russian chunk, the largest language chunk that `pnpm check:bundle` counts in the entry, measured on the build of `main` at `ef9a98d` by inserting them into the built chunk; the entry then had 629 bytes of headroom ([phone design record](../../reviews/slice-10-phone-design.md)). They are frame texts needed on every page, so they belong to the global chunk (K21 of the [slice 10 plan](../../plans/slice-10.md)).
+
 ## Tutor labels
 
 In every student view, items carry their tutor's label: an 8 px dot in the relationship colour plus the tutor's name (or initials in narrow layouts). The filter "All tutors / {name}" sits at the top of Home, Schedule and Homework.

@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phone mockups · OVC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F7F4EE; --surface: #FBF9F4; --field: #FFFFFF; --sidebar: #F1EEE6; --hover: #E7E3D9;
+  --border: #E2DCD0; --border-strong: #8F8676; --text: #26241F; --muted: #6B655A; --icon: #736C60;
+  --accent: #5E6B3A; --on-accent: #FFFFFF; --accent-text: #4A5530; --success: #2E6B4F; --warning: #8A5A12;
+  --danger: #A3352A; --info: #3F5E7A; --live: #A3352A; --scrim: rgba(38,36,31,.32);
+  --shadow: 0 8px 24px rgba(38,36,31,.12);
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #1C1B18; --surface: #23221E; --field: #2A2925; --sidebar: #201F1C; --hover: #2E2D28;
+  --border: #37352F; --border-strong: #7D7667; --text: #ECE8DF; --muted: #ABA496; --icon: #9C9587;
+  --accent: #A3B275; --on-accent: #1C1B18; --accent-text: #B7C48C; --success: #86C3A4; --warning: #D9A75E;
+  --danger: #E58A7C; --info: #93B3D1; --live: #E58A7C; --scrim: rgba(0,0,0,.5);
+  --shadow: none;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 15px/22px "Golos Text", system-ui, sans-serif; }
+.gallery-head { padding: 24px 16px 8px; max-width: 1200px; margin: 0 auto; }
+.gallery-head h1 { font: 500 26px/32px Literata, Georgia, serif; margin: 0 0 6px; }
+.gallery-head p { margin: 0 0 8px; color: var(--muted); max-width: 760px; }
+.theme-switch { display: inline-flex; gap: 0; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; margin-top: 4px; }
+.theme-switch button { font: inherit; font-size: 14px; border: 0; background: transparent; color: var(--text); min-height: 44px; padding: 0 16px; cursor: pointer; }
+.theme-switch button[aria-pressed="true"] { background: var(--hover); font-weight: 500; }
+.group { max-width: 1200px; margin: 0 auto; padding: 16px; }
+.group > h2 { font: 500 20px/28px Literata, Georgia, serif; margin: 16px 0 4px; }
+.group > p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+.screens { display: flex; flex-wrap: wrap; gap: 28px; }
+figure { margin: 0; width: 362px; }
+figcaption { font-size: 13px; line-height: 18px; color: var(--muted); margin-top: 8px; }
+figcaption b { color: var(--text); font-weight: 500; }
+
+.phone { position: relative; width: 362px; height: 742px; border: 1px solid var(--border-strong); border-radius: 18px; overflow: hidden; background: var(--bg); display: flex; flex-direction: column; }
+.scroll { flex: 1; overflow: hidden; position: relative; }
+.topbar { height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 4px 0 16px; border-bottom: 1px solid var(--border); background: var(--bg); }
+.logo { font: 500 18px/24px Literata, Georgia, serif; color: var(--text); text-decoration: none; }
+.icon-btn { position: relative; width: 44px; height: 44px; display: inline-grid; place-items: center; border: 0; background: transparent; color: var(--icon); border-radius: 8px; }
+.num-badge { position: absolute; top: 4px; right: 2px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border-strong); font: 500 11px/16px "Golos Text", sans-serif; color: var(--text); text-align: center; }
+svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.banner { padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 14px; line-height: 20px; }
+.banner .btn { margin-top: 8px; }
+.main { padding: 16px 16px 72px; }
+.title { font: 500 24px/30px Literata, Georgia, serif; margin: 0; }
+.sub { color: var(--muted); font-size: 14px; margin: 2px 0 0; }
+.back { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; color: var(--accent-text); text-decoration: none; font-size: 15px; }
+h3.h { font-size: 13px; line-height: 18px; font-weight: 500; color: var(--muted); margin: 20px 0 6px; text-transform: none; display: flex; justify-content: space-between; align-items: baseline; }
+.list { border-top: 1px solid var(--border); }
+.row { border-bottom: 1px solid var(--border); padding: 10px 0; }
+.row .t { font-weight: 500; }
+.row .m { color: var(--muted); font-size: 14px; line-height: 20px; }
+.row a, a.link { color: var(--accent-text); text-decoration: none; }
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px; border-radius: 8px; font: 500 16px/20px "Golos Text", sans-serif; border: 1px solid var(--border-strong); background: transparent; color: var(--text); }
+.btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.btn.full { width: 100%; margin-top: 8px; }
+.btn-row { display: flex; gap: 8px; margin-top: 8px; }
+.btn-row .btn { flex: 1; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-top: 12px; }
+.badge { font-size: 12px; font-weight: 500; }
+.warn { color: var(--warning); } .ok { color: var(--success); } .info { color: var(--info); } .live { color: var(--live); } .danger { color: var(--danger); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.field { display: block; width: 100%; min-height: 44px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--field); color: var(--text); font: 400 16px/24px "Golos Text", sans-serif; padding: 9px 12px; margin-top: 4px; }
+label.lbl { display: block; font-size: 14px; font-weight: 500; margin-top: 12px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 0 4px; border-bottom: 1px solid var(--border); margin-top: 12px; }
+.tabs a { min-height: 44px; display: inline-flex; align-items: center; padding: 0 8px; color: var(--muted); text-decoration: none; font-size: 15px; border-bottom: 2px solid transparent; }
+.tabs a[aria-current] { color: var(--text); font-weight: 500; border-color: var(--accent); }
+.select { display: flex; justify-content: space-between; align-items: center; }
+.avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--hover); display: inline-grid; place-items: center; font-weight: 500; font-size: 14px; flex: none; }
+.person { display: flex; gap: 10px; align-items: center; }
+
+.bottombar { position: absolute; left: 0; right: 0; bottom: 0; height: 56px; background: var(--sidebar); border-top: 1px solid var(--border); display: flex; justify-content: center; }
+.bottombar a, .bottombar button { flex: 0 0 20%; min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: var(--muted); font: 500 12px/16px "Golos Text", sans-serif; background: transparent; border: 0; position: relative; padding: 0; }
+.bottombar .ic { position: relative; width: 32px; height: 24px; display: grid; place-items: center; border-radius: 6px; color: var(--icon); }
+.bottombar [aria-current] { color: var(--text); font-weight: 600; }
+.bottombar [aria-current] .ic { background: var(--hover); color: var(--text); }
+.bottombar .num-badge { top: -6px; right: -10px; }
+
+.scrim { position: absolute; inset: 0; background: var(--scrim); }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--surface); border-radius: 10px 10px 0 0; box-shadow: var(--shadow); max-height: 80%; padding: 8px 0 12px; }
+:root[data-theme="dark"] .sheet, :root[data-theme="dark"] .popover { outline: 1px solid var(--border-strong); }
+.sheet .acct { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.sheet a, .sheet button.item { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 16px; color: var(--text); text-decoration: none; font: 400 16px/24px "Golos Text", sans-serif; border: 0; border-bottom: 1px solid var(--border); background: transparent; width: 100%; text-align: left; }
+.sheet .i { color: var(--icon); }
+.sheet .count { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 500; }
+.sheet .current { background: var(--hover); font-weight: 500; }
+.focus-ring { outline: 2px solid var(--accent); outline-offset: -4px; border-radius: 8px; }
+.popover { position: absolute; left: 0; right: 0; top: 48px; background: var(--surface); box-shadow: var(--shadow); max-height: 70%; border-bottom: 1px solid var(--border); padding: 4px 16px 12px; }
+.composer { position: absolute; left: 0; right: 0; bottom: 0; border-top: 1px solid var(--border); background: var(--bg); padding: 8px 8px 8px 4px; display: flex; gap: 4px; align-items: flex-end; }
+.composer .field { margin: 0; flex: 1; }
+.msg { max-width: 82%; padding: 8px 12px; border-radius: 10px; margin: 6px 0; background: var(--surface); border: 1px solid var(--border); }
+.msg.mine { margin-left: auto; background: var(--hover); border-color: var(--hover); }
+.msg .m { font-size: 12px; color: var(--muted); }
+.convhead { height: 56px; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 4px; border-bottom: 1px solid var(--border); }
+.q { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 12px; background: var(--surface); }
+.q .h { font-size: 13px; color: var(--muted); font-weight: 500; }
+.opt { display: flex; gap: 10px; align-items: center; min-height: 44px; }
+.opt span.r { width: 20px; height: 20px; border: 1.5px solid var(--border-strong); border-radius: 50%; flex: none; }
+.opt span.r.on { border: 6px solid var(--accent); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-today" viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
+  <symbol id="i-home" viewBox="0 0 20 20"><path d="M3.5 9 10 3.5 16.5 9v7a1 1 0 0 1-1 1h-3.5v-5h-4v5H4.5a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 20 20"><rect x="3" y="4.5" width="14" height="12.5" rx="2"/><path d="M3 8.5h14M7 2.5v3M13 2.5v3"/></symbol>
+  <symbol id="i-hw" viewBox="0 0 20 20"><path d="M5 3h7.5L15.5 6v11H5z"/><path d="M12.5 3v3h3M7.5 10h5M7.5 13h5"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 20 20"><path d="M3.5 5a1.5 1.5 0 0 1 1.5-1.5h10A1.5 1.5 0 0 1 16.5 5v7a1.5 1.5 0 0 1-1.5 1.5H8l-4.5 3z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 20 20"><circle cx="5" cy="10" r="1.1"/><circle cx="10" cy="10" r="1.1"/><circle cx="15" cy="10" r="1.1"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 20 20"><path d="M5.5 13.5V9a4.5 4.5 0 0 1 9 0v4.5l1.5 2H4zM8.5 17.5h3"/></symbol>
+  <symbol id="i-users" viewBox="0 0 20 20"><circle cx="8" cy="7" r="3"/><path d="M2.5 17c.5-3 2.7-4.5 5.5-4.5s5 1.5 5.5 4.5M13.5 4.5a3 3 0 0 1 0 5.5M15.5 12.8c1.2.7 1.8 2 2 4.2"/></symbol>
+  <symbol id="i-group" viewBox="0 0 20 20"><circle cx="6" cy="8" r="2.3"/><circle cx="14" cy="8" r="2.3"/><circle cx="10" cy="5" r="2.3"/><path d="M2.5 16c.4-2.4 1.8-3.6 3.5-3.6M17.5 16c-.4-2.4-1.8-3.6-3.5-3.6M6.5 16.5c.4-2.6 1.7-4 3.5-4s3.1 1.4 3.5 4"/></symbol>
+  <symbol id="i-tutors" viewBox="0 0 20 20"><path d="M2.5 7.5 10 4l7.5 3.5L10 11z"/><path d="M5.5 9v4c1.2 1.3 2.7 2 4.5 2s3.3-.7 4.5-2V9"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
+  <symbol id="i-out" viewBox="0 0 20 20"><path d="M8 3.5H4.5v13H8M12 6.5 15.5 10 12 13.5M15.5 10H7.5"/></symbol>
+  <symbol id="i-back" viewBox="0 0 20 20"><path d="M12 4.5 6.5 10l5.5 5.5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 20 20"><path d="m15.5 9.5-5.8 5.8a3.5 3.5 0 0 1-5-5l6.3-6.3a2.3 2.3 0 0 1 3.3 3.3l-6.2 6.2a1.2 1.2 0 0 1-1.7-1.7l5.6-5.6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 20 20"><path d="m5.5 8 4.5 4.5L14.5 8"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 20 20"><circle cx="10" cy="5" r="1.1"/><circle cx="10" cy="10" r="1.1"/><circle cx="10" cy="15" r="1.1"/></symbol>
+</svg>
+
+<header class="gallery-head">
+  <h1>Phone mockups, 360 px</h1>
+  <p>Mockups of slice 10 change G0 for the owner's review: the phone frame below 768 px and one or more screens of each page group G1 to G5. The specifications in <code>navigation.md</code>, <code>pages.md</code>, <code>tokens.md</code> and <code>states.md</code> are normative; where a mockup differs from them, the specifications win. All data is invented. Each frame is 360 × 740 CSS px; its outline is only for the gallery. The interface copy inside the frames is Russian, as in the clickable prototype.</p>
+  <div class="theme-switch" role="group" aria-label="Mockup theme">
+    <button type="button" aria-pressed="true" data-theme-choice="light">Light</button>
+    <button type="button" aria-pressed="false" data-theme-choice="dark">Dark</button>
+  </div>
+</header>
+
+<section class="group" aria-labelledby="g1">
+  <h2 id="g1">G1 · Frame</h2>
+  <p>The bottom bar of five items with 20 px icons, the top bar with the logo and the Notifications button, the More sheet with the account, sections, Settings and Sign out, the unconfirmed student's reduced frame, and the notifications panel.</p>
+  <div class="screens">
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar"><a class="logo" href="#g1">OVC</a><button class="icon-btn" type="button" aria-label="Уведомления, 3 непрочитанных"><svg class="i"><use href="#i-bell"/></svg><span class="num-badge">3</span></button></div>
+        <div class="scroll"><div class="main">
+          <h1 class="title">Сегодня</h1><p class="sub">Вторник, 18 ноября</p>
+          <h3 class="h">Уроки сегодня</h3>
+          <div class="list">
+            <div class="row"><a href="#g1"><div class="t">18:00–18:45 · Past simple: практика</div></a><div class="m">Борис П. · <span class="live">Идёт</span></div><button class="btn primary full" type="button">Вернуться в урок</button></div>
+            <div class="row"><a href="#g1"><div class="t">19:30–20:30 · Условные предложения</div></a><div class="m"><span class="dot" style="background:#5E6B3A"></span>Группа B1</div><div class="m">Комната откроется в 19:20</div></div>
+          </div>
+          <h3 class="h">Ждут проверки <span>3</span></h3>
+          <div class="list">
+            <div class="row"><a href="#g1"><div class="t">Борис П.</div></a><div class="m">Past simple, неделя 1 · вчера · <span class="warn">С опозданием</span></div></div>
+            <div class="row"><a href="#g1"><div class="t">Мария К.</div></a><div class="m">Эссе: мой город · вчера</div></div>
+          </div>
+        </div></div>
+        <nav class="bottombar" aria-label="Основная навигация">
+          <a href="#g1" aria-current="page"><span class="ic"><svg class="i"><use href="#i-today"/></svg></span>Сегодня</a>
+          <a href="#g2"><span class="ic"><svg class="i"><use href="#i-cal"/></svg></span>Расписание</a>
+          <a href="#g4" aria-label="Задания, ждут проверки: 3"><span class="ic"><svg class="i"><use href="#i-hw"/></svg><span class="num-badge">3</span></span>Задания</a>
+          <a href="#g5" aria-label="Чаты, непрочитанных: 2"><span class="ic"><svg class="i"><use href="#i-chat"/></svg><span class="num-badge">2</span></span>Чаты</a>
+          <button type="button"><span class="ic"><svg class="i"><use href="#i-more"/></svg></span>Ещё</button>
+        </nav>
+      </div>
+      <figcaption><b>Tutor, frame.</b> The top bar scrolls away with the page; the bottom bar is fixed, 56 px plus the safe area. Homework and Chats carry counts; their accessible names begin with the visible label.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar"><a class="logo" href="#g1">OVC</a><button class="icon-btn" type="button" aria-label="Уведомления, 3 непрочитанных"><svg class="i"><use href="#i-bell"/></svg><span class="num-badge">3</span></button></div>
+        <div class="scroll"><div class="main"><h1 class="title">Ученики</h1></div></div>
+        <div class="scrim"></div>
+        <div class="sheet" role="dialog" aria-modal="true" aria-label="Ещё">
+          <div class="acct"><span class="avatar">Е</span><div><div style="font-weight:500">Елена Орлова</div><div class="sub" style="margin:0">Репетитор</div></div></div>
+          <a href="#g2" class="current focus-ring" aria-current="page"><svg class="i"><use href="#i-users"/></svg>Ученики</a>
+          <a href="#g2"><svg class="i"><use href="#i-group"/></svg>Группы</a>
+          <a href="#g1"><svg class="i"><use href="#i-bell"/></svg>Уведомления<span class="count">3</span></a>
+          <a href="#g2"><svg class="i"><use href="#i-gear"/></svg>Настройки</a>
+          <button class="item" type="button"><svg class="i"><use href="#i-out"/></svg>Выйти</button>
+          <button class="item" type="button" style="border-bottom:0"><svg class="i"><use href="#i-close"/></svg>Закрыть</button>
+        </div>
+      </div>
+      <figcaption><b>More sheet.</b> A modal dialog from the bottom edge. Focus goes to the current page's row (here Students), otherwise to the first section row; Esc, a tap on the dimmed page or Close return focus to More. Choosing a row closes the sheet and moves focus to the new page's heading.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar"><a class="logo" href="#g1">OVC</a><button class="icon-btn" type="button" aria-expanded="true" aria-label="Уведомления, 2 непрочитанных"><svg class="i"><use href="#i-bell"/></svg><span class="num-badge">2</span></button></div>
+        <div class="scroll"><div class="main"><h1 class="title">Главная</h1></div></div>
+        <div class="popover" role="dialog" aria-label="Уведомления">
+          <h3 class="h" style="margin-top:8px">Уведомления <a class="link" href="#g1" style="font-weight:400">Отметить все как прочитанные</a></h3>
+          <div class="list">
+            <div class="row"><a href="#g3"><div class="t">Новый урок: 20 ноября, 18:00</div></a><div class="m">Елена О. · 5 мин назад</div></div>
+            <div class="row"><a href="#g4"><div class="t">Работа проверена: Past simple</div></a><div class="m">Елена О. · вчера</div></div>
+            <div class="row"><div class="t" style="font-weight:400">Группа «B1 вечер» в архиве</div><div class="m">Пётр С. · 2 дня назад</div></div>
+          </div>
+          <a class="link" href="#g1" style="display:inline-flex;min-height:44px;align-items:center">Все уведомления</a>
+        </div>
+        <nav class="bottombar" aria-label="Основная навигация">
+          <a href="#g3" aria-current="page"><span class="ic"><svg class="i"><use href="#i-home"/></svg></span>Главная</a>
+          <a href="#g3"><span class="ic"><svg class="i"><use href="#i-cal"/></svg></span>Расписание</a>
+          <a href="#g4" aria-label="Задания, нужно сделать: 1"><span class="ic"><svg class="i"><use href="#i-hw"/></svg><span class="num-badge">1</span></span>Задания</a>
+          <a href="#g5"><span class="ic"><svg class="i"><use href="#i-chat"/></svg></span>Чаты</a>
+          <button type="button"><span class="ic"><svg class="i"><use href="#i-more"/></svg></span>Ещё</button>
+        </nav>
+      </div>
+      <figcaption><b>Notifications panel (student).</b> Full width under the top bar, at most 70 % of the height, scrolling on its own; the panel's focus rules are unchanged.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar"><a class="logo" href="#g1">OVC</a></div>
+        <div class="banner">Подтвердите email, чтобы продолжить занятия с репетитором. Мы отправили ссылку на nina@example.com.<br><button class="btn" type="button">Отправить ссылку ещё раз</button></div>
+        <div class="scroll"><div class="main">
+          <h1 class="title">Главная</h1><p class="sub">Сегодня уроков нет</p>
+          <h3 class="h">Мои репетиторы</h3>
+          <div class="list"><div class="row person"><span class="avatar">Е</span><div><div class="t">Елена Орлова</div><div class="m">Английский</div></div></div></div>
+        </div></div>
+        <nav class="bottombar" aria-label="Основная навигация">
+          <a href="#g3" aria-current="page"><span class="ic"><svg class="i"><use href="#i-home"/></svg></span>Главная</a>
+          <button type="button"><span class="ic"><svg class="i"><use href="#i-more"/></svg></span>Ещё</button>
+        </nav>
+      </div>
+      <figcaption><b>Unconfirmed student.</b> Only the allowed sections: Home and More (My tutors, Settings, Sign out), and no Notifications button. A provisional relationship adds Schedule, Homework and Chats. Items keep a fifth of the width, centred; no greyed-out items.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar" style="flex-wrap:wrap;gap:4px"><a class="logo" href="#g1">OVC</a><span style="display:flex;align-items:center;gap:2px"><button class="btn" type="button" aria-pressed="true" style="border:0;padding:0 8px;font-weight:500">Русский</button><button class="btn" type="button" aria-pressed="false" style="border:0;padding:0 8px;font-weight:400;color:var(--muted)">English</button><a class="link" href="#g3" style="padding:0 8px;min-height:44px;display:inline-flex;align-items:center">Регистрация</a></span></div>
+        <div class="scroll"><div class="main">
+          <h1 class="title">Вход</h1>
+          <label class="lbl">Email<input class="field" value="nina@example.com" aria-label="Email"></label>
+          <label class="lbl">Пароль<input class="field" type="password" value="xxxxxxxxxx" aria-label="Пароль"></label>
+          <label class="opt" style="font-size:15px"><span class="r" style="border-radius:4px"></span>Показать пароль</label>
+          <button class="btn primary full" type="button">Войти</button>
+          <p style="margin-top:16px"><a class="link" href="#g3" style="display:inline-flex;min-height:44px;align-items:center">Забыли пароль?</a></p>
+        </div></div>
+      </div>
+      <figcaption><b>Public frame (G3).</b> The logo, the language switch and the sign-up link on one row that wraps when needed; no bottom bar. 16 px inputs, a full-width button.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="group" aria-labelledby="g2">
+  <h2 id="g2">G2 · Tutor's pages</h2>
+  <p>Schedule (an agenda by day), the Lesson page joining only in a new tab, Students and the Student card.</p>
+  <div class="screens">
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar"><a class="logo" href="#g1">OVC</a><button class="icon-btn" type="button" aria-label="Уведомления"><svg class="i"><use href="#i-bell"/></svg></button></div>
+        <div class="scroll"><div class="main">
+          <div style="display:flex;justify-content:space-between;align-items:center"><h1 class="title">Расписание</h1><button class="btn primary" type="button">Новый урок</button></div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+            <span class="theme-switch" style="margin:0"><button type="button" aria-pressed="true">Неделя</button><button type="button" aria-pressed="false">Месяц</button></span>
+            <span style="display:flex;gap:4px"><button class="btn" type="button">Сегодня</button><button class="icon-btn" type="button" aria-label="Назад"><svg class="i"><use href="#i-back"/></svg></button><button class="icon-btn" type="button" aria-label="Вперёд" style="transform:scaleX(-1)"><svg class="i"><use href="#i-back"/></svg></button></span>
+          </div>
+          <p class="sub" style="margin-top:8px">17–23 ноября</p>
+          <h3 class="h">Вторник, 18 ноября</h3>
+          <div class="list">
+            <div class="row"><a href="#g2"><div class="t">18:00–18:45 Past simple: практика</div></a><div class="m">Борис П. · <span class="live">Идёт</span></div></div>
+            <div class="row"><a href="#g2"><div class="t">19:30–20:30 Условные предложения</div></a><div class="m"><span class="dot" style="background:#5E6B3A"></span>Группа B1</div></div>
+          </div>
+          <h3 class="h">Четверг, 20 ноября</h3>
+          <div class="list">
+            <div class="row"><a href="#g2"><div class="t" style="text-decoration:line-through;color:var(--muted)">17:00–18:00 Разговорный клуб</div></a><div class="m"><span class="danger">Отменён</span></div></div>
+            <div class="row"><a href="#g2"><div class="t">18:00–18:45 Past simple: повторение</div></a><div class="m">Мария К.</div></div>
+          </div>
+        </div></div>
+        <nav class="bottombar" aria-label="Основная навигация">
+          <a href="#g1"><span class="ic"><svg class="i"><use href="#i-today"/></svg></span>Сегодня</a>
+          <a href="#g2" aria-current="page"><span class="ic"><svg class="i"><use href="#i-cal"/></svg></span>Расписание</a>
+          <a href="#g4" aria-label="Задания, ждут проверки: 3"><span class="ic"><svg class="i"><use href="#i-hw"/></svg><span class="num-badge">3</span></span>Задания</a>
+          <a href="#g5" aria-label="Чаты, непрочитанных: 2"><span class="ic"><svg class="i"><use href="#i-chat"/></svg><span class="num-badge">2</span></span>Чаты</a>
+          <button type="button"><span class="ic"><svg class="i"><use href="#i-more"/></svg></span>Ещё</button>
+        </nav>
+      </div>
+      <figcaption><b>Schedule.</b> The toolbar on two rows, an agenda by day for the week and the month; "New lesson" in the header opens a full-screen dialog.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar"><a class="logo" href="#g1">OVC</a><button class="icon-btn" type="button" aria-label="Уведомления"><svg class="i"><use href="#i-bell"/></svg></button></div>
+        <div class="scroll"><div class="main">
+          <a class="back" href="#g2"><svg class="i"><use href="#i-back"/></svg>К расписанию</a>
+          <h1 class="title" dir="auto">Past simple: разговорная практика</h1>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"><button class="btn" type="button">Сообщения</button><button class="btn" type="button">Изменить урок</button><button class="icon-btn" type="button" aria-label="Действия с уроком" style="border:1px solid var(--border-strong)"><svg class="i"><use href="#i-dots"/></svg></button></div>
+          <div class="panel"><div class="badge">Скоро начнётся</div><button class="btn primary full" type="button">Начать урок</button><p class="sub" style="margin-top:8px">Урок откроется в новой вкладке.</p></div>
+          <h3 class="h">Материалы</h3>
+          <div class="list"><div class="row"><a href="#g2"><div class="t">Неправильные глаголы</div></a><div class="m">verbs.pdf · 240 КБ</div></div></div>
+          <h3 class="h">Задания</h3>
+          <div class="list"><div class="row"><a href="#g4"><div class="t">Past simple, неделя 1</div></a><div class="m">До 21 ноября · 0/1 отправлено</div></div></div>
+          <h3 class="h">Об уроке</h3>
+          <div class="m">18 ноября, 18:00–18:45 · Индивидуальный · Борис П.</div>
+        </div></div>
+        <nav class="bottombar" aria-label="Основная навигация">
+          <a href="#g1"><span class="ic"><svg class="i"><use href="#i-today"/></svg></span>Сегодня</a>
+          <a href="#g2" aria-current="page"><span class="ic"><svg class="i"><use href="#i-cal"/></svg></span>Расписание</a>
+          <a href="#g4" aria-label="Задания, ждут проверки: 3"><span class="ic"><svg class="i"><use href="#i-hw"/></svg><span class="num-badge">3</span></span>Задания</a>
+          <a href="#g5" aria-label="Чаты, непрочитанных: 2"><span class="ic"><svg class="i"><use href="#i-chat"/></svg><span class="num-badge">2</span></span>Чаты</a>
+          <button type="button"><span class="ic"><svg class="i"><use href="#i-more"/></svg></span>Ещё</button>
+        </nav>
+      </div>
+      <figcaption><b>Lesson.</b> One column; the full-width join button opens the room only in a new tab (no embedding and no focus mode on phones). The pre-opened tab and refusal rules are unchanged.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar"><a class="logo" href="#g1">OVC</a><button class="icon-btn" type="button" aria-label="Уведомления"><svg class="i"><use href="#i-bell"/></svg></button></div>
+        <div class="scroll"><div class="main">
+          <div style="display:flex;justify-content:space-between;align-items:center"><h1 class="title">Ученики</h1><button class="btn primary" type="button">Добавить ученика</button></div>
+          <nav class="tabs" aria-label="Состояние"><a href="#g2" aria-current="page">Действующие</a><a href="#g2">Приглашённые</a><a href="#g2">Архив</a></nav>
+          <div style="display:flex;gap:8px;margin-top:12px"><input class="field" style="margin:0" placeholder="Поиск" aria-label="Поиск"><button class="btn" type="button">Найти</button></div>
+          <div class="field select" style="margin-top:8px">Все группы <svg class="i"><use href="#i-down"/></svg></div>
+          <div class="list" style="margin-top:12px">
+            <div class="row person"><span class="avatar">Б</span><div style="flex:1"><a href="#g2" class="t">Борис Петров</a><div class="m">boris@example.com · B1 · 20 нояб., 18:00 · заданий: 1</div></div><span class="m">Активен</span></div>
+            <div class="row person"><span class="avatar">М</span><div style="flex:1"><a href="#g2" class="t">Мария Ким</a><div class="m">maria@example.test · Нет урока · заданий: 0</div></div><span class="m warn">Не подтв.</span></div>
+          </div>
+        </div></div>
+        <nav class="bottombar" aria-label="Основная навигация">
+          <a href="#g1"><span class="ic"><svg class="i"><use href="#i-today"/></svg></span>Сегодня</a>
+          <a href="#g2"><span class="ic"><svg class="i"><use href="#i-cal"/></svg></span>Расписание</a>
+          <a href="#g4" aria-label="Задания, ждут проверки: 3"><span class="ic"><svg class="i"><use href="#i-hw"/></svg><span class="num-badge">3</span></span>Задания</a>
+          <a href="#g5" aria-label="Чаты, непрочитанных: 2"><span class="ic"><svg class="i"><use href="#i-chat"/></svg><span class="num-badge">2</span></span>Чаты</a>
+          <button type="button" style="color:var(--text)"><span class="ic" style="background:var(--hover);color:var(--text)"><svg class="i"><use href="#i-more"/></svg></span>Ещё</button>
+        </nav>
+      </div>
+      <figcaption><b>Students.</b> The filter row stacks; the table keeps Name and State, with the rest under the name. A page listed in the More sheet marks More visually.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar"><a class="logo" href="#g1">OVC</a><button class="icon-btn" type="button" aria-label="Уведомления"><svg class="i"><use href="#i-bell"/></svg></button></div>
+        <div class="scroll"><div class="main">
+          <a class="back" href="#g2"><svg class="i"><use href="#i-back"/></svg>Все ученики</a>
+          <div class="person"><span class="avatar" style="width:44px;height:44px">Т</span><div><h1 class="title" style="font-size:22px">Тимур Алиев</h1><div class="m">timur@example.com · <span class="info">Приглашён</span></div></div></div>
+          <div class="panel"><div class="t" style="font-weight:500">Ссылка-приглашение</div><input class="field" readonly value="ovc.example.com/invite/…" aria-label="Ссылка-приглашение"><button class="btn full" type="button">Копировать</button></div>
+          <nav class="tabs" aria-label="Карточка"><a href="#g2" aria-current="page">Обзор</a><a href="#g2">Уроки</a><a href="#g2">Задания</a></nav>
+          <p class="sub">Уроков пока нет.</p>
+          <h3 class="h">Заметки <span>Видите только вы</span></h3>
+          <textarea class="field" rows="3" aria-label="Заметки">Хочет готовиться к собеседованию.</textarea>
+        </div></div>
+        <nav class="bottombar" aria-label="Основная навигация">
+          <a href="#g1"><span class="ic"><svg class="i"><use href="#i-today"/></svg></span>Сегодня</a>
+          <a href="#g2"><span class="ic"><svg class="i"><use href="#i-cal"/></svg></span>Расписание</a>
+          <a href="#g4" aria-label="Задания, ждут проверки: 3"><span class="ic"><svg class="i"><use href="#i-hw"/></svg><span class="num-badge">3</span></span>Задания</a>
+          <a href="#g5" aria-label="Чаты, непрочитанных: 2"><span class="ic"><svg class="i"><use href="#i-chat"/></svg><span class="num-badge">2</span></span>Чаты</a>
+          <button type="button" style="color:var(--text)"><span class="ic" style="background:var(--hover);color:var(--text)"><svg class="i"><use href="#i-more"/></svg></span>Ещё</button>
+        </nav>
+      </div>
+      <figcaption><b>Student card.</b> One column; the invitation link wraps inside a read-only field with a full-width Copy; Notes after the tabs.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="group" aria-labelledby="g3">
+  <h2 id="g3">G3 · Student's and public pages</h2>
+  <p>The student's Home and the invitation page (a page with a token in its link).</p>
+  <div class="screens">
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar"><a class="logo" href="#g1">OVC</a><button class="icon-btn" type="button" aria-label="Уведомления, 2 непрочитанных"><svg class="i"><use href="#i-bell"/></svg><span class="num-badge">2</span></button></div>
+        <div class="scroll"><div class="main">
+          <h1 class="title">Главная</h1><p class="sub">1 урок сегодня</p>
+          <div class="field select" style="margin-top:12px">Все репетиторы <svg class="i"><use href="#i-down"/></svg></div>
+          <div class="panel"><div class="badge live">Идёт · 18:00–18:45</div><div class="t" style="font-weight:500;margin-top:4px">Past simple: практика</div><div class="m"><span class="dot" style="background:#3F5E7A"></span>Елена О. · Индивидуальный урок</div><button class="btn primary full" type="button">Войти</button></div>
+          <h3 class="h">Нужно сделать</h3>
+          <div class="list"><div class="row"><a href="#g4"><div class="t">Past simple, неделя 1</div></a><div class="m">Елена О. · до 21 ноября</div></div></div>
+          <h3 class="h">Недавно проверено</h3>
+          <div class="list"><div class="row"><a href="#g4"><div class="t">Эссе: мой город</div></a><div class="m">«Хорошая структура, проверь артикли.» · исправленный файл</div></div></div>
+        </div></div>
+        <nav class="bottombar" aria-label="Основная навигация">
+          <a href="#g3" aria-current="page"><span class="ic"><svg class="i"><use href="#i-home"/></svg></span>Главная</a>
+          <a href="#g3"><span class="ic"><svg class="i"><use href="#i-cal"/></svg></span>Расписание</a>
+          <a href="#g4" aria-label="Задания, нужно сделать: 1"><span class="ic"><svg class="i"><use href="#i-hw"/></svg><span class="num-badge">1</span></span>Задания</a>
+          <a href="#g5"><span class="ic"><svg class="i"><use href="#i-chat"/></svg></span>Чаты</a>
+          <button type="button"><span class="ic"><svg class="i"><use href="#i-more"/></svg></span>Ещё</button>
+        </nav>
+      </div>
+      <figcaption><b>Student's Home.</b> The next lesson first with a full-width Join; then To do, Recently checked (no points), the next seven days and My tutors.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar"><a class="logo" href="#g1">OVC</a><span><button class="btn" type="button" style="border:0;padding:0 8px;font-weight:500">Русский</button><button class="btn" type="button" style="border:0;padding:0 8px;font-weight:400;color:var(--muted)">English</button></span></div>
+        <div class="scroll"><div class="main">
+          <div class="person"><span class="avatar" style="width:48px;height:48px">Е</span><div><div class="t" style="font-weight:500">Елена Орлова</div><div class="m">Английский, подготовка к IELTS</div></div></div>
+          <h1 class="title" style="font-size:22px;margin-top:16px">Елена Орлова приглашает вас заниматься в OVC</h1>
+          <button class="btn primary full" type="button" style="margin-top:16px">Создать аккаунт</button>
+          <button class="btn full" type="button">Войти и принять</button>
+        </div></div>
+      </div>
+      <figcaption><b>Invitation.</b> Full-width buttons stacked; the forms open in place. The address is already <code>/invite</code>; the token stays in memory and never enters <code>next</code>; the layout adds no request or storage.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="group" aria-labelledby="g4">
+  <h2 id="g4">G4 · Homework</h2>
+  <p>Library, the student's assignment page and the review screen.</p>
+  <div class="screens">
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar"><a class="logo" href="#g1">OVC</a><button class="icon-btn" type="button" aria-label="Уведомления"><svg class="i"><use href="#i-bell"/></svg></button></div>
+        <div class="scroll"><div class="main">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h1 class="title">Задания</h1><span style="display:flex;gap:4px"><button class="btn primary" type="button">Новое задание</button><button class="icon-btn" type="button" aria-label="Ещё действия" style="border:1px solid var(--border-strong)"><svg class="i"><use href="#i-dots"/></svg></button></span></div>
+          <nav class="tabs" aria-label="Задания"><a href="#g4" aria-current="page">Библиотека</a><a href="#g4">Выданные</a><a href="#g4">На проверке</a></nav>
+          <div class="field select" style="margin-top:12px">Папка: Грамматика <svg class="i"><use href="#i-down"/></svg></div>
+          <input class="field" placeholder="Поиск" aria-label="Поиск">
+          <div class="list" style="margin-top:12px">
+            <div class="row" style="display:flex;align-items:center"><div style="flex:1"><a href="#g4" class="t">Past simple, неделя 1</a><div class="m">Задание · 12 нояб.</div></div><button class="icon-btn" type="button" aria-label="Действия: Past simple, неделя 1"><svg class="i"><use href="#i-dots"/></svg></button></div>
+            <div class="row" style="display:flex;align-items:center"><div style="flex:1"><a href="#g4" class="t">Неправильные глаголы</a><div class="m">Материал · PDF · 10 нояб.</div></div><button class="icon-btn" type="button" aria-label="Действия: Неправильные глаголы"><svg class="i"><use href="#i-dots"/></svg></button></div>
+          </div>
+        </div></div>
+        <nav class="bottombar" aria-label="Основная навигация">
+          <a href="#g1"><span class="ic"><svg class="i"><use href="#i-today"/></svg></span>Сегодня</a>
+          <a href="#g2"><span class="ic"><svg class="i"><use href="#i-cal"/></svg></span>Расписание</a>
+          <a href="#g4" aria-current="page" aria-label="Задания, ждут проверки: 3"><span class="ic"><svg class="i"><use href="#i-hw"/></svg><span class="num-badge">3</span></span>Задания</a>
+          <a href="#g5" aria-label="Чаты, непрочитанных: 2"><span class="ic"><svg class="i"><use href="#i-chat"/></svg><span class="num-badge">2</span></span>Чаты</a>
+          <button type="button"><span class="ic"><svg class="i"><use href="#i-more"/></svg></span>Ещё</button>
+        </nav>
+      </div>
+      <figcaption><b>Library.</b> The section's tabs, the folder as a drop-down, the search on its own row; each row holds the name, kind and date, with a 44 px menu.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar"><a class="logo" href="#g1">OVC</a><button class="icon-btn" type="button" aria-label="Уведомления"><svg class="i"><use href="#i-bell"/></svg></button></div>
+        <div class="scroll"><div class="main">
+          <a class="back" href="#g4"><svg class="i"><use href="#i-back"/></svg>Все задания</a>
+          <h1 class="title" style="font-size:22px">Past simple, неделя 1</h1><p class="sub">Елена О. · до 21 ноября, 23:59</p>
+          <div class="q"><div class="h">Вопрос 1</div><p style="margin:4px 0">Yesterday I ___ to the cinema.</p><div class="opt"><span class="r on"></span>went</div><div class="opt"><span class="r"></span>go</div><div class="opt"><span class="r"></span>gone</div></div>
+          <div class="q"><div class="h">Вопрос 2</div><p style="margin:4px 0">Загрузите фото письменного упражнения.</p><button class="btn full" type="button"><svg class="i" style="margin-right:6px"><use href="#i-clip"/></svg>Прикрепить файл</button></div>
+          <button class="btn primary full" type="button" style="margin-top:16px">Отправить</button>
+        </div></div>
+        <nav class="bottombar" aria-label="Основная навигация">
+          <a href="#g3"><span class="ic"><svg class="i"><use href="#i-home"/></svg></span>Главная</a>
+          <a href="#g3"><span class="ic"><svg class="i"><use href="#i-cal"/></svg></span>Расписание</a>
+          <a href="#g4" aria-current="page" aria-label="Задания, нужно сделать: 1"><span class="ic"><svg class="i"><use href="#i-hw"/></svg><span class="num-badge">1</span></span>Задания</a>
+          <a href="#g5"><span class="ic"><svg class="i"><use href="#i-chat"/></svg></span>Чаты</a>
+          <button type="button"><span class="ic"><svg class="i"><use href="#i-more"/></svg></span>Ещё</button>
+        </nav>
+      </div>
+      <figcaption><b>Student's assignment.</b> Full-width questions, a full-width upload and Submit at the end. No key and no points on any width.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar"><a class="logo" href="#g1">OVC</a><button class="icon-btn" type="button" aria-label="Уведомления"><svg class="i"><use href="#i-bell"/></svg></button></div>
+        <div class="scroll"><div class="main">
+          <a class="back" href="#g4"><svg class="i"><use href="#i-back"/></svg>К очереди</a>
+          <h1 class="title" style="font-size:22px">Борис П. · Past simple, неделя 1</h1><p class="sub">Отправлено вчера · <span class="warn">С опозданием</span></p>
+          <div class="q"><div class="h">Вопрос 1 · ответ ученика</div><p style="margin:4px 0">went <span class="ok">· верно</span></p><div class="m">Баллы: 1 из 1 (автоматически)</div></div>
+          <div class="q"><div class="h">Вопрос 2 · ответ ученика</div><a class="link" href="#g4">photo_1.jpg · 1,2 МБ</a>
+            <label class="lbl">Баллы<input class="field" value="2" aria-label="Баллы за вопрос 2"></label>
+            <label class="lbl">Комментарий<textarea class="field" rows="2" aria-label="Комментарий к вопросу 2">Проверь окончания.</textarea></label>
+            <button class="btn full" type="button">Загрузить исправленный файл</button></div>
+          <button class="btn primary full" type="button" style="margin-top:16px">Вернуть ученику</button>
+        </div></div>
+      </div>
+      <figcaption><b>Review.</b> One column with scoring under each answer, a full-width corrected-file upload and the actions at the end of the page. Scrolled to the end, so the bottom bar is outside this crop.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="group" aria-labelledby="g5">
+  <h2 id="g5">G5 · Messages</h2>
+  <p>The list and the conversation are separate screens; the conversation screen hides the bottom bar and the top bar.</p>
+  <div class="screens">
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="topbar"><a class="logo" href="#g1">OVC</a><button class="icon-btn" type="button" aria-label="Уведомления"><svg class="i"><use href="#i-bell"/></svg></button></div>
+        <div class="scroll"><div class="main">
+          <h1 class="title">Сообщения</h1>
+          <div class="list" style="margin-top:12px">
+            <a class="row person" href="#g5" style="color:inherit;text-decoration:none"><span class="avatar">Б</span><div style="flex:1"><div class="t">Борис Петров</div><div class="m">14:02</div></div><span class="num-badge" style="position:static">2</span></a>
+            <a class="row person" href="#g5" style="color:inherit;text-decoration:none"><span class="avatar" style="background:#5E6B3A;color:#fff">B</span><div style="flex:1"><div class="t">Группа B1</div><div class="m">вчера</div></div></a>
+            <a class="row person" href="#g5" style="color:inherit;text-decoration:none"><span class="avatar">М</span><div style="flex:1"><div class="t">Мария Ким</div><div class="m">16 нояб.</div></div></a>
+          </div>
+        </div></div>
+        <nav class="bottombar" aria-label="Основная навигация">
+          <a href="#g1"><span class="ic"><svg class="i"><use href="#i-today"/></svg></span>Сегодня</a>
+          <a href="#g2"><span class="ic"><svg class="i"><use href="#i-cal"/></svg></span>Расписание</a>
+          <a href="#g4" aria-label="Задания, ждут проверки: 3"><span class="ic"><svg class="i"><use href="#i-hw"/></svg><span class="num-badge">3</span></span>Задания</a>
+          <a href="#g5" aria-current="page" aria-label="Чаты, непрочитанных: 2"><span class="ic"><svg class="i"><use href="#i-chat"/></svg><span class="num-badge">2</span></span>Чаты</a>
+          <button type="button"><span class="ic"><svg class="i"><use href="#i-more"/></svg></span>Ещё</button>
+        </nav>
+      </div>
+      <figcaption><b>Chat list.</b> With the bottom bar; Chats is the current item.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone" lang="ru">
+        <div class="convhead"><button class="icon-btn" type="button" aria-label="Назад к списку"><svg class="i"><use href="#i-back"/></svg></button><div style="flex:1"><div class="t" style="font-weight:500">Борис Петров</div><div class="m" style="font-size:12px;color:var(--muted)">в сети</div></div></div>
+        <div class="scroll"><div class="main" style="padding-bottom:80px">
+          <div class="msg"><div>Добрый день! Можно перенести урок на четверг?</div><div class="m">13:58</div></div>
+          <div class="msg mine"><div>Да, давайте в 18:00. Поставлю в расписание.</div><div class="m">14:01</div></div>
+          <div class="msg"><div><a class="link" href="#g5">homework_photo.jpg</a> · 860 КБ</div><div class="m">14:02</div></div>
+        </div></div>
+        <div class="composer"><button class="icon-btn" type="button" aria-label="Прикрепить файлы"><svg class="i"><use href="#i-clip"/></svg></button><textarea class="field" rows="1" aria-label="Сообщение" placeholder="Сообщение"></textarea><button class="btn primary" type="button">Отправить</button></div>
+      </div>
+      <figcaption><b>Conversation.</b> No bottom bar and no top bar; Back to the list (a route change, focus to the list's heading) and the channel's name at the top; the composer pinned at the bottom with a 44 px attach button.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<script>
+  document.querySelectorAll('[data-theme-choice]').forEach((button) => {
+    button.addEventListener('click', () => {
+      document.documentElement.dataset.theme = button.dataset.themeChoice;
+      document.querySelectorAll('[data-theme-choice]').forEach((other) => other.setAttribute('aria-pressed', String(other === button)));
+    });
+  });
+</script>
+</body>
+</html>

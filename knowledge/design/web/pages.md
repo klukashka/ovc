@@ -14,6 +14,7 @@ FR-1.4, FR-1.8, FR-17.1.
 - A language switch in the frame.
 - Throttling shows "Too many attempts, try again in {minutes}".
 - A wrong email or password shows one message that does not say which was wrong.
+- **Phone** (slice 10 change G0, page group G3, pending owner review): the public frame on phones above one column with 16 px side padding: Email, Password with "Show password", and Sign in at the full width, then Forgot password and Sign up as links with 44 px targets; inputs use `text-body-phone`. The answers that reveal no account and the `next` rule are unchanged.
 
 ### Sign up
 
@@ -25,6 +26,7 @@ FR-1.1, FR-1.2.
   - the student form (`/signup/student`) also has a required tutor code field, first in the form, with the hint "Got a link from your tutor? Open it instead"; an invalid code (`tutor_code_invalid`) shows "This code is no longer valid — ask your tutor for a new one" under the field, with the form's alert "Check the highlighted fields", and creates nothing; a valid code shows "Check your email" for a new and a taken email alike.
 - **Submitting** shows "Check your email" with the address and a resend button, disabled for 60 seconds.
 - **After confirmation** in the same browser, a student who signed up with a code sees "Request sent. Waiting for the tutor."
+- **Phone** (slice 10 change G0, page group G3, pending owner review): "I teach" and "I study" stack as full-width panels; the form is one column with the tutor code first on `/signup/student`, the consent checkbox on a 44 px target and the submit button at the full width; "Check your email" puts its resend button at the full width.
 
 ### Accept invitation
 
@@ -42,6 +44,7 @@ FR-2.1, FR-2.2, FR-1.2, FR-1.3.
 - **Another email:** "This invitation is for another email address" (`invitation_email_mismatch`), for a sign-up and a signed-in acceptance alike.
 - **Invalid, expired, used or revoked:** one message, "This invitation is no longer valid — ask your tutor for a new link".
 - **The page** never shows the invitee's email, removes the link's secret part from the address bar on its first render (before the session has loaded), and keeps it in memory only, never in `next`. Its address `/invite/{token}` is replaced with `/invite`; opened as `/invite` alone (for example after a reload), it shows "Open the link from your tutor again".
+- **Phone** (slice 10 change G0, page group G3, pending owner review): the tutor's avatar, name and subjects stack above the invitation sentence; "Create account" and "Sign in to accept" (or "Accept" and "Use another account") stack as full-width buttons, and the forms open in place in one column. The layout adds no request, address, history entry or storage: the address is still replaced on the first render, the token stays in memory and never enters `next`, and the page sends `Referrer-Policy: no-referrer` as before (T-27).
 
 ### Confirmation, password reset, unsubscribe
 
@@ -52,6 +55,7 @@ FR-1.1, FR-1.5, FR-13.3. Single-purpose pages with one result message and one ne
   - it loads `GET /unsubscribe/preview`, showing "Checking the link" meanwhile, and then the group's name with the button "Turn off these emails"; every `token_invalid`, on the preview as on the confirmation, shows one message, "This link is no longer valid", which takes focus, with the link "All email settings" to Settings → Notifications (which asks to sign in when signed out); `rate_limited` shows the throttling message with the minutes to wait; any other failed preview shows the shared load failure with Retry;
   - confirming sends `POST /unsubscribe` with no body; the button stays busy until the answer, and the result "These emails are turned off" replaces the button and takes focus, with the link "All email settings" to Settings → Notifications (which asks to sign in when signed out); a refused confirmation other than `token_invalid` shows its error, which takes focus, and keeps the button;
   - the page's texts are in [states](states.md#notifications).
+- **Phone** (slice 10 change G0, page group G3, pending owner review): one column with the result message and its one next step as a full-width button or link; the new-password form of the confirmation page and the reset page is one column with the strength hint under the field. The token handling above is unchanged (T-27).
 
 ## Tutor pages
 
@@ -100,7 +104,7 @@ FR-15.1, FR-15.2, FR-2.3, FR-5.1.
   - the checklist's header holds "Dismiss", which sends `PATCH /tutor/settings` with `{"onboarding_dismissed": true}` and is busy while it runs; on success the checklist goes for good and focus moves to the heading of today's lessons, the next panel; a refusal shows its error code's message in an alert inside the checklist, which takes focus, and `unauthenticated` follows the session rule; a checklist the tutor dismissed never comes back, also when a step becomes undone;
   - for an unconfirmed tutor `/home` gives the "Invite a student" step as `null`: the step shows the confirmation prompt in place of its link, as before, and counts as not done, so the checklist stays until it is dismissed, or until the tutor confirms the email and every step is done; "Dismiss" works for an unconfirmed tutor too.
 - **Computer layout:** the greeting spans the page; the main column holds the checklist, today's lessons and needs checking; a 300 px side column holds join requests, upcoming deadlines and unread messages.
-- **Phone:** sections stack in the order above.
+- **Phone** (slice 10 change G0, page group G2, pending owner review): one column in the order of the computer layout's columns: the title with the date, the refetch notice when shown, the checklist with its steps in one column, today's lessons, Needs checking, the join requests with the tutor code, Upcoming deadlines and unread messages. Each lesson row puts its Join control on its own line at the full width below the row's link; each join request row puts Accept and Decline side by side under the name and email, with the menu on a 44 px target. Join still opens only a new tab, under the lesson page's pre-opened tab rules (T-25).
 
 ### Schedule
 
@@ -110,7 +114,8 @@ FR-4.1–FR-4.5. Built in slice 5 from `GET /calendar` and `POST /lessons` ([sch
 - **Week:** a time grid in the viewer's profile timezone; lesson blocks in the audience colour with title and status. From 1024 px the hours area takes the window's height below the toolbar. It opens one hour before the first lesson of the shown week that has not ended, or before the week's earliest lesson when every lesson has ended, or at 00:00 when that lesson starts before the shown week, or at 08:00 in a week without lessons; it opens so when the page is opened and when another week has loaded, and keeps the reader's position on a refetch of the same week (design slice step D4, pending owner review). Cancelled lessons are struck through and muted. Clicking a free slot pre-fills "New lesson", and the dialog it opens returns focus to "New lesson" when it closes, because the free slots are kept out of the Tab order and the accessibility tree (pending owner review).
 - **Week targets** (owner's decision of 2026-10-28, pending owner review): the time grid is shown only at 1024 px and wider with a fine pointer; there every lesson block is at least 24 px high, and lanes are computed from the blocks' shown heights so that no block covers another (WCAG 2.5.8). A block of a lesson shorter than 45 minutes shows only its start time and its status icon (none for a `scheduled` lesson), one icon per state, with a cancelled lesson's time muted and struck through; the full time, title, audience and status word are in the link's accessible name and in its tooltip. Each lane is at least 64 px wide, so a day with more overlapping lessons than its column holds scrolls sideways instead of narrowing them. When the window crosses 1024 px, a focused lesson keeps focus in the other layout. Below 1024 px and on coarse pointers the week view lists its lessons day by day with full-size items of at least 44 px, as the agenda does.
 - **Month:** days with up to three lessons and "+{n} more". Lesson blocks and "+{n} more" keep 44 px touch targets. "+{n} more" expands its day in place to list all of the day's lessons, and focus moves to the first newly shown lesson (owner's decision of 2026-10-28, pending owner review).
-- **Phone:** an agenda list grouped by day, with the same toolbar (Week, Month, Today, previous and next): it lists the days of the selected week or month that have lessons, and a period without lessons shows the sentence "No lessons in this period" (owner's decision of 2026-10-28, pending owner review).
+- **Phone** (slice 10 change G0, page group G2, pending owner review): the toolbar wraps onto two rows (Week and Month, then Today with previous and next), and "New lesson" stays in the page header. The New lesson dialog fills the screen, with its fields in one column and its actions at the end; the overlap warning and the series scope question keep their focus rules.
+- **Phone** (the agenda rule, unchanged and normative beside the G0 rule above): an agenda list grouped by day, with the same toolbar (Week, Month, Today, previous and next): it lists the days of the selected week or month that have lessons, and a period without lessons shows the sentence "No lessons in this period" (owner's decision of 2026-10-28, pending owner review).
 - **Status:** each lesson block shows the word of its `status` from [states](states.md#lessons), except an ordinary `scheduled` lesson, which shows none, in blocks and in every lesson list (design slice step D4, pending owner review); "Starting soon" appears on the lesson page only, so the calendar derives no state from the clock. An `ended` lesson shows "Ended" when it took place and "Did not take place" otherwise, from the item's `took_place` (lesson room change, pending owner review).
 - **More than 1,000 lessons:** when `GET /calendar` answers `truncated: true`, a notice above the grid says "Only the first 1,000 lessons of this period are shown. Open a week to see the rest." (owner's decision of 2026-10-28, pending owner review).
 - **Construction:** the week grid, the month grid and the agenda are built with CSS grid and `Intl.DateTimeFormat` in the viewer's profile timezone, without a date or calendar library; the local-midnight bounds of a range come from a small helper that iterates on the zone offset, unit-tested across a daylight-saving change in both directions. The range bounds are the only instants the client computes; it never converts a local time into an instant for saving.
@@ -187,7 +192,8 @@ FR-4.6, FR-4.7, FR-5.1–FR-5.6. Built in slice 5 without video from `GET /lesso
   - Play opens a player dialog;
   - the tutor has Delete, and Retry on a recording held because storage is full.
 - **Computer layout:** a thin top bar with breadcrumbs; the main column holds the video area (as a join panel until the user is in the room), materials, assignments and recordings; a 300 px side column "About the lesson" holds date and time, format (individual or group), audience, the series rule, a short "Before the lesson" hint (new tab, headphones, camera and microphone permission) and a link to the chat.
-- **Phone:** the video area becomes a large Join button that opens the room in a new tab, because phone browsers do not offer full-screen embedding reliably.
+- **Phone:** the video area becomes a large Join button that opens the room in a new tab, because phone browsers do not offer full-screen embedding reliably (kept; the G0 rule below details it).
+- **Phone** (slice 10 change G0, page group G2, pending owner review): one column: the back link, the title, the header's actions (Messages, Edit lesson, Lesson actions) on a row below the title that wraps, the join block with its button at the full width, the description, Materials, Assignments and "About the lesson". The join takes the new-tab path, as on every width below 1024 px, so phones never embed the room or show focus mode; the pre-opened tab, the cleared opener, the join refusals and the signed material addresses are unchanged (T-10, T-11, T-16, T-24, T-25, T-37). The End lesson and Restart the room confirmations fill the screen.
 
 ### Students
 
@@ -205,6 +211,7 @@ FR-2.1, FR-2.3, FR-2.5.
 - **Pending join requests** appear at the top with Accept, Decline and, in a menu, "Decline and block", in the same section and with the same notices as on Today; the section is shown only while requests wait, and stays after the last decision until the page is left, so its notice keeps focus. Until the join requests have first loaded, the tabs, the search and the list are not shown (a loading state stands in their place), so they do not move when requests arrive; once shown they stay shown, also while a failed request list is retried.
 - **Empty:** a heading with "Invite your first student" and "Share your tutor code {code}"; the empty Invited and Ended tabs and a search or group without matches say so in one line ("No open invitations.", "No ended relationships.", "Nobody matches the search."); the empty states add no button of their own, because "Add student" stays in the header (pending owner review).
 - **An unconfirmed tutor** gets the confirmation prompt instead of "Add student".
+- **Phone** (slice 10 change G0, page group G2, pending owner review): the filter row stacks: the three tabs as one row of links (each a 44 px target, «Действующие», «Приглашённые», «Архив» fitting at 360 px), the search field with its Search button on one row, then the Group choice at the full width; the table keeps the Name and State columns, and Email, Groups, Next lesson and Open assignments are shown under the name; "Add student" stays in the page header.
 
 ### Student card
 
@@ -237,6 +244,7 @@ FR-2.5, FR-2.7, FR-11.3.
   - **Live and focus:** the tab and Overview refetch on `entity.changed` of kinds `issue` and `submission`; a refetch that removes the focused row follows the shared rule; the tab's texts load with the `homework` feature section.
 - **Ended card:** "Invite again" creates a new link with Copy and Send; history stays visible. In slice 3 it sits under "Work together again" with the hint that the student comes back to the card and its history but not to the groups; once the link exists, the card shows it as an invited card does (Copy, Send, "Create a new link", its expiry) and the notice "A new invitation link was created." takes focus. An ended card that already holds an open link shows that link instead of "Invite again". When the student's account is deleted, the card shows no account details until the purge: the avatar falls back to the display name's initial and the email line shows only the card's own email.
 - **End dialog** for an active student names the consequences: the student leaves the tutor's groups, future lessons are cancelled, the chat becomes read-only, and the student gets an email. It opens on Cancel; its button is "End". After ending, the card shows its ended state and the notice "You no longer work with this student." takes focus. In slice 3 "End working together" is a button below the notes on provisional, reclaim-pending and active cards, not yet in an overflow menu, because the header has no other actions until lessons and chat arrive.
+- **Phone** (slice 10 change G0, page group G2, pending owner review): one column: the account details, the invitation block, the tabs Overview, Lessons and Homework as one row of links, the tab's content, then Notes. The invitation link wraps inside its read-only field with Copy at the full width below it; it is shown only where it is shown today and never enters an address, storage or diagnostics (T-27).
 
 ### Groups and group page
 
@@ -270,6 +278,7 @@ FR-3.
   - "Add students" opens a dialog with the same member choice, limited to the free places, which opens on its search field; adding closes it and the notice "The students were added to the group." takes focus; an archived group offers no "Add students" and says that it takes no new students;
   - removing a member, archiving and unarchiving each show a notice that takes focus ("The student was removed from the group.", "The group is archived.", "The group is active again.");
   - a refusal because chosen students stopped being active (`relationship_not_active`) keeps the dialog open, takes them off the choice and says so; a member outside the tutor's scope (`not_found`) empties the choice and asks to choose again; the 30-member and 200-group limits each have their own message; an addition refused because the group was archived meanwhile (`audience_not_active`) closes the dialog and shows "This group changed in the meantime. Its current state is shown below.", which takes focus above the reloaded group.
+- **Phone** (slice 10 change G0, page group G2, pending owner review): the list keeps the Name column and shows the member count and the next lesson under the name; the group page is one column with the header (name, colour dot and actions wrapping onto a second row), the members with "Add students" and Remove, then the next lessons and Assignments.
 
 ### Library
 
@@ -291,6 +300,7 @@ FR-6. Built in slice 8 from `GET /library`, `GET /library/folders` and the libra
 - **Unconfirmed tutor:** folders and templates work; "Upload material", and a file dropped on the empty library's drop zone, show "Confirm your email to upload files." in place of the picker, and the builder offers no prompt images.
 - **Empty:** the root with nothing in it shows "Build your first assignment" with "New assignment" and an upload drop zone; an empty folder shows "This folder is empty"; a search without results shows "Nothing found".
 - **Errors:** a stale or missing item (`not_found`) reloads the folder and shows "This item is no longer in your library.", which takes focus; the shared refetch notice applies to a failed refetch.
+- **Phone** (slice 10 change G0, page group G4, pending owner review): the header keeps "New assignment" and the menu; the folder tree is the drop-down above the items, as below 1024 px, and the search sits on its own row; the table keeps the Name column, with the kind and the date under the name, and each row's menu on a 44 px target.
 
 ### Builder
 
@@ -323,6 +333,7 @@ FR-7, FR-8.1. Built in slice 8 at `/homework/templates/{id}` from `GET`, `PUT` a
 - **Issuing from the builder** (from slice 9): for a confirmed tutor, while the template is ready, the header shows "Issue assignment" beside Preview; it first flushes the pending save and opens the [Issue dialog](#issue-dialog) with the template preset only when the saved template is still ready (otherwise the readiness line shows the problems and focus stays on the button, which then disappears with the readiness, moving focus to the title field); dismissing the dialog returns focus to the button, and a saved issue closes it onto the notice "Assignment issued.", which takes focus, with the link "Open the issued assignment". While the template is incomplete, or the tutor is unconfirmed, the button is not shown; when it disappears with focus on it, focus moves to the title field.
 - **The width** is optimised for desktop; on phones the builder stacks and stays fully usable.
 - **Code:** the builder is its own lazily loaded route chunk; no module reachable only from it enters the entry or a student page chunk ([frontend module map](../../architecture/detailed.md#frontend-frontendsrc)).
+- **Phone** (slice 10 change G0, page group G4, pending owner review): one column: the back link and the title, the save state, then the blocks in order, each editor at the full width with its fields stacked and its Move up, Move down, Duplicate and Delete buttons on 44 px targets in one row that wraps; Preview opens its dialog at the full screen with the "Phone" frame chosen. The preview still never shows a key, an explanation or points.
 
 ### Issue dialog
 
@@ -343,7 +354,7 @@ FR-8.1 to FR-8.3. Built in slice 9 on `POST /issues` ([issuing](../../specs/home
   - `not_found`: "The assignment, student, group or lesson is no longer available.", and the choices reload;
   - `validation_failed` at `body.deadline_at`: "Choose a time in the future." under the deadline; at `body.lesson_id` with `too_many`: "A lesson links at most 20 assignments." under the lesson; at `body` with `too_many`: "Your issued assignments have reached their storage limit.";
   - `rate_limited`: the shared refusal text with the waiting time; `email_not_verified`: the confirmation prompt.
-- **Phone:** below 768 px the dialog fills the screen in the interim one-column frame.
+- **Phone** (slice 10 change G0, page group G4, pending owner review): below 768 px the dialog fills the screen, its fields in one column and its actions at the end, as every dialog on phones.
 
 ### Issued work and issue page
 
@@ -359,6 +370,7 @@ FR-8.4, FR-10.1, FR-11.2. Built in slice 9 on `GET /issues`, `GET /issues/{id}`,
 - **Change linked lesson** opens a dialog on its lesson choice ("No linked lesson" and the audience's next lessons, with the current lesson under "Chosen"); saving sends only `lesson_id` with the `version` and behaves as Change deadline, announcing "Linked lesson changed"; `too_many` shows "A lesson links at most 20 assignments." under the choice and `not_found` shows "This lesson is no longer available." there, each taking focus.
 - **Withdraw** opens the confirmation "Withdraw this assignment?" with the consequence "Students no longer see it, and it leaves their lists. This cannot be undone.", the buttons "Withdraw" and Cancel, opening on Cancel and returning focus to the menu button when dismissed; a confirmed withdrawal closes it onto the notice "The assignment is withdrawn.", which takes focus above the reloaded page, because the menu's items are gone; `issue_has_submissions` closes it, reloads the page and shows the alert "A student has already submitted this assignment, so it can no longer be withdrawn.", which takes focus.
 - **A live change** of the issue while one of its dialogs is open closes the dialog onto the changed-meanwhile notice.
+- **Phone** (slice 10 change G0, page group G4, pending owner review): the list stacks its filter above a table that keeps the Assignment column, with the audience, the deadline and the progress under the title; the issue page is one column, the submissions table keeps Student and State with the points under the state, and "About the assignment" follows it. Downloads keep their signed addresses (T-13, T-35).
 
 ### Review queue and review
 
@@ -379,7 +391,7 @@ FR-10. Built in slice 9 on `GET /review-queue`, `GET /submissions/{id}` (the tut
   - a confirmed publication shows the notice "Checked. The student can see your review." or "Returned for revision.", which takes focus above the reloaded screen; checked work stays editable as a new draft, and a returned screen becomes read-only until the student resubmits; `conflict` reloads the screen and shows the changed-meanwhile notice.
 - **Not reviewable:** for `not_started`, `draft` and `closed` work the screen shows the answers read-only with "This work has not been submitted yet." or "This work is closed.", and no scoring controls.
 - **Live:** the screen refetches on `entity.changed` of kind `submission` for its identifier, keeping every field the tutor has changed since it last showed a stored value; when the refetch finds the submission gone, the screen shows "This assignment is no longer available." with the link "Back to the queue", which takes focus when focus was lost or a dialog was open.
-- **Phone:** below 1024 px the interim one-column frame, with scoring under each answer.
+- **Phone:** below 1024 px one column, with scoring under each answer (kept; from 768 to 1023 px inside the interim frame, below 768 px inside the phone frame, as the G0 rule below details).
 - **As built in slice 9 change F3** (agent changes pending owner review):
   - the total shows `homework.score` from the submission's `final_points` and `percentage`, which the API stores at a publication, so it reflects the last publication and is absent before the first one (or before the automatic check of work without manual questions); the tutor schema carries no total of a draft, and the browser computes none (owner's decision of 2026-11-13);
   - the screen lists the snapshot's questions only, numbered "Question {n}", each a region named by its number; instruction and material blocks are not repeated beside the answers;
@@ -389,6 +401,7 @@ FR-10. Built in slice 9 on `GET /review-queue`, `GET /submissions/{id}` (the tut
   - "Save draft" sends the pending changes at once; "Mark checked" and "Return for revision" first save, creating the draft as a copy of the latest publication when none exists;
   - returned work shows the published comments read-only;
   - the issue page's student names link to the review screen with `issue` set, and the student card's Homework rows link to their submission's review screen with `student` set.
+- **Phone** (slice 10 change G0, page group G4, pending owner review): the queue's filter row stacks and its table keeps the Student column, with the assignment, the submitted time and the badges under it; the review screen is one column, as the interim rule above already gives below 1024 px, with each question's scoring under the student's answer, the corrected-file upload button at the full width, and the screen's actions at the end of the page. Uploads, downloads and the student's view of the review are unchanged (T-9, T-13, T-30, T-35).
 
 ### Messages
 
@@ -410,7 +423,7 @@ FR-12.
 - **A chat that is no longer available** (removed from a group, an erased link) replaces the conversation with the notice "This chat is no longer available.", which takes focus.
 - **Focus:** opening a conversation moves focus to its heading; "Show older" moves focus to the first newly shown message; the message menu opens on its first item and Escape returns focus to its button; Edit puts the message's text into the composer, which takes focus, and Save or Escape returns focus to the message; deleting closes the menu onto the message's "Message deleted" placeholder; a live refetch that removes the focused message moves focus as the shared behavior says; a refused upload's inline message takes focus. Each move has a `toBeFocused` or `document.activeElement` test.
 - **Computer layout** (design slice step D3, owner's decisions of 2026-11-06 and 2026-11-09, pending owner review): from 1024 px Messages fills the window's height and the page width, and the page itself does not scroll while no frame banner is shown; the page title is visually hidden but stays for screen readers, route focus and the skip link; a 300 px channel list on the left scrolls on its own; the conversation fills the rest, with its header at the top, its history scrolling on its own and the composer fixed at the bottom; only the messages inside the history's own visible area count as shown for read state; an opened conversation shows its latest messages, and sending a message, or receiving one while the history is scrolled to the bottom, keeps it at the bottom, while any other position is kept; a history at the bottom also stays there when its content grows without a new message (the typing indicator appears, a picture finishes loading) and when the pane gets shorter (the window or the composer changes height), and "Show older" leaves the bottom (design slice review follow-up, pending owner review); the composer is a field that starts at one line and grows to eight, then scrolls, keeping the history at the bottom when it was there and fitting its height again when the window is resized, with attach as an icon button named "Attach files" and Send as the primary action; messages and channel rows are separated by hairlines.
-- **Phone:** below 768 px the list and the conversation are separate screens, with Back to the list; dedicated phone layouts come with slice 10.
+- **Phone** (slice 10 change G0, page group G5, pending owner review): below 768 px the list and the conversation are separate screens. The list screen shows the frame's top and bottom bars; the conversation screen hides both and holds, in the top bar's place, Back to the list (a route change to `/messages`, so focus moves to the page heading as for every route change), the channel's label and its members or details action, then the messages, and the composer pinned at the bottom with its attach button on a 44 px target; the messages scroll above the composer and are never hidden under it. Message bodies, link rendering, attachments and their download addresses are unchanged (T-13, T-14, T-35).
 - **Texts** load with the Messages route's chunk, per language; only the sidebar label, the badge's accessible name, the offline banner and the new error codes stay in the entry's language chunk.
 
 ### Settings
@@ -435,6 +448,7 @@ FR-1.4–FR-1.7, FR-5.6, FR-13.3, FR-14.2, FR-17.
   - the usage reads "{used} of {quota}" in decimal units: megabytes below one gigabyte, gigabytes from one gigabyte (after rounding to one decimal), at most one decimal, and a non-zero amount below 0.1 MB as 0.1 MB, so 5 000 000 000 bytes read "5 GB" (design slice step D1, pending owner review);
   - blocked students with Unblock, each row with the avatar, the account name and the blocked date (as a table with the columns Student, Blocked on and the Unblock action from design slice step L2, pending owner review); a student whose account is deleted is shown as "Deleted account" with that label's initial in the avatar circle, never the student's picture, and its Unblock button is named "Unblock the deleted account blocked on {date}" for screen readers, so several such rows stay distinguishable;
   - unblocking shows the notice "The student was unblocked.", which takes focus; an Unblock answered `not_found` (the student was unblocked meanwhile) is not reported as done: the alert "This student is no longer blocked. The list is up to date." takes focus each time, and the list reloads.
+- **Phone** (slice 10 change G0, page group G2 for the tutor's pages, G3 for the student's, pending owner review): the section links (Profile, Account, Notifications, and Teaching for tutors) wrap as one list of 44 px links above the section; each settings row puts its control under its label, as below 768 px today; dialogs fill the screen.
 
 ## Pages for both roles
 
@@ -453,6 +467,7 @@ FR-13.1, FR-2.6. Address `/notifications`; the Notifications item in the sidebar
 - **Failed refetch** (design slice review follow-up, pending owner review): a failed refetch of the loaded page keeps the rows and "Mark all as read" and shows the refetch notice with Retry above the rows; a failed "Show more" keeps the rows and the focused button and shows the same notice just above "Show more", whose Retry loads the next rows and moves focus to the first new row.
 - **Live updates:** a `notification.new` frame refetches the list, the panel and the count, and a polite live region in the signed-in frame (outside the page, not a `status` role, so it never competes with a page's own status) announces "New notification" without moving focus, once for the frames that arrive within one animation frame; an `entity.changed` frame of kind `notification` (a read change in another tab) refetches them silently.
 - **An unconfirmed student** sees no bell and no panel, although the routes answer for them ([navigation](navigation.md#rules)); the rows produced meanwhile appear once the email is confirmed.
+- **Phone** (slice 10 change G0, page group G1, pending owner review): the top bar's Notifications button opens the panel at the full width under the top bar, at most 70 % of the window's height and scrolling on its own, with the same focus rules; the More sheet's Notifications row links to the page; the page's table hides the From column as below 768 px today, and "Mark all as read" stays in the page header.
 
 ## Student pages
 
@@ -469,7 +484,7 @@ FR-15.3, FR-5.1, FR-2.6.
 - **Next seven days** (side column): the student's lessons starting within seven days, cancelled ones left out, one row each with weekday, time and tutor label, and a link to the schedule.
 - **My tutors** (side column): each active tutor with label, subject and a Message link, and "Enter a tutor code"; the tutor filter does not hide this list.
 - **No tutor yet:** "No tutor yet." and "Enter your tutor's code" with an input; with a pending request, "Request sent. Waiting for the tutor." instead. A code sent from Home replaces the input with that sentence as a notice that takes focus; refusals are those of My tutors. With current tutors, the list ends with the link "Enter a tutor code" to My tutors.
-- **An unconfirmed student** sees the confirmation banner "Confirm your email to keep studying with your tutor. We sent a link to {email}." with the button "Send the link again", and reaches Home, My tutors and Settings only; the sidebar shows only those sections, and below 1024 px the top bar has no notifications bell.
+- **An unconfirmed student** sees the confirmation banner "Confirm your email to keep studying with your tutor. We sent a link to {email}." with the button "Send the link again", and reaches Home, My tutors and Settings only; the sidebar shows only those sections, below 1024 px the top bar has no notifications bell, and on phones the bottom bar and the More sheet show only those sections ([phone frame](navigation.md#frames), slice 10 change G0, pending owner review).
 - **In slice 3** Home shows the tutor parts (no tutor yet, request sent, My tutors) from `GET /tutors` and `GET /join-requests/sent`; the design slice adds the lessons from the calendar and slice 9 the homework panels from `/assignments`, and `GET /home` replaces these reads in slice 10.
 - **As built in design slice step D2** (owner's decisions of 2026-11-08, pending owner review):
   - the title "Home" with a one-line summary under it ("{n} lessons today" or "No lessons today"); the page width, with the tutor filter and the next lesson in the main column and the next seven days and My tutors in the side column;
@@ -491,11 +506,13 @@ FR-15.3, FR-5.1, FR-2.6.
   - failures and live refetches follow Today's rules on `GET /home`: the load failure with Retry inside the page under its title on a failed first load, and on a failed refetch every panel kept with focus where it was and one refetch notice with Retry at the top of the main column above the next lesson; the frames listed for the student's `/home` refetch it, coalesced; the next lesson stays shown after its end until `/home` answers again, and Home refetches `/home` at the next lesson's `ends_at`, with Upcoming deadlines' timing and retries after a failure, so the following lesson takes its place without a reload (fix of the next lesson's end, pending owner review);
   - Recently checked marks a row whose `feedback_new` is true with the badge "New" after its title, whose accessible name is "New feedback"; the badge goes once the student has opened the results, whose page sends `POST /submissions/{id}/feedback-seen` ([assignment page](#homework-student)), on Home's next refetch; no points of any kind, as before.
 - **Computer layout:** greeting and a one-line summary of the day, the tutor filter, then a main column (next lesson panel, to do, recently checked) and a 300 px side column (next seven days, my tutors).
-- **Phone:** columns stack with the next lesson first, and the Join button stays within thumb reach.
+- **Phone** (slice 10 change G0, page group G3, pending owner review): one column in the order of the computer layout's columns: the title with its summary, the tutor filter at the full width, the next lesson with Join at the full width, To do, Recently checked, the next seven days and My tutors. Feedback excerpts keep their visibility rules and never show points (T-9, T-30).
 
 ### Schedule (student)
 
 FR-4.5. Agenda by day on phones; week and month from 768 px, with the tutor's toolbar without "New lesson"; the view and the date are kept in the address as for tutors (owner's decision of 2026-10-28, pending owner review). Each item has its tutor label, the tutor filter sits at the top (kept in the address as `tutor=`, listing the tutors of My tutors), and there are no editing controls. Items show "Individual lesson" or the group's label from the [label table](../../specs/schedule.md#labels-per-role), never a card name. From slice 5 an unconfirmed student whose My tutors lists a provisional relationship also reaches Schedule and the lesson pages of that relationship's one-to-one lessons ([navigation](navigation.md#rules)).
+
+- **Phone** (slice 10 change G0, page group G3, pending owner review): the agenda with the tutor filter at the full width above the toolbar, each item a 44 px target showing its time, title, tutor label and status word.
 
 ### Homework (student)
 
@@ -523,6 +540,7 @@ FR-9, FR-11.1 (the per-submission results). Built in slice 9 on `GET /assignment
 - **Closed work:** read-only, with "This assignment is closed and can no longer be submitted." and its published review, if any.
 - **Addresses** (pictures, materials, answer files, corrected files) pass the same-origin signed-file check, carry `referrerpolicy="no-referrer"`, and are renewed by refetching 30 seconds before the earliest expires and once when a picture fails to load, which never touches unsaved answers; pictures with recorded dimensions reserve their space.
 - **No longer available:** when a refetch finds the submission gone (withdrawn, erased, or no longer readable), the page replaces its content with "This assignment is no longer available." and the link "All homework"; the notice takes focus when focus was lost or a dialog was open, and unsaved answers are dropped.
+- **Phone** (slice 10 change G0, page group G4, pending owner review): the tabs wrap onto a second row when they do not fit, the tutor filter is at the full width, and each row shows the title with the tutor label, the deadline and the state word under it. The assignment page is one column: each question at the full width with inputs in `text-body-phone`, a file answer's upload button at the full width, and Submit at the end at the full width; results show the same fields as on a computer, so no key, points or score reaches a student on any width (T-9, T-30).
 
 ### My tutors
 
@@ -539,6 +557,7 @@ FR-2.6, FR-1.2, FR-2.7, FR-2.8, FR-1.7.
   - In slice 3 they are listed under "Sent requests", newest first, from `GET /join-requests/sent`: each row shows the state word from [states](states.md) ("Request sent", "Not accepted", "Expired"), the sentence for a pending or declined request and "Sent {date}"; accepted requests are left out, because their tutor is listed; the rows carry no tutor name, because the student-facing request has none; "Show more" loads the next page and moves focus to its first row. The API offers no withdrawal, so a request is never withdrawn from the page.
 - **Ended relationships:** listed under "Past tutors" with read-only chat, lessons, recordings until they expire, and results. They are left out of the Home filter by default. In slice 3 each row shows the avatar, name, colour, subjects and "Ended {date}".
 - **A tutor who deleted their account:** shown as "Account closed — results available until {date}", with read-only access until then; the date is `account_closed_until`. From slice 10 (pending owner review) the row leaves Past tutors at that instant, because `GET /tutors` stops listing it, whatever the purge's progress; that tutor's work leaves the Homework list, Home and the Homework count, and an open result or a saved link to one shows "This assignment is no longer available." with "All homework", as for withdrawn work; the same holds after the purge.
+- **Phone** (slice 10 change G0, page group G3, pending owner review): one column in the order of the computer layout's columns: the current tutors with "Message" and the overflow menu on 44 px targets, Past tutors, then "Add a tutor" with its field and "Send request" at the full width, and the sent requests.
 
 ### Keep or drop earlier links
 
@@ -549,17 +568,20 @@ FR-1.2. Address `/reclaim`, reached after a confirmation or reset that answers `
 - **Items:** each tutor link and each request with the tutor's avatar, name and subjects, and Keep or Drop; dropped items are removed and their tutors are not told.
 - **Deadline:** "Choose by {date}; anything not kept by then is dropped".
 - **Saving** sends every choice at once; a refusal reloads the list with "The list has changed. Check your choices and save again". After saving, the page shows the outcome (as on the confirmation page, or "Your choices are saved") with "Continue" to Home; opened when nothing waits, it says "Nothing is waiting for your choice".
+- **Phone** (slice 10 change G0, page group G3, pending owner review): one column: the explanation, the account, then each item with its existing Keep and Drop radio choice under the tutor's name, each option a full-width row of at least 44 px, and Save at the full width at the end.
 
 ### Messages and settings (student)
 
 Same as the tutor's, without tutor-only sections; direct channels are named by tutor, group channels by group with the tutor label.
+
+- **Phone** (slice 10 change G0, page group G5 for Messages, G3 for the settings, pending owner review): as the tutor's phone rules for [Messages](#messages) and [Settings](#settings).
 
 ## Shared behavior
 
 - **Loading:**
   - skeletons in the shape of the content appear after 300 ms; nothing appears before;
   - buttons that start an action show a spinner and stay unavailable until it completes: they carry `aria-disabled="true"` and `aria-busy="true"` and ignore activation, but never the `disabled` attribute, which moves focus to the page body in Chromium, Firefox and WebKit; so a busy button keeps focus, and a button waiting for a cooldown (the confirmation resend) is unavailable the same way;
-  - every sign-out control (the account menu's Sign out, the public header's Sign out and the invitation page's sign-out in place) is busy in this way while its sign-out runs, which can take up to 15 seconds while the tab's reads in flight are answered ([navigation](navigation.md)): it reads "Signing out…" and ignores further presses until the sign-out ends or fails (slice 8 review follow-up, pending owner review);
+  - every sign-out control (the account menu's Sign out, from slice 10 change G1 the More sheet's Sign out on phones, the public header's Sign out and the invitation page's sign-out in place) is busy in this way while its sign-out runs, which can take up to 15 seconds while the tab's reads in flight are answered ([navigation](navigation.md)): it reads "Signing out…" and ignores further presses until the sign-out ends or fails (slice 8 review follow-up, pending owner review);
   - where several controls share one action (the Accept, Decline and menu buttons of every join-request row, the Remove buttons of the group members, the Unblock buttons of the blocked students, Send and "Create a new link" of an invitation link), only the control that started it carries `aria-busy="true"`; the others carry only `aria-disabled="true"` until it completes; a decision chosen from a row's menu marks that row's menu button busy.
 - **Empty states:** a heading, one sentence and one primary action (an optional line illustration as in [tokens](tokens.md#illustration-and-iconography)):
 
@@ -604,7 +626,12 @@ Same as the tutor's, without tutor-only sections; direct channels are named by t
 - **Responsive:**
   - "phone" means narrower than 768 px; every page works from 360 px;
   - every page, for both roles, is designed for a 1280 px computer screen first and degrades to a single column ([ADR-0010](../../../docs/decisions/0010-quiet-visual-language.md));
-  - dedicated phone layouts are designed in slice 10 of the [roadmap](../../../docs/roadmap.md); until then the rules marked **Phone** above are the minimum.
+  - below 768 px every page follows its **Phone** rule above inside the [phone frame](navigation.md#frames) (slice 10 change G0, pending owner review; built by page group in changes G1 to G5):
+    - one column with 16 px side padding, the side column after the main column in the document's order, and no horizontal scrolling at 360 px;
+    - a table keeps its row-header column and at most one more column, and shows the hidden columns' values under the row header in `text-small` `text-muted`;
+    - every modal dialog fills the screen, with its title at the top and its existing actions, the dismiss button among them, at the end, and keeps its focus rules and its busy rules; phones add no close control;
+    - tab lists and filter rows wrap rather than scroll sideways, and every target is at least 44 × 44 px;
+    - outline icons are 20 px.
 - **Keyboard and screen readers:**
   - every action is reachable by keyboard in visual order, with a visible focus ring;
   - dialogs trap focus and restore it to the opener on close, unless the page section names another target (a notice) or the action changes the route, as for every route change; a dialog opens with focus on the element its page section names, a destructive confirmation without fields on its safe choice (Cancel), one that asks for a password on that field, and otherwise on its first field;
