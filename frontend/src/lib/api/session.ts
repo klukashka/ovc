@@ -673,7 +673,7 @@ export interface SignOut {
   readonly signOut: () => void;
 }
 
-export function useSignOut(onSignedOut: () => void): SignOut {
+export function useSignOut(onSignedOut: () => void, onFailed: () => void = () => undefined): SignOut {
   const session = useSession();
   const [state, setState] = useState<SignOutState>('idle');
   return {
@@ -685,6 +685,7 @@ export function useSignOut(onSignedOut: () => void): SignOut {
       setState('busy');
       session.signOut().then(onSignedOut, () => {
         setState('failed');
+        onFailed();
       });
     },
   };

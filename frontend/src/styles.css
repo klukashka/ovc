@@ -162,10 +162,23 @@
     background-color: var(--color-scrim);
   }
 
+  html {
+    scroll-padding-bottom: var(--bottom-bar-height, 0px);
+  }
+
   @media (max-width: 767px) {
     body {
       font-size: var(--text-body-phone);
       line-height: var(--text-body-phone--line-height);
+    }
+
+    [data-outline-icon] {
+      width: 20px;
+      height: 20px;
+    }
+
+    [data-outline-icon] * {
+      vector-effect: non-scaling-stroke;
     }
   }
 

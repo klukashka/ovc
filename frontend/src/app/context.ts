@@ -55,3 +55,4 @@ export function useMediaQuery(query: string): boolean {
 }
 
 export const wideLayoutQuery = '(min-width: 1024px)';
+export const phoneLayoutQuery = '(max-width: 767px)';

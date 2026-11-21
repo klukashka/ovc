@@ -1,6 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 
 import { newTestAccount, signInThroughTheApi } from './accounts.ts';
+import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser, tableRows } from './fixtures.ts';
 import { notificationRows } from './notifications.ts';
 import { accountId, waitForSockets } from './realtime.ts';
@@ -292,5 +293,42 @@ test.describe('notifications in Russian on a computer', () => {
     await expect(page.getByRole('navigation').getByRole('link', { name: /Уведомления/ })).toHaveCount(0);
     await expect(panel(page)).toHaveCount(0);
     expect(notificationRequests).toEqual([]);
+  });
+});
+
+test.describe('notifications on a phone', () => {
+  test.use({ locale: 'ru-RU', timezoneId: 'Europe/Moscow', viewport: { width: 360, height: 780 } });
+
+  function topBarButton(page: Page): Locator {
+    return page.getByRole('banner').getByRole('button', { name: /^Уведомления/ });
+  }
+
+  async function signedInPhoneTutor(page: Page, deployment: Deployment): Promise<void> {
+    const tutor = await seedVerifiedUser(deployment, 'Репетитор с телефоном');
+    await signInThroughTheApi(page, tutor);
+    await page.goto('/today');
+    await page.getByRole('heading', { level: 1, name: 'Сегодня' }).waitFor();
+  }
+
+  test('the top bar button opens the panel at the full width on its heading', async ({ page, deployment }) => {
+    await signedInPhoneTutor(page, deployment);
+
+    await topBarButton(page).click();
+
+    await expect(panel(page).getByRole('heading', { name: 'Уведомления' })).toBeFocused();
+    const panelWidth = Math.round((await panel(page).boundingBox())?.width ?? 0);
+    const windowWidth = await page.evaluate(() => document.documentElement.clientWidth);
+    expect(panelWidth).toBe(windowWidth);
+  });
+
+  test('Escape closes the panel and returns focus to the top bar button', async ({ page, deployment }) => {
+    await signedInPhoneTutor(page, deployment);
+    await topBarButton(page).click();
+    await expect(panel(page).getByRole('heading', { name: 'Уведомления' })).toBeFocused();
+
+    await page.keyboard.press('Escape');
+
+    await expect(panel(page)).toHaveCount(0);
+    await expect(topBarButton(page)).toBeFocused();
   });
 });

@@ -7,7 +7,7 @@ import { createGroup, seedActiveStudent } from './tutoring.ts';
 
 const computer = { width: 1440, height: 900 } as const;
 const smallComputer = { width: 1024, height: 768 } as const;
-const phone = { width: 390, height: 844 } as const;
+const phone = { width: 360, height: 780 } as const;
 const markup = '<img src=x onerror="document.title=1"><b>Bold</b>';
 
 interface Box {
@@ -33,8 +33,9 @@ const longWord = 'Длиннаягруппаизшестидесятибуквб
 async function tutorWithStudentInGroup(
   deployment: Deployment,
   name = 'Vera Student',
+  tutorName = 'Tutor',
 ): Promise<{ readonly tutor: TestAccount; readonly student: TestAccount }> {
-  const tutor = await seedVerifiedUser(deployment, 'Tutor', 'en');
+  const tutor = await seedVerifiedUser(deployment, tutorName, 'en');
   const { student, cardId } = await seedActiveStudent(deployment, tutor, name, 'en');
   await createGroup(deployment, tutor, name === 'Vera Student' ? 'Evening group' : name, [cardId]);
   return { tutor, student };
@@ -68,6 +69,111 @@ async function openAt(
     await document.fonts.ready;
   });
 }
+
+const settingsPaths = ['/settings/profile', '/settings/account', '/settings/notifications', '/settings/teaching'];
+
+function settingsReady(page: Page): Locator {
+  return page.locator('main [data-settings-value], main form, main [role="switch"]').first();
+}
+
+function firstTableRow(page: Page): Locator {
+  return page.locator('main table > tbody > tr').first();
+}
+
+interface SweptPage {
+  readonly path: string;
+  readonly ready: (page: Page) => Locator;
+}
+
+async function pagesScrollingSideways(page: Page, pages: readonly SweptPage[]): Promise<string[]> {
+  await page.setViewportSize(phone);
+  const sideways: string[] = [];
+  for (const { path, ready } of pages) {
+    await page.goto(path);
+    await ready(page).waitFor();
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
+    if (await scrollsSideways(page)) {
+      sideways.push(path);
+    }
+  }
+  return sideways;
+}
+
+function notificationsReady(page: Page): Locator {
+  return firstTableRow(page).or(page.getByRole('main').getByText(/No notifications yet/));
+}
+
+test.describe('the 360 px sweeps', () => {
+  test('the tutor’s frame group: Notifications does not scroll sideways and shows a name with markup as text', async ({
+    page,
+    deployment,
+  }) => {
+    const { tutor } = await tutorWithStudentInGroup(deployment, longWord, longWord);
+    await seedActiveStudent(deployment, tutor, markup, 'en');
+    await signInThroughTheApi(page, tutor);
+
+    const sideways = await pagesScrollingSideways(page, [{ path: '/notifications', ready: firstTableRow }]);
+
+    expect(sideways).toEqual([]);
+    const table = page.getByRole('table', { name: 'Notifications' });
+    await expect(table).toContainText(markup);
+    await expect(table.locator('img, b')).toHaveCount(0);
+    await expect(page).not.toHaveTitle('1');
+  });
+
+  test('the tutor’s pages group: Students, Groups and Settings do not scroll sideways', async ({
+    page,
+    deployment,
+  }) => {
+    const { tutor } = await tutorWithStudentInGroup(deployment, longWord, longWord);
+    await signInThroughTheApi(page, tutor);
+
+    const sideways = await pagesScrollingSideways(page, [
+      { path: '/students', ready: firstTableRow },
+      { path: '/groups', ready: firstTableRow },
+      ...settingsPaths.map((path) => ({ path, ready: settingsReady })),
+    ]);
+
+    expect(sideways).toEqual([]);
+  });
+
+  test('the student’s frame group: Notifications does not scroll sideways', async ({ page, deployment }) => {
+    const { student } = await tutorWithStudentInGroup(deployment, longWord, longWord);
+    await signInThroughTheApi(page, student);
+
+    const sideways = await pagesScrollingSideways(page, [{ path: '/notifications', ready: notificationsReady }]);
+
+    expect(sideways).toEqual([]);
+  });
+
+  test('the student’s pages group: My tutors does not scroll sideways and shows its side column below the main column', async ({
+    page,
+    deployment,
+  }) => {
+    const { student } = await tutorWithStudentInGroup(deployment, longWord, longWord);
+    await signInThroughTheApi(page, student);
+
+    const sideways = await pagesScrollingSideways(page, [{ path: '/tutors', ready: firstTableRow }]);
+
+    expect(sideways).toEqual([]);
+    const main = await boxOf(page.locator('[data-column="main"]'));
+    const aside = await boxOf(page.locator('[data-column="aside"]'));
+    expect(aside.top).toBeGreaterThanOrEqual(main.bottom);
+  });
+
+  test('the public pages group: Sign in and Sign up do not scroll sideways', async ({ page }) => {
+    const heading = (shown: Page): Locator => shown.locator('main h1');
+
+    const sideways = await pagesScrollingSideways(page, [
+      { path: '/', ready: heading },
+      { path: '/signup', ready: heading },
+    ]);
+
+    expect(sideways).toEqual([]);
+  });
+});
 
 test.describe('desktop layout', () => {
   test('Students shows its table columns in one row with the filters above them at 1440 × 900', async ({
@@ -118,15 +224,6 @@ test.describe('desktop layout', () => {
 
       expect(await scrollsSideways(page)).toBe(false);
     });
-
-    test(`${path} does not scroll sideways at 390 px`, async ({ page, deployment }) => {
-      const { tutor } = await tutorWithStudentInGroup(deployment, longWord);
-      await signInThroughTheApi(page, tutor);
-
-      await openAt(page, phone, path);
-
-      expect(await scrollsSideways(page)).toBe(false);
-    });
   }
 
   test('My tutors does not scroll sideways at 1024 px', async ({ page, deployment }) => {
@@ -136,18 +233,6 @@ test.describe('desktop layout', () => {
     await openAt(page, smallComputer, '/tutors');
 
     expect(await scrollsSideways(page)).toBe(false);
-  });
-
-  test('at 390 px My tutors shows its side column below the main column', async ({ page, deployment }) => {
-    const { student } = await tutorWithStudentInGroup(deployment);
-    await signInThroughTheApi(page, student);
-
-    await openAt(page, phone, '/tutors');
-    const main = await boxOf(page.locator('[data-column="main"]'));
-    const aside = await boxOf(page.locator('[data-column="aside"]'));
-
-    expect(await scrollsSideways(page)).toBe(false);
-    expect(aside.top).toBeGreaterThanOrEqual(main.bottom);
   });
 
   test('at 1440 px My tutors shows its side column beside the main column', async ({ page, deployment }) => {
@@ -239,21 +324,16 @@ test.describe('desktop layout', () => {
     });
   }
 
-  for (const path of ['/settings/profile', '/settings/account', '/settings/notifications', '/settings/teaching']) {
-    for (const [name, size] of [
-      ['1024 px', smallComputer],
-      ['390 px', phone],
-    ] as const) {
-      test(`${path} does not scroll sideways at ${name}`, async ({ page, deployment }) => {
-        const tutor = await seedVerifiedUser(deployment, 'Tutor', 'en');
-        await signInThroughTheApi(page, tutor);
+  for (const path of settingsPaths) {
+    test(`${path} does not scroll sideways at 1024 px`, async ({ page, deployment }) => {
+      const tutor = await seedVerifiedUser(deployment, 'Tutor', 'en');
+      await signInThroughTheApi(page, tutor);
 
-        await openAt(page, size, path, 'heading');
-        await page.locator('main [data-settings-value], main form, main [role="switch"]').first().waitFor();
+      await openAt(page, smallComputer, path, 'heading');
+      await settingsReady(page).waitFor();
 
-        expect(await scrollsSideways(page)).toBe(false);
-      });
-    }
+      expect(await scrollsSideways(page)).toBe(false);
+    });
   }
 
   test('a tutor name with markup is shown as text in My tutors', async ({ page, deployment }) => {

@@ -6,8 +6,9 @@ import { type Server, createServer } from 'node:http';
 import { type Locator, type Page } from '@playwright/test';
 
 import { signInThroughTheApi } from './accounts.ts';
-import { diagnosedTest as test, diagnosticRegistry, expect, watchPage } from './fixtures.ts';
+import { diagnosedTest as test, diagnosticRegistry, expect, seedVerifiedUser, watchPage } from './fixtures.ts';
 import { expectSettledAfterTheSocketIsReady, todayQueryPaths, trafficAfterReady } from './realtime.ts';
+import { seedActiveStudent } from './tutoring.ts';
 
 async function recordThemeAtFirstBody(page: Page): Promise<void> {
   await page.addInitScript(() => {
@@ -116,8 +117,8 @@ test('showing the sidebar again is remembered', async ({ signedInPage: page }) =
   await expect(page.getByRole('navigation', { name: 'Основная навигация' })).toBeVisible();
 });
 
-test.describe('below 1024 px', () => {
-  test.use({ viewport: { width: 390, height: 844 } });
+test.describe('from 768 to 1023 px', () => {
+  test.use({ viewport: { width: 800, height: 1000 } });
 
   test('the top bar shows the page title, the bell and touch-sized targets', async ({ signedInPage: page }) => {
     await page.goto('/today');
@@ -195,6 +196,220 @@ test.describe('below 1024 px', () => {
     await expect(page.getByRole('dialog')).toBeHidden();
     await expect(page).toHaveURL(/\/schedule$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Расписание' })).toBeFocused();
+  });
+});
+
+const phoneMarkup = '<img src=x onerror="document.title=1"><b>Bold</b>';
+
+function bottomBar(page: Page): Locator {
+  return page.getByRole('navigation', { name: 'Основная навигация' });
+}
+
+function moreSheet(page: Page): Locator {
+  return page.getByRole('dialog', { name: 'Ещё' });
+}
+
+async function openSheetOnToday(page: Page): Promise<void> {
+  await openSettledToday(page);
+  await bottomBar(page).getByRole('button', { name: 'Ещё' }).click();
+  await expect(moreSheet(page)).toBeVisible();
+}
+
+test.describe('below 768 px', () => {
+  test.use({ viewport: { width: 360, height: 780 } });
+
+  test('a bottom bar item opens its section, marks it current and focuses the heading', async ({
+    signedInPage: page,
+  }) => {
+    await openSettledToday(page);
+    const schedule = bottomBar(page).getByRole('link', { name: 'Расписание' });
+
+    await schedule.click();
+
+    await expect(page).toHaveURL(/\/schedule$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Расписание' })).toBeFocused();
+    await expect(schedule).toHaveAttribute('aria-current', 'page');
+    await expect(bottomBar(page).getByRole('link', { name: 'Сегодня' })).not.toHaveAttribute('aria-current');
+  });
+
+  test('the frame’s icons are 20 px and its targets at least 44 × 44 px', async ({ signedInPage: page }) => {
+    await openSheetOnToday(page);
+
+    const sizes = await page.evaluate(() => {
+      const frame = [
+        ...document.querySelectorAll('header, nav[aria-label="Основная навигация"], dialog[aria-label="Ещё"]'),
+      ].filter((element) => element.closest('main') === null);
+      const box = (element: Element): { readonly width: number; readonly height: number } => {
+        const rect = element.getBoundingClientRect();
+        return { width: Math.round(rect.width), height: Math.round(rect.height) };
+      };
+      return {
+        icons: frame.flatMap((part) => [...part.querySelectorAll('svg')].map(box)),
+        targets: frame.flatMap((part) => [...part.querySelectorAll('a, button')].map(box)),
+      };
+    });
+
+    expect(sizes.icons.length).toBeGreaterThanOrEqual(10);
+    expect(new Set(sizes.icons.map((icon) => `${String(icon.width)}×${String(icon.height)}`))).toEqual(
+      new Set(['20×20']),
+    );
+    expect(sizes.targets.length).toBeGreaterThanOrEqual(11);
+    for (const target of sizes.targets) {
+      expect(target.width).toBeGreaterThanOrEqual(44);
+      expect(target.height).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test('More opens the sheet on its first section row', async ({ signedInPage: page }) => {
+    await openSettledToday(page);
+
+    await bottomBar(page).getByRole('button', { name: 'Ещё' }).click();
+
+    await expect(moreSheet(page).getByRole('link', { name: 'Ученики' })).toBeFocused();
+  });
+
+  test('on a page the sheet lists, More opens the sheet on that page’s row', async ({ signedInPage: page }) => {
+    await page.goto('/groups');
+    await page.getByRole('heading', { level: 1, name: 'Группы' }).waitFor();
+
+    await bottomBar(page).getByRole('button', { name: 'Ещё' }).click();
+
+    const groups = moreSheet(page).getByRole('link', { name: 'Группы' });
+    await expect(groups).toBeFocused();
+    await expect(groups).toHaveAttribute('aria-current', 'page');
+  });
+
+  test('Shift+Tab and Tab stay inside the sheet', async ({ signedInPage: page }) => {
+    await openSheetOnToday(page);
+
+    await page.keyboard.press('Shift+Tab');
+    const closeFocusedAfterShiftTab = await moreSheet(page)
+      .getByRole('button', { name: 'Закрыть' })
+      .evaluate((element) => element === document.activeElement);
+    await page.keyboard.press('Tab');
+
+    expect(closeFocusedAfterShiftTab).toBe(true);
+    await expect(moreSheet(page).getByRole('link', { name: 'Ученики' })).toBeFocused();
+  });
+
+  test('Escape closes the sheet and returns focus to More', async ({ signedInPage: page }) => {
+    await openSheetOnToday(page);
+
+    await page.keyboard.press('Escape');
+
+    await expect(moreSheet(page)).toBeHidden();
+    await expect(bottomBar(page).getByRole('button', { name: 'Ещё' })).toBeFocused();
+  });
+
+  test('Close closes the sheet and returns focus to More', async ({ signedInPage: page }) => {
+    await openSheetOnToday(page);
+
+    await moreSheet(page).getByRole('button', { name: 'Закрыть' }).click();
+
+    await expect(moreSheet(page)).toBeHidden();
+    await expect(bottomBar(page).getByRole('button', { name: 'Ещё' })).toBeFocused();
+  });
+
+  test('a tap on the dimmed page closes the sheet and returns focus to More', async ({ signedInPage: page }) => {
+    await openSheetOnToday(page);
+
+    await page.mouse.click(180, 20);
+
+    await expect(moreSheet(page)).toBeHidden();
+    await expect(bottomBar(page).getByRole('button', { name: 'Ещё' })).toBeFocused();
+  });
+
+  test('a row of the sheet closes it, opens its page and focuses the heading', async ({ signedInPage: page }) => {
+    await openSheetOnToday(page);
+
+    await moreSheet(page).getByRole('link', { name: 'Группы' }).click();
+
+    await expect(moreSheet(page)).toBeHidden();
+    await expect(page).toHaveURL(/\/groups$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Группы' })).toBeFocused();
+  });
+
+  test('widening the window past 768 px closes the sheet and moves focus from it to the page heading', async ({
+    signedInPage: page,
+  }) => {
+    await openSheetOnToday(page);
+
+    await page.setViewportSize({ width: 800, height: 1000 });
+
+    await expect(moreSheet(page)).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: 'Сегодня' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeVisible();
+  });
+
+  test('narrowing the window below 768 px moves focus from Show sidebar to the page heading', async ({
+    signedInPage: page,
+  }) => {
+    await page.setViewportSize({ width: 800, height: 1000 });
+    await openSettledToday(page);
+    await page.getByRole('button', { name: 'Показать боковую панель' }).focus();
+
+    await page.setViewportSize({ width: 360, height: 780 });
+
+    await expect(page.getByRole('heading', { level: 1, name: 'Сегодня' })).toBeFocused();
+    await expect(bottomBar(page).getByRole('button', { name: 'Ещё' })).toBeVisible();
+  });
+
+  test('narrowing the window from 1440 to 360 px moves focus from a sidebar item to the page heading', async ({
+    signedInPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openSettledToday(page);
+    await page
+      .getByRole('navigation', { name: 'Основная навигация' })
+      .getByRole('link', { name: 'Расписание' })
+      .focus();
+
+    await page.setViewportSize({ width: 360, height: 780 });
+
+    await expect(bottomBar(page).getByRole('button', { name: 'Ещё' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Сегодня' })).toBeFocused();
+  });
+
+  test('crossing 768 px keeps focus and a typed value inside the page', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Репетитор с учеником');
+    await seedActiveStudent(deployment, tutor, 'Вера Ученица');
+    await signInThroughTheApi(page, tutor);
+    await page.goto('/students');
+    const search = page.getByRole('main').getByRole('searchbox');
+    await search.fill('Вера');
+
+    await page.setViewportSize({ width: 800, height: 1000 });
+
+    await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeVisible();
+    await expect(search).toBeFocused();
+    await expect(search).toHaveValue('Вера');
+  });
+
+  test('crossing 768 px with the notifications panel open closes it and moves focus to the page heading', async ({
+    signedInPage: page,
+  }) => {
+    await openSettledToday(page);
+    await page
+      .getByRole('banner')
+      .getByRole('button', { name: /^Уведомления/ })
+      .click();
+    await expect(page.getByRole('region', { name: 'Уведомления' }).getByRole('heading')).toBeFocused();
+
+    await page.setViewportSize({ width: 800, height: 1000 });
+
+    await expect(page.getByRole('region', { name: 'Уведомления' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: 'Сегодня' })).toBeFocused();
+  });
+
+  test('the sheet shows an account name with markup as text', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, phoneMarkup);
+    await signInThroughTheApi(page, tutor);
+
+    await openSheetOnToday(page);
+
+    await expect(moreSheet(page)).toContainText(phoneMarkup);
+    await expect(moreSheet(page).locator('img, b')).toHaveCount(0);
+    await expect(page).not.toHaveTitle('1');
   });
 });
 

@@ -1,22 +1,24 @@
 import type { ParseKeys } from 'i18next';
 import { type ReactElement, type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, Outlet } from 'react-router';
+import { Link, Outlet, useNavigate } from 'react-router';
 
 import { useUnreadChannels } from '../../features/messages/unread.ts';
 import { provisionallyLinked, useProvisionalLink } from '../../routes/provisionalLink.ts';
 
 import { NotificationAnnouncer, NotificationsBell, useUnreadCount } from '../../features/notifications/Bell.tsx';
 
-import { useMediaQuery, usePreferences, wideLayoutQuery } from '../../app/context.ts';
+import { phoneLayoutQuery, useMediaQuery, usePreferences, wideLayoutQuery } from '../../app/context.ts';
 import { preferenceKeys } from '../../lib/preferences/store.ts';
 import { useRouteTitle } from '../../app/handles.ts';
 import { type SectionCounts, hasNews } from '../../app/sections.ts';
 import { useHomeworkCount } from '../../app/homeworkCount.ts';
-import type { Me } from '../../lib/api/session.ts';
+import { type Me, type SignOut, useSignOut } from '../../lib/api/session.ts';
 import { reachable } from '../../routes/access.ts';
 import { SidebarIcon } from '../ui/icons.tsx';
+import { FrameDialog } from './FrameDialog.tsx';
 import { OfflineBanner } from './OfflineBanner.tsx';
+import { BottomBar, MoreSheet, PhoneTopBar } from './PhoneFrame.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { StudentConfirmation } from './StudentConfirmation.tsx';
 import { SkipLink, mainContentId } from './SkipLink.tsx';
@@ -46,115 +48,13 @@ function ShowSidebarButton({
       type="button"
       aria-label={news ? t('frame.showSidebarWithNews') : t('frame.showSidebar')}
       aria-expanded={expanded}
+      data-frame-only=""
       onClick={onClick}
       className={iconButton}
     >
       <SidebarIcon />
       {news ? <NewsDot /> : null}
     </button>
-  );
-}
-
-function focusableElements(container: HTMLElement): HTMLElement[] {
-  return Array.from(
-    container.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'),
-  );
-}
-
-function SidebarOverlay({
-  open,
-  onClose,
-  returnFocus,
-  label,
-  children,
-}: {
-  readonly open: boolean;
-  readonly onClose: () => void;
-  readonly returnFocus: RefObject<HTMLButtonElement | null>;
-  readonly label: string;
-  readonly children: ReactElement;
-}): ReactElement {
-  const dialog = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const element = dialog.current;
-    if (element === null) {
-      return undefined;
-    }
-    const opened: HTMLDialogElement = element;
-    function cancel(event: Event): void {
-      event.preventDefault();
-      if (opened.querySelector('[aria-expanded="true"]') !== null) {
-        return;
-      }
-      onClose();
-    }
-    function closeOnScrim(event: MouseEvent): void {
-      if (event.target === element) {
-        onClose();
-      }
-    }
-    function keepFocusInside(event: KeyboardEvent): void {
-      if (event.key !== 'Tab' || element === null) {
-        return;
-      }
-      const focusable = focusableElements(element);
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (first === undefined || last === undefined) {
-        return;
-      }
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-    function syncClosed(): void {
-      onClose();
-      const active = document.activeElement;
-      if (active === null || active === document.body || opened.contains(active)) {
-        returnFocus.current?.focus();
-      }
-    }
-    element.addEventListener('close', syncClosed);
-    element.addEventListener('cancel', cancel);
-    element.addEventListener('click', closeOnScrim);
-    element.addEventListener('keydown', keepFocusInside);
-    return (): void => {
-      element.removeEventListener('close', syncClosed);
-      element.removeEventListener('cancel', cancel);
-      element.removeEventListener('click', closeOnScrim);
-      element.removeEventListener('keydown', keepFocusInside);
-    };
-  }, [onClose, returnFocus]);
-
-  useEffect(() => {
-    const element = dialog.current;
-    if (element === null) {
-      return;
-    }
-    if (open && !element.open) {
-      element.showModal();
-      const current = element.querySelector<HTMLElement>('[aria-current="page"]') ?? focusableElements(element)[0];
-      current?.focus();
-    }
-    if (!open && element.open) {
-      element.close();
-      returnFocus.current?.focus();
-    }
-  }, [open, returnFocus]);
-
-  return (
-    <dialog
-      ref={dialog}
-      aria-label={label}
-      className="m-0 h-dvh max-h-none w-sidebar max-w-overlay-cap bg-transparent p-0 text-text"
-    >
-      {children}
-    </dialog>
   );
 }
 
@@ -204,6 +104,53 @@ function ConfirmationBanner({ me }: { readonly me: Me }): ReactElement {
   );
 }
 
+type FocusedPart = 'frameOnly' | 'bell' | 'page';
+
+function focusedPart(target: EventTarget | null): FocusedPart {
+  if (!(target instanceof Element)) {
+    return 'page';
+  }
+  if (target.closest('[data-frame-only]') !== null) {
+    return 'frameOnly';
+  }
+  if (target.closest('[data-frame-bell] > button') !== null) {
+    return 'bell';
+  }
+  return target.closest('[data-frame-bell]') === null ? 'page' : 'frameOnly';
+}
+
+function useFrameSwitchFocus(phone: boolean): void {
+  const lastFocused = useRef<FocusedPart>('page');
+  const shownPhone = useRef(phone);
+
+  useEffect(() => {
+    function note(event: FocusEvent): void {
+      lastFocused.current = focusedPart(event.target);
+    }
+    document.addEventListener('focusin', note);
+    return (): void => {
+      document.removeEventListener('focusin', note);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (shownPhone.current === phone) {
+      return;
+    }
+    shownPhone.current = phone;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body && active.isConnected) {
+      return;
+    }
+    if (lastFocused.current === 'page') {
+      return;
+    }
+    const bell =
+      lastFocused.current === 'bell' ? document.querySelector<HTMLElement>('[data-frame-bell] > button') : null;
+    (bell ?? document.querySelector<HTMLElement>('main h1'))?.focus();
+  }, [phone]);
+}
+
 export function SignedInFrame({
   me,
   title,
@@ -215,12 +162,43 @@ export function SignedInFrame({
 }): ReactElement {
   const { t } = useTranslation();
   const preferences = usePreferences();
+  const navigate = useNavigate();
   const wide = useMediaQuery(wideLayoutQuery);
+  const phone = useMediaQuery(phoneLayoutQuery);
   const [sidebarShown, setSidebarShown] = useState(() => preferences.read(preferenceKeys.sidebar) !== 'hidden');
   const [overlayOpen, setOverlayOpen] = useState(false);
-  if (wide && overlayOpen) {
+  if ((wide || phone) && overlayOpen) {
     setOverlayOpen(false);
   }
+  const [sheetOpen, setSheetOpen] = useState(false);
+  if (!phone && sheetOpen) {
+    setSheetOpen(false);
+  }
+  const sheetShown = useRef(sheetOpen);
+  const moreButton = useRef<HTMLButtonElement>(null);
+  const [signOutFailedAbovePage, setSignOutFailedAbovePage] = useState(false);
+  const signing = useSignOut(
+    () => {
+      void navigate('/', { replace: true });
+    },
+    () => {
+      if (!sheetShown.current) {
+        setSignOutFailedAbovePage(true);
+        moreButton.current?.focus();
+      }
+    },
+  );
+  const sheetSigning: SignOut = {
+    state: signing.state,
+    signOut: () => {
+      setSignOutFailedAbovePage(false);
+      signing.signOut();
+    },
+  };
+  useEffect(() => {
+    sheetShown.current = sheetOpen;
+  }, [sheetOpen]);
+  useFrameSwitchFocus(phone);
   const showButton = useRef<HTMLButtonElement>(null);
   const hideButtonRef = useRef<HTMLButtonElement>(null);
   const withBell = reachable(me, '/notifications');
@@ -248,6 +226,10 @@ export function SignedInFrame({
 
   const closeOverlay = useCallback(() => {
     setOverlayOpen(false);
+  }, []);
+
+  const closeSheet = useCallback(() => {
+    setSheetOpen(false);
   }, []);
 
   const hideButton = wide ? (
@@ -282,7 +264,9 @@ export function SignedInFrame({
       <SkipLink />
       {withBell ? <NotificationAnnouncer /> : null}
       {wide && sidebarShown ? (
-        <aside className="fixed inset-y-0 left-0 z-20 w-sidebar border-r border-border">{sidebar}</aside>
+        <aside data-frame-only="" className="fixed inset-y-0 left-0 z-20 w-sidebar border-r border-border">
+          {sidebar}
+        </aside>
       ) : null}
       {wide && !sidebarShown ? (
         <div className="fixed top-3 left-3 z-10">
@@ -297,7 +281,7 @@ export function SignedInFrame({
           />
         </div>
       ) : null}
-      {wide ? null : (
+      {wide || phone ? null : (
         <>
           <NarrowTopBar
             title={title}
@@ -309,22 +293,58 @@ export function SignedInFrame({
             }}
             withBell={withBell}
           />
-          <SidebarOverlay open={overlayOpen} onClose={closeOverlay} returnFocus={showButton} label={t('frame.sidebar')}>
+          <FrameDialog
+            open={overlayOpen}
+            onClose={closeOverlay}
+            returnFocus={showButton}
+            label={t('frame.sidebar')}
+            className="m-0 h-dvh max-h-none w-sidebar max-w-overlay-cap bg-transparent p-0 text-text"
+          >
             {sidebar}
-          </SidebarOverlay>
+          </FrameDialog>
         </>
       )}
+      {phone ? <PhoneTopBar me={me} withBell={withBell} /> : null}
       <div className={wide && sidebarShown ? 'pl-(--container-sidebar)' : ''}>
         <OfflineBanner />
         {me.state === 'unverified' ? <ConfirmationBanner me={me} /> : null}
+        {signOutFailedAbovePage && signing.state === 'failed' ? (
+          <p role="alert" className="border-b border-border px-4 py-3 text-small text-danger">
+            {t('frame.signOutFailed')}
+          </p>
+        ) : null}
         <main
           id={mainContentId}
           tabIndex={-1}
-          className="mx-auto w-full max-w-page px-4 py-8 outline-none tablet:px-8 desktop:px-14 desktop:py-12"
+          className={`mx-auto w-full max-w-page px-4 py-8 outline-none tablet:px-8 desktop:px-14 desktop:py-12 ${phone ? 'pb-[calc(--spacing(8)+var(--bottom-bar-height,56px))]' : ''}`}
         >
           {children ?? <Outlet />}
         </main>
       </div>
+      {phone ? (
+        <>
+          <BottomBar
+            me={me}
+            linked={linked}
+            counts={counts}
+            sheetOpen={sheetOpen}
+            moreButton={moreButton}
+            onMore={() => {
+              setSignOutFailedAbovePage(false);
+              setSheetOpen(true);
+            }}
+          />
+          <MoreSheet
+            me={me}
+            linked={linked}
+            counts={counts}
+            open={sheetOpen}
+            onClose={closeSheet}
+            moreButton={moreButton}
+            signing={sheetSigning}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

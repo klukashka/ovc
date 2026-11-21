@@ -72,3 +72,17 @@ export type SectionCounts = Readonly<Partial<Record<SectionKey, number>>>;
 export function hasNews(counts: SectionCounts): boolean {
   return Object.values(counts).some((count) => count > 0);
 }
+
+function sectionsOf(role: Role, keys: readonly SectionKey[]): readonly Section[] {
+  return roleSections[role].filter((section) => keys.includes(section.key));
+}
+
+export const barSections: Readonly<Record<Role, readonly Section[]>> = {
+  tutor: sectionsOf('tutor', ['today', 'schedule', 'homework', 'messages']),
+  student: sectionsOf('student', ['home', 'schedule', 'homework', 'messages']),
+};
+
+export const sheetSections: Readonly<Record<Role, readonly Section[]>> = {
+  tutor: sectionsOf('tutor', ['students', 'groups']),
+  student: sectionsOf('student', ['tutors']),
+};

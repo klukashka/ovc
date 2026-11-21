@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { type ReactElement, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router';
@@ -16,6 +17,13 @@ interface SidebarProps {
   readonly onNavigate: () => void;
 }
 
+export function homeworkCountName(t: TFunction, section: Section, count: number): string {
+  const toCheck = section.to !== '/homework';
+  return count > 99
+    ? t(toCheck ? 'frame.homeworkToCheckOverCap' : 'frame.homeworkToDoOverCap')
+    : t(toCheck ? 'frame.homeworkToCheck' : 'frame.homeworkToDo', { count });
+}
+
 function SidebarItem({
   section,
   count,
@@ -29,7 +37,6 @@ function SidebarItem({
 }): ReactElement {
   const { t } = useTranslation();
   const { Icon } = section;
-  const toCheck = section.to !== '/homework';
   return (
     <li>
       <Link
@@ -44,9 +51,7 @@ function SidebarItem({
                 ? t('frame.messagesOverCap')
                 : t('frame.messagesWithCount', { count })
               : section.key === 'homework'
-                ? count > 99
-                  ? t(toCheck ? 'frame.homeworkToCheckOverCap' : 'frame.homeworkToDoOverCap')
-                  : t(toCheck ? 'frame.homeworkToCheck' : 'frame.homeworkToDo', { count })
+                ? homeworkCountName(t, section, count)
                 : undefined
         }
         data-sidebar-item=""

@@ -172,8 +172,8 @@ test('a signed-in tutor sees Not found in their own frame at a student address',
   await expect(page).toHaveTitle('Страница не найдена · OVC');
 });
 
-test.describe('below 1024 px', () => {
-  test.use({ viewport: { width: 390, height: 844 } });
+test.describe('from 768 to 1023 px', () => {
+  test.use({ viewport: { width: 800, height: 1000 } });
 
   test('the top bar names Not found, not the student page, at a student address', async ({ signedInPage: page }) => {
     await page.goto('/home');
@@ -289,4 +289,38 @@ test('an unverified tutor signs in to the account language and sees the confirma
   await expect(banner).toContainText(account.email);
   await expect(banner.getByRole('link', { name: 'Confirm email' })).toHaveAttribute('href', '/verify-email');
   expect(await page.evaluate(() => globalThis.localStorage.getItem('ovc.language'))).toBe('en');
+});
+
+test.describe('below 768 px', () => {
+  test.use({ viewport: { width: 360, height: 780 } });
+
+  test('signing out from the More sheet returns to sign-in and the old session is refused', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Телефонный репетитор');
+    await signInThroughTheApi(page, tutor);
+    const bearers = new Set<string>();
+    page.on('request', (request) => {
+      const bearer = request.headers().authorization;
+      if (bearer !== undefined && new URL(request.url()).pathname === '/api/v1/users/me') {
+        bearers.add(bearer);
+      }
+    });
+    const ready = trafficAfterReady(page, todayQueryPaths);
+    await ready.initialize();
+    await page.goto('/today');
+    await expectReadyForNavigation(page, ready);
+    await page.getByRole('navigation', { name: 'Основная навигация' }).getByRole('button', { name: 'Ещё' }).click();
+
+    await page.getByRole('dialog', { name: 'Ещё' }).getByRole('button', { name: 'Выйти' }).click();
+
+    await expect(page).toHaveURL('/');
+    await expect(page.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
+    expect(bearers.size).toBeGreaterThanOrEqual(1);
+    for (const bearer of bearers) {
+      const answer = await page.request.get('/api/v1/users/me', { headers: { Authorization: bearer } });
+      expect(answer.status()).toBe(401);
+    }
+  });
 });

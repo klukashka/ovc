@@ -627,6 +627,7 @@ export class FakeAuthServer {
   private grantedRefreshes = 0;
   private failingAccountChecks = 0;
   private failingAccountReads = 0;
+  private failingSignOuts = 0;
   private failingRefreshes = 0;
   private lostRefreshes = 0;
   private accountReadGate: Promise<void> | null = null;
@@ -1151,6 +1152,10 @@ export class FakeAuthServer {
     this.failingAccountReads += 1;
   }
 
+  failNextSignOut(): void {
+    this.failingSignOuts += 1;
+  }
+
   failNextInvitationRead(): void {
     this.failingInvitationReads += 1;
   }
@@ -1448,6 +1453,10 @@ export class FakeAuthServer {
     this.signOutCount += 1;
     this.signOutReceived();
     await this.signOutGate;
+    if (this.failingSignOuts > 0) {
+      this.failingSignOuts -= 1;
+      return refusal(503, 'service_unavailable');
+    }
     const session = this.sessionOf(token);
     if (session !== undefined) {
       session.revoked = true;

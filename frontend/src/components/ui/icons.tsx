@@ -4,11 +4,12 @@ export interface IconProps {
   readonly size?: number;
 }
 
-function Outline({ size = 16, children }: IconProps & { readonly children: ReactNode }): ReactElement {
+function Outline({ size, children }: IconProps & { readonly children: ReactNode }): ReactElement {
   return (
     <svg
-      width={size}
-      height={size}
+      width={size ?? 16}
+      height={size ?? 16}
+      data-outline-icon={size === undefined ? '' : undefined}
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"

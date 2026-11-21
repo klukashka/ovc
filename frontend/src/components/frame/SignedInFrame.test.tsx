@@ -5,7 +5,13 @@ import { RouterProvider, createMemoryRouter } from 'react-router';
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { ConnectionContext, ConnectionState } from '../../app/connectionState.ts';
-import { MediaQueriesContext, PreferencesContext, fixedMediaQueries, wideLayoutQuery } from '../../app/context.ts';
+import {
+  MediaQueriesContext,
+  PreferencesContext,
+  fixedMediaQueries,
+  phoneLayoutQuery,
+  wideLayoutQuery,
+} from '../../app/context.ts';
 import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
 import { type FakeAccountSeed, FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { type Me, Session, SessionContext } from '../../lib/api/session.ts';
@@ -47,12 +53,12 @@ async function signedInSession(seed: FakeAccountSeed): Promise<{ session: Sessio
 async function renderFrame(
   seed: FakeAccountSeed,
   address: string,
-  wide: boolean,
+  wide: boolean | 'phone',
   language: Language = 'ru',
   title?: 'page.notFound',
   connection = new ConnectionState(manualScheduler()),
   chatUnread = false,
-): Promise<void> {
+): Promise<FakeAuthServer> {
   const i18n = await createI18n(language);
   const { session, me, server } = await signedInSession(seed);
   if (chatUnread) {
@@ -106,7 +112,9 @@ async function renderFrame(
   );
   render(
     <ConnectionContext value={connection}>
-      <MediaQueriesContext value={fixedMediaQueries(wide ? [wideLayoutQuery] : [])}>
+      <MediaQueriesContext
+        value={fixedMediaQueries(wide === 'phone' ? [phoneLayoutQuery] : wide ? [wideLayoutQuery] : [])}
+      >
         <PreferencesContext value={memoryPreferenceStore()}>
           <SessionContext value={session}>
             <ApiClientContext value={createApiClient('https://ovc.example', session.authorizedFetch)}>
@@ -121,6 +129,7 @@ async function renderFrame(
       </MediaQueriesContext>
     </ConnectionContext>,
   );
+  return server;
 }
 
 async function click(element: HTMLElement): Promise<void> {
@@ -328,4 +337,81 @@ test('the Messages unread channel count also marks the hidden sidebar', async ()
   const messages = screen.getByRole('link', { name: /Messages.*1/i, hidden: true });
   expect(messages.getAttribute('href')).toBe('/messages');
   expect(within(messages).getByText('1')).toBeDefined();
+});
+
+function bottomBar(): HTMLElement {
+  return screen.getByRole('navigation', { name: /Main navigation|Основная навигация/ });
+}
+
+function sheet(): HTMLElement {
+  const dialog = document.querySelector<HTMLElement>('dialog[aria-label="More"], dialog[aria-label="Ещё"]');
+  if (dialog === null) {
+    throw new Error('the frame shows no More sheet');
+  }
+  return dialog;
+}
+
+function linkLabels(container: HTMLElement): (string | null)[] {
+  return within(container)
+    .queryAllByRole('link', { hidden: true })
+    .map((link) => link.textContent);
+}
+
+describe('the phone frame', () => {
+  test('a student’s bottom bar holds Home, Schedule, Homework, Chats and More, and names the Chats count from its label', async () => {
+    await renderFrame(account('student'), '/homework', 'phone', 'en', undefined, undefined, true);
+
+    const chats = await within(bottomBar()).findByRole('link', { name: 'Chats, 1 unread' });
+
+    expect(linkLabels(bottomBar())).toEqual(['Home', 'Schedule', 'Homework', '1Chats']);
+    expect(chats.getAttribute('href')).toBe('/messages');
+    expect(within(bottomBar()).getByRole('button', { name: 'More' }).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: /Show sidebar/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Account menu/ })).toBeNull();
+  });
+
+  test('an unconfirmed student’s bar shows Home and More, and the sheet lists My tutors, Settings and Sign out only', async () => {
+    await renderFrame(account('student', 'unverified'), '/home', 'phone');
+
+    const bar = bottomBar();
+
+    expect(linkLabels(bar)).toEqual(['Главная']);
+    expect(within(bar).getByRole('button', { name: 'Ещё' })).toBeDefined();
+    expect(linkLabels(sheet())).toEqual(['Мои репетиторы', 'Настройки']);
+    expect(within(sheet()).getByRole('button', { name: 'Выйти', hidden: true })).toBeDefined();
+    expect(within(topBar()).queryByRole('button', { name: /Уведомления/ })).toBeNull();
+  });
+
+  test('an unconfirmed tutor sees the full bar without a Homework count', async () => {
+    await renderFrame(account('tutor', 'unverified'), '/schedule', 'phone', 'en');
+
+    const bar = bottomBar();
+
+    expect(linkLabels(bar)).toEqual(['Today', 'Schedule', 'Homework', 'Chats']);
+    expect(within(bar).getByRole('link', { name: 'Homework' }).getAttribute('aria-label')).toBeNull();
+    expect(linkLabels(sheet())).toEqual(['Students', 'Groups', 'Notifications', 'Settings']);
+  });
+
+  test('a page the sheet lists marks its sheet row current and no bar link', async () => {
+    await renderFrame(account('student'), '/tutors', 'phone', 'en');
+
+    const current = within(sheet()).getByRole('link', { name: 'My tutors', hidden: true });
+
+    expect(current.getAttribute('aria-current')).toBe('page');
+    expect(bottomBar().querySelector('[aria-current]')).toBeNull();
+    expect(within(bottomBar()).getByRole('button', { name: 'More' }).hasAttribute('aria-current')).toBe(false);
+  });
+
+  test('a sign-out that fails while the sheet is closed shows an alert above the page and focuses More', async () => {
+    const server = await renderFrame(account('student'), '/home', 'phone', 'en');
+    server.failNextSignOut();
+    const signOut = within(sheet()).getByRole('button', { name: 'Sign out', hidden: true });
+
+    await click(signOut);
+
+    const alert = await screen.findByRole('alert');
+    expect(sheet().contains(alert)).toBe(false);
+    expect(alert.textContent).toBe('Could not sign out. Check your connection and try again.');
+    expect(document.activeElement).toBe(within(bottomBar()).getByRole('button', { name: 'More' }));
+  });
 });
