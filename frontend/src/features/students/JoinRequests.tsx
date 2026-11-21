@@ -8,6 +8,7 @@ import { type ReactElement, type ReactNode, useEffect, useId, useRef, useState }
 import { useTranslation } from 'react-i18next';
 
 import { type ActionState, done, refusedBy, showsStaleData, useAction } from '../../components/ui/action.ts';
+import { followUpQueuedFor } from '../../app/queryClient.ts';
 import { ActionMenu } from '../../components/ui/ActionMenu.tsx';
 import { Avatar } from '../../components/ui/Avatar.tsx';
 import {
@@ -410,7 +411,12 @@ export function HomeJoinRequestList({
       const query = queryClient.getQueryCache().find<TutorHome>({ queryKey: tutorHomeKey, exact: true });
       const inFlight = query?.state.fetchStatus === 'fetching' ? query.promise : undefined;
       if (inFlight === undefined) {
-        return { kind: refetched ? 'refetched' : 'unchanged', loads: query?.state.dataUpdateCount ?? 0 };
+        const followUp = followUpQueuedFor(queryClient, tutorHomeKey);
+        if (followUp === null) {
+          return { kind: refetched ? 'refetched' : 'unchanged', loads: query?.state.dataUpdateCount ?? 0 };
+        }
+        await followUp;
+        continue;
       }
       const answered = await inFlight.then(
         () => true,

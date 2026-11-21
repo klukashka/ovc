@@ -51,6 +51,34 @@ describe('the following query client', () => {
     expect(queryClient.getQueryData(['students'])).toBe(2);
     unsubscribe();
   });
+
+  test('a follow-up queued behind a fetch is reported until it is abandoned by suspended follow-ups', async () => {
+    const queryClient = new FollowingQueryClient();
+    const held: HeldFetch[] = [];
+    const observer = new QueryObserver(queryClient, {
+      queryKey: ['home'],
+      queryFn: ({ signal }): Promise<number> =>
+        new Promise((resolve) => {
+          held.push({ signal, answer: resolve });
+        }),
+    });
+    const unsubscribe = observer.subscribe(() => undefined);
+    const first = await heldFetch(held, 0);
+    const queuedBeforeInvalidation = queryClient.followUpQueuedFor(['home']);
+
+    const invalidation = queryClient.invalidateQueries({ queryKey: ['home'] });
+    const queued = queryClient.followUpQueuedFor(['home']);
+    queryClient.suspendFollowUps();
+    first.answer(1);
+    await invalidation;
+    await queued;
+
+    expect(queuedBeforeInvalidation).toBeNull();
+    expect(queued).not.toBeNull();
+    expect(queryClient.followUpQueuedFor(['home'])).toBeNull();
+    expect(held).toHaveLength(1);
+    unsubscribe();
+  });
 });
 
 test.each([false, true])('a departed first-wave refusal preserves throwOnError=%s', async (throwOnError) => {

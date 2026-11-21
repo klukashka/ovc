@@ -115,6 +115,10 @@ interface FakeCard {
   readonly card: StudentCard;
 }
 
+function matchesSearch(card: StudentCard, search: string): boolean {
+  return card.display_name.toLowerCase().includes(search) || (card.email?.toLowerCase().includes(search) ?? false);
+}
+
 function fakeCard(id: string, displayName: string): StudentCard {
   return {
     id,
@@ -152,7 +156,7 @@ const defaultPageLimit = 30;
 const maximumPageLimit = 100;
 const unreadCountCap = 100;
 const cursorPrefix = 'fake-cursor-';
-const supportedStudentListParameters: ReadonlySet<string> = new Set(['limit', 'cursor', 'state']);
+const supportedStudentListParameters: ReadonlySet<string> = new Set(['limit', 'cursor', 'state', 'q']);
 const studentListStates: Readonly<Record<string, ReadonlySet<StudentCard['state']>>> = {
   active: new Set(['active', 'provisional', 'reclaim_pending']),
   invited: new Set(['invited']),
@@ -636,6 +640,8 @@ export class FakeAuthServer {
   private readonly notifications = new Map<string, Notification[]>();
   private failingCalendarReads = 0;
   private failingStudentListReads = 0;
+  private studentListReadGate: Promise<void> | null = null;
+  private studentListReadReceived: () => void = () => undefined;
   private failingCardReads = 0;
   private failingCardWrites = 0;
   private cardWriteGate: Promise<void> | null = null;
@@ -1004,6 +1010,30 @@ export class FakeAuthServer {
 
   failNextStudentListRead(): void {
     this.failingStudentListReads += 1;
+  }
+
+  addActiveStudent(tutorEmail: string, displayName: string, email: string): void {
+    const tutorId = this.account(tutorEmail).me.id;
+    const id = `00000000-0000-4000-8000-${String(this.cards.size + 1).padStart(12, '0')}`;
+    const card: StudentCard = { ...fakeCard(id, displayName), state: 'active', email, invitation: null };
+    this.cards.set(id, { tutorId, card });
+  }
+
+  pauseStudentListReads(): PausedReads {
+    let resume = (): void => undefined;
+    let notifyReceived = (): void => undefined;
+    this.studentListReadGate = new Promise((resolve) => {
+      resume = (): void => {
+        this.studentListReadGate = null;
+        this.studentListReadReceived = (): void => undefined;
+        resolve();
+      };
+    });
+    const received = new Promise<void>((resolve) => {
+      notifyReceived = resolve;
+    });
+    this.studentListReadReceived = notifyReceived;
+    return { resume, received };
   }
 
   addIssue(email: string, item: components['schemas']['IssueItem']): void {
@@ -1461,13 +1491,17 @@ export class FakeAuthServer {
       ) {
         return refusal(422, 'validation_failed');
       }
+      this.studentListReadReceived();
+      await this.studentListReadGate;
       if (this.failingStudentListReads > 0) {
         this.failingStudentListReads -= 1;
         return refusal(503, 'service_unavailable');
       }
+      const search = address.searchParams.get('q')?.toLowerCase() ?? null;
       const newestFirst = [...this.cards.values()]
         .filter((found) => found.tutorId === tutorId)
         .filter((found) => listedStates === null || listedStates.has(found.card.state))
+        .filter((found) => search === null || matchesSearch(found.card, search))
         .map((found) => summaryOf(found.card, this.openAssignmentsOf(tutorId, found.card.id)))
         .reverse();
       const page = pageOf(newestFirst, address.searchParams);

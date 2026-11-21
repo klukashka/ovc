@@ -408,6 +408,35 @@ describe('Today on GET /home', () => {
     expect(requestedPaths(shown.server).filter((path) => path === '/api/v1/join-requests')).toHaveLength(1);
   });
 
+  test('Show more during a burst of frames waits for the coalesced follow-up /home read and continues from its cursor', async () => {
+    const shown = await showToday({ joinRequests: 7 });
+    const region = screen.getByRole('region', { name: 'Join requests' });
+    const held = shown.server.pauseHomeReads();
+    const firstFrame = shown.queryClient.refetchQueries({ queryKey: tutorHomeKey });
+    await held.received;
+    const secondFrame = shown.queryClient.refetchQueries({ queryKey: tutorHomeKey });
+    shown.server.addJoinRequest(tutorEmail, joinRequest(0));
+    const showMore = within(region).getByRole('button', { name: 'Show more' });
+    showMore.focus();
+
+    fireEvent.click(showMore);
+    held.resume();
+    await act(async () => {
+      await Promise.all([firstFrame, secondFrame]);
+    });
+    await within(region).findByRole('button', { name: 'Accept Requester 7' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(within(region).getByRole('button', { name: 'Accept Requester 5' }));
+    });
+
+    const rows = within(region).getAllByRole('listitem');
+    expect(shown.server.homeReads()).toBe(3);
+    expect(rows).toHaveLength(8);
+    expect(new Set(rows.map((row) => row.textContent)).size).toBe(8);
+    expect(within(region).getByRole('button', { name: 'Accept Requester 0' })).toBeTruthy();
+    expect(requestedPaths(shown.server).filter((path) => path === '/api/v1/join-requests')).toHaveLength(1);
+  });
+
   test('Show more during an in-flight /home refetch that fails loads nothing and shows the refetch notice', async () => {
     const shown = await showToday({ joinRequests: 7 });
     const region = screen.getByRole('region', { name: 'Join requests' });

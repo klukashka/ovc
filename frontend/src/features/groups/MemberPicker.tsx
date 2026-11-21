@@ -199,6 +199,7 @@ export function MemberPicker({
         {t('groups.chosen', { count: chosen.size, limit: slots })}
       </p>
       <StudentChoices
+        key={search}
         search={search}
         excluded={excluded}
         chosen={chosen}
