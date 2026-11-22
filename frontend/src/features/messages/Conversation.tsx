@@ -536,12 +536,7 @@ export function Conversation({
       </>
     );
   const title = (
-    <h2
-      ref={heading}
-      tabIndex={-1}
-      dir="auto"
-      className={`text-heading outline-none${phone ? ' min-w-0 [overflow-wrap:anywhere]' : ''}`}
-    >
+    <h2 ref={heading} tabIndex={-1} dir="auto" className="min-w-0 text-heading [overflow-wrap:anywhere] outline-none">
       {channel.label ?? texts.deletedUser}
     </h2>
   );

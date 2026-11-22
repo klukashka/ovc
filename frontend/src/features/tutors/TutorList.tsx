@@ -93,7 +93,10 @@ function TutorRow({
         {withBio && profile.bio !== '' ? <p className="text-small whitespace-pre-line">{profile.bio}</p> : null}
         <EndedLine tutor={tutor} />
         {tutor.channel_id === null ? null : (
-          <Link to={`/messages/${encodeURIComponent(tutor.channel_id)}`} className="text-accent-text underline">
+          <Link
+            to={`/messages/${encodeURIComponent(tutor.channel_id)}`}
+            className="self-start text-accent-text underline max-tablet:inline-flex max-tablet:min-h-11 max-tablet:items-center"
+          >
             {t('section.messages')}
           </Link>
         )}

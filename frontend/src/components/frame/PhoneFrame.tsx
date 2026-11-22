@@ -116,6 +116,51 @@ function sheetRows(me: Me, linked: boolean): readonly Section[] {
   return [...sheetSections[me.role], ...trailingSections].filter((section) => reachable(me, section.to, linked));
 }
 
+function overlapWithBar(focused: Element, bar: HTMLElement): number {
+  const target = focused.getBoundingClientRect();
+  const barTop = bar.getBoundingClientRect().top;
+  return Math.min(target.bottom - barTop, target.top);
+}
+
+function insideFixedLayer(focused: Element): boolean {
+  for (let element: Element | null = focused; element !== null; element = element.parentElement) {
+    if (getComputedStyle(element).position === 'fixed') {
+      return true;
+    }
+  }
+  return false;
+}
+
+function useFocusAboveBar(bar: RefObject<HTMLElement | null>): void {
+  useEffect(() => {
+    let frame = 0;
+    function reveal(event: FocusEvent): void {
+      const focused = event.target;
+      const element = bar.current;
+      if (
+        !(focused instanceof Element) ||
+        element === null ||
+        element.contains(focused) ||
+        focused.closest('dialog') !== null
+      ) {
+        return;
+      }
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const overlap = overlapWithBar(focused, element);
+        if (document.activeElement === focused && overlap > 0 && !insideFixedLayer(focused)) {
+          window.scrollBy({ top: overlap });
+        }
+      });
+    }
+    document.addEventListener('focusin', reveal);
+    return (): void => {
+      document.removeEventListener('focusin', reveal);
+      window.cancelAnimationFrame(frame);
+    };
+  }, [bar]);
+}
+
 export function BottomBar({
   me,
   linked,
@@ -135,6 +180,7 @@ export function BottomBar({
   const { pathname } = useLocation();
   const bar = useRef<HTMLElement>(null);
   const moreCurrent = sheetRows(me, linked).some((section) => isCurrent(section, pathname));
+  useFocusAboveBar(bar);
 
   useEffect(() => {
     const element = bar.current;

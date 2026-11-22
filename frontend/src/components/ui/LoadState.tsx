@@ -61,6 +61,31 @@ function useFocusAfterRetry(retried: { readonly current: boolean }, focusIfLost:
   );
 }
 
+function useFocusWhenRemovedHoldingFocus(
+  container: RefObject<HTMLElement | null>,
+  focusIfLost: () => void = focusHeadingIfLost,
+): void {
+  const heldFocus = useRef(false);
+  const latest = useRef(focusIfLost);
+  useEffect(() => {
+    latest.current = focusIfLost;
+  }, [focusIfLost]);
+  useLayoutEffect(() => {
+    const element = container.current;
+    return (): void => {
+      heldFocus.current = element?.contains(document.activeElement) ?? false;
+    };
+  }, [container]);
+  useEffect(
+    () => (): void => {
+      if (heldFocus.current) {
+        latest.current();
+      }
+    },
+    [],
+  );
+}
+
 export function LoadFailed({
   error,
   onRetry,
@@ -72,9 +97,11 @@ export function LoadFailed({
 }): ReactElement {
   const { t } = useTranslation();
   const retried = useRef(false);
+  const container = useRef<HTMLDivElement>(null);
   useFocusAfterRetry(retried, focusIfLost);
+  useFocusWhenRemovedHoldingFocus(container, focusIfLost);
   return (
-    <div className="flex flex-col items-start gap-3">
+    <div ref={container} className="flex flex-col items-start gap-3">
       <p role="alert" className="text-strong">
         {t('load.failed')}
       </p>
@@ -90,24 +117,6 @@ export function LoadFailed({
       </button>
       <p className="text-caption text-text-muted">{t('load.requestId', { requestId: error.requestId ?? '—' })}</p>
     </div>
-  );
-}
-
-function useFocusWhenRemovedHoldingFocus(container: RefObject<HTMLElement | null>): void {
-  const heldFocus = useRef(false);
-  useLayoutEffect(() => {
-    const element = container.current;
-    return (): void => {
-      heldFocus.current = element?.contains(document.activeElement) ?? false;
-    };
-  }, [container]);
-  useEffect(
-    () => (): void => {
-      if (heldFocus.current) {
-        focusHeadingIfLost();
-      }
-    },
-    [],
   );
 }
 

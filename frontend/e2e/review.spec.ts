@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 
-import { type TestAccount, newTestAccount, registerTutor, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, newTestAccount, pageLoaded, registerTutor, signInThroughTheApi } from './accounts.ts';
 import {
   createPastSimpleTemplate,
   onlySubmission,
@@ -153,8 +153,11 @@ test.describe('the review queue', () => {
     const work = await submittedByAnna(deployment);
     await signInThroughTheApi(page, work.pavel);
     await page.goto(`/homework/issued/${work.issueId}`);
+    await page.getByRole('link', { name: 'Anna' }).waitFor();
+    await pageLoaded(page);
     await page.getByRole('link', { name: 'Anna' }).click();
     await page.getByRole('heading', { level: 1, name: pastSimple.title }).waitFor();
+    await pageLoaded(page);
     await page.getByRole('link', { name: 'Back to the queue' }).click();
     await expect(page.getByText(`Assignment: ${pastSimple.title}`)).toBeVisible();
 
@@ -253,6 +256,7 @@ test.describe('the review queue', () => {
 
     await page.goto('/homework/review');
     await expect(page.getByText('Confirm your email to issue and check assignments.')).toBeVisible();
+    await pageLoaded(page);
     await page.goto('/homework/review/0b5f2c1e-3c3a-4b8e-9d55-7f1a2b3c4d5e');
 
     await expect(page.getByText('Confirm your email to issue and check assignments.')).toBeVisible();

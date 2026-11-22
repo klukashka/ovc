@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test';
+import type { Locator, Page, Request } from '@playwright/test';
 
 import { type TestAccount, pageLoaded, signInThroughTheApi } from './accounts.ts';
 import { createPastSimpleTemplate, pastSimple, questionIds, studentWork } from './assignment.ts';
@@ -32,6 +32,70 @@ async function boxOf(locator: Locator): Promise<Box> {
 
 async function scrollsSideways(page: Page): Promise<boolean> {
   return page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+}
+
+const otherWidths = [
+  { width: 320, height: 640 },
+  { width: 780, height: 360 },
+] as const;
+
+async function frameFollowsWidth(page: Page): Promise<boolean> {
+  return page.evaluate(
+    async () =>
+      new Promise<boolean>((resolve) => {
+        requestAnimationFrame(() => {
+          const signedIn = document.querySelector('[data-frame-only]') !== null;
+          const showSidebar = document.querySelector('button[data-frame-only][aria-expanded]') !== null;
+          resolve(!signedIn || showSidebar === window.innerWidth >= 768);
+        });
+      }),
+  );
+}
+
+const apiReadsInFlight = new WeakMap<Page, Set<Request>>();
+
+function trackedApiReads(page: Page): Set<Request> {
+  const known = apiReadsInFlight.get(page);
+  if (known !== undefined) {
+    return known;
+  }
+  const reads = new Set<Request>();
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/')) {
+      reads.add(request);
+    }
+  });
+  page.on('requestfinished', (request) => {
+    reads.delete(request);
+  });
+  page.on('requestfailed', (request) => {
+    reads.delete(request);
+  });
+  apiReadsInFlight.set(page, reads);
+  return reads;
+}
+
+async function resizeTo(page: Page, size: { readonly width: number; readonly height: number }): Promise<void> {
+  const reads = trackedApiReads(page);
+  await page.setViewportSize(size);
+  await expect.poll(async () => frameFollowsWidth(page)).toBe(true);
+  await pageLoaded(page);
+  await expect.poll(() => reads.size).toBe(0);
+}
+
+async function widthsScrollingSideways(page: Page, path: string, ready: (page: Page) => Locator): Promise<string[]> {
+  const previous = page.viewportSize() ?? phone;
+  const sideways: string[] = [];
+  trackedApiReads(page);
+  for (const size of otherWidths) {
+    await resizeTo(page, size);
+    if (await scrollsSideways(page)) {
+      sideways.push(`${path} at ${String(size.width)} px`);
+    }
+  }
+  await resizeTo(page, previous);
+  await ready(page).waitFor();
+  return sideways;
 }
 
 const longWord = 'Длиннаягруппаизшестидесятибуквбезединогопробеладлятесташирин';
@@ -100,6 +164,7 @@ async function pagesScrollingSideways(
   pages: readonly SweptPage[],
   measured: Record<string, boolean> = {},
 ): Promise<string[]> {
+  trackedApiReads(page);
   await page.setViewportSize(phone);
   const sideways: string[] = [];
   for (const { path, ready, measure } of pages) {
@@ -113,6 +178,7 @@ async function pagesScrollingSideways(
       sideways.push(path);
     }
     Object.assign(measured, (await measure?.(page)) ?? {});
+    sideways.push(...(await widthsScrollingSideways(page, path, ready)));
   }
   return sideways;
 }
@@ -179,6 +245,7 @@ interface MarkupSweep {
 }
 
 async function pagesSweptForMarkup(page: Page, pages: readonly SweptPage[]): Promise<MarkupSweep> {
+  trackedApiReads(page);
   await page.setViewportSize(phone);
   const sideways: string[] = [];
   const withoutMarkupText: string[] = [];
@@ -191,6 +258,7 @@ async function pagesSweptForMarkup(page: Page, pages: readonly SweptPage[]): Pro
     if (await scrollsSideways(page)) {
       sideways.push(path);
     }
+    sideways.push(...(await widthsScrollingSideways(page, path, ready)));
     const main = page.getByRole('main');
     if (!((await main.textContent()) ?? '').includes(markup) || (await main.locator('img, b').count()) > 0) {
       withoutMarkupText.push(path);
@@ -332,6 +400,9 @@ test.describe('the 360 px sweeps', () => {
               shown.getByRole('group', { name: 'Tutor' }),
               pageColumn(shown),
             ),
+            'Home: a tutor’s Messages link is a 44 px target': await isTarget(
+              shown.locator('[data-column="aside"]').getByRole('link', { name: 'Messages', exact: true }).first(),
+            ),
           }),
         },
         {
@@ -342,9 +413,9 @@ test.describe('the 360 px sweeps', () => {
               shown.getByLabel('Tutor', { exact: true }),
               pageColumn(shown),
             ),
-            'Schedule: the toolbar follows the tutor filter': await isBelow(
-              shown.getByRole('group', { name: 'Calendar view' }),
+            'Schedule: the tutor filter follows the toolbar': await isBelow(
               shown.getByLabel('Tutor', { exact: true }),
+              shown.getByRole('group', { name: 'Calendar view' }),
             ),
           }),
         },
@@ -376,7 +447,7 @@ test.describe('the 360 px sweeps', () => {
 
     expect(sideways).toEqual([]);
     expect(measured).toEqual(allTrue(measured));
-    expect(Object.keys(measured)).toHaveLength(12);
+    expect(Object.keys(measured)).toHaveLength(13);
     const main = await boxOf(page.locator('[data-column="main"]'));
     const aside = await boxOf(page.locator('[data-column="aside"]'));
     expect(aside.top).toBeGreaterThanOrEqual(main.bottom);
@@ -604,6 +675,7 @@ async function overflowingElements(page: Page): Promise<string[]> {
 }
 
 async function sweepHomeworkPages(page: Page, pages: readonly SweptPage[]): Promise<HomeworkSweep> {
+  trackedApiReads(page);
   await page.setViewportSize(phone);
   const sideways: string[] = [];
   const wideTables: string[] = [];
@@ -642,6 +714,7 @@ async function sweepHomeworkPages(page: Page, pages: readonly SweptPage[]): Prom
     rowMenus += await page.locator('main tbody button[aria-expanded]').count();
     smallRowMenus += await smallRowMenusOf(page);
     injected += await page.locator('main').locator('img, b').count();
+    sideways.push(...(await widthsScrollingSideways(page, path, ready)));
   }
   return { sideways, wideTables, texts, fullWidthButtons, rowHeaders, rowMenus, smallRowMenus, injected };
 }

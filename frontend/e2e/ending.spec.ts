@@ -496,7 +496,7 @@ test.describe('Boris in English', () => {
   test.describe('on a phone', () => {
     test.use({ viewport: { width: 360, height: 780 } });
 
-    test('my tutors › stop studying before the email is confirmed removes the link silently', async ({
+    test('my tutors › stop studying before the email is confirmed fills the screen with its dialog and removes the link silently', async ({
       page,
       deployment,
       control,
@@ -517,6 +517,7 @@ test.describe('Boris in English', () => {
       );
       await expect(dialog.getByRole('button', { name: 'Stop studying' })).toHaveAttribute('aria-disabled', 'false');
       await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+      expect(await dialog.boundingBox()).toEqual({ x: 0, y: 0, width: 360, height: 780 });
 
       await dialog.getByRole('button', { name: 'Stop studying' }).click();
 

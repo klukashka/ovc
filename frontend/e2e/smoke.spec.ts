@@ -30,6 +30,14 @@ async function chooseEnglish(page: Page): Promise<void> {
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
 }
 
+async function closeNatively(dialog: Locator): Promise<void> {
+  await dialog.evaluate((element) => {
+    if (element instanceof HTMLDialogElement) {
+      element.close();
+    }
+  });
+}
+
 async function openOverlay(page: Page): Promise<void> {
   await openSettledToday(page);
   await page.getByRole('button', { name: 'Показать боковую панель' }).click();
@@ -165,6 +173,17 @@ test.describe('from 768 to 1023 px', () => {
     await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeFocused();
   });
 
+  test('a close by the browser itself, without a cancel event, returns focus to the show button', async ({
+    signedInPage: page,
+  }) => {
+    await openOverlay(page);
+
+    await closeNatively(page.getByRole('dialog'));
+
+    await expect(page.getByRole('dialog')).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeFocused();
+  });
+
   test('a click on the dimmed page closes the overlay and returns focus', async ({ signedInPage: page }) => {
     await openOverlay(page);
 
@@ -203,6 +222,12 @@ const phoneMarkup = '<img src=x onerror="document.title=1"><b>Bold</b>';
 
 function bottomBar(page: Page): Locator {
   return page.getByRole('navigation', { name: 'Основная навигация' });
+}
+
+async function endsAboveTheBar(page: Page, field: Locator): Promise<boolean> {
+  const fieldBox = await field.boundingBox();
+  const barBox = await bottomBar(page).boundingBox();
+  return fieldBox !== null && barBox !== null && fieldBox.y + fieldBox.height <= barBox.y + 1;
 }
 
 function moreSheet(page: Page): Locator {
@@ -301,6 +326,17 @@ test.describe('below 768 px', () => {
     await expect(bottomBar(page).getByRole('button', { name: 'Ещё' })).toBeFocused();
   });
 
+  test('a close by the browser itself, without a cancel event, returns focus to More', async ({
+    signedInPage: page,
+  }) => {
+    await openSheetOnToday(page);
+
+    await closeNatively(moreSheet(page));
+
+    await expect(moreSheet(page)).toBeHidden();
+    await expect(bottomBar(page).getByRole('button', { name: 'Ещё' })).toBeFocused();
+  });
+
   test('Close closes the sheet and returns focus to More', async ({ signedInPage: page }) => {
     await openSheetOnToday(page);
 
@@ -317,6 +353,20 @@ test.describe('below 768 px', () => {
 
     await expect(moreSheet(page)).toBeHidden();
     await expect(bottomBar(page).getByRole('button', { name: 'Ещё' })).toBeFocused();
+  });
+
+  test('a field that Tab focuses behind the bottom bar is scrolled above it', async ({ signedInPage: page }) => {
+    await page.goto('/settings/profile');
+    const subjects = page.getByLabel('Предметы', { exact: true });
+    const about = page.getByLabel('О себе', { exact: true });
+    await subjects.focus();
+    const aboveBeforeTab = await endsAboveTheBar(page, about);
+
+    await page.keyboard.press('Tab');
+
+    expect(aboveBeforeTab).toBe(false);
+    await expect(about).toBeFocused();
+    await expect.poll(async () => endsAboveTheBar(page, about)).toBe(true);
   });
 
   test('a row of the sheet closes it, opens its page and focuses the heading', async ({ signedInPage: page }) => {

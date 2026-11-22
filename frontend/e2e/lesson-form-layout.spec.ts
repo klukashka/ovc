@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 
-import { signInThroughTheApi } from './accounts.ts';
+import { pageLoaded, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { type LocalDate, addDays, isoWeekday, localDate, scheduleLessonsWithIds } from './schedule.ts';
@@ -11,6 +11,7 @@ const languages = [
     language: 'ru',
     locale: 'ru-RU',
     newLesson: 'Новый урок',
+    nothingFound: 'Ничего не найдено',
     editLesson: 'Изменить урок',
     editDialog: 'Изменение урока',
     title: 'Название',
@@ -23,6 +24,7 @@ const languages = [
     language: 'en',
     locale: 'en-GB',
     newLesson: 'New lesson',
+    nothingFound: 'Nothing found',
     editLesson: 'Edit lesson',
     editDialog: 'Edit lesson',
     title: 'Title',
@@ -48,27 +50,44 @@ interface FieldGeometry {
   readonly labelBottom: number;
 }
 
-async function fieldGeometry(field: Locator): Promise<FieldGeometry> {
-  return field.evaluate((element) => {
-    if (!(element instanceof HTMLInputElement)) {
-      throw new Error('the lesson field is not an input');
+type FieldName = 'title' | 'start' | 'duration_minutes' | 'date';
+
+async function fieldGeometries(dialog: Locator): Promise<Readonly<Partial<Record<FieldName, FieldGeometry>>>> {
+  return dialog.evaluate((element) => {
+    const measured: Partial<Record<FieldName, FieldGeometry>> = {};
+    for (const name of ['title', 'start', 'duration_minutes', 'date'] as const) {
+      const field = element.querySelector(`input[name="${name}"]`);
+      if (field === null) {
+        continue;
+      }
+      if (!(field instanceof HTMLInputElement)) {
+        throw new Error('the lesson field is not an input');
+      }
+      const label = field.labels?.item(0);
+      if (label === undefined) {
+        throw new Error('the lesson field has no label');
+      }
+      const inputBox = field.getBoundingClientRect();
+      const labelBox = label.getBoundingClientRect();
+      measured[name] = {
+        left: inputBox.left,
+        right: inputBox.right,
+        top: inputBox.top,
+        bottom: inputBox.bottom,
+        width: inputBox.width,
+        labelTop: labelBox.top,
+        labelBottom: labelBox.bottom,
+      };
     }
-    const label = element.labels?.item(0);
-    if (label === undefined) {
-      throw new Error('the lesson field has no label');
-    }
-    const inputBox = element.getBoundingClientRect();
-    const labelBox = label.getBoundingClientRect();
-    return {
-      left: inputBox.left,
-      right: inputBox.right,
-      top: inputBox.top,
-      bottom: inputBox.bottom,
-      width: inputBox.width,
-      labelTop: labelBox.top,
-      labelBottom: labelBox.bottom,
-    };
+    return measured;
   });
+}
+
+function present(geometry: FieldGeometry | undefined, name: FieldName): FieldGeometry {
+  if (geometry === undefined) {
+    throw new Error(`the lesson form has no ${name} field`);
+  }
+  return geometry;
 }
 
 function expectAligned(actual: number, expected: number): void {
@@ -76,9 +95,10 @@ function expectAligned(actual: number, expected: number): void {
 }
 
 async function expectLessonFieldLayout(dialog: Locator, columns: boolean, hasDate = true): Promise<void> {
-  const title = await fieldGeometry(dialog.locator('input[name="title"]'));
-  const start = await fieldGeometry(dialog.locator('input[name="start"]'));
-  const duration = await fieldGeometry(dialog.locator('input[name="duration_minutes"]'));
+  const fields = await fieldGeometries(dialog);
+  const title = present(fields.title, 'title');
+  const start = present(fields.start, 'start');
+  const duration = present(fields.duration_minutes, 'duration_minutes');
   const overflow = await dialog.evaluate((element) => ({
     dialog: element.scrollWidth - element.clientWidth,
     document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -105,7 +125,7 @@ async function expectLessonFieldLayout(dialog: Locator, columns: boolean, hasDat
     expect(start.bottom).toBeLessThan(duration.labelTop);
   }
   if (hasDate) {
-    const date = await fieldGeometry(dialog.locator('input[name="date"]'));
+    const date = present(fields.date, 'date');
     expectAligned(date.left, title.left);
     expectAligned(date.width, title.width);
     expect(date.width).toBeGreaterThanOrEqual(240);
@@ -138,6 +158,8 @@ async function openExistingLesson(
   }
   await signInThroughTheApi(page, tutor);
   await page.goto(`/lessons/${lesson.id}`);
+  await page.getByRole('heading', { level: 1, name: 'Conversation practice' }).waitFor();
+  await pageLoaded(page);
 }
 
 for (const language of languages) {
@@ -155,6 +177,7 @@ for (const language of languages) {
 
         await expect(dialog.getByLabel(language.search)).toBeFocused();
         await expect(dialog.getByLabel(language.date, { exact: true })).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+        await expect(dialog.getByText(language.nothingFound, { exact: true })).toBeVisible();
         await expectLessonFieldLayout(dialog, viewport.columns);
       });
 

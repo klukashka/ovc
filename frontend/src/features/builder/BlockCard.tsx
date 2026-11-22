@@ -771,9 +771,9 @@ export function BlockCard({
         >
           ⠿
         </span>
-        <h3 id={headingId} tabIndex={-1} className="grow font-serif text-strong outline-none">
+        <h2 id={headingId} tabIndex={-1} className="grow font-serif text-strong outline-none">
           {t('builder.blockHeading', { position: context.index + 1, type: t(`builder.types.${block.type}`) })}
-        </h3>
+        </h2>
         <div className="flex flex-wrap gap-1">
           <ActionButton
             busy={false}

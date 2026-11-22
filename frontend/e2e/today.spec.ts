@@ -658,6 +658,7 @@ interface PhoneLayout {
   readonly week: Box;
   readonly today: Box;
   readonly next: Box;
+  readonly newLessonDialog: Box;
 }
 
 async function phoneLayoutOfTodayAndSchedule(page: Page, now: number, title: string): Promise<PhoneLayout> {
@@ -676,19 +677,20 @@ async function phoneLayoutOfTodayAndSchedule(page: Page, now: number, title: str
   await page.goto('/schedule');
   const toolbar = page.getByRole('group', { name: 'Schedule view and period' });
   await toolbar.waitFor();
-  return {
-    ...today,
+  const schedule = {
     newLessonInHeader: await page.locator('main header').getByRole('button', { name: 'New lesson' }).count(),
     week: await boxOf(toolbar.getByRole('button', { name: 'Week', exact: true })),
     today: await boxOf(toolbar.getByRole('button', { name: 'Today', exact: true })),
     next: await boxOf(toolbar.getByRole('button', { name: 'Next week', exact: true })),
   };
+  await page.locator('main header').getByRole('button', { name: 'New lesson' }).click();
+  return { ...today, ...schedule, newLessonDialog: await boxOf(page.getByRole('dialog', { name: 'New lesson' })) };
 }
 
 test.describe('Today and Schedule on a phone', () => {
   test.use({ locale: 'en-GB', viewport: { width: 360, height: 780 }, colorScheme: 'light' });
 
-  test('at 360 px Join stands under its lesson’s link, Accept and Decline sit under the requester, and Schedule keeps New lesson in the header above a two-row toolbar', async ({
+  test('at 360 px Join stands at the full width under its lesson’s link, Accept and Decline sit under the requester, Schedule keeps New lesson in the header above a two-row toolbar, and its dialog fills the screen', async ({
     page,
     deployment,
     control,
@@ -703,12 +705,14 @@ test.describe('Today and Schedule on a phone', () => {
     const shown = await phoneLayoutOfTodayAndSchedule(page, now, 'Conversation practice');
 
     expect(shown.join.top).toBeGreaterThanOrEqual(shown.lessonLink.bottom);
+    expect(Math.abs(shown.join.width - shown.lessonLink.width)).toBeLessThanOrEqual(1);
     expect(shown.accept.top).toBeGreaterThanOrEqual(shown.requesterName.bottom);
     expect(Math.abs(shown.decline.top - shown.accept.top)).toBeLessThanOrEqual(1);
     expect(shown.decline.left).toBeGreaterThan(shown.accept.left);
     expect(shown.newLessonInHeader).toBe(1);
     expect(shown.today.top).toBeGreaterThanOrEqual(shown.week.bottom);
     expect(Math.abs(shown.next.top - shown.today.top)).toBeLessThanOrEqual(1);
+    expect(shown.newLessonDialog).toEqual({ left: 0, top: 0, bottom: 780, width: 360 });
   });
 });
 

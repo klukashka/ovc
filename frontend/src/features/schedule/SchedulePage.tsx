@@ -51,7 +51,7 @@ function TutorFilter({
     return null;
   }
   return (
-    <div className="order-first flex w-full flex-col gap-1 tablet:order-none tablet:w-auto">
+    <div className="flex w-full flex-col gap-1 tablet:w-auto">
       <label htmlFor={selectId} className="text-label">
         {t('schedule.tutorFilter')}
       </label>

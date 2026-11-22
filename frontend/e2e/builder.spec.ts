@@ -592,7 +592,7 @@ test.describe('builder order and focus', () => {
 
     await block(page, '2. Instruction').getByRole('button', { name: 'Delete', exact: true }).click();
 
-    await expect(block(page, '2. Instruction').getByRole('heading')).toBeFocused();
+    await expect(block(page, '2. Instruction').getByRole('heading', { level: 2 })).toBeFocused();
     expect(await textareaValues(page, 'Text')).toEqual(['First', 'Third']);
   });
 
@@ -603,7 +603,7 @@ test.describe('builder order and focus', () => {
 
     await block(page, '2. Instruction').getByRole('button', { name: 'Delete', exact: true }).click();
 
-    await expect(block(page, '1. Instruction').getByRole('heading')).toBeFocused();
+    await expect(block(page, '1. Instruction').getByRole('heading', { level: 2 })).toBeFocused();
   });
 
   test('deleting the only block focuses Add block', async ({ page, deployment }) => {
