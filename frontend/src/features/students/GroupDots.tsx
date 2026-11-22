@@ -8,11 +8,11 @@ export function GroupDots({ groups }: { readonly groups: StudentCard['groups'] }
     return null;
   }
   return (
-    <ul className="flex flex-wrap gap-x-3 gap-y-1 text-small text-text-muted">
+    <ul className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-small text-text-muted">
       {groups.map((group) => (
-        <li key={group.id} className="inline-flex items-center gap-1.5">
+        <li key={group.id} className="inline-flex min-w-0 items-center gap-1.5">
           <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${paletteDotClass[group.colour]}`} />
-          {group.name}
+          <span className="min-w-0 [overflow-wrap:anywhere]">{group.name}</span>
         </li>
       ))}
     </ul>

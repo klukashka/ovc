@@ -373,7 +373,7 @@ export function LessonRoom({
               onClick={() => {
                 join(inTab);
               }}
-              className={primaryButtonClass}
+              className={`${primaryButtonClass} w-full tablet:w-auto`}
             >
               {buttonLabel}
             </ActionButton>

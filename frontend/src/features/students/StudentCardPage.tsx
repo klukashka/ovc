@@ -617,7 +617,7 @@ function CardSummary({ card }: { readonly card: StudentCard }): ReactElement {
       </p>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <Avatar name={card.display_name} avatarId={card.account?.avatar_id ?? null} size="large" />
-        <p className="text-text-muted">{email ?? t('students.noEmail')}</p>
+        <p className="min-w-0 text-text-muted [overflow-wrap:anywhere]">{email ?? t('students.noEmail')}</p>
         <StateBadge state={card.state} />
         <GroupDots groups={card.groups} />
       </div>

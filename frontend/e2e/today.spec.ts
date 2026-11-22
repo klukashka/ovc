@@ -8,7 +8,16 @@ import { createPastSimpleTemplate, onlySubmission, pastSimple } from './assignme
 import { issueThroughTheApi } from './homework.ts';
 import { channelOf } from './messages.ts';
 import { answerTextAndSubmit } from './review.ts';
-import { addDays, cancelThisLesson, isoWeekday, localClock, localDate, scheduleLessonsWithIds } from './schedule.ts';
+import {
+  addDays,
+  cancelThisLesson,
+  daytimeZone,
+  hourIn,
+  isoWeekday,
+  localClock,
+  localDate,
+  scheduleLessonsWithIds,
+} from './schedule.ts';
 import {
   accessToken,
   callApi,
@@ -16,44 +25,16 @@ import {
   createGroup,
   enterTutorCode,
   seedActiveStudent,
+  seedJoinRequests,
   tutorCode,
 } from './tutoring.ts';
 
 const markup = '<img src=x onerror="document.title=1"><b>Bold</b>';
-const daytimeZones = [
-  'Pacific/Kiritimati',
-  'Pacific/Auckland',
-  'Asia/Tokyo',
-  'Asia/Dubai',
-  'Europe/Moscow',
-  'Europe/London',
-  'America/Sao_Paulo',
-  'America/New_York',
-  'America/Denver',
-  'Pacific/Honolulu',
-] as const;
 
 interface LocalTime {
   readonly zone: string;
   readonly date: string;
   readonly start: string;
-}
-
-function hourIn(instant: number, zone: string): number {
-  return Number(
-    new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', hourCycle: 'h23' }).format(instant),
-  );
-}
-
-function daytimeZone(now: number): string {
-  const zone = daytimeZones.find((candidate) => {
-    const hour = hourIn(now, candidate);
-    return hour >= 5 && hour <= 17;
-  });
-  if (zone === undefined) {
-    throw new Error('no daytime zone in the list');
-  }
-  return zone;
 }
 
 function laterToday(now: number): LocalTime {
@@ -649,6 +630,85 @@ test.describe('Join on Today', () => {
     await expect(lessons(page).getByRole('button')).toHaveCount(0);
     await expect(lessonRow(page, 'Cancelled lesson')).not.toContainText('Room opens at');
     await expect(lessonRow(page, 'Last lesson')).not.toContainText('Room opens at');
+  });
+});
+
+interface Box {
+  readonly left: number;
+  readonly top: number;
+  readonly bottom: number;
+  readonly width: number;
+}
+
+async function boxOf(locator: ReturnType<Page['getByRole']>): Promise<Box> {
+  const box = await locator.boundingBox();
+  if (box === null) {
+    throw new Error('the element has no layout box');
+  }
+  return { left: box.x, top: box.y, bottom: box.y + box.height, width: box.width };
+}
+
+interface PhoneLayout {
+  readonly lessonLink: Box;
+  readonly join: Box;
+  readonly requesterName: Box;
+  readonly accept: Box;
+  readonly decline: Box;
+  readonly newLessonInHeader: number;
+  readonly week: Box;
+  readonly today: Box;
+  readonly next: Box;
+}
+
+async function phoneLayoutOfTodayAndSchedule(page: Page, now: number, title: string): Promise<PhoneLayout> {
+  await openToday(page, now);
+  const row = lessonRow(page, title);
+  const request = page.getByRole('main').locator('li[data-row]').filter({ hasText: 'Requester 01' });
+  const requesterName = request.getByText('Requester 01', { exact: true });
+  await requesterName.waitFor();
+  const today = {
+    lessonLink: await boxOf(row.getByRole('link')),
+    join: await boxOf(row.getByRole('button', { name: 'Join lesson', exact: true })),
+    requesterName: await boxOf(requesterName),
+    accept: await boxOf(request.getByRole('button', { name: 'Accept Requester 01' })),
+    decline: await boxOf(request.getByRole('button', { name: 'Decline Requester 01' })),
+  };
+  await page.goto('/schedule');
+  const toolbar = page.getByRole('group', { name: 'Schedule view and period' });
+  await toolbar.waitFor();
+  return {
+    ...today,
+    newLessonInHeader: await page.locator('main header').getByRole('button', { name: 'New lesson' }).count(),
+    week: await boxOf(toolbar.getByRole('button', { name: 'Week', exact: true })),
+    today: await boxOf(toolbar.getByRole('button', { name: 'Today', exact: true })),
+    next: await boxOf(toolbar.getByRole('button', { name: 'Next week', exact: true })),
+  };
+}
+
+test.describe('Today and Schedule on a phone', () => {
+  test.use({ locale: 'en-GB', viewport: { width: 360, height: 780 }, colorScheme: 'light' });
+
+  test('at 360 px Join stands under its lesson’s link, Accept and Decline sit under the requester, and Schedule keeps New lesson in the header above a two-row toolbar', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const now = await control.now();
+    const { tutor } = await tutorWithSoonLessons(deployment, now, [
+      { title: 'Conversation practice', minutesAhead: 5 },
+    ]);
+    await seedJoinRequests(deployment, tutor, 1);
+    await signInThroughTheApi(page, tutor);
+
+    const shown = await phoneLayoutOfTodayAndSchedule(page, now, 'Conversation practice');
+
+    expect(shown.join.top).toBeGreaterThanOrEqual(shown.lessonLink.bottom);
+    expect(shown.accept.top).toBeGreaterThanOrEqual(shown.requesterName.bottom);
+    expect(Math.abs(shown.decline.top - shown.accept.top)).toBeLessThanOrEqual(1);
+    expect(shown.decline.left).toBeGreaterThan(shown.accept.left);
+    expect(shown.newLessonInHeader).toBe(1);
+    expect(shown.today.top).toBeGreaterThanOrEqual(shown.week.bottom);
+    expect(Math.abs(shown.next.top - shown.today.top)).toBeLessThanOrEqual(1);
   });
 });
 

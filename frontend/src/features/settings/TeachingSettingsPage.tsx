@@ -7,9 +7,10 @@ import { Avatar } from '../../components/ui/Avatar.tsx';
 import {
   DataTable,
   type TableColumn,
-  cellClass,
   endCellClass,
+  narrowOnlyClass,
   primaryCellClass,
+  secondaryCellClass,
   tableRowClass,
 } from '../../components/ui/DataTable.tsx';
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
@@ -162,6 +163,7 @@ function BlockedRow({
   const me = useSignedInAccount();
   const name = student.name ?? t('teaching.deletedAccount');
   const blockedDate = formatDate(student.blocked_at, me.language, me.timezone);
+  const blockedAt = t('teaching.blockedAt', { date: blockedDate });
   const unblockLabel =
     student.name === null
       ? t('teaching.unblockDeleted', { date: blockedDate })
@@ -171,13 +173,16 @@ function BlockedRow({
       <th scope="row" className={primaryCellClass}>
         <span className="flex min-w-0 items-center gap-3">
           <Avatar name={name} avatarId={student.avatar_id} />
-          <span dir="auto" className={student.name === null ? 'text-text-muted' : 'text-strong'}>
-            {name}
+          <span className="flex min-w-0 flex-col">
+            <span dir="auto" className={student.name === null ? 'text-text-muted' : 'text-strong'}>
+              {name}
+            </span>
+            <span className={`tabular text-small text-text-muted ${narrowOnlyClass}`}>{blockedAt}</span>
           </span>
         </span>
       </th>
-      <td className={cellClass}>
-        <span className="tabular text-small text-text-muted">{t('teaching.blockedAt', { date: blockedDate })}</span>
+      <td className={secondaryCellClass}>
+        <span className="tabular text-small text-text-muted">{blockedAt}</span>
       </td>
       <td className={endCellClass}>
         <ActionButton
@@ -210,9 +215,9 @@ function BlockedStudentsSection(): ReactElement {
   });
   const students = query.data?.pages.flatMap((page) => page.items) ?? [];
   const blockedColumns: readonly TableColumn[] = [
-    { key: 'student', label: t('teaching.columns.student'), width: 'w-1/2' },
-    { key: 'blocked', label: t('teaching.columns.blocked'), width: 'w-1/4' },
-    { key: 'actions', label: t('teaching.columns.actions'), visuallyHidden: true, width: 'w-1/4' },
+    { key: 'student', label: t('teaching.columns.student'), width: 'w-2/3 tablet:w-1/2' },
+    { key: 'blocked', label: t('teaching.columns.blocked'), secondary: true, width: 'w-1/4' },
+    { key: 'actions', label: t('teaching.columns.actions'), visuallyHidden: true, width: 'w-1/3 tablet:w-1/4' },
   ];
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLTableSectionElement>(
     students.length,

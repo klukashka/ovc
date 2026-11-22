@@ -9,7 +9,7 @@ function Outline({ size, children }: IconProps & { readonly children: ReactNode 
     <svg
       width={size ?? 16}
       height={size ?? 16}
-      data-outline-icon={size === undefined ? '' : undefined}
+      data-outline-icon=""
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"

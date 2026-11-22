@@ -25,7 +25,7 @@ export const narrowOnlyClass = 'tablet:hidden';
 export const endCellClass = 'px-2 py-3 text-right [overflow-wrap:anywhere]';
 
 export const rowLinkClass =
-  'rounded-sm font-medium text-text underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+  'rounded-sm font-medium text-text underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent max-tablet:inline-block max-tablet:min-h-11 max-tablet:py-2.5';
 
 function headerClass(column: TableColumn): string {
   const base = `px-2 pb-2 text-left text-label text-text-muted ${column.width ?? ''}`;

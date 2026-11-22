@@ -995,6 +995,51 @@ test.describe('the embedded room under the test override', () => {
   });
 });
 
+test.describe('the room on a phone under the test override', () => {
+  test.use({ locale: 'ru-RU', timezoneId: moscow, viewport: { width: 360, height: 780 } });
+
+  test.beforeEach(async ({ deployment }) => {
+    await setEmbedOverride(deployment, true);
+  });
+
+  test.afterEach(async ({ deployment }) => {
+    await setEmbedOverride(deployment, false);
+  });
+
+  test('lesson room › at 360 px the header actions sit below the title, Join fills the width, takes the new-tab path without an opener and focus lands on Open again', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const seed = await seedLesson(deployment, control);
+    await openLesson(page, seed.tutor, seed.lessonId, control);
+    const joinWidth = await roomButton(page, 'Подключиться к уроку').evaluate(
+      (button) => button.getBoundingClientRect().width,
+    );
+    const titleBottom = await page
+      .getByRole('heading', { level: 1, name: lessonTitle })
+      .evaluate((heading) => heading.getBoundingClientRect().bottom);
+    const editTop = await editLessonButton(page).evaluate((button) => button.getBoundingClientRect().top);
+    const iconSizes = await page
+      .getByRole('main')
+      .locator('svg[data-outline-icon]')
+      .evaluateAll((icons) => icons.map((icon) => icon.getBoundingClientRect().width));
+
+    const tutorRoom = await joinInNewTab(page, 'Подключиться к уроку', diagnostics);
+
+    expect(joinWidth).toBeGreaterThanOrEqual(290);
+    expect(editTop).toBeGreaterThanOrEqual(titleBottom);
+    expect(iconSizes.length).toBeGreaterThan(0);
+    expect(iconSizes.every((size) => size === 20)).toBe(true);
+    await expect(tutorRoom.locator('#participant-role')).toHaveText('moderator');
+    expect(await tutorRoom.evaluate(() => window.opener === null)).toBe(true);
+    await expect(page.locator('iframe')).toHaveCount(0);
+    await expect(roomButton(page, 'Режим фокуса')).toHaveCount(0);
+    await expect(roomButton(page, 'Открыть снова')).toBeFocused();
+  });
+});
+
 test.describe('pilot scenario 1 in the lesson room', () => {
   test.use({ locale: 'ru-RU', timezoneId: moscow, viewport: { width: 1280, height: 800 } });
 

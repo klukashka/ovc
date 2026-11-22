@@ -66,6 +66,36 @@ export function seriesDates(first: LocalDate, weekdays: readonly number[], count
   return dates;
 }
 
+const daytimeZones = [
+  'Pacific/Kiritimati',
+  'Pacific/Auckland',
+  'Asia/Tokyo',
+  'Asia/Dubai',
+  'Europe/Moscow',
+  'Europe/London',
+  'America/Sao_Paulo',
+  'America/New_York',
+  'America/Denver',
+  'Pacific/Honolulu',
+] as const;
+
+export function hourIn(instant: number, zone: string): number {
+  return Number(
+    new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', hourCycle: 'h23' }).format(instant),
+  );
+}
+
+export function daytimeZone(now: number): string {
+  const zone = daytimeZones.find((candidate) => {
+    const hour = hourIn(now, candidate);
+    return hour >= 5 && hour <= 17;
+  });
+  if (zone === undefined) {
+    throw new Error('no daytime zone in the list');
+  }
+  return zone;
+}
+
 export function moscowInstant(date: LocalDate, clock: string): number {
   return Date.parse(`${date}T${clock}:00+03:00`);
 }

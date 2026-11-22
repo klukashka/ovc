@@ -86,7 +86,7 @@ function NeedsChecking({ part }: { readonly part: NeedsCheckingPart }): ReactEle
                   data-row-link=""
                   to={reviewAddress(item.submission_id, noFilter)}
                   dir="auto"
-                  className={`${linkClass} min-h-0 break-words`}
+                  className={`${linkClass} desktop:min-h-0 break-words`}
                 >
                   {item.student.display_name}
                 </Link>
@@ -150,7 +150,7 @@ function UpcomingDeadlines({
                   data-row-link=""
                   to={issueAddress(item.id)}
                   dir="auto"
-                  className={`${linkClass} min-h-0 break-words`}
+                  className={`${linkClass} desktop:min-h-0 break-words`}
                 >
                   {item.title}
                 </Link>

@@ -94,51 +94,55 @@ function Toolbar({
   const week = range.view === 'week';
   return (
     <div role="group" aria-label={t('schedule.toolbar')} className="flex flex-wrap items-center gap-3">
-      <div role="group" aria-label={t('schedule.views')} className="inline-flex rounded-md bg-hover p-0.5">
-        {calendarViews.map((view) => (
-          <button
-            key={view}
-            type="button"
-            aria-pressed={range.view === view}
-            onClick={() => {
-              onView(view);
-            }}
-            className={segmentClass}
-          >
-            {t(`schedule.${view}`)}
-          </button>
-        ))}
+      <div className="w-full tablet:w-auto">
+        <div role="group" aria-label={t('schedule.views')} className="inline-flex rounded-md bg-hover p-0.5">
+          {calendarViews.map((view) => (
+            <button
+              key={view}
+              type="button"
+              aria-pressed={range.view === view}
+              onClick={() => {
+                onView(view);
+              }}
+              className={segmentClass}
+            >
+              {t(`schedule.${view}`)}
+            </button>
+          ))}
+        </div>
       </div>
-      <button
-        type="button"
-        onClick={() => {
-          onDate(today);
-        }}
-        className={quietButtonClass}
-      >
-        {t('schedule.today')}
-      </button>
-      <div className="inline-flex gap-1">
+      <div className="inline-flex gap-1 tablet:gap-3">
         <button
           type="button"
-          aria-label={t(week ? 'schedule.previousWeek' : 'schedule.previousMonth')}
           onClick={() => {
-            onDate(shifted(range.view, range.anchor, -1));
+            onDate(today);
           }}
-          className={`${quietButtonClass} w-11 px-0`}
+          className={quietButtonClass}
         >
-          <ChevronLeftIcon />
+          {t('schedule.today')}
         </button>
-        <button
-          type="button"
-          aria-label={t(week ? 'schedule.nextWeek' : 'schedule.nextMonth')}
-          onClick={() => {
-            onDate(shifted(range.view, range.anchor, 1));
-          }}
-          className={`${quietButtonClass} w-11 px-0`}
-        >
-          <ChevronRightIcon />
-        </button>
+        <div className="inline-flex gap-1">
+          <button
+            type="button"
+            aria-label={t(week ? 'schedule.previousWeek' : 'schedule.previousMonth')}
+            onClick={() => {
+              onDate(shifted(range.view, range.anchor, -1));
+            }}
+            className={`${quietButtonClass} w-11 px-0`}
+          >
+            <ChevronLeftIcon />
+          </button>
+          <button
+            type="button"
+            aria-label={t(week ? 'schedule.nextWeek' : 'schedule.nextMonth')}
+            onClick={() => {
+              onDate(shifted(range.view, range.anchor, 1));
+            }}
+            className={`${quietButtonClass} w-11 px-0`}
+          >
+            <ChevronRightIcon />
+          </button>
+        </div>
       </div>
       <h2 className="text-heading">{formatRangeTitle(range, me.language)}</h2>
     </div>
@@ -254,8 +258,21 @@ export function SchedulePage(): ReactElement {
     setDialog(prefill);
   }
 
+  const newLesson = tutorCanSchedule ? (
+    <button
+      ref={newLessonButton}
+      type="button"
+      onClick={() => {
+        openDialog(nextFullHour(scheduler.wallClock(), me.timezone), newLessonButton.current);
+      }}
+      className={primaryButtonClass}
+    >
+      {t('schedule.newLesson')}
+    </button>
+  ) : undefined;
+
   return (
-    <Page>
+    <Page action={newLesson}>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <Toolbar
           range={range}
@@ -275,18 +292,7 @@ export function SchedulePage(): ReactElement {
               changed('tutor', chosen);
             }}
           />
-        ) : tutorCanSchedule ? (
-          <button
-            ref={newLessonButton}
-            type="button"
-            onClick={() => {
-              openDialog(nextFullHour(scheduler.wallClock(), me.timezone), newLessonButton.current);
-            }}
-            className={primaryButtonClass}
-          >
-            {t('schedule.newLesson')}
-          </button>
-        ) : (
+        ) : tutorCanSchedule ? null : (
           <ConfirmationPrompt reason="schedule" />
         )}
       </div>

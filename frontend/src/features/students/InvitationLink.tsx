@@ -147,7 +147,7 @@ export function InvitationLink({
             onClick={() => {
               copy(url);
             }}
-            className={quietButtonClass}
+            className={`${quietButtonClass} w-full tablet:w-auto`}
           >
             {t('invitation.copy')}
           </button>

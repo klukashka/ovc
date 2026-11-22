@@ -110,7 +110,7 @@ function GroupFilter({ group }: { readonly group: string }): ReactElement | null
     return null;
   }
   return (
-    <div className="flex min-w-48 flex-col gap-1">
+    <div className="flex w-full flex-col gap-1 tablet:w-auto tablet:min-w-48">
       <label htmlFor={selectId} className="text-label">
         {t('students.group')}
       </label>
@@ -156,7 +156,7 @@ function SearchForm({ view }: { readonly view: ListView }): ReactElement {
       onSubmit={submit}
       className="flex flex-1 flex-wrap items-end gap-3"
     >
-      <div className="flex min-w-60 flex-1 flex-col gap-1">
+      <div className="flex w-full flex-col gap-1 tablet:w-auto tablet:min-w-60 tablet:flex-1">
         <label htmlFor={inputId} className="text-label">
           {t('students.searchLabel')}
         </label>
@@ -171,7 +171,7 @@ function SearchForm({ view }: { readonly view: ListView }): ReactElement {
         />
       </div>
       <GroupFilter group={view.group} />
-      <button type="submit" className={quietButtonClass}>
+      <button type="submit" className={`${quietButtonClass} w-full tablet:w-auto`}>
         {t('students.searchSubmit')}
       </button>
       {filtered ? (
@@ -213,6 +213,11 @@ function StudentRow({ card }: { readonly card: StudentCardSummary }): ReactEleme
               {card.display_name}
             </Link>
             <span className={`text-small text-text-muted ${narrowOnlyClass}`}>{email ?? t('students.noEmail')}</span>
+            {card.groups.length === 0 ? null : (
+              <span className={narrowOnlyClass}>
+                <GroupDots groups={card.groups} />
+              </span>
+            )}
             {lesson === null ? null : <span className={narrowOnlyClass}>{lesson}</span>}
             <span className={`text-small text-text-muted ${narrowOnlyClass}`}>
               {t('students.openAssignments', { count: card.open_assignments })}
@@ -226,7 +231,7 @@ function StudentRow({ card }: { readonly card: StudentCardSummary }): ReactEleme
       <td className={cellClass}>
         <StateBadge state={card.state} />
       </td>
-      <td className={cellClass}>
+      <td className={secondaryCellClass}>
         <GroupDots groups={card.groups} />
       </td>
       <td className={secondaryCellClass}>{lesson}</td>
@@ -302,10 +307,10 @@ function StudentList({ view }: { readonly view: ListView }): ReactElement {
   });
   const cards = query.data?.pages.flatMap((page) => page.items) ?? [];
   const columns: readonly TableColumn[] = [
-    { key: 'name', label: t('students.columns.name'), width: 'w-1/2 tablet:w-3/12' },
+    { key: 'name', label: t('students.columns.name'), width: 'w-2/3 tablet:w-3/12' },
     { key: 'email', label: t('students.columns.email'), secondary: true, width: 'w-2/12' },
-    { key: 'state', label: t('students.columns.state'), width: 'w-1/4 tablet:w-2/12' },
-    { key: 'groups', label: t('students.columns.groups'), width: 'w-1/4 tablet:w-2/12' },
+    { key: 'state', label: t('students.columns.state'), width: 'w-1/3 tablet:w-2/12' },
+    { key: 'groups', label: t('students.columns.groups'), secondary: true, width: 'w-2/12' },
     { key: 'lesson', label: t('students.columns.nextLesson'), secondary: true, width: 'w-2/12' },
     { key: 'open', label: t('students.columns.openAssignments'), secondary: true, width: 'w-1/12' },
   ];

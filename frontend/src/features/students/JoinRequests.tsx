@@ -113,7 +113,7 @@ function RequestRow({
           </span>
         </span>
       </span>
-      <span className="flex items-center gap-2">
+      <span className="flex w-full items-center gap-2 pl-11 tablet:w-auto tablet:pl-0">
         <ActionButton
           busy={started === 'accept'}
           unavailable={unavailable}

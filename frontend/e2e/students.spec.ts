@@ -27,6 +27,7 @@ import {
   accessToken,
   callApi,
   createCard,
+  createGroup,
   invitationIsUsable,
   removeStudent,
   seedActiveStudent,
@@ -1151,13 +1152,27 @@ test.describe('in English with the dark theme', () => {
   });
 });
 
+async function layoutBox(
+  locator: Locator,
+): Promise<{ readonly y: number; readonly height: number; readonly width: number }> {
+  const box = await locator.boundingBox();
+  if (box === null) {
+    throw new Error('the element has no layout box');
+  }
+  return box;
+}
+
 test.describe('the open assignments column', () => {
   test.use({ locale: 'en-GB', viewport: { width: 1440, height: 900 }, colorScheme: 'light' });
 
-  test('shows each student’s open work in a column, and under the name on a phone', async ({ page, deployment }) => {
+  test('shows each student’s open work in a column, and under the name with the groups on a phone below stacked filters', async ({
+    page,
+    deployment,
+  }) => {
     const tutor = await seedVerifiedUser(deployment, 'Tutor', 'en');
     const { cardId } = await seedActiveStudent(deployment, tutor, 'Vera Student', 'en');
     await seedActiveStudent(deployment, tutor, 'Oleg Student', 'en');
+    await createGroup(deployment, tutor, 'Evening group', [cardId]);
     const template = await createPastSimpleTemplate(deployment, tutor);
     await issueThroughTheApi(deployment, tutor, template, { relationship_id: cardId });
     await signInThroughTheApi(page, tutor);
@@ -1181,5 +1196,20 @@ test.describe('the open assignments column', () => {
     expect(wide).toEqual({ header: true, vera: '1', oleg: '0' });
     await expect(vera.getByText('Open assignments: 1')).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Open assignments' })).toBeHidden();
+    await expect(page.getByRole('columnheader', { name: 'Groups' })).toBeHidden();
+    await expect(vera.getByRole('rowheader').getByText('Evening group')).toBeVisible();
+    expect((await vera.getByRole('link', { name: 'Vera Student' }).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(
+      44,
+    );
+    await expect(page.getByRole('table', { name: 'Active', exact: true }).getByRole('columnheader')).toHaveText([
+      'Name',
+      'State',
+    ]);
+    const search = await layoutBox(page.getByRole('searchbox', { name: 'Name or email' }));
+    const group = await layoutBox(page.getByRole('combobox', { name: 'Group' }));
+    const submit = await layoutBox(page.getByRole('search').getByRole('button', { name: 'Search' }));
+    expect(group.y).toBeGreaterThanOrEqual(search.y + search.height);
+    expect(submit.y).toBeGreaterThanOrEqual(group.y + group.height);
+    expect(Math.abs(submit.width - search.width)).toBeLessThanOrEqual(1);
   });
 });

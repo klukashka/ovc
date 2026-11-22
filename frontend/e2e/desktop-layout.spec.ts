@@ -3,10 +3,11 @@ import type { Locator, Page } from '@playwright/test';
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import { createPastSimpleTemplate, pastSimple, questionIds, studentWork } from './assignment.ts';
 import type { Deployment } from './deployment.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser, tableRows } from './fixtures.ts';
+import { type TestControl, diagnosedTest as test, expect, seedVerifiedUser, tableRows } from './fixtures.ts';
 import { issueThroughTheApi } from './homework.ts';
 import { publishReview, saveReviewDraft, scoreFormsIn } from './results.ts';
 import { answerTextAndSubmit } from './review.ts';
+import { daytimeZone, localClock, localDate, scheduleLessonsWithIds, setTimezone } from './schedule.ts';
 import { acceptSignedIn, createCard, createGroup, seedActiveStudent } from './tutoring.ts';
 
 const computer = { width: 1440, height: 900 } as const;
@@ -169,6 +170,71 @@ async function studentSettingsFacts(page: Page): Promise<LayoutFacts> {
   };
 }
 
+interface MarkupSweep {
+  readonly sideways: readonly string[];
+  readonly withoutMarkupText: readonly string[];
+}
+
+async function pagesSweptForMarkup(page: Page, pages: readonly SweptPage[]): Promise<MarkupSweep> {
+  await page.setViewportSize(phone);
+  const sideways: string[] = [];
+  const withoutMarkupText: string[] = [];
+  for (const { path, ready } of pages) {
+    await page.goto(path);
+    await ready(page).waitFor();
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
+    if (await scrollsSideways(page)) {
+      sideways.push(path);
+    }
+    const main = page.getByRole('main');
+    if (!((await main.textContent()) ?? '').includes(markup) || (await main.locator('img, b').count()) > 0) {
+      withoutMarkupText.push(path);
+    }
+  }
+  return { sideways, withoutMarkupText };
+}
+
+interface TutorPagesSeed {
+  readonly tutor: TestAccount;
+  readonly markupCardId: string;
+  readonly groupId: string;
+  readonly lessonId: string;
+  readonly now: number;
+}
+
+async function tutorPagesWithLongAndMarkupNames(deployment: Deployment, control: TestControl): Promise<TutorPagesSeed> {
+  const now = await control.now();
+  const zone = daytimeZone(now);
+  const tutor = await seedVerifiedUser(deployment, longWord, 'en');
+  await setTimezone(deployment, tutor, zone);
+  const long = await seedActiveStudent(deployment, tutor, longWord, 'en');
+  const marked = await seedActiveStudent(deployment, tutor, markup, 'en');
+  const groupId = await createGroup(deployment, tutor, longWord, [long.cardId, marked.cardId]);
+  const markupGroupId = await createGroup(deployment, tutor, markup, [marked.cardId]);
+  const soon = now + 10 * 60_000;
+  const later = now + 60 * 60_000;
+  const [lesson] = await scheduleLessonsWithIds(deployment, tutor, {
+    group_id: markupGroupId,
+    title: longWord,
+    date: localDate(soon, zone),
+    start: localClock(soon, zone),
+    duration_minutes: 45,
+  });
+  await scheduleLessonsWithIds(deployment, tutor, {
+    relationship_id: long.cardId,
+    title: markup,
+    date: localDate(later, zone),
+    start: localClock(later, zone),
+    duration_minutes: 45,
+  });
+  if (lesson === undefined) {
+    throw new Error('no lesson was scheduled');
+  }
+  return { tutor, markupCardId: marked.cardId, groupId, lessonId: lesson.id, now };
+}
+
 function notificationsReady(page: Page): Locator {
   return firstTableRow(page).or(page.getByRole('main').getByText(/No notifications yet/));
 }
@@ -191,20 +257,37 @@ test.describe('the 360 px sweeps', () => {
     await expect(page).not.toHaveTitle('1');
   });
 
-  test('the tutor’s pages group: Students, Groups and Settings do not scroll sideways', async ({
+  test('the tutor’s pages group: Today, Schedule, Lesson, Students, the card, Groups, the group page and Settings do not scroll sideways and show names and titles with markup as text', async ({
     page,
     deployment,
+    control,
   }) => {
-    const { tutor } = await tutorWithStudentInGroup(deployment, longWord, longWord);
-    await signInThroughTheApi(page, tutor);
-
-    const sideways = await pagesScrollingSideways(page, [
+    const seeded = await tutorPagesWithLongAndMarkupNames(deployment, control);
+    await page.clock.install({ time: seeded.now });
+    await signInThroughTheApi(page, seeded.tutor);
+    const markupPages = [
+      {
+        path: '/today',
+        ready: (shown: Page): Locator => shown.getByRole('list', { name: 'Today’s lessons' }).getByRole('link').first(),
+      },
+      { path: '/schedule', ready: (shown: Page): Locator => shown.locator('main a[href^="/lessons/"]').first() },
+      { path: `/lessons/${seeded.lessonId}`, ready: headingNamed(longWord) },
       { path: '/students', ready: firstTableRow },
+      { path: `/students/${seeded.markupCardId}`, ready: headingNamed(markup) },
       { path: '/groups', ready: firstTableRow },
-      ...settingsPaths.map((path) => ({ path, ready: settingsReady })),
-    ]);
+      { path: `/groups/${seeded.groupId}`, ready: headingNamed(longWord) },
+    ];
 
-    expect(sideways).toEqual([]);
+    const swept = await pagesSweptForMarkup(page, markupPages);
+    const settingsSideways = await pagesScrollingSideways(
+      page,
+      settingsPaths.map((path) => ({ path, ready: settingsReady })),
+    );
+
+    expect(swept.sideways).toEqual([]);
+    expect(swept.withoutMarkupText).toEqual([]);
+    expect(settingsSideways).toEqual([]);
+    await expect(page).not.toHaveTitle('1');
   });
 
   test('the student’s frame group: Notifications does not scroll sideways', async ({ page, deployment }) => {

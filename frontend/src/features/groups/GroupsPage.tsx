@@ -8,7 +8,6 @@ import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
 import {
   DataTable,
   type TableColumn,
-  cellClass,
   narrowOnlyClass,
   primaryCellClass,
   rowLinkClass,
@@ -31,6 +30,8 @@ function GroupRow({ group }: { readonly group: GroupSummary }): ReactElement {
   const me = useSignedInAccount();
   const hidden = group.member_count - group.members.length;
   const memberCount = t('groups.memberCount', { count: group.member_count });
+  const lesson = group.archived_at === null ? <NextLessonLine item={group.next_lesson} me={me} /> : null;
+  const archived = group.archived_at === null ? null : <StatusWord tone="muted">{t('groups.archived')}</StatusWord>;
   return (
     <tr data-row={group.id} className={tableRowClass}>
       <th scope="row" className={primaryCellClass}>
@@ -46,6 +47,8 @@ function GroupRow({ group }: { readonly group: GroupSummary }): ReactElement {
               {group.name}
             </Link>
             <span className={`text-small text-text-muted ${narrowOnlyClass}`}>{memberCount}</span>
+            {lesson === null ? null : <span className={narrowOnlyClass}>{lesson}</span>}
+            {archived === null ? null : <span className={narrowOnlyClass}>{archived}</span>}
           </span>
         </span>
       </th>
@@ -60,12 +63,8 @@ function GroupRow({ group }: { readonly group: GroupSummary }): ReactElement {
           <span className="text-small text-text-muted">{memberCount}</span>
         </span>
       </td>
-      <td className={cellClass}>
-        {group.archived_at === null ? <NextLessonLine item={group.next_lesson} me={me} /> : null}
-      </td>
-      <td className={cellClass}>
-        {group.archived_at === null ? null : <StatusWord tone="muted">{t('groups.archived')}</StatusWord>}
-      </td>
+      <td className={secondaryCellClass}>{lesson}</td>
+      <td className={secondaryCellClass}>{archived}</td>
     </tr>
   );
 }
@@ -105,10 +104,10 @@ function GroupList({
     );
   }
   const columns: readonly TableColumn[] = [
-    { key: 'name', label: t('groups.columns.name'), width: 'w-1/2 tablet:w-4/12' },
+    { key: 'name', label: t('groups.columns.name'), width: 'w-full tablet:w-4/12' },
     { key: 'members', label: t('groups.columns.members'), secondary: true, width: 'w-3/12' },
-    { key: 'lesson', label: t('groups.columns.nextLesson'), width: 'w-1/4 tablet:w-3/12' },
-    { key: 'state', label: t('groups.columns.state'), width: 'w-1/4 tablet:w-2/12' },
+    { key: 'lesson', label: t('groups.columns.nextLesson'), secondary: true, width: 'w-3/12' },
+    { key: 'state', label: t('groups.columns.state'), secondary: true, width: 'w-2/12' },
   ];
   return (
     <DataTable label={t('groups.list')} columns={columns}>

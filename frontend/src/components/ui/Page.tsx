@@ -26,6 +26,7 @@ export function Page({
   titleSize = 'title',
   titleHiddenOnDesktop = false,
   focusTitle = false,
+  actionsBelowTitleOnPhones = false,
   action,
   menu,
   children,
@@ -37,6 +38,7 @@ export function Page({
   readonly titleSize?: TitleSize;
   readonly titleHiddenOnDesktop?: boolean;
   readonly focusTitle?: boolean;
+  readonly actionsBelowTitleOnPhones?: boolean;
   readonly action?: ReactNode;
   readonly menu?: ReactNode;
   readonly children?: ReactNode;
@@ -61,7 +63,7 @@ export function Page({
       ref={heading}
       tabIndex={-1}
       dir={headingDir}
-      className={`${titleClass[titleSize]}${headingDir === undefined ? '' : ' break-words'}${titleHiddenOnDesktop ? ' desktop:sr-only' : ''}`}
+      className={`${titleClass[titleSize]} min-w-0 [overflow-wrap:anywhere]${titleHiddenOnDesktop ? ' desktop:sr-only' : ''}`}
     >
       {title}
     </h1>
@@ -74,7 +76,7 @@ export function Page({
       >
         {headingElement}
         {action === undefined && menu === undefined ? null : (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className={`flex flex-wrap items-center gap-2${actionsBelowTitleOnPhones ? ' max-tablet:w-full' : ''}`}>
             {action}
             {menu}
           </div>

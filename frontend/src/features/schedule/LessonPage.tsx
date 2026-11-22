@@ -609,6 +609,7 @@ export function LessonPage(): ReactElement {
   return (
     <Page
       {...headingOf(lesson, notFound)}
+      actionsBelowTitleOnPhones
       action={
         <>
           {lesson?.channel_id != null ? (

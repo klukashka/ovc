@@ -351,7 +351,7 @@ function Members({
               <span className="flex min-w-0 flex-1 flex-col">
                 <Link
                   to={`/students/${encodeURIComponent(member.relationship_id)}`}
-                  className="truncate text-strong text-accent-text underline"
+                  className="block truncate py-3 text-strong text-accent-text underline desktop:py-0"
                 >
                   {member.display_name}
                 </Link>
@@ -719,6 +719,7 @@ export function GroupPage(): ReactElement {
       {...(notFound ? { title: 'page.notFound' as const } : {})}
       {...(shown === null ? {} : { headingText: shown.name })}
       focusTitle={notFound}
+      actionsBelowTitleOnPhones
       action={
         shown === null ? null : (
           <>

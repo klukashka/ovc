@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 
-import { type TestAccount, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import {
   chooseFromPageMenu,
@@ -28,10 +28,12 @@ import {
   archiveGroup,
   callApi,
   cardState,
+  createCard,
   createGroup,
   endRelationship,
   groupMemberNames,
   seedActiveStudent,
+  seedBlockedStudent,
   seedEmptyGroups,
   unarchiveGroup,
   signUpActiveStudentOnInvitation,
@@ -164,6 +166,103 @@ test.describe('Maria in Russian', () => {
     await expect(
       page.getByRole('region', { name: 'Чаты', exact: true }).getByRole('link').filter({ hasText: 'B1 evening' }),
     ).toBeVisible();
+  });
+});
+
+const blockedMarkup = '<img src=x onerror="document.title=1"><b>Ученик</b>';
+
+interface PhoneLists {
+  readonly groupHeaders: readonly string[];
+  readonly groupRowHeader: string;
+  readonly memberLinkHeight: number;
+  readonly titleBottom: number;
+  readonly groupActionsTop: number;
+  readonly blockedHeaders: number;
+  readonly blockedRowHeader: string;
+  readonly blockedInjected: number;
+  readonly copyWidth: number;
+  readonly invitationWidth: number;
+}
+
+async function boxOf(
+  locator: Locator,
+): Promise<{ readonly top: number; readonly bottom: number; readonly width: number }> {
+  const box = await locator.boundingBox();
+  if (box === null) {
+    throw new Error('the element has no layout box');
+  }
+  return { top: box.y, bottom: box.y + box.height, width: box.width };
+}
+
+async function phoneListsOfGroupsAndTeaching(page: Page, groupId: string, invitedCardId: string): Promise<PhoneLists> {
+  await page.goto('/groups');
+  const groupRow = tableRows(page, 'Группы').first();
+  await groupRow.waitFor();
+  const groupHeaders = await page.getByRole('table', { name: 'Группы' }).getByRole('columnheader').allInnerTexts();
+  const groupRowHeader = await groupRow.getByRole('rowheader').innerText();
+  await page.goto(`/groups/${groupId}`);
+  const memberLink = members(page, 'Ученики').first().getByRole('link');
+  await memberLink.waitFor();
+  const memberLinkBox = await boxOf(memberLink);
+  const titleBottom = (await boxOf(page.getByRole('heading', { level: 1, name: 'B1 вечер' }))).bottom;
+  const groupActionsTop = (await boxOf(page.getByRole('button', { name: 'Действия с группой' }))).top;
+  await page.goto(`/students/${invitedCardId}`);
+  const invitation = page.getByRole('region', { name: 'Ссылка-приглашение' });
+  const copy = invitation.getByRole('button', { name: 'Скопировать ссылку' });
+  await copy.waitFor();
+  const copyWidth = (await boxOf(copy)).width;
+  const invitationWidth = (await boxOf(invitation)).width;
+  await page.goto('/settings/teaching');
+  const blockedRow = tableRows(page, 'Заблокированные ученики').first();
+  await blockedRow.waitFor();
+  return {
+    groupHeaders,
+    groupRowHeader,
+    memberLinkHeight: memberLinkBox.bottom - memberLinkBox.top,
+    titleBottom,
+    groupActionsTop,
+    copyWidth,
+    invitationWidth,
+    blockedInjected: await blockedRow.locator('img, b').count(),
+    blockedHeaders: await page
+      .getByRole('table', { name: 'Заблокированные ученики' })
+      .getByRole('columnheader')
+      .count(),
+    blockedRowHeader: await blockedRow.getByRole('rowheader').innerText(),
+  };
+}
+
+test.describe('on a phone in Russian', () => {
+  test.use({
+    locale: 'ru-RU',
+    timezoneId: 'Europe/Moscow',
+    viewport: { width: 360, height: 780 },
+    colorScheme: 'dark',
+  });
+
+  test('at 360 px Groups keeps one column with the details under the name, the group page puts its actions below the title with 44 px member targets, the card’s Copy fills the invitation block and the blocked list keeps its date and a markup name as text under the name', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Мария', 'ru');
+    const { cardId } = await seedActiveStudent(deployment, tutor, 'Анна', 'ru');
+    const groupId = await createGroup(deployment, tutor, 'B1 вечер', [cardId]);
+    await seedBlockedStudent(deployment, tutor, blockedMarkup);
+    const invited = await createCard(deployment, tutor, 'Тимур', newTestAccount('Тимур', 'student').email);
+    await signInThroughTheApi(page, tutor);
+
+    const shown = await phoneListsOfGroupsAndTeaching(page, groupId, invited.id);
+
+    expect(shown.groupHeaders).toEqual(['Название']);
+    expect(shown.groupRowHeader).toContain('B1 вечер');
+    expect(shown.groupRowHeader).toContain('1 ученик');
+    expect(shown.memberLinkHeight).toBeGreaterThanOrEqual(44);
+    expect(shown.groupActionsTop).toBeGreaterThanOrEqual(shown.titleBottom);
+    expect(shown.copyWidth).toBeGreaterThanOrEqual(shown.invitationWidth - 1);
+    expect(shown.blockedHeaders).toBe(2);
+    expect(shown.blockedRowHeader).toContain(blockedMarkup);
+    expect(shown.blockedRowHeader).toContain('В списке с');
+    expect(shown.blockedInjected).toBe(0);
   });
 });
 
