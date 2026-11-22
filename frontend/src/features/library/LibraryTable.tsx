@@ -6,8 +6,8 @@ import { ActionMenu, type MenuItem } from '../../components/ui/ActionMenu.tsx';
 import {
   DataTable,
   type TableColumn,
-  cellClass,
   endCellClass,
+  narrowOnlyClass,
   primaryCellClass,
   rowLinkClass,
   secondaryCellClass,
@@ -99,7 +99,7 @@ function FolderRow({
         </Link>
       </th>
       <td className={secondaryCellClass} />
-      <td className={cellClass} />
+      <td className={secondaryCellClass} />
       <td className={secondaryCellClass} />
       <td className={endCellClass}>
         <RowMenu target={target} label={folder.name} commands={['rename', 'move', 'delete']} handlers={handlers} />
@@ -129,6 +129,37 @@ function commandsOf(item: LibraryItem, issuable: boolean): readonly RowCommand[]
     : ['open', 'duplicate', 'move', 'delete'];
 }
 
+function ItemDetails({ item, me }: { readonly item: LibraryItem; readonly me: Me }): ReactElement {
+  const { t } = useTranslation();
+  return item.kind === 'material' ? (
+    <span className="flex flex-col text-small text-text-muted">
+      <span dir="auto">{item.filename}</span>
+      <span>{formatStorage(item.size_bytes ?? 0, me.language)}</span>
+    </span>
+  ) : (
+    <span className="flex flex-col text-small text-text-muted">
+      <span>{t('library.question_count', { count: item.question_count ?? 0 })}</span>
+      <span>{t('library.maxPoints', { count: item.max_points ?? 0 })}</span>
+    </span>
+  );
+}
+
+function ItemState({ item }: { readonly item: LibraryItem }): ReactElement | null {
+  const { t } = useTranslation();
+  if (item.kind === 'material') {
+    return null;
+  }
+  return item.ready === true ? (
+    <StatusWord tone="success">{t('library.ready')}</StatusWord>
+  ) : (
+    <StatusWord tone="warning">{t('library.incomplete')}</StatusWord>
+  );
+}
+
+function ItemDate({ item, me }: { readonly item: LibraryItem; readonly me: Me }): ReactElement {
+  return <span className="text-small text-text-muted">{formatDate(item.updated_at, me.language, me.timezone)}</span>;
+}
+
 function ItemRow({
   item,
   me,
@@ -138,7 +169,6 @@ function ItemRow({
   readonly me: Me;
   readonly handlers: RowHandlers;
 }): ReactElement {
-  const { t } = useTranslation();
   const target: LibraryTarget = { kind: 'item', item };
   const material = item.kind === 'material';
   return (
@@ -168,30 +198,21 @@ function ItemRow({
             </Link>
           )}
           <ItemPath path={item.path} />
+          <span className={`flex flex-col gap-0.5 ${narrowOnlyClass}`}>
+            <ItemDetails item={item} me={me} />
+            <ItemState item={item} />
+            <ItemDate item={item} me={me} />
+          </span>
         </span>
       </th>
       <td className={secondaryCellClass}>
-        {material ? (
-          <span className="flex flex-col text-small text-text-muted">
-            <span dir="auto">{item.filename}</span>
-            <span>{formatStorage(item.size_bytes ?? 0, me.language)}</span>
-          </span>
-        ) : (
-          <span className="flex flex-col text-small text-text-muted">
-            <span>{t('library.question_count', { count: item.question_count ?? 0 })}</span>
-            <span>{t('library.maxPoints', { count: item.max_points ?? 0 })}</span>
-          </span>
-        )}
-      </td>
-      <td className={cellClass}>
-        {material ? null : item.ready === true ? (
-          <StatusWord tone="success">{t('library.ready')}</StatusWord>
-        ) : (
-          <StatusWord tone="warning">{t('library.incomplete')}</StatusWord>
-        )}
+        <ItemDetails item={item} me={me} />
       </td>
       <td className={secondaryCellClass}>
-        <span className="text-small text-text-muted">{formatDate(item.updated_at, me.language, me.timezone)}</span>
+        <ItemState item={item} />
+      </td>
+      <td className={secondaryCellClass}>
+        <ItemDate item={item} me={me} />
       </td>
       <td className={endCellClass}>
         <RowMenu
@@ -222,11 +243,11 @@ export function LibraryTable({
 }): ReactElement {
   const { t } = useTranslation();
   const columns: readonly TableColumn[] = [
-    { key: 'name', label: t('library.columns.name'), width: 'w-1/2 tablet:w-4/12' },
+    { key: 'name', label: t('library.columns.name'), width: 'w-9/12 tablet:w-4/12' },
     { key: 'details', label: t('library.columns.details'), secondary: true, width: 'w-3/12' },
-    { key: 'state', label: t('library.columns.state'), width: 'w-1/4 tablet:w-2/12' },
+    { key: 'state', label: t('library.columns.state'), secondary: true, width: 'w-2/12' },
     { key: 'edited', label: t('library.columns.edited'), secondary: true, width: 'w-2/12' },
-    { key: 'actions', label: t('library.columns.actions'), visuallyHidden: true, width: 'w-1/4 tablet:w-1/12' },
+    { key: 'actions', label: t('library.columns.actions'), visuallyHidden: true, width: 'w-3/12 tablet:w-1/12' },
   ];
   return (
     <DataTable label={label} columns={columns} bodyRef={bodyRef}>

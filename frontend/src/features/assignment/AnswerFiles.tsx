@@ -243,7 +243,7 @@ export function AnswerFiles({
       {alertText === null ? null : <FormAlert key={alert?.attempt}>{alertText}</FormAlert>}
       {editable ? (
         confirmed ? (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 max-tablet:flex-col max-tablet:items-stretch">
             <button
               ref={attachButton}
               type="button"

@@ -226,6 +226,16 @@ async function addBlock(page: Page, type: string, label = 'Add block'): Promise<
   await page.locator('main [aria-expanded="true"] + div').getByRole('button', { name: type, exact: true }).click();
 }
 
+async function layoutBox(
+  locator: Locator,
+): Promise<{ readonly x: number; readonly y: number; readonly width: number; readonly height: number }> {
+  const box = await locator.boundingBox();
+  if (box === null) {
+    throw new Error('the element has no layout box');
+  }
+  return box;
+}
+
 function dialog(page: Page): Locator {
   return page.getByRole('dialog');
 }
@@ -973,6 +983,55 @@ test.describe('builder preview', () => {
 
     await dialog(page).getByRole('button', { name: 'Close', exact: true }).click();
 
+    await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeFocused();
+  });
+});
+
+test.describe('builder preview on a phone', () => {
+  test.use({ viewport: { width: 360, height: 780 } });
+
+  test('the preview fills the screen on Close, chooses the phone width and puts Close after the frame', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const template = await createTemplate(deployment, tutor, 'Frames', [instruction('Read it.')]);
+    await openBuilder(page, tutor, template.id);
+
+    await page.getByRole('button', { name: 'Preview', exact: true }).click();
+
+    const close = dialog(page).getByRole('button', { name: 'Close', exact: true });
+    await expect(close).toBeFocused();
+    await expect(dialog(page).getByRole('button', { name: 'Phone', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(await layoutBox(dialog(page))).toEqual({ x: 0, y: 0, width: 360, height: 780 });
+    const frame = await layoutBox(dialog(page).locator('[data-preview-frame="phone"]'));
+    expect((await layoutBox(close)).y).toBeGreaterThanOrEqual(frame.y + frame.height);
+  });
+
+  test('widening the window across 768 px with the preview open keeps focus on Close', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const template = await createTemplate(deployment, tutor, 'Frames', [instruction('Read it.')]);
+    await openBuilder(page, tutor, template.id);
+    await page.getByRole('button', { name: 'Preview', exact: true }).click();
+    await dialog(page).getByRole('button', { name: 'Close', exact: true }).waitFor();
+
+    await page.setViewportSize({ width: 1024, height: 780 });
+
+    await expect(dialog(page).getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+  });
+
+  test('Close at the end of the phone preview returns focus to Preview', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const template = await createTemplate(deployment, tutor, 'Frames', [instruction('Read it.')]);
+    await openBuilder(page, tutor, template.id);
+    await page.getByRole('button', { name: 'Preview', exact: true }).click();
+
+    await dialog(page).getByRole('button', { name: 'Close', exact: true }).click();
+
+    await expect(dialog(page)).toBeHidden();
     await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeFocused();
   });
 });

@@ -6,7 +6,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import {
   DataTable,
   type TableColumn,
-  cellClass,
+  narrowOnlyClass,
   primaryCellClass,
   rowLinkClass,
   secondaryCellClass,
@@ -130,6 +130,16 @@ function SubmittedCell({ item }: { readonly item: QueueItem }): ReactElement {
   );
 }
 
+function QueueBadges({ item }: { readonly item: QueueItem }): ReactElement {
+  const { t } = useTranslation();
+  return (
+    <span className="inline-flex flex-wrap gap-x-3 gap-y-1">
+      {item.late ? <StatusWord tone="warning">{t('homework.states.late')}</StatusWord> : null}
+      {item.has_draft ? <StatusWord tone="info">{t('homework.states.reviewInProgress')}</StatusWord> : null}
+    </span>
+  );
+}
+
 function QueueTable({ filter }: { readonly filter: QueueFilter }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
@@ -179,10 +189,10 @@ function QueueTable({ filter }: { readonly filter: QueueFilter }): ReactElement 
   }
   const count = list.data.pages[0]?.count ?? 0;
   const columns: readonly TableColumn[] = [
-    { key: 'student', label: t('homework.issuePage.student'), width: 'w-1/2 tablet:w-3/12' },
+    { key: 'student', label: t('homework.issuePage.student'), width: 'w-full tablet:w-3/12' },
     { key: 'assignment', label: t('homework.list.assignment'), secondary: true, width: 'w-4/12' },
-    { key: 'submitted', label: t('homework.queue.submitted'), width: 'w-1/4 tablet:w-3/12' },
-    { key: 'state', label: t('homework.issuePage.state'), width: 'w-1/4 tablet:w-2/12' },
+    { key: 'submitted', label: t('homework.queue.submitted'), secondary: true, width: 'w-3/12' },
+    { key: 'state', label: t('homework.issuePage.state'), secondary: true, width: 'w-2/12' },
   ];
   return (
     <section aria-labelledby={headingId} className="flex flex-col items-start gap-4">
@@ -213,22 +223,21 @@ function QueueTable({ filter }: { readonly filter: QueueFilter }): ReactElement 
                     {item.student.display_name}
                   </Link>
                   {item.issued_before_reclaim ? <ReclaimCue /> : null}
-                  <span dir="auto" className="text-small text-text-muted tablet:hidden">
-                    {item.title}
+                  <span className={`flex flex-col gap-0.5 text-small text-text-muted ${narrowOnlyClass}`}>
+                    <span dir="auto">{item.title}</span>
+                    <SubmittedCell item={item} />
+                    <QueueBadges item={item} />
                   </span>
                 </span>
               </th>
               <td className={secondaryCellClass}>
                 <span dir="auto">{item.title}</span>
               </td>
-              <td className={cellClass}>
+              <td className={secondaryCellClass}>
                 <SubmittedCell item={item} />
               </td>
-              <td className={cellClass}>
-                <span className="inline-flex flex-wrap gap-x-3 gap-y-1">
-                  {item.late ? <StatusWord tone="warning">{t('homework.states.late')}</StatusWord> : null}
-                  {item.has_draft ? <StatusWord tone="info">{t('homework.states.reviewInProgress')}</StatusWord> : null}
-                </span>
+              <td className={secondaryCellClass}>
+                <QueueBadges item={item} />
               </td>
             </tr>
           ))}

@@ -210,7 +210,7 @@ export function CorrectedFiles({
           {alert.reason === 'fileGone' ? t('homework.review.fileGone') : t(`homework.review.files.${alert.reason}`)}
         </FormAlert>
       )}
-      <div>
+      <div className="flex flex-col items-start max-tablet:items-stretch">
         <button
           ref={attachButton}
           type="button"

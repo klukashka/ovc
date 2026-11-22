@@ -132,7 +132,7 @@ export function AudienceLabel({
       {group === null ? null : (
         <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${paletteDotClass[group.colour]}`} />
       )}
-      <span dir="auto" className="min-w-0 break-words">
+      <span dir="auto" className="min-w-0 [overflow-wrap:anywhere]">
         {audienceName(audience)}
       </span>
     </span>

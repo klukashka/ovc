@@ -35,7 +35,7 @@ export function TutorName({ name, colour }: { readonly name: string; readonly co
       {isPaletteColour(colour) ? (
         <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${paletteDotClass[colour]}`} />
       ) : null}
-      <span dir="auto" className="break-words">
+      <span dir="auto" className="min-w-0 [overflow-wrap:anywhere]">
         {name}
       </span>
     </span>

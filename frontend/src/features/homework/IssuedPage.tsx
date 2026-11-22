@@ -6,7 +6,7 @@ import { Link, useSearchParams } from 'react-router';
 import {
   DataTable,
   type TableColumn,
-  cellClass,
+  narrowOnlyClass,
   primaryCellClass,
   rowLinkClass,
   secondaryCellClass,
@@ -24,6 +24,7 @@ import { formatDate } from '../../lib/format/dates.ts';
 import { fetchGroups, groupsKey } from '../groups/api.ts';
 import {
   type IssueFilter,
+  type IssueItem,
   type IssueStatus,
   fetchIssuePage,
   isIssueStatus,
@@ -36,6 +37,15 @@ import { AudienceLabel, DeadlineText, ProgressText, ToCheckBadge } from './Issue
 const statusTabClass = 'inline-flex min-h-11 items-center rounded-md px-3 text-small';
 const currentStatusClass = `${statusTabClass} bg-hover font-medium text-text`;
 const otherStatusClass = `${statusTabClass} text-text-muted hover:text-text`;
+
+function IssueProgress({ progress }: { readonly progress: IssueItem['progress'] }): ReactElement {
+  return (
+    <span className="flex flex-col gap-1">
+      <ProgressText progress={progress} full />
+      <ToCheckBadge count={progress.needs_checking} />
+    </span>
+  );
+}
 
 const statuses: readonly IssueStatus[] = ['active', 'withdrawn'];
 
@@ -122,11 +132,11 @@ function IssuedList({ status }: { readonly status: IssueStatus }): ReactElement 
     );
   }
   const columns: readonly TableColumn[] = [
-    { key: 'assignment', label: t('homework.list.assignment'), width: 'w-1/2 tablet:w-3/12' },
-    { key: 'audience', label: t('homework.list.audience'), width: 'w-1/4 tablet:w-2/12' },
+    { key: 'assignment', label: t('homework.list.assignment'), width: 'w-full tablet:w-3/12' },
+    { key: 'audience', label: t('homework.list.audience'), secondary: true, width: 'w-2/12' },
     { key: 'issued', label: t('homework.list.issued'), secondary: true, width: 'w-2/12' },
     { key: 'deadline', label: t('homework.list.deadline'), secondary: true, width: 'w-2/12' },
-    { key: 'progress', label: t('homework.list.progress'), width: 'w-1/4 tablet:w-3/12' },
+    { key: 'progress', label: t('homework.list.progress'), secondary: true, width: 'w-3/12' },
   ];
   return (
     <div className="flex flex-col items-start gap-4">
@@ -139,12 +149,14 @@ function IssuedList({ status }: { readonly status: IssueStatus }): ReactElement 
                 <Link data-row-link="" to={issueAddress(item.id)} dir="auto" className={rowLinkClass}>
                   {item.title}
                 </Link>
-                <span className="text-small text-text-muted tablet:hidden">
+                <span className={`flex flex-col gap-0.5 text-small text-text-muted ${narrowOnlyClass}`}>
+                  <AudienceLabel audience={item.audience} groups={groups.data ?? []} />
                   <DeadlineText deadline={item.deadline_at} />
+                  <IssueProgress progress={item.progress} />
                 </span>
               </span>
             </th>
-            <td className={cellClass}>
+            <td className={secondaryCellClass}>
               <AudienceLabel audience={item.audience} groups={groups.data ?? []} />
             </td>
             <td className={secondaryCellClass}>
@@ -155,11 +167,8 @@ function IssuedList({ status }: { readonly status: IssueStatus }): ReactElement 
                 <DeadlineText deadline={item.deadline_at} />
               </span>
             </td>
-            <td className={cellClass}>
-              <span className="flex flex-col gap-1">
-                <ProgressText progress={item.progress} full />
-                <ToCheckBadge count={item.progress.needs_checking} />
-              </span>
+            <td className={secondaryCellClass}>
+              <IssueProgress progress={item.progress} />
             </td>
           </tr>
         ))}

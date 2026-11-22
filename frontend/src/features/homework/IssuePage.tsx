@@ -9,8 +9,10 @@ import {
   DataTable,
   type TableColumn,
   cellClass,
+  narrowOnlyClass,
   primaryCellClass,
   rowLinkClass,
+  secondaryCellClass,
   tableRowClass,
 } from '../../components/ui/DataTable.tsx';
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
@@ -559,7 +561,7 @@ function Detail({ term, children }: { readonly term: string; readonly children: 
   return (
     <div className="flex flex-col gap-0.5">
       <dt className="text-label text-text-muted">{term}</dt>
-      <dd className="break-words">{children}</dd>
+      <dd className="[overflow-wrap:anywhere]">{children}</dd>
     </div>
   );
 }
@@ -608,14 +610,34 @@ function AboutIssue({ issue }: { readonly issue: Issue }): ReactElement {
   );
 }
 
-function Submissions({ issue }: { readonly issue: Issue }): ReactElement {
+function SubmissionPoints({
+  issue,
+  submission,
+  className,
+}: {
+  readonly issue: Issue;
+  readonly submission: Issue['submissions'][number];
+  readonly className: string;
+}): ReactElement | null {
   const { t } = useTranslation();
   const me = useSignedInAccount();
+  if (issue.max_points !== 0 && (submission.status !== 'checked' || submission.final_points === null)) {
+    return null;
+  }
+  return (
+    <span className={className}>
+      {scoreText(t, me.language, submission.final_points ?? 0, issue.max_points, submission.percentage)}
+    </span>
+  );
+}
+
+function Submissions({ issue }: { readonly issue: Issue }): ReactElement {
+  const { t } = useTranslation();
   const headingId = useId();
   const columns: readonly TableColumn[] = [
-    { key: 'student', label: t('homework.issuePage.student'), width: 'w-5/12' },
-    { key: 'state', label: t('homework.issuePage.state'), width: 'w-4/12' },
-    { key: 'points', label: t('homework.issuePage.points'), width: 'w-3/12' },
+    { key: 'student', label: t('homework.issuePage.student'), width: 'w-1/2 tablet:w-5/12' },
+    { key: 'state', label: t('homework.issuePage.state'), width: 'w-1/2 tablet:w-4/12' },
+    { key: 'points', label: t('homework.issuePage.points'), secondary: true, width: 'w-3/12' },
   ];
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
@@ -637,19 +659,22 @@ function Submissions({ issue }: { readonly issue: Issue }): ReactElement {
               {submission.issued_before_reclaim ? <ReclaimCue /> : null}
             </th>
             <td className={cellClass}>
-              <SubmissionState
-                status={submission.status}
-                late={submission.late}
-                manual={issue.has_manual_questions}
-                draft={submission.has_draft}
-              />
-            </td>
-            <td className={cellClass}>
-              <span className="text-small">
-                {issue.max_points === 0 || (submission.status === 'checked' && submission.final_points !== null)
-                  ? scoreText(t, me.language, submission.final_points ?? 0, issue.max_points, submission.percentage)
-                  : null}
+              <span className="flex flex-col gap-0.5">
+                <SubmissionState
+                  status={submission.status}
+                  late={submission.late}
+                  manual={issue.has_manual_questions}
+                  draft={submission.has_draft}
+                />
+                <SubmissionPoints
+                  issue={issue}
+                  submission={submission}
+                  className={`text-small text-text-muted ${narrowOnlyClass}`}
+                />
               </span>
+            </td>
+            <td className={secondaryCellClass}>
+              <SubmissionPoints issue={issue} submission={submission} className="text-small" />
             </td>
           </tr>
         ))}

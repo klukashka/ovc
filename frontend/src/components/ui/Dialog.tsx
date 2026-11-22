@@ -2,11 +2,12 @@ import { type ReactElement, type ReactNode, type RefObject, useEffect, useLayout
 
 import { focusHeadingIfLost } from './LoadState.tsx';
 
-export const dialogClass =
-  'm-auto w-full max-w-md rounded-lg border border-border bg-surface p-6 text-text shadow-raised backdrop:bg-scrim dark:border-border-strong dark:shadow-none';
+const phoneDialogClass =
+  'max-tablet:h-dvh max-tablet:max-h-none max-tablet:w-full max-tablet:max-w-none max-tablet:rounded-none max-tablet:border-0 max-tablet:p-4';
 
-const wideDialogClass =
-  'm-auto w-full max-w-5xl rounded-lg border border-border bg-surface p-6 text-text shadow-raised backdrop:bg-scrim dark:border-border-strong dark:shadow-none';
+export const dialogClass = `m-auto w-full max-w-md rounded-lg border border-border bg-surface p-6 text-text shadow-raised backdrop:bg-scrim dark:border-border-strong dark:shadow-none ${phoneDialogClass}`;
+
+const wideDialogClass = `m-auto w-full max-w-5xl rounded-lg border border-border bg-surface p-6 text-text shadow-raised backdrop:bg-scrim dark:border-border-strong dark:shadow-none ${phoneDialogClass}`;
 
 export function returnFocusTo(target: HTMLElement | null): void {
   if (target?.isConnected === true) {

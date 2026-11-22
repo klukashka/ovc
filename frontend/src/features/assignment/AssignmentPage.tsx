@@ -764,7 +764,7 @@ function AssignmentForm({
         }}
       />
       {writable ? (
-        <div className="flex flex-col items-start gap-3 border-t border-border pt-4">
+        <div className="flex flex-col items-start gap-3 border-t border-border pt-4 max-tablet:items-stretch">
           {deadlinePassed ? <p>{t('assignment.deadlinePassed')}</p> : null}
           <button
             ref={submitButton}

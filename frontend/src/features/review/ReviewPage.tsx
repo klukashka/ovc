@@ -869,7 +869,7 @@ function ReviewForm({
   return (
     <>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <span dir="auto" className="text-strong">
+        <span dir="auto" className="min-w-0 text-strong [overflow-wrap:anywhere]">
           {submission.studentName}
         </span>
         <SubmissionState
@@ -963,7 +963,7 @@ function ReviewForm({
             </p>
           ) : null}
           {alert === null ? null : <FormAlert key={alert.count}>{alert.value}</FormAlert>}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3 max-tablet:flex-col max-tablet:items-stretch">
             <button
               type="button"
               onClick={() => {

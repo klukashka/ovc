@@ -1,8 +1,12 @@
 import type { Locator, Page } from '@playwright/test';
 
 import { type TestAccount, signInThroughTheApi } from './accounts.ts';
+import { createPastSimpleTemplate, pastSimple, questionIds, studentWork } from './assignment.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser, tableRows } from './fixtures.ts';
+import { issueThroughTheApi } from './homework.ts';
+import { publishReview, saveReviewDraft, scoreFormsIn } from './results.ts';
+import { answerTextAndSubmit } from './review.ts';
 import { acceptSignedIn, createCard, createGroup, seedActiveStudent } from './tutoring.ts';
 
 const computer = { width: 1440, height: 900 } as const;
@@ -388,6 +392,258 @@ test.describe('the 360 px sweeps', () => {
     expect(sideways).toEqual([]);
     expect(measured).toEqual(allTrue(measured));
     expect(Object.keys(measured)).toHaveLength(12);
+  });
+});
+
+interface HomeworkScene {
+  readonly tutor: TestAccount;
+  readonly student: TestAccount;
+  readonly templateId: string;
+  readonly issueId: string;
+  readonly checkedIssueId: string;
+  readonly submittedId: string;
+  readonly toDoId: string;
+  readonly checkedId: string;
+}
+
+const checkedTitle = 'Checked work';
+const toDoTitle = 'Work to do';
+const otherTutorsTitle = 'Other tutor’s work';
+
+async function homeworkScene(deployment: Deployment, studentLanguage: 'ru' | 'en'): Promise<HomeworkScene> {
+  const tutor = await seedVerifiedUser(deployment, longWord, 'en');
+  const { student, cardId } = await seedActiveStudent(deployment, tutor, longWord, studentLanguage);
+  const classmate = await seedActiveStudent(deployment, tutor, markup, studentLanguage);
+  const audience = { group_id: await createGroup(deployment, tutor, markup, [cardId, classmate.cardId]) };
+  const templateId = await createPastSimpleTemplate(deployment, tutor);
+  const issueId = await issueThroughTheApi(deployment, tutor, templateId, audience);
+  const issued = new Map<string, string>();
+  for (const title of [markup, checkedTitle, toDoTitle]) {
+    const other = await createPastSimpleTemplate(deployment, tutor, { texts: { ...pastSimple, title } });
+    issued.set(title, await issueThroughTheApi(deployment, tutor, other, audience));
+  }
+  const checkedIssueId = issued.get(checkedTitle);
+  if (checkedIssueId === undefined) {
+    throw new Error('the checked work was not issued');
+  }
+  const work = await studentWork(deployment, student, 'todo');
+  const idOf = (title: string): string => {
+    const found = work.find((item) => item.title === title);
+    if (found === undefined) {
+      throw new Error('the seeded work is missing');
+    }
+    return found.submissionId;
+  };
+  const submittedId = idOf(pastSimple.title);
+  const checkedId = idOf(checkedTitle);
+  await answerTextAndSubmit(deployment, student, submittedId, 'went');
+  await saveReviewDraft(deployment, tutor, submittedId, 'Draft notes.', []);
+  await answerTextAndSubmit(deployment, student, checkedId, 'went');
+  const classmateWork = await studentWork(deployment, classmate.student, 'todo');
+  const classmateSubmission = classmateWork.find((item) => item.title === pastSimple.title);
+  if (classmateSubmission === undefined) {
+    throw new Error('the classmate’s seeded work is missing');
+  }
+  await answerTextAndSubmit(deployment, classmate.student, classmateSubmission.submissionId, 'went');
+  const otherTutor = await seedVerifiedUser(deployment, markup, 'en');
+  const otherCard = await createCard(deployment, otherTutor, longWord, student.email);
+  await acceptSignedIn(deployment, student, otherCard.link);
+  const otherTemplate = await createPastSimpleTemplate(deployment, otherTutor, {
+    texts: { ...pastSimple, title: otherTutorsTitle },
+  });
+  await issueThroughTheApi(deployment, otherTutor, otherTemplate, { relationship_id: otherCard.id });
+  const [, , fileQuestion] = await questionIds(deployment, student, checkedId);
+  if (fileQuestion === undefined) {
+    throw new Error('the seeded work has no file question');
+  }
+  await publishReview(deployment, tutor, checkedId, 'check', markup, [
+    { questionId: fileQuestion, points: 5, comment: markup },
+  ]);
+  return { tutor, student, templateId, issueId, checkedIssueId, submittedId, toDoId: idOf(toDoTitle), checkedId };
+}
+
+interface HomeworkSweep {
+  readonly sideways: readonly string[];
+  readonly wideTables: readonly string[];
+  readonly texts: readonly string[];
+  readonly fullWidthButtons: readonly (readonly string[])[];
+  readonly rowHeaders: readonly (readonly string[])[];
+  readonly rowMenus: number;
+  readonly smallRowMenus: number;
+  readonly injected: number;
+}
+
+const columnInset = 64;
+
+async function fullWidthButtonsOf(page: Page): Promise<string[]> {
+  return page.evaluate((inset) => {
+    const main = document.querySelector('main');
+    if (main === null) {
+      throw new Error('the page has no main element');
+    }
+    const limit = main.getBoundingClientRect().width - inset;
+    return Array.from(main.querySelectorAll('button'))
+      .filter((button) => button.getBoundingClientRect().width >= limit)
+      .map((button) => button.textContent.trim());
+  }, columnInset);
+}
+
+async function rowHeadersOf(page: Page): Promise<string[]> {
+  return page.locator('main tbody th').allInnerTexts();
+}
+
+async function smallRowMenusOf(page: Page): Promise<number> {
+  return page.evaluate(
+    () =>
+      Array.from(document.querySelectorAll('main tbody button[aria-expanded]')).filter((button) => {
+        const box = button.getBoundingClientRect();
+        return Math.min(box.width, box.height) < 44;
+      }).length,
+  );
+}
+
+async function overflowingElements(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const limit = document.documentElement.clientWidth;
+    const overflowing = Array.from(document.querySelectorAll('body *')).filter(
+      (element) => element.getBoundingClientRect().right > limit + 0.5,
+    );
+    return overflowing
+      .filter((element) => !overflowing.some((other) => other !== element && element.contains(other)))
+      .map(
+        (element) =>
+          `${element.tagName.toLowerCase()}[${(element.getAttribute('class') ?? '').slice(0, 80)}]${element.closest('[role="group"]') === null ? '' : ' in a group'}`,
+      );
+  });
+}
+
+async function sweepHomeworkPages(page: Page, pages: readonly SweptPage[]): Promise<HomeworkSweep> {
+  await page.setViewportSize(phone);
+  const sideways: string[] = [];
+  const wideTables: string[] = [];
+  const texts: string[] = [];
+  const fullWidthButtons: string[][] = [];
+  const rowHeaders: string[][] = [];
+  let rowMenus = 0;
+  let smallRowMenus = 0;
+  let injected = 0;
+  for (const { path, ready } of pages) {
+    await page.goto(path);
+    await ready(page).waitFor();
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
+    if (await scrollsSideways(page)) {
+      sideways.push(`${path}: ${(await overflowingElements(page)).join(', ')}`);
+    }
+    const widest = await page.evaluate(() =>
+      Math.max(
+        0,
+        ...Array.from(document.querySelectorAll('main table')).map(
+          (table) =>
+            Array.from(table.querySelectorAll('thead th')).filter(
+              (header) => getComputedStyle(header).display !== 'none',
+            ).length,
+        ),
+      ),
+    );
+    if (widest > 2) {
+      wideTables.push(path);
+    }
+    texts.push(await page.locator('main').innerText());
+    fullWidthButtons.push(await fullWidthButtonsOf(page));
+    rowHeaders.push(await rowHeadersOf(page));
+    rowMenus += await page.locator('main tbody button[aria-expanded]').count();
+    smallRowMenus += await smallRowMenusOf(page);
+    injected += await page.locator('main').locator('img, b').count();
+  }
+  return { sideways, wideTables, texts, fullWidthButtons, rowHeaders, rowMenus, smallRowMenus, injected };
+}
+
+function titleFieldOf(page: Page): Locator {
+  return page.getByRole('textbox', { name: 'Title', exact: true });
+}
+
+function markCheckedOf(page: Page): Locator {
+  return page.getByRole('button', { name: 'Mark checked', exact: true });
+}
+
+function headingNamed(name: string): (page: Page) => Locator {
+  return (shown) => shown.getByRole('heading', { level: 1, name, exact: true });
+}
+
+test.describe('the 360 px sweeps of the homework pages', () => {
+  test('the tutor’s homework group: Library, Builder, Issued work, the issue page, the review queue and the review keep two columns at most, do not scroll sideways and show a title with markup as text', async ({
+    page,
+    deployment,
+  }) => {
+    const scene = await homeworkScene(deployment, 'en');
+    await signInThroughTheApi(page, scene.tutor);
+
+    const swept = await sweepHomeworkPages(page, [
+      {
+        path: `/homework/templates/${scene.templateId}`,
+        ready: titleFieldOf,
+      },
+      { path: '/homework/issued', ready: firstTableRow },
+      { path: `/homework/issued/${scene.checkedIssueId}`, ready: firstTableRow },
+      { path: '/homework/review', ready: firstTableRow },
+      {
+        path: `/homework/review/${scene.submittedId}`,
+        ready: markCheckedOf,
+      },
+      { path: '/homework/library', ready: firstTableRow },
+    ]);
+
+    expect(swept.sideways).toEqual([]);
+    expect(swept.wideTables).toEqual([]);
+    expect([1, 2, 3, 5].map((index) => swept.texts[index]?.includes(markup))).toEqual([true, true, true, true]);
+    expect(swept.injected).toBe(0);
+    await expect(page).not.toHaveTitle('1');
+    const [, issuedList, issuePage, queue, , library] = swept.texts;
+    expect(issuedList).toMatch(/\d\/2 submitted/);
+    expect(issuePage).toMatch(/\d+ of 10/);
+    expect(queue).toContain(pastSimple.title);
+    const draftedRow = swept.rowHeaders[3]?.find((header) => header.includes(longWord));
+    expect(draftedRow).toContain('Review in progress');
+    expect(draftedRow).toMatch(/\d{1,2}:\d{2}/);
+    expect(library).toContain('3 questions');
+    expect(library).toContain('Ready');
+    expect(swept.fullWidthButtons[4]).toEqual(
+      expect.arrayContaining(['Attach corrected file', 'Save draft', 'Return for revision', 'Mark checked']),
+    );
+    expect(swept.rowMenus).toBeGreaterThan(0);
+    expect(swept.smallRowMenus).toBe(0);
+  });
+
+  test('the student’s homework group in Russian and the dark theme: Homework, checked results and the assignment page keep two columns at most, do not scroll sideways, show no points and put Attach files and Submit at the full width', async ({
+    page,
+    deployment,
+  }) => {
+    const scene = await homeworkScene(deployment, 'ru');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await signInThroughTheApi(page, scene.student);
+
+    const swept = await sweepHomeworkPages(page, [
+      { path: '/homework', ready: firstTableRow },
+      { path: '/homework?status=checked', ready: firstTableRow },
+      { path: `/homework/${scene.checkedId}`, ready: headingNamed(checkedTitle) },
+      { path: `/homework/${scene.toDoId}`, ready: headingNamed(toDoTitle) },
+    ]);
+
+    expect(swept.sideways).toEqual([]);
+    expect(swept.wideTables).toEqual([]);
+    const [toDoList, checkedList, checkedResult] = swept.texts;
+    expect([toDoList, checkedList, checkedResult].flatMap((text) => scoreFormsIn(text ?? '', 'ru'))).toEqual([]);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    const otherTutorsRow = swept.rowHeaders[0]?.find((header) => header.includes(otherTutorsTitle));
+    expect(otherTutorsRow).toContain(markup);
+    expect(otherTutorsRow).toContain('Нужно сделать');
+    expect(checkedList).toContain('Проверено');
+    expect(checkedResult).toContain(markup);
+    expect(swept.injected).toBe(0);
+    await expect(page).not.toHaveTitle('1');
+    expect(swept.fullWidthButtons[3]).toEqual(expect.arrayContaining(['Прикрепить файлы', 'Сдать']));
   });
 });
 

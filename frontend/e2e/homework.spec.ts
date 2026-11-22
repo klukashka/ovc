@@ -104,6 +104,16 @@ async function openCardIssueDialog(page: Page, tutor: TestAccount, cardId: strin
     .waitFor();
 }
 
+async function layoutBox(
+  locator: Locator,
+): Promise<{ readonly x: number; readonly y: number; readonly width: number; readonly height: number }> {
+  const box = await locator.boundingBox();
+  if (box === null) {
+    throw new Error('the element has no layout box');
+  }
+  return box;
+}
+
 function issueDialog(page: Page): Locator {
   return page.getByRole('dialog', { name: 'Issue assignment' });
 }
@@ -1220,5 +1230,28 @@ test.describe('homework on the student card and the group page', () => {
 
     await expect(rows).toHaveCount(21);
     await expect(rows.nth(20).getByRole('link')).toBeFocused();
+  });
+});
+
+test.describe('issuing on a phone', () => {
+  test.use({ viewport: { width: 360, height: 780 } });
+
+  test('Issue assignment fills the screen, opens on the audience search and keeps its actions at the end', async ({
+    page,
+    deployment,
+  }) => {
+    const { pavel } = await pavelWithAnna(deployment);
+    await createReadyTemplate(deployment, pavel, 'Fractions');
+    await openLibrary(page, pavel);
+
+    await chooseRowAction(page, 'Fractions', 'Issue assignment');
+
+    await expect(audienceSearch(page)).toBeFocused();
+    expect(await layoutBox(issueDialog(page))).toEqual({ x: 0, y: 0, width: 360, height: 780 });
+    const search = await layoutBox(audienceSearch(page));
+    for (const name of ['Issue', 'Cancel']) {
+      const action = await layoutBox(issueDialog(page).getByRole('button', { name, exact: true }));
+      expect(action.y).toBeGreaterThan(search.y + search.height);
+    }
   });
 });

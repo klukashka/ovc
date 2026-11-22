@@ -6,7 +6,7 @@ import { Link, useSearchParams } from 'react-router';
 import {
   DataTable,
   type TableColumn,
-  cellClass,
+  narrowOnlyClass,
   primaryCellClass,
   rowLinkClass,
   secondaryCellClass,
@@ -134,15 +134,17 @@ function AssignmentRow({
           {status === 'checked' && item.has_corrected_files ? (
             <span className="text-small text-text-muted">{t('assignment.correctedFile')}</span>
           ) : null}
-          <span className="text-small text-text-muted tablet:hidden">
+          <span className={`flex flex-col gap-0.5 text-small text-text-muted ${narrowOnlyClass}`}>
+            <TutorName name={item.tutor.name} colour={item.tutor.colour} />
             <WhenCell item={item} status={status} />
+            <StateLabel status={item.status} deadline={item.deadline_at} late={item.late} now={now} />
           </span>
         </span>
       </th>
-      <td className={cellClass}>
+      <td className={secondaryCellClass}>
         <TutorName name={item.tutor.name} colour={item.tutor.colour} />
       </td>
-      <td className={cellClass}>
+      <td className={secondaryCellClass}>
         <StateLabel status={item.status} deadline={item.deadline_at} late={item.late} now={now} />
       </td>
       <td className={secondaryCellClass}>
@@ -202,9 +204,9 @@ function AssignmentList({
     );
   }
   const columns: readonly TableColumn[] = [
-    { key: 'assignment', label: t('assignment.list.assignment'), width: 'w-1/2 tablet:w-5/12' },
-    { key: 'tutor', label: t('assignment.list.tutor'), width: 'w-1/4 tablet:w-2/12' },
-    { key: 'state', label: t('assignment.list.state'), width: 'w-1/4 tablet:w-2/12' },
+    { key: 'assignment', label: t('assignment.list.assignment'), width: 'w-full tablet:w-5/12' },
+    { key: 'tutor', label: t('assignment.list.tutor'), secondary: true, width: 'w-2/12' },
+    { key: 'state', label: t('assignment.list.state'), secondary: true, width: 'w-2/12' },
     { key: 'when', label: t('assignment.list.when'), secondary: true, width: 'w-3/12' },
   ];
   return (
