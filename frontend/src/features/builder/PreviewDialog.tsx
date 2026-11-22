@@ -20,12 +20,14 @@ const frameButtonClass =
 function PreviewContent({
   assignment,
   headingId,
+  heading,
   closeButton,
   phone,
   onClose,
 }: {
   readonly assignment: StudentAssignment;
   readonly headingId: string;
+  readonly heading: RefObject<HTMLHeadingElement | null>;
   readonly closeButton: RefObject<HTMLButtonElement | null>;
   readonly phone: boolean;
   readonly onClose: () => void;
@@ -50,7 +52,7 @@ function PreviewContent({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id={headingId} className="font-serif text-title">
+        <h2 ref={heading} id={headingId} tabIndex={-1} className="font-serif text-title outline-none">
           {t('builder.preview')}
         </h2>
         <div className="flex flex-wrap items-center gap-2">
@@ -90,6 +92,7 @@ export function PreviewDialog({
   readonly onClose: () => void;
 }): ReactElement {
   const headingId = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const phone = useMediaQuery(phoneLayoutQuery);
   return (
@@ -98,7 +101,7 @@ export function PreviewDialog({
       busy={false}
       labelledBy={headingId}
       returnFocus={returnFocus}
-      initialFocus={closeButton}
+      initialFocus={phone ? heading : closeButton}
       wide
       onClose={onClose}
     >
@@ -106,6 +109,7 @@ export function PreviewDialog({
         <PreviewContent
           assignment={assignment}
           headingId={headingId}
+          heading={heading}
           closeButton={closeButton}
           phone={phone}
           onClose={onClose}

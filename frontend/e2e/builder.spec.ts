@@ -990,18 +990,24 @@ test.describe('builder preview', () => {
 test.describe('builder preview on a phone', () => {
   test.use({ viewport: { width: 360, height: 780 } });
 
-  test('the preview fills the screen on Close, chooses the phone width and puts Close after the frame', async ({
+  test('the preview fills the screen at its top on its heading, chooses the phone width and puts Close after the frame', async ({
     page,
     deployment,
   }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
-    const template = await createTemplate(deployment, tutor, 'Frames', [instruction('Read it.')]);
+    const longText = 'Read every line of this instruction slowly and aloud before answering. '.repeat(12);
+    const template = await createTemplate(
+      deployment,
+      tutor,
+      'Frames',
+      Array.from({ length: 5 }, () => instruction(longText)),
+    );
     await openBuilder(page, tutor, template.id);
 
     await page.getByRole('button', { name: 'Preview', exact: true }).click();
 
     const close = dialog(page).getByRole('button', { name: 'Close', exact: true });
-    await expect(close).toBeFocused();
+    await expect(dialog(page).getByRole('heading', { name: 'Preview', exact: true })).toBeFocused();
     await expect(dialog(page).getByRole('button', { name: 'Phone', exact: true })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -1009,14 +1015,20 @@ test.describe('builder preview on a phone', () => {
     expect(await layoutBox(dialog(page))).toEqual({ x: 0, y: 0, width: 360, height: 780 });
     const frame = await layoutBox(dialog(page).locator('[data-preview-frame="phone"]'));
     expect((await layoutBox(close)).y).toBeGreaterThanOrEqual(frame.y + frame.height);
+    const scroll = await dialog(page).evaluate((element) => ({
+      top: element.scrollTop,
+      overflow: element.scrollHeight - element.clientHeight,
+    }));
+    expect(scroll.overflow).toBeGreaterThan(0);
+    expect(scroll.top).toBe(0);
   });
 
-  test('widening the window across 768 px with the preview open keeps focus on Close', async ({ page, deployment }) => {
+  test('widening the window across 768 px with Close focused keeps focus on Close', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     const template = await createTemplate(deployment, tutor, 'Frames', [instruction('Read it.')]);
     await openBuilder(page, tutor, template.id);
     await page.getByRole('button', { name: 'Preview', exact: true }).click();
-    await dialog(page).getByRole('button', { name: 'Close', exact: true }).waitFor();
+    await dialog(page).getByRole('button', { name: 'Close', exact: true }).focus();
 
     await page.setViewportSize({ width: 1024, height: 780 });
 

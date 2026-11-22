@@ -8,7 +8,14 @@ import { issueThroughTheApi } from './homework.ts';
 import { channelOf } from './messages.ts';
 import { publishReview, saveReviewDraft, scoreFormsIn } from './results.ts';
 import { answerTextAndSubmit } from './review.ts';
-import { daytimeZone, localClock, localDate, scheduleLessonsWithIds, setTimezone } from './schedule.ts';
+import {
+  cancelThisLesson,
+  daytimeZone,
+  localClock,
+  localDate,
+  scheduleLessonsWithIds,
+  setTimezone,
+} from './schedule.ts';
 import { accessToken, acceptSignedIn, callApi, createCard, createGroup, seedActiveStudent } from './tutoring.ts';
 
 const computer = { width: 1440, height: 900 } as const;
@@ -306,8 +313,26 @@ async function tutorPagesWithLongAndMarkupNames(deployment: Deployment, control:
   return { tutor, markupCardId: marked.cardId, groupId, lessonId: lesson.id, now };
 }
 
-function notificationsReady(page: Page): Locator {
-  return firstTableRow(page).or(page.getByRole('main').getByText(/No notifications yet/));
+async function studentWithCancelledGroupLesson(deployment: Deployment, control: TestControl): Promise<TestAccount> {
+  const now = await control.now();
+  const zone = daytimeZone(now);
+  const tutor = await seedVerifiedUser(deployment, longWord, 'en');
+  await setTimezone(deployment, tutor, zone);
+  const { student, cardId } = await seedActiveStudent(deployment, tutor, longWord, 'en');
+  const groupId = await createGroup(deployment, tutor, longWord, [cardId]);
+  const later = now + 60 * 60_000;
+  const [lesson] = await scheduleLessonsWithIds(deployment, tutor, {
+    group_id: groupId,
+    title: longWord,
+    date: localDate(later, zone),
+    start: localClock(later, zone),
+    duration_minutes: 45,
+  });
+  if (lesson === undefined) {
+    throw new Error('no lesson was scheduled');
+  }
+  await cancelThisLesson(deployment, tutor, lesson.id);
+  return student;
 }
 
 test.describe('the 360 px sweeps', () => {
@@ -361,13 +386,18 @@ test.describe('the 360 px sweeps', () => {
     await expect(page).not.toHaveTitle('1');
   });
 
-  test('the student’s frame group: Notifications does not scroll sideways', async ({ page, deployment }) => {
-    const { student } = await tutorWithStudentInGroup(deployment, longWord, longWord);
+  test('the student’s frame group: Notifications does not scroll sideways with a long lesson title in a row', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const student = await studentWithCancelledGroupLesson(deployment, control);
     await signInThroughTheApi(page, student);
 
-    const sideways = await pagesScrollingSideways(page, [{ path: '/notifications', ready: notificationsReady }]);
+    const sideways = await pagesScrollingSideways(page, [{ path: '/notifications', ready: firstTableRow }]);
 
     expect(sideways).toEqual([]);
+    await expect(firstTableRow(page)).toContainText(longWord);
   });
 
   test('the student’s pages group: Home, Schedule, My tutors, Keep or drop and Settings do not scroll sideways and keep their phone layout', async ({

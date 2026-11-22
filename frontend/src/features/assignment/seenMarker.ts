@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useApiClient } from '../../lib/api/client.ts';
 import { homeKey } from '../home/api.ts';
@@ -21,9 +21,14 @@ export function useSeenMarker(submission: Submission | undefined): void {
   const client = useApiClient();
   const queryClient = useQueryClient();
   const marked = useRef<string | null>(null);
+  const latestVersion = useRef<number | undefined>(undefined);
+  const [resend, setResend] = useState(0);
   const id = submission?.id;
   const version = submission?.version;
   const shown = shownReview(submission);
+  useEffect(() => {
+    latestVersion.current = version;
+  }, [version]);
   useEffect(() => {
     if (shown === null || id === undefined || version === undefined || marked.current === shown) {
       return;
@@ -35,9 +40,12 @@ export function useSeenMarker(submission: Submission | undefined): void {
           void queryClient.invalidateQueries({ queryKey: homeKey });
         } else if (response.status === conflictStatus && marked.current === shown) {
           marked.current = null;
+          if (latestVersion.current !== version) {
+            setResend((count) => count + 1);
+          }
         }
       },
       () => undefined,
     );
-  }, [client, queryClient, id, version, shown]);
+  }, [client, queryClient, id, version, shown, resend]);
 }

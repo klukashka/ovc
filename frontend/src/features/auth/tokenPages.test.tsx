@@ -255,10 +255,11 @@ describe('token pages', () => {
       await Promise.resolve();
     });
 
-    await screen.findByRole('heading', { level: 2, name: 'Мария' });
+    const tutorName = await screen.findByRole('heading', { level: 2, name: 'Мария' });
     await waitFor(() => {
       expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Приглашение' }));
     });
+    expect(tutorName.getAttribute('dir')).toBe('auto');
   });
 
   test('the reset page without a token asks to open the link again', async () => {

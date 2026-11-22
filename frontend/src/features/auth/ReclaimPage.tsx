@@ -70,7 +70,7 @@ function ItemChoice({ field, tutor }: { readonly field: string; readonly tutor: 
         <legend className="sr-only">{tutor.name}</legend>
         <Avatar name={tutor.name} avatarId={tutor.avatar_id} />
         <div className="flex min-w-0 flex-col">
-          <span aria-hidden="true" className="text-strong wrap-anywhere">
+          <span aria-hidden="true" dir="auto" className="text-strong wrap-anywhere">
             {tutor.name}
           </span>
           {tutor.subjects.length === 0 ? null : (

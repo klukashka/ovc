@@ -121,6 +121,21 @@ function cardRequest(subject: ContractSubject, token: string, path: string, body
   });
 }
 
+function studentListRequest(subject: ContractSubject, token: string, search: string): Request {
+  const query = new URLSearchParams({ state: 'invited', q: search });
+  return new Request(`${subject.origin}/api/v1/students?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+function listedNames(body: unknown): unknown[] {
+  if (typeof body !== 'object' || body === null || !('items' in body) || !Array.isArray(body.items)) {
+    return [];
+  }
+  const items: unknown[] = body.items;
+  return items.map((item) => (typeof item === 'object' && item !== null ? property(item, 'display_name') : undefined));
+}
+
 function joinRequestsRequest(subject: ContractSubject, token: string): Request {
   return new Request(`${subject.origin}/api/v1/join-requests`, { headers: { Authorization: `Bearer ${token}` } });
 }
@@ -577,6 +592,29 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
     check(missing.status === 404, `expected 404, got ${String(missing.status)}`);
     check((await errorCode(missing)) === 'not_found', 'expected not_found');
   },
+
+  'the student list search finds a card by its name, finds nothing for other text and refuses a search over 254 characters':
+    async (subject) => {
+      const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+      const suffix = crypto.randomUUID().slice(0, 8);
+      await subject.transport.send(cardRequest(subject, token, '', { display_name: `Searchable ${suffix}` }));
+      await subject.transport.send(cardRequest(subject, token, '', { display_name: `Unrelated ${suffix}` }));
+
+      const found = await subject.transport.send(studentListRequest(subject, token, `searchable ${suffix}`));
+      const none = await subject.transport.send(studentListRequest(subject, token, `absent ${suffix}`));
+      const tooLong = await subject.transport.send(studentListRequest(subject, token, 'a'.repeat(255)));
+
+      check(found.status === 200, `expected 200, got ${String(found.status)}`);
+      const foundNames = listedNames(await found.json());
+      check(
+        foundNames.length === 1 && foundNames[0] === `Searchable ${suffix}`,
+        `expected only the searched card, got ${JSON.stringify(foundNames)}`,
+      );
+      check(none.status === 200, `expected 200, got ${String(none.status)}`);
+      check(listedNames(await none.json()).length === 0, 'expected no card for other text');
+      check(tooLong.status === 422, `expected 422, got ${String(tooLong.status)}`);
+      check((await errorCode(tooLong)) === 'validation_failed', 'expected validation_failed');
+    },
 
   'another tutor cannot read a tutor’s card and gets not_found': async (subject) => {
     const owner = await accessToken(await subject.transport.login(subject.email, subject.password));

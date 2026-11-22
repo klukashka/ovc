@@ -292,6 +292,8 @@ export class FakeSubmissionServer {
   private readonly savedBodies: string[] = [];
   private readonly feedbackSeenLog: FeedbackSeenRequest[] = [];
   private readonly feedbackSeenRefusals: Response[] = [];
+  private feedbackSeenGate: Promise<void> | null = null;
+  private feedbackSeenReceived: () => void = () => undefined;
 
   constructor(feedbackSeenListener: (studentId: string, submissionId: string) => void = () => undefined) {
     this.feedbackSeenListener = feedbackSeenListener;
@@ -318,6 +320,23 @@ export class FakeSubmissionServer {
 
   refuseNextFeedbackSeen(status: number, code: string): void {
     this.feedbackSeenRefusals.push(fakeRefusal(status, code));
+  }
+
+  pauseFeedbackSeen(): { readonly resume: () => void; readonly received: Promise<void> } {
+    let resume = (): void => undefined;
+    let notifyReceived = (): void => undefined;
+    this.feedbackSeenGate = new Promise((resolve) => {
+      resume = (): void => {
+        this.feedbackSeenGate = null;
+        this.feedbackSeenReceived = (): void => undefined;
+        resolve();
+      };
+    });
+    const received = new Promise<void>((resolve) => {
+      notifyReceived = resolve;
+    });
+    this.feedbackSeenReceived = notifyReceived;
+    return { resume, received };
   }
 
   returnSubmission(id: string): void {
@@ -388,7 +407,7 @@ export class FakeSubmissionServer {
       }
     }
     if (request.method === 'POST' && action === 'feedback-seen' && rest.length === 0 && caller.role === 'student') {
-      return this.markFeedbackSeen(id, stored, caller, await request.text());
+      return this.markFeedbackSeen(id, caller, await request.text());
     }
     if (stored?.studentId !== caller.id || rest.length > 0) {
       return fakeRefusal(404, 'not_found');
@@ -461,7 +480,7 @@ export class FakeSubmissionServer {
     return editableStatuses.has(stored.submission.status) && !stored.ended;
   }
 
-  private markFeedbackSeen(id: string, stored: StoredSubmission | undefined, caller: Me, text: string): Response {
+  private async markFeedbackSeen(id: string, caller: Me, text: string): Promise<Response> {
     const parsed = feedbackSeenBody(text);
     if (parsed.kind === 'malformed') {
       return fakeRefusal(400, 'bad_request');
@@ -470,10 +489,13 @@ export class FakeSubmissionServer {
       return fakeRefusal(422, 'validation_failed', parsed.problems);
     }
     this.feedbackSeenLog.push({ id, version: parsed.version });
+    this.feedbackSeenReceived();
+    await this.feedbackSeenGate;
     const planned = this.feedbackSeenRefusals.shift();
     if (planned !== undefined) {
       return planned;
     }
+    const stored = this.submissions.get(id);
     if (stored?.studentId !== caller.id) {
       return fakeRefusal(404, 'not_found');
     }

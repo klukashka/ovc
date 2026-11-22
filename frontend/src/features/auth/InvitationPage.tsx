@@ -65,7 +65,9 @@ function TutorProfile({ tutor }: { readonly tutor: PublicTutor }): ReactElement 
       <div className="flex flex-col items-start gap-4 tablet:flex-row tablet:items-center">
         <Avatar name={tutor.name} avatarId={tutor.avatar_id} size="large" />
         <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="text-heading wrap-anywhere">{tutor.name}</h2>
+          <h2 dir="auto" className="text-heading wrap-anywhere">
+            {tutor.name}
+          </h2>
           {tutor.subjects.length === 0 ? null : (
             <p className="text-small text-text-muted">{tutor.subjects.join(', ')}</p>
           )}

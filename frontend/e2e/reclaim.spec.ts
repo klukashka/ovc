@@ -152,6 +152,11 @@ test.describe('on a phone', () => {
     await expect(page.getByText(/^Выберите до \d{1,2} [а-я]+\.?, \d{2}:\d{2}: всё, что вы не оставите/)).toBeVisible();
     await expect(linksBeforeConfirmation(page).getByRole('group')).toHaveCount(1);
     await expect(requestsBeforeConfirmation(page).getByRole('group')).toHaveCount(1);
+    await expect(
+      linksBeforeConfirmation(page)
+        .locator('span[aria-hidden="true"]')
+        .filter({ hasText: /^Мария$/ }),
+    ).toHaveAttribute('dir', 'auto');
     expect(await phoneChoiceLayout(page)).toEqual({
       fullWidthOptions: 4,
       tallOptions: 4,

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { type ReactElement, type ReactNode, useCallback, useEffect, useState } from 'react';
+import { type ReactElement, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { useScheduler } from '../../app/clock.ts';
@@ -44,6 +44,7 @@ function ChannelConversation({
     evictChannel(cache, id);
     scheduleChatReads(cache, scheduler);
   }, [cache, id, scheduler]);
+  useFocusHeadingWhenLayoutDropsFocus(back !== null);
   if (!seen && query.isSuccess && query.isFetchedAfterMount) setSeen(true);
   const notFound = query.isError && asApiError(query.error).status === 404;
   if (notFound && !gone) setGone(true);
@@ -92,6 +93,18 @@ function ChannelConversation({
   );
 }
 
+function useFocusHeadingWhenLayoutDropsFocus(phone: boolean): void {
+  const shownAsPhone = useRef(phone);
+  useEffect(() => {
+    if (shownAsPhone.current === phone) return;
+    shownAsPhone.current = phone;
+    const active = document.activeElement;
+    if (active === null || active === document.body || !active.isConnected) {
+      document.querySelector<HTMLElement>('main h1')?.focus();
+    }
+  }, [phone]);
+}
+
 function BackToList({ label }: { readonly label: string }): ReactElement {
   return (
     <Link
@@ -111,7 +124,7 @@ function MissingChannel(): ReactElement {
 
 function MessagesContent({ texts }: { readonly texts: ChatTexts }): ReactElement {
   const { channelId } = useParams();
-  const wide = useMediaQuery('(min-width: 768px)');
+  const wide = !useMediaQuery(phoneLayoutQuery);
   const me = useSignedInAccount();
   return (
     <div

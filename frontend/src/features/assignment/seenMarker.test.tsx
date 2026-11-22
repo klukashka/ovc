@@ -234,6 +234,47 @@ describe('the seen marker on the assignment page', () => {
       { id: submissionId, version: 5 },
     ]);
   });
+  test('a marker refused with a conflict after an autosave moved the version meanwhile is sent again at once', async () => {
+    const server = new FakeAuthServer();
+    const paused = server.pauseFeedbackSeen();
+    const shown = await showResultsOn(server, checked(4));
+    await paused.received;
+    shown.server.addSubmission(student.email, tutor.email, checked(5));
+    await refetchSubmission(shown);
+    await waitFor(() => {
+      expect(shown.queryClient.getQueryData<StudentSubmission>(submissionKey(submissionId))?.version).toBe(5);
+    });
+
+    act(() => {
+      paused.resume();
+    });
+    await waitFor(() => {
+      expect(shown.server.feedbackSeenRequests()).toHaveLength(2);
+    });
+
+    expect(shown.server.feedbackSeenRequests()).toEqual([
+      { id: submissionId, version: 4 },
+      { id: submissionId, version: 5 },
+    ]);
+  });
+
+  test('a marker refused for another reason is not sent again at the next version that shows the same review', async () => {
+    const server = new FakeAuthServer();
+    server.refuseNextFeedbackSeen(503, 'service_unavailable');
+    const shown = await showResultsOn(server, checked(4));
+    await waitFor(() => {
+      expect(shown.server.feedbackSeenRequests()).toHaveLength(1);
+    });
+    shown.server.addSubmission(student.email, tutor.email, checked(5));
+
+    await refetchSubmission(shown);
+    await waitFor(() => {
+      expect(shown.queryClient.getQueryData<StudentSubmission>(submissionKey(submissionId))?.version).toBe(5);
+    });
+
+    expect(shown.server.feedbackSeenRequests()).toEqual([{ id: submissionId, version: 4 }]);
+  });
+
   test('a newly published review that changes only an item comment sends the marker again', async () => {
     const first = reviewed(4, 'checked', commented('Check the spelling.'));
     const second = reviewed(6, 'checked', commented('Better now.'));

@@ -12,7 +12,14 @@ import { memoryPreferenceStore } from '../../lib/preferences/store.ts';
 import { liveRefetch } from '../../app/liveRefetch.ts';
 import { SchedulerContext } from '../../app/clock.ts';
 import { ConnectionContext, ConnectionState } from '../../app/connectionState.ts';
-import { MediaQueriesContext, PreferencesContext, fixedMediaQueries, wideLayoutQuery } from '../../app/context.ts';
+import {
+  type MediaQueries,
+  MediaQueriesContext,
+  PreferencesContext,
+  fixedMediaQueries,
+  phoneLayoutQuery,
+  wideLayoutQuery,
+} from '../../app/context.ts';
 import { type ApiClient, ApiClientContext, createApiClient } from '../../lib/api/client.ts';
 import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
@@ -68,6 +75,7 @@ async function fixture(
     readonly role?: 'tutor' | 'student';
     readonly reclaimed?: boolean;
     readonly initialReadMode?: 'strict' | 'single';
+    readonly mediaQueries?: MediaQueries;
   } = {},
 ): Promise<{
   readonly server: FakeAuthServer;
@@ -136,13 +144,12 @@ async function fixture(
               <SchedulerContext value={clock}>
                 <ConnectionContext value={connection}>
                   <MediaQueriesContext
-                    value={fixedMediaQueries(
-                      wide
-                        ? options.initialReadMode === undefined
-                          ? ['(min-width: 768px)']
-                          : ['(min-width: 768px)', wideLayoutQuery]
-                        : [],
-                    )}
+                    value={
+                      options.mediaQueries ??
+                      fixedMediaQueries(
+                        wide ? (options.initialReadMode === undefined ? [] : [wideLayoutQuery]) : [phoneLayoutQuery],
+                      )
+                    }
                   >
                     <MessageKeyContext
                       value={() => {
@@ -164,6 +171,29 @@ async function fixture(
   render(options.initialReadMode === 'strict' ? <StrictMode>{tree}</StrictMode> : tree);
   await screen.findByRole('heading', { level: address === '/messages' ? 1 : 2 });
   return { server, initialReads, api, cache, clock, connection, router, session };
+}
+
+function switchableMediaQueries(matching: readonly string[]): {
+  readonly queries: MediaQueries;
+  readonly match: (next: readonly string[]) => void;
+} {
+  let current = matching;
+  const listeners = new Set<() => void>();
+  return {
+    queries: (query) => ({
+      subscribe: (onChange) => {
+        listeners.add(onChange);
+        return (): void => {
+          listeners.delete(onChange);
+        };
+      },
+      snapshot: () => current.includes(query),
+    }),
+    match: (next): void => {
+      current = next;
+      for (const listener of listeners) listener();
+    },
+  };
 }
 
 function seedChannels(server: FakeAuthServer, count: number): void {
@@ -605,6 +635,25 @@ describe('Messages', () => {
     expect(screen.getByRole('link', { name: 'Back to the list' }).getAttribute('href')).toBe('/messages');
     expect(within(screen.getByRole('list', { name: 'Messages' })).getAllByRole('listitem').length).toBe(1);
   });
+  test('widening past 768 px with focus on Back of a missing channel moves focus to the page heading', async () => {
+    const media = switchableMediaQueries([phoneLayoutQuery]);
+    const { router } = await fixture(1, '/messages', false, { mediaQueries: media.queries });
+    await act(async () => {
+      await router.navigate('/messages/missing-channel');
+    });
+    const back = await screen.findByRole('link', { name: 'Back to the list' });
+    back.focus();
+
+    act(() => {
+      media.match([]);
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('link', { name: 'Back to the list' })).toBeNull();
+    });
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
+  });
+
   test.each(['tutor', 'student'] as const)(
     'the %s sees reclaimed sender cues without account identity details',
     async (role) => {

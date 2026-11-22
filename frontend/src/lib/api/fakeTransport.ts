@@ -154,6 +154,7 @@ const homeworkUploadContexts: ReadonlySet<string> = new Set(['answer', 'correcte
 
 const defaultPageLimit = 30;
 const maximumPageLimit = 100;
+const maximumStudentSearchLength = 254;
 const unreadCountCap = 100;
 const cursorPrefix = 'fake-cursor-';
 const supportedStudentListParameters: ReadonlySet<string> = new Set(['limit', 'cursor', 'state', 'q']);
@@ -922,6 +923,10 @@ export class FakeAuthServer {
     this.submissions.refuseNextFeedbackSeen(status, code);
   }
 
+  pauseFeedbackSeen(): PausedReads {
+    return this.submissions.pauseFeedbackSeen();
+  }
+
   returnSubmission(submissionId: string): void {
     this.submissions.returnSubmission(submissionId);
   }
@@ -1496,7 +1501,8 @@ export class FakeAuthServer {
       const listedStates = requestedState === null ? null : studentListStates[requestedState];
       if (
         [...address.searchParams.keys()].some((name) => !supportedStudentListParameters.has(name)) ||
-        listedStates === undefined
+        listedStates === undefined ||
+        Array.from(address.searchParams.get('q') ?? '').length > maximumStudentSearchLength
       ) {
         return refusal(422, 'validation_failed');
       }
