@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 
-import { type TestAccount, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, pageLoaded, signInThroughTheApi } from './accounts.ts';
 import { createPastSimpleTemplate, pastSimple, questionIds, studentWork } from './assignment.ts';
 import type { Deployment } from './deployment.ts';
 import { type TestControl, diagnosedTest as test, expect, seedVerifiedUser, tableRows } from './fixtures.ts';
@@ -68,9 +68,10 @@ async function openAt(
   await page.setViewportSize(size);
   await page.goto(path);
   await page
-    .locator(content === 'table' ? 'main table > tbody > tr' : 'main h1')
+    .locator(content === 'table' ? 'main table > tbody > tr' : 'main article h1')
     .first()
     .waitFor();
+  await pageLoaded(page);
   await page.evaluate(async () => {
     await document.fonts.ready;
   });
@@ -104,6 +105,7 @@ async function pagesScrollingSideways(
   for (const { path, ready, measure } of pages) {
     await page.goto(path);
     await ready(page).waitFor();
+    await pageLoaded(page);
     await page.evaluate(async () => {
       await document.fonts.ready;
     });
@@ -383,7 +385,7 @@ test.describe('the 360 px sweeps', () => {
   test('the public pages group: Sign in, Sign up and the token pages do not scroll sideways and keep their phone layout', async ({
     page,
   }) => {
-    const heading = (shown: Page): Locator => shown.locator('main h1');
+    const heading = (shown: Page): Locator => shown.locator('main article h1');
     const measured: Record<string, boolean> = {};
 
     const sideways = await pagesScrollingSideways(

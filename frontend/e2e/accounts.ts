@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 import type { Deployment } from './deployment.ts';
 
@@ -156,8 +156,13 @@ export async function confirmFromAnotherBrowser(
   }
 }
 
+export async function pageLoaded(page: Page): Promise<void> {
+  await expect(page.locator('main [aria-busy="true"]')).toHaveCount(0);
+}
+
 export async function pageSettled(page: Page): Promise<void> {
-  await page.locator('main h1').waitFor();
+  await page.locator('main article h1').waitFor();
+  await pageLoaded(page);
   await page.evaluate(async () => {
     await document.fonts.ready;
   });

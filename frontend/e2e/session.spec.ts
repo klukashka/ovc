@@ -49,6 +49,28 @@ async function browserStorage(page: Page): Promise<{ local: string[]; session: n
   }));
 }
 
+interface HeldPageModule {
+  readonly requested: Promise<void>;
+  readonly release: () => void;
+}
+
+async function holdThePageModule(page: Page, chunk: string): Promise<HeldPageModule> {
+  let release: () => void = () => undefined;
+  const resumed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let markRequested: () => void = () => undefined;
+  const requested = new Promise<void>((resolve) => {
+    markRequested = resolve;
+  });
+  await page.route(`**/assets/${chunk}-*.js`, async (route) => {
+    markRequested();
+    await resumed;
+    await route.continue();
+  });
+  return { requested, release };
+}
+
 test('a blocked account is signed out and told it is blocked when it signs in again', async ({
   page,
   deployment,
@@ -109,6 +131,30 @@ test('signing in follows next, signing out returns to sign-in that a reload keep
     expect(storage.session).toBe(0);
     expect(storage.cookie).toBe('');
   }
+});
+
+test('a page counts as settled only once its page module has loaded, not while its loading heading shows', async ({
+  page,
+}) => {
+  const signInModule = await holdThePageModule(page, 'SignInPage');
+  await page.goto('/');
+  await signInModule.requested;
+  await expect(page.getByRole('heading', { level: 1, name: 'Вход' })).toBeVisible();
+  const order: string[] = [];
+  const settled = pageSettled(page).then(() => {
+    order.push('settled');
+  });
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+  await expect(page.locator('main [aria-busy="true"]')).toHaveCount(1);
+
+  order.push('released');
+  signInModule.release();
+  await settled;
+
+  expect(order).toEqual(['released', 'settled']);
+  await expect(page.getByLabel('Email')).toBeVisible();
 });
 
 test('a next address on another origin is ignored after sign-in', async ({ page, tutor }) => {

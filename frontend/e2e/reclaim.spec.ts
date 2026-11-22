@@ -2,7 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 
 import type { ObservedBrowser } from './browser-diagnostics.ts';
 
-import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, emailedLinkTo, newTestAccount, pageLoaded, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import type { Diagnostics, PageDiagnostics, TestControl } from './fixtures.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser, tableRows } from './fixtures.ts';
@@ -209,6 +209,7 @@ test('reclaim › after the choice Continue leads Home to the kept tutor and the
   await page.getByRole('main').getByRole('link', { name: 'Продолжить' }).click();
   await expect(page).toHaveURL('/home');
   await expect(page.getByRole('list', { name: 'Репетиторы' }).getByRole('listitem')).toHaveText([/Мария/]);
+  await pageLoaded(page);
 
   await page.goto('/reclaim');
 

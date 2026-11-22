@@ -1,6 +1,6 @@
 import type { BrowserContext, Page, Route } from '@playwright/test';
 
-import { type TestAccount, seedAccount, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, pageSettled, seedAccount, signInThroughTheApi } from './accounts.ts';
 import type { ObservedBrowser } from './browser-diagnostics.ts';
 import type { Deployment } from './deployment.ts';
 import {
@@ -479,6 +479,7 @@ test.describe('the lesson room through a new tab', () => {
     await openLesson(page, seed.student, seed.lessonId, control);
     await signOutThroughTheMenu(page);
     await page.getByRole('heading', { level: 1, name: 'Вход' }).waitFor();
+    await pageSettled(page);
 
     await page.goto(`/lessons/${seed.lessonId}`);
 
