@@ -152,7 +152,7 @@ function ChannelPages({
           <li key={channel.id} data-row={channel.id}>
             <Link
               to={`/messages/${encodeURIComponent(channel.id)}`}
-              className="block border-b border-border px-2 py-3 hover:bg-hover"
+              className="block border-b border-border px-2 py-3 [overflow-wrap:anywhere] hover:bg-hover"
             >
               <span dir="auto" className={channel.unread_count > 0 ? 'font-semibold' : ''}>
                 {channel.label ?? texts.deletedUser}

@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { type ReactElement, useCallback, useEffect, useState } from 'react';
+import { type ReactElement, type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { useScheduler } from '../../app/clock.ts';
-import { useMediaQuery } from '../../app/context.ts';
+import { phoneLayoutQuery, useMediaQuery } from '../../app/context.ts';
+import { ChevronLeftIcon } from '../../components/ui/icons.tsx';
 import { FocusedNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
@@ -17,7 +18,15 @@ import { channelKey } from './keys.ts';
 import { evictChannel } from './cache.ts';
 import { type ChatTexts, useChatTexts } from './translations.ts';
 
-function ChannelConversation({ id, texts }: { readonly id: string; readonly texts: ChatTexts }): ReactElement {
+function ChannelConversation({
+  id,
+  texts,
+  back,
+}: {
+  readonly id: string;
+  readonly texts: ChatTexts;
+  readonly back: ReactNode;
+}): ReactElement {
   const client = useApiClient();
   const cache = useQueryClient();
   const scheduler = useScheduler();
@@ -44,13 +53,20 @@ function ChannelConversation({ id, texts }: { readonly id: string; readonly text
       scheduleChatReads(cache, scheduler);
     }
   }, [notFound, cache, id, scheduler]);
-  if (notFound || gone) return seen ? <FocusedNotice message={texts.unavailable} /> : <MissingChannel />;
+  if (notFound || gone)
+    return (
+      <>
+        {back}
+        {seen ? <FocusedNotice message={texts.unavailable} /> : <MissingChannel />}
+      </>
+    );
   if (seen && query.data !== undefined)
     return (
       <Conversation
         revision={query.dataUpdatedAt}
         channel={query.data}
         texts={texts}
+        back={back}
         onUnavailable={unavailable}
         channelError={query.isError ? asApiError(query.error) : null}
         refreshChannel={() => query.refetch()}
@@ -58,14 +74,34 @@ function ChannelConversation({ id, texts }: { readonly id: string; readonly text
     );
   if (query.isError)
     return (
-      <LoadFailed
-        error={asApiError(query.error)}
-        onRetry={() => {
-          void query.refetch();
-        }}
-      />
+      <>
+        {back}
+        <LoadFailed
+          error={asApiError(query.error)}
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
+      </>
     );
-  return <DelayedLoading />;
+  return (
+    <>
+      {back}
+      <DelayedLoading />
+    </>
+  );
+}
+
+function BackToList({ label }: { readonly label: string }): ReactElement {
+  return (
+    <Link
+      to="/messages"
+      aria-label={label}
+      className="inline-flex size-11 shrink-0 items-center justify-center rounded-sm text-icon hover:bg-hover hover:text-text"
+    >
+      <ChevronLeftIcon />
+    </Link>
+  );
 }
 
 function MissingChannel(): ReactElement {
@@ -82,7 +118,9 @@ function MessagesContent({ texts }: { readonly texts: ChatTexts }): ReactElement
       className={
         wide
           ? 'grid grid-cols-2 gap-6 desktop:h-[calc(100dvh-(--spacing(24)))] desktop:grid-cols-[var(--container-aside)_minmax(0,1fr)] desktop:gap-0'
-          : 'flex flex-col gap-3'
+          : channelId === undefined
+            ? 'flex flex-col gap-3'
+            : 'flex h-[calc(100dvh-(--spacing(4)))] flex-col'
       }
     >
       {wide || channelId === undefined ? (
@@ -95,13 +133,13 @@ function MessagesContent({ texts }: { readonly texts: ChatTexts }): ReactElement
           <p>{texts.choose}</p>
         ) : null
       ) : (
-        <div className="flex min-w-0 flex-col gap-3 desktop:min-h-0 desktop:pl-6">
-          {!wide ? (
-            <Link to="/messages" className="text-accent-text underline">
-              {texts.back}
-            </Link>
-          ) : null}
-          <ChannelConversation key={`${me.id}:${channelId}`} id={channelId} texts={texts} />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 desktop:pl-6">
+          <ChannelConversation
+            key={`${me.id}:${channelId}`}
+            id={channelId}
+            texts={texts}
+            back={wide ? null : <BackToList label={texts.back} />}
+          />
         </div>
       )}
     </div>
@@ -110,10 +148,14 @@ function MessagesContent({ texts }: { readonly texts: ChatTexts }): ReactElement
 
 export function MessagesPage(): ReactElement {
   const { texts, failed, retry } = useChatTexts();
+  const { channelId } = useParams();
+  const phone = useMediaQuery(phoneLayoutQuery);
   return (
-    <Page titleHiddenOnDesktop>
-      {failed ? <LoadFailed error={asApiError(undefined)} onRetry={retry} /> : null}
-      {texts === null ? <DelayedLoading /> : <MessagesContent texts={texts} />}
-    </Page>
+    <div className={phone && channelId !== undefined && texts !== null ? '[&>article>header]:sr-only' : undefined}>
+      <Page titleHiddenOnDesktop>
+        {failed ? <LoadFailed error={asApiError(undefined)} onRetry={retry} /> : null}
+        {texts === null ? <DelayedLoading /> : <MessagesContent texts={texts} />}
+      </Page>
+    </div>
   );
 }

@@ -77,7 +77,7 @@ async function studentContext(browser: ObservedBrowser, deployment: Deployment):
     ignoreHTTPSErrors: true,
     locale: 'en-GB',
     timezoneId: 'Europe/Moscow',
-    viewport: { width: 375, height: 812 },
+    viewport: { width: 360, height: 780 },
   });
 }
 
@@ -122,7 +122,7 @@ async function send(page: Page, body: string): Promise<void> {
 test.describe('text messages', () => {
   test.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', viewport: { width: 1280, height: 800 } });
 
-  test('messages › a tutor and a student exchange messages live, with unread state, header links and focus, also at 375 px', async ({
+  test('messages › a tutor and a student exchange messages live, with unread state, header links and focus, also at 360 px with Back to the list', async ({
     page,
     observedBrowser: browser,
     deployment,
@@ -143,7 +143,9 @@ test.describe('text messages', () => {
 
     await expectRefetchedAfterTheSocketIsReady(studentTraffic);
     await studentPage.getByRole('region', { name: 'Chats', exact: true }).getByRole('link').click();
-    await studentPage.getByRole('heading', { level: 2, name: 'Pavel', exact: true }).waitFor();
+    const studentHeading = studentPage.getByRole('heading', { level: 2, name: 'Pavel', exact: true });
+    await studentHeading.waitFor();
+    const studentOpeningFocus = await studentHeading.evaluate((element) => element === document.activeElement);
     const listHidden = await studentPage.getByRole('searchbox', { name: 'Search chats' }).isHidden();
     await send(studentPage, 'A question before our lesson');
     const studentFocusAfterSend = await studentPage
@@ -160,6 +162,16 @@ test.describe('text messages', () => {
       .evaluate((element) => element === document.activeElement);
     await send(page, 'Let us discuss it together');
     await messages(studentPage).filter({ hasText: 'Let us discuss it together' }).waitFor();
+    const frameInConversation = await studentPage.locator('[data-frame-only]').count();
+    const back = studentPage.getByRole('link', { name: 'Back to the list', exact: true });
+    const backShown = await back.isVisible();
+    await back.focus();
+    await studentPage.setViewportSize({ width: 1024, height: 780 });
+    await studentPage.getByRole('region', { name: 'Chats', exact: true }).waitFor();
+    const focusAfterWidening = await studentHeading.evaluate((element) => element === document.activeElement);
+    await studentPage.setViewportSize({ width: 360, height: 780 });
+    await back.click();
+    await studentPage.waitForURL((url) => url.pathname === '/messages');
 
     expect(listHidden).toBe(true);
     expect(studentFocusAfterSend).toBe(true);
@@ -167,7 +179,12 @@ test.describe('text messages', () => {
     expect(openingFocus).toBe(true);
     await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toBeFocused();
     await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue('');
-    await expect(studentPage.getByRole('link', { name: 'Back to the list', exact: true })).toBeVisible();
+    expect(frameInConversation).toBe(0);
+    expect(backShown).toBe(true);
+    expect(studentOpeningFocus).toBe(true);
+    expect(focusAfterWidening).toBe(true);
+    await expect(studentPage.getByRole('heading', { level: 1, name: 'Messages', exact: true })).toBeFocused();
+    await expect(studentPage.getByRole('navigation', { name: 'Main navigation', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Student card', exact: true })).toHaveAttribute(
       'href',
       `/students/${cardId}`,
@@ -401,7 +418,7 @@ paginationTest.describe('channel pagination', () => {
   for (const role of ['tutor', 'student'] as const) {
     for (const profile of [
       { language: 'en', theme: 'light', width: 1280, list: 'Chats', more: 'Show more' },
-      { language: 'ru', theme: 'dark', width: 375, list: 'Чаты', more: 'Показать ещё' },
+      { language: 'ru', theme: 'dark', width: 360, list: 'Чаты', more: 'Показать ещё' },
     ] as const) {
       for (const final of [false, true]) {
         paginationTest(

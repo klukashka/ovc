@@ -1,7 +1,7 @@
 import type { ParseKeys } from 'i18next';
 import { type ReactElement, type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, Outlet, useNavigate } from 'react-router';
+import { Link, Outlet, useMatch, useNavigate } from 'react-router';
 
 import { useUnreadChannels } from '../../features/messages/unread.ts';
 import { provisionallyLinked, useProvisionalLink } from '../../routes/provisionalLink.ts';
@@ -151,6 +151,13 @@ function useFrameSwitchFocus(phone: boolean): void {
   }, [phone]);
 }
 
+function mainPadding(phone: boolean, phoneBars: boolean): string {
+  if (!phone) {
+    return 'py-8 desktop:py-12';
+  }
+  return phoneBars ? 'pt-8 pb-[calc(--spacing(8)+var(--bottom-bar-height,56px))]' : 'py-2';
+}
+
 export function SignedInFrame({
   me,
   title,
@@ -165,13 +172,15 @@ export function SignedInFrame({
   const navigate = useNavigate();
   const wide = useMediaQuery(wideLayoutQuery);
   const phone = useMediaQuery(phoneLayoutQuery);
+  const conversationScreen = useMatch('/messages/:channelId') !== null;
+  const phoneBars = phone && !conversationScreen;
   const [sidebarShown, setSidebarShown] = useState(() => preferences.read(preferenceKeys.sidebar) !== 'hidden');
   const [overlayOpen, setOverlayOpen] = useState(false);
   if ((wide || phone) && overlayOpen) {
     setOverlayOpen(false);
   }
   const [sheetOpen, setSheetOpen] = useState(false);
-  if (!phone && sheetOpen) {
+  if (!phoneBars && sheetOpen) {
     setSheetOpen(false);
   }
   const sheetShown = useRef(sheetOpen);
@@ -304,7 +313,7 @@ export function SignedInFrame({
           </FrameDialog>
         </>
       )}
-      {phone ? <PhoneTopBar me={me} withBell={withBell} /> : null}
+      {phoneBars ? <PhoneTopBar me={me} withBell={withBell} /> : null}
       <div className={wide && sidebarShown ? 'pl-(--container-sidebar)' : ''}>
         <OfflineBanner />
         {me.state === 'unverified' ? <ConfirmationBanner me={me} /> : null}
@@ -316,12 +325,12 @@ export function SignedInFrame({
         <main
           id={mainContentId}
           tabIndex={-1}
-          className={`mx-auto w-full max-w-page px-4 py-8 outline-none tablet:px-8 desktop:px-14 desktop:py-12 ${phone ? 'pb-[calc(--spacing(8)+var(--bottom-bar-height,56px))]' : ''}`}
+          className={`mx-auto w-full max-w-page px-4 outline-none tablet:px-8 desktop:px-14 ${mainPadding(phone, phoneBars)}`}
         >
           {children ?? <Outlet />}
         </main>
       </div>
-      {phone ? (
+      {phoneBars ? (
         <>
           <BottomBar
             me={me}

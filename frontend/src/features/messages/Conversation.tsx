@@ -1,6 +1,7 @@
 import { type QueryObserverResult, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   type ReactElement,
+  type ReactNode,
   createContext,
   useContext,
   useEffect,
@@ -68,8 +69,10 @@ export function Conversation({
   channelError,
   refreshChannel,
   revision = 0,
+  back = null,
 }: {
   readonly revision?: number;
+  readonly back?: ReactNode;
   readonly channel: Channel;
   readonly texts: ChatTexts;
   readonly onUnavailable: () => void;
@@ -517,31 +520,70 @@ export function Conversation({
       if (isAlive()) setBusy(false);
     }
   }
-  if (unavailable) return <FocusedNotice message={texts.unavailable} />;
+  const phone = back !== null;
+  const shownAsPhone = useRef(phone);
+  useEffect(() => {
+    if (shownAsPhone.current === phone) return;
+    shownAsPhone.current = phone;
+    const active = document.activeElement;
+    if (active === null || active === document.body || !active.isConnected) heading.current?.focus();
+  }, [phone]);
+  if (unavailable)
+    return (
+      <>
+        {back}
+        <FocusedNotice message={texts.unavailable} />
+      </>
+    );
+  const title = (
+    <h2
+      ref={heading}
+      tabIndex={-1}
+      dir="auto"
+      className={`text-heading outline-none${phone ? ' min-w-0 [overflow-wrap:anywhere]' : ''}`}
+    >
+      {channel.label ?? texts.deletedUser}
+    </h2>
+  );
+  const presenceSummary = (
+    <PresenceSummary
+      presence={presence}
+      group={channel.kind === 'group'}
+      viewerRole={me.role}
+      onlineLabel={texts.online}
+      membersLabel={texts.members}
+      collapsed={phone}
+    />
+  );
+  const linkClass = `text-accent-text underline${phone ? ' inline-flex min-h-11 items-center' : ''}`;
   return (
-    <section className="flex min-w-0 flex-col gap-3 desktop:h-full desktop:min-h-0">
-      <h2 ref={heading} tabIndex={-1} dir="auto" className="text-heading outline-none">
-        {channel.label ?? texts.deletedUser}
-      </h2>
-      <PresenceSummary
-        presence={presence}
-        group={channel.kind === 'group'}
-        viewerRole={me.role}
-        onlineLabel={texts.online}
-        membersLabel={texts.members}
-      />
-      {channel.tutor === null ? null : <p dir="auto">{channel.tutor.name}</p>}
-      {channel.unconfirmed ? <p>{texts.unconfirmed}</p> : null}
-      {channel.relationship_id === undefined ? null : (
-        <Link className="text-accent-text underline" to={`/students/${encodeURIComponent(channel.relationship_id)}`}>
-          {texts.card}
-        </Link>
-      )}
-      {channel.group_id === undefined ? null : (
-        <Link className="text-accent-text underline" to={`/groups/${encodeURIComponent(channel.group_id)}`}>
-          {texts.group}
-        </Link>
-      )}
+    <section className={`flex min-w-0 flex-col gap-3 desktop:h-full desktop:min-h-0${phone ? ' min-h-0 flex-1' : ''}`}>
+      <div className={phone ? 'flex items-center gap-1' : 'contents'}>
+        {back}
+        <div className={phone ? 'flex min-w-0 flex-1 flex-col' : 'contents'}>
+          {title}
+          {phone && channel.kind === 'group' ? null : presenceSummary}
+        </div>
+      </div>
+      <div className={phone ? 'flex flex-wrap items-center gap-x-4 empty:hidden' : 'contents'}>
+        {phone && channel.kind === 'group' ? presenceSummary : null}
+        {channel.tutor === null ? null : (
+          <p dir="auto" className="min-w-0 [overflow-wrap:anywhere]">
+            {channel.tutor.name}
+          </p>
+        )}
+        {channel.unconfirmed ? <p>{texts.unconfirmed}</p> : null}
+        {channel.relationship_id === undefined ? null : (
+          <Link className={linkClass} to={`/students/${encodeURIComponent(channel.relationship_id)}`}>
+            {texts.card}
+          </Link>
+        )}
+        {channel.group_id === undefined ? null : (
+          <Link className={linkClass} to={`/groups/${encodeURIComponent(channel.group_id)}`}>
+            {texts.group}
+          </Link>
+        )}
+      </div>
       <p aria-live="polite" className="sr-only">
         {announcement}
       </p>
@@ -551,7 +593,7 @@ export function Conversation({
       <div
         ref={historyPane}
         onScroll={rememberBottom}
-        className="flex min-w-0 flex-col desktop:min-h-0 desktop:flex-1 desktop:overflow-y-auto"
+        className={`flex min-w-0 flex-col desktop:min-h-0 desktop:flex-1 desktop:overflow-y-auto${phone ? ' min-h-0 flex-1 overflow-y-auto' : ''}`}
       >
         <div ref={historyContent} className="flex min-w-0 shrink-0 flex-col gap-3">
           {query.isPending ? <DelayedLoading /> : null}
@@ -604,7 +646,7 @@ export function Conversation({
                 >
                   {firstOfDay ? <p className="mb-2 text-small text-text-muted">{day}</p> : null}
                   <div className="flex items-center justify-between gap-2">
-                    <span dir="auto" className="text-strong">
+                    <span dir="auto" className="min-w-0 text-strong [overflow-wrap:anywhere]">
                       {message.own ? texts.you : (message.sender_label ?? texts.deletedUser)}
                     </span>
                     {!message.deleted && !message.erased && (message.own || me.role === 'tutor') ? (
@@ -689,7 +731,7 @@ export function Conversation({
         ) : null}
       </div>
       <form
-        className="flex shrink-0 flex-col gap-2 border-t border-border pt-3"
+        className={`flex shrink-0 flex-col gap-2 border-t border-border pt-3${phone ? ' pb-[env(safe-area-inset-bottom)]' : ''}`}
         onSubmit={(event) => {
           event.preventDefault();
           guard.run(() => {

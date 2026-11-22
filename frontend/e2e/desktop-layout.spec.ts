@@ -5,10 +5,11 @@ import { createPastSimpleTemplate, pastSimple, questionIds, studentWork } from '
 import type { Deployment } from './deployment.ts';
 import { type TestControl, diagnosedTest as test, expect, seedVerifiedUser, tableRows } from './fixtures.ts';
 import { issueThroughTheApi } from './homework.ts';
+import { channelOf } from './messages.ts';
 import { publishReview, saveReviewDraft, scoreFormsIn } from './results.ts';
 import { answerTextAndSubmit } from './review.ts';
 import { daytimeZone, localClock, localDate, scheduleLessonsWithIds, setTimezone } from './schedule.ts';
-import { acceptSignedIn, createCard, createGroup, seedActiveStudent } from './tutoring.ts';
+import { accessToken, acceptSignedIn, callApi, createCard, createGroup, seedActiveStudent } from './tutoring.ts';
 
 const computer = { width: 1440, height: 900 } as const;
 const smallComputer = { width: 1024, height: 768 } as const;
@@ -727,6 +728,239 @@ test.describe('the 360 px sweeps of the homework pages', () => {
     expect(swept.injected).toBe(0);
     await expect(page).not.toHaveTitle('1');
     expect(swept.fullWidthButtons[3]).toEqual(expect.arrayContaining(['Прикрепить файлы', 'Сдать']));
+  });
+});
+
+interface MessagesScene {
+  readonly tutor: TestAccount;
+  readonly student: TestAccount;
+  readonly direct: string;
+  readonly group: string;
+}
+
+const lastHistoryLine = 'History message 8';
+
+async function postMessage(deployment: Deployment, token: string, channel: string, body: string): Promise<void> {
+  const sent = await callApi(deployment, token, 'POST', `/channels/${channel}/messages`, { body, attachment_ids: [] });
+  if (sent.status !== 201) {
+    throw new Error(`sending a seeded message answered ${String(sent.status)}`);
+  }
+}
+
+async function messagesScene(deployment: Deployment, studentLanguage: 'ru' | 'en'): Promise<MessagesScene> {
+  const tutor = await seedVerifiedUser(deployment, longWord, 'en');
+  const { student, cardId } = await seedActiveStudent(deployment, tutor, longWord, studentLanguage);
+  const groupId = await createGroup(deployment, tutor, markup, [cardId]);
+  const direct = await channelOf(deployment, tutor, `/students/${cardId}`);
+  const group = await channelOf(deployment, tutor, `/groups/${groupId}`);
+  const tutorToken = await accessToken(deployment, tutor);
+  const lines = Array.from({ length: 4 }, (_, line) => `Line ${String(line + 1)} of a long message`).join('\n');
+  await postMessage(deployment, tutorToken, group, markup);
+  await postMessage(deployment, tutorToken, direct, `${longWord}${longWord}`);
+  await postMessage(deployment, tutorToken, direct, markup);
+  for (let index = 1; index <= 8; index += 1) {
+    await postMessage(deployment, tutorToken, direct, `${lines}\nHistory message ${String(index)}`);
+  }
+  return { tutor, student, direct, group };
+}
+
+interface ChatWords {
+  readonly list: string;
+  readonly back: string;
+  readonly attach: string;
+  readonly composer: string;
+  readonly send: string;
+  readonly history: string;
+}
+
+const chatWords: Readonly<Record<'ru' | 'en', ChatWords>> = {
+  en: {
+    list: 'Chats',
+    back: 'Back to the list',
+    attach: 'Attach files',
+    composer: 'Message',
+    send: 'Send',
+    history: 'Messages',
+  },
+  ru: {
+    list: 'Чаты',
+    back: 'К списку чатов',
+    attach: 'Прикрепить файлы',
+    composer: 'Сообщение',
+    send: 'Отправить',
+    history: 'Сообщения',
+  },
+};
+
+function historyOf(page: Page, words: ChatWords): Locator {
+  return page.getByRole('list', { name: words.history, exact: true });
+}
+
+function chatListReady(words: ChatWords): (page: Page) => Locator {
+  return (page: Page): Locator => page.getByRole('region', { name: words.list, exact: true }).getByRole('link').first();
+}
+
+function conversationReady(words: ChatWords, lastMessage: string): (page: Page) => Locator {
+  return (page: Page): Locator => historyOf(page, words).getByRole('listitem').filter({ hasText: lastMessage });
+}
+
+function chatListFacts(words: ChatWords): (page: Page) => Promise<LayoutFacts> {
+  return async (page: Page): Promise<LayoutFacts> => {
+    const list = page.getByRole('region', { name: words.list, exact: true });
+    return {
+      'the list: the bottom bar is shown': (await page.locator('nav[data-frame-only]').count()) === 1,
+      'the list: a group name and a preview with markup are text': (await list.getByText(markup).count()) === 2,
+      'the list: no markup element is rendered': (await list.locator('img, b').count()) === 0,
+    };
+  };
+}
+
+function conversationFacts(
+  words: ChatWords,
+  name: 'direct' | 'group',
+  lastMessage: string,
+): (page: Page) => Promise<LayoutFacts> {
+  return async (page: Page): Promise<LayoutFacts> => {
+    const composer = await boxOf(page.getByRole('textbox', { name: words.composer, exact: true }));
+    const send = await boxOf(page.getByRole('button', { name: words.send, exact: true }));
+    const latest = await boxOf(historyOf(page, words).getByRole('listitem').filter({ hasText: lastMessage }));
+    const viewport = page.viewportSize()?.height ?? 0;
+    return {
+      [`${name}: no top bar and no bottom bar`]: (await page.locator('[data-frame-only]').count()) === 0,
+      ...(name === 'group'
+        ? {
+            'group: the heading with markup is text': (
+              (await page.getByRole('heading', { level: 2 }).textContent()) ?? ''
+            ).includes(markup),
+            'group: the header renders no markup element':
+              (await page.locator('main section > div').first().locator('img, b').count()) === 0,
+          }
+        : {}),
+      [`${name}: Back to the list is a 44 px target`]: await isTarget(
+        page.getByRole('link', { name: words.back, exact: true }),
+      ),
+      [`${name}: attach is a 44 px target`]: await isTarget(page.getByRole('button', { name: words.attach })),
+      [`${name}: Send stays inside the window`]: send.bottom <= viewport,
+      [`${name}: the latest message is above the composer`]: latest.bottom <= composer.top && latest.top >= 0,
+      [`${name}: the history does not scroll sideways`]: await historyOf(page, words).evaluate((list) => {
+        let pane = list.parentElement;
+        while (pane !== null && getComputedStyle(pane).overflowY !== 'auto') pane = pane.parentElement;
+        return pane !== null && pane.scrollWidth <= pane.clientWidth;
+      }),
+      [`${name}: the window does not scroll`]: await page.evaluate(
+        () => document.documentElement.scrollHeight <= document.documentElement.clientHeight,
+      ),
+    };
+  };
+}
+
+async function shownAsText(page: Page, words: ChatWords): Promise<{ text: string; injected: number }> {
+  const message = historyOf(page, words).getByRole('listitem').filter({ hasText: markup });
+  return {
+    text: (await message.textContent()) ?? '',
+    injected: await historyOf(page, words).locator('img, b').count(),
+  };
+}
+
+test.describe('the 360 px sweeps of Messages', () => {
+  test('the tutor’s Messages group: the list and the conversations do not scroll sideways, the conversation hides the frame above a pinned composer, and a body with markup is text', async ({
+    page,
+    deployment,
+  }) => {
+    const scene = await messagesScene(deployment, 'en');
+    const words = chatWords.en;
+    await signInThroughTheApi(page, scene.tutor);
+    const measured: Record<string, boolean> = {};
+
+    const sideways = await pagesScrollingSideways(
+      page,
+      [
+        { path: '/messages', ready: chatListReady(words), measure: chatListFacts(words) },
+        {
+          path: `/messages/${scene.direct}`,
+          ready: conversationReady(words, lastHistoryLine),
+          measure: async (shown: Page): Promise<LayoutFacts> => ({
+            ...(await conversationFacts(words, 'direct', lastHistoryLine)(shown)),
+            'direct: Student card is 44 px high': await allAtLeast44High(
+              shown.getByRole('link', { name: 'Student card', exact: true }),
+            ),
+          }),
+        },
+        {
+          path: `/messages/${scene.group}`,
+          ready: conversationReady(words, markup),
+          measure: async (shown: Page): Promise<LayoutFacts> => ({
+            ...(await conversationFacts(words, 'group', markup)(shown)),
+            'group: Group is 44 px high': await allAtLeast44High(
+              shown.getByRole('link', { name: 'Group', exact: true }),
+            ),
+            'group: the members list is collapsed behind a 44 px Members control': await allAtLeast44High(
+              shown.locator('main details:not([open]) > summary').filter({ hasText: 'Members' }),
+            ),
+            'group: the members list is hidden while collapsed': await shown
+              .getByRole('list', { name: 'Members', exact: true })
+              .isHidden(),
+          }),
+        },
+      ],
+      measured,
+    );
+    const group = await shownAsText(page, words);
+    const membersControl = page.locator('main details > summary').filter({ hasText: 'Members' });
+    await membersControl.click();
+    await membersControl.focus();
+    await page.setViewportSize({ width: 1024, height: 780 });
+    await page.getByRole('region', { name: words.list, exact: true }).waitFor();
+    const headingFocusedAfterWidening = await page
+      .getByRole('heading', { level: 2 })
+      .evaluate((element) => element === document.activeElement);
+
+    expect(sideways).toEqual([]);
+    expect(measured).toEqual(allTrue(measured));
+    expect(Object.keys(measured)).toHaveLength(23);
+    expect(group.text).toContain(markup);
+    expect(group.injected).toBe(0);
+    await expect(page.getByRole('list', { name: 'Members', exact: true })).toContainText(longWord);
+    expect(headingFocusedAfterWidening).toBe(true);
+    await expect(page).not.toHaveTitle('1');
+  });
+
+  test('the student’s Messages group in Russian and the dark theme: the list and the conversations do not scroll sideways, the conversation hides the frame above a pinned composer, and a body with markup is text', async ({
+    page,
+    deployment,
+  }) => {
+    const scene = await messagesScene(deployment, 'ru');
+    const words = chatWords.ru;
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await signInThroughTheApi(page, scene.student);
+    const measured: Record<string, boolean> = {};
+
+    const sideways = await pagesScrollingSideways(
+      page,
+      [
+        { path: '/messages', ready: chatListReady(words), measure: chatListFacts(words) },
+        {
+          path: `/messages/${scene.direct}`,
+          ready: conversationReady(words, lastHistoryLine),
+          measure: conversationFacts(words, 'direct', lastHistoryLine),
+        },
+        {
+          path: `/messages/${scene.group}`,
+          ready: conversationReady(words, markup),
+          measure: conversationFacts(words, 'group', markup),
+        },
+      ],
+      measured,
+    );
+    const group = await shownAsText(page, words);
+
+    expect(sideways).toEqual([]);
+    expect(measured).toEqual(allTrue(measured));
+    expect(Object.keys(measured)).toHaveLength(19);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    expect(group.text).toContain(markup);
+    expect(group.injected).toBe(0);
+    await expect(page).not.toHaveTitle('1');
   });
 });
 
