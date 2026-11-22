@@ -1,6 +1,6 @@
 # Outline of OVC's legal documents
 
-Written 2026-11-23. Agent analysis, not legal advice and not the final texts: it fixes the structure and the OVC-specific content of the three documents the [legal gaps](legal-gaps-2026-11-22.md) put first, the privacy policy, the consent to processing and the user agreement, so that drafting starts from the real data flows in the specifications. The texts themselves are written in Russian later; `[verify]` marks interpretations to confirm against the current law or with a specialist. The operator is an individual entrepreneur and OVC is the only operator ([owner decisions](legal-gaps-2026-11-22.md#owner-decisions-of-2026-11-22-and-2026-11-23)).
+Written 2026-11-23. Agent analysis, not legal advice and not the final texts: it fixes the structure and the OVC-specific content of the three documents the [legal gaps](legal-gaps-2026-11-22.md) put first, the privacy policy, the consent to processing and the user agreement, so that drafting starts from the real data flows in the specifications. The texts themselves are written in Russian later; `[verify]` marks interpretations to confirm against the current law or with a specialist. The operator is an individual entrepreneur and OVC is the only operator ([owner decisions](legal-gaps-2026-11-22.md#owner-decisions-of-2026-11-22-and-2026-11-23)); [proposal 0006](../../docs/proposals/0006-legal-documents-and-student-data.md) records the decisions and governs where this outline differs. The retention bullets below describe current behaviour; proposal 0006 changes the retention of unaccepted, withdrawn, merged and removed cards and of student data after a student's purge.
 
 ## Shared facts all three documents state the same way
 
@@ -30,7 +30,7 @@ Required by item 2 of part 1 and part 2 of article 18.1; published at `/privacy`
 
 1. General provisions: scope (the OVC site and service), operator details, date and version, where the current version lives.
 2. Terms: personal data, processing, operator, processor, tutor, student, as the documents use them.
-3. Legal grounds: items 1 and 5 of part 1 of article 6, the consent and the user agreement; for data a tutor enters before a student signs up, the legitimate interests of item 7, supported by the tutor's warranty, or the warranty alone, as the owner decides `[verify]`.
+3. Legal grounds: items 1 and 5 of part 1 of article 6, the consent and the user agreement; for data a tutor enters before a student signs up, the legitimate interests of item 7, supported by the tutor's warranty (owner decision of 2026-11-23) `[verify]`.
 4. Purposes, each with its subject categories, data, actions, methods and retention, derived from the specifications:
    - accounts and sign-in, including the keyed hashes of IP addresses and emails in the throttle counters;
    - student cards and invitations, including data received from a tutor, not from the student (article 18 part 3), and the 90-day email bound;
@@ -89,7 +89,7 @@ Each needs its own specification and code change with a plan and reviews; none i
 
 - Sign-up and the invitation page: the consent checkbox links to the consent text; one line under the sign-up button links to the agreement.
 - The invitation email: one fixed line with the operator and a link to the policy on OVC's origin; changes the notifications specification and T-31.
-- An unaccepted card loses its email after 90 days, revoking its open invitation in the same transaction, and withdrawn and merged cards lose theirs too; changes the invitations specification, T-7, T-23 and T-34.
+- An unaccepted card loses its email after 90 days, revoking its open invitation in the same transaction, and withdrawn and merged cards lose display name, email and notes at once; changes the invitations specification, T-7, T-23 and T-34.
 - Three public pages instead of the `/privacy` placeholder, in Russian and English.
 
 ## Facts the policy needs that the repository does not settle
@@ -100,10 +100,10 @@ A check of the policy's purposes against the specifications on 2026-11-23 brough
 - the `ovc-admin` audit trail, written to the command's standard error;
 - the application's own diagnostic logs;
 - the lesson presentation on the conferencing server, which T-11 records as kept while the server keeps the meeting, with no numeric bound;
-- student data in a tutor's records after the student's purge;
-- withdrawn and merged cards;
 - the channel of a discarded link;
-- removed links' display names;
-- blocked accounts.
+- blocked accounts;
+- an invited card's display name and notes.
+
+Student data in a tutor's records after the student's purge, withdrawn and merged cards and removed links' display names are decided in proposal 0006, with their specification pending.
 
 Each needs a decided period recorded in the threat model (T-18, T-34, and T-22 for the audit trail) and the deployment plan before the policy can state it; no period relaxes the token redaction of T-27.
