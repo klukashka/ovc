@@ -6,7 +6,7 @@ Recordings (FR-5.4 to FR-5.6) and analytics (FR-11.2 to FR-11.4) come [after the
 
 ## Public pages
 
-Pending the change that follows [ADR-0024](../../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), the consent checkbox links a separate consent text, the sign-up and invitation pages gain a line accepting the user agreement, and the invitation page always links the privacy policy (pending owner review).
+The legal documents, the consent link, the acceptance line and the invitation page's policy link below follow [ADR-0024](../../../docs/decisions/0024-legal-documents-and-student-data.md), as specified by change L0 of the [interface rework plan](../../plans/ui-rework.md) on 2026-11-23 (pending owner review): the documents, the consent link and the acceptance line are pending implementation by L1, and the invitation page's policy link by L2. The interface carries no legal wording beyond the consent checkbox's label and the acceptance line; explanations, warranties and disclosures live in the documents.
 
 ### Sign in
 
@@ -24,7 +24,8 @@ FR-1.1, FR-1.2.
 
 - `/signup` offers two large choices, each a bordered panel: "I teach" and "I study".
 - **Form:**
-  - name, email, password with a strength hint (minimum 10 characters), language (preselected from the interface language, which follows the browser until the person chooses one), and a consent checkbox linking the privacy policy;
+  - name, email, password with a strength hint (minimum 10 characters), language (preselected from the interface language, which follows the browser until the person chooses one), and a consent checkbox whose label links the [consent text](#legal-documents) at `/consent`: "I consent to the processing of my personal data" ("Я даю согласие на обработку моих персональных данных"), the words "processing of my personal data" being the link (pending implementation by L1); sign-up without the checkbox is refused as before;
+  - one line under the submit button, the acceptance line: "By creating an account, you accept the user agreement" ("Создавая аккаунт, вы принимаете пользовательское соглашение"), the words "user agreement" linking `/terms`; pressing the button accepts the agreement, the checkbox never does (pending implementation by L1);
   - the student form (`/signup/student`) also has a required tutor code field, first in the form, with the hint "Got a link from your tutor? Open it instead"; an invalid code (`tutor_code_invalid`) shows "This code is no longer valid — ask your tutor for a new one" under the field, with the form's alert "Check the highlighted fields", and creates nothing; a valid code shows "Check your email" for a new and a taken email alike.
 - **Submitting** shows "Check your email" with the address and a resend button, disabled for 60 seconds.
 - **After confirmation** in the same browser, a student who signed up with a code sees "Request sent. Waiting for the tutor."
@@ -36,7 +37,7 @@ FR-2.1, FR-2.2, FR-1.2, FR-1.3.
 
 - **Shows:** tutor avatar, name and subjects, and "{tutor} invites you to study on OVC".
 - **Signed out:** "Create account" and "Sign in to accept", both in place, whatever the invitation's email:
-  - "Create account" asks for name, email, password, language and the consent checkbox; the page never shows or pre-fills the invited email;
+  - "Create account" asks for name, email, password, language and the consent checkbox, with the acceptance line under its button, both as on [sign-up](#sign-up) (pending implementation by L1); the page never shows or pre-fills the invited email;
   - after creating the account the page signs in with the chosen password and lands on Home, linked to the tutor with the confirmation banner; when that sign-in fails it shows "Check your email, or sign in to accept" and switches to the sign-in form, never a wrong-password error;
   - when the email was already taken and the password signs in to that account, and the account is confirmed (`active`), the page stays on the invitation and offers "Accept", keeping the link in memory; otherwise it lands on Home;
   - "Sign in to accept" signs in on the same page and then offers "Accept".
@@ -44,9 +45,20 @@ FR-2.1, FR-2.2, FR-1.2, FR-1.3.
 - **Signed in as a tutor:** an explanation that tutor accounts cannot study, with a button that signs out on the page and keeps the invitation (`role_mismatch`).
 - **Signed in as an unconfirmed student who already joined a tutor:** "Confirm your email first" with a resend button (`email_not_verified`).
 - **Another email:** "This invitation is for another email address" (`invitation_email_mismatch`), for a sign-up and a signed-in acceptance alike.
-- **Invalid, expired, used or revoked:** one message, "This invitation is no longer valid — ask your tutor for a new link".
+- **Invalid, expired, used or revoked:** one message, "This invitation is no longer valid — ask your tutor for a new link"; a link revoked by the 90-day erasure of the card's email answers the same.
+- **Privacy policy link:** the page shows one link "Privacy policy" ("Политика конфиденциальности") under the invitation sentence for every card, with or without an email, so it reveals nothing about the card, and also with the invalid-link message; the link is the plain address `/privacy`, with no token, query or fragment, and opens in a new tab with `rel="noopener noreferrer"`, as do the consent and agreement links of this page (pending implementation by L2 for the policy link and L1 for the others).
 - **The page** never shows the invitee's email, removes the link's secret part from the address bar on its first render (before the session has loaded), and keeps it in memory only, never in `next`. Its address `/invite/{token}` is replaced with `/invite`; opened as `/invite` alone (for example after a reload), it shows "Open the link from your tutor again".
 - **Phone** (slice 10 change G0, page group G3, pending owner review): the tutor's avatar, name and subjects stack above the invitation sentence; "Create account" and "Sign in to accept" (or "Accept" and "Use another account") stack at the full width, each a target of at least 44 px: "Create account", "Sign in to accept" and "Accept" as buttons, and "Use another account" as a full-width text button with the look it has on computers, because the tutor-explanation panel shares that sign-out control (owner's decision of 2026-11-22, recorded by slice 10 change A1, pending owner review); and the forms open in place in one column. The layout adds no request, address, history entry or storage: the address is still replaced on the first render, the token stays in memory and never enters `next`, and the page sends `Referrer-Policy: no-referrer` as before (T-27).
+
+### Legal documents
+
+FR-1.1. The privacy policy, the consent text and the user agreement ([ADR-0024](../../../docs/decisions/0024-legal-documents-and-student-data.md), change L0 of the [interface rework plan](../../plans/ui-rework.md), pending owner review; pending implementation by L1):
+
+- **Addresses:** `/privacy`, `/consent` and `/terms` ([public addresses](navigation.md#public-addresses)), reachable signed in or out in the public frame, with the document's title as the page heading.
+- **Texts** live in the repository as `frontend/src/legal/{ru,en}/{privacy,consent,terms}.md` (owner's decision of 2026-11-23), part of the frontend build like the interface catalogues. The Russian text is the binding version and the English one its translation, which says so in its own text. Each file records its version, its date and its review status (`draft` until a lawyer has reviewed it, then `reviewed`); the page shows the version and date under the heading. No text is published before the lawyer's review at the first deployment, as [ADR-0024](../../../docs/decisions/0024-legal-documents-and-student-data.md) and the [roadmap](../../../docs/roadmap.md#before-the-pilot) require, and a check fails when a deployment configuration exists while any text is `draft`.
+- **Rendering:** each text is written in the [restricted Markdown](../../specs/homework.md#restricted-markdown) subset and rendered by its one shared renderer, never as raw HTML, in the interface language; a section title is a bold paragraph and a table is written as a list, because the renderer is not widened for these pages. The pages load nothing from a third party and keep the content security policy and `frame-ancestors 'none'` unchanged.
+- **The version accepted:** the consent's version and time are recorded at sign-up ([registration](../../specs/accounts.md#registration-and-email-verification)); the user agreement accepted is the version in force at the account's creation, as the file's history shows.
+- **Phone:** one column in the public frame on phones, the text at `text-body-phone`.
 
 ### Confirmation, password reset, unsubscribe
 
@@ -217,7 +229,7 @@ FR-2.1, FR-2.3, FR-2.5.
 
 ### Student card
 
-Pending the change that follows [ADR-0024](../../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), an invited card whose email was erased after 90 days refuses Regenerate and Send until the tutor enters an email, and withdrawn, merged and purged students' cards lose or relabel their names (pending owner review).
+The erasure marker's block below follows [ADR-0024](../../../docs/decisions/0024-legal-documents-and-student-data.md), as specified by change L0 of the [interface rework plan](../../plans/ui-rework.md) on 2026-11-23 (pending owner review; pending implementation by L3). A withdrawn, merged, removed or purged card is `discarded` and outside the tutor's scope, so the card page never shows an erased name: it answers as a card that is no longer on the list, and the tutor's other pages show the fixed label of [states](states.md) in its place.
 
 FR-2.5, FR-2.7, FR-11.3.
 
@@ -230,6 +242,7 @@ FR-2.5, FR-2.7, FR-11.3.
 
   In slice 3 the card shows the header, groups and notes; the tabs arrive with the slices that add lessons and work.
 - **Invited card:** the invitation link with Copy, Send and Regenerate, its expiry, "Link revoked after repeated wrong emails" when the mismatch limit revoked it, and "Withdraw invitation".
+- **Invited card whose email was erased** (`email_erased: true`, pending implementation by L3): the invitation block shows no link and no Copy, Send or Regenerate, only the line "The email was removed because the invitation was not accepted within 90 days, and the link no longer works. Enter an email to create a new link." ("Почта удалена, потому что приглашение не приняли за 90 дней, и ссылка больше не работает. Укажите почту, чтобы создать новую ссылку.") and the button "Enter email" ("Указать почту"), which opens "Name and email…" with that dialog's own focus rule; a saved email shows the new link as for any invited card. A Regenerate or Send refused with `email_erased` because the erasure ran while the card was shown closes any dialog and shows the changed-meanwhile notice above the reloaded card, which takes focus.
 - **Provisional card:** the badge "Email not confirmed", the account's name and email, and "End working together", which removes the student after a dialog explaining that the link is discarded and a new card with a fresh link replaces it (Cancel focused first; the dialog's button is "End"); the new card then opens with the notice "The link was removed. This new card has a fresh invitation link."
 - **Reclaim-pending card:** the badge "Waiting for the student", the line "The owner of this email is deciding whether to keep studying with you", no account details, and the same "End working together", whose dialog says that the owner has not chosen yet and is not told.
 - **A dialog action refused because the card changed meanwhile** (for example a removal answering `relationship_not_provisional` after the owner kept the link, or a withdrawal of a card that was linked) closes the dialog and shows the notice "This card changed in the meantime. Its current state is shown below.", which takes focus, above the reloaded card.

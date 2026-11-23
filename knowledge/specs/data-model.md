@@ -144,24 +144,28 @@ Slice 4 adds three row-level `AFTER` triggers, so every path that revokes a sess
 | `state` | `invited`, `provisional`, `reclaim_pending`, `active`, `ended`, `discarded` |
 | `discard_reason` | `withdrawn`, `merged`, `removed`, `tutor_deleted`, `student_purged`; set exactly when `discarded` |
 | `ended_by` | `tutor`, `student`, `deletion`; set, with `ended_at`, when `ended`, and kept when a student's purge discards an ended row; null in every other state |
-| `display_name` | the tutor's private name for the student, 1–100 characters; for a card created by accepting a join request, a copy of the student's account name at accept time, which the tutor can edit; [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md) erases or relabels it in more cases and relaxes the required length (pending owner review) |
+| `display_name` | the tutor's private name for the student, 1–100 characters when set; for a card created by accepting a join request, a copy of the student's account name at accept time, which the tutor can edit; nullable: null means erased, set only on a `discarded` row, by a withdrawal, a merge, a removal or the student's purge ([ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md), pending owner review; pending implementation by L3 and L4) |
 | `email` | optional, citext, 3–254 characters |
+| `email_set_at` | the time the card's current email was entered or changed, or, on the new card of a removal, the removal time; set exactly when `email` is set; the 90-day erasure counts from it (pending owner review; pending implementation by L3) |
+| `email_erased_at` | the erasure marker: set by the 90-day erasure on an `invited` card, and cleared when the tutor enters an email and by every transaction that moves the card out of `invited` (a withdrawal, a tutor's deletion, a link); while it is set, regenerating and sending are refused (pending owner review; pending implementation by L3) |
 | `colour` | one of the eight palette keys |
 | `notes` | tutor-only, up to 10,000 characters, empty by default |
 | `create_key` | the `Idempotency-Key` of the creating request, nullable |
 | `linked_at`, `ended_at`, `discarded_at` | |
 
-No column follows the student's account name: after a student's purge the tutor's history shows the card's display name, which is the tutor's own data, even where it began as a copy of the account name when a join request was accepted. [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md) replaces this: the purge replaces the display name with a fixed label and erases the notes (pending owner review).
+No column follows the student's account name. A card's display name, email and notes are personal data of the student, not the tutor's own data: they are erased when the card is withdrawn or merged (display name, email and notes), when its provisional or reclaim-pending link is removed (the display name; the notes and email move to the new card), and after 90 days for an unaccepted card's email; the student's purge sets the display name of every row of the student to null, shown as the fixed label `former_student`, and erases the notes, and the tutor's history stays under that label ([ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md), as specified by change L0 of the [interface rework plan](../plans/ui-rework.md), pending owner review; pending implementation by L3 and L4).
 
 Constraints and indexes:
 
+- `display_name` is null only while the state is `discarded`, otherwise 1–100 characters; `email_set_at` is null exactly when `email` is null; `email_erased_at` is set only while the state is `invited` and `email` is null, so every transition out of `invited` clears it (pending owner review; pending implementation by L3);
 - `invited` requires `student_id` to be null; `provisional`, `reclaim_pending`, `active` and `ended` require it to be set; `discarded` allows either;
 - `colour` and `linked_at` are null while `invited` and set in `provisional`, `reclaim_pending`, `active` and `ended`, since the colour is chosen at linking time; a `discarded` row keeps whatever it had;
 - unique `(tutor_id, student_id)` where `student_id` is not null and the state is not `discarded`;
 - unique `(tutor_id, email)` where `email` is not null and the state is not `discarded`;
 - unique `(student_id)` where the state is `provisional`, so an account holds at most one provisional link;
 - `(tutor_id, state, created_at DESC, id DESC)` for the student list, and `(student_id)`;
-- unique `(tutor_id, create_key)` where `create_key` is not null.
+- unique `(tutor_id, create_key)` where `create_key` is not null;
+- partial `(email_set_at, id)` where the state is `invited` and `email` is not null, for `cards.erase_emails` (pending owner review; pending implementation by L3).
 
 ### Invitation
 
@@ -174,7 +178,7 @@ Constraints and indexes:
 | `bound_student_id` | for the link of an `ended` card: the only account that may accept it; references the user, `ON DELETE CASCADE` |
 | `expires_at`, `used_at` | |
 | `used_by` | references the user, `ON DELETE SET NULL` |
-| `revoked_at`, `revoke_reason` | `regenerated`, `withdrawn`, `email_changed`, `mismatch_limit`, `linked`, `removed`, `tutor_deleted`, `expired_on_send` |
+| `revoked_at`, `revoke_reason` | `regenerated`, `withdrawn`, `email_changed`, `mismatch_limit`, `linked`, `removed`, `tutor_deleted`, `expired_on_send`, and `email_erased` for the 90-day erasure of the card's email (pending owner review; pending implementation by L3) |
 | `mismatch_count` | 0–5; the fifth `invitation_email_mismatch` revokes the invitation |
 | `send_count` | emails sent for this invitation; part of the email's idempotency key |
 
@@ -694,7 +698,7 @@ Created by the normal migrations in every database, but written only by the test
 
 ## Purge
 
-Pending the specification change of [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), its retention, erasure and labelling rules govern this section where the two differ (pending owner review).
+The student purge's relationship row below follows [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md), as specified by change L0 of the [interface rework plan](../plans/ui-rework.md) on 2026-11-23 (pending owner review; pending implementation by L4).
 
 What the purge job does 30 days after an account is deleted. Slice 2 implements the rows for users, sessions, email requests and tokens, tutor profiles, and attachments with their references: every upload of the account is deleted, and each still-stored object gets a `storage_delete` outbox row carrying its storage key, so the object is deleted after its row is gone. Throttle counters are pseudonymous and expire with their windows. Slice 3 adds the relationship, invitation, join-request, blocked-requester and group rows; a tutor purge deletes group members, groups, invitations, join requests, blocked requesters and relationships in batches of 500 rows per transaction, each locking the user row and re-checking that the account is still `deleted`, and then deletes the profile and the user in a final transaction. One run of the purge job spends at most 100 such batches across all accounts and the next run continues where it stopped ([account deletion](accounts.md#account-deletion)). Slice 4 adds the notification rows that name the account and the account's email preferences, on every purge path: the 30-day purge, the 7-day cleanup and the immediate purge of an unconfirmed account its owner deletes. Slice 5 adds:
 
@@ -727,7 +731,7 @@ Slice 9 adds, each table's batches in the change that creates the table:
 | Daily answer upload bytes | Cascaded with final user deletion | Deleted in batches after the homework batches; no tutor foreign key |
 | Session, email request, email token | Deleted | Deleted |
 | Tutor profile | — | Deleted |
-| Relationship | On every row of the student, discarded ones included, `student_id` and the card `email` set to null; non-discarded rows become `discarded` (`student_purged`), keeping `ended_at` and `ended_by`, for the tutor's history under the card's display name; a provisional or reclaim-pending link gets the removal effects first, so its tutor gets a new card (also while the tutor is blocked; its link is invalid until the tutor is `active` again); an `active` row is first ended (`deletion`) | Deleted |
+| Relationship | On every row of the student, discarded ones included, `student_id`, the card `email`, `email_set_at` and `display_name` set to null, the name shown as the fixed label `former_student`, and `notes` emptied (pending owner review; pending implementation by L4); non-discarded rows become `discarded` (`student_purged`), keeping `ended_at` and `ended_by`, for the tutor's history under that label; a provisional or reclaim-pending link gets the removal effects first, so its tutor gets a new card (also while the tutor is blocked; its link is invalid until the tutor is `active` again); an `active` row is first ended (`deletion`) | Deleted |
 | Invitation, join request, blocked requester | Invitations bound to the student, and the student's join requests and blocked-requester rows, deleted; `used_by` set to null | Rows of the tutor deleted |
 | Group, group member | Memberships deleted | Groups and memberships deleted |
 | Lesson series, lesson, roster | Roster rows of the student deleted through the `student_id` index in one statement of the transaction that deletes the user row, after the student's relationships are discarded | Deleted in batches: rosters, then lessons, then series, before group members |

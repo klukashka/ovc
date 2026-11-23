@@ -28,16 +28,16 @@ Slice 6 builds chat; the [slice 6 plan](../plans/slice-6.md#3-decisions-the-plan
 
 ### Labels per role
 
-Pending the specification change of [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), its retention, erasure and labelling rules govern this section where the two differ (pending owner review).
+The labels of erased card names below follow [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md), as specified by change L0 of the [interface rework plan](../plans/ui-rework.md) on 2026-11-23 (pending owner review; pending implementation by L4).
 
 Every name a chat response, a digest and a frame-triggered refetch shows. A fixed label travels as a `label_kind` code beside a `null` label, as lessons do.
 
 | Field | Tutor | Student |
 |---|---|---|
-| Direct channel label | the card's own display name, also while `provisional` (never the account name a possibly squatting account chose), with `unconfirmed: true` and the cue "Email not confirmed" while the link is provisional | the tutor's account name and the relationship colour |
+| Direct channel label | the card's own display name, also while `provisional` (never the account name a possibly squatting account chose), with `unconfirmed: true` and the cue "Email not confirmed" while the link is provisional; after the student's purge, the fixed label `former_student` ("Former student") of the [label table](schedule.md#labels-per-role), never the account name; the read-only channel keeps the tutor's own messages, which the tutor may delete | the tutor's account name and the relationship colour |
 | Group channel label | the group's name and colour | the group's name, with the tutor's account name and the relationship colour as its tutor label |
-| Sender of a message | the card's display name for a student of the tutor; "You" for the tutor's own | the tutor's account name; another student's account name, on that student's messages only; "You" for the student's own |
-| Group members in the conversation header | card display names | none: the header shows the group's name and tutor label only |
+| Sender of a message | the card's display name for a student of the tutor; "You" for the tutor's own; a purged sender as in the row "Sender purged" | the tutor's account name; another student's account name, on that student's messages only; "You" for the student's own |
+| Group members in the conversation header | card display names, never account names | none: the header shows the group's name and tutor label only |
 | Typing indicator | the card's display name | the tutor's account name; for another student "Someone is typing…" |
 | Presence | every member's, in writable channels only | the tutor's only, in a writable channel only; never another student's |
 | Sender whose account is `deleted` | `label_kind: deleted_user` ("Deleted user"), body kept until the purge | the same |

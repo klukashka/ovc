@@ -36,18 +36,20 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 
 ## Public addresses
 
-Pending the change that follows [ADR-0024](../../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), the consent checkbox links a separate consent text, the sign-up and invitation pages gain a line accepting the user agreement, and the invitation page always links the privacy policy (pending owner review).
+The legal document addresses and links below follow [ADR-0024](../../../docs/decisions/0024-legal-documents-and-student-data.md), as specified by change L0 of the [interface rework plan](../../plans/ui-rework.md) on 2026-11-23 (pending owner review): `/consent`, `/terms`, the consent link and the acceptance line are pending implementation by L1, and the invitation page's policy link by L2.
 
 | Address | Page | Notes |
 |---|---|---|
 | `/` | Sign in | Signed-in users are redirected to their home page |
 | `/signup` | Choose: "I teach" or "I study" | |
-| `/signup/tutor`, `/signup/student` | Sign-up form | Consent checkbox, language preselected from the interface language, which follows the browser until the person chooses one; `/signup/student` is the sign-up with a required tutor code, with a hint to open the tutor's link instead ([ADR-0014](../../../docs/decisions/0014-students-join-through-their-tutor.md)) |
+| `/signup/tutor`, `/signup/student` | Sign-up form | Consent checkbox linking `/consent`, the acceptance line under the button linking `/terms`, language preselected from the interface language, which follows the browser until the person chooses one; `/signup/student` is the sign-up with a required tutor code, with a hint to open the tutor's link instead ([ADR-0014](../../../docs/decisions/0014-students-join-through-their-tutor.md)) |
 | `/verify-email?token=` | Email confirmation result | Then continues to the home page, or to `/reclaim` when the outcome is `choice_required`; without a token, a signed-in unverified account sees "Check your email" with a resend button |
 | `/forgot-password`, `/reset-password?token=` | Password reset | After a reset answering `choice_required`, the next sign-in lands on `/reclaim` |
-| `/invite/{token}` | Accept invitation | Reachable signed in or out, also while a reclaim choice is pending; shows the tutor; create an account or sign in in place, or accept while signed in; the address becomes `/invite` on the first render, and `/invite` alone asks to open the link again |
+| `/invite/{token}` | Accept invitation | Reachable signed in or out, also while a reclaim choice is pending; shows the tutor and, for every card and beside the invalid-link message too, a link to `/privacy` that opens in a new tab and carries no token; create an account (with the consent checkbox and the acceptance line, as on sign-up) or sign in in place, or accept while signed in; the address becomes `/invite` on the first render, and `/invite` alone asks to open the link again |
 | `/unsubscribe?token=` | Unsubscribe confirmation | Works without signing in and never signs in; the address becomes `/unsubscribe` on the first render, and `/unsubscribe` alone shows the invalid-link message |
-| `/privacy` | Privacy policy | Linked from the consent checkbox; a placeholder until the owner supplies the text |
+| `/privacy` | Privacy policy | Reachable signed in or out; linked from the invitation page and from the invitation email; renders `frontend/src/legal/{ru,en}/privacy.md` ([legal documents](pages.md#legal-documents)) |
+| `/consent` | Consent to the processing of personal data | Reachable signed in or out; linked from the consent checkbox; renders `frontend/src/legal/{ru,en}/consent.md` |
+| `/terms` | User agreement | Reachable signed in or out; linked from the acceptance line under the sign-up and invitation buttons; renders `frontend/src/legal/{ru,en}/terms.md` |
 
 ## Tutor addresses
 
