@@ -1,6 +1,6 @@
 # Functional requirements
 
-Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after design review and for the student Home content (FR-15.3); FR-5.4 to FR-5.6, FR-11.2 to FR-11.4 and the recording storage email of FR-13.2 moved after the MVP on 2026-10-22 by the owner's decision; FR-1.1 to FR-1.3, FR-1.7, FR-2.2, FR-2.3, FR-2.7 and FR-13.2 amended and FR-2.8 added on 2026-10-22 by ADR-0014; FR-2.6 amended on 2026-10-25 with an exception for notifications about join requests that never formed a relationship, pending owner review; FR-12.3 and FR-12.4 amended on 2026-10-29 with the owner's decisions on the slice 6 plan (deletes in read-only chats, students' view of other students), pending owner review; FR-1.1 and FR-1.7 given pointers to ADR-0024 on 2026-11-23 and rewritten for it the same day by change L0 of the interface rework plan, pending owner review; pending line-by-line owner review.
+Status: rewritten 2026-10-20 for the tutor-centric product and amended the same day after design review and for the student Home content (FR-15.3); FR-5.4 to FR-5.6, FR-11.2 to FR-11.4 and the recording storage email of FR-13.2 moved after the MVP on 2026-10-22 by the owner's decision; FR-1.1 to FR-1.3, FR-1.7, FR-2.2, FR-2.3, FR-2.7 and FR-13.2 amended and FR-2.8 added on 2026-10-22 by ADR-0014; FR-2.6 amended on 2026-10-25 with an exception for notifications about join requests that never formed a relationship, pending owner review; FR-12.3 and FR-12.4 amended on 2026-10-29 with the owner's decisions on the slice 6 plan (deletes in read-only chats, students' view of other students), pending owner review; FR-1.1 and FR-1.7 given pointers to ADR-0024 on 2026-11-23 and rewritten for it the same day by change L0 of the interface rework plan, pending owner review; FR-7.6, FR-8.5 and FR-18 added and FR-12.2 to FR-12.4, FR-13.2 and FR-13.3 amended on 2026-11-23 by change U1b of the interface rework plan, pending owner review; pending line-by-line owner review.
 
 What OVC must do, numbered so that specifications, tests, pages and plans can cite them. Each section links the specification that defines the exact behavior. Roles are **tutor**, **student** and **operator** (command line only). The [product overview](../product.md) explains the intent; this file is normative.
 
@@ -77,8 +77,9 @@ Specified in [library](../../knowledge/specs/homework.md#library).
 - **FR-7.3** Long text and file answers are checked by the tutor.
 - **FR-7.4** Every question has points and an optional explanation shown with the correct answer.
 - **FR-7.5** The builder previews the assignment as a student will see it.
+- **FR-7.6** Besides the builder, a tutor can write a task on one page, attaching files and pictures while writing it, add questions of any of the six types to one list, and issue it in the same flow; the task is saved as an ordinary template that the builder opens (amended 2026-11-23 by change U1b of the [interface rework plan](../../knowledge/plans/ui-rework.md) with [proposal 0007](../proposals/0007-tutor-crm-scope.md), pending owner review).
 
-Specified in [assignment blocks](../../knowledge/specs/homework.md#assignment-blocks), [short-answer normalisation](../../knowledge/specs/homework.md#short-answer-normalisation).
+Specified in [assignment blocks](../../knowledge/specs/homework.md#assignment-blocks), [short-answer normalisation](../../knowledge/specs/homework.md#short-answer-normalisation), [the one-page task](../../knowledge/specs/homework.md#the-one-page-task).
 
 ## FR-8 Issuing assignments
 
@@ -86,6 +87,7 @@ Specified in [assignment blocks](../../knowledge/specs/homework.md#assignment-bl
 - **FR-8.2** Issuing takes a snapshot; later template edits do not change it.
 - **FR-8.3** Issuing to a group creates separate work for each member at that moment; members added later receive it only if the tutor issues it again.
 - **FR-8.4** A tutor withdraws issued work that no student has submitted; the students are notified and it disappears from their lists.
+- **FR-8.5** A task written on one page (FR-7.6) is issued from that page with the same choices of audience, deadline and answer visibility as FR-8.1, and with the same snapshot (amended 2026-11-23 by change U1b of the [interface rework plan](../../knowledge/plans/ui-rework.md) with [proposal 0007](../proposals/0007-tutor-crm-scope.md), pending owner review).
 
 Specified in [issuing](../../knowledge/specs/homework.md#issuing), [answer visibility](../../knowledge/specs/homework.md#answer-visibility).
 
@@ -119,9 +121,9 @@ Specified in [analytics](../../knowledge/specs/homework.md#analytics).
 ## FR-12 Chat
 
 - **FR-12.1** Each tutor–student relationship has a private chat; each group has a group chat for the tutor and the members. Students cannot chat privately with each other.
-- **FR-12.2** Messages appear live and stay as history. Members can send files and pictures; pictures show a preview.
-- **FR-12.3** An author edits their own message within 24 hours and deletes it at any time; the tutor deletes any message in their private and group chats. Deleting stays possible in read-only chats, editing does not (amended 2026-10-29 by the owner's decision on the slice 6 plan, pending owner review).
-- **FR-12.4** Users see unread counts, who is online and who is typing. A student sees only their tutor's presence, never another student's, and sees that another student is typing without the student's name (amended 2026-10-29 by the owner's decision on the slice 6 plan, pending owner review).
+- **FR-12.2** Messages appear live and stay as history. Members can send files and pictures; pictures show a preview, and several pictures of one message show as an album. A message may reply to an earlier message of the same chat, which it quotes; the tutor pins one message per chat; members search the text of the messages they can read in one chat (amended 2026-11-23 by change U1b of the [interface rework plan](../../knowledge/plans/ui-rework.md) with [proposal 0007](../proposals/0007-tutor-crm-scope.md), pending owner review).
+- **FR-12.3** An author edits their own message within 24 hours and deletes it at any time; the tutor deletes any message in their private and group chats. Deleting stays possible in read-only chats, editing does not (amended 2026-10-29 by the owner's decision on the slice 6 plan, pending owner review). Members react to a message with one of a small fixed set of reactions; a student sees how many members reacted, never which other student did. In a read-only chat no new reply, reaction or pin is made, and the tutor may still unpin (amended 2026-11-23 by change U1b of the [interface rework plan](../../knowledge/plans/ui-rework.md) with [proposal 0007](../proposals/0007-tutor-crm-scope.md), pending owner review).
+- **FR-12.4** Users see unread counts, who is online and who is typing. A student sees only their tutor's presence, never another student's, and sees that another student is typing without the student's name (amended 2026-10-29 by the owner's decision on the slice 6 plan, pending owner review). In a private chat each member sees whether the other has read their messages (one tick when sent, two when read), from reads made while both members are active and the chat is writable; while the chat is read-only the ticks stay as they were; group chats show no read state, so students never learn about each other's reading (amended 2026-11-23 by change U1b of the [interface rework plan](../../knowledge/plans/ui-rework.md) with [proposal 0007](../proposals/0007-tutor-crm-scope.md), pending owner review).
 - **FR-12.5** Chats of ended relationships and archived groups are read-only.
 
 Specified in [chat](../../knowledge/specs/realtime-and-video.md#chat).
@@ -138,8 +140,9 @@ Specified in [chat](../../knowledge/specs/realtime-and-video.md#chat).
   - unread messages, as a digest;
   - invitations, email confirmation and password reset, and a notice when someone tries to sign up with their email;
   - a relationship ended (to the other party: the student when the tutor ends it, the tutor when the student ends it) or a tutor's account deleted (to students) (amended 2026-10-22 by [ADR-0014](../decisions/0014-students-join-through-their-tutor.md), pending owner review);
-  - recording storage full (to the tutor) (after the MVP, by the owner's decision of 2026-10-22).
-- **FR-13.3** Users turn off each optional email group in settings or with one click from the email. Invitation, confirmation, password-reset, duplicate sign-up notice, relationship-ended, tutor-deleted and (after the MVP) storage-full emails cannot be turned off.
+  - recording storage full (to the tutor) (after the MVP, by the owner's decision of 2026-10-22);
+  - an export of their data requested (to the account's own confirmed address) (amended 2026-11-23 by change U1b of the [interface rework plan](../../knowledge/plans/ui-rework.md) with [proposal 0007](../proposals/0007-tutor-crm-scope.md), pending owner review).
+- **FR-13.3** Users turn off each optional email group in settings or with one click from the email. Invitation, confirmation, password-reset, duplicate sign-up notice, relationship-ended, tutor-deleted, export-requested and (after the MVP) storage-full emails cannot be turned off.
 - **FR-13.4** Emails use the recipient's language and timezone and reflect the lesson as it is when the email is sent.
 
 Specified in [notifications](../../knowledge/specs/notifications.md).
@@ -172,3 +175,12 @@ Specified in [administration command](../../knowledge/specs/accounts.md#administ
 - **FR-17.2** Dates, times, numbers and plurals follow the user's language. Content written by users is never translated.
 
 Specified in [localisation](../../knowledge/design/web/states.md#localisation).
+
+## FR-18 Export of a user's data
+
+Added 2026-11-23 by change U1b of the [interface rework plan](../../knowledge/plans/ui-rework.md) with [proposal 0007](../proposals/0007-tutor-crm-scope.md), pending owner review; pending implementation by changes E1 and E2.
+
+- **FR-18.1** A tutor or a student whose email is confirmed requests an export of their data in settings, confirming it with their current password; an email that cannot be turned off tells them an export was requested. The export is built in the background, the user receives an in-app notification when it is ready or has failed, and downloads it as one ZIP archive through a short-lived authorized download. Each user holds at most one export; at most one export is started per 24 hours, not counting a failed, cancelled or withdrawn one; a built export is kept 3 days and then deleted. It is deleted earlier when data it holds becomes unreadable in OVC, for example after another person's deletion or purge, an ended relationship, a removal from a group or an erasure. The user can cancel or delete it at any time.
+- **FR-18.2** The archive holds what the user can read in OVC, under the same rules as the pages: tables as XLSX workbooks, the user's lessons as one iCalendar file, the files the user can download, and a JSON copy with a format version. A tutor's export holds only their own students, groups, lessons, issued work with scores and reviews, library, private notes and chats; a student's export holds their tutors, lessons, homework with published feedback, never answer keys before the visibility policy allows them and never points or scores, and their chats, never a tutor's private notes or a card's email. No cell becomes a formula and no file name inside the archive can leave its folder.
+
+Specified in [exports](../../knowledge/specs/files.md#exports) and [the export routes](../../knowledge/specs/api.md#export).

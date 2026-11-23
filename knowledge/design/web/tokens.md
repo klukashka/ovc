@@ -68,6 +68,7 @@ Times, dates and counts use tabular figures (`font-variant-numeric: tabular-nums
 | `info` | `#3F5E7A` | `#93B3D1` | Submitted, informational |
 | `live` | `#A3352A` | `#E58A7C` | Lesson live now, recording (always with its word and the live dot) |
 | `scrim` | `rgba(38,36,31,.32)` | `rgba(0,0,0,.5)` | The dimmed page behind a modal overlay (decorative) |
+| `mine` | `#ECEEDF` | `#2B3023` | The bubble of the caller's own messages in Messages; others' bubbles use `surface` (interface rework stage, specified 2026-11-23 by change U1b from the prototype the owner approved, pending owner review; pending implementation by M1) |
 
 Measured contrast:
 
@@ -84,6 +85,7 @@ Measured contrast:
 | `icon` on `bg` / `sidebar` / `hover` | 4.7 / 4.5 / 4.1 | 5.8 / 5.5 / 4.6 |
 | `border-strong` on `bg` / `surface` / `field` | 3.3 / 3.4 / 3.6 | 3.8 / 3.5 / 3.2 |
 | `focus` on `bg` / `surface` | 5.3 / 5.5 | 7.5 / 7.0 |
+| `text` / `text-muted` / `accent-text` on `mine` (computed 2026-11-23 with the WCAG 2 formula) | 13.2 / 4.9 / 6.8 | 11.1 / 5.5 / 7.3 |
 
 Every text pair meets WCAG AA for normal text (4.5:1); `icon`, `border-strong` on every background a control sits on (`bg`, `surface`, `field`) and the focus ring meet 3:1. Controls therefore never change their own fill to `hover`: a hovered quiet button fills with `surface`, and the segmented control's track is `hover` with its selected segment on `field` outlined by `border-strong` (3.6:1 against the segment's own `field`; against the track it is 2.8:1, so the pressed segment also changes its label to `text` and weight 500). The current sidebar item's `hover` fill is decorative; it is identified by weight 500 and `aria-current`. `border` (1.2:1 light, 1.4:1 dark) is used only where the boundary carries no meaning.
 
@@ -126,6 +128,21 @@ Group colours use the same palette.
 - **Panel:** `surface` with a 1 px `border` and `radius-l`, padding 20–24 px.
 - **News dot:** a 7 px `accent-text` dot on an icon button that hides counts (the hidden sidebar's "Show sidebar" button); never the only signal, the accessible name says it too.
 - **Inputs:** `field` background, 1 px `border-strong`, `radius-m`, `text-body-phone` size at every width. A large title input (the assignment title) keeps at least a bottom `border-strong` rule.
+
+## Shared interface rules
+
+The interface rework stage's shared rules ([plan](../../plans/ui-rework.md), D4 and D5, from the UI guidelines research's gaps G5, G9 to G13, G17, G19 to G21 and G23), written once here and built once in `frontend/src/components/ui/` (interface rework stage, specified 2026-11-23 by change U1b from the prototype the owner approved, pending owner review; pending implementation by U2):
+
+- **Dialog and form buttons:** the primary or danger action comes first, on the left, then a quiet Cancel. A danger button uses `danger` for its label and outline (a filled `danger` button only for the final confirmation of a deletion) and names the consequence in its label ("Delete the group", "Remove from the group"), never colour alone or "OK".
+- **Error summary:** a form with more than three fields shows, on a refused submit, a summary above the form in the `danger` notice style: a heading ("Check these fields") and a list of links, one per problem, each with the same wording as its inline message and moving focus to its field; the summary takes focus when it appears. Forms of three fields or fewer show inline messages only.
+- **Inline errors:** an inline message clears as soon as its field becomes valid, on input, not on the next submit; a server refusal stays until the field changes.
+- **Optional fields and hints:** an optional field's label ends with "(optional)"; a hint stands below the label and above the field, linked by `aria-describedby`; a placeholder is never the only label.
+- **Temporarily unavailable buttons** stay focusable with `aria-disabled="true"` and say when they become available, for example "Send again in 42 s", updated at most once a second and announced only when they become available.
+- **Failures and results:** a failed action shows its error inline in the page, near the action, as a notice; toasts report results only, never a failure.
+- **Reading width:** running text (descriptions, instructions, feedback, legal text) is capped at 68 `ch`; tables, the calendar and Messages are not.
+- **Type scale:** `text-caption` merges into `text-label`: counts and timestamps use `text-label` at weight 500, section labels keep weight 600; `text-small` and `text-body` stay two sizes on computers as the prototype shows them, and the phone sizes do not change, because the phone design is deferred.
+- **Tabs and filters:** one pattern per concept: ARIA tabs (`tablist`, arrow keys) for panels inside one page, links styled as tabs for sections that are routes (the Homework tabs, Settings sections), a segmented control for a filter of up to four options and a select beyond four. The back link keeps its order below the page header, as the owner decided on 2026-11-22.
+- **Long forms are pages:** New lesson and Issue are routes at every width (`/schedule/new`, `/homework/issue`, [navigation](navigation.md#tutor-addresses)), so resizing never switches between a dialog and a page; arriving moves focus to the page heading, a browser Back leaves them, and leaving returns focus to the control that opened the page when the page the user came from still holds it.
 
 ## Illustration and iconography
 

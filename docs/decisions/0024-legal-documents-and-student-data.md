@@ -1,6 +1,6 @@
 # ADR-0024: Legal documents and the retention of student data
 
-- Status: accepted, 2026-11-23
+- Status: accepted, 2026-11-23; its retention rules gain the export's 3-day retention, added 2026-11-23 by change U1b of the interface rework plan (pending owner review)
 - Reviewed: decided by the project owner on 2026-11-22 and 2026-11-23 with [proposal 0006](../proposals/0006-legal-documents-and-student-data.md); wording pending owner review
 - Deciders: project owner
 - Amends: [ADR-0008](0008-hosting-and-data-residency.md): the privacy policy, the consent text and the user agreement live in the repository as public pages, while registration with the data-protection authority stays an owner obligation; retention bounds are added and the data still without a bound is listed below as open against ADR-0008's retention consequence
@@ -25,6 +25,7 @@ OVC has no privacy policy (the `/privacy` page is a placeholder), no consent tex
    - removing a provisional or reclaim-pending link, by any path that applies the removal effects of the accounts specification (the tutor's removal, the student stopping studying, a dropped or expired reclaim, the 7-day cleanup, a student account's deletion or purge), erases the display name that the discarded row keeps, in the same transaction; the notes and email move to the new invited card as before;
    - when a purged student held a provisional or reclaim-pending link, the replacement invited card stays a live card the tutor sees, with the notes and email moved onto it; its email falls under the 90-day rule counted from the removal;
    - a student's purge, over every relationship row of the student including discarded ones, replaces the card's display name with a fixed label and erases its notes; lesson and issue history stays under the label; the student's direct chat keeps the tutor's own messages, which the tutor may delete. The documents say "replaces the name with a fixed label", never "anonymises": chat, issue content and dates may still identify the student.
+   - an export of a user's data (FR-18) is kept at most 3 days after it was built, and deleted earlier with its storage object when data it holds becomes unreadable in OVC, as the [files specification](../../knowledge/specs/files.md#exports) lists the effects; the user agreement says that a user is responsible for an export once downloaded, `[verify]` for the lawyer (added 2026-11-23 by change U1b of the [interface rework plan](../../knowledge/plans/ui-rework.md), pending owner review).
 
 ### Constraints on the implementation
 

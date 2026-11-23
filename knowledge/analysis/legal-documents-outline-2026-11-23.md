@@ -21,6 +21,7 @@ Written 2026-11-23. Agent analysis, not legal advice and not the final texts: it
   - mail provider logs at most 30 days, a selection condition the provider has yet to confirm;
   - the bounce event stream at its shortest available retention;
   - recordings, once they exist, at most 365 days by the tutor's setting.
+  - a user's data export (FR-18): one ZIP archive per user in object storage, kept at most 3 days after it was built and deleted earlier when data in it becomes unreadable in OVC (another person's deletion or purge, an ended or discarded relationship, a removal from a group, an erasure); a copy the user downloaded is outside the operator's systems (added 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md), pending owner review).
 - **No transfer abroad** at launch; web push adds the browser vendors' push services only after its own assessment and an update of all three documents.
 - One version identifier per document; the consent version is the backend constant `CurrentConsentVersion`, and a changed consent text changes it.
 
@@ -40,6 +41,7 @@ Required by item 2 of part 1 and part 2 of article 18.1; published at `/privacy`
    - homework, answers and reviews published to the student, points and scores visible only to the tutor, all kept readable after a relationship ends;
    - service email, its preferences and the undeliverable marks from the mail provider;
    - administration: account blocking and the operator's audit trail;
+   - the export of a user's own data at their request (FR-18): the archive holds what the user can read in OVC, including other people's data visible to them (a tutor's students' names, notes, answers and chat messages; a student's tutors' names and group chats), built by the operator's worker, kept at most 3 days, confirmed with the current password and announced by email; `[verify]` whether handing a tutor their students' data as files changes the purpose or needs a mention in the consent text;
    - logs and security, including the minimal records of unfinished file cleanup.
 5. Processors by name and what each receives.
 6. Localization: all databases in Russia (article 18 part 5).
@@ -76,6 +78,7 @@ A public offer of a free service, accepted by pressing the sign-up button with a
 5. The student's position: one account across several tutors; each tutor sees only their own relationship; scores are never shown to students.
 6. Content rules: prohibited content, harassment, spam; complaint address; blocking and removal by the operator.
 7. Uploaded materials: the user keeps rights and grants OVC a licence limited to storing and showing them to the intended participants; responsibility for third-party rights.
+7a. Exported data (FR-18): a user who downloads an export of their data is responsible for the files once downloaded; a tutor keeps their students' data from an export only for teaching those students, protects it and deletes it when the purpose ends `[verify]` whether this obligation is enforceable against a tutor who is a user, not an operator, and how it fits the warranty of item 4.
 8. Lessons and, after the MVP, recordings: who sees them, retention, informing participants.
 9. Deleting an account and ending relationships: effects as FR-1.7 and FR-2.7 describe, 30 days of read-only results for students of a deleted tutor.
 10. Availability and liability: service as is, limits of liability as far as the law allows `[verify]` consumer-protection limits for a free service.
@@ -91,6 +94,7 @@ Each needs its own specification and code change with a plan and reviews; none i
 - The invitation email: one fixed line with the operator and a link to the policy on OVC's origin; changes the notifications specification and T-31.
 - An unaccepted card loses its email after 90 days, revoking its open invitation in the same transaction, and withdrawn and merged cards lose display name, email and notes at once; changes the invitations specification, T-7, T-23 and T-34.
 - Three public pages instead of the `/privacy` placeholder, in Russian and English.
+- The export (FR-18): the policy's purposes and retention, and the agreement's point on downloaded exports; changes T-48 and the files specification (added by change U1b, pending owner review).
 
 ## Facts the policy needs that the repository does not settle
 

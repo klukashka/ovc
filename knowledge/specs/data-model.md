@@ -400,6 +400,7 @@ Slice 6 adds these tables; behavior is in [chat](realtime-and-video.md#chat). Mi
 | `provisional_through_seq` | set by a reclaim to `last_seq`: every message up to it was written during the provisional period |
 | `discarded_at` | set by a discarding transaction and never cleared |
 | `erase_pending_since` | set with `discarded_at`, cleared by the erasure job when no message is left; partial index where not null, for `chat.erase_channels` |
+| `pinned_message_id` | nullable; the channel's one pinned message, a foreign key on `(id, pinned_message_id)` to the message's unique `(channel_id, id)`, so it can only name a message of the same channel; set and cleared by the tutor under the channel's `FOR UPDATE` lock, and cleared in the transaction that deletes or erases that message, by the delete, the sender's purge and the erasure job; the tutor purge clears it before deleting the channel's messages (specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md), pending owner review; pending implementation by M2) |
 
 ### Channel member
 
@@ -411,6 +412,7 @@ Slice 6 adds these tables; behavior is in [chat](realtime-and-video.md#chat). Mi
 | `last_read_at` | |
 | `digested_through_seq` | the highest sequence a digest has counted for this member; starts at the channel's `last_seq` |
 | `suspended_since` | set while the student's link is `reclaim_pending`; a suspended row grants nothing |
+| `shared_read_seq` | the read marker the other member of a direct channel may see: a read-marker move sets it to the new `last_read_seq` only while the channel is writable and both member rows are active (not suspended), so it stays frozen while the channel is read-only or the student's row is suspended, and moves again with the member's first read after a restore; a write that lowers `last_read_seq` (keeping a reclaimed link) lowers it to the same value; a new row starts at `last_read_seq`; unused in group channels (specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md), pending owner review; pending implementation by M3) |
 
 Primary key `(channel_id, user_id)`, and an index on `user_id`. Membership rows mirror the relationship or group and are updated in the same transaction.
 
@@ -428,8 +430,22 @@ The one active-member predicate ([channels](realtime-and-video.md#channels)) is 
 | `body` | 0 to 4,000 code points of plain text as entered; erased (null) on deletion and on the sender's purge |
 | `version` | incremented on every edit; edits are conditional on it |
 | `created_at`, `edited_at`, `deleted_at`, `erased_at` | |
+| `reply_to_message_id` | nullable; M2's migration adds the unique key `(channel_id, id)` on messages that this column's and `channels.pinned_message_id`'s foreign keys reference; the message this one replies to, a foreign key on `(channel_id, reply_to_message_id)` to the message's `(channel_id, id)` with `ON DELETE SET NULL (reply_to_message_id)`, so a reply can only name a message of its own channel and loses the link when the tutor purge deletes the quoted message; set only by the send and never changed by an edit; an index on it where not null (specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md), pending owner review; pending implementation by M2) |
 
 A message's attachments are references with `ref_kind = message` and `ref_id` the message's identifier.
+
+### Message reaction
+
+Specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md) (pending owner review; pending implementation by M5).
+
+| Column | Notes |
+|---|---|
+| `message_id` | references the message `ON DELETE CASCADE` |
+| `user_id` | the member who reacted; no foreign key to the user, for the reason given for member rows; indexed, so every purge path deletes the account's reactions through it |
+| `reaction` | one of the six values of the `Reaction` enum in `internal/domain` ([messages](realtime-and-video.md#messages)), checked |
+| `created_at` | |
+
+Primary key `(message_id, user_id)`: one reaction per member and message. A delete of the message deletes its reactions in the same transaction, the sender's purge erases the message's body and deletes its reactions, and the student purge's final transaction deletes the account's own reactions under the channel locks with its member rows.
 
 ### Presence and digest bookkeeping
 
@@ -628,6 +644,8 @@ Named phases are `opening`, `streaming`, `completing`, `cleanup` and `uncertain`
 
 A capacity row holds `used`, bounded from zero to 4,096. From slice 8 ([ADR-0022](../../docs/decisions/0022-library-upload-cleanup-adoption.md)) the journal has one capacity row per capacity class: `chat`, bounded to 4,096, and `library`, bounded to 1,024 and shared by the `library` and `prompt_image` contexts; each intent records its class, so its creation reserves and its removal releases that class's row. Migration 00033 keys the capacity rows by `capacity_class`, with a check bounding each class, gives every existing intent the `chat` class, and adds the `library` row at zero; its rollback is refused while any `library` intent or any `library` or `prompt_image` attachment row remains, because the earlier code cannot delete their objects, and otherwise restores the single row with the chat count. From slice 9 a third class, `homework`, bounded to 1,024 and shared by the `answer` and `corrected` contexts, is added at zero by migration 00039 of the upload contexts change; its rollback is refused while any `homework` intent or any `answer` or `corrected` attachment row remains. Intent creation reserves and terminal removal releases capacity atomically, with that row locked last. A confirmed pending publication removes the intent in the same transaction. An uncertain started Complete retains the journal even after successful Delete; failed/dead results survive ordinary outbox retention. Indexed candidate state and attachment-ID keyset ordering support bounded recovery without taking intent locks before attachment locks.
 
+From [ADR-0025](../../docs/decisions/0025-export-upload-cleanup-adoption.md) (pending owner review; pending implementation by E1) each intent also records its subject kind, `attachment` or `export_build`: for `export_build` the immutable identity column holds the export's build identifier instead of an attachment identifier, the key lies under the `exports/` prefix, and recovery locks the export row with that build identifier, if it exists, instead of an attachment. A fourth capacity row, `export`, bounded to 256, is added at zero by E1's migration, which gives every existing intent the `attachment` kind; its rollback is refused while any `export_build` intent or any export row holding a storage key remains.
+
 Operator receipts have an immutable `(attachment_id, attempt_id UUID)` identity, fixed outbox identity and cycle state. They survive outbox retention until safe intent removal; no total receipt count limit is imposed. Only explicit privileged commands create them. UUID lookup and active-cycle lookup are indexed; paginated inspection returns at most 100 history rows, with no full-history scan under the intent lock. The 4,096-intent capacity does not bound all receipt bytes. See [cleanup rules](files.md#durable-chat-upload-cleanup) for generation and removal evidence.
 
 ### Attachment reference and quota charge
@@ -639,6 +657,27 @@ Operator receipts have an immutable `(attachment_id, attempt_id UUID)` identity,
 - **Quota charge:** `tutor_id`, `attachment_id`, `size_bytes`; primary key on the pair. It is created with the first reference that charges the tutor and deleted with the last one. Every `material`, `template`, `lesson` and `series` reference charges the material's, template's, lesson's or series' tutor; from slice 9 every `issue_snapshot`, `answer` and `review_item` reference charges the issue's tutor.
 - **Same-tutor rule:** a `material`, `template`, `lesson` or `series` reference names a file of that item's own tutor: an attachment the tutor uploaded in the `library` or `prompt_image` context, or the file of one of the tutor's own materials; from slice 9 an `issue_snapshot` reference names a file the issued template references, an `answer` reference a file uploaded in the `answer` context scoped to that submission and question, and a `review_item` reference a file uploaded in the `corrected` context scoped to that submission and question, or one the latest published revision already references; the services check it before inserting, because the reference is polymorphic and has no composite key, and denial tests prove it.
 
+### Export
+
+Specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md) (pending owner review; pending implementation by E1); behavior in [exports](files.md#exports), storage in [ADR-0025](../../docs/decisions/0025-export-upload-cleanup-adoption.md).
+
+| Column | Notes |
+|---|---|
+| `id` | |
+| `user_id` | references the user `ON DELETE RESTRICT`; unique, so a user holds at most one export |
+| `state` | `queued`, `building`, `ready`, `failed`, `expired` |
+| `language`, `timezone` | the account's at request, for the workbook's sheet names, headers and date cells |
+| `requested_at` | the injected clock at request; a partial index on it where `queued` serves the lane's claim |
+| `build_id`, `storage_key` | random and unique, set together at build start and never reused; `storage_key` under `exports/`, never returned; `storage_key` is cleared when the object's deletion is queued |
+| `build_started_at` | a partial index where `building` serves the recovery pass of `exports.recover` |
+| `progress_done`, `progress_total` | counts of items while `building` |
+| `built_at`, `size_bytes`, `expires_at` | set by publication; a partial index on `expires_at` where `ready` serves `exports.expire` |
+| `failure` | `error`, `too_long`, `too_large`, `withdrawn`; set exactly while `failed` |
+
+Checks tie the columns to the states: `queued` holds no build identifier or key; `building` holds both and `build_started_at`; `ready` holds the key, `built_at`, `size_bytes` and `expires_at`; `failed` holds `failure`. The row is locked `FOR UPDATE` before any intent ([lock order](accounts.md#locks-and-the-session-re-check)).
+
+`export_limits` has primary key `user_id` (references the user `ON DELETE CASCADE`), `export_id` (the export whose `ready` publication wrote it) and `allowed_from` (that export's `requested_at` plus 24 hours). Publication upserts it after the export row and before the intent; a withdrawal of that export deletes it; deleting the export itself keeps it.
+
 ## Notifications and worker
 
 ### Notification
@@ -649,10 +688,10 @@ Slice 4. Rows store identifiers only, never names or titles; labels are resolved
 |---|---|
 | `id` | |
 | `user_id` | the recipient |
-| `tutor_id` | the tutor the event concerns |
+| `tutor_id` | the tutor the event concerns; null only for the export events, which concern the recipient's own export, enforced by a check (specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md), pending owner review; pending implementation by E1) |
 | `student_id` | the student the event concerns; nullable |
-| `event` | checked against the five slice 4 events (`invitation.accepted`, `join_request.created`, `join_request.accepted`, `join_request.declined`, `relationship.ended`), widened in slice 5 with `lesson.reminder_1h`, `lesson.moved`, `lesson.cancelled`, `lesson.series_changed` and `group.archived`, and in slice 9 with `issue.created`, `issue.withdrawn`, `submission.submitted`, `submission.checked`, `submission.returned` and `submission.review_updated`; later slices widen the check with their events |
-| `subject_id` | the relationship or the join request; from slice 5 the lesson (for `lesson.series_changed`, the occurrence the tutor acted on) or the group ([in-app producers in slice 5](notifications.md#in-app-producers-in-slice-5)); from slice 9 the submission for the six homework events, also for `issue.created` and `issue.withdrawn`, with `relationship_id` the submission's relationship |
+| `event` | checked against the five slice 4 events (`invitation.accepted`, `join_request.created`, `join_request.accepted`, `join_request.declined`, `relationship.ended`), widened in slice 5 with `lesson.reminder_1h`, `lesson.moved`, `lesson.cancelled`, `lesson.series_changed` and `group.archived`, and in slice 9 with `issue.created`, `issue.withdrawn`, `submission.submitted`, `submission.checked`, `submission.returned` and `submission.review_updated`; from the interface rework stage with `export.ready` and `export.failed` (specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md), pending owner review; pending implementation by E1); later slices widen the check with their events |
+| `subject_id` | the relationship or the join request; from slice 5 the lesson (for `lesson.series_changed`, the occurrence the tutor acted on) or the group ([in-app producers in slice 5](notifications.md#in-app-producers-in-slice-5)); from slice 9 the submission for the six homework events, also for `issue.created` and `issue.withdrawn`, with `relationship_id` the submission's relationship; for the export events the export's identifier (specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md), pending owner review; pending implementation by E1) |
 | `relationship_id` | nullable; for the tutor colour |
 | `idempotency_key` | unique |
 | `created_at`, `read_at` | |
@@ -670,7 +709,7 @@ Slice 4. `user_id` (references the user, `ON DELETE CASCADE`), `email_group` (`l
 |---|---|
 | `id` | |
 | `lane` | `email`, `provider_call`, `recording_copy`, `storage_delete` |
-| `kind` | |
+| `kind` | the event or effect name; the `storage_delete` lane gains `export_intent` and `export_object` ([ADR-0025](../../docs/decisions/0025-export-upload-cleanup-adoption.md), pending owner review; pending implementation by E1) |
 | `payload` | identifiers only |
 | `priority` | 0 high, 1 normal |
 | `idempotency_key` | unique |
@@ -747,6 +786,8 @@ Slice 9 adds, each table's batches in the change that creates the table:
 | Upload cleanup intent and operator receipt | Minimal unresolved technical records survive purge independently until safe terminal cleanup; no account/channel identifier is retained | Same |
 | Notification | Every row whose `user_id`, `tutor_id` or `student_id` is the student deleted, through their indexes, inside the purge's batches | Every row whose `user_id`, `tutor_id` or `student_id` is the tutor deleted, likewise |
 | Email preference | Removed with the user row (`ON DELETE CASCADE`) | Same |
+| Message reaction (pending implementation by M5) | The account's own reactions deleted in the final transaction, under the channel locks | Deleted with the tutor's channels' messages (`ON DELETE CASCADE`) |
+| Export and export limit (pending implementation by E1) | The account's export already withdrawn at deletion; its row and limit row deleted in the final transaction by the [deletion path](files.md#states), queueing an object deletion only if one is still due | Same |
 
 ## Indexes and integrity notes
 

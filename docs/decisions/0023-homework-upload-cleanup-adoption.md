@@ -1,6 +1,6 @@
 # ADR-0023: Durable cleanup for answer and corrected-file uploads
 
-- Status: accepted, 2026-11-11
+- Status: accepted, 2026-11-11; amended by [ADR-0025](0025-export-upload-cleanup-adoption.md) on 2026-11-23, which adds a fourth capacity class, `export`, of 256 unresolved intents for export archives (pending owner review)
 - Reviewed: decided by the project owner on 2026-11-11 with the [slice 9 plan](../../knowledge/plans/slice-9.md#4-owner-questions); wording pending owner review
 - Deciders: project owner
 - Related: [ADR-0019](0019-durable-upload-cleanup.md), [ADR-0022](0022-library-upload-cleanup-adoption.md), [files](../../knowledge/specs/files.md#upload-flow), [data model](../../knowledge/specs/data-model.md#upload-cleanup-intent), [threat model](../threat-model.md) (T-13, T-20, T-34)

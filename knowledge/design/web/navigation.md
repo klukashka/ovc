@@ -57,11 +57,14 @@ The legal document addresses and links below follow [ADR-0024](../../../docs/dec
 |---|---|
 | `/today` | Today (home) |
 | `/schedule?view=week\|month&date=` | Schedule |
+| `/schedule/new?date=` | New lesson, a page at every width instead of the dialog; `date` preselects the day; Back or Cancel returns to the page that opened it (interface rework stage, specified 2026-11-23 by change U1b, pending owner review; pending implementation by U2) |
 | `/lessons/{id}` | Lesson |
 | `/students?state=&group=&q=` | Students |
 | `/students/{id}` | Student card |
 | `/groups`, `/groups/{id}` | Groups, group page |
 | `/homework/library?folder=&q=` | Library; from slice 8. `folder` and `q` are not sent together: a search ignores the folder, and an unknown folder shows Not found |
+| `/homework/new-task` | New task: write a task with attachments and questions and issue it on one page ([the one-page task](../../specs/homework.md#the-one-page-task)); an unconfirmed tutor sees the "Confirm your email" notice in its place (interface rework stage, specified 2026-11-23 by change U1b, pending owner review; pending implementation by H1) |
+| `/homework/issue?template=` | Issue, a page at every width instead of the dialog; a template that is not the tutor's, deleted or not ready shows Not found or its completeness problems as the dialog did (interface rework stage, specified 2026-11-23 by change U1b, pending owner review; pending implementation by U2) |
 | `/homework/templates/{id}` | Builder; from slice 8. "New assignment" in the library creates a template titled with the localised "New assignment" and opens it here; a deleted or foreign template shows Not found |
 | `/homework/issued?status=active\|withdrawn` | Issued work; from slice 9, `active` when no status is given |
 | `/homework/issued/{id}` | Issue page with its submissions; from slice 9. The Analytics tab comes after the MVP; a foreign or unknown issue shows Not found |
@@ -70,6 +73,7 @@ The legal document addresses and links below follow [ADR-0024](../../../docs/dec
 | `/messages`, `/messages/{channelId}` | Messages |
 | `/notifications` | Notifications |
 | `/settings/profile`, `/settings/account`, `/settings/notifications`, `/settings/teaching` | Settings sections |
+| `/settings/data` | My data: request, follow, download and delete the export of the tutor's data (interface rework stage, specified 2026-11-23 by change U1b, pending owner review; pending implementation by E2) |
 
 ## Student addresses
 
@@ -85,6 +89,7 @@ The legal document addresses and links below follow [ADR-0024](../../../docs/dec
 | `/reclaim` | Keep or drop the links and requests made before the email was confirmed; sign-in lands on it while `GET /users/me` reports `reclaim_pending: true`; opened when nothing waits, it says so; a tutor gets Not found |
 | `/notifications` | Notifications |
 | `/settings/profile`, `/settings/account`, `/settings/notifications` | Settings sections |
+| `/settings/data` | My data, as for tutors (interface rework stage, specified 2026-11-23 by change U1b, pending owner review; pending implementation by E2) |
 
 ## Rules
 
@@ -104,7 +109,7 @@ The legal document addresses and links below follow [ADR-0024](../../../docs/dec
 - **Route changes commit synchronously** (slice 9 change F3, agent change pending owner review): every client-side navigation (links, `navigate`, redirects, and Back and Forward) renders the new route, unmounts the page it leaves and ends that page's query subscriptions in the same task as the address change (`withSynchronousNavigation` in `src/routes/router.tsx`, with `flushSync` passed to `RouterProvider`), so no read of the left page can start after the address changed, for example a live refetch's follow-up; `src/routes/router.test.tsx` proves it. Back and Forward (`popstate`) reach the router without a synchronous option, so the router's subscribers receive every update that changes the location with `flushSync` set (slice 10 change X2, owner decision of 2026-11-16, pending owner review). In a browser React 19 already renders a transition scheduled during a `popstate` event eagerly, in the microtask that runs when the router's listener returns, but only once per event and only for a real `popstate` event; the wrapper makes the synchronous commit a guarantee independent of that heuristic. `src/routes/router.test.tsx` proves the wrapper on a Back navigation without a browser event, and the students test of Back while the card is still loading guards the behaviour in each browser engine. A redirect made from an effect (`<Navigate>`, the token holders) now calls `flushSync` while React runs effects, which React's development build reports as a console error; the production build does not, and the update still commits at the end of that effects pass. A modal dialog that a navigation removes while it is open (a link or a completed action inside it that opens another page) closes itself before it leaves the document (`ModalDialog` in `src/components/ui/Dialog.tsx`): WebKit refuses to focus an element outside a modal dialog removed while open in the same task, so without it the new page's heading would not receive focus; the students test of Open the card and step 4 of pilot scenario 2 prove it in WebKit.
 - **A deep link** to a resource the user cannot see shows Not found (`404` from the API).
 - **Signing out** returns to `/` and clears cached data. The tab's own sign-out, sign out everywhere or account deletion first waits until the tab's reads already in flight (`GET` requests) are answered, for at most 15 seconds, and only then sends its own request, so the server does not check a read of the tab after the action revoked its session unless that read hung past the bound; a write in flight, such as a join or an upload, is not waited for and its late answer is dropped as the page's rules say. While the action is in flight, every new API request of the tab waits for it, as the socket's refresh after `4401` does ([realtime](../../specs/realtime-and-video.md)): when the action ended the session, the request is never sent and fails as aborted; when the action failed, it is sent as usual. Only the action's own request is not held, and the session ends before the held requests resume, so no request sent after the action began carries a token that the action revoked.
-- **Notification links** open the related page: in slice 4 the student card (`student_card`), the Students page, whose pending requests list the request (`join_requests`), and My tutors (`my_tutors`); from slice 5 the lesson (`lesson`) and from slice 9 the assignment page `/homework/{submissionId}` (`assignment`, a student's link) and the review screen `/homework/review/{submissionId}` (`review`, a tutor's link). A `group.archived` row has no link. A link the API returns as `null`, because its subject is outside the caller's current scope, is not shown as a link.
+- **Notification links** open the related page: in slice 4 the student card (`student_card`), the Students page, whose pending requests list the request (`join_requests`), and My tutors (`my_tutors`); from slice 5 the lesson (`lesson`) and from slice 9 the assignment page `/homework/{submissionId}` (`assignment`, a student's link) and the review screen `/homework/review/{submissionId}` (`review`, a tutor's link). A `group.archived` row has no link. A link the API returns as `null`, because its subject is outside the caller's current scope, is not shown as a link. From E2, `my_data` opens `/settings/data` for either role (pending owner review).
 - **Filters and tabs** that change what is shown are reflected in the address, so reload and Back keep the view.
 
 ## Token pages

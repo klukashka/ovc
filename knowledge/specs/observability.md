@@ -118,6 +118,22 @@ From the owner-approved 2026-11-01 protocol, the files service owns transition r
 
 Safe fields are attachment/intent and outbox identifiers, phase, generation, bounded counts and error kinds; no storage key, MPU identifier, filename, credential, content or raw error text is logged. Operator actions also use the existing `admin.command` audit with system user and outcome. Recovery partial failure follows the scheduler's failed job reporting while retaining progress. Tests assert both transition evidence and absence of forbidden data.
 
+## Export diagnostics
+
+Specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md) (pending owner review; pending implementation by E1). The export service and the export lane own:
+
+- `export.requested` (INFO): `user_id`, `role`, `export_id`;
+- `export.build.started` (INFO): `export_id`, `build_id`, the lane slot;
+- `export.built` (INFO): `export_id`, `build_id`, `user_id`, item counts per sheet, the number of files, files left out as unreadable, `size_bytes`, the duration;
+- `export.failed` (WARNING, or ERROR for `error`): `export_id`, `build_id`, `user_id`, the failure kind (`error` with a safe error kind, `too_long`, `too_large`, `withdrawn`), the duration;
+- `export.invalidated` (INFO): `export_id`, `build_id` when one exists, `user_id`, the export's state before, and the `cause` (`account_deleted`, `account_blocked`, `relationship_ended`, `relationship_discarded`, `channel_erased`, `reclaim_pending`, `group_member_removed`, `issue_erased`, `tutor_deleted`, `card_email_erased`, `card_erased`); exports that expire at a purge's due time are counted by `exports.expire`;
+- `export.deleted` (INFO): `export_id`, the state before; `export.expired` through the `exports.expire` job's `job.run` counts;
+- `export.download.minted` (INFO): `export_id`, never the address; a signing failure is `export.download.failed` (WARNING) with the error's kind only.
+
+They never carry file names, titles, message bodies, cell contents, the password, the storage key, the multipart upload identifier or the download address. The intent transitions of ADR-0025 reuse the durable upload cleanup events above with `subject_kind: export_build`. E1 adds `TestExportRecordsCarryNoContentKeyOrAddress`, which builds an export over seeded sentinel names, titles, bodies and file names and asserts that no captured record holds any of them, the key or a signed query.
+
+**Chat events of the messenger contracts** (pending implementation by M2 to M5): `chat.message.persisted` gains `has_reply`; `chat.message.pinned` and `chat.message.unpinned` (INFO, `channel_id`, `message_id`, the tutor's `user_id`, and `cause: deleted` when a delete clears the pin); `chat.reaction.set` and `chat.reaction.removed` (INFO, `channel_id`, `message_id`, `user_id`, the reaction value); a search logs only its access record, which holds `query_length` and the result count, never the query; a read-marker move that signals the other member of a direct channel is not logged at INFO. `TestChatRecordsCarryNoBodiesNamesOrAddresses` extends to quotes and search.
+
 ## Daily upload accounting
 
 The files service owns `upload.accounting.cutover` (INFO), emitted for a student upload refused by the initial migration barrier or pre-cutover creation-day check, and `upload.accounting.unavailable` (ERROR, safe `kind` only) when activation state cannot be trusted. The scheduler owns `job.run` for `uploads.daily_cleanup`, with its existing count, duration and safe error-kind fields; from slice 9 its count includes the removed rows of the daily answer aggregate. No storage key, filename, body, token or raw database error is added. Admission/settlement failures never emit `upload.accepted`; ordinary cap refusals retain `chat.rate_limited` and `upload.rejected`.
