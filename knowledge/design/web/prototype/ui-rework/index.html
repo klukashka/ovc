@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Переработка интерфейса · OVC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F7F4EE; --surface: #FBF9F4; --field: #FFFFFF; --sidebar: #F1EEE6; --hover: #E7E3D9;
+  --border: #E2DCD0; --border-strong: #8F8676; --text: #26241F; --muted: #6B655A; --icon: #736C60;
+  --accent: #5E6B3A; --accent-hover: #525E32; --on-accent: #FFFFFF; --accent-text: #4A5530;
+  --success: #2E6B4F; --warning: #8A5A12; --danger: #A3352A; --info: #3F5E7A; --live: #A3352A;
+  --mine: #E6EAD8; --scrim: rgba(38,36,31,.32); --shadow: 0 8px 24px rgba(38,36,31,.12);
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #1C1B18; --surface: #23221E; --field: #2A2925; --sidebar: #201F1C; --hover: #2E2D28;
+  --border: #37352F; --border-strong: #7D7667; --text: #ECE8DF; --muted: #ABA496; --icon: #9C9587;
+  --accent: #A3B275; --accent-hover: #B2C083; --on-accent: #1C1B18; --accent-text: #B7C48C;
+  --success: #86C3A4; --warning: #D9A75E; --danger: #E58A7C; --info: #93B3D1; --live: #E58A7C;
+  --mine: #343A26; --scrim: rgba(0,0,0,.5); --shadow: 0 0 0 1px #7D7667;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 15px/22px "Golos Text", system-ui, sans-serif; }
+a { color: var(--accent-text); }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.serif { font-family: "Literata", Georgia, serif; font-weight: 400; }
+.muted { color: var(--muted); }
+.small { font-size: 14px; line-height: 20px; }
+.label { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--muted); margin: 0 0 8px; }
+.tnum { font-variant-numeric: tabular-nums; }
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 6px; vertical-align: 1px; }
+.app { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100%; }
+.side { background: var(--sidebar); border-right: 1px solid var(--border); padding: 16px 12px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; }
+.side .me { display: flex; gap: 10px; align-items: center; padding: 4px 8px 14px; font-weight: 500; }
+.side a.item { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-radius: 6px; color: var(--text); text-decoration: none; font-size: 14px; min-height: 32px; }
+.side a.item:hover { background: var(--hover); }
+.side a.item[aria-current="page"] { background: var(--hover); font-weight: 500; }
+.side .count { font-size: 12px; color: var(--muted); }
+.side .foot { margin-top: auto; border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.side .foot .seg2 { display: grid; grid-template-columns: 1fr 1fr; background: var(--hover); border-radius: 6px; padding: 2px; }
+.side .foot .seg2 button { border: 0; background: transparent; border-radius: 5px; padding: 4px; cursor: pointer; color: var(--muted); }
+.side .foot .seg2 button[aria-pressed="true"] { background: var(--field); color: var(--text); }
+.av { width: 30px; height: 30px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 12px; font-weight: 600; color: #fff; flex: 0 0 auto; }
+main { min-width: 0; }
+.page { max-width: 1120px; margin: 0 auto; padding: 40px 56px 72px; display: flex; flex-direction: column; gap: 32px; }
+.page.reading { max-width: 832px; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.page-head h1 { font-size: 28px; line-height: 36px; margin: 0; }
+.page-head h1.display { font-size: 36px; line-height: 44px; }
+.back { font-size: 14px; display: inline-block; margin-bottom: 4px; }
+.sec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.sec-head h2 { margin: 0; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border-strong); background: transparent; cursor: pointer; font-weight: 500; text-decoration: none; color: var(--text); }
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: var(--on-accent); }
+.btn.text { border-color: transparent; color: var(--accent-text); padding-inline: 8px; }
+.btn.small { min-height: 32px; padding: 4px 10px; font-size: 14px; }
+.btn[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.list { border-top: 1px solid var(--border); }
+.row { display: grid; align-items: center; gap: 16px; padding: 13px 0; border-bottom: 1px solid var(--border); }
+.panel { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 64px; align-items: start; }
+.prose { max-width: 68ch; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > label, .field > .flabel { font-size: 14px; font-weight: 500; }
+.field .opt { color: var(--muted); font-weight: 400; }
+.field .hint { font-size: 13px; line-height: 18px; color: var(--muted); }
+.input, textarea.input, select.input { border: 1px solid var(--border-strong); background: var(--field); border-radius: 8px; padding: 9px 12px; min-height: 40px; width: 100%; }
+textarea.input { min-height: 96px; resize: vertical; }
+.input[aria-invalid="true"] { border-color: var(--danger); }
+.err { color: var(--danger); font-size: 14px; display: flex; gap: 6px; }
+.group3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.summary { border: 2px solid var(--danger); border-radius: 10px; padding: 16px 20px; background: var(--surface); }
+.summary h2 { margin: 0 0 8px; font-size: 18px; line-height: 26px; font-weight: 500; }
+.summary ul { margin: 0; padding-left: 18px; }
+.summary a { color: var(--danger); }
+.seg { display: inline-grid; grid-auto-flow: column; background: var(--hover); border-radius: 8px; padding: 3px; gap: 3px; }
+.seg button { border: 0; border-radius: 6px; padding: 8px 14px; background: transparent; cursor: pointer; color: var(--muted); font-weight: 500; text-align: left; }
+.seg button small { display: block; font-weight: 400; font-size: 12px; line-height: 16px; }
+.seg button[aria-pressed="true"] { background: var(--field); color: var(--text); box-shadow: 0 1px 2px rgba(38,36,31,.12); }
+.drop { border: 1.5px dashed var(--border-strong); border-radius: 10px; padding: 20px; display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.thumbs { display: flex; gap: 10px; flex-wrap: wrap; }
+.thumb { width: 96px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; line-height: 16px; }
+.thumb .ph { aspect-ratio: 4/3; border-radius: 8px; background: linear-gradient(135deg, #C9BFA8, #9C9077); position: relative; }
+.thumb .ph.b2 { background: linear-gradient(135deg, #B8C2A0, #7E8C5C); }
+.thumb .ph.pdf { background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-weight: 600; font-size: 12px; }
+.thumb .rm { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(0,0,0,.55); color: #fff; cursor: pointer; font-size: 12px; }
+.warn { border-left: 3px solid var(--warning); background: var(--surface); padding: 10px 14px; border-radius: 4px; font-size: 14px; }
+.notice { display: flex; gap: 12px; align-items: center; justify-content: space-between; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; background: var(--surface); }
+.state { font-size: 14px; }
+.empty { padding: 28px 0; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.empty h3 { margin: 0; font-size: 18px; font-weight: 500; }
+.kebab { width: 32px; height: 32px; border-radius: 6px; border: 0; background: transparent; cursor: pointer; color: var(--icon); font-size: 18px; }
+.kebab:hover { background: var(--hover); }
+.msgs-wrap { display: grid; grid-template-columns: 300px minmax(0, 1fr); height: 100vh; }
+.chans { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+.chans .search { margin: 14px; }
+.chan { display: flex; gap: 10px; padding: 10px 14px; border: 0; border-top: 1px solid var(--border); background: transparent; text-align: left; width: 100%; cursor: pointer; align-items: center; }
+.chan:hover { background: var(--hover); }
+.chan[aria-current="true"] { background: var(--hover); }
+.chan .who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chan .who b { font-weight: 500; font-size: 14px; }
+.chan .who span { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chan .meta { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 12px; color: var(--muted); }
+.cnt { background: var(--accent); color: var(--on-accent); border-radius: 9px; padding: 0 6px; font-size: 11px; line-height: 17px; font-weight: 600; }
+.conv { display: flex; flex-direction: column; min-height: 0; position: relative; }
+.conv-head { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border); }
+.conv-head .who { flex: 1; display: flex; flex-direction: column; }
+.conv-head h1 { font-size: 16px; line-height: 22px; margin: 0; font-weight: 500; font-family: inherit; }
+.conv-head .online { font-size: 13px; color: var(--success); }
+.pinbar { display: flex; gap: 10px; align-items: center; padding: 8px 18px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 14px; }
+.pinbar i { width: 2px; align-self: stretch; background: var(--accent); }
+.pinbar div { flex: 1; min-width: 0; }
+.pinbar small { display: block; color: var(--accent-text); font-weight: 600; font-size: 12px; }
+.pinbar span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.searchbar { display: flex; gap: 8px; align-items: center; padding: 8px 18px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.history { flex: 1; overflow: auto; padding: 12px 18px; display: flex; flex-direction: column; gap: 4px; }
+.chip { align-self: center; font-size: 12px; background: var(--hover); color: var(--muted); padding: 2px 10px; border-radius: 10px; margin: 8px 0; }
+.msg { display: flex; align-items: flex-end; gap: 6px; max-width: 72%; position: relative; }
+.msg.me { align-self: flex-end; flex-direction: row-reverse; }
+.bubble { padding: 7px 12px 6px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); font-size: 14px; line-height: 20px; min-width: 0; }
+.msg.me .bubble { background: var(--mine); border-color: transparent; }
+.msg.hit .bubble { outline: 2px solid var(--warning); }
+.bmeta { float: right; margin: 6px 0 -4px 12px; font-size: 11px; line-height: 14px; color: var(--muted); }
+.ticks { color: var(--accent-text); font-weight: 600; letter-spacing: -3px; margin-left: 3px; }
+.quote { display: block; border-left: 2px solid var(--accent); padding: 1px 0 1px 8px; margin: 2px 0 6px; font-size: 13px; line-height: 17px; cursor: pointer; background: transparent; border-top: 0; border-right: 0; border-bottom: 0; text-align: left; color: inherit; width: 100%; }
+.quote b { display: block; color: var(--accent-text); font-weight: 600; }
+.quote span { color: var(--muted); }
+.album { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin: -2px -7px 6px; border-radius: 10px; overflow: hidden; width: 300px; max-width: 100%; }
+.album span { aspect-ratio: 1; background: linear-gradient(135deg, #C9BFA8, #9C9077); }
+.album span:nth-child(2) { background: linear-gradient(135deg, #B8C2A0, #7E8C5C); }
+.album span.wide { grid-column: 1 / 3; aspect-ratio: 2 / 1; background: linear-gradient(160deg, #D6CBB4, #A89778); }
+.file { display: flex; gap: 10px; align-items: center; margin: 2px 0 4px; }
+.file .fi { width: 36px; height: 36px; border-radius: 8px; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-size: 10px; font-weight: 600; }
+.reacts { display: flex; gap: 4px; margin-top: 4px; }
+.reacts button { font-size: 12px; border: 1px solid var(--border); background: var(--bg); border-radius: 10px; padding: 0 7px; cursor: pointer; }
+.reacts button[aria-pressed="true"] { border-color: var(--accent); }
+.more { opacity: 0; border: 0; background: var(--bg); border-radius: 6px; width: 28px; height: 28px; cursor: pointer; color: var(--icon); }
+.msg:hover .more, .msg:focus-within .more { opacity: 1; }
+.menu { position: absolute; bottom: 30px; z-index: 5; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; min-width: 180px; }
+.msg .menu { right: 0; }
+.msg.me .menu { right: auto; left: 0; }
+.menu button { border: 0; background: transparent; text-align: left; padding: 7px 10px; border-radius: 6px; cursor: pointer; }
+.menu button:hover { background: var(--hover); }
+.menu .rx { display: flex; gap: 2px; padding: 4px 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.menu .rx button { padding: 4px 6px; font-size: 16px; }
+.jump { position: absolute; right: 22px; bottom: 84px; width: 40px; height: 40px; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); cursor: pointer; color: var(--icon); }
+.jump em { position: absolute; top: -6px; right: -4px; font-style: normal; font-size: 11px; line-height: 16px; background: var(--accent); color: var(--on-accent); border-radius: 8px; padding: 0 5px; font-weight: 600; }
+.replybar { display: flex; gap: 10px; align-items: center; padding: 8px 18px; border-top: 1px solid var(--border); background: var(--surface); font-size: 13px; }
+.replybar div { flex: 1; border-left: 2px solid var(--accent); padding-left: 8px; min-width: 0; }
+.replybar b { display: block; color: var(--accent-text); }
+.composer { display: flex; gap: 8px; align-items: flex-end; padding: 10px 18px 14px; border-top: 1px solid var(--border); }
+.composer textarea { flex: 1; min-height: 40px; max-height: 160px; resize: none; border-radius: 20px; padding: 9px 16px; border: 1px solid var(--border-strong); background: var(--field); }
+.round { width: 40px; height: 40px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; flex: 0 0 auto; }
+.round.send { background: var(--accent); color: var(--on-accent); }
+.round.att { background: transparent; color: var(--icon); }
+.round.att:hover { background: var(--hover); }
+.banner { position: fixed; left: 50%; transform: translateX(-50%); top: 12px; z-index: 50; background: var(--text); color: var(--bg); font-size: 13px; padding: 6px 12px; border-radius: 8px; }
+.qrow { display: grid; grid-template-columns: 28px minmax(0, 1fr) 140px 32px; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.progress { height: 6px; background: var(--hover); border-radius: 3px; overflow: hidden; }
+.progress i { display: block; height: 100%; background: var(--accent); }
+dialog { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); box-shadow: var(--shadow); padding: 24px; max-width: 460px; width: calc(100% - 32px); }
+dialog::backdrop { background: var(--scrim); }
+dialog h2 { margin: 0 0 8px; font-size: 22px; line-height: 30px; }
+.tag { font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
+@media (max-width: 1023px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; }
+  .side .foot { margin-top: 0; border-top: 0; padding-top: 0; flex-direction: row; }
+  .page { padding: 24px 16px 48px; }
+  .two, .msgs-wrap { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .group3 { grid-template-columns: 1fr; }
+  .msg { max-width: 90%; }
+}
+@media (prefers-reduced-motion: no-preference) { .btn, .chan, .seg button { transition: background .12s; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="side" aria-label="Разделы" id="side"></nav>
+  <main id="main" tabindex="-1"></main>
+</div>
+<div id="live" class="banner" role="status" hidden></div>
+<dialog id="dlg"></dialog>
+<script>
+(function () {
+  const state = {
+    role: 'tutor',
+    theme: 'light',
+    chan: 'anna',
+    replyTo: null,
+    menuFor: null,
+    searchOpen: false,
+    searchQ: '',
+    jumpCount: 2,
+    reactions: { m3: { '👍': 1 } },
+    myReaction: {},
+    policy: 'after_check',
+    policyOpen: false,
+    taskErrors: false,
+    attached: [{ name: 'text-unit7.jpg', kind: 'img' }, { name: 'questions.pdf', kind: 'pdf' }],
+    lessonErrors: false,
+    exportState: 'idle',
+    exportProgress: 0,
+    libNotice: null,
+    groupNotice: null,
+    removed: false,
+    answerFiles: [],
+    draftSaved: true,
+  };
+  const tutorNav = [
+    ['today', 'Сегодня', ''], ['schedule', 'Расписание', ''], ['students', 'Ученики', ''], ['group', 'Группы', ''],
+    ['library', 'Задания', '3'], ['messages', 'Сообщения', '2'], ['finance', 'Финансы', 'в макете нет'], ['my-data', 'Настройки', '']
+  ];
+  const studentNav = [
+    ['home', 'Главная', ''], ['schedule', 'Расписание', ''], ['work', 'Задание', '1'], ['messages', 'Сообщения', '1'], ['my-data', 'Настройки', '']
+  ];
+  const chans = [
+    { id: 'anna', name: 'Анна Смирнова', color: '#7A6A4F', init: 'АС', last: 'Это к четвергу', time: '18:14', ticks: '✓', unread: 0, online: true },
+    { id: 'b2', name: 'Группа B2, вечер', color: '#4F6A7A', init: 'B2', last: 'Илья: а домашку на когда?', time: '17:40', unread: 2 },
+    { id: 'pavel', name: 'Павел Лебедев', color: '#7A4F5C', init: 'ПЛ', last: 'Вы: Фото получил, спасибо', time: 'Пн', ticks: '✓✓', unread: 0 },
+    { id: 'maria', name: 'Мария Орлова', color: '#6A7A4F', init: 'МО', last: 'Фото', time: '20 нояб.', unread: 0 },
+  ];
+  const messages = [
+    { id: 'm1', me: false, day: 'Сегодня', text: 'Добрый вечер! Я сделала упражнения 4–6, но в шестом не уверена', time: '18:02' },
+    { id: 'm2', me: false, album: true, text: 'Вот фото тетради', time: '18:03' },
+    { id: 'm3', me: true, quote: 'm1', text: 'Посмотрю до занятия. В шестом проверьте порядок слов во втором предложении', time: '18:10', ticks: '✓✓' },
+    { id: 'm4', me: false, text: 'Спасибо!', time: '18:11' },
+    { id: 'm5', me: true, file: { name: 'Unit 7, тест.pdf', size: '420 КБ' }, text: 'Это к четвергу', time: '18:14', ticks: '✓' },
+  ];
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const routes = {};
+  const route = () => (location.hash.slice(1) || (state.role === 'tutor' ? 'today' : 'work'));
+
+  function announce(text) {
+    const live = document.getElementById('live');
+    live.hidden = false;
+    live.textContent = '';
+    setTimeout(() => { live.textContent = text; }, 30);
+    clearTimeout(announce.t);
+    announce.t = setTimeout(() => { live.hidden = true; }, 2600);
+  }
+
+  function side() {
+    const nav = state.role === 'tutor' ? tutorNav : studentNav;
+    const cur = route();
+    const who = state.role === 'tutor'
+      ? '<span class="av" style="background:#5E6B3A">ЕК</span>Елена Котова'
+      : '<span class="av" style="background:#7A6A4F">АС</span>Анна Смирнова';
+    return '<div class="me">' + who + '</div>' + nav.map(([id, label, count]) =>
+      '<a class="item" href="#' + id + '"' + (cur === id || (id === 'library' && ['new-task', 'issue', 'review-empty'].includes(cur)) || (id === 'schedule' && cur === 'new-lesson') ? ' aria-current="page"' : '') + '><span>' + label + '</span>' + (count ? '<span class="count">' + count + '</span>' : '') + '</a>'
+    ).join('') +
+    '<div class="foot"><span class="muted">Смотреть как</span><div class="seg2" role="group" aria-label="Роль">' +
+    '<button type="button" data-act="role" data-v="tutor" aria-pressed="' + (state.role === 'tutor') + '">Преподаватель</button>' +
+    '<button type="button" data-act="role" data-v="student" aria-pressed="' + (state.role === 'student') + '">Ученик</button></div>' +
+    '<div class="seg2" role="group" aria-label="Тема"><button type="button" data-act="theme" data-v="light" aria-pressed="' + (state.theme === 'light') + '">Светлая</button><button type="button" data-act="theme" data-v="dark" aria-pressed="' + (state.theme === 'dark') + '">Тёмная</button></div>' +
+    '<span class="muted">Макет U1a · данные вымышлены</span></div>';
+  }
+
+  routes.today = () => '<div class="page"><header class="page-head"><div><h1 class="serif display" tabindex="-1">Вторник, 25 ноября</h1><p class="muted" style="margin:4px 0 0">Два урока и три работы на проверке.</p></div><div class="actions"><a class="btn" href="#new-lesson">Новое занятие</a><a class="btn" href="#new-task">Новое задание</a></div></header>' +
+    '<div class="two"><div style="display:flex;flex-direction:column;gap:40px">' +
+    '<section aria-labelledby="t-l"><div class="sec-head"><h2 id="t-l" class="label">Уроки сегодня</h2><a class="small" href="#schedule">Всё расписание</a></div><div class="list">' +
+    '<div class="row" style="grid-template-columns:64px minmax(0,1fr) auto"><span class="tnum">18:00</span><span><b style="font-weight:500">Анна Смирнова</b><br><span class="small muted"><span class="dot" style="color:var(--accent-text)"></span>начнётся через 8 минут</span></span><a class="btn primary" href="#today">Войти</a></div>' +
+    '<div class="row" style="grid-template-columns:64px minmax(0,1fr) auto"><span class="tnum">19:30</span><span><b style="font-weight:500">Группа B2, вечер</b><br><span class="small muted">запланировано</span></span><a class="btn" href="#today">Войти</a></div></div></section>' +
+    '<section aria-labelledby="t-c"><div class="sec-head"><h2 id="t-c" class="label">На проверку · 3</h2><a class="small" href="#review-empty">Открыть очередь</a></div><div class="list">' +
+    ['Павел Лебедев · Reading, Unit 7 · сдано вчера', 'Мария Орлова · Тест по Unit 6 · сдано вчера', 'Илья Козлов · Эссе · сдано 3 дня назад'].map((t) => '<div class="row" style="grid-template-columns:minmax(0,1fr) auto"><span>' + t + '</span><a class="btn small" href="#review-empty">Проверить</a></div>').join('') + '</div></section></div>' +
+    '<aside style="display:flex;flex-direction:column;gap:32px"><section><div class="sec-head"><h2 class="label">Заявки</h2></div><div class="list"><div class="row" style="grid-template-columns:minmax(0,1fr)"><span>Олег Савин хочет заниматься<br><span class="actions" style="margin-top:6px"><button class="btn small" type="button">Принять</button><button class="btn small text" type="button">Отклонить</button></span></span></div></div></section>' +
+    '<section><h2 class="label">Что изменилось</h2><ul class="small muted" style="margin:0;padding-left:18px"><li>Залита только кнопка «Войти» ближайшего урока (G7)</li><li>Действия раздела стоят рядом с заголовком раздела (G6)</li></ul></section></aside></div></div>';
+
+  function bubble(m) {
+    const q = m.quote ? messages.find((x) => x.id === m.quote) : null;
+    const reacts = state.reactions[m.id] || {};
+    const hit = state.searchQ.length >= 2 && m.text && m.text.toLowerCase().includes(state.searchQ.toLowerCase());
+    let inner = '';
+    if (q) inner += '<button type="button" class="quote" data-act="jumpto" data-v="' + q.id + '"><b>' + (q.me ? 'Вы' : 'Анна Смирнова') + '</b><span>' + esc(q.text.slice(0, 120)) + '</span></button>';
+    if (m.album) inner += '<span class="album" aria-label="3 фото"><span class="wide"></span><span></span><span></span></span>';
+    if (m.file) inner += '<span class="file"><span class="fi">PDF</span><span><b style="font-weight:500;font-size:13px">' + esc(m.file.name) + '</b><br><span class="small muted">' + m.file.size + '</span></span></span>';
+    inner += '<span dir="auto">' + esc(m.text) + '</span><span class="bmeta tnum">' + m.time + (m.ticks ? '<span class="ticks" aria-label="' + (m.ticks === '✓✓' ? 'прочитано' : 'доставлено') + '">' + m.ticks + '</span>' : '') + '</span>';
+    const rk = Object.keys(reacts).filter((k) => reacts[k] > 0);
+    if (rk.length) inner += '<span class="reacts">' + rk.map((k) => '<button type="button" data-act="react" data-msg="' + m.id + '" data-v="' + k + '" aria-pressed="' + (state.myReaction[m.id] === k) + '">' + k + ' ' + reacts[k] + '</button>').join('') + '</span>';
+    const menu = state.menuFor === m.id ? '<div class="menu" aria-label="Действия с сообщением"><div class="rx">' + ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((e) => '<button type="button" data-act="react" data-msg="' + m.id + '" data-v="' + e + '" aria-label="Реакция ' + e + '">' + e + '</button>').join('') + '</div><button type="button" data-act="reply" data-v="' + m.id + '">Ответить</button><button type="button" data-act="pin" data-v="' + m.id + '">Закрепить</button>' + (m.me ? '<button type="button" data-act="noop">Изменить</button><button type="button" data-act="noop" style="color:var(--danger)">Удалить</button>' : '') + '</div>' : '';
+    return '<div class="msg' + (m.me ? ' me' : '') + (hit ? ' hit' : '') + '" id="msg-' + m.id + '"><div class="bubble">' + inner + '</div><button type="button" class="more" data-act="menu" data-v="' + m.id + '" aria-label="Действия с сообщением" aria-expanded="' + (state.menuFor === m.id) + '">⋯</button>' + menu + '</div>';
+  }
+
+  routes.messages = () => {
+    const c = chans.find((x) => x.id === state.chan) || chans[0];
+    let hist = '<span class="chip">Сегодня</span>' + messages.map(bubble).join('');
+    const reply = state.replyTo ? messages.find((x) => x.id === state.replyTo) : null;
+    return '<div class="msgs-wrap"><div class="chans"><h1 class="serif" style="position:absolute;left:-9999px" tabindex="-1">Сообщения</h1><input class="input search" placeholder="Поиск по чатам" aria-label="Поиск по чатам">' +
+      chans.map((x) => '<button type="button" class="chan" data-act="chan" data-v="' + x.id + '" aria-current="' + (x.id === c.id) + '"><span class="av" style="background:' + x.color + '">' + x.init + '</span><span class="who"><b>' + x.name + '</b><span>' + x.last + '</span></span><span class="meta tnum">' + x.time + (x.unread ? '<span class="cnt">' + x.unread + '</span>' : x.ticks ? '<span class="ticks">' + x.ticks + '</span>' : '') + '</span></button>').join('') +
+      '</div><section class="conv" aria-label="Переписка"><header class="conv-head"><span class="av" style="background:' + c.color + '">' + c.init + '</span><div class="who"><h2 tabindex="-1" style="font-size:16px;line-height:22px;margin:0;font-weight:500">' + c.name + '</h2>' + (c.online ? '<span class="online">в сети</span>' : '<span class="small muted">' + (c.id === 'b2' ? '5 участников' : 'был(а) недавно') + '</span>') + '</div><button type="button" class="kebab" data-act="search" aria-label="Поиск в переписке" aria-pressed="' + state.searchOpen + '">⌕</button><a class="kebab" href="#messages" aria-label="Карточка ученика" style="display:grid;place-items:center;text-decoration:none">ⓘ</a></header>' +
+      '<div class="pinbar"><i></i><div><small>Закреплено</small><span>Занятия по вторникам и четвергам в 18:00, ссылка в расписании</span></div><button type="button" class="btn text small">Открепить</button></div>' +
+      (state.searchOpen ? '<div class="searchbar"><input id="sq" class="input" style="max-width:320px" placeholder="Искать в переписке" aria-label="Искать в переписке" value="' + esc(state.searchQ) + '"><span class="small muted">' + (state.searchQ.length >= 2 ? messages.filter((m) => m.text.toLowerCase().includes(state.searchQ.toLowerCase())).length + ' найдено' : 'не меньше 2 символов') + '</span><button type="button" class="btn text small" data-act="search">Закрыть</button></div>' : '') +
+      '<div class="history" id="hist">' + hist + '</div>' +
+      (state.jumpCount ? '<button type="button" class="jump" data-act="jump" aria-label="К новым сообщениям: ' + state.jumpCount + '">↓<em>' + state.jumpCount + '</em></button>' : '') +
+      (reply ? '<div class="replybar"><div><b>Ответ на сообщение</b><span class="muted">' + esc(reply.text.slice(0, 80)) + '</span></div><button type="button" class="kebab" data-act="unreply" aria-label="Отменить ответ">✕</button></div>' : '') +
+      '<div class="composer"><button type="button" class="round att" aria-label="Прикрепить файлы">📎</button><textarea id="composer" placeholder="Сообщение · Enter — отправить, Shift+Enter — новая строка" aria-label="Сообщение"></textarea><button type="button" class="round send" data-act="send" aria-label="Отправить">➤</button></div></section></div>';
+  };
+
+  function errorSummary(items) {
+    return '<div class="summary" role="alert" tabindex="-1" id="summary"><h2>Исправьте ошибки</h2><ul>' + items.map(([id, t]) => '<li><a href="#' + id + '" data-act="focusfield" data-v="' + id + '">' + t + '</a></li>').join('') + '</ul></div>';
+  }
+
+  routes.issue = () => '<div class="page reading"><div><a class="back" href="#library">← Задания</a><header class="page-head"><h1 class="serif" tabindex="-1">Выдать задание</h1></header></div><p class="muted prose" style="margin:0">Раньше это был диалог; теперь отдельная страница с понятным «назад» (G13).</p>' +
+    '<div class="field"><label for="i-t">Задание</label><select id="i-t" class="input"><option>Тест по Unit 6</option></select></div><div class="group3" style="grid-template-columns:2fr 1fr"><div class="field"><label for="i-a">Кому</label><select id="i-a" class="input"><option>Группа B2, вечер</option></select></div><div class="field"><label for="i-d">Срок <span class="opt">(необязательно)</span></label><input id="i-d" class="input" type="date"></div></div>' +
+    '<div class="field"><label for="i-l">Урок <span class="opt">(необязательно)</span></label><select id="i-l" class="input"><option>Не привязывать</option></select></div><div class="field"><span class="flabel" id="i-pol">Когда показать правильные ответы</span><div class="seg" role="group" aria-labelledby="i-pol"><button type="button" aria-pressed="false">Никогда</button><button type="button" aria-pressed="false">После отправки</button><button type="button" aria-pressed="true">После проверки</button></div><div class="warn">В задании нет вопросов на ручную проверку, поэтому правильные ответы ученик увидит сразу после отправки.</div></div>' +
+    '<div class="actions"><button type="button" class="btn primary">Выдать</button><a class="btn text" href="#library">Отмена</a></div></div>';
+
+  routes['new-lesson'] = () => '<div class="page reading"><div><a class="back" href="#schedule">← Расписание</a><header class="page-head"><h1 class="serif" tabindex="-1">Новое занятие</h1></header></div>' +
+    (state.lessonErrors ? errorSummary([['l-who', 'Выберите ученика или группу'], ['l-date', 'Укажите дату в будущем']]) : '') +
+    '<div class="field"><label for="l-who">Ученик или группа</label><input id="l-who" class="input" placeholder=""' + (state.lessonErrors ? ' aria-invalid="true"' : ' value="Анна Смирнова"') + '>' + (state.lessonErrors ? '<span class="err">⚠ Выберите ученика или группу</span>' : '') + '</div>' +
+    '<div class="field"><label for="l-title">Название</label><input id="l-title" class="input" value="Английский, B1"></div>' +
+    '<div class="group3"><div class="field"><label for="l-date">Дата</label><input id="l-date" class="input" type="date"' + (state.lessonErrors ? ' aria-invalid="true"' : ' value="2026-11-27"') + '>' + (state.lessonErrors ? '<span class="err">⚠ Укажите дату в будущем</span>' : '') + '</div><div class="field"><label for="l-time">Начало</label><input id="l-time" class="input" type="time" value="18:00"></div><div class="field"><label for="l-dur">Длительность</label><select id="l-dur" class="input"><option>60 минут</option></select></div></div>' +
+    '<div class="field"><span class="flabel">Повторять <span class="opt">(необязательно)</span></span><label class="small"><input type="checkbox" checked> Каждую неделю по вт и чт, до 30 декабря</label></div>' +
+    '<div class="field"><label for="l-desc">Описание <span class="opt">(необязательно)</span></label><textarea id="l-desc" class="input"></textarea><span class="hint">Увидят участники занятия.</span></div>' +
+    '<div class="actions"><button type="button" class="btn primary" data-act="lesson-save">Сохранить занятие</button><a class="btn text" href="#today">Отмена</a><button type="button" class="btn text small" data-act="lesson-errors" style="margin-left:auto">Показать ошибки (демо)</button></div></div>';
+
+  routes.library = () => '<div class="page"><header class="page-head"><h1 class="serif" tabindex="-1">Задания</h1><div class="actions"><a class="btn primary" href="#new-task">Новое задание</a><a class="btn" href="#library">Новый шаблон</a></div></header>' +
+    (state.libNotice ? '<div class="notice" role="status"><span>«Тест по Unit 6» перемещён в папку «Unit 6».</span><button type="button" class="btn text small" data-act="lib-undo">Отменить</button></div>' : '') +
+    '<div class="list">' + [['Тест по Unit 6', '12 вопросов, все автоматически · готов', true], ['Reading, Unit 7', '4 вопроса: 2 автоматически, 2 проверяете вы · 2 файла · готов', true], ['Эссе: мой город', 'Черновик · 2 проблемы', false]].map(([t, s, ready]) =>
+      '<div class="row" style="grid-template-columns:minmax(0,1fr) auto 32px"><span><a href="#library" style="color:var(--text);font-weight:500;text-decoration:none">' + t + '</a><br><span class="small muted">' + s + '</span></span>' + (ready ? '<a class="btn small" href="#issue">Выдать</a>' : '<button type="button" class="btn small" data-act="stub" data-v="Конструктор">Открыть</button>') + '<button type="button" class="kebab" data-act="lib-move" aria-label="Ещё действия: ' + t + '">⋯</button></div>').join('') +
+    '</div><p class="small muted" style="margin:0">Частое действие видно в строке, редкие — в меню «⋯» (G15). Нажмите «⋯», чтобы переместить шаблон и увидеть «Отменить» (G22).</p></div>';
+
+  routes.group = () => '<div class="page"><div><span class="back muted">Группы › (списка групп в макете нет)</span><header class="page-head"><h1 class="serif" tabindex="-1">Группа B2, вечер</h1><div class="actions"><a class="btn" href="#messages">Чат группы</a><button type="button" class="kebab" aria-label="Ещё действия с группой">⋯</button></div></header></div>' +
+    (state.groupNotice ? '<div class="notice" role="status"><span>Илья Козлов удалён из группы. Его загрузки в процессе и доступ к идущему уроку не восстановятся.</span><button type="button" class="btn text small" data-act="group-addback">Вернуть в группу</button></div>' : '') +
+    '<section><div class="sec-head"><h2 class="label">Участники · ' + (state.removed ? 4 : 5) + '</h2><button type="button" class="btn small">Добавить учеников</button></div><div class="list">' +
+    ['Анна Смирнова', 'Мария Орлова', 'Павел Лебедев', 'Олег Савин'].concat(state.removed ? [] : ['Илья Козлов']).map((n) => '<div class="row" style="grid-template-columns:minmax(0,1fr) auto"><span>' + n + '</span>' + (n === 'Илья Козлов' ? '<button type="button" class="btn small text" data-act="group-remove">Убрать из группы</button>' : '<span></span>') + '</div>').join('') + '</div></section></div>';
+
+  routes['review-empty'] = () => '<div class="page"><header class="page-head"><h1 class="serif" tabindex="-1">На проверку</h1></header><div class="empty"><h3>Проверять нечего</h3><p class="muted" style="margin:0">Сданные работы появятся здесь, как только ученики их отправят.</p><a href="#library">Посмотреть выданные задания</a></div><p class="small muted" style="margin:0">Пустые экраны подсказывают следующий шаг (G18).</p></div>';
+
+  routes.home = () => '<div class="page"><header class="page-head"><h1 class="serif display" tabindex="-1">Добрый вечер, Анна</h1></header><div class="panel"><span class="label" style="margin:0">Ближайший урок</span><b style="font-weight:500">Сегодня, 18:00 · Елена Котова</b><div class="actions"><a class="btn primary" href="#home">Войти</a></div></div><section><div class="sec-head"><h2 class="label">Сделать</h2><a class="small" href="#work">Все задания</a></div><div class="list"><div class="row" style="grid-template-columns:minmax(0,1fr) auto"><span>Reading, Unit 7 <span class="small muted">· до чт</span></span><a class="btn small" href="#work">Открыть</a></div></div></section><section><h2 class="label">Проверено</h2><div class="empty"><h3>Пока ничего не проверено</h3><p class="muted" style="margin:0">Когда преподаватель проверит работу, отзыв появится здесь.</p><a href="#work">Перейти к заданиям</a></div></section></div>';
+
+  routes['my-data'] = () => {
+    const s = state.exportState;
+    let body = '';
+    if (s === 'idle') body = '<p class="muted prose" style="margin:0">Последний архив: нет. Ссылка на скачивание действует 3 дня; новый архив можно собрать раз в сутки.</p><div class="actions"><button type="button" class="btn primary" data-act="export-start">Собрать архив</button></div>';
+    if (s === 'building') body = '<span class="state"><span class="dot" style="color:var(--info)"></span>Собираем архив… файлы ' + Math.round(1270 * state.exportProgress / 100) + ' из 1 270</span><div class="progress" role="progressbar" aria-label="Сборка архива" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + state.exportProgress + '"><i style="width:' + state.exportProgress + '%"></i></div><p class="small muted" style="margin:0">Можно закрыть страницу — придёт уведомление. Письмо «Запрошена выгрузка ваших данных» уже отправлено на вашу почту.</p><div class="actions"><button type="button" class="btn" data-act="export-cancel">Отменить</button><button type="button" class="btn text small" data-act="export-finish">Готово (демо)</button></div>';
+    if (s === 'ready') body = '<span class="state"><span class="dot" style="color:var(--success)"></span>Архив готов · 148 МБ · доступен до 28 ноября</span><div class="actions"><button type="button" class="btn primary">Скачать архив</button><button type="button" class="btn text" data-act="export-cancel">Удалить архив</button></div>';
+    return '<div class="page reading"><header class="page-head"><h1 class="serif" tabindex="-1">Настройки</h1></header><nav class="actions small" aria-label="Разделы настроек"><a href="#my-data">Профиль</a><a href="#my-data">Почта и уведомления</a><a href="#my-data" aria-current="page" style="font-weight:600">Мои данные</a></nav>' +
+      '<section class="panel" aria-labelledby="md"><h2 id="md" style="margin:0;font-size:18px;font-weight:500">Скачать мои данные</h2><p class="prose" style="margin:0">Один ZIP-архив: таблицы Excel (' + (state.role === 'tutor' ? 'ученики, группы, занятия, задания, оценки, переписка' : 'преподаватели, занятия, задания и отзывы, переписка') + '), календарь .ics для Google, Apple или Яндекс Календаря, все ваши файлы и копия в формате JSON.</p>' + body + '</section>' +
+      '<section><h2 class="label">Что ещё в этом разделе</h2><p class="small muted prose" style="margin:0">Финансовые листы добавятся в архив вместе с этапом «Финансы». ' + (state.role === 'student' ? 'Баллов в архиве ученика нет — как и в OVC.' : '') + '</p></section></div>';
+  };
+
+  const week = [
+    ['Пн', '24', []],
+    ['Вт', '25', [['18:00', 'Анна Смирнова', '#7A6A4F', 'Английский, B1', 'серия · вт и чт', 'Елена Котова'], ['19:30', 'Группа B2, вечер', '#4F6A7A', 'Разговорный клуб', 'серия · вт', 'Елена Котова']]],
+    ['Ср', '26', [['17:00', 'Павел Лебедев', '#7A4F5C', 'Подготовка к IELTS', 'разовое', 'Елена Котова'], ['20:00', 'Математика', '#3F5E7A', 'Производные', 'серия · ср', 'Игорь Белов']]],
+    ['Чт', '27', [['18:00', 'Анна Смирнова', '#7A6A4F', 'Английский, B1', 'серия · вт и чт', 'Елена Котова']]],
+    ['Пт', '28', [['16:00', 'Мария Орлова', '#6A7A4F', 'Английский, A2', 'отменено', 'Елена Котова']]],
+    ['Сб', '29', []],
+    ['Вс', '30', []],
+  ];
+  routes.schedule = () => {
+    const student = state.role === 'student';
+    const filter = state.tutorFilter || 'all';
+    const days = week.map(([d, n, ls]) => {
+      const items = ls.filter((l) => {
+        if (!student) return l[5] === 'Елена Котова';
+        if (l[1] !== 'Анна Смирнова' && l[1] !== 'Группа B2, вечер' && l[1] !== 'Математика') return false;
+        return filter === 'all' || l[5] === filter;
+      });
+      return '<div style="border-top:1px solid var(--border);padding-top:8px;min-width:0"><div class="small" style="font-weight:600' + (n === '25' ? ';color:var(--accent-text)' : '') + '">' + d + ', ' + n + (n === '25' ? ' · сегодня' : '') + '</div>' +
+        (items.length ? items.map((l) => '<a href="#schedule" style="display:block;margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--surface);border:1px solid var(--border);text-decoration:none;color:var(--text);border-left:3px solid ' + (student ? (l[5] === 'Игорь Белов' ? '#3F5E7A' : '#5E6B3A') : l[2]) + (l[4] === 'отменено' ? ';opacity:.6' : '') + '"><span class="tnum small" style="font-weight:600">' + l[0] + '</span><br><span class="small">' + (student ? l[3] : l[1]) + '</span><br><span class="small muted">' + (student ? l[5] : l[3]) + (l[4] === 'отменено' ? ' · <span style="color:var(--danger)">отменено</span>' : '') + '</span></a>').join('') : '<p class="small muted" style="margin:8px 0 0">Нет уроков</p>') + '</div>';
+    }).join('');
+    return '<div class="page"><header class="page-head"><div><h1 class="serif" tabindex="-1">Расписание</h1><p class="muted" style="margin:4px 0 0">24–30 ноября 2026</p></div><div class="actions"><div class="seg" role="group" aria-label="Вид"><button type="button" aria-pressed="true">Неделя</button><button type="button" aria-pressed="false">Месяц</button></div><button type="button" class="btn small" aria-label="Предыдущая неделя">‹</button><button type="button" class="btn small">Сегодня</button><button type="button" class="btn small" aria-label="Следующая неделя">›</button>' + (student ? '' : '<a class="btn primary" href="#new-lesson">Новое занятие</a>') + '</div></header>' +
+      (student ? '<div class="field" style="max-width:280px"><label for="tf">Преподаватель</label><select id="tf" class="input" data-act="tutor-filter"><option value="all"' + (filter === 'all' ? ' selected' : '') + '>Все преподаватели</option><option value="Елена Котова"' + (filter === 'Елена Котова' ? ' selected' : '') + '>Елена Котова · английский</option><option value="Игорь Белов"' + (filter === 'Игорь Белов' ? ' selected' : '') + '>Игорь Белов · математика</option></select></div>' : '') +
+      '<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px">' + days + '</div>' +
+      '<p class="small muted" style="margin:0">' + (student ? 'Ученик видит уроки всех своих преподавателей; цвет полосы — цвет преподавателя, фильтр сужает до одного.' : '«Новое занятие» стоит рядом с заголовком и ведёт на отдельную страницу (G6, G13). Серии и разовые занятия видны в карточке урока.') + '</p></div>';
+  };
+  routes.students = () => '<div class="page"><header class="page-head"><h1 class="serif" tabindex="-1">Ученики</h1><div class="actions"><button type="button" class="btn">Код преподавателя</button><button type="button" class="btn primary">Пригласить ученика</button></div></header>' +
+    '<div class="actions"><input class="input" style="max-width:280px" placeholder="Поиск по имени" aria-label="Поиск по имени"><div class="seg" role="group" aria-label="Показать"><button type="button" aria-pressed="true">Занимаются</button><button type="button" aria-pressed="false">Приглашены</button><button type="button" aria-pressed="false">Закончили</button></div></div>' +
+    '<section><div class="sec-head"><h2 class="label">Заявки · 1</h2></div><div class="list"><div class="row" style="grid-template-columns:minmax(0,1fr) auto"><span>Олег Савин <span class="small muted">· по коду преподавателя, вчера</span></span><span class="actions"><button type="button" class="btn small">Принять</button><button type="button" class="btn small text">Отклонить</button></span></div></div></section>' +
+    '<section><div class="sec-head"><h2 class="label">Занимаются · 4</h2></div><div class="list">' +
+    '<div class="row small muted" style="grid-template-columns:minmax(0,1fr) 180px 140px 120px 32px;padding:8px 0"><span>Имя</span><span>Группы</span><span>Открытые задания</span><span>Следующий урок</span><span></span></div>' +
+    [['Анна Смирнова', '#7A6A4F', 'B2, вечер', '1', 'вт, 18:00'], ['Мария Орлова', '#6A7A4F', 'B2, вечер', '2', 'пт, 16:00'], ['Павел Лебедев', '#7A4F5C', '—', '0', 'ср, 17:00'], ['Илья Козлов', '#4F7A6A', 'B2, вечер', '1 · просрочено', '—']].map(([n, c, g, w, next]) =>
+      '<div class="row" style="grid-template-columns:minmax(0,1fr) 180px 140px 120px 32px"><span style="display:flex;gap:10px;align-items:center"><span class="av" style="background:' + c + '">' + n.split(' ').map((p) => p[0]).join('') + '</span><a href="#students" style="color:var(--text);font-weight:500;text-decoration:none">' + n + '</a></span><span class="small">' + g + '</span><span class="small' + (w.includes('просрочено') ? '" style="color:var(--warning)' : '') + '">' + w + '</span><span class="small tnum">' + next + '</span><button type="button" class="kebab" aria-label="Ещё действия: ' + n + '">⋯</button></div>').join('') +
+    '</div></section><p class="small muted" style="margin:0">Главные действия страницы — в шапке; заявки отдельным разделом над списком; редкие действия со строкой (написать, выдать задание, закончить занятия) — в меню «⋯». Карточки ученика в макете нет.</p></div>';
+  routes.finance = () => '<div class="page"><header class="page-head"><h1 class="serif" tabindex="-1">Финансы</h1></header><div class="empty"><h3>Появится на этапе «Финансы»</h3><p class="muted" style="margin:0">Этот раздел не входит в переработку интерфейса; эскиз — на странице макетов этапа.</p></div></div>';
+
+  const qtypes = {
+    single: ['Один вариант', true], multiple: ['Несколько вариантов', true], short: ['Короткий ответ', true],
+    number: ['Число', true], long: ['Текстовый ответ', false], file: ['Файл или фото', false],
+  };
+  state.questions = [
+    { type: 'single', text: 'What is the main idea of the text?' },
+    { type: 'short', text: 'Find a synonym for “brief”' },
+    { type: 'long', text: 'Explain in 3–4 sentences why the author disagrees' },
+    { type: 'file', text: 'Сфотографируйте решение упражнения 6' },
+  ];
+  routes['new-task'] = () => {
+    const qs = state.questions;
+    const manual = qs.filter((q) => !qtypes[q.type][1]).length;
+    const auto = qs.length - manual;
+    const revealing = qs.length > 0 && manual === 0 && state.policy !== 'never';
+    const thumbs = state.attached.map((f, i) => '<div class="thumb"><div class="ph ' + (f.kind === 'pdf' ? 'pdf' : i % 2 ? 'b2' : '') + '">' + (f.kind === 'pdf' ? 'PDF' : '') + '<button type="button" class="rm" data-act="rmfile" data-v="' + i + '" aria-label="Убрать ' + esc(f.name) + '">✕</button></div><span>' + esc(f.name) + '</span></div>').join('');
+    const textErr = state.taskErrors;
+    let result;
+    if (!qs.length) result = 'Без вопросов задание — только инструкция и файлы; ученик отправит его, когда выполнит, без оценки.';
+    else if (!manual) result = 'Все вопросы проверяются автоматически: оценка появится у вас сразу после отправки. Ученик баллов не видит.';
+    else if (!auto) result = 'Все вопросы проверяете вы: после отправки работа ждёт в «На проверку».';
+    else result = auto + ' ' + (auto === 1 ? 'вопрос проверится' : auto < 5 ? 'вопроса проверятся' : 'вопросов проверятся') + ' автоматически сразу после отправки, ' + manual + ' ' + 'проверяете' + ' вы — работа ждёт в «На проверку» с уже посчитанной автоматической частью.';
+    const rows = qs.map((q, i) => '<div class="qrow" style="grid-template-columns:28px minmax(0,1fr) 170px 150px 32px"><span class="muted tnum">' + (i + 1) + '.</span><span>' + esc(q.text) + '</span><span class="small muted">' + qtypes[q.type][0] + '</span><span class="small" style="color:' + (qtypes[q.type][1] ? 'var(--info)' : 'var(--accent-text)') + '"><span class="dot"></span>' + (qtypes[q.type][1] ? 'автоматически' : 'проверяете вы') + '</span><button type="button" class="kebab" data-act="rmq" data-v="' + i + '" aria-label="Убрать вопрос ' + (i + 1) + '">✕</button></div>').join('');
+    return '<div class="page reading"><div><a class="back" href="#library">← Задания</a><header class="page-head"><h1 class="serif" tabindex="-1">Новое задание</h1><button type="button" class="btn text small" data-act="stub" data-v="Конструктор">Открыть в конструкторе</button></header></div>' +
+      (textErr ? errorSummary([['task-text', 'Напишите, что сделать'], ['task-to', 'Выберите, кому выдать']]) : '') +
+      '<form id="task-form" style="display:flex;flex-direction:column;gap:24px" novalidate>' +
+      '<div class="field"><label for="task-title">Название</label><input id="task-title" class="input" value="Reading, Unit 7"></div>' +
+      '<div class="field"><label for="task-text">Что сделать</label><textarea id="task-text" class="input"' + (textErr ? ' aria-invalid="true" aria-describedby="task-text-err"' : '') + '>' + (textErr ? '' : 'Прочитайте текст на фото и ответьте на вопросы.') + '</textarea>' + (textErr ? '<span class="err" id="task-text-err">⚠ Напишите, что сделать</span>' : '') + '</div>' +
+      '<div class="field"><span class="flabel">Файлы и фото к заданию <span class="opt">(необязательно)</span></span><div class="drop"><span class="muted small">Перетащите файлы сюда или выберите. Фото, PDF, документы, аудио, видео · до 100 МБ</span><button type="button" class="btn" data-act="addfile">Выбрать файлы</button></div><div class="thumbs">' + thumbs + '</div><span class="hint">Файлы сохранятся в библиотеке, в папке «Вложения заданий».</span></div>' +
+      '<section class="field" aria-labelledby="qs-l"><div class="sec-head"><span class="flabel" id="qs-l">Вопросы <span class="opt">(необязательно)</span></span><span class="small muted">' + qs.length + ' · автоматически ' + auto + ' · проверяете вы ' + manual + '</span></div>' +
+      (qs.length ? '<div class="list">' + rows + '</div>' : '<p class="small muted" style="margin:0">Вопросов пока нет.</p>') +
+      '<div class="actions"><label for="qtype" class="small">Добавить вопрос:</label><select id="qtype" class="input" style="width:auto"><optgroup label="Проверяется автоматически"><option value="single">Один вариант</option><option value="multiple">Несколько вариантов</option><option value="short">Короткий ответ</option><option value="number">Число</option></optgroup><optgroup label="Проверяете вы"><option value="long">Текстовый ответ</option><option value="file">Файл или фото</option></optgroup></select><button type="button" class="btn small" data-act="addq">Добавить</button></div>' +
+      '<div class="notice" role="status" style="justify-content:flex-start"><span>' + result + '</span></div></section>' +
+      '<div class="group3" style="grid-template-columns:2fr 1fr"><div class="field"><label for="task-to">Кому</label><select id="task-to" class="input"' + (textErr ? ' aria-invalid="true"' : '') + '><option value="">' + (textErr ? 'Выберите ученика или группу' : 'Анна Смирнова') + '</option><option>Группа B2, вечер</option></select>' + (textErr ? '<span class="err">⚠ Выберите, кому выдать</span>' : '') + '</div><div class="field"><label for="task-due">Срок <span class="opt">(необязательно)</span></label><input id="task-due" class="input tnum" type="date" value="2026-11-27"></div></div>' +
+      '<div class="field"><button type="button" class="btn text small" style="align-self:flex-start;padding-left:0" data-act="policy-open" aria-expanded="' + state.policyOpen + '">Когда показать правильные ответы: ' + ({ never: 'никогда', after_submission: 'после отправки', after_check: 'после проверки' }[state.policy]) + '</button>' +
+      (state.policyOpen ? '<div class="seg" role="group" aria-label="Когда показать ответы">' + [['never', 'Никогда'], ['after_submission', 'После отправки'], ['after_check', 'После проверки']].map(([v, t]) => '<button type="button" data-act="policy" data-v="' + v + '" aria-pressed="' + (state.policy === v) + '">' + t + '</button>').join('') + '</div>' : '') +
+      (revealing ? '<div class="warn" role="note">Все вопросы проверяются автоматически, поэтому правильные ответы ученик увидит сразу после отправки.</div>' : '') +
+      (state.policy === 'after_submission' && qs.length && manual ? '<div class="warn" role="note">Правильные ответы ученик увидит сразу после отправки, ещё до вашей проверки.</div>' : '') + '</div>' +
+      '<div class="actions"><button type="submit" class="btn primary">Выдать задание</button><a class="btn text" href="#library">Отмена</a><button type="button" class="btn text small" data-act="demo-errors" style="margin-left:auto">Показать ошибки (демо)</button></div></form></div>';
+  };
+  routes.work = () => {
+    const files = state.answerFiles.map((f, i) => '<div class="thumb"><div class="ph b2"><button type="button" class="rm" data-act="rmanswer" data-v="' + i + '" aria-label="Убрать ' + esc(f) + '">✕</button></div><span>' + esc(f) + '</span></div>').join('');
+    const who = (a) => '<span class="small" style="color:' + (a ? 'var(--info)' : 'var(--accent-text)') + '"><span class="dot"></span>' + (a ? 'проверится автоматически' : 'проверит преподаватель') + '</span>';
+    const qh = (n, t, a) => '<div class="sec-head"><h2 id="q' + n + '" style="margin:0;font-size:18px;font-weight:500">' + n + '. ' + t + '</h2>' + who(a) + '</div>';
+    return '<div class="page reading"><div><span class="back muted">Задания › (списка заданий ученика в макете нет)</span><header class="page-head"><div><h1 class="serif" tabindex="-1">Reading, Unit 7</h1><p class="small muted" style="margin:4px 0 0"><span class="dot" style="color:#5E6B3A"></span>Елена Котова · <span style="color:var(--warning)">срок чт, 27 ноября</span> · 4 вопроса</p></div></header></div>' +
+      '<section class="panel"><span class="label" style="margin:0">Задание</span><p class="prose" style="margin:0">Прочитайте текст на фото и ответьте на вопросы.</p><div class="thumbs"><div class="thumb"><div class="ph"></div><span>text-unit7.jpg</span></div><div class="thumb"><div class="ph pdf">PDF</div><span>questions.pdf</span></div></div></section>' +
+      '<section style="display:flex;flex-direction:column;gap:10px" aria-labelledby="q1">' + qh(1, 'What is the main idea of the text?', true) + ['Cities are growing too fast', 'Public transport improves life in cities', 'Cars should be banned'].map((o, i) => '<label class="small" style="display:flex;gap:8px;align-items:center"><input type="radio" name="q1"' + (i === 1 ? ' checked' : '') + '> ' + o + '</label>').join('') + '</section>' +
+      '<section style="display:flex;flex-direction:column;gap:10px" aria-labelledby="q2">' + qh(2, 'Find a synonym for “brief”', true) + '<input class="input" style="max-width:320px" value="short" aria-labelledby="q2"></section>' +
+      '<section style="display:flex;flex-direction:column;gap:10px" aria-labelledby="q3">' + qh(3, 'Explain in 3–4 sentences why the author disagrees', false) + '<textarea class="input" data-act="draft" aria-labelledby="q3">The author thinks that…</textarea></section>' +
+      '<section style="display:flex;flex-direction:column;gap:10px" aria-labelledby="q4">' + qh(4, 'Сфотографируйте решение упражнения 6', false) + '<div class="drop"><span class="muted small">Перетащите фото тетради или файл сюда · фото, PDF, документы, аудио · до 5 файлов, до 25 МБ каждый</span><button type="button" class="btn" data-act="addanswer">Выбрать файлы</button></div><div class="thumbs">' + files + '</div></section>' +
+      '<div class="notice" style="justify-content:flex-start"><span class="small">После отправки вопросы 1 и 2 проверятся сразу, вопросы 3 и 4 проверит преподаватель. Баллов вы не увидите — только отзыв и, если преподаватель разрешил, правильные ответы.</span></div>' +
+      '<div class="actions"><button type="button" class="btn primary" data-act="submit-work">Отправить на проверку</button><span class="state muted"><span class="dot" style="color:var(--success)"></span>' + (state.draftSaved ? 'Черновик сохранён' : 'Сохраняем…') + '</span></div></div>';
+  };
+
+  const tutorOnly = ['today', 'students', 'group', 'library', 'new-task', 'issue', 'new-lesson', 'review-empty', 'finance'];
+  const studentOnly = ['home', 'work'];
+  function focusKey(el) {
+    if (!el || el === document.body) return null;
+    if (el.id) return { id: el.id };
+    if (el.dataset && el.dataset.act) return { act: el.dataset.act, v: el.dataset.v || '' };
+    return null;
+  }
+  function render(focusHeading) {
+    const key = focusHeading ? null : focusKey(document.activeElement);
+    document.documentElement.dataset.theme = state.theme;
+    document.getElementById('side').innerHTML = side();
+    const r = route();
+    const wrongRole = (state.role === 'student' && tutorOnly.includes(r)) || (state.role === 'tutor' && studentOnly.includes(r));
+    const view = wrongRole ? () => '<div class="page"><header class="page-head"><h1 class="serif" tabindex="-1">Этот экран для другой роли</h1></header><p class="muted" style="margin:0">Переключите роль в боковой панели. В продукте такой адрес отвечает «Не найдено».</p></div>' : (routes[r] || routes[state.role === 'tutor' ? 'today' : 'work']);
+    const main = document.getElementById('main');
+    main.innerHTML = view();
+    if (focusHeading) {
+      const h = main.querySelector('h1');
+      if (h) { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: false }); }
+    } else if (key) {
+      let el = key.id ? document.getElementById(key.id) : document.querySelector('[data-act="' + key.act + '"][data-v="' + key.v + '"]') || document.querySelector('[data-act="' + key.act + '"]');
+      if (!el) { el = main.querySelector('h1'); if (el) el.setAttribute('tabindex', '-1'); }
+      if (el) el.focus({ preventScroll: true });
+    }
+    const sq = document.getElementById('sq');
+    if (sq && state.searchOpen && document.activeElement === document.body) sq.focus();
+  }
+
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-act]');
+    if (!t) { if (state.menuFor && !e.target.closest('.menu')) { state.menuFor = null; render(); } return; }
+    const v = t.dataset.v;
+    switch (t.dataset.act) {
+      case 'role': state.role = v; location.hash = v === 'tutor' ? 'today' : 'work'; render(true); break;
+      case 'theme': state.theme = v; render(); break;
+      case 'chan': state.chan = v; render(); document.querySelector('.conv-head h2').focus(); break;
+      case 'menu': state.menuFor = state.menuFor === v ? null : v; render(); { const first = document.querySelector('.menu button'); if (first) first.focus(); } break;
+      case 'reply': state.replyTo = v; state.menuFor = null; render(); document.getElementById('composer').focus(); break;
+      case 'unreply': state.replyTo = null; render(); document.getElementById('composer').focus(); break;
+      case 'stub': announce(v + ' в макете не показан'); break;
+      case 'pin': state.menuFor = null; render(); announce('Сообщение закреплено'); break;
+      case 'react': {
+        const m = t.dataset.msg; state.reactions[m] = state.reactions[m] || {};
+        const prev = state.myReaction[m];
+        if (prev) state.reactions[m][prev]--;
+        if (prev === v) { delete state.myReaction[m]; } else { state.myReaction[m] = v; state.reactions[m][v] = (state.reactions[m][v] || 0) + 1; }
+        state.menuFor = null; render(); break;
+      }
+      case 'jump': state.jumpCount = 0; render(); { const h = document.getElementById('hist'); h.scrollTop = h.scrollHeight; document.getElementById('composer').focus(); } break;
+      case 'jumpto': { const el = document.getElementById('msg-' + v); el.scrollIntoView({ block: 'center' }); el.querySelector('.bubble').setAttribute('tabindex', '-1'); el.querySelector('.bubble').focus(); } break;
+      case 'search': state.searchOpen = !state.searchOpen; state.searchQ = ''; render(); if (state.searchOpen) document.getElementById('sq').focus(); break;
+      case 'send': { const c = document.getElementById('composer'); if (c.value.trim()) { messages.push({ id: 'm' + (messages.length + 1), me: true, quote: state.replyTo, text: c.value.trim(), time: '18:20', ticks: '✓' }); state.replyTo = null; render(); const h = document.getElementById('hist'); h.scrollTop = h.scrollHeight; document.getElementById('composer').focus(); } break; }
+      case 'addq': { const ty = document.getElementById('qtype').value; state.questions.push({ type: ty, text: { single: 'Новый вопрос с одним вариантом', multiple: 'Новый вопрос с несколькими вариантами', short: 'Новый вопрос с коротким ответом', number: 'Новый вопрос с числом', long: 'Новый вопрос с текстовым ответом', file: 'Приложите фото или файл' }[ty] }); syncPolicy(); render(); document.getElementById('qtype').focus(); announce('Вопрос добавлен'); break; }
+      case 'rmq': state.questions.splice(Number(v), 1); syncPolicy(); render(); announce('Вопрос убран'); break;
+      case 'policy-open': state.policyOpen = !state.policyOpen; render(); break;
+      case 'policy': state.policy = v; state.policyTouched = true; render(); break;
+      case 'rmfile': state.attached.splice(Number(v), 1); render(); announce('Файл убран'); break;
+      case 'addfile': state.attached.push({ name: 'photo-' + (state.attached.length + 1) + '.jpg', kind: 'img' }); render(); break;
+      case 'demo-errors': state.taskErrors = true; render(); document.getElementById('summary').focus(); break;
+      case 'lesson-errors': state.lessonErrors = true; render(); document.getElementById('summary').focus(); break;
+      case 'lesson-save': state.lessonErrors = false; location.hash = 'today'; announce('Занятие сохранено'); break;
+      case 'focusfield': e.preventDefault(); { const f = document.getElementById(v); f.focus(); } break;
+      case 'lib-move': state.libNotice = true; render(); document.querySelector('.notice button').focus(); break;
+      case 'lib-undo': state.libNotice = null; render(); announce('Перемещение отменено'); break;
+      case 'group-remove': state.removed = true; state.groupNotice = true; render(); document.querySelector('.notice button').focus(); break;
+      case 'group-addback': state.removed = false; state.groupNotice = null; render(); announce('Илья Козлов снова в группе'); break;
+      case 'addanswer': state.answerFiles.push('notebook-' + (state.answerFiles.length + 1) + '.jpg'); render(); break;
+      case 'rmanswer': state.answerFiles.splice(Number(v), 1); render(); break;
+      case 'submit-work': openDialog('<h2 class="serif">Отправить на проверку?</h2><p class="muted">После отправки ответы нельзя изменить, пока преподаватель не вернёт работу.</p><div class="actions"><button type="button" class="btn primary" data-act="dlg-ok">Отправить</button><button type="button" class="btn text" data-act="dlg-close">Отмена</button></div>'); break;
+      case 'export-start': openDialog('<h2 class="serif">Подтвердите паролем</h2><p class="muted small">Архив содержит все ваши данные. Мы также пришлём письмо, что выгрузка запрошена.</p><div class="field"><label for="pw">Текущий пароль</label><input id="pw" class="input" type="password" autocomplete="current-password"></div><div class="actions" style="margin-top:16px"><button type="button" class="btn primary" data-act="export-confirm">Собрать архив</button><button type="button" class="btn text" data-act="dlg-close">Отмена</button></div>'); document.getElementById('pw').focus(); break;
+      case 'export-confirm': closeDialog(); state.exportState = 'building'; state.exportProgress = 12; render(); tick(); break;
+      case 'export-cancel': state.exportState = 'idle'; state.exportProgress = 0; render(); announce('Архив удалён'); break;
+      case 'export-finish': state.exportState = 'ready'; render(); announce('Архив готов'); break;
+      case 'dlg-ok': closeDialog(); announce('Работа отправлена на проверку'); break;
+      case 'dlg-close': closeDialog(); break;
+      default: break;
+    }
+  });
+
+  document.addEventListener('change', (e) => { if (e.target.id === 'tf') { state.tutorFilter = e.target.value; render(); document.getElementById('tf').focus(); } });
+  document.addEventListener('submit', (e) => { e.preventDefault(); state.taskErrors = false; location.hash = 'library'; announce('Задание выдано'); });
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'sq') { state.searchQ = e.target.value; const pos = e.target.selectionStart; render(); const s = document.getElementById('sq'); s.focus(); s.setSelectionRange(pos, pos); }
+    if (e.target.id === 'task-text' && state.taskErrors && e.target.value.trim()) { e.target.removeAttribute('aria-invalid'); const err = document.getElementById('task-text-err'); if (err) err.remove(); }
+    if (e.target.dataset.act === 'draft') { state.draftSaved = false; const st = document.querySelector('.state'); if (st) st.lastChild.textContent = 'Сохраняем…'; clearTimeout(state.dt); state.dt = setTimeout(() => { state.draftSaved = true; const s2 = document.querySelector('.state'); if (s2) s2.lastChild.textContent = 'Черновик сохранён'; }, 900); }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.target.id === 'composer' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.querySelector('[data-act="send"]').click(); }
+    if (e.key === 'Escape' && state.menuFor) { const id = state.menuFor; state.menuFor = null; render(); const b = document.querySelector('[data-act="menu"][data-v="' + id + '"]'); if (b) b.focus(); }
+  });
+
+  function syncPolicy() {
+    if (state.policyTouched) return;
+    const manual = state.questions.some((q) => !qtypes[q.type][1]);
+    state.policy = state.questions.length && !manual ? 'never' : 'after_check';
+  }
+  let opener = null;
+  function openDialog(html) { opener = document.activeElement; const d = document.getElementById('dlg'); d.innerHTML = html; d.showModal(); }
+  function closeDialog() { const d = document.getElementById('dlg'); d.close(); if (opener && document.contains(opener)) opener.focus(); }
+  function tick() {
+    if (state.exportState !== 'building') return;
+    state.exportProgress = Math.min(96, state.exportProgress + 7);
+    if (route() === 'my-data') {
+      const bar = document.querySelector('.progress i'); const st = document.querySelector('.panel .state');
+      if (bar) bar.style.width = state.exportProgress + '%';
+      if (st) st.lastChild.textContent = 'Собираем архив… файлы ' + Math.round(1270 * state.exportProgress / 100) + ' из 1 270';
+    }
+    setTimeout(tick, 700);
+  }
+
+  window.addEventListener('hashchange', () => render(true));
+  render(false);
+})();
+</script>
+</body>
+</html>

@@ -9,6 +9,7 @@ A low-fidelity, clickable prototype of five screens in the visual language decid
 | `review.html` | Tutor: two-pane review |
 | `student-home.html` | Student: Home, with the tutor filter |
 | `student-lesson.html` | Student: lesson page, with every join state |
+| `ui-rework/index.html` | The desktop prototype of the interface rework stage (change U1a, approved by the owner on 2026-11-23): Today, Schedule of both roles, Students, Messages, New task with mixed questions, the Issue and New lesson pages, Library, a group page, empty states, Home, the student's work page and My data, in both themes, with a role switch; self-contained like `phone.html` |
 | `phone.html` | Phone mockups at 360 px of slice 10 change G0: the phone frame of both roles (bottom bar, More sheet, notifications panel, unconfirmed student, public frame) and screens of every page group G1 to G5, in both themes |
 
 ## Opening it

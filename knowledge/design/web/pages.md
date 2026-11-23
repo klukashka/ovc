@@ -649,3 +649,31 @@ Same as the tutor's, without tutor-only sections; direct channels are named by t
   - every page has a "Skip to content" link, and route changes move focus to the page heading;
   - lesson status changes ("Live now", the Join button appearing) are announced, while countdowns are not;
   - typing dots and the live pulse stop with reduced motion.
+
+## Interface rework stage: desktop prototype
+
+Change U1a of the [interface rework plan](../../plans/ui-rework.md) (D2, D3). The clickable desktop prototype is [`prototype/ui-rework/index.html`](prototype/ui-rework/index.html): Today, Schedule of both roles, Students, Messages, New task, the Issue and New lesson pages, Library rows, a group page with Add back, the review queue's empty state, Home, the student's work page and Settings with My data, in both themes. These specifications stay normative over it; the stage's later changes write each page's desktop design here from it.
+
+- **Approval.** The owner approved the prototype on 2026-11-23, after it gained Schedule of both roles and Students and after New task changed from a choice between a test and a free answer to one list of questions that mixes automatic and tutor-checked types, each marked with who checks it, with a result hint and the student's work page showing the mixed case (pending owner review of this wording).
+- **Phone design.** The phone design of every page this stage reworks is deferred by the owner's decision of 2026-11-23 to the phone stage of slice 10; each reworked page keeps its phone section, and the stage's changes keep every phone test passing except the replacements below.
+- **Phone tests on pages this stage changes** (D2), found on 2026-11-23 by searching `frontend/e2e/` for viewports narrower than 768 px (`setViewportSize`, `viewport` options and the phone browser contexts of the pilot suites), listed by file with the line of the test or group at `2d884e8`:
+  - `messages.spec.ts`: 125 (the exchange at 360 px with Back to the list), 197 (editing and deleting own messages, the student at 360 px), 312 (a channel outside the caller's chats at 360 px), 359 (the unconfirmed provisional student's direct chat), and 419 to 433 (the Russian and dark pagination tests at 360 px);
+  - `assignment.spec.ts`: pilot-2 steps 7, 14 and 16 on Anna's phone, and the New marker on Home's Recently checked panel on a phone;
+  - `invitations.spec.ts`: 150 (pilot-1 step 5, Home), 222 (pilot-3 steps 1 and 2 on a phone), and 592 (the invitation page at 360 px, which L1 changes);
+  - `home.spec.ts`: Home on a phone;
+  - `today.spec.ts`: Join, Accept and Decline at 360 px; Dismiss on a phone; Today and Schedule on a phone;
+  - `schedule.spec.ts`: 871 (pilot-1 step 6) and 1049 (pilot-3 step 4, Schedule and Home's To do) on a phone; `lesson-form-layout.spec.ts`: the New lesson form at 320 px;
+  - `homework.spec.ts`: issuing on a phone;
+  - `groups.spec.ts`: Groups on a phone in Russian;
+  - `students.spec.ts`: open work under the name on a phone;
+  - `notifications.spec.ts`: notifications on a phone;
+  - `email-settings.spec.ts`: Settings on a phone;
+  - `desktop-layout.spec.ts`: 339 and 389 (the frames of both roles), 356 (the tutor's pages group), the student's pages group, the public pages group, 765 and 808 (the homework groups of both roles), 971 and 1033 (the Messages groups of both roles);
+  - `ending.spec.ts`: 497 (stop studying at 360 px);
+  - `reclaim.spec.ts`: 125, and `signup.spec.ts`: 450 (pages that L1 or L3 change, at 360 px);
+  - `lesson-room.spec.ts`: 1000 (the lesson room at 360 px, listed because Today and Schedule link to it);
+  - `smoke.spec.ts` and `session.spec.ts`: the frame below 768 px;
+  - `builder.spec.ts`: the builder preview on a phone (the builder is not reworked; listed because New task opens it).
+
+  Each later change of the stage searches again for the pages it changes and adds any test this list missed to its readiness report.
+- **Approved replacements** (approved with the prototype on 2026-11-23, pending owner review): the New lesson dialog and the Issue dialog become pages at every width (D5), so `homework.spec.ts` "Issue assignment fills the screen, opens on the audience search and keeps its actions at the end" and the New lesson dialog's phone assertions in `lesson-form-layout.spec.ts` and in `today.spec.ts` ("Schedule keeps New lesson…") change from a full-screen dialog to a page that opens on its heading, keeps its fields in one column and its actions at the end of the form, and returns with Back; no other phone assertion changes.
