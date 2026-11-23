@@ -9,7 +9,7 @@ import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fake
 import { Session } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import type { AnswerPolicy, IssueTemplate } from './api.ts';
-import { PolicyField } from './IssueDialog.tsx';
+import { PolicyField } from './IssueAssignmentPage.tsx';
 import { homeworkTexts as englishTexts } from './texts.en.ts';
 import { homeworkTexts as russianTexts } from './texts.ru.ts';
 

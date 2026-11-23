@@ -85,19 +85,19 @@ const placements: Readonly<Record<BellPlacement, PlacementClasses>> = {
     button:
       'flex min-h-11 w-full items-center gap-2.5 rounded-sm px-2.5 text-left text-small text-text-muted transition-colors duration-(--duration-press) ease-quiet hover:bg-hover hover:text-text aria-expanded:bg-hover aria-expanded:text-text desktop:pointer-fine:min-h-8',
     icon: 'text-icon',
-    count: 'tabular text-caption text-text-muted',
+    count: 'tabular text-label font-medium text-text-muted',
     panel: `${panelClass} ${boundedPanel} top-3 left-(--container-sidebar) ml-2 w-96`,
   },
   topBar: {
     button: topBarButton,
     icon: 'inline-flex',
-    count: 'tabular text-caption text-text',
+    count: 'tabular text-label font-medium text-text',
     panel: `${panelClass} ${boundedPanel} top-14 right-2 left-2 tablet:left-auto tablet:w-96`,
   },
   phoneTopBar: {
     button: topBarButton,
     icon: 'inline-flex',
-    count: 'tabular text-caption text-text',
+    count: 'tabular text-label font-medium text-text',
     panel: `${panelClass} top-12 right-0 left-0 max-h-[70dvh] rounded-none border-x-0`,
   },
 };

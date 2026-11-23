@@ -8,6 +8,7 @@ import { useMediaQuery } from '../../app/context.ts';
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
 import { SelectChevron, primaryButtonClass, quietButtonClass, selectClass } from '../../components/ui/Form.tsx';
 import { ChevronLeftIcon, ChevronRightIcon } from '../../components/ui/icons.tsx';
+import { useOpenFormRoute, useReturnFocus } from '../../components/ui/formRoute.ts';
 import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import {
   DelayedLoading,
@@ -17,6 +18,7 @@ import {
   loadingDelayMilliseconds,
 } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
+import { SegmentedControl } from '../../components/ui/Tabs.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type Me, useSignedInAccount } from '../../lib/api/session.ts';
 import { fetchMyTutors, myTutorsKey } from '../tutors/api.ts';
@@ -27,14 +29,12 @@ import { type LocalDate, isLocalDate } from '../../lib/time/localDates.ts';
 import { type CalendarRange, type CalendarView, calendarViews, rangeOf, shifted } from './calendarTime.ts';
 import { LessonFocusContext } from './LessonParts.tsx';
 import { MonthGrid } from './MonthGrid.tsx';
-import { type LessonPrefill, NewLessonDialog, nextFullHour } from './NewLessonDialog.tsx';
+import { type LessonPrefill, newLessonAddress, nextFullHour } from './newLesson.ts';
+import { useLessonScheduled } from './ScheduleLessonAction.tsx';
 import { type SlotChosen, WeekGrid } from './WeekGrid.tsx';
 
 const tabletQuery = '(min-width: 768px)';
 const timeGridQuery = '(min-width: 1024px) and (pointer: fine)';
-
-const segmentClass =
-  'inline-flex min-h-11 items-center px-4 text-small text-text-muted aria-pressed:rounded-md aria-pressed:border aria-pressed:border-border-strong aria-pressed:bg-field aria-pressed:text-strong aria-pressed:text-text';
 
 function TutorFilter({
   tutor,
@@ -95,21 +95,12 @@ function Toolbar({
   return (
     <div role="group" aria-label={t('schedule.toolbar')} className="flex flex-wrap items-center gap-3">
       <div className="w-full tablet:w-auto">
-        <div role="group" aria-label={t('schedule.views')} className="inline-flex rounded-md bg-hover p-0.5">
-          {calendarViews.map((view) => (
-            <button
-              key={view}
-              type="button"
-              aria-pressed={range.view === view}
-              onClick={() => {
-                onView(view);
-              }}
-              className={segmentClass}
-            >
-              {t(`schedule.${view}`)}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          name={{ label: t('schedule.views') }}
+          chosen={range.view}
+          onChoose={onView}
+          segments={calendarViews.map((view) => ({ value: view, label: t(`schedule.${view}`) }))}
+        />
       </div>
       <div className="inline-flex gap-1 tablet:gap-3">
         <button
@@ -208,16 +199,17 @@ interface ShownCalendar {
   readonly calendar: Calendar;
 }
 
+const scheduleNewLessonOpener = 'schedule-new-lesson';
+
 export function SchedulePage(): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
   const client = useApiClient();
   const scheduler = useScheduler();
   const [params, setParams] = useSearchParams();
+  const openNewLesson = useOpenFormRoute(me.id);
+  const announcement = useLessonScheduled();
   const newLessonButton = useRef<HTMLButtonElement>(null);
-  const opener = useRef<HTMLElement | null>(null);
-  const [dialog, setDialog] = useState<LessonPrefill | null>(null);
-  const [announcement, setAnnouncement] = useState<string | null>(null);
   const today = useLocalToday(me.timezone);
   const requestedDate = params.get('date');
   const [undatedAnchor, setUndatedAnchor] = useState({ requestedDate, day: today });
@@ -239,6 +231,7 @@ export function SchedulePage(): ReactElement {
   const longAwaitedRange = useDebouncedValue(awaitedRange, loadingDelayMilliseconds);
   const stillLoading = awaitedRange !== null && longAwaitedRange === awaitedRange;
   const tutorCanSchedule = me.role === 'tutor' && me.state === 'active';
+  useReturnFocus(scheduleNewLessonOpener, newLessonButton, tutorCanSchedule);
 
   function changed(name: string, value: string | null): void {
     setParams((current) => {
@@ -252,10 +245,8 @@ export function SchedulePage(): ReactElement {
     });
   }
 
-  function openDialog(prefill: LessonPrefill, control: HTMLElement | null): void {
-    opener.current = control;
-    setAnnouncement(null);
-    setDialog(prefill);
+  function openDialog(prefill: LessonPrefill): void {
+    openNewLesson(newLessonAddress(prefill.date), scheduleNewLessonOpener, prefill);
   }
 
   const newLesson = tutorCanSchedule ? (
@@ -263,7 +254,7 @@ export function SchedulePage(): ReactElement {
       ref={newLessonButton}
       type="button"
       onClick={() => {
-        openDialog(nextFullHour(scheduler.wallClock(), me.timezone), newLessonButton.current);
+        openDialog(nextFullHour(scheduler.wallClock(), me.timezone));
       }}
       className={primaryButtonClass}
     >
@@ -326,7 +317,7 @@ export function SchedulePage(): ReactElement {
               onSlot={
                 tutorCanSchedule
                   ? (date, start): void => {
-                      openDialog({ date, start }, newLessonButton.current);
+                      openDialog({ date, start });
                     }
                   : null
               }
@@ -334,20 +325,6 @@ export function SchedulePage(): ReactElement {
           </div>
         </div>
       )}
-      {tutorCanSchedule ? (
-        <NewLessonDialog
-          open={dialog !== null}
-          prefill={dialog ?? { date: today, start: '00:00' }}
-          returnFocus={opener}
-          onClose={() => {
-            setDialog(null);
-          }}
-          onScheduled={() => {
-            setDialog(null);
-            setAnnouncement(t('schedule.scheduled'));
-          }}
-        />
-      ) : null}
     </Page>
   );
 }

@@ -244,7 +244,11 @@ function endSeriesDialog(page: Page): Locator {
 }
 
 function newLessonDialog(page: Page): Locator {
-  return page.getByRole('dialog', { name: 'Новый урок' });
+  return page.getByRole('main');
+}
+
+function newLessonHeading(page: Page): Locator {
+  return page.getByRole('heading', { level: 1, name: 'Новый урок' });
 }
 
 async function checkedWeekdays(dialog: Locator): Promise<number[]> {
@@ -565,7 +569,7 @@ test.describe('lesson page for a tutor in Russian', () => {
     await endSeriesDialog(page).getByRole('button', { name: 'Завершить серию' }).click();
 
     const dialog = newLessonDialog(page);
-    await expect(dialog.getByRole('button', { name: 'Изменить', exact: true })).toBeFocused();
+    await expect(newLessonHeading(page)).toBeFocused();
     await expect(page.getByText(changedMeanwhile)).toHaveCount(0);
     await expect(dialog.getByRole('button', { name: 'Изменить', exact: true })).toHaveAccessibleDescription('Анна');
     await expect(dialog.getByLabel('Дата', { exact: true })).toHaveValue(series.secondDate);
@@ -594,7 +598,7 @@ test.describe('lesson page for a tutor in Russian', () => {
     await endSeriesDialog(page).getByRole('button', { name: 'Завершить серию' }).click();
 
     const dialog = newLessonDialog(page);
-    await expect(dialog.getByRole('button', { name: 'Изменить', exact: true })).toBeFocused();
+    await expect(newLessonHeading(page)).toBeFocused();
     await expect(dialog.getByRole('button', { name: 'Изменить', exact: true })).toHaveAccessibleDescription(
       'Вечерняя группа',
     );
@@ -610,9 +614,9 @@ test.describe('lesson page for a tutor in Russian', () => {
   }) => {
     const { seed } = await endedSeriesWithNewLessonOpen(page, deployment, control.now);
 
-    await newLessonDialog(page).getByRole('button', { name: 'Запланировать' }).click();
+    await newLessonDialog(page).getByRole('button', { name: 'Создать урок' }).click();
 
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(newLessonHeading(page)).toHaveCount(0);
     await expect(page.getByRole('status').filter({ hasText: cancelledNotice })).toBeFocused();
     await expect(page.getByRole('status').filter({ hasText: 'Урок запланирован' })).toBeVisible();
     await expect(lessonActions(page)).toHaveCount(0);
@@ -646,9 +650,9 @@ test.describe('lesson page for a tutor in Russian', () => {
     await endSeriesDialog(page).getByRole('button', { name: 'Завершить серию' }).click();
     await newLessonDialog(page).getByRole('button', { name: 'Изменить', exact: true }).waitFor();
 
-    await newLessonDialog(page).getByRole('button', { name: 'Запланировать' }).click();
+    await newLessonDialog(page).getByRole('button', { name: 'Создать урок' }).click();
 
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(newLessonHeading(page)).toHaveCount(0);
     const starts = await scheduledCardLessonStarts(deployment, seed.maria, seed.cardId);
     const cancelledStarts = series.lessons.slice(1).map((lesson) => lesson.startsAt);
     expect(starts).toHaveLength(9);
@@ -675,7 +679,7 @@ test.describe('lesson page for a tutor in Russian', () => {
 
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByRole('status').filter({ hasText: changedMeanwhile })).toBeFocused();
-    await expect(newLessonDialog(page)).toHaveCount(0);
+    await expect(newLessonHeading(page)).toHaveCount(0);
     const statuses = await Promise.all(
       series.lessons.map(async (lesson) => (await readLesson(deployment, seed.maria, lesson.id)).status),
     );
@@ -719,7 +723,7 @@ test.describe('lesson page for a tutor in Russian', () => {
     await expect(endSeriesItem(page)).toHaveCount(0);
   });
 
-  test('lesson › a new series refused after the ending shows the refusal in the dialog', async ({
+  test('lesson › a new series refused after the ending shows the refusal on the New lesson page', async ({
     page,
     deployment,
     control,
@@ -728,10 +732,10 @@ test.describe('lesson page for a tutor in Russian', () => {
     diagnostics.expectFailure({ method: 'POST', path: '/api/v1/lessons', status: 409 });
     await refusedNewSeries(page, deployment, control.now);
 
-    await newLessonDialog(page).getByRole('button', { name: 'Запланировать' }).click();
+    await newLessonDialog(page).getByRole('button', { name: 'Создать урок' }).click();
 
     await expect(newLessonDialog(page).getByText(audienceGone)).toBeVisible();
-    await expect(newLessonDialog(page)).toBeVisible();
+    await expect(newLessonHeading(page)).toBeVisible();
   });
 
   test('lesson › New lesson dismissed with its Cancel button after a refusal closes onto the cancelled notice', async ({
@@ -742,25 +746,25 @@ test.describe('lesson page for a tutor in Russian', () => {
   }) => {
     diagnostics.expectFailure({ method: 'POST', path: '/api/v1/lessons', status: 409 });
     await refusedNewSeries(page, deployment, control.now);
-    await newLessonDialog(page).getByRole('button', { name: 'Запланировать' }).click();
+    await newLessonDialog(page).getByRole('button', { name: 'Создать урок' }).click();
     await newLessonDialog(page).getByText(audienceGone).waitFor();
 
     await newLessonDialog(page).getByRole('button', { name: 'Отмена', exact: true }).click();
 
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(newLessonHeading(page)).toHaveCount(0);
     await expect(page.getByRole('status').filter({ hasText: cancelledNotice })).toBeFocused();
   });
 
-  test('lesson › New lesson dismissed after ending a series closes onto the cancelled notice', async ({
+  test('lesson › New lesson left with Back after ending a series returns onto the cancelled notice', async ({
     page,
     deployment,
     control,
   }) => {
     await endedSeriesWithNewLessonOpen(page, deployment, control.now);
 
-    await page.keyboard.press('Escape');
+    await page.goBack();
 
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(newLessonHeading(page)).toHaveCount(0);
     await expect(page.getByRole('status').filter({ hasText: cancelledNotice })).toBeFocused();
     await expect(page.getByRole('status').filter({ hasText: 'Урок запланирован' })).toHaveCount(0);
   });
@@ -1225,6 +1229,7 @@ test.describe('lesson materials for a tutor in Russian', () => {
     await signInThroughTheApi(page, maria);
     await page.goto('/schedule');
     await page.getByRole('button', { name: 'Новый урок' }).click();
+    await expect(newLessonHeading(page)).toBeFocused();
     const dialog = newLessonDialog(page);
 
     await dialog.getByRole('button', { name: 'Прикрепить материал' }).click();
@@ -1247,9 +1252,9 @@ test.describe('lesson materials for a tutor in Russian', () => {
     await librarySearch(dialog).fill('лист');
     await libraryChoice(dialog, 'Таблица глаголов').waitFor({ state: 'detached' });
     await libraryChoice(dialog, 'Рабочий лист').check();
-    await dialog.getByRole('button', { name: 'Запланировать' }).click();
+    await dialog.getByRole('button', { name: 'Создать урок' }).click();
 
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(newLessonHeading(page)).toHaveCount(0);
     const lessons = await scheduledCardLessonIds(deployment, seed.maria, seed.cardId);
     expect(lessons).toHaveLength(9);
     const titles = await Promise.all(lessons.map((id) => lessonMaterialTitles(deployment, seed.maria, id)));

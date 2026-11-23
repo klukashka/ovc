@@ -33,15 +33,11 @@ import { refusalText } from '../../components/ui/Refusal.tsx';
 import { type ApiError, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { downloadAddress } from '../../lib/files/downloadAddress.ts';
+import { useOpenFormRoute } from '../../components/ui/formRoute.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
-import {
-  HomeworkTabs,
-  IssueDialogHost,
-  type IssuePreset,
-  IssuedNotice,
-  homeworkTextLoaders,
-} from '../homework/IssueAssignment.tsx';
+import { issueAssignmentAddress } from '../homework/api.ts';
+import { HomeworkTabs, IssuedNotice, homeworkTextLoaders, useIssuedResult } from '../homework/IssueAssignment.tsx';
 import {
   type FolderNode,
   type Library,
@@ -65,6 +61,7 @@ import {
   type NameSubject,
   UploadDialog,
   UploadPromptDialog,
+  libraryRowOpener,
   rowKey,
 } from './LibraryDialogs.tsx';
 import { type RowCommand, type RowHandlers, LibraryTable, folderAddress, templateAddress } from './LibraryTable.tsx';
@@ -442,6 +439,7 @@ export function LibraryPage(): ReactElement {
   const texts = useFeatureTexts('library', libraryTextLoaders);
   const homeworkTexts = useFeatureTexts('homework', homeworkTextLoaders);
   const me = useSignedInAccount();
+  const openIssue = useOpenFormRoute(me.id);
   const session = useSession();
   const client = useApiClient();
   const queryClient = useQueryClient();
@@ -461,8 +459,10 @@ export function LibraryPage(): ReactElement {
   const [focusRequest, setFocusRequest] = useState(0);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [alert, setAlert] = useState<Alert | null>(null);
-  const [issuing, setIssuing] = useState<IssuePreset | null>(null);
-  const [issued, setIssued] = useState<{ readonly issueId: string; readonly count: number } | null>(null);
+  const issuedId = useIssuedResult();
+  const [issued, setIssued] = useState<{ readonly issueId: string; readonly count: number } | null>(() =>
+    issuedId === null ? null : { issueId: issuedId, count: 1 },
+  );
   const [busyRow, setBusyRow] = useState<string | null>(null);
   const rowAction = useAction();
   const currentUpload = useRef<LibraryUpload | null>(null);
@@ -723,7 +723,7 @@ export function LibraryPage(): ReactElement {
       setNotice(null);
       setAlert(null);
       setIssued(null);
-      setIssuing({ template: { id: target.item.id, title: target.item.title } });
+      openIssue(issueAssignmentAddress(target.item.id), libraryRowOpener(rowKey(target)));
       return;
     }
     if (command === 'rename') {
@@ -878,20 +878,6 @@ export function LibraryPage(): ReactElement {
         onSaved={savedTo}
       />
       <UploadPromptDialog open={dialog?.kind === 'uploadPrompt'} returnFocus={opener} onClose={closeDialog} />
-      {homeworkTexts.ready ? (
-        <IssueDialogHost
-          open={issuing !== null}
-          preset={issuing ?? {}}
-          returnFocus={opener}
-          onClose={() => {
-            setIssuing(null);
-          }}
-          onIssued={(issue) => {
-            setIssuing(null);
-            setIssued((previous) => ({ issueId: issue.id, count: (previous?.count ?? 0) + 1 }));
-          }}
-        />
-      ) : null}
     </Page>
   );
 }

@@ -300,7 +300,7 @@ export function MaterialPicker({
         />
       </div>
       <p id={countId} className="text-small text-text-muted">
-        {t('groups.chosen', { count: chosen.length, limit: lessonMaterialLimit })}
+        {t('newLesson.materialsChosen', { count: chosen.length, limit: lessonMaterialLimit })}
       </p>
       {chosen.length >= lessonMaterialLimit ? (
         <p id={limitHintId} className="text-small text-text-muted">

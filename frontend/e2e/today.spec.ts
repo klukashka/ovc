@@ -658,7 +658,13 @@ interface PhoneLayout {
   readonly week: Box;
   readonly today: Box;
   readonly next: Box;
-  readonly newLessonDialog: Box;
+  readonly newLessonPage: {
+    readonly start: Box;
+    readonly duration: Box;
+    readonly lastField: Box;
+    readonly create: Box;
+    readonly pageOverflow: number;
+  };
 }
 
 async function phoneLayoutOfTodayAndSchedule(page: Page, now: number, title: string): Promise<PhoneLayout> {
@@ -684,13 +690,29 @@ async function phoneLayoutOfTodayAndSchedule(page: Page, now: number, title: str
     next: await boxOf(toolbar.getByRole('button', { name: 'Next week', exact: true })),
   };
   await page.locator('main header').getByRole('button', { name: 'New lesson' }).click();
-  return { ...today, ...schedule, newLessonDialog: await boxOf(page.getByRole('dialog', { name: 'New lesson' })) };
+  const newLessonHeading = page.getByRole('heading', { level: 1, name: 'New lesson' });
+  await page.waitForFunction(
+    () => document.activeElement instanceof HTMLHeadingElement && document.activeElement.textContent === 'New lesson',
+  );
+  const form = page.getByRole('main');
+  const newLessonPage = {
+    start: await boxOf(form.getByLabel('Start time')),
+    duration: await boxOf(form.getByLabel('Duration, minutes')),
+    lastField: await boxOf(form.getByRole('button', { name: 'Attach material', exact: true })),
+    create: await boxOf(form.getByRole('button', { name: 'Create lesson', exact: true })),
+    pageOverflow: await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  };
+  await page.goBack();
+  await newLessonHeading.waitFor({ state: 'detached' });
+  return { ...today, ...schedule, newLessonPage };
 }
 
 test.describe('Today and Schedule on a phone', () => {
   test.use({ locale: 'en-GB', viewport: { width: 360, height: 780 }, colorScheme: 'light' });
 
-  test('at 360 px Join stands at the full width under its lesson’s link, Accept and Decline sit under the requester, Schedule keeps New lesson in the header above a two-row toolbar, and its dialog fills the screen', async ({
+  test('at 360 px Join stands at the full width under its lesson’s link, Accept and Decline sit under the requester, Schedule keeps New lesson in the header above a two-row toolbar, and New lesson opens as a one-column page on its heading with its actions at the end and returns with Back', async ({
     page,
     deployment,
     control,
@@ -712,7 +734,11 @@ test.describe('Today and Schedule on a phone', () => {
     expect(shown.newLessonInHeader).toBe(1);
     expect(shown.today.top).toBeGreaterThanOrEqual(shown.week.bottom);
     expect(Math.abs(shown.next.top - shown.today.top)).toBeLessThanOrEqual(1);
-    expect(shown.newLessonDialog).toEqual({ left: 0, top: 0, bottom: 780, width: 360 });
+    expect(shown.newLessonPage.duration.top).toBeGreaterThanOrEqual(shown.newLessonPage.start.bottom);
+    expect(Math.abs(shown.newLessonPage.duration.width - shown.newLessonPage.start.width)).toBeLessThanOrEqual(1);
+    expect(shown.newLessonPage.create.top).toBeGreaterThanOrEqual(shown.newLessonPage.lastField.bottom);
+    expect(shown.newLessonPage.pageOverflow).toBeLessThanOrEqual(0);
+    await expect(page.locator('main header').getByRole('button', { name: 'New lesson' })).toBeFocused();
   });
 });
 

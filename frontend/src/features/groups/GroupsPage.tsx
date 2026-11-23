@@ -20,9 +20,11 @@ import { Page } from '../../components/ui/Page.tsx';
 import { StatusWord } from '../../components/ui/StatusWord.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { type GroupSummary, fetchGroups, firstUnusedColour, groupsKey } from './api.ts';
 import { GroupDot } from './ColourField.tsx';
 import { NewGroupDialog } from './NewGroupDialog.tsx';
+import { groupsTextLoaders } from './texts.ts';
 import { NextLessonLine } from '../schedule/LessonList.tsx';
 
 function GroupRow({ group }: { readonly group: GroupSummary }): ReactElement {
@@ -122,6 +124,7 @@ export function GroupsPage(): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
   const client = useApiClient();
+  const texts = useFeatureTexts('groups', groupsTextLoaders);
   const [dialogOpen, setDialogOpen] = useState(false);
   const opener = useRef<HTMLButtonElement>(null);
   const query = useQuery({
@@ -143,6 +146,14 @@ export function GroupsPage(): ReactElement {
         {t('groups.new')}
       </button>
     );
+
+  if (!texts.ready) {
+    return (
+      <Page>
+        {texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />}
+      </Page>
+    );
+  }
 
   return (
     <Page action={query.isSuccess && query.data.length > 0 ? addButton : null}>

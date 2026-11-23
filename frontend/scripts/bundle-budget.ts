@@ -490,11 +490,8 @@ export const sharedLessonPage: SharedPage = {
   pinnedFolder: 'src/features/homework/',
   pinned: [
     'src/features/homework/IssueAssignment.tsx',
-    'src/features/homework/IssueDialog.tsx',
     'src/features/homework/LessonIssues.tsx',
-    'src/features/homework/TemplatePicker.tsx',
     'src/features/homework/api.ts',
-    'src/features/homework/issueProblems.ts',
     'src/features/homework/texts.en.ts',
     'src/features/homework/texts.ru.ts',
   ],

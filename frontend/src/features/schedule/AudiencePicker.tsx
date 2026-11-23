@@ -15,6 +15,20 @@ export type Audience =
   | { readonly kind: 'one_to_one'; readonly id: string; readonly name: string }
   | { readonly kind: 'group'; readonly id: string; readonly name: string };
 
+export function audienceOf(value: unknown): Audience | undefined {
+  if (typeof value !== 'object' || value === null || !('kind' in value) || !('id' in value) || !('name' in value)) {
+    return undefined;
+  }
+  const { kind, id, name } = value;
+  if (typeof id !== 'string' || typeof name !== 'string') {
+    return undefined;
+  }
+  if (kind === 'one_to_one' || kind === 'group') {
+    return { kind, id, name };
+  }
+  return undefined;
+}
+
 export const searchDelayMilliseconds = 300;
 
 function schedulableStudentsKey(search: string): readonly unknown[] {

@@ -4,6 +4,14 @@ export const homeworkTexts: HomeworkTexts = {
   tabs: { library: 'Библиотека', issued: 'Выданные', review: 'На проверке' },
   confirmEmail: 'Подтвердите адрес почты, чтобы выдавать и проверять задания.',
   issue: 'Выдать задание',
+  issueForm: {
+    back: {
+      library: 'Назад в библиотеку',
+      builder: 'Назад к заданию',
+      student: 'Назад к ученику',
+      lesson: 'Назад к уроку',
+    },
+  },
   fields: {
     template: 'Задание',
     audience: 'Ученик или группа',

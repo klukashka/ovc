@@ -115,7 +115,9 @@ export function LoadFailed({
       >
         {t('load.retry')}
       </button>
-      <p className="text-caption text-text-muted">{t('load.requestId', { requestId: error.requestId ?? '—' })}</p>
+      <p className="text-label font-medium text-text-muted">
+        {t('load.requestId', { requestId: error.requestId ?? '—' })}
+      </p>
     </div>
   );
 }
@@ -145,7 +147,9 @@ export function RefetchFailed({
       >
         {t('load.retry')}
       </button>
-      <p className="text-caption text-text-muted">{t('load.requestId', { requestId: error.requestId ?? '—' })}</p>
+      <p className="text-label font-medium text-text-muted">
+        {t('load.requestId', { requestId: error.requestId ?? '—' })}
+      </p>
     </div>
   );
 }

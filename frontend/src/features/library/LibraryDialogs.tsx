@@ -46,6 +46,10 @@ export function targetName(target: LibraryTarget): string {
   return target.kind === 'folder' ? target.folder.name : target.item.title;
 }
 
+export function libraryRowOpener(key: string): string {
+  return `library-row:${key}`;
+}
+
 export function rowKey(target: LibraryTarget): string {
   return target.kind === 'folder' ? `folder:${target.folder.id}` : `${target.item.kind}:${target.item.id}`;
 }

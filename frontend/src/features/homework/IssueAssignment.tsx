@@ -1,94 +1,27 @@
-import { type ReactElement, type RefObject, useEffect, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { linkClass, quietButtonClass } from '../../components/ui/Form.tsx';
-import { useFocusOnMount } from '../../components/ui/LiveNotice.tsx';
-import { ModuleLoadFailed } from '../../components/ui/LoadState.tsx';
+import { useFormResult, useOpenFormRoute, useReturnFocus } from '../../components/ui/formRoute.ts';
+import { useFocusAfterReturn } from '../../components/ui/ReturnedNotice.tsx';
+import { RouteTabs } from '../../components/ui/Tabs.tsx';
+import { useSignedInAccount } from '../../lib/api/session.ts';
 import type { TextLoaders } from '../../lib/i18n/featureTexts.ts';
-import { type IssueItem, issueAddress } from './api.ts';
-import type { IssueDialog, IssuePreset } from './IssueDialog.tsx';
+import { issueAddress, issueAssignmentAddress } from './api.ts';
+import type { IssuePreset } from './IssueAssignmentPage.tsx';
 
 export const homeworkTextLoaders: TextLoaders<'homework'> = {
   ru: async () => (await import('./texts.ru.ts')).homeworkTexts,
   en: async () => (await import('./texts.en.ts')).homeworkTexts,
 };
 
-export type { IssuePreset, PresetLesson } from './IssueDialog.tsx';
-
-type DialogComponent = typeof IssueDialog;
-
-class DialogModule {
-  private component: DialogComponent | null = null;
-  private loading: Promise<DialogComponent> | null = null;
-
-  loaded(): DialogComponent | null {
-    return this.component;
-  }
-
-  start(): Promise<DialogComponent> {
-    this.loading ??= import('./IssueDialog.tsx').then(
-      (module) => {
-        this.component = module.IssueDialog;
-        return module.IssueDialog;
-      },
-      (error: unknown) => {
-        this.loading = null;
-        throw error;
-      },
-    );
-    return this.loading;
-  }
-}
-
-const dialogModule = new DialogModule();
-
-export interface IssueDialogProps {
-  readonly open: boolean;
-  readonly preset: IssuePreset;
-  readonly returnFocus: RefObject<HTMLElement | null>;
-  readonly onClose: () => void;
-  readonly onIssued: (issue: IssueItem) => void;
-}
-
-export function IssueDialogHost(props: IssueDialogProps): ReactElement | null {
-  const [Dialog, setDialog] = useState<DialogComponent | null>(() => dialogModule.loaded());
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (!props.open || Dialog !== null) {
-      return undefined;
-    }
-    let mounted = true;
-    dialogModule.start().then(
-      (component) => {
-        if (mounted) {
-          setFailed(false);
-          setDialog(() => component);
-        }
-      },
-      (error: unknown) => {
-        console.error('dialog_load_failed', error instanceof Error ? error.name : typeof error);
-        if (mounted) {
-          setFailed(true);
-        }
-      },
-    );
-    return (): void => {
-      mounted = false;
-    };
-  }, [props.open, Dialog]);
-
-  if (Dialog === null) {
-    return failed && props.open ? <ModuleLoadFailed /> : null;
-  }
-  return <Dialog {...props} />;
-}
+export type { IssuePreset, PresetLesson } from './IssueAssignmentPage.tsx';
 
 export function IssuedNotice({ issueId }: { readonly issueId: string | null }): ReactElement {
   const { t } = useTranslation();
   const element = useRef<HTMLParagraphElement>(null);
-  useFocusOnMount(element);
+  useFocusAfterReturn(element);
 
   return (
     <div className="flex flex-wrap items-center gap-x-3">
@@ -104,53 +37,48 @@ export function IssuedNotice({ issueId }: { readonly issueId: string | null }): 
   );
 }
 
-export function IssueAssignmentButton({
-  preset,
-  onIssued,
-  unavailableReason = null,
-}: {
-  readonly preset: IssuePreset;
-  readonly onIssued: (issue: IssueItem) => void;
-  readonly unavailableReason?: string | null;
-}): ReactElement {
-  const { t } = useTranslation();
-  const opener = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button
-        ref={opener}
-        type="button"
-        aria-disabled={unavailableReason === null ? undefined : true}
-        aria-describedby={unavailableReason ?? undefined}
-        onClick={() => {
-          if (unavailableReason === null) {
-            setOpen(true);
-          }
-        }}
-        className={quietButtonClass}
-      >
-        {t('homework.issue')}
-      </button>
-      <IssueDialogHost
-        open={open}
-        preset={preset}
-        returnFocus={opener}
-        onClose={() => {
-          setOpen(false);
-        }}
-        onIssued={(issue) => {
-          setOpen(false);
-          onIssued(issue);
-        }}
-      />
-    </>
-  );
+export function useIssuedResult(): string | null {
+  const result = useFormResult('assignmentIssued');
+  return result?.issueId ?? null;
 }
 
-const tabClass = 'inline-flex min-h-11 items-center border-b-2 px-1 text-small';
-const currentTabClass = `${tabClass} border-accent font-medium text-text`;
-const otherTabClass = `${tabClass} border-transparent text-text-muted hover:text-text`;
+export function IssueAssignmentButton({
+  opener,
+  preset,
+  templateId,
+  unavailableReason = null,
+  className = quietButtonClass,
+  children,
+}: {
+  readonly opener: string;
+  readonly preset?: IssuePreset;
+  readonly templateId?: string;
+  readonly unavailableReason?: string | null;
+  readonly className?: string;
+  readonly children?: ReactNode;
+}): ReactElement {
+  const { t } = useTranslation();
+  const me = useSignedInAccount();
+  const open = useOpenFormRoute(me.id);
+  const button = useRef<HTMLButtonElement>(null);
+  useReturnFocus(opener, button);
+  return (
+    <button
+      ref={button}
+      type="button"
+      aria-disabled={unavailableReason === null ? undefined : true}
+      aria-describedby={unavailableReason ?? undefined}
+      onClick={() => {
+        if (unavailableReason === null) {
+          open(issueAssignmentAddress(templateId), opener, preset);
+        }
+      }}
+      className={className}
+    >
+      {children ?? t('homework.issue')}
+    </button>
+  );
+}
 
 export type HomeworkTab = 'library' | 'issued' | 'review';
 
@@ -163,21 +91,11 @@ const tabs: readonly { readonly key: HomeworkTab; readonly to: string }[] = [
 export function HomeworkTabs({ current }: { readonly current: HomeworkTab }): ReactElement {
   const { t } = useTranslation();
   return (
-    <nav aria-label={t('section.homework')} className="border-b border-border">
-      <ul className="flex flex-wrap gap-6">
-        {tabs.map((entry) => (
-          <li key={entry.key}>
-            <Link
-              to={entry.to}
-              aria-current={entry.key === current ? 'page' : undefined}
-              className={entry.key === current ? currentTabClass : otherTabClass}
-            >
-              {t(`homework.tabs.${entry.key}`)}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    <RouteTabs
+      label={t('section.homework')}
+      current={current}
+      tabs={tabs.map((entry) => ({ ...entry, label: t(`homework.tabs.${entry.key}`) }))}
+    />
   );
 }
 

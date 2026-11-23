@@ -38,6 +38,7 @@ import { ScheduleLessonAction } from '../schedule/ScheduleLessonAction.tsx';
 import { GroupIssues, GroupMemberNote } from '../homework/GroupIssues.tsx';
 import { homeworkTextLoaders } from '../homework/IssueAssignment.tsx';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
+import { groupsTextLoaders } from './texts.ts';
 import { studentsKey } from '../students/api.ts';
 import {
   type Group,
@@ -52,6 +53,8 @@ import {
 import { ColourField, GroupDot } from './ColourField.tsx';
 import { type Chosen, MemberPicker, toggled, trimmed } from './MemberPicker.tsx';
 import { chosenAfterRefusal, membershipRefusal } from './NewGroupDialog.tsx';
+
+const groupNewLessonOpener = 'group-new-lesson';
 
 type GroupPatch = components['schemas']['GroupPatch'];
 
@@ -660,6 +663,7 @@ export function GroupPage(): ReactElement {
 
   const me = useSignedInAccount();
   const homeworkTexts = useFeatureTexts('homework', homeworkTextLoaders);
+  const groupTexts = useFeatureTexts('groups', groupsTextLoaders);
   const homework = me.email_verified && homeworkTexts.ready;
   const [outcome, setOutcome] = useState<{
     readonly id: string;
@@ -669,7 +673,8 @@ export function GroupPage(): ReactElement {
   if (outcome !== null && outcome.id !== groupId) {
     setOutcome(null);
   }
-  const shown = error === null ? (query.data ?? null) : null;
+  const shown = error === null && groupTexts.ready ? (query.data ?? null) : null;
+  const noticesShown = groupTexts.ready && !notFound;
   const handlers: GroupHandlers = {
     onChanged: (group) => {
       queryClient.setQueryData<GroupDetail>(key, (previous) =>
@@ -696,6 +701,13 @@ export function GroupPage(): ReactElement {
   };
 
   function body(): ReactElement {
+    if (!groupTexts.ready) {
+      return groupTexts.failed ? (
+        <LoadFailed error={asApiError(undefined)} onRetry={groupTexts.retry} />
+      ) : (
+        <DelayedLoading />
+      );
+    }
     if (error !== null) {
       return notFound ? (
         <NotFoundContent />
@@ -731,6 +743,7 @@ export function GroupPage(): ReactElement {
             {shown.archived_at === null && me.state === 'active' ? (
               <ScheduleLessonAction
                 audience={{ kind: 'group', id: shown.id, name: shown.name }}
+                opener={groupNewLessonOpener}
                 onScheduled={() => {
                   void queryClient.invalidateQueries({ queryKey: key });
                   void queryClient.invalidateQueries({ queryKey: groupsKey, refetchType: 'none' });
@@ -755,8 +768,8 @@ export function GroupPage(): ReactElement {
         )
       }
     >
-      {changed === null || notFound ? null : <FocusedNotice key={changed.count} message={t('groups.changed')} />}
-      {outcome === null || notFound ? null : <OutcomeNotice key={outcome.count} outcome={outcome.outcome} />}
+      {changed === null || !noticesShown ? null : <FocusedNotice key={changed.count} message={t('groups.changed')} />}
+      {outcome === null || !noticesShown ? null : <OutcomeNotice key={outcome.count} outcome={outcome.outcome} />}
       {refetchError === null ? null : (
         <RefetchFailed
           error={refetchError}

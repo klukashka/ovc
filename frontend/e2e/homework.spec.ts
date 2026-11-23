@@ -98,10 +98,7 @@ async function openCardIssueDialog(page: Page, tutor: TestAccount, cardId: strin
   await signInThroughTheApi(page, tutor);
   await page.goto(`/students/${cardId}`);
   await page.getByRole('button', { name: 'Issue assignment', exact: true }).click();
-  await page
-    .getByRole('dialog', { name: 'Issue assignment' })
-    .getByRole('button', { name: listed, exact: true })
-    .waitFor();
+  await page.getByRole('main').getByRole('button', { name: listed, exact: true }).waitFor();
 }
 
 async function layoutBox(
@@ -115,7 +112,11 @@ async function layoutBox(
 }
 
 function issueDialog(page: Page): Locator {
-  return page.getByRole('dialog', { name: 'Issue assignment' });
+  return page.getByRole('main');
+}
+
+function issueHeading(page: Page): Locator {
+  return page.getByRole('heading', { level: 1, name: 'Issue assignment' });
 }
 
 function audienceSearch(page: Page): Locator {
@@ -195,7 +196,25 @@ test.describe('issuing from the library', () => {
     await expect(items.getByRole('button', { name: 'Issue assignment', exact: true })).toHaveCount(0);
   });
 
-  test('Issue assignment opens the dialog on the audience search with the template preset', async ({
+  test('Issue assignment opens the Issue page on its heading with the template preset', async ({
+    page,
+    deployment,
+  }) => {
+    const { pavel } = await pavelWithAnna(deployment);
+    const template = await createReadyTemplate(deployment, pavel, 'Fractions');
+    await openLibrary(page, pavel);
+
+    await chooseRowAction(page, 'Fractions', 'Issue assignment');
+
+    await expect(issueHeading(page)).toBeFocused();
+    await expect(page).toHaveURL(`/homework/issue?template=${template.id}`);
+    await expect(audienceSearch(page)).toBeVisible();
+    await expect(issueDialog(page).getByRole('link', { name: 'Back to the library' })).toBeVisible();
+    await expect(issueDialog(page).getByText('Fractions', { exact: true })).toBeVisible();
+    await expect(issueDialog(page).getByRole('radio', { name: 'After checking' })).toBeChecked();
+  });
+
+  test('the Issue page warns under After checking that a template without hand-checked questions reveals answers at submission', async ({
     page,
     deployment,
   }) => {
@@ -205,25 +224,31 @@ test.describe('issuing from the library', () => {
 
     await chooseRowAction(page, 'Fractions', 'Issue assignment');
 
-    await expect(audienceSearch(page)).toBeFocused();
-    await expect(issueDialog(page).getByText('Fractions', { exact: true })).toBeVisible();
-    await expect(issueDialog(page).getByRole('radio', { name: 'After checking' })).toBeChecked();
+    await expect(issueHeading(page)).toBeFocused();
+    const afterChecking = issueDialog(page).getByRole('radio', { name: 'After checking' });
+    await expect(afterChecking).toBeChecked();
+    await expect(afterChecking).toHaveAccessibleDescription(
+      'This assignment has no questions you check by hand, so students see the answers right after submitting.',
+    );
+    await expect(issueDialog(page).getByRole('radio', { name: 'After submission' })).toHaveAccessibleDescription(
+      'Students see the correct answers as soon as they submit, so work cannot be returned for revision.',
+    );
   });
 
-  test('dismissing the dialog returns focus to the row’s menu button', async ({ page, deployment }) => {
+  test('Back from the Issue page returns focus to the row’s menu button', async ({ page, deployment }) => {
     const { pavel } = await pavelWithAnna(deployment);
     await createReadyTemplate(deployment, pavel, 'Fractions');
     await openLibrary(page, pavel);
     await chooseRowAction(page, 'Fractions', 'Issue assignment');
     await audienceSearch(page).waitFor();
 
-    await page.keyboard.press('Escape');
+    await page.goBack();
 
-    await expect(issueDialog(page)).toBeHidden();
+    await expect(issueHeading(page)).toBeHidden();
     await expect(rowMenuButton(page, 'Fractions')).toBeFocused();
   });
 
-  test('issuing to a student closes the dialog onto the focused notice with a link to the issue', async ({
+  test('issuing to a student returns to the library onto the focused notice with a link to the issue', async ({
     page,
     deployment,
   }) => {
@@ -236,7 +261,7 @@ test.describe('issuing from the library', () => {
 
     await issueDialog(page).getByRole('button', { name: 'Issue', exact: true }).click();
 
-    await expect(issueDialog(page)).toBeHidden();
+    await expect(issueHeading(page)).toBeHidden();
     await expect(issuedNotice(page)).toBeFocused();
     const [issueId] = await issueIdsOf(deployment, pavel, `student=${annaCard}&status=active`);
     await expect(page.getByRole('link', { name: 'Open the issued assignment' })).toHaveAttribute(
@@ -245,7 +270,7 @@ test.describe('issuing from the library', () => {
     );
   });
 
-  test('a template that stopped being ready is refused in the dialog with a link to the builder', async ({
+  test('a template that stopped being ready is refused on the Issue page with a link to the builder', async ({
     page,
     deployment,
     diagnostics,
@@ -270,7 +295,10 @@ test.describe('issuing from the library', () => {
     expect(await issueTitles(deployment, pavel, 'status=active')).toEqual([]);
   });
 
-  test('choosing a student in the dialog moves focus to the audience’s Change button', async ({ page, deployment }) => {
+  test('choosing a student on the Issue page moves focus to the audience’s Change button', async ({
+    page,
+    deployment,
+  }) => {
     const { pavel } = await pavelWithAnna(deployment);
     await createReadyTemplate(deployment, pavel, 'Fractions');
     await openLibrary(page, pavel);
@@ -283,7 +311,7 @@ test.describe('issuing from the library', () => {
     await expect(issueDialog(page).getByText('1 student will receive this', { exact: true })).toBeVisible();
   });
 
-  test('a student whose relationship ended meanwhile is refused in the dialog with an alert that takes focus', async ({
+  test('a student whose relationship ended meanwhile is refused on the Issue page with an alert that takes focus', async ({
     page,
     deployment,
     diagnostics,
@@ -305,7 +333,7 @@ test.describe('issuing from the library', () => {
     expect(await issueTitles(deployment, pavel, 'status=active')).toEqual([]);
   });
 
-  test('a past deadline in the dialog is refused under the deadline, whose date field takes focus', async ({
+  test('a past deadline is refused under the deadline and in the error summary, which takes focus', async ({
     page,
     deployment,
     control,
@@ -323,8 +351,12 @@ test.describe('issuing from the library', () => {
 
     await issueDialog(page).getByRole('button', { name: 'Issue', exact: true }).click();
 
-    await expect(issueDialog(page).getByText('Choose a time in the future.', { exact: true })).toBeVisible();
-    await expect(issueDialog(page).getByLabel('Date', { exact: true })).toBeFocused();
+    const summary = issueDialog(page).getByRole('alert', { name: 'Check these fields' });
+    await expect(summary).toBeFocused();
+    await expect(summary.getByRole('link')).toHaveText(['Choose a time in the future.']);
+    await expect(issueDialog(page).getByRole('group', { name: 'Deadline' })).toContainText(
+      'Choose a time in the future.',
+    );
     expect(await issueTitles(deployment, pavel, 'status=active')).toEqual([]);
   });
 });
@@ -344,13 +376,16 @@ test.describe('issuing from the builder, the card and the lesson', () => {
 
     await issueDialog(page).getByRole('button', { name: 'Issue', exact: true }).click();
 
-    await expect(issueDialog(page)).toBeHidden();
+    await expect(issueHeading(page)).toBeHidden();
     await expect(issuedNotice(page)).toBeFocused();
     const [issueId] = await issueIdsOf(deployment, pavel, `group=${groupId}&status=active`);
     expect((await readIssue(deployment, pavel, issueId ?? '')).students).toBe(2);
   });
 
-  test('dismissing the builder’s dialog returns focus to its Issue assignment button', async ({ page, deployment }) => {
+  test('Cancel on the Issue page returns focus to the builder’s Issue assignment button', async ({
+    page,
+    deployment,
+  }) => {
     const { pavel } = await pavelWithAnna(deployment);
     const template = await createReadyTemplate(deployment, pavel, 'Fractions');
     await signInThroughTheApi(page, pavel);
@@ -361,11 +396,11 @@ test.describe('issuing from the builder, the card and the lesson', () => {
 
     await issueDialog(page).getByRole('button', { name: 'Cancel', exact: true }).click();
 
-    await expect(issueDialog(page)).toBeHidden();
+    await expect(issueHeading(page)).toBeHidden();
     await expect(opener).toBeFocused();
   });
 
-  test('the card’s Issue assignment opens on the template search with the student preset', async ({
+  test('the card’s Issue assignment opens the Issue page on its heading with the student preset', async ({
     page,
     deployment,
   }) => {
@@ -378,7 +413,8 @@ test.describe('issuing from the builder, the card and the lesson', () => {
 
     await page.getByRole('button', { name: 'Issue assignment', exact: true }).click();
 
-    await expect(issueDialog(page).getByRole('searchbox', { name: 'Search the library' })).toBeFocused();
+    await expect(issueHeading(page)).toBeFocused();
+    await expect(issueDialog(page).getByRole('searchbox', { name: 'Search the library' })).toBeVisible();
     await expect(issueDialog(page).getByText('Anna', { exact: true })).toBeVisible();
     await expect(issueDialog(page).getByRole('button', { name: 'Draft' })).toHaveAttribute('aria-disabled', 'true');
     await expect(issueDialog(page).getByRole('button', { name: 'Draft' })).toHaveAccessibleDescription(
@@ -399,7 +435,7 @@ test.describe('issuing from the builder, the card and the lesson', () => {
 
     await issueDialog(page).getByRole('button', { name: 'Issue', exact: true }).click();
 
-    await expect(issueDialog(page)).toBeHidden();
+    await expect(issueHeading(page)).toBeHidden();
     await expect(issuedNotice(page)).toBeFocused();
     const open = page.getByRole('list', { name: 'Open assignments', exact: true }).getByRole('listitem');
     await expect(open).toHaveCount(1);
@@ -424,23 +460,23 @@ test.describe('issuing from the builder, the card and the lesson', () => {
 
     await issueDialog(page).getByRole('button', { name: 'Issue', exact: true }).click();
 
-    await expect(issueDialog(page)).toBeHidden();
+    await expect(issueHeading(page)).toBeHidden();
     await expect(issuedNotice(page)).toBeFocused();
     const [issueId] = await issueIdsOf(deployment, pavel, `student=${annaCard}&status=active`);
     expect((await readIssue(deployment, pavel, issueId ?? '')).lessonId).toBe(lesson?.id);
   });
-  test('dismissing the card’s dialog returns focus to its Issue assignment button', async ({ page, deployment }) => {
+  test('Back from the card’s Issue page returns focus to its Issue assignment button', async ({ page, deployment }) => {
     const { pavel, annaCard } = await pavelWithAnna(deployment);
     await createReadyTemplate(deployment, pavel, 'Fractions');
     await openCardIssueDialog(page, pavel, annaCard, 'Fractions');
 
-    await page.keyboard.press('Escape');
+    await page.goBack();
 
-    await expect(issueDialog(page)).toBeHidden();
+    await expect(issueHeading(page)).toBeHidden();
     await expect(page.getByRole('button', { name: 'Issue assignment', exact: true })).toBeFocused();
   });
 
-  test('dismissing the lesson page’s dialog returns focus to its Issue assignment button', async ({
+  test('Cancel on the lesson page’s Issue page returns focus to its Issue assignment button', async ({
     page,
     deployment,
     control,
@@ -455,7 +491,7 @@ test.describe('issuing from the builder, the card and the lesson', () => {
 
     await issueDialog(page).getByRole('button', { name: 'Cancel', exact: true }).click();
 
-    await expect(issueDialog(page)).toBeHidden();
+    await expect(issueHeading(page)).toBeHidden();
     await expect(page.getByRole('button', { name: 'Issue assignment', exact: true })).toBeFocused();
   });
 
@@ -484,7 +520,7 @@ test.describe('issuing from the builder, the card and the lesson', () => {
 
     await expect(opener).toHaveCount(0);
     await expect(page.getByRole('textbox', { name: 'Title', exact: true })).toBeFocused();
-    await expect(issueDialog(page)).toHaveCount(0);
+    await expect(issueHeading(page)).toHaveCount(0);
   });
 
   test('opening a folder in the template picker moves focus to the current path step', async ({ page, deployment }) => {
@@ -522,7 +558,7 @@ test.describe('issuing from the builder, the card and the lesson', () => {
     await expect(issueDialog(page).getByRole('searchbox', { name: 'Search the library' })).toBeFocused();
   });
 
-  test('a lesson that links 20 assignments is refused under the dialog’s lesson choice, which takes focus', async ({
+  test('a lesson that links 20 assignments is refused under the lesson choice and in the error summary, which takes focus', async ({
     page,
     deployment,
     control,
@@ -543,8 +579,12 @@ test.describe('issuing from the builder, the card and the lesson', () => {
 
     await issueDialog(page).getByRole('button', { name: 'Issue', exact: true }).click();
 
-    await expect(issueDialog(page).getByText('A lesson links at most 20 assignments.', { exact: true })).toBeVisible();
-    await expect(issueDialog(page).getByRole('combobox', { name: 'Linked lesson' })).toBeFocused();
+    const summary = issueDialog(page).getByRole('alert', { name: 'Check these fields' });
+    await expect(summary).toBeFocused();
+    await expect(summary.getByRole('link')).toHaveText(['A lesson links at most 20 assignments.']);
+    await expect(issueDialog(page).getByRole('combobox', { name: 'Linked lesson' })).toHaveAccessibleDescription(
+      'A lesson links at most 20 assignments.',
+    );
   });
 });
 
@@ -649,7 +689,7 @@ test.describe('the lesson page’s assignments', () => {
 
     await expect(opener).toHaveAttribute('aria-disabled', 'true');
     await expect(opener).toHaveAccessibleDescription('A lesson links at most 20 assignments.');
-    await expect(issueDialog(page)).toHaveCount(0);
+    await expect(issueHeading(page)).toHaveCount(0);
   });
 
   test('the student sees their own work for the lesson with its state and opens it', async ({
@@ -1236,22 +1276,31 @@ test.describe('homework on the student card and the group page', () => {
 test.describe('issuing on a phone', () => {
   test.use({ viewport: { width: 360, height: 780 } });
 
-  test('Issue assignment fills the screen, opens on the audience search and keeps its actions at the end', async ({
+  test('Issue assignment opens a one-column page on its heading, keeps its actions at the end and returns with Back', async ({
     page,
     deployment,
   }) => {
     const { pavel } = await pavelWithAnna(deployment);
     await createReadyTemplate(deployment, pavel, 'Fractions');
     await openLibrary(page, pavel);
-
     await chooseRowAction(page, 'Fractions', 'Issue assignment');
-
-    await expect(audienceSearch(page)).toBeFocused();
-    expect(await layoutBox(issueDialog(page))).toEqual({ x: 0, y: 0, width: 360, height: 780 });
+    await expect(issueHeading(page)).toBeFocused();
     const search = await layoutBox(audienceSearch(page));
-    for (const name of ['Issue', 'Cancel']) {
-      const action = await layoutBox(issueDialog(page).getByRole('button', { name, exact: true }));
-      expect(action.y).toBeGreaterThan(search.y + search.height);
+    const deadline = await layoutBox(issueDialog(page).getByRole('checkbox', { name: 'Set a deadline' }));
+    const actions = await Promise.all(
+      ['Issue', 'Cancel'].map(async (name) => layoutBox(issueDialog(page).getByRole('button', { name, exact: true }))),
+    );
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+
+    await page.goBack();
+
+    await expect(rowMenuButton(page, 'Fractions')).toBeFocused();
+    expect(deadline.y).toBeGreaterThan(search.y + search.height);
+    for (const action of actions) {
+      expect(action.y).toBeGreaterThan(deadline.y + deadline.height);
     }
+    expect(overflow).toBeLessThanOrEqual(0);
   });
 });

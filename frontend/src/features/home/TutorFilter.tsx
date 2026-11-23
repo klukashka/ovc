@@ -3,10 +3,10 @@ import { useTranslation } from 'react-i18next';
 
 import { focusHeadingIfLost } from '../../components/ui/LoadState.tsx';
 import { paletteDotClass } from '../../components/ui/palette.ts';
+import { SegmentedControl } from '../../components/ui/Tabs.tsx';
 import type { MyTutor } from '../tutors/api.ts';
 
-const segmentClass =
-  'inline-flex min-h-11 max-w-full min-w-0 grow items-center justify-center gap-2 rounded-sm border border-transparent px-3 text-small text-text-muted hover:text-text aria-pressed:border-border-strong aria-pressed:bg-field aria-pressed:font-medium aria-pressed:text-text tablet:grow-0 desktop:pointer-fine:min-h-10';
+const allTutors = 'all';
 
 export function TutorFilter({
   tutors,
@@ -30,34 +30,28 @@ export function TutorFilter({
       <span id={labelId} className="text-label text-text-muted">
         {t('home.filter')}
       </span>
-      <div role="group" aria-labelledby={labelId} className="flex flex-wrap gap-1 rounded-md bg-hover p-1">
-        <button
-          type="button"
-          aria-pressed={chosen === null}
-          onClick={() => {
-            onChoose(null);
-          }}
-          className={segmentClass}
-        >
-          {t('home.allTutors')}
-        </button>
-        {tutors.map((tutor) => (
-          <button
-            key={tutor.relationship_id}
-            type="button"
-            aria-pressed={chosen === tutor.relationship_id}
-            onClick={() => {
-              onChoose(tutor.relationship_id);
-            }}
-            className={segmentClass}
-          >
-            <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${paletteDotClass[tutor.colour]}`} />
-            <span dir="auto" className="min-w-0 wrap-anywhere">
-              {tutor.tutor.name}
-            </span>
-          </button>
-        ))}
-      </div>
+      <SegmentedControl
+        name={{ labelledBy: labelId }}
+        fill
+        chosen={chosen ?? allTutors}
+        onChoose={(value) => {
+          onChoose(value === allTutors ? null : value);
+        }}
+        segments={[
+          { value: allTutors, label: t('home.allTutors') },
+          ...tutors.map((tutor) => ({
+            value: tutor.relationship_id,
+            label: (
+              <>
+                <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${paletteDotClass[tutor.colour]}`} />
+                <span dir="auto" className="min-w-0 wrap-anywhere">
+                  {tutor.tutor.name}
+                </span>
+              </>
+            ),
+          })),
+        ]}
+      />
     </div>
   );
 }

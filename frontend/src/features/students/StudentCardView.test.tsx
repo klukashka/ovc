@@ -9,6 +9,7 @@ import { SchedulerContext } from '../../app/clock.ts';
 import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
+import { studentCardTexts } from './cardTexts.ru.ts';
 import { type StudentCard, studentCardKey } from './api.ts';
 import { StudentCardPage, StudentCardView } from './StudentCardPage.tsx';
 
@@ -55,6 +56,7 @@ async function signedInTutor(server: FakeAuthServer = new FakeAuthServer()): Pro
 async function show(card: StudentCard): Promise<void> {
   const session = await signedInTutor();
   const i18n = await createI18n('ru');
+  i18n.addResourceBundle('ru', 'translation', { studentCard: studentCardTexts }, true, true);
   const handlers = {
     onChanged: (): void => undefined,
     onStale: (): void => undefined,

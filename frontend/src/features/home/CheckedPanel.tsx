@@ -32,7 +32,7 @@ function CheckedRow({ item }: { readonly item: AssignmentItem }): ReactElement {
             role="img"
             aria-label={t('homeworkPanels.newFeedbackName')}
             data-new-feedback=""
-            className="rounded-full bg-accent px-2 text-caption font-medium text-on-accent"
+            className="rounded-full bg-accent px-2 text-label font-medium text-on-accent"
           >
             <span aria-hidden="true">{t('homeworkPanels.newFeedback')}</span>
           </span>

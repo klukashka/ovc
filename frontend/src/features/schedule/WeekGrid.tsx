@@ -155,7 +155,7 @@ export function WeekGrid({
         <div className="grid grid-cols-[3rem_repeat(7,minmax(0,1fr))]">
           <div aria-hidden="true" className="flex flex-col">
             {hours.map((hour) => (
-              <span key={hour} className="h-12 pr-2 text-right text-caption text-text-muted">
+              <span key={hour} className="h-12 pr-2 text-right text-label font-medium text-text-muted">
                 {localTimeOf(hour * 60)}
               </span>
             ))}

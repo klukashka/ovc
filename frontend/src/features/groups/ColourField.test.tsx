@@ -5,8 +5,15 @@ import { I18nextProvider } from 'react-i18next';
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { createI18n } from '../../lib/i18n/i18n.ts';
+import { groupsTexts as englishGroupTexts } from './texts.en.ts';
+import { groupsTexts as russianGroupTexts } from './texts.ru.ts';
 import type { GroupColour } from './api.ts';
 import { ColourField } from './ColourField.tsx';
+
+function withGroupTexts(translations: Awaited<ReturnType<typeof createI18n>>): void {
+  translations.addResourceBundle('en', 'translation', { groups: englishGroupTexts }, true, true);
+  translations.addResourceBundle('ru', 'translation', { groups: russianGroupTexts }, true, true);
+}
 
 interface Stored {
   readonly colour: GroupColour;
@@ -23,6 +30,7 @@ function field(translations: i18n, stored: Stored): ReactElement {
 
 async function checkedAfter(picked: string | null, changes: readonly Stored[]): Promise<string[]> {
   const translations = await createI18n('en');
+  withGroupTexts(translations);
   const { rerender } = render(field(translations, { colour: 'clay', reloads: 0 }));
   if (picked !== null) {
     act(() => {
@@ -70,6 +78,7 @@ describe('the group colour choice showing a stored colour', () => {
 
 async function renderedIn(language: 'ru' | 'en'): Promise<HTMLElement> {
   const translations = await createI18n(language);
+  withGroupTexts(translations);
   const { container } = render(field(translations, { colour: 'moss', reloads: 0 }));
   return container;
 }

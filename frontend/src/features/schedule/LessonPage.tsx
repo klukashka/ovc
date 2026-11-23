@@ -9,7 +9,9 @@ import { useAction } from '../../components/ui/action.ts';
 import { ActionMenu, type MenuItem } from '../../components/ui/ActionMenu.tsx';
 import { linkClass, quietButtonClass } from '../../components/ui/Form.tsx';
 import { CalendarIcon, CheckIcon, CrossIcon, DashIcon, DoorIcon, MoreIcon } from '../../components/ui/icons.tsx';
+import { useFormResult, useFormReturned, useOpenFormRoute, useReturnFocus } from '../../components/ui/formRoute.ts';
 import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
+import { ReturnedNotice } from '../../components/ui/ReturnedNotice.tsx';
 import { DelayedLoading, LoadFailed, RefetchFailed, focusHeadingIfLost } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { PageColumns } from '../../components/ui/PageColumns.tsx';
@@ -27,7 +29,7 @@ import { calendarKey, lessonKey, lessonsKey } from './keys.ts';
 import { CancelLessonDialog, EditLessonDialog } from './LessonDialogs.tsx';
 import { audienceLabel } from './LessonParts.tsx';
 import { LessonWork } from '../assignment/LessonWork.tsx';
-import { IssuedNotice } from '../homework/IssueAssignment.tsx';
+import { IssuedNotice, useIssuedResult } from '../homework/IssueAssignment.tsx';
 import { LessonIssues } from '../homework/LessonIssues.tsx';
 import { withIssuesOf } from './lessonCache.ts';
 import { studentWorkOf, tutorIssuesOf } from './lessonIssues.ts';
@@ -35,7 +37,7 @@ import { LessonMaterials } from './LessonMaterials.tsx';
 import { LessonRoom } from './LessonRoom.tsx';
 import { type LessonPhase, dialogOutdated, isEditable, phaseOf, useLessonClock } from './lessonTiming.ts';
 import { addressRenewalDelay } from './materials.ts';
-import { type LessonPrefill, NewLessonDialog, nextFullHour } from './NewLessonDialog.tsx';
+import { type LessonPrefill, newLessonAddress } from './newLesson.ts';
 import { seriesTimingIn } from './seriesTiming.ts';
 
 type DialogKind = 'edit' | 'cancel' | 'endSeries';
@@ -49,6 +51,7 @@ interface PageNotice {
   readonly lessonId: string;
   readonly kind: 'changed' | 'cancelled' | 'ended';
   readonly count: number;
+  readonly afterRouteChange?: boolean;
 }
 
 const noticeKeys = {
@@ -291,7 +294,7 @@ export function LessonView({
               {room}
             </div>
             {lesson.description === null ? null : (
-              <p dir="auto" data-part="description" className="break-words whitespace-pre-line">
+              <p dir="auto" data-part="description" className="max-w-running-text break-words whitespace-pre-line">
                 {lesson.description}
               </p>
             )}
@@ -383,6 +386,9 @@ export function LessonEditButton({
   );
 }
 
+const lessonActionsOpener = 'lesson-actions';
+const nextSeriesContext = 'next-series';
+
 export function LessonActionsMenu({
   menuButton,
   series,
@@ -393,6 +399,7 @@ export function LessonActionsMenu({
   readonly onOpen: (kind: DialogKind) => void;
 }): ReactElement {
   const { t } = useTranslation();
+  useReturnFocus(lessonActionsOpener, menuButton);
   const cancel: MenuItem = {
     label: t('lesson.cancel'),
     onChoose: (): void => {
@@ -435,11 +442,19 @@ export function LessonPage(): ReactElement {
   const editButton = useRef<HTMLButtonElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const [dialog, setDialog] = useState<OpenDialog | null>(null);
-  const [nextSeries, setNextSeries] = useState<LessonPrefill | null>(null);
-  const [closedPrefill] = useState<LessonPrefill>(() => nextFullHour(Date.now(), me.timezone));
-  const [notice, setNotice] = useState<PageNotice | null>(null);
-  const [announcement, setAnnouncement] = useState<string | null>(null);
-  const [issued, setIssued] = useState<{ readonly lessonId: string; readonly count: number } | null>(null);
+  const openNewLesson = useOpenFormRoute(me.id);
+  const nextSeriesReturned = useFormReturned(nextSeriesContext);
+  const nextSeriesScheduled = useFormResult('lessonScheduled');
+  const issuedId = useIssuedResult();
+  const [notice, setNotice] = useState<PageNotice | null>(() =>
+    nextSeriesReturned ? { lessonId, kind: 'cancelled', count: 1, afterRouteChange: true } : null,
+  );
+  const [announcement, setAnnouncement] = useState<string | null>(() =>
+    nextSeriesScheduled === null ? null : t('schedule.scheduled'),
+  );
+  const [issued] = useState<{ readonly lessonId: string; readonly count: number } | null>(() =>
+    issuedId === null ? null : { lessonId, count: 1 },
+  );
   const action = useAction();
   const query = useQuery({
     queryKey: key,
@@ -509,15 +524,7 @@ export function LessonPage(): ReactElement {
       return;
     }
     saved('endSeries', changed);
-    setNextSeries(prefill);
-  }
-
-  function nextSeriesClosed(): void {
-    if (nextSeries === null) {
-      return;
-    }
-    setNextSeries(null);
-    noticeOf('cancelled');
+    openNewLesson(newLessonAddress(), lessonActionsOpener, prefill, nextSeriesContext);
   }
 
   function stale(): void {
@@ -531,11 +538,11 @@ export function LessonPage(): ReactElement {
     setDialog(null);
   }
 
-  function issuedFromLesson(): void {
-    setNotice(null);
-    setIssued((previous) => ({ lessonId, count: (previous?.count ?? 0) + 1 }));
-    void queryClient.invalidateQueries({ queryKey: key });
-  }
+  useEffect(() => {
+    if (issuedId !== null) {
+      void queryClient.invalidateQueries({ queryKey: key });
+    }
+  }, [issuedId, key, queryClient]);
 
   const tutor = me.role === 'tutor';
   const issueAudience = lesson === undefined ? null : sameAudience(t, lesson.audience);
@@ -596,7 +603,6 @@ export function LessonPage(): ReactElement {
                     }
                   : null
               }
-              onIssued={issuedFromLesson}
             />
           ) : (
             <LessonWork work={studentWorkOf(lesson.issues)} now={now} />
@@ -626,7 +632,9 @@ export function LessonPage(): ReactElement {
         ) : null
       }
     >
-      {shownNotice === null ? null : (
+      {shownNotice === null ? null : shownNotice.afterRouteChange === true ? (
+        <ReturnedNotice key={shownNotice.count} message={t(noticeKeys[shownNotice.kind])} />
+      ) : (
         <FocusedNotice key={shownNotice.count} message={t(noticeKeys[shownNotice.kind])} />
       )}
       {issued?.lessonId !== lessonId || notFound ? null : <IssuedNotice key={issued.count} issueId={null} />}
@@ -680,16 +688,6 @@ export function LessonPage(): ReactElement {
                 }
               },
               onStale: stale,
-            }}
-          />
-          <NewLessonDialog
-            open={nextSeries !== null}
-            prefill={nextSeries ?? closedPrefill}
-            returnFocus={menuButton}
-            onClose={nextSeriesClosed}
-            onScheduled={() => {
-              nextSeriesClosed();
-              setAnnouncement(t('schedule.scheduled'));
             }}
           />
         </>

@@ -81,9 +81,14 @@ async function englishContext(
   });
 }
 
+function newLessonHeading(page: Page): ReturnType<Page['getByRole']> {
+  return page.getByRole('heading', { level: 1, name: /^(Новый урок|New lesson)$/ });
+}
+
 async function openNewLesson(page: Page): Promise<ReturnType<Page['getByRole']>> {
   await page.getByRole('button', { name: 'Новый урок' }).click();
-  return page.getByRole('dialog', { name: 'Новый урок' });
+  await expect(newLessonHeading(page)).toBeFocused();
+  return page.getByRole('main');
 }
 
 async function fillOneOffLesson(
@@ -186,15 +191,18 @@ async function tutorWithStudent(deployment: Deployment): Promise<TutorWithStuden
 test.describe('schedule for a tutor in Russian', () => {
   test.use({ locale: 'ru-RU', timezoneId: moscow, viewport: { width: 1280, height: 800 } });
 
-  test('schedule › a dialog opens on its first field', async ({ page, deployment, control }) => {
+  test('schedule › New lesson opens as a page with focus on its heading', async ({ page, deployment, control }) => {
     const { maria } = await tutorWithStudent(deployment);
     await signInThroughTheApi(page, maria);
     await page.goto(weekAddress(await moscowTomorrow(control.now)));
 
-    const dialog = await openNewLesson(page);
+    await page.getByRole('button', { name: 'Новый урок' }).click();
 
-    await expect(dialog.getByLabel('Поиск ученика или группы')).toBeFocused();
-    await expect(dialog.getByLabel('Название')).toHaveValue('Урок');
+    await expect(page).toHaveURL(/\/schedule\/new\?date=/);
+    await expect(newLessonHeading(page)).toBeFocused();
+    await expect(page.getByRole('main').getByLabel('Поиск ученика или группы')).toBeVisible();
+    await expect(page.getByRole('main').getByLabel('Название')).toHaveValue('Урок');
+    await expect(page.getByRole('main').getByRole('link', { name: 'Назад к расписанию' })).toBeVisible();
   });
 
   for (const { view, control: name } of pagingControls) {
@@ -310,7 +318,7 @@ test.describe('schedule for a tutor in Russian', () => {
     await expect(dialog.getByLabel('Дата окончания')).toHaveValue(laterDate);
   });
 
-  test('schedule › a free slot prefills the dialog', async ({ page, deployment, control }) => {
+  test('schedule › a free slot prefills New lesson', async ({ page, deployment, control }) => {
     const { maria } = await tutorWithStudent(deployment);
     const date = await moscowTomorrow(control.now);
     await signInThroughTheApi(page, maria);
@@ -318,10 +326,10 @@ test.describe('schedule for a tutor in Russian', () => {
 
     await page.locator(`[data-slot="${date}T14:30"]`).click();
 
-    const dialog = page.getByRole('dialog', { name: 'Новый урок' });
+    const dialog = page.getByRole('main');
     await expect(dialog.getByLabel('Дата', { exact: true })).toHaveValue(date);
     await expect(dialog.getByLabel('Время начала')).toHaveValue('14:30');
-    await expect(dialog.getByLabel('Поиск ученика или группы')).toBeFocused();
+    await expect(newLessonHeading(page)).toBeFocused();
   });
 
   test('schedule › the overlap warning takes focus', async ({ page, deployment, control, diagnostics }) => {
@@ -334,7 +342,7 @@ test.describe('schedule for a tutor in Russian', () => {
     const dialog = await openNewLesson(page);
     await fillOneOffLesson(dialog, 'Анна', date, '15:30');
 
-    await dialog.getByRole('button', { name: 'Запланировать' }).click();
+    await dialog.getByRole('button', { name: 'Создать урок' }).click();
 
     const warning = dialog.getByRole('alert');
     await expect(warning).toBeFocused();
@@ -343,7 +351,7 @@ test.describe('schedule for a tutor in Russian', () => {
     await expect(dialog.locator('b')).toHaveCount(0);
     await expect(warning).toContainText('15:00–16:00');
     await expect(warning.getByRole('button', { name: 'Всё равно запланировать' })).toBeVisible();
-    await expect(lessonLinks(page)).toHaveCount(1);
+    await expect(newLessonHeading(page)).toBeVisible();
   });
 
   test('schedule › the overlap warning takes focus and Schedule anyway saves', async ({
@@ -360,13 +368,13 @@ test.describe('schedule for a tutor in Russian', () => {
     await page.goto(weekAddress(date));
     const dialog = await openNewLesson(page);
     await fillOneOffLesson(dialog, 'Анна', date, '15:30');
-    await dialog.getByRole('button', { name: 'Запланировать' }).click();
+    await dialog.getByRole('button', { name: 'Создать урок' }).click();
     const scheduleAnyway = dialog.getByRole('alert').getByRole('button', { name: 'Всё равно запланировать' });
     await scheduleAnyway.waitFor();
 
     await scheduleAnyway.click();
 
-    await expect(dialog).toBeHidden();
+    await expect(newLessonHeading(page)).toBeHidden();
     await expect(page.getByRole('button', { name: 'Новый урок' })).toBeFocused();
     await expect(lessonLinks(page)).toHaveCount(2);
     await expect(lessonLinks(page).filter({ hasText: '15:30–16:30' })).toHaveCount(1);
@@ -391,7 +399,7 @@ test.describe('schedule for a tutor in Russian', () => {
     await page.goto(weekAddress(date));
     const dialog = await openNewLesson(page);
     await fillOneOffLesson(dialog, 'Анна', date, '15:30');
-    await dialog.getByRole('button', { name: 'Запланировать' }).click();
+    await dialog.getByRole('button', { name: 'Создать урок' }).click();
     const scheduleAnyway = dialog.getByRole('alert').getByRole('button', { name: 'Всё равно запланировать' });
     await scheduleAnyway.waitFor();
     await scheduleAnyway.focus();
@@ -400,16 +408,16 @@ test.describe('schedule for a tutor in Russian', () => {
 
     await expect(scheduleAnyway).toBeFocused();
     await expect(scheduleAnyway).toHaveAttribute('aria-busy', 'true');
-    await expect(dialog.getByRole('button', { name: 'Запланировать', exact: true })).toHaveAttribute(
+    await expect(dialog.getByRole('button', { name: 'Создать урок', exact: true })).toHaveAttribute(
       'aria-disabled',
       'true',
     );
-    await expect(dialog.getByRole('button', { name: 'Запланировать', exact: true })).toHaveAttribute(
+    await expect(dialog.getByRole('button', { name: 'Создать урок', exact: true })).toHaveAttribute(
       'aria-busy',
       'false',
     );
     release();
-    await expect(dialog).toBeHidden();
+    await expect(newLessonHeading(page)).toBeHidden();
     await expect(page.getByRole('button', { name: 'Новый урок' })).toBeFocused();
     await expect(lessonLinks(page)).toHaveCount(2);
   });
@@ -442,7 +450,7 @@ test.describe('schedule for a tutor in Russian', () => {
     await page.goto(weekAddress(date));
     const dialog = await openNewLesson(page);
     await fillOneOffLesson(dialog, 'Анна', date, '15:30');
-    const submit = dialog.getByRole('button', { name: 'Запланировать', exact: true });
+    const submit = dialog.getByRole('button', { name: 'Создать урок', exact: true });
     await submit.click();
     await dialog.getByRole('alert').waitFor();
     await diagnostics.finishHttpPhase();
@@ -459,7 +467,7 @@ test.describe('schedule for a tutor in Russian', () => {
     await diagnostics.finishHttpPhase();
   });
 
-  test('schedule › a series without weekdays says so and the message takes focus', async ({
+  test('schedule › a series without weekdays says so in the error summary, which takes focus and links to the weekdays', async ({
     page,
     deployment,
     control,
@@ -472,15 +480,16 @@ test.describe('schedule for a tutor in Russian', () => {
     await fillOneOffLesson(dialog, 'Анна', date, '12:00');
     await dialog.getByRole('checkbox', { name: 'Повторять каждую неделю' }).check();
 
-    await dialog.getByRole('button', { name: 'Запланировать' }).click();
+    await dialog.getByRole('button', { name: 'Создать урок' }).click();
 
-    const message = dialog.getByRole('alert');
-    await expect(message).toHaveText('Выберите хотя бы один день недели.');
-    await expect(message).toBeFocused();
-    await expect(dialog).toBeVisible();
+    const summary = dialog.getByRole('alert', { name: 'Проверьте эти поля' });
+    await expect(summary).toBeFocused();
+    await expect(summary.getByRole('link')).toHaveText(['Выберите хотя бы один день недели.']);
+    await expect(dialog.getByRole('group', { name: 'Дни недели' })).toContainText('Выберите хотя бы один день недели.');
+    await expect(newLessonHeading(page)).toBeVisible();
   });
 
-  test('schedule › a dialog opened from a free slot returns focus to New lesson', async ({
+  test('schedule › New lesson opened from a free slot returns focus to New lesson on Back', async ({
     page,
     deployment,
     control,
@@ -490,12 +499,11 @@ test.describe('schedule for a tutor in Russian', () => {
     await signInThroughTheApi(page, maria);
     await page.goto(weekAddress(date));
     await page.locator(`[data-slot="${date}T09:00"]`).click();
-    const dialog = page.getByRole('dialog', { name: 'Новый урок' });
-    await expect(dialog.getByLabel('Поиск ученика или группы')).toBeFocused();
+    await expect(newLessonHeading(page)).toBeFocused();
 
-    await page.keyboard.press('Escape');
+    await page.goBack();
 
-    await expect(dialog).toBeHidden();
+    await expect(newLessonHeading(page)).toBeHidden();
     await expect(page.getByRole('button', { name: 'Новый урок' })).toBeFocused();
   });
 
@@ -632,9 +640,9 @@ test.describe('schedule for a tutor in Russian', () => {
     const dialog = await openNewLesson(page);
     await fillOneOffLesson(dialog, 'Анна', date, '12:00');
 
-    await dialog.getByRole('button', { name: 'Запланировать' }).click();
+    await dialog.getByRole('button', { name: 'Создать урок' }).click();
 
-    await expect(dialog).toBeHidden();
+    await expect(newLessonHeading(page)).toBeHidden();
     await expect(page.getByRole('button', { name: 'Новый урок' })).toBeFocused();
     await expect(page.getByRole('status').filter({ hasText: 'Урок запланирован' })).toBeVisible();
     await expect(lessonLinks(page).filter({ hasText: '12:00–13:00' })).toContainText('Анна');
@@ -684,9 +692,11 @@ test.describe('schedule for a tutor in Russian', () => {
 
     await dialog.getByLabel('Поиск ученика или группы').press('Enter');
 
-    await expect(dialog.getByText('Выберите ученика или группу.')).toBeVisible();
-    await expect(dialog.getByLabel('Поиск ученика или группы')).toBeFocused();
-    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('alert', { name: 'Проверьте эти поля' })).toBeFocused();
+    await expect(dialog.getByRole('group', { name: 'Ученик или группа' })).toContainText(
+      'Выберите ученика или группу.',
+    );
+    await expect(newLessonHeading(page)).toBeVisible();
     expect(lessonWrites).toEqual([]);
   });
 
@@ -707,16 +717,16 @@ test.describe('schedule for a tutor in Russian', () => {
     await first.getByRole('button', { name: '90 мин', exact: true }).click();
     await first.getByRole('button', { name: 'Добавить описание', exact: true }).click();
     const descriptionFocused = await first
-      .getByLabel('Описание', { exact: true })
+      .getByLabel('Описание (необязательно)', { exact: true })
       .evaluate((element) => element === document.activeElement);
-    await first.getByLabel('Описание', { exact: true }).fill('Повторение глаголов');
-    await first.getByRole('button', { name: 'Запланировать' }).click();
-    await first.waitFor({ state: 'hidden' });
+    await first.getByLabel('Описание (необязательно)', { exact: true }).fill('Повторение глаголов');
+    await first.getByRole('button', { name: 'Создать урок' }).click();
+    await newLessonHeading(page).waitFor({ state: 'detached' });
     const second = await openNewLesson(page);
     await fillOneOffLesson(second, 'Анна', date, '15:00');
     await second.getByLabel('Длительность, минут').fill('75');
-    await second.getByRole('button', { name: 'Запланировать' }).click();
-    await second.waitFor({ state: 'hidden' });
+    await second.getByRole('button', { name: 'Создать урок' }).click();
+    await newLessonHeading(page).waitFor({ state: 'detached' });
 
     expect(dateFits).toBe(true);
     expect(descriptionFocused).toBe(true);
@@ -807,7 +817,8 @@ test.describe('schedule for a tutor in English', () => {
     await signInThroughTheApi(page, studentsOfPavel.pavel);
     await page.goto('/schedule');
     await page.getByRole('button', { name: 'New lesson' }).click();
-    const dialog = page.getByRole('dialog', { name: 'New lesson' });
+    await expect(newLessonHeading(page)).toBeFocused();
+    const dialog = page.getByRole('main');
     const students = dialog.getByRole('list', { name: 'Students' }).getByRole('button');
     await expect(students).toHaveCount(30);
 
@@ -891,9 +902,9 @@ test.describe('pilot 1, the first lessons of Maria and Anna', () => {
     await dialog.getByRole('checkbox', { name: 'четверг' }).check();
     await dialog.getByLabel('Число уроков').fill('8');
 
-    await dialog.getByRole('button', { name: 'Запланировать' }).click();
+    await dialog.getByRole('button', { name: 'Создать урок' }).click();
 
-    await expect(dialog).toBeHidden();
+    await expect(newLessonHeading(page)).toBeHidden();
     await expect(page.getByRole('button', { name: 'Новый урок' })).toBeFocused();
     const addresses = new Set<string>();
     for (const month of [firstDate, lessonDates.at(-1) ?? firstDate]) {
@@ -1023,11 +1034,11 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
     await page.goto(weekAddress(monday));
 
     await page.locator(`[data-slot="${monday}T10:00"]`).click();
-    const dialog = page.getByRole('dialog', { name: 'New lesson' });
+    const dialog = page.getByRole('main');
     await dialog.getByRole('button', { name: 'Anna', exact: true }).click();
-    await dialog.getByRole('button', { name: 'Schedule', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Create lesson', exact: true }).click();
 
-    await expect(dialog).toBeHidden();
+    await expect(newLessonHeading(page)).toBeHidden();
     await expect(lessonLinks(page).filter({ hasText: '10:00–11:00' })).toContainText('Lesson');
     await createReadyTemplate(deployment, pavel, 'Fractions');
     await page.goto('/homework/library');
@@ -1036,10 +1047,12 @@ test.describe('pilot 3, two tutors in Anna’s schedule', () => {
       .locator('main [aria-expanded="true"] + div')
       .getByRole('button', { name: 'Issue assignment', exact: true })
       .click();
-    const issue = page.getByRole('dialog', { name: 'Issue assignment' });
+    const issueHeading = page.getByRole('heading', { level: 1, name: 'Issue assignment' });
+    await expect(issueHeading).toBeFocused();
+    const issue = page.getByRole('main');
     await issue.getByRole('button', { name: 'Anna', exact: true }).click();
     await issue.getByRole('button', { name: 'Issue', exact: true }).click();
-    await expect(issue).toBeHidden();
+    await expect(issueHeading).toBeHidden();
     await expect(page.getByText('Assignment issued.', { exact: true })).toBeFocused();
     await diagnostics.closeContext(context);
     pavelOfPilotThree = pavel;

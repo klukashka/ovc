@@ -2,6 +2,14 @@ export const homeworkTexts = {
   tabs: { library: 'Library', issued: 'Issued', review: 'Needs checking' },
   confirmEmail: 'Confirm your email to issue and check assignments.',
   issue: 'Issue assignment',
+  issueForm: {
+    back: {
+      library: 'Back to the library',
+      builder: 'Back to the assignment',
+      student: 'Back to the student',
+      lesson: 'Back to the lesson',
+    },
+  },
   fields: {
     template: 'Assignment',
     audience: 'Student or group',

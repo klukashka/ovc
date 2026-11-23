@@ -11,6 +11,8 @@ const languages = [
     language: 'ru',
     locale: 'ru-RU',
     newLesson: 'Новый урок',
+    attachMaterial: 'Прикрепить материал',
+    create: 'Создать урок',
     nothingFound: 'Ничего не найдено',
     editLesson: 'Изменить урок',
     editDialog: 'Изменение урока',
@@ -24,6 +26,8 @@ const languages = [
     language: 'en',
     locale: 'en-GB',
     newLesson: 'New lesson',
+    attachMaterial: 'Attach material',
+    create: 'Create lesson',
     nothingFound: 'Nothing found',
     editLesson: 'Edit lesson',
     editDialog: 'Edit lesson',
@@ -171,14 +175,17 @@ for (const language of languages) {
         const tutor = await seedVerifiedUser(deployment, 'Tutor', language.language);
         await signInThroughTheApi(page, tutor);
         await page.goto('/schedule');
-        const dialog = page.getByRole('dialog', { name: language.newLesson });
+        const form = page.getByRole('main');
 
         await page.getByRole('button', { name: language.newLesson, exact: true }).click();
 
-        await expect(dialog.getByLabel(language.search)).toBeFocused();
-        await expect(dialog.getByLabel(language.date, { exact: true })).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
-        await expect(dialog.getByText(language.nothingFound, { exact: true })).toBeVisible();
-        await expectLessonFieldLayout(dialog, viewport.columns);
+        await expect(page.getByRole('heading', { level: 1, name: language.newLesson })).toBeFocused();
+        await expect(form.getByLabel(language.date, { exact: true })).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+        await expect(form.getByText(language.nothingFound, { exact: true })).toBeVisible();
+        await expectLessonFieldLayout(form, viewport.columns);
+        const lastField = await form.getByRole('button', { name: language.attachMaterial, exact: true }).boundingBox();
+        const create = await form.getByRole('button', { name: language.create, exact: true }).boundingBox();
+        expect(create?.y ?? 0).toBeGreaterThanOrEqual((lastField?.y ?? Infinity) + (lastField?.height ?? 0));
       });
 
       test('editing gives the full date its own row and aligns time with duration', async ({

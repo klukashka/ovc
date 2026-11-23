@@ -218,6 +218,10 @@ export function ActionButton({
   );
 }
 
+export function FormActions({ children }: { readonly children: ReactNode }): ReactElement {
+  return <div className="flex flex-wrap items-center gap-3">{children}</div>;
+}
+
 export function SubmitButton({
   busy,
   quiet = false,

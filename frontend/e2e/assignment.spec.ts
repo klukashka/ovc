@@ -1364,7 +1364,9 @@ test.describe('pilot 2, group homework from the library', () => {
       .locator('main [aria-expanded="true"] + div')
       .getByRole('button', { name: 'Выдать задание', exact: true })
       .click();
-    const dialog = page.getByRole('dialog', { name: 'Выдать задание' });
+    const issueHeading = page.getByRole('heading', { level: 1, name: 'Выдать задание' });
+    await expect(issueHeading).toBeFocused();
+    const dialog = page.getByRole('main');
     await dialog.getByRole('button', { name: 'B1 evening', exact: true }).click();
     await dialog.getByRole('checkbox', { name: 'Указать срок' }).check();
     pilotTwoDeadlineDate = localDate(deadline, pilotTimezone);
@@ -1373,7 +1375,7 @@ test.describe('pilot 2, group homework from the library', () => {
 
     await dialog.getByRole('button', { name: 'Выдать', exact: true }).click();
 
-    await expect(dialog).toBeHidden();
+    await expect(issueHeading).toBeHidden();
     await expect(page.getByText('Задание выдано.', { exact: true })).toBeFocused();
     expect((await studentWork(deployment, seed.anna, 'todo')).map((work) => work.title)).toEqual([pastSimple.title]);
     expect((await studentWork(deployment, seed.boris, 'todo')).map((work) => work.title)).toEqual([pastSimple.title]);

@@ -25,6 +25,7 @@ import {
   quietButtonClass,
   textButtonClass,
 } from '../../components/ui/Form.tsx';
+import { useOpenFormRoute, useReturnFocus } from '../../components/ui/formRoute.ts';
 import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
@@ -35,7 +36,8 @@ import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import { parseStudentView, type StudentAssignment } from '../assignment/studentView.ts';
 import { assignmentTextLoaders } from '../assignment/texts.ts';
-import { IssueDialogHost, IssuedNotice, homeworkTextLoaders } from '../homework/IssueAssignment.tsx';
+import { issueAssignmentAddress } from '../homework/api.ts';
+import { IssuedNotice, homeworkTextLoaders, useIssuedResult } from '../homework/IssueAssignment.tsx';
 import { fetchFolders, folderTree, libraryFoldersKey, libraryListsKey } from '../library/api.ts';
 import { folderAddress } from '../library/LibraryTable.tsx';
 import { LibraryUpload } from '../library/upload.ts';
@@ -71,6 +73,8 @@ import { type ChosenMaterial, MaterialPicker } from './MaterialPicker.tsx';
 import { PreviewDialog } from './PreviewDialog.tsx';
 import { builderTextLoaders } from './texts.ts';
 
+const builderIssueOpener = 'builder-issue';
+
 function IssueButton({
   busy,
   buttonRef,
@@ -84,6 +88,7 @@ function IssueButton({
 }): ReactElement {
   const { t } = useTranslation();
   const heldFocus = useRef(false);
+  useReturnFocus(builderIssueOpener, buttonRef);
 
   useLayoutEffect(() => {
     const element = buttonRef.current;
@@ -280,8 +285,11 @@ function Editor({
   const issueButton = useRef<HTMLButtonElement>(null);
   const homeworkTexts = useFeatureTexts('homework', homeworkTextLoaders);
   const [issueBusy, setIssueBusy] = useState(false);
-  const [issuing, setIssuing] = useState<{ readonly id: string; readonly title: string } | null>(null);
-  const [issued, setIssued] = useState<{ readonly issueId: string; readonly count: number } | null>(null);
+  const openIssueRoute = useOpenFormRoute(me.id);
+  const issuedId = useIssuedResult();
+  const [issued, setIssued] = useState<{ readonly issueId: string; readonly count: number } | null>(() =>
+    issuedId === null ? null : { issueId: issuedId, count: 1 },
+  );
   const addBlockButton = useRef<HTMLButtonElement>(null);
   const lastFocusedBlock = useRef<string | null>(null);
   const dragged = useRef<string | null>(null);
@@ -561,7 +569,7 @@ function Editor({
       const clean = await autosave.flush();
       const saved = queryClient.getQueryData<Template>(templateKey(initial.id));
       if (clean && saved?.ready === true) {
-        setIssuing({ id: saved.id, title: saved.title });
+        openIssueRoute(issueAssignmentAddress(saved.id), builderIssueOpener);
       }
     } finally {
       setIssueBusy(false);
@@ -701,20 +709,6 @@ function Editor({
           setPreview(null);
         }}
       />
-      {homeworkTexts.ready ? (
-        <IssueDialogHost
-          open={issuing !== null}
-          preset={issuing === null ? {} : { template: issuing }}
-          returnFocus={issueButton}
-          onClose={() => {
-            setIssuing(null);
-          }}
-          onIssued={(issue) => {
-            setIssuing(null);
-            setIssued((previous) => ({ issueId: issue.id, count: (previous?.count ?? 0) + 1 }));
-          }}
-        />
-      ) : null}
     </div>
   );
 }

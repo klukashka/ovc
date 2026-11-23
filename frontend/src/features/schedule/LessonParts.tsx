@@ -57,10 +57,10 @@ const layoutClass: Readonly<Record<'stacked' | 'fill', string>> = {
 };
 
 const compactTime: Readonly<Record<LessonStatus, string>> = {
-  scheduled: 'shrink-0 text-caption',
-  live: 'shrink-0 text-caption',
-  ended: 'shrink-0 text-caption',
-  cancelled: 'shrink-0 text-caption line-through',
+  scheduled: 'shrink-0 text-label font-medium',
+  live: 'shrink-0 text-label font-medium',
+  ended: 'shrink-0 text-label font-medium',
+  cancelled: 'shrink-0 text-label font-medium line-through',
 };
 
 export function LessonTitle({
@@ -200,7 +200,7 @@ export function LessonBlock({
       data-lesson-id={item.id}
       className={`flex min-w-0 flex-col gap-0.5 overflow-hidden rounded-sm border border-l-4 border-border bg-surface px-2 text-small hover:border-border-strong ${layoutClass[layout]} ${edge} ${statusText[item.status]}`}
     >
-      <span className="text-caption text-text-muted">{times}</span>
+      <span className="text-label font-medium text-text-muted">{times}</span>
       <span className="text-strong">
         <LessonTitle title={item.title} cancelled={struck} />
       </span>

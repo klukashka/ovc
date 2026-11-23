@@ -8,6 +8,7 @@ import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
 import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
+import { groupsTexts } from './texts.en.ts';
 import { MemberPicker } from './MemberPicker.tsx';
 
 afterEach(() => {
@@ -37,6 +38,7 @@ async function showPicker(): Promise<FakeAuthServer> {
   });
   await session.signIn(tutorEmail, password);
   const i18n = await createI18n('en');
+  i18n.addResourceBundle('en', 'translation', { groups: groupsTexts }, true, true);
   render(
     <SessionContext value={session}>
       <ApiClientContext value={createApiClient(origin, session.authorizedFetch)}>

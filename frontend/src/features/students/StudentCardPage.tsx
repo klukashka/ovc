@@ -35,6 +35,7 @@ import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
 import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
+import { RouteTabs } from '../../components/ui/Tabs.tsx';
 import { PageColumns } from '../../components/ui/PageColumns.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
 import { useStoredValue, valueAccess } from '../../components/ui/serverValue.ts';
@@ -47,8 +48,14 @@ import type { CalendarItem } from '../schedule/api.ts';
 import { LessonList } from '../schedule/LessonList.tsx';
 import { ScheduleLessonAction } from '../schedule/ScheduleLessonAction.tsx';
 import { CardHomeworkTab, CardOpenAssignments } from '../homework/CardHomework.tsx';
-import { IssueAssignmentButton, IssuedNotice, homeworkTextLoaders } from '../homework/IssueAssignment.tsx';
+import {
+  IssueAssignmentButton,
+  IssuedNotice,
+  homeworkTextLoaders,
+  useIssuedResult,
+} from '../homework/IssueAssignment.tsx';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
+import { studentCardTextLoaders } from './cardTexts.ts';
 import {
   type CardInvitation,
   type RelationshipState,
@@ -68,11 +75,10 @@ import { InvitationLink } from './InvitationLink.tsx';
 import { type AutosaveStatus, useAutosave } from './notesAutosave.ts';
 import { StateBadge } from './StateBadge.tsx';
 
-type StudentCardPatch = components['schemas']['StudentCardPatch'];
+const cardNewLessonOpener = 'card-new-lesson';
+const cardIssueOpener = 'card-issue';
 
-const tabClass = 'inline-flex min-h-11 items-center border-b-2 px-1 text-small';
-const currentTabClass = `${tabClass} border-accent font-medium text-text`;
-const otherTabClass = `${tabClass} border-transparent text-text-muted hover:text-text`;
+type StudentCardPatch = components['schemas']['StudentCardPatch'];
 
 export interface CardHandlers {
   readonly onChanged: (card: StudentCard) => void;
@@ -909,23 +915,12 @@ function CardTabs({
 }): ReactElement {
   const { t } = useTranslation();
   const keys: readonly CardTab[] = homework ? ['overview', 'lessons', 'homework'] : ['overview', 'lessons'];
-  const tabs = keys.map((key) => ({ key, to: cardTabAddress(cardId, key) }));
   return (
-    <nav aria-label={t('studentCard.sections')} className="border-b border-border">
-      <ul className="flex flex-wrap gap-6">
-        {tabs.map((entry) => (
-          <li key={entry.key}>
-            <Link
-              to={entry.to}
-              aria-current={entry.key === tab ? 'page' : undefined}
-              className={entry.key === tab ? currentTabClass : otherTabClass}
-            >
-              {cardTabLabel(t, entry.key)}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    <RouteTabs
+      label={t('studentCard.sections')}
+      current={tab}
+      tabs={keys.map((key) => ({ key, to: cardTabAddress(cardId, key), label: cardTabLabel(t, key) }))}
+    />
   );
 }
 
@@ -1109,8 +1104,12 @@ export function StudentCardPage(): ReactElement {
   }
   const me = useSignedInAccount();
   const homeworkTexts = useFeatureTexts('homework', homeworkTextLoaders);
+  const cardTexts = useFeatureTexts('studentCard', studentCardTextLoaders);
   const homework = me.email_verified && homeworkTexts.ready;
-  const [issued, setIssued] = useState<{ readonly id: string; readonly count: number } | null>(null);
+  const issuedId = useIssuedResult();
+  const [issued, setIssued] = useState<{ readonly id: string; readonly count: number } | null>(() =>
+    issuedId === null ? null : { id: studentId, count: 1 },
+  );
   if (issued !== null && issued.id !== studentId) {
     setIssued(null);
   }
@@ -1211,9 +1210,17 @@ export function StudentCardPage(): ReactElement {
       });
     },
   };
-  const shown = error === null ? (query.data ?? null) : null;
+  const shown = error === null && cardTexts.ready ? (query.data ?? null) : null;
+  const noticesShown = cardTexts.ready && !notFound && !gone;
 
   function body(): ReactElement {
+    if (!cardTexts.ready) {
+      return cardTexts.failed ? (
+        <LoadFailed error={asApiError(undefined)} onRetry={cardTexts.retry} />
+      ) : (
+        <DelayedLoading />
+      );
+    }
     if (gone) {
       return (
         <>
@@ -1263,6 +1270,7 @@ export function StudentCardPage(): ReactElement {
             {me.state === 'active' && schedulable(shown) ? (
               <ScheduleLessonAction
                 audience={{ kind: 'one_to_one', id: shown.id, name: shown.display_name }}
+                opener={cardNewLessonOpener}
                 onScheduled={() => {
                   void queryClient.invalidateQueries({ queryKey: key });
                   void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
@@ -1271,10 +1279,8 @@ export function StudentCardPage(): ReactElement {
             ) : null}
             {homework && schedulable(shown) ? (
               <IssueAssignmentButton
+                opener={cardIssueOpener}
                 preset={{ audience: { kind: 'one_to_one', id: shown.id, name: shown.display_name } }}
-                onIssued={() => {
-                  setIssued((previous) => ({ id: studentId, count: (previous?.count ?? 0) + 1 }));
-                }}
               />
             ) : null}
           </>
@@ -1298,13 +1304,13 @@ export function StudentCardPage(): ReactElement {
         )
       }
     >
-      {removedCard === null ? null : <LiveNotice message={t('studentCard.removed')} />}
+      {removedCard === null || !cardTexts.ready ? null : <LiveNotice message={t('studentCard.removed')} />}
       {issued === null || notFound || gone ? null : <IssuedNotice key={issued.count} issueId={null} />}
-      {changedCard === null || notFound || gone ? null : (
+      {changedCard === null || !noticesShown ? null : (
         <FocusedNotice key={changedCard.count} message={t('studentCard.changedElsewhere')} />
       )}
-      {endedCard === null || notFound || gone ? null : <FocusedNotice message={t('studentCard.ended')} />}
-      {savedCard === null || notFound || gone ? null : (
+      {endedCard === null || !noticesShown ? null : <FocusedNotice message={t('studentCard.ended')} />}
+      {savedCard === null || !noticesShown ? null : (
         <FocusedNotice key={savedCard.count} message={t('studentCard.saved')} />
       )}
       {refetchError === null ? null : (

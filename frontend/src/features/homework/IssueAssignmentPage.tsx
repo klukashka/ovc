@@ -2,12 +2,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
 import { type ReactElement, type RefObject, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 
 import { type Action, type ActionState, done, refusedBy, useAction } from '../../components/ui/action.ts';
-import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
+  FormActions,
   FormAlert,
   SelectChevron,
   fieldClass,
@@ -15,9 +15,14 @@ import {
   primaryButtonClass,
   quietButtonClass,
   selectClass,
-  textButtonClass,
 } from '../../components/ui/Form.tsx';
-import { type ApiClient, useApiClient } from '../../lib/api/client.ts';
+import { ErrorSummary, useFieldProblems } from '../../components/ui/FormProblems.tsx';
+import { useFormPreset, useLeaveFormRoute } from '../../components/ui/formRoute.ts';
+import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
+import { Page } from '../../components/ui/Page.tsx';
+import { type ApiClient, asApiError, useApiClient } from '../../lib/api/client.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
+import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import { type Me, useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDateTime } from '../../lib/format/dates.ts';
 import { addDays, isLocalDate, localDateOf, localInstant, utcOffsetText } from '../../lib/time/localDates.ts';
@@ -25,20 +30,21 @@ import { cityOf } from '../../lib/time/timezoneCities.ts';
 import { fetchGroup, groupKey, groupsKey } from '../groups/api.ts';
 import { libraryKey } from '../library/api.ts';
 import type { CalendarItem } from '../schedule/api.ts';
-import { type Audience, AudiencePicker } from '../schedule/AudiencePicker.tsx';
+import { type Audience, AudiencePicker, audienceOf } from '../schedule/AudiencePicker.tsx';
 import { fetchStudentCard, studentCardKey, studentsKey } from '../students/api.ts';
 import {
   type AnswerPolicy,
   type IssueItem,
   type NewIssue,
   answerPolicies,
+  builderAddress,
   fetchIssueTemplate,
   hasManualQuestion,
   issueTemplateKey,
   issuesKey,
 } from './api.ts';
 import { type Problem, problemOf } from './issueProblems.ts';
-import { ConfirmEmailPrompt } from './IssueAssignment.tsx';
+import { ConfirmEmailPrompt, homeworkTextLoaders } from './IssueAssignment.tsx';
 import { type ChosenTemplate, TemplatePicker } from './TemplatePicker.tsx';
 
 export interface PresetLesson {
@@ -224,7 +230,7 @@ function LessonField({
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={selectId} className="text-label">
-        {t('homework.fields.lesson')}
+        {t('homework.fields.lesson')} <span className="font-normal text-text-muted">{t('form.optional')}</span>
       </label>
       <div className="relative">
         <select
@@ -305,7 +311,7 @@ function DeadlineField({
           }}
           className="size-4 accent-accent"
         />
-        {t('homework.fields.setDeadline')}
+        {t('homework.fields.setDeadline')} <span className="text-text-muted">{t('form.optional')}</span>
       </label>
       {enabled ? (
         <fieldset aria-labelledby={legendId} className="flex flex-col gap-2">
@@ -461,24 +467,19 @@ export function PolicyField({
   );
 }
 
-type PendingFocus = 'templateSearch' | 'templateChange' | 'deadline' | 'lesson' | null;
+type PendingFocus = 'templateSearch' | 'templateChange' | null;
+
+const problemOrder: readonly string[] = ['lesson', 'deadline'];
 
 function IssueForm({
-  headingId,
   preset,
-  refs,
+  idempotencyKey,
   action,
   onCancel,
   onIssued,
 }: {
-  readonly headingId: string;
   readonly preset: IssuePreset;
-  readonly refs: {
-    readonly templateSearch: RefObject<HTMLInputElement | null>;
-    readonly audienceSearch: RefObject<HTMLInputElement | null>;
-    readonly audienceChange: RefObject<HTMLButtonElement | null>;
-    readonly deadlineCheckbox: RefObject<HTMLInputElement | null>;
-  };
+  readonly idempotencyKey: string;
   readonly action: Action;
   readonly onCancel: () => void;
   readonly onIssued: (issue: IssueItem) => void;
@@ -487,7 +488,6 @@ function IssueForm({
   const client = useApiClient();
   const queryClient = useQueryClient();
   const me = useSignedInAccount();
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [template, setTemplate] = useState<ChosenTemplate | null>(preset.template ?? null);
   const [audience, setAudience] = useState<Audience | null>(preset.audience ?? null);
   const [lessonId, setLessonId] = useState(preset.lesson?.id ?? '');
@@ -497,8 +497,13 @@ function IssueForm({
   );
   const [deadlineClock, setDeadlineClock] = useState(endOfDay);
   const [policy, setPolicy] = useState<AnswerPolicy>('after_check');
-  const [problem, setProblem] = useState<{ readonly problem: Problem; readonly count: number } | null>(null);
+  const [alert, setAlert] = useState<{ readonly problem: Problem; readonly count: number } | null>(null);
+  const problems = useFieldProblems();
+  const templateSearch = useRef<HTMLInputElement>(null);
   const templateChange = useRef<HTMLButtonElement>(null);
+  const audienceSearch = useRef<HTMLInputElement>(null);
+  const audienceChange = useRef<HTMLButtonElement>(null);
+  const deadlineCheckbox = useRef<HTMLInputElement>(null);
   const deadlineDateField = useRef<HTMLInputElement>(null);
   const lessonField = useRef<HTMLSelectElement>(null);
   const pendingFocus = useRef<PendingFocus>(null);
@@ -510,13 +515,9 @@ function IssueForm({
     const target = pendingFocus.current;
     pendingFocus.current = null;
     if (target === 'templateSearch') {
-      refs.templateSearch.current?.focus();
+      templateSearch.current?.focus();
     } else if (target === 'templateChange') {
       templateChange.current?.focus();
-    } else if (target === 'deadline') {
-      deadlineDateField.current?.focus();
-    } else if (target === 'lesson') {
-      lessonField.current?.focus();
     }
   });
 
@@ -527,6 +528,10 @@ function IssueForm({
       onIssued(issue);
     }
   }, [action.state, onIssued]);
+
+  function deadlineProblem(date: string, clock: string): string | undefined {
+    return deadlineInstant(date, clock, me.timezone) === null ? t('homework.refusals.futureDeadline') : undefined;
+  }
 
   function report(state: ActionState, chosen: ChosenTemplate | null): void {
     const next = problemOf(t, state, chosen);
@@ -549,11 +554,14 @@ function IssueForm({
       }
     }
     if (next.kind === 'deadline') {
-      pendingFocus.current = 'deadline';
-    } else if (next.kind === 'lesson') {
-      pendingFocus.current = 'lesson';
+      problems.refuse([{ field: 'deadline', message: t('homework.refusals.futureDeadline'), source: 'server' }]);
+      return;
     }
-    setProblem((previous) => ({ problem: next, count: (previous?.count ?? 0) + 1 }));
+    if (next.kind === 'lesson') {
+      problems.refuse([{ field: 'lesson', message: t('homework.refusals.lessonLimit'), source: 'server' }]);
+      return;
+    }
+    setAlert((previous) => ({ problem: next, count: (previous?.count ?? 0) + 1 }));
   }
 
   function issue(): void {
@@ -561,11 +569,12 @@ function IssueForm({
       return;
     }
     const deadlineAt = deadlineOn ? deadlineInstant(deadlineDate, deadlineClock, me.timezone) : null;
+    setAlert(null);
     if (deadlineOn && deadlineAt === null) {
-      pendingFocus.current = 'deadline';
-      setProblem((previous) => ({ problem: { kind: 'deadline' }, count: (previous?.count ?? 0) + 1 }));
+      problems.refuse([{ field: 'deadline', message: t('homework.refusals.futureDeadline'), source: 'client' }]);
       return;
     }
+    problems.cleared();
     const chosen = template;
     const body: NewIssue = {
       template_id: chosen.id,
@@ -574,7 +583,6 @@ function IssueForm({
       deadline_at: deadlineAt,
       answer_policy: policy,
     };
-    setProblem(null);
     action.run(async (): Promise<ActionState> => {
       const answer = await sendIssue(client, body, idempotencyKey);
       if (isIssue(answer)) {
@@ -587,16 +595,21 @@ function IssueForm({
     });
   }
 
-  const shown = problem?.problem ?? null;
+  const shown = alert?.problem ?? null;
   return (
     <div className="flex flex-col gap-4">
-      <h2 id={headingId} className="font-serif text-title">
-        {t('homework.issue')}
-      </h2>
+      <ErrorSummary
+        attempt={problems.attempt}
+        problems={problems.listed(problemOrder).map((problem) => ({
+          key: problem.field,
+          message: problem.message,
+          target: () => (problem.field === 'lesson' ? lessonField.current : deadlineDateField.current),
+        }))}
+      />
       <TemplateField
         preset={preset.template !== undefined}
         template={template}
-        searchField={refs.templateSearch}
+        searchField={templateSearch}
         changeButton={templateChange}
         onChoose={(chosen) => {
           pendingFocus.current = 'templateChange';
@@ -611,16 +624,18 @@ function IssueForm({
         chosen={audience}
         preselected={preset.audience ?? null}
         groupsWithMembers
-        searchField={refs.audienceSearch}
-        changeButton={refs.audienceChange}
+        searchField={audienceSearch}
+        changeButton={audienceChange}
         error={undefined}
         onChoose={(chosen) => {
           setAudience(chosen);
           setLessonId(chosen.id === preset.audience?.id ? (preset.lesson?.id ?? '') : '');
+          problems.edited('lesson', undefined);
         }}
         onClear={() => {
           setAudience(null);
           setLessonId('');
+          problems.edited('lesson', undefined);
         }}
       />
       {audience === null ? null : (
@@ -628,30 +643,42 @@ function IssueForm({
           lessons={detail.lessons}
           preset={presetLesson}
           value={lessonId}
-          error={shown?.kind === 'lesson' ? t('homework.refusals.lessonLimit') : null}
+          error={problems.message('lesson') ?? null}
           field={lessonField}
-          onChange={setLessonId}
+          onChange={(value) => {
+            setLessonId(value);
+            problems.edited('lesson', undefined);
+          }}
         />
       )}
       <DeadlineField
         enabled={deadlineOn}
         date={deadlineDate}
         clock={deadlineClock}
-        error={shown?.kind === 'deadline' ? t('homework.refusals.futureDeadline') : null}
-        checkbox={refs.deadlineCheckbox}
+        error={problems.message('deadline') ?? null}
+        checkbox={deadlineCheckbox}
         dateField={deadlineDateField}
-        onToggle={setDeadlineOn}
-        onDate={setDeadlineDate}
-        onClock={setDeadlineClock}
+        onToggle={(enabled) => {
+          setDeadlineOn(enabled);
+          problems.edited('deadline', undefined);
+        }}
+        onDate={(value) => {
+          setDeadlineDate(value);
+          problems.edited('deadline', deadlineProblem(value, deadlineClock));
+        }}
+        onClock={(value) => {
+          setDeadlineClock(value);
+          problems.edited('deadline', deadlineProblem(deadlineDate, value));
+        }}
       />
       <PolicyField template={template} policy={policy} onChange={setPolicy} />
       {detail.students === null ? null : (
         <p className="text-small text-text-muted">{t('homework.summary', { count: detail.students })}</p>
       )}
-      {shown?.kind === 'confirmation' ? <ConfirmationAlert key={problem?.count} /> : null}
+      {shown?.kind === 'confirmation' ? <ConfirmationAlert key={alert?.count} /> : null}
       {shown?.kind === 'alert' ? (
         <div className="flex flex-col items-start gap-1">
-          <FormAlert key={problem?.count}>{shown.message}</FormAlert>
+          <FormAlert key={alert?.count}>{shown.message}</FormAlert>
           {shown.builderLink === null ? null : (
             <Link to={shown.builderLink} className={linkClass}>
               {t('homework.refusals.openInBuilder')}
@@ -659,7 +686,7 @@ function IssueForm({
           )}
         </div>
       ) : null}
-      <div className="flex flex-wrap gap-3">
+      <FormActions>
         <ActionButton
           busy={action.busy}
           unavailable={template === null || audience === null}
@@ -668,63 +695,170 @@ function IssueForm({
         >
           {t('homework.submit')}
         </ActionButton>
-        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={textButtonClass}>
+        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={quietButtonClass}>
           {t('homework.cancel')}
         </ActionButton>
-      </div>
+      </FormActions>
     </div>
   );
 }
 
-export function IssueDialog({
-  open,
-  preset,
-  returnFocus,
-  onClose,
-  onIssued,
-}: {
-  readonly open: boolean;
-  readonly preset: IssuePreset;
-  readonly returnFocus: RefObject<HTMLElement | null>;
-  readonly onClose: () => void;
-  readonly onIssued: (issue: IssueItem) => void;
-}): ReactElement {
-  const headingId = useId();
-  const templateSearch = useRef<HTMLInputElement>(null);
-  const audienceSearch = useRef<HTMLInputElement>(null);
-  const audienceChange = useRef<HTMLButtonElement>(null);
-  const deadlineCheckbox = useRef<HTMLInputElement>(null);
-  const action = useAction();
-
-  function close(): void {
-    action.reset();
-    onClose();
+function presetLessonOf(value: unknown): PresetLesson | undefined {
+  if (typeof value !== 'object' || value === null || !('id' in value) || !('title' in value)) {
+    return undefined;
   }
+  if (!('startsAt' in value)) {
+    return undefined;
+  }
+  const { id, title, startsAt } = value;
+  return typeof id === 'string' && typeof title === 'string' && typeof startsAt === 'string'
+    ? { id, title, startsAt }
+    : undefined;
+}
 
-  function initialFocus(): RefObject<HTMLElement | null> {
-    if (preset.template === undefined) {
-      return templateSearch;
+export function issuePresetOf(value: unknown): IssuePreset {
+  if (typeof value !== 'object' || value === null) {
+    return {};
+  }
+  const audience = 'audience' in value ? audienceOf(value.audience) : undefined;
+  const lesson = 'lesson' in value ? presetLessonOf(value.lesson) : undefined;
+  return {
+    ...(audience === undefined ? {} : { audience }),
+    ...(audience === undefined || lesson === undefined ? {} : { lesson }),
+  };
+}
+
+type BackLinkKey =
+  | 'homework.issueForm.back.library'
+  | 'homework.issueForm.back.builder'
+  | 'homework.issueForm.back.student'
+  | 'homework.issueForm.back.lesson';
+
+function backLinkKey(address: string): BackLinkKey {
+  if (address.startsWith('/homework/templates/')) {
+    return 'homework.issueForm.back.builder';
+  }
+  if (address.startsWith('/students/')) {
+    return 'homework.issueForm.back.student';
+  }
+  if (address.startsWith('/lessons/')) {
+    return 'homework.issueForm.back.lesson';
+  }
+  return 'homework.issueForm.back.library';
+}
+
+const templateIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function IssueAssignmentContent(): ReactElement {
+  const { t } = useTranslation();
+  const client = useApiClient();
+  const me = useSignedInAccount();
+  const [searchParams] = useSearchParams();
+  const { backAddress, leave } = useLeaveFormRoute('/homework/library');
+  const templateId = searchParams.get('template');
+  const templateIdValid = templateId === null || templateIdPattern.test(templateId);
+  const preset = issuePresetOf(useFormPreset(me.id));
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const action = useAction();
+  const template = useQuery({
+    queryKey: issueTemplateKey(templateId ?? ''),
+    queryFn: () => fetchIssueTemplate(client, templateId ?? ''),
+    enabled: templateId !== null && templateIdValid && me.email_verified,
+    retry: false,
+  });
+  const templateError = template.error === null || template.data !== undefined ? null : asApiError(template.error);
+  const notFound = !templateIdValid || templateError?.code === 'not_found';
+  const backLink = (
+    <p>
+      <Link
+        to={backAddress}
+        onClick={(event) => {
+          event.preventDefault();
+          leave();
+        }}
+        className={linkClass}
+      >
+        {t(backLinkKey(backAddress))}
+      </Link>
+    </p>
+  );
+
+  function body(): ReactElement {
+    if (!me.email_verified) {
+      return <ConfirmEmailPrompt />;
     }
-    return preset.audience === undefined ? audienceSearch : deadlineCheckbox;
+    if (templateId === null) {
+      return (
+        <IssueForm
+          preset={preset}
+          idempotencyKey={idempotencyKey}
+          action={action}
+          onCancel={() => {
+            leave();
+          }}
+          onIssued={(issue) => {
+            leave({ kind: 'assignmentIssued', issueId: issue.id });
+          }}
+        />
+      );
+    }
+    if (notFound) {
+      return <NotFoundContent />;
+    }
+    if (templateError !== null) {
+      return (
+        <LoadFailed
+          error={templateError}
+          onRetry={() => {
+            void template.refetch();
+          }}
+        />
+      );
+    }
+    if (template.data === undefined) {
+      return <DelayedLoading />;
+    }
+    if (!template.data.ready) {
+      return (
+        <div className="flex flex-col items-start gap-1">
+          <p>{t('homework.refusals.notEditable')}</p>
+          <Link to={builderAddress(template.data.id)} className={linkClass}>
+            {t('homework.refusals.openInBuilder')}
+          </Link>
+        </div>
+      );
+    }
+    return (
+      <IssueForm
+        preset={{ ...preset, template: { id: template.data.id, title: template.data.title } }}
+        idempotencyKey={idempotencyKey}
+        action={action}
+        onCancel={() => {
+          leave();
+        }}
+        onIssued={(issue) => {
+          leave({ kind: 'assignmentIssued', issueId: issue.id });
+        }}
+      />
+    );
   }
 
   return (
-    <ModalDialog
-      open={open}
-      busy={action.busy}
-      labelledBy={headingId}
-      returnFocus={returnFocus}
-      initialFocus={initialFocus()}
-      onClose={close}
-    >
-      <IssueForm
-        headingId={headingId}
-        preset={preset}
-        refs={{ templateSearch, audienceSearch, audienceChange, deadlineCheckbox }}
-        action={action}
-        onCancel={close}
-        onIssued={onIssued}
-      />
-    </ModalDialog>
+    <Page width="reading" {...(notFound ? { title: 'page.notFound' as const } : {})} focusTitle={notFound}>
+      {backLink}
+      {body()}
+    </Page>
   );
+}
+
+export function IssueAssignmentPage(): ReactElement {
+  const texts = useFeatureTexts('homework', homeworkTextLoaders);
+  if (!texts.ready) {
+    return (
+      <Page width="reading">
+        {texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />}
+      </Page>
+    );
+  }
+  return <IssueAssignmentContent />;
 }

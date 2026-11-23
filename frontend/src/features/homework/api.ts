@@ -47,6 +47,12 @@ export function issueAddress(id: string): string {
   return `/homework/issued/${encodeURIComponent(id)}`;
 }
 
+export function issueAssignmentAddress(templateId?: string): string {
+  return templateId === undefined
+    ? '/homework/issue'
+    : `/homework/issue?${new URLSearchParams({ template: templateId }).toString()}`;
+}
+
 export function builderAddress(templateId: string): string {
   return `/homework/templates/${encodeURIComponent(templateId)}`;
 }

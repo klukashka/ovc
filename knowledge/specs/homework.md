@@ -279,7 +279,7 @@ One predicate, `ReadableStudentSubmission`, decides whether a student reads a su
 The policy is one of `never`, `after_submission` or `after_check`. **Correct answers are revealed** to a student by the [reveal rule](#reveal-rule):
 
 - `after_submission`: their submission is `submitted` or `checked`;
-- `after_check`: their submission is `checked`; work with no manual questions is checked at submission ([submitting](#submitting)), so under this policy it reveals the answers in the submit answer, as `after_submission` would (clarified 2026-11-15 at the slice 9 review); from slice 10 the Issue dialog says so to the tutor before issuing such work ([Issue dialog](../design/web/pages.md#issue-dialog), pending owner review);
+- `after_check`: their submission is `checked`; work with no manual questions is checked at submission ([submitting](#submitting)), so under this policy it reveals the answers in the submit answer, as `after_submission` would (clarified 2026-11-15 at the slice 9 review); from slice 10 the Issue dialog, a page from the interface rework stage, says so to the tutor before issuing such work ([Issuing page](../design/web/pages.md#issuing-page), pending owner review);
 - `never`: never.
 
 **Tutor review content visible to the student** (comments, corrected files, feedback) comes only from the latest **published** review revision, whatever the policy. Points the tutor sets or overrides stay tutor-only. Overrides apply only to automatic questions. A draft revision is never visible, and its corrected files cannot be downloaded by the student: corrected files are referenced by the revision's own identifier, and students are authorized only through the latest published revision.

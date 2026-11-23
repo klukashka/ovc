@@ -334,6 +334,37 @@ function listLoaded(page: Page, state: 'active' | 'invited'): Promise<unknown> {
 test.describe('in English with the dark theme', () => {
   test.use({ locale: 'en-GB', colorScheme: 'dark' });
 
+  test('student card › while its texts load the card keeps its heading, which keeps focus once they arrive', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    await seedActiveStudent(deployment, pavel, 'Boris');
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const held = page.waitForRequest(/\/assets\/cardTexts\.(en|ru)-[^/]+\.js$/);
+    await page.route(/\/assets\/cardTexts\.(en|ru)-[^/]+\.js$/, async (route) => {
+      await released;
+      await route.continue();
+    });
+    await signInThroughTheApi(page, pavel);
+    await page.goto('/students');
+    await page.getByRole('link', { name: 'Boris', exact: true }).click();
+    await held;
+    await page.waitForFunction(
+      () => document.activeElement instanceof HTMLHeadingElement && document.activeElement.matches('main h1'),
+    );
+    const sectionsWhileLoading = await page.getByRole('navigation', { name: 'Card sections' }).count();
+
+    release();
+
+    expect(sectionsWhileLoading).toBe(0);
+    await expect(page.getByRole('navigation', { name: 'Card sections' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Boris' })).toBeFocused();
+  });
+
   test('students › creating an invitation focuses the ready dialog and Copy link copies its link', async ({
     page,
     browserName,
@@ -751,13 +782,14 @@ test.describe('in English with the dark theme', () => {
     await page.goto(`/students/${cardId}?tab=lessons`);
     const opener = page.getByRole('button', { name: 'Schedule a lesson' });
     await opener.click();
-    const dialog = page.getByRole('dialog', { name: 'New lesson' });
+    await expect(page.getByRole('heading', { level: 1, name: 'New lesson' })).toBeFocused();
+    const dialog = page.getByRole('main');
     await dialog.getByLabel('Date', { exact: true }).fill(addDays(tomorrow, 1));
     await dialog.getByLabel('Start time').fill('09:00');
 
-    await dialog.getByRole('button', { name: 'Schedule', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Create lesson', exact: true }).click();
 
-    await expect(dialog).toBeHidden();
+    await expect(page.getByRole('heading', { level: 1, name: 'New lesson' })).toBeHidden();
     await expect(opener).toBeFocused();
     const history = page.getByRole('list', { name: 'Lessons', exact: true }).getByRole('listitem');
     await expect(history).toHaveText([

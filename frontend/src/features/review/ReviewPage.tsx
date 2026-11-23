@@ -24,6 +24,7 @@ import {
 } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed, RefetchFailed, focusIsLost } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
+import { SegmentedControl } from '../../components/ui/Tabs.tsx';
 import { type ApiError, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
@@ -440,28 +441,23 @@ function FeedbackField({
 }): ReactElement {
   const { t } = useTranslation();
   const id = useId();
+  const labelId = useId();
   const [mode, setMode] = useState<'write' | 'preview'>('write');
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <label htmlFor={id} className="text-strong">
+        <label id={labelId} htmlFor={id} className="text-strong">
           {t('homework.review.feedback')}
         </label>
-        <div role="group" className="flex gap-1 rounded-md bg-hover p-1">
-          {(['write', 'preview'] as const).map((entry) => (
-            <button
-              key={entry}
-              type="button"
-              aria-pressed={mode === entry}
-              onClick={() => {
-                setMode(entry);
-              }}
-              className="inline-flex min-h-11 items-center rounded-sm border border-transparent px-3 text-small text-text-muted hover:text-text aria-pressed:border-border-strong aria-pressed:bg-field aria-pressed:font-medium aria-pressed:text-text desktop:pointer-fine:min-h-10"
-            >
-              {t(`homework.review.${entry}`)}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          name={{ labelledBy: labelId }}
+          chosen={mode}
+          onChoose={setMode}
+          segments={(['write', 'preview'] as const).map((entry) => ({
+            value: entry,
+            label: t(`homework.review.${entry}`),
+          }))}
+        />
       </div>
       <textarea
         id={id}

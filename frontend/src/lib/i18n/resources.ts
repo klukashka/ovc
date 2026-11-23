@@ -4,7 +4,9 @@ import type { builderTexts } from '../../features/builder/texts.en.ts';
 import type { homeworkPanelTexts } from '../../features/home/panelTexts.en.ts';
 import type { homeworkTexts } from '../../features/homework/texts.en.ts';
 import type { libraryTexts } from '../../features/library/texts.en.ts';
+import type { groupsTexts } from '../../features/groups/texts.en.ts';
 import type { notificationEventTexts } from '../../features/notifications/texts.en.ts';
+import type { studentCardTexts } from '../../features/students/cardTexts.en.ts';
 import type { ru } from './ru.ts';
 
 export type Shape<Tree> = { readonly [Key in keyof Tree]: Tree[Key] extends string ? string : Shape<Tree[Key]> };
@@ -19,6 +21,8 @@ export interface FeatureSections {
   readonly homework: Shape<typeof homeworkTexts>;
   readonly homeworkPanels: Shape<typeof homeworkPanelTexts>;
   readonly reclaim: Shape<typeof reclaimTexts>;
+  readonly studentCard: Shape<typeof studentCardTexts>;
+  readonly groups: Shape<typeof groupsTexts>;
 }
 
 export type FeatureSection = keyof FeatureSections;

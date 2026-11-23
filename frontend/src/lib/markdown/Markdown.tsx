@@ -79,5 +79,5 @@ function renderBlock(block: BlockNode, index: number): ReactElement {
 
 export function Markdown({ source }: { readonly source: string }): ReactElement {
   const blocks = useMemo(() => parseMarkdown(source), [source]);
-  return <div className="flex flex-col gap-3">{blocks.map(renderBlock)}</div>;
+  return <div className="flex max-w-running-text flex-col gap-3">{blocks.map(renderBlock)}</div>;
 }

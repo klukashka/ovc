@@ -5,8 +5,12 @@ import { assignmentTexts as assignmentEnglish } from '../../features/assignment/
 import { assignmentTexts as assignmentRussian } from '../../features/assignment/texts.ru.ts';
 import { builderTexts as builderEnglish } from '../../features/builder/texts.en.ts';
 import { builderTexts as builderRussian } from '../../features/builder/texts.ru.ts';
+import { groupsTexts as groupsEnglish } from '../../features/groups/texts.en.ts';
+import { groupsTexts as groupsRussian } from '../../features/groups/texts.ru.ts';
 import { libraryTexts as libraryEnglish } from '../../features/library/texts.en.ts';
 import { libraryTexts as libraryRussian } from '../../features/library/texts.ru.ts';
+import { studentCardTexts as studentCardEnglish } from '../../features/students/cardTexts.en.ts';
+import { studentCardTexts as studentCardRussian } from '../../features/students/cardTexts.ru.ts';
 import { en } from './en.ts';
 import { ru } from './ru.ts';
 
@@ -28,8 +32,22 @@ function messages(tree: MessageTree, prefix = ''): Map<string, string> {
 }
 
 const catalogues = {
-  ru: messages({ ...ru, library: libraryRussian, builder: builderRussian, assignment: assignmentRussian }),
-  en: messages({ ...en, library: libraryEnglish, builder: builderEnglish, assignment: assignmentEnglish }),
+  ru: messages({
+    ...ru,
+    library: libraryRussian,
+    builder: builderRussian,
+    assignment: assignmentRussian,
+    studentCard: studentCardRussian,
+    groups: groupsRussian,
+  }),
+  en: messages({
+    ...en,
+    library: libraryEnglish,
+    builder: builderEnglish,
+    assignment: assignmentEnglish,
+    studentCard: studentCardEnglish,
+    groups: groupsEnglish,
+  }),
 };
 
 function sampleValues(message: string, count: number): Record<string, number> {

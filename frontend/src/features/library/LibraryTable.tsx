@@ -1,8 +1,9 @@
-import { type ReactElement, type RefObject } from 'react';
+import { type ReactElement, type RefObject, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { ActionMenu, type MenuItem } from '../../components/ui/ActionMenu.tsx';
+import { useReturnFocus } from '../../components/ui/formRoute.ts';
 import {
   DataTable,
   type TableColumn,
@@ -19,7 +20,7 @@ import { formatDate } from '../../lib/format/dates.ts';
 import type { Me } from '../../lib/api/session.ts';
 import { formatStorage } from '../settings/storageAmount.ts';
 import type { LibraryFolder, LibraryItem, LibraryPathEntry } from './api.ts';
-import { type LibraryTarget, rowKey } from './LibraryDialogs.tsx';
+import { type LibraryTarget, libraryRowOpener, rowKey } from './LibraryDialogs.tsx';
 
 export type RowCommand = 'open' | 'issue' | 'rename' | 'move' | 'duplicate' | 'delete';
 
@@ -63,6 +64,8 @@ function RowMenu({
 }): ReactElement {
   const { t } = useTranslation();
   const key = rowKey(target);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  useReturnFocus(libraryRowOpener(key), menuButton);
   const items: readonly MenuItem[] = commands.map((command) => ({
     label: command === 'issue' ? t('homework.issue') : t(`library.${command}`),
     onChoose: (): void => {
@@ -76,6 +79,7 @@ function RowMenu({
         busy={handlers.busyRow === key}
         unavailable={handlers.busyRow !== null}
         items={items}
+        buttonRef={menuButton}
       >
         <MoreIcon />
       </ActionMenu>

@@ -30,6 +30,7 @@ import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
+import { RouteTabs } from '../../components/ui/Tabs.tsx';
 import { useAddressValue } from '../../components/ui/serverValue.ts';
 import { type ApiError, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
@@ -50,10 +51,6 @@ import {
 import { GroupDots } from './GroupDots.tsx';
 import { JoinRequests, useJoinRequestsSettled } from './JoinRequests.tsx';
 import { StateBadge } from './StateBadge.tsx';
-
-const tabClass = 'inline-flex min-h-11 items-center border-b-2 px-1 text-small';
-const currentTabClass = `${tabClass} border-accent font-medium text-text`;
-const otherTabClass = `${tabClass} border-transparent text-text-muted hover:text-text`;
 
 interface ListView {
   readonly state: StudentListState;
@@ -76,21 +73,16 @@ function listAddress(view: ListView): string {
 function Tabs({ view }: { readonly view: ListView }): ReactElement {
   const { t } = useTranslation();
   return (
-    <nav aria-label={t('students.lists')} className="shrink-0 border-b border-border desktop:border-b-0">
-      <ul className="flex flex-wrap gap-6">
-        {studentListStates.map((state) => (
-          <li key={state}>
-            <Link
-              to={listAddress({ ...view, state })}
-              aria-current={state === view.state ? 'page' : undefined}
-              className={state === view.state ? currentTabClass : otherTabClass}
-            >
-              {t(`students.tabs.${state}`)}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    <RouteTabs
+      label={t('students.lists')}
+      inFilterRow
+      current={view.state}
+      tabs={studentListStates.map((state) => ({
+        key: state,
+        to: listAddress({ ...view, state }),
+        label: t(`students.tabs.${state}`),
+      }))}
+    />
   );
 }
 

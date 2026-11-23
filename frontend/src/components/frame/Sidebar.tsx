@@ -61,7 +61,9 @@ function SidebarItem({
           <Icon />
         </span>
         <span className="flex-1">{t(`section.${section.key}`)}</span>
-        {count > 0 ? <span className="tabular text-caption text-text-muted">{count > 99 ? '99+' : count}</span> : null}
+        {count > 0 ? (
+          <span className="tabular text-label font-medium text-text-muted">{count > 99 ? '99+' : count}</span>
+        ) : null}
       </Link>
     </li>
   );
@@ -148,7 +150,7 @@ function AccountMenu({ me }: { readonly me: Me }): ReactElement {
       >
         <span
           aria-hidden="true"
-          className="flex size-6 items-center justify-center rounded-full bg-hover text-caption font-semibold text-text"
+          className="flex size-6 items-center justify-center rounded-full bg-hover text-label text-text"
         >
           {initial}
         </span>

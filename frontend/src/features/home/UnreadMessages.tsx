@@ -59,7 +59,7 @@ export function UnreadMessages({ part }: { readonly part: TutorHome['unread_chan
                         : channel.label}
                     </span>
                   </span>
-                  <span className="shrink-0 rounded-full bg-hover px-2 text-caption tabular">
+                  <span className="shrink-0 rounded-full bg-hover px-2 text-label font-medium tabular">
                     <span aria-hidden="true">{unreadCount(channel.unread_count)}</span>
                     <span className="sr-only">{t('today.unreadCount', { count: channel.unread_count })}</span>
                   </span>

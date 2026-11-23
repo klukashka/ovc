@@ -9,8 +9,10 @@ import { formatDateTime } from '../../lib/format/dates.ts';
 import { relativeHint } from '../../lib/format/relative.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { type TutorLessonIssue, lessonIssueLimit } from '../schedule/lessonIssues.ts';
-import { issueAddress, type IssueItem } from './api.ts';
+import { issueAddress } from './api.ts';
 import { type IssuePreset, IssueAssignmentButton, homeworkTextLoaders } from './IssueAssignment.tsx';
+
+const lessonIssueOpener = 'lesson-issue';
 
 function IssueRow({ issue, now }: { readonly issue: TutorLessonIssue; readonly now: number }): ReactElement {
   const { t } = useTranslation();
@@ -36,12 +38,10 @@ function LessonIssueList({
   issues,
   now,
   preset,
-  onIssued,
 }: {
   readonly issues: readonly TutorLessonIssue[];
   readonly now: number;
   readonly preset: IssuePreset | null;
-  readonly onIssued: (issue: IssueItem) => void;
 }): ReactElement {
   const { t } = useTranslation();
   const headingId = useId();
@@ -62,7 +62,11 @@ function LessonIssueList({
           {t('homework.sections.assignments')}
         </h2>
         {preset === null ? null : (
-          <IssueAssignmentButton preset={preset} onIssued={onIssued} unavailableReason={limited ? limitId : null} />
+          <IssueAssignmentButton
+            opener={lessonIssueOpener}
+            preset={preset}
+            unavailableReason={limited ? limitId : null}
+          />
         )}
       </div>
       {preset !== null && limited ? (
@@ -84,7 +88,6 @@ export function LessonIssues(props: {
   readonly issues: readonly TutorLessonIssue[];
   readonly now: number;
   readonly preset: IssuePreset | null;
-  readonly onIssued: (issue: IssueItem) => void;
 }): ReactElement | null {
   const texts = useFeatureTexts('homework', homeworkTextLoaders);
   return texts.ready ? <LessonIssueList {...props} /> : null;

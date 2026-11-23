@@ -2,46 +2,40 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
 import { type ReactElement, type RefObject, type SyntheticEvent, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link, useSearchParams } from 'react-router';
+
+import { useScheduler } from '../../app/clock.ts';
 
 import { type Action, type ActionState, done, refusedBy, useAction } from '../../components/ui/action.ts';
-import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
+  FormActions,
   FormAlert,
   fieldClass,
   fieldMessage,
+  linkClass,
   primaryButtonClass,
   quietButtonClass,
   stringField,
-  textButtonClass,
 } from '../../components/ui/Form.tsx';
+import { ErrorSummary, type FieldProblem, namedField, useFieldProblems } from '../../components/ui/FormProblems.tsx';
+import { useFormPreset, useLeaveFormRoute } from '../../components/ui/formRoute.ts';
+import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
+import { Page } from '../../components/ui/Page.tsx';
 import { Refusal, refusalText } from '../../components/ui/Refusal.tsx';
 import { type ApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
+import { isLocalDate } from '../../lib/time/localDates.ts';
 import { type NewLesson, lessonDurationLimits, seriesCountLimit } from './api.ts';
-import { type Audience, AudiencePicker } from './AudiencePicker.tsx';
+import { type Audience, AudiencePicker, audienceOf } from './AudiencePicker.tsx';
 import { formatWeekdayName } from './calendarFormat.ts';
-import { type LocalDate, addDays, localDateOf, localMinutesOf, localTimeOf } from '../../lib/time/localDates.ts';
 import { calendarKey } from './keys.ts';
 import { InputField, descriptionLimit, titleLimit } from './LessonFields.tsx';
 import { useMaterialTexts } from './materialTexts.ts';
 import { MaterialsField } from './MaterialPicker.tsx';
 import { type PickedMaterial, idsOf } from './materials.ts';
+import { type LessonPrefill, nextFullHour } from './newLesson.ts';
 import { OverlapWarning } from './OverlapWarning.tsx';
-
-export interface LessonPrefill {
-  readonly date: LocalDate;
-  readonly start: string;
-  readonly audience?: Audience;
-  readonly durationMinutes?: number;
-  readonly weekdays?: readonly number[];
-}
-
-export function nextFullHour(now: number, timeZone: string): LessonPrefill {
-  const today = localDateOf(now, timeZone);
-  const hour = Math.floor(localMinutesOf(now, timeZone) / 60) + 1;
-  return hour >= 24 ? { date: addDays(today, 1), start: '00:00' } : { date: today, start: localTimeOf(hour * 60) };
-}
 
 const defaultDurationMinutes = 60;
 const durationPresets = [45, 60, 90] as const;
@@ -73,11 +67,11 @@ function lessonRefusal(t: TFunction, state: ActionState, materialGone: string | 
 }
 
 function SeriesFields({
-  error,
+  message,
   readFirstDate,
   chosenWeekdays,
 }: {
-  readonly error: ApiError | null;
+  readonly message: (field: string) => string | undefined;
   readonly readFirstDate: () => string;
   readonly chosenWeekdays: readonly number[];
 }): ReactElement {
@@ -87,10 +81,15 @@ function SeriesFields({
   const [endDefault, setEndDefault] = useState('');
   const weekdaysId = useId();
   const endsId = useId();
-  const weekdaysError = error?.fieldCode('weekdays');
+  const weekdaysErrorId = useId();
+  const weekdaysError = message('weekdays');
   return (
     <div className="flex flex-col gap-4">
-      <fieldset aria-labelledby={weekdaysId} className="flex flex-col gap-2">
+      <fieldset
+        aria-labelledby={weekdaysId}
+        aria-describedby={weekdaysError === undefined ? undefined : weekdaysErrorId}
+        className="flex flex-col gap-2"
+      >
         <legend id={weekdaysId} className="text-label">
           {t('newLesson.weekdays')}
         </legend>
@@ -112,7 +111,9 @@ function SeriesFields({
           ))}
         </ul>
         {weekdaysError === undefined ? null : (
-          <p className="text-small text-danger">{fieldMessage(t, error, 'weekdays')}</p>
+          <p id={weekdaysErrorId} className="text-small text-danger">
+            {weekdaysError}
+          </p>
         )}
       </fieldset>
       <fieldset aria-labelledby={endsId} className="flex flex-col gap-2">
@@ -156,7 +157,7 @@ function SeriesFields({
             min={1}
             max={seriesCountLimit}
             step={1}
-            error={fieldMessage(t, error, 'count')}
+            error={message('count')}
           />
         ) : (
           <InputField
@@ -165,7 +166,7 @@ function SeriesFields({
             name="end_date"
             type="date"
             defaultValue={endDefault}
-            error={fieldMessage(t, error, 'end_date')}
+            error={message('end_date')}
           />
         )}
       </fieldset>
@@ -175,8 +176,10 @@ function SeriesFields({
 
 function DurationPresets({
   durationField,
+  onPreset,
 }: {
   readonly durationField: RefObject<HTMLInputElement | null>;
+  readonly onPreset: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   return (
@@ -188,6 +191,7 @@ function DurationPresets({
             onClick={() => {
               if (durationField.current !== null) {
                 durationField.current.value = String(preset);
+                onPreset();
               }
             }}
             className="min-h-11 rounded-md border border-border-strong px-3 text-small hover:border-accent"
@@ -235,7 +239,7 @@ function DescriptionField({ error }: { readonly error: string | undefined }): Re
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={descriptionId} className="text-label">
-        {t('newLesson.description')}
+        {t('newLesson.description')} <span className="font-normal text-text-muted">{t('form.optional')}</span>
       </label>
       <textarea
         ref={field}
@@ -286,18 +290,34 @@ function lessonBody(
   return { ...lesson, weekdays: chosenDays, ...end };
 }
 
+const serverFields = [
+  'title',
+  'date',
+  'start',
+  'duration_minutes',
+  'weekdays',
+  'count',
+  'end_date',
+  'description',
+] as const;
+
+const problemOrder: readonly string[] = ['audience', ...serverFields];
+
+const inputProblemField: Readonly<Record<string, string>> = { weekday: 'weekdays', series_end: 'end_date' };
+
+function serverProblems(t: TFunction, error: ApiError): readonly FieldProblem[] {
+  return serverFields.flatMap((field) => {
+    const message = fieldMessage(t, error, field);
+    return message === undefined ? [] : [{ field, message, source: 'server' as const }];
+  });
+}
+
 function NewLessonForm({
-  headingId,
   prefill,
-  searchField,
-  changeButton,
   action,
   onCancel,
 }: {
-  readonly headingId: string;
   readonly prefill: LessonPrefill;
-  readonly searchField: RefObject<HTMLInputElement | null>;
-  readonly changeButton: RefObject<HTMLButtonElement | null>;
   readonly action: Action;
   readonly onCancel: () => void;
 }): ReactElement {
@@ -310,6 +330,8 @@ function NewLessonForm({
   const titleHintId = useId();
   const titleErrorId = useId();
   const form = useRef<HTMLFormElement>(null);
+  const searchField = useRef<HTMLInputElement>(null);
+  const changeButton = useRef<HTMLButtonElement>(null);
   const durationField = useRef<HTMLInputElement>(null);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const preselected = prefill.audience ?? null;
@@ -318,17 +340,26 @@ function NewLessonForm({
   const [titleEdited, setTitleEdited] = useState(false);
   const [repeat, setRepeat] = useState(prefill.weekdays !== undefined);
   const [materials, setMaterials] = useState<readonly PickedMaterial[]>([]);
-  const [missing, setMissing] = useState<'audience' | 'weekdays' | null>(null);
   const [refusals, setRefusals] = useState(0);
-  const [missingAttempts, setMissingAttempts] = useState(0);
   const [lastOverlap, setLastOverlap] = useState<ApiError | null>(null);
   const [startedBy, setStartedBy] = useState<'submit' | 'anyway'>('submit');
+  const problems = useFieldProblems();
   const error = action.state.kind === 'refused' ? action.state.error : null;
   const overlap = error?.code === 'lesson_overlap' ? error : action.busy && startedBy === 'anyway' ? lastOverlap : null;
-  const descriptionError = fieldMessage(t, error, 'description');
   const materialTexts = useMaterialTexts();
   const refusal = lessonRefusal(t, action.state, materials.length > 0 ? materialTexts.materialGone : null);
-  const titleError = fieldMessage(t, error, 'title');
+  const titleError = problems.message('title');
+
+  function weekdaysProblem(data: FormData): string | undefined {
+    return repeat && data.getAll('weekday').length === 0 ? t('newLesson.weekdaysRequired') : undefined;
+  }
+
+  function summaryTarget(field: string): HTMLElement | null {
+    if (field === 'audience') {
+      return searchField.current ?? changeButton.current;
+    }
+    return namedField(form.current, field === 'weekdays' ? 'weekday' : field);
+  }
 
   function send(allowOverlap: boolean): void {
     const element = form.current;
@@ -336,17 +367,20 @@ function NewLessonForm({
       return;
     }
     const data = new FormData(element);
+    const missing: FieldProblem[] = [];
     if (audience === null) {
-      setMissing('audience');
-      searchField.current?.focus();
+      missing.push({ field: 'audience', message: t('newLesson.audienceRequired'), source: 'client' });
+    }
+    const weekdays = weekdaysProblem(data);
+    if (weekdays !== undefined) {
+      missing.push({ field: 'weekdays', message: weekdays, source: 'client' });
+    }
+    if (audience === null || missing.length > 0) {
+      action.reset();
+      problems.refuse(missing);
       return;
     }
-    if (repeat && data.getAll('weekday').length === 0) {
-      setMissing('weekdays');
-      setMissingAttempts((count) => count + 1);
-      return;
-    }
-    setMissing(null);
+    problems.cleared();
     setStartedBy(allowOverlap ? 'anyway' : 'submit');
     const body: NewLesson = {
       ...lessonBody(data, audience, title, repeat, materials),
@@ -366,6 +400,9 @@ function NewLessonForm({
         const refused = refusedBy(response, problem);
         setRefusals((count) => count + 1);
         setLastOverlap(refused.kind === 'refused' && refused.error.code === 'lesson_overlap' ? refused.error : null);
+        if (refused.kind === 'refused') {
+          problems.refuse(serverProblems(t, refused.error));
+        }
         return refused;
       }
       return done;
@@ -377,21 +414,44 @@ function NewLessonForm({
     send(false);
   }
 
+  function inputChanged(event: SyntheticEvent<HTMLFormElement>): void {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
+      return;
+    }
+    const field = inputProblemField[target.name] ?? target.name;
+    const data = form.current === null ? null : new FormData(form.current);
+    problems.edited(field, field === 'weekdays' && data !== null ? weekdaysProblem(data) : undefined);
+  }
+
   return (
     <div className="flex flex-col gap-4">
-      <h2 id={headingId} className="font-serif text-title">
-        {t('newLesson.title')}
-      </h2>
-      <form ref={form} id={formId} onSubmit={submit} noValidate className="flex flex-col gap-4">
+      <ErrorSummary
+        attempt={problems.attempt}
+        problems={problems.listed(problemOrder).map((problem) => ({
+          key: problem.field,
+          message: problem.message,
+          target: () => summaryTarget(problem.field),
+        }))}
+      />
+      <form
+        ref={form}
+        id={formId}
+        onSubmit={submit}
+        onInput={inputChanged}
+        onChange={inputChanged}
+        noValidate
+        className="flex flex-col gap-4"
+      >
         <AudiencePicker
           chosen={audience}
           preselected={preselected}
           searchField={searchField}
           changeButton={changeButton}
-          error={missing === 'audience' ? t('newLesson.audienceRequired') : undefined}
+          error={problems.message('audience')}
           onChoose={(chosen) => {
             setAudience(chosen);
-            setMissing(null);
+            problems.edited('audience', undefined);
             if (!titleEdited) {
               setTitle(defaultTitle(t, chosen));
             }
@@ -407,6 +467,9 @@ function NewLessonForm({
           <label htmlFor={titleId} className="text-label">
             {t('newLesson.lessonTitle')}
           </label>
+          <p id={titleHintId} className="text-small text-text-muted">
+            {t('newLesson.titleHint')}
+          </p>
           <input
             id={titleId}
             name="title"
@@ -424,9 +487,6 @@ function NewLessonForm({
             }}
             className={fieldClass}
           />
-          <p id={titleHintId} className="text-small text-text-muted">
-            {t('newLesson.titleHint')}
-          </p>
           {titleError === undefined ? null : (
             <p id={titleErrorId} className="text-small text-danger">
               {titleError}
@@ -438,7 +498,7 @@ function NewLessonForm({
           name="date"
           type="date"
           defaultValue={prefill.date}
-          error={fieldMessage(t, error, 'date')}
+          error={problems.message('date')}
         />
         <div className="grid grid-cols-1 gap-4 tablet:grid-cols-2">
           <InputField
@@ -448,7 +508,7 @@ function NewLessonForm({
             type="time"
             defaultValue={prefill.start}
             step={300}
-            error={fieldMessage(t, error, 'start')}
+            error={problems.message('start')}
           />
           <InputField
             label={t('newLesson.duration')}
@@ -460,16 +520,24 @@ function NewLessonForm({
             min={lessonDurationLimits.minimum}
             max={lessonDurationLimits.maximum}
             step={lessonDurationLimits.step}
-            error={fieldMessage(t, error, 'duration_minutes')}
+            error={problems.message('duration_minutes')}
           />
         </div>
-        <DurationPresets durationField={durationField} />
+        <DurationPresets
+          durationField={durationField}
+          onPreset={() => {
+            problems.edited('duration_minutes', undefined);
+          }}
+        />
         <label className="inline-flex min-h-11 items-center gap-2 text-strong">
           <input
             type="checkbox"
             checked={repeat}
             onChange={(event) => {
               setRepeat(event.target.checked);
+              if (!event.target.checked) {
+                problems.edited('weekdays', undefined);
+              }
             }}
             className="size-4 accent-accent"
           />
@@ -477,7 +545,7 @@ function NewLessonForm({
         </label>
         {repeat ? (
           <SeriesFields
-            error={error}
+            message={problems.message}
             readFirstDate={() => {
               if (form.current === null) {
                 throw new Error('the series fields are shown outside the lesson form');
@@ -487,8 +555,7 @@ function NewLessonForm({
             chosenWeekdays={prefill.weekdays ?? []}
           />
         ) : null}
-        {missing === 'weekdays' ? <FormAlert key={missingAttempts}>{t('newLesson.weekdaysRequired')}</FormAlert> : null}
-        <DescriptionField error={descriptionError} />
+        <DescriptionField error={problems.message('description')} />
         <MaterialsField chosen={materials} onChange={setMaterials} />
       </form>
       {error?.code === 'email_not_verified' ? <Refusal state={action.state} confirmation="schedule" /> : null}
@@ -506,7 +573,7 @@ function NewLessonForm({
           }}
         />
       )}
-      <div className="flex flex-wrap gap-3">
+      <FormActions>
         <ActionButton
           type="submit"
           form={formId}
@@ -516,58 +583,111 @@ function NewLessonForm({
         >
           {t('newLesson.submit')}
         </ActionButton>
-        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={textButtonClass}>
+        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={quietButtonClass}>
           {t('newLesson.cancel')}
         </ActionButton>
-      </div>
+      </FormActions>
     </div>
   );
 }
 
-export function NewLessonDialog({
-  open,
-  prefill,
-  returnFocus,
-  onClose,
-  onScheduled,
-}: {
-  readonly open: boolean;
-  readonly prefill: LessonPrefill;
-  readonly returnFocus: RefObject<HTMLElement | null>;
-  readonly onClose: () => void;
-  readonly onScheduled: () => void;
-}): ReactElement {
-  const headingId = useId();
-  const searchField = useRef<HTMLInputElement>(null);
-  const changeButton = useRef<HTMLButtonElement>(null);
+const startPattern = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+
+function weekdaysOf(value: unknown): readonly number[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const days = value.filter((day): day is number => typeof day === 'number' && weekdays.includes(day));
+  return days.length === value.length ? days : undefined;
+}
+
+export function lessonPrefillOf(preset: unknown, queryDate: string | null, fallback: LessonPrefill): LessonPrefill {
+  const date = isLocalDate(queryDate) ? queryDate : fallback.date;
+  if (typeof preset !== 'object' || preset === null) {
+    return { ...fallback, date };
+  }
+  const presetDate =
+    'date' in preset && typeof preset.date === 'string' && isLocalDate(preset.date) ? preset.date : date;
+  const start =
+    'start' in preset && typeof preset.start === 'string' && startPattern.test(preset.start)
+      ? preset.start
+      : fallback.start;
+  const audience = 'audience' in preset ? audienceOf(preset.audience) : undefined;
+  const duration =
+    'durationMinutes' in preset && typeof preset.durationMinutes === 'number' ? preset.durationMinutes : undefined;
+  const chosenWeekdays = 'weekdays' in preset ? weekdaysOf(preset.weekdays) : undefined;
+  return {
+    date: presetDate,
+    start,
+    ...(audience === undefined ? {} : { audience }),
+    ...(duration === undefined ? {} : { durationMinutes: duration }),
+    ...(chosenWeekdays === undefined ? {} : { weekdays: chosenWeekdays }),
+  };
+}
+
+type BackLinkKey =
+  | 'newLesson.back.schedule'
+  | 'newLesson.back.today'
+  | 'newLesson.back.student'
+  | 'newLesson.back.group'
+  | 'newLesson.back.lesson';
+
+function backLinkKey(address: string): BackLinkKey {
+  if (address.startsWith('/today')) {
+    return 'newLesson.back.today';
+  }
+  if (address.startsWith('/students/')) {
+    return 'newLesson.back.student';
+  }
+  if (address.startsWith('/groups/')) {
+    return 'newLesson.back.group';
+  }
+  if (address.startsWith('/lessons/')) {
+    return 'newLesson.back.lesson';
+  }
+  return 'newLesson.back.schedule';
+}
+
+export function NewLessonPage(): ReactElement {
+  const { t } = useTranslation();
+  const me = useSignedInAccount();
+  const scheduler = useScheduler();
+  const [searchParams] = useSearchParams();
+  const { backAddress, leave } = useLeaveFormRoute('/schedule');
+  const preset = useFormPreset(me.id);
+  const [prefill] = useState(() =>
+    lessonPrefillOf(preset, searchParams.get('date'), nextFullHour(scheduler.wallClock(), me.timezone)),
+  );
   const action = useAction((settled) => {
     if (settled.kind === 'done') {
-      onScheduled();
+      leave({ kind: 'lessonScheduled' });
     }
   });
-
-  function close(): void {
-    action.reset();
-    onClose();
-  }
-
   return (
-    <ModalDialog
-      open={open}
-      busy={action.busy}
-      labelledBy={headingId}
-      returnFocus={returnFocus}
-      initialFocus={prefill.audience === undefined ? searchField : changeButton}
-      onClose={close}
-    >
-      <NewLessonForm
-        headingId={headingId}
-        prefill={prefill}
-        searchField={searchField}
-        changeButton={changeButton}
-        action={action}
-        onCancel={close}
-      />
-    </ModalDialog>
+    <Page width="reading">
+      <p>
+        <Link
+          to={backAddress}
+          onClick={(event) => {
+            event.preventDefault();
+            leave();
+          }}
+          className={linkClass}
+        >
+          {t(backLinkKey(backAddress))}
+        </Link>
+      </p>
+      {me.state === 'active' ? (
+        <NewLessonForm
+          prefill={prefill}
+          action={action}
+          onCancel={() => {
+            leave();
+          }}
+        />
+      ) : (
+        <ConfirmationPrompt reason="schedule" />
+      )}
+    </Page>
   );
 }
