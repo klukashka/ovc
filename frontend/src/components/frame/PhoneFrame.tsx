@@ -134,11 +134,21 @@ function insideFixedLayer(focused: Element): boolean {
 function useFocusAboveBar(bar: RefObject<HTMLElement | null>): void {
   useEffect(() => {
     let frame = 0;
+    let pressed: Node | null = null;
+    let pressEnd = 0;
+    function press(event: MouseEvent): void {
+      pressed = event.target instanceof Node ? event.target : null;
+      window.clearTimeout(pressEnd);
+      pressEnd = window.setTimeout(() => {
+        pressed = null;
+      }, 0);
+    }
     function reveal(event: FocusEvent): void {
       const focused = event.target;
       const element = bar.current;
       if (
         !(focused instanceof Element) ||
+        (pressed !== null && focused.contains(pressed)) ||
         element === null ||
         element.contains(focused) ||
         focused.closest('dialog') !== null
@@ -153,10 +163,13 @@ function useFocusAboveBar(bar: RefObject<HTMLElement | null>): void {
         }
       });
     }
+    document.addEventListener('mousedown', press, true);
     document.addEventListener('focusin', reveal);
     return (): void => {
+      document.removeEventListener('mousedown', press, true);
       document.removeEventListener('focusin', reveal);
       window.cancelAnimationFrame(frame);
+      window.clearTimeout(pressEnd);
     };
   }, [bar]);
 }

@@ -240,6 +240,19 @@ function dialog(page: Page): Locator {
   return page.getByRole('dialog');
 }
 
+async function afterTwoFrames(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            resolve();
+          });
+        });
+      }),
+  );
+}
+
 function isTemplateSave(response: Response, id: string): boolean {
   return (
     response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/v1/library/templates/${id}`
@@ -1033,6 +1046,26 @@ test.describe('builder preview on a phone', () => {
     await page.setViewportSize({ width: 1024, height: 780 });
 
     await expect(dialog(page).getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+  });
+
+  test('a press on Preview keeps the page still until it is released, so it opens the preview', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const template = await createTemplate(deployment, tutor, 'Frames', [instruction('Read it.')]);
+    await openBuilder(page, tutor, template.id);
+    const preview = await layoutBox(page.getByRole('button', { name: 'Preview', exact: true }));
+    const scrollBeforePress = await page.evaluate(() => window.scrollY);
+
+    await page.mouse.move(preview.x + preview.width / 2, preview.y + preview.height / 2);
+    await page.mouse.down();
+    await afterTwoFrames(page);
+    const scrollDuringPress = await page.evaluate(() => window.scrollY);
+    await page.mouse.up();
+
+    expect(scrollDuringPress).toBe(scrollBeforePress);
+    await expect(dialog(page).getByRole('heading', { name: 'Preview', exact: true })).toBeFocused();
   });
 
   test('Close at the end of the phone preview returns focus to Preview', async ({ page, deployment }) => {
