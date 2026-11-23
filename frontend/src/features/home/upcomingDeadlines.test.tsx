@@ -22,6 +22,7 @@ const origin = 'https://ovc.example';
 const password = 'a long password';
 const tutorEmail = 'maria@example.org';
 const hour = 3_600_000;
+const instantMargin = 1_000;
 
 function issueDue(id: string, title: string, deadline: number): IssueItem {
   return {
@@ -78,6 +79,9 @@ async function showDeadlines(clientAheadBy: number): Promise<ShownDeadlines> {
     </SchedulerContext>,
   );
   await screen.findByRole('link', { name: 'Эссе о поездке' });
+  await waitFor(() => {
+    expect(scheduler.pendingDelays()).toContain(2 * hour - clientAheadBy + instantMargin);
+  });
   return { server, scheduler, queryClient };
 }
 
@@ -98,7 +102,7 @@ describe('Upcoming deadlines on GET /home', () => {
     const shown = await showDeadlines(0);
     screen.getByRole('link', { name: 'Эссе о поездке' }).focus();
 
-    await passBoth(shown, 2 * hour + 1_000, true);
+    await passBoth(shown, 2 * hour + instantMargin, true);
     await waitFor(() => {
       expect(screen.queryByRole('link', { name: 'Эссе о поездке' })).toBeNull();
     });
@@ -112,8 +116,11 @@ describe('Upcoming deadlines on GET /home', () => {
   test('keeps scheduling the deadline refetch of /home after a scheduled refetch fails', async () => {
     const shown = await showDeadlines(0);
     shown.server.failNextHomeRead();
-    await passBoth(shown, 2 * hour + 1_000, true);
+    await passBoth(shown, 2 * hour + instantMargin, true);
     await screen.findByRole('link', { name: 'Эссе о поездке' });
+    await waitFor(() => {
+      expect(shown.scheduler.pendingDelays()).toContain(instantMargin);
+    });
 
     await passBoth(shown, 30_000, true);
 
@@ -127,7 +134,7 @@ describe('Upcoming deadlines on GET /home', () => {
     const shown = await showDeadlines(10 * 60_000);
     const readsBefore = shown.server.homeReads();
 
-    await passBoth(shown, 2 * hour - 10 * 60_000 + 1_000);
+    await passBoth(shown, 2 * hour - 10 * 60_000 + instantMargin);
     for (let step = 0; step < 120; step += 1) {
       await passBoth(shown, 10_000);
     }
