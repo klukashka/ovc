@@ -2,6 +2,8 @@
 
 Written 2026-10-25. Agent analysis: it informs the owner's decisions and decides nothing. Hosting costs come from the [hosting cost and load analysis](hosting-cost-and-load-2026-10-25.md), the price range and market from the [early-stage product strategy](early-stage-product-strategy-2026-10-25.md), the post-pilot development effort from the [post-pilot plan](post-pilot-plan-and-mobile-app-2026-10-25.md), and tax and acquiring facts from the [taxes and acquiring research](../research/taxes-and-acquiring-2026-10-25.md). Every figure is per month in roubles unless stated, and every result is an **estimate**: no tutor has paid for OVC yet.
 
+Superseded on 2026-11-23 by the [budget, revenue model and tax regimes](budget-and-revenue-model-2026-11-23.md), which uses the November prices and the owner's inputs of that day; this file is kept as the record of the October estimate.
+
 ## Inputs
 
 - **Price:** a flat monthly plan per tutor, students free, between 990 ₽ and 1,490 ₽; the pilot is free. The project owner stated this pricing model on 2026-10-25; it is not yet recorded in a decision record, and the price itself is still a hypothesis (H4 of the strategy).
