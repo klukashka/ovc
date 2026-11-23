@@ -566,7 +566,7 @@ Every item under the roadmap's slice 10 entry, the slice 9 slice review's carrie
 | The lane A upload recovery flake; the WebKit browser closure under traces | Slice 10 known limitations, sub-slice 10.3 | 10.5 H3 (D47, Q14 A) |
 | The burst test's early poll; the two-commit merge of the Today Show more fix | Slice 10 known limitations, sub-slice 10.3 | Re-verified by the 10.3 slice review (accepted by the owner on 2026-11-20) |
 | The rerun of the Today Show more fix's gate (2026-11-20, tree `1bff94e`) | Slice 10 known limitations, gate reruns, sub-slice 10.3 | Re-verified by the 10.3 slice review's development tooling reviewer |
-| The picomatch acceptance, which expires on 2026-12-01 | Sub-slice 10.2 slice review | The owner, outside 10.3's changes |
+| The picomatch acceptance, which expires on 2026-12-01 | Sub-slice 10.2 slice review | The owner, outside 10.3's changes; resolved on 2026-11-23 by removing the acceptance after GitHub withdrew the advisory ([recheck](../research/picomatch-advisory-2026-11-23.md)) |
 | Performance baselines and budgets for the NFRs | Roadmap | H1, H2 locally, latencies to the pilot deployment slice (K6); since 2026-11-23 all of it moved to the pilot deployment slice (D50) |
 | Performance measurements of the homework routes | Slice 9 plan | H1; moved with H1 to the pilot deployment slice (D50) |
 | All four pilot scenarios in their MVP form | Roadmap | H7 |

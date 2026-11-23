@@ -1,6 +1,6 @@
 # picomatch advisory triage (2026-11-17)
 
-Status: agent triage for the temporary acceptance of GHSA-fc5q-39xc-vjpf, decided by the owner on 2026-11-17; checked on 2026-11-17 at `main` 899d50e. Cited from [the development guide](../../docs/development.md#security-scanning) as evidence, not as a decision.
+Status: agent triage for the temporary acceptance of GHSA-fc5q-39xc-vjpf, decided by the owner on 2026-11-17; checked on 2026-11-17 at `main` 899d50e. Cited from [the development guide](../../docs/development.md#security-scanning) as evidence, not as a decision. Superseded on 2026-11-23: GitHub withdrew the advisory on 2026-11-18 and the acceptance was removed ([recheck](picomatch-advisory-2026-11-23.md)); the reachability analysis below is kept as a record.
 
 ## Advisory
 

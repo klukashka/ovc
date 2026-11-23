@@ -39,7 +39,8 @@ Overrides in `tools/docs/pnpm-workspace.yaml` raise `smol-toml` to 1.9.0 and `js
 | Advisory | Package | Reason |
 |---|---|---|
 | GHSA-238p-pmpm-9mq7 (low, CVSS 2.1) | `katex` 0.16.47 | Fixed only in the 0.18 line, outside mermaid's 0.16 range; the renderer processes only this repository's diagrams offline. Accepted until 2027-01-21 |
-| GHSA-fc5q-39xc-vjpf (high, CVSS 3.1 7.5) | `picomatch` 4.0.7 | Every published release affected, no fix; reaches only markdownlint-cli through tinyglobby, which receives repository Markdown paths. Accepted until 2026-12-01, decided by the owner on 2026-11-17 ([triage](picomatch-advisory-2026-11-17.md)) |
+
+GHSA-fc5q-39xc-vjpf (picomatch 4.0.7, through markdownlint-cli and tinyglobby) was accepted from 2026-11-17 ([triage](picomatch-advisory-2026-11-17.md)); GitHub withdrew it on 2026-11-18 as not a security issue, and its entry left `tools/docs/osv-scanner.toml` on 2026-11-23 ([recheck](picomatch-advisory-2026-11-23.md)).
 
 ## Toolchain security update of 2026-11-11
 
