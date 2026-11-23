@@ -116,7 +116,10 @@ func (source tutorLabelSource) audience() Audience {
 		audience.RelationshipID = source.relationship
 	}
 	removed := source.cardDiscardReason != nil && (*source.cardDiscardReason == domain.DiscardRemoved || *source.cardDiscardReason == domain.DiscardTutorDeleted)
-	if source.cardName == nil || (discarded && removed) {
+	switch {
+	case source.cardName == nil:
+		audience.Label, audience.LabelKind = nil, fixed(domain.ErasedCardLabel(source.cardDiscardReason))
+	case discarded && removed:
 		audience.Label, audience.LabelKind = nil, fixed(domain.LabelRemovedStudent)
 	}
 	return audience

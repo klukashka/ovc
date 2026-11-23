@@ -84,6 +84,10 @@ func itemOfRow(row repositories.IssueListRow) IssueItem {
 	if row.CardName != nil {
 		item.Audience.DisplayName = *row.CardName
 	}
+	if row.RelationshipID != nil && row.CardName == nil {
+		kind := domain.ErasedCardLabel(row.CardDiscardReason)
+		item.Audience.LabelKind = &kind
+	}
 	if row.GroupName != nil {
 		item.Audience.Name = *row.GroupName
 	}
@@ -95,7 +99,7 @@ func itemOfIssue(row repositories.TutorIssue) IssueItem {
 		ID: row.ID, RelationshipID: row.RelationshipID, GroupID: row.GroupID, LessonID: row.LessonID, Title: row.Title,
 		MaxPoints: row.MaxPoints, HasManualQuestions: row.HasManualQuestions, DeadlineAt: row.DeadlineAt, AnswerPolicy: row.AnswerPolicy,
 		Status: row.Status, Version: row.Version, IssuedAt: row.IssuedAt, WithdrawnAt: row.WithdrawnAt, CardName: row.CardName,
-		GroupName: row.GroupName,
+		CardDiscardReason: row.CardDiscardReason, GroupName: row.GroupName,
 	})
 }
 

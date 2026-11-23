@@ -415,7 +415,9 @@ func (q *Queries) ListChannelMemberLabels(ctx context.Context, arg ListChannelMe
 const listChannelsOfMember = `-- name: ListChannelsOfMember :many
 SELECT members.channel_id, members.kind, members.tutor_id, members.relationship_id, members.group_id, members.last_seq,
     members.last_read_seq, members.last_activity_at, members.read_only_since,
-    (CASE WHEN members.tutor_id = members.user_id THEN COALESCE(relationships.display_name, groups.name) ELSE '' END)::text AS tutor_label,
+    (CASE WHEN members.tutor_id = members.user_id THEN COALESCE(relationships.display_name, groups.name, '') ELSE '' END)::text AS tutor_label,
+    (relationships.id IS NOT NULL AND relationships.display_name IS NULL)::boolean AS card_name_erased,
+    relationships.discard_reason AS card_discard_reason,
     (CASE WHEN members.tutor_id = members.user_id THEN COALESCE(groups.colour, relationships.colour) ELSE '' END)::text AS tutor_colour,
     COALESCE(relationships.state = 'provisional', false)::boolean AS provisional,
     relationships.student_id AS card_student_id, groups.name AS group_name, tutors.name AS tutor_name,
@@ -463,24 +465,26 @@ type ListChannelsOfMemberParams struct {
 }
 
 type ListChannelsOfMemberRow struct {
-	ChannelID        domain.ChannelID
-	Kind             domain.ChannelKind
-	TutorID          domain.UserID
-	RelationshipID   *domain.RelationshipID
-	GroupID          *domain.GroupID
-	LastSeq          int64
-	LastReadSeq      int64
-	LastActivityAt   time.Time
-	ReadOnlySince    *time.Time
-	TutorLabel       string
-	TutorColour      string
-	Provisional      bool
-	CardStudentID    *domain.UserID
-	GroupName        *string
-	TutorName        string
-	OwnColour        *domain.Colour
-	OtherPartyActive bool
-	OtherPartyOnline bool
+	ChannelID         domain.ChannelID
+	Kind              domain.ChannelKind
+	TutorID           domain.UserID
+	RelationshipID    *domain.RelationshipID
+	GroupID           *domain.GroupID
+	LastSeq           int64
+	LastReadSeq       int64
+	LastActivityAt    time.Time
+	ReadOnlySince     *time.Time
+	TutorLabel        string
+	CardNameErased    bool
+	CardDiscardReason *domain.DiscardReason
+	TutorColour       string
+	Provisional       bool
+	CardStudentID     *domain.UserID
+	GroupName         *string
+	TutorName         string
+	OwnColour         *domain.Colour
+	OtherPartyActive  bool
+	OtherPartyOnline  bool
 }
 
 func (q *Queries) ListChannelsOfMember(ctx context.Context, arg ListChannelsOfMemberParams) ([]ListChannelsOfMemberRow, error) {
@@ -511,6 +515,8 @@ func (q *Queries) ListChannelsOfMember(ctx context.Context, arg ListChannelsOfMe
 			&i.LastActivityAt,
 			&i.ReadOnlySince,
 			&i.TutorLabel,
+			&i.CardNameErased,
+			&i.CardDiscardReason,
 			&i.TutorColour,
 			&i.Provisional,
 			&i.CardStudentID,

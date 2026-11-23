@@ -1376,7 +1376,7 @@ export interface components {
             kind: "one_to_one" | "group";
             label: string | null;
             /** @enum {string|null} */
-            label_kind: "individual" | "group" | "removed_student" | null;
+            label_kind: "individual" | "group" | "removed_student" | "former_student" | null;
         };
         CalendarItem: {
             audience: components["schemas"]["CalendarAudience"];
@@ -1433,7 +1433,7 @@ export interface components {
             kind: "direct" | "group";
             label: string | null;
             /** @enum {string|null} */
-            label_kind: "deleted_user" | null;
+            label_kind: "deleted_user" | "former_student" | "removed_student" | null;
             last_message: components["schemas"]["ChannelLastMessage"] | null;
             members?: components["schemas"]["ChannelMember"][];
             online: boolean | null;
@@ -1456,7 +1456,7 @@ export interface components {
             kind: "direct" | "group";
             label: string | null;
             /** @enum {string|null} */
-            label_kind: "deleted_user" | null;
+            label_kind: "deleted_user" | "former_student" | "removed_student" | null;
             last_message: components["schemas"]["ChannelLastMessage"] | null;
             online: boolean | null;
             tutor: components["schemas"]["ChannelTutor"] | null;
@@ -1656,6 +1656,8 @@ export interface components {
             display_name?: string;
             /** Format: uuid */
             group_id?: string;
+            /** @enum {string} */
+            label_kind?: "former_student" | "removed_student";
             name?: string;
             /** Format: uuid */
             relationship_id?: string;
@@ -1823,7 +1825,7 @@ export interface components {
             kind: "one_to_one" | "group";
             label: string | null;
             /** @enum {string|null} */
-            label_kind: "individual" | "group" | "removed_student" | null;
+            label_kind: "individual" | "group" | "removed_student" | "former_student" | null;
             members: components["schemas"]["LessonMember"][] | null;
             /** Format: uuid */
             relationship_id?: string;
@@ -1913,7 +1915,7 @@ export interface components {
         LessonMember: {
             label: string | null;
             /** @enum {string|null} */
-            label_kind: "deleted_account" | "removed_student" | null;
+            label_kind: "deleted_account" | "removed_student" | "former_student" | null;
         };
         LessonPatch: {
             allow_overlap?: boolean;
@@ -2221,7 +2223,7 @@ export interface components {
             label: string | null;
             label_deleted: boolean;
             /** @enum {string|null} */
-            label_kind: "group" | "removed_student" | null;
+            label_kind: "group" | "removed_student" | "former_student" | null;
             link: components["schemas"]["NotificationLink"] | null;
             /** Format: date-time */
             read_at: string | null;
@@ -2879,7 +2881,7 @@ export interface components {
             colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink" | null;
             label: string | null;
             /** @enum {string|null} */
-            label_kind: "deleted_user" | null;
+            label_kind: "deleted_user" | "former_student" | "removed_student" | null;
             /** Format: int64 */
             unread_count: number;
         };
@@ -14005,16 +14007,16 @@ export const pathsApiV1StudentsGetParametersQueryStateValues: ReadonlyArray<Flat
 export const pathsApiV1UploadsPostParametersQueryContextValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/uploads"]["post"]["parameters"]["query"]["context"]> = ["avatar", "chat", "library", "prompt_image", "answer", "corrected"];
 export const calendarAudienceColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CalendarAudience"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const calendarAudienceKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CalendarAudience"]["kind"]> = ["one_to_one", "group"];
-export const calendarAudienceLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CalendarAudience"]["label_kind"]> = ["individual", "group", "removed_student"];
+export const calendarAudienceLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CalendarAudience"]["label_kind"]> = ["individual", "group", "removed_student", "former_student"];
 export const calendarItemStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CalendarItem"]["status"]> = ["scheduled", "live", "ended", "cancelled"];
 export const cardGroupColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CardGroup"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const cardInvitationStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CardInvitation"]["status"]> = ["open", "expired", "revoked_after_mismatches"];
 export const channelDetailColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelDetail"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const channelDetailKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelDetail"]["kind"]> = ["direct", "group"];
-export const channelDetailLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelDetail"]["label_kind"]> = ["deleted_user"];
+export const channelDetailLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelDetail"]["label_kind"]> = ["deleted_user", "former_student", "removed_student"];
 export const channelItemColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelItem"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const channelItemKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelItem"]["kind"]> = ["direct", "group"];
-export const channelItemLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelItem"]["label_kind"]> = ["deleted_user"];
+export const channelItemLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelItem"]["label_kind"]> = ["deleted_user", "former_student", "removed_student"];
 export const channelLastMessageSender_label_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelLastMessage"]["sender_label_kind"]> = ["deleted_user"];
 export const channelTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelTutor"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const emailConfirmedOutcomeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EmailConfirmed"]["outcome"]> = ["choice_required", "linked", "request_sent", "code_invalid"];
@@ -14027,6 +14029,7 @@ export const groupSummaryColourValues: ReadonlyArray<FlattenedDeepRequired<compo
 export const invitationAcceptRequestLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["InvitationAcceptRequest"]["language"]> = ["ru", "en"];
 export const issueAnswer_policyValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Issue"]["answer_policy"]> = ["never", "after_submission", "after_check"];
 export const issueStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Issue"]["status"]> = ["active", "withdrawn"];
+export const issueAudienceLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueAudience"]["label_kind"]> = ["former_student", "removed_student"];
 export const issueBlockScoringValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueBlock"]["scoring"]> = ["all_or_nothing", "partial"];
 export const issueBlockTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueBlock"]["type"]> = ["instruction", "material", "single_choice", "multiple_choice", "short_text", "short_number", "long_text", "file"];
 export const issueItemAnswer_policyValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueItem"]["answer_policy"]> = ["never", "after_submission", "after_check"];
@@ -14037,11 +14040,11 @@ export const issuedInvitationStatusValues: ReadonlyArray<FlattenedDeepRequired<c
 export const joinRequestDecisionStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["JoinRequestDecision"]["state"]> = ["declined"];
 export const lessonAudienceColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonAudience"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const lessonAudienceKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonAudience"]["kind"]> = ["one_to_one", "group"];
-export const lessonAudienceLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonAudience"]["label_kind"]> = ["individual", "group", "removed_student"];
+export const lessonAudienceLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonAudience"]["label_kind"]> = ["individual", "group", "removed_student", "former_student"];
 export const lessonCancellationScopeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonCancellation"]["scope"]> = ["this", "following"];
 export const lessonDetailStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonDetail"]["status"]> = ["scheduled", "live", "ended", "cancelled"];
 export const lessonIssueStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonIssue"]["status"]> = ["not_started", "draft", "submitted", "returned", "checked", "closed"];
-export const lessonMemberLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonMember"]["label_kind"]> = ["deleted_account", "removed_student"];
+export const lessonMemberLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonMember"]["label_kind"]> = ["deleted_account", "removed_student", "former_student"];
 export const lessonPatchScopeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonPatch"]["scope"]> = ["this", "following"];
 export const lessonTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonTutor"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const lessonViewStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonView"]["status"]> = ["scheduled", "live", "ended", "cancelled"];
@@ -14059,7 +14062,7 @@ export const newGroupColourValues: ReadonlyArray<FlattenedDeepRequired<component
 export const newIssueAnswer_policyValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NewIssue"]["answer_policy"]> = ["never", "after_submission", "after_check"];
 export const notificationColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const notificationEventValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["event"]> = ["invitation.accepted", "join_request.created", "join_request.accepted", "join_request.declined", "relationship.ended", "lesson.reminder_1h", "lesson.moved", "lesson.cancelled", "lesson.series_changed", "group.archived", "issue.created", "issue.withdrawn", "submission.submitted", "submission.checked", "submission.returned", "submission.review_updated"];
-export const notificationLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["label_kind"]> = ["group", "removed_student"];
+export const notificationLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["label_kind"]> = ["group", "removed_student", "former_student"];
 export const notificationLinkKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NotificationLink"]["kind"]> = ["student_card", "join_requests", "my_tutors", "lesson", "assignment", "review"];
 export const passwordResetOutcomeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["PasswordReset"]["outcome"]> = ["choice_required"];
 export const profilePatchLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["language"]> = ["ru", "en"];
@@ -14088,7 +14091,7 @@ export const templateBlockInputScoringValues: ReadonlyArray<FlattenedDeepRequire
 export const templateBlockInputTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateBlockInput"]["type"]> = ["instruction", "material", "single_choice", "multiple_choice", "short_text", "short_number", "long_text", "file"];
 export const templateProblemCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateProblem"]["code"]> = ["no_blocks", "text_missing", "prompt_missing", "too_few_options", "option_empty", "correct_count", "no_correct_option", "no_accepted_answer", "accepted_answer_empty", "value_invalid", "tolerance_invalid"];
 export const tutorHomeChannelColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorHomeChannel"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
-export const tutorHomeChannelLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorHomeChannel"]["label_kind"]> = ["deleted_user"];
+export const tutorHomeChannelLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorHomeChannel"]["label_kind"]> = ["deleted_user", "former_student", "removed_student"];
 export const tutorReviewRevisionActionValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorReviewRevision"]["action"]> = ["check", "return"];
 export const tutorReviewRevisionStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorReviewRevision"]["state"]> = ["draft", "published"];
 export const tutorSubmissionAnswer_policyValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorSubmission"]["answer_policy"]> = ["never", "after_submission", "after_check"];

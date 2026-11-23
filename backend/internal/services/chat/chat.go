@@ -244,6 +244,10 @@ func channelView(viewer domain.UserID, row repositories.ChannelRow) Channel {
 	if row.TutorID == viewer {
 		label, colour := row.TutorLabel, domain.Colour(row.TutorColour)
 		channel.Label, channel.Colour = &label, &colour
+		if row.CardNameErased {
+			kind := domain.ErasedCardLabel(row.CardDiscardReason)
+			channel.Label, channel.LabelKind = nil, &kind
+		}
 		if row.Kind == domain.ChannelDirect {
 			channel.Unconfirmed = row.Provisional
 			if row.OtherPartyActive {

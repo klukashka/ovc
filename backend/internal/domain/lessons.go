@@ -60,8 +60,16 @@ const (
 	LabelIndividual     LabelKind = "individual"
 	LabelGroup          LabelKind = "group"
 	LabelRemovedStudent LabelKind = "removed_student"
+	LabelFormerStudent  LabelKind = "former_student"
 	LabelDeletedAccount LabelKind = "deleted_account"
 )
+
+func ErasedCardLabel(reason *DiscardReason) LabelKind {
+	if reason != nil && *reason == DiscardStudentPurged {
+		return LabelFormerStudent
+	}
+	return LabelRemovedStudent
+}
 
 const (
 	LessonTitleMaxRunes       = 120

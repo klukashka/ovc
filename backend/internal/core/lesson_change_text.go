@@ -65,7 +65,7 @@ func LessonChangeEmailText(language domain.Language, kind domain.OutboxKind) (Le
 		LessonEmailText: LessonEmailText{
 			SubjectPrefix: change.subjectPrefix, Intro: change.intro, When: words.when, Lesson: words.lesson, Group: words.group,
 			Student: words.student, Tutor: words.tutor, Individual: words.individual, GroupLesson: words.groupLesson,
-			RemovedStudent: words.removedStudent, Action: words.action, Note: words.note, Unsubscribe: words.unsubscribe,
+			RemovedStudent: words.removedStudent, FormerStudent: words.formerStudent, Action: words.action, Note: words.note, Unsubscribe: words.unsubscribe,
 			UnsubscribeNote: changes.unsubscribeNote,
 		},
 		Cancelled: changes.cancelled, moreFormat: changes.more,

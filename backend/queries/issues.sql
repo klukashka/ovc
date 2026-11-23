@@ -64,7 +64,8 @@ FROM unnest(sqlc.arg(attachment_ids)::uuid[]) AS attachment_id;
 -- name: GetTutorIssue :one
 SELECT issues.id, issues.template_id, issues.relationship_id, issues.group_id, issues.lesson_id, issues.title, issues.snapshot,
     issues.max_points, issues.has_manual_questions, issues.deadline_at, issues.answer_policy, issues.status, issues.version,
-    issues.issued_at, issues.withdrawn_at, card.display_name AS card_name, issue_group.name AS group_name
+    issues.issued_at, issues.withdrawn_at, card.display_name AS card_name, card.discard_reason AS card_discard_reason,
+    issue_group.name AS group_name
 FROM issues
 LEFT JOIN relationships AS card ON card.id = issues.relationship_id
 LEFT JOIN groups AS issue_group ON issue_group.id = issues.group_id
@@ -102,7 +103,7 @@ UPDATE issues SET status = 'withdrawn', withdrawn_at = sqlc.arg(now)::timestampt
 -- name: ListTutorIssues :many
 SELECT issues.id, issues.relationship_id, issues.group_id, issues.lesson_id, issues.title, issues.max_points, issues.has_manual_questions,
     issues.deadline_at, issues.answer_policy, issues.status, issues.version, issues.issued_at, issues.withdrawn_at,
-    card.display_name AS card_name, issue_group.name AS group_name
+    card.display_name AS card_name, card.discard_reason AS card_discard_reason, issue_group.name AS group_name
 FROM issues
 LEFT JOIN relationships AS card ON card.id = issues.relationship_id
 LEFT JOIN groups AS issue_group ON issue_group.id = issues.group_id
@@ -126,7 +127,7 @@ LIMIT sqlc.arg(page_size);
 -- name: ListTutorIssuesByDeadline :many
 SELECT issues.id, issues.relationship_id, issues.group_id, issues.lesson_id, issues.title, issues.max_points, issues.has_manual_questions,
     issues.deadline_at, issues.answer_policy, issues.status, issues.version, issues.issued_at, issues.withdrawn_at,
-    card.display_name AS card_name, issue_group.name AS group_name
+    card.display_name AS card_name, card.discard_reason AS card_discard_reason, issue_group.name AS group_name
 FROM issues
 LEFT JOIN relationships AS card ON card.id = issues.relationship_id
 LEFT JOIN groups AS issue_group ON issue_group.id = issues.group_id

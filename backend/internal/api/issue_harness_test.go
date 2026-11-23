@@ -25,6 +25,7 @@ const issuesRoute = "/api/v1/issues"
 type issueAudienceBody struct {
 	RelationshipID *string `json:"relationship_id"`
 	DisplayName    *string `json:"display_name"`
+	LabelKind      *string `json:"label_kind"`
 	GroupID        *string `json:"group_id"`
 	Name           *string `json:"name"`
 }

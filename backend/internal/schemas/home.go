@@ -25,7 +25,7 @@ type TutorHomeDeadlines struct {
 type TutorHomeChannel struct {
 	ChannelID   string            `json:"channel_id" format:"uuid"`
 	Label       *string           `json:"label" nullable:"true"`
-	LabelKind   *domain.LabelKind `json:"label_kind" enum:"deleted_user" nullable:"true"`
+	LabelKind   *domain.LabelKind `json:"label_kind" enum:"deleted_user,former_student,removed_student" nullable:"true"`
 	Colour      *domain.Colour    `json:"colour" enum:"clay,slate,moss,plum,ochre,teal,rust,ink" nullable:"true"`
 	UnreadCount int64             `json:"unread_count"`
 }

@@ -279,8 +279,12 @@ func issueItemBody(item homework.IssueItem) schemas.IssueItem {
 		body.LessonID = &lesson
 	}
 	if item.Audience.Relationship != nil {
-		relationship, name := item.Audience.Relationship.String(), item.Audience.DisplayName
-		body.Audience = schemas.IssueAudience{RelationshipID: &relationship, DisplayName: &name}
+		relationship := item.Audience.Relationship.String()
+		body.Audience = schemas.IssueAudience{RelationshipID: &relationship, LabelKind: item.Audience.LabelKind}
+		if item.Audience.LabelKind == nil {
+			name := item.Audience.DisplayName
+			body.Audience.DisplayName = &name
+		}
 	}
 	if item.Audience.Group != nil {
 		group, name := item.Audience.Group.String(), item.Audience.Name

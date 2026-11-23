@@ -1,4 +1,5 @@
 import { type ReactElement, useId, useRef } from 'react';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
@@ -6,6 +7,15 @@ import { linkClass } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { paletteDotClass } from '../../components/ui/palette.ts';
 import type { TutorHome } from './api.ts';
+
+type UnreadChannel = TutorHome['unread_channels']['items'][number];
+
+function unreadChannelLabel(t: TFunction, channel: UnreadChannel): string {
+  if (channel.label_kind === 'former_student' || channel.label_kind === 'removed_student') {
+    return t(`lesson.${channel.label_kind}`);
+  }
+  return channel.label_kind === 'deleted_user' || channel.label === null ? t('today.deletedUser') : channel.label;
+}
 
 function unreadCount(count: number): string {
   return count > 99 ? '99+' : String(count);
@@ -54,9 +64,7 @@ export function UnreadMessages({ part }: { readonly part: TutorHome['unread_chan
                       />
                     )}
                     <span dir="auto" className="truncate">
-                      {channel.label_kind === 'deleted_user' || channel.label === null
-                        ? t('today.deletedUser')
-                        : channel.label}
+                      {unreadChannelLabel(t, channel)}
                     </span>
                   </span>
                   <span className="shrink-0 rounded-full bg-hover px-2 text-label font-medium tabular">

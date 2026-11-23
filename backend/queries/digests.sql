@@ -99,7 +99,7 @@ WITH bounds AS (
     FROM counted ORDER BY counted.channel_id LIMIT sqlc.arg(channel_limit)::int
 )
 SELECT listed.channel_id, listed.message_count, listed.total_channels,
-    (CASE WHEN member.user_id = member.tutor_id THEN COALESCE(relationships.display_name, groups.name)
+    (CASE WHEN member.user_id = member.tutor_id THEN COALESCE(relationships.display_name, groups.name, '')
         WHEN member.kind = 'group' THEN groups.name ELSE tutors.name END)::text AS label
 FROM listed
 JOIN active_channel_members AS member ON member.channel_id = listed.channel_id AND member.user_id = sqlc.arg(user_id)::uuid

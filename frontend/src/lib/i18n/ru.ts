@@ -600,6 +600,7 @@ export const ru = {
     individual: 'Индивидуальный урок',
     group: 'Групповой урок',
     removed_student: 'Удалённый ученик',
+    former_student: 'Бывший ученик',
     deleted_account: 'Удалённый аккаунт',
     status: {
       scheduled: 'Запланирован',

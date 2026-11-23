@@ -9,6 +9,7 @@ import (
 type Audience struct {
 	Relationship *domain.RelationshipID
 	DisplayName  string
+	LabelKind    *domain.LabelKind
 	Group        *domain.GroupID
 	Name         string
 }

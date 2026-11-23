@@ -125,6 +125,7 @@ export function AudienceLabel({
   readonly audience: IssueAudience;
   readonly groups: readonly GroupSummary[];
 }): ReactElement {
+  const { t } = useTranslation();
   const group =
     audience.group_id === undefined ? null : (groups.find((entry) => entry.id === audience.group_id) ?? null);
   return (
@@ -133,7 +134,7 @@ export function AudienceLabel({
         <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${paletteDotClass[group.colour]}`} />
       )}
       <span dir="auto" className="min-w-0 [overflow-wrap:anywhere]">
-        {audienceName(audience)}
+        {audience.label_kind === undefined ? audienceName(audience) : t(`lesson.${audience.label_kind}`)}
       </span>
     </span>
   );

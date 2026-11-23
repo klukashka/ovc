@@ -365,7 +365,8 @@ func (q *Queries) GetSubmissionForEmail(ctx context.Context, id domain.Submissio
 const getTutorIssue = `-- name: GetTutorIssue :one
 SELECT issues.id, issues.template_id, issues.relationship_id, issues.group_id, issues.lesson_id, issues.title, issues.snapshot,
     issues.max_points, issues.has_manual_questions, issues.deadline_at, issues.answer_policy, issues.status, issues.version,
-    issues.issued_at, issues.withdrawn_at, card.display_name AS card_name, issue_group.name AS group_name
+    issues.issued_at, issues.withdrawn_at, card.display_name AS card_name, card.discard_reason AS card_discard_reason,
+    issue_group.name AS group_name
 FROM issues
 LEFT JOIN relationships AS card ON card.id = issues.relationship_id
 LEFT JOIN groups AS issue_group ON issue_group.id = issues.group_id
@@ -394,6 +395,7 @@ type GetTutorIssueRow struct {
 	IssuedAt           time.Time
 	WithdrawnAt        *time.Time
 	CardName           *string
+	CardDiscardReason  *domain.DiscardReason
 	GroupName          *string
 }
 
@@ -417,6 +419,7 @@ func (q *Queries) GetTutorIssue(ctx context.Context, arg GetTutorIssueParams) (G
 		&i.IssuedAt,
 		&i.WithdrawnAt,
 		&i.CardName,
+		&i.CardDiscardReason,
 		&i.GroupName,
 	)
 	return i, err
@@ -1023,7 +1026,7 @@ func (q *Queries) ListTutorIssueSubmissions(ctx context.Context, arg ListTutorIs
 const listTutorIssues = `-- name: ListTutorIssues :many
 SELECT issues.id, issues.relationship_id, issues.group_id, issues.lesson_id, issues.title, issues.max_points, issues.has_manual_questions,
     issues.deadline_at, issues.answer_policy, issues.status, issues.version, issues.issued_at, issues.withdrawn_at,
-    card.display_name AS card_name, issue_group.name AS group_name
+    card.display_name AS card_name, card.discard_reason AS card_discard_reason, issue_group.name AS group_name
 FROM issues
 LEFT JOIN relationships AS card ON card.id = issues.relationship_id
 LEFT JOIN groups AS issue_group ON issue_group.id = issues.group_id
@@ -1071,6 +1074,7 @@ type ListTutorIssuesRow struct {
 	IssuedAt           time.Time
 	WithdrawnAt        *time.Time
 	CardName           *string
+	CardDiscardReason  *domain.DiscardReason
 	GroupName          *string
 }
 
@@ -1107,6 +1111,7 @@ func (q *Queries) ListTutorIssues(ctx context.Context, arg ListTutorIssuesParams
 			&i.IssuedAt,
 			&i.WithdrawnAt,
 			&i.CardName,
+			&i.CardDiscardReason,
 			&i.GroupName,
 		); err != nil {
 			return nil, err
@@ -1122,7 +1127,7 @@ func (q *Queries) ListTutorIssues(ctx context.Context, arg ListTutorIssuesParams
 const listTutorIssuesByDeadline = `-- name: ListTutorIssuesByDeadline :many
 SELECT issues.id, issues.relationship_id, issues.group_id, issues.lesson_id, issues.title, issues.max_points, issues.has_manual_questions,
     issues.deadline_at, issues.answer_policy, issues.status, issues.version, issues.issued_at, issues.withdrawn_at,
-    card.display_name AS card_name, issue_group.name AS group_name
+    card.display_name AS card_name, card.discard_reason AS card_discard_reason, issue_group.name AS group_name
 FROM issues
 LEFT JOIN relationships AS card ON card.id = issues.relationship_id
 LEFT JOIN groups AS issue_group ON issue_group.id = issues.group_id
@@ -1172,6 +1177,7 @@ type ListTutorIssuesByDeadlineRow struct {
 	IssuedAt           time.Time
 	WithdrawnAt        *time.Time
 	CardName           *string
+	CardDiscardReason  *domain.DiscardReason
 	GroupName          *string
 }
 
@@ -1209,6 +1215,7 @@ func (q *Queries) ListTutorIssuesByDeadline(ctx context.Context, arg ListTutorIs
 			&i.IssuedAt,
 			&i.WithdrawnAt,
 			&i.CardName,
+			&i.CardDiscardReason,
 			&i.GroupName,
 		); err != nil {
 			return nil, err

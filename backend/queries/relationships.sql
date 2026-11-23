@@ -117,7 +117,8 @@ SET state = 'discarded', discard_reason = 'student_purged', discarded_at = sqlc.
 WHERE student_id = @student_id AND state <> 'discarded';
 
 -- name: ClearPurgedStudentFromRelationships :execrows
-UPDATE relationships SET student_id = NULL, email = NULL, email_set_at = NULL, updated_at = sqlc.arg(now)::timestamptz
+UPDATE relationships
+SET student_id = NULL, email = NULL, email_set_at = NULL, display_name = NULL, notes = '', updated_at = sqlc.arg(now)::timestamptz
 WHERE student_id = @student_id;
 
 -- name: StudentHoldsProvisionalRelationship :one

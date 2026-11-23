@@ -589,6 +589,7 @@ export const en: Resources = {
     individual: 'Individual lesson',
     group: 'Group lesson',
     removed_student: 'Removed student',
+    former_student: 'Former student',
     deleted_account: 'Deleted account',
     status: {
       scheduled: 'Scheduled',

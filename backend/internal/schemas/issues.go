@@ -54,10 +54,11 @@ type IssuePatch struct {
 }
 
 type IssueAudience struct {
-	RelationshipID *string `json:"relationship_id,omitempty" format:"uuid"`
-	DisplayName    *string `json:"display_name,omitempty"`
-	GroupID        *string `json:"group_id,omitempty" format:"uuid"`
-	Name           *string `json:"name,omitempty"`
+	RelationshipID *string           `json:"relationship_id,omitempty" format:"uuid"`
+	DisplayName    *string           `json:"display_name,omitempty"`
+	LabelKind      *domain.LabelKind `json:"label_kind,omitempty" enum:"former_student,removed_student"`
+	GroupID        *string           `json:"group_id,omitempty" format:"uuid"`
+	Name           *string           `json:"name,omitempty"`
 }
 
 type IssueProgress struct {

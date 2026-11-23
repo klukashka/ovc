@@ -28,7 +28,7 @@ Slice 6 builds chat; the [slice 6 plan](../plans/slice-6.md#3-decisions-the-plan
 
 ### Labels per role
 
-The labels of erased card names below follow [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md), as specified by change L0 of the [interface rework plan](../plans/ui-rework.md) on 2026-11-23 (pending owner review; pending implementation by L4).
+The labels of erased card names below follow [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md), as specified by change L0 of the [interface rework plan](../plans/ui-rework.md) on 2026-11-23 (pending owner review).
 
 Every name a chat response, a digest and a frame-triggered refetch shows. A fixed label travels as a `label_kind` code beside a `null` label, as lessons do.
 

@@ -20,6 +20,7 @@ type LessonEmailText struct {
 	Individual      string
 	GroupLesson     string
 	RemovedStudent  string
+	FormerStudent   string
 	Action          string
 	Note            string
 	Unsubscribe     string
@@ -38,6 +39,7 @@ type lessonEmailWords struct {
 	individual      string
 	groupLesson     string
 	removedStudent  string
+	formerStudent   string
 	action          string
 	note            string
 	unsubscribe     string
@@ -57,6 +59,7 @@ var lessonEmailCatalogue = map[domain.Language]lessonEmailWords{
 		individual:      "Individual lesson",
 		groupLesson:     "Group lesson",
 		removedStudent:  "Removed student",
+		formerStudent:   "Former student",
 		action:          "Open the lesson",
 		note:            "The lesson's description is on its page in OVC.",
 		unsubscribe:     "Turn off these emails",
@@ -74,6 +77,7 @@ var lessonEmailCatalogue = map[domain.Language]lessonEmailWords{
 		individual:      "Индивидуальный урок",
 		groupLesson:     "Групповой урок",
 		removedStudent:  "Удалённый ученик",
+		formerStudent:   "Бывший ученик",
 		action:          "Открыть урок",
 		note:            "Описание урока — на его странице в OVC.",
 		unsubscribe:     "Отключить эти письма",
@@ -92,7 +96,7 @@ func LessonReminderText(language domain.Language, before time.Duration) (LessonE
 		SubjectPrefix: fmt.Sprintf(words.subjectPrefix, hours, unit), Intro: fmt.Sprintf(words.intro, hours, unit),
 		When: words.when, Lesson: words.lesson, Group: words.group, Student: words.student, Tutor: words.tutor,
 		Individual: words.individual, GroupLesson: words.groupLesson, RemovedStudent: words.removedStudent,
-		Action: words.action, Note: words.note, Unsubscribe: words.unsubscribe, UnsubscribeNote: words.unsubscribeNote,
+		FormerStudent: words.formerStudent, Action: words.action, Note: words.note, Unsubscribe: words.unsubscribe, UnsubscribeNote: words.unsubscribeNote,
 	}, true
 }
 

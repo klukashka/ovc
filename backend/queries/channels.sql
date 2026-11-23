@@ -166,7 +166,9 @@ DELETE FROM channel_members WHERE user_id = @user_id;
 -- name: ListChannelsOfMember :many
 SELECT members.channel_id, members.kind, members.tutor_id, members.relationship_id, members.group_id, members.last_seq,
     members.last_read_seq, members.last_activity_at, members.read_only_since,
-    (CASE WHEN members.tutor_id = members.user_id THEN COALESCE(relationships.display_name, groups.name) ELSE '' END)::text AS tutor_label,
+    (CASE WHEN members.tutor_id = members.user_id THEN COALESCE(relationships.display_name, groups.name, '') ELSE '' END)::text AS tutor_label,
+    (relationships.id IS NOT NULL AND relationships.display_name IS NULL)::boolean AS card_name_erased,
+    relationships.discard_reason AS card_discard_reason,
     (CASE WHEN members.tutor_id = members.user_id THEN COALESCE(groups.colour, relationships.colour) ELSE '' END)::text AS tutor_colour,
     COALESCE(relationships.state = 'provisional', false)::boolean AS provisional,
     relationships.student_id AS card_student_id, groups.name AS group_name, tutors.name AS tutor_name,

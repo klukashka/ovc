@@ -36,7 +36,7 @@ func (NewLesson) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Sch
 
 type LessonMember struct {
 	Label     *string           `json:"label" nullable:"true"`
-	LabelKind *domain.LabelKind `json:"label_kind" enum:"deleted_account,removed_student" nullable:"true"`
+	LabelKind *domain.LabelKind `json:"label_kind" enum:"deleted_account,removed_student,former_student" nullable:"true"`
 }
 
 type LessonAudience struct {
@@ -44,7 +44,7 @@ type LessonAudience struct {
 	RelationshipID *string             `json:"relationship_id,omitempty" format:"uuid"`
 	GroupID        *string             `json:"group_id,omitempty" format:"uuid"`
 	Label          *string             `json:"label" nullable:"true"`
-	LabelKind      *domain.LabelKind   `json:"label_kind" enum:"individual,group,removed_student" nullable:"true"`
+	LabelKind      *domain.LabelKind   `json:"label_kind" enum:"individual,group,removed_student,former_student" nullable:"true"`
 	Colour         *domain.Colour      `json:"colour" enum:"clay,slate,moss,plum,ochre,teal,rust,ink" nullable:"true"`
 	Members        []LessonMember      `json:"members" nullable:"true"`
 }
@@ -52,7 +52,7 @@ type LessonAudience struct {
 type CalendarAudience struct {
 	Kind      domain.AudienceKind `json:"kind" enum:"one_to_one,group"`
 	Label     *string             `json:"label" nullable:"true"`
-	LabelKind *domain.LabelKind   `json:"label_kind" enum:"individual,group,removed_student" nullable:"true"`
+	LabelKind *domain.LabelKind   `json:"label_kind" enum:"individual,group,removed_student,former_student" nullable:"true"`
 	Colour    *domain.Colour      `json:"colour" enum:"clay,slate,moss,plum,ochre,teal,rust,ink" nullable:"true"`
 }
 

@@ -246,4 +246,27 @@ describe('the label of a notification row', () => {
 
     expect(screen.getByText('Removed student')).toBeDefined();
   });
+
+  test("a card whose name a student's purge erased is labelled with the fixed former student text", async () => {
+    const loaders = new ControlledLoaders();
+    const former: Notification = {
+      ...homeworkRow('relationship.ended', 1),
+      label: null,
+      label_kind: 'former_student',
+      link: null,
+    };
+    await showRows(
+      <NotificationList
+        items={[homeworkRow('issue.created', 0), former]}
+        label="Notifications"
+        onChoose={() => undefined}
+        focusIfLost={focusHeadingIfLost}
+        textLoaders={loaders.loaders}
+      />,
+    );
+
+    await loaders.load();
+
+    expect(screen.getByText('Former student')).toBeDefined();
+  });
 });

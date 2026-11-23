@@ -341,7 +341,7 @@ func TestStudentDeletionEndsRelationshipsWithoutEmail(t *testing.T) {
 	}
 }
 
-func TestPurgeOfStudentKeepsTheTutorsHistoryUnderTheCardName(t *testing.T) {
+func TestPurgeOfStudentKeepsTheTutorsHistoryUnderTheFormerStudentLabel(t *testing.T) {
 	t.Parallel()
 	h := newFlowHarness(t)
 	parties := h.activeStudentInAGroup(t)
@@ -355,14 +355,14 @@ func TestPurgeOfStudentKeepsTheTutorsHistoryUnderTheCardName(t *testing.T) {
 	if stored.State != "discarded" || stored.DiscardReason == nil || *stored.DiscardReason != "student_purged" || stored.StudentID != nil || stored.Email != nil {
 		t.Fatalf("the purged student's relationship is %+v", stored)
 	}
-	if stored.DisplayName == nil || *stored.DisplayName != cardName || stored.Notes != cardNotes || stored.EndedBy == nil || *stored.EndedBy != "deletion" || stored.EndedAt == nil {
-		t.Fatalf("the tutor's history lost its card name, notes or ending: %+v", stored)
+	if stored.DisplayName != nil || stored.Notes != "" || stored.EndedBy == nil || *stored.EndedBy != "deletion" || stored.EndedAt == nil {
+		t.Fatalf("the tutor's history kept the card name or notes or lost its ending: %+v", stored)
 	}
 	if h.userExists(t, studentEmail) {
 		t.Fatal("the student account was not purged")
 	}
 	listed := h.send(t, http.MethodGet, studentsPath, "", jsonCall(parties.tutorToken))
-	for _, private := range []string{endingStudentName, studentEmail} {
+	for _, private := range []string{endingStudentName, studentEmail, cardName, cardNotes} {
 		if strings.Contains(listed.body, private) {
 			t.Fatalf("the tutor still sees %q: %s", private, listed.body)
 		}

@@ -480,7 +480,7 @@ func (s subjects) tutorCard(tutor domain.UserID, row repositories.Notification, 
 		return
 	}
 	if card.DisplayName == nil {
-		kind := domain.LabelRemovedStudent
+		kind := domain.ErasedCardLabel(card.DiscardReason)
 		item.LabelKind = &kind
 	} else {
 		item.Label = card.DisplayName

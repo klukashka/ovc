@@ -16,6 +16,8 @@ export const chatTexts: ChatTexts = {
   deleted: 'Сообщение удалено',
   erased: 'Сообщение стёрто',
   deletedUser: 'Удалённый пользователь',
+  formerStudent: 'Бывший ученик',
+  removedStudent: 'Удалённый ученик',
   you: 'Вы',
   edited: 'изменено',
   composer: 'Сообщение',

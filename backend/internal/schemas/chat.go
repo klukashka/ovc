@@ -27,7 +27,7 @@ type ChannelItem struct {
 	ID          string              `json:"id" format:"uuid"`
 	Kind        domain.ChannelKind  `json:"kind" enum:"direct,group"`
 	Label       *string             `json:"label" nullable:"true"`
-	LabelKind   *domain.LabelKind   `json:"label_kind" enum:"deleted_user" nullable:"true"`
+	LabelKind   *domain.LabelKind   `json:"label_kind" enum:"deleted_user,former_student,removed_student" nullable:"true"`
 	Colour      *domain.Colour      `json:"colour" enum:"clay,slate,moss,plum,ochre,teal,rust,ink" nullable:"true"`
 	Tutor       *ChannelTutor       `json:"tutor"`
 	UserID      *string             `json:"user_id" format:"uuid" nullable:"true"`

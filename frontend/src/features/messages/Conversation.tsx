@@ -25,6 +25,7 @@ import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDate } from '../../lib/format/dates.ts';
 import { type Channel, type Message, type MessagePage, deleteMessage, editMessage, sendMessage } from './api.ts';
 import { Attachments, useAttachmentExpiry } from './Attachments.tsx';
+import { channelLabel } from './channelLabel.ts';
 import { UploadComposer } from './UploadComposer.tsx';
 import { useUploads } from './uploads.ts';
 import { useChatSignals } from './presence.ts';
@@ -537,7 +538,7 @@ export function Conversation({
     );
   const title = (
     <h2 ref={heading} tabIndex={-1} dir="auto" className="min-w-0 text-heading [overflow-wrap:anywhere] outline-none">
-      {channel.label ?? texts.deletedUser}
+      {channelLabel(channel, texts)}
     </h2>
   );
   const presenceSummary = (

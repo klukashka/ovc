@@ -179,7 +179,7 @@ export function MemberLabel({
   kind,
 }: {
   readonly label: string | null;
-  readonly kind: 'deleted_account' | 'removed_student' | null;
+  readonly kind: 'deleted_account' | 'removed_student' | 'former_student' | null;
 }): ReactElement {
   const { t } = useTranslation();
   const kindText = kind === null ? null : t(`lesson.${kind}`);

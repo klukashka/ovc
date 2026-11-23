@@ -60,7 +60,8 @@ func (q *Queries) ActivateProvisionalRelationship(ctx context.Context, arg Activ
 }
 
 const clearPurgedStudentFromRelationships = `-- name: ClearPurgedStudentFromRelationships :execrows
-UPDATE relationships SET student_id = NULL, email = NULL, email_set_at = NULL, updated_at = $1::timestamptz
+UPDATE relationships
+SET student_id = NULL, email = NULL, email_set_at = NULL, display_name = NULL, notes = '', updated_at = $1::timestamptz
 WHERE student_id = $2
 `
 

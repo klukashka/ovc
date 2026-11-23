@@ -11,6 +11,7 @@ import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDateTime } from '../../lib/format/dates.ts';
 import { type ChannelItem, type ChannelPage, fetchChannels } from './api.ts';
 import { channelScopeRevision, channelsScopeRevisionKey } from './cache.ts';
+import { channelLabel } from './channelLabel.ts';
 import { channelsKey } from './keys.ts';
 import { useFirstChannelPage } from './firstPage.ts';
 import { ChannelPresence } from './PresenceSummary.tsx';
@@ -155,7 +156,7 @@ function ChannelPages({
               className="block border-b border-border px-2 py-3 [overflow-wrap:anywhere] hover:bg-hover"
             >
               <span dir="auto" className={channel.unread_count > 0 ? 'font-semibold' : ''}>
-                {channel.label ?? texts.deletedUser}
+                {channelLabel(channel, texts)}
               </span>
               <ChannelPresence
                 channel={channel}

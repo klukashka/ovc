@@ -383,6 +383,8 @@ function fixedLabel(t: TFunction, kind: Notification['label_kind']): string | nu
       return t('notifications.groupLesson');
     case 'removed_student':
       return t('lesson.removed_student');
+    case 'former_student':
+      return t('lesson.former_student');
     case null:
       return null;
   }
