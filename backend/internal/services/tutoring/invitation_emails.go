@@ -49,6 +49,9 @@ func (s *Service) SendInvitation(ctx context.Context, actor domain.TutorActor, i
 		outcome = sent
 		return err
 	})
+	if errors.Is(err, ErrEmailErased) {
+		s.logErasureRefusal(ctx, tutor, id, refusedSend)
+	}
 	var throttled *ThrottledError
 	if errors.As(err, &throttled) {
 		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "invitation.send_limited", cardAttributes(tutor, id)...)
@@ -81,6 +84,9 @@ func (s *Service) sendInvitation(ctx context.Context, repos repositories.Reposit
 	}
 	if !domain.CardTakesInvitations(card.State) {
 		return "", ErrRelationshipNotActive
+	}
+	if card.EmailErasedAt != nil {
+		return "", ErrEmailErased
 	}
 	if card.Email == nil {
 		return "", &ValidationError{Fields: []FieldProblem{{Path: fieldCardEmail, Code: domain.FieldRequired}}}

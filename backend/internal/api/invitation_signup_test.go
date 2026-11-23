@@ -67,8 +67,12 @@ func (h *authHarness) cardsOf(t *testing.T, tutor domain.UserID, state domain.Re
 	var cards []studentCard
 	for rows.Next() {
 		var card studentCard
-		if err := rows.Scan(&card.ID, &card.State, &card.DisplayName, &card.Email, &card.Notes); err != nil {
+		var name *string
+		if err := rows.Scan(&card.ID, &card.State, &name, &card.Email, &card.Notes); err != nil {
 			t.Fatal(err)
+		}
+		if name != nil {
+			card.DisplayName = *name
 		}
 		cards = append(cards, card)
 	}

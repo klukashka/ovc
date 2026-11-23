@@ -54,7 +54,7 @@ Lesson emails never reach an unconfirmed account ([dispatch-time checks](notific
 
 ### Labels per role
 
-The labels of erased card names below follow [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md), as specified by change L0 of the [interface rework plan](../plans/ui-rework.md) on 2026-11-23 (pending owner review): the labels of removed, withdrawn and merged cards are pending implementation by L3, and the fixed label `former_student` with the relabelling at a student's purge by L4.
+The labels of erased card names below follow [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md), as specified by change L0 of the [interface rework plan](../plans/ui-rework.md) on 2026-11-23 (pending owner review): the labels of removed, withdrawn and merged cards are implemented by L3, and the fixed label `former_student` with the relabelling at a student's purge is pending implementation by L4.
 
 Every name, colour and timezone that a lesson response, a notification row or an email shows follows one table, so card display names never reach students and a deleted or possibly squatting account's chosen name never reaches the tutor ([T-34](../../docs/threat-model.md#threats-and-controls), [T-44](../../docs/threat-model.md#threats-and-controls)):
 

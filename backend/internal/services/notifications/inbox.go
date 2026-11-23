@@ -425,11 +425,10 @@ func (s subjects) assignmentRow(principal accounts.Principal, row repositories.N
 
 func (s subjects) reviewRow(principal accounts.Principal, row repositories.Notification, item *Item) {
 	submission, found := s.reviews[domain.SubmissionID(row.SubjectID)]
-	if principal.Role != domain.RoleTutor || !found || submission.CardState == domain.RelationshipDiscarded {
+	if principal.Role != domain.RoleTutor || !found || submission.CardState == domain.RelationshipDiscarded || submission.DisplayName == nil {
 		return
 	}
-	name := submission.DisplayName
-	item.Label = &name
+	item.Label = submission.DisplayName
 	if submission.IssueReadable {
 		item.Link = &Link{Kind: domain.LinkReview, ID: row.SubjectID}
 	}
@@ -480,8 +479,12 @@ func (s subjects) tutorCard(tutor domain.UserID, row repositories.Notification, 
 	if !found || card.TutorID != tutor {
 		return
 	}
-	name := card.DisplayName
-	item.Label = &name
+	if card.DisplayName == nil {
+		kind := domain.LabelRemovedStudent
+		item.LabelKind = &kind
+	} else {
+		item.Label = card.DisplayName
+	}
 	if card.State != domain.RelationshipDiscarded {
 		item.Link = &Link{Kind: domain.LinkStudentCard, ID: domain.EntityID(card.ID)}
 	}

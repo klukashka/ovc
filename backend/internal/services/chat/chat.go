@@ -221,7 +221,11 @@ func (s *Service) Channel(ctx context.Context, viewer domain.UserID, id domain.C
 		}
 		channel.Members = make([]Member, 0, len(labels))
 		for _, label := range labels {
-			channel.Members = append(channel.Members, Member{UserID: label.UserID, Label: label.DisplayName, Online: presenceOf(channel.Writable, label.Online)})
+			name, err := domain.CardName(label.DisplayName)
+			if err != nil {
+				return err
+			}
+			channel.Members = append(channel.Members, Member{UserID: label.UserID, Label: name, Online: presenceOf(channel.Writable, label.Online)})
 		}
 		return nil
 	})

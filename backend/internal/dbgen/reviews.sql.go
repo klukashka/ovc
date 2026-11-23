@@ -496,7 +496,7 @@ type ListReviewQueueRow struct {
 	IssueID             domain.IssueID
 	Title               string
 	RelationshipID      domain.RelationshipID
-	DisplayName         string
+	DisplayName         *string
 	SubmittedAt         *time.Time
 	FirstSubmittedAt    *time.Time
 	Late                bool

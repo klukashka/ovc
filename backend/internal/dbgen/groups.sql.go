@@ -254,7 +254,7 @@ type ListFirstGroupMembersParams struct {
 type ListFirstGroupMembersRow struct {
 	GroupID        domain.GroupID
 	RelationshipID domain.RelationshipID
-	DisplayName    string
+	DisplayName    *string
 	StudentID      *domain.UserID
 	Name           string
 	AddedAt        time.Time
@@ -334,7 +334,7 @@ type ListGroupMembersParams struct {
 
 type ListGroupMembersRow struct {
 	RelationshipID domain.RelationshipID
-	DisplayName    string
+	DisplayName    *string
 	StudentID      *domain.UserID
 	Name           string
 	AddedAt        time.Time

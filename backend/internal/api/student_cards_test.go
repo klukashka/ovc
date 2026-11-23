@@ -46,6 +46,7 @@ type studentCard struct {
 	State       string            `json:"state"`
 	DisplayName string            `json:"display_name"`
 	Email       *string           `json:"email"`
+	EmailErased bool              `json:"email_erased"`
 	Account     *cardAccount      `json:"account"`
 	Groups      []json.RawMessage `json:"groups"`
 	Notes       *string           `json:"notes"`

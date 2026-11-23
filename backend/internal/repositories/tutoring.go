@@ -28,6 +28,7 @@ type (
 	InvitationEmail    = dbgen.GetInvitationForEmailRow
 	UsableInvitation   = dbgen.GetUsableInvitationRow
 	StudentTutor       = dbgen.ListStudentTutorsRow
+	CardDueForErasure  = dbgen.ListCardsDueForEmailErasureRow
 )
 
 type Link struct {
@@ -647,4 +648,21 @@ func (r JoinRequests) DeleteOfStudent(ctx context.Context, student domain.UserID
 func (r Relationships) LockForStudentDeletion(ctx context.Context, student domain.UserID) ([]Relationship, error) {
 	relationships, err := r.queries.LockStudentDeletionRelationships(ctx, &student)
 	return one(relationships, err, "lock all relationships for student deletion")
+}
+
+func (r Relationships) DueForEmailErasure(
+	ctx context.Context, dueBefore time.Time, after *CardDueForErasure, batchSize int32,
+) ([]CardDueForErasure, error) {
+	params := dbgen.ListCardsDueForEmailErasureParams{DueBefore: dueBefore, RowLimit: batchSize}
+	if after != nil {
+		params.AfterSetAt = after.EmailSetAt
+		params.AfterID = pgtype.UUID{Bytes: after.ID, Valid: true}
+	}
+	due, err := r.queries.ListCardsDueForEmailErasure(ctx, params)
+	return one(due, err, "list cards due for email erasure")
+}
+
+func (r Relationships) EraseEmail(ctx context.Context, card CardDueForErasure, dueBefore time.Time, now time.Time) (bool, error) {
+	rows, err := r.queries.EraseCardEmail(ctx, dbgen.EraseCardEmailParams{Now: now, ID: card.ID, TutorID: card.TutorID, DueBefore: dueBefore})
+	return applied(rows, err, "erase card email")
 }

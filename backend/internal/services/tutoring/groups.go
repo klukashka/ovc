@@ -103,8 +103,8 @@ func (s *Service) ListGroups(ctx context.Context, tutor domain.UserID) ([]GroupS
 		if err != nil {
 			return err
 		}
-		summaries = groupSummaries(groups, first, avatars)
-		return nil
+		summaries, err = groupSummaries(groups, first, avatars)
+		return err
 	})
 	return summaries, err
 }
@@ -119,12 +119,18 @@ func firstMemberStudents(members []repositories.FirstGroupMember) []domain.UserI
 	return students
 }
 
-func groupSummaries(groups []repositories.Group, first []repositories.FirstGroupMember, avatars map[domain.UserID]domain.AttachmentID) []GroupSummary {
+func groupSummaries(
+	groups []repositories.Group, first []repositories.FirstGroupMember, avatars map[domain.UserID]domain.AttachmentID,
+) ([]GroupSummary, error) {
 	counts := make(map[domain.GroupID]int64, len(groups))
 	previews := make(map[domain.GroupID][]GroupMember, len(groups))
 	for _, member := range first {
 		counts[member.GroupID] = member.MemberCount
-		previews[member.GroupID] = append(previews[member.GroupID], memberView(member.RelationshipID, member.DisplayName, member.Name, member.StudentID, member.AddedAt, avatars))
+		view, err := memberView(member.RelationshipID, member.DisplayName, member.Name, member.StudentID, member.AddedAt, avatars)
+		if err != nil {
+			return nil, err
+		}
+		previews[member.GroupID] = append(previews[member.GroupID], view)
 	}
 	summaries := make([]GroupSummary, 0, len(groups))
 	for _, group := range groups {
@@ -133,19 +139,23 @@ func groupSummaries(groups []repositories.Group, first []repositories.FirstGroup
 			MemberCount: counts[group.ID], FirstMembers: previews[group.ID],
 		})
 	}
-	return summaries
+	return summaries, nil
 }
 
 func memberView(
-	relationship domain.RelationshipID, displayName string, name string, student *domain.UserID, addedAt time.Time, avatars map[domain.UserID]domain.AttachmentID,
-) GroupMember {
-	member := GroupMember{RelationshipID: relationship, DisplayName: displayName, Name: name, AddedAt: addedAt}
+	relationship domain.RelationshipID, displayName *string, name string, student *domain.UserID, addedAt time.Time, avatars map[domain.UserID]domain.AttachmentID,
+) (GroupMember, error) {
+	cardName, err := domain.CardName(displayName)
+	if err != nil {
+		return GroupMember{}, err
+	}
+	member := GroupMember{RelationshipID: relationship, DisplayName: cardName, Name: name, AddedAt: addedAt}
 	if student != nil {
 		if avatar, has := avatars[*student]; has {
 			member.AvatarID = &avatar
 		}
 	}
-	return member
+	return member, nil
 }
 
 func (s *Service) Group(ctx context.Context, tutor domain.UserID, id domain.GroupID) (Group, error) {
@@ -181,7 +191,11 @@ func (s *Service) groupView(ctx context.Context, repos repositories.Repositories
 	}
 	group := Group{ID: row.ID, Name: row.Name, Colour: row.Colour, ArchivedAt: row.ArchivedAt, Members: make([]GroupMember, 0, len(members))}
 	for _, member := range members {
-		group.Members = append(group.Members, memberView(member.RelationshipID, member.DisplayName, member.Name, member.StudentID, member.AddedAt, avatars))
+		view, err := memberView(member.RelationshipID, member.DisplayName, member.Name, member.StudentID, member.AddedAt, avatars)
+		if err != nil {
+			return Group{}, err
+		}
+		group.Members = append(group.Members, view)
 	}
 	group.ChannelID, err = repos.Channels.OfGroupFor(ctx, row.TutorID, row.ID)
 	return group, err

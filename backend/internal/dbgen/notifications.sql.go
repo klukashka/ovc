@@ -269,7 +269,7 @@ type ListNotificationRelationshipsRow struct {
 	TutorID        domain.UserID
 	StudentID      *domain.UserID
 	State          domain.RelationshipState
-	DisplayName    string
+	DisplayName    *string
 	Colour         *domain.Colour
 	TutorName      string
 	TutorState     domain.AccountState

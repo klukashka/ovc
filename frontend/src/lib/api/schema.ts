@@ -1529,7 +1529,7 @@ export interface components {
         };
         ErrorBody: {
             /** @enum {string} */
-            code: "bad_request" | "unauthenticated" | "token_expired" | "invalid_signature" | "invalid_credentials" | "email_not_verified" | "account_blocked" | "forbidden" | "not_found" | "method_not_allowed" | "conflict" | "lesson_overlap" | "lesson_not_live" | "outside_join_window" | "not_editable" | "answer_frozen" | "already_linked" | "student_exists" | "relationship_not_active" | "audience_not_active" | "role_mismatch" | "invitation_invalid" | "invitation_email_mismatch" | "relationship_not_provisional" | "return_not_allowed" | "issue_has_submissions" | "channel_read_only" | "edit_window_passed" | "gone" | "payload_too_large" | "unsupported_media_type" | "validation_failed" | "lesson_in_past" | "tutor_code_invalid" | "token_invalid" | "rate_limited" | "tutor_unavailable" | "internal" | "provider_unavailable" | "service_unavailable" | "quota_exceeded";
+            code: "bad_request" | "unauthenticated" | "token_expired" | "invalid_signature" | "invalid_credentials" | "email_not_verified" | "account_blocked" | "forbidden" | "not_found" | "method_not_allowed" | "conflict" | "lesson_overlap" | "lesson_not_live" | "outside_join_window" | "not_editable" | "answer_frozen" | "already_linked" | "student_exists" | "relationship_not_active" | "audience_not_active" | "role_mismatch" | "invitation_invalid" | "invitation_email_mismatch" | "relationship_not_provisional" | "email_erased" | "return_not_allowed" | "issue_has_submissions" | "channel_read_only" | "edit_window_passed" | "gone" | "payload_too_large" | "unsupported_media_type" | "validation_failed" | "lesson_in_past" | "tutor_code_invalid" | "token_invalid" | "rate_limited" | "tutor_unavailable" | "internal" | "provider_unavailable" | "service_unavailable" | "quota_exceeded";
             details?: components["schemas"]["ErrorDetails"];
             fields?: components["schemas"]["FieldError"][] | null;
             message: string;
@@ -1911,9 +1911,9 @@ export interface components {
             version: number;
         };
         LessonMember: {
-            label: string;
+            label: string | null;
             /** @enum {string|null} */
-            label_kind: "deleted_account" | null;
+            label_kind: "deleted_account" | "removed_student" | null;
         };
         LessonPatch: {
             allow_overlap?: boolean;
@@ -2221,7 +2221,7 @@ export interface components {
             label: string | null;
             label_deleted: boolean;
             /** @enum {string|null} */
-            label_kind: "group" | null;
+            label_kind: "group" | "removed_student" | null;
             link: components["schemas"]["NotificationLink"] | null;
             /** Format: date-time */
             read_at: string | null;
@@ -2487,6 +2487,7 @@ export interface components {
             created_at: string;
             display_name: string;
             email: string | null;
+            email_erased: boolean;
             /** Format: date-time */
             ended_at: string | null;
             /** @enum {string|null} */
@@ -2509,6 +2510,7 @@ export interface components {
             created_at: string;
             display_name: string;
             email: string | null;
+            email_erased: boolean;
             /** Format: date-time */
             ended_at: string | null;
             /** @enum {string|null} */
@@ -2539,6 +2541,7 @@ export interface components {
             created_at: string;
             display_name: string;
             email: string | null;
+            email_erased: boolean;
             /** Format: date-time */
             ended_at: string | null;
             /** @enum {string|null} */
@@ -14016,7 +14019,7 @@ export const channelLastMessageSender_label_kindValues: ReadonlyArray<FlattenedD
 export const channelTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelTutor"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const emailConfirmedOutcomeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EmailConfirmed"]["outcome"]> = ["choice_required", "linked", "request_sent", "code_invalid"];
 export const emailPreferenceGroupValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EmailPreference"]["group"]> = ["lesson_reminders", "lesson_changes", "homework", "results", "submissions", "message_digest"];
-export const errorBodyCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorBody"]["code"]> = ["bad_request", "unauthenticated", "token_expired", "invalid_signature", "invalid_credentials", "email_not_verified", "account_blocked", "forbidden", "not_found", "method_not_allowed", "conflict", "lesson_overlap", "lesson_not_live", "outside_join_window", "not_editable", "answer_frozen", "already_linked", "student_exists", "relationship_not_active", "audience_not_active", "role_mismatch", "invitation_invalid", "invitation_email_mismatch", "relationship_not_provisional", "return_not_allowed", "issue_has_submissions", "channel_read_only", "edit_window_passed", "gone", "payload_too_large", "unsupported_media_type", "validation_failed", "lesson_in_past", "tutor_code_invalid", "token_invalid", "rate_limited", "tutor_unavailable", "internal", "provider_unavailable", "service_unavailable", "quota_exceeded"];
+export const errorBodyCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorBody"]["code"]> = ["bad_request", "unauthenticated", "token_expired", "invalid_signature", "invalid_credentials", "email_not_verified", "account_blocked", "forbidden", "not_found", "method_not_allowed", "conflict", "lesson_overlap", "lesson_not_live", "outside_join_window", "not_editable", "answer_frozen", "already_linked", "student_exists", "relationship_not_active", "audience_not_active", "role_mismatch", "invitation_invalid", "invitation_email_mismatch", "relationship_not_provisional", "email_erased", "return_not_allowed", "issue_has_submissions", "channel_read_only", "edit_window_passed", "gone", "payload_too_large", "unsupported_media_type", "validation_failed", "lesson_in_past", "tutor_code_invalid", "token_invalid", "rate_limited", "tutor_unavailable", "internal", "provider_unavailable", "service_unavailable", "quota_exceeded"];
 export const groupColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Group"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const groupDetailColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["GroupDetail"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const groupPatchColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["GroupPatch"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
@@ -14038,7 +14041,7 @@ export const lessonAudienceLabel_kindValues: ReadonlyArray<FlattenedDeepRequired
 export const lessonCancellationScopeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonCancellation"]["scope"]> = ["this", "following"];
 export const lessonDetailStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonDetail"]["status"]> = ["scheduled", "live", "ended", "cancelled"];
 export const lessonIssueStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonIssue"]["status"]> = ["not_started", "draft", "submitted", "returned", "checked", "closed"];
-export const lessonMemberLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonMember"]["label_kind"]> = ["deleted_account"];
+export const lessonMemberLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonMember"]["label_kind"]> = ["deleted_account", "removed_student"];
 export const lessonPatchScopeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonPatch"]["scope"]> = ["this", "following"];
 export const lessonTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonTutor"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const lessonViewStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LessonView"]["status"]> = ["scheduled", "live", "ended", "cancelled"];
@@ -14056,7 +14059,7 @@ export const newGroupColourValues: ReadonlyArray<FlattenedDeepRequired<component
 export const newIssueAnswer_policyValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NewIssue"]["answer_policy"]> = ["never", "after_submission", "after_check"];
 export const notificationColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const notificationEventValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["event"]> = ["invitation.accepted", "join_request.created", "join_request.accepted", "join_request.declined", "relationship.ended", "lesson.reminder_1h", "lesson.moved", "lesson.cancelled", "lesson.series_changed", "group.archived", "issue.created", "issue.withdrawn", "submission.submitted", "submission.checked", "submission.returned", "submission.review_updated"];
-export const notificationLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["label_kind"]> = ["group"];
+export const notificationLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["label_kind"]> = ["group", "removed_student"];
 export const notificationLinkKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NotificationLink"]["kind"]> = ["student_card", "join_requests", "my_tutors", "lesson", "assignment", "review"];
 export const passwordResetOutcomeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["PasswordReset"]["outcome"]> = ["choice_required"];
 export const profilePatchLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["language"]> = ["ru", "en"];

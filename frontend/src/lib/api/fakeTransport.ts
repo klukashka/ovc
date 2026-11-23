@@ -125,6 +125,7 @@ function fakeCard(id: string, displayName: string): StudentCard {
     state: 'invited',
     display_name: displayName,
     email: null,
+    email_erased: false,
     account: null,
     groups: [],
     notes: '',
@@ -331,6 +332,7 @@ function summaryOf(card: StudentCard, openAssignments: number): StudentCardSumma
     state: card.state,
     display_name: card.display_name,
     email: card.email,
+    email_erased: card.email_erased,
     account: card.account,
     groups: card.groups,
     linked_at: card.linked_at,
@@ -1124,6 +1126,14 @@ export class FakeAuthServer {
     this.notifications.set(accountId, newestFirst);
   }
 
+  eraseCardEmail(cardId: string): void {
+    const found = this.cards.get(cardId);
+    if (found === undefined) {
+      throw new Error(`no fake card ${cardId}`);
+    }
+    this.cards.set(cardId, { ...found, card: { ...found.card, email: null, email_erased: true, invitation: null } });
+  }
+
   failNextCardRead(): void {
     this.failingCardReads += 1;
   }
@@ -1522,9 +1532,16 @@ export class FakeAuthServer {
       const page = pageOf(newestFirst, address.searchParams);
       return page === null ? refusal(422, 'validation_failed') : json(200, page);
     }
-    const found = this.cards.get(path.slice(cardPathPrefix.length));
+    const cardPath = path.slice(cardPathPrefix.length);
+    const invitationAction = cardPath.endsWith('/invitation') || cardPath.endsWith('/invitation/send');
+    const found = this.cards.get(invitationAction ? cardPath.slice(0, cardPath.indexOf('/')) : cardPath);
     if (found?.tutorId !== tutorId) {
       return refusal(404, 'not_found');
+    }
+    if (invitationAction) {
+      return request.method === 'POST' && found.card.email_erased
+        ? refusal(409, 'email_erased')
+        : refusal(404, 'not_found');
     }
     if (request.method === 'PATCH') {
       return this.writeCard(found, await request.text());

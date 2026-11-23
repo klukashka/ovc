@@ -507,7 +507,7 @@ type Relationship struct {
 	State         domain.RelationshipState
 	DiscardReason *domain.DiscardReason
 	EndedBy       *domain.EndedBy
-	DisplayName   string
+	DisplayName   *string
 	Email         *string
 	Colour        *domain.Colour
 	Notes         string
@@ -517,6 +517,8 @@ type Relationship struct {
 	DiscardedAt   *time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	EmailSetAt    *time.Time
+	EmailErasedAt *time.Time
 }
 
 type ReviewRevision struct {

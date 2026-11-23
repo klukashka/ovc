@@ -388,7 +388,7 @@ type ListChannelMemberLabelsParams struct {
 
 type ListChannelMemberLabelsRow struct {
 	UserID      domain.UserID
-	DisplayName string
+	DisplayName *string
 	Online      bool
 }
 

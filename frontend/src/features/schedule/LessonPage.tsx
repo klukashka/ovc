@@ -176,7 +176,7 @@ export function MemberLabel({
   kind,
 }: {
   readonly label: string | null;
-  readonly kind: 'deleted_account' | null;
+  readonly kind: 'deleted_account' | 'removed_student' | null;
 }): ReactElement {
   const { t } = useTranslation();
   const kindText = kind === null ? null : t(`lesson.${kind}`);
@@ -219,7 +219,7 @@ function AboutLesson({ lesson, me }: { readonly lesson: LessonDetail; readonly m
           <Detail term={t('lesson.members')}>
             <ul className="flex flex-col gap-1">
               {members.map((member, index) => (
-                <li key={`${member.label}-${String(index)}`}>
+                <li key={`${member.label ?? member.label_kind ?? ''}-${String(index)}`}>
                   <MemberLabel label={member.label} kind={member.label_kind} />
                 </li>
               ))}

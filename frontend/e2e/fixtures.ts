@@ -150,6 +150,10 @@ export interface MeasurementWorkerOptions {
   readonly measurementDatabaseMode: 'on' | 'off' | undefined;
 }
 
+export interface ClockWorkerOptions {
+  readonly clockMovedFarAhead: boolean;
+}
+
 export const test = base.extend<
   {
     control: TestControl;
@@ -158,7 +162,7 @@ export const test = base.extend<
     observedBrowser: ObservedBrowser;
     diagnosticRegistry: DiagnosticRegistry;
   },
-  { deployment: Deployment } & SharedActors & MeasurementWorkerOptions
+  { deployment: Deployment } & SharedActors & MeasurementWorkerOptions & ClockWorkerOptions
 >({
   diagnosticRegistry: [
     async ({ browserName }, use, testInfo): Promise<void> => {
@@ -176,12 +180,13 @@ export const test = base.extend<
     await use(observedBrowser(browser, (context) => diagnosticRegistry.watch(context)));
   },
   measurementDatabaseMode: [undefined, { scope: 'worker', option: true }],
+  clockMovedFarAhead: [false, { scope: 'worker', option: true }],
   deployment: [
-    async ({ browserName, measurementDatabaseMode }, use, workerInfo): Promise<void> => {
+    async ({ browserName, measurementDatabaseMode, clockMovedFarAhead }, use, workerInfo): Promise<void> => {
       const deployment = await startDeployment(
         readE2ESettings(process.env),
         workerInfo.parallelIndex,
-        `${browserName}-worker${String(workerInfo.workerIndex)}`,
+        `${browserName}-worker${String(workerInfo.workerIndex)}${clockMovedFarAhead ? '-far-clock' : ''}`,
         measurementDatabaseMode === undefined ? undefined : { synchronousCommit: measurementDatabaseMode },
       );
       try {

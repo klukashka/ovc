@@ -183,8 +183,12 @@ func (b submittedEmail) Build(ctx context.Context, row repositories.ClaimedOutbo
 	if !found {
 		return Composition{}, domain.PermanentEffect(fmt.Errorf("%w: no %s text in %s", errUnknownKind, row.Kind, recipient.Language))
 	}
+	person, err := domain.CardName(submission.DisplayName)
+	if err != nil {
+		return Composition{}, domain.PermanentEffect(err)
+	}
 	return b.emails.compose(recipient, homeworkMessage{
-		text: text, person: submission.DisplayName, deadline: submission.DeadlineAt, title: submission.Title,
+		text: text, person: person, deadline: submission.DeadlineAt, title: submission.Title,
 		path: domain.HomeworkReviewPagePath + id.String(), group: domain.EmailGroupSubmissions,
 	}, now)
 }

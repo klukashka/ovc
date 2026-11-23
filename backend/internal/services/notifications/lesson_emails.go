@@ -249,7 +249,7 @@ func (l *LessonEmails) audienceDetails(source lessonRender) []lessonDetail {
 
 func tutorCardLabel(lesson repositories.LessonForEmail, text core.LessonEmailText) string {
 	removed := lesson.CardDiscardReason != nil && (*lesson.CardDiscardReason == domain.DiscardRemoved || *lesson.CardDiscardReason == domain.DiscardTutorDeleted)
-	if domain.RelationshipState(lesson.CardState) == domain.RelationshipDiscarded && removed {
+	if lesson.CardName == nil || (domain.RelationshipState(lesson.CardState) == domain.RelationshipDiscarded && removed) {
 		return text.RemovedStudent
 	}
 	return safeName(lesson.CardName)

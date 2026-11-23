@@ -473,7 +473,7 @@ type GetTutorIssueRelationshipRow struct {
 	ID          domain.RelationshipID
 	State       domain.RelationshipState
 	StudentID   *domain.UserID
-	DisplayName string
+	DisplayName *string
 }
 
 func (q *Queries) GetTutorIssueRelationship(ctx context.Context, arg GetTutorIssueRelationshipParams) (GetTutorIssueRelationshipRow, error) {
@@ -977,7 +977,7 @@ type ListTutorIssueSubmissionsParams struct {
 type ListTutorIssueSubmissionsRow struct {
 	ID                  domain.SubmissionID
 	RelationshipID      domain.RelationshipID
-	DisplayName         string
+	DisplayName         *string
 	Status              domain.SubmissionStatus
 	Late                bool
 	FirstSubmittedAt    *time.Time
@@ -1468,7 +1468,7 @@ type TutorReviewSubmissionsParams struct {
 
 type TutorReviewSubmissionsRow struct {
 	ID            domain.SubmissionID
-	DisplayName   string
+	DisplayName   *string
 	CardState     domain.RelationshipState
 	IssueReadable bool
 }

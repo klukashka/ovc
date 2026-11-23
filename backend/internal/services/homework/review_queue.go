@@ -63,8 +63,12 @@ func (s *Service) ReviewQueue(ctx context.Context, tutor domain.UserID, query Re
 			}
 		}
 		for _, row := range rows {
+			name, err := domain.CardName(row.DisplayName)
+			if err != nil {
+				return err
+			}
 			page.Items = append(page.Items, ReviewQueueItem{
-				Submission: row.ID, Issue: row.IssueID, Title: row.Title, Relationship: row.RelationshipID, DisplayName: row.DisplayName,
+				Submission: row.ID, Issue: row.IssueID, Title: row.Title, Relationship: row.RelationshipID, DisplayName: name,
 				SubmittedAt: row.SubmittedAt, FirstSubmittedAt: row.FirstSubmittedAt, Late: row.Late, HasDraft: row.HasDraft,
 				IssuedBeforeReclaim: row.IssuedBeforeReclaim,
 			})

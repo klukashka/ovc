@@ -47,6 +47,7 @@ const (
 	JobAccountsCleanupUnverified JobName = "accounts.cleanup_unverified"
 	JobInvitationsExpire         JobName = "invitations.expire"
 	JobReclaimExpire             JobName = "reclaim.expire"
+	JobCardsEraseEmails          JobName = "cards.erase_emails"
 	JobJoinRequestsExpire        JobName = "join_requests.expire"
 	JobNotificationsCleanup      JobName = "notifications.cleanup"
 )

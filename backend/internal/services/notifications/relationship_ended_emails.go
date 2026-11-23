@@ -92,7 +92,11 @@ func (b relationshipEndedEmail) parties(ctx context.Context, repos repositories.
 		if err != nil || !found {
 			return endedEmailParties{}, found, err
 		}
-		return endedEmailParties{recipient: tutor, name: link.DisplayName, actionURL: b.emails.publicURL + studentCardsPath + link.ID.String()}, true, nil
+		name, err := domain.CardName(link.DisplayName)
+		if err != nil {
+			return endedEmailParties{}, false, domain.PermanentEffect(err)
+		}
+		return endedEmailParties{recipient: tutor, name: name, actionURL: b.emails.publicURL + studentCardsPath + link.ID.String()}, true, nil
 	case domain.EndedByDeletion:
 	}
 	return endedEmailParties{}, false, nil

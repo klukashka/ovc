@@ -402,7 +402,7 @@ func TestRemovalSucceedsOnlyWhileProvisional(t *testing.T) {
 	if !errors.Is(outOfScope, repositories.ErrNotFound) || !errors.Is(repeated, repositories.ErrNotFound) {
 		t.Fatalf("another tutor's removal %v, repeated removal %v", outOfScope, repeated)
 	}
-	if removeErr != nil || removed.Email == nil || *removed.Email != email || removed.Notes != notes || removed.DisplayName != "A student" {
+	if removeErr != nil || removed.Email == nil || *removed.Email != email || removed.Notes != notes || removed.DisplayName == nil || *removed.DisplayName != "A student" {
 		t.Fatalf("removed %+v, %v", removed, removeErr)
 	}
 	for state, err := range refusals {

@@ -495,6 +495,9 @@ export const en: Resources = {
     validUntil: 'Valid until {date}',
     expired: 'Invitation expired',
     revoked: 'Link revoked after repeated wrong emails',
+    emailErased:
+      'The email was removed because the invitation was not accepted within 90 days, and the link no longer works. Enter an email to create a new link.',
+    enterEmail: 'Enter email',
   },
   studentCard: {
     actions: 'Card actions',
@@ -863,6 +866,7 @@ export const en: Resources = {
     invitation_email_mismatch: 'This invitation is for a different email address.',
     relationship_not_provisional:
       'Only a student whose email is not confirmed yet, or whose email owner has not chosen yet, can be removed.',
+    email_erased: 'The email was removed. Enter an email to create a new link.',
     return_not_allowed: 'This work cannot be returned for revision.',
     issue_has_submissions: 'The assignment already has submissions.',
     channel_read_only: 'This conversation is read-only.',

@@ -191,8 +191,12 @@ func (s *Service) issueSubmissions(ctx context.Context, repos repositories.Repos
 	}
 	submissions := make([]IssueSubmission, 0, len(rows))
 	for _, submission := range rows {
+		name, err := domain.CardName(submission.DisplayName)
+		if err != nil {
+			return nil, err
+		}
 		view := IssueSubmission{
-			ID: submission.ID, Relationship: submission.RelationshipID, DisplayName: submission.DisplayName, Status: submission.Status,
+			ID: submission.ID, Relationship: submission.RelationshipID, DisplayName: name, Status: submission.Status,
 			Late: submission.Late, FirstSubmittedAt: submission.FirstSubmittedAt, SubmittedAt: submission.SubmittedAt,
 			CheckedAt: submission.CheckedAt, FinalPoints: submission.FinalPoints, IssuedBeforeReclaim: submission.IssuedBeforeReclaim,
 			HasDraft: submission.HasDraft,

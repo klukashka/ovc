@@ -1,10 +1,11 @@
 -- name: CreateRelationship :exec
 INSERT INTO relationships (
-    id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key,
+    id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, email_set_at, colour, notes, create_key,
     linked_at, ended_at, discarded_at, created_at, updated_at
 ) VALUES (
-    @id, @tutor_id, @student_id, @state, @discard_reason, @ended_by, @display_name, @email, @colour, @notes, @create_key,
-    @linked_at, @ended_at, @discarded_at, @created_at, @created_at
+    @id, @tutor_id, @student_id, @state, @discard_reason, @ended_by, sqlc.arg(display_name)::text, sqlc.narg(email)::citext,
+    CASE WHEN sqlc.narg(email)::citext IS NULL THEN NULL ELSE sqlc.arg(created_at)::timestamptz END, @colour, @notes, @create_key,
+    @linked_at, @ended_at, @discarded_at, sqlc.arg(created_at)::timestamptz, sqlc.arg(created_at)::timestamptz
 );
 
 -- name: GetTutorRelationship :one
@@ -37,14 +38,14 @@ LIMIT sqlc.arg(row_limit);
 -- name: RemoveRelationship :one
 UPDATE relationships
 SET state = 'discarded', discard_reason = 'removed', discarded_at = sqlc.arg(now)::timestamptz, notes = '', email = NULL,
-    updated_at = sqlc.arg(now)::timestamptz
+    email_set_at = NULL, display_name = NULL, updated_at = sqlc.arg(now)::timestamptz
 FROM (
-    SELECT locked.id, locked.email, locked.notes FROM relationships AS locked
+    SELECT locked.id, locked.display_name, locked.email, locked.notes FROM relationships AS locked
     WHERE locked.id = @id AND locked.tutor_id = @tutor_id
     FOR UPDATE
 ) AS removed
 WHERE relationships.id = removed.id AND relationships.state IN ('provisional', 'reclaim_pending')
-RETURNING relationships.id, relationships.tutor_id, relationships.student_id, relationships.display_name, removed.email, removed.notes;
+RETURNING relationships.id, relationships.tutor_id, relationships.student_id, removed.display_name, removed.email, removed.notes;
 
 -- name: GetTutorRelationshipByCreateKey :one
 SELECT * FROM relationships WHERE tutor_id = @tutor_id AND create_key = @create_key;
@@ -57,12 +58,20 @@ SELECT * FROM relationships WHERE id = @id AND tutor_id = @tutor_id FOR UPDATE;
 
 -- name: UpdateCardText :execrows
 UPDATE relationships
-SET display_name = @display_name, email = @email, notes = @notes, updated_at = sqlc.arg(now)::timestamptz
+SET display_name = sqlc.arg(display_name)::text, email = sqlc.narg(email)::citext, notes = sqlc.arg(notes)::text,
+    email_set_at = CASE
+        WHEN sqlc.narg(email)::citext IS NULL THEN NULL
+        WHEN relationships.email IS NOT DISTINCT FROM sqlc.narg(email)::citext THEN relationships.email_set_at
+        ELSE sqlc.arg(now)::timestamptz
+    END,
+    email_erased_at = CASE WHEN sqlc.narg(email)::citext IS NULL THEN relationships.email_erased_at END,
+    updated_at = sqlc.arg(now)::timestamptz
 WHERE id = @id AND tutor_id = @tutor_id AND state <> 'discarded';
 
 -- name: WithdrawCard :execrows
 UPDATE relationships
-SET state = 'discarded', discard_reason = 'withdrawn', discarded_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+SET state = 'discarded', discard_reason = 'withdrawn', discarded_at = sqlc.arg(now)::timestamptz, display_name = NULL, email = NULL,
+    email_set_at = NULL, email_erased_at = NULL, notes = '', updated_at = sqlc.arg(now)::timestamptz
 WHERE id = @id AND tutor_id = @tutor_id AND state = 'invited';
 
 -- name: ListCardAccounts :many
@@ -83,7 +92,7 @@ ORDER BY group_members.relationship_id, groups.name, groups.id;
 
 -- name: LinkInvitedRelationship :execrows
 UPDATE relationships
-SET state = @state, student_id = @student_id, colour = @colour, linked_at = sqlc.arg(now)::timestamptz,
+SET state = @state, student_id = @student_id, colour = @colour, linked_at = sqlc.arg(now)::timestamptz, email_erased_at = NULL,
     updated_at = sqlc.arg(now)::timestamptz
 WHERE id = @id AND state = 'invited';
 
@@ -108,7 +117,7 @@ SET state = 'discarded', discard_reason = 'student_purged', discarded_at = sqlc.
 WHERE student_id = @student_id AND state <> 'discarded';
 
 -- name: ClearPurgedStudentFromRelationships :execrows
-UPDATE relationships SET student_id = NULL, email = NULL, updated_at = sqlc.arg(now)::timestamptz
+UPDATE relationships SET student_id = NULL, email = NULL, email_set_at = NULL, updated_at = sqlc.arg(now)::timestamptz
 WHERE student_id = @student_id;
 
 -- name: StudentHoldsProvisionalRelationship :one
@@ -122,7 +131,8 @@ FOR UPDATE;
 
 -- name: MergeInvitedCard :execrows
 UPDATE relationships
-SET state = 'discarded', discard_reason = 'merged', discarded_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+SET state = 'discarded', discard_reason = 'merged', discarded_at = sqlc.arg(now)::timestamptz, display_name = NULL, email = NULL,
+    email_set_at = NULL, email_erased_at = NULL, notes = '', updated_at = sqlc.arg(now)::timestamptz
 WHERE id = @id AND tutor_id = @tutor_id AND state = 'invited';
 
 -- name: ActivateLinkedRelationship :execrows
@@ -208,7 +218,7 @@ SELECT id FROM relationships WHERE tutor_id = @tutor_id AND state <> 'discarded'
 
 -- name: DiscardRelationshipsForTutorDeletion :many
 UPDATE relationships
-SET state = 'discarded', discard_reason = 'tutor_deleted', discarded_at = sqlc.arg(now)::timestamptz,
+SET state = 'discarded', discard_reason = 'tutor_deleted', discarded_at = sqlc.arg(now)::timestamptz, email_erased_at = NULL,
     updated_at = sqlc.arg(now)::timestamptz
 FROM (
     SELECT locked.id, locked.state FROM relationships AS locked
@@ -251,3 +261,20 @@ SELECT * FROM relationships WHERE student_id = @student_id ORDER BY id FOR UPDAT
 
 -- name: TutorHasCard :one
 SELECT EXISTS (SELECT 1 FROM relationships WHERE tutor_id = @tutor_id AND state <> 'discarded')::boolean;
+
+-- name: ListCardsDueForEmailErasure :many
+SELECT id, tutor_id, email_set_at FROM relationships
+WHERE state = 'invited' AND email IS NOT NULL
+    AND email_set_at <= sqlc.arg(due_before)::timestamptz
+    AND (
+        sqlc.narg(after_set_at)::timestamptz IS NULL
+        OR (email_set_at, id) > (sqlc.narg(after_set_at)::timestamptz, sqlc.narg(after_id)::uuid)
+    )
+ORDER BY email_set_at, id
+LIMIT sqlc.arg(row_limit);
+
+-- name: EraseCardEmail :execrows
+UPDATE relationships
+SET email = NULL, email_set_at = NULL, email_erased_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND tutor_id = @tutor_id AND state = 'invited' AND email IS NOT NULL
+    AND email_set_at <= sqlc.arg(due_before)::timestamptz;

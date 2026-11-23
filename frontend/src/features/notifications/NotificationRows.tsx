@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import type { TFunction } from 'i18next';
 import { type ReactElement, type Ref, type RefObject, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
@@ -113,7 +114,7 @@ function Label({ item }: { readonly item: Notification }): ReactElement | null {
   if (item.label_deleted) {
     return <span className="text-strong">{t('notifications.deletedAccount')}</span>;
   }
-  const label = item.label ?? (item.label_kind === 'group' ? t('notifications.groupLesson') : null);
+  const label = item.label ?? fixedLabel(t, item.label_kind);
   if (label === null) {
     return null;
   }
@@ -374,4 +375,15 @@ export function MarkAllRead({ newest }: { readonly newest: Notification }): Reac
       <Refusal state={action.state} />
     </div>
   );
+}
+
+function fixedLabel(t: TFunction, kind: Notification['label_kind']): string | null {
+  switch (kind) {
+    case 'group':
+      return t('notifications.groupLesson');
+    case 'removed_student':
+      return t('lesson.removed_student');
+    case null:
+      return null;
+  }
 }

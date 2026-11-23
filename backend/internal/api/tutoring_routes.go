@@ -615,6 +615,8 @@ func (r *router) tutoringError(ctx context.Context, event string, err error) err
 		return NewError(ctx, domain.ErrorRelationshipNotActive)
 	case errors.Is(err, tutoring.ErrRelationshipNotProvisional):
 		return NewError(ctx, domain.ErrorRelationshipNotProvisional)
+	case errors.Is(err, tutoring.ErrEmailErased):
+		return NewError(ctx, domain.ErrorEmailErased)
 	case errors.As(err, &invalid):
 		fields := make([]schemas.FieldError, 0, len(invalid.Fields))
 		for _, field := range invalid.Fields {
@@ -632,7 +634,7 @@ func (r *router) tutoringError(ctx context.Context, event string, err error) err
 
 func cardFieldsBody(card tutoring.Card) schemas.CardFields {
 	summary := schemas.CardFields{
-		ID: card.ID.String(), State: card.State, DisplayName: card.DisplayName, Email: card.Email,
+		ID: card.ID.String(), State: card.State, DisplayName: card.DisplayName, Email: card.Email, EmailErased: card.EmailErased,
 		Groups: make([]schemas.CardGroup, 0, len(card.Groups)), LinkedAt: utc(card.LinkedAt), EndedAt: utc(card.EndedAt),
 		EndedBy: card.EndedBy, CreatedAt: card.CreatedAt.UTC(),
 	}

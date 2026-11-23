@@ -20,7 +20,7 @@ type Notification struct {
 	ReadAt       *time.Time               `json:"read_at" nullable:"true"`
 	Label        *string                  `json:"label" nullable:"true"`
 	LabelDeleted bool                     `json:"label_deleted"`
-	LabelKind    *domain.LabelKind        `json:"label_kind" enum:"group" nullable:"true"`
+	LabelKind    *domain.LabelKind        `json:"label_kind" enum:"group,removed_student" nullable:"true"`
 	Colour       *domain.Colour           `json:"colour" enum:"clay,slate,moss,plum,ochre,teal,rust,ink" nullable:"true"`
 	Link         *NotificationLink        `json:"link"`
 }

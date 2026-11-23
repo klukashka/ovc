@@ -339,12 +339,16 @@ func (s *Service) removeLink(
 			return repositories.Relationship{}, lessonEffects{}, err
 		}
 	}
+	name, err := domain.CardName(discarded.DisplayName)
+	if err != nil {
+		return repositories.Relationship{}, lessonEffects{}, err
+	}
 	id, err := core.NewID[domain.RelationshipID](s.deps.Random)
 	if err != nil {
 		return repositories.Relationship{}, lessonEffects{}, err
 	}
 	err = repos.Relationships.Create(ctx, repositories.NewRelationship{
-		ID: id, TutorID: link.TutorID, State: domain.RelationshipInvited, DisplayName: discarded.DisplayName, Email: discarded.Email,
+		ID: id, TutorID: link.TutorID, State: domain.RelationshipInvited, DisplayName: name, Email: discarded.Email,
 		Notes: discarded.Notes, CreatedAt: now,
 	})
 	if err != nil {

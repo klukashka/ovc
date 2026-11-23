@@ -43,7 +43,7 @@ type purgedRow struct {
 	State         string
 	StudentID     *string
 	Email         *string
-	DisplayName   string
+	DisplayName   *string
 	Notes         string
 	DiscardReason *string
 	EndedBy       *string
@@ -86,8 +86,8 @@ func (h *authHarness) regeneratedLink(t *testing.T, token string, card string) s
 func (h *authHarness) seedInvitedCards(t *testing.T, tutor domain.UserID, count int) {
 	t.Helper()
 	_, err := h.database.Pool.Exec(context.Background(), `
-INSERT INTO relationships (id, tutor_id, state, display_name, email, notes, created_at, updated_at)
-SELECT gen_random_uuid(), $1, 'invited', $2 || n, 'seeded-' || n || '@example.org', 'Seeded notes', $3, $3
+INSERT INTO relationships (id, tutor_id, state, display_name, email, email_set_at, notes, created_at, updated_at)
+SELECT gen_random_uuid(), $1, 'invited', $2 || n, 'seeded-' || n || '@example.org', $3, 'Seeded notes', $3, $3
 FROM generate_series(1, $4::int) AS n`, tutor, seededCardPrefix, authStart, count)
 	if err != nil {
 		t.Fatal(err)
@@ -355,7 +355,7 @@ func TestPurgeOfStudentKeepsTheTutorsHistoryUnderTheCardName(t *testing.T) {
 	if stored.State != "discarded" || stored.DiscardReason == nil || *stored.DiscardReason != "student_purged" || stored.StudentID != nil || stored.Email != nil {
 		t.Fatalf("the purged student's relationship is %+v", stored)
 	}
-	if stored.DisplayName != cardName || stored.Notes != cardNotes || stored.EndedBy == nil || *stored.EndedBy != "deletion" || stored.EndedAt == nil {
+	if stored.DisplayName == nil || *stored.DisplayName != cardName || stored.Notes != cardNotes || stored.EndedBy == nil || *stored.EndedBy != "deletion" || stored.EndedAt == nil {
 		t.Fatalf("the tutor's history lost its card name, notes or ending: %+v", stored)
 	}
 	if h.userExists(t, studentEmail) {

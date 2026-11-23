@@ -320,6 +320,7 @@ func newAuthHarnessWithDatabase(
 		{Name: domain.JobEmailRequestsCleanup, Every: time.Hour, Run: accounts.CleanupEmailRequests(store)},
 		{Name: domain.JobInvitationsExpire, Every: time.Hour, Run: tutoringService.ExpireInvitations},
 		{Name: domain.JobReclaimExpire, Every: time.Hour, Run: tutoringService.ExpireReclaims},
+		{Name: domain.JobCardsEraseEmails, Every: time.Hour, Run: tutoringService.EraseCardEmails},
 		{Name: domain.JobJoinRequestsExpire, Every: time.Hour, Run: tutoringService.ExpireJoinRequests},
 		{Name: domain.JobNotificationsCleanup, Every: time.Hour, Run: inbox.Cleanup},
 		{Name: domain.JobMessagesDigest, Every: time.Minute, Run: chatService.QueueDigests},

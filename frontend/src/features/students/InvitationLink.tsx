@@ -55,6 +55,7 @@ export function InvitationLink({
   onRegenerated,
   onSent,
   onStale,
+  onErased,
 }: {
   readonly cardId: string;
   readonly invitation: CardInvitation;
@@ -63,6 +64,7 @@ export function InvitationLink({
   readonly onRegenerated?: (invitation: CardInvitation) => void;
   readonly onSent: () => void;
   readonly onStale?: () => void;
+  readonly onErased?: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
@@ -70,6 +72,9 @@ export function InvitationLink({
   const action = useAction((state) => {
     if (showsStaleData(state)) {
       onStale?.();
+    }
+    if (state.kind === 'refused' && state.error.code === 'email_erased') {
+      onErased?.();
     }
   });
   const [notice, setNotice] = useState<Notice>(initialNotice);

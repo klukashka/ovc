@@ -222,3 +222,28 @@ describe('the notification rows after their event texts fail to load', () => {
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Notifications' }));
   });
 });
+
+describe('the label of a notification row', () => {
+  test('a card whose name was erased is labelled with the fixed removed student text, not a name', async () => {
+    const loaders = new ControlledLoaders();
+    const removed: Notification = {
+      ...homeworkRow('invitation.accepted', 1),
+      label: null,
+      label_kind: 'removed_student',
+      link: null,
+    };
+    await showRows(
+      <NotificationList
+        items={[homeworkRow('issue.created', 0), removed]}
+        label="Notifications"
+        onChoose={() => undefined}
+        focusIfLost={focusHeadingIfLost}
+        textLoaders={loaders.loaders}
+      />,
+    );
+
+    await loaders.load();
+
+    expect(screen.getByText('Removed student')).toBeDefined();
+  });
+});

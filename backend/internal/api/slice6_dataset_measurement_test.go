@@ -28,9 +28,9 @@ source.consent_version, source.consent_at, source.unverified_since, source.creat
 FROM users AS source CROSS JOIN generate_series($2::integer, $3::integer) AS series(seq) WHERE source.id = $1::uuid`
 
 const measurementRelationships = `INSERT INTO relationships
-(id, tutor_id, student_id, state, display_name, email, colour, linked_at, created_at, updated_at)
+(id, tutor_id, student_id, state, display_name, email, email_set_at, colour, linked_at, created_at, updated_at)
 SELECT md5('measurement-relationship-' || seq)::uuid, $1::uuid, md5('measurement-student-' || seq)::uuid,
-'active', 'Synthetic student', 'measurement-' || seq || '@example.org', 'moss', $4::timestamptz, $4::timestamptz, $4::timestamptz
+'active', 'Synthetic student', 'measurement-' || seq || '@example.org', $4::timestamptz, 'moss', $4::timestamptz, $4::timestamptz, $4::timestamptz
 FROM generate_series($2::integer, $3::integer) AS series(seq)`
 
 const measurementChannels = `INSERT INTO channels

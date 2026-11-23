@@ -97,8 +97,12 @@ func (s *Service) tutorWork(ctx context.Context, repos repositories.Repositories
 	if err != nil {
 		return TutorWork{}, err
 	}
+	name, err := domain.CardName(row.DisplayName)
+	if err != nil {
+		return TutorWork{}, err
+	}
 	work := TutorWork{
-		ID: row.ID, Issue: row.IssueID, Relationship: row.RelationshipID, DisplayName: row.DisplayName, Title: row.Title,
+		ID: row.ID, Issue: row.IssueID, Relationship: row.RelationshipID, DisplayName: name, Title: row.Title,
 		Status: row.Status, Late: row.Late, IssuedBeforeReclaim: row.IssuedBeforeReclaim, Deadline: row.DeadlineAt,
 		FirstSubmittedAt: row.FirstSubmittedAt, SubmittedAt: row.SubmittedAt, CheckedAt: row.CheckedAt, Version: row.Version,
 		Policy: row.AnswerPolicy, Blocks: blocks, Answers: make([]TutorAnswer, 0, len(answers)), Revisions: revisions,

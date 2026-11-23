@@ -765,7 +765,7 @@ type ListGroupLessonMembersParams struct {
 
 type ListGroupLessonMembersRow struct {
 	GroupID      domain.GroupID
-	DisplayName  string
+	DisplayName  *string
 	AccountState string
 }
 
@@ -972,7 +972,7 @@ type ListRosterLessonMembersParams struct {
 
 type ListRosterLessonMembersRow struct {
 	LessonID     domain.LessonID
-	DisplayName  string
+	DisplayName  *string
 	AccountState string
 }
 

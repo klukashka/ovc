@@ -20,6 +20,7 @@ const invitedCard: StudentCard = {
   state: 'invited',
   display_name: 'Анна',
   email: 'anna@example.org',
+  email_erased: false,
   account: null,
   groups: [],
   notes: '',
@@ -64,6 +65,7 @@ async function show(card: StudentCard): Promise<void> {
     onChangedElsewhere: (): void => undefined,
     onDialog: (): void => undefined,
     onLeaving: (): void => undefined,
+    onEnterEmail: (): void => undefined,
   };
   const router = createMemoryRouter([{ path: '*', element: <StudentCardView card={card} handlers={handlers} /> }], {
     initialEntries: [`/students/${card.id}`],
@@ -273,6 +275,20 @@ describe('the student card', () => {
     expect(screen.queryByText(/\/invite\//)).toBeNull();
   });
 
+  test('an invited card whose email was erased explains it and offers only to enter an email', async () => {
+    await show({ ...invitedCard, email: null, email_erased: true, invitation: null });
+
+    const names = buttonNames();
+
+    expect(
+      screen.getByText(
+        'Почта удалена, потому что приглашение не приняли за 90 дней, и ссылка больше не работает. Укажите почту, чтобы создать новую ссылку.',
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText(/\/invite\//)).toBeNull();
+    expect(names).toEqual(['Действия с карточкой', 'Указать почту']);
+  });
+
   test('an active card shows the account and groups with no state word, link or withdrawal, and can be ended', async () => {
     await show(activeCard);
 
@@ -379,6 +395,21 @@ describe('the student card page', () => {
       expect(queryClient.getQueryData(studentCardKey(card.id))).toBeUndefined();
     });
     expect(screen.queryByText(card.invitation?.url ?? '')).toBeNull();
+  });
+
+  test('a new link refused because the email was erased meanwhile reloads the card under the focused changed notice', async () => {
+    const shown = await showLoadedCard();
+    shown.server.eraseCardEmail(shown.card.id);
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Создать новую ссылку' }).click();
+      await Promise.resolve();
+    });
+    const notice = await screen.findByText('Карточка тем временем изменилась. Ниже — её текущее состояние.');
+    await screen.findByRole('button', { name: 'Указать почту' });
+
+    expect(document.activeElement).toBe(notice);
+    expect(screen.queryByRole('button', { name: 'Создать новую ссылку' })).toBeNull();
   });
 
   test('keeps unsaved typing and the loaded card when a background refetch fails, with a polite notice', async () => {

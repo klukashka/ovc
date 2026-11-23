@@ -107,8 +107,8 @@ func TestHomeworkCleanupIdleUsesTwoMarkedRowProbes(t *testing.T) {
 func (f erasureFixture) spreadIssuesOverCards(t *testing.T) {
 	t.Helper()
 	h := f.h
-	if _, err := h.database.Pool.Exec(t.Context(), `INSERT INTO relationships (id, tutor_id, state, display_name, email, notes, created_at, updated_at)
- SELECT gen_random_uuid(), $1, 'invited', 'Spread ' || n, 'spread-' || n || '@example.org', '', $2, $2 FROM generate_series(1, 2000) AS n`,
+	if _, err := h.database.Pool.Exec(t.Context(), `INSERT INTO relationships (id, tutor_id, state, display_name, email, email_set_at, notes, created_at, updated_at)
+ SELECT gen_random_uuid(), $1, 'invited', 'Spread ' || n, 'spread-' || n || '@example.org', $2, '', $2, $2 FROM generate_series(1, 2000) AS n`,
 		f.tutor, h.now(t)); err != nil {
 		t.Fatal(err)
 	}

@@ -35,6 +35,14 @@ var (
 	ErrNotEditable           = errors.New("the card's email can be changed only while it is invited")
 	ErrRelationshipNotActive = errors.New("the card is not in a state that allows this")
 	ErrInvitationNotFound    = errors.New("the invitation is not usable")
+	ErrEmailErased           = errors.New("the card's email was erased and no email was entered since")
+)
+
+type erasureRefusal string
+
+const (
+	refusedRegenerate erasureRefusal = "regenerate"
+	refusedSend       erasureRefusal = "send"
 )
 
 type StudentExistsError struct {
@@ -82,6 +90,7 @@ type Card struct {
 	State       domain.RelationshipState
 	DisplayName string
 	Email       *string
+	EmailErased bool
 	Account     *CardAccount
 	Groups      []CardGroup
 	Notes       string
@@ -417,7 +426,9 @@ func (s *Service) applyChange(
 			email = &normalized
 		}
 		emailChanged = !sameEmail(row.Email, email)
-		updated.Email = email
+		if emailChanged {
+			updated.Email = email
+		}
 	}
 	if emailChanged {
 		if row.State != domain.RelationshipInvited {
@@ -430,17 +441,22 @@ func (s *Service) applyChange(
 		}
 		changed = append(changed, "email")
 	}
+	name, err := domain.CardName(row.DisplayName)
+	if err != nil {
+		return row, nil, err
+	}
 	if change.DisplayName != nil {
-		updated.DisplayName = strings.TrimSpace(*change.DisplayName)
-		if updated.DisplayName != row.DisplayName {
+		name = strings.TrimSpace(*change.DisplayName)
+		if name != *row.DisplayName {
 			changed = append(changed, "display_name")
 		}
 	}
+	updated.DisplayName = &name
 	if change.Notes != nil && *change.Notes != row.Notes {
 		updated.Notes = *change.Notes
 		changed = append(changed, "notes")
 	}
-	problems := cardProblems(updated.DisplayName, changedEmail(emailChanged, updated.Email))
+	problems := cardProblems(name, changedEmail(emailChanged, updated.Email))
 	if change.Notes != nil && strings.ContainsFunc(*change.Notes, controlOtherThanLineFeedOrTab) {
 		problems = append(problems, FieldProblem{Path: fieldNotes, Code: domain.FieldInvalid})
 	}
@@ -456,7 +472,7 @@ func (s *Service) applyChange(
 		}
 	}
 	applied, err := repos.Relationships.UpdateText(ctx, repositories.CardText{
-		DisplayName: updated.DisplayName, Email: updated.Email, Notes: updated.Notes, Now: now, ID: row.ID, TutorID: row.TutorID,
+		DisplayName: name, Email: updated.Email, Notes: updated.Notes, Now: now, ID: row.ID, TutorID: row.TutorID,
 	})
 	if err != nil {
 		return row, nil, err
@@ -470,6 +486,12 @@ func (s *Service) applyChange(
 		}
 	}
 	updated.UpdatedAt = now
+	if emailChanged && updated.Email != nil {
+		updated.EmailSetAt, updated.EmailErasedAt = &now, nil
+	}
+	if emailChanged && updated.Email == nil {
+		updated.EmailSetAt = nil
+	}
 	if emailChanged {
 		if err := s.replaceInvitation(ctx, repos, updated, domain.RevokeEmailChanged, now); err != nil {
 			return row, nil, err
@@ -560,6 +582,9 @@ func (s *Service) RegenerateInvitation(ctx context.Context, actor domain.TutorAc
 		if !domain.CardTakesInvitations(row.State) {
 			return ErrRelationshipNotActive
 		}
+		if row.EmailErasedAt != nil {
+			return ErrEmailErased
+		}
 		if err := s.reserve(ctx, repos, regenerationLimit, tutor, now); err != nil {
 			return err
 		}
@@ -572,6 +597,9 @@ func (s *Service) RegenerateInvitation(ctx context.Context, actor domain.TutorAc
 		issued, err = s.invitationView(ctx, repos, row, now)
 		return err
 	})
+	if errors.Is(err, ErrEmailErased) {
+		s.logErasureRefusal(ctx, tutor, id, refusedRegenerate)
+	}
 	if err != nil {
 		return CardInvitation{}, err
 	}
@@ -655,8 +683,12 @@ func (s *Service) cardViews(ctx context.Context, repos repositories.Repositories
 	}
 	cards := make([]Card, 0, len(rows))
 	for _, row := range rows {
+		name, err := domain.CardName(row.DisplayName)
+		if err != nil {
+			return nil, err
+		}
 		card := Card{
-			ID: row.ID, State: row.State, DisplayName: row.DisplayName, Email: row.Email, Groups: groupsOf[row.ID],
+			ID: row.ID, State: row.State, DisplayName: name, Email: row.Email, EmailErased: row.EmailErasedAt != nil, Groups: groupsOf[row.ID],
 			LinkedAt: row.LinkedAt, EndedAt: row.EndedAt, EndedBy: row.EndedBy, CreatedAt: row.CreatedAt,
 		}
 		if row.StudentID != nil && domain.CardShowsAccount(row.State) {
@@ -693,7 +725,7 @@ func (s *Service) accounts(ctx context.Context, repos repositories.Repositories,
 }
 
 func (s *Service) invitationView(ctx context.Context, repos repositories.Repositories, card repositories.Relationship, now time.Time) (*CardInvitation, error) {
-	if !domain.CardTakesInvitations(card.State) {
+	if !domain.CardTakesInvitations(card.State) || card.EmailErasedAt != nil {
 		return nil, nil
 	}
 	latest, err := repos.Invitations.LatestOf(ctx, card.ID)
@@ -783,4 +815,9 @@ func (s *Service) ExpireInvitations(ctx context.Context, now time.Time) (int64, 
 
 func cardAttributes(tutor domain.UserID, card domain.RelationshipID) []slog.Attr {
 	return []slog.Attr{slog.String("tutor_id", tutor.String()), slog.String("relationship_id", card.String())}
+}
+
+func (s *Service) logErasureRefusal(ctx context.Context, tutor domain.UserID, card domain.RelationshipID, action erasureRefusal) {
+	attributes := append(cardAttributes(tutor, card), slog.String("action", string(action)))
+	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "invitation.email_erased_refused", attributes...)
 }

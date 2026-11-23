@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"errors"
 	"strings"
 	"time"
 	"unicode"
@@ -68,7 +69,17 @@ const (
 	RevokeRemoved       RevokeReason = "removed"
 	RevokeTutorDeleted  RevokeReason = "tutor_deleted"
 	RevokeExpiredOnSend RevokeReason = "expired_on_send"
+	RevokeEmailErased   RevokeReason = "email_erased"
 )
+
+var ErrCardNameErased = errors.New("a card that must be in scope has an erased display name")
+
+func CardName(name *string) (string, error) {
+	if name == nil {
+		return "", ErrCardNameErased
+	}
+	return *name, nil
+}
 
 const InvitationMismatchLimit int16 = 5
 

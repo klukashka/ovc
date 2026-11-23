@@ -79,6 +79,7 @@ type CardFields struct {
 	State       domain.RelationshipState `json:"state" enum:"invited,provisional,reclaim_pending,active,ended"`
 	DisplayName string                   `json:"display_name"`
 	Email       *string                  `json:"email" nullable:"true"`
+	EmailErased bool                     `json:"email_erased"`
 	Account     *CardAccount             `json:"account"`
 	Groups      []CardGroup              `json:"groups" nullable:"false"`
 	LinkedAt    *time.Time               `json:"linked_at" nullable:"true"`

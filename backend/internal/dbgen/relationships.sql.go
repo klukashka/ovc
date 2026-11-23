@@ -60,7 +60,7 @@ func (q *Queries) ActivateProvisionalRelationship(ctx context.Context, arg Activ
 }
 
 const clearPurgedStudentFromRelationships = `-- name: ClearPurgedStudentFromRelationships :execrows
-UPDATE relationships SET student_id = NULL, email = NULL, updated_at = $1::timestamptz
+UPDATE relationships SET student_id = NULL, email = NULL, email_set_at = NULL, updated_at = $1::timestamptz
 WHERE student_id = $2
 `
 
@@ -79,11 +79,12 @@ func (q *Queries) ClearPurgedStudentFromRelationships(ctx context.Context, arg C
 
 const createRelationship = `-- name: CreateRelationship :exec
 INSERT INTO relationships (
-    id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key,
+    id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, email_set_at, colour, notes, create_key,
     linked_at, ended_at, discarded_at, created_at, updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-    $12, $13, $14, $15, $15
+    $1, $2, $3, $4, $5, $6, $7::text, $8::citext,
+    CASE WHEN $8::citext IS NULL THEN NULL ELSE $9::timestamptz END, $10, $11, $12,
+    $13, $14, $15, $9::timestamptz, $9::timestamptz
 )
 `
 
@@ -96,13 +97,13 @@ type CreateRelationshipParams struct {
 	EndedBy       *domain.EndedBy
 	DisplayName   string
 	Email         *string
+	CreatedAt     time.Time
 	Colour        *domain.Colour
 	Notes         string
 	CreateKey     *string
 	LinkedAt      *time.Time
 	EndedAt       *time.Time
 	DiscardedAt   *time.Time
-	CreatedAt     time.Time
 }
 
 func (q *Queries) CreateRelationship(ctx context.Context, arg CreateRelationshipParams) error {
@@ -115,13 +116,13 @@ func (q *Queries) CreateRelationship(ctx context.Context, arg CreateRelationship
 		arg.EndedBy,
 		arg.DisplayName,
 		arg.Email,
+		arg.CreatedAt,
 		arg.Colour,
 		arg.Notes,
 		arg.CreateKey,
 		arg.LinkedAt,
 		arg.EndedAt,
 		arg.DiscardedAt,
-		arg.CreatedAt,
 	)
 	return err
 }
@@ -222,7 +223,7 @@ func (q *Queries) DeleteTutorRelationshipsBatch(ctx context.Context, arg DeleteT
 
 const discardRelationshipsForTutorDeletion = `-- name: DiscardRelationshipsForTutorDeletion :many
 UPDATE relationships
-SET state = 'discarded', discard_reason = 'tutor_deleted', discarded_at = $1::timestamptz,
+SET state = 'discarded', discard_reason = 'tutor_deleted', discarded_at = $1::timestamptz, email_erased_at = NULL,
     updated_at = $1::timestamptz
 FROM (
     SELECT locked.id, locked.state FROM relationships AS locked
@@ -295,7 +296,7 @@ const endRelationship = `-- name: EndRelationship :one
 UPDATE relationships
 SET state = 'ended', ended_by = $1::text, ended_at = $2::timestamptz, updated_at = $2::timestamptz
 WHERE id = $3 AND tutor_id = $4 AND state = 'active'
-RETURNING id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at
+RETURNING id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at, email_set_at, email_erased_at
 `
 
 type EndRelationshipParams struct {
@@ -330,6 +331,8 @@ func (q *Queries) EndRelationship(ctx context.Context, arg EndRelationshipParams
 		&i.DiscardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmailSetAt,
+		&i.EmailErasedAt,
 	)
 	return i, err
 }
@@ -372,8 +375,35 @@ func (q *Queries) EndRelationshipsForTutorDeletion(ctx context.Context, arg EndR
 	return items, nil
 }
 
+const eraseCardEmail = `-- name: EraseCardEmail :execrows
+UPDATE relationships
+SET email = NULL, email_set_at = NULL, email_erased_at = $1::timestamptz, updated_at = $1::timestamptz
+WHERE id = $2 AND tutor_id = $3 AND state = 'invited' AND email IS NOT NULL
+    AND email_set_at <= $4::timestamptz
+`
+
+type EraseCardEmailParams struct {
+	Now       time.Time
+	ID        domain.RelationshipID
+	TutorID   domain.UserID
+	DueBefore time.Time
+}
+
+func (q *Queries) EraseCardEmail(ctx context.Context, arg EraseCardEmailParams) (int64, error) {
+	result, err := q.db.Exec(ctx, eraseCardEmail,
+		arg.Now,
+		arg.ID,
+		arg.TutorID,
+		arg.DueBefore,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getRelationship = `-- name: GetRelationship :one
-SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE id = $1
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at, email_set_at, email_erased_at FROM relationships WHERE id = $1
 `
 
 func (q *Queries) GetRelationship(ctx context.Context, id domain.RelationshipID) (Relationship, error) {
@@ -396,6 +426,8 @@ func (q *Queries) GetRelationship(ctx context.Context, id domain.RelationshipID)
 		&i.DiscardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmailSetAt,
+		&i.EmailErasedAt,
 	)
 	return i, err
 }
@@ -417,7 +449,7 @@ func (q *Queries) GetTutorCardIDByEmail(ctx context.Context, arg GetTutorCardIDB
 }
 
 const getTutorRelationship = `-- name: GetTutorRelationship :one
-SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE id = $1 AND tutor_id = $2 AND state <> 'discarded'
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at, email_set_at, email_erased_at FROM relationships WHERE id = $1 AND tutor_id = $2 AND state <> 'discarded'
 `
 
 type GetTutorRelationshipParams struct {
@@ -445,12 +477,14 @@ func (q *Queries) GetTutorRelationship(ctx context.Context, arg GetTutorRelation
 		&i.DiscardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmailSetAt,
+		&i.EmailErasedAt,
 	)
 	return i, err
 }
 
 const getTutorRelationshipByCreateKey = `-- name: GetTutorRelationshipByCreateKey :one
-SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE tutor_id = $1 AND create_key = $2
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at, email_set_at, email_erased_at FROM relationships WHERE tutor_id = $1 AND create_key = $2
 `
 
 type GetTutorRelationshipByCreateKeyParams struct {
@@ -478,12 +512,14 @@ func (q *Queries) GetTutorRelationshipByCreateKey(ctx context.Context, arg GetTu
 		&i.DiscardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmailSetAt,
+		&i.EmailErasedAt,
 	)
 	return i, err
 }
 
 const getTutorRelationshipOfStudent = `-- name: GetTutorRelationshipOfStudent :one
-SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE tutor_id = $1 AND student_id = $2 AND state <> 'discarded'
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at, email_set_at, email_erased_at FROM relationships WHERE tutor_id = $1 AND student_id = $2 AND state <> 'discarded'
 `
 
 type GetTutorRelationshipOfStudentParams struct {
@@ -511,13 +547,15 @@ func (q *Queries) GetTutorRelationshipOfStudent(ctx context.Context, arg GetTuto
 		&i.DiscardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmailSetAt,
+		&i.EmailErasedAt,
 	)
 	return i, err
 }
 
 const linkInvitedRelationship = `-- name: LinkInvitedRelationship :execrows
 UPDATE relationships
-SET state = $1, student_id = $2, colour = $3, linked_at = $4::timestamptz,
+SET state = $1, student_id = $2, colour = $3, linked_at = $4::timestamptz, email_erased_at = NULL,
     updated_at = $4::timestamptz
 WHERE id = $5 AND state = 'invited'
 `
@@ -647,6 +685,56 @@ func (q *Queries) ListCardGroups(ctx context.Context, arg ListCardGroupsParams) 
 			&i.Name,
 			&i.Colour,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCardsDueForEmailErasure = `-- name: ListCardsDueForEmailErasure :many
+SELECT id, tutor_id, email_set_at FROM relationships
+WHERE state = 'invited' AND email IS NOT NULL
+    AND email_set_at <= $1::timestamptz
+    AND (
+        $2::timestamptz IS NULL
+        OR (email_set_at, id) > ($2::timestamptz, $3::uuid)
+    )
+ORDER BY email_set_at, id
+LIMIT $4
+`
+
+type ListCardsDueForEmailErasureParams struct {
+	DueBefore  time.Time
+	AfterSetAt *time.Time
+	AfterID    pgtype.UUID
+	RowLimit   int32
+}
+
+type ListCardsDueForEmailErasureRow struct {
+	ID         domain.RelationshipID
+	TutorID    domain.UserID
+	EmailSetAt *time.Time
+}
+
+func (q *Queries) ListCardsDueForEmailErasure(ctx context.Context, arg ListCardsDueForEmailErasureParams) ([]ListCardsDueForEmailErasureRow, error) {
+	rows, err := q.db.Query(ctx, listCardsDueForEmailErasure,
+		arg.DueBefore,
+		arg.AfterSetAt,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCardsDueForEmailErasureRow
+	for rows.Next() {
+		var i ListCardsDueForEmailErasureRow
+		if err := rows.Scan(&i.ID, &i.TutorID, &i.EmailSetAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -815,7 +903,7 @@ func (q *Queries) ListStudentTutors(ctx context.Context, arg ListStudentTutorsPa
 }
 
 const listTutorRelationships = `-- name: ListTutorRelationships :many
-SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at, email_set_at, email_erased_at FROM relationships
 WHERE relationships.tutor_id = $1
     AND state = ANY ($2::text[])
     AND state <> 'discarded'
@@ -883,6 +971,8 @@ func (q *Queries) ListTutorRelationships(ctx context.Context, arg ListTutorRelat
 			&i.DiscardedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EmailSetAt,
+			&i.EmailErasedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -895,7 +985,7 @@ func (q *Queries) ListTutorRelationships(ctx context.Context, arg ListTutorRelat
 }
 
 const lockRelationshipsForJoinRequest = `-- name: LockRelationshipsForJoinRequest :many
-SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at, email_set_at, email_erased_at FROM relationships
 WHERE tutor_id = $1 AND state <> 'discarded'
     AND (student_id = $2 OR (state = 'invited' AND email = $3))
 ORDER BY id
@@ -934,6 +1024,8 @@ func (q *Queries) LockRelationshipsForJoinRequest(ctx context.Context, arg LockR
 			&i.DiscardedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EmailSetAt,
+			&i.EmailErasedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -946,7 +1038,7 @@ func (q *Queries) LockRelationshipsForJoinRequest(ctx context.Context, arg LockR
 }
 
 const lockRelationshipsForLink = `-- name: LockRelationshipsForLink :many
-SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at, email_set_at, email_erased_at FROM relationships
 WHERE tutor_id = $1 AND (id = $2 OR (student_id = $3 AND state <> 'discarded'))
 ORDER BY id
 FOR UPDATE
@@ -984,6 +1076,8 @@ func (q *Queries) LockRelationshipsForLink(ctx context.Context, arg LockRelation
 			&i.DiscardedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EmailSetAt,
+			&i.EmailErasedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -996,7 +1090,7 @@ func (q *Queries) LockRelationshipsForLink(ctx context.Context, arg LockRelation
 }
 
 const lockStudentDeletionRelationships = `-- name: LockStudentDeletionRelationships :many
-SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE student_id = $1 ORDER BY id FOR UPDATE
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at, email_set_at, email_erased_at FROM relationships WHERE student_id = $1 ORDER BY id FOR UPDATE
 `
 
 func (q *Queries) LockStudentDeletionRelationships(ctx context.Context, studentID *domain.UserID) ([]Relationship, error) {
@@ -1025,6 +1119,8 @@ func (q *Queries) LockStudentDeletionRelationships(ctx context.Context, studentI
 			&i.DiscardedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EmailSetAt,
+			&i.EmailErasedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1037,7 +1133,7 @@ func (q *Queries) LockStudentDeletionRelationships(ctx context.Context, studentI
 }
 
 const lockStudentReclaimPendingRelationships = `-- name: LockStudentReclaimPendingRelationships :many
-SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE student_id = $1 AND state = 'reclaim_pending' ORDER BY id FOR UPDATE
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at, email_set_at, email_erased_at FROM relationships WHERE student_id = $1 AND state = 'reclaim_pending' ORDER BY id FOR UPDATE
 `
 
 func (q *Queries) LockStudentReclaimPendingRelationships(ctx context.Context, studentID *domain.UserID) ([]Relationship, error) {
@@ -1066,6 +1162,8 @@ func (q *Queries) LockStudentReclaimPendingRelationships(ctx context.Context, st
 			&i.DiscardedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EmailSetAt,
+			&i.EmailErasedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1078,7 +1176,7 @@ func (q *Queries) LockStudentReclaimPendingRelationships(ctx context.Context, st
 }
 
 const lockStudentRelationship = `-- name: LockStudentRelationship :one
-SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE id = $1 AND student_id = $2 AND state <> 'discarded' FOR UPDATE
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at, email_set_at, email_erased_at FROM relationships WHERE id = $1 AND student_id = $2 AND state <> 'discarded' FOR UPDATE
 `
 
 type LockStudentRelationshipParams struct {
@@ -1106,12 +1204,14 @@ func (q *Queries) LockStudentRelationship(ctx context.Context, arg LockStudentRe
 		&i.DiscardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmailSetAt,
+		&i.EmailErasedAt,
 	)
 	return i, err
 }
 
 const lockStudentRelationships = `-- name: LockStudentRelationships :many
-SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE student_id = $1 AND state <> 'discarded' ORDER BY id FOR UPDATE
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at, email_set_at, email_erased_at FROM relationships WHERE student_id = $1 AND state <> 'discarded' ORDER BY id FOR UPDATE
 `
 
 func (q *Queries) LockStudentRelationships(ctx context.Context, studentID *domain.UserID) ([]Relationship, error) {
@@ -1140,6 +1240,8 @@ func (q *Queries) LockStudentRelationships(ctx context.Context, studentID *domai
 			&i.DiscardedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EmailSetAt,
+			&i.EmailErasedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1152,7 +1254,7 @@ func (q *Queries) LockStudentRelationships(ctx context.Context, studentID *domai
 }
 
 const lockTutorRelationship = `-- name: LockTutorRelationship :one
-SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at FROM relationships WHERE id = $1 AND tutor_id = $2 FOR UPDATE
+SELECT id, tutor_id, student_id, state, discard_reason, ended_by, display_name, email, colour, notes, create_key, linked_at, ended_at, discarded_at, created_at, updated_at, email_set_at, email_erased_at FROM relationships WHERE id = $1 AND tutor_id = $2 FOR UPDATE
 `
 
 type LockTutorRelationshipParams struct {
@@ -1180,6 +1282,8 @@ func (q *Queries) LockTutorRelationship(ctx context.Context, arg LockTutorRelati
 		&i.DiscardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmailSetAt,
+		&i.EmailErasedAt,
 	)
 	return i, err
 }
@@ -1284,7 +1388,8 @@ func (q *Queries) LockTutorRelationshipsForGroupChange(ctx context.Context, arg 
 
 const mergeInvitedCard = `-- name: MergeInvitedCard :execrows
 UPDATE relationships
-SET state = 'discarded', discard_reason = 'merged', discarded_at = $1::timestamptz, updated_at = $1::timestamptz
+SET state = 'discarded', discard_reason = 'merged', discarded_at = $1::timestamptz, display_name = NULL, email = NULL,
+    email_set_at = NULL, email_erased_at = NULL, notes = '', updated_at = $1::timestamptz
 WHERE id = $2 AND tutor_id = $3 AND state = 'invited'
 `
 
@@ -1323,14 +1428,14 @@ func (q *Queries) ReclaimProvisionalRelationship(ctx context.Context, arg Reclai
 const removeRelationship = `-- name: RemoveRelationship :one
 UPDATE relationships
 SET state = 'discarded', discard_reason = 'removed', discarded_at = $1::timestamptz, notes = '', email = NULL,
-    updated_at = $1::timestamptz
+    email_set_at = NULL, display_name = NULL, updated_at = $1::timestamptz
 FROM (
-    SELECT locked.id, locked.email, locked.notes FROM relationships AS locked
+    SELECT locked.id, locked.display_name, locked.email, locked.notes FROM relationships AS locked
     WHERE locked.id = $2 AND locked.tutor_id = $3
     FOR UPDATE
 ) AS removed
 WHERE relationships.id = removed.id AND relationships.state IN ('provisional', 'reclaim_pending')
-RETURNING relationships.id, relationships.tutor_id, relationships.student_id, relationships.display_name, removed.email, removed.notes
+RETURNING relationships.id, relationships.tutor_id, relationships.student_id, removed.display_name, removed.email, removed.notes
 `
 
 type RemoveRelationshipParams struct {
@@ -1343,7 +1448,7 @@ type RemoveRelationshipRow struct {
 	ID          domain.RelationshipID
 	TutorID     domain.UserID
 	StudentID   *domain.UserID
-	DisplayName string
+	DisplayName *string
 	Email       *string
 	Notes       string
 }
@@ -1401,7 +1506,14 @@ func (q *Queries) TutorHasCard(ctx context.Context, tutorID domain.UserID) (bool
 
 const updateCardText = `-- name: UpdateCardText :execrows
 UPDATE relationships
-SET display_name = $1, email = $2, notes = $3, updated_at = $4::timestamptz
+SET display_name = $1::text, email = $2::citext, notes = $3::text,
+    email_set_at = CASE
+        WHEN $2::citext IS NULL THEN NULL
+        WHEN relationships.email IS NOT DISTINCT FROM $2::citext THEN relationships.email_set_at
+        ELSE $4::timestamptz
+    END,
+    email_erased_at = CASE WHEN $2::citext IS NULL THEN relationships.email_erased_at END,
+    updated_at = $4::timestamptz
 WHERE id = $5 AND tutor_id = $6 AND state <> 'discarded'
 `
 
@@ -1431,7 +1543,8 @@ func (q *Queries) UpdateCardText(ctx context.Context, arg UpdateCardTextParams) 
 
 const withdrawCard = `-- name: WithdrawCard :execrows
 UPDATE relationships
-SET state = 'discarded', discard_reason = 'withdrawn', discarded_at = $1::timestamptz, updated_at = $1::timestamptz
+SET state = 'discarded', discard_reason = 'withdrawn', discarded_at = $1::timestamptz, display_name = NULL, email = NULL,
+    email_set_at = NULL, email_erased_at = NULL, notes = '', updated_at = $1::timestamptz
 WHERE id = $2 AND tutor_id = $3 AND state = 'invited'
 `
 

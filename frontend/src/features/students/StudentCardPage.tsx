@@ -84,6 +84,7 @@ export interface CardHandlers {
   readonly onChangedElsewhere: () => void;
   readonly onDialog: (open: boolean) => void;
   readonly onLeaving: (leaving: boolean) => void;
+  readonly onEnterEmail: () => void;
 }
 
 async function withoutLiveRefetch(
@@ -625,6 +626,24 @@ function CardSummary({ card }: { readonly card: StudentCard }): ReactElement {
   );
 }
 
+function ErasedEmail({ onEnterEmail }: { readonly onEnterEmail: () => void }): ReactElement {
+  const { t } = useTranslation();
+  const labelId = useId();
+  return (
+    <section aria-labelledby={labelId} className="flex flex-col gap-3">
+      <h2 id={labelId} className="text-heading">
+        {t('invitation.link')}
+      </h2>
+      <p>{t('invitation.emailErased')}</p>
+      <div className="flex flex-wrap gap-3">
+        <button type="button" onClick={onEnterEmail} className={`${quietButtonClass} w-full tablet:w-auto`}>
+          {t('invitation.enterEmail')}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function CardInvitation({
   card,
   handlers,
@@ -634,6 +653,9 @@ function CardInvitation({
 }): ReactElement | null {
   const [invitedAgain, setInvitedAgain] = useState<string | null>(null);
   const linkState = card.state === 'invited' || card.state === 'ended';
+  if (card.state === 'invited' && card.email_erased) {
+    return <ErasedEmail onEnterEmail={handlers.onEnterEmail} />;
+  }
   if (linkState && card.invitation !== null) {
     return (
       <InvitationLink
@@ -646,6 +668,7 @@ function CardInvitation({
         }}
         onSent={handlers.onSent}
         onStale={handlers.onStale}
+        onErased={handlers.onChangedElsewhere}
       />
     );
   }
@@ -712,12 +735,14 @@ export function CardActions({
   card,
   reloads,
   handlers,
+  detailsRequests = 0,
   onDetails,
   onSaved,
 }: {
   readonly card: StudentCard;
   readonly reloads: number;
   readonly handlers: CardHandlers;
+  readonly detailsRequests?: number;
   readonly onDetails: () => void;
   readonly onSaved: () => void;
 }): ReactElement {
@@ -725,6 +750,12 @@ export function CardActions({
   const menuButton = useRef<HTMLButtonElement>(null);
   const [dialog, setDialog] = useState<OpenCardDialog | null>(null);
   const [openings, setOpenings] = useState(0);
+  const [answeredRequests, setAnsweredRequests] = useState(detailsRequests);
+  if (detailsRequests !== answeredRequests) {
+    setAnsweredRequests(detailsRequests);
+    setOpenings((count) => count + 1);
+    setDialog({ kind: 'details', state: card.state });
+  }
   if (dialog !== null && dialog.state !== card.state) {
     setDialog(null);
   }
@@ -827,18 +858,27 @@ export function StudentCardView({
   readonly reloads?: number;
   readonly handlers: CardHandlers;
 }): ReactElement {
+  const [detailsRequests, setDetailsRequests] = useState(0);
+  const viewHandlers: CardHandlers = {
+    ...handlers,
+    onEnterEmail: () => {
+      handlers.onEnterEmail();
+      setDetailsRequests((count) => count + 1);
+    },
+  };
   return (
     <>
       <CardActions
         key={card.id}
         card={card}
         reloads={reloads}
-        handlers={handlers}
+        handlers={viewHandlers}
+        detailsRequests={detailsRequests}
         onDetails={() => undefined}
         onSaved={() => undefined}
       />
       <CardSummary card={card} />
-      <CardColumns card={card} reloads={reloads} handlers={handlers} />
+      <CardColumns card={card} reloads={reloads} handlers={viewHandlers} />
     </>
   );
 }
@@ -1063,6 +1103,7 @@ export function StudentCardPage(): ReactElement {
     setEndedCard(null);
   }
   const [savedCard, setSavedCard] = useState<{ readonly id: string; readonly count: number } | null>(null);
+  const [detailsRequests, setDetailsRequests] = useState(0);
   if (savedCard !== null && savedCard.id !== studentId) {
     setSavedCard(null);
   }
@@ -1157,6 +1198,11 @@ export function StudentCardPage(): ReactElement {
     onDialog: (open) => {
       setDialogSubject(open && query.data !== undefined ? { id: studentId, state: query.data.state } : null);
     },
+    onEnterEmail: () => {
+      setSavedCard(null);
+      setDialogSubject(query.data === undefined ? null : { id: studentId, state: query.data.state });
+      setDetailsRequests((count) => count + 1);
+    },
     onRemoved: (newCard) => {
       void queryClient.invalidateQueries({ queryKey: studentsKey, refetchType: 'none' });
       void navigate(`/students/${encodeURIComponent(newCard.id)}`, {
@@ -1241,6 +1287,7 @@ export function StudentCardPage(): ReactElement {
             card={shown}
             reloads={reloads}
             handlers={handlers}
+            detailsRequests={detailsRequests}
             onDetails={() => {
               setSavedCard(null);
             }}

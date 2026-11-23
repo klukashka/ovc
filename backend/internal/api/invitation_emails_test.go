@@ -417,7 +417,7 @@ func TestSendingACardWithoutAnOpenLinkIssuesOne(t *testing.T) {
 	tutor, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
 	student := h.seedStudent(t, 2)
 	ended := h.seedCard(t, tutor, 1, domain.RelationshipEnded, &student)
-	if _, err := h.database.Pool.Exec(context.Background(), "UPDATE relationships SET email = $1 WHERE tutor_id = $2", "student-2@example.org", tutor); err != nil {
+	if _, err := h.database.Pool.Exec(context.Background(), "UPDATE relationships SET email = $1, email_set_at = updated_at WHERE tutor_id = $2", "student-2@example.org", tutor); err != nil {
 		t.Fatal(err)
 	}
 

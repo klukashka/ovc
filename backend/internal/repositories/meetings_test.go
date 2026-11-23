@@ -30,7 +30,10 @@ func newMeetingFixture(t *testing.T, database *testdb.Database) meetingFixture {
 	store := repositories.NewStore(database.Pool)
 	f := meetingFixture{tutoringFixture: tutoringFixture{pool: database.Pool, store: store, repos: store.Repositories()}, database: database}
 	f.tutor, f.student = f.tutorAccount(t, 1), f.studentAccount(t, 2)
-	card := f.card(t, linkedCard(3, f.tutor, f.student, domain.RelationshipActive))
+	card := domain.RelationshipID{3}
+	_, err := database.Pool.Exec(t.Context(), `INSERT INTO relationships (id, tutor_id, student_id, state, display_name, colour, linked_at, created_at, updated_at)
+VALUES ($1, $2, $3, 'active', 'A student', 'clay', $4, $4, $4)`, card, f.tutor, f.student, instant)
+	meetingRequire(t, err)
 	f.lesson, f.otherLesson = domain.LessonID{4}, domain.LessonID{5}
 	meetingRequire(t, f.repos.Lessons.Create(t.Context(), repositories.NewLessons{
 		TutorID: f.tutor, RelationshipID: &card, Title: "A lesson", DurationMinutes: 60, Timezone: "UTC", Now: instant,

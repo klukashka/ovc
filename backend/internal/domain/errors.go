@@ -29,6 +29,7 @@ const (
 	ErrorInvitationInvalid          ErrorCode = "invitation_invalid"
 	ErrorInvitationEmailMismatch    ErrorCode = "invitation_email_mismatch"
 	ErrorRelationshipNotProvisional ErrorCode = "relationship_not_provisional"
+	ErrorEmailErased                ErrorCode = "email_erased"
 	ErrorReturnNotAllowed           ErrorCode = "return_not_allowed"
 	ErrorIssueHasSubmissions        ErrorCode = "issue_has_submissions"
 	ErrorChannelReadOnly            ErrorCode = "channel_read_only"
@@ -79,6 +80,7 @@ var errorCatalogue = []errorDefinition{
 	{ErrorInvitationInvalid, http.StatusConflict, "The invitation is no longer valid."},
 	{ErrorInvitationEmailMismatch, http.StatusConflict, "The invitation is for a different email address."},
 	{ErrorRelationshipNotProvisional, http.StatusConflict, "The card is not linked provisionally."},
+	{ErrorEmailErased, http.StatusConflict, "The card's email was erased; enter an email first."},
 	{ErrorReturnNotAllowed, http.StatusConflict, "The work cannot be returned for revision."},
 	{ErrorIssueHasSubmissions, http.StatusConflict, "The assignment already has submissions."},
 	{ErrorChannelReadOnly, http.StatusConflict, "The conversation is read-only."},

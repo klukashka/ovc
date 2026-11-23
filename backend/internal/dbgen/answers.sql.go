@@ -385,7 +385,7 @@ type GetSubmissionForTutorEmailRow struct {
 	DeadlineAt       *time.Time
 	Title            string
 	MarkedForErasure bool
-	DisplayName      string
+	DisplayName      *string
 	CardState        domain.RelationshipState
 }
 
@@ -440,7 +440,7 @@ type GetTutorSubmissionRow struct {
 	Snapshot            []byte
 	MaxPoints           int32
 	AnswerPolicy        domain.AnswerPolicy
-	DisplayName         string
+	DisplayName         *string
 }
 
 func (q *Queries) GetTutorSubmission(ctx context.Context, arg GetTutorSubmissionParams) (GetTutorSubmissionRow, error) {

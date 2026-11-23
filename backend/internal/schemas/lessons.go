@@ -35,8 +35,8 @@ func (NewLesson) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Sch
 }
 
 type LessonMember struct {
-	Label     string            `json:"label"`
-	LabelKind *domain.LabelKind `json:"label_kind" enum:"deleted_account" nullable:"true"`
+	Label     *string           `json:"label" nullable:"true"`
+	LabelKind *domain.LabelKind `json:"label_kind" enum:"deleted_account,removed_student" nullable:"true"`
 }
 
 type LessonAudience struct {
