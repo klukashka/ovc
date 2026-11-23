@@ -496,7 +496,7 @@ describe('Messages', () => {
     const field = await screen.findByRole('textbox', { name: 'Message' });
     fireEvent.change(field, { target: { value: 'Unsent draft' } });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Message actions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     const editingFocus = document.activeElement;
     fireEvent.keyDown(field, { key: 'Escape' });
@@ -509,6 +509,7 @@ describe('Messages', () => {
   test('offline blocks Send, Edit, Delete and every attach path and preserves the composer', async () => {
     const { connection, clock, server } = await fixture();
     const field = await screen.findByRole('textbox', { name: 'Message' });
+    await screen.findByRole('button', { name: 'Message actions' });
     fireEvent.change(field, { target: { value: 'Unsent draft' } });
     field.focus();
 
@@ -584,6 +585,7 @@ describe('Messages', () => {
   test('a history read refused as not found clears the conversation and focuses its notice', async () => {
     const { server, cache } = await fixture();
     const field = await screen.findByRole('textbox', { name: 'Message' });
+    await screen.findByText('Message 1');
     field.focus();
 
     server.chat.removeMember(channel.id, tutor.id);
@@ -642,6 +644,9 @@ describe('Messages', () => {
       await router.navigate('/messages/missing-channel');
     });
     const back = await screen.findByRole('link', { name: 'Back to the list' });
+    await waitFor(() => {
+      expect(document.activeElement?.matches('p[role="status"]')).toBe(true);
+    });
     back.focus();
 
     act(() => {
@@ -705,7 +710,9 @@ describe('Messages', () => {
 
     expect(failedDraft).toBe('Recovered once');
     expect(server.chat.history(channel.id).filter((item) => item.body === 'Recovered once').length).toBe(1);
-    expect(document.activeElement).toBe(field);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(field);
+    });
   });
 
   test.each(['Keep my text', 'Use latest text'] as const)(
@@ -714,7 +721,7 @@ describe('Messages', () => {
       const { server, api } = await fixture();
       const field = await screen.findByRole('textbox', { name: 'Message' });
       fireEvent.change(field, { target: { value: 'Original draft' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Message actions' }));
       fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
       fireEvent.change(field, { target: { value: 'My unsaved edit' } });
       await editMessage(api, message(1), 'Changed elsewhere');
@@ -748,7 +755,7 @@ describe('Messages', () => {
   test('another concurrent edit after the choice requires a new explicit choice', async () => {
     const { api, server } = await fixture();
     const field = await screen.findByRole('textbox', { name: 'Message' });
-    fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Message actions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.change(field, { target: { value: 'Local edit' } });
     const second = await editMessage(api, message(1), 'Second version');
@@ -801,7 +808,7 @@ describe('Messages', () => {
   test('a failed conflict read offers retry without adopting stale cached content', async () => {
     const { api, server } = await fixture();
     const field = await screen.findByRole('textbox', { name: 'Message' });
-    fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Message actions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.change(field, { target: { value: 'Local edit' } });
     await editMessage(api, message(1), 'Latest server text');
@@ -827,7 +834,7 @@ describe('Messages', () => {
   test('a paused conflict recovery waits for both new reads after reconnect', async () => {
     const { api, server, cache } = await fixture();
     const field = await screen.findByRole('textbox', { name: 'Message' });
-    fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Message actions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.change(field, { target: { value: 'Local edit' } });
     await editMessage(api, message(1), 'Latest server text');
@@ -945,7 +952,7 @@ describe('Messages', () => {
   test('a failed channel conflict read has one retry that completes the whole recovery', async () => {
     const { api, server } = await fixture();
     const field = await screen.findByRole('textbox', { name: 'Message' });
-    fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Message actions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.change(field, { target: { value: 'Local edit' } });
     await editMessage(api, message(1), 'Latest server text');
@@ -975,7 +982,7 @@ describe('Messages', () => {
     async (change) => {
       const { api, server, cache } = await fixture();
       const field = await screen.findByRole('textbox', { name: 'Message' });
-      fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Message actions' }));
       fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
       await editMessage(api, message(1), 'Latest server text');
       fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -1056,7 +1063,7 @@ describe('Messages', () => {
       const field = await screen.findByRole('textbox', { name: 'Message' });
       fireEvent.change(field, { target: { value: 'Original unsent draft' } });
 
-      const first = screen.getByText('Message 1').closest('li');
+      const first = (await screen.findByText('Message 1')).closest('li');
       const second = screen.getByText('Message 2').closest('li');
       if (first === null || second === null) throw new Error('Missing message rows');
       fireEvent.click(within(first).getByRole('button', { name: 'Message actions' }));
@@ -1313,7 +1320,9 @@ describe('attachment sending and lifecycle', () => {
       expect(server.chat.history(channel.id)).toHaveLength(1);
       expect(server.chat.history(channel.id)[0]?.attachments).toHaveLength(1);
       expect(server.chat.history(channel.id)[0]?.body).toBe(body);
-      expect(document.activeElement).toBe(field);
+      await waitFor(() => {
+        expect(document.activeElement).toBe(field);
+      });
     },
   );
 
@@ -1360,6 +1369,7 @@ describe('attachment sending and lifecycle', () => {
 
   test('pagehide cancels an image recovery waiting to refresh history and pageshow restores expiry refresh', async () => {
     const { server, cache, clock } = await fixture();
+    await screen.findByText('Message 1');
     server.chat.addMessage(channel.id, {
       ...message(2),
       attachments: [
@@ -1464,7 +1474,7 @@ test('reopening the same channel rejects a withheld old-generation incremental r
 test('conflict adoption requires fresh authoritative history after incremental work', async () => {
   const { server, api, cache, clock } = await fixture();
   const field = await screen.findByRole('textbox', { name: 'Message' });
-  fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Message actions' }));
   fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
   fireEvent.change(field, { target: { value: 'Retained conflict draft' } });
   await editMessage(api, message(1), 'Incrementally observed text');

@@ -378,6 +378,7 @@ describe('Home on GET /home', () => {
 
   test('choosing a tutor keeps the page and focus on the pressed choice while its read is in flight', async () => {
     const shown = await showHome();
+    await screen.findByRole('link', { name: 'Irregular verbs' });
     const pavel = screen.getByRole('button', { name: 'Pavel' });
     pavel.focus();
     const held = shown.server.pauseHomeReads();

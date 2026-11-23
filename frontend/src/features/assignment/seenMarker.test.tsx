@@ -66,10 +66,7 @@ function commented(comment: string, address = 'first', attachmentId = firstAttac
   };
 }
 
-async function markersAfterRefetchShowing(
-  first: StudentSubmission,
-  second: StudentSubmission,
-): Promise<readonly { readonly id: string; readonly version: number }[]> {
+async function afterRefetchShowing(first: StudentSubmission, second: StudentSubmission): Promise<ShownResults> {
   const shown = await showResults(first);
   await waitFor(() => {
     expect(shown.server.feedbackSeenRequests()).toHaveLength(1);
@@ -84,7 +81,7 @@ async function markersAfterRefetchShowing(
   await waitFor(() => {
     expect(shown.queryClient.isFetching() + shown.queryClient.isMutating()).toBe(0);
   });
-  return shown.server.feedbackSeenRequests();
+  return shown;
 }
 
 interface ShownResults {
@@ -279,43 +276,49 @@ describe('the seen marker on the assignment page', () => {
     const first = reviewed(4, 'checked', commented('Check the spelling.'));
     const second = reviewed(6, 'checked', commented('Better now.'));
 
-    const markers = await markersAfterRefetchShowing(first, second);
+    const shown = await afterRefetchShowing(first, second);
 
-    expect(markers).toEqual([
-      { id: submissionId, version: 4 },
-      { id: submissionId, version: 6 },
-    ]);
+    await waitFor(() => {
+      expect(shown.server.feedbackSeenRequests()).toEqual([
+        { id: submissionId, version: 4 },
+        { id: submissionId, version: 6 },
+      ]);
+    });
   });
 
   test('a check after a return that keeps the returned review sends the marker again', async () => {
     const first = reviewed(4, 'returned', commented('Check the spelling.'));
     const second = reviewed(6, 'checked', commented('Check the spelling.'));
 
-    const markers = await markersAfterRefetchShowing(first, second);
+    const shown = await afterRefetchShowing(first, second);
 
-    expect(markers).toEqual([
-      { id: submissionId, version: 4 },
-      { id: submissionId, version: 6 },
-    ]);
+    await waitFor(() => {
+      expect(shown.server.feedbackSeenRequests()).toEqual([
+        { id: submissionId, version: 4 },
+        { id: submissionId, version: 6 },
+      ]);
+    });
   });
 
   test('a newer version whose corrected file only has a fresh download address sends no further marker', async () => {
     const first = reviewed(4, 'returned', commented('Check the spelling.', 'first'));
     const second = reviewed(5, 'returned', commented('Check the spelling.', 'renewed'));
 
-    const markers = await markersAfterRefetchShowing(first, second);
+    const shown = await afterRefetchShowing(first, second);
 
-    expect(markers).toEqual([{ id: submissionId, version: 4 }]);
+    expect(shown.server.feedbackSeenRequests()).toEqual([{ id: submissionId, version: 4 }]);
   });
   test('a newly published review that changes only a corrected file sends the marker again', async () => {
     const first = reviewed(4, 'checked', commented('Check the spelling.', 'first', firstAttachment));
     const second = reviewed(6, 'checked', commented('Check the spelling.', 'second', secondAttachment));
 
-    const markers = await markersAfterRefetchShowing(first, second);
+    const shown = await afterRefetchShowing(first, second);
 
-    expect(markers).toEqual([
-      { id: submissionId, version: 4 },
-      { id: submissionId, version: 6 },
-    ]);
+    await waitFor(() => {
+      expect(shown.server.feedbackSeenRequests()).toEqual([
+        { id: submissionId, version: 4 },
+        { id: submissionId, version: 6 },
+      ]);
+    });
   });
 });

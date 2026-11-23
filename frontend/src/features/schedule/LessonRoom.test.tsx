@@ -505,6 +505,9 @@ describe('the embedded room', () => {
     const shown = await showRoom({ lesson: embeddable });
     fireEvent.click(joinButton('Подключиться снова'));
     const frame = await screen.findByTitle(embeddable.title);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(frame);
+    });
     return { ...shown, frame };
   }
 

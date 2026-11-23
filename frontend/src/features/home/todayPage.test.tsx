@@ -321,9 +321,11 @@ describe('Today on GET /home', () => {
 
     fireEvent.click(within(checklist()).getByRole('button', { name: 'Dismiss' }));
     const alert = await within(checklist()).findByRole('alert');
+    await waitFor(() => {
+      expect(document.activeElement).toBe(alert);
+    });
 
     expect(alert.textContent).not.toBe('');
-    expect(document.activeElement).toBe(alert);
     expect(screen.getByRole('heading', { name: checklistHeading })).toBeTruthy();
   });
 
@@ -468,6 +470,9 @@ describe('Today on GET /home', () => {
     shown.server.failJoinRequestReads(1);
     fireEvent.click(within(region).getByRole('button', { name: 'Show more' }));
     const retry = await within(region).findByRole('button', { name: 'Try again' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(within(region).getByRole('button', { name: 'Accept Requester 5' }));
+    });
 
     fireEvent.click(retry);
     const sixth = await within(region).findByRole('button', { name: 'Accept Requester 6' });
