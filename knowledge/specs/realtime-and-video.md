@@ -28,6 +28,8 @@ Slice 6 builds chat; the [slice 6 plan](../plans/slice-6.md#3-decisions-the-plan
 
 ### Labels per role
 
+Pending the specification change of [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), its retention, erasure and labelling rules govern this section where the two differ (pending owner review).
+
 Every name a chat response, a digest and a frame-triggered refetch shows. A fixed label travels as a `label_kind` code beside a `null` label, as lessons do.
 
 | Field | Tutor | Student |

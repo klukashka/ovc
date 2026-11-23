@@ -36,6 +36,8 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 
 ## Public addresses
 
+Pending the change that follows [ADR-0024](../../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), the consent checkbox links a separate consent text, the sign-up and invitation pages gain a line accepting the user agreement, and the invitation page always links the privacy policy (pending owner review).
+
 | Address | Page | Notes |
 |---|---|---|
 | `/` | Sign in | Signed-in users are redirected to their home page |

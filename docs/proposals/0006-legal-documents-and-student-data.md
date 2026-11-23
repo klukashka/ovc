@@ -1,10 +1,10 @@
 # Proposal 0006: Legal documents and student data
 
-- Status: proposed
+- Status: accepted
 - Reviewed: decisions taken by the project owner on 2026-11-22 (the operator, OVC as the only operator, legal wording in the documents) and on 2026-11-23 (the legal bases, the acceptance of the user agreement, the invitation notice and the retention changes); wording pending owner review
 - Author: project owner, written up by an agent
 - Date: 2026-11-23
-- Trigger: a lawyer's review of the legal bases, the acceptance form and the invitation notice before the first deployment ([roadmap: before the pilot](../roadmap.md#before-the-pilot)); then this proposal becomes a decision record with its specification changes
+- Trigger (history; accepted before it): a lawyer's review of the legal bases, the acceptance form and the invitation notice before the first deployment ([roadmap: before the pilot](../roadmap.md#before-the-pilot)); then this proposal becomes a decision record with its specification changes
 - Related: [ADR-0005](../decisions/0005-tutor-centric-domain.md), [ADR-0008](../decisions/0008-hosting-and-data-residency.md), [ADR-0014](../decisions/0014-students-join-through-their-tutor.md), [proposal 0003](0003-students-aged-14-and-over.md), FR-1.1, FR-1.7, FR-2.7, NFR-1.3, [accounts specification](../../knowledge/specs/accounts.md), [data model](../../knowledge/specs/data-model.md), [notifications specification](../../knowledge/specs/notifications.md), [threat model](../threat-model.md), [legal gap analysis](../../knowledge/analysis/legal-gaps-2026-11-22.md), [outline of the legal documents](../../knowledge/analysis/legal-documents-outline-2026-11-23.md)
 
 ## Motivation
@@ -70,4 +70,4 @@ The texts of the three documents are drafted from the [outline](../../knowledge/
 
 ## Decision
 
-Not yet decided.
+Accepted by the project owner on 2026-11-23, before the lawyer's review, as [ADR-0024](../decisions/0024-legal-documents-and-student-data.md), which states the decision in full. The record lands first and the specification change follows as its own change, a deviation from this proposal's plan of one change; meanwhile the affected specification sections and threat-model rows point to the record. A lawyer still reviews the three texts before the first deployment (pending owner review).

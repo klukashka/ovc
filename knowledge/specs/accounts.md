@@ -88,6 +88,8 @@ Behavior for FR-1, FR-2, FR-3 and FR-16. Decisions: [ADR-0005](../../docs/decisi
 
 ## Tutor–student relationships
 
+Pending the specification change of [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), its retention, erasure and labelling rules govern this section where the two differ (pending owner review).
+
 Students join through their tutor ([ADR-0014](../../docs/decisions/0014-students-join-through-their-tutor.md)).
 
 - **States:**
@@ -146,6 +148,8 @@ Students join through their tutor ([ADR-0014](../../docs/decisions/0014-students
 
 ## Invitations
 
+Pending the specification change of [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), its retention, erasure and labelling rules govern this section where the two differ (pending owner review).
+
 - **Creating:** a confirmed tutor creates a student card with a display name and an optional email. The card starts as `invited` and gets its invitation link at once.
 - **One open invitation per card**, the same link whether the tutor copies it or OVC emails it:
   - the token is 32 random bytes in base64url, valid for 14 days and single use;
@@ -190,6 +194,8 @@ Students join through their tutor ([ADR-0014](../../docs/decisions/0014-students
   - the tutor gets the in-app notification `invitation.accepted` in the linking transaction, also when the link is provisional, labelled with the card's own display name and never with the account name a possibly squatting account chose; no second notification follows when the email is confirmed ([in-app producers](notifications.md#in-app-producers-in-slice-4)).
 
 ## Provisional links and reclaim
+
+Pending the specification change of [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), its retention, erasure and labelling rules govern this section where the two differ (pending owner review).
 
 - **A provisional link** reaches only the one-to-one relationship: it is listed on the student's My tutors, it cannot be added to a group (`409 relationship_not_active`), and no notification email about it is sent to the unconfirmed address. From slice 5 it reaches the relationship's one-to-one lessons, from slice 6 its private chat, with text messages only, never a group's, and from slice 9 the work issued to it directly: the student reads, answers and submits it, except that file answers need a confirmed email, as chat uploads do, and gets the in-app rows but no homework email; the direct channel is created in the linking transaction. The card shows "Email not confirmed", and so do the tutor's channel list and conversation header for that channel.
 - **Removal** (`POST /students/{id}/remove`) is allowed only while the card is `provisional` or `reclaim_pending`, and answers `409 relationship_not_provisional` otherwise. In one transaction, which locks the student's user row, then the tutor's profile (answering `401 unauthenticated` when the tutor is no longer `active`), then the relationship, and re-checks its state:
@@ -309,6 +315,8 @@ Ending an `ended` relationship again returns it unchanged and queues no second e
 - **Unarchiving** (idempotent) restores issuing and chat, but no series and no cancelled lessons.
 
 ## Account deletion
+
+Pending the specification change of [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), its retention, erasure and labelling rules govern this section where the two differ (pending owner review).
 
 - **Starting deletion:** it requires the current password and an explicit confirmation. A wrong password answers `422` and is counted in the same per-account counter as password change, shared by every current-password check (5 per fixed 15-minute window, [sessions and passwords](#sessions-and-passwords)); beyond it the attempt answers `429` with `Retry-After`, returns its slot and changes nothing, and a correct password returns its slot. The account becomes `deleted` at once: sessions are revoked, sockets are closed and sign-in is refused. A purge job runs 30 days later.
 - **From deletion until purge**, the account's messages show their sender as "Deleted user" (`label_kind: deleted_user`) and keep their bodies; the purge erases a student's message bodies (shown as "Message removed") and deletes a tutor's channels with their messages ([purge](data-model.md#purge)).

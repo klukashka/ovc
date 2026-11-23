@@ -144,14 +144,14 @@ Slice 4 adds three row-level `AFTER` triggers, so every path that revokes a sess
 | `state` | `invited`, `provisional`, `reclaim_pending`, `active`, `ended`, `discarded` |
 | `discard_reason` | `withdrawn`, `merged`, `removed`, `tutor_deleted`, `student_purged`; set exactly when `discarded` |
 | `ended_by` | `tutor`, `student`, `deletion`; set, with `ended_at`, when `ended`, and kept when a student's purge discards an ended row; null in every other state |
-| `display_name` | the tutor's private name for the student, 1–100 characters; for a card created by accepting a join request, a copy of the student's account name at accept time, which the tutor can edit |
+| `display_name` | the tutor's private name for the student, 1–100 characters; for a card created by accepting a join request, a copy of the student's account name at accept time, which the tutor can edit; [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md) erases or relabels it in more cases and relaxes the required length (pending owner review) |
 | `email` | optional, citext, 3–254 characters |
 | `colour` | one of the eight palette keys |
 | `notes` | tutor-only, up to 10,000 characters, empty by default |
 | `create_key` | the `Idempotency-Key` of the creating request, nullable |
 | `linked_at`, `ended_at`, `discarded_at` | |
 
-No column follows the student's account name: after a student's purge the tutor's history shows the card's display name, which is the tutor's own data, even where it began as a copy of the account name when a join request was accepted.
+No column follows the student's account name: after a student's purge the tutor's history shows the card's display name, which is the tutor's own data, even where it began as a copy of the account name when a join request was accepted. [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md) replaces this: the purge replaces the display name with a fixed label and erases the notes (pending owner review).
 
 Constraints and indexes:
 
@@ -693,6 +693,8 @@ Created by the normal migrations in every database, but written only by the test
 - **Mail sink:** recipient, subject, bodies, links and sent time; from slice 5 also the headers as sent, so tests read the unsubscribe headers and tokens.
 
 ## Purge
+
+Pending the specification change of [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), its retention, erasure and labelling rules govern this section where the two differ (pending owner review).
 
 What the purge job does 30 days after an account is deleted. Slice 2 implements the rows for users, sessions, email requests and tokens, tutor profiles, and attachments with their references: every upload of the account is deleted, and each still-stored object gets a `storage_delete` outbox row carrying its storage key, so the object is deleted after its row is gone. Throttle counters are pseudonymous and expire with their windows. Slice 3 adds the relationship, invitation, join-request, blocked-requester and group rows; a tutor purge deletes group members, groups, invitations, join requests, blocked requesters and relationships in batches of 500 rows per transaction, each locking the user row and re-checking that the account is still `deleted`, and then deletes the profile and the user in a final transaction. One run of the purge job spends at most 100 such batches across all accounts and the next run continues where it stopped ([account deletion](accounts.md#account-deletion)). Slice 4 adds the notification rows that name the account and the account's email preferences, on every purge path: the 30-day purge, the 7-day cleanup and the immediate purge of an unconfirmed account its owner deletes. Slice 5 adds:
 

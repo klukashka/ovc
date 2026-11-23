@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Status: amended 2026-10-20 with ADR-0004 to ADR-0012, and 2026-10-22 with ADR-0013 and with ADR-0014 and its notes on ADR-0005 and ADR-0009, and 2026-10-26 with ADR-0015 and its notes on ADR-0006 and ADR-0008 and with ADR-0016, and with ADR-0017, pending owner review; amended 2026-10-27 with ADR-0018 (pending owner review); amended 2026-11-10 with ADR-0022 and its note on ADR-0019 (pending owner review); amended 2026-11-11 with ADR-0023 and its notes on ADR-0019 and ADR-0022 (pending owner review); pending line-by-line owner review.
+Status: amended 2026-10-20 with ADR-0004 to ADR-0012, and 2026-10-22 with ADR-0013 and with ADR-0014 and its notes on ADR-0005 and ADR-0009, and 2026-10-26 with ADR-0015 and its notes on ADR-0006 and ADR-0008 and with ADR-0016, and with ADR-0017, pending owner review; amended 2026-10-27 with ADR-0018 (pending owner review); amended 2026-11-10 with ADR-0022 and its note on ADR-0019 (pending owner review); amended 2026-11-11 with ADR-0023 and its notes on ADR-0019 and ADR-0022 (pending owner review); amended 2026-11-23 with ADR-0024 and its note on ADR-0008 (pending owner review); pending line-by-line owner review.
 
 One record per significant decision, in the MADR shape: context, decision, alternatives considered, consequences, where it is applied. Records are numbered in writing order and never renumbered; a record that changes an earlier one says so in its header (`Supersedes` / `Superseded by`), and the earlier record is kept with its status updated ([ADR-0001](0001-record-architecture-decisions.md)).
 
@@ -13,7 +13,7 @@ One record per significant decision, in the MADR shape: context, decision, alter
 | [ADR-0005](0005-tutor-centric-domain.md) | One role per account; tutor–student relationships and tutor-owned groups; relationship-scoped authorization | accepted; relationship states and the student's access rule superseded in part by ADR-0014 |
 | [ADR-0006](0006-background-worker-and-email.md) | A worker process with a PostgreSQL outbox and scheduled jobs; email over SMTP as the external channel | accepted; amended by ADR-0015 with web push as a second external channel (pending owner review) |
 | [ADR-0007](0007-recurring-lessons.md) | Weekly series in the tutor's timezone with materialised occurrences and scoped edits | accepted |
-| [ADR-0008](0008-hosting-and-data-residency.md) | All user data hosted in Russia; S3-compatible storage in the MVP; no foreign data processors | accepted; amended by ADR-0015 with the web push exception (pending owner review) |
+| [ADR-0008](0008-hosting-and-data-residency.md) | All user data hosted in Russia; S3-compatible storage in the MVP; no foreign data processors | accepted; amended by ADR-0015 with the web push exception and by ADR-0024 with the legal documents and retention bounds (pending owner review) |
 | [ADR-0009](0009-owner-approved-exceptions-and-visibility.md) | Owner-approved exceptions (credentials in URLs, adapter state in PostgreSQL, closing slow sockets), product refinements, and tutor-only scores | accepted; the first bullet of item 4 (an emailed invitation confirms the email) superseded by ADR-0014 |
 | [ADR-0010](0010-quiet-visual-language.md) | Quiet text-first visual language (Golos Text, Literata, olive accent, hairline rules), a sidebar for both roles, computers first | accepted |
 | [ADR-0011](0011-tiered-verification.md) | Tiered verification: checks for trivial changes, one standard reviewer (plus a security reviewer when the security trigger is met) for routine changes, one fresh reviewer per changed layer when a slice completes, and at most one re-review after fixes (amended 2026-10-22, pending owner review) | accepted |
@@ -29,6 +29,7 @@ One record per significant decision, in the MADR shape: context, decision, alter
 | [ADR-0021](0021-quiet-window-meeting-settlement.md) | Quiet-window settlement of uncertain meeting creation after 1 hour and provider absence (pending wording review) | accepted, 2026-11-07 |
 | [ADR-0022](0022-library-upload-cleanup-adoption.md) | Library and prompt-image uploads adopt ADR-0019's durable cleanup journal with their own capacity of 1,024 unresolved intents (pending owner review) | accepted, 2026-11-10; amended by ADR-0023 (pending owner review) |
 | [ADR-0023](0023-homework-upload-cleanup-adoption.md) | Answer and corrected-file uploads adopt ADR-0019's durable cleanup journal with a third capacity class, `homework`, of 1,024 unresolved intents (pending owner review) | accepted, 2026-11-11 |
+| [ADR-0024](0024-legal-documents-and-student-data.md) | The individual entrepreneur as the only operator, the privacy policy, consent text and user agreement, the invitation notice, and erasure and relabelling of student data in tutors' records (pending owner review) | accepted, 2026-11-23 |
 
 ## Writing a new record
 

@@ -6,6 +6,8 @@ Recordings (FR-5.4 to FR-5.6) and analytics (FR-11.2 to FR-11.4) come [after the
 
 ## Public pages
 
+Pending the change that follows [ADR-0024](../../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), the consent checkbox links a separate consent text, the sign-up and invitation pages gain a line accepting the user agreement, and the invitation page always links the privacy policy (pending owner review).
+
 ### Sign in
 
 FR-1.4, FR-1.8, FR-17.1.
@@ -214,6 +216,8 @@ FR-2.1, FR-2.3, FR-2.5.
 - **Phone** (slice 10 change G0, page group G2, pending owner review): the filter row stacks: the three tabs as one row of links (each a 44 px target, «Действующие», «Приглашённые», «Архив» fitting at 360 px), the search field, the Group choice and the Search button each at the full width in that order, so that the visual order follows the focus order and Search, which applies both, comes last (amended by slice 10 change G2 on 2026-11-22, pending owner review); the table keeps the Name and State columns, and Email, Groups, Next lesson and Open assignments are shown under the name; "Add student" stays in the page header.
 
 ### Student card
+
+Pending the change that follows [ADR-0024](../../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), an invited card whose email was erased after 90 days refuses Regenerate and Send until the tutor enters an email, and withdrawn, merged and purged students' cards lose or relabel their names (pending owner review).
 
 FR-2.5, FR-2.7, FR-11.3.
 

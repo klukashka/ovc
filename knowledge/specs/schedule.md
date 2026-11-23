@@ -54,6 +54,8 @@ Lesson emails never reach an unconfirmed account ([dispatch-time checks](notific
 
 ### Labels per role
 
+Pending the specification change of [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md) (accepted 2026-11-23), its retention, erasure and labelling rules govern this section where the two differ (pending owner review).
+
 Every name, colour and timezone that a lesson response, a notification row or an email shows follows one table, so card display names never reach students and a deleted or possibly squatting account's chosen name never reaches the tutor ([T-34](../../docs/threat-model.md#threats-and-controls), [T-44](../../docs/threat-model.md#threats-and-controls)):
 
 | Field | Tutor | Student |

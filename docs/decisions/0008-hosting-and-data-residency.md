@@ -6,6 +6,7 @@
 - Amended by: [ADR-0015](0015-web-push.md), with one exception for web push metadata to the browser vendors' push services (pending owner review)
 - Amended by: [ADR-0019](0019-durable-upload-cleanup.md), for retained minimal unresolved upload cleanup records and operator receipts (2026-11-01, wording pending owner review)
 - Amended by: [ADR-0020](0020-durable-meeting-recovery.md), for minimal unresolved meeting recovery obligations and cleanup-cycle receipts (2026-11-06, wording pending owner review)
+- Amended by: [ADR-0024](0024-legal-documents-and-student-data.md), which puts the privacy policy, consent text and user agreement in the repository as public pages while registration with the data-protection authority stays an owner obligation, and adds retention bounds while listing the data still without a bound (2026-11-23, wording pending owner review)
 - Related: [ADR-0004](0004-bigbluebutton-primary-provider.md), [ADR-0006](0006-background-worker-and-email.md), NFR-1, [threat model](../threat-model.md)
 
 ## Context
