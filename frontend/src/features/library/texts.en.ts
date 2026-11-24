@@ -1,6 +1,7 @@
 export const libraryTexts = {
   root: 'Library',
   newAssignment: 'New assignment',
+  newTemplate: 'New template',
   moreActions: 'More library actions',
   upload: 'Upload material',
   newFolder: 'New folder',

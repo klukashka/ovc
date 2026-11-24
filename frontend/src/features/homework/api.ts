@@ -53,6 +53,8 @@ export function issueAssignmentAddress(templateId?: string): string {
     : `/homework/issue?${new URLSearchParams({ template: templateId }).toString()}`;
 }
 
+export const newTaskAddress = '/homework/new-task';
+
 export function builderAddress(templateId: string): string {
   return `/homework/templates/${encodeURIComponent(templateId)}`;
 }

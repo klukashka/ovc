@@ -1108,7 +1108,7 @@ test.describe('Maria in Russian', () => {
       .getByRole('button', { name: 'Irregular verbs', exact: true })
       .waitFor();
     await page.getByRole('navigation', { name: 'Путь к папке' }).getByRole('link', { name: 'Библиотека' }).click();
-    await page.locator('main header').getByRole('button', { name: 'Новое задание', exact: true }).click();
+    await page.locator('main header').getByRole('button', { name: 'Новый шаблон', exact: true }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Конструктор задания' })).toBeFocused();
 
     const title = page.getByRole('textbox', { name: 'Название', exact: true });

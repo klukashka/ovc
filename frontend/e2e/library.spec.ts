@@ -546,12 +546,12 @@ test.describe('library templates', () => {
     await expect(items(page).getByRole('link')).toHaveText(['Essay']);
   });
 
-  test('New assignment opens the builder with its heading focused', async ({ page, deployment }) => {
+  test('New template opens the builder with its heading focused', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     await createTemplate(deployment, tutor, 'Essay');
     await openLibrary(page, tutor);
 
-    await page.locator('main header').getByRole('button', { name: 'New assignment', exact: true }).click();
+    await page.locator('main header').getByRole('button', { name: 'New template', exact: true }).click();
 
     await expect(page).toHaveURL(/\/homework\/templates\/[0-9a-f-]{36}$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Assignment builder' })).toBeFocused();

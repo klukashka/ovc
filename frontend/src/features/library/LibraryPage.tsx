@@ -37,7 +37,13 @@ import { useOpenFormRoute } from '../../components/ui/formRoute.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import { issueAssignmentAddress } from '../homework/api.ts';
-import { HomeworkTabs, IssuedNotice, homeworkTextLoaders, useIssuedResult } from '../homework/IssueAssignment.tsx';
+import {
+  HomeworkTabs,
+  IssuedNotice,
+  NewTaskButton,
+  homeworkTextLoaders,
+  useIssuedResult,
+} from '../homework/IssueAssignment.tsx';
 import {
   type FolderNode,
   type Library,
@@ -737,7 +743,7 @@ export function LibraryPage(): ReactElement {
 
   const createButton = (
     <ActionButton busy={createAction.busy} onClick={createAssignment} className={primaryButtonClass}>
-      {t('library.newAssignment')}
+      {t('library.newTemplate')}
     </ActionButton>
   );
   const rootEmpty =
@@ -766,7 +772,12 @@ export function LibraryPage(): ReactElement {
 
   return (
     <Page
-      action={rootEmpty ? null : createButton}
+      action={
+        <>
+          <NewTaskButton opener="library-new-task" />
+          {rootEmpty ? null : createButton}
+        </>
+      }
       menu={
         <ActionMenu
           label={t('library.moreActions')}

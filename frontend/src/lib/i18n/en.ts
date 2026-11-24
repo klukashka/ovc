@@ -110,6 +110,7 @@ export const en: Resources = {
     home: 'Home',
     newLesson: 'New lesson',
     issueAssignment: 'Issue assignment',
+    newTask: 'New task',
     schedule: 'Schedule',
     lesson: 'Lesson',
     students: 'Students',

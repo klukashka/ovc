@@ -63,7 +63,7 @@ The legal document addresses and links below follow [ADR-0024](../../../docs/dec
 | `/students/{id}` | Student card |
 | `/groups`, `/groups/{id}` | Groups, group page |
 | `/homework/library?folder=&q=` | Library; from slice 8. `folder` and `q` are not sent together: a search ignores the folder, and an unknown folder shows Not found |
-| `/homework/new-task` | New task: write a task with attachments and questions and issue it on one page ([the one-page task](../../specs/homework.md#the-one-page-task)); an unconfirmed tutor sees the "Confirm your email" notice in its place (interface rework stage, specified 2026-11-23 by change U1b, pending owner review; pending implementation by H1) |
+| `/homework/new-task` | New task: write a task with attachments and questions and issue it on one page ([the one-page task](../../specs/homework.md#the-one-page-task)); an unconfirmed tutor sees the "Confirm your email" notice in its place (interface rework stage, specified 2026-11-23 by change U1b, pending owner review; built by H1 on 2026-11-24, pending owner review) |
 | `/homework/issue?template=` | Issue, a page at every width instead of the dialog; a template that is not the tutor's, deleted or not ready shows Not found or its completeness problems as the dialog did (interface rework stage, specified 2026-11-23 by change U1b, pending owner review; built by change U2) |
 | `/homework/templates/{id}` | Builder; from slice 8. "New assignment" in the library creates a template titled with the localised "New assignment" and opens it here; a deleted or foreign template shows Not found |
 | `/homework/issued?status=active\|withdrawn` | Issued work; from slice 9, `active` when no status is given |

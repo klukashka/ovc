@@ -8,7 +8,7 @@ import { useFocusAfterReturn } from '../../components/ui/ReturnedNotice.tsx';
 import { RouteTabs } from '../../components/ui/Tabs.tsx';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import type { TextLoaders } from '../../lib/i18n/featureTexts.ts';
-import { issueAddress, issueAssignmentAddress } from './api.ts';
+import { issueAddress, issueAssignmentAddress, newTaskAddress } from './api.ts';
 import type { IssuePreset } from './IssueAssignmentPage.tsx';
 
 export const homeworkTextLoaders: TextLoaders<'homework'> = {
@@ -76,6 +76,32 @@ export function IssueAssignmentButton({
       className={className}
     >
       {children ?? t('homework.issue')}
+    </button>
+  );
+}
+
+export function NewTaskButton({
+  opener,
+  className = quietButtonClass,
+}: {
+  readonly opener: string;
+  readonly className?: string;
+}): ReactElement {
+  const { t } = useTranslation();
+  const me = useSignedInAccount();
+  const open = useOpenFormRoute(me.id);
+  const button = useRef<HTMLButtonElement>(null);
+  useReturnFocus(opener, button);
+  return (
+    <button
+      ref={button}
+      type="button"
+      onClick={() => {
+        open(newTaskAddress, opener);
+      }}
+      className={className}
+    >
+      {t('homework.newTask.open')}
     </button>
   );
 }

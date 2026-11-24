@@ -3,6 +3,7 @@ import type { LibraryTexts } from './texts.ts';
 export const libraryTexts: LibraryTexts = {
   root: 'Библиотека',
   newAssignment: 'Новое задание',
+  newTemplate: 'Новый шаблон',
   moreActions: 'Другие действия с библиотекой',
   upload: 'Загрузить материал',
   newFolder: 'Новая папка',

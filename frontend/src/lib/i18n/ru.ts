@@ -117,6 +117,7 @@ export const ru = {
     home: 'Главная',
     newLesson: 'Новый урок',
     issueAssignment: 'Выдать задание',
+    newTask: 'Новое задание',
     schedule: 'Расписание',
     lesson: 'Урок',
     students: 'Ученики',

@@ -41,19 +41,23 @@ export function useFieldProblems(): FieldProblems {
       setAttempt((count) => count + 1);
     },
     edited: (field, problemNow): void => {
-      const shown = problems.get(field);
-      if (shown === undefined) {
+      if (!problems.has(field)) {
         return;
       }
-      if (shown.source === 'client' && problemNow !== undefined) {
-        if (problemNow !== shown.message) {
-          setProblems(new Map(problems).set(field, { ...shown, message: problemNow }));
+      setProblems((current) => {
+        const shown = current.get(field);
+        if (shown === undefined) {
+          return current;
         }
-        return;
-      }
-      const next = new Map(problems);
-      next.delete(field);
-      setProblems(next);
+        if (shown.source === 'client' && problemNow !== undefined) {
+          return problemNow === shown.message
+            ? current
+            : new Map(current).set(field, { ...shown, message: problemNow });
+        }
+        const next = new Map(current);
+        next.delete(field);
+        return next;
+      });
     },
     cleared: (): void => {
       if (problems.size > 0) {
