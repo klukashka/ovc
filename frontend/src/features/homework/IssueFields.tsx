@@ -159,32 +159,41 @@ export function DeadlineField({
   );
 }
 
-function noteOf(
-  option: AnswerPolicy,
-  showNoManualHint: boolean,
-): 'homework.afterSubmissionNote' | 'homework.noManualQuestionHint' | null {
+export type NoManualHint = 'absent' | 'reserved' | 'shown';
+
+type PolicyNoteKey = 'homework.afterSubmissionNote' | 'homework.noManualQuestionHint';
+
+interface PolicyNote {
+  readonly key: PolicyNoteKey;
+  readonly shown: boolean;
+}
+
+function noteOf(option: AnswerPolicy, policy: AnswerPolicy, noManualHint: NoManualHint): PolicyNote | null {
   if (option === 'after_submission') {
-    return 'homework.afterSubmissionNote';
+    return { key: 'homework.afterSubmissionNote', shown: true };
   }
-  return option === 'after_check' && showNoManualHint ? 'homework.noManualQuestionHint' : null;
+  if (option !== 'after_check' || policy !== 'after_check' || noManualHint === 'absent') {
+    return null;
+  }
+  return { key: 'homework.noManualQuestionHint', shown: noManualHint === 'shown' };
 }
 
 function PolicyOption({
   option,
   name,
   policy,
-  showNoManualHint,
+  noManualHint,
   onChange,
 }: {
   readonly option: AnswerPolicy;
   readonly name: string;
   readonly policy: AnswerPolicy;
-  readonly showNoManualHint: boolean;
+  readonly noManualHint: NoManualHint;
   readonly onChange: (policy: AnswerPolicy) => void;
 }): ReactElement {
   const { t } = useTranslation();
   const noteId = useId();
-  const note = noteOf(option, showNoManualHint);
+  const note = noteOf(option, policy, noManualHint);
   return (
     <div className="flex flex-col">
       <label className="inline-flex min-h-11 items-center gap-2 text-small">
@@ -193,7 +202,7 @@ function PolicyOption({
           name={name}
           value={option}
           checked={policy === option}
-          aria-describedby={note === null ? undefined : noteId}
+          aria-describedby={note?.shown === true ? noteId : undefined}
           onChange={() => {
             onChange(option);
           }}
@@ -205,8 +214,12 @@ function PolicyOption({
         {t(`homework.policies.${option}`)}
       </label>
       {note === null ? null : (
-        <p id={noteId} className="pl-6 text-small text-text-muted">
-          {t(note)}
+        <p
+          id={noteId}
+          aria-hidden={note.shown ? undefined : true}
+          className={note.shown ? 'pl-6 text-small text-text-muted' : 'invisible pl-6 text-small text-text-muted'}
+        >
+          {t(note.key)}
         </p>
       )}
     </div>
@@ -215,11 +228,11 @@ function PolicyOption({
 
 export function PolicyRadios({
   policy,
-  showNoManualHint,
+  noManualHint,
   onChange,
 }: {
   readonly policy: AnswerPolicy;
-  readonly showNoManualHint: boolean;
+  readonly noManualHint: NoManualHint;
   readonly onChange: (policy: AnswerPolicy) => void;
 }): ReactElement {
   const { t } = useTranslation();
@@ -236,7 +249,7 @@ export function PolicyRadios({
           option={option}
           name={name}
           policy={policy}
-          showNoManualHint={showNoManualHint}
+          noManualHint={noManualHint}
           onChange={onChange}
         />
       ))}

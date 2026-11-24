@@ -95,6 +95,22 @@ export async function createReadyTemplate(
   return { id: textField(created, 'id'), version: numberField(created, 'version') };
 }
 
+export async function createReadyHandCheckedTemplate(
+  deployment: Deployment,
+  tutor: TestAccount,
+  title: string,
+): Promise<SavedTemplate> {
+  const created = await send(deployment, tutor, 'POST', '/library/templates', 201, {
+    title,
+    folder_id: null,
+    blocks: [{ id: randomUUID(), type: 'long_text', prompt: 'Explain one half.', points: 2, max_length: 400 }],
+  });
+  if (field(created, 'ready') !== true) {
+    throw new Error('the seeded template is not ready');
+  }
+  return { id: textField(created, 'id'), version: numberField(created, 'version') };
+}
+
 export async function createIncompleteTemplate(
   deployment: Deployment,
   tutor: TestAccount,

@@ -235,7 +235,7 @@ function PolicyDisclosure({
         {shownOpen ? (
           <PolicyRadios
             policy={view.policy}
-            showNoManualHint={view.warning === 'noManualQuestion'}
+            noManualHint={view.warning === 'noManualQuestion' ? 'shown' : 'absent'}
             onChange={onChoose}
           />
         ) : null}

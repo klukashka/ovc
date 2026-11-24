@@ -15,6 +15,7 @@ import {
   changeDeadlineThroughTheApi,
   createFolder,
   createIncompleteTemplate,
+  createReadyHandCheckedTemplate,
   createReadyTemplate,
   issueIdsOf,
   issueManyThroughTheApi,
@@ -121,6 +122,77 @@ function issueHeading(page: Page): Locator {
 
 function audienceSearch(page: Page): Locator {
   return issueDialog(page).getByRole('searchbox', { name: 'Search for a student or group' });
+}
+
+function noManualQuestionHint(page: Page): Locator {
+  return issueDialog(page).getByText(
+    'This assignment has no questions you check by hand, so students see the answers right after submitting.',
+    { exact: true },
+  );
+}
+
+async function chooseTemplate(page: Page, title: string): Promise<void> {
+  await issueDialog(page).getByRole('button', { name: title }).click();
+  await expect(noManualQuestionHint(page)).toBeVisible();
+}
+
+async function holdTemplateRead(
+  page: Page,
+  templateId: string,
+): Promise<{ readonly held: Promise<void>; readonly release: () => Promise<void> }> {
+  const address = `**/api/v1/library/templates/${templateId}`;
+  let arrived: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    arrived = resolve;
+  });
+  let resume: () => void = () => undefined;
+  const resumed = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  await page.route(address, async (route) => {
+    if (route.request().method() === 'GET') {
+      arrived();
+      await resumed;
+    }
+    await route.continue();
+  });
+  return {
+    held,
+    release: async (): Promise<void> => {
+      const answered = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'GET' && new URL(response.url()).pathname.endsWith(`/${templateId}`),
+      );
+      resume();
+      await answered;
+      await page.unroute(address);
+    },
+  };
+}
+
+function issueButton(page: Page): Locator {
+  return issueDialog(page).getByRole('button', { name: 'Issue', exact: true });
+}
+
+async function chooseWhileTheTemplateReadIsHeld(
+  page: Page,
+  cardId: string,
+  tutor: TestAccount,
+  templateId: string,
+  title: string,
+): Promise<{
+  readonly read: { readonly release: () => Promise<void> };
+  readonly issueButtonBox: Awaited<ReturnType<typeof layoutBox>>;
+}> {
+  await signInThroughTheApi(page, tutor);
+  await page.goto(`/students/${cardId}`);
+  await page.getByRole('button', { name: 'Issue assignment', exact: true }).click();
+  const read = await holdTemplateRead(page, templateId);
+  await issueDialog(page).getByRole('button', { name: title }).click();
+  await read.held;
+  await expect(issueButton(page)).toHaveAttribute('aria-disabled', 'false');
+  await expect(noManualQuestionHint(page)).toBeHidden();
+  return { read, issueButtonBox: await layoutBox(issueButton(page)) };
 }
 
 function issuedNotice(page: Page): Locator {
@@ -431,7 +503,7 @@ test.describe('issuing from the builder, the card and the lesson', () => {
     await signInThroughTheApi(page, pavel);
     await page.goto(`/students/${annaCard}`);
     await page.getByRole('button', { name: 'Issue assignment', exact: true }).click();
-    await issueDialog(page).getByRole('button', { name: 'Fractions' }).click();
+    await chooseTemplate(page, 'Fractions');
 
     await issueDialog(page).getByRole('button', { name: 'Issue', exact: true }).click();
 
@@ -441,6 +513,37 @@ test.describe('issuing from the builder, the card and the lesson', () => {
     await expect(open).toHaveCount(1);
     await expect(open).toContainText('Fractions');
     await expect(open).toContainText('Not submitted');
+  });
+
+  test('the answer-visibility hint that arrives after choosing a template leaves the Issue button in place', async ({
+    page,
+    deployment,
+  }) => {
+    const { pavel, annaCard } = await pavelWithAnna(deployment);
+    const template = await createReadyTemplate(deployment, pavel, 'Fractions');
+    const pending = await chooseWhileTheTemplateReadIsHeld(page, annaCard, pavel, template.id, 'Fractions');
+
+    await pending.read.release();
+
+    await expect(noManualQuestionHint(page)).toBeVisible();
+    expect(await layoutBox(issueButton(page))).toEqual(pending.issueButtonBox);
+  });
+
+  test('a template with a question checked by hand keeps the hint hidden and the Issue button in place', async ({
+    page,
+    deployment,
+  }) => {
+    const { pavel, annaCard } = await pavelWithAnna(deployment);
+    const template = await createReadyHandCheckedTemplate(deployment, pavel, 'Essay');
+    const pending = await chooseWhileTheTemplateReadIsHeld(page, annaCard, pavel, template.id, 'Essay');
+
+    await pending.read.release();
+
+    await expect(noManualQuestionHint(page)).toBeHidden();
+    await expect(issueDialog(page).getByRole('radio', { name: 'After checking' })).not.toHaveAttribute(
+      'aria-describedby',
+    );
+    expect(await layoutBox(issueButton(page))).toEqual(pending.issueButtonBox);
   });
 
   test('the lesson page issues with its lesson linked', async ({ page, deployment, control }) => {
@@ -456,7 +559,7 @@ test.describe('issuing from the builder, the card and the lesson', () => {
     await signInThroughTheApi(page, pavel);
     await page.goto(`/lessons/${lesson?.id ?? ''}`);
     await page.getByRole('button', { name: 'Issue assignment', exact: true }).click();
-    await issueDialog(page).getByRole('button', { name: 'Fractions' }).click();
+    await chooseTemplate(page, 'Fractions');
 
     await issueDialog(page).getByRole('button', { name: 'Issue', exact: true }).click();
 
@@ -573,7 +676,7 @@ test.describe('issuing from the builder, the card and the lesson', () => {
     await signInThroughTheApi(page, pavel);
     await page.goto(`/lessons/${lesson}`);
     await page.getByRole('button', { name: 'Issue assignment', exact: true }).click();
-    await issueDialog(page).getByRole('button', { name: 'Fractions' }).click();
+    await chooseTemplate(page, 'Fractions');
     await issueThroughTheApi(deployment, pavel, template.id, { relationship_id: annaCard }, { lessonId: lesson });
     diagnostics.expectFailure({ method: 'POST', path: '/api/v1/issues', status: 422 });
 

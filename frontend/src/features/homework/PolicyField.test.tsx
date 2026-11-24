@@ -106,6 +106,11 @@ function descriptionOf(radio: HTMLElement): string {
     .join(' ');
 }
 
+function shownText(text: string): HTMLElement | null {
+  const element = screen.queryByText(text);
+  return element !== null && element.closest('[aria-hidden="true"]') === null ? element : null;
+}
+
 const automaticTemplateId = '00000000-0000-4000-8000-000000000051';
 
 describe('answer visibility in the Issue dialog', () => {
@@ -114,7 +119,7 @@ describe('answer visibility in the Issue dialog', () => {
 
     await showPolicy('en', template);
 
-    expect(screen.getByText(englishHint)).toBeTruthy();
+    expect(shownText(englishHint)).not.toBeNull();
     expect(descriptionOf(screen.getByRole('radio', { name: 'After checking' }))).toBe(englishHint);
   });
 
@@ -123,7 +128,7 @@ describe('answer visibility in the Issue dialog', () => {
 
     await showPolicy('ru', template);
 
-    expect(screen.getByText(russianHint)).toBeTruthy();
+    expect(shownText(russianHint)).not.toBeNull();
     expect(descriptionOf(screen.getByRole('radio', { checked: true }))).toBe(russianHint);
   });
 
@@ -132,7 +137,7 @@ describe('answer visibility in the Issue dialog', () => {
 
     await showPolicy('en', template);
 
-    expect(screen.queryByText(englishHint)).toBeNull();
+    expect(shownText(englishHint)).toBeNull();
     expect(screen.getByRole('radio', { name: 'After checking' }).getAttribute('aria-describedby')).toBeNull();
   });
 
@@ -143,7 +148,7 @@ describe('answer visibility in the Issue dialog', () => {
       server.failNextTemplateRead();
     });
 
-    expect(screen.queryByText(englishHint)).toBeNull();
+    expect(shownText(englishHint)).toBeNull();
   });
 
   test('choosing "Never" hides the hint and keeps focus on that radio', async () => {
@@ -153,7 +158,7 @@ describe('answer visibility in the Issue dialog', () => {
 
     fireEvent.click(never);
 
-    expect(screen.queryByText(englishHint)).toBeNull();
+    expect(shownText(englishHint)).toBeNull();
     expect(document.activeElement).toBe(never);
   });
 

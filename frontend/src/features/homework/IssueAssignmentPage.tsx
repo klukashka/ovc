@@ -44,6 +44,7 @@ import { ConfirmEmailPrompt, homeworkTextLoaders } from './IssueAssignment.tsx';
 import {
   ConfirmationAlert,
   DeadlineField,
+  type NoManualHint,
   PolicyRadios,
   deadlineDays,
   deadlineInstant,
@@ -225,7 +226,7 @@ function LessonField({
   );
 }
 
-function useNoManualQuestion(template: ChosenTemplate | null): boolean {
+function useNoManualHint(template: ChosenTemplate | null): NoManualHint {
   const client = useApiClient();
   const templateId = template?.id ?? '';
   const read = useQuery({
@@ -235,7 +236,10 @@ function useNoManualQuestion(template: ChosenTemplate | null): boolean {
     staleTime: 0,
     gcTime: 0,
   });
-  return template !== null && read.data?.id === templateId && !hasManualQuestion(read.data);
+  if (template === null) {
+    return 'absent';
+  }
+  return read.data?.id === templateId && !hasManualQuestion(read.data) ? 'shown' : 'reserved';
 }
 
 export function PolicyField({
@@ -247,10 +251,8 @@ export function PolicyField({
   readonly policy: AnswerPolicy;
   readonly onChange: (policy: AnswerPolicy) => void;
 }): ReactElement {
-  const noManualQuestion = useNoManualQuestion(template);
-  return (
-    <PolicyRadios policy={policy} showNoManualHint={policy === 'after_check' && noManualQuestion} onChange={onChange} />
-  );
+  const noManualHint = useNoManualHint(template);
+  return <PolicyRadios policy={policy} noManualHint={noManualHint} onChange={onChange} />;
 }
 
 type PendingFocus = 'templateSearch' | 'templateChange' | null;
