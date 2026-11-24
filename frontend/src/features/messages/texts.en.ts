@@ -53,4 +53,8 @@ export const chatTexts = {
   members: 'Members',
   someoneTyping: 'Someone is typing',
   namedTyping: '{name} is typing',
+  album: 'Album, {count} pictures',
+  jumpToLatest: 'Jump to latest',
+  jumpToLatestNew: 'Jump to latest, {count} new',
+  composerHint: 'Enter sends, Shift+Enter adds a line',
 } as const;

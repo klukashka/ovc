@@ -632,3 +632,118 @@ test.describe('Messages on a computer', () => {
     await expect(page.getByRole('button', { name: 'Send', exact: true })).toHaveClass(/bg-accent/);
   });
 });
+
+test.describe('the messenger layout on a computer', () => {
+  test.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', viewport: { width: 1280, height: 800 } });
+
+  async function bubbleColours(page: Page): Promise<{ readonly own: string[]; readonly others: string[] }> {
+    return page.getByRole('list', { name: 'Messages', exact: true }).evaluate((list) => {
+      const probe = document.createElement('span');
+      probe.style.background = 'var(--color-mine)';
+      document.body.append(probe);
+      const mine = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const colours = (own: boolean): string[] =>
+        Array.from(list.querySelectorAll<HTMLElement>(own ? 'li[data-own]' : 'li:not([data-own])')).map((row) => {
+          const bubble = row.querySelector('[data-bubble]');
+          return bubble === null ? 'none' : getComputedStyle(bubble).backgroundColor === mine ? 'mine' : 'other';
+        });
+      return { own: colours(true), others: colours(false) };
+    });
+  }
+
+  async function scrollHistoryTo(page: Page, end: 'top' | 'bottom'): Promise<void> {
+    await page.getByRole('list', { name: 'Messages', exact: true }).evaluate((list, target) => {
+      let pane = list.parentElement;
+      while (pane !== null && getComputedStyle(pane).overflowY !== 'auto') pane = pane.parentElement;
+      if (pane === null) throw new Error('the history has no scroll pane');
+      pane.scrollTop = target === 'top' ? 0 : pane.scrollHeight;
+      pane.dispatchEvent(new Event('scroll'));
+    }, end);
+  }
+
+  test('bubbles mark own messages, every message offers its actions by Tab, Enter sends, and Jump to latest counts arrivals', async ({
+    page,
+    deployment,
+    browserName,
+  }) => {
+    const { tutor, studentToken, channel } = await longHistory(deployment);
+    await signInThroughTheApi(page, tutor);
+    await openSettledConversation(page, channel, 'with the chat list');
+    await expect(messages(page).getByText(/History message 12$/)).toBeInViewport();
+    const composer = page.getByRole('textbox', { name: 'Message', exact: true });
+    await settledComposer(page);
+
+    const colours = await bubbleColours(page);
+    const rows = await messages(page).count();
+    const reachedByTab: boolean[] = [];
+    for (let index = 0; index < rows; index += 1) {
+      const row = messages(page).nth(index);
+      await row.focus();
+      await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
+      reachedByTab.push(
+        await row.getByRole('button', { name: 'Message actions', exact: true }).evaluate((button) => {
+          return button === document.activeElement;
+        }),
+      );
+    }
+    await composer.fill('Sent with Enter');
+    const sent = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' && /\/channels\/[^/]+\/messages$/.test(new URL(response.url()).pathname),
+    );
+    await composer.press('Enter');
+    const sentStatus = (await sent).status();
+    await messages(page).filter({ hasText: 'Sent with Enter' }).waitFor();
+    await settledComposer(page);
+    const sendsBeforeShiftEnter = await messages(page).count();
+    await composer.press('a');
+    await composer.press('Shift+Enter');
+    await composer.press('b');
+    const twoLines = await composer.inputValue();
+    await composer.fill('');
+    await scrollHistoryTo(page, 'top');
+    const arrivals: number[] = [];
+    for (const body of ['First while away', 'Second while away']) {
+      const arrived = await callApi(deployment, studentToken, 'POST', `/channels/${channel}/messages`, {
+        body,
+        attachment_ids: [],
+      });
+      arrivals.push(arrived.status);
+    }
+    const jump = page.getByRole('button', { name: 'Jump to latest, 2 new', exact: true });
+    await jump.waitFor();
+    const badge = await jump.textContent();
+    await jump.click();
+    const focusAfterJump = await composer.evaluate((element) => element === document.activeElement);
+    const latestAfterJump = await messages(page)
+      .getByText('Second while away')
+      .evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return box.top >= 0 && box.bottom <= window.innerHeight;
+      });
+    await scrollHistoryTo(page, 'top');
+    const third = await callApi(deployment, studentToken, 'POST', `/channels/${channel}/messages`, {
+      body: 'Third while away',
+      attachment_ids: [],
+    });
+    arrivals.push(third.status);
+    const oneNew = page.getByRole('button', { name: 'Jump to latest, 1 new', exact: true });
+    await oneNew.focus();
+    await scrollHistoryTo(page, 'bottom');
+
+    expect(sentStatus).toBe(201);
+    expect(arrivals).toEqual([201, 201, 201]);
+    expect(latestAfterJump).toBe(true);
+    expect(focusAfterJump).toBe(true);
+    expect(badge).toBe('2');
+    expect(colours.own).toEqual(Array.from({ length: 6 }, () => 'mine'));
+    expect(colours.others).toEqual(Array.from({ length: 6 }, () => 'other'));
+    expect(reachedByTab).toEqual(Array.from({ length: rows }, () => true));
+    expect(twoLines).toBe('a\nb');
+    expect(await messages(page).count()).toBe(sendsBeforeShiftEnter + 3);
+    await expect(messages(page).getByText('Third while away')).toBeInViewport();
+    await expect(composer).toBeFocused();
+    await expect(page.getByRole('button', { name: /^Jump to latest/ })).toHaveCount(0);
+  });
+});

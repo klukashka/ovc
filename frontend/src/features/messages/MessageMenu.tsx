@@ -3,7 +3,11 @@ import { type ReactElement, useEffect, useId, useLayoutEffect, useRef, useState 
 import { useScheduler } from '../../app/clock.ts';
 import { ActionButton, quietButtonClass } from '../../components/ui/Form.tsx';
 import { useChatWrite } from '../../components/ui/chatWrite.ts';
+import { MoreIcon } from '../../components/ui/icons.tsx';
 import type { ChatTexts } from './translations.ts';
+
+const moreButtonClass =
+  'inline-flex size-11 items-center justify-center rounded-full text-icon hover:bg-surface hover:text-text desktop:pointer-fine:size-8 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100 pointer-fine:aria-expanded:opacity-100';
 
 export function MessageMenu({
   texts,
@@ -74,7 +78,7 @@ export function MessageMenu({
         aria-label={texts.menu}
         aria-expanded={open}
         aria-controls={id}
-        className={quietButtonClass}
+        className={moreButtonClass}
         onPointerDown={(event) => {
           pressedLong.current = false;
           cancelPress.current();
@@ -102,13 +106,13 @@ export function MessageMenu({
           setOpen((value) => !value);
         }}
       >
-        ⋯
+        <MoreIcon size={18} />
       </button>
       {open ? (
         <div
           ref={menu}
           id={id}
-          className="absolute right-0 z-20 flex flex-col rounded-md border border-border bg-surface p-2"
+          className="absolute right-0 z-20 flex min-w-40 flex-col rounded-md border border-border bg-surface p-2 shadow-raised"
         >
           {editable ? (
             <ActionButton

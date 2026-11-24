@@ -68,7 +68,7 @@ Times, dates and counts use tabular figures (`font-variant-numeric: tabular-nums
 | `info` | `#3F5E7A` | `#93B3D1` | Submitted, informational |
 | `live` | `#A3352A` | `#E58A7C` | Lesson live now, recording (always with its word and the live dot) |
 | `scrim` | `rgba(38,36,31,.32)` | `rgba(0,0,0,.5)` | The dimmed page behind a modal overlay (decorative) |
-| `mine` | `#ECEEDF` | `#2B3023` | The bubble of the caller's own messages in Messages; others' bubbles use `surface` (interface rework stage, specified 2026-11-23 by change U1b from the prototype the owner approved, pending owner review; pending implementation by M1) |
+| `mine` | `#ECEEDF` | `#2B3023` | The bubble of the caller's own messages in Messages; others' bubbles use `surface` (interface rework stage, specified 2026-11-23 by change U1b from the prototype the owner approved, pending owner review; built by M1 on 2026-11-24) |
 
 Measured contrast:
 

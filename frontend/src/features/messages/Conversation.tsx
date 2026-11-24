@@ -1,5 +1,6 @@
 import { type QueryObserverResult, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  type KeyboardEvent,
   type ReactElement,
   type ReactNode,
   createContext,
@@ -22,9 +23,8 @@ import { FocusedNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { asApiError, useApiClient, type ApiError } from '../../lib/api/client.ts';
 import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
-import { formatDate } from '../../lib/format/dates.ts';
 import { type Channel, type Message, type MessagePage, deleteMessage, editMessage, sendMessage } from './api.ts';
-import { Attachments, useAttachmentExpiry } from './Attachments.tsx';
+import { useAttachmentExpiry } from './Attachments.tsx';
 import { channelLabel } from './channelLabel.ts';
 import { UploadComposer } from './UploadComposer.tsx';
 import { useUploads } from './uploads.ts';
@@ -32,8 +32,11 @@ import { useChatSignals } from './presence.ts';
 import { PresenceSummary } from './PresenceSummary.tsx';
 import { TypingIndicator } from './TypingIndicator.tsx';
 import { channelKey, messagesKey } from './keys.ts';
+import { ArrowDownIcon } from './icons.tsx';
 import { MessageBody } from './MessageBody.tsx';
 import { MessageMenu } from './MessageMenu.tsx';
+import { MessageRow } from './MessageRow.tsx';
+import { messagePlaces } from './messageGroups.ts';
 import { useReadMarkers } from './readMarkers.ts';
 import { chatRefetch, scheduleChatReads } from './refetch.ts';
 import { HistoryRefresh } from './historyRefresh.ts';
@@ -42,6 +45,20 @@ import type { ChatTexts } from './translations.ts';
 const composerMaximumRows = 8;
 
 const bottomTolerance = 24;
+
+const lineBreakInputs: ReadonlySet<string> = new Set(['insertLineBreak', 'insertParagraph']);
+
+function sendsOnEnter(event: KeyboardEvent<HTMLTextAreaElement>, phone: boolean): boolean {
+  return (
+    !phone &&
+    event.key === 'Enter' &&
+    !event.shiftKey &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.nativeEvent.isComposing
+  );
+}
 
 function fitComposerRows(field: HTMLTextAreaElement): void {
   field.rows = 1;
@@ -95,6 +112,7 @@ export function Conversation({
   const heading = useRef<HTMLHeadingElement>(null);
   const list = useRef<HTMLOListElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const pendingEnter = useRef<{ readonly repeat: boolean } | null>(null);
   const conflictContainer = useRef<HTMLDivElement>(null);
   const alive = useRef(true);
   const [draft, setDraft] = useState('');
@@ -147,10 +165,21 @@ export function Conversation({
   const historyContent = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
   const lastShown = useRef<string | null>(null);
+  const lastShownSeq = useRef(0);
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
+  const [unseen, setUnseen] = useState(0);
+  const jumpButton = useRef<HTMLButtonElement>(null);
+  const reachedBottom = (): void => {
+    if (jumpButton.current !== null && document.activeElement === jumpButton.current) composer.current?.focus();
+    setAwayFromBottom(false);
+    setUnseen(0);
+  };
   const rememberBottom = (): void => {
     const element = historyPane.current;
     if (element !== null) {
       atBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight <= bottomTolerance;
+      if (atBottom.current) reachedBottom();
+      else setAwayFromBottom(true);
     }
   };
   const latestMessage = messages.at(-1);
@@ -160,12 +189,26 @@ export function Conversation({
       return;
     }
     const opening = lastShown.current === null;
+    const previousSeq = lastShownSeq.current;
     lastShown.current = latestMessage.id;
+    lastShownSeq.current = Math.max(previousSeq, latestMessage.seq);
     if (opening || atBottom.current || latestMessage.own) {
       element.scrollTop = element.scrollHeight;
       atBottom.current = true;
+      reachedBottom();
+    } else {
+      const arrived = messages.filter((message) => message.seq > previousSeq && !message.own).length;
+      if (arrived > 0) setUnseen((count) => count + arrived);
     }
-  }, [latestMessage]);
+  }, [latestMessage, messages]);
+  function jumpToLatest(): void {
+    const pane = historyPane.current;
+    if (pane !== null) pane.scrollTop = pane.scrollHeight;
+    atBottom.current = true;
+    composer.current?.focus();
+    reachedBottom();
+  }
+  const places = useMemo(() => messagePlaces(messages, me.language, me.timezone), [messages, me.language, me.timezone]);
   useLayoutEffect(() => {
     const field = composer.current;
     if (field === null) {
@@ -205,6 +248,21 @@ export function Conversation({
     return (): void => {
       observer?.disconnect();
       window.removeEventListener('resize', windowResized);
+    };
+  }, [unavailable]);
+  useEffect(() => {
+    const field = composer.current;
+    if (unavailable || field === null) return undefined;
+    const sendInsteadOfLineBreak = (event: Event): void => {
+      const enter = pendingEnter.current;
+      if (enter === null || !(event instanceof InputEvent) || !lineBreakInputs.has(event.inputType)) return;
+      pendingEnter.current = null;
+      event.preventDefault();
+      if (!enter.repeat) field.form?.requestSubmit();
+    };
+    field.addEventListener('beforeinput', sendInsteadOfLineBreak);
+    return (): void => {
+      field.removeEventListener('beforeinput', sendInsteadOfLineBreak);
     };
   }, [unavailable]);
   useAttachmentExpiry(messages, refreshAttachments, isAlive);
@@ -552,6 +610,69 @@ export function Conversation({
     />
   );
   const linkClass = `text-accent-text underline${phone ? ' inline-flex min-h-11 items-center' : ''}`;
+  const field = (
+    <>
+      <textarea
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes('Files')) event.preventDefault();
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          chooseFiles(Array.from(event.dataTransfer.files));
+        }}
+        onPaste={(event) => {
+          const pictures = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'));
+          if (pictures.length > 0) {
+            event.preventDefault();
+            chooseFiles(pictures);
+          }
+        }}
+        ref={composer}
+        id={id}
+        value={draft}
+        readOnly={!channel.writable || busy}
+        aria-disabled={guard.unavailable}
+        aria-describedby={
+          [phone ? null : `${id}-hint`, validation === null ? null : `${id}-error`]
+            .filter((part) => part !== null)
+            .join(' ') || undefined
+        }
+        placeholder={texts.composer}
+        rows={1}
+        className="min-h-11 min-w-0 flex-1 resize-none rounded-md border border-border-strong bg-field px-3 py-2"
+        onChange={(event) => {
+          setDraft(event.target.value);
+          if (event.target.value.trim() === '') presence.stopTyping();
+          else presence.startTyping();
+        }}
+        onBlur={presence.stopTyping}
+        onKeyUp={() => {
+          pendingEnter.current = null;
+        }}
+        onKeyDown={(event) => {
+          pendingEnter.current = sendsOnEnter(event, phone) ? { repeat: event.repeat } : null;
+          if (event.key === 'Escape' && editing !== null) {
+            event.preventDefault();
+            cancelEdit();
+          }
+        }}
+      />
+      <ActionButton
+        type="submit"
+        busy={busy}
+        unavailable={guard.unavailable || conflict !== null}
+        unavailableReason={conflict !== null ? texts.resolveConflict : guard.reason}
+        className={primaryButtonClass}
+      >
+        {editing === null ? texts.send : texts.save}
+      </ActionButton>
+      {editing === null ? null : (
+        <button type="button" className={quietButtonClass} onClick={cancelEdit}>
+          {texts.cancel}
+        </button>
+      )}
+    </>
+  );
   return (
     <section className={`flex min-w-0 flex-col gap-3 desktop:h-full desktop:min-h-0${phone ? ' min-h-0 flex-1' : ''}`}>
       <div className={phone ? 'flex items-center gap-1' : 'contents'}>
@@ -586,113 +707,118 @@ export function Conversation({
       <p aria-live="polite" className={channel.writable ? 'sr-only' : 'text-text-muted'}>
         {channel.writable ? '' : texts.readonly}
       </p>
-      <div
-        ref={historyPane}
-        onScroll={rememberBottom}
-        className={`flex min-w-0 flex-col desktop:min-h-0 desktop:flex-1 desktop:overflow-y-auto${phone ? ' min-h-0 flex-1 overflow-y-auto' : ''}`}
-      >
-        <div ref={historyContent} className="flex min-w-0 shrink-0 flex-col gap-3">
-          {query.isPending ? <DelayedLoading /> : null}
-          {conflict?.error != null ||
-          channelError !== null ||
-          (conflict === null && query.isError && asApiError(query.error).status !== 404) ? (
-            <LoadFailed
-              error={conflict?.error ?? channelError ?? asApiError(query.error)}
-              onRetry={() => {
-                if (conflict !== null && editing !== null) void refreshConflict(editing.id, conflict.generation);
-                else if (channelError !== null) void refreshChannel();
-                else void query.refetch();
-              }}
+      <div className={`relative flex min-w-0 flex-col desktop:min-h-0 desktop:flex-1${phone ? ' min-h-0 flex-1' : ''}`}>
+        <div
+          ref={historyPane}
+          onScroll={rememberBottom}
+          className={`relative flex min-w-0 flex-col desktop:min-h-0 desktop:flex-1 desktop:overflow-y-auto${phone ? ' min-h-0 flex-1 overflow-y-auto' : ''}`}
+        >
+          <div ref={historyContent} className="flex min-w-0 shrink-0 flex-col gap-3">
+            {query.isPending ? <DelayedLoading /> : null}
+            {conflict?.error != null ||
+            channelError !== null ||
+            (conflict === null && query.isError && asApiError(query.error).status !== 404) ? (
+              <LoadFailed
+                error={conflict?.error ?? channelError ?? asApiError(query.error)}
+                onRetry={() => {
+                  if (conflict !== null && editing !== null) void refreshConflict(editing.id, conflict.generation);
+                  else if (channelError !== null) void refreshChannel();
+                  else void query.refetch();
+                }}
+              />
+            ) : null}
+            {query.data?.next_cursor != null ? (
+              <button
+                type="button"
+                className={quietButtonClass}
+                aria-disabled={loadingOlder || query.isFetching}
+                onClick={() => {
+                  if (!loadingOlder && !query.isFetching) {
+                    atBottom.current = false;
+                    olderThan.current = messages[0]?.seq ?? null;
+                    void showOlder();
+                  }
+                }}
+              >
+                {texts.older}
+              </button>
+            ) : null}
+            {query.isSuccess && messages.length === 0 ? <p>{texts.noMessages}</p> : null}
+            <ol ref={list} aria-label={texts.history} className="flex flex-col px-1 pb-2">
+              {messages.map((message, index) => {
+                const place = places[index];
+                if (place === undefined) return null;
+                const editable =
+                  message.own &&
+                  channel.writable &&
+                  scheduler.wallClock() - Date.parse(message.created_at) <= 24 * 60 * 60 * 1000;
+                return (
+                  <MessageRow
+                    key={message.id}
+                    message={message}
+                    place={place}
+                    texts={texts}
+                    language={me.language}
+                    timeZone={me.timezone}
+                    groupChat={channel.kind === 'group'}
+                    refresh={refreshAttachments}
+                    menu={
+                      !message.deleted && !message.erased && (message.own || me.role === 'tutor') ? (
+                        <MessageMenu
+                          texts={texts}
+                          editable={editable}
+                          busy={busy}
+                          onEdit={() => {
+                            guard.run(() => {
+                              editGeneration.current += 1;
+                              conflictRefresh.current?.cancel();
+                              conflictRefresh.current = null;
+                              setConflict(null);
+                              if (editing === null) savedDraft.current = draft;
+                              setEditing(message);
+                              setDraft(message.body ?? '');
+                              setFailure(null);
+                              composer.current?.focus();
+                            });
+                          }}
+                          onDelete={() => {
+                            deletion.run(() => {
+                              void remove(message);
+                            });
+                          }}
+                        />
+                      ) : null
+                    }
+                  />
+                );
+              })}
+            </ol>
+            <TypingIndicator
+              presence={presence}
+              someoneTyping={texts.someoneTyping}
+              namedTyping={(name) => texts.namedTyping.replace('{name}', name)}
             />
-          ) : null}
-          {query.data?.next_cursor != null ? (
-            <button
-              type="button"
-              className={quietButtonClass}
-              aria-disabled={loadingOlder || query.isFetching}
-              onClick={() => {
-                if (!loadingOlder && !query.isFetching) {
-                  atBottom.current = false;
-                  olderThan.current = messages[0]?.seq ?? null;
-                  void showOlder();
-                }
-              }}
-            >
-              {texts.older}
-            </button>
-          ) : null}
-          {query.isSuccess && messages.length === 0 ? <p>{texts.noMessages}</p> : null}
-          <ol ref={list} aria-label={texts.history} className="flex flex-col border-t border-border">
-            {messages.map((message, index) => {
-              const day = formatDate(message.created_at, me.language, me.timezone);
-              const previous = messages[index - 1];
-              const firstOfDay =
-                previous === undefined || formatDate(previous.created_at, me.language, me.timezone) !== day;
-              const editable =
-                message.own &&
-                channel.writable &&
-                scheduler.wallClock() - Date.parse(message.created_at) <= 24 * 60 * 60 * 1000;
-              return (
-                <li
-                  key={message.id}
-                  data-row={message.id}
-                  data-seq={message.seq}
-                  tabIndex={-1}
-                  className="border-b border-border px-1 py-3 outline-none focus-visible:ring-2"
-                >
-                  {firstOfDay ? <p className="mb-2 text-small text-text-muted">{day}</p> : null}
-                  <div className="flex items-center justify-between gap-2">
-                    <span dir="auto" className="min-w-0 text-strong [overflow-wrap:anywhere]">
-                      {message.own ? texts.you : (message.sender_label ?? texts.deletedUser)}
-                    </span>
-                    {!message.deleted && !message.erased && (message.own || me.role === 'tutor') ? (
-                      <MessageMenu
-                        texts={texts}
-                        editable={editable}
-                        busy={busy}
-                        onEdit={() => {
-                          guard.run(() => {
-                            editGeneration.current += 1;
-                            conflictRefresh.current?.cancel();
-                            conflictRefresh.current = null;
-                            setConflict(null);
-                            if (editing === null) savedDraft.current = draft;
-                            setEditing(message);
-                            setDraft(message.body ?? '');
-                            setFailure(null);
-                            composer.current?.focus();
-                          });
-                        }}
-                        onDelete={() => {
-                          deletion.run(() => {
-                            void remove(message);
-                          });
-                        }}
-                      />
-                    ) : null}
-                  </div>
-                  {message.deleted ? (
-                    <p>{texts.deleted}</p>
-                  ) : message.erased ? (
-                    <p>{texts.erased}</p>
-                  ) : (
-                    <MessageBody body={message.body ?? ''} />
-                  )}
-                  <Attachments message={message} texts={texts} refresh={refreshAttachments} />
-                  {message.edited_at === null || message.deleted || message.erased ? null : (
-                    <span className="text-small text-text-muted">{texts.edited}</span>
-                  )}
-                  {message.sent_before_reclaim ? <p className="text-small">{texts.reclaimed}</p> : null}
-                </li>
-              );
-            })}
-          </ol>
-          <TypingIndicator
-            presence={presence}
-            someoneTyping={texts.someoneTyping}
-            namedTyping={(name) => texts.namedTyping.replace('{name}', name)}
-          />
+          </div>
         </div>
+        {awayFromBottom ? (
+          <button
+            ref={jumpButton}
+            type="button"
+            aria-label={unseen > 0 ? texts.jumpToLatestNew.replace('{count}', String(unseen)) : texts.jumpToLatest}
+            className="absolute right-4 bottom-3 inline-flex size-11 items-center justify-center rounded-full border border-border bg-surface text-icon shadow-raised hover:text-text"
+            onClick={jumpToLatest}
+          >
+            <ArrowDownIcon size={18} />
+            {unseen > 0 ? (
+              <span
+                aria-hidden="true"
+                className="absolute -top-1.5 -right-1 min-w-5 rounded-full bg-accent px-1.5 text-center text-caption text-on-accent"
+              >
+                {unseen > 99 ? '99+' : unseen}
+              </span>
+            ) : null}
+          </button>
+        ) : null}
       </div>
       {read.failed ? (
         <button type="button" className={quietButtonClass} onClick={read.retry}>
@@ -735,79 +861,34 @@ export function Conversation({
           });
         }}
       >
-        <label htmlFor={id}>{texts.composer}</label>
-        <textarea
-          onDragOver={(event) => {
-            if (event.dataTransfer.types.includes('Files')) event.preventDefault();
-          }}
-          onDrop={(event) => {
-            event.preventDefault();
-            chooseFiles(Array.from(event.dataTransfer.files));
-          }}
-          onPaste={(event) => {
-            const pictures = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'));
-            if (pictures.length > 0) {
-              event.preventDefault();
-              chooseFiles(pictures);
-            }
-          }}
-          ref={composer}
-          id={id}
-          value={draft}
-          readOnly={!channel.writable || busy}
-          aria-disabled={guard.unavailable}
-          aria-describedby={validation === null ? undefined : `${id}-error`}
-          rows={1}
-          className="min-h-11 resize-none rounded-md border border-border-strong bg-field px-3 py-2"
-          onChange={(event) => {
-            setDraft(event.target.value);
-            if (event.target.value.trim() === '') presence.stopTyping();
-            else presence.startTyping();
-          }}
-          onBlur={presence.stopTyping}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape' && editing !== null) {
-              event.preventDefault();
-              cancelEdit();
-            }
-          }}
-        />
+        <label htmlFor={id} className="sr-only">
+          {texts.composer}
+        </label>
+        {phone ? null : (
+          <p id={`${id}-hint`} className="sr-only">
+            {texts.composerHint}
+          </p>
+        )}
         {validation === null ? null : (
           <p ref={uploadError} role="alert" tabIndex={-1} id={`${id}-error`}>
             {texts[validation]}
           </p>
         )}
-        {editing === null ? (
-          <UploadComposer
-            focusFallback={composer}
-            items={uploads.items}
-            texts={texts}
-            confirmed={me.email_verified}
-            busy={busy}
-            unavailable={attachmentGuard.unavailable}
-            reason={attachmentGuard.reason}
-            choose={chooseFiles}
-            remove={(key) => {
-              uploads.queue.remove(key);
-            }}
-          />
-        ) : null}
-        <div className="flex gap-2">
-          <ActionButton
-            type="submit"
-            busy={busy}
-            unavailable={guard.unavailable || conflict !== null}
-            unavailableReason={conflict !== null ? texts.resolveConflict : guard.reason}
-            className={primaryButtonClass}
-          >
-            {editing === null ? texts.send : texts.save}
-          </ActionButton>
-          {editing === null ? null : (
-            <button type="button" className={quietButtonClass} onClick={cancelEdit}>
-              {texts.cancel}
-            </button>
-          )}
-        </div>
+        <UploadComposer
+          focusFallback={composer}
+          field={field}
+          editing={editing !== null}
+          items={uploads.items}
+          texts={texts}
+          confirmed={me.email_verified}
+          busy={busy}
+          unavailable={attachmentGuard.unavailable}
+          reason={attachmentGuard.reason}
+          choose={chooseFiles}
+          remove={(key) => {
+            uploads.queue.remove(key);
+          }}
+        />
       </form>
     </section>
   );

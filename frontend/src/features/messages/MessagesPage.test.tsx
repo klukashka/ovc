@@ -24,6 +24,7 @@ import { type ApiClient, ApiClientContext, createApiClient } from '../../lib/api
 import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
+import { formatDate } from '../../lib/format/dates.ts';
 import { type Channel, type Message, deleteMessage, editMessage } from './api.ts';
 import { channelsScopeRevisionKey, channelScopeRevision, evictChannel } from './cache.ts';
 import { channelKey, channelsKey, messagesKey } from './keys.ts';
@@ -76,6 +77,8 @@ async function fixture(
     readonly reclaimed?: boolean;
     readonly initialReadMode?: 'strict' | 'single';
     readonly mediaQueries?: MediaQueries;
+    readonly kind?: Channel['kind'];
+    readonly seeds?: readonly (Message & { readonly senderId: string })[];
   } = {},
 ): Promise<{
   readonly server: FakeAuthServer;
@@ -89,9 +92,13 @@ async function fixture(
 }> {
   const server = new FakeAuthServer();
   server.addAccount({ ...tutor, role: options.role ?? 'tutor' });
-  server.chat.addChannel({ channel, members: [{ accountId: tutor.id }, { accountId: 'student-1' }] });
+  server.chat.addChannel({
+    channel: { ...channel, kind: options.kind ?? channel.kind },
+    members: [{ accountId: tutor.id }, { accountId: 'student-1' }],
+  });
   for (let seq = 1; seq <= count; seq += 1)
     server.chat.addMessage(channel.id, { ...message(seq), sent_before_reclaim: options.reclaimed ?? false });
+  for (const seed of options.seeds ?? []) server.chat.addMessage(channel.id, seed);
   const clock = manualScheduler();
   const session = new Session({ origin, transport: server.transport(), locks: memoryLocks(), scheduler: clock });
   await session.signIn(tutor.email, tutor.password);
@@ -1502,4 +1509,256 @@ test('conflict adoption requires fresh authoritative history after incremental w
   expect((field as HTMLTextAreaElement).value).toBe('Retained conflict draft');
   expect(document.activeElement).toBe(field);
   receive.cancel();
+});
+
+function fromOther(seq: number, senderLabel: string, createdAt: string): Message & { readonly senderId: string } {
+  return {
+    ...message(seq),
+    own: false,
+    body: `Other ${String(seq)}`,
+    sender_label: senderLabel,
+    senderId: `other-${senderLabel}`,
+    created_at: createdAt,
+  };
+}
+
+function rowOf(text: string): HTMLElement {
+  const row = screen.getByText(text).closest('li');
+  if (row === null) throw new Error('the message has no row');
+  return row;
+}
+
+function pressEnter(
+  field: HTMLElement,
+  init: { readonly shiftKey?: boolean; readonly repeat?: boolean } = {},
+): boolean {
+  fireEvent.keyDown(field, { key: 'Enter', ...init });
+  const lineBreakKept = fireEvent(
+    field,
+    new InputEvent('beforeinput', { inputType: 'insertLineBreak', bubbles: true, cancelable: true }),
+  );
+  fireEvent.keyUp(field, { key: 'Enter', ...init });
+  return lineBreakKept;
+}
+
+async function typedComposer(text: string): Promise<HTMLTextAreaElement> {
+  const field = await screen.findByRole('textbox', { name: 'Message' });
+  if (!(field instanceof HTMLTextAreaElement)) throw new Error('the composer is not a text area');
+  fireEvent.change(field, { target: { value: text } });
+  return field;
+}
+
+describe('messenger layout', () => {
+  test('own messages are marked as own and others are not, and a group chat names the first message of each group', async () => {
+    const seeds = [
+      fromOther(2, 'Anna', '2026-11-01T00:00:10Z'),
+      fromOther(3, 'Anna', '2026-11-01T00:00:20Z'),
+      fromOther(4, '<b>Boris</b>', '2026-11-01T00:00:30Z'),
+    ];
+
+    await fixture(1, '/messages/channel-1', true, { kind: 'group', seeds });
+    await screen.findByText('Other 4');
+
+    expect(rowOf('Message 1').hasAttribute('data-own')).toBe(true);
+    expect(rowOf('Other 2').hasAttribute('data-own')).toBe(false);
+    expect(within(rowOf('Message 1')).getByText('You').className).toBe('sr-only');
+    expect(within(rowOf('Other 2')).getByText('Anna').className).not.toBe('sr-only');
+    expect(within(rowOf('Other 3')).getByText('Anna').className).toBe('sr-only');
+    expect(within(rowOf('Other 4')).getByText('<b>Boris</b>').className).not.toBe('sr-only');
+    expect(screen.getByRole('list', { name: 'Messages' }).querySelector('b')).toBeNull();
+  });
+
+  test('a direct chat keeps every sender label for screen readers only', async () => {
+    await fixture(1, '/messages/channel-1', true, { seeds: [fromOther(2, 'Anna', '2026-11-01T00:00:10Z')] });
+
+    await screen.findByText('Other 2');
+
+    expect(within(rowOf('Other 2')).getByText('Anna').className).toBe('sr-only');
+  });
+
+  test('each day starts with one date chip', async () => {
+    const seeds = [
+      { ...message(2), created_at: '2026-11-01T10:00:00Z' },
+      { ...message(3), created_at: '2026-11-02T10:00:00Z' },
+      { ...message(4), created_at: '2026-11-02T10:00:30Z' },
+    ];
+
+    await fixture(1, '/messages/channel-1', true, { seeds });
+    await screen.findByText('Message 4');
+    const first = formatDate('2026-11-01T10:00:00Z', 'ru', 'Europe/Moscow');
+    const second = formatDate('2026-11-02T10:00:00Z', 'ru', 'Europe/Moscow');
+
+    expect(screen.getAllByText(first)).toHaveLength(1);
+    expect(screen.getAllByText(second)).toHaveLength(1);
+    expect(within(rowOf('Message 3')).queryByText(second)).not.toBeNull();
+    expect(within(rowOf('Message 4')).queryByText(second)).toBeNull();
+  });
+
+  test('Enter sends through the form instead of a line break and keeps focus in the emptied composer', async () => {
+    const { server } = await fixture();
+    const field = await typedComposer('Sent with Enter');
+
+    const lineBreakKept = pressEnter(field);
+    await screen.findByText('Sent with Enter');
+
+    expect(lineBreakKept).toBe(false);
+    expect(server.chat.sends.map((send) => send.body)).toEqual(['Sent with Enter']);
+    await waitFor(() => {
+      expect(field.value).toBe('');
+    });
+    expect(document.activeElement).toBe(field);
+  });
+
+  test.each([
+    {
+      name: 'Shift+Enter',
+      lineBreak: true,
+      press: (field: HTMLElement): boolean => pressEnter(field, { shiftKey: true }),
+    },
+    {
+      name: 'a held Enter',
+      lineBreak: false,
+      press: (field: HTMLElement): boolean => pressEnter(field, { repeat: true }),
+    },
+    {
+      name: 'the Enter that commits a composition before it ends',
+      lineBreak: null,
+      press: (field: HTMLElement): null => {
+        fireEvent.compositionStart(field);
+        fireEvent.keyDown(field, { key: 'Enter', isComposing: true });
+        fireEvent.compositionEnd(field);
+        fireEvent.keyUp(field, { key: 'Enter' });
+        return null;
+      },
+    },
+    {
+      name: 'the Enter that commits a composition after it ends',
+      lineBreak: null,
+      press: (field: HTMLElement): null => {
+        fireEvent.compositionStart(field);
+        fireEvent.compositionEnd(field);
+        fireEvent.keyDown(field, { key: 'Enter' });
+        fireEvent.keyUp(field, { key: 'Enter' });
+        return null;
+      },
+    },
+  ])('$name sends nothing and keeps the text', async ({ press, lineBreak }) => {
+    const { server } = await fixture();
+    const field = await typedComposer('Not sent yet');
+
+    const lineBreakKept = press(field);
+    const busyAfterPress = field.readOnly;
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(lineBreakKept).toBe(lineBreak);
+    expect(busyAfterPress).toBe(false);
+    expect(field.value).toBe('Not sent yet');
+    expect(server.chat.sends).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Send' }).getAttribute('aria-busy')).not.toBe('true');
+  });
+
+  test('Enter sends after a composition that ended without a key, as dictation or a picked candidate does', async () => {
+    const { server } = await fixture();
+    const field = await typedComposer('Dictated text');
+    fireEvent.compositionStart(field);
+    fireEvent.compositionEnd(field);
+
+    pressEnter(field);
+    await screen.findByText('Dictated text');
+
+    expect(server.chat.sends.map((send) => send.body)).toEqual(['Dictated text']);
+  });
+
+  test('Enter sends once when a text replacement comes before its line break', async () => {
+    const { server } = await fixture();
+    const field = await typedComposer('Corrected text');
+
+    fireEvent.keyDown(field, { key: 'Enter' });
+    fireEvent(
+      field,
+      new InputEvent('beforeinput', { inputType: 'insertReplacementText', bubbles: true, cancelable: true }),
+    );
+    fireEvent(field, new InputEvent('beforeinput', { inputType: 'insertLineBreak', bubbles: true, cancelable: true }));
+    fireEvent.keyUp(field, { key: 'Enter' });
+    await screen.findByText('Corrected text');
+
+    expect(server.chat.sends.map((send) => send.body)).toEqual(['Corrected text']);
+  });
+
+  test('a second Enter while a send is in flight sends nothing more', async () => {
+    const { server } = await fixture();
+    const field = await typedComposer('Only once');
+    const pause = server.chat.pauseNextSendResponse();
+
+    pressEnter(field);
+    await pause.answered;
+    pressEnter(field);
+    pressEnter(field);
+    pause.resume();
+    await screen.findByText('Only once');
+
+    expect(server.chat.sends).toHaveLength(1);
+    expect(server.chat.history(channel.id).filter((item) => item.body === 'Only once')).toHaveLength(1);
+  });
+
+  test('Enter offline or during an edit conflict sends nothing', async () => {
+    const { server, connection, clock, api } = await fixture();
+    const field = await typedComposer('Kept offline');
+    act(() => {
+      connection.readiness(1, false);
+      clock.pass(5000);
+    });
+
+    pressEnter(field);
+    act(() => {
+      connection.readiness(1, true);
+      clock.pass(5000);
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Message actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(field, { target: { value: 'Conflicting edit' } });
+    await editMessage(api, message(1), 'Changed elsewhere');
+    pressEnter(field);
+    await screen.findByRole('button', { name: 'Keep my text' });
+    const patchesBefore = server.chat.history(channel.id)[0]?.version;
+    pressEnter(field);
+    const busyAfterConflictEnter = field.readOnly;
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(busyAfterConflictEnter).toBe(false);
+    expect(server.chat.sends).toHaveLength(0);
+    expect(server.chat.history(channel.id)[0]?.version).toBe(patchesBefore);
+    expect(field.value).toBe('Conflicting edit');
+  });
+
+  test('a phone layout keeps Enter for a new line', async () => {
+    const { server } = await fixture(1, '/messages/channel-1', false);
+    const field = await typedComposer('Typed on a phone');
+
+    const lineBreakKept = pressEnter(field);
+    const busyAfterEnter = field.readOnly;
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(lineBreakKept).toBe(true);
+    expect(busyAfterEnter).toBe(false);
+    expect(field.value).toBe('Typed on a phone');
+    expect(server.chat.sends).toHaveLength(0);
+  });
+
+  test('a student sees no message actions on another member’s message', async () => {
+    await fixture(0, '/messages/channel-1', true, {
+      role: 'student',
+      seeds: [fromOther(1, 'Teacher', '2026-11-01T00:00:00Z')],
+    });
+
+    await screen.findByText('Other 1');
+
+    expect(within(rowOf('Other 1')).queryByRole('button', { name: 'Message actions' })).toBeNull();
+  });
 });

@@ -1,4 +1,4 @@
-import { type ReactElement, type RefObject, useEffect, useRef } from 'react';
+import { type ReactElement, type ReactNode, type RefObject, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ActionButton, errorMessage, fieldMessage, quietButtonClass } from '../../components/ui/Form.tsx';
@@ -34,8 +34,12 @@ export function UploadComposer({
   choose,
   remove,
   focusFallback,
+  field,
+  editing,
 }: {
   readonly focusFallback: RefObject<HTMLTextAreaElement | null>;
+  readonly field: ReactNode;
+  readonly editing: boolean;
   readonly items: readonly UploadItem[];
   readonly texts: ChatTexts;
   readonly confirmed: boolean;
@@ -55,59 +59,63 @@ export function UploadComposer({
   );
   return (
     <div className="flex flex-col gap-2">
-      {confirmed ? (
-        <>
-          <input
-            ref={picker}
-            type="file"
-            multiple
-            tabIndex={-1}
-            className="hidden"
-            aria-label={texts.attach}
-            onChange={(event) => {
-              choose(Array.from(event.target.files ?? []));
-              event.target.value = '';
-            }}
-          />
-          <ActionButton
-            type="button"
-            className={attachButtonClass}
-            busy={busy}
-            unavailable={unavailable}
-            unavailableReason={reason}
-            label={texts.attach}
-            onClick={() => {
-              if (!busy && !unavailable) picker.current?.click();
-            }}
-          >
-            <AttachIcon />
-          </ActionButton>
-        </>
-      ) : (
-        <p>{texts.confirmFiles}</p>
+      {editing ? null : (
+        <ul ref={list} className="flex flex-col gap-2 empty:hidden" aria-label={texts.attachments}>
+          {items.map((item) => (
+            <li key={item.key} data-row={String(item.key)}>
+              <span dir="auto">{item.name}</span>
+              {item.state === 'uploading' || item.state === 'waiting' ? (
+                <progress max={100} value={item.progress ?? undefined} aria-label={item.name} />
+              ) : null}
+              {item.state === 'ready' ? <span> {texts.uploaded}</span> : null}
+              <button
+                type="button"
+                className={quietButtonClass}
+                aria-disabled={busy}
+                onClick={() => {
+                  if (!busy) remove(item.key);
+                }}
+              >
+                {texts.removeFile}
+              </button>
+              <UploadFailure item={item} texts={texts} />
+            </li>
+          ))}
+        </ul>
       )}
-      <ul ref={list} className="flex flex-col gap-2" aria-label={texts.attachments}>
-        {items.map((item) => (
-          <li key={item.key} data-row={String(item.key)}>
-            <span dir="auto">{item.name}</span>
-            {item.state === 'uploading' || item.state === 'waiting' ? (
-              <progress max={100} value={item.progress ?? undefined} aria-label={item.name} />
-            ) : null}
-            {item.state === 'ready' ? <span> {texts.uploaded}</span> : null}
-            <button
+      {editing || confirmed ? null : <p className="text-small text-text-muted">{texts.confirmFiles}</p>}
+      <div className="flex items-end gap-2">
+        {editing || !confirmed ? null : (
+          <>
+            <input
+              ref={picker}
+              type="file"
+              multiple
+              tabIndex={-1}
+              className="hidden"
+              aria-label={texts.attach}
+              onChange={(event) => {
+                choose(Array.from(event.target.files ?? []));
+                event.target.value = '';
+              }}
+            />
+            <ActionButton
               type="button"
-              className={quietButtonClass}
-              aria-disabled={busy}
+              className={attachButtonClass}
+              busy={busy}
+              unavailable={unavailable}
+              unavailableReason={reason}
+              label={texts.attach}
               onClick={() => {
-                if (!busy) remove(item.key);
+                if (!busy && !unavailable) picker.current?.click();
               }}
             >
-              {texts.removeFile}
-            </button>
-            <UploadFailure item={item} texts={texts} />
-          </li>
-        ))}
-      </ul>
+              <AttachIcon />
+            </ActionButton>
+          </>
+        )}
+        {field}
+      </div>
     </div>
   );
 }

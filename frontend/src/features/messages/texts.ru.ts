@@ -55,4 +55,8 @@ export const chatTexts: ChatTexts = {
   members: 'Участники',
   someoneTyping: 'Кто-то печатает',
   namedTyping: '{name} печатает',
+  album: 'Альбом, фото: {count}',
+  jumpToLatest: 'К последним сообщениям',
+  jumpToLatestNew: 'К последним сообщениям, новых: {count}',
+  composerHint: 'Enter — отправить, Shift+Enter — новая строка',
 };

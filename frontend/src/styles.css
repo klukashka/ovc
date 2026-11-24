@@ -92,6 +92,7 @@
   --color-info: #3f5e7a;
   --color-live: #a3352a;
   --color-scrim: rgba(38, 36, 31, 0.32);
+  --color-mine: #eceedf;
 
   --color-clay: #6e3d22;
   --color-slate: #13759d;
@@ -125,6 +126,7 @@
   --color-info: #93b3d1;
   --color-live: #e58a7c;
   --color-scrim: rgba(0, 0, 0, 0.5);
+  --color-mine: #2b3023;
   --color-clay: #c29582;
   --color-slate: #5e9ac8;
   --color-moss: #848f7e;

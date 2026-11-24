@@ -400,3 +400,92 @@ test('teaching settings › storage meter reports the server usage after a chat 
   await expect(page.getByRole('meter')).toHaveAttribute('max', String(usage.file_quota_bytes));
   expect(usage.file_usage_bytes).toBeGreaterThan(0);
 });
+
+async function holdFileDownloads(
+  page: Page,
+): Promise<{ readonly firstHeld: Promise<void>; readonly release: () => void }> {
+  let release = (): void => {
+    throw new Error('the download release is not initialized');
+  };
+  let reached = (): void => {
+    throw new Error('the download barrier is not initialized');
+  };
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const firstHeld = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  await page.route(/\/api\/v1\/files\/[^/?]+\?/, async (route) => {
+    reached();
+    await released;
+    await route.continue();
+  });
+  return { firstHeld, release };
+}
+
+test('attachments › three pictures of one message form one album that keeps its boxes before loading, beside a file card that covers no other control', async ({
+  page,
+  deployment,
+}) => {
+  const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+  const { cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+  const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+  await openChat(page, tutor, channel);
+  await page.locator('input[type=file]').setInputFiles([
+    { name: 'board-1.png', mimeType: 'image/png', buffer: picture },
+    { name: 'board-2.png', mimeType: 'image/png', buffer: picture },
+    { name: 'board-3.png', mimeType: 'image/png', buffer: picture },
+    { name: 'homework.pdf', mimeType: 'application/pdf', buffer: documentBytes },
+  ]);
+  await page
+    .getByRole('list', { name: 'Attachments', exact: true })
+    .getByText('Uploaded', { exact: true })
+    .nth(3)
+    .waitFor();
+  const downloads = await holdFileDownloads(page);
+
+  await send(page, 'The board after the lesson');
+  const album = page.getByRole('group', { name: 'Album, 3 pictures', exact: true });
+  await album.waitFor();
+  await downloads.firstHeld;
+  const cellsBeforeLoading = await album.locator('img').evaluateAll((images) =>
+    images.map((image) => {
+      const cell = image.parentElement?.getBoundingClientRect();
+      return {
+        loaded: image instanceof HTMLImageElement && image.naturalWidth > 0,
+        width: cell?.width ?? 0,
+        height: cell?.height ?? 0,
+      };
+    }),
+  );
+  const row = page.getByRole('list', { name: 'Messages', exact: true }).getByRole('listitem').filter({ has: album });
+  const hits = await row.evaluate((element) => {
+    const hitsItself = (control: Element | null): boolean => {
+      if (control === null) return false;
+      const box = control.getBoundingClientRect();
+      return control.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+    };
+    return {
+      menu: hitsItself(element.querySelector('button[aria-label="Message actions"]')),
+      file: hitsItself(element.querySelector('a[href*="/api/v1/files/"]')),
+    };
+  });
+  downloads.release();
+
+  expect(cellsBeforeLoading).toHaveLength(3);
+  for (const cell of cellsBeforeLoading) {
+    expect(cell.loaded).toBe(false);
+    expect(cell.width).toBeGreaterThan(40);
+    expect(cell.height).toBeGreaterThan(40);
+  }
+  expect(hits).toEqual({ menu: true, file: true });
+  await expect(row.getByRole('link', { name: 'homework.pdf', exact: true })).toBeVisible();
+  await expect
+    .poll(() =>
+      album
+        .locator('img')
+        .evaluateAll((images) => images.every((image) => image instanceof HTMLImageElement && image.naturalWidth > 0)),
+    )
+    .toBe(true);
+});
