@@ -68,7 +68,9 @@ async function showAssignment(): Promise<ShownAssignment> {
 }
 
 function question(number: number): HTMLElement {
-  return screen.getByRole('group', { name: `Question ${String(number)}` });
+  return screen.getByRole('group', {
+    name: new RegExp(`^Question ${String(number)} · (Checked automatically|Your tutor checks it)$`),
+  });
 }
 
 function leaveTheQuestion(): void {

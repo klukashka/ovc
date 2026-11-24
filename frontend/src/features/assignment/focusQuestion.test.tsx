@@ -30,10 +30,10 @@ const text: QuestionBlock = {
   images: [],
 };
 
-function answering(): Answering {
+function answering(editable: readonly string[] = [choice.id, text.id]): Answering {
   return {
     answers: new Map<string, Answer>([[text.id, emptyAnswer]]),
-    editable: new Set([choice.id, text.id]),
+    editable: new Set(editable),
     invalid: new Set([text.id]),
     onChange: () => undefined,
     fileControl: () => null,
@@ -42,7 +42,7 @@ function answering(): Answering {
   };
 }
 
-async function renderQuestions(): Promise<void> {
+async function renderQuestions(editable?: readonly string[]): Promise<void> {
   const i18n = await createI18n('en');
   i18n.addResourceBundle('en', 'translation', { assignment: assignmentTexts }, true, true);
   render(
@@ -50,7 +50,7 @@ async function renderQuestions(): Promise<void> {
       <StudentBlocks
         assignment={{ title: 'Past simple', blocks: [choice, text] }}
         origin="https://ovc.example"
-        answering={answering()}
+        answering={answering(editable)}
         showTitle={false}
       />
     </I18nextProvider>,
@@ -63,7 +63,9 @@ describe('the field a refused question moves focus to', () => {
 
     const field = firstFieldOf(text.id);
 
-    expect(field).toBe(screen.getByRole('group', { name: 'Question 2' }).querySelector('input'));
+    expect(field).toBe(
+      screen.getByRole('group', { name: 'Question 2 · Checked automatically' }).querySelector('input'),
+    );
     expect(field?.getAttribute('aria-invalid')).toBe('true');
   });
 
@@ -73,5 +75,13 @@ describe('the field a refused question moves focus to', () => {
     const field = firstFieldOf(choice.id);
 
     expect(field).toBe(screen.getByRole('radio', { name: 'goed' }));
+  });
+
+  test('a question shows who checks it only while the work can be answered', async () => {
+    await renderQuestions([]);
+
+    const names = screen.getAllByRole('group').map((group) => group.querySelector('legend')?.textContent);
+
+    expect(names).toEqual(['Question 1', 'Question 2']);
   });
 });

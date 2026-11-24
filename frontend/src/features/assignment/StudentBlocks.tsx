@@ -261,6 +261,19 @@ export function questionNumbers(blocks: readonly StudentBlock[]): ReadonlyMap<st
   return numbers;
 }
 
+function checkerOf(type: QuestionBlock['type']): 'automatic' | 'tutor' {
+  switch (type) {
+    case 'single_choice':
+    case 'multiple_choice':
+    case 'short_text':
+    case 'short_number':
+      return 'automatic';
+    case 'long_text':
+    case 'file':
+      return 'tutor';
+  }
+}
+
 function StudentBlockView({
   block,
   number,
@@ -284,7 +297,11 @@ function StudentBlockView({
   }
   return (
     <fieldset aria-describedby={promptId} data-question={block.id} className="flex min-w-0 flex-col gap-3">
-      <legend className="mb-2 text-small text-text-muted">{t('assignment.question', { number })}</legend>
+      <legend className="mb-2 text-small text-text-muted">
+        {answering === null || answering.editable.size === 0
+          ? t('assignment.question', { number })
+          : `${t('assignment.question', { number })} · ${t(`assignment.checker.${checkerOf(block.type)}`)}`}
+      </legend>
       <div id={promptId}>
         <Markdown source={block.prompt} />
       </div>

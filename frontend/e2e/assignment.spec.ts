@@ -200,7 +200,7 @@ async function attach(
   file: { name: string; mimeType: string; buffer: Buffer },
 ): Promise<void> {
   const chooser = page.waitForEvent('filechooser');
-  await question(page, number).getByRole('button', { name: 'Attach files', exact: true }).click();
+  await question(page, number).getByRole('button', { name: 'Choose files', exact: true }).click();
   await (await chooser).setFiles(file);
 }
 
@@ -440,7 +440,7 @@ test.describe('answering an assignment', () => {
     expect((await storedAnswers(deployment, anna, submissionId)).files).toEqual([pdfFile.name]);
   });
 
-  test('Remove on the only file moves focus to Attach files and saves the removal', async ({
+  test('Remove on the only file moves focus to Choose files and saves the removal', async ({
     page,
     deployment,
     control,
@@ -455,7 +455,7 @@ test.describe('answering an assignment', () => {
     await removeButton(page, pdfFile.name).click();
     await skipVisibleSaveDelay(page);
 
-    await expect(question(page, 3).getByRole('button', { name: 'Attach files', exact: true })).toBeFocused();
+    await expect(question(page, 3).getByRole('button', { name: 'Choose files', exact: true })).toBeFocused();
     await expect(saveStatus(page)).toHaveText('Saved');
     expect((await storedAnswers(deployment, anna, submissionId)).files).toEqual([]);
   });
@@ -683,6 +683,8 @@ test.describe('answering an assignment', () => {
     await expect(saveStatus(page)).toHaveText('Saved');
     await expect(question(page, 3).getByText('Confirm your email to attach files.', { exact: true })).toBeVisible();
     await expect(question(page, 3).getByRole('button', { name: 'Attach files' })).toHaveCount(0);
+    await expect(question(page, 3).getByRole('button', { name: 'Choose files' })).toHaveCount(0);
+    await expect(question(page, 3).locator('[data-drop-zone]')).toHaveCount(0);
   });
 
   test('an answer saved after the relationship ended reloads the page onto the focused changed notice', async ({
@@ -1032,7 +1034,7 @@ test.describe('results of checked and returned work', () => {
     await expect(question(page, 3).getByRole('link', { name: correctedPdf.name })).toBeVisible();
     await expect(question(page, 1).getByRole('radio', { name: 'went' })).toBeDisabled();
     await expect(textAnswer(page)).not.toBeEditable();
-    await expect(question(page, 3).getByRole('button', { name: 'Attach files', exact: true })).toBeVisible();
+    await expect(question(page, 3).getByRole('button', { name: 'Choose files', exact: true })).toBeVisible();
     expect(await page.locator('main').innerText()).not.toMatch(/Correct answer|Explanation/);
   });
 
@@ -1458,7 +1460,7 @@ test.describe('pilot 2, group homework from the library', () => {
     await expect(page.getByRole('status').filter({ hasText: /^Saved$/ })).toBeVisible();
     await control.advance(1);
     const chooser = page.waitForEvent('filechooser');
-    await page.getByRole('group', { name: 'Question 3' }).getByRole('button', { name: 'Attach files' }).click();
+    await page.getByRole('group', { name: 'Question 3' }).getByRole('button', { name: 'Choose files' }).click();
     await (await chooser).setFiles(pdfFile);
     await expect(
       page.getByRole('group', { name: 'Question 3' }).getByRole('button', { name: `Remove ${pdfFile.name}` }),
@@ -1612,7 +1614,7 @@ test.describe('pilot 2, group homework from the library', () => {
       page.getByRole('group', { name: 'Question 2' }).getByRole('textbox', { name: 'Your answer' }),
     ).not.toBeEditable();
     const chooser = page.waitForEvent('filechooser');
-    await page.getByRole('group', { name: 'Question 3' }).getByRole('button', { name: 'Attach files' }).click();
+    await page.getByRole('group', { name: 'Question 3' }).getByRole('button', { name: 'Choose files' }).click();
     await (await chooser).setFiles(pictureFile);
     await expect(
       page.getByRole('group', { name: 'Question 3' }).getByRole('button', { name: `Remove ${pictureFile.name}` }),

@@ -46,7 +46,7 @@ import {
   submissionKey,
   submitWork,
 } from './api.ts';
-import { AnswerFiles } from './AnswerFiles.tsx';
+import { AnswerFiles, useFileDropGuard } from './AnswerFiles.tsx';
 import { AnswerAutosave, type Refusal } from './autosave.ts';
 import { firstFieldOf } from './focusQuestion.ts';
 import { SaveStatus } from './SaveStatus.tsx';
@@ -293,6 +293,7 @@ function AssignmentForm({
   const queryClient = useQueryClient();
   const session = useSession();
   const [sessionEpoch] = useState(() => session.currentEpoch());
+  useFileDropGuard();
   const scheduler = useScheduler();
   const me = useSignedInAccount();
   const now = useNow();

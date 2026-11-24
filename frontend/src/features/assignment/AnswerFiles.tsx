@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import { type DragEvent, type ReactElement, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FormAlert, linkClass, quietButtonClass, textButtonClass } from '../../components/ui/Form.tsx';
@@ -64,6 +64,52 @@ function useAnswerUploads(submissionId: string, questionId: string): UploadQueue
   return queue;
 }
 
+function carriesFiles(event: { readonly dataTransfer: DataTransfer | null }): boolean {
+  return event.dataTransfer?.types.includes('Files') ?? false;
+}
+
+function holdsFolder(transfer: DataTransfer): boolean {
+  return Array.from(transfer.items).some((item) => item.webkitGetAsEntry()?.isDirectory === true);
+}
+
+function outsideDropZone(event: globalThis.DragEvent): boolean {
+  const target = event.target;
+  const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
+  return element?.closest('[data-drop-zone]') === null || element === null;
+}
+
+export function useFileDropGuard(): void {
+  useEffect(() => {
+    const guard = (event: globalThis.DragEvent): void => {
+      if (!carriesFiles(event)) {
+        return;
+      }
+      event.preventDefault();
+      if (event.type === 'dragover' && event.dataTransfer !== null && outsideDropZone(event)) {
+        event.dataTransfer.dropEffect = 'none';
+      }
+    };
+    window.addEventListener('dragover', guard);
+    window.addEventListener('drop', guard);
+    return (): void => {
+      window.removeEventListener('dragover', guard);
+      window.removeEventListener('drop', guard);
+    };
+  }, []);
+}
+
+function focusFirst(candidates: readonly (HTMLElement | null | undefined)[]): void {
+  for (const candidate of candidates) {
+    if (candidate === null || candidate === undefined) {
+      continue;
+    }
+    candidate.focus();
+    if (document.activeElement === candidate) {
+      return;
+    }
+  }
+}
+
 function FileName({ file }: { readonly file: AnswerFile }): ReactElement {
   const address = file.url === '' ? null : downloadAddress(file.attachmentId, file.url, window.location.origin);
   return address === null ? (
@@ -103,6 +149,8 @@ export function AnswerFiles({
 }): ReactElement {
   const { t, i18n } = useTranslation();
   const hintId = useId();
+  const dropHintId = useId();
+  const dropButton = useRef<HTMLButtonElement>(null);
   const queue = useAnswerUploads(submissionId, block.id);
   const items = useSyncExternalStore(queue.subscribe, queue.snapshot);
   const [alert, setAlert] = useState<{ readonly reason: AlertReason; readonly attempt: number } | null>(null);
@@ -153,7 +201,8 @@ export function AnswerFiles({
       return;
     }
     const buttons = list.current?.querySelectorAll<HTMLButtonElement>('[data-remove-file]');
-    (buttons?.[removed.index] ?? buttons?.[removed.index - 1] ?? attachButton.current)?.focus();
+    const neighbour = buttons?.[removed.index] ?? buttons?.[removed.index - 1];
+    focusFirst(neighbour === undefined ? [dropButton.current, attachButton.current] : [neighbour]);
   }, [removed]);
   const uploading = items.length > 0;
   const onUploadingValue = useRef(onUploading);
@@ -191,6 +240,24 @@ export function AnswerFiles({
     }
     setAlert(null);
     queue.add(chosen);
+  }
+
+  const remaining = Math.max(0, block.maxFiles - files.length - items.length);
+
+  function dropped(event: DragEvent<HTMLButtonElement>): void {
+    if (!carriesFiles(event)) {
+      return;
+    }
+    event.preventDefault();
+    if (remaining === 0) {
+      refuse('tooMany');
+      return;
+    }
+    if (holdsFolder(event.dataTransfer)) {
+      refuse('wrongType');
+      return;
+    }
+    choose(Array.from(event.dataTransfer.files));
   }
 
   function remove(index: number): void {
@@ -243,52 +310,87 @@ export function AnswerFiles({
       {alertText === null ? null : <FormAlert key={alert?.attempt}>{alertText}</FormAlert>}
       {editable ? (
         confirmed ? (
-          <div className="flex flex-wrap items-center gap-2 max-tablet:flex-col max-tablet:items-stretch">
-            <button
-              ref={attachButton}
-              type="button"
-              aria-describedby={hintId}
-              onClick={() => attachInput.current?.click()}
-              className={quietButtonClass}
-            >
-              {t('assignment.attach')}
-            </button>
-            {block.allowedKinds.includes('images') ? (
-              <button type="button" onClick={() => photoInput.current?.click()} className={quietButtonClass}>
-                {t('assignment.files.takePhoto')}
+          <>
+            <div className="hidden flex-col gap-1 desktop:flex">
+              <button
+                ref={dropButton}
+                type="button"
+                data-drop-zone=""
+                aria-disabled={remaining === 0 ? true : undefined}
+                aria-describedby={dropHintId}
+                onClick={() => {
+                  if (remaining === 0) {
+                    refuse('tooMany');
+                    return;
+                  }
+                  attachInput.current?.click();
+                }}
+                onDragOver={(event) => {
+                  if (carriesFiles(event)) {
+                    event.preventDefault();
+                  }
+                }}
+                onDrop={dropped}
+                className="flex min-h-24 w-full items-center justify-center rounded-lg border border-dashed border-border-strong p-6 text-strong hover:bg-surface aria-disabled:text-text-muted"
+              >
+                {t('assignment.choose')}
               </button>
-            ) : null}
-            <input
-              ref={attachInput}
-              type="file"
-              hidden
-              multiple={block.maxFiles > 1}
-              accept={acceptList(block.allowedKinds)}
-              onChange={(event) => {
-                choose(Array.from(event.currentTarget.files ?? []));
-                event.currentTarget.value = '';
-              }}
-            />
-            {block.allowedKinds.includes('images') ? (
+              <p id={dropHintId} className="text-small text-text-muted">
+                {remaining === 0
+                  ? t('assignment.full', { count: block.maxFiles })
+                  : t('assignment.remaining', {
+                      kinds: block.allowedKinds.map((kind) => t(`assignment.kinds.${kind}`)).join(', '),
+                      count: remaining,
+                    })}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 desktop:hidden max-tablet:flex-col max-tablet:items-stretch">
+              <button
+                ref={attachButton}
+                type="button"
+                aria-describedby={hintId}
+                onClick={() => attachInput.current?.click()}
+                className={quietButtonClass}
+              >
+                {t('assignment.attach')}
+              </button>
+              {block.allowedKinds.includes('images') ? (
+                <button type="button" onClick={() => photoInput.current?.click()} className={quietButtonClass}>
+                  {t('assignment.files.takePhoto')}
+                </button>
+              ) : null}
               <input
-                ref={photoInput}
+                ref={attachInput}
                 type="file"
                 hidden
-                accept={pictureAcceptList()}
-                capture="environment"
+                multiple={block.maxFiles > 1}
+                accept={acceptList(block.allowedKinds)}
                 onChange={(event) => {
                   choose(Array.from(event.currentTarget.files ?? []));
                   event.currentTarget.value = '';
                 }}
               />
-            ) : null}
-          </div>
+              {block.allowedKinds.includes('images') ? (
+                <input
+                  ref={photoInput}
+                  type="file"
+                  hidden
+                  accept={pictureAcceptList()}
+                  capture="environment"
+                  onChange={(event) => {
+                    choose(Array.from(event.currentTarget.files ?? []));
+                    event.currentTarget.value = '';
+                  }}
+                />
+              ) : null}
+            </div>
+          </>
         ) : (
           <p className="text-text-muted">{t('assignment.files.confirmEmail')}</p>
         )
       ) : null}
       {editable && confirmed ? (
-        <p id={hintId} className="text-small text-text-muted">
+        <p id={hintId} className="text-small text-text-muted desktop:hidden">
           {t('assignment.fileHint', {
             kinds: block.allowedKinds.map((kind) => t(`assignment.kinds.${kind}`)).join(', '),
             count: block.maxFiles,
