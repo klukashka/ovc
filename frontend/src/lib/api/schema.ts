@@ -303,6 +303,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["exports-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exports/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["exports-current"];
+        put?: never;
+        post?: never;
+        delete: operations["exports-current-delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exports/current/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["exports-current-download"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/files/{id}": {
         parameters: {
             query?: never;
@@ -1501,6 +1549,11 @@ export interface components {
             lessons: components["schemas"]["LessonDetail"][];
             series: components["schemas"]["LessonSeries"] | null;
         };
+        CurrentExport: {
+            export: components["schemas"]["Export"] | null;
+            /** Format: date-time */
+            next_allowed_at: string | null;
+        };
         DeleteAccountRequest: {
             password: string;
         };
@@ -1529,7 +1582,7 @@ export interface components {
         };
         ErrorBody: {
             /** @enum {string} */
-            code: "bad_request" | "unauthenticated" | "token_expired" | "invalid_signature" | "invalid_credentials" | "email_not_verified" | "account_blocked" | "forbidden" | "not_found" | "method_not_allowed" | "conflict" | "lesson_overlap" | "lesson_not_live" | "outside_join_window" | "not_editable" | "answer_frozen" | "already_linked" | "student_exists" | "relationship_not_active" | "audience_not_active" | "role_mismatch" | "invitation_invalid" | "invitation_email_mismatch" | "relationship_not_provisional" | "email_erased" | "return_not_allowed" | "issue_has_submissions" | "channel_read_only" | "edit_window_passed" | "gone" | "payload_too_large" | "unsupported_media_type" | "validation_failed" | "lesson_in_past" | "tutor_code_invalid" | "token_invalid" | "rate_limited" | "tutor_unavailable" | "internal" | "provider_unavailable" | "service_unavailable" | "quota_exceeded";
+            code: "bad_request" | "unauthenticated" | "token_expired" | "invalid_signature" | "invalid_credentials" | "email_not_verified" | "account_blocked" | "forbidden" | "not_found" | "method_not_allowed" | "conflict" | "lesson_overlap" | "lesson_not_live" | "outside_join_window" | "not_editable" | "answer_frozen" | "already_linked" | "student_exists" | "relationship_not_active" | "audience_not_active" | "role_mismatch" | "invitation_invalid" | "invitation_email_mismatch" | "relationship_not_provisional" | "email_erased" | "return_not_allowed" | "issue_has_submissions" | "channel_read_only" | "edit_window_passed" | "export_in_progress" | "gone" | "payload_too_large" | "unsupported_media_type" | "validation_failed" | "lesson_in_past" | "tutor_code_invalid" | "token_invalid" | "rate_limited" | "tutor_unavailable" | "internal" | "provider_unavailable" | "service_unavailable" | "quota_exceeded";
             details?: components["schemas"]["ErrorDetails"];
             fields?: components["schemas"]["FieldError"][] | null;
             message: string;
@@ -1542,6 +1595,38 @@ export interface components {
             relationship_ids?: string[] | null;
             /** Format: uuid */
             student_id?: string;
+        };
+        Export: {
+            /** Format: date-time */
+            built_at: string | null;
+            /** Format: date-time */
+            expires_at: string | null;
+            /** @enum {string|null} */
+            failure: "error" | "too_long" | "too_large" | "withdrawn" | null;
+            id: string;
+            /** Format: date-time */
+            next_allowed_at: string | null;
+            progress: components["schemas"]["ExportProgress"] | null;
+            /** Format: date-time */
+            requested_at: string;
+            /** Format: int64 */
+            size_bytes: number | null;
+            /** @enum {string} */
+            state: "queued" | "building" | "ready" | "failed" | "expired";
+        };
+        ExportDownload: {
+            /** Format: date-time */
+            expires_at: string;
+            url: string;
+        };
+        ExportProgress: {
+            /** Format: int32 */
+            done: number;
+            /** Format: int32 */
+            total: number;
+        };
+        ExportRequest: {
+            password: string;
         };
         FieldError: {
             code: string;
@@ -2217,7 +2302,7 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             /** @enum {string} */
-            event: "invitation.accepted" | "join_request.created" | "join_request.accepted" | "join_request.declined" | "relationship.ended" | "lesson.reminder_1h" | "lesson.moved" | "lesson.cancelled" | "lesson.series_changed" | "group.archived" | "issue.created" | "issue.withdrawn" | "submission.submitted" | "submission.checked" | "submission.returned" | "submission.review_updated";
+            event: "invitation.accepted" | "join_request.created" | "join_request.accepted" | "join_request.declined" | "relationship.ended" | "lesson.reminder_1h" | "lesson.moved" | "lesson.cancelled" | "lesson.series_changed" | "group.archived" | "issue.created" | "issue.withdrawn" | "submission.submitted" | "submission.checked" | "submission.returned" | "submission.review_updated" | "export.ready" | "export.failed";
             /** Format: uuid */
             id: string;
             label: string | null;
@@ -2232,7 +2317,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            kind: "student_card" | "join_requests" | "my_tutors" | "lesson" | "assignment" | "review";
+            kind: "student_card" | "join_requests" | "my_tutors" | "lesson" | "assignment" | "review" | "my_data";
         };
         NotificationPage: {
             items: components["schemas"]["Notification"][];
@@ -4790,6 +4875,129 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "exports-create": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Export"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "exports-current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentExport"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "exports-current-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "exports-current-download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportDownload"];
+                };
+            };
+            /** @description Error */
+            default: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14021,7 +14229,9 @@ export const channelLastMessageSender_label_kindValues: ReadonlyArray<FlattenedD
 export const channelTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ChannelTutor"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const emailConfirmedOutcomeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EmailConfirmed"]["outcome"]> = ["choice_required", "linked", "request_sent", "code_invalid"];
 export const emailPreferenceGroupValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EmailPreference"]["group"]> = ["lesson_reminders", "lesson_changes", "homework", "results", "submissions", "message_digest"];
-export const errorBodyCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorBody"]["code"]> = ["bad_request", "unauthenticated", "token_expired", "invalid_signature", "invalid_credentials", "email_not_verified", "account_blocked", "forbidden", "not_found", "method_not_allowed", "conflict", "lesson_overlap", "lesson_not_live", "outside_join_window", "not_editable", "answer_frozen", "already_linked", "student_exists", "relationship_not_active", "audience_not_active", "role_mismatch", "invitation_invalid", "invitation_email_mismatch", "relationship_not_provisional", "email_erased", "return_not_allowed", "issue_has_submissions", "channel_read_only", "edit_window_passed", "gone", "payload_too_large", "unsupported_media_type", "validation_failed", "lesson_in_past", "tutor_code_invalid", "token_invalid", "rate_limited", "tutor_unavailable", "internal", "provider_unavailable", "service_unavailable", "quota_exceeded"];
+export const errorBodyCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorBody"]["code"]> = ["bad_request", "unauthenticated", "token_expired", "invalid_signature", "invalid_credentials", "email_not_verified", "account_blocked", "forbidden", "not_found", "method_not_allowed", "conflict", "lesson_overlap", "lesson_not_live", "outside_join_window", "not_editable", "answer_frozen", "already_linked", "student_exists", "relationship_not_active", "audience_not_active", "role_mismatch", "invitation_invalid", "invitation_email_mismatch", "relationship_not_provisional", "email_erased", "return_not_allowed", "issue_has_submissions", "channel_read_only", "edit_window_passed", "export_in_progress", "gone", "payload_too_large", "unsupported_media_type", "validation_failed", "lesson_in_past", "tutor_code_invalid", "token_invalid", "rate_limited", "tutor_unavailable", "internal", "provider_unavailable", "service_unavailable", "quota_exceeded"];
+export const exportFailureValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Export"]["failure"]> = ["error", "too_long", "too_large", "withdrawn"];
+export const exportStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Export"]["state"]> = ["queued", "building", "ready", "failed", "expired"];
 export const groupColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Group"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const groupDetailColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["GroupDetail"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const groupPatchColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["GroupPatch"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
@@ -14061,9 +14271,9 @@ export const myTutorStateValues: ReadonlyArray<FlattenedDeepRequired<components>
 export const newGroupColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NewGroup"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const newIssueAnswer_policyValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NewIssue"]["answer_policy"]> = ["never", "after_submission", "after_check"];
 export const notificationColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
-export const notificationEventValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["event"]> = ["invitation.accepted", "join_request.created", "join_request.accepted", "join_request.declined", "relationship.ended", "lesson.reminder_1h", "lesson.moved", "lesson.cancelled", "lesson.series_changed", "group.archived", "issue.created", "issue.withdrawn", "submission.submitted", "submission.checked", "submission.returned", "submission.review_updated"];
+export const notificationEventValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["event"]> = ["invitation.accepted", "join_request.created", "join_request.accepted", "join_request.declined", "relationship.ended", "lesson.reminder_1h", "lesson.moved", "lesson.cancelled", "lesson.series_changed", "group.archived", "issue.created", "issue.withdrawn", "submission.submitted", "submission.checked", "submission.returned", "submission.review_updated", "export.ready", "export.failed"];
 export const notificationLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["label_kind"]> = ["group", "removed_student", "former_student"];
-export const notificationLinkKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NotificationLink"]["kind"]> = ["student_card", "join_requests", "my_tutors", "lesson", "assignment", "review"];
+export const notificationLinkKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NotificationLink"]["kind"]> = ["student_card", "join_requests", "my_tutors", "lesson", "assignment", "review", "my_data"];
 export const passwordResetOutcomeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["PasswordReset"]["outcome"]> = ["choice_required"];
 export const profilePatchLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["language"]> = ["ru", "en"];
 export const profilePatchThemeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["theme"]> = ["light", "dark", "system"];

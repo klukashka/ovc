@@ -142,7 +142,7 @@ func TestUploadIntentCleanupGenerationsAreFinite(t *testing.T) {
 		}
 	}
 	initialGeneration := domain.UploadInitialCleanup
-	repeated, lateErr := h.service.finishIntentDeletion(context.Background(), repositories.ClaimedOutboxRow{ID: *initial.CleanupOutboxID}, domain.AttachmentPayload{Key: opened.key, Generation: &initialGeneration}, initial, h.now)
+	repeated, lateErr := h.service.finishIntentDeletion(context.Background(), repositories.ClaimedOutboxRow{ID: *initial.CleanupOutboxID}, intentEffect{subject: domain.UploadSubjectAttachment, id: opened.id, key: opened.key, generation: &initialGeneration}, initial, h.now)
 	final := h.read(t, opened.id)
 	h.tick(t, h.now)
 	_, remaining := h.service.deps.Store.Repositories().UploadIntents.ByID(context.Background(), opened.id)

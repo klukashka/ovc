@@ -67,7 +67,7 @@ func TestUploadReconciliationPreservesTransferredOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reason, staleErr := h.service.DeleteObject(context.Background(), repositories.ClaimedOutboxRow{Payload: payload}, h.now)
+	reason, staleErr := h.service.DeleteObject(context.Background(), repositories.ClaimedOutboxRow{Kind: domain.KindStorageDelete, Payload: payload}, h.now)
 	reconciled := h.service.discardChatUpload(context.Background(), opened, true)
 	after, lookupErr := h.service.deps.Store.Repositories().Attachments.ByID(context.Background(), uploaded.ID)
 	object, openErr := h.objects.Open(context.Background(), row.StorageKey)
@@ -180,7 +180,7 @@ func TestUploadStaleIntentCleanupPreservesPendingOwnership(t *testing.T) {
 	}
 
 	reconciled := h.service.discardChatUpload(context.Background(), openUpload{id: uploaded.ID, key: row.StorageKey}, true)
-	reason, staleErr := h.service.DeleteObject(context.Background(), repositories.ClaimedOutboxRow{Payload: payload}, h.now)
+	reason, staleErr := h.service.DeleteObject(context.Background(), repositories.ClaimedOutboxRow{Kind: domain.KindStorageDelete, Payload: payload}, h.now)
 	after, lookupErr := h.service.deps.Store.Repositories().Attachments.ByID(context.Background(), uploaded.ID)
 	object, openErr := h.objects.Open(context.Background(), row.StorageKey)
 	if openErr != nil {

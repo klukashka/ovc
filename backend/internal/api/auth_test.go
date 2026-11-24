@@ -27,6 +27,7 @@ import (
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
+	"ovc/backend/internal/services/export"
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/homework"
 	"ovc/backend/internal/services/library"
@@ -128,6 +129,9 @@ type authHarness struct {
 	provider  *meeting.SharedFake
 	lifecycle *meetings.Lifecycle
 	random    *countingRandom
+	exports   *export.Service
+	effects   export.Effects
+	wall      *steppedWall
 
 	createGate *providerClockGate
 	linkGate   *providerEntropyGate
@@ -204,7 +208,8 @@ func newAuthHarnessWithDatabase(
 	store := repositories.NewStore(database.Pool)
 	local := teststorage.New(t)
 	objects := local.Store
-	fileService := files.New(files.Dependencies{Store: store, Objects: objectsFor(local), Clock: shared, Random: random, Keys: keys, Logger: logger})
+	serving := objectsFor(local)
+	fileService := files.New(files.Dependencies{Store: store, Objects: serving, Clock: shared, Random: random, Keys: keys, Logger: logger})
 	fieldKey := sha256.Sum256([]byte("test-field-key"))
 	cipher, err := core.NewFieldCipher(core.NewSecret(base64.StdEncoding.EncodeToString(fieldKey[:])), random)
 	if err != nil {
@@ -214,11 +219,18 @@ func newAuthHarnessWithDatabase(
 		Store: store, Clock: shared, Random: random, Keys: keys, Cipher: cipher, PublicURL: publicOrigin, Logger: logger,
 	})
 	scheduleService := schedule.New(schedule.Dependencies{Store: store, Clock: shared, Random: random, Keys: keys, Logger: logger, Addresses: fileService})
+	effects := export.NewEffects(export.Dependencies{Store: store, Random: random, Logger: logger, Cleanup: fileService})
 	service := accounts.New(accounts.Dependencies{
 		Store: store, Clock: shared, Random: random, Hasher: hasher, Keys: keys, Logger: logger,
 		Tokens: core.NewAccessTokens(keys, publicOrigin, 15*time.Minute), RefreshTTL: 30 * 24 * time.Hour,
 		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}, Avatars: fileService, Uploads: fileService,
-		Tutoring: tutoringService,
+		Tutoring: tutoringService, Exports: effects,
+	})
+	wall := &steppedWall{}
+	exportService := export.New(export.Dependencies{
+		Store: store, Clock: shared, Wall: wall.Now, Random: random, Keys: keys, Logger: logger, Objects: serving,
+		Signer: storage.NewPresigner(local.Settings, local.Settings.Endpoint), Passwords: service, Cleanup: fileService,
+		PublicHost: "ovc.example", Timing: export.Timing{Complete: exportCompleteTimeout},
 	})
 	_, unsubscribeSecret, err := core.RandomToken(random, 32)
 	if err != nil {
@@ -262,6 +274,7 @@ func newAuthHarnessWithDatabase(
 		Chat:        chatService,
 		Library:     libraryService,
 		Homework:    homeworkService,
+		Exports:     exportService,
 		Meetings:    lifecycle,
 	}
 	for _, hook := range hooks {
@@ -310,7 +323,7 @@ func newAuthHarnessWithDatabase(
 		{Name: domain.LaneEmail, Concurrency: 10, Perform: notifier.Deliver},
 		{Name: domain.LaneStorageDelete, Concurrency: 4, Perform: fileService.DeleteObject},
 	}
-	purger := accounts.NewPurger(store, fileService, tutoringService, logger)
+	purger := accounts.NewPurger(store, fileService, tutoringService, effects, logger)
 	scheduled := []worker.Job{
 		{Name: domain.JobUploadsExpire, Every: time.Hour, Run: fileService.ExpirePending},
 		{Name: domain.JobDailyUploadsCleanup, Every: time.Minute, Run: fileService.CleanupDailyUploads},
@@ -329,14 +342,37 @@ func newAuthHarnessWithDatabase(
 		{Name: domain.JobLessonStatus, Every: time.Minute, Run: jobs.run((*schedule.Jobs).EndDue)},
 		{Name: domain.JobLessonReminders, Every: time.Minute, Run: jobs.run((*schedule.Jobs).QueueReminders)},
 		{Name: domain.JobSeriesExtension, Every: time.Hour, OwnLoop: true, Run: jobs.run((*schedule.Jobs).ExtendHorizons)},
+		{Name: domain.JobExportsRecover, Every: time.Minute, Run: options.Exports.Recover},
+		{Name: domain.JobExportsExpire, Every: time.Hour, Run: options.Exports.Expire},
 	}
-	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, scheduled, worker.DefaultTiming())
+	exportLane := worker.ClaimLane{Name: "export", Slots: domain.ExportLaneSlots, Poll: domain.ExportLanePoll, Claim: options.Exports.ClaimBuild}
+	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, scheduled, worker.DefaultTiming(), exportLane)
 	return &authHarness{
 		server: server, store: store, clock: shared, hasher: hasher, logs: logs,
 		database: database, sink: sink, worker: background, objects: objects, storage: local.Settings, links: links,
 		accounts: options.Auth.Accounts, tutoring: options.Tutoring, chat: options.Chat, keys: keys, mailer: mailer, schedule: scheduleService, jobs: jobs, files: fileService, purger: purger,
 		logger: logger, options: options, provider: provider, lifecycle: lifecycle, random: random, createGate: createGate, linkGate: linkGate,
+		exports: options.Exports, effects: effects, wall: wall,
 	}
+}
+
+const exportCompleteTimeout = 2 * time.Second
+
+type steppedWall struct {
+	mutex  sync.Mutex
+	offset time.Duration
+}
+
+func (w *steppedWall) Now() time.Time {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	return clock.System{}.Now().Add(w.offset)
+}
+
+func (w *steppedWall) Step(by time.Duration) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	w.offset += by
 }
 
 func (h *authHarness) seedUser(t *testing.T, id byte, email string, password string, age passwordAge) domain.UserID {

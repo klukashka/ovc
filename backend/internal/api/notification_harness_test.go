@@ -292,7 +292,7 @@ func (h *authHarness) seedNotifications(t *testing.T, recipient domain.UserID, t
 	for index := range count {
 		id := domain.NotificationID{0xab, recipient[0], byte(index >> 8), byte(index)}
 		_, err := h.store.Repositories().Notifications.Insert(context.Background(), repositories.NewNotification{
-			ID: id, UserID: recipient, TutorID: tutor, StudentID: &recipient, Event: domain.NotificationJoinRequestDeclined,
+			ID: id, UserID: recipient, TutorID: &tutor, StudentID: &recipient, Event: domain.NotificationJoinRequestDeclined,
 			SubjectID: domain.EntityID(id), IdempotencyKey: fmt.Sprintf("seeded:%s", id), CreatedAt: first.Add(time.Duration(index) * time.Second),
 		})
 		if err != nil {

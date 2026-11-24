@@ -550,7 +550,7 @@ func (s *Service) insertLessonRow(ctx context.Context, repos repositories.Reposi
 		return nil, err
 	}
 	inserted, err := repos.Notifications.Insert(ctx, repositories.NewNotification{
-		ID: id, UserID: row.target.user, TutorID: row.tutor, StudentID: row.target.student, Event: row.event,
+		ID: id, UserID: row.target.user, TutorID: &row.tutor, StudentID: row.target.student, Event: row.event,
 		SubjectID: domain.EntityID(row.subject), RelationshipID: row.target.relationship, IdempotencyKey: row.key, CreatedAt: row.now,
 	})
 	if err != nil || !inserted {

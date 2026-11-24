@@ -34,6 +34,7 @@ const (
 	ErrorIssueHasSubmissions        ErrorCode = "issue_has_submissions"
 	ErrorChannelReadOnly            ErrorCode = "channel_read_only"
 	ErrorEditWindowPassed           ErrorCode = "edit_window_passed"
+	ErrorExportInProgress           ErrorCode = "export_in_progress"
 	ErrorGone                       ErrorCode = "gone"
 	ErrorPayloadTooLarge            ErrorCode = "payload_too_large"
 	ErrorUnsupportedMediaType       ErrorCode = "unsupported_media_type"
@@ -85,6 +86,7 @@ var errorCatalogue = []errorDefinition{
 	{ErrorIssueHasSubmissions, http.StatusConflict, "The assignment already has submissions."},
 	{ErrorChannelReadOnly, http.StatusConflict, "The conversation is read-only."},
 	{ErrorEditWindowPassed, http.StatusConflict, "The message can no longer be edited."},
+	{ErrorExportInProgress, http.StatusConflict, "An export is already being prepared."},
 	{ErrorGone, http.StatusGone, "The resource no longer exists."},
 	{ErrorPayloadTooLarge, http.StatusRequestEntityTooLarge, "The request body is too large."},
 	{ErrorUnsupportedMediaType, http.StatusUnsupportedMediaType, "The request content type is not supported."},

@@ -308,6 +308,7 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: UserID
+              pointer: true
           - column: notifications.student_id
             go_type:
               import: ovc/backend/internal/domain
@@ -506,6 +507,48 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: AttachmentID
+          - column: upload_intents.subject_kind
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UploadSubjectKind
+          - column: upload_cleanup_receipts.subject_kind
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UploadSubjectKind
+          - column: exports.id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ExportID
+          - column: exports.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: exports.state
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ExportState
+          - column: exports.language
+            go_type:
+              import: ovc/backend/internal/domain
+              type: Language
+          - column: exports.build_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ExportBuildID
+              pointer: true
+          - column: exports.failure
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ExportFailure
+              pointer: true
+          - column: export_limits.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: export_limits.export_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: ExportID
           - column: upload_intents.capacity_class
             go_type:
               import: ovc/backend/internal/domain

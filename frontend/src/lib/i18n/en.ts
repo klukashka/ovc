@@ -782,6 +782,7 @@ export const en: Resources = {
     issue_has_submissions: 'The assignment already has submissions.',
     channel_read_only: 'This conversation is read-only.',
     edit_window_passed: 'The message can no longer be edited.',
+    export_in_progress: 'An export of your data is already being prepared.',
     gone: 'This no longer exists.',
     payload_too_large: 'The file or request is too large.',
     unsupported_media_type: 'This file type is not supported.',

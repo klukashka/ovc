@@ -16,6 +16,7 @@ const (
 	varStorageSecretKey = "OVC_STORAGE_SECRET_KEY"
 
 	varPresentationEndpoint = "OVC_PRESENTATION_STORAGE_ENDPOINT"
+	varExportEndpoint       = "OVC_EXPORT_STORAGE_ENDPOINT"
 
 	varDevStorageAccessKey = "OVC_DEV_STORAGE_ACCESS_KEY"
 	varDevStorageSecretKey = "OVC_DEV_STORAGE_SECRET_KEY"
@@ -98,6 +99,21 @@ func presentationEndpointFrom(lookup Lookup, provider MeetingProvider, testContr
 	}
 	if testControl && !isLoopbackAddress(parsed.Hostname()) {
 		return "", &SettingsError{Variable: varPresentationEndpoint, Problem: "must use a loopback IP address with OVC_TEST_CONTROL=1"}
+	}
+	return strings.TrimRight(endpoint, "/"), nil
+}
+
+func exportEndpointFrom(lookup Lookup, testControl bool) (string, error) {
+	endpoint, _ := lookup(varExportEndpoint)
+	if !validStorageEndpoint(endpoint) {
+		return "", &SettingsError{Variable: varExportEndpoint, Problem: "is required: an https origin, or http only on a loopback host"}
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return "", &SettingsError{Variable: varExportEndpoint, Problem: "is not a valid origin"}
+	}
+	if testControl && !isLoopbackAddress(parsed.Hostname()) {
+		return "", &SettingsError{Variable: varExportEndpoint, Problem: "must use a loopback IP address with OVC_TEST_CONTROL=1"}
 	}
 	return strings.TrimRight(endpoint, "/"), nil
 }

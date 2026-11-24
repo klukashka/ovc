@@ -65,7 +65,7 @@ func (s *Service) notifyStudents(
 		}
 		student, relationship := recipient.student, recipient.relationship
 		inserted, err := repos.Notifications.Insert(ctx, repositories.NewNotification{
-			ID: id, UserID: student, TutorID: tutor, StudentID: &student, Event: event, SubjectID: domain.EntityID(recipient.submission),
+			ID: id, UserID: student, TutorID: &tutor, StudentID: &student, Event: event, SubjectID: domain.EntityID(recipient.submission),
 			RelationshipID: &relationship, IdempotencyKey: key, CreatedAt: now,
 		})
 		if err != nil {

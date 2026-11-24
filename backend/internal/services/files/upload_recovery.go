@@ -28,14 +28,14 @@ func (s *Service) RecoverUploads(ctx context.Context, now time.Time) (int64, err
 			s.recoveryCursor = domain.AttachmentID{}
 			break
 		}
-		for _, id := range ids {
+		for _, found := range ids {
 			candidate, done := context.WithTimeout(bounded, s.deps.Uploads.Candidate)
-			err := s.recoverUpload(candidate, id, now)
+			err := s.recoverUpload(candidate, found.SubjectKind, found.AttachmentID, now)
 			done()
-			s.recoveryCursor = id
+			s.recoveryCursor = found.AttachmentID
 			if err != nil {
 				failures = errors.Join(failures, err)
-				s.deps.Logger.LogAttrs(bounded, slog.LevelError, "upload.recovery.failed", attachmentAttribute(id), slog.String("kind", "candidate_failed"))
+				s.deps.Logger.LogAttrs(bounded, slog.LevelError, "upload.recovery.failed", intentAttributes(found.SubjectKind, found.AttachmentID, slog.String("kind", "candidate_failed"))...)
 			} else {
 				processed++
 			}
@@ -51,9 +51,9 @@ func (s *Service) RecoverUploads(ctx context.Context, now time.Time) (int64, err
 	return processed, failures
 }
 
-func (s *Service) recoverUpload(ctx context.Context, id domain.AttachmentID, now time.Time) error {
+func (s *Service) recoverUpload(ctx context.Context, kind domain.UploadSubjectKind, id domain.AttachmentID, now time.Time) error {
 	return s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
-		row, found, err := lockUpload(ctx, repos, id)
+		subject, err := lockSubject(ctx, repos, kind, id, "", uploadingSince(now))
 		if err != nil {
 			return err
 		}
@@ -64,15 +64,18 @@ func (s *Service) recoverUpload(ctx context.Context, id domain.AttachmentID, now
 		if err != nil {
 			return err
 		}
-		if found && (row.State == domain.AttachmentPending || row.State == domain.AttachmentBound) {
+		if intent.SubjectKind != kind {
+			return repositories.ErrUploadTransition
+		}
+		if subject.protected {
 			return repositories.ErrUploadTransition
 		}
 		before := intent
 		if !intent.CleanupRequested {
-			if found && row.State == domain.AttachmentUploading && row.CreatedAt.After(uploadingSince(now)) {
+			if subject.live {
 				return nil
 			}
-			if found && row.State != domain.AttachmentDeleted {
+			if kind == domain.UploadSubjectAttachment && subject.found && !subject.deleted {
 				if _, err := repos.Attachments.MarkDeleted(ctx, id, now); err != nil {
 					return err
 				}
@@ -98,7 +101,7 @@ func (s *Service) recoverUpload(ctx context.Context, id domain.AttachmentID, now
 		changed := before.CleanupRequested != after.CleanupRequested || before.CleanupResult != after.CleanupResult || before.FinalCleanupRequired != after.FinalCleanupRequired
 		if changed {
 			repos.AfterCommit(ctx, func(ctx context.Context) {
-				s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.recovery.completed", attachmentAttribute(id))
+				s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.recovery.completed", intentAttributes(kind, id)...)
 			})
 		}
 		return nil

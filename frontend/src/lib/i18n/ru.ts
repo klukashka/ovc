@@ -795,6 +795,7 @@ export const ru = {
     issue_has_submissions: 'По заданию уже есть сданные работы.',
     channel_read_only: 'Этот чат доступен только для чтения.',
     edit_window_passed: 'Сообщение уже нельзя изменить.',
+    export_in_progress: 'Выгрузка ваших данных уже готовится.',
     gone: 'Этого больше нет.',
     payload_too_large: 'Файл или запрос слишком большой.',
     unsupported_media_type: 'Такой тип файла не поддерживается.',

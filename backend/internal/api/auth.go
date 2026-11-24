@@ -20,6 +20,7 @@ import (
 	"ovc/backend/internal/schemas"
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
+	"ovc/backend/internal/services/export"
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/homework"
 	"ovc/backend/internal/services/library"
@@ -94,6 +95,7 @@ type router struct {
 	chat        *chat.Service
 	library     *library.Service
 	homework    *homework.Service
+	exports     *export.Service
 	meetings    *meetings.Lifecycle
 	uploads     UploadTiming
 	downloads   DownloadTiming

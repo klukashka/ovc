@@ -7,4 +7,6 @@ export const notificationEventTexts: NotificationEventTexts = {
   submissionChecked: 'Ваша работа проверена',
   submissionReturned: 'Работа возвращена на доработку',
   submissionReviewUpdated: 'Репетитор обновил проверку',
+  exportReady: 'Выгрузка ваших данных готова к скачиванию',
+  exportFailed: 'Не удалось подготовить выгрузку ваших данных',
 };

@@ -21,7 +21,12 @@ type UploadIntent = dbgen.UploadIntent
 type UploadCleanupReceipt = dbgen.UploadCleanupReceipt
 
 func (r UploadIntents) Create(ctx context.Context, id domain.AttachmentID, key string, class domain.UploadCapacityClass, now time.Time) error {
-	if err := r.queries.CreateUploadIntent(ctx, dbgen.CreateUploadIntentParams{AttachmentID: id, StorageKey: key, CapacityClass: class, CreatedAt: now}); err != nil {
+	subject := domain.UploadSubjectAttachment
+	if class == domain.UploadCapacityExport {
+		subject = domain.UploadSubjectExportBuild
+	}
+	params := dbgen.CreateUploadIntentParams{AttachmentID: id, StorageKey: key, CapacityClass: class, SubjectKind: subject, CreatedAt: now}
+	if err := r.queries.CreateUploadIntent(ctx, params); err != nil {
 		return done(err, "create upload intent")
 	}
 	rows, err := r.queries.ReserveUploadIntentCapacity(ctx, dbgen.ReserveUploadIntentCapacityParams{CapacityClass: class, Now: now})
@@ -86,7 +91,9 @@ func (r UploadIntents) Remove(ctx context.Context, id domain.AttachmentID, key s
 	return intentApplied(released, err)
 }
 
-func (r UploadIntents) Candidates(ctx context.Context, after domain.AttachmentID, cutoff time.Time, limit int32) ([]domain.AttachmentID, error) {
+type UploadIntentCandidate = dbgen.UploadIntentCandidatesRow
+
+func (r UploadIntents) Candidates(ctx context.Context, after domain.AttachmentID, cutoff time.Time, limit int32) ([]UploadIntentCandidate, error) {
 	rows, err := r.queries.UploadIntentCandidates(ctx, dbgen.UploadIntentCandidatesParams{AfterID: pgtype.UUID{Bytes: after, Valid: true}, Cutoff: cutoff, BatchSize: limit})
 	return one(rows, err, "upload recovery candidates")
 }
@@ -111,8 +118,9 @@ func (r UploadIntents) ReceiptCount(ctx context.Context, id domain.AttachmentID)
 	return one(count, err, "upload cleanup receipt count")
 }
 
-func (r UploadIntents) CreateReceipt(ctx context.Context, id domain.AttachmentID, attempt domain.UploadAttemptID, outbox domain.OutboxID, now time.Time) error {
-	return done(r.queries.CreateUploadCleanupReceipt(ctx, dbgen.CreateUploadCleanupReceiptParams{AttachmentID: id, AttemptID: attempt, OutboxID: outbox, CreatedAt: now}), "create upload cleanup receipt")
+func (r UploadIntents) CreateReceipt(ctx context.Context, intent UploadIntent, attempt domain.UploadAttemptID, outbox domain.OutboxID, now time.Time) error {
+	params := dbgen.CreateUploadCleanupReceiptParams{AttachmentID: intent.AttachmentID, AttemptID: attempt, OutboxID: outbox, SubjectKind: intent.SubjectKind, CreatedAt: now}
+	return done(r.queries.CreateUploadCleanupReceipt(ctx, params), "create upload cleanup receipt")
 }
 
 func (r UploadIntents) UpdateReceipt(ctx context.Context, id domain.AttachmentID, outbox domain.OutboxID, status domain.OutboxStatus, now time.Time) error {
@@ -128,4 +136,9 @@ func intentApplied(rows int64, err error) error {
 		return ErrUploadTransition
 	}
 	return nil
+}
+
+func (r UploadIntents) CapacityUsed(ctx context.Context, class domain.UploadCapacityClass) (int32, error) {
+	used, err := r.queries.UploadIntentCapacityUsed(ctx, class)
+	return one(used, err, "upload intent capacity used")
 }

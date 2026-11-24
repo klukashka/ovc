@@ -48,6 +48,9 @@ func (c Command) inspectUpload(ctx context.Context, id domain.AttachmentID, args
 		return err
 	}
 	c.write(c.Stdout, fmt.Sprintf("intent\t%s\t%s\t%s\tcompletion_started=%t\tcompletion_confirmed=%t\tcleanup_requested=%t\tfinal_cleanup_required=%t\treceipts=%d", inspection.Attachment, inspection.Phase, inspection.Result, inspection.CompletionStarted, inspection.CompletionConfirmed, inspection.CleanupRequested, inspection.FinalCleanupRequired, inspection.ReceiptCount))
+	if inspection.Subject == domain.UploadSubjectExportBuild {
+		c.write(c.Stdout, "subject\t"+string(inspection.Subject))
+	}
 	if inspection.Outbox != nil {
 		c.write(c.Stdout, "outbox\t"+inspection.Outbox.String())
 	}

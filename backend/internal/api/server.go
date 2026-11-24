@@ -17,6 +17,7 @@ import (
 	"ovc/backend/internal/realtime"
 	"ovc/backend/internal/schemas"
 	"ovc/backend/internal/services/chat"
+	"ovc/backend/internal/services/export"
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/homework"
 	"ovc/backend/internal/services/library"
@@ -86,6 +87,7 @@ type Options struct {
 	Chat          *chat.Service
 	Library       *library.Service
 	Homework      *homework.Service
+	Exports       *export.Service
 	Meetings      *meetings.Lifecycle
 	Realtime      *realtime.Gateway
 	Uploads       UploadTiming
@@ -103,7 +105,7 @@ func newHandler(options Options, registerExtra func(*router)) (http.Handler, err
 	downloads := options.Downloads.withDefaults()
 	routes := &router{
 		api: api, auth: options.Auth, files: options.Files, tutoring: options.Tutoring, schedule: options.Schedule, preferences: options.Preferences,
-		inbox: options.Inbox, chat: options.Chat, library: options.Library, homework: options.Homework, meetings: options.Meetings, uploads: options.Uploads.withDefaults(),
+		inbox: options.Inbox, chat: options.Chat, library: options.Library, homework: options.Homework, exports: options.Exports, meetings: options.Meetings, uploads: options.Uploads.withDefaults(),
 		downloads: downloads, addresses: newAddressDownloads(downloads.PerAddress, downloads.ActivePerAddress), now: options.Now, logger: options.Logger,
 	}
 	routes.registerAll(readiness.run)
@@ -200,6 +202,7 @@ func (r *router) registerAll(readiness ReadinessFunc) {
 	r.registerSubmissions()
 	r.registerReviews()
 	r.registerFileRoutes()
+	r.registerExports()
 	r.registerHome()
 	r.registerRealtimeAudience()
 }

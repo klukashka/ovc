@@ -2,7 +2,6 @@ package files
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -167,25 +166,25 @@ func (s *Service) queueIntentCleanup(ctx context.Context, repos repositories.Rep
 	if err != nil {
 		return err
 	}
-	payload := domain.AttachmentPayload{Attachment: intent.AttachmentID.String(), Key: intent.StorageKey, Generation: &generation}
+	effect := intentEffect{subject: intent.SubjectKind, id: intent.AttachmentID, key: intent.StorageKey, generation: &generation}
 	if err := repos.UploadIntents.Queue(ctx, intent.AttachmentID, generation, id, now); err != nil {
 		return err
 	}
-	if err := s.insertIntentEffect(ctx, repos, id, payload, fmt.Sprintf("storage_delete:%s:intent:%d", intent.AttachmentID, generation), now); err != nil {
+	if err := s.insertIntentEffect(ctx, repos, id, effect, effect.cleanupKey(generation), now); err != nil {
 		return err
 	}
 	repos.AfterCommit(ctx, func(ctx context.Context) {
-		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.cleanup.requested", attachmentAttribute(intent.AttachmentID), slog.Int("generation", int(generation)))
+		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.cleanup.requested", intentAttributes(intent.SubjectKind, intent.AttachmentID, slog.Int("generation", int(generation)))...)
 	})
 	return nil
 }
 
-func (s *Service) insertIntentEffect(ctx context.Context, repos repositories.Repositories, id domain.OutboxID, payload domain.AttachmentPayload, key string, now time.Time) error {
-	encoded, err := json.Marshal(payload)
+func (s *Service) insertIntentEffect(ctx context.Context, repos repositories.Repositories, id domain.OutboxID, effect intentEffect, key string, now time.Time) error {
+	kind, encoded, err := effect.outboxPayload()
 	if err != nil {
-		return fmt.Errorf("encode upload cleanup: %w", err)
+		return err
 	}
-	inserted, err := repos.Outbox.Insert(ctx, repositories.NewOutboxRow{ID: id, Lane: domain.LaneStorageDelete, Priority: domain.PriorityNormal, Kind: domain.KindStorageDelete, Payload: encoded, IdempotencyKey: key, NextAttemptAt: now, CreatedAt: now})
+	inserted, err := repos.Outbox.Insert(ctx, repositories.NewOutboxRow{ID: id, Lane: domain.LaneStorageDelete, Priority: domain.PriorityNormal, Kind: kind, Payload: encoded, IdempotencyKey: key, NextAttemptAt: now, CreatedAt: now})
 	if err != nil {
 		return err
 	}

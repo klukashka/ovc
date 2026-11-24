@@ -53,6 +53,8 @@ const eventTexts = {
   'submission.checked': 'notificationEvents.submissionChecked',
   'submission.returned': 'notificationEvents.submissionReturned',
   'submission.review_updated': 'notificationEvents.submissionReviewUpdated',
+  'export.ready': 'notificationEvents.exportReady',
+  'export.failed': 'notificationEvents.exportFailed',
 } as const satisfies Readonly<Record<NotificationEvent, string>>;
 
 const lazySectionPrefix = 'notificationEvents.';

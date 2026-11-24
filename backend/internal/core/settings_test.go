@@ -32,6 +32,7 @@ func validValues() map[string]string {
 	values["OVC_JWT_SECRET"] = sentinel("jwt-signing-material-0123456789")
 	values["OVC_STORAGE_ENDPOINT"] = "https://storage.ovc.example"
 	values["OVC_PRESENTATION_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
+	values["OVC_EXPORT_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
 	values["OVC_STORAGE_REGION"] = "ru-central1"
 	values["OVC_STORAGE_BUCKET"] = "ovc-files"
 	values["OVC_STORAGE_ACCESS_KEY"] = sentinel("storage-access-key")
@@ -142,6 +143,7 @@ func TestLoadRefusesTestControlWithSMTPMail(t *testing.T) {
 	for key, value := range map[string]string{
 		"OVC_TEST_CONTROL": "1", "OVC_HTTP_ADDR": "127.0.0.1:8000", "OVC_STORAGE_ENDPOINT": "http://127.0.0.1:58333",
 		"OVC_PRESENTATION_STORAGE_ENDPOINT": "http://127.0.0.1:58333",
+		"OVC_EXPORT_STORAGE_ENDPOINT":       "http://127.0.0.1:58333",
 		"OVC_MAIL_BACKEND":                  "smtp", "OVC_SMTP_HOST": "smtp.example", "OVC_MAIL_FROM": "noreply@ovc.example",
 	} {
 		values[key] = value
@@ -183,6 +185,7 @@ func TestLoadChecksTheFakeRoomOrigin(t *testing.T) {
 				values["OVC_HTTP_ADDR"] = "127.0.0.1:8000"
 				values["OVC_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
 				values["OVC_PRESENTATION_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
+				values["OVC_EXPORT_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
 				values["OVC_FAKE_ROOM_ORIGIN"] = testCase.origin
 
 				settings, err := core.Load(lookupFrom(values), process)
@@ -209,6 +212,7 @@ func TestLoadAcceptsTestControlOnLoopback(t *testing.T) {
 	values["OVC_HTTP_ADDR"] = "[::1]:8000"
 	values["OVC_STORAGE_ENDPOINT"] = "http://[::1]:58333"
 	values["OVC_PRESENTATION_STORAGE_ENDPOINT"] = "http://[::1]:58333"
+	values["OVC_EXPORT_STORAGE_ENDPOINT"] = "http://[::1]:58333"
 
 	settings, err := core.Load(lookupFrom(values), core.ProcessAPI)
 
@@ -363,6 +367,7 @@ func TestPublicURLMustBeAnHTTPSOrigin(t *testing.T) {
 				values["OVC_TEST_CONTROL"] = testCase.testControl
 				values["OVC_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
 				values["OVC_PRESENTATION_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
+				values["OVC_EXPORT_STORAGE_ENDPOINT"] = "http://127.0.0.1:58333"
 			}
 
 			settings, err := core.Load(lookupFrom(values), core.ProcessAPI)
@@ -636,5 +641,50 @@ func TestTheAdministrationCommandNeedsOnlyTheDatabaseAndLogging(t *testing.T) {
 
 	if err != nil || settings.Process != core.ProcessAdmin {
 		t.Fatalf("the administration settings needed more than the database: %v", err)
+	}
+}
+
+func TestExportStorageEndpointRule(t *testing.T) {
+	loopbackTestControl := map[string]string{"OVC_TEST_CONTROL": "1", "OVC_HTTP_ADDR": "127.0.0.1:8000", "OVC_STORAGE_ENDPOINT": "http://127.0.0.1:58333"}
+	cases := map[string]struct {
+		extra    map[string]string
+		value    string
+		accepted string
+	}{
+		"remote https":                    {value: "https://storage.ovc.example/", accepted: "https://storage.ovc.example"},
+		"http on a loopback address":      {value: "http://127.0.0.1:58333", accepted: "http://127.0.0.1:58333"},
+		"loopback IP under test control":  {extra: loopbackTestControl, value: "http://127.0.0.1:58333", accepted: "http://127.0.0.1:58333"},
+		"missing":                         {},
+		"http on a remote host":           {value: "http://storage.ovc.example"},
+		"localhost under test control":    {extra: loopbackTestControl, value: "http://localhost:58333"},
+		"remote https under test control": {extra: loopbackTestControl, value: "https://storage.ovc.example"},
+		"a path":                          {value: "https://storage.ovc.example/bucket"},
+		"user information":                {value: "https://key@storage.ovc.example"},
+		"a query":                         {value: "https://storage.ovc.example?x=1"},
+		"another scheme":                  {value: "ftp://storage.ovc.example"},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			values := validValues()
+			delete(values, "OVC_EXPORT_STORAGE_ENDPOINT")
+			for key, value := range testCase.extra {
+				values[key] = value
+			}
+			if testCase.value != "" {
+				values["OVC_EXPORT_STORAGE_ENDPOINT"] = testCase.value
+			}
+
+			settings, err := core.Load(lookupFrom(values), core.ProcessAPI)
+
+			if testCase.accepted != "" {
+				if err != nil || settings.ExportEndpoint != testCase.accepted {
+					t.Fatalf("got %q, %v; want %q", settings.ExportEndpoint, err, testCase.accepted)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "OVC_EXPORT_STORAGE_ENDPOINT") {
+				t.Fatalf("expected a refusal naming the export endpoint, got %v", err)
+			}
+		})
 	}
 }

@@ -96,7 +96,13 @@ type Dependencies struct {
 	Avatars     AvatarBinder
 	Uploads     UploadPurger
 	Tutoring    TutoringEffects
+	Exports     ExportEffects
 	Logger      *slog.Logger
+}
+
+type ExportEffects interface {
+	WithdrawOwn(ctx context.Context, repos repositories.Repositories, user domain.UserID, cause domain.ExportInvalidationCause, now time.Time) error
+	DeleteForPurge(ctx context.Context, repos repositories.Repositories, user domain.UserID, now time.Time) error
 }
 
 type Service struct {
@@ -104,8 +110,8 @@ type Service struct {
 }
 
 func New(dependencies Dependencies) *Service {
-	if dependencies.Avatars == nil || dependencies.Uploads == nil || dependencies.Tutoring == nil {
-		panic("the accounts service needs an avatar binder, an upload purger and the tutoring effects")
+	if dependencies.Avatars == nil || dependencies.Uploads == nil || dependencies.Tutoring == nil || dependencies.Exports == nil {
+		panic("the accounts service needs an avatar binder, an upload purger, the tutoring effects and the export effects")
 	}
 	return &Service{deps: dependencies}
 }

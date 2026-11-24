@@ -33,7 +33,7 @@ func (s *Service) notify(ctx context.Context, repos repositories.Repositories, r
 	}
 	student := row.student
 	inserted, err := repos.Notifications.Insert(ctx, repositories.NewNotification{
-		ID: id, UserID: row.recipient, TutorID: row.tutor, StudentID: &student, Event: row.event, SubjectID: row.subject,
+		ID: id, UserID: row.recipient, TutorID: &row.tutor, StudentID: &student, Event: row.event, SubjectID: row.subject,
 		RelationshipID: row.relationship, IdempotencyKey: row.key, CreatedAt: now,
 	})
 	if err != nil || !inserted {

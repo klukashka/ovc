@@ -106,7 +106,7 @@ func storageDefaults() map[string]string {
 		panic(err)
 	}
 	return map[string]string{
-		"OVC_STORAGE_ENDPOINT": settings.Endpoint, "OVC_PRESENTATION_STORAGE_ENDPOINT": settings.Endpoint,
+		"OVC_STORAGE_ENDPOINT": settings.Endpoint, "OVC_PRESENTATION_STORAGE_ENDPOINT": settings.Endpoint, "OVC_EXPORT_STORAGE_ENDPOINT": settings.Endpoint,
 		"OVC_STORAGE_REGION": settings.Region, "OVC_STORAGE_BUCKET": settings.Bucket,
 		"OVC_STORAGE_ACCESS_KEY": settings.AccessKey.Reveal(), "OVC_STORAGE_SECRET_KEY": settings.SecretKey.Reveal(),
 	}

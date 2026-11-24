@@ -350,7 +350,8 @@ func subjectIsSubmission(event domain.NotificationEvent) bool {
 		return true
 	case domain.NotificationInvitationAccepted, domain.NotificationJoinRequestCreated, domain.NotificationJoinRequestAccepted,
 		domain.NotificationJoinRequestDeclined, domain.NotificationRelationshipEnded, domain.NotificationLessonReminder1h,
-		domain.NotificationLessonMoved, domain.NotificationLessonCancelled, domain.NotificationSeriesChanged, domain.NotificationGroupArchived:
+		domain.NotificationLessonMoved, domain.NotificationLessonCancelled, domain.NotificationSeriesChanged, domain.NotificationGroupArchived,
+		domain.NotificationExportReady, domain.NotificationExportFailed:
 		return false
 	}
 	return false
@@ -363,7 +364,7 @@ func subjectIsRequest(event domain.NotificationEvent) bool {
 	case domain.NotificationInvitationAccepted, domain.NotificationRelationshipEnded, domain.NotificationLessonReminder1h,
 		domain.NotificationLessonMoved, domain.NotificationLessonCancelled, domain.NotificationSeriesChanged, domain.NotificationGroupArchived,
 		domain.NotificationIssueCreated, domain.NotificationIssueWithdrawn, domain.NotificationSubmitted, domain.NotificationSubmissionChecked,
-		domain.NotificationSubmissionReturned, domain.NotificationReviewUpdated:
+		domain.NotificationSubmissionReturned, domain.NotificationReviewUpdated, domain.NotificationExportReady, domain.NotificationExportFailed:
 		return false
 	}
 	return false
@@ -376,7 +377,7 @@ func subjectIsLesson(event domain.NotificationEvent) bool {
 	case domain.NotificationInvitationAccepted, domain.NotificationJoinRequestCreated, domain.NotificationJoinRequestAccepted,
 		domain.NotificationJoinRequestDeclined, domain.NotificationRelationshipEnded, domain.NotificationGroupArchived,
 		domain.NotificationIssueCreated, domain.NotificationIssueWithdrawn, domain.NotificationSubmitted, domain.NotificationSubmissionChecked,
-		domain.NotificationSubmissionReturned, domain.NotificationReviewUpdated:
+		domain.NotificationSubmissionReturned, domain.NotificationReviewUpdated, domain.NotificationExportReady, domain.NotificationExportFailed:
 		return false
 	}
 	return false
@@ -408,6 +409,8 @@ func (s subjects) item(principal accounts.Principal, row repositories.Notificati
 		s.assignmentRow(principal, row, &item)
 	case domain.NotificationSubmitted:
 		s.reviewRow(principal, row, &item)
+	case domain.NotificationExportReady, domain.NotificationExportFailed:
+		item.Link = &Link{Kind: domain.LinkMyData, ID: row.SubjectID}
 	}
 	return item
 }
@@ -436,7 +439,7 @@ func (s subjects) reviewRow(principal accounts.Principal, row repositories.Notif
 
 func (s subjects) archivedGroupRow(principal accounts.Principal, row repositories.Notification, item *Item) {
 	group, found := s.groups[domain.GroupID(row.SubjectID)]
-	if principal.Role != domain.RoleStudent || !found || group.TutorID != row.TutorID {
+	if principal.Role != domain.RoleStudent || !found || row.TutorID == nil || group.TutorID != *row.TutorID {
 		return
 	}
 	if group.Member {

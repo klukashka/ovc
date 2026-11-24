@@ -100,7 +100,7 @@ func VariableNames() []string {
 		varHTTPAddr, varDatabaseURL, varDBPoolSize, varLogLevel, varLogFormat, varAPIDocsEnabled,
 		varTestControl, varClock, varMeetingProvider, varMailBackend, varPublicURL, varFakeRoomOrigin, varSMTPHost, varSMTPPort,
 		varSMTPTLS, varSMTPUsername, varSMTPPassword, varMailFrom, varJWTSecret, varAccessTTL, varRefreshTTL,
-		varTrustedProxies, varTestDatabaseURL, varFileQuota, varRecordingQuota, varFieldKey, varUnsubscribeKey, varPresentationEndpoint,
+		varTrustedProxies, varTestDatabaseURL, varFileQuota, varRecordingQuota, varFieldKey, varUnsubscribeKey, varPresentationEndpoint, varExportEndpoint,
 	}, storageVariableNames()...)
 }
 
@@ -129,6 +129,7 @@ type Settings struct {
 	TutorQuotas     TutorQuotas
 	Storage         StorageSettings
 	Presentation    string
+	ExportEndpoint  string
 	FieldKey        Secret
 	UnsubscribeKey  Secret
 }
@@ -283,6 +284,11 @@ func Load(lookup Lookup, process Process) (Settings, error) {
 			problems = append(problems, err)
 		}
 		settings.Presentation = presentation
+		exportEndpoint, err := exportEndpointFrom(lookup, settings.TestControl)
+		if err != nil {
+			problems = append(problems, err)
+		}
+		settings.ExportEndpoint = exportEndpoint
 	}
 
 	if value, set := lookup(varFakeRoomOrigin); set {

@@ -3,7 +3,6 @@ package files
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -22,6 +21,7 @@ type UploadCleanupCycle struct {
 
 type UploadInspection struct {
 	Attachment           domain.AttachmentID
+	Subject              domain.UploadSubjectKind
 	Phase                domain.UploadPhase
 	CompletionStarted    bool
 	CompletionConfirmed  bool
@@ -53,7 +53,7 @@ func (s *Service) InspectUpload(ctx context.Context, id domain.AttachmentID, aft
 	if err != nil {
 		return UploadInspection{}, err
 	}
-	result := UploadInspection{Attachment: id, Phase: intent.Phase, CompletionStarted: intent.CompletionStarted, CompletionConfirmed: intent.CompletionConfirmed, CleanupRequested: intent.CleanupRequested, FinalCleanupRequired: intent.FinalCleanupRequired, Generation: intent.CleanupGeneration, Outbox: intent.CleanupOutboxID, Result: intent.CleanupResult, ErrorCode: intent.ErrorCode, ReceiptCount: count}
+	result := UploadInspection{Attachment: id, Subject: intent.SubjectKind, Phase: intent.Phase, CompletionStarted: intent.CompletionStarted, CompletionConfirmed: intent.CompletionConfirmed, CleanupRequested: intent.CleanupRequested, FinalCleanupRequired: intent.FinalCleanupRequired, Generation: intent.CleanupGeneration, Outbox: intent.CleanupOutboxID, Result: intent.CleanupResult, ErrorCode: intent.ErrorCode, ReceiptCount: count}
 	for _, receipt := range receipts {
 		result.Receipts = append(result.Receipts, cycleOf(receipt))
 	}
@@ -78,7 +78,14 @@ func (s *Service) RetryUploadCleanup(ctx context.Context, id domain.AttachmentID
 	result := UploadCleanupCycle{}
 	refused := false
 	err = s.deps.Store.WithTx(bounded, func(repos repositories.Repositories) error {
-		if _, _, err := lockUpload(bounded, repos, id); err != nil {
+		known, err := repos.UploadIntents.ByID(bounded, id)
+		if errors.Is(err, repositories.ErrNotFound) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := lockSubject(bounded, repos, known.SubjectKind, id, known.StorageKey, now); err != nil {
 			return err
 		}
 		intent, err := repos.UploadIntents.Lock(bounded, id)
@@ -125,16 +132,16 @@ func (s *Service) RetryUploadCleanup(ctx context.Context, id domain.AttachmentID
 		if err != nil {
 			return err
 		}
-		if err := repos.UploadIntents.CreateReceipt(bounded, id, attempt, outbox, now); err != nil {
+		if err := repos.UploadIntents.CreateReceipt(bounded, intent, attempt, outbox, now); err != nil {
 			return err
 		}
-		payload := domain.AttachmentPayload{Attachment: id.String(), Key: intent.StorageKey, Attempt: &attempt}
-		if err := s.insertIntentEffect(bounded, repos, outbox, payload, fmt.Sprintf("storage_delete:%s:manual:%s", id, attempt), now); err != nil {
+		effect := intentEffect{subject: intent.SubjectKind, id: id, key: intent.StorageKey, attempt: &attempt}
+		if err := s.insertIntentEffect(bounded, repos, outbox, effect, effect.manualKey(attempt), now); err != nil {
 			return err
 		}
 		result = UploadCleanupCycle{Attempt: attempt, Outbox: outbox, Status: domain.OutboxPending}
 		repos.AfterCommit(bounded, func(ctx context.Context) {
-			s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.cleanup.operator_retry", attachmentAttribute(id), slog.String("attempt_id", attempt.String()))
+			s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "upload.cleanup.operator_retry", intentAttributes(intent.SubjectKind, id, slog.String("attempt_id", attempt.String()))...)
 		})
 		return nil
 	})
@@ -154,7 +161,7 @@ func (s *Service) activeUploadCycle(ctx context.Context, repos repositories.Repo
 		return &result, nil
 	}
 	for _, generation := range []domain.UploadCleanupGeneration{domain.UploadInitialCleanup, domain.UploadFinalCleanup} {
-		row, err := repos.Outbox.ByKey(ctx, fmt.Sprintf("storage_delete:%s:intent:%d", intent.AttachmentID, generation))
+		row, err := repos.Outbox.ByKey(ctx, intentEffect{subject: intent.SubjectKind, id: intent.AttachmentID}.cleanupKey(generation))
 		if errors.Is(err, repositories.ErrNotFound) {
 			continue
 		}

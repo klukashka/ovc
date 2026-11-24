@@ -70,7 +70,10 @@ func (s *Service) DeleteAccount(ctx context.Context, principal Principal, passwo
 					return err
 				}
 				announce, err = s.deps.Tutoring.OnAccountDeleted(ctx, repos, principal.UserID, principal.Role, now)
-				return err
+				if err != nil {
+					return err
+				}
+				return s.deps.Exports.WithdrawOwn(ctx, repos, principal.UserID, domain.ExportCauseAccountDeleted, now)
 			case domain.AccountBlocked, domain.AccountDeleted:
 			}
 			return ErrUnauthenticated
@@ -134,18 +137,19 @@ type Purger struct {
 	store    *repositories.Store
 	uploads  UploadPurger
 	tutoring TutoringEffects
+	exports  ExportEffects
 	logger   *slog.Logger
 }
 
-func NewPurger(store *repositories.Store, uploads UploadPurger, tutoring TutoringEffects, logger *slog.Logger) *Purger {
-	if uploads == nil || tutoring == nil {
-		panic("purging accounts needs an upload purger and the tutoring effects")
+func NewPurger(store *repositories.Store, uploads UploadPurger, tutoring TutoringEffects, exports ExportEffects, logger *slog.Logger) *Purger {
+	if uploads == nil || tutoring == nil || exports == nil {
+		panic("purging accounts needs an upload purger, the tutoring effects and the export effects")
 	}
-	return &Purger{store: store, uploads: uploads, tutoring: tutoring, logger: logger}
+	return &Purger{store: store, uploads: uploads, tutoring: tutoring, exports: exports, logger: logger}
 }
 
 func (s *Service) purger() *Purger {
-	return NewPurger(s.deps.Store, s.deps.Uploads, s.deps.Tutoring, s.deps.Logger)
+	return NewPurger(s.deps.Store, s.deps.Uploads, s.deps.Tutoring, s.deps.Exports, s.deps.Logger)
 }
 
 func (p *Purger) purge(ctx context.Context, repos repositories.Repositories, user domain.UserID, now time.Time, batches int) (Announce, error) {
@@ -167,6 +171,9 @@ func (p *Purger) purge(ctx context.Context, repos repositories.Repositories, use
 		return nil, err
 	}
 	if _, err := repos.Meetings.DeleteParticipantsOf(ctx, user); err != nil {
+		return nil, err
+	}
+	if err := p.exports.DeleteForPurge(ctx, repos, user, now); err != nil {
 		return nil, err
 	}
 	if _, err := repos.Users.Delete(ctx, user); err != nil {
@@ -289,4 +296,8 @@ func purgeIsDue(state repositories.PurgeState, now time.Time) bool {
 	deletedLongAgo := state.State == domain.AccountDeleted && state.DeletedAt != nil && !state.DeletedAt.After(now.Add(-domain.DeletedAccountRetention))
 	unverifiedTooLong := state.State == domain.AccountUnverified && !state.UnverifiedSince.After(now.Add(-unverifiedLifetime))
 	return deletedLongAgo || unverifiedTooLong
+}
+
+func (s *Service) VerifyCurrentPassword(ctx context.Context, id domain.UserID, password string, now time.Time) (repositories.User, error) {
+	return s.verifyCurrentPassword(ctx, id, password, fieldPassword, now)
 }

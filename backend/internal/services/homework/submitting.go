@@ -247,7 +247,7 @@ func (s *Service) notify(
 		return err
 	}
 	inserted, err := repos.Notifications.Insert(ctx, repositories.NewNotification{
-		ID: id, UserID: user, TutorID: tutor, StudentID: &student, Event: event, SubjectID: domain.EntityID(submission),
+		ID: id, UserID: user, TutorID: &tutor, StudentID: &student, Event: event, SubjectID: domain.EntityID(submission),
 		RelationshipID: &relationship, IdempotencyKey: key, CreatedAt: now,
 	})
 	if err != nil || !inserted {

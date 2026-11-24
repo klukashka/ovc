@@ -55,3 +55,20 @@ func onlyHostSigned(headers http.Header) bool {
 	}
 	return true
 }
+
+func (p *Presigner) PresignDownload(ctx context.Context, key string, contentType string, disposition string) (core.Secret, error) {
+	input := &s3.GetObjectInput{
+		Bucket:                     aws.String(p.bucket),
+		Key:                        aws.String(key),
+		ResponseContentType:        aws.String(contentType),
+		ResponseContentDisposition: aws.String(disposition),
+	}
+	signed, err := p.client.PresignGetObject(ctx, input)
+	if err != nil {
+		return core.Secret{}, fmt.Errorf("presign a storage download: %w", err)
+	}
+	if signed.Method != http.MethodGet || signed.URL == "" || !onlyHostSigned(signed.SignedHeader) {
+		return core.Secret{}, ErrPresignRefused
+	}
+	return core.NewSecret(signed.URL), nil
+}

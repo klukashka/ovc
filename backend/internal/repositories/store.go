@@ -42,6 +42,7 @@ type Repositories struct {
 	Library         Library
 	LessonMaterials LessonMaterials
 	Homework        Homework
+	Exports         Exports
 	TestClock       TestClock
 
 	commit *commitHooks
@@ -111,6 +112,7 @@ func newRepositories(queries *dbgen.Queries) Repositories {
 		RateLimits:      RateLimits{queries: queries},
 		Attachments:     Attachments{queries: queries},
 		UploadIntents:   UploadIntents{queries: queries},
+		Exports:         Exports{queries: queries},
 		DailyUploads:    DailyUploads{queries: queries},
 		Outbox:          Outbox{queries: queries},
 		JobRuns:         JobRuns{queries: queries},

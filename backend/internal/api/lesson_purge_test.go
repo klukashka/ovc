@@ -114,7 +114,7 @@ func TestEachDueAccountGetsItsShareOfAPurgeRun(t *testing.T) {
 	logger := slog.New(core.NewContextHandler(slog.NewJSONHandler(h.logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	uploads := files.New(files.Dependencies{Store: h.store, Objects: h.objects, Clock: h.clock, Random: random, Keys: keys, Logger: logger})
 	effects := tutoring.New(tutoring.Dependencies{Store: h.store, Clock: h.clock, Random: random, Logger: logger, PurgeBatchRows: 1})
-	purger := accounts.NewPurger(h.store, uploads, effects, logger)
+	purger := accounts.NewPurger(h.store, uploads, effects, h.effects, logger)
 
 	purged, err := purger.PurgeDeleted(context.Background(), authStart)
 

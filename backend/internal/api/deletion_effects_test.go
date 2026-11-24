@@ -63,7 +63,7 @@ func (h *authHarness) purgedRow(t *testing.T, id string) purgedRow {
 }
 
 func (h *authHarness) operators() *operators.Service {
-	return operators.New(h.store, h.clock, slog.New(slog.NewJSONHandler(h.logs, nil)))
+	return operators.New(h.store, h.clock, slog.New(slog.NewJSONHandler(h.logs, nil)), h.effects)
 }
 
 func (h *authHarness) deleteInBackground(token string, password string) <-chan pendingAnswer {

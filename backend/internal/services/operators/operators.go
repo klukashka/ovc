@@ -42,13 +42,21 @@ type Account struct {
 }
 
 type Service struct {
-	store  *repositories.Store
-	clock  clock.Source
-	logger *slog.Logger
+	store   *repositories.Store
+	clock   clock.Source
+	logger  *slog.Logger
+	exports ExportWithdrawer
 }
 
-func New(store *repositories.Store, source clock.Source, logger *slog.Logger) *Service {
-	return &Service{store: store, clock: source, logger: logger}
+type ExportWithdrawer interface {
+	WithdrawOwn(ctx context.Context, repos repositories.Repositories, user domain.UserID, cause domain.ExportInvalidationCause, now time.Time) error
+}
+
+func New(store *repositories.Store, source clock.Source, logger *slog.Logger, exports ExportWithdrawer) *Service {
+	if exports == nil {
+		panic("the operator service needs the export effects")
+	}
+	return &Service{store: store, clock: source, logger: logger, exports: exports}
 }
 
 func (s *Service) List(ctx context.Context, filter Filter) ([]Account, error) {
@@ -105,8 +113,10 @@ func (s *Service) Block(ctx context.Context, email string) (domain.UserID, error
 		if _, err := repos.EmailTokens.DeleteOpenRequests(ctx, target.ID); err != nil {
 			return err
 		}
-		_, err = repos.EmailTokens.DiscardAllUnused(ctx, target.ID)
-		return err
+		if _, err := repos.EmailTokens.DiscardAllUnused(ctx, target.ID); err != nil {
+			return err
+		}
+		return s.exports.WithdrawOwn(ctx, repos, target.ID, domain.ExportCauseAccountBlocked, now)
 	})
 }
 

@@ -54,15 +54,22 @@ type Worker struct {
 	lanes  []Lane
 	jobs   []Job
 	timing Timing
+
+	claimLanes []ClaimLane
 }
 
-func New(logger *slog.Logger, source clock.Source, service *outbox.Service, lanes []Lane, jobs []Job, timing Timing) *Worker {
+func New(logger *slog.Logger, source clock.Source, service *outbox.Service, lanes []Lane, jobs []Job, timing Timing, claimLanes ...ClaimLane) *Worker {
 	for _, job := range jobs {
 		if (job.Run == nil) == (job.RunHomeworkCleanup == nil) {
 			panic("a worker job requires exactly one run function")
 		}
 	}
-	return &Worker{logger: logger, clock: source, outbox: service, lanes: lanes, jobs: jobs, timing: timing}
+	for _, lane := range claimLanes {
+		if lane.Slots < 1 || lane.Poll <= 0 || lane.Claim == nil {
+			panic("a claim lane requires slots, a poll interval and a claim function")
+		}
+	}
+	return &Worker{logger: logger, clock: source, outbox: service, lanes: lanes, jobs: jobs, timing: timing, claimLanes: claimLanes}
 }
 
 type dispatch struct {
@@ -77,6 +84,9 @@ func (w *Worker) Tick(ctx context.Context, now time.Time) error {
 	w.logger.LogAttrs(ctx, slog.LevelDebug, "worker.tick", slog.Time("now", now))
 	stopClaiming := w.timing.Wall().Add(w.timing.ClaimBudget)
 	if err := w.schedule(ctx, now, w.jobs); err != nil {
+		return err
+	}
+	if err := w.drainClaimLanes(ctx, now); err != nil {
 		return err
 	}
 	stop, abort := context.WithCancel(ctx)
@@ -97,6 +107,11 @@ func (w *Worker) Run(ctx context.Context) error {
 	schedulers := []<-chan error{core.Run(stop, w.logger, "worker-scheduler", abortOnFailure(abort, func() error {
 		return w.scheduleEverySecond(stop, func(ctx context.Context, now time.Time) error { return w.schedule(ctx, now, shared) })
 	}))}
+	for _, lane := range w.claimLanes {
+		schedulers = append(schedulers, core.Run(stop, w.logger, "worker-claim-lane", abortOnFailure(abort, func() error {
+			return w.runClaimLane(stop, lane)
+		})))
+	}
 	for _, job := range alone {
 		schedulers = append(schedulers, core.Run(stop, w.logger, "worker-job-loop", abortOnFailure(abort, func() error {
 			return w.scheduleEverySecond(stop, func(ctx context.Context, now time.Time) error { return w.runJob(ctx, job, now) })

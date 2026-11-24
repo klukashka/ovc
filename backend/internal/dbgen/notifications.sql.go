@@ -177,7 +177,7 @@ ON CONFLICT (idempotency_key) DO NOTHING
 type InsertNotificationParams struct {
 	ID             domain.NotificationID
 	UserID         domain.UserID
-	TutorID        domain.UserID
+	TutorID        *domain.UserID
 	StudentID      *domain.UserID
 	Event          domain.NotificationEvent
 	SubjectID      domain.EntityID
@@ -338,7 +338,7 @@ type ListNotificationsParams struct {
 type ListNotificationsRow struct {
 	ID             domain.NotificationID
 	Event          domain.NotificationEvent
-	TutorID        domain.UserID
+	TutorID        *domain.UserID
 	StudentID      *domain.UserID
 	SubjectID      domain.EntityID
 	RelationshipID *domain.RelationshipID

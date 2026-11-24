@@ -124,11 +124,13 @@ Specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-re
 
 - `export.requested` (INFO): `user_id`, `role`, `export_id`;
 - `export.build.started` (INFO): `export_id`, `build_id`, the lane slot;
-- `export.built` (INFO): `export_id`, `build_id`, `user_id`, item counts per sheet, the number of files, files left out as unreadable, `size_bytes`, the duration;
+- `export.built` (INFO): `export_id`, `build_id`, `user_id`, item counts per sheet (pending implementation by E1d; E1b's archive holds only the account), the number of files, files left out as unreadable, `size_bytes`, the duration;
 - `export.failed` (WARNING, or ERROR for `error`): `export_id`, `build_id`, `user_id`, the failure kind (`error` with a safe error kind, `too_long`, `too_large`, `withdrawn`), the duration;
 - `export.invalidated` (INFO): `export_id`, `build_id` when one exists, `user_id`, the export's state before, and the `cause` (`account_deleted`, `account_blocked`, `relationship_ended`, `relationship_discarded`, `channel_erased`, `reclaim_pending`, `group_member_removed`, `issue_erased`, `tutor_deleted`, `card_email_erased`, `card_erased`); exports that expire at a purge's due time are counted by `exports.expire`;
 - `export.deleted` (INFO): `export_id`, the state before; `export.expired` through the `exports.expire` job's `job.run` counts;
-- `export.download.minted` (INFO): `export_id`, never the address; a signing failure is `export.download.failed` (WARNING) with the error's kind only.
+- `export.download.minted` (INFO): `export_id`, never the address; a signing failure is `export.download.failed` (WARNING) with the error's kind only;
+- `export.build.stopped` (INFO): `export_id`, `build_id`, when a build finds its row deleted, withdrawn or failed at a part boundary and stops without further cleanup (added by E1b, pending owner review);
+- `export.object.deleted` (INFO): `export_id`, `build_id`, when the storage-delete lane deletes a published archive (`export_object`) (added by E1b, pending owner review).
 
 They never carry file names, titles, message bodies, cell contents, the password, the storage key, the multipart upload identifier or the download address. The intent transitions of ADR-0025 reuse the durable upload cleanup events above with `subject_kind: export_build`. E1 adds `TestExportRecordsCarryNoContentKeyOrAddress`, which builds an export over seeded sentinel names, titles, bodies and file names and asserts that no captured record holds any of them, the key or a signed query.
 

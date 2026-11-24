@@ -33,7 +33,7 @@ func NotificationEvents() []NotificationEvent {
 		NotificationJoinRequestDeclined, NotificationRelationshipEnded, NotificationLessonReminder1h, NotificationLessonMoved,
 		NotificationLessonCancelled, NotificationSeriesChanged, NotificationGroupArchived, NotificationIssueCreated,
 		NotificationIssueWithdrawn, NotificationSubmitted, NotificationSubmissionChecked, NotificationSubmissionReturned,
-		NotificationReviewUpdated,
+		NotificationReviewUpdated, NotificationExportReady, NotificationExportFailed,
 	}
 }
 

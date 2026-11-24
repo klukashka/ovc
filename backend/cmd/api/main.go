@@ -146,7 +146,12 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	if err != nil {
 		return err
 	}
-	accountService, err := startup.NewAccounts(logging.Logger, settings, database, source, random, fileService, tutoringService)
+	exportEffects := startup.NewExportEffects(logging.Logger, database, random, fileService)
+	accountService, err := startup.NewAccounts(logging.Logger, settings, database, source, random, fileService, tutoringService, exportEffects)
+	if err != nil {
+		return err
+	}
+	exportService, err := startup.NewExports(logging.Logger, settings, database, source, random, objects, fileService, accountService)
 	if err != nil {
 		return err
 	}
@@ -205,6 +210,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		Chat:        chatService,
 		Library:     libraryService,
 		Homework:    homeworkService,
+		Exports:     exportService,
 		Meetings:    lifecycle,
 		Realtime:    live.Gateway,
 		DocsEnabled: settings.APIDocsEnabled,

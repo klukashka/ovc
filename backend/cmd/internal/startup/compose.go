@@ -2,7 +2,10 @@ package startup
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
+	"net/url"
 	"runtime"
 	"time"
 	_ "time/tzdata"
@@ -18,6 +21,7 @@ import (
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
+	"ovc/backend/internal/services/export"
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/homework"
 	"ovc/backend/internal/services/library"
@@ -46,6 +50,39 @@ func NewFiles(lifetime context.Context, logger *slog.Logger, settings core.Setti
 		Store: repositories.NewStore(database.Pool), Objects: objects, Clock: source, Random: random, Keys: keys, Logger: logger, Lifetime: lifetime,
 	}), nil
 }
+
+func NewExportEffects(logger *slog.Logger, database *core.Database, random core.RandomSource, fileService *files.Service) export.Effects {
+	return export.NewEffects(export.Dependencies{Store: repositories.NewStore(database.Pool), Random: random, Logger: logger, Cleanup: fileService})
+}
+
+func NewExports(
+	logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource,
+	objects storage.Store, fileService *files.Service, passwords export.PasswordChecker,
+) (*export.Service, error) {
+	keys, err := core.DeriveKeys(settings.JWTSecret)
+	if err != nil {
+		return nil, err
+	}
+	host, err := publicHost(settings.PublicURL)
+	if err != nil {
+		return nil, err
+	}
+	return export.New(export.Dependencies{
+		Store: repositories.NewStore(database.Pool), Clock: source, Wall: clock.System{}.Now, Random: random, Keys: keys, Logger: logger,
+		Objects: objects, Signer: storage.NewPresigner(settings.Storage, settings.ExportEndpoint), Passwords: passwords, Cleanup: fileService,
+		PublicHost: host,
+	}), nil
+}
+
+func publicHost(publicURL string) (string, error) {
+	parsed, err := url.Parse(publicURL)
+	if err != nil || parsed.Host == "" {
+		return "", fmt.Errorf("read the host of the public address: %w", errors.Join(err, errNoPublicHost))
+	}
+	return parsed.Host, nil
+}
+
+var errNoPublicHost = errors.New("the public address has no host")
 
 func NewTutoring(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource) (*tutoring.Service, error) {
 	keys, err := core.DeriveKeys(settings.JWTSecret)
@@ -108,7 +145,7 @@ func NewSchedule(
 
 func NewAccounts(
 	logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource,
-	fileService *files.Service, tutoringService *tutoring.Service,
+	fileService *files.Service, tutoringService *tutoring.Service, exports accounts.ExportEffects,
 ) (*accounts.Service, error) {
 	keys, err := core.DeriveKeys(settings.JWTSecret)
 	if err != nil {
@@ -130,6 +167,7 @@ func NewAccounts(
 		Avatars:     fileService,
 		Uploads:     fileService,
 		Tutoring:    tutoringService,
+		Exports:     exports,
 		Logger:      logger,
 	}), nil
 }
@@ -193,7 +231,16 @@ func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings,
 	}
 	fileService := files.New(files.Dependencies{Store: store, Objects: objects, Clock: source, Random: random, Logger: logger})
 	tutoringService := tutoring.New(tutoring.Dependencies{Store: store, Clock: source, Random: random, Cipher: cipher, Logger: logger})
-	purger := accounts.NewPurger(store, fileService, tutoringService, logger)
+	exportEffects := export.NewEffects(export.Dependencies{Store: store, Random: random, Logger: logger, Cleanup: fileService})
+	purger := accounts.NewPurger(store, fileService, tutoringService, exportEffects, logger)
+	host, err := publicHost(settings.PublicURL)
+	if err != nil {
+		return nil, err
+	}
+	exportBuilder := export.NewBuilder(export.Dependencies{
+		Store: store, Clock: source, Wall: clock.System{}.Now, Random: random, Logger: logger, Objects: objects, Cleanup: fileService,
+		PublicHost: host,
+	})
 	inbox := notifications.NewInbox(notifications.InboxDependencies{Store: store, Clock: source, Logger: logger})
 	chatService := chat.New(chat.Dependencies{
 		Store: store, Clock: source, Random: random, Addresses: fileService, Erasure: chat.DefaultErasureSettings(), Logger: logger,
@@ -269,8 +316,11 @@ func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings,
 		{Name: domain.JobLessonStatus, Every: time.Minute, Run: lessonJobs.EndDue},
 		{Name: domain.JobLessonReminders, Every: time.Minute, Run: lessonJobs.QueueReminders},
 		{Name: domain.JobSeriesExtension, Every: time.Hour, OwnLoop: true, Run: lessonJobs.ExtendHorizons},
+		{Name: domain.JobExportsRecover, Every: time.Minute, Run: exportBuilder.Recover},
+		{Name: domain.JobExportsExpire, Every: time.Hour, Run: exportBuilder.Expire},
 	}
-	return worker.New(logger, source, queue, lanes, jobs, worker.DefaultTiming()), nil
+	exportLane := worker.ClaimLane{Name: "export", Slots: domain.ExportLaneSlots, Poll: domain.ExportLanePoll, Claim: exportBuilder.ClaimBuild}
+	return worker.New(logger, source, queue, lanes, jobs, worker.DefaultTiming(), exportLane), nil
 }
 
 type Realtime struct {

@@ -52,5 +52,7 @@ export function linkAddress(link: NotificationLink): string {
       return `/homework/${encodeURIComponent(link.id)}`;
     case 'review':
       return `/homework/review/${encodeURIComponent(link.id)}`;
+    case 'my_data':
+      return '/settings/data';
   }
 }

@@ -159,6 +159,31 @@ type EmailToken struct {
 	CreatedAt time.Time
 }
 
+type Export struct {
+	ID             domain.ExportID
+	UserID         domain.UserID
+	State          domain.ExportState
+	Language       domain.Language
+	Timezone       string
+	RequestedAt    time.Time
+	BuildID        *domain.ExportBuildID
+	StorageKey     *string
+	BuildStartedAt *time.Time
+	ProgressDone   int32
+	ProgressTotal  int32
+	BuiltAt        *time.Time
+	SizeBytes      *int64
+	ExpiresAt      *time.Time
+	Failure        *domain.ExportFailure
+	UpdatedAt      time.Time
+}
+
+type ExportLimit struct {
+	UserID      domain.UserID
+	ExportID    domain.ExportID
+	AllowedFrom time.Time
+}
+
 type FakeMeetingLink struct {
 	Digest        []byte
 	RoomID        pgtype.UUID
@@ -458,7 +483,7 @@ type Message struct {
 type Notification struct {
 	ID             domain.NotificationID
 	UserID         domain.UserID
-	TutorID        domain.UserID
+	TutorID        *domain.UserID
 	StudentID      *domain.UserID
 	Event          domain.NotificationEvent
 	SubjectID      domain.EntityID
@@ -631,6 +656,7 @@ type UploadCleanupReceipt struct {
 	Status       domain.OutboxStatus
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	SubjectKind  domain.UploadSubjectKind
 }
 
 type UploadIntent struct {
@@ -649,6 +675,7 @@ type UploadIntent struct {
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 	CapacityClass        domain.UploadCapacityClass
+	SubjectKind          domain.UploadSubjectKind
 }
 
 type UploadIntentCapacity struct {

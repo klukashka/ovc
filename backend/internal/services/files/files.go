@@ -586,18 +586,30 @@ var deletableKeyPrefixes = []string{
 }
 
 func (s *Service) DeleteObject(ctx context.Context, row repositories.ClaimedOutboxRow, now time.Time) (domain.OutboxDoneReason, error) {
-	var payload domain.AttachmentPayload
-	decoder := json.NewDecoder(bytes.NewReader(row.Payload))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&payload); err != nil {
-		return "", domain.PermanentEffect(fmt.Errorf("%w: %w", errMalformedPayload, err))
+	if row.Kind == domain.KindExportIntent {
+		effect, err := exportIntentEffect(row.Payload)
+		if err != nil {
+			return "", err
+		}
+		return s.deleteUploadIntent(ctx, row, effect, now)
+	}
+	if row.Kind == domain.KindExportObject {
+		return s.deleteExportObject(ctx, row.Payload)
+	}
+	if row.Kind != domain.KindStorageDelete {
+		return "", domain.PermanentEffect(errMalformedPayload)
+	}
+	payload, err := decodeStrict[domain.AttachmentPayload](row.Payload)
+	if err != nil {
+		return "", err
 	}
 	id, ok := domain.ParseUUID[domain.AttachmentID](payload.Attachment)
 	if !ok || !slices.ContainsFunc(deletableKeyPrefixes, func(prefix string) bool { return strings.HasPrefix(payload.Key, prefix) }) {
 		return "", domain.PermanentEffect(errMalformedPayload)
 	}
 	if payload.Generation != nil || payload.Attempt != nil {
-		return s.deleteUploadIntent(ctx, row, payload, id, now)
+		effect := intentEffect{subject: domain.UploadSubjectAttachment, id: id, key: payload.Key, upload: payload.Upload, generation: payload.Generation, attempt: payload.Attempt}
+		return s.deleteUploadIntent(ctx, row, effect, now)
 	}
 	repos := s.deps.Store.Repositories()
 	if _, err := repos.UploadIntents.ByID(ctx, id); err == nil {
