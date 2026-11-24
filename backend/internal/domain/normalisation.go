@@ -33,6 +33,10 @@ func NormaliseTextV1(text string) NormalisedText {
 	return NormalisedText(strings.Join(strings.Fields(replaced), " "))
 }
 
+func NormaliseNFC(text string) string {
+	return norm.NFC.String(text)
+}
+
 func foldCaseV1(text string) string {
 	return strings.Map(foldCherokeeToUpper, cases.Fold().String(text))
 }
