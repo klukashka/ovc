@@ -4,10 +4,13 @@ import { useTranslation } from 'react-i18next';
 
 import { type ActionState, done, refusedBy, showsStaleData, useAction } from '../../components/ui/action.ts';
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
-import { ActionButton, dangerButtonClass, textButtonClass } from '../../components/ui/Form.tsx';
+import { ActionButton, FormActions, dangerFilledButtonClass, quietButtonClass } from '../../components/ui/Form.tsx';
+import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
-import { useApiClient } from '../../lib/api/client.ts';
+import { asApiError, useApiClient } from '../../lib/api/client.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { type MyTutor, myTutorsKey } from './api.ts';
+import { myTutorsTextLoaders } from './texts.ts';
 
 export type StopOutcome = 'ended' | 'removed' | 'changed';
 
@@ -29,6 +32,7 @@ export function StopStudyingDialog({
   const { t } = useTranslation();
   const client = useApiClient();
   const queryClient = useQueryClient();
+  const texts = useFeatureTexts('myTutors', myTutorsTextLoaders);
   const headingId = useId();
   const consequenceId = useId();
   const cancel = useRef<HTMLButtonElement>(null);
@@ -77,23 +81,23 @@ export function StopStudyingDialog({
         onClose();
       }}
     >
-      {tutor === null ? null : (
+      {tutor === null ? null : texts.ready ? (
         <div className="flex flex-col gap-4">
           <h2 id={headingId} className="text-heading">
             {t('tutors.stopTitle')}
           </h2>
           <p id={consequenceId}>
-            {t(tutor.state === 'provisional' ? 'tutors.stopProvisionalConsequence' : 'tutors.stopConsequence')}
+            {t(tutor.state === 'provisional' ? 'myTutors.stopProvisionalConsequence' : 'tutors.stopConsequence')}
           </p>
           <Refusal state={action.state} />
-          <div className="flex flex-wrap gap-3">
+          <FormActions>
             <ActionButton
               busy={action.busy}
               unavailable={checking}
               onClick={() => {
                 stop(tutor);
               }}
-              className={dangerButtonClass}
+              className={dangerFilledButtonClass}
             >
               {t('tutors.stopSubmit')}
             </ActionButton>
@@ -105,12 +109,16 @@ export function StopStudyingDialog({
                 action.reset();
                 onClose();
               }}
-              className={textButtonClass}
+              className={quietButtonClass}
             >
               {t('tutors.cancel')}
             </ActionButton>
-          </div>
+          </FormActions>
         </div>
+      ) : texts.failed ? (
+        <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} />
+      ) : (
+        <DelayedLoading />
       )}
     </ModalDialog>
   );

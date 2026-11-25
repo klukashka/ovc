@@ -1,6 +1,7 @@
 export const homeworkPanelTexts = {
   todo: 'To do',
   nothingToDo: 'Nothing to do',
+  nothingToDoSentence: 'New assignments from your tutors appear here.',
   start: 'Start',
   continue: 'Continue',
   allHomework: 'All homework, {count} to do',
@@ -17,10 +18,19 @@ export const homeworkPanelTexts = {
   cue: 'Issued before the account was reclaimed',
   recentlyChecked: 'Recently checked',
   nothingChecked: 'Nothing checked yet',
+  nothingCheckedSentence: 'Feedback appears here when your tutor checks your work.',
+  noNextLessonSentence: 'Your next lesson appears here once your tutor schedules it.',
   correctedFile: 'A corrected file came back',
   checkedOn: 'Checked {date}',
   newFeedback: 'New',
   newFeedbackName: 'New feedback',
+  unconfirmed: {
+    heading: 'After you confirm your email',
+    withoutLink:
+      'Schedule, homework, messages and notifications appear here after you confirm your email. Until then you can enter a tutor code, see your tutors and change your settings.',
+    withLink:
+      'After you confirm your email in this browser, you also get notifications, group lessons and chats, and file answers.',
+  },
   states: {
     todo: 'To do',
     dueSoon: 'Due soon',

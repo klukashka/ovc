@@ -8,6 +8,7 @@ import type { groupsTexts } from '../../features/groups/texts.en.ts';
 import type { notificationEventTexts } from '../../features/notifications/texts.en.ts';
 import type { myDataTexts } from '../../features/settings/myDataTexts.en.ts';
 import type { studentCardTexts } from '../../features/students/cardTexts.en.ts';
+import type { myTutorsTexts } from '../../features/tutors/texts.en.ts';
 import type { ru } from './ru.ts';
 
 export type Shape<Tree> = { readonly [Key in keyof Tree]: Tree[Key] extends string ? string : Shape<Tree[Key]> };
@@ -25,6 +26,7 @@ export interface FeatureSections {
   readonly studentCard: Shape<typeof studentCardTexts>;
   readonly groups: Shape<typeof groupsTexts>;
   readonly myData: Shape<typeof myDataTexts>;
+  readonly myTutors: Shape<typeof myTutorsTexts>;
 }
 
 export type FeatureSection = keyof FeatureSections;

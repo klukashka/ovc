@@ -222,17 +222,21 @@ const featureTextFolders = [
   'src/features/home/TodoPanel.tsx',
   'src/features/home/CheckedPanel.tsx',
   'src/features/home/TutorHomeworkPanels.tsx',
+  'src/features/home/HomeLessons.tsx',
+  'src/features/home/UnconfirmedSections.tsx',
   'src/features/auth/ReclaimPage.tsx',
   'src/features/students/StudentCardPage.tsx',
   'src/features/groups/**',
+  'src/features/tutors/MyTutorsPage.tsx',
+  'src/features/tutors/StopStudying.tsx',
 ];
 
 const featureTextMessage =
   'Library, builder, student-view, student card and group texts load only with their own pages, so other code cannot read them';
 
 const forbiddenFeatureTextKeys = [
-  "CallExpression[callee.name='t'] > Literal[value=/^(library|builder|assignment|homeworkPanels|reclaim|studentCard|groups)\\./]",
-  "CallExpression[callee.name='t'] > TemplateLiteral[quasis.0.value.raw=/^(library|builder|assignment|homeworkPanels|reclaim|studentCard|groups)\\./]",
+  "CallExpression[callee.name='t'] > Literal[value=/^(library|builder|assignment|homeworkPanels|reclaim|studentCard|groups|myTutors)\\./]",
+  "CallExpression[callee.name='t'] > TemplateLiteral[quasis.0.value.raw=/^(library|builder|assignment|homeworkPanels|reclaim|studentCard|groups|myTutors)\\./]",
 ].map((selector) => ({ selector, message: featureTextMessage }));
 
 const bareNextPageMessage =

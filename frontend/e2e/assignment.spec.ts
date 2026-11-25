@@ -542,7 +542,7 @@ test.describe('answering an assignment', () => {
     expect(uploads).toEqual([]);
   });
 
-  test('Submit saves the pending answer and opens the confirmation on Cancel, listing the unanswered questions', async ({
+  test('Submit saves the pending answer and opens the confirmation on Cancel, listing the unanswered questions, with Submit before Cancel', async ({
     page,
     deployment,
   }) => {
@@ -555,6 +555,7 @@ test.describe('answering an assignment', () => {
     const dialog = page.getByRole('dialog', { name: 'Submit your work?' });
     await expect(dialog.getByRole('listitem')).toHaveText(['Question 1', 'Question 3']);
     await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+    await expect(dialog.getByRole('button')).toHaveText(['Submit', 'Cancel']);
     expect((await storedAnswers(deployment, anna, submissionId)).texts).toEqual(['went']);
   });
 
@@ -728,8 +729,12 @@ test.describe('answering an assignment', () => {
   });
 });
 
+async function linkTargets(region: Locator): Promise<readonly (string | null)[]> {
+  return region.getByRole('link').evaluateAll((links) => links.map((link) => link.getAttribute('href')));
+}
+
 test.describe('the student’s Homework list', () => {
-  test('choosing a tab keeps focus on it, and the Closed tab shows only while closed work exists', async ({
+  test('choosing a tab keeps focus on it, the tabs keep their addresses, and the Closed tab shows only while closed work exists', async ({
     page,
     deployment,
   }) => {
@@ -748,9 +753,13 @@ test.describe('the student’s Homework list', () => {
     await expect(page.getByRole('table', { name: 'Assignments' }).getByRole('row')).toHaveCount(2);
     await expect(page.getByRole('table', { name: 'Assignments' })).toContainText('Submitted');
     await expect(tabs.getByRole('link')).toHaveText(['To do', 'Submitted', 'Checked']);
+    expect(await linkTargets(tabs)).toEqual(['/homework', '/homework?status=submitted', '/homework?status=checked']);
   });
 
-  test('a tutor filter that no current tutor holds shows the refusal without a list', async ({ page, deployment }) => {
+  test('a tutor filter that no current tutor holds shows the refusal without a list, and no tab carries it', async ({
+    page,
+    deployment,
+  }) => {
     const { anna } = await issuedToAnna(deployment);
     await signInThroughTheApi(page, anna);
 
@@ -759,6 +768,11 @@ test.describe('the student’s Homework list', () => {
     await expect(page.getByText('This tutor is not available.', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'All tutors', exact: true })).toHaveAttribute('href', '/homework');
     await expect(page.getByRole('table', { name: 'Assignments' })).toHaveCount(0);
+    expect(await linkTargets(page.getByRole('navigation', { name: 'Homework lists' }))).toEqual([
+      '/homework',
+      '/homework?status=submitted',
+      '/homework?status=checked',
+    ]);
   });
 
   test('Show more moves focus to the first new row', async ({ page, deployment }) => {
@@ -850,7 +864,7 @@ test.describe('Home’s To do panel and the Homework count', () => {
     await withdrawThroughTheApi(deployment, pavel, issueId);
 
     await expect(panel.getByText('Nothing to do', { exact: true })).toBeVisible();
-    await expect(panel.getByRole('heading', { name: 'To do' })).toBeFocused();
+    await expect(panel.getByRole('heading', { name: 'To do', exact: true })).toBeFocused();
   });
 });
 

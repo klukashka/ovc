@@ -34,6 +34,18 @@ export const assignmentTexts = {
     checked: 'Nothing checked yet',
     closed: 'Nothing closed',
   },
+  emptyBody: {
+    todo: 'New assignments from your tutors appear here.',
+    submitted: 'Work you submit waits here until your tutor checks it.',
+    checked: 'Feedback appears here when your tutor checks your work.',
+    closed: 'Assignments that can no longer be submitted appear here.',
+  },
+  emptyNext: {
+    todo: 'See checked work',
+    submitted: 'See what to do',
+    checked: 'See submitted work',
+    closed: 'See what to do',
+  },
   states: {
     todo: 'To do',
     dueSoon: 'Due soon',

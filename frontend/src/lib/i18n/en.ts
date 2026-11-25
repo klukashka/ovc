@@ -87,6 +87,7 @@ export const en: Resources = {
     summary: '{count, plural, =0 {No lessons today} one {# lesson today} other {# lessons today}}',
     filter: 'Tutor',
     allTutors: 'All tutors',
+    chooseTutor: 'Choose a tutor',
     lessonsWaitForTutors: 'Your lessons show once your tutors have loaded.',
     tutorUnavailable: 'This tutor is not available.',
     nextLesson: 'Next lesson',
@@ -273,8 +274,6 @@ export const en: Resources = {
     stopTitle: 'Stop studying with this tutor?',
     stopConsequence:
       'You leave this tutor’s groups, your future lessons with this tutor are cancelled, your chat becomes read-only, and the tutor gets an email. The tutor stays listed under Past tutors.',
-    stopProvisionalConsequence:
-      'Your email is not confirmed yet, so the link to this tutor is simply removed. The tutor gets no message.',
     stopSubmit: 'Stop studying',
     cancel: 'Cancel',
     stopped: 'You no longer study with this tutor. The tutor is listed under Past tutors.',

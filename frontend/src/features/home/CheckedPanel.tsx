@@ -2,9 +2,11 @@ import { type ReactElement, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
+import { EmptyState } from '../../components/ui/EmptyState.tsx';
 import { linkClass } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
+import { SectionHead } from '../../components/ui/SectionHead.tsx';
 import { asApiError } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDate } from '../../lib/format/dates.ts';
@@ -50,7 +52,7 @@ function CheckedRow({ item }: { readonly item: AssignmentItem }): ReactElement {
         )}
       </div>
       {item.feedback_excerpt === null ? null : (
-        <p data-excerpt="" dir="auto" className="break-words">
+        <p data-excerpt="" dir="auto" className="max-w-running-text break-words">
           {item.feedback_excerpt}
         </p>
       )}
@@ -74,10 +76,14 @@ function CheckedRows({ items }: { readonly items: readonly AssignmentItem[] }): 
   );
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 ref={heading} id={headingId} tabIndex={-1} className="text-heading outline-none">
-        {t('homeworkPanels.recentlyChecked')}
-      </h2>
-      {items.length === 0 ? <p className="text-text-muted">{t('homeworkPanels.nothingChecked')}</p> : null}
+      <SectionHead headingId={headingId} heading={heading} title={t('homeworkPanels.recentlyChecked')} />
+      {items.length === 0 ? (
+        <EmptyState
+          level={3}
+          title={t('homeworkPanels.nothingChecked')}
+          sentence={t('homeworkPanels.nothingCheckedSentence')}
+        />
+      ) : null}
       <ul ref={listRef} className={items.length === 0 ? 'hidden' : 'flex flex-col border-b border-border'}>
         {items.map((item) => (
           <CheckedRow key={item.submission_id} item={item} />

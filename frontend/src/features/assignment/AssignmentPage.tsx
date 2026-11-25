@@ -17,6 +17,7 @@ import { Link, useParams } from 'react-router';
 import { useScheduler } from '../../app/clock.ts';
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
+  FormActions,
   FormAlert,
   errorMessage,
   linkClass,
@@ -244,20 +245,7 @@ function SubmitDialog({
         ) : null}
         <p className="text-text-muted">{t('assignment.submit.warning')}</p>
         {failure === null ? null : <FormAlert>{errorMessage(t, failure, retryAfter)}</FormAlert>}
-        <div className="flex flex-wrap justify-end gap-2">
-          <button
-            ref={cancel}
-            type="button"
-            aria-disabled={busy}
-            onClick={() => {
-              if (!busy) {
-                onClose();
-              }
-            }}
-            className={quietButtonClass}
-          >
-            {t('assignment.submit.cancel')}
-          </button>
+        <FormActions>
           <button
             type="button"
             aria-disabled={busy}
@@ -271,7 +259,20 @@ function SubmitDialog({
           >
             {t('assignment.submit.confirm')}
           </button>
-        </div>
+          <button
+            ref={cancel}
+            type="button"
+            aria-disabled={busy}
+            onClick={() => {
+              if (!busy) {
+                onClose();
+              }
+            }}
+            className={quietButtonClass}
+          >
+            {t('assignment.submit.cancel')}
+          </button>
+        </FormActions>
       </div>
     </ModalDialog>
   );

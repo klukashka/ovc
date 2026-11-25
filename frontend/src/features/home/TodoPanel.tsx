@@ -2,9 +2,11 @@ import { type ReactElement, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
+import { EmptyState } from '../../components/ui/EmptyState.tsx';
 import { linkClass } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
+import { SectionHead } from '../../components/ui/SectionHead.tsx';
 import { StatusWord } from '../../components/ui/StatusWord.tsx';
 import { asApiError } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
@@ -85,22 +87,30 @@ function TodoRows({ part }: { readonly part: StudentHome['todo'] }): ReactElemen
   );
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 ref={heading} id={headingId} tabIndex={-1} className="text-heading outline-none">
-        {t('homeworkPanels.todo')}
-      </h2>
-      {items.length === 0 ? <p className="text-text-muted">{t('homeworkPanels.nothingToDo')}</p> : null}
+      <SectionHead
+        headingId={headingId}
+        heading={heading}
+        title={t('homeworkPanels.todo')}
+        action={
+          count > 0 ? (
+            <Link to="/homework" className={linkClass}>
+              {t('homeworkPanels.allHomework', { count: shownCount(count) })}
+            </Link>
+          ) : null
+        }
+      />
+      {items.length === 0 ? (
+        <EmptyState
+          level={3}
+          title={t('homeworkPanels.nothingToDo')}
+          sentence={t('homeworkPanels.nothingToDoSentence')}
+        />
+      ) : null}
       <ul ref={listRef} className={items.length === 0 ? 'hidden' : 'flex flex-col border-b border-border'}>
         {items.map((item) => (
           <TodoRow key={item.submission_id} item={item} now={now} />
         ))}
       </ul>
-      {count > 0 ? (
-        <p>
-          <Link to="/homework" className={linkClass}>
-            {t('homeworkPanels.allHomework', { count: shownCount(count) })}
-          </Link>
-        </p>
-      ) : null}
     </section>
   );
 }

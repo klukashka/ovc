@@ -12,11 +12,13 @@ import {
   secondaryCellClass,
   tableRowClass,
 } from '../../components/ui/DataTable.tsx';
+import { EmptyState } from '../../components/ui/EmptyState.tsx';
 import { linkClass, quietButtonClass } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
 import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
+import { RouteTabs } from '../../components/ui/Tabs.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDate } from '../../lib/format/dates.ts';
@@ -37,10 +39,6 @@ import {
 } from './api.ts';
 import { DeadlineHint, ReclaimCue, StateLabel, TutorName, useNow } from './parts.tsx';
 import { assignmentTextLoaders } from './texts.ts';
-
-const statusTabClass = 'inline-flex min-h-11 items-center rounded-md px-3 text-small';
-const currentStatusClass = `${statusTabClass} bg-hover font-medium text-text`;
-const otherStatusClass = `${statusTabClass} text-text-muted hover:text-text`;
 
 type ListQuery = UseInfiniteQueryResult<InfiniteData<AssignmentPage>>;
 
@@ -68,21 +66,39 @@ function StatusTabs({
   const { t } = useTranslation();
   const shown = assignmentStatuses.filter((status) => status !== 'closed' || closedCount > 0 || current === 'closed');
   return (
-    <nav aria-label={t('assignment.list.tabs')}>
-      <ul className="flex flex-wrap gap-2">
-        {shown.map((status) => (
-          <li key={status}>
-            <Link
-              to={listAddress(status, tutor)}
-              aria-current={status === current ? 'page' : undefined}
-              className={status === current ? currentStatusClass : otherStatusClass}
-            >
-              {t(`assignment.list.tab.${status}`)}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    <RouteTabs
+      label={t('assignment.list.tabs')}
+      current={current}
+      tabs={shown.map((status) => ({
+        key: status,
+        to: listAddress(status, tutor),
+        label: t(`assignment.list.tab.${status}`),
+      }))}
+    />
+  );
+}
+
+const emptyNextStep: Readonly<Record<AssignmentStatus, AssignmentStatus>> = {
+  todo: 'checked',
+  submitted: 'todo',
+  checked: 'submitted',
+  closed: 'todo',
+};
+
+function EmptyList({
+  status,
+  tutor,
+}: {
+  readonly status: AssignmentStatus;
+  readonly tutor: string | null;
+}): ReactElement {
+  const { t } = useTranslation();
+  return (
+    <EmptyState title={t(`assignment.empty.${status}`)} sentence={t(`assignment.emptyBody.${status}`)}>
+      <Link to={listAddress(emptyNextStep[status], tutor)} className={linkClass}>
+        {t(`assignment.emptyNext.${status}`)}
+      </Link>
+    </EmptyState>
   );
 }
 
@@ -158,9 +174,11 @@ function AssignmentRow({
 
 function AssignmentList({
   status,
+  tutor,
   list,
 }: {
   readonly status: AssignmentStatus;
+  readonly tutor: string | null;
   readonly list: ListQuery;
 }): ReactElement {
   const { t } = useTranslation();
@@ -199,7 +217,7 @@ function AssignmentList({
     return (
       <div className="flex flex-col items-start gap-3">
         {failure}
-        <p className="text-strong">{t(`assignment.empty.${status}`)}</p>
+        <EmptyList status={status} tutor={tutor} />
       </div>
     );
   }
@@ -305,7 +323,7 @@ function HomeworkLists({
           <DelayedLoading />
         )
       ) : (
-        <AssignmentList key={`${status}:${tutor ?? ''}`} status={status} list={list} />
+        <AssignmentList key={`${status}:${tutor ?? ''}`} status={status} tutor={tutor} list={list} />
       )}
     </>
   );

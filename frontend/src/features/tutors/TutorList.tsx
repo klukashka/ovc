@@ -108,6 +108,7 @@ function TutorRow({
           items={[
             {
               label: t('tutors.stopStudying'),
+              danger: true,
               onChoose: (): void => {
                 onStopStudying(tutor);
               },
@@ -239,6 +240,7 @@ export function CurrentTutorTable({
                   items={[
                     {
                       label: t('tutors.stopStudying'),
+                      danger: true,
                       onChoose: (): void => {
                         onStopStudying(tutor);
                       },

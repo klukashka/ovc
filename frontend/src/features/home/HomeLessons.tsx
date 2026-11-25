@@ -4,15 +4,19 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { useScheduler } from '../../app/clock.ts';
+import { EmptyState } from '../../components/ui/EmptyState.tsx';
 import { linkClass } from '../../components/ui/Form.tsx';
-import { LoadFailed } from '../../components/ui/LoadState.tsx';
+import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
+import { SectionHead } from '../../components/ui/SectionHead.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { Me } from '../../lib/api/session.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { type CalendarItem, fetchLesson } from '../schedule/api.ts';
 import { type JoinLesson, JoinControl } from '../schedule/JoinControl.tsx';
 import { lessonKey } from '../schedule/keys.ts';
 import { LessonList } from '../schedule/LessonList.tsx';
 import { phaseOf, useLessonClock } from '../schedule/lessonTiming.ts';
+import { homeworkPanelTextLoaders } from './panelTexts.ts';
 import { type HomeRefetch, useRefetchAt } from './refetchAt.ts';
 
 const weekMilliseconds = 7 * 24 * 60 * 60 * 1000;
@@ -61,14 +65,41 @@ function NextLessonJoin({ item, me }: { readonly item: CalendarItem; readonly me
   return <JoinControl key={item.id} lesson={lesson} me={me} showsOpensAt />;
 }
 
+function ScheduleLink({ address }: { readonly address: string | null }): ReactElement | null {
+  const { t } = useTranslation();
+  if (address === null) {
+    return null;
+  }
+  return (
+    <Link to={address} className={linkClass}>
+      {t('home.openSchedule')}
+    </Link>
+  );
+}
+
+function NoNextLesson({ scheduleAddress }: { readonly scheduleAddress: string | null }): ReactElement {
+  const { t } = useTranslation();
+  const texts = useFeatureTexts('homeworkPanels', homeworkPanelTextLoaders);
+  if (!texts.ready) {
+    return texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />;
+  }
+  return (
+    <EmptyState level={3} title={t('home.noNextLesson')} sentence={t('homeworkPanels.noNextLessonSentence')}>
+      {scheduleAddress === null ? undefined : <ScheduleLink address={scheduleAddress} />}
+    </EmptyState>
+  );
+}
+
 export function NextLesson({
   me,
   item,
   homeRefetch,
+  scheduleAddress,
 }: {
   readonly me: Me;
   readonly item: CalendarItem | null;
   readonly homeRefetch: HomeRefetch;
+  readonly scheduleAddress: string | null;
 }): ReactElement {
   const { t } = useTranslation();
   const headingId = useId();
@@ -76,11 +107,9 @@ export function NextLesson({
   useRefetchAt(next?.ends_at ?? null, homeRefetch);
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 id={headingId} className="text-heading">
-        {t('home.nextLesson')}
-      </h2>
+      <SectionHead headingId={headingId} title={t('home.nextLesson')} />
       {next === undefined ? (
-        <p className="text-text-muted">{t('home.noNextLesson')}</p>
+        <NoNextLesson scheduleAddress={scheduleAddress} />
       ) : (
         <LessonList
           items={[next]}
@@ -111,18 +140,15 @@ export function NextSevenDays({
   const week = upcoming(items, now).filter((item) => Date.parse(item.starts_at) < now + weekMilliseconds);
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 id={headingId} className="text-heading">
-        {t('home.nextSevenDays')}
-      </h2>
+      <SectionHead
+        headingId={headingId}
+        title={t('home.nextSevenDays')}
+        action={<ScheduleLink address={scheduleAddress} />}
+      />
       {week.length === 0 ? (
         <p className="text-text-muted">{t('home.noLessonsThisWeek')}</p>
       ) : (
         <LessonList items={week} label={t('home.nextSevenDays')} me={me} showAudience={false} showTutor />
-      )}
-      {scheduleAddress === null ? null : (
-        <Link to={scheduleAddress} className={linkClass}>
-          {t('home.openSchedule')}
-        </Link>
       )}
     </section>
   );

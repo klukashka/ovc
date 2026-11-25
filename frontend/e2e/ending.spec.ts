@@ -83,6 +83,16 @@ interface PilotFourSeed {
 
 const emailListLimit = 20;
 
+function openedMenu(page: Page): Locator {
+  return page.locator('main [aria-expanded="true"] + div');
+}
+
+const transparent = 'rgba(0, 0, 0, 0)';
+
+async function backgroundOf(locator: Locator): Promise<string> {
+  return locator.evaluate((element) => getComputedStyle(element).backgroundColor);
+}
+
 function allCancelled(count: number): string[] {
   return Array.from({ length: count }, () => 'cancelled');
 }
@@ -438,6 +448,37 @@ test.describe('Anna in Russian', () => {
       expect(await cardState(deployment, maria, cardId)).toEqual({ state: 'active', groups: [] });
     });
 
+    test('my tutors › Stop studying is the last item of the tutor’s menu, with a warning icon', async ({
+      page,
+      mariaAndAnna: { anna },
+    }) => {
+      await signInThroughTheApi(page, anna);
+      await page.goto('/tutors');
+
+      await page.getByRole('button', { name: 'Другие действия: Мария' }).click();
+
+      const lastItem = openedMenu(page).locator(':scope > button:last-child');
+      await expect(lastItem).toHaveText('Прекратить занятия');
+      await expect(lastItem.locator('svg')).toHaveCount(1);
+    });
+
+    test('my tutors › the stop studying dialog shows the filled Stop studying before a quiet Cancel and opens on Cancel', async ({
+      page,
+      mariaAndAnna: { anna },
+    }) => {
+      await signInThroughTheApi(page, anna);
+      await page.goto('/tutors');
+      await page.getByRole('button', { name: 'Другие действия: Мария' }).click();
+
+      await openedMenu(page).getByRole('button', { name: 'Прекратить занятия' }).click();
+
+      const dialog = page.getByRole('dialog', { name: 'Прекратить занятия с этим репетитором?' });
+      await expect(dialog.getByRole('button', { name: 'Отмена' })).toBeFocused();
+      await expect(dialog.getByRole('button')).toHaveText(['Прекратить занятия', 'Отмена']);
+      expect(await backgroundOf(dialog.getByRole('button', { name: 'Прекратить занятия' }))).not.toBe(transparent);
+      expect(await backgroundOf(dialog.getByRole('button', { name: 'Отмена' }))).toBe(transparent);
+    });
+
     test('my tutors › the stop studying dialog opens again after Cancel', async ({ page, mariaAndAnna: { anna } }) => {
       await signInThroughTheApi(page, anna);
       await page.goto('/tutors');
@@ -514,7 +555,7 @@ test.describe('Boris in English', () => {
       await page.getByRole('button', { name: 'Stop studying' }).click();
       const dialog = page.getByRole('dialog', { name: 'Stop studying with this tutor?' });
       await expect(dialog).toContainText(
-        'Your email is not confirmed yet, so the link to this tutor is simply removed.',
+        'Your email is not confirmed yet, so the link to this tutor is removed: your future lessons with this tutor are cancelled, and your chat with them and your work for them are deleted. The tutor gets no message.',
       );
       await expect(dialog.getByRole('button', { name: 'Stop studying' })).toHaveAttribute('aria-disabled', 'false');
       await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();

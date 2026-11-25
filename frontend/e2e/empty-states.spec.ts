@@ -4,7 +4,7 @@ import { signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { createFolder } from './homework.ts';
 import { addDays, localDate, scheduleLessonsWithIds } from './schedule.ts';
-import { createGroup, seedActiveStudent } from './tutoring.ts';
+import { createGroup, endRelationship, seedActiveStudent } from './tutoring.ts';
 
 const moscow = 'Europe/Moscow';
 
@@ -129,5 +129,109 @@ test.describe('empty states with a next step', () => {
     await expect(page.getByRole('heading', { level: 2, name: 'Invite your first student' })).toBeVisible();
     await expect(page.getByLabel('Name or email')).toBeFocused();
     await expect(page.getByLabel('Name or email')).toHaveValue('');
+  });
+});
+
+interface ShownEmptyState {
+  readonly sentence: string | null;
+  readonly link: string | null;
+  readonly href: string | null;
+}
+
+test.describe('the student’s empty Homework tabs and My tutors', () => {
+  test('each empty Homework tab names what arrives there and links to another tab', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { student } = await seedActiveStudent(deployment, tutor, 'Anna');
+    await signInThroughTheApi(page, student);
+    const shown: ShownEmptyState[] = [];
+
+    for (const [address, heading] of [
+      ['/homework', 'Nothing to do'],
+      ['/homework?status=submitted', 'Nothing submitted'],
+      ['/homework?status=checked', 'Nothing checked yet'],
+      ['/homework?status=closed', 'Nothing closed'],
+    ] as const) {
+      await page.goto(address);
+      const empty = page.locator('main [data-empty-state]');
+      await empty.getByRole('heading', { level: 2, name: heading }).waitFor();
+      const link = empty.getByRole('link');
+      shown.push({
+        sentence: await empty.locator('p').textContent(),
+        link: await link.textContent(),
+        href: await link.getAttribute('href'),
+      });
+    }
+
+    expect(shown).toEqual([
+      {
+        sentence: 'New assignments from your tutors appear here.',
+        link: 'See checked work',
+        href: '/homework?status=checked',
+      },
+      {
+        sentence: 'Work you submit waits here until your tutor checks it.',
+        link: 'See what to do',
+        href: '/homework',
+      },
+      {
+        sentence: 'Feedback appears here when your tutor checks your work.',
+        link: 'See submitted work',
+        href: '/homework?status=submitted',
+      },
+      {
+        sentence: 'Assignments that can no longer be submitted appear here.',
+        link: 'See what to do',
+        href: '/homework',
+      },
+    ]);
+  });
+
+  test('My tutors without a current tutor points to Add a tutor beside the list', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { student, cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+    await endRelationship(deployment, tutor, cardId);
+    await signInThroughTheApi(page, student);
+
+    await page.goto('/tutors');
+
+    const empty = page.locator('main [data-empty-state]');
+    await expect(empty.getByRole('heading', { level: 2, name: 'No tutor yet.' })).toBeVisible();
+    await expect(empty.locator('p')).toHaveText('Enter your tutor’s code under “Add a tutor” to start studying.');
+    await expect(
+      page.getByRole('complementary', { name: 'Adding a tutor and sent requests' }).getByRole('heading', {
+        level: 2,
+        name: 'Add a tutor',
+      }),
+    ).toBeVisible();
+  });
+});
+
+test.describe('the student’s empty Home sections', () => {
+  test('an empty Recently checked says when feedback arrives and an empty Next lesson offers the schedule', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const { student } = await seedActiveStudent(deployment, tutor, 'Anna', 'en');
+    await signInThroughTheApi(page, student);
+    const checked = page.getByRole('region', { name: 'Recently checked', exact: true });
+    const nextLesson = page.getByRole('region', { name: 'Next lesson', exact: true });
+
+    await page.goto('/home');
+    await checked.locator('[data-empty-state]').waitFor();
+    await nextLesson.locator('[data-empty-state]').waitFor();
+
+    await expect(checked.getByRole('heading', { level: 3, name: 'Nothing checked yet' })).toBeVisible();
+    await expect(checked.locator('[data-empty-state] p')).toHaveText(
+      'Feedback appears here when your tutor checks your work.',
+    );
+    await expect(nextLesson.getByRole('heading', { level: 3, name: 'No lesson scheduled' })).toBeVisible();
+    await expect(nextLesson.locator('[data-empty-state] p')).toHaveText(
+      'Your next lesson appears here once your tutor schedules it.',
+    );
+    await expect(
+      nextLesson.locator('[data-empty-state]').getByRole('link', { name: 'Open the schedule', exact: true }),
+    ).toHaveAttribute('href', '/schedule');
+    await expect(page.getByRole('main')).not.toContainText(/points|score|answer/i);
   });
 });

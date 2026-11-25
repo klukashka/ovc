@@ -181,6 +181,15 @@ export function CrossIcon(props: IconProps): ReactElement {
   );
 }
 
+export function WarningIcon(props: IconProps): ReactElement {
+  return (
+    <Outline {...props}>
+      <path d="M8 2.5 14 13H2Z" />
+      <path d="M8 6.5v3M8 11.3v.2" />
+    </Outline>
+  );
+}
+
 export function DoorIcon(props: IconProps): ReactElement {
   return (
     <Outline {...props}>

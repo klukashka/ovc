@@ -15,12 +15,19 @@ import {
   callApi,
   createCard,
   createGroup,
+  registerStudentWithCode,
   seedActiveStudent,
   signUpOnInvitation,
+  tutorCode,
 } from './tutoring.ts';
 
 const markup = '<img src=x onerror="document.title=1"><b>Bold</b>';
 const homeQueryPaths = ['/api/v1/home'];
+const unconfirmedSectionName = 'After you confirm your email';
+const withoutLinkSentence =
+  'Schedule, homework, messages and notifications appear here after you confirm your email. Until then you can enter a tutor code, see your tutors and change your settings.';
+const withLinkSentence =
+  'After you confirm your email in this browser, you also get notifications, group lessons and chats, and file answers.';
 
 interface TwoTutors {
   readonly maria: TestAccount;
@@ -68,6 +75,54 @@ function region(page: Page, name: string): Locator {
 
 function weekRows(page: Page): Locator {
   return region(page, 'Next seven days').getByRole('list').getByRole('link');
+}
+
+function recordApiReads(page: Page): string[] {
+  const requested: string[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (
+      url.pathname.startsWith('/api/v1/') &&
+      url.pathname !== '/api/v1/ws' &&
+      !url.pathname.startsWith('/api/v1/auth/')
+    ) {
+      requested.push(`${url.pathname}${url.search}`);
+    }
+  });
+  return requested;
+}
+
+function readPaths(requested: readonly string[]): string[] {
+  return [...new Set(requested.map((read) => new URL(read, 'https://ovc.invalid').pathname))].sort();
+}
+
+interface UnconfirmedHome {
+  readonly paths: readonly string[];
+  readonly assignmentReads: readonly string[];
+}
+
+async function openUnconfirmedHome(
+  page: Page,
+  student: TestAccount,
+  sentence: string,
+  requested: string[],
+): Promise<UnconfirmedHome> {
+  await page.context().clearCookies();
+  await signInThroughTheApi(page, student);
+  requested.splice(0);
+  const ready = trafficAfterReady(page, homeQueryPaths);
+  try {
+    await ready.initialize();
+    await page.goto('/home');
+    await expectReadyForNavigation(page, ready);
+  } finally {
+    await ready.dispose();
+  }
+  await region(page, unconfirmedSectionName).getByText(sentence, { exact: true }).waitFor();
+  return {
+    paths: readPaths(requested),
+    assignmentReads: requested.filter((read) => read.startsWith('/api/v1/assignments')),
+  };
 }
 
 test.describe('Home', () => {
@@ -452,6 +507,7 @@ test.describe('Home', () => {
     await expectReadyForNavigation(page, ready);
     await expect(weekRows(page)).toHaveCount(2);
 
+    await expect(region(page, unconfirmedSectionName)).toHaveCount(0);
     const paths = requested.map((read) => new URL(read, 'https://ovc.invalid').pathname);
     expect([...new Set(paths)].sort()).toEqual(
       [
@@ -469,6 +525,41 @@ test.describe('Home', () => {
     expect(
       Math.max(...[...new Set(requested)].map((read) => requested.filter((entry) => entry === read).length)),
     ).toBeLessThanOrEqual(2);
+  });
+
+  test("an unconfirmed student's Home says which sections arrive after confirming", async ({ page, deployment }) => {
+    const maria = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const waiting = newTestAccount('Boris', 'student');
+    await registerStudentWithCode(deployment, waiting, await tutorCode(deployment, maria), 'en');
+    const linked = newTestAccount('Vera', 'student');
+    const card = await createCard(deployment, maria, 'Vera', linked.email);
+    await signUpOnInvitation(deployment, card.link, linked, 'en');
+    const requested = recordApiReads(page);
+
+    const withoutLink = await openUnconfirmedHome(page, waiting, withoutLinkSentence, requested);
+    const withoutLinkSection = {
+      shown: await region(page, unconfirmedSectionName).getByText(withoutLinkSentence, { exact: true }).count(),
+      other: await page.getByText(withLinkSentence, { exact: true }).count(),
+    };
+    const withLink = await openUnconfirmedHome(page, linked, withLinkSentence, requested);
+    const withLinkSection = {
+      shown: await region(page, unconfirmedSectionName).getByText(withLinkSentence, { exact: true }).count(),
+      other: await page.getByText(withoutLinkSentence, { exact: true }).count(),
+    };
+
+    expect(withoutLinkSection).toEqual({ shown: 1, other: 0 });
+    expect(withoutLink.paths).toEqual(
+      ['/api/v1/home', '/api/v1/join-requests/sent', '/api/v1/tutors', '/api/v1/users/me'].sort(),
+    );
+    expect(withLinkSection).toEqual({ shown: 1, other: 0 });
+    expect(withLink.paths).toEqual(
+      ['/api/v1/assignments', '/api/v1/channels/unread', '/api/v1/home', '/api/v1/tutors', '/api/v1/users/me'].sort(),
+    );
+    expect(withLink.assignmentReads.length).toBeGreaterThanOrEqual(1);
+    expect(withLink.assignmentReads).toEqual(
+      withLink.assignmentReads.filter((read) => read === '/api/v1/assignments?status=todo&limit=1'),
+    );
+    expect([...withoutLink.paths, ...withLink.paths]).not.toContain('/api/v1/notifications');
   });
 
   test('a lesson title, group name, tutor name, assignment titles and feedback with markup show as text on Home', async ({

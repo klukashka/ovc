@@ -1,13 +1,21 @@
 import { type ReactElement, type ReactNode, type RefObject, useEffect, useId, useRef, useState } from 'react';
 
+import { WarningIcon } from './icons.tsx';
+
 const menuButtonClass =
   'inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-border-strong px-3 text-strong text-text hover:bg-surface aria-disabled:opacity-60';
+
+const menuItemClass =
+  'flex min-h-11 w-full items-center gap-2 rounded-sm px-2.5 text-left text-small hover:bg-hover desktop:pointer-fine:min-h-8';
+
+const dangerMenuItemClass = `${menuItemClass} text-danger`;
 
 const menuPosition: Readonly<Record<'start' | 'end', string>> = { start: 'left-0', end: 'right-0' };
 
 export interface MenuItem {
   readonly label: string;
   readonly onChoose: () => void;
+  readonly danger?: boolean;
 }
 
 export function ActionMenu({
@@ -34,6 +42,26 @@ export function ActionMenu({
   const container = useRef<HTMLDivElement>(null);
   const ownButton = useRef<HTMLButtonElement>(null);
   const button = buttonRef ?? ownButton;
+  const routineItems = items.filter((item) => item.danger !== true);
+  const dangerItems = items.filter((item) => item.danger === true);
+
+  function itemButton(item: MenuItem): ReactElement {
+    return (
+      <button
+        key={item.label}
+        type="button"
+        onClick={() => {
+          setOpen(false);
+          button.current?.focus();
+          item.onChoose();
+        }}
+        className={item.danger === true ? dangerMenuItemClass : menuItemClass}
+      >
+        {item.danger === true ? <WarningIcon /> : null}
+        {item.label}
+      </button>
+    );
+  }
 
   useEffect(() => {
     if (!open) {
@@ -94,20 +122,9 @@ export function ActionMenu({
           id={menuId}
           className={`absolute top-full ${menuPosition[align]} z-20 mt-1 w-56 rounded-lg border border-border bg-surface p-1 shadow-raised dark:border-border-strong dark:shadow-none`}
         >
-          {items.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                button.current?.focus();
-                item.onChoose();
-              }}
-              className="flex min-h-11 w-full items-center rounded-sm px-2.5 text-left text-small hover:bg-hover desktop:pointer-fine:min-h-8"
-            >
-              {item.label}
-            </button>
-          ))}
+          {routineItems.map(itemButton)}
+          {dangerItems.length === 0 || routineItems.length === 0 ? null : <hr className="my-1 border-border" />}
+          {dangerItems.map(itemButton)}
         </div>
       ) : null}
     </div>

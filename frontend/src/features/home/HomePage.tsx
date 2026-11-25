@@ -7,6 +7,7 @@ import { linkClass } from '../../components/ui/Form.tsx';
 import { DelayedLoading, LoadFailed, focusHeadingIfLost } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { PageColumns } from '../../components/ui/PageColumns.tsx';
+import { SectionHead } from '../../components/ui/SectionHead.tsx';
 import { asApiError } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { reachable } from '../../routes/access.ts';
@@ -21,6 +22,7 @@ import { NextLesson, NextSevenDays } from './HomeLessons.tsx';
 import { HomeFirstLoad, HomeRefetchNotice } from './HomeLoadState.tsx';
 import { TodoPanel } from './TodoPanel.tsx';
 import { TutorFilter } from './TutorFilter.tsx';
+import { UnconfirmedSections } from './UnconfirmedSections.tsx';
 
 function asMyTutor(tutor: StudentHomeTutor): MyTutor {
   return {
@@ -72,18 +74,22 @@ function FirstTutor(): ReactElement {
 
 function StudentTutors({ tutors }: { readonly tutors: readonly MyTutor[] }): ReactElement {
   const { t } = useTranslation();
-  if (tutors.length === 0) {
-    return <FirstTutor />;
-  }
+  const headingId = useId();
   return (
-    <>
-      <TutorList tutors={tutors} label={t('tutors.list')} withBio={false} />
-      <p>
-        <Link to="/tutors" className={linkClass}>
-          {t('tutors.enterCode')}
-        </Link>
-      </p>
-    </>
+    <section aria-labelledby={headingId} className="flex flex-col gap-3">
+      <SectionHead
+        headingId={headingId}
+        title={t('section.tutors')}
+        action={
+          tutors.length === 0 ? null : (
+            <Link to="/tutors" className={linkClass}>
+              {t('tutors.enterCode')}
+            </Link>
+          )
+        }
+      />
+      {tutors.length === 0 ? <FirstTutor /> : <TutorList tutors={tutors} label={t('tutors.list')} withBio={false} />}
+    </section>
   );
 }
 
@@ -96,7 +102,6 @@ export function HomePage(): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
   const queryClient = useQueryClient();
-  const tutorsHeading = useId();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const requested = params.get('tutor');
@@ -123,7 +128,8 @@ export function HomePage(): ReactElement {
       focusHeadingIfLost();
     }
   }, [unavailable]);
-  const homeworkShown = reachable(me, '/homework', provisionallyLinked(useProvisionalLink(me)));
+  const provisionalLink = useProvisionalLink(me);
+  const homeworkShown = reachable(me, '/homework', provisionallyLinked(provisionalLink));
   const home = query.data ?? lastHome;
   const choiceFailed = query.data === undefined && query.isError && !unavailable;
   const read = {
@@ -147,6 +153,7 @@ export function HomePage(): ReactElement {
           ? ' '
           : t('home.summary', { count: home.today_lessons_count })}
       </p>
+      <UnconfirmedSections me={me} link={provisionalLink} />
       {home === undefined ? (
         <HomeFirstLoad query={read} />
       ) : (
@@ -180,6 +187,7 @@ export function HomePage(): ReactElement {
                   <NextLesson
                     me={me}
                     item={home.next_lesson}
+                    scheduleAddress={scheduleAddress}
                     homeRefetch={{
                       refetch: query.refetch,
                       loadedAt: query.dataUpdatedAt,
@@ -201,12 +209,7 @@ export function HomePage(): ReactElement {
               {unavailable || choiceFailed ? null : (
                 <NextSevenDays me={me} items={home.next_seven_days} scheduleAddress={scheduleAddress} />
               )}
-              <section aria-labelledby={tutorsHeading} className="flex flex-col gap-3">
-                <h2 id={tutorsHeading} className="text-heading">
-                  {t('section.tutors')}
-                </h2>
-                <StudentTutors tutors={tutors} />
-              </section>
+              <StudentTutors tutors={tutors} />
             </>
           }
         />

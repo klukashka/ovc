@@ -2,14 +2,18 @@ import { useQueryClient } from '@tanstack/react-query';
 import { type ReactElement, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { EmptyState } from '../../components/ui/EmptyState.tsx';
 import { FocusedNotice } from '../../components/ui/LiveNotice.tsx';
-import { DelayedLoading } from '../../components/ui/LoadState.tsx';
+import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { PageColumns } from '../../components/ui/PageColumns.tsx';
+import { asApiError } from '../../lib/api/client.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { type MyTutor, currentTutors, myTutorsKey, pastTutors } from './api.ts';
 import { CodeEntry } from './CodeEntry.tsx';
 import { SentRequests } from './SentRequests.tsx';
 import { type StopOutcome, StopStudyingDialog } from './StopStudying.tsx';
+import { myTutorsTextLoaders } from './texts.ts';
 import { CurrentTutorTable, PastTutorTable, TutorsLoadFailed, useMyTutors } from './TutorList.tsx';
 
 const stopNotice = {
@@ -47,6 +51,7 @@ function PastTutors({ tutors }: { readonly tutors: readonly MyTutor[] }): ReactE
 
 export function MyTutorsPage(): ReactElement {
   const { t } = useTranslation();
+  const texts = useFeatureTexts('myTutors', myTutorsTextLoaders);
   const addHeading = useId();
   const query = useMyTutors();
   const queryClient = useQueryClient();
@@ -67,9 +72,12 @@ export function MyTutorsPage(): ReactElement {
     if (query.isError) {
       return <TutorsLoadFailed query={query} />;
     }
+    if (!texts.ready) {
+      return texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />;
+    }
     const tutors = currentTutors(query.data);
     return tutors.length === 0 ? (
-      <p className="text-text-muted">{t('tutors.empty')}</p>
+      <EmptyState title={t('tutors.empty')} sentence={t('myTutors.emptyNext')} />
     ) : (
       <CurrentTutorTable
         tutors={tutors}

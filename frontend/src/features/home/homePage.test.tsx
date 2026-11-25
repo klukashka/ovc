@@ -10,13 +10,16 @@ import { FollowingQueryClient } from '../../app/queryClient.ts';
 import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
 import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import type { components } from '../../lib/api/schema.ts';
-import { Session, SessionContext } from '../../lib/api/session.ts';
+import { type Me, Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
+import { reachable } from '../../routes/access.ts';
+import type { ProvisionalLink } from '../../routes/provisionalLink.ts';
 import type { CalendarItem, LessonDetail } from '../schedule/api.ts';
 import { type OpenRoomTab, RoomTabContext } from '../schedule/roomTab.ts';
 import type { Language } from '../../lib/i18n/languages.ts';
 import { studentHomesKey } from './api.ts';
 import { HomePage } from './HomePage.tsx';
+import { UnconfirmedSections } from './UnconfirmedSections.tsx';
 
 afterEach(() => {
   cleanup();
@@ -33,6 +36,11 @@ const pavelLink = '00000000-0000-4000-8000-000000000072';
 const otherLink = '00000000-0000-4000-8000-000000000079';
 const refetchFailedText = 'The latest data could not be loaded. The page shows what was loaded before.';
 const unavailableText = 'This tutor is not available.';
+const unconfirmedHeading = 'After you confirm your email';
+const withoutLinkText =
+  'Schedule, homework, messages and notifications appear here after you confirm your email. Until then you can enter a tutor code, see your tutors and change your settings.';
+const withLinkText =
+  'After you confirm your email in this browser, you also get notifications, group lessons and chats, and file answers.';
 
 const liveLesson: LessonDetail = {
   id: '00000000-0000-4000-8000-000000000021',
@@ -439,5 +447,105 @@ describe('Home on GET /home', () => {
     expect(badges[0]?.textContent).toBe(text);
     expect(badges[0]?.closest('li')?.textContent).toContain('Past simple');
     expect(screen.getByRole('main').textContent).not.toMatch(/points|балл/i);
+  });
+});
+
+function headOf(element: HTMLElement): Element | null {
+  return element.closest('[data-section-head]');
+}
+
+describe('section heads on Home', () => {
+  test('the To do, Next seven days and My tutors actions stand in their section heads beside the heading', async () => {
+    await showHome();
+
+    const todo = await screen.findByRole('link', { name: 'All homework, 1 to do' });
+    const placed = [
+      { action: todo, heading: 'To do' },
+      { action: screen.getByRole('link', { name: 'Open the schedule' }), heading: 'Next seven days' },
+      { action: screen.getByRole('link', { name: 'Enter a tutor code' }), heading: 'My tutors' },
+    ].map(({ action, heading }) => ({
+      heading,
+      inHead:
+        headOf(action) !== null && headOf(action) === headOf(screen.getByRole('heading', { level: 2, name: heading })),
+    }));
+
+    expect(placed).toEqual([
+      { heading: 'To do', inHead: true },
+      { heading: 'Next seven days', inHead: true },
+      { heading: 'My tutors', inHead: true },
+    ]);
+  });
+});
+
+function unconfirmedStudent(): Me {
+  return {
+    id: '00000000-0000-4000-8000-000000000001',
+    name: 'Anna',
+    email: studentEmail,
+    email_verified: false,
+    timezone: 'Europe/Moscow',
+    avatar_id: null,
+    reclaim_pending: false,
+    role: 'student',
+    state: 'unverified',
+    language: 'en',
+    theme: 'system',
+  };
+}
+
+async function showUnconfirmedSections(link: ProvisionalLink): Promise<(next: ProvisionalLink) => void> {
+  const i18n = await createI18n('en');
+  const me = unconfirmedStudent();
+  const view = render(
+    <I18nextProvider i18n={i18n}>
+      <UnconfirmedSections me={me} link={link} />
+    </I18nextProvider>,
+  );
+  return (next: ProvisionalLink): void => {
+    view.rerender(
+      <I18nextProvider i18n={i18n}>
+        <UnconfirmedSections me={me} link={next} />
+      </I18nextProvider>,
+    );
+  };
+}
+
+describe("an unconfirmed student's Home says which sections arrive after confirming", () => {
+  test.each([
+    { linked: false, shown: withoutLinkText, other: withLinkText },
+    { linked: true, shown: withLinkText, other: withoutLinkText },
+  ])('a known link state, linked $linked, shows only its own sentence', async ({ linked, shown, other }) => {
+    await showUnconfirmedSections({ kind: 'known', linked });
+
+    const section = await screen.findByRole('region', { name: unconfirmedHeading });
+
+    expect(within(section).getByText(shown)).toBeTruthy();
+    expect(screen.queryByText(other)).toBeNull();
+  });
+
+  test.each<{ readonly state: string; readonly link: ProvisionalLink }>([
+    { state: 'pending', link: { kind: 'pending' } },
+    { state: 'failed', link: { kind: 'failed', retry: (): void => undefined } },
+  ])('nothing shows while the link state is $state', async ({ link }) => {
+    const show = await showUnconfirmedSections({ kind: 'known', linked: false });
+    await screen.findByText(withoutLinkText);
+
+    show(link);
+
+    expect(screen.queryByRole('region', { name: unconfirmedHeading })).toBeNull();
+    expect(screen.queryByText(withoutLinkText)).toBeNull();
+    expect(screen.queryByText(withLinkText)).toBeNull();
+  });
+
+  test('every section the sentence without a link names is unreachable and every section it offers is reachable', () => {
+    const me = unconfirmedStudent();
+
+    const named = ['/schedule', '/homework', '/messages', '/notifications'].map((path) => reachable(me, path, false));
+    const offered = ['/tutors', '/settings'].map((path) => reachable(me, path, false));
+    const notificationsWithLink = reachable(me, '/notifications', true);
+
+    expect(named).toEqual([false, false, false, false]);
+    expect(offered).toEqual([true, true]);
+    expect(notificationsWithLink).toBe(false);
   });
 });
