@@ -16,11 +16,19 @@ import { issueThroughTheApi } from './homework.ts';
 import { publishReview } from './results.ts';
 import { answerTextAndSubmit } from './review.ts';
 import { addDays, localDate, scheduleLessons } from './schedule.ts';
-import { acceptSignedIn, createCard, endRelationship, seedActiveStudent } from './tutoring.ts';
+import { acceptSignedIn, callApi, createCard, endRelationship, seedActiveStudent } from './tutoring.ts';
 import { unsubscribeTokenFromAReminder } from './unsubscribe.ts';
 
 const refreshCookie = '__Host-ovc_refresh';
 const dayMilliseconds = 24 * 60 * 60 * 1_000;
+const exportReadyTimeout = 30_000;
+
+async function currentExportState(deployment: Deployment, token: string): Promise<unknown> {
+  const answer = await callApi(deployment, token, 'GET', '/exports/current');
+  const body = answer.body;
+  const current = typeof body === 'object' && body !== null && 'export' in body ? body.export : null;
+  return typeof current === 'object' && current !== null && 'state' in current ? current.state : null;
+}
 
 interface SeededWork extends SeededSubmission {
   readonly student: TestAccount;
@@ -188,6 +196,10 @@ test.describe('the HTTP authentication transport against the real backend', () =
           ]),
         endSeededRelationship: (seeded: SeededSubmission): Promise<void> =>
           endRelationship(deployment, account, seeded.relationshipId),
+        readyExport: async (token: string): Promise<void> => {
+          await control.tick();
+          await expect.poll(() => currentExportState(deployment, token), { timeout: exportReadyTimeout }).toBe('ready');
+        },
       };
 
       const run = scenario(subject);

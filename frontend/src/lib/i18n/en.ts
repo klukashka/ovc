@@ -132,6 +132,7 @@ export const en: Resources = {
     settingsAccount: 'Account',
     settingsNotifications: 'Notification settings',
     settingsTeaching: 'Teaching',
+    settingsData: 'My data',
     checkEmail: 'Check your email',
     privacy: 'Privacy policy',
     notFound: 'Page not found',
@@ -326,6 +327,7 @@ export const en: Resources = {
     account: 'Account',
     notifications: 'Notifications',
     teaching: 'Teaching',
+    myData: 'My data',
     details: 'Name and description',
     avatar: 'Photo',
     noAvatar: 'No photo uploaded.',
@@ -421,6 +423,7 @@ export const en: Resources = {
     groups: 'Confirm your email to create groups.',
     schedule: 'Confirm your email to schedule lessons.',
     upload: 'Confirm your email to upload files.',
+    export: 'Confirm your email to export your data.',
     action: 'Confirm email',
   },
   limits: {

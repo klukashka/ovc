@@ -6,6 +6,7 @@ import type { homeworkTexts } from '../../features/homework/texts.en.ts';
 import type { libraryTexts } from '../../features/library/texts.en.ts';
 import type { groupsTexts } from '../../features/groups/texts.en.ts';
 import type { notificationEventTexts } from '../../features/notifications/texts.en.ts';
+import type { myDataTexts } from '../../features/settings/myDataTexts.en.ts';
 import type { studentCardTexts } from '../../features/students/cardTexts.en.ts';
 import type { ru } from './ru.ts';
 
@@ -23,6 +24,7 @@ export interface FeatureSections {
   readonly reclaim: Shape<typeof reclaimTexts>;
   readonly studentCard: Shape<typeof studentCardTexts>;
   readonly groups: Shape<typeof groupsTexts>;
+  readonly myData: Shape<typeof myDataTexts>;
 }
 
 export type FeatureSection = keyof FeatureSections;

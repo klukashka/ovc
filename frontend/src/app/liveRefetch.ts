@@ -9,6 +9,7 @@ import { groupsKey, memberChoiceKey } from '../features/groups/api.ts';
 import { homeKey, tutorHomeKey } from '../features/home/api.ts';
 import { issuesKey } from '../features/homework/api.ts';
 import { notificationsKey } from '../features/notifications/api.ts';
+import { currentExportKey } from '../features/settings/exportApi.ts';
 import { reviewKey } from '../features/review/keys.ts';
 import { calendarKey, lessonKey, lessonsKey } from '../features/schedule/keys.ts';
 import { joinRequestsKey, studentCardKey, studentCardsKey, studentListsKey } from '../features/students/api.ts';
@@ -84,6 +85,7 @@ export function liveRefetch(
       case 'notification':
         arrivals.arrived();
         void queryClient.invalidateQueries({ queryKey: notificationsKey });
+        void queryClient.invalidateQueries({ queryKey: currentExportKey });
         return;
       case 'message':
         coalescer.changed(event.channelId, event);

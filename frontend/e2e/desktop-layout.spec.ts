@@ -148,7 +148,13 @@ async function openAt(
   });
 }
 
-const settingsPaths = ['/settings/profile', '/settings/account', '/settings/notifications', '/settings/teaching'];
+const settingsPaths = [
+  '/settings/profile',
+  '/settings/account',
+  '/settings/notifications',
+  '/settings/teaching',
+  '/settings/data',
+];
 
 function settingsReady(page: Page): Locator {
   return page.locator('main [data-settings-value], main form, main [role="switch"]').first();

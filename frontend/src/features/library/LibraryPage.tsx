@@ -33,6 +33,7 @@ import { refusalText } from '../../components/ui/Refusal.tsx';
 import { type ApiError, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import { downloadAddress } from '../../lib/files/downloadAddress.ts';
+import { startDownload } from '../../lib/files/startDownload.ts';
 import { useOpenFormRoute } from '../../components/ui/formRoute.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
@@ -113,16 +114,6 @@ function actionRefusal(t: TFunction, state: ActionState): string | null {
     return t('library.tooMany');
   }
   return refusalText(t, state.error, state.retryAfter, undefined);
-}
-
-function startDownload(address: string): void {
-  const link = document.createElement('a');
-  link.href = address;
-  link.download = '';
-  link.rel = 'noopener noreferrer';
-  document.body.append(link);
-  link.click();
-  link.remove();
 }
 
 function visible(element: HTMLElement | null): element is HTMLElement {

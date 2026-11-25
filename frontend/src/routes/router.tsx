@@ -49,6 +49,7 @@ const profileSettingsPage = lazyPage(
 const accountSettingsPage = lazyPage(
   async () => (await import('../features/settings/AccountSettingsPage.tsx')).AccountSettingsPage,
 );
+const myDataPage = lazyPage(async () => (await import('../features/settings/MyDataPage.tsx')).MyDataPage);
 const notificationsPage = lazyPage(
   async () => (await import('../features/notifications/NotificationsPage.tsx')).NotificationsPage,
 );
@@ -105,6 +106,7 @@ export const sharedPages: RouteObject[] = [
   page('/settings/profile', 'page.settingsProfile', profileSettingsPage),
   page('/settings/account', 'page.settingsAccount', accountSettingsPage),
   page('/settings/notifications', 'page.settingsNotifications', notificationSettingsPage),
+  page('/settings/data', 'page.settingsData', myDataPage),
 ];
 
 const frames: RouteObject[] = [

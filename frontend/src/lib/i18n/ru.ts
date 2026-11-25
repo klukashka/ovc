@@ -139,6 +139,7 @@ export const ru = {
     settingsAccount: 'Аккаунт',
     settingsNotifications: 'Настройки уведомлений',
     settingsTeaching: 'Преподавание',
+    settingsData: 'Мои данные',
     checkEmail: 'Проверьте почту',
     privacy: 'Политика конфиденциальности',
     notFound: 'Страница не найдена',
@@ -337,6 +338,7 @@ export const ru = {
     account: 'Аккаунт',
     notifications: 'Уведомления',
     teaching: 'Преподавание',
+    myData: 'Мои данные',
     details: 'Имя и описание',
     avatar: 'Фото',
     noAvatar: 'Фото не загружено.',
@@ -432,6 +434,7 @@ export const ru = {
     groups: 'Подтвердите email, чтобы создавать группы.',
     schedule: 'Подтвердите email, чтобы планировать уроки.',
     upload: 'Подтвердите адрес почты, чтобы загружать файлы.',
+    export: 'Подтвердите email, чтобы выгрузить свои данные.',
     action: 'Подтвердить email',
   },
   limits: {

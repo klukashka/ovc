@@ -299,6 +299,10 @@ function fakeSubject(): ContractSubject {
       await Promise.resolve();
       server.endRelationshipOf(seeded.submissionId);
     },
+    readyExport: async (token: string): Promise<void> => {
+      await Promise.resolve();
+      server.finishExportOf(token);
+    },
   };
 }
 

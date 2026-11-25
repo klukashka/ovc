@@ -23,6 +23,7 @@ export interface ContractSubject {
   readonly seedOtherStudentSubmission: () => Promise<SeededSubmission>;
   readonly returnSeededSubmission: (seeded: SeededSubmission) => Promise<void>;
   readonly endSeededRelationship: (seeded: SeededSubmission) => Promise<void>;
+  readonly readyExport: (accessToken: string) => Promise<void>;
 }
 
 export interface SeededSubmission {
@@ -544,6 +545,51 @@ async function refusalShape(response: Response): Promise<RefusalShape> {
     same: (other) => other.describe() === summary,
     describe: () => summary,
   };
+}
+
+const exportKeys = [
+  'id',
+  'state',
+  'failure',
+  'requested_at',
+  'built_at',
+  'expires_at',
+  'size_bytes',
+  'progress',
+  'next_allowed_at',
+] as const;
+
+function exportRequest(
+  subject: ContractSubject,
+  token: string,
+  method: 'GET' | 'POST' | 'DELETE',
+  path: '' | '/current' | '/current/download',
+  body?: unknown,
+): Request {
+  return new Request(`${subject.origin}/api/v1/exports${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+}
+
+function requestExport(subject: ContractSubject, token: string, password: string): Promise<Response> {
+  return subject.transport.send(exportRequest(subject, token, 'POST', '', { password }));
+}
+
+function wrongPassword(subject: ContractSubject): string {
+  return `${subject.password} but wrong`;
+}
+
+async function currentExport(subject: ContractSubject, token: string): Promise<unknown> {
+  const response = await subject.transport.send(exportRequest(subject, token, 'GET', '/current'));
+  check(response.status === 200, `expected the current export, got ${String(response.status)}`);
+  return bodyOf(response);
+}
+
+function checkRetryAfter(response: Response): void {
+  const header = response.headers.get('Retry-After') ?? '';
+  check(/^[1-9][0-9]*$/.test(header), `expected a positive Retry-After, got ${JSON.stringify(header)}`);
 }
 
 export const authTransportContract: Readonly<Record<string, ContractScenario>> = {
@@ -1416,5 +1462,101 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
       );
       check(wholeRead === 'failed', 'expected account body abort to reject a whole read');
     }
+  },
+
+  'a new account reads no current export': async (subject) => {
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+
+    const response = await subject.transport.send(exportRequest(subject, token, 'GET', '/current'));
+
+    check(response.status === 200, `expected 200, got ${String(response.status)}`);
+    const body = await bodyOf(response);
+    checkKeys(body, ['export', 'next_allowed_at'], 'the current export');
+    check(property(body, 'export') === null, 'expected no export');
+    check(property(body, 'next_allowed_at') === null, 'expected no limit');
+  },
+
+  'an export request with a wrong password is refused at body.password and the right password queues it': async (
+    subject,
+  ) => {
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+
+    const wrong = await requestExport(subject, token, wrongPassword(subject));
+    const right = await requestExport(subject, token, subject.password);
+    const current = await currentExport(subject, token);
+
+    check(wrong.status === 422, `expected 422, got ${String(wrong.status)}`);
+    const problems = await fieldProblems(wrong);
+    check(problems === 'validation_failed body.password:incorrect', `expected an incorrect password, got ${problems}`);
+    check(right.status === 202, `expected 202, got ${String(right.status)}`);
+    const requested = await bodyOf(right);
+    checkKeys(requested, exportKeys, 'the requested export');
+    check(property(requested, 'state') === 'queued', 'expected the export queued');
+    const shown = property(current, 'export');
+    check(property(shown, 'id') === property(requested, 'id'), 'expected the requested export to be current');
+    check(
+      ['queued', 'building', 'ready'].includes(String(property(shown, 'state'))),
+      `expected the export queued, building or ready, got ${String(property(shown, 'state'))}`,
+    );
+  },
+
+  'the sixth wrong password for an export request is refused as rate_limited with Retry-After': async (subject) => {
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const refusals: number[] = [];
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      refusals.push((await requestExport(subject, token, wrongPassword(subject))).status);
+    }
+
+    const sixth = await requestExport(subject, token, wrongPassword(subject));
+
+    check(refusals.join(',') === '422,422,422,422,422', `expected five 422, got ${refusals.join(',')}`);
+    check(sixth.status === 429, `expected 429, got ${String(sixth.status)}`);
+    checkRetryAfter(sixth);
+    check((await errorCode(sixth)) === 'rate_limited', 'expected rate_limited');
+  },
+
+  'deleting the current export is idempotent and removes a requested export': async (subject) => {
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const nothing = await subject.transport.send(exportRequest(subject, token, 'DELETE', '/current'));
+    const requested = await requestExport(subject, token, subject.password);
+
+    const deleted = await subject.transport.send(exportRequest(subject, token, 'DELETE', '/current'));
+
+    check(nothing.status === 204, `expected 204 without an export, got ${String(nothing.status)}`);
+    check(requested.status === 202, `expected 202, got ${String(requested.status)}`);
+    check(deleted.status === 204, `expected 204, got ${String(deleted.status)}`);
+    check(property(await currentExport(subject, token), 'export') === null, 'expected no export after the delete');
+  },
+
+  'the download mint is not found without an export and after a delete': async (subject) => {
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const withoutExport = await subject.transport.send(exportRequest(subject, token, 'POST', '/current/download'));
+    await requestExport(subject, token, subject.password);
+    await subject.transport.send(exportRequest(subject, token, 'DELETE', '/current'));
+
+    const afterDelete = await subject.transport.send(exportRequest(subject, token, 'POST', '/current/download'));
+
+    check(withoutExport.status === 404, `expected 404 without an export, got ${String(withoutExport.status)}`);
+    check((await errorCode(withoutExport)) === 'not_found', 'expected not_found without an export');
+    check(afterDelete.status === 404, `expected 404 after the delete, got ${String(afterDelete.status)}`);
+    check((await errorCode(afterDelete)) === 'not_found', 'expected not_found after the delete');
+  },
+
+  'a new export request within 24 hours of a ready export is refused as rate_limited and the limit is shown': async (
+    subject,
+  ) => {
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const first = await requestExport(subject, token, subject.password);
+    await subject.readyExport(token);
+
+    const second = await requestExport(subject, token, subject.password);
+
+    check(first.status === 202, `expected 202, got ${String(first.status)}`);
+    check(second.status === 429, `expected 429, got ${String(second.status)}`);
+    checkRetryAfter(second);
+    check((await errorCode(second)) === 'rate_limited', 'expected rate_limited');
+    const current = await currentExport(subject, token);
+    check(property(property(current, 'export'), 'state') === 'ready', 'expected the export to stay ready');
+    check(typeof property(current, 'next_allowed_at') === 'string', 'expected the instant a new export may start');
   },
 };

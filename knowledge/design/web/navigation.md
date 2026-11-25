@@ -73,7 +73,7 @@ The legal document addresses and links below follow [ADR-0024](../../../docs/dec
 | `/messages`, `/messages/{channelId}` | Messages |
 | `/notifications` | Notifications |
 | `/settings/profile`, `/settings/account`, `/settings/notifications`, `/settings/teaching` | Settings sections |
-| `/settings/data` | My data: request, follow, download and delete the export of the tutor's data (interface rework stage, specified 2026-11-23 by change U1b, pending owner review; pending implementation by E2) |
+| `/settings/data` | My data: request, follow, download and delete the export of the tutor's data (interface rework stage, specified 2026-11-23 by change U1b, pending owner review) |
 
 ## Student addresses
 
@@ -89,7 +89,7 @@ The legal document addresses and links below follow [ADR-0024](../../../docs/dec
 | `/reclaim` | Keep or drop the links and requests made before the email was confirmed; sign-in lands on it while `GET /users/me` reports `reclaim_pending: true`; opened when nothing waits, it says so; a tutor gets Not found |
 | `/notifications` | Notifications |
 | `/settings/profile`, `/settings/account`, `/settings/notifications` | Settings sections |
-| `/settings/data` | My data, as for tutors (interface rework stage, specified 2026-11-23 by change U1b, pending owner review; pending implementation by E2) |
+| `/settings/data` | My data, as for tutors (interface rework stage, specified 2026-11-23 by change U1b, pending owner review) |
 
 ## Rules
 

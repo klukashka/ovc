@@ -58,6 +58,8 @@ type TutorCode = components['schemas']['TutorCode'];
 type TutorHome = components['schemas']['TutorHome'];
 type TutorJoinRequest = components['schemas']['TutorJoinRequest'];
 type TutorSettings = components['schemas']['TutorSettings'];
+type Export = components['schemas']['Export'];
+type CurrentExport = components['schemas']['CurrentExport'];
 type CurrentTutor = MyTutor & { readonly state: 'active' | 'provisional' };
 
 interface HomeFilter {
@@ -370,6 +372,31 @@ function fieldRefusal(path: string, code: string): Response {
   });
 }
 
+const exportsPath = '/api/v1/exports';
+const currentExportPath = '/api/v1/exports/current';
+const exportDownloadPath = '/api/v1/exports/current/download';
+const minuteMilliseconds = 60 * 1_000;
+const currentPasswordWindowMilliseconds = 15 * minuteMilliseconds;
+const currentPasswordFailureLimit = 5;
+const exportAddressMilliseconds = 5 * minuteMilliseconds;
+const exportStartLimitMilliseconds = 24 * 60 * minuteMilliseconds;
+const exportRetentionMilliseconds = 3 * exportStartLimitMilliseconds;
+export const fakeStorageOrigin = 'https://storage.example';
+
+interface FakeExport {
+  readonly current: Export | null;
+  readonly nextAllowedAt: string | null;
+}
+
+interface WrongPasswords {
+  readonly window: number;
+  readonly count: number;
+}
+
+function plannedRefusal(status: number, code: string, retryAfterSeconds: number | null): Response {
+  return retryAfterSeconds === null ? refusal(status, code) : refusalRetryingAfter(status, code, retryAfterSeconds);
+}
+
 function fakeAudienceRefusal(method: string, path: string, caller: Me): Response | null {
   const tutorOnly =
     path === '/api/v1/students' ||
@@ -677,6 +704,22 @@ export class FakeAuthServer {
   private failingUnsubscribes = 0;
   private readonly disabledGroups = new Map<string, Set<EmailGroup>>();
   private readonly unsubscribeGrants = new Map<string, UnsubscribeGrant>();
+  private readonly exportsHeld = new Map<string, FakeExport>();
+  private readonly wrongCurrentPasswords = new Map<string, WrongPasswords>();
+  private readonly exportRequestRefusals: Response[] = [];
+  private readonly exportDownloadRefusals: Response[] = [];
+  private readonly exportDeletionRefusals: Response[] = [];
+  private failingExportReads = 0;
+  private exportReadAnswerCount = 0;
+  private nextExportReadHold: {
+    readonly gate: Promise<void>;
+    readonly received: () => void;
+    readonly consumed: () => void;
+  } | null = null;
+  private exportReadCount = 0;
+  private exportRequestCount = 0;
+  private exportMintCount = 0;
+  private exportIds = 0;
 
   get refreshes(): number {
     return this.refreshCount;
@@ -1219,6 +1262,79 @@ export class FakeAuthServer {
     }
   }
 
+  seedExport(email: string, current: Export | null, nextAllowedAt: string | null = null): void {
+    this.exportsHeld.set(this.account(email).me.id, { current, nextAllowedAt });
+  }
+
+  finishExportOf(token: string): void {
+    const accountId = this.issuedBy(token);
+    const held = accountId === undefined ? undefined : this.exportsHeld.get(accountId);
+    if (accountId === undefined || held?.current === null || held === undefined) {
+      throw new Error('the fake server holds no export for this token');
+    }
+    const now = this.serverNow();
+    this.exportsHeld.set(accountId, {
+      current: {
+        ...held.current,
+        state: 'ready',
+        progress: null,
+        built_at: new Date(now).toISOString(),
+        expires_at: new Date(now + exportRetentionMilliseconds).toISOString(),
+        size_bytes: 4_096,
+      },
+      nextAllowedAt: new Date(Date.parse(held.current.requested_at) + exportStartLimitMilliseconds).toISOString(),
+    });
+  }
+
+  refuseNextExportRequest(status: number, code: string, retryAfterSeconds: number | null = null): void {
+    this.exportRequestRefusals.push(plannedRefusal(status, code, retryAfterSeconds));
+  }
+
+  refuseNextExportDeletion(status: number, code: string, retryAfterSeconds: number | null = null): void {
+    this.exportDeletionRefusals.push(plannedRefusal(status, code, retryAfterSeconds));
+  }
+
+  refuseNextExportDownload(status: number, code: string, retryAfterSeconds: number | null = null): void {
+    this.exportDownloadRefusals.push(plannedRefusal(status, code, retryAfterSeconds));
+  }
+
+  failNextExportRead(): void {
+    this.failingExportReads += 1;
+  }
+
+  holdNextExportRead(): HeldRead {
+    let resume = (): void => undefined;
+    let notifyReceived = (): void => undefined;
+    let notifyConsumed = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const received = new Promise<void>((resolve) => {
+      notifyReceived = resolve;
+    });
+    const consumed = new Promise<void>((resolve) => {
+      notifyConsumed = resolve;
+    });
+    this.nextExportReadHold = { gate, received: notifyReceived, consumed: notifyConsumed };
+    return { resume, received, consumed };
+  }
+
+  get exportReadsAnswered(): number {
+    return this.exportReadAnswerCount;
+  }
+
+  get exportReads(): number {
+    return this.exportReadCount;
+  }
+
+  get exportRequests(): number {
+    return this.exportRequestCount;
+  }
+
+  get exportDownloadsMinted(): number {
+    return this.exportMintCount;
+  }
+
   private account(email: string): FakeAccount {
     const account = this.accounts.get(email);
     if (account === undefined) {
@@ -1427,6 +1543,9 @@ export class FakeAuthServer {
       }
       return this.submissions.handle(request, caller);
     }
+    if ((path === exportsPath || path.startsWith(`${exportsPath}/`)) && caller !== undefined) {
+      return this.answerExport(request, caller, path);
+    }
     if (path === '/api/v1/tutors' && request.method === 'GET') {
       const invalid = this.refusedToken(token);
       if (invalid !== null) {
@@ -1478,6 +1597,137 @@ export class FakeAuthServer {
     }
     this.storedRefresh = null;
     return new Response(null, { status: 204 });
+  }
+
+  private async answerExport(request: Request, caller: Me, path: string): Promise<Response> {
+    if (path === exportsPath && request.method === 'POST') {
+      return this.requestExport(request, caller);
+    }
+    if (path === currentExportPath && request.method === 'GET') {
+      this.exportReadCount += 1;
+      if (this.failingExportReads > 0) {
+        this.failingExportReads -= 1;
+        this.exportReadAnswerCount += 1;
+        return refusal(503, 'service_unavailable');
+      }
+      const body = this.currentExportOf(caller.id);
+      const hold = this.nextExportReadHold;
+      this.nextExportReadHold = null;
+      if (hold === null) {
+        this.exportReadAnswerCount += 1;
+        return json(200, body);
+      }
+      hold.received();
+      await hold.gate;
+      this.exportReadAnswerCount += 1;
+      return jsonReportingConsumption(body, hold.consumed);
+    }
+    if (path === currentExportPath && request.method === 'DELETE') {
+      const planned = this.exportDeletionRefusals.shift();
+      if (planned !== undefined) {
+        return planned;
+      }
+      const held = this.exportsHeld.get(caller.id);
+      if (held !== undefined) {
+        this.exportsHeld.set(caller.id, { current: null, nextAllowedAt: held.nextAllowedAt });
+      }
+      return new Response(null, { status: 204 });
+    }
+    if (path === exportDownloadPath && request.method === 'POST') {
+      return this.mintExportDownload(caller.id);
+    }
+    return refusal(405, 'method_not_allowed');
+  }
+
+  private currentExportOf(accountId: string): CurrentExport {
+    const held = this.exportsHeld.get(accountId);
+    const nextAllowedAt =
+      held?.nextAllowedAt !== null &&
+      held?.nextAllowedAt !== undefined &&
+      Date.parse(held.nextAllowedAt) > this.serverNow()
+        ? held.nextAllowedAt
+        : null;
+    const current = held?.current ?? null;
+    return {
+      export: current === null ? null : { ...current, next_allowed_at: nextAllowedAt },
+      next_allowed_at: nextAllowedAt,
+    };
+  }
+
+  private async requestExport(request: Request, caller: Me): Promise<Response> {
+    this.exportRequestCount += 1;
+    const planned = this.exportRequestRefusals.shift();
+    if (planned !== undefined) {
+      return planned;
+    }
+    const body: unknown = await request.json();
+    const password =
+      typeof body === 'object' && body !== null && 'password' in body && typeof body.password === 'string'
+        ? body.password
+        : null;
+    if (password === null) {
+      return fieldRefusal('body.password', 'required');
+    }
+    const passwordRefusal = this.currentPasswordRefusal(caller.id, password);
+    if (passwordRefusal !== null) {
+      return passwordRefusal;
+    }
+    const now = this.serverNow();
+    const held = this.exportsHeld.get(caller.id) ?? { current: null, nextAllowedAt: null };
+    if (held.current?.state === 'queued' || held.current?.state === 'building') {
+      return refusal(409, 'export_in_progress');
+    }
+    if (held.nextAllowedAt !== null && Date.parse(held.nextAllowedAt) > now) {
+      return refusalRetryingAfter(429, 'rate_limited', Math.ceil((Date.parse(held.nextAllowedAt) - now) / 1_000));
+    }
+    this.exportIds += 1;
+    const created: Export = {
+      id: `00000000-0000-4000-a000-${String(this.exportIds).padStart(12, '0')}`,
+      state: 'queued',
+      failure: null,
+      requested_at: new Date(now).toISOString(),
+      built_at: null,
+      expires_at: null,
+      size_bytes: null,
+      progress: null,
+      next_allowed_at: null,
+    };
+    this.exportsHeld.set(caller.id, { current: created, nextAllowedAt: held.nextAllowedAt });
+    return json(202, created);
+  }
+
+  private currentPasswordRefusal(accountId: string, password: string): Response | null {
+    const now = this.serverNow();
+    const window = Math.floor(now / currentPasswordWindowMilliseconds);
+    const counted = this.wrongCurrentPasswords.get(accountId);
+    const failures = counted?.window === window ? counted.count : 0;
+    if (failures >= currentPasswordFailureLimit) {
+      const windowEnd = (window + 1) * currentPasswordWindowMilliseconds;
+      return refusalRetryingAfter(429, 'rate_limited', Math.max(1, Math.ceil((windowEnd - now) / 1_000)));
+    }
+    const account = [...this.accounts.values()].find((candidate) => candidate.me.id === accountId);
+    if (account?.password !== password) {
+      this.wrongCurrentPasswords.set(accountId, { window, count: failures + 1 });
+      return fieldRefusal('body.password', 'incorrect');
+    }
+    return null;
+  }
+
+  private mintExportDownload(accountId: string): Response {
+    const planned = this.exportDownloadRefusals.shift();
+    if (planned !== undefined) {
+      return planned;
+    }
+    const now = this.serverNow();
+    const current = this.exportsHeld.get(accountId)?.current ?? null;
+    if (current?.state !== 'ready' || current.expires_at === null || Date.parse(current.expires_at) <= now) {
+      return refusal(404, 'not_found');
+    }
+    this.exportMintCount += 1;
+    return json(200, {
+      url: `${fakeStorageOrigin}/exports/${current.id}.zip?X-Amz-Signature=fake-${String(this.exportMintCount)}`,
+      expires_at: new Date(now + exportAddressMilliseconds).toISOString(),
+    });
   }
 
   private async answerCards(request: Request, token: string, address: URL): Promise<Response> {
@@ -2028,6 +2278,24 @@ export interface PausedAnswers {
 export interface FakeAccountWrite {
   readonly accountId: string | null;
   readonly language: string | null;
+}
+
+export interface HeldRead extends PausedReads {
+  readonly consumed: Promise<void>;
+}
+
+function jsonReportingConsumption(body: unknown, consumed: () => void): Response {
+  const bytes = new TextEncoder().encode(JSON.stringify(body));
+  const stream = new ReadableStream<Uint8Array>({
+    start: (controller): void => {
+      controller.enqueue(bytes);
+    },
+    pull: (controller): void => {
+      controller.close();
+      consumed();
+    },
+  });
+  return new Response(stream, { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
 export interface PausedReads {

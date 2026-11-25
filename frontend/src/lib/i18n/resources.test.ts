@@ -9,6 +9,8 @@ import { groupsTexts as groupsEnglish } from '../../features/groups/texts.en.ts'
 import { groupsTexts as groupsRussian } from '../../features/groups/texts.ru.ts';
 import { libraryTexts as libraryEnglish } from '../../features/library/texts.en.ts';
 import { libraryTexts as libraryRussian } from '../../features/library/texts.ru.ts';
+import { myDataTexts as myDataEnglish } from '../../features/settings/myDataTexts.en.ts';
+import { myDataTexts as myDataRussian } from '../../features/settings/myDataTexts.ru.ts';
 import { studentCardTexts as studentCardEnglish } from '../../features/students/cardTexts.en.ts';
 import { studentCardTexts as studentCardRussian } from '../../features/students/cardTexts.ru.ts';
 import { en } from './en.ts';
@@ -39,6 +41,7 @@ const catalogues = {
     assignment: assignmentRussian,
     studentCard: studentCardRussian,
     groups: groupsRussian,
+    myData: myDataRussian,
   }),
   en: messages({
     ...en,
@@ -47,6 +50,7 @@ const catalogues = {
     assignment: assignmentEnglish,
     studentCard: studentCardEnglish,
     groups: groupsEnglish,
+    myData: myDataEnglish,
   }),
 };
 

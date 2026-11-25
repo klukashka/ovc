@@ -14,6 +14,7 @@ export function SettingsNav(): ReactElement {
     { to: '/settings/account', label: t('settings.account') },
     { to: '/settings/notifications', label: t('settings.notifications') },
     ...(me.role === 'tutor' ? [{ to: '/settings/teaching', label: t('settings.teaching') }] : []),
+    { to: '/settings/data', label: t('settings.myData') },
   ];
   return (
     <nav aria-label={t('settings.sections')} className="flex flex-wrap gap-1 border-b border-border pb-2">
