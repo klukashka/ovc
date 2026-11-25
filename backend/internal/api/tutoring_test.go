@@ -392,6 +392,9 @@ var denialCases = map[string]denialCase{
 		result, _ := h.readChannel(t, bearerToken, channel, 1)
 		return result
 	}),
+	"POST /api/v1/channels/{id}/messages/search": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, channel string, _ string) response {
+		return h.searchCall(t, bearerToken, channel, searchBody(t, "Only", nil))
+	}),
 	"PUT /api/v1/channels/{id}/pin": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, channel string, message string) response {
 		return h.pin(t, bearerToken, channel, message)
 	}),

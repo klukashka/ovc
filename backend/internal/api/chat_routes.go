@@ -94,6 +94,17 @@ type readMarkerInput struct {
 	Body        schemas.ReadMarker
 }
 
+type searchInput struct {
+	ID          string `path:"id"`
+	ContentType string `header:"Content-Type"`
+	Body        schemas.SearchRequest
+}
+
+type searchOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         schemas.SearchPage
+}
+
 type readStateOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         schemas.ReadState
@@ -130,6 +141,10 @@ func (r *router) registerChat() {
 	remove.DefaultStatus = http.StatusNoContent
 	remove.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound, http.StatusTooManyRequests)
 	register(r, remove, AudienceUnverifiedOK, r.deleteMessage)
+
+	search := operation("channels-messages-search", http.MethodPost, channelsPath+"/{id}/messages/search")
+	search.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound, http.StatusTooManyRequests, http.StatusServiceUnavailable)
+	register(r, search, AudienceUnverifiedOK, r.searchMessages)
 
 	read := operation("channels-read", http.MethodPost, channelsPath+"/{id}/read")
 	read.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound)
@@ -211,6 +226,26 @@ func (r *router) listMessages(ctx context.Context, input *messageListInput) (*me
 		body.Items = append(body.Items, messageBody(message))
 	}
 	return &messageListOutput{CacheControl: noStore, Body: body}, nil
+}
+
+func (r *router) searchMessages(ctx context.Context, input *searchInput) (*searchOutput, error) {
+	recordAccessCount(ctx, accessQueryLength, chat.SearchTermLength(input.Body.Q))
+	if err := requireJSON(ctx, input.ContentType); err != nil {
+		return nil, err
+	}
+	id, valid := domain.ParseUUID[domain.ChannelID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	page, err := r.chat.Search(ctx, principalFrom(ctx).UserID, id, chat.SearchRequest{Term: input.Body.Q, Cursor: input.Body.Cursor})
+	if err != nil {
+		return nil, r.chatError(ctx, "channels.messages.search.failed", err)
+	}
+	body := schemas.SearchPage{Items: make([]schemas.Message, 0, len(page.Items)), NextCursor: page.NextCursor}
+	for _, message := range page.Items {
+		body.Items = append(body.Items, messageBody(message))
+	}
+	return &searchOutput{CacheControl: noStore, Body: body}, nil
 }
 
 func (r *router) sendMessage(ctx context.Context, input *sendMessageInput) (*messageOutput, error) {
@@ -402,6 +437,9 @@ func (r *router) chatError(ctx context.Context, event string, err error) error {
 		return NewError(ctx, domain.ErrorConflict)
 	case errors.Is(err, chat.ErrQuotaExceeded):
 		return NewError(ctx, domain.ErrorQuotaExceeded)
+	case errors.Is(err, chat.ErrSearchBusy), errors.Is(err, chat.ErrSearchTimedOut):
+		retryAfter := strconv.FormatInt(int64(domain.MessageSearchRetryAfter.Seconds()), 10)
+		return NewError(ctx, domain.ErrorServiceUnavailable).withHeader("Retry-After", retryAfter)
 	case errors.As(err, &throttled):
 		seconds := int64(math.Ceil(throttled.RetryAfter.Seconds()))
 		return NewError(ctx, domain.ErrorRateLimited).withHeader("Retry-After", strconv.FormatInt(max(seconds, 1), 10))

@@ -146,6 +146,16 @@ type MessagePatch struct {
 	Version int32  `json:"version" minimum:"1"`
 }
 
+type SearchRequest struct {
+	Q      string  `json:"q" maxLength:"400"`
+	Cursor *string `json:"cursor,omitempty" required:"false" nullable:"false" maxLength:"64"`
+}
+
+type SearchPage struct {
+	Items      []Message `json:"items" nullable:"false"`
+	NextCursor *string   `json:"next_cursor" nullable:"true"`
+}
+
 type ReadMarker struct {
 	Seq int64 `json:"seq" minimum:"0"`
 }

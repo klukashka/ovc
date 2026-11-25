@@ -93,6 +93,30 @@ FROM added
 WHERE tutor_profiles.user_id = sqlc.arg(tutor_id)::uuid AND tutor_profiles.file_usage_bytes + added.bytes <= tutor_profiles.file_quota_bytes
 RETURNING tutor_profiles.file_usage_bytes;
 
+-- name: SetLocalStatementTimeout :exec
+SELECT set_config('statement_timeout', sqlc.arg(timeout)::text, true);
+
+-- name: SearchMessages :many
+SELECT messages.id, messages.channel_id, messages.seq, messages.sender_id, messages.body, messages.version, messages.created_at,
+    messages.edited_at, messages.deleted_at, messages.erased_at, channels.tutor_id, COALESCE(senders.state, '')::text AS sender_state, senders.name AS sender_name,
+    COALESCE(cards.display_name, '')::text AS card_name,
+    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim, messages.reply_to_message_id
+FROM messages
+JOIN channels ON channels.id = messages.channel_id
+LEFT JOIN relationships AS direct ON direct.id = channels.relationship_id
+LEFT JOIN users AS senders ON senders.id = messages.sender_id
+LEFT JOIN LATERAL (
+    SELECT relationships.display_name FROM relationships
+    WHERE relationships.tutor_id = channels.tutor_id AND relationships.student_id = messages.sender_id
+    ORDER BY relationships.state = 'discarded', relationships.created_at DESC
+    LIMIT 1
+) AS cards ON true
+WHERE messages.channel_id = @channel_id AND messages.deleted_at IS NULL AND messages.erased_at IS NULL AND messages.body IS NOT NULL
+    AND lower(messages.body) LIKE '%' || lower(sqlc.arg(pattern)::text) || '%' ESCAPE '\'
+    AND (sqlc.narg(before_seq)::bigint IS NULL OR messages.seq < sqlc.narg(before_seq)::bigint)
+ORDER BY messages.seq DESC
+LIMIT sqlc.arg(row_limit);
+
 -- name: ListMessagesBefore :many
 SELECT messages.id, messages.channel_id, messages.seq, messages.sender_id, messages.body, messages.version, messages.created_at,
     messages.edited_at, messages.deleted_at, messages.erased_at, channels.tutor_id, COALESCE(senders.state, '')::text AS sender_state, senders.name AS sender_name,

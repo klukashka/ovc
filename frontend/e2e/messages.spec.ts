@@ -834,3 +834,39 @@ test.describe('read ticks in a direct chat', () => {
     await diagnostics.closeContext(context);
   });
 });
+
+test.describe('search in a conversation', () => {
+  test.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', viewport: { width: 1280, height: 800 } });
+
+  test('a tutor searches a Russian chat on Enter, opens the match focused in the history, and the address holds no term', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+    const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+    const tutorToken = await accessToken(deployment, tutor);
+    for (const body of ['Домашнее задание на среду', 'Обычное сообщение', 'Вопрос про тест']) {
+      const seeded = await callApi(deployment, tutorToken, 'POST', `/channels/${channel}/messages`, {
+        body,
+        attachment_ids: [],
+      });
+      expect(seeded.status).toBe(201);
+    }
+    await signInThroughTheApi(page, tutor);
+    await openSettledConversation(page, channel, 'with the chat list');
+    await page.getByRole('button', { name: 'Search in this chat', exact: true }).click();
+    const field = page.getByRole('searchbox', { name: 'Search messages', exact: true });
+    await expect(field).toBeFocused();
+
+    await field.fill('ДОМАШНЕЕ');
+    await field.press('Enter');
+    const results = page.getByRole('list', { name: 'Search results', exact: true });
+    await expect(results.getByRole('button')).toHaveCount(1);
+    await results.getByRole('button').click();
+
+    await expect(messages(page).filter({ hasText: 'Домашнее задание на среду' })).toBeFocused();
+    expect(page.url()).not.toContain(encodeURIComponent('ДОМАШНЕЕ'));
+    expect(page.url().toLowerCase()).not.toContain('домашнее');
+  });
+});

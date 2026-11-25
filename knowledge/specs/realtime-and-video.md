@@ -94,9 +94,13 @@ This amends the "no read receipts" rule above for direct channels only ([proposa
 
 #### Search in a conversation (M4)
 
+Built on 2026-11-25 by change M4 of the [interface rework plan](../plans/ui-rework.md), with the owner's decisions of that day (pending owner review).
+
 - `POST /channels/{id}/messages/search` with `{q, cursor}` in the body, so search terms stay out of URLs, access records and logs ([T-18](../../docs/threat-model.md#threats-and-controls)); `q` holds 2 to 100 code points after trimming, with no NUL or other control character, otherwise `422 validation_failed` at `body.q`. The interface keeps the term out of the page's address and history. Any active member may search, unconfirmed accounts included, as they may read.
 - It matches a case-insensitive substring of the bodies of the channel's messages that are neither deleted nor erased, with `%`, `_` and `\` in `q` escaped so they match only themselves, and answers `{items: [Message], next_cursor}`, newest first by `seq`, at most 30 per page, keyset paginated like history; case folding is PostgreSQL's `lower()` under the database's collation, and M4's test proves it folds Cyrillic.
-- At most 30 searches a minute per user, counted in memory per API instance like the message limits, `429 rate_limited` with `Retry-After` beyond.
+- At most 30 searches a minute per user, counted in memory per API instance like the message limits, `429 rate_limited` with `Retry-After` beyond. A search counts only once it passed validation and reached a channel the caller may read: a `422` or a `404` counts nothing, and the limit is checked before the channel, so it reveals no membership.
+- Each search runs in a read transaction whose statements may take at most 2 seconds (`statement_timeout`, set locally for that transaction); a search that runs out of time answers `503 service_unavailable` with `Retry-After: 5`, logs `chat.search_timed_out` and still counts. At most 4 searches run at once on each API instance; a further one waits at most 1 second for a slot, without holding a database connection, then answers `503 service_unavailable` with `Retry-After: 5`, logs `chat.search_busy` and counts. A client that aborts its request ends quietly, not as a timeout.
+- The interface searches when the user presses Enter or the search button, never while typing. The term stays in the panel's memory only, out of the page's address, history, form history and query cache, and each result opens the history around its message, focused.
 - M4 measures the plan and time of a search at 50,000 messages in one channel and adds a trigram index through a migration only if the measurement asks for it, recording the `pg_trgm` extension in the [stack table](../architecture/detailed.md#stack-per-component) if it adds it.
 
 #### Reactions (M5)

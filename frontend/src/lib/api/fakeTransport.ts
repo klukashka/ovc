@@ -426,7 +426,7 @@ function fakeAudienceRefusal(method: string, path: string, caller: Me): Response
       (path === '/api/v1/channels' ||
         path === '/api/v1/channels/unread' ||
         /^\/api\/v1\/channels\/[^/]+(?:\/messages)?$/.test(path))) ||
-    (method === 'POST' && /^\/api\/v1\/channels\/[^/]+\/(?:messages|read)$/.test(path)) ||
+    (method === 'POST' && /^\/api\/v1\/channels\/[^/]+\/(?:messages|messages\/search|read)$/.test(path)) ||
     ((method === 'PATCH' || method === 'DELETE') && /^\/api\/v1\/messages\/[^/]+$/.test(path));
   return caller.state === 'unverified' && !unverifiedOK ? refusal(403, 'email_not_verified') : null;
 }

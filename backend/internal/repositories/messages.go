@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -18,6 +19,7 @@ var ErrDuplicateClientKey = errors.New("the sender already used this idempotency
 
 const (
 	uniqueViolation       = "23505"
+	queryCanceled         = "57014"
 	messageClientKeyIndex = "messages_client_key_idx"
 )
 
@@ -214,6 +216,36 @@ func (r Messages) History(ctx context.Context, query HistoryQuery) ([]MessageRow
 		converted = append(converted, MessageRow(row))
 	}
 	return converted, nil
+}
+
+type SearchQuery struct {
+	Channel  domain.ChannelID
+	Pattern  string
+	Before   *int64
+	RowLimit int32
+}
+
+func (r Messages) Search(ctx context.Context, query SearchQuery) ([]MessageRow, error) {
+	rows, err := r.queries.SearchMessages(ctx, dbgen.SearchMessagesParams{
+		ChannelID: query.Channel, Pattern: query.Pattern, BeforeSeq: query.Before, RowLimit: query.RowLimit,
+	})
+	if err != nil {
+		return nil, done(err, "search messages")
+	}
+	converted := make([]MessageRow, 0, len(rows))
+	for _, row := range rows {
+		converted = append(converted, MessageRow(row))
+	}
+	return converted, nil
+}
+
+func (r Messages) LimitStatements(ctx context.Context, timeout time.Duration) error {
+	return done(r.queries.SetLocalStatementTimeout(ctx, strconv.FormatInt(timeout.Milliseconds(), 10)+"ms"), "limit statement time")
+}
+
+func IsStatementTimeout(ctx context.Context, err error) bool {
+	var failure *pgconn.PgError
+	return ctx.Err() == nil && errors.As(err, &failure) && failure.Code == queryCanceled
 }
 
 func (r Messages) LastOf(ctx context.Context, channels []domain.ChannelID) ([]MessageRow, error) {

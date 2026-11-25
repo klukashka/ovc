@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type ChannelID [16]byte
 
@@ -20,14 +23,28 @@ const (
 	MessageEditWindow        = 24 * time.Hour
 	MessageWritesPerMinute   = 30
 	MessageWriteWindow       = time.Minute
+	MessageSearchesPerMinute = 30
+	MessageSearchWindow      = time.Minute
+	MessageSearchPage        = 30
+	MessageSearchMinTerm     = 2
+	MessageSearchMaxTerm     = 100
+	MessageSearchSlots       = 4
+	MessageSearchTimeout     = 2 * time.Second
+	MessageSearchQueueWait   = time.Second
+	MessageSearchRetryAfter  = 5 * time.Second
 	MessagePageDefault       = 50
 	MessagePageMax           = 100
 	MessagePreviewCodePoints = 120
 	MessageClientKeyMax      = 64
 	MessageClientKeyPattern  = `^[A-Za-z0-9._-]{1,64}$`
 
-	LimitWrites ChatLimit = "writes"
+	LimitWrites   ChatLimit = "writes"
+	LimitSearches ChatLimit = "searches"
 )
+
+func LikeLiteral(term string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
+}
 
 type MessageDeleter string
 

@@ -497,6 +497,29 @@ describe('fake chat audience and state', () => {
     expect(removal.status).toBe(404);
   });
 
+  test('search matches live bodies of a member chat literally, refuses short terms and limits each caller', async () => {
+    const server = chatFixture();
+    const token = await chatToken(server, 'tutor@example.org');
+    const search = (q: string): Promise<Response> =>
+      server.transport().send(chatRequest(`channels/${chatId}/messages/search`, token, 'POST', { q }));
+    const outsider = await chatToken(server, 'other@example.org');
+
+    const found: unknown = await (await search('EARLIER')).json();
+    const literal: unknown = await (await search('ear%')).json();
+    const short = await search(' e ');
+    const outside = await server
+      .transport()
+      .send(chatRequest(`channels/${chatId}/messages/search`, outsider, 'POST', { q: 'earlier' }));
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 30; attempt += 1) statuses.push((await search('earlier')).status);
+
+    expect(found).toMatchObject({ items: [{ body: 'Earlier message' }], next_cursor: null });
+    expect(literal).toMatchObject({ items: [], next_cursor: null });
+    expect(short.status).toBe(422);
+    expect(outside.status).toBe(404);
+    expect(statuses.filter((status) => status === 429)).toHaveLength(2);
+  });
+
   test('read markers clamp and never move backwards', async () => {
     const server = chatFixture();
     const token = await chatToken(server, 'tutor@example.org');

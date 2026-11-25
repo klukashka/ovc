@@ -1,4 +1,5 @@
-import { type ApiClient, apiErrorFrom } from '../../lib/api/client.ts';
+import { retryAfterSeconds } from '../../components/ui/Form.tsx';
+import { type ApiClient, type ApiError, apiErrorFrom } from '../../lib/api/client.ts';
 import type { components } from '../../lib/api/schema.ts';
 
 export type Channel = components['schemas']['ChannelDetail'];
@@ -8,6 +9,7 @@ export type Message = components['schemas']['Message'];
 export type MessagePage = components['schemas']['MessagePage'];
 export type MessageQuote = components['schemas']['MessageQuote'];
 export type PinnedMessage = components['schemas']['PinnedMessage'];
+export type SearchPage = components['schemas']['SearchPage'];
 
 export async function fetchChannels(
   client: ApiClient,
@@ -109,6 +111,33 @@ export async function fetchMessagesAround(
     params: { path: { id }, query: { around_seq: String(seq), limit } },
   });
   if (data === undefined) throw apiErrorFrom(response.status, error);
+  return data;
+}
+
+export class SearchRefusal extends Error {
+  readonly refusal: ApiError;
+  readonly retryAfter: number | null;
+
+  constructor(refusal: ApiError, retryAfter: number | null) {
+    super(refusal.message);
+    this.refusal = refusal;
+    this.retryAfter = retryAfter;
+  }
+}
+
+export async function searchMessages(
+  client: ApiClient,
+  id: string,
+  q: string,
+  cursor: string | null,
+  signal: AbortSignal,
+): Promise<SearchPage> {
+  const { data, error, response } = await client.POST('/api/v1/channels/{id}/messages/search', {
+    signal,
+    params: { path: { id } },
+    body: cursor === null ? { q } : { q, cursor },
+  });
+  if (data === undefined) throw new SearchRefusal(apiErrorFrom(response.status, error), retryAfterSeconds(response));
   return data;
 }
 

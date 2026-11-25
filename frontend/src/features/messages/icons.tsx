@@ -29,6 +29,10 @@ export function ArrowDownIcon({ size }: { readonly size: number }): ReactElement
   return <Outline size={size} path="M8 3v10M3.5 8.5L8 13l4.5-4.5" />;
 }
 
+export function SearchIcon({ size }: { readonly size: number }): ReactElement {
+  return <Outline size={size} path="M7 12.5a5.5 5.5 0 100-11 5.5 5.5 0 000 11zM11 11l3.5 3.5" />;
+}
+
 export function CloseIcon({ size }: { readonly size: number }): ReactElement {
   return <Outline size={size} path="M4 4l8 8M12 4l-8 8" />;
 }

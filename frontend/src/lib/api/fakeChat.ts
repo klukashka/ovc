@@ -261,6 +261,8 @@ export class FakeChatServer {
   private loseSendResponse = false;
   private failDelete = false;
   private failHistoryRead = false;
+  private readonly searchRefusals: { readonly status: number; readonly code: string }[] = [];
+  private readonly searches = new Map<string, { window: number; count: number }>();
   private failChannelListRead = false;
 
   failNextChannelListRead(): void {
@@ -685,6 +687,9 @@ export class FakeChatServer {
     if (channel === undefined || !this.visible(channel, caller)) {
       return refused(404, 'not_found');
     }
+    if (parts[4] === 'messages' && parts[5] === 'search' && request.method === 'POST') {
+      return this.searchMessages(channel, caller, request, now);
+    }
     if (parts[4] === 'messages' && request.method === 'POST') {
       const response = await this.sendMessage(channel, caller, request, now);
       if (response.status === 201 && this.loseSendResponse) {
@@ -781,6 +786,91 @@ export class FakeChatServer {
       has_newer: false,
       peer_read_seq: this.peerRead(channel, caller),
     });
+  }
+
+  private searchPause: { readonly answered: () => void; readonly resumed: Promise<void> } | null = null;
+
+  pauseNextSearchResponse(): { readonly answered: Promise<void>; readonly resume: () => void } {
+    let answer = (): void => {
+      throw new Error('the search pause is not initialized');
+    };
+    let resume = (): void => {
+      throw new Error('the search pause is not initialized');
+    };
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const resumed = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    this.searchPause = { answered: answer, resumed };
+    return { answered, resume };
+  }
+
+  refuseNextSearch(status: number, code: string): void {
+    this.searchRefusals.push({ status, code });
+  }
+
+  private async searchMessages(channel: StoredChannel, caller: Me, request: Request, now: number): Promise<Response> {
+    const body: unknown = await request.json();
+    if (typeof body !== 'object' || body === null || !('q' in body) || typeof body.q !== 'string') {
+      return refused(422, 'validation_failed');
+    }
+    const term = body.q.trim();
+    const length = Array.from(term).length;
+    if (length < 2 || length > 100 || Array.from(term).some((character) => /\p{Cc}/u.test(character))) {
+      return refusedAt(422, 'validation_failed', 'body.q');
+    }
+    const cursor = 'cursor' in body && typeof body.cursor === 'string' ? Number(body.cursor) : null;
+    if (cursor !== null && (!Number.isSafeInteger(cursor) || cursor <= 0)) {
+      return refusedAt(422, 'validation_failed', 'body.cursor');
+    }
+    const planned = this.searchRefusals.shift();
+    if (planned !== undefined) {
+      return new Response(
+        JSON.stringify({ error: { code: planned.code, message: planned.code, request_id: 'fake-request' } }),
+        {
+          status: planned.status,
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Retry-After': '30' },
+        },
+      );
+    }
+    const window = Math.floor(now / 60_000);
+    const counted = this.searches.get(caller.id);
+    const count = counted?.window === window ? counted.count : 0;
+    if (count >= 30) {
+      return new Response(
+        JSON.stringify({ error: { code: 'rate_limited', message: 'rate_limited', request_id: 'fake-request' } }),
+        {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Retry-After': '60' },
+        },
+      );
+    }
+    this.searches.set(caller.id, { window, count: count + 1 });
+    const folded = term.toLocaleLowerCase();
+    const matching = channel.messages
+      .filter(
+        (stored) =>
+          !stored.message.deleted &&
+          !stored.message.erased &&
+          stored.message.body !== null &&
+          stored.message.body.toLocaleLowerCase().includes(folded) &&
+          (cursor === null || stored.message.seq < cursor),
+      )
+      .sort((left, right) => right.message.seq - left.message.seq);
+    const page = matching.slice(0, 30);
+    const response = answer(200, {
+      items: page.map((stored) => this.messageFor(stored, caller, channel)),
+      next_cursor: matching.length > 30 ? String(page.at(-1)?.message.seq) : null,
+    });
+    const pause = this.searchPause;
+    this.searchPause = null;
+    if (pause !== null) {
+      pause.answered();
+      await pause.resumed;
+    }
+    return response;
   }
 
   private async sendMessage(channel: StoredChannel, caller: Me, request: Request, now: number): Promise<Response> {

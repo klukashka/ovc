@@ -92,12 +92,15 @@ type Dependencies struct {
 	Erasure         ErasureSettings
 	Logger          *slog.Logger
 	Scheduler       core.Scheduler
+	Search          SearchSettings
 }
 
 type Service struct {
-	deps   Dependencies
-	writes *writeLimit
-	reads  *readSignals
+	deps     Dependencies
+	writes   *fixedWindowLimit
+	searches *fixedWindowLimit
+	slots    chan struct{}
+	reads    *readSignals
 }
 
 func New(dependencies Dependencies) *Service {
@@ -113,7 +116,12 @@ func New(dependencies Dependencies) *Service {
 	if dependencies.Scheduler == nil {
 		panic("chat: the read signal scheduler is required")
 	}
-	service := &Service{deps: dependencies, writes: newWriteLimit()}
+	if dependencies.Search.StatementTimeout == 0 {
+		dependencies.Search = DefaultSearchSettings()
+	}
+	service := &Service{
+		deps: dependencies, writes: newWriteLimit(), searches: newSearchLimit(), slots: make(chan struct{}, domain.MessageSearchSlots),
+	}
 	service.reads = newReadSignals(dependencies.Scheduler, dependencies.Logger, service.signalRead)
 	return service
 }

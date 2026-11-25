@@ -726,6 +726,138 @@ describe('Messages', () => {
     expect(screen.queryByText('Read')).toBeNull();
   });
 
+  test('search opens on its field and Escape returns focus to the header button', async () => {
+    await fixture();
+    const open = await screen.findByRole('button', { name: 'Search in this chat' });
+
+    fireEvent.click(open);
+    const field = await screen.findByRole('searchbox', { name: 'Search messages' });
+    const focusedOnOpen = document.activeElement;
+    fireEvent.keyDown(field, { key: 'Escape' });
+
+    expect(focusedOnOpen).toBe(field);
+    expect(screen.queryByRole('searchbox', { name: 'Search messages' })).toBeNull();
+    expect(document.activeElement).toBe(open);
+  });
+
+  test('a one-character term sends no search and shows the hint', async () => {
+    const { server } = await fixture(3);
+    fireEvent.click(await screen.findByRole('button', { name: 'Search in this chat' }));
+    const field = await screen.findByRole('searchbox', { name: 'Search messages' });
+    server.chat.refuseNextSearch(503, 'service_unavailable');
+
+    fireEvent.change(field, { target: { value: 'M' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    expect(await screen.findByText('Type at least 2 characters')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('results render as text and opening one focuses its message', async () => {
+    await fixture(2, '/messages/channel-1', true, {
+      seeds: [{ ...message(3), id: 'message-3', body: '<b>Bold needle</b>', senderId: tutor.id }],
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Search in this chat' }));
+    const field = await screen.findByRole('searchbox', { name: 'Search messages' });
+
+    fireEvent.change(field, { target: { value: 'needle' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    const result = await within(await screen.findByRole('list', { name: 'Search results' })).findByRole('button');
+    fireEvent.click(result);
+
+    expect(result.textContent).toContain('<b>Bold needle</b>');
+    expect(result.querySelector('b')).toBeNull();
+    await waitFor(() => {
+      expect(document.activeElement instanceof HTMLElement ? document.activeElement.dataset.row : undefined).toBe(
+        'message-3',
+      );
+    });
+  });
+
+  test('Show more focuses the first new result', async () => {
+    await fixture(31);
+    fireEvent.click(await screen.findByRole('button', { name: 'Search in this chat' }));
+    const field = await screen.findByRole('searchbox', { name: 'Search messages' });
+    fireEvent.change(field, { target: { value: 'Message' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    const list = await screen.findByRole('list', { name: 'Search results' });
+
+    fireEvent.click(await within(list.parentElement ?? list).findByRole('button', { name: 'Show more' }));
+
+    await waitFor(() => {
+      expect(document.activeElement?.textContent).toContain('Message 1');
+    });
+    expect(within(list).getAllByRole('button')).toHaveLength(31);
+  });
+
+  test('a busy or rate-limited search shows its refusal and keeps focus in the field', async () => {
+    const { server } = await fixture(2);
+    fireEvent.click(await screen.findByRole('button', { name: 'Search in this chat' }));
+    const field = await screen.findByRole('searchbox', { name: 'Search messages' });
+    fireEvent.change(field, { target: { value: 'Message' } });
+    server.chat.refuseNextSearch(503, 'service_unavailable');
+    server.chat.refuseNextSearch(429, 'rate_limited');
+
+    fireEvent.keyDown(field, { key: 'Enter' });
+    const busy = (await screen.findByRole('alert')).textContent;
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).not.toBe(busy);
+    });
+
+    expect(busy).toBe('The service is temporarily unavailable. Try again later.');
+    expect(screen.getByRole('alert').textContent).toBe('Too many attempts, try again in 1 minute.');
+    expect(document.activeElement).toBe(field);
+  });
+
+  test('the search term stays out of the address, form history and the query cache', async () => {
+    const { cache, router } = await fixture(2);
+    fireEvent.click(await screen.findByRole('button', { name: 'Search in this chat' }));
+    const field = await screen.findByRole('searchbox', { name: 'Search messages' });
+
+    fireEvent.change(field, { target: { value: 'zebrafinch' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await screen.findByText('No messages found');
+
+    const location = router.state.location;
+    expect(`${location.pathname}${location.search}${location.hash}`).not.toContain('zebrafinch');
+    expect(JSON.stringify(window.history.state ?? null)).not.toContain('zebrafinch');
+    expect(field.getAttribute('autocomplete')).toBe('off');
+    expect(field.hasAttribute('name')).toBe(false);
+    expect(field.closest('form')).toBeNull();
+    expect(
+      JSON.stringify(
+        cache
+          .getQueryCache()
+          .getAll()
+          .map((query) => query.queryKey),
+      ),
+    ).not.toContain('zebrafinch');
+  });
+
+  test('a late search response never renders after the conversation changed', async () => {
+    const { server, router } = await fixture(2);
+    const other = { ...channel, id: 'channel-other', label: 'Other conversation' };
+    server.chat.addChannel({ channel: other, members: [{ accountId: tutor.id }, { accountId: 'student-1' }] });
+    fireEvent.click(await screen.findByRole('button', { name: 'Search in this chat' }));
+    const field = await screen.findByRole('searchbox', { name: 'Search messages' });
+    fireEvent.change(field, { target: { value: 'Message' } });
+    const pause = server.chat.pauseNextSearchResponse();
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await pause.answered;
+
+    await act(async () => {
+      await router.navigate('/messages/channel-other');
+    });
+    await screen.findByRole('heading', { name: 'Other conversation' });
+    await act(async () => {
+      pause.resume();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole('list', { name: 'Search results' })).toBeNull();
+  });
+
   test('touch long press keeps the menu open through pointerup and its generated click', async () => {
     const { clock } = await fixture();
     const menu = await screen.findByRole('button', { name: 'Message actions' });

@@ -43,7 +43,8 @@ import { useChatSignals } from './presence.ts';
 import { PresenceSummary } from './PresenceSummary.tsx';
 import { TypingIndicator } from './TypingIndicator.tsx';
 import { aroundPrefix, channelKey, messagesKey } from './keys.ts';
-import { ArrowDownIcon, CloseIcon } from './icons.tsx';
+import { ArrowDownIcon, CloseIcon, SearchIcon } from './icons.tsx';
+import { SearchPanel } from './SearchPanel.tsx';
 import { MessageBody } from './MessageBody.tsx';
 import { MessageMenu, type PinAction } from './MessageMenu.tsx';
 import { MessageRow } from './MessageRow.tsx';
@@ -122,6 +123,15 @@ export function Conversation({
   }));
   const { t } = useTranslation();
   const heading = useRef<HTMLHeadingElement>(null);
+  const searchButton = useRef<HTMLButtonElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchReturn = useRef(false);
+  useLayoutEffect(() => {
+    if (!searchOpen && searchReturn.current) {
+      searchReturn.current = false;
+      searchButton.current?.focus();
+    }
+  }, [searchOpen]);
   const list = useRef<HTMLOListElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
   const pendingEnter = useRef<{ readonly repeat: boolean } | null>(null);
@@ -877,7 +887,35 @@ export function Conversation({
             {texts.group}
           </Link>
         )}
+        <button
+          ref={searchButton}
+          type="button"
+          aria-label={texts.searchOpen}
+          aria-expanded={searchOpen}
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md hover:bg-hover"
+          onClick={() => {
+            setSearchOpen((open) => !open);
+          }}
+        >
+          <SearchIcon size={18} />
+        </button>
       </div>
+      {searchOpen ? (
+        <SearchPanel
+          channelId={channel.id}
+          texts={texts}
+          language={me.language}
+          timeZone={me.timezone}
+          onUnavailable={onUnavailable}
+          onClose={() => {
+            searchReturn.current = true;
+            setSearchOpen(false);
+          }}
+          onOpen={(message) => {
+            jumpTo(message.seq, message.id);
+          }}
+        />
+      ) : null}
       {channel.pinned === null ? null : (
         <PinnedBar
           pinned={channel.pinned}

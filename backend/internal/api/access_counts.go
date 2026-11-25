@@ -18,6 +18,7 @@ const (
 	accessRecentlyChecked   accessCount = "recently_checked"
 	accessNextSevenDays     accessCount = "next_seven_days"
 	accessTutors            accessCount = "tutors"
+	accessQueryLength       accessCount = "query_length"
 )
 
 type accessCountsKey struct{}

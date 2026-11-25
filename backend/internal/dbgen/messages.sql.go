@@ -1348,3 +1348,102 @@ func (q *Queries) ResolveLiveMessageOfChannel(ctx context.Context, arg ResolveLi
 	err := row.Scan(&id)
 	return id, err
 }
+
+const searchMessages = `-- name: SearchMessages :many
+SELECT messages.id, messages.channel_id, messages.seq, messages.sender_id, messages.body, messages.version, messages.created_at,
+    messages.edited_at, messages.deleted_at, messages.erased_at, channels.tutor_id, COALESCE(senders.state, '')::text AS sender_state, senders.name AS sender_name,
+    COALESCE(cards.display_name, '')::text AS card_name,
+    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim, messages.reply_to_message_id
+FROM messages
+JOIN channels ON channels.id = messages.channel_id
+LEFT JOIN relationships AS direct ON direct.id = channels.relationship_id
+LEFT JOIN users AS senders ON senders.id = messages.sender_id
+LEFT JOIN LATERAL (
+    SELECT relationships.display_name FROM relationships
+    WHERE relationships.tutor_id = channels.tutor_id AND relationships.student_id = messages.sender_id
+    ORDER BY relationships.state = 'discarded', relationships.created_at DESC
+    LIMIT 1
+) AS cards ON true
+WHERE messages.channel_id = $1 AND messages.deleted_at IS NULL AND messages.erased_at IS NULL AND messages.body IS NOT NULL
+    AND lower(messages.body) LIKE '%' || lower($2::text) || '%' ESCAPE '\'
+    AND ($3::bigint IS NULL OR messages.seq < $3::bigint)
+ORDER BY messages.seq DESC
+LIMIT $4
+`
+
+type SearchMessagesParams struct {
+	ChannelID domain.ChannelID
+	Pattern   string
+	BeforeSeq *int64
+	RowLimit  int32
+}
+
+type SearchMessagesRow struct {
+	ID                domain.MessageID
+	ChannelID         domain.ChannelID
+	Seq               int64
+	SenderID          *domain.UserID
+	Body              *string
+	Version           int32
+	CreatedAt         time.Time
+	EditedAt          *time.Time
+	DeletedAt         *time.Time
+	ErasedAt          *time.Time
+	TutorID           domain.UserID
+	SenderState       string
+	SenderName        *string
+	CardName          string
+	SentBeforeReclaim bool
+	ReplyToMessageID  *domain.MessageID
+}
+
+func (q *Queries) SearchMessages(ctx context.Context, arg SearchMessagesParams) ([]SearchMessagesRow, error) {
+	rows, err := q.db.Query(ctx, searchMessages,
+		arg.ChannelID,
+		arg.Pattern,
+		arg.BeforeSeq,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchMessagesRow
+	for rows.Next() {
+		var i SearchMessagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ChannelID,
+			&i.Seq,
+			&i.SenderID,
+			&i.Body,
+			&i.Version,
+			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
+			&i.ErasedAt,
+			&i.TutorID,
+			&i.SenderState,
+			&i.SenderName,
+			&i.CardName,
+			&i.SentBeforeReclaim,
+			&i.ReplyToMessageID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setLocalStatementTimeout = `-- name: SetLocalStatementTimeout :exec
+SELECT set_config('statement_timeout', $1::text, true)
+`
+
+func (q *Queries) SetLocalStatementTimeout(ctx context.Context, timeout string) error {
+	_, err := q.db.Exec(ctx, setLocalStatementTimeout, timeout)
+	return err
+}
