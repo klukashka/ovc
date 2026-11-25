@@ -1,4 +1,9 @@
-import { type InfiniteData, type UseInfiniteQueryResult, useInfiniteQuery } from '@tanstack/react-query';
+import {
+  type InfiniteData,
+  type UseInfiniteQueryResult,
+  useInfiniteQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { type ReactElement, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
@@ -8,8 +13,12 @@ import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
 import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
+import { type GroupDetail, groupKey } from '../groups/api.ts';
 import { type IssueFilter, type IssuePage, fetchIssuePage, issueAddress, issueListKey } from './api.ts';
+import { IssueAssignmentButton } from './IssueAssignment.tsx';
 import { DeadlineText, ProgressText, ToCheckBadge } from './IssueParts.tsx';
+
+const groupEmptyIssueOpener = 'group-issues-empty';
 
 function useGroupIssues(groupId: string): UseInfiniteQueryResult<InfiniteData<IssuePage>> {
   const client = useApiClient();
@@ -37,6 +46,7 @@ export function GroupIssues({ groupId }: { readonly groupId: string }): ReactEle
   const headingId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
   const query = useGroupIssues(groupId);
+  const group = useQueryClient().getQueryData<GroupDetail>(groupKey(groupId));
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     items.length,
@@ -74,7 +84,19 @@ export function GroupIssues({ groupId }: { readonly groupId: string }): ReactEle
             }}
           />
         ) : null}
-        {items.length === 0 ? <p className="text-text-muted">{t('homework.empty.group')}</p> : null}
+        {items.length === 0 ? (
+          <>
+            <p className="text-text-muted">{t('homework.empty.group')}</p>
+            {group?.archived_at !== null || group.members.length === 0 ? null : (
+              <IssueAssignmentButton
+                opener={groupEmptyIssueOpener}
+                preset={{ audience: { kind: 'group', id: group.id, name: group.name } }}
+              >
+                {t('homework.empty.issueToGroup')}
+              </IssueAssignmentButton>
+            )}
+          </>
+        ) : null}
       </>
     );
   }

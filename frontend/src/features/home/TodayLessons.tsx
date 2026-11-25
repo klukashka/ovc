@@ -8,7 +8,9 @@ import type { Me } from '../../lib/api/session.ts';
 import type { CalendarItem } from '../schedule/api.ts';
 import { JoinControl } from '../schedule/JoinControl.tsx';
 import { LessonList } from '../schedule/LessonList.tsx';
-import { phaseOf, useLessonClock } from '../schedule/lessonTiming.ts';
+import { type LessonPhase, phaseOf, useLessonClock } from '../schedule/lessonTiming.ts';
+
+const upcomingPhases: ReadonlySet<LessonPhase> = new Set(['before', 'window', 'live']);
 
 export function TodayLessons({
   me,
@@ -25,6 +27,8 @@ export function TodayLessons({
   const now = scheduler.wallClock();
   const nextBeforeWindow = lessons.find((item) => phaseOf(item, now) === 'before');
   useLessonClock(nextBeforeWindow);
+  const nextLesson = lessons.find((item) => upcomingPhases.has(phaseOf(item, now)));
+  useLessonClock(nextLesson);
 
   function body(): ReactElement {
     if (lessons.length === 0) {
@@ -55,6 +59,7 @@ export function TodayLessons({
             }}
             me={me}
             showsOpensAt={item.id === nextBeforeWindow?.id}
+            emphasis={item.id === nextLesson?.id ? 'filled' : 'quiet'}
           />
         )}
       />

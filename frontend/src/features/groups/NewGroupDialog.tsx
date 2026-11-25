@@ -8,12 +8,13 @@ import { type Action, type ActionState, done, refusedBy, useAction } from '../..
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
+  FormActions,
   FormAlert,
   TextField,
   fieldMessage,
   primaryButtonClass,
+  quietButtonClass,
   stringField,
-  textButtonClass,
 } from '../../components/ui/Form.tsx';
 import { refusalText } from '../../components/ui/Refusal.tsx';
 import { useApiClient } from '../../lib/api/client.ts';
@@ -144,14 +145,14 @@ function NewGroupForm({
           setChosen((current) => toggled(current, id, name));
         }}
       />
-      <div className="flex flex-wrap gap-3">
+      <FormActions>
         <ActionButton type="submit" form={formId} busy={action.busy} className={primaryButtonClass}>
           {t('groups.create')}
         </ActionButton>
-        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={textButtonClass}>
+        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={quietButtonClass}>
           {t('groups.cancel')}
         </ActionButton>
-      </div>
+      </FormActions>
     </div>
   );
 }

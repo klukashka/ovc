@@ -2,8 +2,10 @@ import type { TFunction } from 'i18next';
 import { type DragEvent, type ReactElement, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FormAlert, quietButtonClass, textButtonClass } from '../../components/ui/Form.tsx';
+import { FormAlert, textButtonClass } from '../../components/ui/Form.tsx';
+import { CrossIcon, DocumentIcon, FileKindIcon, ImageIcon } from '../../components/ui/icons.tsx';
 import { refusalText } from '../../components/ui/Refusal.tsx';
+import { extensionTile } from '../../lib/files/extension.ts';
 import type { Attachment, AttachmentRefusal, TaskAttachments } from './attachmentQueue.ts';
 
 function refusalOf(t: TFunction, refusal: AttachmentRefusal): string {
@@ -23,7 +25,23 @@ function removeButtonId(key: string): string {
   return `task-attachment-remove-${key}`;
 }
 
-function AttachmentRow({
+function FileKind({ file }: { readonly file: File }): ReactElement {
+  if (file.type.startsWith('image/')) {
+    return <ImageIcon size={28} />;
+  }
+  const extension = extensionTile(file.name);
+  if (extension === null) {
+    return <FileKindIcon size={28} />;
+  }
+  return (
+    <>
+      <DocumentIcon size={24} />
+      <span className="text-label">{extension}</span>
+    </>
+  );
+}
+
+function AttachmentTile({
   attachment,
   locked,
   onRetry,
@@ -37,6 +55,7 @@ function AttachmentRow({
   const { t } = useTranslation();
   const nameId = useId();
   const { state } = attachment;
+  const { name } = attachment.file;
   const label =
     state.kind === 'ready'
       ? t('homework.newTask.uploaded')
@@ -44,37 +63,43 @@ function AttachmentRow({
         ? t('homework.newTask.waiting')
         : t('homework.newTask.uploading');
   return (
-    <li className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3">
-      <div className="flex items-center gap-3">
-        <span id={nameId} dir="auto" className="min-w-0 flex-1 break-words">
-          {attachment.file.name}
-        </span>
-        {state.kind === 'refused' && state.retryable && !locked ? (
-          <button type="button" aria-describedby={nameId} onClick={onRetry} className={quietButtonClass}>
-            {t('homework.newTask.retry')}
-          </button>
-        ) : null}
-        {locked ? null : (
-          <button
-            id={removeButtonId(attachment.key)}
-            type="button"
-            aria-describedby={nameId}
-            onClick={onRemove}
-            className={textButtonClass}
-          >
-            {t('homework.newTask.remove')}
-          </button>
-        )}
-      </div>
+    <li aria-labelledby={nameId} data-attachment-tile="" className="relative flex w-24 flex-col gap-1">
+      <span
+        aria-hidden="true"
+        className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-0.5 rounded-md border border-border bg-surface text-icon"
+      >
+        <FileKind file={attachment.file} />
+      </span>
+      <span id={nameId} dir="auto" title={name} className="truncate text-small">
+        {name}
+      </span>
       {state.kind === 'refused' ? (
-        <FormAlert>{refusalOf(t, state.refusal)}</FormAlert>
+        <div className="text-small">
+          <FormAlert>{refusalOf(t, state.refusal)}</FormAlert>
+        </div>
       ) : (
         <progress
-          aria-label={`${label} ${attachment.file.name}`}
+          aria-label={`${label} ${name}`}
           value={state.kind === 'uploading' ? state.loaded : state.kind === 'ready' ? 1 : 0}
           max={state.kind === 'uploading' ? (state.total ?? attachment.file.size) : 1}
           className="w-full"
         />
+      )}
+      {state.kind === 'refused' && state.retryable && !locked ? (
+        <button type="button" aria-describedby={nameId} onClick={onRetry} className={textButtonClass}>
+          {t('homework.newTask.retry')}
+        </button>
+      ) : null}
+      {locked ? null : (
+        <button
+          id={removeButtonId(attachment.key)}
+          type="button"
+          aria-label={t('homework.newTask.removeFile', { name })}
+          onClick={onRemove}
+          className="absolute top-1 right-1 flex size-7 items-center justify-center rounded-full border border-border-strong bg-bg text-text hover:bg-surface"
+        >
+          <CrossIcon size={14} />
+        </button>
       )}
     </li>
   );
@@ -172,9 +197,9 @@ export function TaskAttachmentsField({
         </>
       )}
       {attachments.length === 0 ? null : (
-        <ul className="flex flex-col gap-2">
+        <ul aria-label={t('homework.newTask.attachedFiles')} className="flex flex-wrap gap-3">
           {attachments.map((attachment, index) => (
-            <AttachmentRow
+            <AttachmentTile
               key={attachment.key}
               attachment={attachment}
               locked={locked}

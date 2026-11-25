@@ -63,7 +63,7 @@ function loadPanel(): Promise<Panel | null> {
   return panelLoading;
 }
 
-export type BellPlacement = 'sidebar' | 'topBar' | 'phoneTopBar';
+export type BellPlacement = 'sidebar' | 'overlay' | 'topBar' | 'phoneTopBar';
 
 const panelClass =
   'fixed z-30 flex flex-col gap-3 overflow-y-auto rounded-lg border border-border bg-surface p-3 text-text shadow-raised dark:border-border-strong dark:shadow-none';
@@ -80,14 +80,17 @@ const boundedPanel = 'max-h-[calc(100dvh-1.5rem)] max-w-[calc(100vw-1rem)]';
 const topBarButton =
   'relative inline-flex target items-center justify-center gap-1 rounded-sm px-2 text-icon transition-colors duration-(--duration-press) ease-quiet hover:bg-hover hover:text-text';
 
+const sidebarPlacement: PlacementClasses = {
+  button:
+    'flex min-h-11 w-full items-center gap-2.5 rounded-sm px-2.5 text-left text-small text-text-muted transition-colors duration-(--duration-press) ease-quiet hover:bg-hover hover:text-text aria-expanded:bg-hover aria-expanded:text-text desktop:pointer-fine:min-h-8',
+  icon: 'text-icon',
+  count: 'tabular text-label font-medium text-text-muted',
+  panel: `${panelClass} ${boundedPanel} top-3 left-(--container-sidebar) ml-2 w-96`,
+};
+
 const placements: Readonly<Record<BellPlacement, PlacementClasses>> = {
-  sidebar: {
-    button:
-      'flex min-h-11 w-full items-center gap-2.5 rounded-sm px-2.5 text-left text-small text-text-muted transition-colors duration-(--duration-press) ease-quiet hover:bg-hover hover:text-text aria-expanded:bg-hover aria-expanded:text-text desktop:pointer-fine:min-h-8',
-    icon: 'text-icon',
-    count: 'tabular text-label font-medium text-text-muted',
-    panel: `${panelClass} ${boundedPanel} top-3 left-(--container-sidebar) ml-2 w-96`,
-  },
+  sidebar: sidebarPlacement,
+  overlay: sidebarPlacement,
   topBar: {
     button: topBarButton,
     icon: 'inline-flex',
@@ -144,7 +147,9 @@ function BellButtonContent({
       <span className={classes.icon}>
         <BellIcon />
       </span>
-      {placement === 'sidebar' ? <span className="flex-1">{t('section.notifications')}</span> : null}
+      {placement === 'sidebar' || placement === 'overlay' ? (
+        <span className="flex-1">{t('section.notifications')}</span>
+      ) : null}
       {shown === null ? null : (
         <span aria-hidden="true" className={classes.count}>
           {shown}

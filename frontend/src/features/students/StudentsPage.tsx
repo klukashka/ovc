@@ -121,10 +121,9 @@ function GroupFilter({ group }: { readonly group: string }): ReactElement | null
   );
 }
 
-function SearchForm({ view }: { readonly view: ListView }): ReactElement {
+function SearchForm({ view, inputId }: { readonly view: ListView; readonly inputId: string }): ReactElement {
   const { t } = useTranslation();
   const [, setSearchParams] = useSearchParams();
-  const inputId = useId();
   const searchField = useAddressValue<HTMLInputElement>(view.search);
   const filtered = view.search !== '' || view.group !== '';
 
@@ -234,7 +233,11 @@ function StudentRow({ card }: { readonly card: StudentCardSummary }): ReactEleme
   );
 }
 
-function EmptyList({ view }: { readonly view: ListView }): ReactElement {
+interface EmptyActions {
+  readonly onClearFilter: () => void;
+}
+
+function EmptyList({ view, actions }: { readonly view: ListView; readonly actions: EmptyActions }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const { state } = view;
@@ -246,11 +249,23 @@ function EmptyList({ view }: { readonly view: ListView }): ReactElement {
     enabled: firstStudent,
     retry: false,
   });
+  if (filtered) {
+    return (
+      <div className="flex flex-col items-start gap-2">
+        <p className="text-text-muted">{t('students.noMatches')}</p>
+        <Link
+          to={listAddress({ ...view, search: '', group: '' })}
+          onClick={actions.onClearFilter}
+          className={linkClass}
+        >
+          {t('students.clearFilter')}
+        </Link>
+      </div>
+    );
+  }
   if (!firstStudent) {
     return (
-      <p className="text-text-muted">
-        {t(filtered ? 'students.noMatches' : state === 'invited' ? 'students.emptyInvited' : 'students.emptyEnded')}
-      </p>
+      <p className="text-text-muted">{t(state === 'invited' ? 'students.emptyInvited' : 'students.emptyEnded')}</p>
     );
   }
   return (
@@ -284,7 +299,13 @@ function unusableFilter(error: ApiError, view: ListView): 'group' | 'search' | n
   return null;
 }
 
-function StudentList({ view }: { readonly view: ListView }): ReactElement {
+function StudentList({
+  view,
+  emptyActions,
+}: {
+  readonly view: ListView;
+  readonly emptyActions: EmptyActions;
+}): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const { state, search, group } = view;
@@ -348,7 +369,7 @@ function StudentList({ view }: { readonly view: ListView }): ReactElement {
     );
   }
   if (cards.length === 0) {
-    return <EmptyList view={view} />;
+    return <EmptyList view={view} actions={emptyActions} />;
   }
   return (
     <div aria-busy={query.isPlaceholderData} className="flex flex-col items-start gap-4">
@@ -398,8 +419,14 @@ export function StudentsPage(): ReactElement {
     setWithdrawnView(null);
   }
   const [dialogOpen, setDialogOpen] = useState(false);
-  const opener = useRef<HTMLButtonElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const searchInputId = useId();
   const requestsSettled = useJoinRequestsSettled();
+
+  function openAddDialog(element: HTMLElement): void {
+    opener.current = element;
+    setDialogOpen(true);
+  }
 
   useEffect(() => {
     if (hasNotice(location.state, withdrawnNotice)) {
@@ -410,16 +437,20 @@ export function StudentsPage(): ReactElement {
   const addButton =
     me.state === 'unverified' ? null : (
       <button
-        ref={opener}
         type="button"
-        onClick={() => {
-          setDialogOpen(true);
+        onClick={(event) => {
+          openAddDialog(event.currentTarget);
         }}
         className={primaryButtonClass}
       >
         {t('students.add')}
       </button>
     );
+  const emptyActions: EmptyActions = {
+    onClearFilter: () => {
+      document.getElementById(searchInputId)?.focus();
+    },
+  };
 
   return (
     <Page action={addButton ?? undefined}>
@@ -429,9 +460,9 @@ export function StudentsPage(): ReactElement {
       <div hidden={!requestsSettled} className="flex flex-col gap-6">
         <div className="flex flex-col gap-4 desktop:flex-row desktop:items-end desktop:gap-8">
           <Tabs view={view} />
-          <SearchForm view={view} />
+          <SearchForm view={view} inputId={searchInputId} />
         </div>
-        <StudentList view={view} />
+        <StudentList view={view} emptyActions={emptyActions} />
       </div>
       <AddStudentDialog
         open={dialogOpen}

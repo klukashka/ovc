@@ -593,6 +593,34 @@ test.describe('in English', () => {
     await expect(next).toContainText('Lesson Evening algebra');
   });
 
+  test('groups › New lesson for this group in the empty lessons list preselects the group and focuses the section heading once the lesson is listed', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    const tomorrow = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    const lessonsSection = page.getByRole('complementary', { name: 'Next lessons' });
+    await expect(lessonsSection.getByText('No lessons scheduled.')).toBeVisible();
+    await lessonsSection.getByRole('button', { name: 'New lesson for this group', exact: true }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'New lesson' })).toBeFocused();
+    const form = page.getByRole('main');
+    await form.getByLabel('Date', { exact: true }).fill(tomorrow);
+    await form.getByLabel('Start time').fill('18:00');
+
+    await form.getByRole('button', { name: 'Create lesson', exact: true }).click();
+
+    const next = page.getByRole('list', { name: 'Next lessons', exact: true }).getByRole('listitem');
+    await expect(next).toHaveCount(1);
+    await expect(next).toContainText('Lesson Evening algebra');
+    await expect(lessonsSection.getByRole('button', { name: 'New lesson for this group' })).toHaveCount(0);
+    await expect(lessonsSection.getByRole('heading', { level: 2, name: 'Next lessons' })).toBeFocused();
+  });
+
   test('groups › unarchiving a group moves focus to the notice and lists the group on its cards again', async ({
     page,
     deployment,

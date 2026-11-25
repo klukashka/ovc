@@ -294,6 +294,7 @@ export const ru = {
   joinRequests: {
     title: 'Заявки на занятия',
     empty: 'Новых заявок нет.',
+    emptyHint: 'Заявки приходят сюда, когда ученик вводит ваш код репетитора.',
     wantsToJoin: 'Хочет заниматься',
     sentOn: 'Отправлена {date}',
     accept: 'Принять',
@@ -476,6 +477,7 @@ export const ru = {
     searchLabel: 'Имя или email',
     searchSubmit: 'Найти',
     clearSearch: 'Сбросить поиск',
+    clearFilter: 'Сбросить фильтр',
     showMore: 'Показать ещё',
     noEmail: 'Без email',
     noMatches: 'Никого не нашли.',

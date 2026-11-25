@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import type { ReactElement } from 'react';
+import { type ReactElement, type RefObject, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router';
 
@@ -12,6 +12,7 @@ import {
   secondaryCellClass,
   tableRowClass,
 } from '../../components/ui/DataTable.tsx';
+import { EmptyState } from '../../components/ui/EmptyState.tsx';
 import { linkClass, quietButtonClass } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
@@ -49,7 +50,13 @@ function IssueProgress({ progress }: { readonly progress: IssueItem['progress'] 
 
 const statuses: readonly IssueStatus[] = ['active', 'withdrawn'];
 
-function StatusFilter({ current }: { readonly current: IssueStatus }): ReactElement {
+function StatusFilter({
+  current,
+  activeLink,
+}: {
+  readonly current: IssueStatus;
+  readonly activeLink: RefObject<HTMLAnchorElement | null>;
+}): ReactElement {
   const { t } = useTranslation();
   return (
     <nav aria-label={t('homework.list.filter')}>
@@ -57,6 +64,7 @@ function StatusFilter({ current }: { readonly current: IssueStatus }): ReactElem
         {statuses.map((status) => (
           <li key={status}>
             <Link
+              ref={status === 'active' ? activeLink : undefined}
               to={status === 'active' ? '/homework/issued' : `/homework/issued?status=${status}`}
               aria-current={status === current ? 'page' : undefined}
               className={status === current ? currentStatusClass : otherStatusClass}
@@ -70,7 +78,13 @@ function StatusFilter({ current }: { readonly current: IssueStatus }): ReactElem
   );
 }
 
-function IssuedList({ status }: { readonly status: IssueStatus }): ReactElement {
+function IssuedList({
+  status,
+  activeLink,
+}: {
+  readonly status: IssueStatus;
+  readonly activeLink: RefObject<HTMLAnchorElement | null>;
+}): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const me = useSignedInAccount();
@@ -119,14 +133,24 @@ function IssuedList({ status }: { readonly status: IssueStatus }): ReactElement 
       <div className="flex flex-col items-start gap-3">
         {failure}
         {status === 'active' ? (
-          <>
-            <p className="text-strong">{t('homework.empty.issued')}</p>
+          <EmptyState title={t('homework.empty.issued')} sentence={t('homework.empty.issuedBody')}>
             <Link to="/homework/library" className={linkClass}>
               {t('homework.empty.openLibrary')}
             </Link>
-          </>
+          </EmptyState>
         ) : (
-          <p className="text-text-muted">{t('homework.empty.withdrawn')}</p>
+          <>
+            <p className="text-text-muted">{t('homework.empty.withdrawn')}</p>
+            <Link
+              to="/homework/issued"
+              onClick={() => {
+                activeLink.current?.focus();
+              }}
+              className={linkClass}
+            >
+              {t('homework.empty.showActive')}
+            </Link>
+          </>
         )}
       </div>
     );
@@ -199,6 +223,7 @@ export function IssuedPage(): ReactElement {
   const [params] = useSearchParams();
   const requested = params.get('status');
   const status: IssueStatus = isIssueStatus(requested) ? requested : 'active';
+  const activeLink = useRef<HTMLAnchorElement>(null);
 
   return (
     <Page>
@@ -207,8 +232,8 @@ export function IssuedPage(): ReactElement {
           <HomeworkTabs current="issued" />
           {me.email_verified ? (
             <>
-              <StatusFilter current={status} />
-              <IssuedList key={status} status={status} />
+              <StatusFilter current={status} activeLink={activeLink} />
+              <IssuedList key={status} status={status} activeLink={activeLink} />
             </>
           ) : (
             <ConfirmEmailPrompt />

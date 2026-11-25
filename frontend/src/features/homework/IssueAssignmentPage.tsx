@@ -297,6 +297,7 @@ function IssueForm({
   const pendingFocus = useRef<PendingFocus>(null);
   const issued = useRef<IssueItem | null>(null);
   const detail = useAudienceDetail(audience);
+  const summaryId = useId();
   const presetLesson = preset.lesson !== undefined && audience?.id === preset.audience?.id ? preset.lesson : null;
 
   useEffect(() => {
@@ -460,8 +461,14 @@ function IssueForm({
         }}
       />
       <PolicyField template={template} policy={policy} onChange={setPolicy} />
-      {detail.students === null ? null : (
-        <p className="text-small text-text-muted">{t('homework.summary', { count: detail.students })}</p>
+      {audience === null ? null : (
+        <p
+          id={summaryId}
+          aria-hidden={detail.students === null ? true : undefined}
+          className={detail.students === null ? 'invisible text-small text-text-muted' : 'text-small text-text-muted'}
+        >
+          {detail.students === null ? '\u00a0' : t('homework.summary', { count: detail.students })}
+        </p>
       )}
       {shown?.kind === 'confirmation' ? <ConfirmationAlert key={alert?.count} /> : null}
       {shown?.kind === 'alert' ? (
@@ -478,6 +485,7 @@ function IssueForm({
         <ActionButton
           busy={action.busy}
           unavailable={template === null || audience === null}
+          {...(audience !== null && detail.students !== null ? { describedBy: summaryId } : {})}
           onClick={issue}
           className={primaryButtonClass}
         >

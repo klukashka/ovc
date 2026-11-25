@@ -5,12 +5,13 @@ import { I18nextProvider } from 'react-i18next';
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { SchedulerContext } from '../../app/clock.ts';
+import { primaryButtonClass, quietButtonClass } from '../../components/ui/Form.tsx';
 import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
 import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { Session, SessionContext, useSignedInAccount } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import type { LessonDetail } from './api.ts';
-import { type JoinLesson, JoinControl } from './JoinControl.tsx';
+import { type JoinEmphasis, type JoinLesson, JoinControl } from './JoinControl.tsx';
 import { type OpenRoomTab, RoomTabContext } from './roomTab.ts';
 
 afterEach(() => {
@@ -106,6 +107,7 @@ class RoomTabs {
 interface ControlRow {
   readonly lesson: JoinLesson;
   readonly showsOpensAt: boolean;
+  readonly emphasis?: JoinEmphasis;
 }
 
 function Controls({ rows }: { readonly rows: readonly ControlRow[] }): ReactElement {
@@ -114,7 +116,13 @@ function Controls({ rows }: { readonly rows: readonly ControlRow[] }): ReactElem
     <ul>
       {rows.map((row, index) => (
         <li key={index}>
-          <JoinControl key={row.lesson.id} lesson={row.lesson} me={me} showsOpensAt={row.showsOpensAt} />
+          <JoinControl
+            key={row.lesson.id}
+            lesson={row.lesson}
+            me={me}
+            showsOpensAt={row.showsOpensAt}
+            {...(row.emphasis === undefined ? {} : { emphasis: row.emphasis })}
+          />
         </li>
       ))}
     </ul>
@@ -263,6 +271,17 @@ describe('what the control offers', () => {
 
     expect(shownForGoneLessons).toBe(0);
     expect(screen.queryByText(/^Комната откроется в /)).toBeNull();
+  });
+
+  test('Join is filled by default and quiet where the row asks for it, with the same name', async () => {
+    const { container } = await showControls({ rows: [rowOf(first), { ...rowOf(second), emphasis: 'quiet' }] });
+
+    const controls = Array.from(container.querySelectorAll('[data-part="join"]'));
+
+    expect(controls.map((control) => control.getAttribute('data-emphasis'))).toEqual(['filled', 'quiet']);
+    expect(
+      screen.getAllByRole('button', { name: 'Подключиться к уроку' }).map((joinButton) => joinButton.className),
+    ).toEqual([primaryButtonClass, quietButtonClass]);
   });
 
   test('the window opening turns the opening time into Join lesson without a new lesson read', async () => {

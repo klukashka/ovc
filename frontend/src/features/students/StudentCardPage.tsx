@@ -20,15 +20,16 @@ import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
+  FormActions,
   SubmitButton,
   TextField,
   fieldClass,
   fieldMessage,
   dangerButtonClass,
+  dangerFilledButtonClass,
   linkClass,
   quietButtonClass,
   stringField,
-  textButtonClass,
 } from '../../components/ui/Form.tsx';
 import { MoreIcon } from '../../components/ui/icons.tsx';
 import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
@@ -44,9 +45,8 @@ import { useSignedInAccount } from '../../lib/api/session.ts';
 import type { components } from '../../lib/api/schema.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import { groupsKey } from '../groups/api.ts';
-import type { CalendarItem } from '../schedule/api.ts';
 import { LessonList } from '../schedule/LessonList.tsx';
-import { ScheduleLessonAction } from '../schedule/ScheduleLessonAction.tsx';
+import { NewLessonButton, ScheduleLessonAction, useFocusHeadingWhenFilled } from '../schedule/ScheduleLessonAction.tsx';
 import { CardHomeworkTab, CardOpenAssignments } from '../homework/CardHomework.tsx';
 import {
   IssueAssignmentButton,
@@ -76,6 +76,7 @@ import { type AutosaveStatus, useAutosave } from './notesAutosave.ts';
 import { StateBadge } from './StateBadge.tsx';
 
 const cardNewLessonOpener = 'card-new-lesson';
+const cardEmptyNewLessonOpener = 'card-empty-new-lesson';
 const cardIssueOpener = 'card-issue';
 
 type StudentCardPatch = components['schemas']['StudentCardPatch'];
@@ -223,7 +224,7 @@ function DetailsDialog({
             error={fieldMessage(t, error, 'email')}
           />
         ) : null}
-        <div className="flex flex-wrap gap-3">
+        <FormActions>
           <SubmitButton busy={action.busy}>{t('studentCard.save')}</SubmitButton>
           <ActionButton
             busy={false}
@@ -232,11 +233,11 @@ function DetailsDialog({
               action.reset();
               onClose();
             }}
-            className={textButtonClass}
+            className={quietButtonClass}
           >
             {t('studentCard.cancel')}
           </ActionButton>
-        </div>
+        </FormActions>
       </form>
     </ModalDialog>
   );
@@ -393,7 +394,7 @@ function WithdrawInvitation({
         </h2>
         <p id={consequenceId}>{t('studentCard.withdrawConsequence')}</p>
         <Refusal state={action.state} />
-        <div className="flex flex-wrap gap-3">
+        <FormActions>
           <ActionButton busy={action.busy} onClick={withdraw} className={dangerButtonClass}>
             {t('studentCard.withdrawSubmit')}
           </ActionButton>
@@ -402,11 +403,11 @@ function WithdrawInvitation({
             busy={false}
             unavailable={action.busy}
             onClick={onClose}
-            className={textButtonClass}
+            className={quietButtonClass}
           >
             {t('studentCard.cancel')}
           </ActionButton>
-        </div>
+        </FormActions>
       </div>
     </ModalDialog>
   );
@@ -414,6 +415,7 @@ function WithdrawInvitation({
 
 function EndWorkingTogether({
   consequence,
+  discards,
   handlers,
   open,
   returnFocus,
@@ -421,6 +423,7 @@ function EndWorkingTogether({
   end,
 }: {
   readonly consequence: string;
+  readonly discards: boolean;
   readonly handlers: CardHandlers;
   readonly open: boolean;
   readonly returnFocus: RefObject<HTMLElement | null>;
@@ -449,13 +452,13 @@ function EndWorkingTogether({
         </h2>
         <p id={consequenceId}>{consequence}</p>
         <Refusal state={action.state} />
-        <div className="flex flex-wrap gap-3">
+        <FormActions>
           <ActionButton
             busy={action.busy}
             onClick={() => {
               action.run(end);
             }}
-            className={dangerButtonClass}
+            className={discards ? dangerFilledButtonClass : dangerButtonClass}
           >
             {t('studentCard.removeSubmit')}
           </ActionButton>
@@ -464,11 +467,11 @@ function EndWorkingTogether({
             busy={false}
             unavailable={action.busy}
             onClick={onClose}
-            className={textButtonClass}
+            className={quietButtonClass}
           >
             {t('studentCard.cancel')}
           </ActionButton>
-        </div>
+        </FormActions>
       </div>
     </ModalDialog>
   );
@@ -496,6 +499,7 @@ function RemoveStudent({
       consequence={t(
         state === 'provisional' ? 'studentCard.removeConsequence' : 'studentCard.removeReclaimConsequence',
       )}
+      discards
       handlers={handlers}
       open={open}
       returnFocus={returnFocus}
@@ -534,6 +538,7 @@ function EndRelationship({
   return (
     <EndWorkingTogether
       consequence={t('studentCard.endConsequence')}
+      discards={false}
       handlers={handlers}
       open={open}
       returnFocus={returnFocus}
@@ -927,19 +932,32 @@ function CardTabs({
   );
 }
 
-function NextLessons({ items }: { readonly items: readonly CalendarItem[] }): ReactElement {
+function NextLessons({ card }: { readonly card: StudentCardDetail }): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
   const headingId = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
+  const empty = card.next_lessons.length === 0;
+  useFocusHeadingWhenFilled(empty, heading);
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 id={headingId} className="text-heading">
+      <h2 ref={heading} id={headingId} tabIndex={-1} className="text-heading outline-none">
         {t('lessons.next')}
       </h2>
-      {items.length === 0 ? (
-        <p className="text-text-muted">{t('lessons.noNext')}</p>
+      {empty ? (
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-text-muted">{t('lessons.noNext')}</p>
+          {me.state === 'active' && schedulable(card) ? (
+            <NewLessonButton
+              audience={{ kind: 'one_to_one', id: card.id, name: card.display_name }}
+              opener={cardEmptyNewLessonOpener}
+            >
+              {t('studentCard.newLesson')}
+            </NewLessonButton>
+          ) : null}
+        </div>
       ) : (
-        <LessonList items={items} label={t('lessons.next')} me={me} showAudience />
+        <LessonList items={card.next_lessons} label={t('lessons.next')} me={me} showAudience />
       )}
     </section>
   );
@@ -995,7 +1013,9 @@ function CardLessonHistory({ cardId }: { readonly cardId: string }): ReactElemen
     return (
       <div className="flex flex-col items-start gap-4">
         {failure}
-        <p className="text-text-muted">{t('lessons.historyEmpty')}</p>
+        <p className="text-text-muted">
+          {t('lessons.historyEmpty')} {t('studentCard.historyEmptyBody')}
+        </p>
       </div>
     );
   }
@@ -1044,7 +1064,7 @@ function CardTabContent({
   }
   return (
     <>
-      <NextLessons items={card.next_lessons} />
+      <NextLessons card={card} />
       {homework ? (
         <CardOpenAssignments relationshipId={card.id} homeworkAddress={cardTabAddress(card.id, 'homework')} />
       ) : null}

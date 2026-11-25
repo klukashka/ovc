@@ -170,6 +170,40 @@ async function holdTemplateRead(
   };
 }
 
+async function holdGroupRead(
+  page: Page,
+  groupId: string,
+): Promise<{ readonly held: Promise<void>; readonly release: () => Promise<void> }> {
+  const address = `**/api/v1/groups/${groupId}`;
+  let arrived: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    arrived = resolve;
+  });
+  let resume: () => void = () => undefined;
+  const resumed = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  await page.route(address, async (route) => {
+    if (route.request().method() === 'GET') {
+      arrived();
+      await resumed;
+    }
+    await route.continue();
+  });
+  return {
+    held,
+    release: async (): Promise<void> => {
+      const answered = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/v1/groups/${groupId}`,
+      );
+      resume();
+      await answered;
+      await page.unroute(address);
+    },
+  };
+}
+
 function issueButton(page: Page): Locator {
   return issueDialog(page).getByRole('button', { name: 'Issue', exact: true });
 }
@@ -454,6 +488,34 @@ test.describe('issuing from the builder, the card and the lesson', () => {
     expect((await readIssue(deployment, pavel, issueId ?? '')).students).toBe(2);
   });
 
+  test('the group summary that arrives after choosing a group leaves the Issue button in place', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const boris = await seedActiveStudent(deployment, pavel, 'Boris');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId, boris.cardId]);
+    const template = await createReadyTemplate(deployment, pavel, 'Fractions');
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/homework/templates/${template.id}`);
+    await page.getByRole('button', { name: 'Issue assignment', exact: true }).click();
+    await expect(noManualQuestionHint(page)).toBeVisible();
+    const read = await holdGroupRead(page, groupId);
+    await issueDialog(page).getByRole('button', { name: 'Evening algebra', exact: true }).click();
+    await read.held;
+    await expect(issueButton(page)).toHaveAttribute('aria-disabled', 'false');
+    await expect(issueDialog(page).getByText('2 students will receive this', { exact: true })).toHaveCount(0);
+    await expect(issueButton(page)).not.toHaveAttribute('aria-describedby');
+    const issueButtonBox = await layoutBox(issueButton(page));
+
+    await read.release();
+
+    await expect(issueDialog(page).getByText('2 students will receive this', { exact: true })).toBeVisible();
+    await expect(issueButton(page)).toHaveAccessibleDescription('2 students will receive this');
+    expect(await layoutBox(issueButton(page))).toEqual(issueButtonBox);
+  });
+
   test('Cancel on the Issue page returns focus to the builder’s Issue assignment button', async ({
     page,
     deployment,
@@ -544,6 +606,25 @@ test.describe('issuing from the builder, the card and the lesson', () => {
       'aria-describedby',
     );
     expect(await layoutBox(issueButton(page))).toEqual(pending.issueButtonBox);
+  });
+
+  test('issuing from the empty assignments of a group returns to the group page onto the focused notice', async ({
+    page,
+    deployment,
+  }) => {
+    const { pavel, annaCard } = await pavelWithAnna(deployment);
+    await createReadyTemplate(deployment, pavel, 'Fractions');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [annaCard]);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await page.getByRole('button', { name: 'Issue to this group', exact: true }).click();
+    await chooseTemplate(page, 'Fractions');
+
+    await issueDialog(page).getByRole('button', { name: 'Issue', exact: true }).click();
+
+    await expect(issueHeading(page)).toBeHidden();
+    await expect(page.getByRole('heading', { level: 1, name: 'Evening algebra' })).toBeVisible();
+    await expect(issuedNotice(page)).toBeFocused();
   });
 
   test('the lesson page issues with its lesson linked', async ({ page, deployment, control }) => {
@@ -1178,7 +1259,7 @@ test.describe('the issued work and the issue page', () => {
     await submitThroughTheApi(deployment, anna, await onlySubmission(deployment, anna));
     diagnostics.expectFailure({ method: 'POST', path: `/api/v1/issues/${issueId}/withdraw`, status: 409 });
 
-    await dialog.getByRole('button', { name: 'Withdraw', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Withdraw assignment', exact: true }).click();
 
     await expect(dialog).toBeHidden();
     const alert = page.getByText('A student has already submitted this assignment, so it can no longer be withdrawn.', {
@@ -1199,7 +1280,7 @@ test.describe('the issued work and the issue page', () => {
     await chooseFromPageMenu(page, 'Assignment actions', 'Withdraw');
     const dialog = page.getByRole('dialog', { name: 'Withdraw this assignment?' });
 
-    await dialog.getByRole('button', { name: 'Withdraw', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Withdraw assignment', exact: true }).click();
 
     await expect(dialog).toBeHidden();
     await expect(page.getByText('The assignment is withdrawn.', { exact: true })).toBeFocused();

@@ -8,11 +8,11 @@ import { type Action, type ActionState, done, refusedBy, useAction } from '../..
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
+  FormActions,
   FormAlert,
   dangerButtonClass,
   primaryButtonClass,
   quietButtonClass,
-  textButtonClass,
 } from '../../components/ui/Form.tsx';
 import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { focusHeadingIfLost, focusIsLost } from '../../components/ui/LoadState.tsx';
@@ -168,7 +168,7 @@ function RoomDialog({
           </h2>
           <p id={consequenceId}>{texts.consequence}</p>
           {refusal === null ? null : <FormAlert>{refusal}</FormAlert>}
-          <div className="flex flex-wrap gap-3">
+          <FormActions>
             <ActionButton busy={action.busy} onClick={onConfirm} className={dangerButtonClass}>
               {texts.confirm}
             </ActionButton>
@@ -177,11 +177,11 @@ function RoomDialog({
               busy={false}
               unavailable={action.busy}
               onClick={onDismiss}
-              className={textButtonClass}
+              className={quietButtonClass}
             >
               {t('newLesson.cancel')}
             </ActionButton>
-          </div>
+          </FormActions>
         </div>
       ) : null}
     </ModalDialog>

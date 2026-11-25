@@ -227,6 +227,20 @@ test.describe('the review queue', () => {
     await expect(queueRows(page).nth(20).getByRole('link')).toBeFocused();
   });
 
+  test('an empty queue says Nothing to check and links to the issued work', async ({ page, deployment }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    await signInThroughTheApi(page, pavel);
+
+    await page.goto('/homework/review');
+
+    await expect(page.getByRole('heading', { level: 3, name: 'Nothing to check' })).toBeVisible();
+    await expect(page.getByText('Submitted work appears here as soon as students send it.')).toBeVisible();
+    await expect(page.getByRole('main').getByRole('link', { name: 'See issued work', exact: true })).toHaveAttribute(
+      'href',
+      '/homework/issued',
+    );
+  });
+
   test('the Homework count and the queue follow a new submission without a reload', async ({ page, deployment }) => {
     const work = await issuedToAnna(deployment);
     await signInThroughTheApi(page, work.pavel);

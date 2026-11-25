@@ -1,4 +1,9 @@
-import { type InfiniteData, type UseInfiniteQueryResult, useInfiniteQuery } from '@tanstack/react-query';
+import {
+  type InfiniteData,
+  type UseInfiniteQueryResult,
+  useInfiniteQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { type ReactElement, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
@@ -10,10 +15,17 @@ import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRow
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDate } from '../../lib/format/dates.ts';
+import { type StudentCardDetail, studentCardKey } from '../students/api.ts';
 import { type IssueFilter, type IssueItem, type IssuePage, fetchIssuePage, issueListKey } from './api.ts';
+import { IssueAssignmentButton } from './IssueAssignment.tsx';
 import { DeadlineText, ReclaimCue, SubmissionState, pointsText } from './IssueParts.tsx';
 
 const overviewLimit = 5;
+const cardEmptyIssueOpener = 'card-homework-empty';
+
+function issuable(card: StudentCardDetail | undefined): card is StudentCardDetail {
+  return card !== undefined && (card.state === 'active' || card.state === 'provisional');
+}
 
 function useCardIssues(relationshipId: string): UseInfiniteQueryResult<InfiniteData<IssuePage>> {
   const client = useApiClient();
@@ -52,6 +64,7 @@ export function CardHomeworkTab({ relationshipId }: { readonly relationshipId: s
   const { t } = useTranslation();
   const me = useSignedInAccount();
   const query = useCardIssues(relationshipId);
+  const card = useQueryClient().getQueryData<StudentCardDetail>(studentCardKey(relationshipId));
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     items.length,
@@ -86,7 +99,19 @@ export function CardHomeworkTab({ relationshipId }: { readonly relationshipId: s
   return (
     <div className="flex flex-col items-start gap-4">
       {failure}
-      {items.length === 0 ? <p className="text-text-muted">{t('homework.empty.card')}</p> : null}
+      {items.length === 0 ? (
+        <>
+          <p className="text-text-muted">{t('homework.empty.card')}</p>
+          {issuable(card) ? (
+            <IssueAssignmentButton
+              opener={cardEmptyIssueOpener}
+              preset={{ audience: { kind: 'one_to_one', id: card.id, name: card.display_name } }}
+            >
+              {t('homework.empty.issueToStudent')}
+            </IssueAssignmentButton>
+          ) : null}
+        </>
+      ) : null}
       <ul
         ref={listRef}
         aria-label={t('homework.sections.homework')}

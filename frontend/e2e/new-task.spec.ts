@@ -77,6 +77,10 @@ async function attach(page: Page, files: readonly UploadFile[]): Promise<void> {
   await (await chooser).setFiles([...files]);
 }
 
+function attachmentTile(page: Page, name: string): Locator {
+  return main(page).getByRole('list', { name: 'Attached files' }).getByRole('listitem', { name, exact: true });
+}
+
 function question(page: Page, number: number): Locator {
   return main(page)
     .getByRole('listitem')
@@ -315,6 +319,30 @@ test.describe('new task', () => {
     expect(await reviewQueueSubmissions(deployment, tutor)).toEqual([submissionId]);
   });
 
+  test('two attached files show as tiles named by their files, each with a large enough Remove and no picture of the file', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    await openNewTask(page, tutor);
+
+    await attach(page, [pageOne, pageTwo]);
+    await main(page)
+      .getByRole('progressbar', { name: `Uploaded ${pageTwo.name}` })
+      .waitFor();
+
+    for (const file of [pageOne, pageTwo]) {
+      const tile = attachmentTile(page, file.name);
+      await expect(tile).toBeVisible();
+      const remove = tile.getByRole('button', { name: `Remove ${file.name}`, exact: true });
+      const box = await remove.boundingBox();
+      expect(box?.width ?? 0).toBeGreaterThanOrEqual(24);
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(24);
+      await expect(tile.locator('img')).toHaveCount(0);
+    }
+    await expect(main(page).locator('img[src^="blob:"]')).toHaveCount(0);
+  });
+
   test('a question without a prompt is refused inline before issuing', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
     await seedActiveStudent(deployment, tutor, 'Anna');
@@ -450,7 +478,7 @@ test.describe('new task', () => {
     deployment.administer(['tutors', 'set-quota', tutor.email, '--files', '1', '--recordings', '1']);
     diagnostics.expectFailure({ method: 'POST', path: '/api/v1/uploads?context=library', status: 507 });
     await chooseStudent(page, 'Anna');
-    const refused = main(page).getByRole('listitem').filter({ hasText: pageTwo.name });
+    const refused = attachmentTile(page, pageTwo.name);
 
     await attach(page, [pageTwo]);
     await refused.getByRole('alert').waitFor();

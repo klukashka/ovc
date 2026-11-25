@@ -2,7 +2,14 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import { type ReactElement, useState } from 'react';
 import { afterEach, describe, expect, test } from 'vitest';
 
-import { FormNotice } from './Form.tsx';
+import {
+  ActionButton,
+  FormActions,
+  FormNotice,
+  dangerButtonClass,
+  dangerFilledButtonClass,
+  quietButtonClass,
+} from './Form.tsx';
 
 function SavingForm(): ReactElement {
   const [saved, setSaved] = useState(false);
@@ -89,5 +96,56 @@ describe('a notice that takes focus', () => {
     const elsewhere = screen.getByLabelText('Elsewhere');
 
     expect(document.activeElement).toBe(elsewhere);
+  });
+});
+
+interface ConfirmationRow {
+  readonly confirm: HTMLElement;
+  readonly cancel: HTMLElement;
+}
+
+function confirmationRow(dangerClass: string): ConfirmationRow {
+  render(
+    <FormActions>
+      <ActionButton busy={false} className={dangerClass}>
+        Delete account
+      </ActionButton>
+      <ActionButton busy={false} className={quietButtonClass}>
+        Cancel
+      </ActionButton>
+    </FormActions>,
+  );
+  const [confirm, cancel] = screen.getAllByRole('button');
+  if (confirm === undefined || cancel === undefined) {
+    throw new Error('the action row lacks its two buttons');
+  }
+  return { confirm, cancel };
+}
+
+function isFilled(element: HTMLElement): boolean {
+  return [...element.classList].some((name) => name.startsWith('bg-'));
+}
+
+describe('dialog action rows', () => {
+  test('the final confirmation of a deletion comes first, filled with danger, then a quiet Cancel', () => {
+    const row = confirmationRow(dangerFilledButtonClass);
+
+    const order = [...(row.confirm.parentElement?.children ?? [])];
+
+    expect(order).toEqual([row.confirm, row.cancel]);
+    expect(row.confirm.textContent).toBe('Delete account');
+    expect([...row.confirm.classList]).toEqual(expect.arrayContaining(['bg-danger', 'text-on-accent']));
+    expect(row.cancel.textContent).toBe('Cancel');
+    expect([...row.cancel.classList]).toEqual(expect.arrayContaining(['border-border-strong', 'text-text']));
+    expect(isFilled(row.cancel)).toBe(false);
+  });
+
+  test('a danger action that deletes nothing keeps a danger outline and no fill', () => {
+    const row = confirmationRow(dangerButtonClass);
+
+    const filled = isFilled(row.confirm);
+
+    expect(filled).toBe(false);
+    expect([...row.confirm.classList]).toEqual(expect.arrayContaining(['text-danger', 'border-danger']));
   });
 });

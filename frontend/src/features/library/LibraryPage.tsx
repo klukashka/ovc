@@ -6,12 +6,13 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
-import { type DragEvent, type ReactElement, useEffect, useId, useRef, useState } from 'react';
+import { type DragEvent, type ReactElement, type RefObject, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import { useDebouncedValue } from '../../app/clock.ts';
 import { ActionMenu } from '../../components/ui/ActionMenu.tsx';
+import { EmptyState } from '../../components/ui/EmptyState.tsx';
 import { type ActionState, done, refusedBy, useAction } from '../../components/ui/action.ts';
 import {
   ActionButton,
@@ -66,6 +67,7 @@ import {
   MoveDialog,
   NameDialog,
   type NameSubject,
+  type RowControl,
   UploadDialog,
   UploadPromptDialog,
   libraryRowOpener,
@@ -257,9 +259,11 @@ function Breadcrumbs({ library }: { readonly library: Library }): ReactElement |
 
 function SearchField({
   urlQuery,
+  input,
   onSearch,
 }: {
   readonly urlQuery: string | null;
+  readonly input: RefObject<HTMLInputElement | null>;
   readonly onSearch: (term: string | null) => void;
 }): ReactElement {
   const { t } = useTranslation();
@@ -294,6 +298,7 @@ function SearchField({
         {t('library.search')}
       </label>
       <input
+        ref={input}
         id={inputId}
         type="search"
         value={typed}
@@ -359,12 +364,36 @@ function EmptyLibrary({
   );
 }
 
+function NoRows({
+  searching,
+  folderActions,
+  onClearSearch,
+}: {
+  readonly searching: boolean;
+  readonly folderActions: ReactElement;
+  readonly onClearSearch: () => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  return searching ? (
+    <EmptyState title={t('library.nothingFound')} sentence={t('library.nothingFoundBody')}>
+      <button type="button" onClick={onClearSearch} className={quietButtonClass}>
+        {t('library.clearSearch')}
+      </button>
+    </EmptyState>
+  ) : (
+    <EmptyState title={t('library.emptyFolder')} sentence={t('library.emptyFolderBody')}>
+      {folderActions}
+    </EmptyState>
+  );
+}
+
 function ListBody({
   list,
   searching,
   folders,
   items,
   empty,
+  noRows,
   handlers,
 }: {
   readonly list: UseInfiniteQueryResult<InfiniteData<Library>>;
@@ -372,6 +401,7 @@ function ListBody({
   readonly folders: readonly LibraryFolder[];
   readonly items: readonly LibraryItem[];
   readonly empty: ReactElement | null;
+  readonly noRows: ReactElement;
   readonly handlers: RowHandlers;
 }): ReactElement {
   const { t } = useTranslation();
@@ -404,7 +434,7 @@ function ListBody({
     return empty;
   }
   if (folders.length === 0 && items.length === 0) {
-    return <p className="text-text-muted">{searching ? t('library.nothingFound') : t('library.emptyFolder')}</p>;
+    return noRows;
   }
   return (
     <div className="flex flex-col gap-4">
@@ -454,6 +484,7 @@ export function LibraryPage(): ReactElement {
   const opener = useRef<HTMLElement | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
   const [dialog, setDialog] = useState<OpenDialog | null>(null);
   const pendingFocus = useRef<PendingFocus | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
@@ -712,7 +743,7 @@ export function LibraryPage(): ReactElement {
     });
   }
 
-  function onCommand(command: RowCommand, target: LibraryTarget): void {
+  function onCommand(command: RowCommand, target: LibraryTarget, control: RowControl): void {
     if (command === 'open' && target.kind === 'item') {
       if (target.item.kind === 'material') {
         openMaterial(target.item);
@@ -730,7 +761,7 @@ export function LibraryPage(): ReactElement {
       setNotice(null);
       setAlert(null);
       setIssued(null);
-      openIssue(issueAssignmentAddress(target.item.id), libraryRowOpener(rowKey(target)));
+      openIssue(issueAssignmentAddress(target.item.id), libraryRowOpener(rowKey(target), control));
       return;
     }
     if (command === 'rename') {
@@ -831,7 +862,7 @@ export function LibraryPage(): ReactElement {
         <FolderTree folders={folders.data ?? []} current={searching ? null : folder} />
         <div className="flex min-w-0 flex-col gap-4">
           <FolderChoice nodes={nodes} current={searching ? null : folder} />
-          <SearchField urlQuery={search} onSearch={applySearch} />
+          <SearchField urlQuery={search} input={searchInput} onSearch={applySearch} />
           {searching || firstPage === undefined ? null : <Breadcrumbs library={firstPage} />}
           {list.isError && list.data !== undefined ? (
             <RefetchFailed
@@ -851,6 +882,23 @@ export function LibraryPage(): ReactElement {
               rootEmpty ? (
                 <EmptyLibrary createButton={createButton} onChoose={chooseUpload} onFile={acceptFile} />
               ) : null
+            }
+            noRows={
+              <NoRows
+                searching={searching}
+                folderActions={
+                  <>
+                    {homeworkTexts.ready ? <NewTaskButton opener="library-empty-new-task" /> : null}
+                    <button type="button" onClick={chooseUpload} className={quietButtonClass}>
+                      {t('library.upload')}
+                    </button>
+                  </>
+                }
+                onClearSearch={() => {
+                  searchInput.current?.focus();
+                  applySearch(null);
+                }}
+              />
             }
             handlers={{ busyRow, issuable: me.email_verified && homeworkTexts.ready, onCommand }}
           />

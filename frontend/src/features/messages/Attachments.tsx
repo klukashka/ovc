@@ -1,6 +1,7 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { useScheduler } from '../../app/clock.ts';
 import { downloadAddress } from '../../lib/files/downloadAddress.ts';
+import { extensionTile } from '../../lib/files/extension.ts';
 import { localeOf } from '../../lib/format/dates.ts';
 import type { Language } from '../../lib/i18n/resources.ts';
 import type { components } from '../../lib/api/schema.ts';
@@ -182,15 +183,6 @@ function Album({
       })}
     </div>
   );
-}
-
-const shownExtension = /^[a-z0-9]{1,4}$/iu;
-
-export function extensionTile(filename: string): string | null {
-  const dot = filename.lastIndexOf('.');
-  if (dot <= 0) return null;
-  const extension = filename.slice(dot + 1);
-  return shownExtension.test(extension) ? extension.toUpperCase() : null;
 }
 
 const bytesPerKilobyte = 1_000;

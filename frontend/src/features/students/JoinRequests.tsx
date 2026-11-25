@@ -11,13 +11,7 @@ import { type ActionState, done, refusedBy, showsStaleData, useAction } from '..
 import { followUpQueuedFor } from '../../app/queryClient.ts';
 import { ActionMenu } from '../../components/ui/ActionMenu.tsx';
 import { Avatar } from '../../components/ui/Avatar.tsx';
-import {
-  ActionButton,
-  FormAlert,
-  FormNotice,
-  primaryButtonClass,
-  quietButtonClass,
-} from '../../components/ui/Form.tsx';
+import { ActionButton, FormAlert, FormNotice, quietButtonClass } from '../../components/ui/Form.tsx';
 import { MoreIcon } from '../../components/ui/icons.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
@@ -36,6 +30,9 @@ type TutorJoinRequest = components['schemas']['TutorJoinRequest'];
 type TutorJoinRequestPage = components['schemas']['TutorJoinRequestPage'];
 
 type Decision = 'accept' | 'decline' | 'block';
+
+const acceptButtonClass =
+  'inline-flex min-h-11 items-center justify-center rounded-md border border-border-strong px-3 text-small font-medium text-text hover:bg-surface aria-disabled:opacity-60 desktop:pointer-fine:min-h-8';
 
 const decisionNotice = {
   accept: 'joinRequests.accepted',
@@ -122,7 +119,7 @@ function RequestRow({
           onClick={() => {
             onDecide('accept');
           }}
-          className={primaryButtonClass}
+          className={acceptButtonClass}
         >
           {t('joinRequests.accept')}
         </ActionButton>
@@ -254,7 +251,10 @@ function JoinRequestList({
           </FormNotice>
         )}
         {requests.length === 0 ? (
-          <p className="text-text-muted">{t('joinRequests.empty')}</p>
+          <div className="flex flex-col gap-1 text-text-muted">
+            <p>{t('joinRequests.empty')}</p>
+            <p className="text-small">{t('joinRequests.emptyHint')}</p>
+          </div>
         ) : (
           <ul ref={listRef} aria-labelledby={headingId} className="border-b border-border">
             {requests.map((request) => (

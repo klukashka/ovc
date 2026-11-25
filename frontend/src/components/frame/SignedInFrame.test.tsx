@@ -179,7 +179,7 @@ describe('the signed-in frame of a student', () => {
     expect(within(screen.getByRole('navigation')).queryByRole('link', { name: 'Ученики' })).toBeNull();
   });
 
-  test('below 1024 px the notifications page keeps the student frame and the top bar keeps the bell', async () => {
+  test('below 1024 px the notifications page keeps the student frame, the top bar keeps the bell and the overlay offers the panel', async () => {
     await renderFrame(account('student'), '/notifications', false);
 
     const heading = await screen.findByRole('heading', { level: 1, name: 'Уведомления' });
@@ -187,9 +187,9 @@ describe('the signed-in frame of a student', () => {
     expect(heading).toBeDefined();
     expect(within(topBar()).getByRole('button', { name: 'Уведомления' })).toBeDefined();
     const overlay = screen.getByRole('dialog', { hidden: true });
-    expect(within(overlay).getByRole('link', { name: 'Уведомления', hidden: true }).getAttribute('href')).toBe(
-      '/notifications',
-    );
+    const overlayItem = within(overlay).getByRole('button', { name: 'Уведомления', hidden: true });
+    expect(overlayItem.getAttribute('aria-expanded')).toBe('false');
+    expect(within(overlay).queryByRole('link', { name: 'Уведомления', hidden: true })).toBeNull();
     expect(within(overlay).getByRole('link', { name: 'Мои репетиторы', hidden: true })).toBeDefined();
     expect(within(overlay).queryByRole('link', { name: 'Ученики', hidden: true })).toBeNull();
   });
@@ -223,6 +223,16 @@ describe('the signed-in frame of an unconfirmed student', () => {
 
     expect(within(banner).queryByRole('button', { name: /Уведомления/ })).toBeNull();
     expect(within(banner).queryByRole('link', { name: /Уведомления/ })).toBeNull();
+  });
+
+  test('below 1024 px the sidebar overlay offers no notifications panel', async () => {
+    await renderFrame(account('student', 'unverified'), '/homework', false);
+
+    const overlay = screen.getByRole('dialog', { hidden: true });
+
+    expect(within(overlay).getByRole('link', { name: 'Мои репетиторы', hidden: true })).toBeDefined();
+    expect(within(overlay).queryByRole('button', { name: /Уведомления/, hidden: true })).toBeNull();
+    expect(within(overlay).queryByRole('link', { name: /Уведомления/, hidden: true })).toBeNull();
   });
 
   test('the confirmation banner asks to confirm to keep studying and offers to send the link again', async () => {

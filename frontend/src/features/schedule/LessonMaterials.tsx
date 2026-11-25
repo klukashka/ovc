@@ -5,10 +5,10 @@ import { type Action, type ActionState, done, refusedBy, useAction } from '../..
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
+  FormActions,
   FormAlert,
   primaryButtonClass,
   quietButtonClass,
-  textButtonClass,
 } from '../../components/ui/Form.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { refusalText } from '../../components/ui/Refusal.tsx';
@@ -196,7 +196,7 @@ function AttachDialog({
         {refusal === null ? null : (
           <FormAlert key={refusals}>{refusalText(t, refusal.error, refusal.retryAfter, undefined)}</FormAlert>
         )}
-        <div className="flex flex-wrap gap-3">
+        <FormActions>
           <ActionButton
             busy={action.busy}
             onClick={() => {
@@ -210,10 +210,10 @@ function AttachDialog({
           >
             {t('lessonEdit.save')}
           </ActionButton>
-          <ActionButton busy={false} unavailable={action.busy} onClick={onClose} className={textButtonClass}>
+          <ActionButton busy={false} unavailable={action.busy} onClick={onClose} className={quietButtonClass}>
             {t('newLesson.cancel')}
           </ActionButton>
-        </div>
+        </FormActions>
       </div>
     </ModalDialog>
   );

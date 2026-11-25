@@ -321,7 +321,7 @@ async function withdrawThroughTheDialog(page: Page): Promise<void> {
   await chooseFromPageMenu(page, 'Card actions', 'Withdraw invitation');
   await page
     .getByRole('dialog', { name: 'Withdraw the invitation?' })
-    .getByRole('button', { name: 'Withdraw', exact: true })
+    .getByRole('button', { name: 'Withdraw invitation', exact: true })
     .click();
 }
 
@@ -466,7 +466,7 @@ test.describe('in English with the dark theme', () => {
     await chooseFromPageMenu(page, 'Card actions', 'Withdraw invitation');
     await expect(confirm.getByRole('button', { name: 'Cancel' })).toBeFocused();
 
-    await confirm.getByRole('button', { name: 'Withdraw', exact: true }).click();
+    await confirm.getByRole('button', { name: 'Withdraw invitation', exact: true }).click();
 
     await expect(page).toHaveURL('/students?state=invited');
     await expect(page.getByRole('status').filter({ hasText: 'The invitation was withdrawn.' })).toBeVisible();
@@ -1152,7 +1152,7 @@ test.describe('in English with the dark theme', () => {
 
     await page
       .getByRole('dialog', { name: 'Withdraw the invitation?' })
-      .getByRole('button', { name: 'Withdraw', exact: true })
+      .getByRole('button', { name: 'Withdraw invitation', exact: true })
       .click();
     const changedNotice = page
       .getByRole('status')

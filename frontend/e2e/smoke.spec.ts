@@ -570,6 +570,48 @@ test.describe('at 900 px', () => {
     await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeVisible();
     await expect(page.getByRole('dialog')).toBeHidden();
   });
+
+  test('the overlay’s Notifications item opens the notifications panel on its heading', async ({
+    signedInPage: page,
+  }) => {
+    await page.goto('/today');
+    await page.getByRole('button', { name: 'Показать боковую панель' }).click();
+    const overlay = page.getByRole('dialog', { name: 'Боковая панель' });
+    const item = overlay.getByRole('button', { name: /^Уведомления/ });
+
+    await item.click();
+
+    await expect(overlay.getByRole('region', { name: 'Уведомления' }).getByRole('heading')).toBeFocused();
+    await expect(item).toHaveAttribute('aria-expanded', 'true');
+    await expect(overlay.getByRole('link', { name: 'Уведомления', exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL('/today');
+  });
+
+  test('Escape closes the overlay’s notifications panel with focus on its item, and a second Escape closes the overlay', async ({
+    signedInPage: page,
+  }) => {
+    await page.goto('/today');
+    await page.getByRole('button', { name: 'Показать боковую панель' }).click();
+    const overlay = page.getByRole('dialog', { name: 'Боковая панель' });
+    const item = overlay.getByRole('button', { name: /^Уведомления/ });
+    await item.click();
+    await page.waitForFunction(
+      () => document.activeElement instanceof HTMLHeadingElement && document.activeElement.closest('dialog') !== null,
+    );
+
+    await page.keyboard.press('Escape');
+    const afterFirstEscape = await item.evaluate((element) => ({
+      focused: element === document.activeElement,
+      expanded: element.getAttribute('aria-expanded'),
+      overlayOpen: element.closest('dialog')?.open === true,
+    }));
+    await page.keyboard.press('Escape');
+
+    expect(afterFirstEscape).toEqual({ focused: true, expanded: 'false', overlayOpen: true });
+    await expect(overlay).toBeHidden();
+    await expect(page.getByRole('region', { name: 'Уведомления' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeFocused();
+  });
 });
 
 interface HoldingServer {

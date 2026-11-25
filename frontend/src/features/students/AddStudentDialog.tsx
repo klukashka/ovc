@@ -7,20 +7,19 @@ import { type Action, type ActionState, done, refusedBy, useAction } from '../..
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
+  FormActions,
   SubmitButton,
   TextField,
   fieldMessage,
   linkClass,
   primaryButtonClass,
+  quietButtonClass,
   stringField,
 } from '../../components/ui/Form.tsx';
 import { Refusal } from '../../components/ui/Refusal.tsx';
 import { useApiClient } from '../../lib/api/client.ts';
 import { type StudentCard, studentsKey } from './api.ts';
 import { InvitationLink } from './InvitationLink.tsx';
-
-const textButtonClass =
-  'inline-flex min-h-11 items-center px-3 text-small text-accent-text underline aria-disabled:opacity-60';
 
 function ExistingStudent({ state }: { readonly state: ActionState }): ReactElement | null {
   const { t } = useTranslation();
@@ -98,12 +97,12 @@ function NewCardForm({
         hint={t('addStudent.emailHint')}
         error={fieldMessage(t, error, 'email')}
       />
-      <div className="flex flex-wrap gap-3">
+      <FormActions>
         <SubmitButton busy={action.busy}>{t('addStudent.submit')}</SubmitButton>
-        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={textButtonClass}>
+        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={quietButtonClass}>
           {t('addStudent.cancel')}
         </ActionButton>
-      </div>
+      </FormActions>
     </form>
   );
 }

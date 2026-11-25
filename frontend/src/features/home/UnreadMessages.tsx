@@ -35,57 +35,53 @@ export function UnreadMessages({ part }: { readonly part: TutorHome['unread_chan
   );
 
   function body(): ReactElement {
-    const allMessages = (
-      <Link to="/messages" className={linkClass}>
-        {t('today.allMessages', { count: part.unread_total })}
-      </Link>
-    );
+    if (unread.length === 0) {
+      return <p className="text-text-muted">{t('today.noUnread')}</p>;
+    }
     return (
-      <>
-        {unread.length === 0 ? (
-          <p className="text-text-muted">{t('today.noUnread')}</p>
-        ) : (
-          <ul ref={listRef} aria-labelledby={headingId} className="flex flex-col border-y border-border">
-            {unread.map((channel) => (
-              <li
-                key={channel.channel_id}
-                data-row={channel.channel_id}
-                className="border-t border-border first:border-t-0"
-              >
-                <Link
-                  to={`/messages/${encodeURIComponent(channel.channel_id)}`}
-                  className="flex min-h-11 items-center justify-between gap-3 px-1 py-2 hover:bg-surface"
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    {channel.colour === null ? null : (
-                      <span
-                        aria-hidden="true"
-                        className={`size-2 shrink-0 rounded-full ${paletteDotClass[channel.colour]}`}
-                      />
-                    )}
-                    <span dir="auto" className="truncate">
-                      {unreadChannelLabel(t, channel)}
-                    </span>
-                  </span>
-                  <span className="shrink-0 rounded-full bg-hover px-2 text-label font-medium tabular">
-                    <span aria-hidden="true">{unreadCount(channel.unread_count)}</span>
-                    <span className="sr-only">{t('today.unreadCount', { count: channel.unread_count })}</span>
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-        {allMessages}
-      </>
+      <ul ref={listRef} aria-labelledby={headingId} className="flex flex-col border-y border-border">
+        {unread.map((channel) => (
+          <li
+            key={channel.channel_id}
+            data-row={channel.channel_id}
+            className="border-t border-border first:border-t-0"
+          >
+            <Link
+              to={`/messages/${encodeURIComponent(channel.channel_id)}`}
+              className="flex min-h-11 items-center justify-between gap-3 px-1 py-2 hover:bg-surface"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                {channel.colour === null ? null : (
+                  <span
+                    aria-hidden="true"
+                    className={`size-2 shrink-0 rounded-full ${paletteDotClass[channel.colour]}`}
+                  />
+                )}
+                <span dir="auto" className="truncate">
+                  {unreadChannelLabel(t, channel)}
+                </span>
+              </span>
+              <span className="shrink-0 rounded-full bg-hover px-2 text-label font-medium tabular">
+                <span aria-hidden="true">{unreadCount(channel.unread_count)}</span>
+                <span className="sr-only">{t('today.unreadCount', { count: channel.unread_count })}</span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
     );
   }
 
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 ref={headingRef} id={headingId} tabIndex={-1} className="text-heading outline-none">
-        {t('today.unread')}
-      </h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+        <h2 ref={headingRef} id={headingId} tabIndex={-1} className="text-heading outline-none">
+          {t('today.unread')}
+        </h2>
+        <Link to="/messages" className={linkClass}>
+          {t('today.allMessages', { count: part.unread_total })}
+        </Link>
+      </div>
       {body()}
     </section>
   );

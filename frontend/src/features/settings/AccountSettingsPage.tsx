@@ -5,10 +5,13 @@ import { ActionMenu } from '../../components/ui/ActionMenu.tsx';
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
+  FormActions,
   FormAlert,
   SelectChevron,
   SubmitButton,
   TextField,
+  dangerButtonClass,
+  dangerFilledButtonClass,
   errorMessage,
   fieldClass,
   fieldMessage,
@@ -16,7 +19,6 @@ import {
   retryAfterSeconds,
   selectClass,
   stringField,
-  textButtonClass,
 } from '../../components/ui/Form.tsx';
 import { MoreIcon } from '../../components/ui/icons.tsx';
 import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
@@ -36,9 +38,6 @@ type Outcome =
 
 const themes = ['system', 'light', 'dark'] as const;
 type Theme = (typeof themes)[number];
-
-const dangerButtonClass =
-  'inline-flex min-h-11 items-center justify-center rounded-md border border-danger px-4 text-strong text-danger hover:bg-surface aria-disabled:opacity-60';
 
 function isTheme(value: string): value is Theme {
   return themes.some((theme) => theme === value);
@@ -283,12 +282,12 @@ function PasswordDialog({
           hint={t('signUp.passwordHint')}
           error={fieldMessage(t, error, 'new_password')}
         />
-        <div className="flex flex-wrap gap-3">
+        <FormActions>
           <SubmitButton busy={sending}>{t('settings.changePassword')}</SubmitButton>
-          <ActionButton busy={false} unavailable={sending} onClick={onClose} className={textButtonClass}>
+          <ActionButton busy={false} unavailable={sending} onClick={onClose} className={quietButtonClass}>
             {t('settings.cancel')}
           </ActionButton>
-        </div>
+        </FormActions>
       </form>
     </ModalDialog>
   );
@@ -386,7 +385,7 @@ function SignOutEverywhereDialog({
         </h2>
         <p id={consequenceId}>{t('settings.signOutEverywhereBody')}</p>
         <RefusalMessage outcome={outcome} />
-        <div className="flex flex-wrap gap-3">
+        <FormActions>
           <ActionButton
             busy={sending}
             onClick={() => {
@@ -404,11 +403,11 @@ function SignOutEverywhereDialog({
             busy={false}
             unavailable={sending}
             onClick={onClose}
-            className={textButtonClass}
+            className={quietButtonClass}
           >
             {t('settings.cancel')}
           </ActionButton>
-        </div>
+        </FormActions>
       </div>
     </ModalDialog>
   );
@@ -488,14 +487,14 @@ function DeleteAccountDialog({
           autoComplete="current-password"
           error={fieldMessage(t, error, 'password')}
         />
-        <div className="flex flex-wrap gap-3">
-          <ActionButton type="submit" busy={sending} className={dangerButtonClass}>
+        <FormActions>
+          <ActionButton type="submit" busy={sending} className={dangerFilledButtonClass}>
             {t('settings.deleteAccountSubmit')}
           </ActionButton>
-          <ActionButton busy={false} unavailable={sending} onClick={onClose} className={textButtonClass}>
+          <ActionButton busy={false} unavailable={sending} onClick={onClose} className={quietButtonClass}>
             {t('settings.cancel')}
           </ActionButton>
-        </div>
+        </FormActions>
       </form>
     </ModalDialog>
   );

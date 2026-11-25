@@ -452,7 +452,7 @@ test.describe('in English', () => {
 
     await page
       .getByRole('dialog', { name: 'Withdraw the invitation?' })
-      .getByRole('button', { name: 'Withdraw' })
+      .getByRole('button', { name: 'Withdraw invitation', exact: true })
       .click();
 
     await expect(page.getByRole('status').filter({ hasText: 'This card changed in the meantime.' })).toBeFocused();
@@ -479,7 +479,7 @@ test.describe('in English', () => {
     await signUpOnInvitation(deployment, card.link, boris, 'en');
     await page
       .getByRole('dialog', { name: 'Withdraw the invitation?' })
-      .getByRole('button', { name: 'Withdraw' })
+      .getByRole('button', { name: 'Withdraw invitation', exact: true })
       .click();
     await notice.waitFor();
     await chooseFromPageMenu(page, 'Card actions', 'End working together');

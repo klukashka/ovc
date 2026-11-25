@@ -12,6 +12,7 @@ import {
   secondaryCellClass,
   tableRowClass,
 } from '../../components/ui/DataTable.tsx';
+import { EmptyState } from '../../components/ui/EmptyState.tsx';
 import {
   FormAlert,
   SelectChevron,
@@ -207,7 +208,13 @@ function QueueTable({ filter }: { readonly filter: QueueFilter }): ReactElement 
           }}
         />
       )}
-      {items.length === 0 ? <p className="text-strong">{t('homework.queue.empty')}</p> : null}
+      {items.length === 0 ? (
+        <EmptyState level={3} title={t('homework.queue.empty')} sentence={t('homework.queue.emptyBody')}>
+          <Link to="/homework/issued" className={linkClass}>
+            {t('homework.queue.emptyIssued')}
+          </Link>
+        </EmptyState>
+      ) : null}
       <div className={items.length === 0 ? 'hidden' : 'w-full'}>
         <DataTable label={t('homework.queue.label')} columns={columns} bodyRef={listRef}>
           {items.map((item) => (

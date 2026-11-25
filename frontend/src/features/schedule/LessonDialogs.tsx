@@ -6,13 +6,14 @@ import { type Action, type ActionState, done, refusedBy } from '../../components
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
+  FormActions,
   FormAlert,
   dangerButtonClass,
   fieldClass,
   fieldMessage,
   primaryButtonClass,
+  quietButtonClass,
   stringField,
-  textButtonClass,
 } from '../../components/ui/Form.tsx';
 import { refusalText } from '../../components/ui/Refusal.tsx';
 import { type ApiError, useApiClient } from '../../lib/api/client.ts';
@@ -357,7 +358,7 @@ export function EditForm({
           }}
         />
       )}
-      <div className="flex flex-wrap gap-3">
+      <FormActions>
         <ActionButton
           type="submit"
           form={formId}
@@ -367,10 +368,10 @@ export function EditForm({
         >
           {t('lessonEdit.save')}
         </ActionButton>
-        <ActionButton busy={false} unavailable={action.busy} onClick={handlers.onDismiss} className={textButtonClass}>
+        <ActionButton busy={false} unavailable={action.busy} onClick={handlers.onDismiss} className={quietButtonClass}>
           {t('newLesson.cancel')}
         </ActionButton>
-      </div>
+      </FormActions>
     </div>
   );
 }
@@ -513,7 +514,7 @@ function CancelForm({
       {refusal === null ? null : (
         <FormAlert key={refusals}>{refusalText(t, refusal.error, refusal.retryAfter, undefined)}</FormAlert>
       )}
-      <div className="flex flex-wrap gap-3">
+      <FormActions>
         <ActionButton busy={action.busy} onClick={confirm} className={dangerButtonClass}>
           {texts.confirm}
         </ActionButton>
@@ -522,11 +523,11 @@ function CancelForm({
           busy={false}
           unavailable={action.busy}
           onClick={handlers.onDismiss}
-          className={textButtonClass}
+          className={quietButtonClass}
         >
           {t('newLesson.cancel')}
         </ActionButton>
-      </div>
+      </FormActions>
     </div>
   );
 }

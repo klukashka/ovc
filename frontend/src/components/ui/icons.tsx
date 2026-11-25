@@ -197,3 +197,30 @@ export function AttachIcon(props: IconProps): ReactElement {
     </Outline>
   );
 }
+
+export function FileKindIcon(props: IconProps): ReactElement {
+  return (
+    <Outline {...props}>
+      <path d="M9 2H4.5A1.5 1.5 0 003 3.5v9A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V6L9 2zM9 2v4h4" />
+    </Outline>
+  );
+}
+
+export function DocumentIcon(props: IconProps): ReactElement {
+  return (
+    <Outline {...props}>
+      <path d="M9 2H4.5A1.5 1.5 0 003 3.5v9A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V6L9 2zM9 2v4h4" />
+      <path d="M5.5 9h5M5.5 11.5h3.5" />
+    </Outline>
+  );
+}
+
+export function ImageIcon(props: IconProps): ReactElement {
+  return (
+    <Outline {...props}>
+      <rect x="2" y="3" width="12" height="10" rx="1.5" />
+      <circle cx="5.75" cy="6.25" r="1" />
+      <path d="M14 10.5l-3.5-3.5L4 13" />
+    </Outline>
+  );
+}

@@ -19,7 +19,7 @@ export const studentCardTexts = {
   withdraw: 'Withdraw invitation',
   withdrawTitle: 'Withdraw the invitation?',
   withdrawConsequence: 'The link stops working and this card is removed. You can add the student again later.',
-  withdrawSubmit: 'Withdraw',
+  withdrawSubmit: 'Withdraw invitation',
   cancel: 'Cancel',
   end: 'End working together',
   removeTitle: 'End working together?',
@@ -38,4 +38,6 @@ export const studentCardTexts = {
   inviteAgainHint: 'A new link brings the student back to this card and its history, but not back into your groups.',
   inviteAgain: 'Invite again',
   gone: 'This student is no longer on your list.',
+  newLesson: 'New lesson',
+  historyEmptyBody: 'Every lesson with this student appears here, newest first.',
 };

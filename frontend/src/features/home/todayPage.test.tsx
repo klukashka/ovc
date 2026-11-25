@@ -8,7 +8,7 @@ import { SchedulerContext } from '../../app/clock.ts';
 import type { RouteHandle } from '../../app/handles.ts';
 import { FollowingQueryClient } from '../../app/queryClient.ts';
 import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
-import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
+import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import type { components } from '../../lib/api/schema.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
@@ -79,6 +79,14 @@ const lessonItem: CalendarItem = {
   tutor: null,
 };
 
+const laterLessonItem: CalendarItem = {
+  ...lessonItem,
+  id: '00000000-0000-4000-8000-000000000022',
+  title: 'Reading club',
+  starts_at: '2026-11-01T10:05:00Z',
+  ends_at: '2026-11-01T11:05:00Z',
+};
+
 const queueItem: ReviewQueueItem = {
   submission_id: '00000000-0000-4000-8000-000000000051',
   issue_id: '00000000-0000-4000-8000-000000000052',
@@ -131,23 +139,29 @@ interface TodaySetup {
   readonly state?: 'active' | 'unverified';
   readonly joinRequests?: number;
   readonly firstLoadFails?: boolean;
+  readonly laterLesson?: boolean;
 }
 
 interface ShownToday {
   readonly server: FakeAuthServer;
   readonly queryClient: QueryClient;
   readonly tabs: RoomTabs;
+  readonly scheduler: ManualScheduler;
 }
 
 async function showToday({
   state = 'active',
   joinRequests = 0,
   firstLoadFails = false,
+  laterLesson = false,
 }: TodaySetup = {}): Promise<ShownToday> {
   const server = new FakeAuthServer();
   server.addAccount({ id: 'tutor-1', name: 'Maria', email: tutorEmail, password, role: 'tutor', state });
   server.addLesson(lessonDetail, [tutorEmail]);
   server.addCalendarItem(tutorEmail, lessonItem);
+  if (laterLesson) {
+    server.addCalendarItem(tutorEmail, laterLessonItem);
+  }
   server.addQueueItem(tutorEmail, queueItem);
   for (let index = 1; index <= joinRequests; index += 1) {
     server.addJoinRequest(tutorEmail, joinRequest(index));
@@ -196,7 +210,13 @@ async function showToday({
   if (!firstLoadFails && state === 'active') {
     await screen.findByRole('link', { name: 'Anna' });
   }
-  return { server, queryClient, tabs };
+  return { server, queryClient, tabs, scheduler };
+}
+
+function filledJoinRows(): readonly string[] {
+  return [...document.querySelectorAll('[data-part="join"][data-emphasis="filled"]')].map(
+    (control) => control.closest('li')?.textContent ?? '',
+  );
 }
 
 function requestedPaths(server: FakeAuthServer): readonly string[] {
@@ -229,6 +249,38 @@ describe('Today on GET /home', () => {
     expect(requestedPaths(shown.server).filter((path) => replacedReads.includes(path))).toEqual([]);
     expect(lessonLink).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Anna' })).toBeTruthy();
+  });
+
+  test('each section link stands beside its heading, and empty join requests say where requests come from', async () => {
+    await showToday();
+
+    const sectionHeads = [
+      { heading: /^Needs checking/, link: 'Open review queue' },
+      { heading: 'Upcoming deadlines', link: 'All issued work' },
+      { heading: 'Unread messages', link: /^All messages/ },
+    ].map(({ heading, link }) => {
+      const head = screen.getByRole('heading', { level: 2, name: heading }).parentElement;
+      return head?.contains(screen.getByRole('link', { name: link })) === true;
+    });
+
+    expect(sectionHeads).toEqual([true, true, true]);
+    expect(screen.getByText('No new requests.')).toBeTruthy();
+    expect(screen.getByText('Requests arrive here when a student enters your tutor code.')).toBeTruthy();
+  });
+
+  test('the filled Join moves to the next lesson once the current lesson’s join window ends', async () => {
+    const shown = await showToday({ laterLesson: true });
+    await screen.findByRole('link', { name: /Reading club/ });
+    const filledBefore = filledJoinRows();
+
+    act(() => {
+      shown.scheduler.pass(66 * minute);
+    });
+
+    await waitFor(() => {
+      expect(filledJoinRows()).toEqual([expect.stringContaining('Reading club')]);
+    });
+    expect(filledBefore).toEqual([expect.stringContaining('Conversation practice')]);
   });
 
   test('a failed first load shows the load failure with Retry under the page title and no panel', async () => {

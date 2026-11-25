@@ -9,8 +9,10 @@ import { ActionNotice } from '../../components/ui/ActionNotice.tsx';
 import { ActionMenu, type MenuItem } from '../../components/ui/ActionMenu.tsx';
 import { Avatar } from '../../components/ui/Avatar.tsx';
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
+import { EmptyState } from '../../components/ui/EmptyState.tsx';
 import {
   ActionButton,
+  FormActions,
   FormAlert,
   SubmitButton,
   TextField,
@@ -20,7 +22,6 @@ import {
   primaryButtonClass,
   quietButtonClass,
   stringField,
-  textButtonClass,
 } from '../../components/ui/Form.tsx';
 import { MoreIcon } from '../../components/ui/icons.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
@@ -36,9 +37,9 @@ import { useSignedInAccount } from '../../lib/api/session.ts';
 import type { components } from '../../lib/api/schema.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import { LessonList } from '../schedule/LessonList.tsx';
-import { ScheduleLessonAction } from '../schedule/ScheduleLessonAction.tsx';
+import { NewLessonButton, ScheduleLessonAction, useFocusHeadingWhenFilled } from '../schedule/ScheduleLessonAction.tsx';
 import { GroupIssues, GroupMemberNote } from '../homework/GroupIssues.tsx';
-import { homeworkTextLoaders } from '../homework/IssueAssignment.tsx';
+import { IssuedNotice, homeworkTextLoaders, useIssuedResult } from '../homework/IssueAssignment.tsx';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { groupsTextLoaders } from './texts.ts';
 import { studentsKey } from '../students/api.ts';
@@ -59,6 +60,8 @@ import { type Chosen, MemberPicker, toggled, trimmed } from './MemberPicker.tsx'
 import { chosenAfterRefusal, membershipRefusal } from './NewGroupDialog.tsx';
 
 const groupNewLessonOpener = 'group-new-lesson';
+const groupEmptyNewLessonOpener = 'group-empty-new-lesson';
+const sectionHeadClass = 'flex w-full flex-wrap items-baseline justify-between gap-3';
 
 type GroupPatch = components['schemas']['GroupPatch'];
 
@@ -254,7 +257,7 @@ function DetailsDialog({
           error={fieldMessage(t, error, 'name')}
         />
         <ColourField defaultColour={group.colour} reloads={reloads} />
-        <div className="flex flex-wrap gap-3">
+        <FormActions>
           <SubmitButton busy={action.busy}>{t('groups.save')}</SubmitButton>
           <ActionButton
             busy={false}
@@ -263,11 +266,11 @@ function DetailsDialog({
               action.reset();
               onClose();
             }}
-            className={textButtonClass}
+            className={quietButtonClass}
           >
             {t('groups.cancel')}
           </ActionButton>
-        </div>
+        </FormActions>
       </form>
     </ModalDialog>
   );
@@ -359,7 +362,7 @@ function AddMembersDialog({
             setChosen((current) => toggled(current, id, name));
           }}
         />
-        <div className="flex flex-wrap gap-3">
+        <FormActions>
           <ActionButton
             busy={action.busy}
             unavailable={chosen.size === 0 || slots === 0}
@@ -368,10 +371,10 @@ function AddMembersDialog({
           >
             {t('groups.addSubmit')}
           </ActionButton>
-          <ActionButton busy={false} unavailable={action.busy} onClick={close} className={textButtonClass}>
+          <ActionButton busy={false} unavailable={action.busy} onClick={close} className={quietButtonClass}>
             {t('groups.cancel')}
           </ActionButton>
-        </div>
+        </FormActions>
       </div>
     </ModalDialog>
   );
@@ -483,16 +486,35 @@ function Members({
 
   return (
     <section aria-labelledby={headingId} className="flex flex-col items-start gap-3">
-      <h2 ref={heading} id={headingId} tabIndex={-1} className="text-heading outline-none">
-        {t('groups.members')}
-      </h2>
+      <div className={sectionHeadClass}>
+        <h2 ref={heading} id={headingId} tabIndex={-1} className="text-heading outline-none">
+          {t('groups.members')}
+        </h2>
+        {archived ? null : (
+          <button
+            ref={opener}
+            type="button"
+            onClick={() => {
+              setNotice(null);
+              setDialogOpen(true);
+            }}
+            className={quietButtonClass}
+          >
+            {t('groups.add')}
+          </button>
+        )}
+      </div>
       <p className="text-small text-text-muted">
         {t('groups.memberCountOf', { count: group.members.length, limit: groupMemberLimit })}
       </p>
       <Refusal state={action.state} />
       {notice === null ? null : <MembershipNoticeView notice={notice} busy={addBack.busy} onAddBack={addBackRemoved} />}
       {group.members.length === 0 ? (
-        <p className="text-text-muted">{t('groups.noMembers')}</p>
+        <EmptyState
+          level={3}
+          title={t('groups.noMembers')}
+          sentence={t(archived ? 'groups.archivedNoNewMembers' : 'groups.noMembersNext')}
+        />
       ) : (
         <ul ref={listRef} aria-labelledby={headingId} className="w-full border-b border-border">
           {group.members.map((member) => (
@@ -520,27 +542,15 @@ function Members({
                 }}
                 className={quietButtonClass}
               >
-                {t('groups.remove')}
+                {t('groups.removeFromGroup')}
               </ActionButton>
             </li>
           ))}
         </ul>
       )}
-      {archived ? (
+      {archived && group.members.length > 0 ? (
         <p className="text-small text-text-muted">{t('groups.archivedNoNewMembers')}</p>
-      ) : (
-        <button
-          ref={opener}
-          type="button"
-          onClick={() => {
-            setNotice(null);
-            setDialogOpen(true);
-          }}
-          className={quietButtonClass}
-        >
-          {t('groups.add')}
-        </button>
-      )}
+      ) : null}
       <AddMembersDialog
         group={group}
         note={memberNote}
@@ -686,7 +696,7 @@ function GroupActions({
           </h2>
           <p id={consequenceId}>{t('groups.archiveConsequence', { count: group.future_lesson_count })}</p>
           <Refusal state={action.state} />
-          <div className="flex flex-wrap gap-3">
+          <FormActions>
             <ActionButton
               busy={action.busy}
               onClick={() => {
@@ -701,11 +711,11 @@ function GroupActions({
               busy={false}
               unavailable={action.busy}
               onClick={close}
-              className={textButtonClass}
+              className={quietButtonClass}
             >
               {t('groups.cancel')}
             </ActionButton>
-          </div>
+          </FormActions>
         </div>
       </ModalDialog>
     </>
@@ -716,23 +726,36 @@ function GroupLessons({ group }: { readonly group: GroupDetail }): ReactElement 
   const { t } = useTranslation();
   const me = useSignedInAccount();
   const headingId = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
+  const empty = group.next_lessons.length === 0;
+  useFocusHeadingWhenFilled(empty, heading);
   return (
     <section aria-labelledby={headingId} className="flex flex-col items-start gap-3">
-      <h2 id={headingId} className="text-heading">
-        {t('lessons.next')}
-      </h2>
-      {group.next_lessons.length === 0 ? (
-        <p className="text-text-muted">{t('lessons.noNext')}</p>
+      <div className={sectionHeadClass}>
+        <h2 ref={heading} id={headingId} tabIndex={-1} className="text-heading outline-none">
+          {t('lessons.next')}
+        </h2>
+        <Link to="/schedule" className={linkClass}>
+          {t('lessons.openSchedule')}
+        </Link>
+      </div>
+      {empty ? (
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-text-muted">{t('lessons.noNext')}</p>
+          {group.archived_at === null && me.state === 'active' ? (
+            <NewLessonButton
+              audience={{ kind: 'group', id: group.id, name: group.name }}
+              opener={groupEmptyNewLessonOpener}
+            >
+              {t('groups.newLessonForGroup')}
+            </NewLessonButton>
+          ) : null}
+        </div>
       ) : (
         <div className="w-full">
           <LessonList items={group.next_lessons} label={t('lessons.next')} me={me} showAudience={false} />
         </div>
       )}
-      <p>
-        <Link to="/schedule" className={linkClass}>
-          {t('lessons.openSchedule')}
-        </Link>
-      </p>
     </section>
   );
 }
@@ -935,6 +958,13 @@ export function GroupPage(): ReactElement {
   if (outcome !== null && outcome.id !== groupId) {
     setOutcome(null);
   }
+  const issuedId = useIssuedResult();
+  const [issued, setIssued] = useState<{ readonly id: string; readonly count: number } | null>(() =>
+    issuedId === null ? null : { id: groupId, count: 1 },
+  );
+  if (issued !== null && issued.id !== groupId) {
+    setIssued(null);
+  }
   const shown = error === null && groupTexts.ready ? (query.data ?? null) : null;
   const noticesShown = groupTexts.ready && !notFound;
   const handlers: GroupHandlers = {
@@ -1031,6 +1061,9 @@ export function GroupPage(): ReactElement {
       }
     >
       {changed === null || !noticesShown ? null : <FocusedNotice key={changed.count} message={t('groups.changed')} />}
+      {issued === null || !noticesShown || !homeworkTexts.ready ? null : (
+        <IssuedNotice key={issued.count} issueId={null} />
+      )}
       {outcome === null || !noticesShown ? null : (
         <OutcomeNotice
           key={outcome.count}

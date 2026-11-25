@@ -557,6 +557,30 @@ async function tutorWithSoonLessons(
   return { tutor, zone, lessonIds };
 }
 
+async function tutorWithOverlappingLessonsInTheirWindows(
+  deployment: Deployment,
+  now: number,
+  soon: readonly SoonLesson[],
+): Promise<TestAccount> {
+  const zone = daytimeZone(now);
+  const tutor = await seedVerifiedUser(deployment, 'Tutor', 'en');
+  await setTimezone(deployment, tutor, zone);
+  const { cardId } = await seedActiveStudent(deployment, tutor, 'Vera Student', 'en');
+  for (const lesson of soon) {
+    const start = now + lesson.minutesAhead * 60_000;
+    const answer = await callApi(deployment, await accessToken(deployment, tutor), 'POST', '/lessons', {
+      relationship_id: cardId,
+      title: lesson.title,
+      date: localDate(start, zone),
+      start: localClock(start, zone),
+      duration_minutes: 30,
+      allow_overlap: true,
+    });
+    expect(answer.status).toBe(201);
+  }
+  return tutor;
+}
+
 function lessonRow(page: Page, title: string): ReturnType<Page['getByRole']> {
   return lessons(page).getByRole('listitem').filter({ hasText: title });
 }
@@ -630,6 +654,27 @@ test.describe('Join on Today', () => {
     await expect(lessons(page).getByRole('button')).toHaveCount(0);
     await expect(lessonRow(page, 'Cancelled lesson')).not.toContainText('Room opens at');
     await expect(lessonRow(page, 'Last lesson')).not.toContainText('Room opens at');
+  });
+
+  test("only the next lesson's Join is filled", async ({ page, deployment, control }) => {
+    const now = await control.now();
+    const tutor = await tutorWithOverlappingLessonsInTheirWindows(deployment, now, [
+      { title: 'First lesson', minutesAhead: 2 },
+      { title: 'Second lesson', minutesAhead: 5 },
+      { title: 'Third lesson', minutesAhead: 8 },
+    ]);
+    await signInThroughTheApi(page, tutor);
+
+    await openToday(page, now);
+
+    await expect(lessons(page).getByRole('button', { name: 'Join lesson', exact: true })).toHaveCount(3);
+    await expect(lessons(page).locator('[data-emphasis="filled"]').getByRole('button')).toHaveCount(1);
+    await expect(lessonRow(page, 'First lesson').locator('[data-emphasis="filled"]').getByRole('button')).toHaveText(
+      'Join lesson',
+    );
+    await expect(lessons(page).locator('[data-emphasis="quiet"]').getByRole('button')).toHaveCount(2);
+    await expect(lessonRow(page, 'Second lesson').locator('[data-emphasis="quiet"]')).toHaveCount(1);
+    await expect(lessonRow(page, 'Third lesson').locator('[data-emphasis="quiet"]')).toHaveCount(1);
   });
 });
 

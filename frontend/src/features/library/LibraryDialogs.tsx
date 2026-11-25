@@ -19,11 +19,12 @@ import {
   ActionButton,
   FormAlert,
   SelectChevron,
-  dangerButtonClass,
+  FormActions,
+  dangerFilledButtonClass,
   fieldClass,
   primaryButtonClass,
+  quietButtonClass,
   selectClass,
-  textButtonClass,
 } from '../../components/ui/Form.tsx';
 import { refusalText } from '../../components/ui/Refusal.tsx';
 import { hasUnknownOutcome } from '../../components/ui/settled.ts';
@@ -48,8 +49,10 @@ export function targetName(target: LibraryTarget): string {
   return target.kind === 'folder' ? target.folder.name : target.item.title;
 }
 
-export function libraryRowOpener(key: string): string {
-  return `library-row:${key}`;
+export type RowControl = 'menu' | 'visible' | 'link';
+
+export function libraryRowOpener(key: string, control: RowControl): string {
+  return control === 'menu' ? `library-row:${key}` : `library-row:${key}:${control}`;
 }
 
 export function rowKey(target: LibraryTarget): string {
@@ -297,14 +300,14 @@ function NameForm({
           input={input}
         />
       </form>
-      <div className="flex flex-wrap gap-3">
+      <FormActions>
         <ActionButton type="submit" form={formId} busy={action.busy} className={primaryButtonClass}>
           {subject.kind === 'newFolder' ? t('library.create') : t('library.save')}
         </ActionButton>
-        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={textButtonClass}>
+        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={quietButtonClass}>
           {t('library.cancel')}
         </ActionButton>
-      </div>
+      </FormActions>
     </div>
   );
 }
@@ -461,14 +464,14 @@ export function MoveForm({
           <SelectChevron />
         </span>
       </form>
-      <div className="flex flex-wrap gap-3">
+      <FormActions>
         <ActionButton type="submit" form={formId} busy={action.busy} className={primaryButtonClass}>
           {t('library.move')}
         </ActionButton>
-        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={textButtonClass}>
+        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={quietButtonClass}>
           {t('library.cancel')}
         </ActionButton>
-      </div>
+      </FormActions>
     </div>
   );
 }
@@ -478,6 +481,13 @@ function deleteQuestion(t: TFunction, target: LibraryTarget): string {
     return t('library.deleteFolder');
   }
   return target.item.kind === 'material' ? t('library.deleteMaterial') : t('library.deleteTemplate');
+}
+
+function deleteLabel(t: TFunction, target: LibraryTarget): string {
+  if (target.kind === 'folder') {
+    return t('library.confirmDeleteFolder');
+  }
+  return target.item.kind === 'material' ? t('library.confirmDeleteMaterial') : t('library.confirmDeleteTemplate');
 }
 
 export function DeleteDialog({
@@ -548,26 +558,26 @@ export function DeleteDialog({
           </h2>
           <p id={textId}>{deleteQuestion(t, target)}</p>
           {refusal === null ? null : <FormAlert key={refusals}>{refusal}</FormAlert>}
-          <div className="flex flex-wrap gap-3">
-            <ActionButton
-              ref={cancel}
-              busy={false}
-              unavailable={action.busy}
-              onClick={close}
-              className={textButtonClass}
-            >
-              {t('library.cancel')}
-            </ActionButton>
+          <FormActions>
             <ActionButton
               busy={action.busy}
               onClick={() => {
                 remove(target);
               }}
-              className={dangerButtonClass}
+              className={dangerFilledButtonClass}
             >
-              {t('library.delete')}
+              {deleteLabel(t, target)}
             </ActionButton>
-          </div>
+            <ActionButton
+              ref={cancel}
+              busy={false}
+              unavailable={action.busy}
+              onClick={close}
+              className={quietButtonClass}
+            >
+              {t('library.cancel')}
+            </ActionButton>
+          </FormActions>
         </div>
       )}
     </ModalDialog>
@@ -734,7 +744,7 @@ function UploadForm({
           input={input}
         />
       </form>
-      <div className="flex flex-wrap gap-3">
+      <FormActions>
         <ActionButton
           type="submit"
           form={formId}
@@ -744,10 +754,10 @@ function UploadForm({
         >
           {t('library.save')}
         </ActionButton>
-        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={textButtonClass}>
+        <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={quietButtonClass}>
           {t('library.cancel')}
         </ActionButton>
-      </div>
+      </FormActions>
     </div>
   );
 }
@@ -806,11 +816,11 @@ export function UploadPromptDialog({
           {t('library.upload')}
         </h2>
         <ConfirmationPrompt reason="upload" />
-        <div>
-          <ActionButton busy={false} onClick={onClose} className={textButtonClass}>
+        <FormActions>
+          <ActionButton busy={false} onClick={onClose} className={quietButtonClass}>
             {t('library.close')}
           </ActionButton>
-        </div>
+        </FormActions>
       </div>
     </ModalDialog>
   );

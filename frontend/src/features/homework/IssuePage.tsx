@@ -18,14 +18,15 @@ import {
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
+  FormActions,
   FormAlert,
   SelectChevron,
   dangerButtonClass,
   fieldClass,
   linkClass,
   primaryButtonClass,
+  quietButtonClass,
   selectClass,
-  textButtonClass,
 } from '../../components/ui/Form.tsx';
 import { MoreIcon } from '../../components/ui/icons.tsx';
 import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
@@ -470,7 +471,7 @@ function DialogButtons({
 }): ReactElement {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-wrap gap-3">
+    <FormActions>
       <ActionButton busy={busy} onClick={onConfirm} className={danger ? dangerButtonClass : primaryButtonClass}>
         {confirm}
       </ActionButton>
@@ -478,12 +479,12 @@ function DialogButtons({
         busy={false}
         unavailable={busy}
         onClick={onCancel}
-        className={textButtonClass}
+        className={quietButtonClass}
         {...(cancelRef === undefined ? {} : { ref: cancelRef })}
       >
         {t('homework.cancel')}
       </ActionButton>
-    </div>
+    </FormActions>
   );
 }
 

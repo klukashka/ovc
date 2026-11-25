@@ -14,6 +14,7 @@ import { issueAddress } from './api.ts';
 import { type IssuePreset, IssueAssignmentButton, homeworkTextLoaders } from './IssueAssignment.tsx';
 
 const lessonIssueOpener = 'lesson-issue';
+const lessonEmptyIssueOpener = 'lesson-issue-empty';
 
 function IssueRow({ issue, now }: { readonly issue: TutorLessonIssue; readonly now: number }): ReactElement {
   const { t } = useTranslation();
@@ -75,7 +76,16 @@ function LessonIssueList({
           {t('homework.refusals.lessonLimit')}
         </p>
       ) : null}
-      {issues.length === 0 ? <p className="text-text-muted">{t('homework.empty.lesson')}</p> : null}
+      {issues.length === 0 ? (
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-text-muted">{t('homework.empty.lesson')}</p>
+          {preset === null ? null : (
+            <IssueAssignmentButton opener={lessonEmptyIssueOpener} preset={preset}>
+              {t('homework.empty.issueForLesson')}
+            </IssueAssignmentButton>
+          )}
+        </div>
+      ) : null}
       <ul ref={listRef} className={issues.length === 0 ? 'hidden' : 'flex flex-col border-b border-border'}>
         {issues.map((issue) => (
           <IssueRow key={issue.issueId} issue={issue} now={now} />

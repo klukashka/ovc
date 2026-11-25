@@ -40,11 +40,13 @@ function earliestDeadline(items: readonly IssueItem[]): string | null {
 function Panel({
   title,
   count,
+  action,
   rowKeys,
   children,
 }: {
   readonly title: string;
   readonly count: ReactNode;
+  readonly action: ReactNode;
   readonly rowKeys: readonly string[];
   readonly children: (listRef: RefObject<HTMLUListElement | null>) => ReactNode;
 }): ReactElement {
@@ -54,9 +56,12 @@ function Panel({
   useFocusAfterRemovedRow(listRef, rowKeys, '[data-row-link]', heading);
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 ref={heading} id={headingId} tabIndex={-1} className="text-heading outline-none">
-        {title} {count}
-      </h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+        <h2 ref={heading} id={headingId} tabIndex={-1} className="text-heading outline-none">
+          {title} {count}
+        </h2>
+        {action}
+      </div>
       {children(listRef)}
     </section>
   );
@@ -70,6 +75,11 @@ function NeedsChecking({ part }: { readonly part: NeedsCheckingPart }): ReactEle
     <Panel
       title={t('homeworkPanels.needsChecking')}
       count={<span className="tabular text-text-muted">{shownCount(count)}</span>}
+      action={
+        <Link to="/homework/review" className={linkClass}>
+          {t('homeworkPanels.openQueue')}
+        </Link>
+      }
       rowKeys={items.map((item) => item.submission_id)}
     >
       {(listRef) => (
@@ -108,11 +118,6 @@ function NeedsChecking({ part }: { readonly part: NeedsCheckingPart }): ReactEle
               </li>
             ))}
           </ul>
-          <p>
-            <Link to="/homework/review" className={linkClass}>
-              {t('homeworkPanels.openQueue')}
-            </Link>
-          </p>
         </>
       )}
     </Panel>
@@ -139,7 +144,16 @@ function UpcomingDeadlines({
   });
   const now = useNow();
   return (
-    <Panel title={t('homeworkPanels.deadlines')} count={null} rowKeys={items.map((item) => item.id)}>
+    <Panel
+      title={t('homeworkPanels.deadlines')}
+      count={null}
+      action={
+        <Link to="/homework/issued" className={linkClass}>
+          {t('homeworkPanels.allIssued')}
+        </Link>
+      }
+      rowKeys={items.map((item) => item.id)}
+    >
       {(listRef) => (
         <>
           {items.length === 0 ? <p className="text-text-muted">{t('homeworkPanels.noDeadlines')}</p> : null}
@@ -172,11 +186,6 @@ function UpcomingDeadlines({
               </li>
             ))}
           </ul>
-          <p>
-            <Link to="/homework/issued" className={linkClass}>
-              {t('homeworkPanels.allIssued')}
-            </Link>
-          </p>
         </>
       )}
     </Panel>

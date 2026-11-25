@@ -93,12 +93,7 @@ async function showRefusedAttachments(names: readonly string[]): Promise<void> {
 }
 
 function removeButtonOf(name: string): HTMLElement {
-  const row = screen.getByText(name, { exact: true }).closest('li');
-  const button = row?.querySelector<HTMLElement>('button:last-of-type') ?? null;
-  if (button === null) {
-    throw new Error(`no Remove button for ${name}`);
-  }
-  return button;
+  return screen.getByRole('button', { name: `Remove ${name}` });
 }
 
 describe('focus on the New task page', () => {
@@ -159,6 +154,18 @@ describe('focus on the New task page', () => {
     fireEvent.click(removeButtonOf('only.pdf'));
 
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Choose files' }));
+  });
+
+  test('attached files show as tiles named by their files, with the extension and no picture of the file', async () => {
+    const names = ['first.pdf', 'second.pdf'];
+
+    await showRefusedAttachments(names);
+
+    expect(screen.getByRole('listitem', { name: 'first.pdf' })).toBeDefined();
+    expect(screen.getByRole('listitem', { name: 'second.pdf' })).toBeDefined();
+    expect(screen.getAllByText('PDF')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Remove first.pdf' })).toBeDefined();
+    expect(document.querySelectorAll('[data-attachment-tile] img')).toHaveLength(0);
   });
 
   test('Retry moves focus to the Remove button of the same file', async () => {

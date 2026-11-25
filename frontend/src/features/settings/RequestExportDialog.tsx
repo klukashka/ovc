@@ -12,9 +12,9 @@ import {
   errorMessage,
   fieldClass,
   fieldMessage,
+  quietButtonClass,
   retryAfterSeconds,
   stringField,
-  textButtonClass,
 } from '../../components/ui/Form.tsx';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type Me, useSignedInAccount } from '../../lib/api/session.ts';
@@ -153,7 +153,7 @@ export function RequestExportForm({
       </div>
       <FormActions>
         <SubmitButton busy={sending}>{t('myData.submit')}</SubmitButton>
-        <ActionButton busy={false} unavailable={sending} onClick={onClose} className={textButtonClass}>
+        <ActionButton busy={false} unavailable={sending} onClick={onClose} className={quietButtonClass}>
           {t('settings.cancel')}
         </ActionButton>
       </FormActions>

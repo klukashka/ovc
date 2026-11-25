@@ -6,6 +6,7 @@ import type { Locator, Page } from '@playwright/test';
 import { type TestAccount, newTestAccount, registerTutor, signInThroughTheApi, testNetAddress } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { chooseFromPageMenu, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { createReadyTemplate } from './homework.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { accessToken, callApi, inSeedBatches } from './tutoring.ts';
 
@@ -133,6 +134,10 @@ function items(page: Page): Locator {
   return page.getByRole('table', { name: 'Library items', exact: true });
 }
 
+function libraryRow(page: Page, title: string): Locator {
+  return items(page).getByRole('row').filter({ hasText: title });
+}
+
 function dialog(page: Page): Locator {
   return page.getByRole('dialog');
 }
@@ -148,6 +153,12 @@ function menuButton(page: Page): Locator {
 async function chooseRowAction(page: Page, title: string, action: string): Promise<void> {
   await page.getByRole('button', { name: `Actions for ${title}`, exact: true }).click();
   await page.locator('main [aria-expanded="true"] + div').getByRole('button', { name: action, exact: true }).click();
+}
+
+const transparent = 'rgba(0, 0, 0, 0)';
+
+async function backgroundOf(locator: Locator): Promise<string> {
+  return locator.evaluate((element) => getComputedStyle(element).backgroundColor);
 }
 
 async function submitNewFolder(page: Page, name: string): Promise<void> {
@@ -298,6 +309,23 @@ test.describe('library folders', () => {
     await expect(dialog(page)).toContainText('Delete this folder?');
   });
 
+  test('the Delete confirmation shows its filled consequence first and a quiet Cancel after it', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await createFolder(deployment, tutor, 'Grammar');
+    await openLibrary(page, tutor);
+
+    await chooseRowAction(page, 'Grammar', 'Delete');
+
+    await expect(dialog(page).getByRole('button')).toHaveText(['Delete folder', 'Cancel']);
+    expect(await backgroundOf(dialog(page).getByRole('button', { name: 'Delete folder', exact: true }))).not.toBe(
+      transparent,
+    );
+    expect(await backgroundOf(dialog(page).getByRole('button', { name: 'Cancel', exact: true }))).toBe(transparent);
+  });
+
   test('deleting a folder that is not empty shows the refusal in the dialog', async ({
     page,
     deployment,
@@ -310,7 +338,7 @@ test.describe('library folders', () => {
     diagnostics.expectFailure({ method: 'DELETE', path: `/api/v1/library/folders/${grammar}`, status: 409 });
 
     await chooseRowAction(page, 'Grammar', 'Delete');
-    await dialog(page).getByRole('button', { name: 'Delete', exact: true }).click();
+    await dialog(page).getByRole('button', { name: 'Delete folder', exact: true }).click();
 
     await expect(dialog(page).getByText('Only an empty folder can be deleted.')).toBeFocused();
   });
@@ -322,7 +350,7 @@ test.describe('library folders', () => {
     await openLibrary(page, tutor);
 
     await chooseRowAction(page, 'Alpha', 'Delete');
-    await dialog(page).getByRole('button', { name: 'Delete', exact: true }).click();
+    await dialog(page).getByRole('button', { name: 'Delete folder', exact: true }).click();
 
     await expect(items(page).getByRole('link', { name: 'Beta', exact: true })).toBeFocused();
     await expect(items(page).getByRole('link')).toHaveText(['Beta']);
@@ -503,7 +531,7 @@ test.describe('library materials', () => {
 
     await chooseRowAction(page, 'Chapter one', 'Delete');
     const question = await dialog(page).textContent();
-    await dialog(page).getByRole('button', { name: 'Delete', exact: true }).click();
+    await dialog(page).getByRole('button', { name: 'Delete material', exact: true }).click();
 
     expect(question).toContain('Delete this material? Lessons and assignments that use it keep the file.');
     await expect(page.getByText('This folder is empty')).toBeVisible();
@@ -512,6 +540,46 @@ test.describe('library materials', () => {
 });
 
 test.describe('library templates', () => {
+  test('a ready template shows Issue in its row, an incomplete one Open, and folders and materials only their menu', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await createFolder(deployment, tutor, 'Grammar');
+    await createMaterial(deployment, tutor, 'Chapter one', null);
+    await createReadyTemplate(deployment, tutor, 'Fractions');
+    await createTemplate(deployment, tutor, 'Essay');
+
+    await openLibrary(page, tutor);
+
+    await expect(libraryRow(page, 'Fractions').getByRole('button')).toHaveCount(2);
+    await expect(libraryRow(page, 'Fractions').getByRole('button').first()).toHaveAccessibleName('Issue Fractions');
+    await expect(libraryRow(page, 'Essay').getByRole('button')).toHaveCount(2);
+    await expect(libraryRow(page, 'Essay').getByRole('button').first()).toHaveAccessibleName('Open Essay');
+    await expect(libraryRow(page, 'Grammar').getByRole('button')).toHaveCount(1);
+    await expect(libraryRow(page, 'Chapter one').getByRole('button')).toHaveCount(2);
+    await expect(libraryRow(page, 'Chapter one').getByRole('button').first()).toHaveAccessibleName('Chapter one');
+  });
+
+  test('the row’s Issue opens the Issue page with the template and Back returns focus to it', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const template = await createReadyTemplate(deployment, tutor, 'Fractions');
+    await openLibrary(page, tutor);
+    const issue = items(page).getByRole('button', { name: 'Issue Fractions', exact: true });
+
+    await issue.click();
+    await page.getByRole('heading', { level: 1, name: 'Issue assignment' }).waitFor();
+    const issueAddress = new URL(page.url());
+    await page.goBack();
+
+    expect(`${issueAddress.pathname}${issueAddress.search}`).toBe(`/homework/issue?template=${template.id}`);
+    await expect(page.getByRole('heading', { level: 1, name: 'Issue assignment' })).toBeHidden();
+    await expect(issue).toBeFocused();
+  });
+
   test('a template row shows its readiness and Duplicate focuses the copy', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     await createTemplate(deployment, tutor, 'Essay');
@@ -611,7 +679,7 @@ test.describe('library templates', () => {
 
     await chooseRowAction(page, 'Quiz', 'Delete');
     const question = await dialog(page).textContent();
-    await dialog(page).getByRole('button', { name: 'Delete', exact: true }).click();
+    await dialog(page).getByRole('button', { name: 'Delete assignment', exact: true }).click();
 
     expect(question).toContain('Delete this assignment? Files used only in it are deleted too.');
     await expect(items(page).getByRole('link', { name: 'Essay', exact: true })).toBeFocused();

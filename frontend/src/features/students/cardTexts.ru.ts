@@ -21,7 +21,7 @@ export const studentCardTexts: StudentCardTexts = {
   withdraw: 'Отозвать приглашение',
   withdrawTitle: 'Отозвать приглашение?',
   withdrawConsequence: 'Ссылка перестанет работать, а карточка будет удалена. Позже ученика можно добавить снова.',
-  withdrawSubmit: 'Отозвать',
+  withdrawSubmit: 'Отозвать приглашение',
   cancel: 'Отмена',
   end: 'Завершить занятия',
   removeTitle: 'Завершить занятия?',
@@ -40,4 +40,6 @@ export const studentCardTexts: StudentCardTexts = {
   inviteAgainHint: 'По новой ссылке ученик вернётся к этой карточке и её истории, но не в ваши группы.',
   inviteAgain: 'Пригласить снова',
   gone: 'Этого ученика больше нет в вашем списке.',
+  newLesson: 'Новый урок',
+  historyEmptyBody: 'Здесь будут все уроки с этим учеником, начиная с последних.',
 };

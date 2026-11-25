@@ -284,6 +284,7 @@ export const en: Resources = {
   joinRequests: {
     title: 'Join requests',
     empty: 'No new requests.',
+    emptyHint: 'Requests arrive here when a student enters your tutor code.',
     wantsToJoin: 'Wants to join',
     sentOn: 'Sent {date}',
     accept: 'Accept',
@@ -465,6 +466,7 @@ export const en: Resources = {
     searchLabel: 'Name or email',
     searchSubmit: 'Search',
     clearSearch: 'Clear search',
+    clearFilter: 'Clear filter',
     showMore: 'Show more',
     noEmail: 'No email',
     noMatches: 'Nobody matches the search.',

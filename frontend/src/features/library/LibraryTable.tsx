@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { ActionMenu, type MenuItem } from '../../components/ui/ActionMenu.tsx';
+import { quietButtonClass } from '../../components/ui/Form.tsx';
 import { useReturnFocus } from '../../components/ui/formRoute.ts';
 import {
   DataTable,
@@ -20,14 +21,16 @@ import { formatDate } from '../../lib/format/dates.ts';
 import type { Me } from '../../lib/api/session.ts';
 import { formatStorage } from '../settings/storageAmount.ts';
 import type { LibraryFolder, LibraryItem, LibraryPathEntry } from './api.ts';
-import { type LibraryTarget, libraryRowOpener, rowKey } from './LibraryDialogs.tsx';
+import { type LibraryTarget, type RowControl, libraryRowOpener, rowKey } from './LibraryDialogs.tsx';
 
 export type RowCommand = 'open' | 'issue' | 'rename' | 'move' | 'duplicate' | 'delete';
+
+type VisibleCommand = 'open' | 'issue';
 
 export interface RowHandlers {
   readonly busyRow: string | null;
   readonly issuable: boolean;
-  readonly onCommand: (command: RowCommand, target: LibraryTarget) => void;
+  readonly onCommand: (command: RowCommand, target: LibraryTarget, control: RowControl) => void;
 }
 
 export function folderAddress(folderId: string | null): string {
@@ -65,11 +68,11 @@ function RowMenu({
   const { t } = useTranslation();
   const key = rowKey(target);
   const menuButton = useRef<HTMLButtonElement>(null);
-  useReturnFocus(libraryRowOpener(key), menuButton);
+  useReturnFocus(libraryRowOpener(key, 'menu'), menuButton);
   const items: readonly MenuItem[] = commands.map((command) => ({
     label: command === 'issue' ? t('homework.issue') : t(`library.${command}`),
     onChoose: (): void => {
-      handlers.onCommand(command, target);
+      handlers.onCommand(command, target, 'menu');
     },
   }));
   return (
@@ -85,6 +88,56 @@ function RowMenu({
       </ActionMenu>
     </span>
   );
+}
+
+function VisibleAction({
+  target,
+  label,
+  command,
+  handlers,
+}: {
+  readonly target: LibraryTarget;
+  readonly label: string;
+  readonly command: VisibleCommand;
+  readonly handlers: RowHandlers;
+}): ReactElement {
+  const { t } = useTranslation();
+  const key = rowKey(target);
+  const button = useRef<HTMLButtonElement>(null);
+  useReturnFocus(libraryRowOpener(key, 'visible'), button);
+  const unavailable = handlers.busyRow !== null;
+  return (
+    <span className="hidden tablet:inline-flex">
+      <button
+        ref={button}
+        type="button"
+        data-row-action={command}
+        aria-disabled={unavailable ? true : undefined}
+        onClick={() => {
+          if (!unavailable) {
+            handlers.onCommand(command, target, 'visible');
+          }
+        }}
+        className={quietButtonClass}
+      >
+        {command === 'issue' ? t('library.issueRow') : t('library.open')}
+        <span className="sr-only">
+          {' '}
+          <span dir="auto">{label}</span>
+        </span>
+      </button>
+    </span>
+  );
+}
+
+function visibleCommand(item: LibraryItem, issuable: boolean): VisibleCommand | null {
+  if (item.kind === 'material') {
+    return null;
+  }
+  if (item.ready !== true) {
+    return 'open';
+  }
+  return issuable ? 'issue' : null;
 }
 
 function FolderRow({
@@ -175,6 +228,7 @@ function ItemRow({
 }): ReactElement {
   const target: LibraryTarget = { kind: 'item', item };
   const material = item.kind === 'material';
+  const visible = visibleCommand(item, handlers.issuable);
   return (
     <tr data-row={rowKey(target)} className={tableRowClass}>
       <th scope="row" className={primaryCellClass}>
@@ -189,7 +243,7 @@ function ItemRow({
                 data-row-link=""
                 dir="auto"
                 onClick={() => {
-                  handlers.onCommand('open', target);
+                  handlers.onCommand('open', target, 'link');
                 }}
                 className={`text-start ${rowLinkClass}`}
               >
@@ -219,12 +273,17 @@ function ItemRow({
         <ItemDate item={item} me={me} />
       </td>
       <td className={endCellClass}>
-        <RowMenu
-          target={target}
-          label={item.title}
-          commands={commandsOf(item, handlers.issuable)}
-          handlers={handlers}
-        />
+        <span className="flex items-center justify-end gap-2">
+          {visible === null ? null : (
+            <VisibleAction target={target} label={item.title} command={visible} handlers={handlers} />
+          )}
+          <RowMenu
+            target={target}
+            label={item.title}
+            commands={commandsOf(item, handlers.issuable)}
+            handlers={handlers}
+          />
+        </span>
       </td>
     </tr>
   );
@@ -247,11 +306,11 @@ export function LibraryTable({
 }): ReactElement {
   const { t } = useTranslation();
   const columns: readonly TableColumn[] = [
-    { key: 'name', label: t('library.columns.name'), width: 'w-9/12 tablet:w-4/12' },
+    { key: 'name', label: t('library.columns.name'), width: 'w-9/12 tablet:w-3/12' },
     { key: 'details', label: t('library.columns.details'), secondary: true, width: 'w-3/12' },
     { key: 'state', label: t('library.columns.state'), secondary: true, width: 'w-2/12' },
     { key: 'edited', label: t('library.columns.edited'), secondary: true, width: 'w-2/12' },
-    { key: 'actions', label: t('library.columns.actions'), visuallyHidden: true, width: 'w-3/12 tablet:w-1/12' },
+    { key: 'actions', label: t('library.columns.actions'), visuallyHidden: true, width: 'w-3/12 tablet:w-2/12' },
   ];
   return (
     <DataTable label={label} columns={columns} bodyRef={bodyRef}>

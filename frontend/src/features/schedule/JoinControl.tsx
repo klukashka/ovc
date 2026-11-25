@@ -1,7 +1,7 @@
 import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ActionButton, primaryButtonClass } from '../../components/ui/Form.tsx';
+import { ActionButton, primaryButtonClass, quietButtonClass } from '../../components/ui/Form.tsx';
 import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { focusHeadingIfLost, focusIsLost } from '../../components/ui/LoadState.tsx';
 import type { Me } from '../../lib/api/session.ts';
@@ -12,17 +12,25 @@ import { roomOfferOf } from './roomState.ts';
 
 export type JoinLesson = Pick<LessonDetail, 'id' | 'status' | 'starts_at' | 'ends_at' | 'room_open'>;
 
+export type JoinEmphasis = 'filled' | 'quiet';
+
+const emphasisClass: Readonly<Record<JoinEmphasis, string>> = {
+  filled: primaryButtonClass,
+  quiet: quietButtonClass,
+};
+
 interface JoinControlProps {
   readonly lesson: JoinLesson;
   readonly me: Me;
   readonly showsOpensAt: boolean;
+  readonly emphasis?: JoinEmphasis;
 }
 
 export function JoinControl(props: JoinControlProps): ReactElement | null {
   return props.lesson.status === 'cancelled' || props.lesson.status === 'ended' ? null : <OpenJoinControl {...props} />;
 }
 
-function OpenJoinControl({ lesson, me, showsOpensAt }: JoinControlProps): ReactElement | null {
+function OpenJoinControl({ lesson, me, showsOpensAt, emphasis = 'filled' }: JoinControlProps): ReactElement | null {
   const { t } = useTranslation();
   const now = useLessonClock(lesson);
   const offer = roomOfferOf(lesson, phaseOf(lesson, now), me.role);
@@ -87,11 +95,16 @@ function OpenJoinControl({ lesson, me, showsOpensAt }: JoinControlProps): ReactE
           ? t(offer.label)
           : t('lesson.join');
   return (
-    <div ref={container} className="mt-2 flex flex-col items-stretch gap-2 tablet:items-start" data-part="join">
+    <div
+      ref={container}
+      className="mt-2 flex flex-col items-stretch gap-2 tablet:items-start"
+      data-part="join"
+      data-emphasis={emphasis}
+    >
       {text === null ? null : <p className="text-small text-strong">{text}</p>}
       {session === 'inTab' ? <p className="text-small text-text-muted">{t('lesson.openInAnotherTab')}</p> : null}
       {showsButton ? (
-        <ActionButton ref={button} busy={session === 'joining'} onClick={press} className={primaryButtonClass}>
+        <ActionButton ref={button} busy={session === 'joining'} onClick={press} className={emphasisClass[emphasis]}>
           {label}
         </ActionButton>
       ) : null}

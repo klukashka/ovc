@@ -1,7 +1,7 @@
 import type { ParseKeys } from 'i18next';
 import { type ReactElement, type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, Outlet, useMatch, useNavigate } from 'react-router';
+import { Link, Outlet, useLocation, useMatch, useNavigate } from 'react-router';
 
 import { useUnreadChannels } from '../../features/messages/unread.ts';
 import { provisionallyLinked, useProvisionalLink } from '../../routes/provisionalLink.ts';
@@ -179,6 +179,12 @@ export function SignedInFrame({
   if ((wide || phone) && overlayOpen) {
     setOverlayOpen(false);
   }
+  const { pathname } = useLocation();
+  const [overlayPath, setOverlayPath] = useState(pathname);
+  if (overlayPath !== pathname) {
+    setOverlayPath(pathname);
+    setOverlayOpen(false);
+  }
   const [sheetOpen, setSheetOpen] = useState(false);
   if (!phoneBars && sheetOpen) {
     setSheetOpen(false);
@@ -260,7 +266,13 @@ export function SignedInFrame({
     <Sidebar
       me={me}
       counts={counts}
-      bell={wide && withBell ? <NotificationsBell placement="sidebar" /> : null}
+      bell={
+        !withBell ? null : wide ? (
+          <NotificationsBell placement="sidebar" />
+        ) : (
+          <NotificationsBell key={overlayOpen ? 'overlayOpen' : 'overlayClosed'} placement="overlay" />
+        )
+      }
       headerAction={hideButton}
       onNavigate={() => {
         setOverlayOpen(false);
