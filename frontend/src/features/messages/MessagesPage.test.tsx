@@ -66,6 +66,7 @@ function message(seq: number): Message & { readonly senderId: string } {
     sender_label_kind: null,
     sent_before_reclaim: false,
     reply_to: null,
+    reactions: [],
     version: 1,
     senderId: tutor.id,
   };
@@ -499,6 +500,235 @@ describe('Messages', () => {
     expect(focusedFirst).toBe(reply);
     expect(document.activeElement).toBe(menu);
     expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+  });
+
+  test('React opens the picker on its first reaction and choosing one shows a marked chip and returns to the actions', async () => {
+    await fixture();
+    const menu = await screen.findByRole('button', { name: 'Message actions' });
+    fireEvent.click(menu);
+
+    fireEvent.click(screen.getByRole('button', { name: 'React' }));
+    const first = screen.getByRole('button', { name: 'Thumbs up' });
+    const focusedFirst = document.activeElement;
+    fireEvent.click(screen.getByRole('button', { name: 'Heart' }));
+    const chip = await screen.findByRole('button', { name: /Heart\s*1\s*your reaction/ });
+
+    expect(focusedFirst).toBe(first);
+    expect(chip.getAttribute('aria-pressed')).toBe('true');
+    expect(document.activeElement).toBe(menu);
+  });
+
+  test('Escape in the reaction picker returns focus to React', async () => {
+    await fixture();
+    fireEvent.click(await screen.findByRole('button', { name: 'Message actions' }));
+    const react = screen.getByRole('button', { name: 'React' });
+    fireEvent.click(react);
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Thumbs up' }), { key: 'Escape' });
+
+    expect(document.activeElement).toBe(react);
+    expect(screen.queryByRole('button', { name: 'Thumbs up' })).toBeNull();
+  });
+
+  test('a chip toggles the caller\u2019s own reaction in a writable chat', async () => {
+    const { server, cache, clock } = await fixture();
+    await screen.findByText('Message 1');
+    server.chat.memberReact('message-1', tutor.id, 'check');
+    server.chat.memberReact('message-1', 'student-1', 'check');
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+    act(() => {
+      receive({ kind: 'message', change: 'updated', channelId: channel.id, messageId: 'message-1' });
+      clock.pass(1000);
+    });
+    const chip = await screen.findByRole('button', { name: /Done\s*2\s*your reaction/ });
+
+    fireEvent.click(chip);
+
+    expect(await screen.findByRole('button', { name: /^Done\s*1(?!\d)(?!.*your reaction)/ })).toBeTruthy();
+  });
+
+  test('React focuses the current reaction and Remove reaction removes the chip and returns to the actions', async () => {
+    const { server, cache, clock } = await fixture();
+    await screen.findByText('Message 1');
+    server.chat.memberReact('message-1', tutor.id, 'sad');
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+    act(() => {
+      receive({ kind: 'message', change: 'updated', channelId: channel.id, messageId: 'message-1' });
+      clock.pass(1000);
+    });
+    await screen.findByRole('button', { name: /Sad\s*1\s*your reaction/ });
+    const menu = screen.getByRole('button', { name: 'Message actions' });
+    fireEvent.click(menu);
+
+    fireEvent.click(screen.getByRole('button', { name: 'React' }));
+    const focusedCurrent = document.activeElement;
+    fireEvent.click(screen.getByRole('button', { name: 'Remove reaction' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('list', { name: 'Reactions' })).toBeNull();
+    });
+
+    expect(focusedCurrent?.getAttribute('aria-label')).toBe('Sad');
+    expect(focusedCurrent?.getAttribute('aria-pressed')).toBe('true');
+    expect(document.activeElement).toBe(menu);
+  });
+
+  test('toggling off the last chip of a kind moves focus to its message', async () => {
+    const { server, cache, clock } = await fixture();
+    await screen.findByText('Message 1');
+    server.chat.memberReact('message-1', tutor.id, 'heart');
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+    act(() => {
+      receive({ kind: 'message', change: 'updated', channelId: channel.id, messageId: 'message-1' });
+      clock.pass(1000);
+    });
+    const chip = await screen.findByRole('button', { name: /Heart\s*1\s*your reaction/ });
+    chip.focus();
+
+    fireEvent.click(chip);
+    await waitFor(() => {
+      expect(screen.queryByRole('list', { name: 'Reactions' })).toBeNull();
+    });
+
+    expect(document.activeElement).toBe(screen.getByText('Message 1').closest('li'));
+  });
+
+  test('toggling a chip whose kind remains keeps focus on it', async () => {
+    const { server, cache, clock } = await fixture();
+    await screen.findByText('Message 1');
+    server.chat.memberReact('message-1', tutor.id, 'heart');
+    server.chat.memberReact('message-1', 'student-1', 'heart');
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+    act(() => {
+      receive({ kind: 'message', change: 'updated', channelId: channel.id, messageId: 'message-1' });
+      clock.pass(1000);
+    });
+    const chip = await screen.findByRole('button', { name: /Heart\s*2\s*your reaction/ });
+    chip.focus();
+
+    fireEvent.click(chip);
+    await screen.findByRole('button', { name: /^Heart\s*1(?!\d)(?!.*your reaction)/ });
+
+    expect(document.activeElement).toBe(chip);
+  });
+
+  test('in a window around an older message a chip whose kind remains keeps focus', async () => {
+    const { server } = await fixture(60, '/messages/channel-1', true, {
+      seeds: [{ ...message(61), body: 'Reply far back', replyTo: 'message-1' }],
+    });
+    await screen.findByText('Reply far back');
+    server.chat.memberReact('message-1', tutor.id, 'heart');
+    server.chat.memberReact('message-1', 'student-1', 'heart');
+    fireEvent.click(within(rowOf('Reply far back')).getByRole('button', { name: /Message 1$/ }));
+    const chip = await screen.findByRole('button', { name: /Heart\s*2\s*your reaction/ });
+    chip.focus();
+
+    fireEvent.click(chip);
+    await screen.findByRole('button', { name: /^Heart\s*1(?!\d)(?!.*your reaction)/ });
+
+    expect(chip.closest('[hidden]')).toBeNull();
+    expect(document.activeElement).toBe(chip);
+  });
+
+  test('in a window around an older message toggling off the last chip of a kind focuses that message', async () => {
+    const { server } = await fixture(60, '/messages/channel-1', true, {
+      seeds: [{ ...message(61), body: 'Reply far back', replyTo: 'message-1' }],
+    });
+    await screen.findByText('Reply far back');
+    server.chat.memberReact('message-1', tutor.id, 'heart');
+    fireEvent.click(within(rowOf('Reply far back')).getByRole('button', { name: /Message 1$/ }));
+    const chip = await screen.findByRole('button', { name: /Heart\s*1\s*your reaction/ });
+    chip.focus();
+
+    fireEvent.click(chip);
+    await waitFor(() => {
+      expect(screen.queryByRole('list', { name: 'Reactions' })).toBeNull();
+    });
+
+    expect(document.activeElement?.getAttribute('data-row')).toBe('message-1');
+    expect(document.activeElement?.closest('[hidden]')).toBeNull();
+  });
+
+  test('after leaving a window around an older message, toggling off the last chip of a kind still focuses that message', async () => {
+    const { server, cache, clock } = await fixture(60, '/messages/channel-1', true, {
+      seeds: [{ ...message(61), body: 'Reply far back', replyTo: 'message-1' }],
+    });
+    await screen.findByText('Reply far back');
+    server.chat.memberReact('message-20', tutor.id, 'heart');
+    fireEvent.click(within(rowOf('Reply far back')).getByRole('button', { name: /Message 1$/ }));
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute('data-row')).toBe('message-1');
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Jump to latest/ }));
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /^Jump to latest/ })).toBeNull();
+    });
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+    act(() => {
+      receive({ kind: 'message', change: 'updated', channelId: channel.id, messageId: 'message-20' });
+      clock.pass(1000);
+    });
+    const chip = await within(rowOf('Message 20')).findByRole('button', { name: /Heart\s*1\s*your reaction/ });
+    chip.focus();
+
+    fireEvent.click(chip);
+    await waitFor(() => {
+      expect(screen.queryByRole('list', { name: 'Reactions' })).toBeNull();
+    });
+
+    expect(document.activeElement).toBe(rowOf('Message 20'));
+  });
+
+  test('a tutor\u2019s chip names the other reactors in its name and tooltip, a deleted account as Deleted user', async () => {
+    const { server, cache, clock } = await fixture();
+    await screen.findByText('Message 1');
+    server.chat.memberReact('message-1', tutor.id, 'joy');
+    server.chat.memberReact('message-1', 'former-student', 'joy');
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+
+    act(() => {
+      receive({ kind: 'message', change: 'updated', channelId: channel.id, messageId: 'message-1' });
+      clock.pass(1000);
+    });
+    const chip = await screen.findByRole('button', { name: /Laughing\s*2\s*your reaction/ });
+
+    expect(chip.getAttribute('title')).toBe('Deleted user');
+    expect(chip.textContent).toContain('Deleted user');
+  });
+
+  test('a read-only chat offers no React and shows plain chips', async () => {
+    const { server, cache, clock } = await fixture();
+    await screen.findByText('Message 1');
+    server.chat.memberReact('message-1', 'student-1', 'joy');
+    server.chat.setWritable(channel.id, false);
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+
+    act(() => {
+      receive({ kind: 'entity', entity: 'channel', id: channel.id });
+      receive({ kind: 'message', change: 'updated', channelId: channel.id, messageId: 'message-1' });
+      clock.pass(1000);
+    });
+
+    const reactions = await screen.findByRole('list', { name: 'Reactions' });
+    expect(within(reactions).queryByRole('button')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+    expect(screen.queryByRole('button', { name: 'React' })).toBeNull();
+  });
+
+  test('a student\u2019s chip names nobody', async () => {
+    const { server, cache, clock } = await fixture(1, '/messages/channel-1', true, { role: 'student' });
+    await screen.findByText('Message 1');
+    server.chat.memberReact('message-1', 'tutor-1', 'wow');
+    server.chat.memberReact('message-1', 'student-1', 'wow');
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+
+    act(() => {
+      receive({ kind: 'message', change: 'updated', channelId: channel.id, messageId: 'message-1' });
+      clock.pass(1000);
+    });
+    const chip = await screen.findByRole('button', { name: /Surprised\s*2/ });
+
+    expect(chip.getAttribute('title')).toBeNull();
+    expect(chip.textContent).not.toContain('Student');
   });
 
   test('editing focuses the composer and Escape restores the draft and message focus', async () => {
@@ -1923,7 +2153,7 @@ describe('messenger layout', () => {
     expect(server.chat.sends).toHaveLength(0);
   });
 
-  test('a student may only reply to another member’s message, and only in a writable chat', async () => {
+  test('a student may only reply to or react to another member’s message, and only in a writable chat', async () => {
     await fixture(0, '/messages/channel-1', true, {
       role: 'student',
       seeds: [fromOther(1, 'Teacher', '2026-11-01T00:00:00Z')],
@@ -1936,7 +2166,7 @@ describe('messenger layout', () => {
       within(rowOf('Other 1'))
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual(['', 'Reply']);
+    ).toEqual(['', 'Reply', 'React']);
   });
 
   test('a student sees no message actions on another member’s message in a read-only chat', async () => {

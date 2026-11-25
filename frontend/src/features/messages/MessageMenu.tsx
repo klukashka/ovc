@@ -4,6 +4,8 @@ import { useScheduler } from '../../app/clock.ts';
 import { ActionButton, quietButtonClass } from '../../components/ui/Form.tsx';
 import { useChatWrite } from '../../components/ui/chatWrite.ts';
 import { MoreIcon } from '../../components/ui/icons.tsx';
+import type { ReactionValue } from './api.ts';
+import { reactionEmoji, reactionName, reactionValues } from './Reactions.tsx';
 import type { ChatTexts } from './translations.ts';
 
 const moreButtonClass =
@@ -20,6 +22,8 @@ export function MessageMenu({
   onReply = null,
   pin = null,
   onPin = (): void => undefined,
+  reaction = null,
+  onReact = (): void => undefined,
 }: {
   readonly texts: ChatTexts;
   readonly editable: boolean;
@@ -29,8 +33,13 @@ export function MessageMenu({
   readonly onReply?: (() => void) | null;
   readonly pin?: PinAction | null;
   readonly onPin?: (action: PinAction) => void;
+  readonly reaction?: { readonly current: ReactionValue | null } | null;
+  readonly onReact?: (reaction: ReactionValue | null) => void;
 }): ReactElement {
   const [open, setOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const picker = useRef<HTMLDivElement>(null);
+  const reactButton = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const cancelPress = useRef<() => void>(() => undefined);
@@ -53,6 +62,11 @@ export function MessageMenu({
     [],
   );
   useEffect(() => {
+    if (!picking) return;
+    const pressed = picker.current?.querySelector<HTMLElement>('button[aria-pressed="true"]');
+    (pressed ?? picker.current?.querySelector<HTMLElement>('button'))?.focus();
+  }, [picking]);
+  useEffect(() => {
     if (!open) return undefined;
     menu.current?.querySelector<HTMLElement>('button')?.focus();
     function outside(event: PointerEvent): void {
@@ -67,6 +81,11 @@ export function MessageMenu({
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
+        if (picker.current?.contains(document.activeElement) === true) {
+          setPicking(false);
+          reactButton.current?.focus();
+          return;
+        }
         setOpen(false);
         button.current?.focus();
       }
@@ -93,6 +112,7 @@ export function MessageMenu({
           if (event.pointerType === 'touch')
             cancelPress.current = scheduler.schedule(500, () => {
               pressedLong.current = true;
+              setPicking(false);
               setOpen(true);
             });
         }}
@@ -111,6 +131,7 @@ export function MessageMenu({
             pressedLong.current = false;
             return;
           }
+          setPicking(false);
           setOpen((value) => !value);
         }}
       >
@@ -138,6 +159,56 @@ export function MessageMenu({
               {texts.reply}
             </ActionButton>
           )}
+          {reaction === null ? null : (
+            <button
+              ref={reactButton}
+              type="button"
+              aria-expanded={picking}
+              className={quietButtonClass}
+              onClick={() => {
+                setPicking((value) => !value);
+              }}
+            >
+              {texts.react}
+            </button>
+          )}
+          {reaction !== null && picking ? (
+            <div ref={picker} role="group" aria-label={texts.reactions} className="flex flex-wrap gap-1 py-1">
+              {reactionValues.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-label={reactionName(texts, value)}
+                  aria-pressed={reaction.current === value}
+                  className="inline-flex size-11 items-center justify-center rounded-md text-heading hover:bg-hover aria-pressed:bg-mine"
+                  onClick={() => {
+                    guard.run(() => {
+                      setOpen(false);
+                      button.current?.focus();
+                      onReact(value);
+                    });
+                  }}
+                >
+                  <span aria-hidden="true">{reactionEmoji(value)}</span>
+                </button>
+              ))}
+              {reaction.current === null ? null : (
+                <button
+                  type="button"
+                  className={quietButtonClass}
+                  onClick={() => {
+                    guard.run(() => {
+                      setOpen(false);
+                      button.current?.focus();
+                      onReact(null);
+                    });
+                  }}
+                >
+                  {texts.reactionRemove}
+                </button>
+              )}
+            </div>
+          ) : null}
           {editable ? (
             <ActionButton
               busy={busy}

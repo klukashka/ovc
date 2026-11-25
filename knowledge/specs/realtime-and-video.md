@@ -105,11 +105,17 @@ Built on 2026-11-25 by change M4 of the [interface rework plan](../plans/ui-rewo
 
 #### Reactions (M5)
 
+Built on 2026-11-25 by change M5 of the [interface rework plan](../plans/ui-rework.md), with the owner's decisions of that day (pending owner review).
+
 - **Values:** six fixed reactions, the `Reaction` enum in one place in `internal/domain`: `thumbs_up` (👍), `heart` (❤️), `joy` (😂), `wow` (😮), `sad` (😢) and `check` (✅); any other value answers `422 validation_failed` at `body.reaction`.
 - **Writes:** an active member sets their one reaction to a message with `PUT /messages/{id}/reaction` `{reaction}`, replacing an earlier one, and removes it with `DELETE /messages/{id}/reaction`, idempotently. A message that is deleted or erased, or outside the caller's channels, answers `404`; reacting in a read-only channel answers `409 channel_read_only`, after the message is resolved; removing a reaction there stays allowed. Reactions count as message writes in the 30-a-minute limit and take the locks of an edit. A delete of the message drops its reactions.
 - **Reads:** every `Message` carries `reactions: [{reaction, count, mine}]` in the enum's order, only reactions with a count above zero. For the tutor each reaction also carries the optional `members: [{label, label_kind}]`, the card display names of the label table, never an account identifier or account name; it is absent, not `null`, in every student response, as role-only fields are in the schedule's schemas, so `Message` stays one schema, and no student response or frame carries another member's identity for a reaction.
 - **Reclaim:** keeping a reclaimed link deletes the account's reactions in that direct channel, in the transaction that clears the suspension, as it lowers the read marker, so the owner never inherits the reclaiming account's reactions; a dropped link's channel is erased with its reactions.
 - **Frames:** a reaction change sends `message.updated {channel_id, message_id}` to the channel's active members, who refetch the message.
+- **Members:** a tutor's `members` follow the label table's "Sender of a message" row: the card name while it is set, also for a student removed from the group whose relationship is active, and `null` with `deleted_user` for an erased card or a deleted account; the tutor's own reaction is left out, since `mine` already shows it. A removed group member's reactions stay (the owner's decision of 2026-11-25).
+- **Interface:** in a writable chat a chip is a button that toggles the caller's own reaction of that kind (the owner's decision of 2026-11-25); React in the message menu offers all six and Remove reaction.
+- **Deletion without a frame:** reactions that a purge or a kept reclaim deletes send no frame, so counts and a tutor's `members` on other clients stay stale until their next refetch (a frame, focus or reconnection).
+- **Purge locks:** the student purge's first sorted channel lock includes the channels that hold the account's reactions, and its tutor lock their tutors, so it deletes the account's reactions right after that lock without changing the global lock order.
 - **Residual** ([T-6](../../docs/threat-model.md#threats-and-controls)): a count tells a student how many members reacted, which identifies them when it equals the number of members who could have reacted (in a group with one other student, always), and a student watching counts change live can link a change to a member whose messages they see at the same moment.
 
 ### Principle

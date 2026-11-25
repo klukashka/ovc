@@ -105,6 +105,12 @@ type searchOutput struct {
 	Body         schemas.SearchPage
 }
 
+type reactionInput struct {
+	ID          string `path:"id"`
+	ContentType string `header:"Content-Type"`
+	Body        schemas.ReactionRequest
+}
+
 type readStateOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         schemas.ReadState
@@ -145,6 +151,16 @@ func (r *router) registerChat() {
 	search := operation("channels-messages-search", http.MethodPost, channelsPath+"/{id}/messages/search")
 	search.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound, http.StatusTooManyRequests, http.StatusServiceUnavailable)
 	register(r, search, AudienceUnverifiedOK, r.searchMessages)
+
+	react := operation("messages-reaction-set", http.MethodPut, messagesPath+"/{id}/reaction")
+	react.DefaultStatus = http.StatusNoContent
+	react.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests)
+	register(r, react, AudienceUnverifiedOK, r.setReaction)
+
+	unreact := operation("messages-reaction-delete", http.MethodDelete, messagesPath+"/{id}/reaction")
+	unreact.DefaultStatus = http.StatusNoContent
+	unreact.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound, http.StatusTooManyRequests)
+	register(r, unreact, AudienceUnverifiedOK, r.removeReaction)
 
 	read := operation("channels-read", http.MethodPost, channelsPath+"/{id}/read")
 	read.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound)
@@ -226,6 +242,31 @@ func (r *router) listMessages(ctx context.Context, input *messageListInput) (*me
 		body.Items = append(body.Items, messageBody(message))
 	}
 	return &messageListOutput{CacheControl: noStore, Body: body}, nil
+}
+
+func (r *router) setReaction(ctx context.Context, input *reactionInput) (*deletedMessageOutput, error) {
+	if err := requireJSON(ctx, input.ContentType); err != nil {
+		return nil, err
+	}
+	id, valid := domain.ParseUUID[domain.MessageID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	if err := r.chat.React(ctx, authorOf(ctx), id, input.Body.Reaction); err != nil {
+		return nil, r.chatError(ctx, "messages.reaction.set.failed", err)
+	}
+	return &deletedMessageOutput{CacheControl: noStore}, nil
+}
+
+func (r *router) removeReaction(ctx context.Context, input *messageInput) (*deletedMessageOutput, error) {
+	id, valid := domain.ParseUUID[domain.MessageID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	if err := r.chat.Unreact(ctx, authorOf(ctx), id); err != nil {
+		return nil, r.chatError(ctx, "messages.reaction.delete.failed", err)
+	}
+	return &deletedMessageOutput{CacheControl: noStore}, nil
 }
 
 func (r *router) searchMessages(ctx context.Context, input *searchInput) (*searchOutput, error) {
@@ -328,6 +369,18 @@ func messageBody(message chat.Message) schemas.Message {
 		Body: message.Body, CreatedAt: message.CreatedAt.UTC(), EditedAt: utc(message.EditedAt), Deleted: message.Deleted, Erased: message.Erased,
 		Version: message.Version, SentBeforeReclaim: message.SentBeforeReclaim,
 		Attachments: make([]schemas.MessageAttachment, 0, len(message.Attachments)),
+		Reactions:   make([]schemas.MessageReaction, 0, len(message.Reactions)),
+	}
+	for _, reaction := range message.Reactions {
+		item := schemas.MessageReaction{Reaction: reaction.Reaction, Count: reaction.Count, Mine: reaction.Mine}
+		if reaction.Members != nil {
+			members := make([]schemas.ReactionMember, 0, len(*reaction.Members))
+			for _, member := range *reaction.Members {
+				members = append(members, schemas.ReactionMember{Label: member.Label, LabelKind: member.LabelKind})
+			}
+			item.Members = &members
+		}
+		body.Reactions = append(body.Reactions, item)
 	}
 	if quote := message.ReplyTo; quote != nil {
 		body.ReplyTo = &schemas.MessageQuote{

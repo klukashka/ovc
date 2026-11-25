@@ -943,6 +943,22 @@ export interface paths {
         patch: operations["messages-update"];
         trace?: never;
     };
+    "/api/v1/messages/{id}/reaction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["messages-reaction-set"];
+        post?: never;
+        delete: operations["messages-reaction-delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/notifications": {
         parameters: {
             query?: never;
@@ -2210,6 +2226,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             own: boolean;
+            reactions: components["schemas"]["MessageReaction"][];
             reply_to: components["schemas"]["MessageQuote"] | null;
             sender_label: string | null;
             /** @enum {string|null} */
@@ -2260,6 +2277,14 @@ export interface components {
             seq: number;
             /** @enum {string} */
             state: "available" | "deleted" | "removed";
+        };
+        MessageReaction: {
+            /** Format: int64 */
+            count: number;
+            members?: components["schemas"]["ReactionMember"][];
+            mine: boolean;
+            /** @enum {string} */
+            reaction: "thumbs_up" | "heart" | "joy" | "wow" | "sad" | "check";
         };
         MyTutor: {
             /** Format: date-time */
@@ -2430,6 +2455,15 @@ export interface components {
             avatar_id: string | null;
             name: string;
             subjects: string[];
+        };
+        ReactionMember: {
+            label: string | null;
+            /** @enum {string|null} */
+            label_kind: "deleted_user" | null;
+        };
+        ReactionRequest: {
+            /** @enum {string} */
+            reaction: "thumbs_up" | "heart" | "joy" | "wow" | "sad" | "check";
         };
         ReadMarker: {
             /** Format: int64 */
@@ -10481,6 +10515,225 @@ export interface operations {
             };
         };
     };
+    "messages-reaction-set": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReactionRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "messages-reaction-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "notifications-list": {
         parameters: {
             query?: {
@@ -14674,6 +14927,7 @@ export const meThemeValues: ReadonlyArray<FlattenedDeepRequired<components>["sch
 export const messageSender_label_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Message"]["sender_label_kind"]> = ["deleted_user"];
 export const messageQuoteSender_label_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MessageQuote"]["sender_label_kind"]> = ["deleted_user"];
 export const messageQuoteStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MessageQuote"]["state"]> = ["available", "deleted", "removed"];
+export const messageReactionReactionValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MessageReaction"]["reaction"]> = ["thumbs_up", "heart", "joy", "wow", "sad", "check"];
 export const myTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MyTutor"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const myTutorEnded_byValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MyTutor"]["ended_by"]> = ["tutor", "student", "deletion"];
 export const myTutorStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MyTutor"]["state"]> = ["active", "provisional", "ended"];
@@ -14687,6 +14941,8 @@ export const passwordResetOutcomeValues: ReadonlyArray<FlattenedDeepRequired<com
 export const pinnedMessageSender_label_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["PinnedMessage"]["sender_label_kind"]> = ["deleted_user"];
 export const profilePatchLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["language"]> = ["ru", "en"];
 export const profilePatchThemeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["theme"]> = ["light", "dark", "system"];
+export const reactionMemberLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ReactionMember"]["label_kind"]> = ["deleted_user"];
+export const reactionRequestReactionValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ReactionRequest"]["reaction"]> = ["thumbs_up", "heart", "joy", "wow", "sad", "check"];
 export const readyChecksDatabaseValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ReadyChecks"]["database"]> = ["ok"];
 export const readyChecksStorageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ReadyChecks"]["storage"]> = ["ok"];
 export const readyStatusStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ReadyStatus"]["status"]> = ["ready"];

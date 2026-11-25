@@ -5,6 +5,8 @@ import type { Language } from '../../lib/i18n/resources.ts';
 import type { Message, MessageQuote } from './api.ts';
 import { Attachments } from './Attachments.tsx';
 import { ReadTicksIcon } from './icons.tsx';
+import { Reactions } from './Reactions.tsx';
+import type { ReactionValue } from './api.ts';
 import { MessageBody } from './MessageBody.tsx';
 import type { MessagePlace } from './messageGroups.ts';
 import { Quote } from './Quote.tsx';
@@ -26,6 +28,8 @@ export function MessageRow({
   refresh,
   onJump,
   peerReadSeq,
+  reactable = false,
+  onToggleReaction = (): void => undefined,
   tracked = true,
 }: {
   readonly message: Message;
@@ -38,6 +42,8 @@ export function MessageRow({
   readonly refresh: () => Promise<boolean>;
   readonly onJump: (quote: MessageQuote) => void;
   readonly peerReadSeq: number | null;
+  readonly reactable?: boolean;
+  readonly onToggleReaction?: (reaction: ReactionValue, mine: boolean) => void;
   readonly tracked?: boolean;
 }): ReactElement {
   const own = message.own;
@@ -82,6 +88,9 @@ export function MessageRow({
           )}
           <Attachments message={message} texts={texts} language={language} refresh={refresh} />
           {message.sent_before_reclaim ? <p className="text-small text-text-muted">{texts.reclaimed}</p> : null}
+          {message.deleted || message.erased ? null : (
+            <Reactions reactions={message.reactions} texts={texts} writable={reactable} onToggle={onToggleReaction} />
+          )}
           <span className="flex justify-end gap-1 text-caption text-text-muted">
             {message.edited_at === null || message.deleted || message.erased ? null : <span>{texts.edited}</span>}
             <time dateTime={message.created_at}>{time}</time>

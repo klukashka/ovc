@@ -870,3 +870,61 @@ test.describe('search in a conversation', () => {
     expect(page.url().toLowerCase()).not.toContain('домашнее');
   });
 });
+
+test.describe('reactions in a group chat', () => {
+  test.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', viewport: { width: 1280, height: 800 } });
+
+  test('a student reacts from the menu, the tutor sees who reacted live, and the other student sees only the count', async ({
+    page,
+    observedBrowser: browser,
+    deployment,
+    diagnostics,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const first = await seedActiveStudent(deployment, tutor, 'Anna');
+    const second = await seedActiveStudent(deployment, tutor, 'Boris');
+    const group = await createGroup(deployment, tutor, 'Reading group', [first.cardId, second.cardId]);
+    const channel = await channelOf(deployment, tutor, `/groups/${group}`);
+    const seeded = await callApi(
+      deployment,
+      await accessToken(deployment, tutor),
+      'POST',
+      `/channels/${channel}/messages`,
+      {
+        body: 'Who finished the chapter?',
+        attachment_ids: [],
+      },
+    );
+    expect(seeded.status).toBe(201);
+    const firstContext = await studentContext(browser, deployment);
+    const firstPage = await firstContext.newPage();
+    await diagnostics.watch(firstPage);
+    const secondContext = await studentContext(browser, deployment);
+    const secondPage = await secondContext.newPage();
+    await diagnostics.watch(secondPage);
+    await signInThroughTheApi(page, tutor);
+    await signInThroughTheApi(firstPage, first.student);
+    await signInThroughTheApi(secondPage, second.student);
+    await openSettledConversation(page, channel, 'with the chat list');
+    await openSettledConversation(firstPage, channel, 'conversation only');
+    await openSettledConversation(secondPage, channel, 'conversation only');
+
+    const asked = messages(firstPage).filter({ hasText: 'Who finished the chapter?' });
+    await asked.getByRole('button', { name: 'Message actions', exact: true }).click();
+    await firstPage.getByRole('button', { name: 'React', exact: true }).click();
+    await firstPage.getByRole('button', { name: 'Thumbs up', exact: true }).click();
+
+    const tutorChip = messages(page)
+      .filter({ hasText: 'Who finished the chapter?' })
+      .getByRole('listitem')
+      .filter({ hasText: '1' });
+    await expect(tutorChip).toContainText('Anna');
+    const secondChip = messages(secondPage)
+      .filter({ hasText: 'Who finished the chapter?' })
+      .getByRole('list', { name: 'Reactions' });
+    await expect(secondChip).toContainText('1');
+    await expect(secondChip).not.toContainText('Anna');
+    await diagnostics.closeContext(firstContext);
+    await diagnostics.closeContext(secondContext);
+  });
+});

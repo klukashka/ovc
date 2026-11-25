@@ -418,6 +418,9 @@ func (s *Service) Delete(ctx context.Context, author Author, id domain.MessageID
 		if err := s.release().messages(ctx, repos, []domain.MessageID{id}, now); err != nil {
 			return err
 		}
+		if err := repos.Messages.RemoveReactionsOf(ctx, []domain.MessageID{id}); err != nil {
+			return err
+		}
 		if unpinned, err = repos.Channels.ClearPinOfMessage(ctx, scope.ChannelID, id, now); err != nil {
 			return err
 		}

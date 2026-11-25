@@ -172,7 +172,7 @@ func TestTheReclaimCueRevealsNoSquatterIdentity(t *testing.T) {
 	if err := json.Unmarshal([]byte(tutorHistory.body), &page); err != nil {
 		t.Fatal(err)
 	}
-	wantFields := []string{"attachments", "body", "created_at", "deleted", "edited_at", "erased", "id", "own", "reply_to", "sender_label", "sender_label_kind", "sent_before_reclaim",
+	wantFields := []string{"attachments", "body", "created_at", "deleted", "edited_at", "erased", "id", "own", "reactions", "reply_to", "sender_label", "sender_label_kind", "sent_before_reclaim",
 		"seq", "version"}
 	for _, item := range page.Items {
 		if !slices.Equal(fieldNames(item), wantFields) {

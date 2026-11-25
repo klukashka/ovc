@@ -483,6 +483,13 @@ type Message struct {
 	ReplyToMessageID *domain.MessageID
 }
 
+type MessageReaction struct {
+	MessageID domain.MessageID
+	UserID    domain.UserID
+	Reaction  domain.Reaction
+	CreatedAt time.Time
+}
+
 type Notification struct {
 	ID             domain.NotificationID
 	UserID         domain.UserID

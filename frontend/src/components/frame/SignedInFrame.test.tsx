@@ -95,6 +95,7 @@ async function renderFrame(
       sender_label_kind: null,
       sent_before_reclaim: false,
       reply_to: null,
+      reactions: [],
       version: 1,
       senderId: 'tutor-a',
     });

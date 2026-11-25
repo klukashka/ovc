@@ -385,6 +385,55 @@ func (r Messages) Delete(ctx context.Context, ids []domain.MessageID) (int64, er
 	return counted(deleted, err, "delete messages")
 }
 
+type ReactionRow = dbgen.ListMessageReactionsRow
+
+func (r Messages) SetReaction(
+	ctx context.Context, message domain.MessageID, user domain.UserID, reaction domain.Reaction, now time.Time,
+) (bool, error) {
+	changed, err := r.queries.UpsertReaction(ctx, dbgen.UpsertReactionParams{MessageID: message, UserID: user, Reaction: reaction, Now: now})
+	return applied(changed, err, "set a reaction")
+}
+
+func (r Messages) RemoveReaction(ctx context.Context, message domain.MessageID, user domain.UserID) (bool, error) {
+	removed, err := r.queries.DeleteReaction(ctx, dbgen.DeleteReactionParams{MessageID: message, UserID: user})
+	return applied(removed, err, "remove a reaction")
+}
+
+func (r Messages) RemoveReactionsOf(ctx context.Context, ids []domain.MessageID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := r.queries.DeleteReactionsOfMessages(ctx, uuids(ids))
+	return done(err, "remove the reactions of messages")
+}
+
+func (r Messages) RemoveReactionsBy(ctx context.Context, user domain.UserID) error {
+	_, err := r.queries.DeleteReactionsOfUser(ctx, user)
+	return done(err, "remove an account's reactions")
+}
+
+func (r Messages) RemoveReactionsOfMembers(ctx context.Context, members []Membership) error {
+	if len(members) == 0 {
+		return nil
+	}
+	channels := make([]domain.ChannelID, 0, len(members))
+	users := make([]domain.UserID, 0, len(members))
+	for _, member := range members {
+		channels = append(channels, member.Channel)
+		users = append(users, member.User)
+	}
+	_, err := r.queries.DeleteReactionsOfMembers(ctx, dbgen.DeleteReactionsOfMembersParams{ChannelIds: uuids(channels), UserIds: uuids(users)})
+	return done(err, "remove the reactions of restored members")
+}
+
+func (r Messages) ReactionsOf(ctx context.Context, ids []domain.MessageID) ([]ReactionRow, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.queries.ListMessageReactions(ctx, uuids(ids))
+	return rows, done(err, "list reactions")
+}
+
 func (r Messages) BatchOfSender(ctx context.Context, sender domain.UserID, batch int32) ([]SenderMessage, error) {
 	rows, err := r.queries.ListSenderMessagesBatch(ctx, dbgen.ListSenderMessagesBatchParams{SenderID: pgtype.UUID{Bytes: sender, Valid: true}, BatchSize: batch})
 	return one(rows, err, "a batch of the sender's messages")

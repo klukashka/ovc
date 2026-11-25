@@ -102,6 +102,67 @@ func (q *Queries) DeleteMessagesByID(ctx context.Context, ids []pgtype.UUID) (in
 	return result.RowsAffected(), nil
 }
 
+const deleteReaction = `-- name: DeleteReaction :execrows
+DELETE FROM message_reactions WHERE message_id = $1 AND user_id = $2
+`
+
+type DeleteReactionParams struct {
+	MessageID domain.MessageID
+	UserID    domain.UserID
+}
+
+func (q *Queries) DeleteReaction(ctx context.Context, arg DeleteReactionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteReaction, arg.MessageID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteReactionsOfMembers = `-- name: DeleteReactionsOfMembers :execrows
+DELETE FROM message_reactions
+USING messages, (SELECT unnest($1::uuid[]) AS channel_id, unnest($2::uuid[]) AS user_id) AS pairs
+WHERE messages.id = message_reactions.message_id AND messages.channel_id = pairs.channel_id
+    AND message_reactions.user_id = pairs.user_id
+`
+
+type DeleteReactionsOfMembersParams struct {
+	ChannelIds []pgtype.UUID
+	UserIds    []pgtype.UUID
+}
+
+func (q *Queries) DeleteReactionsOfMembers(ctx context.Context, arg DeleteReactionsOfMembersParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteReactionsOfMembers, arg.ChannelIds, arg.UserIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteReactionsOfMessages = `-- name: DeleteReactionsOfMessages :execrows
+DELETE FROM message_reactions WHERE message_id = ANY ($1::uuid[])
+`
+
+func (q *Queries) DeleteReactionsOfMessages(ctx context.Context, ids []pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteReactionsOfMessages, ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteReactionsOfUser = `-- name: DeleteReactionsOfUser :execrows
+DELETE FROM message_reactions WHERE user_id = $1
+`
+
+func (q *Queries) DeleteReactionsOfUser(ctx context.Context, userID domain.UserID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteReactionsOfUser, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteTutorMessagesBatch = `-- name: DeleteTutorMessagesBatch :execrows
 DELETE FROM messages
 WHERE id IN (
@@ -575,6 +636,61 @@ func (q *Queries) ListMessageAttachments(ctx context.Context, messageIds []pgtyp
 			&i.SizeBytes,
 			&i.Width,
 			&i.Height,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMessageReactions = `-- name: ListMessageReactions :many
+SELECT message_reactions.message_id, message_reactions.reaction, message_reactions.user_id, channels.tutor_id,
+    COALESCE(reactors.state, '')::text AS reactor_state, reactors.name AS reactor_name, COALESCE(cards.display_name, '')::text AS card_name
+FROM message_reactions
+JOIN messages ON messages.id = message_reactions.message_id
+JOIN channels ON channels.id = messages.channel_id
+LEFT JOIN users AS reactors ON reactors.id = message_reactions.user_id
+LEFT JOIN LATERAL (
+    SELECT relationships.display_name FROM relationships
+    WHERE relationships.tutor_id = channels.tutor_id AND relationships.student_id = message_reactions.user_id
+    ORDER BY relationships.state = 'discarded', relationships.created_at DESC
+    LIMIT 1
+) AS cards ON true
+WHERE message_reactions.message_id = ANY ($1::uuid[])
+ORDER BY message_reactions.message_id, message_reactions.user_id
+`
+
+type ListMessageReactionsRow struct {
+	MessageID    domain.MessageID
+	Reaction     domain.Reaction
+	UserID       domain.UserID
+	TutorID      domain.UserID
+	ReactorState string
+	ReactorName  *string
+	CardName     string
+}
+
+func (q *Queries) ListMessageReactions(ctx context.Context, ids []pgtype.UUID) ([]ListMessageReactionsRow, error) {
+	rows, err := q.db.Query(ctx, listMessageReactions, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMessageReactionsRow
+	for rows.Next() {
+		var i ListMessageReactionsRow
+		if err := rows.Scan(
+			&i.MessageID,
+			&i.Reaction,
+			&i.UserID,
+			&i.TutorID,
+			&i.ReactorState,
+			&i.ReactorName,
+			&i.CardName,
 		); err != nil {
 			return nil, err
 		}
@@ -1446,4 +1562,31 @@ SELECT set_config('statement_timeout', $1::text, true)
 func (q *Queries) SetLocalStatementTimeout(ctx context.Context, timeout string) error {
 	_, err := q.db.Exec(ctx, setLocalStatementTimeout, timeout)
 	return err
+}
+
+const upsertReaction = `-- name: UpsertReaction :execrows
+INSERT INTO message_reactions (message_id, user_id, reaction, created_at)
+VALUES ($1, $2, $3, $4::timestamptz)
+ON CONFLICT (message_id, user_id) DO UPDATE SET reaction = excluded.reaction, created_at = excluded.created_at
+WHERE message_reactions.reaction <> excluded.reaction
+`
+
+type UpsertReactionParams struct {
+	MessageID domain.MessageID
+	UserID    domain.UserID
+	Reaction  domain.Reaction
+	Now       time.Time
+}
+
+func (q *Queries) UpsertReaction(ctx context.Context, arg UpsertReactionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertReaction,
+		arg.MessageID,
+		arg.UserID,
+		arg.Reaction,
+		arg.Now,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

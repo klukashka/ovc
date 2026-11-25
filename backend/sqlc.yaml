@@ -462,6 +462,18 @@ sql:
             go_type:
               import: ovc/backend/internal/domain
               type: MessageID
+          - column: message_reactions.message_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MessageID
+          - column: message_reactions.user_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: UserID
+          - column: message_reactions.reaction
+            go_type:
+              import: ovc/backend/internal/domain
+              type: Reaction
           - column: messages.channel_id
             go_type:
               import: ovc/backend/internal/domain

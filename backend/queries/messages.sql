@@ -155,6 +155,43 @@ WHERE messages.channel_id = @channel_id AND messages.seq > sqlc.arg(after_seq)::
 ORDER BY messages.seq
 LIMIT sqlc.arg(row_limit);
 
+-- name: UpsertReaction :execrows
+INSERT INTO message_reactions (message_id, user_id, reaction, created_at)
+VALUES (@message_id, @user_id, @reaction, sqlc.arg(now)::timestamptz)
+ON CONFLICT (message_id, user_id) DO UPDATE SET reaction = excluded.reaction, created_at = excluded.created_at
+WHERE message_reactions.reaction <> excluded.reaction;
+
+-- name: DeleteReaction :execrows
+DELETE FROM message_reactions WHERE message_id = @message_id AND user_id = @user_id;
+
+-- name: DeleteReactionsOfMessages :execrows
+DELETE FROM message_reactions WHERE message_id = ANY (sqlc.arg(ids)::uuid[]);
+
+-- name: DeleteReactionsOfUser :execrows
+DELETE FROM message_reactions WHERE user_id = @user_id;
+
+-- name: DeleteReactionsOfMembers :execrows
+DELETE FROM message_reactions
+USING messages, (SELECT unnest(sqlc.arg(channel_ids)::uuid[]) AS channel_id, unnest(sqlc.arg(user_ids)::uuid[]) AS user_id) AS pairs
+WHERE messages.id = message_reactions.message_id AND messages.channel_id = pairs.channel_id
+    AND message_reactions.user_id = pairs.user_id;
+
+-- name: ListMessageReactions :many
+SELECT message_reactions.message_id, message_reactions.reaction, message_reactions.user_id, channels.tutor_id,
+    COALESCE(reactors.state, '')::text AS reactor_state, reactors.name AS reactor_name, COALESCE(cards.display_name, '')::text AS card_name
+FROM message_reactions
+JOIN messages ON messages.id = message_reactions.message_id
+JOIN channels ON channels.id = messages.channel_id
+LEFT JOIN users AS reactors ON reactors.id = message_reactions.user_id
+LEFT JOIN LATERAL (
+    SELECT relationships.display_name FROM relationships
+    WHERE relationships.tutor_id = channels.tutor_id AND relationships.student_id = message_reactions.user_id
+    ORDER BY relationships.state = 'discarded', relationships.created_at DESC
+    LIMIT 1
+) AS cards ON true
+WHERE message_reactions.message_id = ANY (sqlc.arg(ids)::uuid[])
+ORDER BY message_reactions.message_id, message_reactions.user_id;
+
 -- name: GetMessageView :one
 SELECT messages.id, messages.channel_id, messages.seq, messages.sender_id, messages.body, messages.version, messages.created_at,
     messages.edited_at, messages.deleted_at, messages.erased_at, channels.tutor_id, COALESCE(senders.state, '')::text AS sender_state, senders.name AS sender_name,

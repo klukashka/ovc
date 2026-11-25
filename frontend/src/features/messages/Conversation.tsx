@@ -27,10 +27,13 @@ import {
   type Channel,
   type Message,
   type MessagePage,
+  type ReactionValue,
   deleteMessage,
   editMessage,
   pinMessage,
+  removeReaction,
   sendMessage,
+  setReaction,
   unpinMessage,
 } from './api.ts';
 import { AroundWindow, type WindowCenter } from './AroundWindow.tsx';
@@ -657,6 +660,46 @@ export function Conversation({
       if (isAlive()) setBusy(false);
     }
   }
+  function reactionRemains(messageId: string, reaction: ReactionValue): boolean {
+    const pages = [
+      cache.getQueryData<MessagePage>(messagesKey(channel.id)),
+      ...cache
+        .getQueriesData<MessagePage>({ queryKey: aroundPrefix(channel.id), type: 'active' })
+        .map(([, page]) => page),
+    ];
+    return pages.some(
+      (page) =>
+        page?.items.some(
+          (item) => item.id === messageId && item.reactions.some((shown) => shown.reaction === reaction),
+        ) ?? false,
+    );
+  }
+  function focusShownMessage(messageId: string): void {
+    (shownRow(messageId) ?? heading.current)?.focus();
+  }
+  async function changeReaction(
+    message: Message,
+    reaction: ReactionValue | null,
+    toggled: ReactionValue | null = null,
+  ): Promise<void> {
+    if (!isAlive()) return;
+    setFailure(null);
+    setBusy(true);
+    try {
+      if (reaction === null) await removeReaction(client, message.id);
+      else await setReaction(client, message.id, reaction);
+      if (!isAlive()) return;
+      await reload();
+      if (isAlive() && toggled !== null && !reactionRemains(message.id, toggled)) focusShownMessage(message.id);
+    } catch (error: unknown) {
+      if (isAlive()) {
+        setFailure(asApiError(error));
+        await reload();
+      }
+    } finally {
+      if (isAlive()) setBusy(false);
+    }
+  }
   async function unpinFromBar(): Promise<void> {
     if (!isAlive()) return;
     setFailure(null);
@@ -686,12 +729,21 @@ export function Conversation({
           composer.current?.focus();
         }
       : null;
-    if (!canDelete && pin === null && reply === null) return null;
+    const reaction = channel.writable
+      ? { current: message.reactions.find((item) => item.mine)?.reaction ?? null }
+      : null;
+    if (!canDelete && pin === null && reply === null && reaction === null) return null;
     return (
       <MessageMenu
         texts={texts}
         editable={editable}
         busy={busy}
+        reaction={reaction}
+        onReact={(value) => {
+          deletion.run(() => {
+            void changeReaction(message, value);
+          });
+        }}
         onReply={editing === null ? reply : null}
         pin={pin}
         onPin={(action) => {
@@ -737,6 +789,12 @@ export function Conversation({
         refresh={refreshAttachments}
         tracked={tracked}
         peerReadSeq={channel.peer_read_seq}
+        reactable={channel.writable}
+        onToggleReaction={(value, mine) => {
+          deletion.run(() => {
+            void changeReaction(message, mine ? null : value, value);
+          });
+        }}
         onJump={(quote) => {
           jumpTo(quote.seq, quote.message_id);
         }}

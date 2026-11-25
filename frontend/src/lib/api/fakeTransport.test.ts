@@ -407,6 +407,7 @@ function chatFixture(): FakeAuthServer {
     sender_label_kind: null,
     sent_before_reclaim: true,
     reply_to: null,
+    reactions: [],
     seq: 1,
     version: 1,
     senderId: 'student',
@@ -552,6 +553,36 @@ describe('fake chat audience and state', () => {
     expect(short.status).toBe(422);
     expect(outside.status).toBe(404);
     expect(statuses.filter((status) => status === 429)).toHaveLength(2);
+  });
+
+  test('reactions name the reactors only to the tutor and follow the read-only rule', async () => {
+    const server = chatFixture();
+    const student = await chatToken(server, 'student@example.org');
+    const tutor = await chatToken(server, 'tutor@example.org');
+    const react = (token: string, reaction: string): Promise<Response> =>
+      server.transport().send(chatRequest(`messages/${messageId}/reaction`, token, 'PUT', { reaction }));
+
+    const set = await react(student, 'heart');
+    const unknown = await react(student, 'rocket');
+    const forTutor: unknown = await (
+      await server.transport().send(chatRequest(`channels/${chatId}/messages`, tutor))
+    ).json();
+    const forStudent: unknown = await (
+      await server.transport().send(chatRequest(`channels/${chatId}/messages`, student))
+    ).json();
+    server.chat.setWritable(chatId, false);
+    const readOnly = await react(student, 'joy');
+    const removed = await server.transport().send(chatRequest(`messages/${messageId}/reaction`, student, 'DELETE'));
+
+    expect(set.status).toBe(204);
+    expect(unknown.status).toBe(422);
+    expect(forTutor).toMatchObject({
+      items: [{ reactions: [{ reaction: 'heart', count: 1, mine: false, members: [{ label: 'Student card' }] }] }],
+    });
+    expect(forStudent).toMatchObject({ items: [{ reactions: [{ reaction: 'heart', count: 1, mine: true }] }] });
+    expect(JSON.stringify(forStudent)).not.toContain('members');
+    expect(readOnly.status).toBe(409);
+    expect(removed.status).toBe(204);
   });
 
   test('read markers clamp and never move backwards', async () => {

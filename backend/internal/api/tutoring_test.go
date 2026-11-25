@@ -395,6 +395,12 @@ var denialCases = map[string]denialCase{
 	"POST /api/v1/channels/{id}/messages/search": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, channel string, _ string) response {
 		return h.searchCall(t, bearerToken, channel, searchBody(t, "Only", nil))
 	}),
+	"PUT /api/v1/messages/{id}/reaction": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, _ string, message string) response {
+		return h.react(t, bearerToken, message, "heart")
+	}),
+	"DELETE /api/v1/messages/{id}/reaction": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, _ string, message string) response {
+		return h.unreact(t, bearerToken, message)
+	}),
 	"PUT /api/v1/channels/{id}/pin": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, channel string, message string) response {
 		return h.pin(t, bearerToken, channel, message)
 	}),

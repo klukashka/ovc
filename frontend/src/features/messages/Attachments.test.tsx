@@ -21,6 +21,7 @@ const message: Message = {
   erased: false,
   sent_before_reclaim: false,
   reply_to: null,
+  reactions: [],
   attachments: [
     {
       id: 'picture',

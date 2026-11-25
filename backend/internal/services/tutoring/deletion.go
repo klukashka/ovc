@@ -418,6 +418,9 @@ func (s *Service) OnAccountPurged(
 	if err := s.lockStudentChannels(ctx, repos, user, links, now); err != nil {
 		return nil, err
 	}
+	if err := repos.Messages.RemoveReactionsBy(ctx, user); err != nil {
+		return nil, err
+	}
 	if err := s.settleDecidedLessons(ctx, repos, domain.PathRemoval, &removals, now); err != nil {
 		return nil, err
 	}

@@ -10,6 +10,8 @@ export type MessagePage = components['schemas']['MessagePage'];
 export type MessageQuote = components['schemas']['MessageQuote'];
 export type PinnedMessage = components['schemas']['PinnedMessage'];
 export type SearchPage = components['schemas']['SearchPage'];
+export type MessageReaction = components['schemas']['MessageReaction'];
+export type ReactionValue = MessageReaction['reaction'];
 
 export async function fetchChannels(
   client: ApiClient,
@@ -139,6 +141,19 @@ export async function searchMessages(
   });
   if (data === undefined) throw new SearchRefusal(apiErrorFrom(response.status, error), retryAfterSeconds(response));
   return data;
+}
+
+export async function setReaction(client: ApiClient, id: string, reaction: ReactionValue): Promise<void> {
+  const { error, response } = await client.PUT('/api/v1/messages/{id}/reaction', {
+    params: { path: { id } },
+    body: { reaction },
+  });
+  if (!response.ok) throw apiErrorFrom(response.status, error);
+}
+
+export async function removeReaction(client: ApiClient, id: string): Promise<void> {
+  const { error, response } = await client.DELETE('/api/v1/messages/{id}/reaction', { params: { path: { id } } });
+  if (!response.ok) throw apiErrorFrom(response.status, error);
 }
 
 export async function pinMessage(client: ApiClient, id: string, message: string): Promise<void> {

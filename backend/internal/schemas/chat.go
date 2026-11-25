@@ -118,6 +118,23 @@ type Message struct {
 	SentBeforeReclaim bool                `json:"sent_before_reclaim"`
 	Attachments       []MessageAttachment `json:"attachments" nullable:"false"`
 	ReplyTo           *MessageQuote       `json:"reply_to"`
+	Reactions         []MessageReaction   `json:"reactions" nullable:"false"`
+}
+
+type MessageReaction struct {
+	Reaction domain.Reaction   `json:"reaction" enum:"thumbs_up,heart,joy,wow,sad,check"`
+	Count    int64             `json:"count"`
+	Mine     bool              `json:"mine"`
+	Members  *[]ReactionMember `json:"members,omitempty" required:"false" nullable:"false"`
+}
+
+type ReactionMember struct {
+	Label     *string           `json:"label" nullable:"true"`
+	LabelKind *domain.LabelKind `json:"label_kind" enum:"deleted_user" nullable:"true"`
+}
+
+type ReactionRequest struct {
+	Reaction domain.Reaction `json:"reaction" enum:"thumbs_up,heart,joy,wow,sad,check"`
 }
 
 func (Message) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {

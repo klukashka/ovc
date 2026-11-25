@@ -1,4 +1,4 @@
-import type { components } from './schema.ts';
+import { type components, messageReactionReactionValues } from './schema.ts';
 import type { Me } from './session.ts';
 
 type Channel = components['schemas']['ChannelDetail'];
@@ -37,8 +37,16 @@ export interface FakeChatMember {
   suspended?: boolean;
 }
 
+const reactionOrder = messageReactionReactionValues;
+type FakeReaction = (typeof reactionOrder)[number];
+
+function isReaction(value: unknown): value is FakeReaction {
+  return typeof value === 'string' && reactionOrder.some((reaction) => reaction === value);
+}
+
 interface StoredMessage {
   message: Message;
+  reactions?: Map<string, FakeReaction>;
   readonly senderId: string;
   readonly key?: string;
   readonly replyTo?: string;
@@ -263,6 +271,7 @@ export class FakeChatServer {
   private failHistoryRead = false;
   private readonly searchRefusals: { readonly status: number; readonly code: string }[] = [];
   private readonly searches = new Map<string, { window: number; count: number }>();
+  private readonly reactionWrites = new Map<string, { window: number; count: number }>();
   private failChannelListRead = false;
 
   failNextChannelListRead(): void {
@@ -536,6 +545,7 @@ export class FakeChatServer {
     return {
       ...stored.message,
       own: stored.senderId === caller.id,
+      reactions: this.reactionsFor(stored, caller, channel),
       sender_label: label ?? stored.message.sender_label,
       reply_to:
         quoted === undefined
@@ -552,6 +562,72 @@ export class FakeChatServer {
               sent_before_reclaim: quoted.message.sent_before_reclaim,
             },
     };
+  }
+
+  private reactionsFor(stored: StoredMessage, caller: Me, channel: StoredChannel): Message['reactions'] {
+    const reactions = stored.reactions;
+    if (reactions === undefined || reactions.size === 0) return [];
+    return reactionOrder.flatMap((reaction) => {
+      const reactors = [...reactions].filter(([, value]) => value === reaction).map(([account]) => account);
+      if (reactors.length === 0) return [];
+      const view: Message['reactions'][number] = {
+        reaction,
+        count: reactors.length,
+        mine: reactors.includes(caller.id),
+      };
+      if (caller.role === 'tutor') {
+        view.members = reactors
+          .filter((account) => account !== caller.id)
+          .map((account) => {
+            const label = channel.members.get(account)?.label ?? null;
+            return { label, label_kind: label === null ? 'deleted_user' : null };
+          });
+      }
+      return [view];
+    });
+  }
+
+  memberReact(messageId: string, accountId: string, reaction: FakeReaction | null): void {
+    const stored = [...this.channels.values()]
+      .flatMap((channel) => channel.messages)
+      .find((entry) => entry.message.id === messageId);
+    if (stored === undefined) throw new Error('no fake message');
+    stored.reactions ??= new Map();
+    if (reaction === null) stored.reactions.delete(accountId);
+    else stored.reactions.set(accountId, reaction);
+  }
+
+  private async react(
+    channel: StoredChannel,
+    stored: StoredMessage,
+    caller: Me,
+    request: Request,
+    now: number,
+  ): Promise<Response> {
+    if (stored.message.deleted || stored.message.erased) return refused(404, 'not_found');
+    const window = Math.floor(now / 60_000);
+    const counted = this.reactionWrites.get(caller.id);
+    const count = counted?.window === window ? counted.count : 0;
+    if (count >= 30) {
+      return new Response(
+        JSON.stringify({ error: { code: 'rate_limited', message: 'rate_limited', request_id: 'fake-request' } }),
+        { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': '60' } },
+      );
+    }
+    if (request.method === 'DELETE') {
+      this.reactionWrites.set(caller.id, { window, count: count + 1 });
+      stored.reactions?.delete(caller.id);
+      return new Response(null, { status: 204 });
+    }
+    const body: unknown = await request.json();
+    if (typeof body !== 'object' || body === null || !('reaction' in body) || !isReaction(body.reaction)) {
+      return refusedAt(422, 'validation_failed', 'body.reaction');
+    }
+    if (!channel.channel.writable) return refused(409, 'channel_read_only');
+    this.reactionWrites.set(caller.id, { window, count: count + 1 });
+    stored.reactions ??= new Map();
+    stored.reactions.set(caller.id, body.reaction);
+    return new Response(null, { status: 204 });
   }
 
   private pinnedFor(channel: StoredChannel, caller: Me): Channel['pinned'] {
@@ -938,6 +1014,7 @@ export class FakeChatServer {
         sender_label_kind: null,
         sent_before_reclaim: false,
         reply_to: null,
+        reactions: [],
         seq: Math.max(0, ...channel.messages.map((entry) => entry.message.seq)) + 1,
         version: 1,
       },
@@ -962,12 +1039,16 @@ export class FakeChatServer {
     if (channel === undefined || stored === undefined || !this.visible(channel, caller)) {
       return refused(404, 'not_found');
     }
+    if (new URL(request.url).pathname.endsWith('/reaction')) {
+      return this.react(channel, stored, caller, request, now);
+    }
     if (request.method === 'DELETE' && (stored.senderId === caller.id || caller.role === 'tutor')) {
       if (this.failDelete) {
         this.failDelete = false;
         return refused(500, 'internal_error');
       }
       stored.message = { ...stored.message, body: null, attachments: [], deleted: true };
+      stored.reactions?.clear();
       if (channel.pinned === stored.message.id) channel.pinned = null;
       return new Response(null, { status: 204 });
     }

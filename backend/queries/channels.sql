@@ -292,6 +292,11 @@ UNION
 SELECT channels.tutor_id FROM channels
 JOIN channel_members ON channel_members.channel_id = channels.id
 WHERE channel_members.user_id = @student_id
+UNION
+SELECT channels.tutor_id FROM channels
+JOIN messages ON messages.channel_id = channels.id
+JOIN message_reactions ON message_reactions.message_id = messages.id
+WHERE message_reactions.user_id = @student_id
 ORDER BY tutor_id;
 
 -- name: LockStudentDeletionChannels :many
@@ -299,6 +304,11 @@ SELECT channels.id FROM channels
 WHERE channels.relationship_id = ANY (sqlc.arg(relationship_ids)::uuid[])
     OR channels.group_id = ANY (sqlc.arg(group_ids)::uuid[])
     OR channels.id IN (SELECT channel_id FROM channel_members WHERE channel_members.user_id = @user_id)
+    OR channels.id IN (
+        SELECT messages.channel_id FROM message_reactions
+        JOIN messages ON messages.id = message_reactions.message_id
+        WHERE message_reactions.user_id = @user_id
+    )
 ORDER BY channels.id
 FOR UPDATE;
 

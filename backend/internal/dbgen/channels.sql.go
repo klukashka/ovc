@@ -758,6 +758,11 @@ UNION
 SELECT channels.tutor_id FROM channels
 JOIN channel_members ON channel_members.channel_id = channels.id
 WHERE channel_members.user_id = $1
+UNION
+SELECT channels.tutor_id FROM channels
+JOIN messages ON messages.channel_id = channels.id
+JOIN message_reactions ON message_reactions.message_id = messages.id
+WHERE message_reactions.user_id = $1
 ORDER BY tutor_id
 `
 
@@ -969,6 +974,11 @@ SELECT channels.id FROM channels
 WHERE channels.relationship_id = ANY ($1::uuid[])
     OR channels.group_id = ANY ($2::uuid[])
     OR channels.id IN (SELECT channel_id FROM channel_members WHERE channel_members.user_id = $3)
+    OR channels.id IN (
+        SELECT messages.channel_id FROM message_reactions
+        JOIN messages ON messages.id = message_reactions.message_id
+        WHERE message_reactions.user_id = $3
+    )
 ORDER BY channels.id
 FOR UPDATE
 `

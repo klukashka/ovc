@@ -436,7 +436,7 @@ A message's attachments are references with `ref_kind = message` and `ref_id` th
 
 ### Message reaction
 
-Specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md) (pending owner review; pending implementation by M5).
+Specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md) (pending owner review; built on 2026-11-25 by M5, pending owner review).
 
 | Column | Notes |
 |---|---|
@@ -445,7 +445,7 @@ Specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-re
 | `reaction` | one of the six values of the `Reaction` enum in `internal/domain` ([messages](realtime-and-video.md#messages)), checked |
 | `created_at` | |
 
-Primary key `(message_id, user_id)`: one reaction per member and message. A delete of the message deletes its reactions in the same transaction, the sender's purge erases the message's body and deletes its reactions, and the student purge's final transaction deletes the account's own reactions under the channel locks with its member rows.
+Primary key `(message_id, user_id)`: one reaction per member and message. A delete of the message deletes its reactions in the same transaction, the sender's purge erases the message's body and deletes its reactions, and the student purge deletes the account's own reactions right after its first sorted channel lock, which also covers the channels holding them, before its member rows are forgotten. The purge does not lock the group of a channel that holds only the account's reactions; it stays free of deadlocks with group writers because every writer on a group or its channel takes the group's tutor profile first and the purge locks that tutor before any channel (pending owner review).
 
 ### Presence and digest bookkeeping
 
@@ -786,7 +786,7 @@ Slice 9 adds, each table's batches in the change that creates the table:
 | Upload cleanup intent and operator receipt | Minimal unresolved technical records survive purge independently until safe terminal cleanup; no account/channel identifier is retained | Same |
 | Notification | Every row whose `user_id`, `tutor_id` or `student_id` is the student deleted, through their indexes, inside the purge's batches | Every row whose `user_id`, `tutor_id` or `student_id` is the tutor deleted, likewise |
 | Email preference | Removed with the user row (`ON DELETE CASCADE`) | Same |
-| Message reaction (pending implementation by M5) | The account's own reactions deleted in the final transaction, under the channel locks | Deleted with the tutor's channels' messages (`ON DELETE CASCADE`) |
+| Message reaction (built by M5, pending owner review) | The account's own reactions deleted right after the purge's first sorted channel lock, which also covers the channels holding them, and under the channel locks | Deleted with the tutor's channels' messages (`ON DELETE CASCADE`) |
 | Export and export limit (pending implementation by E1) | The account's export already withdrawn at deletion; its row and limit row deleted in the final transaction by the [deletion path](files.md#states), queueing an object deletion only if one is still due | Same |
 
 ## Indexes and integrity notes

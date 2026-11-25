@@ -50,6 +50,7 @@ function message(seq: number): Message & { readonly senderId: string } {
     sender_label_kind: null,
     sent_before_reclaim: false,
     reply_to: null,
+    reactions: [],
     version: 1,
     senderId: account.id,
   };

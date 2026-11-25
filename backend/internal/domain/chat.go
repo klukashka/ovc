@@ -42,6 +42,37 @@ const (
 	LimitSearches ChatLimit = "searches"
 )
 
+type Reaction string
+
+const (
+	ReactionThumbsUp Reaction = "thumbs_up"
+	ReactionHeart    Reaction = "heart"
+	ReactionJoy      Reaction = "joy"
+	ReactionWow      Reaction = "wow"
+	ReactionSad      Reaction = "sad"
+	ReactionCheck    Reaction = "check"
+)
+
+var Reactions = []Reaction{ReactionThumbsUp, ReactionHeart, ReactionJoy, ReactionWow, ReactionSad, ReactionCheck}
+
+func ParseReaction(value string) (Reaction, bool) {
+	for _, reaction := range Reactions {
+		if string(reaction) == value {
+			return reaction, true
+		}
+	}
+	return "", false
+}
+
+func ReactionRank(reaction Reaction) int {
+	for index, known := range Reactions {
+		if known == reaction {
+			return index
+		}
+	}
+	return len(Reactions)
+}
+
 func LikeLiteral(term string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
 }

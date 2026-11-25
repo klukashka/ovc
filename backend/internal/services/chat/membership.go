@@ -185,7 +185,11 @@ func (m Mirror) syncMembers(ctx context.Context, repos repositories.Repositories
 		return err
 	}
 	outcome.suspended = suspended
-	if _, err := repos.Channels.RestoreKept(ctx, ids, now); err != nil {
+	restored, err := repos.Channels.RestoreKept(ctx, ids, now)
+	if err != nil {
+		return err
+	}
+	if err := repos.Messages.RemoveReactionsOfMembers(ctx, restored); err != nil {
 		return err
 	}
 	removed, err := repos.Channels.RemoveFormerGroupMembers(ctx, ids)

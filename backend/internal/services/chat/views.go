@@ -35,6 +35,7 @@ type Message struct {
 	SentBeforeReclaim bool
 	Attachments       []Attachment
 	ReplyTo           *Quote
+	Reactions         []ReactionView
 }
 
 type Quote struct {
@@ -69,24 +70,37 @@ func deletedUser() sender {
 	return sender{kind: &kind}
 }
 
+type labelInput struct {
+	viewer domain.UserID
+	tutor  domain.UserID
+	sender *domain.UserID
+	state  string
+	name   *string
+	card   string
+}
+
 func senderOf(viewer domain.UserID, row repositories.MessageRow) sender {
+	return senderLabel(labelInput{viewer: viewer, tutor: row.TutorID, sender: row.SenderID, state: row.SenderState, name: row.SenderName, card: row.CardName})
+}
+
+func senderLabel(input labelInput) sender {
 	switch {
-	case row.SenderID == nil:
+	case input.sender == nil:
 		return deletedUser()
-	case *row.SenderID == viewer:
+	case *input.sender == input.viewer:
 		return sender{own: true}
-	case row.SenderState == string(domain.AccountDeleted):
+	case input.state == string(domain.AccountDeleted):
 		return deletedUser()
-	case viewer == row.TutorID:
-		if row.CardName == "" {
+	case input.viewer == input.tutor:
+		if input.card == "" {
 			return deletedUser()
 		}
-		name := row.CardName
+		name := input.card
 		return sender{label: &name}
-	case row.SenderName == nil:
+	case input.name == nil:
 		return deletedUser()
 	}
-	name := *row.SenderName
+	name := *input.name
 	return sender{label: &name}
 }
 
@@ -131,9 +145,15 @@ func (s *Service) messageViews(
 	if err != nil {
 		return nil, err
 	}
+	reactionRows, err := repos.Messages.ReactionsOf(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	reactions := reactionViews(viewer, reactionRows)
 	views := make([]Message, 0, len(rows))
 	for _, row := range rows {
 		view := s.messageView(viewer, row, byMessage[row.ID], now)
+		view.Reactions = reactions[row.ID]
 		if row.ReplyToMessageID != nil {
 			view.ReplyTo = quotes[*row.ReplyToMessageID]
 		}

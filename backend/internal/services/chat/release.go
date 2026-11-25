@@ -154,6 +154,9 @@ func (r Release) PurgeSenderBatch(
 	if _, err := repos.Messages.EraseOfSender(ctx, sender, locked, now); err != nil {
 		return 0, err
 	}
+	if err := repos.Messages.RemoveReactionsOf(ctx, locked); err != nil {
+		return 0, err
+	}
 	if err := r.clearPinsOfErased(ctx, repos, locked, now); err != nil {
 		return 0, err
 	}
