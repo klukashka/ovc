@@ -44,10 +44,11 @@ type channelOutput struct {
 }
 
 type messageListInput struct {
-	ID       string `path:"id"`
-	Cursor   string `query:"cursor" maxLength:"64"`
-	AfterSeq string `query:"after_seq" pattern:"^[0-9]{1,18}$"`
-	Limit    int32  `query:"limit" default:"50" minimum:"1" maximum:"100"`
+	ID        string `path:"id"`
+	Cursor    string `query:"cursor" maxLength:"64"`
+	AfterSeq  string `query:"after_seq" pattern:"^[0-9]{1,18}$"`
+	AroundSeq string `query:"around_seq" pattern:"^[0-9]{1,18}$"`
+	Limit     int32  `query:"limit" default:"50" minimum:"1" maximum:"100"`
 }
 
 type messageListOutput struct {
@@ -79,6 +80,12 @@ type messageInput struct {
 
 type deletedMessageOutput struct {
 	CacheControl string `header:"Cache-Control"`
+}
+
+type pinInput struct {
+	ID          string `path:"id"`
+	ContentType string `header:"Content-Type"`
+	Body        schemas.PinRequest
 }
 
 type readMarkerInput struct {
@@ -127,6 +134,45 @@ func (r *router) registerChat() {
 	read := operation("channels-read", http.MethodPost, channelsPath+"/{id}/read")
 	read.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound)
 	register(r, read, AudienceUnverifiedOK, r.markRead)
+
+	pin := operation("channels-pin-set", http.MethodPut, channelsPath+"/{id}/pin")
+	pin.DefaultStatus = http.StatusNoContent
+	pin.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests)
+	register(r, pin, AudienceTutorUnverifiedOK, r.pinMessage)
+
+	unpin := operation("channels-pin-delete", http.MethodDelete, channelsPath+"/{id}/pin")
+	unpin.DefaultStatus = http.StatusNoContent
+	unpin.Errors = errorsOf(http.StatusUnauthorized, http.StatusNotFound, http.StatusTooManyRequests)
+	register(r, unpin, AudienceTutorUnverifiedOK, r.unpinMessage)
+}
+
+func (r *router) pinMessage(ctx context.Context, input *pinInput) (*deletedMessageOutput, error) {
+	if err := requireJSON(ctx, input.ContentType); err != nil {
+		return nil, err
+	}
+	id, valid := domain.ParseUUID[domain.ChannelID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	message, valid := domain.ParseUUID[domain.MessageID](input.Body.MessageID)
+	if !valid {
+		message = domain.MessageID{}
+	}
+	if err := r.chat.Pin(ctx, authorOf(ctx), id, message); err != nil {
+		return nil, r.chatError(ctx, "channels.pin.set.failed", err)
+	}
+	return &deletedMessageOutput{CacheControl: noStore}, nil
+}
+
+func (r *router) unpinMessage(ctx context.Context, input *messageInput) (*deletedMessageOutput, error) {
+	id, valid := domain.ParseUUID[domain.ChannelID](input.ID)
+	if !valid {
+		return nil, NewError(ctx, domain.ErrorNotFound)
+	}
+	if err := r.chat.Unpin(ctx, authorOf(ctx), id); err != nil {
+		return nil, r.chatError(ctx, "channels.pin.delete.failed", err)
+	}
+	return &deletedMessageOutput{CacheControl: noStore}, nil
 }
 
 func authorOf(ctx context.Context) chat.Author {
@@ -147,11 +193,18 @@ func (r *router) listMessages(ctx context.Context, input *messageListInput) (*me
 		}
 		query.AfterSeq = &after
 	}
+	if input.AroundSeq != "" {
+		around, err := strconv.ParseInt(input.AroundSeq, 10, 64)
+		if err != nil {
+			return nil, r.chatError(ctx, "channels.messages.list.failed", &chat.ValidationError{Path: "query.around_seq", Code: domain.FieldInvalid})
+		}
+		query.AroundSeq = &around
+	}
 	page, err := r.chat.History(ctx, principalFrom(ctx).UserID, id, query)
 	if err != nil {
 		return nil, r.chatError(ctx, "channels.messages.list.failed", err)
 	}
-	body := schemas.MessagePage{Items: make([]schemas.Message, 0, len(page.Items)), NextCursor: page.NextCursor}
+	body := schemas.MessagePage{Items: make([]schemas.Message, 0, len(page.Items)), NextCursor: page.NextCursor, HasNewer: page.HasNewer}
 	for _, message := range page.Items {
 		body.Items = append(body.Items, messageBody(message))
 	}
@@ -176,6 +229,13 @@ func (r *router) sendMessage(ctx context.Context, input *sendMessageInput) (*mes
 	}
 	if input.IdempotencyKey != "" {
 		draft.ClientKey = &input.IdempotencyKey
+	}
+	if input.Body.ReplyToMessageID != nil {
+		replyTo, valid := domain.ParseUUID[domain.MessageID](*input.Body.ReplyToMessageID)
+		if !valid {
+			replyTo = domain.MessageID{}
+		}
+		draft.ReplyTo = &replyTo
 	}
 	message, err := r.chat.Send(ctx, authorOf(ctx), id, draft)
 	if err != nil {
@@ -232,6 +292,12 @@ func messageBody(message chat.Message) schemas.Message {
 		Version: message.Version, SentBeforeReclaim: message.SentBeforeReclaim,
 		Attachments: make([]schemas.MessageAttachment, 0, len(message.Attachments)),
 	}
+	if quote := message.ReplyTo; quote != nil {
+		body.ReplyTo = &schemas.MessageQuote{
+			MessageID: quote.MessageID.String(), Seq: quote.Seq, SenderLabel: quote.SenderLabel, SenderLabelKind: quote.SenderLabelKind, Own: quote.Own,
+			Preview: quote.Preview, State: quote.State, SentBeforeReclaim: quote.SentBeforeReclaim,
+		}
+	}
 	for _, attachment := range message.Attachments {
 		body.Attachments = append(body.Attachments, schemas.MessageAttachment{
 			ID: attachment.ID.String(), Filename: attachment.Filename, MediaType: attachment.MediaType, SizeBytes: attachment.SizeBytes,
@@ -272,6 +338,12 @@ func (r *router) channel(ctx context.Context, input *channelInput) (*channelOutp
 		return nil, r.chatError(ctx, "channels.get.failed", err)
 	}
 	body := schemas.ChannelDetail{ChannelItem: channelItemBody(channel)}
+	if pinned := channel.Pinned; pinned != nil {
+		body.Pinned = &schemas.PinnedMessage{
+			MessageID: pinned.MessageID.String(), Seq: pinned.Seq, SenderLabel: pinned.SenderLabel, SenderLabelKind: pinned.SenderLabelKind,
+			Own: pinned.Own, Preview: pinned.Preview, SentBeforeReclaim: pinned.SentBeforeReclaim,
+		}
+	}
 	if channel.TutorView {
 		if channel.RelationshipID != nil {
 			relationship := channel.RelationshipID.String()
@@ -314,6 +386,7 @@ func channelItemBody(channel chat.Channel) schemas.ChannelItem {
 func (r *router) chatError(ctx context.Context, event string, err error) error {
 	var invalid *chat.ValidationError
 	var throttled *chat.ThrottledError
+	var missing *chat.NotFoundAtError
 	switch {
 	case errors.Is(err, chat.ErrNotFound):
 		return NewError(ctx, domain.ErrorNotFound)
@@ -330,6 +403,9 @@ func (r *router) chatError(ctx context.Context, event string, err error) error {
 	case errors.As(err, &throttled):
 		seconds := int64(math.Ceil(throttled.RetryAfter.Seconds()))
 		return NewError(ctx, domain.ErrorRateLimited).withHeader("Retry-After", strconv.FormatInt(max(seconds, 1), 10))
+	case errors.As(err, &missing):
+		fields := []schemas.FieldError{{Path: missing.Path, Code: string(domain.FieldNotFound)}}
+		return &Error{status: http.StatusNotFound, ErrorEnvelope: schemas.NewErrorEnvelope(domain.ErrorNotFound, core.RequestID(ctx), fields)}
 	case errors.As(err, &invalid):
 		fields := []schemas.FieldError{{Path: invalid.Path, Code: string(invalid.Code)}}
 		return &Error{status: http.StatusUnprocessableEntity, ErrorEnvelope: schemas.NewErrorEnvelope(domain.ErrorValidationFailed, core.RequestID(ctx), fields)}

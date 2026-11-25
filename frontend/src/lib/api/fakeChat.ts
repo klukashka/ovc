@@ -40,6 +40,7 @@ interface StoredMessage {
   message: Message;
   readonly senderId: string;
   readonly key?: string;
+  readonly replyTo?: string;
 }
 
 interface StoredChannel {
@@ -47,6 +48,7 @@ interface StoredChannel {
   readonly members: Map<string, FakeChatMember>;
   readonly messages: StoredMessage[];
   activity: number;
+  pinned: string | null;
 }
 
 function answer(status: number, body: unknown): Response {
@@ -58,6 +60,26 @@ function answer(status: number, body: unknown): Response {
 
 function refused(status: number, code: string): Response {
   return answer(status, { error: { code, message: code, request_id: 'fake-request' } });
+}
+
+function refusedAt(status: number, code: string, path: string): Response {
+  return answer(status, {
+    error: { code, message: code, request_id: 'fake-request', fields: [{ path, code: 'not_found' }] },
+  });
+}
+
+function previewOf(message: Message): string | null {
+  if (message.deleted || message.erased) return null;
+  return (
+    Array.from(message.body ?? '')
+      .slice(0, 120)
+      .join('') || null
+  );
+}
+
+function replyTarget(body: object): string | null | undefined {
+  if (!('reply_to_message_id' in body)) return null;
+  return typeof body.reply_to_message_id === 'string' ? body.reply_to_message_id : undefined;
 }
 
 function validBody(body: unknown): body is { readonly body: string } {
@@ -195,7 +217,12 @@ export class FakeChatServer {
       bound: boolean;
     }
   >();
-  readonly sends: { readonly body: string; readonly ids: readonly string[]; readonly key: string }[] = [];
+  readonly sends: {
+    readonly body: string;
+    readonly ids: readonly string[];
+    readonly key: string;
+    readonly replyTo: string | null;
+  }[] = [];
 
   async upload(request: Request, caller: Me, body: FormData, now: number): Promise<Response> {
     request.signal.throwIfAborted();
@@ -379,13 +406,14 @@ export class FakeChatServer {
       members: new Map(seed.members.map((member) => [member.accountId, { ...member }])),
       messages: [],
       activity: this.sequence,
+      pinned: null,
     });
   }
 
-  addMessage(channelId: string, seed: Message & { readonly senderId: string }): void {
+  addMessage(channelId: string, seed: Message & { readonly senderId: string; readonly replyTo?: string }): void {
     const channel = this.requiredChannel(channelId);
-    const { senderId, ...message } = seed;
-    channel.messages.push({ message, senderId });
+    const { senderId, replyTo, ...message } = seed;
+    channel.messages.push(replyTo === undefined ? { message, senderId } : { message, senderId, replyTo });
     this.sequence += 1;
     channel.activity = this.sequence;
   }
@@ -404,6 +432,14 @@ export class FakeChatServer {
       throw new Error('no fake channel member');
     }
     member.suspended = suspended;
+  }
+
+  pinOf(channelId: string): string | null {
+    return this.requiredChannel(channelId).pinned;
+  }
+
+  pin(channelId: string, messageId: string): void {
+    this.requiredChannel(channelId).pinned = messageId;
   }
 
   readSeq(channelId: string, accountId: string): number {
@@ -466,10 +502,40 @@ export class FakeChatServer {
 
   private messageFor(stored: StoredMessage, caller: Me, channel: StoredChannel): Message {
     const label = channel.members.get(stored.senderId)?.label;
+    const quoted = channel.messages.find((entry) => entry.message.id === stored.replyTo);
     return {
       ...stored.message,
       own: stored.senderId === caller.id,
       sender_label: label ?? stored.message.sender_label,
+      reply_to:
+        quoted === undefined
+          ? null
+          : {
+              message_id: quoted.message.id,
+              seq: quoted.message.seq,
+              sender_label:
+                quoted.senderId === caller.id ? null : this.messageFor(quoted, caller, channel).sender_label,
+              sender_label_kind: quoted.message.sender_label_kind,
+              own: quoted.senderId === caller.id,
+              preview: previewOf(quoted.message),
+              state: quoted.message.erased ? 'removed' : quoted.message.deleted ? 'deleted' : 'available',
+              sent_before_reclaim: quoted.message.sent_before_reclaim,
+            },
+    };
+  }
+
+  private pinnedFor(channel: StoredChannel, caller: Me): Channel['pinned'] {
+    const stored = channel.messages.find((entry) => entry.message.id === channel.pinned);
+    if (stored === undefined || stored.message.deleted || stored.message.erased) return null;
+    const view = this.messageFor(stored, caller, channel);
+    return {
+      message_id: view.id,
+      seq: view.seq,
+      sender_label: view.own ? null : view.sender_label,
+      sender_label_kind: view.sender_label_kind,
+      own: view.own,
+      preview: previewOf(view),
+      sent_before_reclaim: view.sent_before_reclaim,
     };
   }
 
@@ -479,6 +545,7 @@ export class FakeChatServer {
     const last = [...channel.messages].sort((left, right) => right.message.seq - left.message.seq)[0];
     const result: Channel = {
       ...base,
+      pinned: this.pinnedFor(channel, caller),
       writable: channel.channel.writable,
       unread_count: Math.min(99, Math.max(0, (last?.message.seq ?? 0) - (member?.lastReadSeq ?? 0))),
       last_message:
@@ -603,6 +670,23 @@ export class FakeChatServer {
       }
       return response;
     }
+    if (parts[4] === 'pin' && (request.method === 'PUT' || request.method === 'DELETE')) {
+      if (caller.role !== 'tutor') return refused(404, 'not_found');
+      if (request.method === 'DELETE') {
+        channel.pinned = null;
+        return new Response(null, { status: 204 });
+      }
+      const body: unknown = await request.json();
+      const message =
+        typeof body === 'object' && body !== null && 'message_id' in body && typeof body.message_id === 'string'
+          ? channel.messages.find((entry) => entry.message.id === body.message_id)
+          : undefined;
+      if (message === undefined || message.message.deleted || message.message.erased)
+        return refusedAt(404, 'not_found', 'body.message_id');
+      if (!channel.channel.writable) return refused(409, 'channel_read_only');
+      channel.pinned = message.message.id;
+      return new Response(null, { status: 204 });
+    }
     if (parts[4] === 'read' && request.method === 'POST') {
       const body: unknown = await request.json();
       if (
@@ -636,6 +720,21 @@ export class FakeChatServer {
     if (query.has('cursor') && query.has('after_seq')) {
       return refused(422, 'validation_failed');
     }
+    if (query.has('around_seq')) {
+      const around = Number(query.get('around_seq'));
+      const limit = Math.min(100, Math.max(1, Number(query.get('limit') ?? 50)));
+      const newerCount = Math.floor(limit / 2);
+      const olderCount = limit - newerCount;
+      const ascending = [...channel.messages].sort((left, right) => left.message.seq - right.message.seq);
+      const older = ascending.filter((stored) => stored.message.seq <= around);
+      const newer = ascending.filter((stored) => stored.message.seq > around);
+      const kept = [...older.slice(-olderCount), ...newer.slice(0, newerCount)];
+      return answer(200, {
+        items: kept.map((stored) => this.messageFor(stored, caller, channel)),
+        next_cursor: older.length > olderCount ? String(older.at(-olderCount)?.message.seq) : null,
+        has_newer: newer.length > newerCount,
+      });
+    }
     const after = query.has('after_seq') ? Number(query.get('after_seq')) : null;
     const before = Number(query.get('cursor') ?? Number.MAX_SAFE_INTEGER);
     const limit = Math.min(100, Math.max(1, Number(query.get('limit') ?? 50)));
@@ -648,6 +747,7 @@ export class FakeChatServer {
     return answer(200, {
       items: page.map((stored) => this.messageFor(stored, caller, channel)),
       next_cursor: after === null && sorted.length > limit ? String(page.at(-1)?.message.seq) : null,
+      has_newer: false,
     });
   }
 
@@ -662,13 +762,20 @@ export class FakeChatServer {
     )
       return refused(422, 'validation_failed');
     const ids = body.attachment_ids;
-    this.sends.push({ body: body.body, ids: [...ids], key });
+    const replyTo = replyTarget(body);
+    if (replyTo === undefined) return refused(422, 'validation_failed');
+    this.sends.push({ body: body.body, ids: [...ids], key, replyTo });
     if (!/^[A-Za-z0-9._-]{1,64}$/.test(key)) {
       return refused(422, 'validation_failed');
     }
     const previous = channel.messages.find((stored) => stored.senderId === caller.id && stored.key === key);
     if (previous !== undefined) {
       return answer(201, this.messageFor(previous, caller, channel));
+    }
+    if (replyTo !== null) {
+      const quoted = channel.messages.find((entry) => entry.message.id === replyTo);
+      if (quoted === undefined || quoted.message.deleted || quoted.message.erased)
+        return refusedAt(404, 'not_found', 'body.reply_to_message_id');
     }
     if (!channel.channel.writable) {
       return refused(409, 'channel_read_only');
@@ -695,6 +802,7 @@ export class FakeChatServer {
     const stored: StoredMessage = {
       key,
       senderId: caller.id,
+      ...(replyTo === null ? {} : { replyTo }),
       message: {
         id: `00000000-0000-4000-9000-${String(this.issued).padStart(12, '0')}`,
         body: body.body,
@@ -707,6 +815,7 @@ export class FakeChatServer {
         sender_label: caller.name,
         sender_label_kind: null,
         sent_before_reclaim: false,
+        reply_to: null,
         seq: Math.max(0, ...channel.messages.map((entry) => entry.message.seq)) + 1,
         version: 1,
       },
@@ -736,6 +845,7 @@ export class FakeChatServer {
         return refused(500, 'internal_error');
       }
       stored.message = { ...stored.message, body: null, attachments: [], deleted: true };
+      if (channel.pinned === stored.message.id) channel.pinned = null;
       return new Response(null, { status: 204 });
     }
     if (

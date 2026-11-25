@@ -79,3 +79,19 @@ const (
 	PathStudentPurge   MembershipPath = "student_purge"
 	PathJoinAcceptance MembershipPath = "join_acceptance"
 )
+
+type QuoteState string
+
+const (
+	QuoteAvailable QuoteState = "available"
+	QuoteDeleted   QuoteState = "deleted"
+	QuoteRemoved   QuoteState = "removed"
+)
+
+type UnpinCause string
+
+const (
+	UnpinDeleted UnpinCause = "deleted"
+	UnpinPurged  UnpinCause = "purged"
+	UnpinErased  UnpinCause = "erased"
+)

@@ -293,3 +293,32 @@ WHERE channels.relationship_id = ANY (sqlc.arg(relationship_ids)::uuid[])
     OR channels.id IN (SELECT channel_id FROM channel_members WHERE channel_members.user_id = @user_id)
 ORDER BY channels.id
 FOR UPDATE;
+
+-- name: GetChannelPin :one
+SELECT pinned_message_id FROM channels WHERE id = @id;
+
+-- name: SetChannelPin :exec
+UPDATE channels SET pinned_message_id = @message_id, updated_at = sqlc.arg(now)::timestamptz WHERE id = @id;
+
+-- name: ClearChannelPin :execrows
+UPDATE channels SET pinned_message_id = NULL, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND pinned_message_id IS NOT NULL;
+
+-- name: ClearChannelPinOfMessage :execrows
+UPDATE channels SET pinned_message_id = NULL, updated_at = sqlc.arg(now)::timestamptz
+WHERE id = @id AND pinned_message_id = @message_id;
+
+-- name: ClearPinsOfMessages :many
+WITH pinned AS (
+    SELECT channels.id, channels.pinned_message_id AS message_id, channels.tutor_id FROM channels
+    WHERE channels.pinned_message_id = ANY (sqlc.arg(message_ids)::uuid[])
+)
+UPDATE channels SET pinned_message_id = NULL, updated_at = sqlc.arg(now)::timestamptz
+FROM pinned
+WHERE channels.id = pinned.id
+RETURNING channels.id, pinned.message_id::uuid AS message_id, pinned.tutor_id;
+
+-- name: ClearPinsOfTutorChannels :execrows
+UPDATE channels SET pinned_message_id = NULL, updated_at = sqlc.arg(now)::timestamptz
+WHERE tutor_id = @tutor_id AND pinned_message_id IS NOT NULL;
+

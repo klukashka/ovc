@@ -25,17 +25,20 @@ type Draft struct {
 	Body        string
 	Attachments []domain.AttachmentID
 	ClientKey   *string
+	ReplyTo     *domain.MessageID
 }
 
 type HistoryQuery struct {
-	Cursor   string
-	AfterSeq *int64
-	Limit    int32
+	Cursor    string
+	AfterSeq  *int64
+	AroundSeq *int64
+	Limit     int32
 }
 
 type History struct {
 	Items      []Message
 	NextCursor *string
+	HasNewer   bool
 }
 
 type ReadState struct {
@@ -104,7 +107,7 @@ func (s *Service) Send(ctx context.Context, author Author, channel domain.Channe
 		return Message{}, err
 	}
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "chat.message.persisted", channelAttribute(channel), messageAttribute(message.ID),
-		userAttribute(author.UserID), slog.Int("attachment_count", len(message.Attachments)))
+		userAttribute(author.UserID), slog.Int("attachment_count", len(message.Attachments)), slog.Bool("has_reply", draft.ReplyTo != nil))
 	for _, attachment := range message.Attachments {
 		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "file.reference.added", slog.String("attachment_id", attachment.ID.String()),
 			slog.String("ref_kind", string(domain.ReferenceMessage)), messageAttribute(message.ID))
@@ -146,6 +149,11 @@ func (s *Service) send(ctx context.Context, author Author, channel domain.Channe
 		if len(uploads) != len(attachments) {
 			return ErrNotFound
 		}
+		if draft.ReplyTo != nil {
+			if err := liveMessageOf(ctx, repos, channel, *draft.ReplyTo, fieldReplyTo); err != nil {
+				return err
+			}
+		}
 		if membership.ReadOnlySince != nil {
 			return ErrReadOnly
 		}
@@ -157,7 +165,7 @@ func (s *Service) send(ctx context.Context, author Author, channel domain.Channe
 			return err
 		}
 		err = repos.Messages.Insert(ctx, repositories.NewMessage{
-			ID: id, Channel: channel, Seq: seq, Sender: author.UserID, ClientKey: draft.ClientKey, Body: draft.Body, Now: now,
+			ID: id, Channel: channel, Seq: seq, Sender: author.UserID, ClientKey: draft.ClientKey, Body: draft.Body, ReplyTo: draft.ReplyTo, Now: now,
 		})
 		if err != nil {
 			return err
@@ -189,6 +197,14 @@ func (s *Service) send(ctx context.Context, author Author, channel domain.Channe
 		return err
 	})
 	return message, err
+}
+
+func liveMessageOf(ctx context.Context, repos repositories.Repositories, channel domain.ChannelID, id domain.MessageID, path string) error {
+	_, err := repos.Messages.LiveOfChannel(ctx, channel, id)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return &NotFoundAtError{Path: path}
+	}
+	return err
 }
 
 func lockChannelTutor(ctx context.Context, repos repositories.Repositories, channel domain.ChannelID) error {
@@ -363,6 +379,7 @@ func (s *Service) Delete(ctx context.Context, author Author, id domain.MessageID
 	}
 	by := domain.DeletedByAuthor
 	deleted := false
+	unpinned := false
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		if err := s.lockAuthor(ctx, repos, author, now); err != nil {
 			return err
@@ -372,7 +389,7 @@ func (s *Service) Delete(ctx context.Context, author Author, id domain.MessageID
 				return err
 			}
 		}
-		membership, err := lockMembership(ctx, repos, scope.ChannelID, author.UserID, scope.HasAttachments)
+		membership, err := lockMembership(ctx, repos, scope.ChannelID, author.UserID, true)
 		if err != nil {
 			return err
 		}
@@ -396,6 +413,14 @@ func (s *Service) Delete(ctx context.Context, author Author, id domain.MessageID
 		if err := s.release().messages(ctx, repos, []domain.MessageID{id}, now); err != nil {
 			return err
 		}
+		if unpinned, err = repos.Channels.ClearPinOfMessage(ctx, scope.ChannelID, id, now); err != nil {
+			return err
+		}
+		if unpinned {
+			if err := signalMembers(ctx, repos, []domain.ChannelID{scope.ChannelID}, everyMember); err != nil {
+				return err
+			}
+		}
 		return signalMessage(ctx, repos, scope.ChannelID, domain.FrameMessageDeleted, &id, nil)
 	})
 	if err != nil {
@@ -405,6 +430,9 @@ func (s *Service) Delete(ctx context.Context, author Author, id domain.MessageID
 	if deleted {
 		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "chat.message.deleted", channelAttribute(scope.ChannelID), messageAttribute(id),
 			userAttribute(author.UserID), slog.String("by", string(by)))
+	}
+	if unpinned {
+		s.logUnpinned(ctx, scope.ChannelID, id, scope.TutorID, domain.UnpinDeleted)
 	}
 	return nil
 }
@@ -460,6 +488,12 @@ func (s *Service) MarkRead(ctx context.Context, author Author, channel domain.Ch
 }
 
 func (s *Service) History(ctx context.Context, viewer domain.UserID, channel domain.ChannelID, query HistoryQuery) (History, error) {
+	if query.AroundSeq != nil {
+		if query.Cursor != "" || query.AfterSeq != nil {
+			return History{}, &ValidationError{Path: fieldAroundSeq, Code: domain.FieldInvalid}
+		}
+		return s.around(ctx, viewer, channel, *query.AroundSeq, query.Limit)
+	}
 	listing := repositories.HistoryQuery{Channel: channel, RowLimit: query.Limit + 1}
 	switch {
 	case query.Cursor != "" && query.AfterSeq != nil:
@@ -494,6 +528,49 @@ func (s *Service) History(ctx context.Context, viewer domain.UserID, channel dom
 			next := encodeSeqCursor(rows[len(rows)-1].Seq)
 			history.NextCursor = &next
 		}
+		history.Items, err = s.messageViews(ctx, repos, viewer, rows, now)
+		return err
+	})
+	return history, err
+}
+
+func (s *Service) around(ctx context.Context, viewer domain.UserID, channel domain.ChannelID, seq int64, limit int32) (History, error) {
+	newerCount := limit / 2
+	olderCount := limit - newerCount
+	now, err := s.now(ctx)
+	if err != nil {
+		return History{}, err
+	}
+	var history History
+	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
+		if _, err := repos.Messages.Membership(ctx, channel, viewer); errors.Is(err, repositories.ErrNotFound) {
+			return ErrNotFound
+		} else if err != nil {
+			return err
+		}
+		through := seq + 1
+		older, err := repos.Messages.History(ctx, repositories.HistoryQuery{Channel: channel, Before: &through, RowLimit: olderCount + 1})
+		if err != nil {
+			return err
+		}
+		if len(older) > int(olderCount) {
+			older = older[:olderCount]
+			next := encodeSeqCursor(older[len(older)-1].Seq)
+			history.NextCursor = &next
+		}
+		newer, err := repos.Messages.History(ctx, repositories.HistoryQuery{Channel: channel, After: &seq, RowLimit: newerCount + 1})
+		if err != nil {
+			return err
+		}
+		if len(newer) > int(newerCount) {
+			newer = newer[:newerCount]
+			history.HasNewer = true
+		}
+		rows := make([]repositories.MessageRow, 0, len(older)+len(newer))
+		for index := len(older) - 1; index >= 0; index-- {
+			rows = append(rows, older[index])
+		}
+		rows = append(rows, newer...)
 		history.Items, err = s.messageViews(ctx, repos, viewer, rows, now)
 		return err
 	})

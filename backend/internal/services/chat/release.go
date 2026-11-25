@@ -154,7 +154,29 @@ func (r Release) PurgeSenderBatch(
 	if _, err := repos.Messages.EraseOfSender(ctx, sender, locked, now); err != nil {
 		return 0, err
 	}
+	if err := r.clearPinsOfErased(ctx, repos, locked, now); err != nil {
+		return 0, err
+	}
 	return int64(len(messages)), nil
+}
+
+func (r Release) clearPinsOfErased(ctx context.Context, repos repositories.Repositories, messages []domain.MessageID, now time.Time) error {
+	cleared, err := repos.Channels.ClearPinsOfMessages(ctx, messages, now)
+	if err != nil || len(cleared) == 0 {
+		return err
+	}
+	channels := make([]domain.ChannelID, 0, len(cleared))
+	for _, pin := range cleared {
+		channels = append(channels, pin.Channel)
+	}
+	if err := signalMembers(ctx, repos, channels, everyMember); err != nil {
+		return err
+	}
+	for _, pin := range cleared {
+		r.Logger.LogAttrs(ctx, slog.LevelInfo, "chat.message.unpinned", channelAttribute(pin.Channel), messageAttribute(pin.Message),
+			userAttribute(pin.Tutor), slog.String("cause", string(domain.UnpinPurged)))
+	}
+	return nil
 }
 
 func (r Release) PurgeTutorReferencesBatch(
@@ -180,6 +202,12 @@ func (r Release) PurgeTutorReferencesBatch(
 	return int64(len(removed)), nil
 }
 
-func PurgeTutorMessagesBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32) (int64, error) {
+func PurgeTutorMessagesBatch(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, batch int32, now time.Time) (int64, error) {
+	if _, err := repos.Channels.LockOfTutor(ctx, tutor); err != nil {
+		return 0, err
+	}
+	if _, err := repos.Channels.ClearPinsOfTutor(ctx, tutor, now); err != nil {
+		return 0, err
+	}
 	return repos.Messages.DeleteBatchOfTutor(ctx, tutor, batch)
 }

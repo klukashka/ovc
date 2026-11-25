@@ -526,7 +526,7 @@ func (s *Service) PurgeTutorBatch(ctx context.Context, repos repositories.Reposi
 			return chat.Release{Random: s.deps.Random, Logger: s.deps.Logger}.PurgeTutorReferencesBatch(ctx, repos, tutor, batch, now)
 		},
 		func(ctx context.Context, tutor domain.UserID, batch int32) (int64, error) {
-			return chat.PurgeTutorMessagesBatch(ctx, repos, tutor, batch)
+			return chat.PurgeTutorMessagesBatch(ctx, repos, tutor, batch, now)
 		},
 		repos.Channels.DeleteMembersBatchOfTutor,
 		repos.Channels.DeleteBatchOfTutor,

@@ -361,6 +361,7 @@ test('a read reply after pagehide cannot restart refetch work and pageshow resto
       tutor: null,
       last_message: null,
       unread_count: 0,
+      pinned: null,
       writable: true,
       online: null,
       unconfirmed: false,

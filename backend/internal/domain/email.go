@@ -69,6 +69,7 @@ const (
 	FieldTooLong    FieldCode = "too_long"
 	FieldIncorrect  FieldCode = "incorrect"
 	FieldTooMany    FieldCode = "too_many"
+	FieldNotFound   FieldCode = "not_found"
 )
 
 func CheckPasswordLength(password string) (FieldCode, bool) {

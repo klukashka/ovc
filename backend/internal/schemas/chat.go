@@ -63,10 +63,32 @@ type ChannelDetail struct {
 	RelationshipID *string          `json:"relationship_id,omitempty" format:"uuid"`
 	GroupID        *string          `json:"group_id,omitempty" format:"uuid"`
 	Members        *[]ChannelMember `json:"members,omitempty" nullable:"false"`
+	Pinned         *PinnedMessage   `json:"pinned"`
 }
 
 func (ChannelDetail) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	return nullableReferences(schema, "tutor", "last_message")
+	return nullableReferences(schema, "tutor", "last_message", "pinned")
+}
+
+type PinnedMessage struct {
+	MessageID         string            `json:"message_id" format:"uuid"`
+	Seq               int64             `json:"seq"`
+	SenderLabel       *string           `json:"sender_label" nullable:"true"`
+	SenderLabelKind   *domain.LabelKind `json:"sender_label_kind" enum:"deleted_user" nullable:"true"`
+	Own               bool              `json:"own"`
+	Preview           *string           `json:"preview" nullable:"true"`
+	SentBeforeReclaim bool              `json:"sent_before_reclaim"`
+}
+
+type MessageQuote struct {
+	MessageID         string            `json:"message_id" format:"uuid"`
+	Seq               int64             `json:"seq"`
+	SenderLabel       *string           `json:"sender_label" nullable:"true"`
+	SenderLabelKind   *domain.LabelKind `json:"sender_label_kind" enum:"deleted_user" nullable:"true"`
+	Own               bool              `json:"own"`
+	Preview           *string           `json:"preview" nullable:"true"`
+	State             domain.QuoteState `json:"state" enum:"available,deleted,removed"`
+	SentBeforeReclaim bool              `json:"sent_before_reclaim"`
 }
 
 type MessageAttachment struct {
@@ -94,16 +116,27 @@ type Message struct {
 	Version           int32               `json:"version"`
 	SentBeforeReclaim bool                `json:"sent_before_reclaim"`
 	Attachments       []MessageAttachment `json:"attachments" nullable:"false"`
+	ReplyTo           *MessageQuote       `json:"reply_to"`
+}
+
+func (Message) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	return nullableReferences(schema, "reply_to")
 }
 
 type MessagePage struct {
 	Items      []Message `json:"items" nullable:"false"`
 	NextCursor *string   `json:"next_cursor" nullable:"true"`
+	HasNewer   bool      `json:"has_newer"`
 }
 
 type NewMessage struct {
-	Body          string   `json:"body"`
-	AttachmentIDs []string `json:"attachment_ids" format:"uuid" maxItems:"10" nullable:"false"`
+	Body             string   `json:"body"`
+	AttachmentIDs    []string `json:"attachment_ids" format:"uuid" maxItems:"10" nullable:"false"`
+	ReplyToMessageID *string  `json:"reply_to_message_id,omitempty" required:"false" nullable:"false"`
+}
+
+type PinRequest struct {
+	MessageID string `json:"message_id"`
 }
 
 type MessagePatch struct {

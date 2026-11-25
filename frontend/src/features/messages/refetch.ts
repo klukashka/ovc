@@ -93,7 +93,9 @@ export function chatRefetch(queryClient: QueryClient, scheduler: Scheduler): Cha
         );
         for (const query of queryClient.getQueryCache().getAll()) {
           if (
-            (query.queryKey[0] === 'channel' || (query.queryKey[0] === 'messages' && owner === undefined)) &&
+            (query.queryKey[0] === 'channel' ||
+              query.queryKey[0] === 'messages-around' ||
+              (query.queryKey[0] === 'messages' && owner === undefined)) &&
             query.queryKey[1] === channelId
           )
             pending.add(query.queryHash);

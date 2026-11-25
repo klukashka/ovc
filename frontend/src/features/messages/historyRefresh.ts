@@ -57,11 +57,22 @@ export class HistoryRefresh {
     this.requestFull = requestFull;
   }
 
+  private quotes(messageId: string): boolean {
+    return (
+      this.cache
+        .getQueryData<MessagePage>(messagesKey(this.channelId))
+        ?.items.some((item) => item.reply_to?.message_id === messageId) ?? false
+    );
+  }
+
   changed(intent: HistoryIntent): void {
     if (intent.kind === 'full') this.pending.full = true;
     else if (intent.kind === 'new') {
       this.pending.through = Math.max(this.pending.through, intent.seq);
       this.pending.fresh ||= this.fullReads > 0 || this.incremental !== null;
+    } else if (this.quotes(intent.messageId)) {
+      this.pending.full = true;
+      this.pending.changed.clear();
     } else if (!this.pending.full) {
       this.pending.changed.add(intent.messageId);
       if (this.pending.changed.size > maximumDirtyMessages) {
@@ -160,7 +171,7 @@ export class HistoryRefresh {
         this.fullRequired = true;
         throw cancelled();
       }
-      return { items, next_cursor: cursor };
+      return { items, next_cursor: cursor, has_newer: false };
     } finally {
       this.releaseAfterPublication(signal, () => {
         this.fullReads -= 1;
@@ -185,6 +196,7 @@ export class HistoryRefresh {
       const merged = {
         items: [...previous.items, ...page.items.filter((item) => !ids.has(item.id))],
         next_cursor: page.next_cursor,
+        has_newer: false,
       };
       this.cache.setQueryData<MessagePage>(messagesKey(this.channelId), merged);
       return merged;
@@ -224,7 +236,11 @@ export class HistoryRefresh {
     }
     const items = new Map(previous.items.map((item) => [item.id, item]));
     for (const [id, item] of replacements) items.set(id, item);
-    return { items: [...items.values()].sort((a, b) => b.seq - a.seq), next_cursor: previous.next_cursor };
+    return {
+      items: [...items.values()].sort((a, b) => b.seq - a.seq),
+      next_cursor: previous.next_cursor,
+      has_newer: false,
+    };
   }
 
   private async drain(): Promise<void> {

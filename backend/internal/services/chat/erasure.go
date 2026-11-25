@@ -11,9 +11,10 @@ import (
 )
 
 type erasureStep struct {
-	erased int64
-	done   bool
-	gone   bool
+	erased   int64
+	done     bool
+	gone     bool
+	unpinned *domain.MessageID
 }
 
 func (s *Service) EraseChannels(ctx context.Context, now time.Time) (int64, error) {
@@ -42,6 +43,9 @@ func (s *Service) EraseChannels(ctx context.Context, now time.Time) (int64, erro
 				break
 			}
 			messages += step.erased
+			if step.unpinned != nil {
+				s.logUnpinned(ctx, channel.ID, *step.unpinned, channel.TutorID, domain.UnpinErased)
+			}
 			if step.gone {
 				break
 			}
@@ -74,6 +78,16 @@ func (s *Service) eraseBatch(ctx context.Context, channel repositories.PendingEr
 		}
 		if err != nil {
 			return err
+		}
+		pinned, err := repos.Channels.Pin(ctx, channel.ID)
+		if err != nil {
+			return err
+		}
+		if pinned != nil {
+			if _, err := repos.Channels.ClearPin(ctx, channel.ID, now); err != nil {
+				return err
+			}
+			step.unpinned = pinned
 		}
 		batch := s.deps.Erasure.MessageBatch
 		messages, err := repos.Messages.LockBatchOfChannel(ctx, channel.ID, batch)

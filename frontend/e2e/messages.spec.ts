@@ -747,3 +747,60 @@ test.describe('the messenger layout on a computer', () => {
     await expect(page.getByRole('button', { name: /^Jump to latest/ })).toHaveCount(0);
   });
 });
+
+test.describe('replies and the pinned message', () => {
+  test.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', viewport: { width: 1280, height: 800 } });
+
+  test('a student replies to an earlier message, the tutor jumps to it from the quote, and a pin reaches the student live until its message is deleted', async ({
+    page,
+    observedBrowser: browser,
+    deployment,
+    diagnostics,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { student, cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+    const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+    const tutorToken = await accessToken(deployment, tutor);
+    for (const body of ['The question to answer', 'Another note', 'Something to pin']) {
+      const seeded = await callApi(deployment, tutorToken, 'POST', `/channels/${channel}/messages`, {
+        body,
+        attachment_ids: [],
+      });
+      expect(seeded.status).toBe(201);
+    }
+    const context = await studentContext(browser, deployment);
+    const studentPage = await context.newPage();
+    await diagnostics.watch(studentPage);
+    await signInThroughTheApi(page, tutor);
+    await signInThroughTheApi(studentPage, student);
+    await openSettledConversation(studentPage, channel, 'conversation only');
+    await openSettledConversation(page, channel, 'with the chat list');
+    await settledComposer(studentPage);
+
+    const pinned = messages(page).filter({ hasText: 'Something to pin' });
+    await pinned.getByRole('button', { name: 'Message actions', exact: true }).click();
+    await page.getByRole('button', { name: 'Pin', exact: true }).click();
+    const studentBar = studentPage.getByRole('region', { name: 'Pinned message', exact: true });
+    await studentBar.waitFor();
+    const barText = await studentBar.textContent();
+    const studentUnpins = await studentBar.getByRole('button', { name: 'Unpin', exact: true }).count();
+    await pinned.getByRole('button', { name: 'Message actions', exact: true }).click();
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await studentBar.waitFor({ state: 'detached' });
+    const question = messages(studentPage).filter({ hasText: 'The question to answer' });
+    await question.focus();
+    await question.getByRole('button', { name: 'Message actions', exact: true }).click();
+    await studentPage.getByRole('button', { name: 'Reply', exact: true }).click();
+    await send(studentPage, 'Here is my answer');
+    const reply = messages(page).filter({ hasText: 'Here is my answer' });
+    await reply.waitFor();
+    await reply.getByRole('button', { name: /The question to answer/ }).click();
+
+    expect(barText).toContain('Something to pin');
+    expect(studentUnpins).toBe(0);
+    await expect(
+      messages(page).filter({ hasText: 'The question to answer' }).filter({ hasNotText: 'Here is my answer' }),
+    ).toBeFocused();
+    await diagnostics.closeContext(context);
+  });
+});

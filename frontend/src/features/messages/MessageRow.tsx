@@ -2,10 +2,11 @@ import type { ReactElement, ReactNode } from 'react';
 
 import { dateTimeFormat } from '../../lib/format/dates.ts';
 import type { Language } from '../../lib/i18n/resources.ts';
-import type { Message } from './api.ts';
+import type { Message, MessageQuote } from './api.ts';
 import { Attachments } from './Attachments.tsx';
 import { MessageBody } from './MessageBody.tsx';
 import type { MessagePlace } from './messageGroups.ts';
+import { Quote } from './Quote.tsx';
 import type { ChatTexts } from './translations.ts';
 
 function bubbleCorners(own: boolean, place: MessagePlace): string {
@@ -22,6 +23,8 @@ export function MessageRow({
   groupChat,
   menu,
   refresh,
+  onJump,
+  tracked = true,
 }: {
   readonly message: Message;
   readonly place: MessagePlace;
@@ -31,6 +34,8 @@ export function MessageRow({
   readonly groupChat: boolean;
   readonly menu: ReactNode;
   readonly refresh: () => Promise<boolean>;
+  readonly onJump: (quote: MessageQuote) => void;
+  readonly tracked?: boolean;
 }): ReactElement {
   const own = message.own;
   const sender = own ? texts.you : (message.sender_label ?? texts.deletedUser);
@@ -41,7 +46,8 @@ export function MessageRow({
   return (
     <li
       data-row={message.id}
-      data-seq={message.seq}
+      data-seq={tracked ? message.seq : undefined}
+      data-window-seq={tracked ? undefined : message.seq}
       data-own={own ? '' : undefined}
       tabIndex={-1}
       className={`group flex flex-col outline-none focus-visible:ring-2 ${place.firstOfGroup ? 'pt-2' : 'pt-0.5'}`}
@@ -59,6 +65,9 @@ export function MessageRow({
           <span dir="auto" className={senderShown ? 'text-label text-accent-text [overflow-wrap:anywhere]' : 'sr-only'}>
             {sender}
           </span>
+          {message.reply_to === null || message.deleted || message.erased ? null : (
+            <Quote quote={message.reply_to} texts={texts} onJump={onJump} />
+          )}
           {message.deleted ? (
             <p className="text-text-muted italic">{texts.deleted}</p>
           ) : message.erased ? (

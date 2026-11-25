@@ -41,6 +41,7 @@ type NewMessage struct {
 	Sender    domain.UserID
 	ClientKey *string
 	Body      string
+	ReplyTo   *domain.MessageID
 	Now       time.Time
 }
 
@@ -99,6 +100,7 @@ func (r Messages) Insert(ctx context.Context, message NewMessage) error {
 	sender := message.Sender
 	err := r.queries.InsertMessage(ctx, dbgen.InsertMessageParams{
 		ID: message.ID, ChannelID: message.Channel, Seq: message.Seq, SenderID: &sender, ClientKey: message.ClientKey, Body: message.Body, Now: message.Now,
+		ReplyToMessageID: message.ReplyTo,
 	})
 	var violation *pgconn.PgError
 	if errors.As(err, &violation) && violation.Code == uniqueViolation && violation.ConstraintName == messageClientKeyIndex {
@@ -163,6 +165,26 @@ func (r Messages) Charge(ctx context.Context, tutor domain.UserID, ids []domain.
 func (r Messages) View(ctx context.Context, id domain.MessageID) (MessageRow, error) {
 	row, err := r.queries.GetMessageView(ctx, id)
 	return one(row, err, "message view")
+}
+
+func (r Messages) Views(ctx context.Context, ids []domain.MessageID) ([]MessageRow, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.queries.ListMessageViews(ctx, uuids(ids))
+	if err != nil {
+		return nil, done(err, "message views")
+	}
+	converted := make([]MessageRow, 0, len(rows))
+	for _, row := range rows {
+		converted = append(converted, MessageRow(row))
+	}
+	return converted, nil
+}
+
+func (r Messages) LiveOfChannel(ctx context.Context, channel domain.ChannelID, id domain.MessageID) (domain.MessageID, error) {
+	found, err := r.queries.ResolveLiveMessageOfChannel(ctx, dbgen.ResolveLiveMessageOfChannelParams{ID: id, ChannelID: channel})
+	return one(found, err, "live message of a channel")
 }
 
 func (r Messages) History(ctx context.Context, query HistoryQuery) ([]MessageRow, error) {

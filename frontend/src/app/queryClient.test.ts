@@ -150,6 +150,7 @@ test('an account replacement retains only its own data after the old first wave 
         tutor: null,
         last_message: null,
         unread_count: 0,
+        pinned: null,
         writable: true,
         online: null,
         unconfirmed: false,

@@ -29,6 +29,7 @@ const channel: Channel = {
   tutor: null,
   unconfirmed: false,
   unread_count: 0,
+  pinned: null,
   user_id: 'history-student',
   writable: true,
 };
@@ -47,6 +48,7 @@ function message(seq: number): Message & { readonly senderId: string } {
     sender_label: 'Tutor',
     sender_label_kind: null,
     sent_before_reclaim: false,
+    reply_to: null,
     version: 1,
     senderId: account.id,
   };

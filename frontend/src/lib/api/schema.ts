@@ -287,6 +287,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/channels/{id}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["channels-pin-set"];
+        post?: never;
+        delete: operations["channels-pin-delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/channels/{id}/read": {
         parameters: {
             query?: never;
@@ -1485,6 +1501,7 @@ export interface components {
             last_message: components["schemas"]["ChannelLastMessage"] | null;
             members?: components["schemas"]["ChannelMember"][];
             online: boolean | null;
+            pinned: components["schemas"]["PinnedMessage"] | null;
             /** Format: uuid */
             relationship_id?: string;
             tutor: components["schemas"]["ChannelTutor"] | null;
@@ -2175,6 +2192,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             own: boolean;
+            reply_to: components["schemas"]["MessageQuote"] | null;
             sender_label: string | null;
             /** @enum {string|null} */
             sender_label_kind: "deleted_user" | null;
@@ -2200,6 +2218,7 @@ export interface components {
             width: number | null;
         };
         MessagePage: {
+            has_newer: boolean;
             items: components["schemas"]["Message"][];
             next_cursor: string | null;
         };
@@ -2207,6 +2226,20 @@ export interface components {
             body: string;
             /** Format: int32 */
             version: number;
+        };
+        MessageQuote: {
+            /** Format: uuid */
+            message_id: string;
+            own: boolean;
+            preview: string | null;
+            sender_label: string | null;
+            /** @enum {string|null} */
+            sender_label_kind: "deleted_user" | null;
+            sent_before_reclaim: boolean;
+            /** Format: int64 */
+            seq: number;
+            /** @enum {string} */
+            state: "available" | "deleted" | "removed";
         };
         MyTutor: {
             /** Format: date-time */
@@ -2285,6 +2318,7 @@ export interface components {
         NewMessage: {
             attachment_ids: string[];
             body: string;
+            reply_to_message_id?: string;
         };
         NewStudentCard: {
             display_name: string;
@@ -2343,6 +2377,21 @@ export interface components {
         PasswordReset: {
             /** @enum {string|null} */
             outcome: "choice_required" | null;
+        };
+        PinRequest: {
+            message_id: string;
+        };
+        PinnedMessage: {
+            /** Format: uuid */
+            message_id: string;
+            own: boolean;
+            preview: string | null;
+            sender_label: string | null;
+            /** @enum {string|null} */
+            sender_label_kind: "deleted_user" | null;
+            sent_before_reclaim: boolean;
+            /** Format: int64 */
+            seq: number;
         };
         ProfilePatch: {
             /** Format: uuid */
@@ -4560,6 +4609,7 @@ export interface operations {
             query?: {
                 cursor?: string;
                 after_seq?: string;
+                around_seq?: string;
                 limit?: number;
             };
             header?: never;
@@ -4774,6 +4824,225 @@ export interface operations {
             };
             /** @description Insufficient Storage */
             507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "channels-pin-set": {
+        parameters: {
+            query?: never;
+            header?: {
+                "Content-Type"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PinRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "channels-pin-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14265,6 +14534,8 @@ export const meRoleValues: ReadonlyArray<FlattenedDeepRequired<components>["sche
 export const meStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Me"]["state"]> = ["unverified", "active"];
 export const meThemeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Me"]["theme"]> = ["light", "dark", "system"];
 export const messageSender_label_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Message"]["sender_label_kind"]> = ["deleted_user"];
+export const messageQuoteSender_label_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MessageQuote"]["sender_label_kind"]> = ["deleted_user"];
+export const messageQuoteStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MessageQuote"]["state"]> = ["available", "deleted", "removed"];
 export const myTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MyTutor"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const myTutorEnded_byValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MyTutor"]["ended_by"]> = ["tutor", "student", "deletion"];
 export const myTutorStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MyTutor"]["state"]> = ["active", "provisional", "ended"];
@@ -14275,6 +14546,7 @@ export const notificationEventValues: ReadonlyArray<FlattenedDeepRequired<compon
 export const notificationLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Notification"]["label_kind"]> = ["group", "removed_student", "former_student"];
 export const notificationLinkKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["NotificationLink"]["kind"]> = ["student_card", "join_requests", "my_tutors", "lesson", "assignment", "review", "my_data"];
 export const passwordResetOutcomeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["PasswordReset"]["outcome"]> = ["choice_required"];
+export const pinnedMessageSender_label_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["PinnedMessage"]["sender_label_kind"]> = ["deleted_user"];
 export const profilePatchLanguageValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["language"]> = ["ru", "en"];
 export const profilePatchThemeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProfilePatch"]["theme"]> = ["light", "dark", "system"];
 export const readyChecksDatabaseValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ReadyChecks"]["database"]> = ["ok"];

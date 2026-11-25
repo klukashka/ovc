@@ -91,6 +91,7 @@ type Channel struct {
 	ErasePendingSince     *time.Time
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
+	PinnedMessageID       *domain.MessageID
 }
 
 type ChannelMember struct {
@@ -466,18 +467,19 @@ type MeetingRecoveryCycle struct {
 }
 
 type Message struct {
-	ID        domain.MessageID
-	ChannelID domain.ChannelID
-	Seq       int64
-	SenderID  *domain.UserID
-	ClientKey *string
-	Body      *string
-	Version   int32
-	CreatedAt time.Time
-	EditedAt  *time.Time
-	DeletedAt *time.Time
-	ErasedAt  *time.Time
-	UpdatedAt time.Time
+	ID               domain.MessageID
+	ChannelID        domain.ChannelID
+	Seq              int64
+	SenderID         *domain.UserID
+	ClientKey        *string
+	Body             *string
+	Version          int32
+	CreatedAt        time.Time
+	EditedAt         *time.Time
+	DeletedAt        *time.Time
+	ErasedAt         *time.Time
+	UpdatedAt        time.Time
+	ReplyToMessageID *domain.MessageID
 }
 
 type Notification struct {

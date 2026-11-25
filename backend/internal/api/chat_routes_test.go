@@ -359,6 +359,9 @@ func TestChatRoutesDenyEveryOutOfScopeCaller(t *testing.T) {
 	randomRead, _ := h.readChannel(t, world.secondToken, randomChannelID, 1)
 	randomEdit := h.editMessage(t, world.secondToken, messageID(99), "Edited", 1)
 	randomDelete := h.deleteMessage(t, world.secondToken, messageID(99))
+	randomAround, _ := h.history(t, world.secondToken, randomChannelID, "?around_seq=1")
+	randomPin := h.pin(t, world.secondToken, randomChannelID, messageID(99))
+	randomUnpin := h.unpin(t, world.secondToken, randomChannelID)
 	index := byte(0)
 	for name, denied := range cases {
 		index++
@@ -376,6 +379,10 @@ func TestChatRoutesDenyEveryOutOfScopeCaller(t *testing.T) {
 		messageRoutes["read marker"] = [2]response{read, randomRead}
 		messageRoutes["edit"] = [2]response{h.editMessage(t, denied.token, messageID(index), "Edited", 1), randomEdit}
 		messageRoutes["delete"] = [2]response{h.deleteMessage(t, denied.token, messageID(index)), randomDelete}
+		around, _ := h.history(t, denied.token, denied.channel, "?around_seq=1")
+		messageRoutes["history around"] = [2]response{around, randomAround}
+		messageRoutes["pin"] = [2]response{h.pin(t, denied.token, denied.channel, messageID(index)), randomPin}
+		messageRoutes["unpin"] = [2]response{h.unpin(t, denied.token, denied.channel), randomUnpin}
 
 		if refused.status != http.StatusNotFound || refusal(t, refused) != refusal(t, random) || slices.Contains(listedChannelIDs(page), denied.channel) {
 			t.Fatalf("%s answered %d %s and lists %v", name, refused.status, refused.body, listedChannelIDs(page))

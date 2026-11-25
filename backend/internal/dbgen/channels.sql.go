@@ -121,6 +121,103 @@ func (q *Queries) ClearChannelErasure(ctx context.Context, arg ClearChannelErasu
 	return result.RowsAffected(), nil
 }
 
+const clearChannelPin = `-- name: ClearChannelPin :execrows
+UPDATE channels SET pinned_message_id = NULL, updated_at = $1::timestamptz
+WHERE id = $2 AND pinned_message_id IS NOT NULL
+`
+
+type ClearChannelPinParams struct {
+	Now time.Time
+	ID  domain.ChannelID
+}
+
+func (q *Queries) ClearChannelPin(ctx context.Context, arg ClearChannelPinParams) (int64, error) {
+	result, err := q.db.Exec(ctx, clearChannelPin, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const clearChannelPinOfMessage = `-- name: ClearChannelPinOfMessage :execrows
+UPDATE channels SET pinned_message_id = NULL, updated_at = $1::timestamptz
+WHERE id = $2 AND pinned_message_id = $3
+`
+
+type ClearChannelPinOfMessageParams struct {
+	Now       time.Time
+	ID        domain.ChannelID
+	MessageID *domain.MessageID
+}
+
+func (q *Queries) ClearChannelPinOfMessage(ctx context.Context, arg ClearChannelPinOfMessageParams) (int64, error) {
+	result, err := q.db.Exec(ctx, clearChannelPinOfMessage, arg.Now, arg.ID, arg.MessageID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const clearPinsOfMessages = `-- name: ClearPinsOfMessages :many
+WITH pinned AS (
+    SELECT channels.id, channels.pinned_message_id AS message_id, channels.tutor_id FROM channels
+    WHERE channels.pinned_message_id = ANY ($2::uuid[])
+)
+UPDATE channels SET pinned_message_id = NULL, updated_at = $1::timestamptz
+FROM pinned
+WHERE channels.id = pinned.id
+RETURNING channels.id, pinned.message_id::uuid AS message_id, pinned.tutor_id
+`
+
+type ClearPinsOfMessagesParams struct {
+	Now        time.Time
+	MessageIds []pgtype.UUID
+}
+
+type ClearPinsOfMessagesRow struct {
+	ID        domain.ChannelID
+	MessageID pgtype.UUID
+	TutorID   pgtype.UUID
+}
+
+func (q *Queries) ClearPinsOfMessages(ctx context.Context, arg ClearPinsOfMessagesParams) ([]ClearPinsOfMessagesRow, error) {
+	rows, err := q.db.Query(ctx, clearPinsOfMessages, arg.Now, arg.MessageIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ClearPinsOfMessagesRow
+	for rows.Next() {
+		var i ClearPinsOfMessagesRow
+		if err := rows.Scan(&i.ID, &i.MessageID, &i.TutorID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const clearPinsOfTutorChannels = `-- name: ClearPinsOfTutorChannels :execrows
+UPDATE channels SET pinned_message_id = NULL, updated_at = $1::timestamptz
+WHERE tutor_id = $2 AND pinned_message_id IS NOT NULL
+`
+
+type ClearPinsOfTutorChannelsParams struct {
+	Now     time.Time
+	TutorID domain.UserID
+}
+
+func (q *Queries) ClearPinsOfTutorChannels(ctx context.Context, arg ClearPinsOfTutorChannelsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, clearPinsOfTutorChannels, arg.Now, arg.TutorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countUnreadChannels = `-- name: CountUnreadChannels :one
 SELECT count(*) FROM (
     SELECT 1 FROM active_channel_members
@@ -320,6 +417,17 @@ func (q *Queries) GetChannelOfActiveMember(ctx context.Context, arg GetChannelOf
 	var i GetChannelOfActiveMemberRow
 	err := row.Scan(&i.ChannelID, &i.TutorID, &i.ReadOnlySince)
 	return i, err
+}
+
+const getChannelPin = `-- name: GetChannelPin :one
+SELECT pinned_message_id FROM channels WHERE id = $1
+`
+
+func (q *Queries) GetChannelPin(ctx context.Context, id domain.ChannelID) (*domain.MessageID, error) {
+	row := q.db.QueryRow(ctx, getChannelPin, id)
+	var pinned_message_id *domain.MessageID
+	err := row.Scan(&pinned_message_id)
+	return pinned_message_id, err
 }
 
 const getGroupChannelOf = `-- name: GetGroupChannelOf :one
@@ -1052,6 +1160,21 @@ func (q *Queries) RestoreKeptMembers(ctx context.Context, arg RestoreKeptMembers
 		return nil, err
 	}
 	return items, nil
+}
+
+const setChannelPin = `-- name: SetChannelPin :exec
+UPDATE channels SET pinned_message_id = $1, updated_at = $2::timestamptz WHERE id = $3
+`
+
+type SetChannelPinParams struct {
+	MessageID *domain.MessageID
+	Now       time.Time
+	ID        domain.ChannelID
+}
+
+func (q *Queries) SetChannelPin(ctx context.Context, arg SetChannelPinParams) error {
+	_, err := q.db.Exec(ctx, setChannelPin, arg.MessageID, arg.Now, arg.ID)
+	return err
 }
 
 const suspendReclaimedMembers = `-- name: SuspendReclaimedMembers :many

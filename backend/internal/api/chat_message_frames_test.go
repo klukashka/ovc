@@ -92,6 +92,11 @@ func TestChatRecordsCarryNoBodiesNamesOrAddresses(t *testing.T) {
 	h.mustAnswer(t, h.sendMessage(t, parties.studentToken, direct.ID, bodySentinel, []string{file}, replaySentinel), http.StatusCreated)
 	h.mustAnswer(t, h.editMessage(t, parties.studentToken, message.ID, editSentinel, 1), http.StatusOK)
 	groupMessage := h.sent(t, parties.tutorToken, group.ID, bodySentinel)
+	quoting := h.reply(t, parties.studentToken, group.ID, editSentinel, groupMessage.ID, "")
+	h.mustAnswer(t, quoting, http.StatusCreated)
+	h.mustAnswer(t, h.pin(t, parties.tutorToken, group.ID, groupMessage.ID), http.StatusNoContent)
+	quoted := h.quoteOf(t, parties.studentToken, group.ID, quotingMessageOf(t, quoting).ID)
+	h.pinnedIn(t, parties.studentToken, group.ID)
 	readResult, _ := h.readChannel(t, parties.tutorToken, direct.ID, message.Seq)
 	h.mustAnswer(t, readResult, http.StatusOK)
 	listed := h.messagesOf(t, parties.tutorToken, direct.ID)
@@ -105,13 +110,17 @@ func TestChatRecordsCarryNoBodiesNamesOrAddresses(t *testing.T) {
 	if len(listed) != 1 || len(listed[0].Attachments) != 1 {
 		t.Fatalf("the tutor reads %+v", listed)
 	}
+	if previewOfQuote(quoted) != bodySentinel {
+		t.Fatalf("the quote shows %q", previewOfQuote(quoted))
+	}
 	forbidden = append(forbidden, strings.SplitN(listed[0].Attachments[0].URL, "?t=", 2)[1])
 	for _, value := range forbidden {
 		if strings.Contains(records, value) {
 			t.Fatalf("a record carries %q", value)
 		}
 	}
-	for _, event := range []string{"chat.message.persisted", "chat.message.edited", "chat.message.deleted", "chat.read_moved"} {
+	for _, event := range []string{"chat.message.persisted", "chat.message.edited", "chat.message.deleted", "chat.read_moved", "chat.message.pinned",
+		"chat.message.unpinned"} {
 		if h.countLogs(`"msg":"`+event+`"`, `"channel_id"`) == 0 {
 			t.Fatalf("no %s record with its channel", event)
 		}
@@ -159,7 +168,7 @@ func TestTheReclaimCueRevealsNoSquatterIdentity(t *testing.T) {
 	if err := json.Unmarshal([]byte(tutorHistory.body), &page); err != nil {
 		t.Fatal(err)
 	}
-	wantFields := []string{"attachments", "body", "created_at", "deleted", "edited_at", "erased", "id", "own", "sender_label", "sender_label_kind", "sent_before_reclaim",
+	wantFields := []string{"attachments", "body", "created_at", "deleted", "edited_at", "erased", "id", "own", "reply_to", "sender_label", "sender_label_kind", "sent_before_reclaim",
 		"seq", "version"}
 	for _, item := range page.Items {
 		if !slices.Equal(fieldNames(item), wantFields) {

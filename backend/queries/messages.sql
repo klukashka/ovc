@@ -21,9 +21,9 @@ WHERE id = @id
 RETURNING last_seq;
 
 -- name: InsertMessage :exec
-INSERT INTO messages (id, channel_id, seq, sender_id, client_key, body, version, created_at, updated_at)
+INSERT INTO messages (id, channel_id, seq, sender_id, client_key, body, version, created_at, updated_at, reply_to_message_id)
 VALUES (@id, @channel_id, @seq, @sender_id, sqlc.narg(client_key)::text, sqlc.arg(body)::text, 1, sqlc.arg(now)::timestamptz,
-    sqlc.arg(now)::timestamptz);
+    sqlc.arg(now)::timestamptz, sqlc.narg(reply_to_message_id));
 
 -- name: MoveSenderReadMarker :execrows
 UPDATE channel_members
@@ -78,7 +78,7 @@ RETURNING tutor_profiles.file_usage_bytes;
 SELECT messages.id, messages.channel_id, messages.seq, messages.sender_id, messages.body, messages.version, messages.created_at,
     messages.edited_at, messages.deleted_at, messages.erased_at, channels.tutor_id, COALESCE(senders.state, '')::text AS sender_state, senders.name AS sender_name,
     COALESCE(cards.display_name, '')::text AS card_name,
-    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim
+    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim, messages.reply_to_message_id
 FROM messages
 JOIN channels ON channels.id = messages.channel_id
 LEFT JOIN relationships AS direct ON direct.id = channels.relationship_id
@@ -97,7 +97,7 @@ LIMIT sqlc.arg(row_limit);
 SELECT messages.id, messages.channel_id, messages.seq, messages.sender_id, messages.body, messages.version, messages.created_at,
     messages.edited_at, messages.deleted_at, messages.erased_at, channels.tutor_id, COALESCE(senders.state, '')::text AS sender_state, senders.name AS sender_name,
     COALESCE(cards.display_name, '')::text AS card_name,
-    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim
+    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim, messages.reply_to_message_id
 FROM messages
 JOIN channels ON channels.id = messages.channel_id
 LEFT JOIN relationships AS direct ON direct.id = channels.relationship_id
@@ -116,7 +116,7 @@ LIMIT sqlc.arg(row_limit);
 SELECT messages.id, messages.channel_id, messages.seq, messages.sender_id, messages.body, messages.version, messages.created_at,
     messages.edited_at, messages.deleted_at, messages.erased_at, channels.tutor_id, COALESCE(senders.state, '')::text AS sender_state, senders.name AS sender_name,
     COALESCE(cards.display_name, '')::text AS card_name,
-    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim
+    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim, messages.reply_to_message_id
 FROM messages
 JOIN channels ON channels.id = messages.channel_id
 LEFT JOIN relationships AS direct ON direct.id = channels.relationship_id
@@ -129,11 +129,28 @@ LEFT JOIN LATERAL (
 ) AS cards ON true
 WHERE messages.id = @id;
 
+-- name: ListMessageViews :many
+SELECT messages.id, messages.channel_id, messages.seq, messages.sender_id, messages.body, messages.version, messages.created_at,
+    messages.edited_at, messages.deleted_at, messages.erased_at, channels.tutor_id, COALESCE(senders.state, '')::text AS sender_state, senders.name AS sender_name,
+    COALESCE(cards.display_name, '')::text AS card_name,
+    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim, messages.reply_to_message_id
+FROM messages
+JOIN channels ON channels.id = messages.channel_id
+LEFT JOIN relationships AS direct ON direct.id = channels.relationship_id
+LEFT JOIN users AS senders ON senders.id = messages.sender_id
+LEFT JOIN LATERAL (
+    SELECT relationships.display_name FROM relationships
+    WHERE relationships.tutor_id = channels.tutor_id AND relationships.student_id = messages.sender_id
+    ORDER BY relationships.state = 'discarded', relationships.created_at DESC
+    LIMIT 1
+) AS cards ON true
+WHERE messages.id = ANY (sqlc.arg(ids)::uuid[]);
+
 -- name: ListLastMessages :many
 SELECT messages.id, messages.channel_id, messages.seq, messages.sender_id, messages.body, messages.version, messages.created_at,
     messages.edited_at, messages.deleted_at, messages.erased_at, channels.tutor_id, COALESCE(senders.state, '')::text AS sender_state, senders.name AS sender_name,
     COALESCE(cards.display_name, '')::text AS card_name,
-    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim
+    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim, messages.reply_to_message_id
 FROM channels
 JOIN messages ON messages.channel_id = channels.id AND messages.seq = channels.last_seq
 LEFT JOIN relationships AS direct ON direct.id = channels.relationship_id
@@ -268,3 +285,7 @@ WHERE id IN (
 
 -- name: DeleteDigestPendingOf :execrows
 DELETE FROM digest_pending WHERE user_id = @user_id;
+
+-- name: ResolveLiveMessageOfChannel :one
+SELECT id FROM messages
+WHERE id = @id AND channel_id = @channel_id AND deleted_at IS NULL AND erased_at IS NULL;

@@ -23,7 +23,18 @@ import { FocusedNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { asApiError, useApiClient, type ApiError } from '../../lib/api/client.ts';
 import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
-import { type Channel, type Message, type MessagePage, deleteMessage, editMessage, sendMessage } from './api.ts';
+import {
+  type Channel,
+  type Message,
+  type MessagePage,
+  deleteMessage,
+  editMessage,
+  pinMessage,
+  sendMessage,
+  unpinMessage,
+} from './api.ts';
+import { AroundWindow, type WindowCenter } from './AroundWindow.tsx';
+import { PinnedBar, quotedSender } from './Quote.tsx';
 import { useAttachmentExpiry } from './Attachments.tsx';
 import { channelLabel } from './channelLabel.ts';
 import { UploadComposer } from './UploadComposer.tsx';
@@ -31,12 +42,13 @@ import { useUploads } from './uploads.ts';
 import { useChatSignals } from './presence.ts';
 import { PresenceSummary } from './PresenceSummary.tsx';
 import { TypingIndicator } from './TypingIndicator.tsx';
-import { channelKey, messagesKey } from './keys.ts';
-import { ArrowDownIcon } from './icons.tsx';
+import { aroundPrefix, channelKey, messagesKey } from './keys.ts';
+import { ArrowDownIcon, CloseIcon } from './icons.tsx';
 import { MessageBody } from './MessageBody.tsx';
-import { MessageMenu } from './MessageMenu.tsx';
+import { MessageMenu, type PinAction } from './MessageMenu.tsx';
 import { MessageRow } from './MessageRow.tsx';
-import { messagePlaces } from './messageGroups.ts';
+import { revealRow } from './reveal.ts';
+import { type MessagePlace, messagePlaces } from './messageGroups.ts';
 import { useReadMarkers } from './readMarkers.ts';
 import { chatRefetch, scheduleChatReads } from './refetch.ts';
 import { HistoryRefresh } from './historyRefresh.ts';
@@ -117,6 +129,11 @@ export function Conversation({
   const alive = useRef(true);
   const [draft, setDraft] = useState('');
   const [editing, setEditing] = useState<Message | null>(null);
+  const [replyToId, setReplyToId] = useState<string | null>(null);
+  const replySnapshot = useRef<Message | null>(null);
+  const [detached, setDetached] = useState<WindowCenter | null>(null);
+  const [windowItems, setWindowItems] = useState<readonly Message[]>([]);
+  const returning = useRef(false);
   const savedDraft = useRef('');
   const editGeneration = useRef(0);
   const conflictRefresh = useRef<{ readonly cancel: () => void } | null>(null);
@@ -127,9 +144,9 @@ export function Conversation({
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<ApiError | null>(null);
-  const [validation, setValidation] = useState<'emptyBody' | 'tooLong' | 'tooManyFiles' | 'waitingUploads' | null>(
-    null,
-  );
+  const [validation, setValidation] = useState<
+    'emptyBody' | 'tooLong' | 'tooManyFiles' | 'waitingUploads' | 'replyUnavailable' | null
+  >(null);
   const submission = useRef<{ readonly body: string; readonly attachments: string; readonly key: string } | null>(null);
   const uploads = useUploads(channel.id, channel.writable, isAlive);
   const attachmentGuard = useChatWrite(busy, !channel.writable || !me.email_verified || editing !== null);
@@ -161,6 +178,17 @@ export function Conversation({
     retry: false,
   });
   const messages = useMemo(() => [...(query.data?.items ?? [])].sort((a, b) => a.seq - b.seq), [query.data]);
+  const loadedReply =
+    replyToId === null
+      ? undefined
+      : (messages.find((item) => item.id === replyToId) ??
+        (detached === null ? undefined : windowItems.find((item) => item.id === replyToId)));
+  const replyTo = replyToId === null ? null : (loadedReply ?? replySnapshot.current);
+  const replyLost = loadedReply !== undefined && (loadedReply.deleted || loadedReply.erased);
+  if (replyLost) {
+    setReplyToId(null);
+    setValidation('replyUnavailable');
+  }
   const historyPane = useRef<HTMLDivElement>(null);
   const historyContent = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
@@ -176,7 +204,10 @@ export function Conversation({
   };
   const rememberBottom = (): void => {
     const element = historyPane.current;
-    if (element !== null) {
+    if (detached !== null) {
+      atBottom.current = false;
+      setAwayFromBottom(true);
+    } else if (element !== null) {
       atBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight <= bottomTolerance;
       if (atBottom.current) reachedBottom();
       else setAwayFromBottom(true);
@@ -202,11 +233,38 @@ export function Conversation({
     }
   }, [latestMessage, messages]);
   function jumpToLatest(): void {
+    if (detached !== null) {
+      returning.current = true;
+      setDetached(null);
+    }
     const pane = historyPane.current;
     if (pane !== null) pane.scrollTop = pane.scrollHeight;
     atBottom.current = true;
     composer.current?.focus();
     reachedBottom();
+  }
+  useLayoutEffect(() => {
+    const pane = historyPane.current;
+    if (detached !== null || !returning.current || pane === null) return;
+    returning.current = false;
+    pane.scrollTop = pane.scrollHeight;
+    atBottom.current = true;
+  }, [detached]);
+  function shownRow(target: string): HTMLElement | null {
+    for (const row of historyContent.current?.querySelectorAll<HTMLElement>('[data-row]') ?? []) {
+      if (row.dataset.row === target && row.closest('[hidden]') === null) return row;
+    }
+    return null;
+  }
+  function jumpTo(seq: number, target: string): void {
+    const row = shownRow(target);
+    if (row !== null) {
+      revealRow(row);
+      return;
+    }
+    atBottom.current = false;
+    setAwayFromBottom(true);
+    setDetached({ seq, target });
   }
   const places = useMemo(() => messagePlaces(messages, me.language, me.timezone), [messages, me.language, me.timezone]);
   useLayoutEffect(() => {
@@ -435,6 +493,7 @@ export function Conversation({
     await Promise.all([
       cache.invalidateQueries({ queryKey: messagesKey(channel.id) }),
       cache.invalidateQueries({ queryKey: channelKey(channel.id) }),
+      cache.invalidateQueries({ queryKey: aroundPrefix(channel.id) }),
     ]);
   }
   function canResolve(message: Message): boolean {
@@ -529,16 +588,24 @@ export function Conversation({
     const original = editing;
     try {
       if (original === null) {
-        const attachmentKey = JSON.stringify(attachments);
+        const replying = replyTo?.id ?? null;
+        const attachmentKey = JSON.stringify([attachments, replying]);
         if (submission.current?.body !== body || submission.current.attachments !== attachmentKey)
           submission.current = { body, attachments: attachmentKey, key: newKey() };
-        await sendMessage(client, channel.id, body, submission.current.key, attachments);
+        await sendMessage(client, channel.id, body, submission.current.key, attachments, replying);
       } else {
         await editMessage(client, original, body);
       }
       if (!isAlive() || editGeneration.current !== generation) return;
       submission.current = null;
-      if (original === null) uploads.queue.clear();
+      if (original === null) {
+        uploads.queue.clear();
+        setReplyToId(null);
+        if (detached !== null) {
+          returning.current = true;
+          setDetached(null);
+        }
+      }
       setDraft(original === null ? '' : savedDraft.current);
       setEditing(null);
       await reload();
@@ -549,6 +616,12 @@ export function Conversation({
     } catch (error: unknown) {
       if (isAlive() && editGeneration.current === generation) {
         const refusal = asApiError(error);
+        if (original === null && refusal.fieldCode('body.reply_to_message_id') !== undefined) {
+          setReplyToId(null);
+          setValidation('replyUnavailable');
+          void reload();
+          return;
+        }
         setFailure(refusal);
         if (refusal.status === 404) void reload();
         if (refusal.code === 'conflict' && original !== null) {
@@ -559,6 +632,106 @@ export function Conversation({
     } finally {
       if (isAlive()) setBusy(false);
     }
+  }
+  async function changePin(message: Message, action: PinAction): Promise<void> {
+    if (!isAlive()) return;
+    setFailure(null);
+    setBusy(true);
+    try {
+      if (action === 'pin') await pinMessage(client, channel.id, message.id);
+      else await unpinMessage(client, channel.id);
+      if (isAlive()) await refreshChannel();
+    } catch (error: unknown) {
+      if (isAlive()) setFailure(asApiError(error));
+    } finally {
+      if (isAlive()) setBusy(false);
+    }
+  }
+  async function unpinFromBar(): Promise<void> {
+    if (!isAlive()) return;
+    setFailure(null);
+    setBusy(true);
+    try {
+      await unpinMessage(client, channel.id);
+      if (isAlive()) await refreshChannel();
+      if (isAlive()) heading.current?.focus();
+    } catch (error: unknown) {
+      if (isAlive()) setFailure(asApiError(error));
+    } finally {
+      if (isAlive()) setBusy(false);
+    }
+  }
+  function menuOf(message: Message): ReactNode {
+    if (message.deleted || message.erased) return null;
+    const editable =
+      message.own && channel.writable && scheduler.wallClock() - Date.parse(message.created_at) <= 24 * 60 * 60 * 1000;
+    const canDelete = message.own || me.role === 'tutor';
+    const pinned = channel.pinned?.message_id === message.id;
+    const pin: PinAction | null = me.role !== 'tutor' ? null : pinned ? 'unpin' : channel.writable ? 'pin' : null;
+    const reply = channel.writable
+      ? (): void => {
+          replySnapshot.current = message;
+          setReplyToId(message.id);
+          setValidation(null);
+          composer.current?.focus();
+        }
+      : null;
+    if (!canDelete && pin === null && reply === null) return null;
+    return (
+      <MessageMenu
+        texts={texts}
+        editable={editable}
+        busy={busy}
+        onReply={editing === null ? reply : null}
+        pin={pin}
+        onPin={(action) => {
+          deletion.run(() => {
+            void changePin(message, action);
+          });
+        }}
+        onEdit={() => {
+          guard.run(() => {
+            editGeneration.current += 1;
+            conflictRefresh.current?.cancel();
+            conflictRefresh.current = null;
+            setConflict(null);
+            if (editing === null) savedDraft.current = draft;
+            setEditing(message);
+            setDraft(message.body ?? '');
+            setFailure(null);
+            composer.current?.focus();
+          });
+        }}
+        onDelete={
+          canDelete
+            ? (): void => {
+                deletion.run(() => {
+                  void remove(message);
+                });
+              }
+            : null
+        }
+      />
+    );
+  }
+  function rowOf(message: Message, place: MessagePlace, tracked: boolean): ReactElement {
+    return (
+      <MessageRow
+        key={message.id}
+        message={message}
+        place={place}
+        texts={texts}
+        language={me.language}
+        timeZone={me.timezone}
+        groupChat={channel.kind === 'group'}
+        refresh={refreshAttachments}
+        tracked={tracked}
+        onJump={(quote) => {
+          jumpTo(quote.seq, quote.message_id);
+        }}
+        menu={menuOf(message)}
+      />
+    );
   }
   async function remove(message: Message): Promise<void> {
     if (!isAlive()) return;
@@ -654,6 +827,9 @@ export function Conversation({
           if (event.key === 'Escape' && editing !== null) {
             event.preventDefault();
             cancelEdit();
+          } else if (event.key === 'Escape' && replyTo !== null) {
+            event.preventDefault();
+            setReplyToId(null);
           }
         }}
       />
@@ -701,6 +877,22 @@ export function Conversation({
           </Link>
         )}
       </div>
+      {channel.pinned === null ? null : (
+        <PinnedBar
+          pinned={channel.pinned}
+          texts={texts}
+          tutor={me.role === 'tutor'}
+          busy={busy}
+          onJump={(pinned) => {
+            jumpTo(pinned.seq, pinned.message_id);
+          }}
+          onUnpin={() => {
+            deletion.run(() => {
+              void unpinFromBar();
+            });
+          }}
+        />
+      )}
       <p aria-live="polite" className="sr-only">
         {announcement}
       </p>
@@ -710,6 +902,7 @@ export function Conversation({
       <div className={`relative flex min-w-0 flex-col desktop:min-h-0 desktop:flex-1${phone ? ' min-h-0 flex-1' : ''}`}>
         <div
           ref={historyPane}
+          data-history-pane=""
           onScroll={rememberBottom}
           className={`relative flex min-w-0 flex-col desktop:min-h-0 desktop:flex-1 desktop:overflow-y-auto${phone ? ' min-h-0 flex-1 overflow-y-auto' : ''}`}
         >
@@ -727,7 +920,7 @@ export function Conversation({
                 }}
               />
             ) : null}
-            {query.data?.next_cursor != null ? (
+            {detached === null && query.data?.next_cursor != null ? (
               <button
                 type="button"
                 className={quietButtonClass}
@@ -743,56 +936,29 @@ export function Conversation({
                 {texts.older}
               </button>
             ) : null}
-            {query.isSuccess && messages.length === 0 ? <p>{texts.noMessages}</p> : null}
-            <ol ref={list} aria-label={texts.history} className="flex flex-col px-1 pb-2">
+            {detached === null && query.isSuccess && messages.length === 0 ? <p>{texts.noMessages}</p> : null}
+            <ol ref={list} aria-label={texts.history} hidden={detached !== null} className="flex flex-col px-1 pb-2">
               {messages.map((message, index) => {
                 const place = places[index];
-                if (place === undefined) return null;
-                const editable =
-                  message.own &&
-                  channel.writable &&
-                  scheduler.wallClock() - Date.parse(message.created_at) <= 24 * 60 * 60 * 1000;
-                return (
-                  <MessageRow
-                    key={message.id}
-                    message={message}
-                    place={place}
-                    texts={texts}
-                    language={me.language}
-                    timeZone={me.timezone}
-                    groupChat={channel.kind === 'group'}
-                    refresh={refreshAttachments}
-                    menu={
-                      !message.deleted && !message.erased && (message.own || me.role === 'tutor') ? (
-                        <MessageMenu
-                          texts={texts}
-                          editable={editable}
-                          busy={busy}
-                          onEdit={() => {
-                            guard.run(() => {
-                              editGeneration.current += 1;
-                              conflictRefresh.current?.cancel();
-                              conflictRefresh.current = null;
-                              setConflict(null);
-                              if (editing === null) savedDraft.current = draft;
-                              setEditing(message);
-                              setDraft(message.body ?? '');
-                              setFailure(null);
-                              composer.current?.focus();
-                            });
-                          }}
-                          onDelete={() => {
-                            deletion.run(() => {
-                              void remove(message);
-                            });
-                          }}
-                        />
-                      ) : null
-                    }
-                  />
-                );
+                return place === undefined ? null : rowOf(message, place, true);
               })}
             </ol>
+            {detached === null ? null : (
+              <AroundWindow
+                channelId={channel.id}
+                center={detached}
+                texts={texts}
+                language={me.language}
+                timeZone={me.timezone}
+                renderRow={(message, place) => rowOf(message, place, false)}
+                onRecenter={setDetached}
+                onItems={setWindowItems}
+                onUnavailable={onUnavailable}
+                onFocusLost={() => {
+                  heading.current?.focus();
+                }}
+              />
+            )}
             <TypingIndicator
               presence={presence}
               someoneTyping={texts.someoneTyping}
@@ -800,7 +966,7 @@ export function Conversation({
             />
           </div>
         </div>
-        {awayFromBottom ? (
+        {awayFromBottom || detached !== null ? (
           <button
             ref={jumpButton}
             type="button"
@@ -873,6 +1039,36 @@ export function Conversation({
           <p ref={uploadError} role="alert" tabIndex={-1} id={`${id}-error`}>
             {texts[validation]}
           </p>
+        )}
+        {replyTo === null || editing !== null ? null : (
+          <div className="flex items-center gap-2 border-l-2 border-accent bg-surface py-1 pr-1 pl-2">
+            <div className="min-w-0 flex-1">
+              <span className="block text-caption text-text-muted">
+                {texts.replyingTo.split('{name}')[0]}
+                <bdi>{quotedSender(replyTo, texts)}</bdi>
+                {texts.replyingTo.split('{name}')[1]}
+              </span>
+              <span dir="auto" className="block truncate text-small">
+                {Array.from(replyTo.body ?? '')
+                  .slice(0, 120)
+                  .join('') || texts.attachmentOnly}
+              </span>
+              {replyTo.sent_before_reclaim ? (
+                <span className="block text-caption text-text-muted">{texts.reclaimed}</span>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              aria-label={texts.cancelReply}
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-icon hover:bg-hover desktop:pointer-fine:size-8"
+              onClick={() => {
+                setReplyToId(null);
+                composer.current?.focus();
+              }}
+            >
+              <CloseIcon size={16} />
+            </button>
+          </div>
         )}
         <UploadComposer
           focusFallback={composer}

@@ -72,6 +72,7 @@ async function renderFrame(
         tutor: null,
         last_message: null,
         unread_count: 0,
+        pinned: null,
         writable: true,
         online: null,
         unconfirmed: false,
@@ -92,6 +93,7 @@ async function renderFrame(
       sender_label: 'A tutor',
       sender_label_kind: null,
       sent_before_reclaim: false,
+      reply_to: null,
       version: 1,
       senderId: 'tutor-a',
     });

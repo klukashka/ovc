@@ -471,6 +471,16 @@ sql:
               import: ovc/backend/internal/domain
               type: UserID
               pointer: true
+          - column: messages.reply_to_message_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MessageID
+              pointer: true
+          - column: channels.pinned_message_id
+            go_type:
+              import: ovc/backend/internal/domain
+              type: MessageID
+              pointer: true
           - column: quota_charges.tutor_id
             go_type:
               import: ovc/backend/internal/domain

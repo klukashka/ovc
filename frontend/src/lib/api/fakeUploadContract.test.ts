@@ -21,6 +21,7 @@ async function subject(): Promise<UploadContractSubject> {
         tutor: null,
         last_message: null,
         unread_count: 0,
+        pinned: null,
         writable: true,
         online: null,
         unconfirmed: false,

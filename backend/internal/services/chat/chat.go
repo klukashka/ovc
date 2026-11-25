@@ -16,9 +16,12 @@ import (
 )
 
 const (
-	cursorSeparator       = "."
-	fieldCursor           = "query.cursor"
-	erasureBatch    int32 = 100
+	cursorSeparator          = "."
+	fieldCursor              = "query.cursor"
+	fieldReplyTo             = "body.reply_to_message_id"
+	fieldPinnedMessage       = "body.message_id"
+	fieldAroundSeq           = "query.around_seq"
+	erasureBatch       int32 = 100
 )
 
 var (
@@ -36,6 +39,14 @@ type ThrottledError struct {
 
 func (e *ThrottledError) Error() string {
 	return "too many message writes"
+}
+
+type NotFoundAtError struct {
+	Path string
+}
+
+func (e *NotFoundAtError) Error() string {
+	return "nothing the caller may reference was found at " + e.Path
 }
 
 type ValidationError struct {
@@ -128,6 +139,7 @@ type Channel struct {
 	Members        []Member
 	TutorView      bool
 	LastMessage    *LastMessage
+	Pinned         *Pinned
 }
 
 type Query struct {
@@ -210,6 +222,9 @@ func (s *Service) Channel(ctx context.Context, viewer domain.UserID, id domain.C
 			return err
 		}
 		channel.LastMessage = last[id]
+		if channel.Pinned, err = pinnedView(ctx, repos, viewer, id); err != nil {
+			return err
+		}
 		if rows[0].TutorID != viewer {
 			return nil
 		}

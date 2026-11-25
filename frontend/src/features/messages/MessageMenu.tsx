@@ -9,18 +9,26 @@ import type { ChatTexts } from './translations.ts';
 const moreButtonClass =
   'inline-flex size-11 items-center justify-center rounded-full text-icon hover:bg-surface hover:text-text desktop:pointer-fine:size-8 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100 pointer-fine:aria-expanded:opacity-100';
 
+export type PinAction = 'pin' | 'unpin';
+
 export function MessageMenu({
   texts,
   editable,
   busy,
   onEdit,
   onDelete,
+  onReply = null,
+  pin = null,
+  onPin = (): void => undefined,
 }: {
   readonly texts: ChatTexts;
   readonly editable: boolean;
   readonly busy: boolean;
   readonly onEdit: () => void;
-  readonly onDelete: () => void;
+  readonly onDelete: (() => void) | null;
+  readonly onReply?: (() => void) | null;
+  readonly pin?: PinAction | null;
+  readonly onPin?: (action: PinAction) => void;
 }): ReactElement {
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
@@ -114,6 +122,22 @@ export function MessageMenu({
           id={id}
           className="absolute right-0 z-20 flex min-w-40 flex-col rounded-md border border-border bg-surface p-2 shadow-raised"
         >
+          {onReply === null ? null : (
+            <ActionButton
+              busy={busy}
+              unavailable={guard.unavailable}
+              unavailableReason={guard.reason}
+              className={quietButtonClass}
+              onClick={() => {
+                guard.run(() => {
+                  setOpen(false);
+                  onReply();
+                });
+              }}
+            >
+              {texts.reply}
+            </ActionButton>
+          )}
           {editable ? (
             <ActionButton
               busy={busy}
@@ -130,21 +154,40 @@ export function MessageMenu({
               {texts.edit}
             </ActionButton>
           ) : null}
-          <ActionButton
-            busy={busy}
-            unavailable={guard.unavailable}
-            unavailableReason={guard.reason}
-            className={quietButtonClass}
-            onClick={() => {
-              guard.run(() => {
-                setOpen(false);
-                button.current?.focus();
-                onDelete();
-              });
-            }}
-          >
-            {texts.delete}
-          </ActionButton>
+          {pin === null ? null : (
+            <ActionButton
+              busy={busy}
+              unavailable={guard.unavailable}
+              unavailableReason={guard.reason}
+              className={quietButtonClass}
+              onClick={() => {
+                guard.run(() => {
+                  setOpen(false);
+                  button.current?.focus();
+                  onPin(pin);
+                });
+              }}
+            >
+              {pin === 'pin' ? texts.pin : texts.unpin}
+            </ActionButton>
+          )}
+          {onDelete === null ? null : (
+            <ActionButton
+              busy={busy}
+              unavailable={guard.unavailable}
+              unavailableReason={guard.reason}
+              className={quietButtonClass}
+              onClick={() => {
+                guard.run(() => {
+                  setOpen(false);
+                  button.current?.focus();
+                  onDelete();
+                });
+              }}
+            >
+              {texts.delete}
+            </ActionButton>
+          )}
         </div>
       ) : null}
     </div>

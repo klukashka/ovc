@@ -20,6 +20,7 @@ const channel: Channel = {
   tutor: { name: 'Tutor', colour: null },
   unconfirmed: false,
   unread_count: 0,
+  pinned: null,
   user_id: 'tutor',
   writable: true,
   members: [{ user_id: 'other', label: 'Private card name', online: true }],

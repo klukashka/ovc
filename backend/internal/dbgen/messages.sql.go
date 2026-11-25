@@ -291,7 +291,7 @@ const getMessageView = `-- name: GetMessageView :one
 SELECT messages.id, messages.channel_id, messages.seq, messages.sender_id, messages.body, messages.version, messages.created_at,
     messages.edited_at, messages.deleted_at, messages.erased_at, channels.tutor_id, COALESCE(senders.state, '')::text AS sender_state, senders.name AS sender_name,
     COALESCE(cards.display_name, '')::text AS card_name,
-    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim
+    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim, messages.reply_to_message_id
 FROM messages
 JOIN channels ON channels.id = messages.channel_id
 LEFT JOIN relationships AS direct ON direct.id = channels.relationship_id
@@ -321,6 +321,7 @@ type GetMessageViewRow struct {
 	SenderName        *string
 	CardName          string
 	SentBeforeReclaim bool
+	ReplyToMessageID  *domain.MessageID
 }
 
 func (q *Queries) GetMessageView(ctx context.Context, id domain.MessageID) (GetMessageViewRow, error) {
@@ -342,24 +343,26 @@ func (q *Queries) GetMessageView(ctx context.Context, id domain.MessageID) (GetM
 		&i.SenderName,
 		&i.CardName,
 		&i.SentBeforeReclaim,
+		&i.ReplyToMessageID,
 	)
 	return i, err
 }
 
 const insertMessage = `-- name: InsertMessage :exec
-INSERT INTO messages (id, channel_id, seq, sender_id, client_key, body, version, created_at, updated_at)
+INSERT INTO messages (id, channel_id, seq, sender_id, client_key, body, version, created_at, updated_at, reply_to_message_id)
 VALUES ($1, $2, $3, $4, $5::text, $6::text, 1, $7::timestamptz,
-    $7::timestamptz)
+    $7::timestamptz, $8)
 `
 
 type InsertMessageParams struct {
-	ID        domain.MessageID
-	ChannelID domain.ChannelID
-	Seq       int64
-	SenderID  *domain.UserID
-	ClientKey *string
-	Body      string
-	Now       time.Time
+	ID               domain.MessageID
+	ChannelID        domain.ChannelID
+	Seq              int64
+	SenderID         *domain.UserID
+	ClientKey        *string
+	Body             string
+	Now              time.Time
+	ReplyToMessageID *domain.MessageID
 }
 
 func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) error {
@@ -371,6 +374,7 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) er
 		arg.ClientKey,
 		arg.Body,
 		arg.Now,
+		arg.ReplyToMessageID,
 	)
 	return err
 }
@@ -399,7 +403,7 @@ const listLastMessages = `-- name: ListLastMessages :many
 SELECT messages.id, messages.channel_id, messages.seq, messages.sender_id, messages.body, messages.version, messages.created_at,
     messages.edited_at, messages.deleted_at, messages.erased_at, channels.tutor_id, COALESCE(senders.state, '')::text AS sender_state, senders.name AS sender_name,
     COALESCE(cards.display_name, '')::text AS card_name,
-    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim
+    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim, messages.reply_to_message_id
 FROM channels
 JOIN messages ON messages.channel_id = channels.id AND messages.seq = channels.last_seq
 LEFT JOIN relationships AS direct ON direct.id = channels.relationship_id
@@ -429,6 +433,7 @@ type ListLastMessagesRow struct {
 	SenderName        *string
 	CardName          string
 	SentBeforeReclaim bool
+	ReplyToMessageID  *domain.MessageID
 }
 
 func (q *Queries) ListLastMessages(ctx context.Context, channelIds []pgtype.UUID) ([]ListLastMessagesRow, error) {
@@ -456,6 +461,7 @@ func (q *Queries) ListLastMessages(ctx context.Context, channelIds []pgtype.UUID
 			&i.SenderName,
 			&i.CardName,
 			&i.SentBeforeReclaim,
+			&i.ReplyToMessageID,
 		); err != nil {
 			return nil, err
 		}
@@ -515,11 +521,85 @@ func (q *Queries) ListMessageAttachments(ctx context.Context, messageIds []pgtyp
 	return items, nil
 }
 
+const listMessageViews = `-- name: ListMessageViews :many
+SELECT messages.id, messages.channel_id, messages.seq, messages.sender_id, messages.body, messages.version, messages.created_at,
+    messages.edited_at, messages.deleted_at, messages.erased_at, channels.tutor_id, COALESCE(senders.state, '')::text AS sender_state, senders.name AS sender_name,
+    COALESCE(cards.display_name, '')::text AS card_name,
+    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim, messages.reply_to_message_id
+FROM messages
+JOIN channels ON channels.id = messages.channel_id
+LEFT JOIN relationships AS direct ON direct.id = channels.relationship_id
+LEFT JOIN users AS senders ON senders.id = messages.sender_id
+LEFT JOIN LATERAL (
+    SELECT relationships.display_name FROM relationships
+    WHERE relationships.tutor_id = channels.tutor_id AND relationships.student_id = messages.sender_id
+    ORDER BY relationships.state = 'discarded', relationships.created_at DESC
+    LIMIT 1
+) AS cards ON true
+WHERE messages.id = ANY ($1::uuid[])
+`
+
+type ListMessageViewsRow struct {
+	ID                domain.MessageID
+	ChannelID         domain.ChannelID
+	Seq               int64
+	SenderID          *domain.UserID
+	Body              *string
+	Version           int32
+	CreatedAt         time.Time
+	EditedAt          *time.Time
+	DeletedAt         *time.Time
+	ErasedAt          *time.Time
+	TutorID           domain.UserID
+	SenderState       string
+	SenderName        *string
+	CardName          string
+	SentBeforeReclaim bool
+	ReplyToMessageID  *domain.MessageID
+}
+
+func (q *Queries) ListMessageViews(ctx context.Context, ids []pgtype.UUID) ([]ListMessageViewsRow, error) {
+	rows, err := q.db.Query(ctx, listMessageViews, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMessageViewsRow
+	for rows.Next() {
+		var i ListMessageViewsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ChannelID,
+			&i.Seq,
+			&i.SenderID,
+			&i.Body,
+			&i.Version,
+			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
+			&i.ErasedAt,
+			&i.TutorID,
+			&i.SenderState,
+			&i.SenderName,
+			&i.CardName,
+			&i.SentBeforeReclaim,
+			&i.ReplyToMessageID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMessagesAfter = `-- name: ListMessagesAfter :many
 SELECT messages.id, messages.channel_id, messages.seq, messages.sender_id, messages.body, messages.version, messages.created_at,
     messages.edited_at, messages.deleted_at, messages.erased_at, channels.tutor_id, COALESCE(senders.state, '')::text AS sender_state, senders.name AS sender_name,
     COALESCE(cards.display_name, '')::text AS card_name,
-    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim
+    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim, messages.reply_to_message_id
 FROM messages
 JOIN channels ON channels.id = messages.channel_id
 LEFT JOIN relationships AS direct ON direct.id = channels.relationship_id
@@ -557,6 +637,7 @@ type ListMessagesAfterRow struct {
 	SenderName        *string
 	CardName          string
 	SentBeforeReclaim bool
+	ReplyToMessageID  *domain.MessageID
 }
 
 func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterParams) ([]ListMessagesAfterRow, error) {
@@ -584,6 +665,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.SenderName,
 			&i.CardName,
 			&i.SentBeforeReclaim,
+			&i.ReplyToMessageID,
 		); err != nil {
 			return nil, err
 		}
@@ -599,7 +681,7 @@ const listMessagesBefore = `-- name: ListMessagesBefore :many
 SELECT messages.id, messages.channel_id, messages.seq, messages.sender_id, messages.body, messages.version, messages.created_at,
     messages.edited_at, messages.deleted_at, messages.erased_at, channels.tutor_id, COALESCE(senders.state, '')::text AS sender_state, senders.name AS sender_name,
     COALESCE(cards.display_name, '')::text AS card_name,
-    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim
+    COALESCE(messages.seq <= channels.provisional_through_seq AND messages.sender_id = direct.student_id, false)::boolean AS sent_before_reclaim, messages.reply_to_message_id
 FROM messages
 JOIN channels ON channels.id = messages.channel_id
 LEFT JOIN relationships AS direct ON direct.id = channels.relationship_id
@@ -637,6 +719,7 @@ type ListMessagesBeforeRow struct {
 	SenderName        *string
 	CardName          string
 	SentBeforeReclaim bool
+	ReplyToMessageID  *domain.MessageID
 }
 
 func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBeforeParams) ([]ListMessagesBeforeRow, error) {
@@ -664,6 +747,7 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.SenderName,
 			&i.CardName,
 			&i.SentBeforeReclaim,
+			&i.ReplyToMessageID,
 		); err != nil {
 			return nil, err
 		}
@@ -1136,4 +1220,21 @@ func (q *Queries) RemoveReferencesOfAttachments(ctx context.Context, attachmentI
 		return nil, err
 	}
 	return items, nil
+}
+
+const resolveLiveMessageOfChannel = `-- name: ResolveLiveMessageOfChannel :one
+SELECT id FROM messages
+WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL AND erased_at IS NULL
+`
+
+type ResolveLiveMessageOfChannelParams struct {
+	ID        domain.MessageID
+	ChannelID domain.ChannelID
+}
+
+func (q *Queries) ResolveLiveMessageOfChannel(ctx context.Context, arg ResolveLiveMessageOfChannelParams) (domain.MessageID, error) {
+	row := q.db.QueryRow(ctx, resolveLiveMessageOfChannel, arg.ID, arg.ChannelID)
+	var id domain.MessageID
+	err := row.Scan(&id)
+	return id, err
 }

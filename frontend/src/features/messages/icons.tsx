@@ -28,3 +28,7 @@ export function FileIcon({ size }: { readonly size: number }): ReactElement {
 export function ArrowDownIcon({ size }: { readonly size: number }): ReactElement {
   return <Outline size={size} path="M8 3v10M3.5 8.5L8 13l4.5-4.5" />;
 }
+
+export function CloseIcon({ size }: { readonly size: number }): ReactElement {
+  return <Outline size={size} path="M4 4l8 8M12 4l-8 8" />;
+}

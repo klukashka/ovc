@@ -20,6 +20,7 @@ const message: Message = {
   deleted: false,
   erased: false,
   sent_before_reclaim: false,
+  reply_to: null,
   attachments: [
     {
       id: 'picture',

@@ -34,6 +34,18 @@ type Message struct {
 	Version           int32
 	SentBeforeReclaim bool
 	Attachments       []Attachment
+	ReplyTo           *Quote
+}
+
+type Quote struct {
+	MessageID         domain.MessageID
+	Seq               int64
+	SenderLabel       *string
+	SenderLabelKind   *domain.LabelKind
+	Own               bool
+	Preview           *string
+	State             domain.QuoteState
+	SentBeforeReclaim bool
 }
 
 type LastMessage struct {
@@ -115,11 +127,57 @@ func (s *Service) messageViews(
 		message := domain.MessageID(file.MessageID)
 		byMessage[message] = append(byMessage[message], file)
 	}
+	quotes, err := quotesOf(ctx, repos, viewer, rows)
+	if err != nil {
+		return nil, err
+	}
 	views := make([]Message, 0, len(rows))
 	for _, row := range rows {
-		views = append(views, s.messageView(viewer, row, byMessage[row.ID], now))
+		view := s.messageView(viewer, row, byMessage[row.ID], now)
+		if row.ReplyToMessageID != nil {
+			view.ReplyTo = quotes[*row.ReplyToMessageID]
+		}
+		views = append(views, view)
 	}
 	return views, nil
+}
+
+func quotesOf(
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, rows []repositories.MessageRow,
+) (map[domain.MessageID]*Quote, error) {
+	ids := make([]domain.MessageID, 0, len(rows))
+	seen := map[domain.MessageID]bool{}
+	for _, row := range rows {
+		if row.ReplyToMessageID != nil && !seen[*row.ReplyToMessageID] {
+			seen[*row.ReplyToMessageID] = true
+			ids = append(ids, *row.ReplyToMessageID)
+		}
+	}
+	quoted, err := repos.Messages.Views(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	quotes := make(map[domain.MessageID]*Quote, len(quoted))
+	for _, row := range quoted {
+		quote := quoteOf(viewer, row)
+		quotes[row.ID] = &quote
+	}
+	return quotes, nil
+}
+
+func quoteOf(viewer domain.UserID, row repositories.MessageRow) Quote {
+	from := senderOf(viewer, row)
+	state := domain.QuoteAvailable
+	switch {
+	case row.ErasedAt != nil:
+		state = domain.QuoteRemoved
+	case row.DeletedAt != nil:
+		state = domain.QuoteDeleted
+	}
+	return Quote{
+		MessageID: row.ID, Seq: row.Seq, SenderLabel: from.label, SenderLabelKind: from.kind, Own: from.own, Preview: previewOf(row), State: state,
+		SentBeforeReclaim: row.SentBeforeReclaim,
+	}
 }
 
 func (s *Service) viewOf(ctx context.Context, repos repositories.Repositories, viewer domain.UserID, id domain.MessageID, now time.Time) (Message, error) {

@@ -392,6 +392,12 @@ var denialCases = map[string]denialCase{
 		result, _ := h.readChannel(t, bearerToken, channel, 1)
 		return result
 	}),
+	"PUT /api/v1/channels/{id}/pin": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, channel string, message string) response {
+		return h.pin(t, bearerToken, channel, message)
+	}),
+	"DELETE /api/v1/channels/{id}/pin": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, channel string, _ string) response {
+		return h.unpin(t, bearerToken, channel)
+	}),
 	"PATCH /api/v1/messages/{id}": anotherTutorsMessages(func(h *authHarness, t *testing.T, bearerToken string, _ string, message string) response {
 		return h.editMessage(t, bearerToken, message, "Edited", 1)
 	}),

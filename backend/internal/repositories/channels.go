@@ -332,3 +332,48 @@ func (r Channels) LockForStudentDeletion(ctx context.Context, student domain.Use
 	})
 	return done(err, "lock all channels for student deletion")
 }
+
+func (r Channels) Pin(ctx context.Context, channel domain.ChannelID) (*domain.MessageID, error) {
+	pinned, err := r.queries.GetChannelPin(ctx, channel)
+	return one(pinned, err, "channel pin")
+}
+
+func (r Channels) SetPin(ctx context.Context, channel domain.ChannelID, message domain.MessageID, now time.Time) error {
+	return done(r.queries.SetChannelPin(ctx, dbgen.SetChannelPinParams{MessageID: &message, Now: now, ID: channel}), "set the channel pin")
+}
+
+func (r Channels) ClearPin(ctx context.Context, channel domain.ChannelID, now time.Time) (bool, error) {
+	cleared, err := r.queries.ClearChannelPin(ctx, dbgen.ClearChannelPinParams{Now: now, ID: channel})
+	return cleared > 0, done(err, "clear the channel pin")
+}
+
+func (r Channels) ClearPinOfMessage(ctx context.Context, channel domain.ChannelID, message domain.MessageID, now time.Time) (bool, error) {
+	cleared, err := r.queries.ClearChannelPinOfMessage(ctx, dbgen.ClearChannelPinOfMessageParams{Now: now, ID: channel, MessageID: &message})
+	return cleared > 0, done(err, "clear the pin of a message")
+}
+
+type ClearedPin struct {
+	Channel domain.ChannelID
+	Message domain.MessageID
+	Tutor   domain.UserID
+}
+
+func (r Channels) ClearPinsOfMessages(ctx context.Context, messages []domain.MessageID, now time.Time) ([]ClearedPin, error) {
+	if len(messages) == 0 {
+		return nil, nil
+	}
+	rows, err := r.queries.ClearPinsOfMessages(ctx, dbgen.ClearPinsOfMessagesParams{Now: now, MessageIds: uuids(messages)})
+	if err != nil {
+		return nil, done(err, "clear the pins of messages")
+	}
+	cleared := make([]ClearedPin, 0, len(rows))
+	for _, row := range rows {
+		cleared = append(cleared, ClearedPin{Channel: row.ID, Message: domain.MessageID(row.MessageID.Bytes), Tutor: domain.UserID(row.TutorID.Bytes)})
+	}
+	return cleared, nil
+}
+
+func (r Channels) ClearPinsOfTutor(ctx context.Context, tutor domain.UserID, now time.Time) (int64, error) {
+	cleared, err := r.queries.ClearPinsOfTutorChannels(ctx, dbgen.ClearPinsOfTutorChannelsParams{Now: now, TutorID: tutor})
+	return cleared, done(err, "clear the pins of a tutor's channels")
+}

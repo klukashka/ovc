@@ -27,7 +27,7 @@ import { createI18n } from '../../lib/i18n/i18n.ts';
 import { formatDate } from '../../lib/format/dates.ts';
 import { type Channel, type Message, deleteMessage, editMessage } from './api.ts';
 import { channelsScopeRevisionKey, channelScopeRevision, evictChannel } from './cache.ts';
-import { channelKey, channelsKey, messagesKey } from './keys.ts';
+import { aroundKey, aroundPrefix, channelKey, channelsKey, messagesKey } from './keys.ts';
 import { MessageKeyContext } from './Conversation.tsx';
 import { MessagesPage } from './MessagesPage.tsx';
 import { MessageBody } from './MessageBody.tsx';
@@ -45,6 +45,7 @@ const channel: Channel = {
   tutor: null,
   unconfirmed: false,
   unread_count: 0,
+  pinned: null,
   user_id: 'student-1',
   writable: true,
   relationship_id: 'card-1',
@@ -63,6 +64,7 @@ function message(seq: number): Message & { readonly senderId: string } {
     sender_label: 'Tutor',
     sender_label_kind: null,
     sent_before_reclaim: false,
+    reply_to: null,
     version: 1,
     senderId: tutor.id,
   };
@@ -78,7 +80,7 @@ async function fixture(
     readonly initialReadMode?: 'strict' | 'single';
     readonly mediaQueries?: MediaQueries;
     readonly kind?: Channel['kind'];
-    readonly seeds?: readonly (Message & { readonly senderId: string })[];
+    readonly seeds?: readonly (Message & { readonly senderId: string; readonly replyTo?: string })[];
   } = {},
 ): Promise<{
   readonly server: FakeAuthServer;
@@ -489,13 +491,13 @@ describe('Messages', () => {
     const menu = await screen.findByRole('button', { name: 'Message actions' });
 
     fireEvent.click(menu);
-    const edit = screen.getByRole('button', { name: 'Edit' });
+    const reply = screen.getByRole('button', { name: 'Reply' });
     const focusedFirst = document.activeElement;
-    fireEvent.keyDown(edit, { key: 'Escape' });
+    fireEvent.keyDown(reply, { key: 'Escape' });
 
-    expect(focusedFirst).toBe(edit);
+    expect(focusedFirst).toBe(reply);
     expect(document.activeElement).toBe(menu);
-    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
   });
 
   test('editing focuses the composer and Escape restores the draft and message focus', async () => {
@@ -697,7 +699,7 @@ describe('Messages', () => {
     fireEvent.pointerUp(menu, { pointerType: 'touch' });
     fireEvent.click(menu);
 
-    expect(screen.getByRole('button', { name: 'Edit' })).toBe(document.activeElement);
+    expect(screen.getByRole('button', { name: 'Reply' })).toBe(document.activeElement);
     expect(menu.getAttribute('aria-expanded')).toBe('true');
   });
   test('retrying an uncertain send keeps its key and creates only one message', async () => {
@@ -1751,14 +1753,244 @@ describe('messenger layout', () => {
     expect(server.chat.sends).toHaveLength(0);
   });
 
-  test('a student sees no message actions on another member’s message', async () => {
+  test('a student may only reply to another member’s message, and only in a writable chat', async () => {
     await fixture(0, '/messages/channel-1', true, {
       role: 'student',
       seeds: [fromOther(1, 'Teacher', '2026-11-01T00:00:00Z')],
     });
-
     await screen.findByText('Other 1');
 
-    expect(within(rowOf('Other 1')).queryByRole('button', { name: 'Message actions' })).toBeNull();
+    fireEvent.click(within(rowOf('Other 1')).getByRole('button', { name: 'Message actions' }));
+
+    expect(
+      within(rowOf('Other 1'))
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['', 'Reply']);
+  });
+
+  test('a student sees no message actions on another member’s message in a read-only chat', async () => {
+    const { server, cache } = await fixture(0, '/messages/channel-1', true, {
+      role: 'student',
+      seeds: [fromOther(1, 'Teacher', '2026-11-01T00:00:00Z')],
+    });
+    await screen.findByText('Other 1');
+
+    server.chat.setWritable(channel.id, false);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelKey(channel.id) });
+    });
+
+    await waitFor(() => {
+      expect(within(rowOf('Other 1')).queryByRole('button', { name: 'Message actions' })).toBeNull();
+    });
+  });
+});
+
+describe('replies and the pinned message', () => {
+  test('Reply shows the quoted message above the composer, focuses it and sends the reply', async () => {
+    const { server } = await fixture(2);
+    await screen.findByText('Message 1');
+    const field = screen.getByRole('textbox', { name: 'Message' });
+
+    fireEvent.click(within(rowOf('Message 1')).getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reply' }));
+    const focusAfterReply = document.activeElement;
+    const bar = screen.getByRole('button', { name: 'Cancel reply' }).parentElement?.textContent;
+    fireEvent.change(field, { target: { value: 'The answer' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await screen.findByText('The answer');
+
+    expect(focusAfterReply).toBe(field);
+    expect(bar).toContain('Message 1');
+    expect(server.chat.sends.map((send) => send.replyTo)).toEqual(['message-1']);
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Cancel reply' })).toBeNull();
+    });
+  });
+
+  test('Escape cancels a reply and editing hides the reply bar until the edit ends', async () => {
+    await fixture(2);
+    await screen.findByText('Message 1');
+    const field = screen.getByRole('textbox', { name: 'Message' });
+    const startReply = (): void => {
+      fireEvent.click(within(rowOf('Message 1')).getByRole('button', { name: 'Message actions' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Reply' }));
+    };
+
+    startReply();
+    fireEvent.keyDown(field, { key: 'Escape' });
+    const afterEscape = screen.queryByRole('button', { name: 'Cancel reply' });
+    const focusAfterEscape = document.activeElement;
+    startReply();
+    fireEvent.click(within(rowOf('Message 2')).getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    const whileEditing = screen.queryByRole('button', { name: 'Cancel reply' });
+    fireEvent.keyDown(field, { key: 'Escape' });
+    const afterEdit = screen.queryByRole('button', { name: 'Cancel reply' });
+
+    expect(afterEscape).toBeNull();
+    expect(focusAfterEscape).toBe(field);
+    expect(whileEditing).toBeNull();
+    expect(afterEdit).not.toBeNull();
+  });
+
+  test('a reply whose message was deleted meanwhile drops the bar with its notice', async () => {
+    const { api, cache, clock } = await fixture(2);
+    await screen.findByText('Message 1');
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+    fireEvent.click(within(rowOf('Message 1')).getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reply' }));
+
+    await deleteMessage(api, 'message-1');
+    act(() => {
+      receive({ kind: 'message', change: 'deleted', channelId: channel.id, messageId: 'message-1' });
+      clock.pass(1000);
+    });
+
+    await screen.findByText('The message you replied to is no longer available.');
+    expect(screen.queryByRole('button', { name: 'Cancel reply' })).toBeNull();
+  });
+
+  test('a send that replies to a message gone on the server drops the bar with its notice', async () => {
+    const { api } = await fixture(2);
+    await screen.findByText('Message 1');
+    const field = screen.getByRole('textbox', { name: 'Message' });
+    fireEvent.click(within(rowOf('Message 1')).getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reply' }));
+    await deleteMessage(api, 'message-1');
+
+    fireEvent.change(field, { target: { value: 'Too late' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await screen.findByText('The message you replied to is no longer available.');
+
+    expect(screen.queryByRole('button', { name: 'Cancel reply' })).toBeNull();
+    expect((field as HTMLTextAreaElement).value).toBe('Too late');
+  });
+
+  test('Show older inside a window moves to the older messages and focuses one of them', async () => {
+    await fixture(120, '/messages/channel-1', true, {
+      seeds: [{ ...message(121), body: 'Reply from far ahead', replyTo: 'message-40' }],
+    });
+    await screen.findByText('Reply from far ahead');
+    fireEvent.click(within(rowOf('Reply from far ahead')).getByRole('button', { name: /Message 40$/ }));
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute('data-row')).toBe('message-40');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show older' }));
+
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute('data-row')).toBe('message-16');
+    });
+    expect(screen.getByText('Message 1')).toBeTruthy();
+  });
+
+  test('a quote renders markup and addresses as text and jumps to its loaded message', async () => {
+    const quoted = { ...message(2), body: '<b>Bold</b> https://example.org/a' };
+    const replying = { ...message(3), body: 'Replying here', replyTo: 'message-2' };
+    await fixture(1, '/messages/channel-1', true, { seeds: [quoted, replying] });
+    await screen.findByText('Replying here');
+    const quote = within(rowOf('Replying here')).getByRole('button', { name: /Bold/ });
+
+    fireEvent.click(quote);
+
+    expect(quote.querySelector('b, a')).toBeNull();
+    expect(quote.textContent).toContain('<b>Bold</b> https://example.org/a');
+    expect(document.activeElement?.getAttribute('data-row')).toBe('message-2');
+  });
+
+  test('a quote of an unloaded message opens a window around it until Jump to latest', async () => {
+    const { api, cache, clock } = await fixture(60, '/messages/channel-1', true, {
+      seeds: [{ ...message(61), body: 'Reply far back', replyTo: 'message-1' }],
+    });
+    await screen.findByText('Reply far back');
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+
+    fireEvent.click(within(rowOf('Reply far back')).getByRole('button', { name: /Message 1$/ }));
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute('data-row')).toBe('message-1');
+    });
+    const listsWhileDetached = screen.getAllByRole('list', { name: 'Messages' }).length;
+    const trackedWhileDetached = Array.from(document.querySelectorAll('[data-seq]')).filter(
+      (row) => row.closest('[hidden]') === null,
+    ).length;
+    await deleteMessage(api, 'message-1');
+    act(() => {
+      receive({ kind: 'message', change: 'deleted', channelId: channel.id, messageId: 'message-1' });
+      clock.pass(1000);
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('Message 1')).toBeNull();
+    });
+    const windowRow = Array.from(document.querySelectorAll<HTMLElement>('[data-row]')).find(
+      (row) => row.dataset.row === 'message-1' && row.closest('[hidden]') === null,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^Jump to latest/ }));
+
+    expect(listsWhileDetached).toBe(1);
+    expect(windowRow?.textContent).toContain('Message deleted');
+    expect(trackedWhileDetached).toBe(0);
+    expect(screen.getByRole('textbox', { name: 'Message' })).toBe(document.activeElement);
+    expect(rowOf('Reply far back').closest('[hidden]')).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /^Jump to latest/ })).toBeNull();
+    });
+    await waitFor(() => {
+      expect(within(rowOf('Reply far back')).getByText('Message deleted')).toBeTruthy();
+    });
+  });
+
+  test('losing the channel drops every window around its messages', async () => {
+    const { cache } = await fixture(1);
+    act(() => {
+      cache.setQueryData(aroundKey(channel.id, 1), { items: [message(1)], next_cursor: null, has_newer: false });
+    });
+
+    act(() => {
+      evictChannel(cache, channel.id);
+    });
+
+    expect(cache.getQueryCache().findAll({ queryKey: aroundPrefix(channel.id) })).toHaveLength(0);
+  });
+
+  test('the tutor pins from the menu, sees the pinned bar and unpins onto the heading', async () => {
+    const { server } = await fixture(2);
+    await screen.findByText('Message 1');
+    const menu = within(rowOf('Message 1')).getByRole('button', { name: 'Message actions' });
+
+    fireEvent.click(menu);
+    fireEvent.click(screen.getByRole('button', { name: 'Pin' }));
+    const bar = await screen.findByRole('region', { name: 'Pinned message' });
+    const focusAfterPin = document.activeElement;
+    fireEvent.click(within(bar).getByRole('button', { name: 'Unpin' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('region', { name: 'Pinned message' })).toBeNull();
+    });
+
+    expect(bar.textContent).toContain('Message 1');
+    expect(focusAfterPin).toBe(menu);
+    expect(server.chat.pinOf(channel.id)).toBeNull();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2 }));
+    });
+  });
+
+  test('a student sees the pinned message without Unpin and its quote of markup as text', async () => {
+    const { server, cache } = await fixture(0, '/messages/channel-1', true, {
+      role: 'student',
+      seeds: [{ ...fromOther(1, 'Teacher', '2026-11-01T00:00:00Z'), body: '<i>Pinned</i>' }],
+    });
+    await screen.findByText('<i>Pinned</i>');
+
+    server.chat.pin(channel.id, 'message-1');
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelKey(channel.id) });
+    });
+    const bar = await screen.findByRole('region', { name: 'Pinned message' });
+
+    expect(within(bar).queryByRole('button', { name: 'Unpin' })).toBeNull();
+    expect(bar.querySelector('i')).toBeNull();
+    expect(bar.textContent).toContain('<i>Pinned</i>');
   });
 });

@@ -57,4 +57,13 @@ export const chatTexts = {
   jumpToLatest: 'Jump to latest',
   jumpToLatestNew: 'Jump to latest, {count} new',
   composerHint: 'Enter sends, Shift+Enter adds a line',
+  reply: 'Reply',
+  replyingTo: 'Replying to {name}',
+  cancelReply: 'Cancel reply',
+  replyUnavailable: 'The message you replied to is no longer available.',
+  attachmentOnly: 'Attachment',
+  pin: 'Pin',
+  unpin: 'Unpin',
+  pinned: 'Pinned message',
+  showNewer: 'Show newer',
 } as const;

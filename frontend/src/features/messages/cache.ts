@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 
 import type { ChannelPage } from './api.ts';
-import { channelKey, channelsKey, messagesKey } from './keys.ts';
+import { aroundPrefix, channelKey, channelsKey, messagesKey } from './keys.ts';
 
 export const channelsScopeRevisionKey = ['channels-scope-revision'] as const;
 
@@ -16,6 +16,13 @@ export function evictChannel(queryClient: QueryClient, id: string, inactiveOnly 
       void queryClient.cancelQueries({ queryKey: key, exact: true });
       queryClient.removeQueries({ queryKey: key, exact: true });
     }
+  }
+  if (
+    !inactiveOnly ||
+    queryClient.getQueryCache().findAll({ queryKey: aroundPrefix(id), type: 'active' }).length === 0
+  ) {
+    void queryClient.cancelQueries({ queryKey: aroundPrefix(id) });
+    queryClient.removeQueries({ queryKey: aroundPrefix(id) });
   }
   void queryClient.cancelQueries({ queryKey: channelsKey });
   queryClient.setQueryData<number>(channelsScopeRevisionKey, (revision) => (revision ?? 0) + 1);

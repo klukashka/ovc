@@ -400,7 +400,7 @@ Slice 6 adds these tables; behavior is in [chat](realtime-and-video.md#chat). Mi
 | `provisional_through_seq` | set by a reclaim to `last_seq`: every message up to it was written during the provisional period |
 | `discarded_at` | set by a discarding transaction and never cleared |
 | `erase_pending_since` | set with `discarded_at`, cleared by the erasure job when no message is left; partial index where not null, for `chat.erase_channels` |
-| `pinned_message_id` | nullable; the channel's one pinned message, a foreign key on `(id, pinned_message_id)` to the message's unique `(channel_id, id)`, so it can only name a message of the same channel; set and cleared by the tutor under the channel's `FOR UPDATE` lock, and cleared in the transaction that deletes or erases that message, by the delete, the sender's purge and the erasure job; the tutor purge clears it before deleting the channel's messages (specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md), pending owner review; pending implementation by M2) |
+| `pinned_message_id` | nullable; the channel's one pinned message, a foreign key on `(id, pinned_message_id)` to the message's unique `(channel_id, id)`, so it can only name a message of the same channel; set and cleared by the tutor under the channel's `FOR UPDATE` lock, and cleared in the transaction that deletes or erases that message, by the delete, the sender's purge and the erasure job; the tutor purge clears it before deleting the channel's messages (specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md), pending owner review; built by M2 on 2026-11-24) |
 
 ### Channel member
 
@@ -430,7 +430,7 @@ The one active-member predicate ([channels](realtime-and-video.md#channels)) is 
 | `body` | 0 to 4,000 code points of plain text as entered; erased (null) on deletion and on the sender's purge |
 | `version` | incremented on every edit; edits are conditional on it |
 | `created_at`, `edited_at`, `deleted_at`, `erased_at` | |
-| `reply_to_message_id` | nullable; M2's migration adds the unique key `(channel_id, id)` on messages that this column's and `channels.pinned_message_id`'s foreign keys reference; the message this one replies to, a foreign key on `(channel_id, reply_to_message_id)` to the message's `(channel_id, id)` with `ON DELETE SET NULL (reply_to_message_id)`, so a reply can only name a message of its own channel and loses the link when the tutor purge deletes the quoted message; set only by the send and never changed by an edit; an index on it where not null (specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md), pending owner review; pending implementation by M2) |
+| `reply_to_message_id` | nullable; M2's migration adds the unique key `(channel_id, id)` on messages that this column's and `channels.pinned_message_id`'s foreign keys reference; the message this one replies to, a foreign key on `(channel_id, reply_to_message_id)` to the message's `(channel_id, id)` with `ON DELETE SET NULL (reply_to_message_id)`, so a reply can only name a message of its own channel and loses the link when the tutor purge deletes the quoted message; set only by the send and never changed by an edit; an index on it where not null (specified 2026-11-23 by change U1b of the [interface rework plan](../plans/ui-rework.md), pending owner review; built by M2 on 2026-11-24) |
 
 A message's attachments are references with `ref_kind = message` and `ref_id` the message's identifier.
 

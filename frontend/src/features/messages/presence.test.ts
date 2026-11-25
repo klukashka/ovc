@@ -16,6 +16,7 @@ const group: Channel = {
   tutor: { name: 'Tutor', colour: null },
   unconfirmed: false,
   unread_count: 0,
+  pinned: null,
   user_id: 'tutor',
   writable: true,
   members: [

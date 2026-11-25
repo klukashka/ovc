@@ -6,6 +6,8 @@ export type ChannelItem = components['schemas']['ChannelItem'];
 export type ChannelPage = components['schemas']['ChannelPage'];
 export type Message = components['schemas']['Message'];
 export type MessagePage = components['schemas']['MessagePage'];
+export type MessageQuote = components['schemas']['MessageQuote'];
+export type PinnedMessage = components['schemas']['PinnedMessage'];
 
 export async function fetchChannels(
   client: ApiClient,
@@ -62,10 +64,11 @@ export async function sendMessage(
   body: string,
   key: string,
   attachments: readonly string[] = [],
+  replyTo: string | null = null,
 ): Promise<Message> {
   const { data, error, response } = await client.POST('/api/v1/channels/{id}/messages', {
     params: { path: { id }, header: { 'Idempotency-Key': key } },
-    body: { body, attachment_ids: [...attachments] },
+    body: { body, attachment_ids: [...attachments], ...(replyTo === null ? {} : { reply_to_message_id: replyTo }) },
   });
   if (data === undefined) throw apiErrorFrom(response.status, error);
   return data;
@@ -91,5 +94,33 @@ export async function markRead(client: ApiClient, id: string, seq: number, signa
     params: { path: { id } },
     body: { seq },
   });
+  if (!response.ok) throw apiErrorFrom(response.status, error);
+}
+
+export async function fetchMessagesAround(
+  client: ApiClient,
+  id: string,
+  seq: number,
+  limit: number,
+  signal: AbortSignal,
+): Promise<MessagePage> {
+  const { data, error, response } = await client.GET('/api/v1/channels/{id}/messages', {
+    signal,
+    params: { path: { id }, query: { around_seq: String(seq), limit } },
+  });
+  if (data === undefined) throw apiErrorFrom(response.status, error);
+  return data;
+}
+
+export async function pinMessage(client: ApiClient, id: string, message: string): Promise<void> {
+  const { error, response } = await client.PUT('/api/v1/channels/{id}/pin', {
+    params: { path: { id } },
+    body: { message_id: message },
+  });
+  if (!response.ok) throw apiErrorFrom(response.status, error);
+}
+
+export async function unpinMessage(client: ApiClient, id: string): Promise<void> {
+  const { error, response } = await client.DELETE('/api/v1/channels/{id}/pin', { params: { path: { id } } });
   if (!response.ok) throw apiErrorFrom(response.status, error);
 }

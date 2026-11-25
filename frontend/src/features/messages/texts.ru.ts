@@ -59,4 +59,13 @@ export const chatTexts: ChatTexts = {
   jumpToLatest: 'К последним сообщениям',
   jumpToLatestNew: 'К последним сообщениям, новых: {count}',
   composerHint: 'Enter — отправить, Shift+Enter — новая строка',
+  reply: 'Ответить',
+  replyingTo: 'Ответ для {name}',
+  cancelReply: 'Отменить ответ',
+  replyUnavailable: 'Сообщение, на которое вы отвечали, больше недоступно.',
+  attachmentOnly: 'Вложение',
+  pin: 'Закрепить',
+  unpin: 'Открепить',
+  pinned: 'Закреплённое сообщение',
+  showNewer: 'Показать более новые',
 };
