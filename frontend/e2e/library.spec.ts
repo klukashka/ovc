@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { open } from 'node:fs/promises';
 
 import type { Locator, Page } from '@playwright/test';
@@ -62,6 +63,24 @@ async function createTemplate(
     throw new Error(`creating a template answered ${String(answer.status)}`);
   }
   return identifierOf(answer.body);
+}
+
+async function renameTemplate(deployment: Deployment, tutor: TestAccount, id: string, title: string): Promise<void> {
+  const token = await accessToken(deployment, tutor);
+  const read = await callApi(deployment, token, 'GET', `/library/templates/${id}`);
+  const body = read.body;
+  if (read.status !== 200 || typeof body !== 'object' || body === null || !('version' in body)) {
+    throw new Error(`reading a template answered ${String(read.status)}`);
+  }
+  const saved = await callApi(deployment, token, 'PUT', `/library/templates/${id}`, {
+    title,
+    blocks: [],
+    version: body.version,
+    save_id: randomUUID(),
+  });
+  if (saved.status !== 200) {
+    throw new Error(`saving a template answered ${String(saved.status)}`);
+  }
 }
 
 async function deleteTemplate(deployment: Deployment, tutor: TestAccount, id: string): Promise<void> {
@@ -232,7 +251,7 @@ test.describe('library folders', () => {
     await expect(dialog(page).getByRole('combobox', { name: 'Destination' })).toBeFocused();
   });
 
-  test('moving announces Moved. with focus', async ({ page, deployment }) => {
+  test('moving names the item and its folder and moves focus to Undo', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     await createFolder(deployment, tutor, 'Grammar');
     await createFolder(deployment, tutor, 'Vocabulary');
@@ -242,8 +261,30 @@ test.describe('library folders', () => {
     await dialog(page).getByRole('combobox', { name: 'Destination' }).selectOption({ label: 'Grammar' });
     await dialog(page).getByRole('button', { name: 'Move', exact: true }).click();
 
-    await expect(page.getByText('Moved.', { exact: true })).toBeFocused();
+    await expect(page.getByRole('status').filter({ hasText: 'Moved: Vocabulary to Grammar' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeFocused();
     await expect(items(page).getByRole('link')).toHaveText(['Grammar']);
+  });
+
+  test('the Undo notice of a move is gone after opening another folder and coming back', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await createFolder(deployment, tutor, 'Grammar');
+    await createFolder(deployment, tutor, 'Vocabulary');
+    await openLibrary(page, tutor);
+    await chooseRowAction(page, 'Vocabulary', 'Move');
+    await dialog(page).getByRole('combobox', { name: 'Destination' }).selectOption({ label: 'Grammar' });
+    await dialog(page).getByRole('button', { name: 'Move', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeFocused();
+
+    await items(page).getByRole('link', { name: 'Grammar' }).click();
+    await expect(items(page).getByRole('link')).toHaveText(['Vocabulary']);
+    await page.goBack();
+
+    await expect(items(page).getByRole('link')).toHaveText(['Grammar']);
+    await expect(page.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
   });
 
   test('deleting a folder asks first and opens on Cancel', async ({ page, deployment }) => {
@@ -430,7 +471,8 @@ test.describe('library materials', () => {
     await dialog(page).getByRole('combobox', { name: 'Destination' }).selectOption({ label: 'Reading' });
     await dialog(page).getByRole('button', { name: 'Move', exact: true }).click();
 
-    await expect(page.getByText('Moved.', { exact: true })).toBeFocused();
+    await expect(page.getByRole('status').filter({ hasText: 'Moved: Chapter one to Reading' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeFocused();
     await expect(items(page).locator('tbody tr')).toHaveCount(1);
     await page.goto(`/homework/library?folder=${reading}`);
     await expect(items(page).getByRole('button', { name: 'Chapter one', exact: true })).toBeVisible();
@@ -502,17 +544,47 @@ test.describe('library templates', () => {
     await expect(items(page).getByRole('link')).toHaveText(['Essay']);
   });
 
-  test('moving a template announces Moved. with focus', async ({ page, deployment }) => {
+  test('Undo after moving a template puts it back and moves focus to the result', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     await createFolder(deployment, tutor, 'Unit 1');
     await createTemplate(deployment, tutor, 'Essay');
     await openLibrary(page, tutor);
-
     await chooseRowAction(page, 'Essay', 'Move');
     await dialog(page).getByRole('combobox', { name: 'Destination' }).selectOption({ label: 'Unit 1' });
     await dialog(page).getByRole('button', { name: 'Move', exact: true }).click();
+    const undo = page.getByRole('button', { name: 'Undo', exact: true });
+    await expect(undo).toBeFocused();
+    await expect(items(page).getByRole('link')).toHaveText(['Unit 1']);
 
-    await expect(page.getByText('Moved.', { exact: true })).toBeFocused();
+    await undo.click();
+
+    await expect(page.getByRole('status').filter({ hasText: 'Moved back: Essay' })).toBeFocused();
+    await expect(items(page).getByRole('link')).toHaveText(['Unit 1', 'Essay']);
+  });
+
+  test('Undo of a template move after the template changed says so and leaves it in place', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await createFolder(deployment, tutor, 'Unit 1');
+    const essay = await createTemplate(deployment, tutor, 'Essay');
+    diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/library/templates/${essay}`, status: 409 });
+    await openLibrary(page, tutor);
+    await chooseRowAction(page, 'Essay', 'Move');
+    await dialog(page).getByRole('combobox', { name: 'Destination' }).selectOption({ label: 'Unit 1' });
+    await dialog(page).getByRole('button', { name: 'Move', exact: true }).click();
+    const undo = page.getByRole('button', { name: 'Undo', exact: true });
+    await expect(undo).toBeFocused();
+    await renameTemplate(deployment, tutor, essay, 'Essay, revised');
+
+    await undo.press('Enter');
+
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'Can’t undo: the item changed since the move.' }),
+    ).toBeVisible();
+    await expect(undo).toBeFocused();
     await expect(items(page).getByRole('link')).toHaveText(['Unit 1']);
   });
 

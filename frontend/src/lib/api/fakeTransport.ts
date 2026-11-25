@@ -1,4 +1,6 @@
 import { FakeChatServer } from './fakeChat.ts';
+import { type FakeGroupSeed, FakeGroupServer, type GroupCandidate } from './fakeGroups.ts';
+import { type FakeLibrarySeed, FakeLibraryServer, type SeededFakeLibrary } from './fakeLibrary.ts';
 import { type FeedbackSeenRequest, FakeSubmissionServer, type FieldProblem, fakeRefusal } from './fakeSubmissions.ts';
 
 import type { components } from './schema.ts';
@@ -622,9 +624,12 @@ export class FakeAuthServer {
   readonly submissions = new FakeSubmissionServer((studentId, submissionId) => {
     this.clearFeedbackNew(studentId, submissionId);
   });
+  private readonly groups = new FakeGroupServer((tutorId, relationshipId) =>
+    this.groupCandidate(tutorId, relationshipId),
+  );
+  private readonly library = new FakeLibraryServer();
   private readonly tutors = new Map<string, components['schemas']['MyTutor'][]>();
   private readonly templateCounts = new Map<string, number>();
-  private readonly templates = new Map<string, Map<string, components['schemas']['Template']>>();
   private failingTemplateReads = 0;
   private readonly libraryUploadRefusals: Response[] = [];
   private readonly homeworkUploadRefusals: Response[] = [];
@@ -1063,11 +1068,68 @@ export class FakeAuthServer {
     this.failingStudentListReads += 1;
   }
 
-  addActiveStudent(tutorEmail: string, displayName: string, email: string): void {
+  addActiveStudent(tutorEmail: string, displayName: string, email: string | null = null): string {
     const tutorId = this.account(tutorEmail).me.id;
     const id = `00000000-0000-4000-8000-${String(this.cards.size + 1).padStart(12, '0')}`;
     const card: StudentCard = { ...fakeCard(id, displayName), state: 'active', email, invitation: null };
     this.cards.set(id, { tutorId, card });
+    return id;
+  }
+
+  endStudentRelationship(cardId: string): void {
+    const found = this.cards.get(cardId);
+    if (found === undefined) {
+      throw new Error(`no fake card ${cardId}`);
+    }
+    const endedAt = new Date(this.serverNow()).toISOString();
+    const card: StudentCard = { ...found.card, state: 'ended', ended_at: endedAt, ended_by: 'tutor', groups: [] };
+    this.cards.set(cardId, { ...found, card });
+    this.groups.removeRelationship(cardId);
+  }
+
+  seedGroup(tutorEmail: string, seed: FakeGroupSeedRequest): SeededFakeGroup {
+    const relationshipIds = [
+      ...(seed.relationshipIds ?? []),
+      ...(seed.members ?? []).map((displayName) => this.addActiveStudent(tutorEmail, displayName)),
+    ];
+    const groupSeed: FakeGroupSeed = {
+      name: seed.name,
+      relationshipIds,
+      ...(seed.colour === undefined ? {} : { colour: seed.colour }),
+      ...(seed.futureLessonCount === undefined ? {} : { futureLessonCount: seed.futureLessonCount }),
+      ...(seed.hasOpenSeries === undefined ? {} : { hasOpenSeries: seed.hasOpenSeries }),
+      ...(seed.archived === undefined ? {} : { archived: seed.archived }),
+    };
+    const groupId = this.groups.seed(this.account(tutorEmail).me.id, groupSeed, this.serverNow());
+    return { groupId, relationshipIds: this.groups.memberIdsOf(groupId) };
+  }
+
+  groupMemberIds(groupId: string): readonly string[] {
+    return this.groups.memberIdsOf(groupId);
+  }
+
+  loseNextGroupWrite(): void {
+    this.groups.loseNextWrite();
+  }
+
+  failNextGroupWrite(): void {
+    this.groups.failNextWrite();
+  }
+
+  seedLibrary(tutorEmail: string, seed: FakeLibrarySeed = {}): SeededFakeLibrary {
+    return this.library.seed(this.account(tutorEmail).me.id, seed, this.serverNow());
+  }
+
+  deleteFromLibrary(id: string): void {
+    this.library.remove(id);
+  }
+
+  loseNextLibraryMove(): void {
+    this.library.loseNextMove();
+  }
+
+  failNextLibraryMove(): void {
+    this.library.failNextMove();
   }
 
   pauseStudentListReads(): PausedReads {
@@ -1101,10 +1163,7 @@ export class FakeAuthServer {
   }
 
   addTemplate(email: string, template: components['schemas']['Template']): void {
-    const accountId = this.account(email).me.id;
-    const owned = this.templates.get(accountId) ?? new Map<string, components['schemas']['Template']>();
-    owned.set(template.id, template);
-    this.templates.set(accountId, owned);
+    this.library.addTemplate(this.account(email).me.id, template);
   }
 
   failNextTemplateRead(): void {
@@ -1486,15 +1545,8 @@ export class FakeAuthServer {
     ) {
       return this.uploadToLibrary(request, caller, upload);
     }
-    if (request.method === 'GET' && path === '/api/v1/library' && caller !== undefined) {
-      return json(200, {
-        folder: null,
-        path: [],
-        folders: [],
-        items: [],
-        next_cursor: null,
-        template_count: this.templateCounts.get(caller.id) ?? 0,
-      });
+    if (this.library.handles(request.method, path) && caller !== undefined) {
+      return this.library.handle(request, caller.id, this.serverNow(), this.templateCounts.get(caller.id) ?? 0);
     }
     if (request.method === 'GET' && path.startsWith(templatePathPrefix) && caller !== undefined) {
       return this.readTemplate(caller, decodeURIComponent(path.slice(templatePathPrefix.length)));
@@ -1536,6 +1588,9 @@ export class FakeAuthServer {
         return refusal(401, 'unauthenticated');
       }
       return this.chat.handle(request, caller, Date.UTC(2026, 10, 1) + this.nowSeconds * 1_000);
+    }
+    if (this.groups.handles(path) && caller !== undefined) {
+      return this.groups.handle(request, caller.id, this.serverNow());
     }
     if (this.submissions.handles(path)) {
       if (caller === undefined) {
@@ -1973,7 +2028,7 @@ export class FakeAuthServer {
           profile: (caller.bio ?? '') !== '' || (caller.subjects ?? []).length > 0,
           student: unconfirmed ? null : [...this.cards.values()].some((found) => found.tutorId === caller.id),
           lesson: calendar.some(startsWithin(dayStart, localDayStart(now, caller.timezone, homeLookaheadDays))),
-          assignment: (this.templateCounts.get(caller.id) ?? 0) > 0,
+          assignment: this.templateCountOf(caller.id) > 0,
         },
       },
     };
@@ -2102,8 +2157,25 @@ export class FakeAuthServer {
       this.failingTemplateReads -= 1;
       return refusal(503, 'service_unavailable');
     }
-    const template = this.templates.get(caller.id)?.get(id);
-    return template === undefined ? refusal(404, 'not_found') : json(200, template);
+    const template = this.library.template(caller.id, id);
+    return template === null ? refusal(404, 'not_found') : json(200, template);
+  }
+
+  private templateCountOf(tutorId: string): number {
+    return (this.templateCounts.get(tutorId) ?? 0) + this.library.liveTemplateCount(tutorId);
+  }
+
+  private groupCandidate(tutorId: string, relationshipId: string): GroupCandidate | null {
+    const found = this.cards.get(relationshipId);
+    if (found?.tutorId !== tutorId) {
+      return null;
+    }
+    return {
+      active: found.card.state === 'active',
+      displayName: found.card.display_name,
+      name: found.card.account?.name ?? found.card.display_name,
+      avatarId: found.card.account?.avatar_id ?? null,
+    };
   }
 
   private async uploadToLibrary(request: Request, caller: Me, upload: UploadTransfer | undefined): Promise<Response> {
@@ -2268,6 +2340,21 @@ export class FakeAuthServer {
     this.tokens.set(token, { sessionId, issuedAt: this.nowSeconds });
     return token;
   }
+}
+
+export interface FakeGroupSeedRequest {
+  readonly name: string;
+  readonly colour?: FakeGroupSeed['colour'];
+  readonly members?: readonly string[];
+  readonly relationshipIds?: readonly string[];
+  readonly futureLessonCount?: number;
+  readonly hasOpenSeries?: boolean;
+  readonly archived?: boolean;
+}
+
+export interface SeededFakeGroup {
+  readonly groupId: string;
+  readonly relationshipIds: readonly string[];
 }
 
 export interface PausedAnswers {

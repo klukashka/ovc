@@ -50,4 +50,13 @@ export const libraryTexts = {
   uploaded: 'Uploaded:',
   fileTooLarge: 'File is larger than 100 MB',
   showMore: 'Show more',
+  movedItem: 'Moved:',
+  movedTo: 'to',
+  rootTarget: 'the library root',
+  movedBack: 'Moved back:',
+  undo: 'Undo',
+  undoChanged: 'Can’t undo: the item changed since the move.',
+  undoGone: 'Can’t undo: the item or its folder is no longer in your library.',
+  unconfirmed: 'We couldn’t confirm the change.',
+  retry: 'Try again',
 };

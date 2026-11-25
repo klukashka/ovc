@@ -371,6 +371,8 @@ export default defineConfig(
       'src/lib/api/fakeTransport.ts',
       'src/lib/api/fakeSubmissions.ts',
       'src/lib/api/fakeChat.ts',
+      'src/lib/api/fakeGroups.ts',
+      'src/lib/api/fakeLibrary.ts',
       'src/lib/realtime/fakeGateway.ts',
     ],
     rules: { 'no-restricted-imports': ['error', testOnlyModuleImports] },

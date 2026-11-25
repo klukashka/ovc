@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router';
 
 import { type ActionState, done, refusedBy, showsStaleData, useAction } from '../../components/ui/action.ts';
+import { ActionNotice } from '../../components/ui/ActionNotice.tsx';
 import { ActionMenu, type MenuItem } from '../../components/ui/ActionMenu.tsx';
 import { Avatar } from '../../components/ui/Avatar.tsx';
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
@@ -27,7 +28,8 @@ import { FocusedNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed, RefetchFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { PageColumns } from '../../components/ui/PageColumns.tsx';
-import { Refusal } from '../../components/ui/Refusal.tsx';
+import { Refusal, refusalText } from '../../components/ui/Refusal.tsx';
+import { hasUnknownOutcome, settledRequest } from '../../components/ui/settled.ts';
 import { StatusWord } from '../../components/ui/StatusWord.tsx';
 import { type ApiClient, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
@@ -43,11 +45,13 @@ import { studentsKey } from '../students/api.ts';
 import {
   type Group,
   type GroupDetail,
+  type GroupMember,
   fetchGroup,
   groupKey,
   groupMemberLimit,
   groupsKey,
   isGroupColour,
+  memberCapReached,
   memberChoiceKey,
 } from './api.ts';
 import { ColourField, GroupDot } from './ColourField.tsx';
@@ -58,11 +62,102 @@ const groupNewLessonOpener = 'group-new-lesson';
 
 type GroupPatch = components['schemas']['GroupPatch'];
 
-type MembershipNotice = { readonly kind: 'added' | 'removed'; readonly count: number } | null;
+type MembershipNotice =
+  | { readonly kind: 'added'; readonly count: number }
+  | { readonly kind: 'back'; readonly name: string; readonly count: number }
+  | {
+      readonly kind: 'removed';
+      readonly relationshipId: string;
+      readonly name: string;
+      readonly unconfirmed: boolean;
+      readonly problem: string | null;
+      readonly count: number;
+    }
+  | null;
+
+function addBackProblem(t: TFunction, state: ActionState): string | null {
+  if (state.kind !== 'refused') {
+    return null;
+  }
+  if (state.error.code === 'relationship_not_active' || state.error.code === 'not_found') {
+    return t('groups.addBackInactive');
+  }
+  if (state.error.code === 'audience_not_active') {
+    return t('groups.addBackArchived');
+  }
+  if (memberCapReached(state.error)) {
+    return t('groups.addBackFull');
+  }
+  return refusalText(t, state.error, state.retryAfter, undefined);
+}
+
+function MembershipNoticeView({
+  notice,
+  busy,
+  onAddBack,
+}: {
+  readonly notice: NonNullable<MembershipNotice>;
+  readonly busy: boolean;
+  readonly onAddBack: (removed: Extract<MembershipNotice, { readonly kind: 'removed' }>) => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  if (notice.kind === 'removed') {
+    return (
+      <RemovedNotice
+        key={notice.count}
+        notice={notice}
+        busy={busy}
+        onAddBack={() => {
+          onAddBack(notice);
+        }}
+      />
+    );
+  }
+  if (notice.kind === 'back') {
+    return (
+      <FocusedNotice
+        key={notice.count}
+        message={
+          <>
+            {t('groups.backInGroup')} <bdi>{notice.name}</bdi>. {t('groups.seesChat')}
+          </>
+        }
+      />
+    );
+  }
+  return <FocusedNotice key={notice.count} message={t('groups.added')} />;
+}
+
+function RemovedNotice({
+  notice,
+  busy,
+  onAddBack,
+}: {
+  readonly notice: Extract<MembershipNotice, { readonly kind: 'removed' }>;
+  readonly busy: boolean;
+  readonly onAddBack: () => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  return (
+    <ActionNotice
+      action={{ label: t(notice.unconfirmed ? 'groups.retry' : 'groups.addBack'), busy, onActivate: onAddBack }}
+      problem={notice.problem}
+    >
+      {notice.unconfirmed ? (
+        t('groups.unconfirmed')
+      ) : (
+        <>
+          {t('groups.removedFrom')} <bdi>{notice.name}</bdi>. {t('groups.unsentNotRestored')}
+        </>
+      )}
+    </ActionNotice>
+  );
+}
 
 interface GroupHandlers {
   readonly onChanged: (group: Group) => void;
   readonly onChangedElsewhere: () => void;
+  readonly onUnknownOutcome: () => void;
 }
 
 async function patchGroup(client: ApiClient, id: string, patch: GroupPatch): Promise<Group | ActionState> {
@@ -82,7 +177,9 @@ function isGroup(value: Group | ActionState): value is Group {
 }
 
 type GroupOutcome =
-  { readonly kind: 'saved' | 'archived' | 'unarchived' } | { readonly kind: 'refused'; readonly state: ActionState };
+  | { readonly kind: 'saved' | 'unarchived' | 'restored' }
+  | { readonly kind: 'archived'; readonly undoable: boolean }
+  | { readonly kind: 'refused'; readonly state: ActionState };
 
 function DetailsDialog({
   group,
@@ -297,6 +394,8 @@ function Members({
   const [notice, setNotice] = useState<MembershipNotice>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const action = useAction();
+  const addBack = useAction();
+  const queryClient = useQueryClient();
   const archived = group.archived_at !== null;
   const listRef = useRef<HTMLUListElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -308,23 +407,77 @@ function Members({
     action.busy || notice !== null,
   );
 
-  function remove(id: string): void {
-    if (action.busy) {
+  function remove(member: GroupMember): void {
+    if (action.busy || addBack.busy) {
       return;
     }
     setNotice(null);
-    setRemoving(id);
+    setRemoving(member.relationship_id);
     action.run(async (): Promise<ActionState> => {
-      const answer = await patchGroup(client, group.id, { remove: [id] });
+      const answer = await settledRequest(() => patchGroup(client, group.id, { remove: [member.relationship_id] }));
       if (!isGroup(answer)) {
         if (showsStaleData(answer)) {
           handlers.onChangedElsewhere();
+        } else if (hasUnknownOutcome(answer)) {
+          handlers.onUnknownOutcome();
         }
         return answer;
       }
       handlers.onChanged(answer);
-      setNotice((previous) => ({ kind: 'removed', count: (previous?.count ?? 0) + 1 }));
+      setNotice((previous) => ({
+        kind: 'removed',
+        relationshipId: member.relationship_id,
+        name: member.display_name,
+        unconfirmed: false,
+        problem: null,
+        count: (previous?.count ?? 0) + 1,
+      }));
       return done;
+    });
+  }
+
+  async function freshMembers(): Promise<readonly string[] | null> {
+    try {
+      await queryClient.cancelQueries({ queryKey: groupKey(group.id) });
+      const fresh = await queryClient.query({
+        queryKey: groupKey(group.id),
+        queryFn: () => fetchGroup(client, group.id),
+        staleTime: 0,
+        retry: false,
+      });
+      return fresh.members.map((member) => member.relationship_id);
+    } catch {
+      return null;
+    }
+  }
+
+  function addBackRemoved(removed: Extract<MembershipNotice, { readonly kind: 'removed' }>): void {
+    if (action.busy) {
+      return;
+    }
+    const isBack = (members: readonly string[] | null): boolean => members?.includes(removed.relationshipId) === true;
+    const confirmBack = (): ActionState => {
+      setNotice((previous) => ({ kind: 'back', name: removed.name, count: (previous?.count ?? 0) + 1 }));
+      return done;
+    };
+    addBack.run(async (): Promise<ActionState> => {
+      if (removed.unconfirmed && isBack(await freshMembers())) {
+        return confirmBack();
+      }
+      const answer = await settledRequest(() => patchGroup(client, group.id, { add: [removed.relationshipId] }));
+      if (isGroup(answer)) {
+        handlers.onChanged(answer);
+        return confirmBack();
+      }
+      if (hasUnknownOutcome(answer)) {
+        if (isBack(await freshMembers())) {
+          return confirmBack();
+        }
+        setNotice({ ...removed, unconfirmed: true, problem: null });
+        return { kind: 'idle' };
+      }
+      setNotice({ ...removed, problem: addBackProblem(t, answer) });
+      return { kind: 'idle' };
     });
   }
 
@@ -337,9 +490,7 @@ function Members({
         {t('groups.memberCountOf', { count: group.members.length, limit: groupMemberLimit })}
       </p>
       <Refusal state={action.state} />
-      {notice === null ? null : (
-        <FocusedNotice key={notice.count} message={t(notice.kind === 'added' ? 'groups.added' : 'groups.removed')} />
-      )}
+      {notice === null ? null : <MembershipNoticeView notice={notice} busy={addBack.busy} onAddBack={addBackRemoved} />}
       {group.members.length === 0 ? (
         <p className="text-text-muted">{t('groups.noMembers')}</p>
       ) : (
@@ -362,10 +513,10 @@ function Members({
               </span>
               <ActionButton
                 busy={action.busy && removing === member.relationship_id}
-                unavailable={action.busy}
+                unavailable={action.busy || addBack.busy}
                 label={t('groups.removeNamed', { name: member.display_name })}
                 onClick={() => {
-                  remove(member.relationship_id);
+                  remove(member);
                 }}
                 className={quietButtonClass}
               >
@@ -448,22 +599,29 @@ function GroupActions({
     onOutcome(null);
     action.run(async (): Promise<ActionState> => {
       const params = { params: { path: { id: group.id } } };
-      const { data, error, response } = archived
-        ? await client.POST('/api/v1/groups/{id}/unarchive', params)
-        : await client.POST('/api/v1/groups/{id}/archive', params);
-      if (data === undefined) {
-        const refused = refusedBy(response, error);
-        if (showsStaleData(refused)) {
+      const answer = await settledRequest(async (): Promise<Group | ActionState> => {
+        const { data, error, response } = archived
+          ? await client.POST('/api/v1/groups/{id}/unarchive', params)
+          : await client.POST('/api/v1/groups/{id}/archive', params);
+        return data ?? refusedBy(response, error);
+      });
+      if (!isGroup(answer)) {
+        if (showsStaleData(answer)) {
           setDialog(null);
           handlers.onChangedElsewhere();
-        } else if (!viaDialog) {
-          onOutcome({ kind: 'refused', state: refused });
+          return answer;
         }
-        return refused;
+        if (hasUnknownOutcome(answer)) {
+          handlers.onUnknownOutcome();
+        }
+        if (!viaDialog) {
+          onOutcome({ kind: 'refused', state: answer });
+        }
+        return answer;
       }
       setDialog(null);
-      handlers.onChanged(data);
-      onOutcome({ kind: archived ? 'unarchived' : 'archived' });
+      handlers.onChanged(answer);
+      onOutcome(archived ? { kind: 'unarchived' } : { kind: 'archived', undoable: !viaDialog });
       return done;
     });
   }
@@ -627,16 +785,117 @@ function outcomeMessage(t: TFunction, outcome: GroupOutcome): string | null {
   if (outcome.kind === 'saved') {
     return t('groups.saved');
   }
-  if (outcome.kind === 'archived') {
-    return t('groups.archivedNotice');
+  if (outcome.kind === 'restored') {
+    return t('groups.restoredNotice');
   }
   return outcome.kind === 'unarchived' ? t('groups.unarchivedNotice') : null;
 }
 
-function OutcomeNotice({ outcome }: { readonly outcome: GroupOutcome }): ReactElement | null {
+function ArchivedNotice({
+  groupId,
+  handlers,
+  onRestored,
+}: {
+  readonly groupId: string;
+  readonly handlers: GroupHandlers;
+  readonly onRestored: () => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const client = useApiClient();
+  const queryClient = useQueryClient();
+  const action = useAction();
+  const [unconfirmed, setUnconfirmed] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  async function isRestored(): Promise<boolean> {
+    try {
+      await queryClient.cancelQueries({ queryKey: groupKey(groupId) });
+      const fresh = await queryClient.query({
+        queryKey: groupKey(groupId),
+        queryFn: () => fetchGroup(client, groupId),
+        staleTime: 0,
+        retry: false,
+      });
+      return fresh.archived_at === null;
+    } catch {
+      return false;
+    }
+  }
+
+  function restored(): ActionState {
+    onRestored();
+    return done;
+  }
+
+  function undo(): void {
+    action.run(async (): Promise<ActionState> => {
+      if (unconfirmed && (await isRestored())) {
+        return restored();
+      }
+      const answer = await settledRequest(async (): Promise<Group | ActionState> => {
+        const { data, error, response } = await client.POST('/api/v1/groups/{id}/unarchive', {
+          params: { path: { id: groupId } },
+        });
+        return data ?? refusedBy(response, error);
+      });
+      if (isGroup(answer)) {
+        handlers.onChanged(answer);
+        return restored();
+      }
+      if (hasUnknownOutcome(answer)) {
+        if (await isRestored()) {
+          return restored();
+        }
+        setUnconfirmed(true);
+        setProblem(null);
+        return { kind: 'idle' };
+      }
+      if (showsStaleData(answer)) {
+        handlers.onChangedElsewhere();
+        return answer;
+      }
+      setProblem(answer.kind === 'refused' ? refusalText(t, answer.error, answer.retryAfter, undefined) : null);
+      return { kind: 'idle' };
+    });
+  }
+
+  return (
+    <ActionNotice
+      action={{ label: t(unconfirmed ? 'groups.retry' : 'groups.undo'), busy: action.busy, onActivate: undo }}
+      problem={problem}
+    >
+      {t(unconfirmed ? 'groups.unconfirmed' : 'groups.archivedNotice')}
+    </ActionNotice>
+  );
+}
+
+function OutcomeNotice({
+  outcome,
+  groupId,
+  handlers,
+  onOutcome,
+}: {
+  readonly outcome: GroupOutcome;
+  readonly groupId: string;
+  readonly handlers: GroupHandlers;
+  readonly onOutcome: (outcome: GroupOutcome) => void;
+}): ReactElement | null {
   const { t } = useTranslation();
   if (outcome.kind === 'refused') {
     return <Refusal state={outcome.state} />;
+  }
+  if (outcome.kind === 'archived') {
+    return outcome.undoable ? (
+      <ArchivedNotice
+        groupId={groupId}
+        handlers={handlers}
+        onRestored={() => {
+          onOutcome({ kind: 'restored' });
+        }}
+      />
+    ) : (
+      <FocusedNotice message={t('groups.archivedCancelledNotice')} />
+    );
   }
   const message = outcomeMessage(t, outcome);
   return message === null ? null : <FocusedNotice message={message} />;
@@ -701,7 +960,16 @@ export function GroupPage(): ReactElement {
         setReloads((count) => count + 1);
       });
     },
+    onUnknownOutcome: () => {
+      void queryClient.invalidateQueries({ queryKey: key });
+    },
   };
+
+  function showOutcome(next: GroupOutcome | null): void {
+    setOutcome((previous) =>
+      next === null ? null : { id: groupId, count: (previous?.count ?? 0) + 1, outcome: next },
+    );
+  }
 
   function body(): ReactElement {
     if (!groupTexts.ready) {
@@ -758,21 +1026,20 @@ export function GroupPage(): ReactElement {
       }
       menu={
         shown === null ? null : (
-          <GroupActions
-            group={shown}
-            reloads={reloads}
-            handlers={handlers}
-            onOutcome={(next) => {
-              setOutcome((previous) =>
-                next === null ? null : { id: groupId, count: (previous?.count ?? 0) + 1, outcome: next },
-              );
-            }}
-          />
+          <GroupActions group={shown} reloads={reloads} handlers={handlers} onOutcome={showOutcome} />
         )
       }
     >
       {changed === null || !noticesShown ? null : <FocusedNotice key={changed.count} message={t('groups.changed')} />}
-      {outcome === null || !noticesShown ? null : <OutcomeNotice key={outcome.count} outcome={outcome.outcome} />}
+      {outcome === null || !noticesShown ? null : (
+        <OutcomeNotice
+          key={outcome.count}
+          outcome={outcome.outcome}
+          groupId={groupId}
+          handlers={handlers}
+          onOutcome={showOutcome}
+        />
+      )}
       {refetchError === null ? null : (
         <RefetchFailed
           error={refetchError}

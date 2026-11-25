@@ -164,6 +164,7 @@ export function ActionButton({
   type = 'button',
   form,
   label,
+  describedBy,
   firstInRow = false,
   onClick,
   className,
@@ -177,6 +178,7 @@ export function ActionButton({
   readonly type?: 'button' | 'submit';
   readonly form?: string;
   readonly label?: string;
+  readonly describedBy?: string;
   readonly firstInRow?: boolean;
   readonly onClick?: () => void;
   readonly className: string;
@@ -195,7 +197,7 @@ export function ActionButton({
         aria-disabled={refused}
         aria-busy={busy}
         title={unavailableReason}
-        aria-describedby={unavailableReason === undefined ? undefined : reasonId}
+        aria-describedby={unavailableReason === undefined ? describedBy : reasonId}
         aria-label={label}
         data-first-in-row={firstInRow ? '' : undefined}
         onClick={(event) => {

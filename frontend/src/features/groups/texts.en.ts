@@ -42,7 +42,6 @@ export const groupsTexts = {
   added: 'The students were added to the group.',
   remove: 'Remove',
   removeNamed: 'Remove from the group: {name}',
-  removed: 'The student was removed from the group.',
   archivedNoNewMembers: 'An archived group takes no new students. Unarchive it to add some.',
   archive: 'Archive',
   archiveHint:
@@ -58,4 +57,18 @@ export const groupsTexts = {
   studentsChanged: 'The list of students has changed. Choose the students again.',
   memberLimit: 'A group holds at most {limit} students.',
   groupLimit: 'You have reached the limit of {limit} groups, archived groups included.',
+  removedFrom: 'Removed from the group:',
+  unsentNotRestored: 'Their unsent files in the group chat are not restored.',
+  addBack: 'Add back',
+  backInGroup: 'Back in the group:',
+  seesChat: 'They see its chat, including messages written meanwhile.',
+  addBackInactive: 'Can’t add back: not an active student.',
+  addBackArchived: 'Can’t add back: the group is archived.',
+  addBackFull: 'Can’t add back: the group is full.',
+  undo: 'Undo',
+  restoredNotice:
+    'Group restored: issuing and chat are back. Lessons and series cancelled by archiving are not restored.',
+  archivedCancelledNotice: 'The group is archived. Lessons and series cancelled by archiving are not restored.',
+  unconfirmed: 'We couldn’t confirm the change.',
+  retry: 'Try again',
 };

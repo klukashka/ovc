@@ -314,6 +314,7 @@ Ending an `ended` relationship again returns it unchanged and queues no second e
 - **Removing a member:**
   - removes them from future group lessons and the group chat, through membership alone: no lesson row changes, and they get no frame for a lesson they no longer see; from slice 7 they can no longer join a live group lesson; from slice 6 their channel member row is deleted, their `pending` uploads to the group channel are marked `deleted` with their deletion queued, and they get one last `entity.changed channel`, losing the history;
   - they keep their issued work, which they may still submit while their relationship with the tutor is active.
+  - From the interface rework stage's change P1a, the group page offers "Add back" after a removal; it is the add path above and restores what adding restores, while the removed member's discarded pending uploads stay deleted (pending owner review).
 - **Archiving** (idempotent):
   - ends the group's series and cancels its future lessons with `cancel_cause` `group_archived` and `cancelled_at` equal to the group's `archived_at`, freezing their rosters from the members as they were before the archiving;
   - makes its chat read-only (`read_only_since` set to `archived_at` under the channel lock, which the archiving takes after the group);

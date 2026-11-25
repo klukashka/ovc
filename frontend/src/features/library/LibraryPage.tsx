@@ -72,6 +72,8 @@ import {
   rowKey,
 } from './LibraryDialogs.tsx';
 import { type RowCommand, type RowHandlers, LibraryTable, folderAddress, templateAddress } from './LibraryTable.tsx';
+import type { Moved } from './moveUndo.ts';
+import { MovedNotice } from './MovedNotice.tsx';
 import { libraryTextLoaders } from './texts.ts';
 import { LibraryUpload } from './upload.ts';
 
@@ -92,6 +94,7 @@ interface PendingFocus {
 
 interface Notice {
   readonly message: 'moved' | 'gone';
+  readonly moved: Moved | null;
   readonly count: number;
   readonly view: string;
 }
@@ -485,6 +488,9 @@ export function LibraryPage(): ReactElement {
   const listError = list.isError ? asApiError(list.error) : null;
   const notFound = listError !== null && list.data === undefined && libraryNotFound(listError, searching);
   const viewKey = `${listFolder ?? ''}\n${search ?? ''}`;
+  if (notice !== null && notice.view !== viewKey) {
+    setNotice(null);
+  }
 
   useEffect(() => {
     const pending = pendingFocus.current;
@@ -541,10 +547,14 @@ export function LibraryPage(): ReactElement {
     setFocusRequest((count) => count + 1);
   }
 
-  function showNotice(message: Notice['message']): void {
+  function showNotice(message: Notice['message'], moved: Moved | null = null): void {
     setAlert(null);
     setIssued(null);
-    setNotice((previous) => ({ message, count: (previous?.count ?? 0) + 1, view: viewKey }));
+    setNotice((previous) => ({ message, moved, count: (previous?.count ?? 0) + 1, view: viewKey }));
+  }
+
+  function folderName(id: string | null): string {
+    return nodes.find((node) => node.folder.id === id)?.folder.name ?? t('library.rootTarget');
   }
 
   function showAlert(message: string): void {
@@ -805,11 +815,13 @@ export function LibraryPage(): ReactElement {
       />
       {homeworkTexts.ready ? <HomeworkTabs current="library" /> : null}
       {issued === null ? null : <IssuedNotice key={issued.count} issueId={issued.issueId} />}
-      {notice?.view !== viewKey ? null : (
+      {notice?.view !== viewKey ? null : notice.moved === null ? (
         <FocusedNotice
           key={notice.count}
           message={notice.message === 'moved' ? t('library.moved') : t('library.gone')}
         />
+      ) : (
+        <MovedNotice key={notice.count} moved={notice.moved} folderName={folderName} />
       )}
       {alert?.view !== viewKey ? null : <FormAlert key={alert.count}>{alert.message}</FormAlert>}
       <div
@@ -857,9 +869,9 @@ export function LibraryPage(): ReactElement {
         returnFocus={opener}
         onClose={closeDialog}
         onGone={itemGone}
-        onMoved={() => {
+        onMoved={(moved) => {
           setDialog(null);
-          showNotice('moved');
+          showNotice('moved', moved);
         }}
       />
       <DeleteDialog

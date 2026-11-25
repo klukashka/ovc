@@ -52,4 +52,13 @@ export const libraryTexts: LibraryTexts = {
   uploaded: 'Файл загружен:',
   fileTooLarge: 'Файл больше 100 МБ',
   showMore: 'Показать ещё',
+  movedItem: 'Перемещено:',
+  movedTo: 'в',
+  rootTarget: 'корень библиотеки',
+  movedBack: 'Возвращено на место:',
+  undo: 'Отменить',
+  undoChanged: 'Нельзя отменить: элемент изменился после перемещения.',
+  undoGone: 'Нельзя отменить: элемента или его папки больше нет в библиотеке.',
+  unconfirmed: 'Не удалось подтвердить изменение.',
+  retry: 'Повторить',
 };

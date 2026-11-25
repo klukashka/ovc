@@ -1,4 +1,4 @@
-import { type ReactElement, type RefObject, useEffect, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
 
 import { focusIsLost } from './LoadState.tsx';
 
@@ -69,7 +69,7 @@ export function FocusedNotice({
   message,
   whenFocusIsLost = false,
 }: {
-  readonly message: string;
+  readonly message: ReactNode;
   readonly whenFocusIsLost?: boolean;
 }): ReactElement {
   const element = useRef<HTMLParagraphElement>(null);

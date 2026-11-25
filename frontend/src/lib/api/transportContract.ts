@@ -24,6 +24,22 @@ export interface ContractSubject {
   readonly returnSeededSubmission: (seeded: SeededSubmission) => Promise<void>;
   readonly endSeededRelationship: (seeded: SeededSubmission) => Promise<void>;
   readonly readyExport: (accessToken: string) => Promise<void>;
+  readonly seedGroupWithMember: () => Promise<SeededGroup>;
+  readonly endGroupMemberRelationship: (seeded: SeededGroup) => Promise<void>;
+  readonly seedGroupWithFutureLesson: () => Promise<SeededGroup>;
+  readonly seedLibraryFolderAndTemplate: () => Promise<SeededLibrary>;
+}
+
+export interface SeededGroup {
+  readonly groupId: string;
+  readonly relationshipId: string;
+}
+
+export interface SeededLibrary {
+  readonly folderId: string;
+  readonly childFolderId: string;
+  readonly templateId: string;
+  readonly templateVersion: number;
 }
 
 export interface SeededSubmission {
@@ -591,6 +607,80 @@ function checkRetryAfter(response: Response): void {
   const header = response.headers.get('Retry-After') ?? '';
   check(/^[1-9][0-9]*$/.test(header), `expected a positive Retry-After, got ${JSON.stringify(header)}`);
 }
+
+type ContractMethod = 'GET' | 'POST' | 'PATCH';
+
+interface ContractAnswer {
+  readonly status: number;
+  readonly body: unknown;
+}
+
+async function callContract(
+  subject: ContractSubject,
+  token: string,
+  method: ContractMethod,
+  path: string,
+  body?: unknown,
+): Promise<ContractAnswer> {
+  const response = await subject.transport.send(
+    new Request(`${subject.origin}/api/v1${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    }),
+  );
+  return { status: response.status, body: await bodyOf(response) };
+}
+
+function refusalCode(answer: ContractAnswer): unknown {
+  return property(property(answer.body, 'error'), 'code');
+}
+
+function problemsOf(answer: ContractAnswer): string {
+  const error = property(answer.body, 'error');
+  const described = listOf(property(error, 'fields')).map(
+    (field) => `${String(property(field, 'path'))}:${String(property(field, 'code'))}`,
+  );
+  return `${String(property(error, 'code'))} ${described.join(',')}`;
+}
+
+function groupPath(seeded: SeededGroup, action = ''): string {
+  return `/groups/${encodeURIComponent(seeded.groupId)}${action}`;
+}
+
+function memberIdsOf(answer: ContractAnswer): string {
+  return JSON.stringify(listOf(property(answer.body, 'members')).map((member) => property(member, 'relationship_id')));
+}
+
+function onlyMember(seeded: SeededGroup): string {
+  return JSON.stringify([seeded.relationshipId]);
+}
+
+function idsOf(values: unknown): unknown[] {
+  return listOf(values).map((value) => property(value, 'id'));
+}
+
+function templatePath(seeded: SeededLibrary): string {
+  return `/library/templates/${encodeURIComponent(seeded.templateId)}`;
+}
+
+function folderListingPath(folderId: string): string {
+  return `/library?${new URLSearchParams({ folder: folderId }).toString()}`;
+}
+
+const groupKeys: readonly string[] = ['id', 'name', 'colour', 'archived_at', 'members'];
+
+const groupDetailKeys: readonly string[] = [
+  ...groupKeys,
+  'channel_id',
+  'next_lessons',
+  'future_lesson_count',
+  'has_open_series',
+];
+
+const groupMemberKeys: readonly string[] = ['relationship_id', 'display_name', 'name', 'avatar_id', 'added_at'];
+
+const randomFolderId = '5e4d3c2b-1a09-4f8e-9d7c-6b5a4f3e2d1c';
 
 export const authTransportContract: Readonly<Record<string, ContractScenario>> = {
   'a request sent with an expired token is refused as token_expired': async (subject) => {
@@ -1558,5 +1648,265 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
     const current = await currentExport(subject, token);
     check(property(property(current, 'export'), 'state') === 'ready', 'expected the export to stay ready');
     check(typeof property(current, 'next_allowed_at') === 'string', 'expected the instant a new export may start');
+  },
+  'a group detail carries its members, archive state and the lesson counts of the archive confirmation': async (
+    subject,
+  ) => {
+    const seeded = await subject.seedGroupWithMember();
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+
+    const read = await callContract(subject, token, 'GET', groupPath(seeded));
+
+    check(read.status === 200, `expected 200, got ${String(read.status)}`);
+    checkKeys(read.body, groupDetailKeys, 'the group detail');
+    checkEachKeys(listOf(property(read.body, 'members')), groupMemberKeys, 'a group member');
+    check(memberIdsOf(read) === onlyMember(seeded), `expected the seeded member, got ${memberIdsOf(read)}`);
+    check(property(read.body, 'archived_at') === null, 'expected an unarchived group');
+    check(property(read.body, 'future_lesson_count') === 0, 'expected no future lesson');
+    check(property(read.body, 'has_open_series') === false, 'expected no open series');
+    check(listOf(property(read.body, 'next_lessons')).length === 0, 'expected no next lesson');
+  },
+
+  'a group with a future lesson counts it until archiving cancels it': async (subject) => {
+    const seeded = await subject.seedGroupWithFutureLesson();
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+
+    const before = await callContract(subject, token, 'GET', groupPath(seeded));
+    const archived = await callContract(subject, token, 'POST', groupPath(seeded, '/archive'));
+    const after = await callContract(subject, token, 'GET', groupPath(seeded));
+
+    check(before.status === 200, `expected 200, got ${String(before.status)}`);
+    check(property(before.body, 'future_lesson_count') === 1, 'expected one future lesson');
+    check(property(before.body, 'has_open_series') === false, 'expected no open series');
+    const nextLessons = listOf(property(before.body, 'next_lessons'));
+    check(nextLessons.length === 1, `expected one next lesson, got ${String(nextLessons.length)}`);
+    checkCalendarItems(nextLessons, 'a next group lesson');
+    check(archived.status === 200, `expected 200 for the archive, got ${String(archived.status)}`);
+    checkKeys(archived.body, groupKeys, 'the archived group');
+    check(typeof property(archived.body, 'archived_at') === 'string', 'expected the archive instant');
+    check(property(after.body, 'future_lesson_count') === 0, 'expected the future lesson cancelled');
+    check(listOf(property(after.body, 'next_lessons')).length === 0, 'expected no next lesson after the archive');
+  },
+
+  'removing a member and adding it back restores exactly that member, and a repeated add changes nothing': async (
+    subject,
+  ) => {
+    const seeded = await subject.seedGroupWithMember();
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const member = [seeded.relationshipId];
+
+    const removed = await callContract(subject, token, 'PATCH', groupPath(seeded), { remove: member });
+    const restored = await callContract(subject, token, 'PATCH', groupPath(seeded), { add: member });
+    const repeated = await callContract(subject, token, 'PATCH', groupPath(seeded), { add: member });
+    const read = await callContract(subject, token, 'GET', groupPath(seeded));
+
+    check(removed.status === 200, `expected 200 for the removal, got ${String(removed.status)}`);
+    check(memberIdsOf(removed) === '[]', `expected no member after the removal, got ${memberIdsOf(removed)}`);
+    check(restored.status === 200, `expected 200 for the add, got ${String(restored.status)}`);
+    checkKeys(restored.body, groupKeys, 'the changed group');
+    check(memberIdsOf(restored) === onlyMember(seeded), `expected the member back, got ${memberIdsOf(restored)}`);
+    check(repeated.status === 200, `expected 200 for the repeated add, got ${String(repeated.status)}`);
+    check(memberIdsOf(repeated) === onlyMember(seeded), `expected one member, got ${memberIdsOf(repeated)}`);
+    check(memberIdsOf(read) === onlyMember(seeded), `expected the member stored, got ${memberIdsOf(read)}`);
+  },
+
+  'ending a relationship removes the member and adding it back is refused as relationship_not_active': async (
+    subject,
+  ) => {
+    const seeded = await subject.seedGroupWithMember();
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+    await subject.endGroupMemberRelationship(seeded);
+
+    const afterEnding = await callContract(subject, token, 'GET', groupPath(seeded));
+    const added = await callContract(subject, token, 'PATCH', groupPath(seeded), { add: [seeded.relationshipId] });
+    const read = await callContract(subject, token, 'GET', groupPath(seeded));
+
+    check(
+      memberIdsOf(afterEnding) === '[]',
+      `expected the ending to remove the member, got ${memberIdsOf(afterEnding)}`,
+    );
+    check(added.status === 409, `expected 409, got ${String(added.status)}`);
+    check(refusalCode(added) === 'relationship_not_active', 'expected relationship_not_active');
+    const refused = JSON.stringify(property(property(property(added.body, 'error'), 'details'), 'relationship_ids'));
+    check(refused === onlyMember(seeded), `expected the ended relationship in the details, got ${refused}`);
+    check(memberIdsOf(read) === '[]', `expected no member added, got ${memberIdsOf(read)}`);
+  },
+
+  'adding an unknown relationship is refused as not_found and adds nobody': async (subject) => {
+    const seeded = await subject.seedGroupWithMember();
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const outsideScope = '00000000-0000-4000-8000-0000000000ff';
+
+    const added = await callContract(subject, token, 'PATCH', groupPath(seeded), { add: [outsideScope] });
+    const read = await callContract(subject, token, 'GET', groupPath(seeded));
+
+    check(added.status === 404, `expected 404, got ${String(added.status)}`);
+    check(refusalCode(added) === 'not_found', 'expected not_found');
+    check(memberIdsOf(read) === onlyMember(seeded), `expected only the seeded member, got ${memberIdsOf(read)}`);
+  },
+
+  'an archived group refuses new members as audience_not_active and still removes members': async (subject) => {
+    const seeded = await subject.seedGroupWithMember();
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const member = [seeded.relationshipId];
+    const archived = await callContract(subject, token, 'POST', groupPath(seeded, '/archive'));
+
+    const refused = await callContract(subject, token, 'PATCH', groupPath(seeded), { add: member });
+    const removed = await callContract(subject, token, 'PATCH', groupPath(seeded), { remove: member });
+    const refusedAgain = await callContract(subject, token, 'PATCH', groupPath(seeded), { add: member });
+
+    check(archived.status === 200, `expected 200 for the archive, got ${String(archived.status)}`);
+    check(refused.status === 409, `expected 409, got ${String(refused.status)}`);
+    check(refusalCode(refused) === 'audience_not_active', 'expected audience_not_active');
+    check(removed.status === 200, `expected 200 for the removal, got ${String(removed.status)}`);
+    check(memberIdsOf(removed) === '[]', `expected no member after the removal, got ${memberIdsOf(removed)}`);
+    check(typeof property(removed.body, 'archived_at') === 'string', 'expected the group to stay archived');
+    check(refusedAgain.status === 409, `expected 409 again, got ${String(refusedAgain.status)}`);
+    check(refusalCode(refusedAgain) === 'audience_not_active', 'expected audience_not_active again');
+  },
+
+  'archiving and unarchiving are idempotent and keep the members': async (subject) => {
+    const seeded = await subject.seedGroupWithMember();
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+
+    const first = await callContract(subject, token, 'POST', groupPath(seeded, '/archive'));
+    const second = await callContract(subject, token, 'POST', groupPath(seeded, '/archive'));
+    const unarchived = await callContract(subject, token, 'POST', groupPath(seeded, '/unarchive'));
+    const unarchivedAgain = await callContract(subject, token, 'POST', groupPath(seeded, '/unarchive'));
+
+    const statuses = [first, second, unarchived, unarchivedAgain].map((answer) => answer.status).join(',');
+    check(statuses === '200,200,200,200', `expected four 200, got ${statuses}`);
+    const archivedAt = property(first.body, 'archived_at');
+    check(typeof archivedAt === 'string', 'expected the archive instant');
+    check(property(second.body, 'archived_at') === archivedAt, 'expected a repeated archive to keep the first instant');
+    check(property(unarchived.body, 'archived_at') === null, 'expected the group unarchived');
+    check(property(unarchivedAgain.body, 'archived_at') === null, 'expected the group to stay unarchived');
+    check(
+      memberIdsOf(unarchivedAgain) === onlyMember(seeded),
+      `expected the member kept, got ${memberIdsOf(unarchivedAgain)}`,
+    );
+  },
+
+  "another tutor's group is not found for every group route and stays unchanged": async (subject) => {
+    const seeded = await subject.seedGroupWithMember();
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const other = await accessToken(await subject.transport.login(subject.otherTutorEmail, subject.otherTutorPassword));
+    const before = await callContract(subject, token, 'GET', groupPath(seeded));
+
+    const answers = [
+      await callContract(subject, other, 'GET', groupPath(seeded)),
+      await callContract(subject, other, 'PATCH', groupPath(seeded), { name: 'Taken over' }),
+      await callContract(subject, other, 'POST', groupPath(seeded, '/archive')),
+      await callContract(subject, other, 'POST', groupPath(seeded, '/unarchive')),
+    ];
+    const after = await callContract(subject, token, 'GET', groupPath(seeded));
+
+    const statuses = answers.map((answer) => answer.status).join(',');
+    check(statuses === '404,404,404,404', `expected four 404, got ${statuses}`);
+    check(
+      answers.every((answer) => refusalCode(answer) === 'not_found'),
+      'expected not_found on every route',
+    );
+    check(property(after.body, 'name') === property(before.body, 'name'), 'expected the name unchanged');
+    check(property(after.body, 'archived_at') === null, 'expected the group unarchived');
+    check(memberIdsOf(after) === onlyMember(seeded), `expected the member kept, got ${memberIdsOf(after)}`);
+  },
+
+  'moving a template into a folder and back increments its version, the listings follow it and a stale version conflicts':
+    async (subject) => {
+      const seeded = await subject.seedLibraryFolderAndTemplate();
+      const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+      const version = seeded.templateVersion;
+
+      const intoFolder = await callContract(subject, token, 'PATCH', templatePath(seeded), {
+        folder_id: seeded.folderId,
+        version,
+      });
+      const folderListing = await callContract(subject, token, 'GET', folderListingPath(seeded.folderId));
+      const stale = await callContract(subject, token, 'PATCH', templatePath(seeded), { folder_id: null, version });
+      const back = await callContract(subject, token, 'PATCH', templatePath(seeded), {
+        folder_id: null,
+        version: version + 1,
+      });
+      const rootListing = await callContract(subject, token, 'GET', '/library');
+      const folderAfter = await callContract(subject, token, 'GET', folderListingPath(seeded.folderId));
+
+      check(intoFolder.status === 200, `expected 200 for the move, got ${String(intoFolder.status)}`);
+      check(property(intoFolder.body, 'folder_id') === seeded.folderId, 'expected the template in the folder');
+      check(property(intoFolder.body, 'version') === version + 1, 'expected the move to increment the version');
+      check(folderListing.status === 200, `expected 200 for the folder listing, got ${String(folderListing.status)}`);
+      const listed = listOf(property(folderListing.body, 'items')).find(
+        (item) => property(item, 'id') === seeded.templateId,
+      );
+      check(property(listed, 'kind') === 'template', 'expected the template listed in the folder');
+      check(property(listed, 'version') === version + 1, 'expected the listing to show the new version');
+      check(stale.status === 409, `expected 409 for a stale version, got ${String(stale.status)}`);
+      check(refusalCode(stale) === 'conflict', 'expected conflict');
+      check(back.status === 200, `expected 200 for the move back, got ${String(back.status)}`);
+      check(property(back.body, 'folder_id') === null, 'expected the template back in the root');
+      check(property(back.body, 'version') === version + 2, 'expected the move back to increment the version');
+      check(
+        idsOf(property(rootListing.body, 'items')).includes(seeded.templateId),
+        'expected the template listed in the root',
+      );
+      check(
+        !idsOf(property(folderAfter.body, 'items')).includes(seeded.templateId),
+        'expected the template gone from the folder',
+      );
+    },
+
+  "a template move is not found for another tutor and for a folder outside the caller's library": async (subject) => {
+    const seeded = await subject.seedLibraryFolderAndTemplate();
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const other = await accessToken(await subject.transport.login(subject.otherTutorEmail, subject.otherTutorPassword));
+    const version = seeded.templateVersion;
+
+    const outsider = await callContract(subject, other, 'PATCH', templatePath(seeded), { folder_id: null, version });
+    const unknownFolder = await callContract(subject, token, 'PATCH', templatePath(seeded), {
+      folder_id: randomFolderId,
+      version,
+    });
+    const read = await callContract(subject, token, 'GET', templatePath(seeded));
+
+    check(outsider.status === 404, `expected 404 for another tutor, got ${String(outsider.status)}`);
+    check(refusalCode(outsider) === 'not_found', 'expected not_found for another tutor');
+    check(unknownFolder.status === 404, `expected 404 for an unknown folder, got ${String(unknownFolder.status)}`);
+    check(refusalCode(unknownFolder) === 'not_found', 'expected not_found for an unknown folder');
+    check(property(read.body, 'version') === version, 'expected the version unchanged');
+    check(property(read.body, 'folder_id') === null, 'expected the template to stay in the root');
+  },
+
+  'moving a folder into the root lists it there, and a move into its own subfolder is refused': async (subject) => {
+    const seeded = await subject.seedLibraryFolderAndTemplate();
+    const token = await accessToken(await subject.transport.login(subject.email, subject.password));
+    const folderPath = (id: string): string => `/library/folders/${encodeURIComponent(id)}`;
+
+    const intoOwnChild = await callContract(subject, token, 'PATCH', folderPath(seeded.folderId), {
+      parent_id: seeded.childFolderId,
+    });
+    const toRoot = await callContract(subject, token, 'PATCH', folderPath(seeded.childFolderId), { parent_id: null });
+    const folders = await callContract(subject, token, 'GET', '/library/folders');
+    const rootListing = await callContract(subject, token, 'GET', '/library');
+    const formerParent = await callContract(subject, token, 'GET', folderListingPath(seeded.folderId));
+
+    check(intoOwnChild.status === 422, `expected 422, got ${String(intoOwnChild.status)}`);
+    const problems = problemsOf(intoOwnChild);
+    check(problems === 'validation_failed body.parent_id:invalid', `expected an invalid parent, got ${problems}`);
+    check(toRoot.status === 200, `expected 200 for the move, got ${String(toRoot.status)}`);
+    check(property(toRoot.body, 'id') === seeded.childFolderId, 'expected the moved folder');
+    check(property(toRoot.body, 'parent_id') === null, 'expected the folder in the root');
+    const moved = listOf(property(folders.body, 'folders')).find(
+      (folder) => property(folder, 'id') === seeded.childFolderId,
+    );
+    check(property(moved, 'parent_id') === null, 'expected the folder list to show the folder in the root');
+    const rootFolders = idsOf(property(rootListing.body, 'folders'));
+    check(
+      rootFolders.includes(seeded.childFolderId) && rootFolders.includes(seeded.folderId),
+      'expected both folders listed in the root',
+    );
+    check(
+      !idsOf(property(formerParent.body, 'folders')).includes(seeded.childFolderId),
+      'expected the folder gone from its former parent',
+    );
   },
 };

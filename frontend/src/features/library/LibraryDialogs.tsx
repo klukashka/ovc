@@ -26,6 +26,7 @@ import {
   textButtonClass,
 } from '../../components/ui/Form.tsx';
 import { refusalText } from '../../components/ui/Refusal.tsx';
+import { hasUnknownOutcome } from '../../components/ui/settled.ts';
 import { type ApiError, useApiClient } from '../../lib/api/client.ts';
 import {
   type FolderNode,
@@ -37,6 +38,7 @@ import {
   titleLimit,
   withoutExtension,
 } from './api.ts';
+import { type Moved, sendMove } from './moveUndo.ts';
 import type { LibraryUpload, UploadState } from './upload.ts';
 
 export type LibraryTarget =
@@ -325,14 +327,17 @@ export function MoveDialog({
 }: DialogFrame & {
   readonly target: LibraryTarget | null;
   readonly nodes: readonly FolderNode[];
-  readonly onMoved: () => void;
+  readonly onMoved: (moved: Moved) => void;
 }): ReactElement {
   const headingId = useId();
   const picker = useRef<HTMLSelectElement>(null);
   const [refusals, setRefusals] = useState(0);
+  const lastMoved = useRef<Moved | null>(null);
   const action = useAction((state) => {
     if (state.kind === 'done') {
-      onMoved();
+      if (lastMoved.current !== null) {
+        onMoved(lastMoved.current);
+      }
       return;
     }
     if (isGone(state)) {
@@ -365,13 +370,16 @@ export function MoveDialog({
           refusals={refusals}
           action={action}
           onCancel={close}
+          onMovedTo={(moved) => {
+            lastMoved.current = moved;
+          }}
         />
       )}
     </ModalDialog>
   );
 }
 
-function MoveForm({
+export function MoveForm({
   target,
   nodes,
   headingId,
@@ -379,6 +387,7 @@ function MoveForm({
   refusals,
   action,
   onCancel,
+  onMovedTo,
 }: {
   readonly target: LibraryTarget;
   readonly nodes: readonly FolderNode[];
@@ -387,6 +396,7 @@ function MoveForm({
   readonly refusals: number;
   readonly action: Action;
   readonly onCancel: () => void;
+  readonly onMovedTo: (moved: Moved) => void;
 }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
@@ -406,27 +416,15 @@ function MoveForm({
     const chosen = fieldValue(event.currentTarget, 'destination');
     const destination = chosen === '' ? null : chosen;
     action.run(async (): Promise<ActionState> => {
-      const answer =
-        target.kind === 'folder'
-          ? await client.PATCH('/api/v1/library/folders/{id}', {
-              params: { path: { id: target.folder.id } },
-              body: { parent_id: destination },
-            })
-          : target.item.kind === 'material'
-            ? await client.PATCH('/api/v1/library/materials/{id}', {
-                params: { path: { id: target.item.id } },
-                body: { folder_id: destination },
-              })
-            : await client.PATCH('/api/v1/library/templates/{id}', {
-                params: { path: { id: target.item.id } },
-                body: { folder_id: destination, version: target.item.version ?? 0 },
-              });
-      if (answer.data === undefined) {
-        if (answer.response.status === 409) {
+      const version = target.kind === 'item' ? (target.item.version ?? 0) : null;
+      const answer = await sendMove(client, target, destination, version);
+      if (typeof answer !== 'number' && answer !== null) {
+        if (hasUnknownOutcome(answer) || (answer.kind === 'refused' && answer.error.status === 409)) {
           await queryClient.invalidateQueries({ queryKey: libraryKey });
         }
-        return refusedBy(answer.response, answer.error);
+        return answer;
       }
+      onMovedTo({ target, from: currentParent(target), to: destination, version: answer });
       await queryClient.invalidateQueries({ queryKey: libraryKey });
       return done;
     });

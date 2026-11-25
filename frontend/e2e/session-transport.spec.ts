@@ -1,7 +1,9 @@
 import {
   type ContractSubject,
   type SeededDeadline,
+  type SeededGroup,
   type SeededLessons,
+  type SeededLibrary,
   type SeededSharedStudent,
   type SeededStudentHome,
   type SeededSubmission,
@@ -16,7 +18,15 @@ import { issueThroughTheApi } from './homework.ts';
 import { publishReview } from './results.ts';
 import { answerTextAndSubmit } from './review.ts';
 import { addDays, localDate, scheduleLessons } from './schedule.ts';
-import { acceptSignedIn, callApi, createCard, endRelationship, seedActiveStudent } from './tutoring.ts';
+import {
+  acceptSignedIn,
+  accessToken,
+  callApi,
+  createCard,
+  createGroup,
+  endRelationship,
+  seedActiveStudent,
+} from './tutoring.ts';
 import { unsubscribeTokenFromAReminder } from './unsubscribe.ts';
 
 const refreshCookie = '__Host-ovc_refresh';
@@ -58,6 +68,58 @@ async function linkExistingStudent(deployment: Deployment, tutor: TestAccount, s
   const card = await createCard(deployment, tutor, student.name, student.email);
   await acceptSignedIn(deployment, student, card.link);
   return card.id;
+}
+
+async function seedGroupWithMember(deployment: Deployment, tutor: TestAccount): Promise<SeededGroup> {
+  const { cardId } = await seedActiveStudent(deployment, tutor, 'Group contract student');
+  const groupId = await createGroup(deployment, tutor, 'Contract group', [cardId]);
+  return { groupId, relationshipId: cardId };
+}
+
+interface CreatedAnswer {
+  readonly status: number;
+  readonly body: unknown;
+}
+
+function createdField(answer: CreatedAnswer, name: string, what: string): unknown {
+  const body = answer.body;
+  if (answer.status !== 201 || typeof body !== 'object' || body === null) {
+    throw new Error(`${what} answered ${String(answer.status)}`);
+  }
+  return Object.entries(body).find(([key]) => key === name)?.[1];
+}
+
+function createdId(answer: CreatedAnswer, what: string): string {
+  const id = createdField(answer, 'id', what);
+  if (typeof id !== 'string') {
+    throw new Error(`${what} answered no identifier`);
+  }
+  return id;
+}
+
+async function seedLibraryFolderAndTemplate(deployment: Deployment, tutor: TestAccount): Promise<SeededLibrary> {
+  const token = await accessToken(deployment, tutor);
+  const folder = await callApi(deployment, token, 'POST', '/library/folders', { name: 'Grammar', parent_id: null });
+  const folderId = createdId(folder, 'creating a folder');
+  const child = await callApi(deployment, token, 'POST', '/library/folders', {
+    name: 'Irregular verbs',
+    parent_id: folderId,
+  });
+  const template = await callApi(deployment, token, 'POST', '/library/templates', {
+    title: 'Past simple',
+    folder_id: null,
+    blocks: [],
+  });
+  const templateVersion = createdField(template, 'version', 'creating a template');
+  if (typeof templateVersion !== 'number') {
+    throw new Error('creating a template answered no version');
+  }
+  return {
+    folderId,
+    childFolderId: createdId(child, 'creating a subfolder'),
+    templateId: createdId(template, 'creating a template'),
+    templateVersion,
+  };
 }
 
 function cookieJarFetch(deployment: Deployment): typeof fetch {
@@ -200,6 +262,22 @@ test.describe('the HTTP authentication transport against the real backend', () =
           await control.tick();
           await expect.poll(() => currentExportState(deployment, token), { timeout: exportReadyTimeout }).toBe('ready');
         },
+        seedGroupWithMember: (): Promise<SeededGroup> => seedGroupWithMember(deployment, account),
+        endGroupMemberRelationship: (seeded: SeededGroup): Promise<void> =>
+          endRelationship(deployment, account, seeded.relationshipId),
+        seedGroupWithFutureLesson: async (): Promise<SeededGroup> => {
+          const seeded = await seedGroupWithMember(deployment, account);
+          const date = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
+          await scheduleLessons(deployment, account, {
+            group_id: seeded.groupId,
+            title: 'Group lesson',
+            date,
+            start: '12:00',
+            duration_minutes: 60,
+          });
+          return seeded;
+        },
+        seedLibraryFolderAndTemplate: (): Promise<SeededLibrary> => seedLibraryFolderAndTemplate(deployment, account),
       };
 
       const run = scenario(subject);

@@ -13,6 +13,7 @@ import {
   tableRows,
 } from './fixtures.ts';
 import { busyControls, recordBusyControls } from './observers.ts';
+import { channelOf } from './messages.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import {
   addDays,
@@ -304,7 +305,10 @@ test.describe('in English', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Groups' })).toBeFocused();
   });
 
-  test('groups › removing a student from the group moves focus to the notice', async ({ page, deployment }) => {
+  test('groups › removing a student moves focus to Add back and says what is not restored', async ({
+    page,
+    deployment,
+  }) => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
     const anna = await seedActiveStudent(deployment, pavel, 'Anna');
     const boris = await seedActiveStudent(deployment, pavel, 'Boris');
@@ -317,11 +321,98 @@ test.describe('in English', () => {
 
     await page.getByRole('button', { name: 'Remove from the group: Boris' }).click();
 
-    const removed = page.getByRole('status').filter({ hasText: 'The student was removed from the group.' });
-    await expect(removed).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Add back' })).toBeFocused();
+    await expect(page.getByRole('status').filter({ hasText: 'Removed from the group: Boris.' })).toContainText(
+      'Their unsent files in the group chat are not restored.',
+    );
     await expect(groupMembers).toHaveText([/Anna/]);
     expect(await busyControls(page)).toEqual([['Remove from the group: Boris']]);
     expect(await cardState(deployment, pavel, boris.cardId)).toEqual({ state: 'active', groups: [] });
+  });
+
+  test('groups › Add back after removing a member restores the membership and moves focus to the result', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const boris = await seedActiveStudent(deployment, pavel, 'Boris');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId, boris.cardId]);
+    const channel = await channelOf(deployment, pavel, `/groups/${groupId}`);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    const groupMembers = members(page, 'Students');
+    await expectRowsNamed(groupMembers, ['Anna', 'Boris']);
+    await page.getByRole('button', { name: 'Remove from the group: Boris' }).click();
+    await expect(page.getByRole('button', { name: 'Add back' })).toBeFocused();
+    const chatWhileRemoved = await callApi(
+      deployment,
+      await accessToken(deployment, boris.student),
+      'GET',
+      `/channels/${channel}`,
+    );
+
+    await page.getByRole('button', { name: 'Add back' }).click();
+
+    await expect(
+      page
+        .getByRole('status')
+        .filter({ hasText: 'Back in the group: Boris. They see its chat, including messages written meanwhile.' }),
+    ).toBeFocused();
+    await expectRowsNamed(groupMembers, ['Anna', 'Boris']);
+    expect(await groupMemberNames(deployment, pavel, groupId)).toHaveLength(2);
+    expect(chatWhileRemoved.status).toBe(404);
+    expect(
+      (await callApi(deployment, await accessToken(deployment, boris.student), 'GET', `/channels/${channel}`)).status,
+    ).toBe(200);
+  });
+
+  test('groups › Add back for a student who no longer studies with the tutor says so and adds nobody', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const boris = await seedActiveStudent(deployment, pavel, 'Boris');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId, boris.cardId]);
+    await signInThroughTheApi(page, pavel);
+    diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/groups/${groupId}`, status: 409 });
+    await page.goto(`/groups/${groupId}`);
+    await page.getByRole('button', { name: 'Remove from the group: Boris' }).click();
+    const addBack = page.getByRole('button', { name: 'Add back' });
+    await expect(addBack).toBeFocused();
+    await endRelationship(deployment, pavel, boris.cardId);
+
+    await addBack.press('Enter');
+
+    await expect(page.getByRole('alert').filter({ hasText: 'Can’t add back: not an active student.' })).toBeVisible();
+    await expect(addBack).toBeFocused();
+    expect(await groupMemberNames(deployment, pavel, groupId)).toEqual(['Anna']);
+  });
+
+  test('groups › Add back to a group archived meanwhile says so and adds nobody', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const boris = await seedActiveStudent(deployment, pavel, 'Boris');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId, boris.cardId]);
+    await signInThroughTheApi(page, pavel);
+    diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/groups/${groupId}`, status: 409 });
+    await page.goto(`/groups/${groupId}`);
+    await page.getByRole('button', { name: 'Remove from the group: Boris' }).click();
+    const addBack = page.getByRole('button', { name: 'Add back' });
+    await expect(addBack).toBeFocused();
+    await archiveGroup(deployment, pavel, groupId);
+
+    await addBack.press('Enter');
+
+    await expect(page.getByRole('alert').filter({ hasText: 'Can’t add back: the group is archived.' })).toBeVisible();
+    await expect(addBack).toBeFocused();
+    expect(await groupMemberNames(deployment, pavel, groupId)).toEqual(['Anna']);
   });
 
   test('groups › archiving a group moves focus to the notice and takes no new students', async ({
@@ -337,12 +428,38 @@ test.describe('in English', () => {
 
     await chooseFromPageMenu(page, 'Group actions', 'Archive group');
 
-    const archived = page.getByRole('status').filter({ hasText: 'The group is archived.' });
-    await expect(archived).toBeFocused();
+    await expect(page.getByRole('status').filter({ hasText: 'The group is archived.' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Undo' })).toBeFocused();
     await expect(page.getByRole('main').getByText('Archived', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add students' })).toHaveCount(0);
     await expect(page.getByText('An archived group takes no new students.')).toBeVisible();
     expect(await cardState(deployment, pavel, anna.cardId)).toEqual({ state: 'active', groups: [] });
+  });
+
+  test('groups › Undo after archiving a group with nothing to cancel restores it and moves focus to the result', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await chooseFromPageMenu(page, 'Group actions', 'Archive group');
+    const undo = page.getByRole('button', { name: 'Undo' });
+    await expect(undo).toBeFocused();
+
+    await undo.click();
+
+    await expect(
+      page.getByRole('status').filter({
+        hasText:
+          'Group restored: issuing and chat are back. Lessons and series cancelled by archiving are not restored.',
+      }),
+    ).toBeFocused();
+    await expect(page.getByRole('main').getByText('Archived', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Add students' })).toBeVisible();
+    expect(await cardState(deployment, pavel, anna.cardId)).toEqual({ state: 'active', groups: ['Evening algebra'] });
   });
 
   test('groups › archiving with future lessons asks first, with Cancel focused and the count of lessons it cancels', async ({
@@ -395,7 +512,12 @@ test.describe('in English', () => {
 
     await dialog.getByRole('button', { name: 'Archive group' }).click();
 
-    await expect(page.getByRole('status').filter({ hasText: 'The group is archived.' })).toBeFocused();
+    await expect(
+      page
+        .getByRole('status')
+        .filter({ hasText: 'The group is archived. Lessons and series cancelled by archiving are not restored.' }),
+    ).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Undo' })).toHaveCount(0);
     await expect(dialog).toBeHidden();
     await expect(page.getByRole('main').getByText('No lessons scheduled.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Schedule a lesson' })).toHaveCount(0);

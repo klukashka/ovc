@@ -1,12 +1,19 @@
 import { describe, expect, test } from 'vitest';
 
 import { pastSimpleQuestions, pastSimpleReview, pastSimpleSubmission } from './fakeSubmissions.ts';
-import { AccountResponseBodies, FakeAuthServer, SignalAwareRefreshBodies } from './fakeTransport.ts';
+import {
+  AccountResponseBodies,
+  FakeAuthServer,
+  type SeededFakeGroup,
+  SignalAwareRefreshBodies,
+} from './fakeTransport.ts';
 import type { components } from './schema.ts';
 import {
   type ContractSubject,
   type SeededDeadline,
+  type SeededGroup,
   type SeededLessons,
+  type SeededLibrary,
   type SeededSharedStudent,
   type SeededStudentHome,
   type SeededSubmission,
@@ -108,6 +115,14 @@ function studentLesson(startsAt: number): CalendarItem {
     audience: { kind: 'one_to_one', label: 'A tutor', label_kind: null, colour: 'moss' },
     tutor: { name: 'A tutor', colour: 'moss' },
   };
+}
+
+function seededGroup(seeded: SeededFakeGroup): SeededGroup {
+  const [relationshipId] = seeded.relationshipIds;
+  if (relationshipId === undefined) {
+    throw new Error('the fake server seeded a group without a member');
+  }
+  return { groupId: seeded.groupId, relationshipId };
 }
 
 async function createdCardId(server: FakeAuthServer, email: string, password: string): Promise<string> {
@@ -302,6 +317,25 @@ function fakeSubject(): ContractSubject {
     readyExport: async (token: string): Promise<void> => {
       await Promise.resolve();
       server.finishExportOf(token);
+    },
+    seedGroupWithMember: async (): Promise<SeededGroup> => {
+      await Promise.resolve();
+      return seededGroup(server.seedGroup('a@example.org', { name: 'Contract group', members: ['Group student'] }));
+    },
+    endGroupMemberRelationship: async (seeded: SeededGroup): Promise<void> => {
+      await Promise.resolve();
+      server.endStudentRelationship(seeded.relationshipId);
+    },
+    seedGroupWithFutureLesson: async (): Promise<SeededGroup> => {
+      await Promise.resolve();
+      return seededGroup(
+        server.seedGroup('a@example.org', { name: 'Contract group', members: ['Group student'], futureLessonCount: 1 }),
+      );
+    },
+    seedLibraryFolderAndTemplate: async (): Promise<SeededLibrary> => {
+      await Promise.resolve();
+      const { folderId, childFolderId, templateId, templateVersion } = server.seedLibrary('a@example.org');
+      return { folderId, childFolderId, templateId, templateVersion };
     },
   };
 }
