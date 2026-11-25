@@ -73,8 +73,8 @@ RETURNING channels.id, relationships.discard_reason;
 DELETE FROM channel_members WHERE channel_id = ANY (sqlc.arg(channel_ids)::uuid[]);
 
 -- name: AddDirectChannelMembers :many
-INSERT INTO channel_members (channel_id, user_id, last_read_seq, digested_through_seq, suspended_since, created_at, updated_at)
-SELECT channels.id, member.user_id, channels.last_seq, channels.last_seq,
+INSERT INTO channel_members (channel_id, user_id, last_read_seq, shared_read_seq, digested_through_seq, suspended_since, created_at, updated_at)
+SELECT channels.id, member.user_id, channels.last_seq, channels.last_seq, channels.last_seq,
     CASE WHEN member.student AND relationships.state = 'reclaim_pending' THEN sqlc.arg(now)::timestamptz END,
     sqlc.arg(now)::timestamptz, sqlc.arg(now)::timestamptz
 FROM channels
@@ -112,6 +112,14 @@ SET suspended_since = NULL,
             WHERE messages.channel_id = channels.id AND messages.seq <= channels.provisional_through_seq
                 AND messages.sender_id IS DISTINCT FROM channel_members.user_id
         ), channels.provisional_through_seq)
+    END,
+    shared_read_seq = CASE
+        WHEN channels.provisional_through_seq IS NULL THEN channel_members.shared_read_seq
+        ELSE LEAST(channel_members.shared_read_seq, COALESCE((
+            SELECT min(messages.seq) - 1 FROM messages
+            WHERE messages.channel_id = channels.id AND messages.seq <= channels.provisional_through_seq
+                AND messages.sender_id IS DISTINCT FROM channel_members.user_id
+        ), channels.provisional_through_seq))
     END,
     digested_through_seq = channels.last_seq, updated_at = sqlc.arg(now)::timestamptz
 FROM channels

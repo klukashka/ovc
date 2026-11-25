@@ -3,6 +3,8 @@ import type { Query, QueryClient, QueryKey } from '@tanstack/react-query';
 import { type Scheduler, browserScheduler } from '../lib/api/session.ts';
 import { evictChannel } from '../features/messages/cache.ts';
 import { chatRefetch } from '../features/messages/refetch.ts';
+import { channelKey } from '../features/messages/keys.ts';
+import type { Channel } from '../features/messages/api.ts';
 
 import { assignmentsKey } from '../features/assignment/keys.ts';
 import { groupsKey, memberChoiceKey } from '../features/groups/api.ts';
@@ -92,6 +94,9 @@ export function liveRefetch(
         return;
       case 'read':
         coalescer.read();
+        if (queryClient.getQueryData<Channel>(channelKey(event.channelId))?.kind !== 'group') {
+          void queryClient.invalidateQueries({ queryKey: channelKey(event.channelId) });
+        }
         return;
       case 'entity':
         if (event.entity === 'channel') {

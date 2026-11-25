@@ -804,3 +804,33 @@ test.describe('replies and the pinned message', () => {
     await diagnostics.closeContext(context);
   });
 });
+
+test.describe('read ticks in a direct chat', () => {
+  test.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', viewport: { width: 1280, height: 800 } });
+
+  test('a tutor sees one tick on a sent message and two once the student opens the chat, without a reload', async ({
+    page,
+    observedBrowser: browser,
+    deployment,
+    diagnostics,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { student, cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+    const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+    const context = await studentContext(browser, deployment);
+    const studentPage = await context.newPage();
+    await diagnostics.watch(studentPage);
+    await signInThroughTheApi(page, tutor);
+    await signInThroughTheApi(studentPage, student);
+    await openSettledConversation(page, channel, 'with the chat list');
+    await send(page, 'Did you read this?');
+    const sent = messages(page).filter({ hasText: 'Did you read this?' });
+    await expect(sent.getByText('Sent', { exact: true })).toBeAttached();
+
+    await openSettledConversation(studentPage, channel, 'conversation only');
+
+    await expect(sent.getByText('Read', { exact: true })).toBeAttached();
+    await expect(sent.getByText('Sent', { exact: true })).toHaveCount(0);
+    await diagnostics.closeContext(context);
+  });
+});

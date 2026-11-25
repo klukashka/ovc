@@ -26,7 +26,7 @@ func digestFixture(t *testing.T) (*authHarness, endingParties, string) {
 
 func (h *authHarness) digestService(t *testing.T, settings chat.DigestSettings) *chat.Service {
 	t.Helper()
-	return chat.New(chat.Dependencies{Store: h.store, Clock: h.clock, Random: randomPerTest(t), Logger: slog.New(slog.DiscardHandler), Digest: settings})
+	return chat.New(chat.Dependencies{Scheduler: &manualScheduler{}, Store: h.store, Clock: h.clock, Random: randomPerTest(t), Logger: slog.New(slog.DiscardHandler), Digest: settings})
 }
 
 func (h *authHarness) queueDigests(t *testing.T) {

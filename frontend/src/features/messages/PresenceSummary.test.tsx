@@ -21,6 +21,7 @@ const channel: Channel = {
   unconfirmed: false,
   unread_count: 0,
   pinned: null,
+  peer_read_seq: null,
   user_id: 'tutor',
   writable: true,
   members: [{ user_id: 'other', label: 'Private card name', online: true }],

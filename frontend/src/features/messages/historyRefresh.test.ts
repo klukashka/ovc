@@ -30,6 +30,7 @@ const channel: Channel = {
   unconfirmed: false,
   unread_count: 0,
   pinned: null,
+  peer_read_seq: null,
   user_id: 'history-student',
   writable: true,
 };

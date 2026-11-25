@@ -32,3 +32,7 @@ export function ArrowDownIcon({ size }: { readonly size: number }): ReactElement
 export function CloseIcon({ size }: { readonly size: number }): ReactElement {
   return <Outline size={size} path="M4 4l8 8M12 4l-8 8" />;
 }
+
+export function ReadTicksIcon({ read }: { readonly read: boolean }): ReactElement {
+  return <Outline size={14} path={read ? 'M1.5 8.5l3 3 6-7M7 11.5l1 0 6-7' : 'M3.5 8.5l3 3 6-7'} />;
+}

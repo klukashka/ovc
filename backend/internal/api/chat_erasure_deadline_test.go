@@ -32,7 +32,7 @@ func (h *authHarness) erasureServiceWithin(t *testing.T, store *repositories.Sto
 
 func (h *authHarness) erasureServiceWith(t *testing.T, store *repositories.Store, settings chat.ErasureSettings) *chat.Service {
 	t.Helper()
-	return chat.New(chat.Dependencies{Store: store, Clock: h.clock, Random: randomPerTest(t), Addresses: h.files,
+	return chat.New(chat.Dependencies{Scheduler: &manualScheduler{}, Store: store, Clock: h.clock, Random: randomPerTest(t), Addresses: h.files,
 		Logger: slog.New(slog.NewJSONHandler(h.logs, nil)), Erasure: settings})
 }
 
@@ -266,7 +266,7 @@ func TestErasureDrainsMoreThanOneCandidatePage(t *testing.T) {
 	if _, err := h.database.Pool.Exec(context.Background(), statement, tutor, authStart.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	service := chat.New(chat.Dependencies{Store: h.store, Clock: h.clock, Random: randomPerTest(t), Addresses: h.files,
+	service := chat.New(chat.Dependencies{Scheduler: &manualScheduler{}, Store: h.store, Clock: h.clock, Random: randomPerTest(t), Addresses: h.files,
 		Logger: slog.New(slog.NewJSONHandler(h.logs, nil)), Erasure: chat.DefaultErasureSettings()})
 
 	first, firstErr := service.EraseChannels(context.Background(), authStart)

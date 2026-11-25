@@ -164,7 +164,7 @@ func TestSlice6PresenceCleanupMeasurement(t *testing.T) {
 	}
 	h.advance(t, time.Minute)
 	logger := slog.New(slog.NewJSONHandler(h.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	service := chat.New(chat.Dependencies{Store: h.store, Logger: logger})
+	service := chat.New(chat.Dependencies{Scheduler: &manualScheduler{}, Store: h.store, Logger: logger})
 	running := worker.New(logger, h.clock, outbox.New(h.store, randomPerTest(t), logger), nil,
 		[]worker.Job{{Name: domain.JobExpirePresence, Every: time.Minute, Run: service.ExpirePresence}}, worker.DefaultTiming())
 	remaining := int64(2 * measurementCount(2000, 20))

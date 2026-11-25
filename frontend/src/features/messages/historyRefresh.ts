@@ -158,10 +158,12 @@ export class HistoryRefresh {
       const floor = this.cache.getQueryData<MessagePage>(messagesKey(this.channelId))?.items.at(-1)?.seq ?? oldest();
       const items: Message[] = [];
       let cursor: string | null = null;
+      let peerReadSeq: number | null = null;
       do {
         const page = await fetchMessages(this.client, this.channelId, cursor, signal);
         if (!this.current()) throw cancelled();
         items.push(...page.items);
+        peerReadSeq ??= page.peer_read_seq;
         cursor = page.next_cursor;
         if ((items.at(-1)?.seq ?? 0) <= Math.min(floor ?? Infinity, oldest() ?? Infinity)) break;
       } while (cursor !== null);
@@ -171,7 +173,7 @@ export class HistoryRefresh {
         this.fullRequired = true;
         throw cancelled();
       }
-      return { items, next_cursor: cursor, has_newer: false };
+      return { items, next_cursor: cursor, has_newer: false, peer_read_seq: peerReadSeq };
     } finally {
       this.releaseAfterPublication(signal, () => {
         this.fullReads -= 1;
@@ -197,6 +199,7 @@ export class HistoryRefresh {
         items: [...previous.items, ...page.items.filter((item) => !ids.has(item.id))],
         next_cursor: page.next_cursor,
         has_newer: false,
+        peer_read_seq: page.peer_read_seq,
       };
       this.cache.setQueryData<MessagePage>(messagesKey(this.channelId), merged);
       return merged;
@@ -210,11 +213,13 @@ export class HistoryRefresh {
     if (previous === undefined || intent.full) return null;
     const replacements = new Map<string, Message>();
     let after = previous.items.reduce((maximum, item) => Math.max(maximum, item.seq), 0);
+    let peerReadSeq = previous.peer_read_seq;
     let fresh = intent.fresh;
     while (after < intent.through || fresh) {
       fresh = false;
       const page = await fetchMessagesAfter(this.client, this.channelId, after, maximumDirtyMessages, signal);
       if (page.next_cursor !== null) return null;
+      peerReadSeq = page.peer_read_seq;
       if (page.items.length === 0) {
         if (after < intent.through) return null;
         break;
@@ -240,6 +245,7 @@ export class HistoryRefresh {
       items: [...items.values()].sort((a, b) => b.seq - a.seq),
       next_cursor: previous.next_cursor,
       has_newer: false,
+      peer_read_seq: peerReadSeq,
     };
   }
 

@@ -25,13 +25,32 @@ INSERT INTO messages (id, channel_id, seq, sender_id, client_key, body, version,
 VALUES (@id, @channel_id, @seq, @sender_id, sqlc.narg(client_key)::text, sqlc.arg(body)::text, 1, sqlc.arg(now)::timestamptz,
     sqlc.arg(now)::timestamptz, sqlc.narg(reply_to_message_id));
 
--- name: MoveSenderReadMarker :execrows
-UPDATE channel_members
-SET last_read_seq = sqlc.arg(seq)::bigint, last_read_at = sqlc.arg(now)::timestamptz, updated_at = sqlc.arg(now)::timestamptz
-FROM active_channel_members AS active
-WHERE channel_members.channel_id = active.channel_id AND channel_members.user_id = active.user_id
-    AND active.channel_id = sqlc.arg(channel_id)::uuid AND active.user_id = sqlc.arg(user_id)::uuid
-    AND channel_members.last_read_seq < sqlc.arg(seq)::bigint;
+-- name: MoveSenderReadMarker :one
+WITH target AS (
+    SELECT channel_members.channel_id, channel_members.user_id, channel_members.last_read_seq AS old_read_seq,
+        channel_members.shared_read_seq AS old_shared_seq, sqlc.arg(seq)::bigint AS reported,
+        (active.kind = 'direct' AND active.read_only_since IS NULL AND EXISTS (
+            SELECT 1 FROM active_channel_members AS other WHERE other.channel_id = active.channel_id AND other.user_id <> active.user_id
+        ))::boolean AS shareable
+    FROM channel_members
+    JOIN active_channel_members AS active ON active.channel_id = channel_members.channel_id AND active.user_id = channel_members.user_id
+    WHERE channel_members.channel_id = sqlc.arg(channel_id)::uuid AND channel_members.user_id = sqlc.arg(user_id)::uuid
+    FOR UPDATE OF channel_members
+), updated AS (
+    UPDATE channel_members
+    SET last_read_seq = GREATEST(target.old_read_seq, target.reported),
+        last_read_at = CASE WHEN target.reported > target.old_read_seq THEN sqlc.arg(now)::timestamptz ELSE channel_members.last_read_at END,
+        shared_read_seq = CASE WHEN target.shareable THEN GREATEST(target.old_shared_seq, target.reported) ELSE target.old_shared_seq END,
+        updated_at = sqlc.arg(now)::timestamptz
+    FROM target
+    WHERE channel_members.channel_id = target.channel_id AND channel_members.user_id = target.user_id
+        AND (target.reported > target.old_read_seq OR (target.shareable AND target.reported > target.old_shared_seq))
+    RETURNING channel_members.last_read_seq, channel_members.shared_read_seq
+)
+SELECT COALESCE(updated.last_read_seq > target.old_read_seq, false)::boolean AS moved,
+    COALESCE(updated.shared_read_seq > target.old_shared_seq, false)::boolean AS exposed
+FROM target
+LEFT JOIN updated ON true;
 
 -- name: FlagDigestPending :execrows
 INSERT INTO digest_pending (user_id, pending_since)
@@ -225,14 +244,52 @@ WHERE id = ANY (sqlc.arg(attachment_ids)::uuid[]) AND state = 'bound'
     AND NOT EXISTS (SELECT 1 FROM attachment_references WHERE attachment_references.attachment_id = attachments.id)
 RETURNING id, storage_key;
 
--- name: MoveReadMarker :execrows
-UPDATE channel_members
-SET last_read_seq = LEAST(sqlc.arg(seq)::bigint, active.last_seq), last_read_at = sqlc.arg(now)::timestamptz,
-    updated_at = sqlc.arg(now)::timestamptz
-FROM active_channel_members AS active
-WHERE channel_members.channel_id = active.channel_id AND channel_members.user_id = active.user_id
-    AND active.channel_id = sqlc.arg(channel_id)::uuid AND active.user_id = sqlc.arg(user_id)::uuid
-    AND channel_members.last_read_seq < LEAST(sqlc.arg(seq)::bigint, active.last_seq);
+-- name: MoveReadMarker :one
+WITH target AS (
+    SELECT channel_members.channel_id, channel_members.user_id, channel_members.last_read_seq AS old_read_seq,
+        channel_members.shared_read_seq AS old_shared_seq, LEAST(sqlc.arg(seq)::bigint, active.last_seq) AS reported,
+        (active.kind = 'direct' AND active.read_only_since IS NULL AND EXISTS (
+            SELECT 1 FROM active_channel_members AS other WHERE other.channel_id = active.channel_id AND other.user_id <> active.user_id
+        ))::boolean AS shareable
+    FROM channel_members
+    JOIN active_channel_members AS active ON active.channel_id = channel_members.channel_id AND active.user_id = channel_members.user_id
+    WHERE channel_members.channel_id = sqlc.arg(channel_id)::uuid AND channel_members.user_id = sqlc.arg(user_id)::uuid
+    FOR UPDATE OF channel_members
+), updated AS (
+    UPDATE channel_members
+    SET last_read_seq = GREATEST(target.old_read_seq, target.reported),
+        last_read_at = CASE WHEN target.reported > target.old_read_seq THEN sqlc.arg(now)::timestamptz ELSE channel_members.last_read_at END,
+        shared_read_seq = CASE WHEN target.shareable THEN GREATEST(target.old_shared_seq, target.reported) ELSE target.old_shared_seq END,
+        updated_at = sqlc.arg(now)::timestamptz
+    FROM target
+    WHERE channel_members.channel_id = target.channel_id AND channel_members.user_id = target.user_id
+        AND (target.reported > target.old_read_seq OR (target.shareable AND target.reported > target.old_shared_seq))
+    RETURNING channel_members.last_read_seq, channel_members.shared_read_seq
+)
+SELECT COALESCE(updated.last_read_seq > target.old_read_seq, false)::boolean AS moved,
+    COALESCE(updated.shared_read_seq > target.old_shared_seq, false)::boolean AS exposed
+FROM target
+LEFT JOIN updated ON true;
+
+-- name: GetPeerReadSeq :one
+SELECT channel_members.shared_read_seq FROM channel_members
+JOIN channels ON channels.id = channel_members.channel_id
+WHERE channel_members.channel_id = sqlc.arg(channel_id)::uuid AND channels.kind = 'direct'
+    AND channel_members.user_id <> sqlc.arg(viewer_id)::uuid;
+
+-- name: GetReadSignalScope :one
+SELECT (channels.read_only_since IS NULL)::boolean AS writable,
+    (SELECT count(*) FROM active_channel_members AS active
+     WHERE active.channel_id = channels.id AND active.user_id IN (sqlc.arg(reader_id)::uuid, sqlc.arg(recipient_id)::uuid)) AS active_members
+FROM channels
+WHERE channels.id = sqlc.arg(channel_id)::uuid AND channels.kind = 'direct' AND channels.discarded_at IS NULL
+    AND channels.erase_pending_since IS NULL;
+
+-- name: GetDirectPeer :one
+SELECT channel_members.user_id FROM channel_members
+JOIN channels ON channels.id = channel_members.channel_id
+WHERE channel_members.channel_id = sqlc.arg(channel_id)::uuid AND channels.kind = 'direct'
+    AND channel_members.user_id <> sqlc.arg(reader_id)::uuid;
 
 -- name: LockChannelMessagesBatch :many
 SELECT id FROM messages WHERE channel_id = @channel_id ORDER BY seq LIMIT sqlc.arg(batch_size) FOR UPDATE;

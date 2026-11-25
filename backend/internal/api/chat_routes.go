@@ -204,7 +204,9 @@ func (r *router) listMessages(ctx context.Context, input *messageListInput) (*me
 	if err != nil {
 		return nil, r.chatError(ctx, "channels.messages.list.failed", err)
 	}
-	body := schemas.MessagePage{Items: make([]schemas.Message, 0, len(page.Items)), NextCursor: page.NextCursor, HasNewer: page.HasNewer}
+	body := schemas.MessagePage{
+		Items: make([]schemas.Message, 0, len(page.Items)), NextCursor: page.NextCursor, HasNewer: page.HasNewer, PeerReadSeq: page.PeerReadSeq,
+	}
 	for _, message := range page.Items {
 		body.Items = append(body.Items, messageBody(message))
 	}
@@ -337,7 +339,7 @@ func (r *router) channel(ctx context.Context, input *channelInput) (*channelOutp
 	if err != nil {
 		return nil, r.chatError(ctx, "channels.get.failed", err)
 	}
-	body := schemas.ChannelDetail{ChannelItem: channelItemBody(channel)}
+	body := schemas.ChannelDetail{ChannelItem: channelItemBody(channel), PeerReadSeq: channel.PeerReadSeq}
 	if pinned := channel.Pinned; pinned != nil {
 		body.Pinned = &schemas.PinnedMessage{
 			MessageID: pinned.MessageID.String(), Seq: pinned.Seq, SenderLabel: pinned.SenderLabel, SenderLabelKind: pinned.SenderLabelKind,

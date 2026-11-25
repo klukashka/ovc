@@ -303,7 +303,7 @@ func TestChatPresenceFailureRecordsCarryNoBodiesNamesOrAddresses(t *testing.T) {
 	parties := h.groupOfTwoStudents(t)
 	client := h.connect(t, parties.firstToken)
 	release := h.holdRow(t, presenceRowLock, parties.first.String())
-	service := chat.New(chat.Dependencies{Store: h.store, Clock: h.clock, Logger: h.realtimeDeps.Logger})
+	service := chat.New(chat.Dependencies{Scheduler: &manualScheduler{}, Store: h.store, Clock: h.clock, Logger: h.realtimeDeps.Logger})
 
 	if err := client.conn.CloseNow(); err != nil {
 		t.Fatal(err)

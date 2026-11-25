@@ -18,6 +18,8 @@ export const chatTexts = {
   removedStudent: 'Removed student',
   you: 'You',
   edited: 'edited',
+  sentTick: 'Sent',
+  readTick: 'Read',
   composer: 'Message',
   send: 'Send',
   latestText: 'Current saved text',

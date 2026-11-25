@@ -20,6 +20,8 @@ export const chatTexts: ChatTexts = {
   removedStudent: 'Удалённый ученик',
   you: 'Вы',
   edited: 'изменено',
+  sentTick: 'Отправлено',
+  readTick: 'Прочитано',
   composer: 'Сообщение',
   send: 'Отправить',
   latestText: 'Текущий сохранённый текст',

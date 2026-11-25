@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"ovc/backend/internal/adapters/clock"
+	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/chat"
@@ -31,7 +32,7 @@ func TestPresenceCleanupRechecksExpiryAfterConcurrentRenewal(t *testing.T) {
 	if _, err := source.Set(ctx, instant); err != nil {
 		t.Fatal(err)
 	}
-	service := chat.New(chat.Dependencies{Store: repositories.NewStore(database.Pool), Clock: source, Logger: slog.New(slog.DiscardHandler)})
+	service := chat.New(chat.Dependencies{Scheduler: core.SystemScheduler{}, Store: repositories.NewStore(database.Pool), Clock: source, Logger: slog.New(slog.DiscardHandler)})
 	held, err := database.Pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +90,7 @@ func TestPresenceCleanupSkipsConcurrentlyPurgedAccountsAndContinuesBatch(t *test
 	purged, retained := domain.UserID{1}, domain.UserID{2}
 	seedExpiredPresence(t, ctx, database, purged, domain.PresenceInstanceID{1}, instant, seedTutor)
 	seedExpiredPresence(t, ctx, database, retained, domain.PresenceInstanceID{2}, instant, strings.Replace(seedTutor, "tutor@example.org", "other@example.org", 1))
-	service := chat.New(chat.Dependencies{Store: repositories.NewStore(database.Pool), Logger: slog.New(slog.DiscardHandler)})
+	service := chat.New(chat.Dependencies{Scheduler: core.SystemScheduler{}, Store: repositories.NewStore(database.Pool), Logger: slog.New(slog.DiscardHandler)})
 	held, err := database.Pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)

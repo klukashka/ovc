@@ -124,6 +124,7 @@ type authHarness struct {
 	accounts  *accounts.Service
 	tutoring  *tutoring.Service
 	chat      *chat.Service
+	reads     *manualScheduler
 	logger    *slog.Logger
 	options   api.Options
 	provider  *meeting.SharedFake
@@ -242,9 +243,11 @@ func newAuthHarnessWithDatabase(
 	}
 	preferences := notifications.NewPreferences(notifications.PreferenceDependencies{Store: store, Clock: shared, Tokens: links, Keys: keys, Logger: logger})
 	inbox := notifications.NewInbox(notifications.InboxDependencies{Store: store, Clock: shared, Logger: logger})
+	reads := &manualScheduler{}
 	chatService := chat.New(chat.Dependencies{
-		Store: store, Clock: shared, Random: random, Addresses: fileService, Erasure: chat.DefaultErasureSettings(), Logger: logger,
+		Store: store, Clock: shared, Random: random, Addresses: fileService, Erasure: chat.DefaultErasureSettings(), Logger: logger, Scheduler: reads,
 	})
+	t.Cleanup(chatService.Close)
 	libraryService := library.New(library.Dependencies{Store: store, Clock: shared, Random: random, Keys: keys, Addresses: fileService, Logger: logger})
 	homeworkService := homework.New(homework.Dependencies{
 		Store: store, Clock: shared, Random: random, Keys: keys, Addresses: fileService, Templates: libraryService, Logger: logger,
@@ -350,7 +353,7 @@ func newAuthHarnessWithDatabase(
 	return &authHarness{
 		server: server, store: store, clock: shared, hasher: hasher, logs: logs,
 		database: database, sink: sink, worker: background, objects: objects, storage: local.Settings, links: links,
-		accounts: options.Auth.Accounts, tutoring: options.Tutoring, chat: options.Chat, keys: keys, mailer: mailer, schedule: scheduleService, jobs: jobs, files: fileService, purger: purger,
+		accounts: options.Auth.Accounts, tutoring: options.Tutoring, chat: options.Chat, reads: reads, keys: keys, mailer: mailer, schedule: scheduleService, jobs: jobs, files: fileService, purger: purger,
 		logger: logger, options: options, provider: provider, lifecycle: lifecycle, random: random, createGate: createGate, linkGate: linkGate,
 		exports: options.Exports, effects: effects, wall: wall,
 	}

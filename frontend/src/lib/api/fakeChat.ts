@@ -33,6 +33,7 @@ export interface FakeChatMember {
   readonly label?: string;
   readonly channel?: Channel;
   lastReadSeq?: number;
+  sharedReadSeq?: number;
   suspended?: boolean;
 }
 
@@ -446,6 +447,33 @@ export class FakeChatServer {
     return this.requiredChannel(channelId).members.get(accountId)?.lastReadSeq ?? 0;
   }
 
+  memberRead(channelId: string, accountId: string, seq: number): void {
+    const channel = this.requiredChannel(channelId);
+    const member = channel.members.get(accountId);
+    if (member === undefined) {
+      throw new Error('no fake channel member');
+    }
+    const reported = Math.min(seq, Math.max(0, ...channel.messages.map((stored) => stored.message.seq)));
+    member.lastReadSeq = Math.max(member.lastReadSeq ?? 0, reported);
+    this.expose(channel, member, reported);
+  }
+
+  private expose(channel: StoredChannel, member: FakeChatMember, reported: number): void {
+    const members = [...channel.members.values()];
+    const shareable =
+      channel.channel.kind === 'direct' &&
+      channel.channel.writable &&
+      members.length === 2 &&
+      members.every((entry) => entry.suspended !== true);
+    if (shareable) member.sharedReadSeq = Math.max(member.sharedReadSeq ?? 0, reported);
+  }
+
+  private peerRead(channel: StoredChannel, caller: Me): number | null {
+    if (channel.channel.kind !== 'direct') return null;
+    const peer = [...channel.members.values()].find((entry) => entry.accountId !== caller.id);
+    return peer === undefined ? null : (peer.sharedReadSeq ?? 0);
+  }
+
   history(channelId: string): readonly Message[] {
     return this.requiredChannel(channelId).messages.map((stored) => ({ ...stored.message }));
   }
@@ -546,6 +574,7 @@ export class FakeChatServer {
     const result: Channel = {
       ...base,
       pinned: this.pinnedFor(channel, caller),
+      peer_read_seq: this.peerRead(channel, caller),
       writable: channel.channel.writable,
       unread_count: Math.min(99, Math.max(0, (last?.message.seq ?? 0) - (member?.lastReadSeq ?? 0))),
       last_message:
@@ -705,6 +734,7 @@ export class FakeChatServer {
       }
       const maximum = Math.max(0, ...channel.messages.map((stored) => stored.message.seq));
       member.lastReadSeq = Math.max(member.lastReadSeq ?? 0, Math.min(body.seq, maximum));
+      this.expose(channel, member, Math.min(body.seq, maximum));
       const pause = this.readPause;
       this.readPause = null;
       if (pause !== null) {
@@ -733,6 +763,7 @@ export class FakeChatServer {
         items: kept.map((stored) => this.messageFor(stored, caller, channel)),
         next_cursor: older.length > olderCount ? String(older.at(-olderCount)?.message.seq) : null,
         has_newer: newer.length > newerCount,
+        peer_read_seq: this.peerRead(channel, caller),
       });
     }
     const after = query.has('after_seq') ? Number(query.get('after_seq')) : null;
@@ -748,6 +779,7 @@ export class FakeChatServer {
       items: page.map((stored) => this.messageFor(stored, caller, channel)),
       next_cursor: after === null && sorted.length > limit ? String(page.at(-1)?.message.seq) : null,
       has_newer: false,
+      peer_read_seq: this.peerRead(channel, caller),
     });
   }
 
@@ -828,6 +860,7 @@ export class FakeChatServer {
       throw new Error('visible channel has no member');
     }
     member.lastReadSeq = stored.message.seq;
+    this.expose(channel, member, stored.message.seq);
     return answer(201, this.messageFor(stored, caller, channel));
   }
 

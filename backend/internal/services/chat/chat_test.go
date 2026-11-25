@@ -76,7 +76,7 @@ func TestUnreadChannelsAreReadInOneQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	service := chat.New(chat.Dependencies{Store: repositories.NewStore(pool), Logger: slog.New(slog.DiscardHandler)})
+	service := chat.New(chat.Dependencies{Scheduler: core.SystemScheduler{}, Store: repositories.NewStore(pool), Logger: slog.New(slog.DiscardHandler)})
 	before := counter.statements.Load()
 
 	unread, unreadErr := service.UnreadChannels(ctx, tutor)

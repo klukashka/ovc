@@ -129,7 +129,7 @@ func TestANewChannelSendAfterDigestLocksRecreatesItsFlag(t *testing.T) {
 			var resume sync.Once
 			release := func() { resume.Do(func() { close(random.resume) }) }
 			t.Cleanup(release)
-			service := chat.New(chat.Dependencies{Store: h.store, Clock: h.clock, Random: random, Logger: slog.New(slog.DiscardHandler)})
+			service := chat.New(chat.Dependencies{Scheduler: &manualScheduler{}, Store: h.store, Clock: h.clock, Random: random, Logger: slog.New(slog.DiscardHandler)})
 
 			running := runDigest(service, h.now(t))
 			select {

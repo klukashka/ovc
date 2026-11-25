@@ -264,6 +264,25 @@ func (q *Queries) GetChannelTutor(ctx context.Context, id domain.ChannelID) (dom
 	return tutor_id, err
 }
 
+const getDirectPeer = `-- name: GetDirectPeer :one
+SELECT channel_members.user_id FROM channel_members
+JOIN channels ON channels.id = channel_members.channel_id
+WHERE channel_members.channel_id = $1::uuid AND channels.kind = 'direct'
+    AND channel_members.user_id <> $2::uuid
+`
+
+type GetDirectPeerParams struct {
+	ChannelID pgtype.UUID
+	ReaderID  pgtype.UUID
+}
+
+func (q *Queries) GetDirectPeer(ctx context.Context, arg GetDirectPeerParams) (domain.UserID, error) {
+	row := q.db.QueryRow(ctx, getDirectPeer, arg.ChannelID, arg.ReaderID)
+	var user_id domain.UserID
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
 const getMessageScope = `-- name: GetMessageScope :one
 SELECT messages.channel_id, channels.tutor_id,
     EXISTS (
@@ -345,6 +364,52 @@ func (q *Queries) GetMessageView(ctx context.Context, id domain.MessageID) (GetM
 		&i.SentBeforeReclaim,
 		&i.ReplyToMessageID,
 	)
+	return i, err
+}
+
+const getPeerReadSeq = `-- name: GetPeerReadSeq :one
+SELECT channel_members.shared_read_seq FROM channel_members
+JOIN channels ON channels.id = channel_members.channel_id
+WHERE channel_members.channel_id = $1::uuid AND channels.kind = 'direct'
+    AND channel_members.user_id <> $2::uuid
+`
+
+type GetPeerReadSeqParams struct {
+	ChannelID pgtype.UUID
+	ViewerID  pgtype.UUID
+}
+
+func (q *Queries) GetPeerReadSeq(ctx context.Context, arg GetPeerReadSeqParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getPeerReadSeq, arg.ChannelID, arg.ViewerID)
+	var shared_read_seq int64
+	err := row.Scan(&shared_read_seq)
+	return shared_read_seq, err
+}
+
+const getReadSignalScope = `-- name: GetReadSignalScope :one
+SELECT (channels.read_only_since IS NULL)::boolean AS writable,
+    (SELECT count(*) FROM active_channel_members AS active
+     WHERE active.channel_id = channels.id AND active.user_id IN ($1::uuid, $2::uuid)) AS active_members
+FROM channels
+WHERE channels.id = $3::uuid AND channels.kind = 'direct' AND channels.discarded_at IS NULL
+    AND channels.erase_pending_since IS NULL
+`
+
+type GetReadSignalScopeParams struct {
+	ReaderID    pgtype.UUID
+	RecipientID pgtype.UUID
+	ChannelID   pgtype.UUID
+}
+
+type GetReadSignalScopeRow struct {
+	Writable      bool
+	ActiveMembers int64
+}
+
+func (q *Queries) GetReadSignalScope(ctx context.Context, arg GetReadSignalScopeParams) (GetReadSignalScopeRow, error) {
+	row := q.db.QueryRow(ctx, getReadSignalScope, arg.ReaderID, arg.RecipientID, arg.ChannelID)
+	var i GetReadSignalScopeRow
+	err := row.Scan(&i.Writable, &i.ActiveMembers)
 	return i, err
 }
 
@@ -1064,63 +1129,108 @@ func (q *Queries) MarkUnreferencedAttachmentsDeleted(ctx context.Context, arg Ma
 	return items, nil
 }
 
-const moveReadMarker = `-- name: MoveReadMarker :execrows
-UPDATE channel_members
-SET last_read_seq = LEAST($1::bigint, active.last_seq), last_read_at = $2::timestamptz,
-    updated_at = $2::timestamptz
-FROM active_channel_members AS active
-WHERE channel_members.channel_id = active.channel_id AND channel_members.user_id = active.user_id
-    AND active.channel_id = $3::uuid AND active.user_id = $4::uuid
-    AND channel_members.last_read_seq < LEAST($1::bigint, active.last_seq)
+const moveReadMarker = `-- name: MoveReadMarker :one
+WITH target AS (
+    SELECT channel_members.channel_id, channel_members.user_id, channel_members.last_read_seq AS old_read_seq,
+        channel_members.shared_read_seq AS old_shared_seq, LEAST($1::bigint, active.last_seq) AS reported,
+        (active.kind = 'direct' AND active.read_only_since IS NULL AND EXISTS (
+            SELECT 1 FROM active_channel_members AS other WHERE other.channel_id = active.channel_id AND other.user_id <> active.user_id
+        ))::boolean AS shareable
+    FROM channel_members
+    JOIN active_channel_members AS active ON active.channel_id = channel_members.channel_id AND active.user_id = channel_members.user_id
+    WHERE channel_members.channel_id = $2::uuid AND channel_members.user_id = $3::uuid
+    FOR UPDATE OF channel_members
+), updated AS (
+    UPDATE channel_members
+    SET last_read_seq = GREATEST(target.old_read_seq, target.reported),
+        last_read_at = CASE WHEN target.reported > target.old_read_seq THEN $4::timestamptz ELSE channel_members.last_read_at END,
+        shared_read_seq = CASE WHEN target.shareable THEN GREATEST(target.old_shared_seq, target.reported) ELSE target.old_shared_seq END,
+        updated_at = $4::timestamptz
+    FROM target
+    WHERE channel_members.channel_id = target.channel_id AND channel_members.user_id = target.user_id
+        AND (target.reported > target.old_read_seq OR (target.shareable AND target.reported > target.old_shared_seq))
+    RETURNING channel_members.last_read_seq, channel_members.shared_read_seq
+)
+SELECT COALESCE(updated.last_read_seq > target.old_read_seq, false)::boolean AS moved,
+    COALESCE(updated.shared_read_seq > target.old_shared_seq, false)::boolean AS exposed
+FROM target
+LEFT JOIN updated ON true
 `
 
 type MoveReadMarkerParams struct {
 	Seq       int64
-	Now       time.Time
 	ChannelID pgtype.UUID
 	UserID    pgtype.UUID
+	Now       time.Time
 }
 
-func (q *Queries) MoveReadMarker(ctx context.Context, arg MoveReadMarkerParams) (int64, error) {
-	result, err := q.db.Exec(ctx, moveReadMarker,
+type MoveReadMarkerRow struct {
+	Moved   bool
+	Exposed bool
+}
+
+func (q *Queries) MoveReadMarker(ctx context.Context, arg MoveReadMarkerParams) (MoveReadMarkerRow, error) {
+	row := q.db.QueryRow(ctx, moveReadMarker,
 		arg.Seq,
-		arg.Now,
 		arg.ChannelID,
 		arg.UserID,
+		arg.Now,
 	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+	var i MoveReadMarkerRow
+	err := row.Scan(&i.Moved, &i.Exposed)
+	return i, err
 }
 
-const moveSenderReadMarker = `-- name: MoveSenderReadMarker :execrows
-UPDATE channel_members
-SET last_read_seq = $1::bigint, last_read_at = $2::timestamptz, updated_at = $2::timestamptz
-FROM active_channel_members AS active
-WHERE channel_members.channel_id = active.channel_id AND channel_members.user_id = active.user_id
-    AND active.channel_id = $3::uuid AND active.user_id = $4::uuid
-    AND channel_members.last_read_seq < $1::bigint
+const moveSenderReadMarker = `-- name: MoveSenderReadMarker :one
+WITH target AS (
+    SELECT channel_members.channel_id, channel_members.user_id, channel_members.last_read_seq AS old_read_seq,
+        channel_members.shared_read_seq AS old_shared_seq, $1::bigint AS reported,
+        (active.kind = 'direct' AND active.read_only_since IS NULL AND EXISTS (
+            SELECT 1 FROM active_channel_members AS other WHERE other.channel_id = active.channel_id AND other.user_id <> active.user_id
+        ))::boolean AS shareable
+    FROM channel_members
+    JOIN active_channel_members AS active ON active.channel_id = channel_members.channel_id AND active.user_id = channel_members.user_id
+    WHERE channel_members.channel_id = $2::uuid AND channel_members.user_id = $3::uuid
+    FOR UPDATE OF channel_members
+), updated AS (
+    UPDATE channel_members
+    SET last_read_seq = GREATEST(target.old_read_seq, target.reported),
+        last_read_at = CASE WHEN target.reported > target.old_read_seq THEN $4::timestamptz ELSE channel_members.last_read_at END,
+        shared_read_seq = CASE WHEN target.shareable THEN GREATEST(target.old_shared_seq, target.reported) ELSE target.old_shared_seq END,
+        updated_at = $4::timestamptz
+    FROM target
+    WHERE channel_members.channel_id = target.channel_id AND channel_members.user_id = target.user_id
+        AND (target.reported > target.old_read_seq OR (target.shareable AND target.reported > target.old_shared_seq))
+    RETURNING channel_members.last_read_seq, channel_members.shared_read_seq
+)
+SELECT COALESCE(updated.last_read_seq > target.old_read_seq, false)::boolean AS moved,
+    COALESCE(updated.shared_read_seq > target.old_shared_seq, false)::boolean AS exposed
+FROM target
+LEFT JOIN updated ON true
 `
 
 type MoveSenderReadMarkerParams struct {
 	Seq       int64
-	Now       time.Time
 	ChannelID pgtype.UUID
 	UserID    pgtype.UUID
+	Now       time.Time
 }
 
-func (q *Queries) MoveSenderReadMarker(ctx context.Context, arg MoveSenderReadMarkerParams) (int64, error) {
-	result, err := q.db.Exec(ctx, moveSenderReadMarker,
+type MoveSenderReadMarkerRow struct {
+	Moved   bool
+	Exposed bool
+}
+
+func (q *Queries) MoveSenderReadMarker(ctx context.Context, arg MoveSenderReadMarkerParams) (MoveSenderReadMarkerRow, error) {
+	row := q.db.QueryRow(ctx, moveSenderReadMarker,
 		arg.Seq,
-		arg.Now,
 		arg.ChannelID,
 		arg.UserID,
+		arg.Now,
 	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+	var i MoveSenderReadMarkerRow
+	err := row.Scan(&i.Moved, &i.Exposed)
+	return i, err
 }
 
 const releaseUnreferencedCharges = `-- name: ReleaseUnreferencedCharges :many

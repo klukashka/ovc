@@ -36,9 +36,10 @@ type HistoryQuery struct {
 }
 
 type History struct {
-	Items      []Message
-	NextCursor *string
-	HasNewer   bool
+	Items       []Message
+	NextCursor  *string
+	HasNewer    bool
+	PeerReadSeq *int64
 }
 
 type ReadState struct {
@@ -184,8 +185,12 @@ func (s *Service) send(ctx context.Context, author Author, channel domain.Channe
 				return ErrQuotaExceeded
 			}
 		}
-		if err := repos.Messages.MoveSenderMarker(ctx, channel, author.UserID, seq, now); err != nil {
+		marker, err := repos.Messages.MoveSenderMarker(ctx, channel, author.UserID, seq, now)
+		if err != nil {
 			return err
+		}
+		if marker.Exposed {
+			s.readExposed(ctx, repos, author.UserID, channel)
 		}
 		if _, err := repos.Messages.FlagDigest(ctx, channel, author.UserID, now); err != nil {
 			return err
@@ -443,7 +448,7 @@ func (s *Service) MarkRead(ctx context.Context, author Author, channel domain.Ch
 		return ReadState{}, err
 	}
 	var state ReadState
-	moved := false
+	var marker repositories.MarkerMove
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		if author.Role == domain.RoleStudent {
 			if err := lockStudent(ctx, repos, author, now); err != nil {
@@ -457,11 +462,14 @@ func (s *Service) MarkRead(ctx context.Context, author Author, channel domain.Ch
 		if err != nil {
 			return err
 		}
-		moved, err = repos.Messages.MoveReadMarker(ctx, channel, author.UserID, seq, now)
+		marker, err = repos.Messages.MoveReadMarker(ctx, channel, author.UserID, seq, now)
 		if err != nil {
 			return err
 		}
-		if moved {
+		if marker.Exposed {
+			s.readExposed(ctx, repos, author.UserID, channel)
+		}
+		if marker.Moved {
 			signal := domain.ChatSignal{Users: []domain.UserID{author.UserID}, Event: domain.FrameReadUpdated, Channel: channel}
 			if err := repos.Signals.Chat(ctx, signal); err != nil {
 				return err
@@ -481,8 +489,9 @@ func (s *Service) MarkRead(ctx context.Context, author Author, channel domain.Ch
 	if err != nil {
 		return ReadState{}, err
 	}
-	if moved {
-		s.deps.Logger.LogAttrs(ctx, slog.LevelDebug, "chat.read_moved", channelAttribute(channel), userAttribute(author.UserID))
+	if marker.Moved {
+		s.deps.Logger.LogAttrs(ctx, slog.LevelDebug, "chat.read_moved", channelAttribute(channel), userAttribute(author.UserID),
+			slog.Bool("exposed", marker.Exposed))
 	}
 	return state, nil
 }
@@ -519,6 +528,11 @@ func (s *Service) History(ctx context.Context, viewer domain.UserID, channel dom
 		} else if err != nil {
 			return err
 		}
+		peer, err := repos.Messages.PeerReadSeq(ctx, channel, viewer)
+		if err != nil {
+			return err
+		}
+		history.PeerReadSeq = peer
 		rows, err := repos.Messages.History(ctx, listing)
 		if err != nil {
 			return err
@@ -548,6 +562,11 @@ func (s *Service) around(ctx context.Context, viewer domain.UserID, channel doma
 		} else if err != nil {
 			return err
 		}
+		peer, err := repos.Messages.PeerReadSeq(ctx, channel, viewer)
+		if err != nil {
+			return err
+		}
+		history.PeerReadSeq = peer
 		through := seq + 1
 		older, err := repos.Messages.History(ctx, repositories.HistoryQuery{Channel: channel, Before: &through, RowLimit: olderCount + 1})
 		if err != nil {

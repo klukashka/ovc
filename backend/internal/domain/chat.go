@@ -95,3 +95,11 @@ const (
 	UnpinPurged  UnpinCause = "purged"
 	UnpinErased  UnpinCause = "erased"
 )
+
+type ReadSignalSuppression string
+
+const (
+	ReadSignalInactive ReadSignalSuppression = "inactive"
+	ReadSignalReadOnly ReadSignalSuppression = "read_only"
+	ReadSignalGone     ReadSignalSuppression = "gone"
+)

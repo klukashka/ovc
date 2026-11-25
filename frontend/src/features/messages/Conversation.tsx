@@ -726,6 +726,7 @@ export function Conversation({
         groupChat={channel.kind === 'group'}
         refresh={refreshAttachments}
         tracked={tracked}
+        peerReadSeq={channel.peer_read_seq}
         onJump={(quote) => {
           jumpTo(quote.seq, quote.message_id);
         }}

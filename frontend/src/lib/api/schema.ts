@@ -1501,6 +1501,8 @@ export interface components {
             last_message: components["schemas"]["ChannelLastMessage"] | null;
             members?: components["schemas"]["ChannelMember"][];
             online: boolean | null;
+            /** Format: int64 */
+            peer_read_seq: number | null;
             pinned: components["schemas"]["PinnedMessage"] | null;
             /** Format: uuid */
             relationship_id?: string;
@@ -2221,6 +2223,8 @@ export interface components {
             has_newer: boolean;
             items: components["schemas"]["Message"][];
             next_cursor: string | null;
+            /** Format: int64 */
+            peer_read_seq: number | null;
         };
         MessagePatch: {
             body: string;

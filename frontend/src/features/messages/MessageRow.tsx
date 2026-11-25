@@ -4,6 +4,7 @@ import { dateTimeFormat } from '../../lib/format/dates.ts';
 import type { Language } from '../../lib/i18n/resources.ts';
 import type { Message, MessageQuote } from './api.ts';
 import { Attachments } from './Attachments.tsx';
+import { ReadTicksIcon } from './icons.tsx';
 import { MessageBody } from './MessageBody.tsx';
 import type { MessagePlace } from './messageGroups.ts';
 import { Quote } from './Quote.tsx';
@@ -24,6 +25,7 @@ export function MessageRow({
   menu,
   refresh,
   onJump,
+  peerReadSeq,
   tracked = true,
 }: {
   readonly message: Message;
@@ -35,11 +37,14 @@ export function MessageRow({
   readonly menu: ReactNode;
   readonly refresh: () => Promise<boolean>;
   readonly onJump: (quote: MessageQuote) => void;
+  readonly peerReadSeq: number | null;
   readonly tracked?: boolean;
 }): ReactElement {
   const own = message.own;
   const sender = own ? texts.you : (message.sender_label ?? texts.deletedUser);
   const senderShown = groupChat && !own && place.firstOfGroup;
+  const ticked = own && !message.deleted && !message.erased && peerReadSeq !== null;
+  const read = peerReadSeq !== null && peerReadSeq >= message.seq;
   const time = dateTimeFormat(language, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone }).format(
     new Date(message.created_at),
   );
@@ -80,6 +85,12 @@ export function MessageRow({
           <span className="flex justify-end gap-1 text-caption text-text-muted">
             {message.edited_at === null || message.deleted || message.erased ? null : <span>{texts.edited}</span>}
             <time dateTime={message.created_at}>{time}</time>
+            {ticked ? (
+              <span data-ticks={read ? 'read' : 'sent'} className="flex items-center">
+                <ReadTicksIcon read={read} />
+                <span className="sr-only">{read ? texts.readTick : texts.sentTick}</span>
+              </span>
+            ) : null}
           </span>
         </div>
         {menu}

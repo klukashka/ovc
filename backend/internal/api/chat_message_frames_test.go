@@ -43,6 +43,7 @@ func TestMessageFramesCarryIdentifiersOnly(t *testing.T) {
 
 	sent := h.sent(t, parties.tutorToken, direct.ID, bodySentinel)
 	tutorNew, studentNew := tutorSocket.expect(t, domain.FrameMessageNew), studentSocket.expect(t, domain.FrameMessageNew)
+	tutorReadShown := studentSocket.expect(t, domain.FrameReadUpdated)
 	h.mustAnswer(t, h.editMessage(t, parties.tutorToken, sent.ID, editSentinel, 1), http.StatusOK)
 	updated := studentSocket.expect(t, domain.FrameMessageUpdated)
 	tutorSocket.expect(t, domain.FrameMessageUpdated)
@@ -51,6 +52,7 @@ func TestMessageFramesCarryIdentifiersOnly(t *testing.T) {
 	tutorSocket.expect(t, domain.FrameMessageDeleted)
 	readResult, _ := h.readChannel(t, parties.studentToken, direct.ID, 1)
 	read := studentSocket.expect(t, domain.FrameReadUpdated)
+	studentReadShown := tutorSocket.expect(t, domain.FrameReadUpdated)
 	following := h.sent(t, parties.tutorToken, direct.ID, "After the read")
 	tutorFollowing := tutorSocket.expect(t, domain.FrameMessageNew)
 
@@ -65,13 +67,15 @@ func TestMessageFramesCarryIdentifiersOnly(t *testing.T) {
 			t.Fatalf("%s carries %s", frame.Type, frame.Payload)
 		}
 	}
-	if fields := payloadFields(t, read); !slices.Equal(fieldNames(fields), []string{"channel_id"}) {
-		t.Fatalf("read.updated carries %s", read.Payload)
+	for _, frame := range []serverFrame{read, tutorReadShown, studentReadShown} {
+		if fields := payloadFields(t, frame); !slices.Equal(fieldNames(fields), []string{"channel_id"}) || string(fields["channel_id"]) != `"`+direct.ID+`"` {
+			t.Fatalf("read.updated carries %s", frame.Payload)
+		}
 	}
 	if string(payloadFields(t, tutorFollowing)["message_id"]) != `"`+following.ID+`"` {
 		t.Fatalf("the tutor's next frame after the student's read is %s", tutorFollowing.Payload)
 	}
-	for _, frame := range []serverFrame{tutorNew, studentNew, updated, deleted, read} {
+	for _, frame := range []serverFrame{tutorNew, studentNew, tutorReadShown, updated, deleted, read, studentReadShown} {
 		if strings.Contains(string(frame.Payload), bodySentinel) || strings.Contains(string(frame.Payload), editSentinel) {
 			t.Fatalf("a frame carries message text: %s", frame.Payload)
 		}
@@ -179,8 +183,8 @@ func TestTheReclaimCueRevealsNoSquatterIdentity(t *testing.T) {
 	if !tutorView.SentBeforeReclaim || tutorView.SenderLabel == nil || *tutorView.SenderLabel != cardName || tutorView.SenderLabelKind != nil {
 		t.Fatalf("the tutor sees the account's provisional message as %+v", tutorView)
 	}
-	replyFrame := []sentFrame{{kind: string(domain.FrameMessageNew), id: reply.ID}}
-	if len(frames) != 2 || !slices.Equal(framesTo(frames, squatter), replyFrame) {
+	replyFrame := []sentFrame{{kind: string(domain.FrameMessageNew), id: reply.ID}, {kind: string(domain.FrameReadUpdated), id: channel.ID}}
+	if len(frames) != 3 || !slices.Equal(framesTo(frames, squatter), replyFrame) {
 		t.Fatalf("the reply was announced as %v", frames)
 	}
 	if strings.Contains(h.logs.String(), chosenNameMarker) {

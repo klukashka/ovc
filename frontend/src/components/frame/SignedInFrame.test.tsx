@@ -73,6 +73,7 @@ async function renderFrame(
         last_message: null,
         unread_count: 0,
         pinned: null,
+        peer_read_seq: null,
         writable: true,
         online: null,
         unconfirmed: false,

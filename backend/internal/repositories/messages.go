@@ -109,11 +109,17 @@ func (r Messages) Insert(ctx context.Context, message NewMessage) error {
 	return done(err, "insert message")
 }
 
-func (r Messages) MoveSenderMarker(ctx context.Context, channel domain.ChannelID, user domain.UserID, seq int64, now time.Time) error {
-	_, err := r.queries.MoveSenderReadMarker(ctx, dbgen.MoveSenderReadMarkerParams{
+type MarkerMove struct {
+	Moved   bool
+	Exposed bool
+}
+
+func (r Messages) MoveSenderMarker(ctx context.Context, channel domain.ChannelID, user domain.UserID, seq int64, now time.Time) (MarkerMove, error) {
+	row, err := r.queries.MoveSenderReadMarker(ctx, dbgen.MoveSenderReadMarkerParams{
 		Seq: seq, Now: now, ChannelID: pgtype.UUID{Bytes: channel, Valid: true}, UserID: pgtype.UUID{Bytes: user, Valid: true},
 	})
-	return done(err, "move the sender's read marker")
+	moved, err := one(row, err, "move the sender's read marker")
+	return MarkerMove{Moved: moved.Moved, Exposed: moved.Exposed}, err
 }
 
 func (r Messages) FlagDigest(ctx context.Context, channel domain.ChannelID, sender domain.UserID, now time.Time) (int64, error) {
@@ -292,11 +298,46 @@ func (r Messages) MarkUnreferencedDeleted(ctx context.Context, attachments []dom
 	return deleted, nil
 }
 
-func (r Messages) MoveReadMarker(ctx context.Context, channel domain.ChannelID, user domain.UserID, seq int64, now time.Time) (bool, error) {
-	rows, err := r.queries.MoveReadMarker(ctx, dbgen.MoveReadMarkerParams{
+func (r Messages) MoveReadMarker(ctx context.Context, channel domain.ChannelID, user domain.UserID, seq int64, now time.Time) (MarkerMove, error) {
+	row, err := r.queries.MoveReadMarker(ctx, dbgen.MoveReadMarkerParams{
 		Seq: seq, Now: now, ChannelID: pgtype.UUID{Bytes: channel, Valid: true}, UserID: pgtype.UUID{Bytes: user, Valid: true},
 	})
-	return applied(rows, err, "move read marker")
+	moved, err := one(row, err, "move read marker")
+	return MarkerMove{Moved: moved.Moved, Exposed: moved.Exposed}, err
+}
+
+func (r Messages) PeerReadSeq(ctx context.Context, channel domain.ChannelID, viewer domain.UserID) (*int64, error) {
+	seq, err := r.queries.GetPeerReadSeq(ctx, dbgen.GetPeerReadSeqParams{
+		ChannelID: pgtype.UUID{Bytes: channel, Valid: true}, ViewerID: pgtype.UUID{Bytes: viewer, Valid: true},
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read the other member's shared read marker: %w", err)
+	}
+	return &seq, nil
+}
+
+func (r Messages) DirectPeer(ctx context.Context, channel domain.ChannelID, reader domain.UserID) (domain.UserID, error) {
+	peer, err := r.queries.GetDirectPeer(ctx, dbgen.GetDirectPeerParams{
+		ChannelID: pgtype.UUID{Bytes: channel, Valid: true}, ReaderID: pgtype.UUID{Bytes: reader, Valid: true},
+	})
+	return one(peer, err, "read the other member of a direct channel")
+}
+
+type ReadSignalScope struct {
+	Writable   bool
+	BothActive bool
+}
+
+func (r Messages) ReadSignalScope(ctx context.Context, channel domain.ChannelID, reader, recipient domain.UserID) (ReadSignalScope, error) {
+	row, err := r.queries.GetReadSignalScope(ctx, dbgen.GetReadSignalScopeParams{
+		ChannelID: pgtype.UUID{Bytes: channel, Valid: true}, ReaderID: pgtype.UUID{Bytes: reader, Valid: true},
+		RecipientID: pgtype.UUID{Bytes: recipient, Valid: true},
+	})
+	scope, err := one(row, err, "read the read signal's channel")
+	return ReadSignalScope{Writable: scope.Writable, BothActive: scope.ActiveMembers == 2}, err
 }
 
 func (r Messages) LockBatchOfChannel(ctx context.Context, channel domain.ChannelID, batch int32) ([]domain.MessageID, error) {

@@ -4,7 +4,7 @@ import { describe, expect, test } from 'vitest';
 import { assignmentListKey, submissionKey } from '../features/assignment/keys.ts';
 import { studentHomeKey, tutorHomeKey } from '../features/home/api.ts';
 import { issueKey, issueListKey } from '../features/homework/api.ts';
-import { channelsKey, unreadChannelsKey, messagesKey } from '../features/messages/keys.ts';
+import { channelKey, channelsKey, unreadChannelsKey, messagesKey } from '../features/messages/keys.ts';
 import { queuePanelKey, reviewSubmissionKey } from '../features/review/keys.ts';
 import { lessonKey } from '../features/schedule/keys.ts';
 import { manualScheduler } from '../lib/api/fakeTransport.ts';
@@ -122,6 +122,49 @@ describe('chat event refetches', () => {
     for (const unsubscribe of unsubscribes) {
       unsubscribe();
     }
+    client.clear();
+  });
+
+  test('a read frame of a group chat leaves its detail alone, since a group exposes no peer read', () => {
+    const client = new QueryClient();
+    const scheduler = manualScheduler();
+    client.setQueryData(channelKey('g'), { kind: 'group' });
+    const onEvent = liveRefetch(client, new NotificationArrivals(), scheduler);
+
+    onEvent({ kind: 'read', channelId: 'g' });
+
+    expect(client.getQueryState(channelKey('g'))?.isInvalidated).toBe(false);
+    client.clear();
+  });
+
+  test('a read frame refetches only its channel detail, without waiting for the burst window', async () => {
+    const client = new QueryClient();
+    const scheduler = manualScheduler();
+    const counts = [{ value: 0 }, { value: 0 }];
+    const observers = [channelKey('a'), channelKey('b')].map(
+      (queryKey, index) =>
+        new QueryObserver(client, {
+          queryKey,
+          queryFn: (): Promise<number> => {
+            const count = counts[index];
+            if (count === undefined) throw new Error('missing counter');
+            count.value += 1;
+            return Promise.resolve(count.value);
+          },
+        }),
+    );
+    const unsubscribes = observers.map((observer) => observer.subscribe(() => undefined));
+    await eventually(() => {
+      expect(observers.map((observer) => observer.getCurrentResult().status)).toEqual(['success', 'success']);
+    });
+    const onEvent = liveRefetch(client, new NotificationArrivals(), scheduler);
+
+    onEvent({ kind: 'read', channelId: 'a' });
+
+    await eventually(() => {
+      expect(counts.map((count) => count.value)).toEqual([2, 1]);
+    });
+    for (const unsubscribe of unsubscribes) unsubscribe();
     client.clear();
   });
 

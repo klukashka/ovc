@@ -103,6 +103,7 @@ type ChannelMember struct {
 	SuspendedSince     *time.Time
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	SharedReadSeq      int64
 }
 
 type ChatUploadAccountingActivation struct {

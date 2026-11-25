@@ -64,7 +64,7 @@ func TestStudentChatWritesRecheckTheSessionUnderTheRowLock(t *testing.T) {
 			parties := h.activeStudentInAGroup(t)
 			direct := h.directChannel(t, parties.card.ID)
 			message := h.sent(t, parties.studentToken, direct.ID, "Before the sign-out")
-			h.exec(t, "UPDATE channel_members SET last_read_seq = 0 WHERE channel_id = $1::uuid", direct.ID)
+			h.exec(t, "UPDATE channel_members SET last_read_seq = 0, shared_read_seq = 0 WHERE channel_id = $1::uuid", direct.ID)
 			release := h.holdUserRow(t, parties.student)
 
 			signOut := h.sendInBackground(http.MethodPost, "/api/v1/auth/logout-all", "", jsonCall(parties.studentToken))

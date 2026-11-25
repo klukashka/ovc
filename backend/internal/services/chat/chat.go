@@ -91,11 +91,13 @@ type Dependencies struct {
 	Addresses       Addresses
 	Erasure         ErasureSettings
 	Logger          *slog.Logger
+	Scheduler       core.Scheduler
 }
 
 type Service struct {
 	deps   Dependencies
 	writes *writeLimit
+	reads  *readSignals
 }
 
 func New(dependencies Dependencies) *Service {
@@ -108,7 +110,12 @@ func New(dependencies Dependencies) *Service {
 	if dependencies.Erasure.Wall == nil {
 		dependencies.Erasure = DefaultErasureSettings()
 	}
-	return &Service{deps: dependencies, writes: newWriteLimit()}
+	if dependencies.Scheduler == nil {
+		panic("chat: the read signal scheduler is required")
+	}
+	service := &Service{deps: dependencies, writes: newWriteLimit()}
+	service.reads = newReadSignals(dependencies.Scheduler, dependencies.Logger, service.signalRead)
+	return service
 }
 
 type TutorLabel struct {
@@ -140,6 +147,7 @@ type Channel struct {
 	TutorView      bool
 	LastMessage    *LastMessage
 	Pinned         *Pinned
+	PeerReadSeq    *int64
 }
 
 type Query struct {
@@ -223,6 +231,9 @@ func (s *Service) Channel(ctx context.Context, viewer domain.UserID, id domain.C
 		}
 		channel.LastMessage = last[id]
 		if channel.Pinned, err = pinnedView(ctx, repos, viewer, id); err != nil {
+			return err
+		}
+		if channel.PeerReadSeq, err = repos.Messages.PeerReadSeq(ctx, id, viewer); err != nil {
 			return err
 		}
 		if rows[0].TutorID != viewer {

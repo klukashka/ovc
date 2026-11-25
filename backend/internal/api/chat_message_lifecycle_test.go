@@ -207,7 +207,7 @@ func TestTheErasureJobErasesADiscardedChannelInBatches(t *testing.T) {
 		var ticks atomic.Int64
 		wall := func() time.Time { return authStart.Add(time.Duration(ticks.Add(1)) * time.Second) }
 		job := func(budget time.Duration) *chat.Service {
-			return chat.New(chat.Dependencies{
+			return chat.New(chat.Dependencies{Scheduler: &manualScheduler{},
 				Store: h.store, Clock: h.clock, Random: rand.Reader, Addresses: h.files, Logger: slog.New(slog.DiscardHandler),
 				Erasure: chat.ErasureSettings{Wall: wall, Budget: budget, MessageBatch: 2},
 			})

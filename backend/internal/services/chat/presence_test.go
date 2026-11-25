@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"ovc/backend/internal/adapters/clock"
+	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
 	"ovc/backend/internal/services/chat"
@@ -37,7 +38,7 @@ func TestPresenceExpiryCleanupIsBoundedAndPreservesRenewedLeases(t *testing.T) {
 	}
 	store := repositories.NewStore(database.Pool)
 	logger := slog.New(slog.DiscardHandler)
-	service := chat.New(chat.Dependencies{Store: store, Logger: logger})
+	service := chat.New(chat.Dependencies{Scheduler: core.SystemScheduler{}, Store: store, Logger: logger})
 	queue := outbox.New(store, nil, logger)
 	jobs := []worker.Job{{Name: domain.JobExpirePresence, Every: time.Minute, Run: service.ExpirePresence}}
 	running := worker.New(logger, clock.System{}, queue, nil, jobs, worker.DefaultTiming())
@@ -87,7 +88,7 @@ func TestPresenceCleanupDeadlineIncludesUserLockWait(t *testing.T) {
 	if _, err := locked.Exec(ctx, `SELECT id FROM users WHERE id = $1 FOR UPDATE`, account); err != nil {
 		t.Fatal(err)
 	}
-	service := chat.New(chat.Dependencies{Store: repositories.NewStore(database.Pool), Logger: slog.New(slog.DiscardHandler), PresenceCleanup: chat.PresenceCleanupSettings{Wall: clock.System{}.Now, Budget: 100 * time.Millisecond, Batch: 500}})
+	service := chat.New(chat.Dependencies{Scheduler: core.SystemScheduler{}, Store: repositories.NewStore(database.Pool), Logger: slog.New(slog.DiscardHandler), PresenceCleanup: chat.PresenceCleanupSettings{Wall: clock.System{}.Now, Budget: 100 * time.Millisecond, Batch: 500}})
 
 	deleted, cleanupErr := service.ExpirePresence(ctx, instant)
 
@@ -113,7 +114,7 @@ func TestPresenceInstanceWritesPreserveOtherLeasesAndActivity(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := clock.NewShared(database.Pool)
-	service := chat.New(chat.Dependencies{Store: repositories.NewStore(database.Pool), Clock: source, Logger: slog.New(slog.DiscardHandler)})
+	service := chat.New(chat.Dependencies{Scheduler: core.SystemScheduler{}, Store: repositories.NewStore(database.Pool), Clock: source, Logger: slog.New(slog.DiscardHandler)})
 	first, second := domain.PresenceInstanceID{1}, domain.PresenceInstanceID{2}
 	write := func(instance domain.PresenceInstanceID, at time.Time, online bool) {
 		t.Helper()
@@ -156,7 +157,7 @@ func TestAnOlderReleaseCannotBackdateTheAccountsOfflineInstant(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := clock.NewShared(database.Pool)
-	service := chat.New(chat.Dependencies{Store: repositories.NewStore(database.Pool), Clock: source, Logger: slog.New(slog.DiscardHandler)})
+	service := chat.New(chat.Dependencies{Scheduler: core.SystemScheduler{}, Store: repositories.NewStore(database.Pool), Clock: source, Logger: slog.New(slog.DiscardHandler)})
 	first, second := domain.PresenceInstanceID{1}, domain.PresenceInstanceID{2}
 	write := func(instance domain.PresenceInstanceID, at time.Time, online bool) {
 		t.Helper()
@@ -197,7 +198,7 @@ func TestPresenceCleanupCannotBackdateTheAccountsOfflineInstant(t *testing.T) {
 	if _, err := database.Pool.Exec(ctx, `INSERT INTO user_presence_instances VALUES ($1,$2,$3,$4),($1,$5,$6,$4)`, account, domain.PresenceInstanceID{1}, instant.Add(-10*time.Second), instant.Add(-time.Minute), domain.PresenceInstanceID{2}, instant.Add(-5*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	service := chat.New(chat.Dependencies{Store: repositories.NewStore(database.Pool), Logger: slog.New(slog.DiscardHandler), PresenceCleanup: chat.PresenceCleanupSettings{Wall: clock.System{}.Now, Budget: time.Second, Batch: 1}})
+	service := chat.New(chat.Dependencies{Scheduler: core.SystemScheduler{}, Store: repositories.NewStore(database.Pool), Logger: slog.New(slog.DiscardHandler), PresenceCleanup: chat.PresenceCleanupSettings{Wall: clock.System{}.Now, Budget: time.Second, Batch: 1}})
 
 	deleted, cleanupErr := service.ExpirePresence(ctx, instant)
 	var until, seen time.Time

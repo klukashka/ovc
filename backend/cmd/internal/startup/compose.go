@@ -102,7 +102,7 @@ func NewTutoring(logger *slog.Logger, settings core.Settings, database *core.Dat
 func NewChat(logger *slog.Logger, database *core.Database, source clock.Source, random core.RandomSource, fileService *files.Service) *chat.Service {
 	return chat.New(chat.Dependencies{
 		Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Addresses: fileService, Erasure: chat.DefaultErasureSettings(),
-		Logger: logger,
+		Logger: logger, Scheduler: core.SystemScheduler{},
 	})
 }
 
@@ -244,6 +244,7 @@ func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings,
 	inbox := notifications.NewInbox(notifications.InboxDependencies{Store: store, Clock: source, Logger: logger})
 	chatService := chat.New(chat.Dependencies{
 		Store: store, Clock: source, Random: random, Addresses: fileService, Erasure: chat.DefaultErasureSettings(), Logger: logger,
+		Scheduler: core.SystemScheduler{},
 	})
 	queue := outbox.New(store, random, logger)
 	accountEmails, err := notifications.NewAccountEmails(store, random, settings.PublicURL)

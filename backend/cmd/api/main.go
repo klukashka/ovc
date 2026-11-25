@@ -165,6 +165,7 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 		return err
 	}
 	chatService := startup.NewChat(logging.Logger, database, source, random, fileService)
+	defer chatService.Close()
 	libraryService, err := startup.NewLibrary(logging.Logger, settings, database, source, random, fileService)
 	if err != nil {
 		return err

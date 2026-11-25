@@ -46,6 +46,7 @@ const channel: Channel = {
   unconfirmed: false,
   unread_count: 0,
   pinned: null,
+  peer_read_seq: null,
   user_id: 'student-1',
   writable: true,
   relationship_id: 'card-1',
@@ -686,6 +687,43 @@ describe('Messages', () => {
     await screen.findByText('Message 1');
 
     expect(screen.queryByText('Sent before the account was reclaimed')).toBeNull();
+  });
+
+  test('own messages show one tick until a read frame reports the peer read, then two', async () => {
+    const { server, cache, clock } = await fixture(2);
+    await screen.findByText('Message 2');
+    const sentBefore = screen.getAllByText('Sent').length;
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+
+    server.chat.memberRead(channel.id, 'student-1', 1);
+    act(() => {
+      receive({ kind: 'read', channelId: channel.id });
+    });
+
+    expect(sentBefore).toBe(2);
+    expect(await screen.findByText('Read')).toBeTruthy();
+    expect(screen.getAllByText('Sent')).toHaveLength(1);
+  });
+
+  test('only own messages carry ticks in a direct chat', async () => {
+    const fromStudent = { ...message(2), id: 'message-2', body: 'From the student', senderId: 'student-1' };
+    await fixture(1, '/messages/channel-1', true, { seeds: [fromStudent] });
+
+    const studentRow = (await screen.findByText('From the student')).closest('li');
+    const ownRow = screen.getByText('Message 1').closest('li');
+
+    if (studentRow === null || ownRow === null) throw new Error('missing message rows');
+    expect(within(studentRow).queryByText('Sent')).toBeNull();
+    expect(within(ownRow).getByText('Sent')).toBeTruthy();
+  });
+
+  test('a group chat shows no ticks', async () => {
+    await fixture(1, '/messages/channel-1', true, { kind: 'group' });
+
+    await screen.findByText('Message 1');
+
+    expect(screen.queryByText('Sent')).toBeNull();
+    expect(screen.queryByText('Read')).toBeNull();
   });
 
   test('touch long press keeps the menu open through pointerup and its generated click', async () => {
@@ -1944,7 +1982,12 @@ describe('replies and the pinned message', () => {
   test('losing the channel drops every window around its messages', async () => {
     const { cache } = await fixture(1);
     act(() => {
-      cache.setQueryData(aroundKey(channel.id, 1), { items: [message(1)], next_cursor: null, has_newer: false });
+      cache.setQueryData(aroundKey(channel.id, 1), {
+        items: [message(1)],
+        next_cursor: null,
+        has_newer: false,
+        peer_read_seq: null,
+      });
     });
 
     act(() => {

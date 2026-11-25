@@ -534,7 +534,8 @@ func TestReadMarkersMoveForwardOnlyAndReachOwnSockets(t *testing.T) {
 		t.Fatalf("the student's marker is %d", member.LastRead)
 	}
 	readFrame := sentFrame{kind: string(domain.FrameReadUpdated), id: direct.ID}
-	if !slices.Equal(chatFramesTo(frames, parties.student), []sentFrame{readFrame, readFrame}) || len(chatFramesTo(frames, parties.tutor)) != 0 {
+	if !slices.Equal(chatFramesTo(frames, parties.student), []sentFrame{readFrame, readFrame}) ||
+		!slices.Equal(chatFramesTo(frames, parties.tutor), []sentFrame{readFrame}) {
 		t.Fatalf("the read frames went to the student %v and the tutor %v", chatFramesTo(frames, parties.student), chatFramesTo(frames, parties.tutor))
 	}
 	h.mustAnswer(t, tutorRead, http.StatusOK)

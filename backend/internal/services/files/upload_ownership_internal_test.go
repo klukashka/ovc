@@ -55,7 +55,8 @@ func TestUploadReconciliationPreservesTransferredOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	messaging := chat.New(chat.Dependencies{Store: h.service.deps.Store, Clock: h.service.deps.Clock, Random: core.CryptoRandom(), Addresses: h.service, Logger: h.service.deps.Logger})
+	messaging := chat.New(chat.Dependencies{Scheduler: core.SystemScheduler{}, Store: h.service.deps.Store, Clock: h.service.deps.Clock, Random: core.CryptoRandom(), Addresses: h.service, Logger: h.service.deps.Logger})
+	t.Cleanup(messaging.Close)
 	message, err := messaging.Send(context.Background(), chat.Author{UserID: principal.UserID, SessionID: principal.SessionID, Role: principal.Role}, channel, chat.Draft{Attachments: []domain.AttachmentID{uploaded.ID}})
 	if err != nil {
 		t.Fatal(err)

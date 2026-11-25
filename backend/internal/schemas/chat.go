@@ -64,6 +64,7 @@ type ChannelDetail struct {
 	GroupID        *string          `json:"group_id,omitempty" format:"uuid"`
 	Members        *[]ChannelMember `json:"members,omitempty" nullable:"false"`
 	Pinned         *PinnedMessage   `json:"pinned"`
+	PeerReadSeq    *int64           `json:"peer_read_seq" nullable:"true"`
 }
 
 func (ChannelDetail) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
@@ -124,9 +125,10 @@ func (Message) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schem
 }
 
 type MessagePage struct {
-	Items      []Message `json:"items" nullable:"false"`
-	NextCursor *string   `json:"next_cursor" nullable:"true"`
-	HasNewer   bool      `json:"has_newer"`
+	Items       []Message `json:"items" nullable:"false"`
+	NextCursor  *string   `json:"next_cursor" nullable:"true"`
+	HasNewer    bool      `json:"has_newer"`
+	PeerReadSeq *int64    `json:"peer_read_seq" nullable:"true"`
 }
 
 type NewMessage struct {

@@ -348,6 +348,7 @@ function chatFixture(): FakeAuthServer {
       last_message: null,
       unread_count: 0,
       pinned: null,
+      peer_read_seq: null,
       writable: true,
       online: false,
       unconfirmed: true,
@@ -508,6 +509,34 @@ describe('fake chat audience and state', () => {
     expect(old.status).toBe(204);
     expect(server.chat.readSeq(chatId, 'tutor')).toBe(1);
     expect(await unread.json()).toEqual({ unread_channels: 0 });
+  });
+
+  test('a direct read reaches the other member only while the chat is writable, and stays frozen until reported again', async () => {
+    const server = chatFixture();
+    const student = await chatToken(server, 'student@example.org');
+    const tutor = await chatToken(server, 'tutor@example.org');
+    const read = (): Promise<Response> =>
+      server.transport().send(chatRequest(`channels/${chatId}/read`, student, 'POST', { seq: 1 }));
+    server.chat.setWritable(chatId, false);
+
+    await read();
+    const frozen: unknown = await (await server.transport().send(chatRequest(`channels/${chatId}`, tutor))).json();
+    server.chat.setWritable(chatId, true);
+    const restored: unknown = await (await server.transport().send(chatRequest(`channels/${chatId}`, tutor))).json();
+    await read();
+    const reported: unknown = await (await server.transport().send(chatRequest(`channels/${chatId}`, tutor))).json();
+    const page: unknown = await (
+      await server.transport().send(chatRequest(`channels/${chatId}/messages`, tutor))
+    ).json();
+    const forStudent: unknown = await (
+      await server.transport().send(chatRequest(`channels/${chatId}`, student))
+    ).json();
+
+    expect(frozen).toMatchObject({ peer_read_seq: 0 });
+    expect(restored).toMatchObject({ peer_read_seq: 0 });
+    expect(reported).toMatchObject({ peer_read_seq: 1 });
+    expect(page).toMatchObject({ peer_read_seq: 1 });
+    expect(forStudent).toMatchObject({ peer_read_seq: 0 });
   });
 });
 
