@@ -2,7 +2,7 @@ import type { BrowserContext, Locator, Page } from '@playwright/test';
 
 import type { ObservedBrowser } from './browser-diagnostics.ts';
 
-import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, newTestAccount, pageLoaded, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { storedAnswers, studentWork } from './assignment.ts';
 import { createReadyTemplate, issueThroughTheApi } from './homework.ts';
@@ -373,6 +373,7 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
       .filter({ hasText: 'Не прочитано' });
     await expect(borisAccepted).toHaveCount(2);
     await page.keyboard.press('Escape');
+    await pageLoaded(page);
     await page.reload();
     await expect(page.getByRole('heading', { level: 1, name: 'Boris' })).toBeVisible();
     await expect(page.getByRole('main').getByText('Занятия завершены', { exact: true })).toHaveCount(0);

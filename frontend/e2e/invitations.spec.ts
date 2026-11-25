@@ -2,7 +2,7 @@ import type { BrowserContext, Locator, Page } from '@playwright/test';
 
 import type { ObservedBrowser } from './browser-diagnostics.ts';
 
-import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, emailedLinkTo, newTestAccount, pageLoaded, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { bellIn, panelRowsIn } from './notifications.ts';
 import {
@@ -203,6 +203,7 @@ test.describe('Anna in Russian on a phone', () => {
     await expect(page).toHaveURL('/home');
     await expectTutors(homeTutorRows(page), ['Мария']);
     await expect(page.getByRole('region', { name: 'Подтверждение email' })).toHaveCount(0);
+    await pageLoaded(mariaPage);
     await mariaPage.reload();
     await expect(mariaPage.getByRole('heading', { level: 1, name: 'Анна' })).toBeVisible();
     await expect(mariaBell).toHaveAccessibleName('Уведомления, 1 непрочитанное');
@@ -211,6 +212,7 @@ test.describe('Anna in Russian on a phone', () => {
     for (const word of ['Email не подтверждён', 'Ждём ответа ученика', 'Приглашение отправлено', 'Занятия завершены']) {
       await expect(mariaPage.getByRole('main').getByText(word)).toHaveCount(0);
     }
+    await pageLoaded(mariaPage);
     await mariaPage.goto('/students?state=active');
     await expect(tableRows(mariaPage, 'Действующие').getByRole('link', { name: /Анна/ })).toBeVisible();
     expect(addresses.at(-1)).not.toContain(token);

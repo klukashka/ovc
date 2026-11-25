@@ -12,6 +12,7 @@ export type TextLoaders<Section extends FeatureSection> = Readonly<
 
 export interface FeatureTexts {
   readonly ready: boolean;
+  readonly pending: boolean;
   readonly failed: boolean;
   readonly retry: () => void;
 }
@@ -61,6 +62,7 @@ export function useFeatureTexts<Section extends FeatureSection>(
 
   return {
     ready,
+    pending: !ready && !failed,
     failed: failed && !ready,
     retry: (): void => {
       setFailed(false);

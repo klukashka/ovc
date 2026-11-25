@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 
-import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, newTestAccount, pageLoaded, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import {
   chooseFromPageMenu,
@@ -206,12 +206,14 @@ async function phoneListsOfGroupsAndTeaching(page: Page, groupId: string, invite
   const memberLinkBox = await boxOf(memberLink);
   const titleBottom = (await boxOf(page.getByRole('heading', { level: 1, name: 'B1 вечер' }))).bottom;
   const groupActionsTop = (await boxOf(page.getByRole('button', { name: 'Действия с группой' }))).top;
+  await pageLoaded(page);
   await page.goto(`/students/${invitedCardId}`);
   const invitation = page.getByRole('region', { name: 'Ссылка-приглашение' });
   const copy = invitation.getByRole('button', { name: 'Скопировать ссылку' });
   await copy.waitFor();
   const copyWidth = (await boxOf(copy)).width;
   const invitationWidth = (await boxOf(invitation)).width;
+  await pageLoaded(page);
   await page.goto('/settings/teaching');
   const blockedRow = tableRows(page, 'Заблокированные ученики').first();
   await blockedRow.waitFor();

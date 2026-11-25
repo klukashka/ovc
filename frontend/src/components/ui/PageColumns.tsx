@@ -4,13 +4,18 @@ export function PageColumns({
   main,
   aside,
   asideLabel,
+  busy = false,
 }: {
   readonly main: ReactNode;
   readonly aside: ReactNode;
   readonly asideLabel: string;
+  readonly busy?: boolean;
 }): ReactElement {
   return (
-    <div className="flex flex-col gap-10 wide:grid wide:grid-cols-[minmax(0,1fr)_var(--container-aside)] wide:items-start wide:gap-16">
+    <div
+      aria-busy={busy}
+      className="flex flex-col gap-10 wide:grid wide:grid-cols-[minmax(0,1fr)_var(--container-aside)] wide:items-start wide:gap-16"
+    >
       <div data-column="main" className="flex min-w-0 flex-col gap-8">
         {main}
       </div>

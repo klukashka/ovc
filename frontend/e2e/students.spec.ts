@@ -1,6 +1,6 @@
 import type { BrowserContext, Locator, Page, Request, Response } from '@playwright/test';
 
-import { type TestAccount, newTestAccount, registerTutor, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, newTestAccount, pageLoaded, registerTutor, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import {
   chooseFromPageMenu,
@@ -498,6 +498,7 @@ test.describe('in English with the dark theme', () => {
     await invitedAgain;
     await expect(page.getByText('No open invitations.')).toBeVisible();
 
+    await pageLoaded(page);
     await page.reload();
 
     await expect(page.getByText('No open invitations.')).toBeVisible();
@@ -591,6 +592,7 @@ test.describe('in English with the dark theme', () => {
     await page.getByRole('form', { name: 'Notes' }).getByLabel('Notes').fill(draft);
 
     await expectNothingStoredContaining(page, draft);
+    await pageLoaded(page);
     await page.reload();
     await page.getByRole('form', { name: 'Notes' }).getByLabel('Notes').waitFor();
 
@@ -673,6 +675,7 @@ test.describe('in English with the dark theme', () => {
     await activeDialog.getByLabel('Name', { exact: true }).waitFor();
     const activeEmailFields = await activeDialog.getByLabel('Email (optional)').count();
     await page.keyboard.press('Escape');
+    await pageLoaded(page);
     await page.goto(`/students/${invited.id}`);
     await chooseFromPageMenu(page, 'Card actions', 'Name and email…');
     const dialog = page.getByRole('dialog', { name: 'Name and email' });

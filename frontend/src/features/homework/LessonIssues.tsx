@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { linkClass } from '../../components/ui/Form.tsx';
+import { DelayedLoading } from '../../components/ui/LoadState.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDateTime } from '../../lib/format/dates.ts';
@@ -90,5 +91,8 @@ export function LessonIssues(props: {
   readonly preset: IssuePreset | null;
 }): ReactElement | null {
   const texts = useFeatureTexts('homework', homeworkTextLoaders);
-  return texts.ready ? <LessonIssueList {...props} /> : null;
+  if (texts.ready) {
+    return <LessonIssueList {...props} />;
+  }
+  return texts.pending ? <DelayedLoading /> : null;
 }

@@ -65,6 +65,7 @@ type EventText = (item: Notification) => string;
 
 interface EventTexts {
   readonly textOf: EventText;
+  readonly pending: boolean;
   readonly failed: boolean;
   readonly retry: () => void;
 }
@@ -79,6 +80,7 @@ function useEventTexts(loaders: EventTextLoaders): EventTexts {
   return {
     textOf: (item) =>
       needsLazyText(item) && !texts.ready ? t('notifications.event.homework') : t(eventTexts[item.event]),
+    pending: texts.pending,
     failed: texts.failed,
     retry: texts.retry,
   };
@@ -303,7 +305,7 @@ export function NotificationTable({
   return (
     <>
       <EventTextsFailed items={items} texts={texts} focusIfLost={focusHeadingIfLost} />
-      <DataTable label={label} columns={columns} bodyRef={bodyRef}>
+      <DataTable label={label} columns={columns} bodyRef={bodyRef} busy={texts.pending}>
         {items.map((item) => (
           <tr key={item.id} data-row={item.id} className={tableRowClass}>
             <EventCell item={item} text={texts.textOf(item)} />
@@ -346,7 +348,7 @@ export function NotificationList({
   return (
     <>
       <EventTextsFailed items={items} texts={texts} focusIfLost={focusIfLost} />
-      <ul ref={listRef} aria-label={label} className="border-b border-border">
+      <ul ref={listRef} aria-label={label} aria-busy={texts.pending} className="border-b border-border">
         {items.map((item) => (
           <NotificationRow key={item.id} item={item} now={now} eventText={texts.textOf(item)} onChoose={onChoose} />
         ))}

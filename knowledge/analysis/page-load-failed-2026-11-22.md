@@ -39,3 +39,70 @@ Every run went through the main checkout's `tools/dev-env.sh` with `--trace=off 
 | Fix, loaded (before the sweeps' `main article h1`) | 10:39:19, 15.25 8.81 9.71 → 41.10 26.20 17.00 | 120 passed | none |
 
 `desktop-layout.spec.ts:382` and `account-edge-cases.spec.ts:152` did not fail in the two main series (20 runs of each per engine), so for them the status is "not reproduced in 60 runs each at the loads above" before the fix; both share the mechanism, shown by the deterministic diagnostic, and their waits are fixed with the others.
+
+## Addendum, 2026-11-25: feature-section texts with no loading state
+
+Recorded for the follow-up change `fix/feature-text-load-waits` after H2's merge gate on 2026-11-24, where `[webkit-1] e2e/ending.spec.ts:341` (pilot-4 step 7) failed with one `console_error` `language_load_failed TypeError` on `/students/<card>` (row of 2026-11-24 in [the slice 10 known limitations](../reviews/slice-10-known-limitations.md)). It resolves the second site kind that X5's scan left to 10.5 H3: waits on a page whose panels load feature-section texts, followed by a navigation.
+
+### The gap
+
+X5's `pageLoaded` waited for no `main [aria-busy="true"]`. Seven callers of `useFeatureTexts` (`frontend/src/lib/i18n/featureTexts.ts`) rendered nothing busy while their section loaded, so the wait passed while the import was still in flight:
+
+| Caller | Section | Shown while loading, before this change |
+|---|---|---|
+| `features/notifications/NotificationRows.tsx` (the bell panel, outside `main`) | `notificationEvents` | placeholder row text |
+| `features/students/StudentCardPage.tsx` | `homework` | the card without its homework tab content |
+| `features/groups/GroupPage.tsx` | `homework` | the group without its homework content |
+| `features/library/LibraryPage.tsx` | `homework` | the page without its homework tabs and issue action |
+| `features/builder/BuilderPage.tsx` | `homework` | the builder without its issue section |
+| `features/homework/LessonIssues.tsx` | `homework` | nothing |
+| `features/assignment/LessonWork.tsx` | `assignment` | nothing |
+
+Every other caller, `MyDataPage.tsx` added by E2 included, renders `DelayedLoading` inside `main` and was already covered.
+
+### Fix
+
+- `useFeatureTexts` returns `pending` (neither loaded nor failed).
+- Each caller in the table puts `aria-busy` on the container its late content belongs to, with no visible change: the notification list or table, the card's section tabs (`RouteTabs busy`), the group's columns (`PageColumns busy`), Library's main grid and the builder's action row. The lesson's issues and work sections render `DelayedLoading` while pending.
+- `pageLoaded` waits for no `[aria-busy="true"]` in the whole document, so the header's bell panel counts.
+- Step 7 of `ending.spec.ts` calls `pageLoaded` before `page.reload()`.
+- Two tests in `frontend/e2e/session.spec.ts` hold a feature text chunk with a `page.route` handler that only holds the request and continues it unchanged. One holds it on the student card's section tabs, the other in the open bell panel. Each proves that the region is busy and that `pageLoaded` resolves only after the chunk is released.
+- Component tests in `NotificationRows.test.tsx` assert the list and table are busy until their texts load, and not busy after a failure.
+- No expected-error list, retry or timeout was added, and `reportLanguageLoadFailure` is unchanged.
+- The marks cover each page's loaded view. The student card's and the group's not-found, gone and load-failure views, the Library's not-found view and the builder's view when one of its two sections failed while the other still loads start the same loads with nothing busy. This is recorded in [the slice 10 known limitations](../reviews/slice-10-known-limitations.md) and carried to 10.5 H3.
+
+### Sweep
+
+A scan of `frontend/e2e/` for a `page.goto` or `page.reload` that follows a page from the table, or an opened bell, without a `pageLoaded` or `pageSettled` wait found eight sites. Each gained `pageLoaded` before its navigation:
+
+- `groups.spec.ts`, two sites;
+- `invitations.spec.ts`, two sites;
+- `join-requests.spec.ts`, one site;
+- `students.spec.ts`, three sites.
+
+It also flagged four sites that stay unchanged: `groups.spec.ts:886`, `homework.spec.ts:188` and `:213`, and `lesson-room.spec.ts:91`. Each is the first navigation of a helper function, not a navigation away from a loaded page. The scan was rerun on `main` at `4fe2093` (after H2, M2 and E2) and found no new site.
+
+### Runs
+
+Every run went through the main checkout's `tools/dev-env.sh` with `--trace=off --retries=0` on AC power, on 2026-11-25 (times in UTC), against `main` at `0d37d62` with the change's working tree.
+
+The deterministic diagnostic was a temporary spec, not committed. It held every `texts.(en|ru)-*.js` request until the test released it, with a handler that only holds and then continues the request.
+
+| Run | Start (UTC), load at start → end | Result | Records |
+|---|---|---|---|
+| Diagnostic: hold the card's feature texts, reload the student card, release | 07:52, 2.49 | `chromium` passed; `firefox-2` and `webkit-2` failed | one `console_error` `language_load_failed TypeError` from `assets/i18n-*.js` in each engine, the H2 gate's text and bundle; Firefox adds two module load warnings for the `IssueAssignment` chunk, which holds the `homework` loaders |
+| Diagnostic: open the bell on the card, hold its texts, press Escape, reload, release | 07:52, 2.49 | passed in `chromium` and `webkit-2`; failed in `firefox-2` | two module load warnings for `NotificationRows`, no `language_load_failed`: the closed panel is unmounted and reports nothing, so this is not the gate's trigger |
+| New session tests with the fix | 07:54, 5.23 | 6 passed in three engines | — |
+| Negative control: the new tests with `main`'s `pageLoaded` | 07:54, 4.15 | the bell panel test failed in all three engines; the card test passed, its tabs being inside `main` | — |
+| Negative control: the new tests with `main`'s application code | 07:55, 3.30 | 6 failed (no busy mark) | — |
+
+Each series ran all of `ending.spec.ts` (its pilot-4 steps are serial, so step 7 needs its seed and earlier steps), 15 tests in `chromium`, `firefox-*` and `webkit-*` with `--repeat-each=10`: 450 runs, 30 of step 7. "Main" is `main`'s copies of every file the change touches, put back in the change's tree. The loaded series ran beside 12 `yes` processes, stopped by their recorded process identifiers when the series ended.
+
+| Series | Start (UTC), load at start → end | Result | Step 7 |
+|---|---|---|---|
+| Fix, idle | 07:56:35, 2.29 3.02 2.47 → 24.22 11.22 5.80 | 450 passed | 30 passed |
+| Main, idle | 07:58:49, 24.22 11.22 5.80 → 20.87 15.13 8.20 | 450 passed | 30 passed |
+| Main, loaded | 08:01:05, 20.87 15.13 8.20 → 59.66 42.54 23.24 | 450 passed | 30 passed |
+| Fix, loaded | 08:06:50, 59.66 42.54 23.24 → 42.32 41.74 29.25 | 450 passed | 30 passed |
+
+The gate failure was not reproduced on `main` in 60 runs of step 7 at the loads above. The mechanism is shown by the deterministic diagnostic, which reproduces the gate's record exactly. The fix series had no failure.

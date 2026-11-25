@@ -157,7 +157,7 @@ export async function confirmFromAnotherBrowser(
 }
 
 export async function pageLoaded(page: Page): Promise<void> {
-  await expect(page.locator('main [aria-busy="true"]')).toHaveCount(0);
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
 }
 
 export async function pageSettled(page: Page): Promise<void> {

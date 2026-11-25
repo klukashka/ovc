@@ -908,10 +908,12 @@ function CardTabs({
   cardId,
   tab,
   homework,
+  homeworkPending,
 }: {
   readonly cardId: string;
   readonly tab: CardTab;
   readonly homework: boolean;
+  readonly homeworkPending: boolean;
 }): ReactElement {
   const { t } = useTranslation();
   const keys: readonly CardTab[] = homework ? ['overview', 'lessons', 'homework'] : ['overview', 'lessons'];
@@ -919,6 +921,7 @@ function CardTabs({
     <RouteTabs
       label={t('studentCard.sections')}
       current={tab}
+      busy={homeworkPending}
       tabs={keys.map((key) => ({ key, to: cardTabAddress(cardId, key), label: cardTabLabel(t, key) }))}
     />
   );
@@ -1053,12 +1056,14 @@ function CardWithLessons({
   card,
   tab,
   homework,
+  homeworkPending,
   reloads,
   handlers,
 }: {
   readonly card: StudentCardDetail;
   readonly tab: CardTab;
   readonly homework: boolean;
+  readonly homeworkPending: boolean;
   readonly reloads: number;
   readonly handlers: CardHandlers;
 }): ReactElement {
@@ -1066,7 +1071,7 @@ function CardWithLessons({
     <>
       <CardSummary card={card} />
       <CardColumns card={card} reloads={reloads} handlers={handlers}>
-        <CardTabs cardId={card.id} tab={tab} homework={homework} />
+        <CardTabs cardId={card.id} tab={tab} homework={homework} homeworkPending={homeworkPending} />
         <CardTabContent card={card} tab={tab} homework={homework} />
       </CardColumns>
     </>
@@ -1251,7 +1256,16 @@ export function StudentCardPage(): ReactElement {
     if (shown === null) {
       return <DelayedLoading />;
     }
-    return <CardWithLessons card={shown} tab={tab} homework={homework} reloads={reloads} handlers={handlers} />;
+    return (
+      <CardWithLessons
+        card={shown}
+        tab={tab}
+        homework={homework}
+        homeworkPending={homeworkTexts.pending}
+        reloads={reloads}
+        handlers={handlers}
+      />
+    );
   }
 
   return (

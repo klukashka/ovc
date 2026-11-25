@@ -582,10 +582,12 @@ function GroupLessons({ group }: { readonly group: GroupDetail }): ReactElement 
 function GroupView({
   group,
   homework,
+  homeworkPending,
   handlers,
 }: {
   readonly group: GroupDetail;
   readonly homework: boolean;
+  readonly homeworkPending: boolean;
   readonly handlers: GroupHandlers;
 }): ReactElement {
   const { t } = useTranslation();
@@ -602,6 +604,7 @@ function GroupView({
       </p>
       <PageColumns
         asideLabel={t('lessons.next')}
+        busy={homeworkPending}
         main={
           <Members
             group={group}
@@ -723,7 +726,7 @@ export function GroupPage(): ReactElement {
     if (shown === null) {
       return <DelayedLoading />;
     }
-    return <GroupView group={shown} homework={homework} handlers={handlers} />;
+    return <GroupView group={shown} homework={homework} homeworkPending={homeworkTexts.pending} handlers={handlers} />;
   }
 
   return (

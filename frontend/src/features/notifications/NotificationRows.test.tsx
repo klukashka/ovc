@@ -182,6 +182,46 @@ describe('the notification rows before their event texts load', () => {
   });
 });
 
+describe('the busy state of the notification rows while their event texts load', () => {
+  test('the list is busy until its texts load', async () => {
+    const loaders = new ControlledLoaders();
+    await showRows(listOf(loaders));
+    const busyBefore = screen.getByRole('list', { name: 'Notifications' }).getAttribute('aria-busy');
+
+    await loaders.load();
+
+    expect(busyBefore).toBe('true');
+    expect(screen.getByRole('list', { name: 'Notifications' }).getAttribute('aria-busy')).toBe('false');
+  });
+
+  test('the table of the notifications page is busy until its texts load', async () => {
+    const loaders = new ControlledLoaders();
+    await showRows(
+      <NotificationTable
+        items={rows}
+        label="Notifications"
+        bodyRef={{ current: null }}
+        textLoaders={loaders.loaders}
+      />,
+    );
+    const busyBefore = screen.getByRole('table', { name: 'Notifications' }).getAttribute('aria-busy');
+
+    await loaders.load();
+
+    expect(busyBefore).toBe('true');
+    expect(screen.getByRole('table', { name: 'Notifications' }).getAttribute('aria-busy')).toBe('false');
+  });
+
+  test('the list is no longer busy once its texts fail to load', async () => {
+    const loaders = new ControlledLoaders();
+    await showRows(listOf(loaders));
+
+    await loaders.fail();
+
+    expect(screen.getByRole('list', { name: 'Notifications' }).getAttribute('aria-busy')).toBe('false');
+  });
+});
+
 describe('the notification rows after their event texts fail to load', () => {
   test('keep the generic label and offer a retry that loads the texts', async () => {
     const loaders = new ControlledLoaders();

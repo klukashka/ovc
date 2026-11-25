@@ -608,7 +608,7 @@ function Editor({
             </p>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div aria-busy={homeworkTexts.pending} className="flex flex-wrap items-center gap-3">
           <LiveNotice message={shownStatus} />
           {status.kind === 'failed' ? (
             <ActionButton

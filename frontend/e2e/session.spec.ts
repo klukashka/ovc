@@ -1,7 +1,8 @@
-import type { Page, Response } from '@playwright/test';
+import type { Locator, Page, Response } from '@playwright/test';
 
-import { newTestAccount, pageSettled, registerTutor, signInThroughTheApi } from './accounts.ts';
+import { newTestAccount, pageLoaded, pageSettled, registerTutor, signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser, type PageDiagnostics } from './fixtures.ts';
+import { bellIn } from './notifications.ts';
 import {
   accessTokenExpiredWithinSocketGrace,
   expectRefetchedAfterTheSocketIsReady,
@@ -9,6 +10,7 @@ import {
   todayQueryPaths,
   trafficAfterReady,
 } from './realtime.ts';
+import { seedActiveStudent } from './tutoring.ts';
 
 test.use({ locale: 'ru-RU' });
 
@@ -155,6 +157,59 @@ test('a page counts as settled only once its page module has loaded, not while i
 
   expect(order).toEqual(['released', 'settled']);
   await expect(page.getByLabel('Email')).toBeVisible();
+});
+
+async function heldUntilLoaded(page: Page, held: HeldPageModule, busy: Locator): Promise<readonly string[]> {
+  await held.requested;
+  await expect(busy).toHaveAttribute('aria-busy', 'true');
+  const order: string[] = [];
+  const loaded = pageLoaded(page).then(() => {
+    order.push('loaded');
+  });
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+  order.push('released');
+  held.release();
+  await loaded;
+  return order;
+}
+
+test('a page counts as loaded only once the texts of a section shown without its own loading state have loaded', async ({
+  page,
+  deployment,
+}) => {
+  const maria = await seedVerifiedUser(deployment, 'Мария');
+  const { cardId } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
+  const homeworkTexts = await holdThePageModule(page, 'texts.en');
+  await signInThroughTheApi(page, maria);
+  await page.goto(`/students/${cardId}`);
+  await expect(page.getByRole('heading', { level: 1, name: 'Анна' })).toBeVisible();
+  const sections = page.getByRole('navigation', { name: 'Разделы карточки' });
+
+  const order = await heldUntilLoaded(page, homeworkTexts, sections);
+
+  expect(order).toEqual(['released', 'loaded']);
+  await expect(sections).toHaveAttribute('aria-busy', 'false');
+});
+
+test('a page counts as loaded only once the event texts of the open notifications panel have loaded', async ({
+  page,
+  deployment,
+}) => {
+  const maria = await seedVerifiedUser(deployment, 'Мария');
+  await seedActiveStudent(deployment, maria, 'Анна', 'ru');
+  await signInThroughTheApi(page, maria);
+  await page.goto('/students');
+  await pageSettled(page);
+  const eventTexts = await holdThePageModule(page, 'texts.en');
+  await bellIn(page, /^Уведомления/).click();
+  const rows = page.getByRole('region', { name: 'Уведомления' }).getByRole('list', { name: 'Уведомления' });
+
+  const order = await heldUntilLoaded(page, eventTexts, rows);
+
+  expect(order).toEqual(['released', 'loaded']);
+  await expect(rows).toHaveAttribute('aria-busy', 'false');
 });
 
 test('a next address on another origin is ignored after sign-in', async ({ page, tutor }) => {

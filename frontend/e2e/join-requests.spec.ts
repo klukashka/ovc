@@ -2,7 +2,7 @@ import type { BrowserContext, Locator, Page } from '@playwright/test';
 
 import type { ObservedBrowser } from './browser-diagnostics.ts';
 
-import { type TestAccount, emailedLinkTo, newTestAccount, signInThroughTheApi } from './accounts.ts';
+import { type TestAccount, emailedLinkTo, newTestAccount, pageLoaded, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { bellIn, panelRowsIn } from './notifications.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor, tableRows } from './fixtures.ts';
@@ -125,6 +125,7 @@ test.describe('Boris in English', () => {
     await expect(accepted).toBeFocused();
     await expect(joinRequests(mariaPage).getByRole('listitem')).toHaveCount(0);
     await expect(joinRequests(mariaPage).getByText('Новых заявок нет.')).toBeVisible();
+    await pageLoaded(mariaPage);
     await mariaPage.goto('/students');
     await expect(tableRows(mariaPage, 'Действующие').getByRole('link', { name: /Boris/ })).toBeVisible();
     await expect(page.getByRole('list', { name: 'Tutors' }).getByRole('listitem')).toHaveText([/Мария/]);

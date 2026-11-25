@@ -16,15 +16,18 @@ export function RouteTabs<K extends string>({
   tabs,
   current,
   inFilterRow = false,
+  busy = false,
 }: {
   readonly label: string;
   readonly tabs: readonly RouteTab<K>[];
   readonly current: K | null;
   readonly inFilterRow?: boolean;
+  readonly busy?: boolean;
 }): ReactElement {
   return (
     <nav
       aria-label={label}
+      aria-busy={busy}
       className={inFilterRow ? 'shrink-0 border-b border-border desktop:border-b-0' : 'border-b border-border'}
     >
       <ul className="flex flex-wrap gap-6">

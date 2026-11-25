@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { linkClass } from '../../components/ui/Form.tsx';
-import { LoadFailed } from '../../components/ui/LoadState.tsx';
+import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { asApiError } from '../../lib/api/client.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
@@ -70,7 +70,7 @@ function LessonWorkWithTexts(props: {
   if (texts.ready) {
     return <LessonWorkList {...props} />;
   }
-  return texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : null;
+  return texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />;
 }
 
 export function LessonWork(props: {
