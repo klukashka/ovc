@@ -1011,6 +1011,15 @@ export class FakeAuthServer {
     this.lessons.set(id, { ...lesson, detail: { ...lesson.detail, ...change, version: lesson.detail.version + 1 } });
   }
 
+  removeLessonMember(id: string, email: string): void {
+    const lesson = this.lessons.get(id);
+    if (lesson === undefined) {
+      throw new Error('the fake server has no such lesson');
+    }
+    const accountId = this.account(email).me.id;
+    this.lessons.set(id, { ...lesson, members: lesson.members.filter((member) => member !== accountId) });
+  }
+
   refuseEmbedding(id: string): void {
     this.embeddingRefused.add(id);
   }

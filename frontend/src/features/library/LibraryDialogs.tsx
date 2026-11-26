@@ -483,6 +483,15 @@ function deleteQuestion(t: TFunction, target: LibraryTarget): string {
   return target.item.kind === 'material' ? t('library.deleteMaterial') : t('library.deleteTemplate');
 }
 
+function deleteTitle(t: TFunction, target: LibraryTarget): string {
+  if (target.kind === 'folder') {
+    return t('library.deleteFolderTitle', { name: target.folder.name });
+  }
+  return target.item.kind === 'material'
+    ? t('library.deleteMaterialTitle', { name: target.item.title })
+    : t('library.deleteTemplateTitle', { name: target.item.title });
+}
+
 function deleteLabel(t: TFunction, target: LibraryTarget): string {
   if (target.kind === 'folder') {
     return t('library.confirmDeleteFolder');
@@ -554,7 +563,7 @@ export function DeleteDialog({
       {target === null ? null : (
         <div className="flex flex-col gap-4">
           <h2 id={headingId} dir="auto" className="font-serif text-title break-words">
-            {targetName(target)}
+            {deleteTitle(t, target)}
           </h2>
           <p id={textId}>{deleteQuestion(t, target)}</p>
           {refusal === null ? null : <FormAlert key={refusals}>{refusal}</FormAlert>}

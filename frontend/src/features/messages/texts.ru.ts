@@ -40,6 +40,10 @@ export const chatTexts: ChatTexts = {
   cancel: 'Отмена',
   edit: 'Изменить',
   delete: 'Удалить',
+  deleteTitle: 'Удалить это сообщение?',
+  deleteConsequence:
+    'Для всех в чате оно сменится на «Сообщение удалено», а его вложения будут удалены. Это нельзя отменить.',
+  deleteConfirm: 'Удалить сообщение',
   menu: 'Действия с сообщением',
   history: 'Сообщения',
   noMessages: 'Пока нет сообщений',

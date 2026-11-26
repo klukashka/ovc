@@ -11,6 +11,7 @@ import {
   seedVerifiedUser,
   tableRows,
 } from './fixtures.ts';
+import { expectDangerConfirmation, expectLastDangerItem, openedMenu } from './dangerActions.ts';
 import {
   changeDeadlineThroughTheApi,
   createFolder,
@@ -1241,6 +1242,27 @@ test.describe('the issued work and the issue page', () => {
 
     await expect(pageMenuButton(page, 'Assignment actions')).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1, name: 'Fractions' })).toBeFocused();
+  });
+
+  test('Withdraw is the last item of Assignment actions after a separator and confirms with a filled button', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, pavel, 'Anna');
+    const template = await createReadyTemplate(deployment, pavel, 'Fractions');
+    const issueId = await issueThroughTheApi(deployment, pavel, template.id, { relationship_id: cardId });
+    await openIssuePage(page, pavel, issueId, 'Fractions');
+    await pageMenuButton(page, 'Assignment actions').click();
+    await expectLastDangerItem(page, 'Withdraw', true);
+
+    await openedMenu(page).getByRole('button', { name: 'Withdraw', exact: true }).click();
+
+    await expectDangerConfirmation(
+      page.getByRole('dialog', { name: 'Withdraw this assignment?' }),
+      'Withdraw assignment',
+      'Cancel',
+    );
   });
 
   test('a withdrawal refused because a student submitted meanwhile shows the focused alert', async ({

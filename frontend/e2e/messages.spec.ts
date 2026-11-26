@@ -6,6 +6,7 @@ import { type TestAccount, newTestAccount, signInThroughTheApi } from './account
 import type { Deployment } from './deployment.ts';
 import { type Diagnostics, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { channelOf, channelUnread } from './messages.ts';
+import { backgroundOf, transparent } from './dangerActions.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { accessToken, callApi, createCard, createGroup, seedActiveStudent, signUpOnInvitation } from './tutoring.ts';
 
@@ -230,6 +231,10 @@ test.describe('text messages', () => {
     await corrected.getByRole('button', { name: 'Message actions', exact: true }).click();
     await page.getByRole('button', { name: 'Delete', exact: true }).click();
     await page
+      .getByRole('dialog', { name: 'Delete this message?' })
+      .getByRole('button', { name: 'Delete message', exact: true })
+      .click();
+    await page
       .locator(`[data-row="${ownId ?? ''}"]`)
       .getByText('Message deleted', { exact: true })
       .waitFor();
@@ -240,6 +245,10 @@ test.describe('text messages', () => {
     const memberId = await member.getAttribute('data-row');
     await member.getByRole('button', { name: 'Message actions', exact: true }).click();
     await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Delete this message?' })
+      .getByRole('button', { name: 'Delete message', exact: true })
+      .click();
 
     expect(editFocus).toBe(true);
     expect(savedFocus).toBe(true);
@@ -248,6 +257,95 @@ test.describe('text messages', () => {
     await expect(messages(page).filter({ hasText: 'Message deleted' })).toHaveCount(2);
     await expect(messages(studentPage).filter({ hasText: 'Message deleted' })).toHaveCount(2);
     await diagnostics.closeContext(context);
+  });
+
+  test('messages › Delete is the last item of the message menu after a separator and asks first, opening on Cancel', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+    const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+    await signInThroughTheApi(page, tutor);
+    await openSettledConversation(page, channel, 'with the chat list');
+    await send(page, 'Something to delete');
+    const own = messages(page).filter({ hasText: 'Something to delete' });
+    await own.getByRole('button', { name: 'Message actions', exact: true }).click();
+    const menu = own.locator('[aria-expanded="true"] + div');
+    const lastItem = menu.locator(':scope > button:last-child');
+    await expect(lastItem).toHaveText('Delete');
+    await expect(lastItem).toHaveClass(/text-danger/);
+    await expect(lastItem.locator('svg')).toHaveCount(1);
+    await expect(menu.locator(':scope > hr')).toHaveCount(1);
+
+    await lastItem.click();
+
+    const dialog = page.getByRole('dialog', { name: 'Delete this message?' });
+    await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+    await expect(dialog.getByRole('button')).toHaveText(['Delete message', 'Cancel']);
+    expect(await backgroundOf(dialog.getByRole('button', { name: 'Delete message', exact: true }))).not.toBe(
+      transparent,
+    );
+    await expect(dialog).toContainText('its attachments are removed. It cannot be undone.');
+  });
+
+  test('messages › Cancel and Escape close the deletion dialog onto the message menu and keep the message', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+    const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+    await signInThroughTheApi(page, tutor);
+    await openSettledConversation(page, channel, 'with the chat list');
+    await send(page, 'Something to keep');
+    const own = messages(page).filter({ hasText: 'Something to keep' });
+    const opener = own.getByRole('button', { name: 'Message actions', exact: true });
+    const dialog = page.getByRole('dialog', { name: 'Delete this message?' });
+
+    await opener.click();
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+    await opener.click();
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await page.keyboard.press('Escape');
+
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+    await expect(own).not.toContainText('Message deleted');
+  });
+
+  test('messages › a message deleted elsewhere while its deletion dialog is open closes it onto the placeholder without a request', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+    const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+    await signInThroughTheApi(page, tutor);
+    await openSettledConversation(page, channel, 'with the chat list');
+    await send(page, 'Deleted in another tab');
+    const own = messages(page).filter({ hasText: 'Deleted in another tab' });
+    const ownId = (await own.getAttribute('data-row')) ?? '';
+    let deletions = 0;
+    page.on('request', (sent) => {
+      if (sent.method() === 'DELETE' && new URL(sent.url()).pathname === `/api/v1/messages/${ownId}`) {
+        deletions += 1;
+      }
+    });
+    await own.getByRole('button', { name: 'Message actions', exact: true }).click();
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Delete this message?' });
+    await expect(dialog).toBeVisible();
+
+    await callApi(deployment, await accessToken(deployment, tutor), 'DELETE', `/messages/${ownId}`);
+
+    await expect(dialog).toBeHidden();
+    await expect(page.locator(`[data-row="${ownId}"]`)).toContainText('Message deleted');
+    await expect(page.locator(`[data-row="${ownId}"]`)).toBeFocused();
+    expect(deletions).toBe(0);
   });
 
   test('messages › a stale edit explicitly keeps local text before a separate save', async ({
@@ -786,6 +884,10 @@ test.describe('replies and the pinned message', () => {
     const studentUnpins = await studentBar.getByRole('button', { name: 'Unpin', exact: true }).count();
     await pinned.getByRole('button', { name: 'Message actions', exact: true }).click();
     await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Delete this message?' })
+      .getByRole('button', { name: 'Delete message', exact: true })
+      .click();
     await studentBar.waitFor({ state: 'detached' });
     const question = messages(studentPage).filter({ hasText: 'The question to answer' });
     await question.focus();

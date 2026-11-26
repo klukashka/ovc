@@ -306,7 +306,26 @@ test.describe('library folders', () => {
     await chooseRowAction(page, 'Grammar', 'Delete');
 
     await expect(dialog(page).getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
-    await expect(dialog(page)).toContainText('Delete this folder?');
+    await expect(page.getByRole('dialog', { name: 'Delete the folder Grammar?' })).toContainText(
+      'The empty folder is deleted. Nobody is notified. It cannot be undone.',
+    );
+  });
+
+  test('Delete is the last item of the row menu after a separator, styled as dangerous', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await createFolder(deployment, tutor, 'Grammar');
+    await openLibrary(page, tutor);
+
+    await page.getByRole('button', { name: 'Actions for Grammar', exact: true }).click();
+
+    const lastItem = page.locator('main [aria-expanded="true"] + div').locator(':scope > button:last-child');
+    await expect(lastItem).toHaveText('Delete');
+    await expect(lastItem).toHaveClass(/text-danger/);
+    await expect(lastItem.locator('svg')).toHaveCount(1);
+    await expect(page.locator('main [aria-expanded="true"] + div').locator(':scope > hr')).toHaveCount(1);
   });
 
   test('the Delete confirmation shows its filled consequence first and a quiet Cancel after it', async ({
@@ -533,7 +552,10 @@ test.describe('library materials', () => {
     const question = await dialog(page).textContent();
     await dialog(page).getByRole('button', { name: 'Delete material', exact: true }).click();
 
-    expect(question).toContain('Delete this material? Lessons and assignments that use it keep the file.');
+    expect(question).toContain('Delete the material Chapter one?');
+    expect(question).toContain(
+      'Lessons and assignments that use it keep the file. Nobody is notified. It cannot be undone.',
+    );
     await expect(page.getByText('This folder is empty')).toBeVisible();
     await expect(heading(page)).toBeFocused();
   });
@@ -681,7 +703,8 @@ test.describe('library templates', () => {
     const question = await dialog(page).textContent();
     await dialog(page).getByRole('button', { name: 'Delete assignment', exact: true }).click();
 
-    expect(question).toContain('Delete this assignment? Files used only in it are deleted too.');
+    expect(question).toContain('Delete the assignment Quiz?');
+    expect(question).toContain('Files used only in it are deleted too. Nobody is notified. It cannot be undone.');
     await expect(items(page).getByRole('link', { name: 'Essay', exact: true })).toBeFocused();
     await expect(items(page).getByRole('link')).toHaveText(['Essay']);
   });

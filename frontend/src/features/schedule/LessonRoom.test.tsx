@@ -11,6 +11,7 @@ import { FakeAuthServer, type ManualScheduler, manualScheduler, memoryLocks } fr
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import type { LessonView } from './api.ts';
+import { lessonKey } from './keys.ts';
 import { LessonPage } from './LessonPage.tsx';
 import { embedLoadHintMilliseconds } from './LessonRoom.tsx';
 import { type OpenRoomTab, RoomTabContext } from './roomTab.ts';
@@ -301,7 +302,7 @@ describe('joining through a new tab', () => {
 
     paused.resume();
 
-    expect(await screen.findByRole('button', { name: 'Подключиться к уроку' })).toBe(button);
+    expect(await screen.findByRole('button', { name: 'Подключиться снова' })).toBe(button);
     expect(document.activeElement).toBe(button);
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByText('Урок открыт в другой вкладке')).toBeNull();
@@ -403,6 +404,80 @@ describe('leaving while the join is in flight', () => {
     expect(shown.tabs.only().closed).toBe(true);
     expect(await screen.findByRole('button', { name: 'Подключиться к уроку' })).toBeTruthy();
     expect(shown.tabs.only().visited).toEqual([]);
+  });
+});
+
+describe('losing the lesson while the join is in flight', () => {
+  test('a lesson that answers not found closes the tab and drops the late answer', async () => {
+    const shown = await showRoom({ lesson: liveLesson });
+    const paused = shown.server.pauseLessonWrites();
+    fireEvent.click(joinButton('Подключиться снова'));
+    await paused.received;
+    shown.server.removeLessonMember(liveLesson.id, tutorEmail);
+
+    await act(async () => {
+      await shown.queryClient.invalidateQueries({ queryKey: lessonKey(liveLesson.id) });
+    });
+    await waitFor(() => {
+      expect(shown.tabs.only().closed).toBe(true);
+    });
+    await act(async () => {
+      paused.resume();
+      await Promise.resolve();
+    });
+
+    expect(shown.tabs.only().visited).toEqual([]);
+  });
+});
+
+describe('the lesson controls when the lesson goes live early', () => {
+  test('focus on Edit moves to the heading when the lesson goes live before its start', async () => {
+    const shown = await showRoom();
+    joinButton('Изменить урок').focus();
+    shown.server.changeLesson(scheduledLesson.id, { status: 'live', took_place: true, room_open: true });
+
+    await act(async () => {
+      await shown.queryClient.invalidateQueries({ queryKey: lessonKey(scheduledLesson.id) });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Изменить урок' })).toBeNull();
+    });
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
+  });
+
+  test('focus on Lesson actions stays on it when the lesson goes live before its start', async () => {
+    const shown = await showRoom();
+    const menu = joinButton('Действия с уроком');
+    menu.focus();
+    shown.server.changeLesson(scheduledLesson.id, { status: 'live', took_place: true, room_open: true });
+
+    await act(async () => {
+      await shown.queryClient.invalidateQueries({ queryKey: lessonKey(scheduledLesson.id) });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Изменить урок' })).toBeNull();
+    });
+    expect(document.activeElement).toBe(joinButton('Действия с уроком'));
+    expect(joinButton('Действия с уроком')).toBe(menu);
+  });
+});
+
+describe('the live lesson actions menu', () => {
+  test('focus on Lesson actions moves to the heading when the lesson is ended elsewhere', async () => {
+    const shown = await showRoom({ lesson: liveLesson });
+    joinButton('Действия с уроком').focus();
+    shown.server.changeLesson(liveLesson.id, { status: 'ended', room_open: false });
+
+    await act(async () => {
+      await shown.queryClient.invalidateQueries({ queryKey: lessonKey(liveLesson.id) });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Действия с уроком' })).toBeNull();
+    });
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
   });
 });
 
@@ -633,26 +708,28 @@ describe('the embedded room', () => {
 });
 
 describe('ending the lesson and restarting the room', () => {
-  test('a student sees neither End lesson nor Restart the room', async () => {
+  test('a student has no Lesson actions menu and sees neither End lesson nor Restart the room', async () => {
     await showRoom({ role: 'student', lesson: liveLesson });
 
+    const menu = screen.queryByRole('button', { name: 'Действия с уроком' });
     const end = screen.queryByRole('button', { name: 'Завершить урок' });
     const restart = screen.queryByRole('button', { name: 'Перезапустить комнату' });
 
+    expect(menu).toBeNull();
     expect(end).toBeNull();
     expect(restart).toBeNull();
   });
-  test('while a join is pending End lesson and Restart the room refuse to open their dialogs', async () => {
+  test('while a join is pending Lesson actions is unavailable and opens no menu', async () => {
     const shown = await showRoom({ lesson: liveLesson });
     const paused = shown.server.pauseLessonWrites();
     fireEvent.click(joinButton('Подключиться снова'));
     await paused.received;
 
-    fireEvent.click(joinButton('Завершить урок'));
-    fireEvent.click(joinButton('Перезапустить комнату'));
+    fireEvent.click(joinButton('Действия с уроком'));
 
-    expect(joinButton('Завершить урок').getAttribute('aria-disabled')).toBe('true');
-    expect(joinButton('Перезапустить комнату').getAttribute('aria-disabled')).toBe('true');
+    expect(joinButton('Действия с уроком').getAttribute('aria-disabled')).toBe('true');
+    expect(joinButton('Действия с уроком').getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: 'Завершить урок' })).toBeNull();
     expect(lessonWrites(shown.server)).toEqual([`/api/v1/lessons/${liveLesson.id}/join`]);
     await act(async () => {
       paused.resume();

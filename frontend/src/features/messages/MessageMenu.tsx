@@ -3,10 +3,13 @@ import { type ReactElement, useEffect, useId, useLayoutEffect, useRef, useState 
 import { useScheduler } from '../../app/clock.ts';
 import { ActionButton, quietButtonClass } from '../../components/ui/Form.tsx';
 import { useChatWrite } from '../../components/ui/chatWrite.ts';
-import { MoreIcon } from '../../components/ui/icons.tsx';
+import { MoreIcon, WarningIcon } from '../../components/ui/icons.tsx';
 import type { ReactionValue } from './api.ts';
 import { reactionEmoji, reactionName, reactionValues } from './Reactions.tsx';
 import type { ChatTexts } from './translations.ts';
+
+const deleteItemClass =
+  'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border-strong px-4 text-strong text-danger hover:bg-surface aria-disabled:opacity-60';
 
 const moreButtonClass =
   'inline-flex size-11 items-center justify-center rounded-full text-icon hover:bg-surface hover:text-text desktop:pointer-fine:size-8 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100 pointer-fine:aria-expanded:opacity-100';
@@ -243,21 +246,27 @@ export function MessageMenu({
             </ActionButton>
           )}
           {onDelete === null ? null : (
-            <ActionButton
-              busy={busy}
-              unavailable={guard.unavailable}
-              unavailableReason={guard.reason}
-              className={quietButtonClass}
-              onClick={() => {
-                guard.run(() => {
-                  setOpen(false);
-                  button.current?.focus();
-                  onDelete();
-                });
-              }}
-            >
-              {texts.delete}
-            </ActionButton>
+            <>
+              {editable || pin !== null || reaction !== null || onReply !== null ? (
+                <hr className="my-1 border-border" />
+              ) : null}
+              <ActionButton
+                busy={busy}
+                unavailable={guard.unavailable}
+                unavailableReason={guard.reason}
+                className={deleteItemClass}
+                onClick={() => {
+                  guard.run(() => {
+                    setOpen(false);
+                    button.current?.focus();
+                    onDelete();
+                  });
+                }}
+              >
+                <WarningIcon />
+                {texts.delete}
+              </ActionButton>
+            </>
           )}
         </div>
       ) : null}

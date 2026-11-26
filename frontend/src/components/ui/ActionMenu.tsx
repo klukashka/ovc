@@ -6,7 +6,7 @@ const menuButtonClass =
   'inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-border-strong px-3 text-strong text-text hover:bg-surface aria-disabled:opacity-60';
 
 const menuItemClass =
-  'flex min-h-11 w-full items-center gap-2 rounded-sm px-2.5 text-left text-small hover:bg-hover desktop:pointer-fine:min-h-8';
+  'flex min-h-11 w-full items-center gap-2 rounded-sm px-2.5 text-left text-small hover:bg-hover aria-disabled:opacity-60 desktop:pointer-fine:min-h-8';
 
 const dangerMenuItemClass = `${menuItemClass} text-danger`;
 
@@ -50,7 +50,11 @@ export function ActionMenu({
       <button
         key={item.label}
         type="button"
+        aria-disabled={unavailable}
         onClick={() => {
+          if (unavailable) {
+            return;
+          }
           setOpen(false);
           button.current?.focus();
           item.onChoose();

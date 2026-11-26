@@ -34,9 +34,10 @@ import { LessonIssues } from '../homework/LessonIssues.tsx';
 import { withIssuesOf } from './lessonCache.ts';
 import { studentWorkOf, tutorIssuesOf } from './lessonIssues.ts';
 import { LessonMaterials } from './LessonMaterials.tsx';
-import { LessonRoom } from './LessonRoom.tsx';
+import { type LiveLessonActions, LessonRoom, useLiveLessonActions } from './LessonRoom.tsx';
 import { type LessonPhase, dialogOutdated, isEditable, phaseOf, useLessonClock } from './lessonTiming.ts';
 import { addressRenewalDelay } from './materials.ts';
+import { useRoomEntry } from './roomEntry.ts';
 import { type LessonPrefill, newLessonAddress } from './newLesson.ts';
 import { seriesTimingIn } from './seriesTiming.ts';
 
@@ -393,21 +394,25 @@ export function LessonActionsMenu({
   menuButton,
   series,
   onOpen,
+  live = null,
 }: {
   readonly menuButton: RefObject<HTMLButtonElement | null>;
   readonly series: boolean;
   readonly onOpen: (kind: DialogKind) => void;
+  readonly live?: Pick<LiveLessonActions, 'items' | 'unavailable'> | null;
 }): ReactElement {
   const { t } = useTranslation();
   useReturnFocus(lessonActionsOpener, menuButton);
   const cancel: MenuItem = {
     label: t('lesson.cancel'),
+    danger: true,
     onChoose: (): void => {
       onOpen('cancel');
     },
   };
   const endSeries: MenuItem = {
     label: t('lesson.endSeries'),
+    danger: true,
     onChoose: (): void => {
       onOpen('endSeries');
     },
@@ -415,8 +420,8 @@ export function LessonActionsMenu({
   return (
     <ActionMenu
       label={t('lesson.actions')}
-      unavailable={false}
-      items={series ? [cancel, endSeries] : [cancel]}
+      unavailable={live?.unavailable ?? false}
+      items={live === null ? (series ? [cancel, endSeries] : [cancel]) : live.items}
       buttonRef={menuButton}
     >
       <MoreIcon />
@@ -433,6 +438,10 @@ export function headingOf(lesson: LessonDetail | undefined, notFound: boolean): 
 
 export function LessonPage(): ReactElement {
   const { lessonId = '' } = useParams();
+  return <LessonPageFor key={lessonId} lessonId={lessonId} />;
+}
+
+function LessonPageFor({ lessonId }: { readonly lessonId: string }): ReactElement {
   const me = useSignedInAccount();
   const client = useApiClient();
   const queryClient = useQueryClient();
@@ -471,7 +480,23 @@ export function LessonPage(): ReactElement {
   const lesson = error === null ? query.data : undefined;
   const shownNotice = notice !== null && notice.lessonId === lessonId && !notFound ? notice : null;
   const controlsShown = lessonControlsShown(me, lesson, now);
-  useHeadingWhenControlsLeave(controlsShown);
+  const entry = useRoomEntry(lessonId);
+  if (lesson !== undefined) {
+    entry.observeLesson(lesson);
+  }
+  const lessonShown = lesson !== undefined;
+  const { leaveRoom } = entry;
+  const shownBefore = useRef(false);
+  useEffect(() => {
+    if (lessonShown) {
+      shownBefore.current = true;
+      return;
+    }
+    if (shownBefore.current) {
+      shownBefore.current = false;
+      leaveRoom();
+    }
+  }, [lessonShown, leaveRoom]);
 
   const noticeOf = useCallback(
     (kind: PageNotice['kind']): void => {
@@ -485,6 +510,19 @@ export function LessonPage(): ReactElement {
   const roomEnded = useCallback((): void => {
     noticeOf('ended');
   }, [noticeOf]);
+  const liveActions = useLiveLessonActions({
+    lessonId,
+    lesson,
+    me,
+    entry,
+    menuButton,
+    onChangedMeanwhile: roomChangedMeanwhile,
+    onEnded: roomEnded,
+  });
+  const liveMenuShown = !controlsShown && liveActions.items.length > 0;
+  const menuShown = controlsShown || liveMenuShown;
+  useHeadingWhenControlsLeave(controlsShown);
+  useHeadingWhenControlsLeave(menuShown);
 
   if (dialog !== null && !action.busy && dialogOutdated(dialog.lesson, lesson, now)) {
     setDialog(null);
@@ -574,8 +612,8 @@ export function LessonPage(): ReactElement {
             lesson={lesson}
             me={me}
             phase={phaseOf(lesson, now)}
-            onChangedMeanwhile={roomChangedMeanwhile}
-            onEnded={roomEnded}
+            entry={entry}
+            dialogOpen={liveActions.dialogOpen}
           />
         }
         materials={
@@ -627,8 +665,13 @@ export function LessonPage(): ReactElement {
         </>
       }
       menu={
-        controlsShown && lesson !== undefined ? (
-          <LessonActionsMenu menuButton={menuButton} series={lesson.series !== null} onOpen={open} />
+        menuShown && lesson !== undefined ? (
+          <LessonActionsMenu
+            menuButton={menuButton}
+            series={lesson.series !== null}
+            onOpen={open}
+            live={liveMenuShown ? liveActions : null}
+          />
         ) : null
       }
     >
@@ -648,6 +691,7 @@ export function LessonPage(): ReactElement {
       )}
       <LiveNotice message={announcement} />
       {body()}
+      {liveActions.dialogs}
       {tutor ? (
         <>
           <EditLessonDialog

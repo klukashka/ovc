@@ -11,7 +11,15 @@ import { type ActionState, done, refusedBy, showsStaleData, useAction } from '..
 import { followUpQueuedFor } from '../../app/queryClient.ts';
 import { ActionMenu } from '../../components/ui/ActionMenu.tsx';
 import { Avatar } from '../../components/ui/Avatar.tsx';
-import { ActionButton, FormAlert, FormNotice, quietButtonClass } from '../../components/ui/Form.tsx';
+import { ModalDialog } from '../../components/ui/Dialog.tsx';
+import {
+  ActionButton,
+  FormActions,
+  FormAlert,
+  FormNotice,
+  dangerFilledButtonClass,
+  quietButtonClass,
+} from '../../components/ui/Form.tsx';
 import { MoreIcon } from '../../components/ui/icons.tsx';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
@@ -83,16 +91,24 @@ export function useJoinRequestsSettled(): boolean {
   return useSettledOnce(me.state !== 'active' || !query.isPending);
 }
 
+function menuIdOf(base: string, request: TutorJoinRequest): string {
+  return `${base}-${request.id}`;
+}
+
 function RequestRow({
   request,
+  menuId,
   started,
   unavailable,
   onDecide,
+  onBlock,
 }: {
   readonly request: TutorJoinRequest;
+  readonly menuId: string;
   readonly started: Decision | null;
   readonly unavailable: boolean;
   readonly onDecide: (decision: Decision) => void;
+  readonly onBlock: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
@@ -138,12 +154,14 @@ function RequestRow({
           label={t('joinRequests.more', { name })}
           busy={started === 'block'}
           unavailable={unavailable}
+          buttonId={menuId}
           items={[
             {
               label: t('joinRequests.declineAndBlock'),
+              danger: true,
               onChoose: (): void => {
                 if (!unavailable) {
-                  onDecide('block');
+                  onBlock();
                 }
               },
             },
@@ -185,8 +203,19 @@ function JoinRequestList({
   const [decided, setDecided] = useState<{ readonly decision: Decision; readonly count: number } | null>(null);
   const [deciding, setDeciding] = useState<{ readonly id: string; readonly decision: Decision } | null>(null);
   const [refusals, setRefusals] = useState(0);
+  const [blocking, setBlocking] = useState<TutorJoinRequest | null>(null);
+  const [goneWhileBlocking, setGoneWhileBlocking] = useState(0);
+  const menuIds = useId();
+  const blockHeadingId = useId();
+  const blockConsequenceId = useId();
+  const blockMenuButton = useRef<HTMLElement | null>(null);
+  const keepRequest = useRef<HTMLButtonElement>(null);
   const action = useAction();
   const { requests } = source;
+  if (blocking !== null && !action.busy && !requests.some((request) => request.id === blocking.id)) {
+    setBlocking(null);
+    setGoneWhileBlocking((count) => count + 1);
+  }
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLUListElement>(
     requests.length,
     ':scope > li [data-first-in-row]',
@@ -204,6 +233,7 @@ function JoinRequestList({
     if (action.busy) {
       return;
     }
+    setGoneWhileBlocking(0);
     setDecided(null);
     setDeciding({ id, decision });
     action.run(async (): Promise<ActionState> => {
@@ -222,6 +252,9 @@ function JoinRequestList({
 
   function refusal(): ReactElement | null {
     const state = action.state;
+    if (goneWhileBlocking > 0) {
+      return <FormAlert key={`gone-${String(goneWhileBlocking)}`}>{t('joinRequests.changed')}</FormAlert>;
+    }
     if (state.kind !== 'refused') {
       return null;
     }
@@ -261,10 +294,16 @@ function JoinRequestList({
               <RequestRow
                 key={request.id}
                 request={request}
+                menuId={menuIdOf(menuIds, request)}
                 started={action.busy && deciding?.id === request.id ? deciding.decision : null}
                 unavailable={action.busy}
                 onDecide={(decision) => {
                   decide(request.id, decision);
+                }}
+                onBlock={() => {
+                  blockMenuButton.current = document.getElementById(menuIdOf(menuIds, request));
+                  setGoneWhileBlocking(0);
+                  setBlocking(request);
                 }}
               />
             ))}
@@ -304,7 +343,11 @@ function JoinRequestList({
   const nothingToShow =
     source.state === 'closed' ||
     source.state === 'pending' ||
-    (source.state === 'ready' && requests.length === 0 && decided === null && action.state.kind !== 'refused');
+    (source.state === 'ready' &&
+      requests.length === 0 &&
+      decided === null &&
+      goneWhileBlocking === 0 &&
+      action.state.kind !== 'refused');
   if (hideWhenEmpty && nothingToShow) {
     return null;
   }
@@ -313,6 +356,48 @@ function JoinRequestList({
       <h2 ref={heading} id={headingId} tabIndex={-1} className="text-heading outline-none">
         {t('joinRequests.title')}
       </h2>
+      <ModalDialog
+        open={blocking !== null}
+        busy={false}
+        labelledBy={blockHeadingId}
+        describedBy={blockConsequenceId}
+        returnFocus={blockMenuButton}
+        initialFocus={keepRequest}
+        onClose={() => {
+          setBlocking(null);
+        }}
+      >
+        {blocking === null ? null : (
+          <div className="flex flex-col gap-4">
+            <h2 id={blockHeadingId} className="text-heading">
+              {t('joinRequests.blockTitle', { name: blocking.student.name })}
+            </h2>
+            <p id={blockConsequenceId}>{t('joinRequests.blockConsequence')}</p>
+            <FormActions>
+              <ActionButton
+                busy={false}
+                onClick={() => {
+                  setBlocking(null);
+                  decide(blocking.id, 'block');
+                }}
+                className={dangerFilledButtonClass}
+              >
+                {t('joinRequests.declineAndBlock')}
+              </ActionButton>
+              <ActionButton
+                ref={keepRequest}
+                busy={false}
+                onClick={() => {
+                  setBlocking(null);
+                }}
+                className={quietButtonClass}
+              >
+                {t('joinRequests.cancel')}
+              </ActionButton>
+            </FormActions>
+          </div>
+        )}
+      </ModalDialog>
       {body()}
       {children}
     </section>

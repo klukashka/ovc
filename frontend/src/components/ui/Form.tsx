@@ -12,8 +12,6 @@ export const primaryButtonClass =
   'inline-flex min-h-11 items-center justify-center rounded-md bg-accent px-4 text-strong text-on-accent hover:bg-accent-hover aria-disabled:opacity-60';
 export const quietButtonClass =
   'inline-flex min-h-11 items-center justify-center rounded-md border border-border-strong px-4 text-strong text-text hover:bg-surface aria-disabled:opacity-60';
-export const dangerButtonClass =
-  'inline-flex min-h-11 items-center justify-center rounded-md border border-danger px-4 text-strong text-danger hover:bg-surface aria-disabled:opacity-60';
 export const dangerFilledButtonClass =
   'inline-flex min-h-11 items-center justify-center rounded-md border border-danger bg-danger px-4 text-strong text-on-accent hover:bg-danger/90 aria-disabled:opacity-60';
 export const textButtonClass =

@@ -7,6 +7,7 @@ import type { Deployment } from './deployment.ts';
 import { bellIn, panelRowsIn } from './notifications.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor, tableRows } from './fixtures.ts';
 import { busyControls, offsetsBelowHeading, recordBusyControls, recordFirstOffsets } from './observers.ts';
+import { expectDangerConfirmation, expectLastDangerItem, openedMenu } from './dangerActions.ts';
 import { expectReadyForNavigation, todayQueryPaths, trafficAfterReady } from './realtime.ts';
 import {
   acceptSignedIn,
@@ -308,14 +309,89 @@ test.describe('Olga in Russian', () => {
     await page.goto('/students');
     const request = joinRequests(page).getByRole('listitem').filter({ hasText: anna.email });
     await request.getByRole('button', { name: 'Другие действия: Анна' }).click();
-
     await joinRequests(page).getByRole('button', { name: 'Отклонить и заблокировать' }).click();
+
+    await page
+      .getByRole('dialog', { name: 'Отклонить и заблокировать: Анна?' })
+      .getByRole('button', { name: 'Отклонить и заблокировать', exact: true })
+      .click();
 
     const declined = joinRequests(page).getByRole('status');
     await expect(declined).toHaveText('Заявка отклонена. Заявки этого ученика к вам больше не приходят.');
     await expect(declined).toBeFocused();
     await expect(joinRequests(page).getByRole('listitem')).toHaveCount(0);
     expect(await busyControls(page)).toEqual([['Другие действия: Анна']]);
+  });
+  test('join requests › Decline and block is the dangerous item of the request menu and asks first, opening on Cancel', async ({
+    page,
+    deployment,
+  }) => {
+    const { anna, olga } = await seedRequestToOlga(deployment);
+    await signInThroughTheApi(page, olga);
+    await page.goto('/students');
+    const request = joinRequests(page).getByRole('listitem').filter({ hasText: anna.email });
+    await request.getByRole('button', { name: 'Другие действия: Анна' }).click();
+    await expectLastDangerItem(page, 'Отклонить и заблокировать', false);
+
+    await openedMenu(page).getByRole('button', { name: 'Отклонить и заблокировать', exact: true }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Отклонить и заблокировать: Анна?' });
+    await expectDangerConfirmation(dialog, 'Отклонить и заблокировать', 'Отмена');
+    await expect(dialog).toContainText('Ученик увидит только, что эта заявка не принята.');
+    await expect(request).toBeVisible();
+  });
+
+  test('join requests › Cancel and Escape close the block dialog onto the request menu and decide nothing', async ({
+    page,
+    deployment,
+  }) => {
+    const { anna, olga } = await seedRequestToOlga(deployment);
+    await signInThroughTheApi(page, olga);
+    await page.goto('/students');
+    const request = joinRequests(page).getByRole('listitem').filter({ hasText: anna.email });
+    const menu = request.getByRole('button', { name: 'Другие действия: Анна' });
+    const dialog = page.getByRole('dialog', { name: 'Отклонить и заблокировать: Анна?' });
+
+    await menu.click();
+    await openedMenu(page).getByRole('button', { name: 'Отклонить и заблокировать', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(menu).toBeFocused();
+    await menu.click();
+    await openedMenu(page).getByRole('button', { name: 'Отклонить и заблокировать', exact: true }).click();
+    await page.keyboard.press('Escape');
+
+    await expect(dialog).toBeHidden();
+    await expect(menu).toBeFocused();
+    await expect(request).toBeVisible();
+  });
+
+  test('join requests › a request decided elsewhere while the block dialog is open closes it without a request', async ({
+    page,
+    deployment,
+  }) => {
+    const { anna, olga } = await seedRequestToOlga(deployment);
+    await signInThroughTheApi(page, olga);
+    await page.goto('/students');
+    const request = joinRequests(page).getByRole('listitem').filter({ hasText: anna.email });
+    let declines = 0;
+    page.on('request', (sent) => {
+      if (sent.method() === 'POST' && new URL(sent.url()).pathname.endsWith('/decline')) {
+        declines += 1;
+      }
+    });
+    await request.getByRole('button', { name: 'Другие действия: Анна' }).click();
+    await openedMenu(page).getByRole('button', { name: 'Отклонить и заблокировать', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Отклонить и заблокировать: Анна?' });
+    await expect(dialog).toBeVisible();
+
+    await decideJoinRequest(deployment, olga, anna.email, 'decline');
+
+    await expect(dialog).toBeHidden();
+    await expect(
+      joinRequests(page).getByRole('alert').filter({ hasText: 'Эта заявка уже не действует. Список обновлён.' }),
+    ).toBeFocused();
+    expect(declines).toBe(0);
   });
 });
 

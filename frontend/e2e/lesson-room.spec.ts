@@ -19,6 +19,7 @@ import {
   waitForSockets,
 } from './realtime.ts';
 import { localClock, localDate, readLesson, scheduleLessonsWithIds } from './schedule.ts';
+import { expectDangerConfirmation } from './dangerActions.ts';
 import { accessToken, callApi, createCard, acceptSignedIn, createGroup } from './tutoring.ts';
 
 const moscow = 'Europe/Moscow';
@@ -102,6 +103,15 @@ function editLessonButton(page: Page): ReturnType<Page['getByRole']> {
 
 function roomButton(page: Page, name: string): ReturnType<Page['getByRole']> {
   return page.getByRole('region', { name: 'Видеокомната' }).getByRole('button', { name, exact: true });
+}
+
+function lessonActions(page: Page): ReturnType<Page['getByRole']> {
+  return page.getByRole('button', { name: 'Действия с уроком', exact: true });
+}
+
+async function chooseLiveAction(page: Page, name: string): Promise<void> {
+  await lessonActions(page).click();
+  await page.locator('main [aria-expanded="true"] + div').getByRole('button', { name, exact: true }).click();
 }
 
 async function joinInNewTab(page: Page, button: string, diagnostics: Diagnostics): Promise<Page> {
@@ -288,7 +298,7 @@ test.describe('the lesson room through a new tab', () => {
     await release();
   });
 
-  test('lesson room › a join in flight while the start passes and the header controls leave enters its blank tab', async ({
+  test('lesson room › a join in flight while the start passes and Edit leaves enters its blank tab', async ({
     page,
     deployment,
     control,
@@ -308,7 +318,7 @@ test.describe('the lesson room through a new tab', () => {
     expect(blank.isClosed()).toBe(false);
     expect(page.context().pages()).toHaveLength(2);
     await expect(editLessonButton(page)).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Действия с уроком' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Действия с уроком' })).toHaveCount(1);
     await expect(roomButton(page, 'Открыть снова')).toBeFocused();
   });
 
@@ -537,27 +547,89 @@ test.describe('ending the lesson and restarting the room', () => {
     test(`lesson room › the dialog of «${name}» opens on Cancel`, async ({ page, deployment, control }) => {
       await liveLesson(page, deployment, control);
 
-      await roomButton(page, name).click();
+      await chooseLiveAction(page, name);
 
-      await expect(page.getByRole('dialog', { name }).getByRole('button', { name: 'Отмена' })).toBeFocused();
+      await expectDangerConfirmation(page.getByRole('dialog', { name: `${name}?` }), name, 'Отмена');
     });
 
-    test(`lesson room › dismissing the dialog of «${name}» returns focus to its button`, async ({
+    test(`lesson room › Escape closes the dialog of «${name}» onto Lesson actions`, async ({
       page,
       deployment,
       control,
     }) => {
       await liveLesson(page, deployment, control);
-      await roomButton(page, name).click();
+      await chooseLiveAction(page, name);
 
-      await page.getByRole('dialog', { name }).getByRole('button', { name: 'Отмена' }).click();
+      await page.keyboard.press('Escape');
 
       await expect(page.getByRole('dialog')).toHaveCount(0);
-      await expect(roomButton(page, name)).toBeFocused();
+      await expect(lessonActions(page)).toBeFocused();
+    });
+
+    test(`lesson room › dismissing the dialog of «${name}» returns focus to Lesson actions`, async ({
+      page,
+      deployment,
+      control,
+    }) => {
+      await liveLesson(page, deployment, control);
+      await chooseLiveAction(page, name);
+
+      await page
+        .getByRole('dialog', { name: `${name}?` })
+        .getByRole('button', { name: 'Отмена' })
+        .click();
+
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await expect(lessonActions(page)).toBeFocused();
     });
   }
 
-  test('lesson room › while a join is pending End and Restart do nothing', async ({
+  test('lesson room › End and Restart are the dangerous items of Lesson actions while the lesson is live and are no longer below the room', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    await liveLesson(page, deployment, control);
+
+    await lessonActions(page).click();
+
+    const items = page.locator('main [aria-expanded="true"] + div').locator(':scope > button');
+    await expect(items).toHaveText(['Перезапустить комнату', 'Завершить урок']);
+    await expect(items.nth(0)).toHaveClass(/text-danger/);
+    await expect(items.nth(1)).toHaveClass(/text-danger/);
+    await expect(items.locator('svg')).toHaveCount(2);
+    await expect(roomButton(page, 'Завершить урок')).toHaveCount(0);
+    await expect(roomButton(page, 'Перезапустить комнату')).toHaveCount(0);
+  });
+
+  test('lesson room › a join refusal left in the room disappears once Restart enters the room', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const seed = await liveLesson(page, deployment, control);
+    await setFakeAvailability(deployment, false);
+    diagnostics.expectFailure({ method: 'POST', path: `/api/v1/lessons/${seed.lessonId}/join`, status: 503 });
+    const refused = page.context().waitForEvent('page');
+    await roomButton(page, 'Подключиться снова').click();
+    await diagnostics.watch(await refused);
+    await expect(page.getByRole('region', { name: 'Видеокомната' }).getByRole('alert')).toHaveText(unavailableText);
+    await setFakeAvailability(deployment, true);
+    await chooseLiveAction(page, 'Перезапустить комнату');
+    const opened = page.context().waitForEvent('page');
+
+    await page
+      .getByRole('dialog', { name: 'Перезапустить комнату?' })
+      .getByRole('button', { name: 'Перезапустить комнату', exact: true })
+      .click();
+    await diagnostics.watch(await opened);
+
+    await expect(page.getByText(inAnotherTab)).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Видеокомната' }).getByRole('alert')).toHaveCount(0);
+  });
+
+  test('lesson room › while a join is pending Lesson actions is unavailable and opens no dialog', async ({
     page,
     deployment,
     control,
@@ -566,12 +638,11 @@ test.describe('ending the lesson and restarting the room', () => {
     await liveLesson(page, deployment, control);
     const { release } = await heldJoinTab(page, 'Подключиться снова', diagnostics);
 
-    await roomButton(page, 'Перезапустить комнату').press('Enter');
-    await roomButton(page, 'Завершить урок').press('Enter');
+    await lessonActions(page).press('Enter');
 
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(roomButton(page, 'Перезапустить комнату')).toHaveAttribute('aria-disabled', 'true');
-    await expect(roomButton(page, 'Завершить урок')).toHaveAttribute('aria-disabled', 'true');
+    await expect(lessonActions(page)).toHaveAttribute('aria-disabled', 'true');
+    await expect(lessonActions(page)).toHaveAttribute('aria-expanded', 'false');
     await release();
   });
 
@@ -581,7 +652,7 @@ test.describe('ending the lesson and restarting the room', () => {
     control,
   }) => {
     const seed = await liveLesson(page, deployment, control);
-    await roomButton(page, 'Завершить урок').click();
+    await chooseLiveAction(page, 'Завершить урок');
 
     await page.getByRole('dialog').getByRole('button', { name: 'Завершить урок' }).click();
 
@@ -602,7 +673,7 @@ test.describe('ending the lesson and restarting the room', () => {
     const studentPage = await studentPageOf(observedBrowser, deployment, diagnostics);
     await openLesson(studentPage, seed.student, seed.lessonId, control);
     await roomButton(studentPage, 'Подключиться').focus();
-    await roomButton(page, 'Завершить урок').click();
+    await chooseLiveAction(page, 'Завершить урок');
 
     await page.getByRole('dialog').getByRole('button', { name: 'Завершить урок' }).click();
 
@@ -611,7 +682,7 @@ test.describe('ending the lesson and restarting the room', () => {
     await expect(studentPage.getByRole('heading', { level: 1 })).toBeFocused();
   });
 
-  test('lesson room › a restart opens a fresh tab, ends the old room and returns focus to its button', async ({
+  test('lesson room › a restart opens a fresh tab, ends the old room and returns focus to Lesson actions', async ({
     page,
     deployment,
     control,
@@ -619,9 +690,9 @@ test.describe('ending the lesson and restarting the room', () => {
   }) => {
     await liveLesson(page, deployment, control);
     const oldRoom = await joinInNewTab(page, 'Подключиться снова', diagnostics);
-    const restart = roomButton(page, 'Перезапустить комнату');
-    await restart.click();
-    const dialog = page.getByRole('dialog', { name: 'Перезапустить комнату' });
+    await chooseLiveAction(page, 'Перезапустить комнату');
+    const restart = lessonActions(page);
+    const dialog = page.getByRole('dialog', { name: 'Перезапустить комнату?' });
     const opened = page.context().waitForEvent('page');
 
     await dialog.getByRole('button', { name: 'Перезапустить комнату' }).click();
@@ -642,10 +713,10 @@ test.describe('ending the lesson and restarting the room', () => {
     diagnostics,
   }) => {
     const seed = await liveLesson(page, deployment, control);
-    await roomButton(page, 'Перезапустить комнату').click();
+    await chooseLiveAction(page, 'Перезапустить комнату');
     await setFakeAvailability(deployment, false);
     diagnostics.expectFailure({ method: 'POST', path: `/api/v1/lessons/${seed.lessonId}/restart-room`, status: 503 });
-    const dialog = page.getByRole('dialog', { name: 'Перезапустить комнату' });
+    const dialog = page.getByRole('dialog', { name: 'Перезапустить комнату?' });
     const opened = page.context().waitForEvent('page');
 
     await dialog.getByRole('button', { name: 'Перезапустить комнату' }).click();
@@ -662,7 +733,7 @@ test.describe('ending the lesson and restarting the room', () => {
     control,
   }) => {
     const seed = await liveLesson(page, deployment, control);
-    await roomButton(page, 'Перезапустить комнату').click();
+    await chooseLiveAction(page, 'Перезапустить комнату');
 
     const ended = await callApi(
       deployment,
@@ -787,7 +858,7 @@ test.describe('the embedded room under the test override', () => {
     await expect(room.locator('#room')).toHaveAttribute('data-state', 'left');
   }
 
-  test('lesson room › the frame loads one room document and keeps focus while the lesson goes live and the header controls leave', async ({
+  test('lesson room › the frame loads one room document and keeps focus while the lesson goes live and Edit leaves', async ({
     page,
     deployment,
     control,
@@ -812,7 +883,7 @@ test.describe('the embedded room under the test override', () => {
     const documentsWhileLive = roomDocuments;
     await leaveTheFrame(page);
 
-    expect(lessonActionsShown).toBe(0);
+    expect(lessonActionsShown).toBe(1);
     expect(frameFocused).toBe(true);
     expect(frames).toBe(1);
     expect(documentsWhileLive).toBe(1);
@@ -947,7 +1018,7 @@ test.describe('the embedded room under the test override', () => {
     await expect(roomButton(page, 'Открыть снова')).toBeFocused();
   });
 
-  test('lesson room › a restart replaces the frame and returns focus to its button', async ({
+  test('lesson room › a restart replaces the frame and returns focus to Lesson actions', async ({
     page,
     deployment,
     control,
@@ -955,7 +1026,7 @@ test.describe('the embedded room under the test override', () => {
     await embeddedRoom(page, deployment, control);
     const oldAddress = await frameOf(page).getAttribute('src');
     await leaveTheFrame(page);
-    await roomButton(page, 'Перезапустить комнату').click();
+    await chooseLiveAction(page, 'Перезапустить комнату');
     const loaded = nextRoomDocument(page);
 
     await page.getByRole('dialog').getByRole('button', { name: 'Перезапустить комнату' }).click();
@@ -967,7 +1038,7 @@ test.describe('the embedded room under the test override', () => {
       'data-state',
       'entered',
     );
-    await expect(roomButton(page, 'Перезапустить комнату')).toBeFocused();
+    await expect(lessonActions(page)).toBeFocused();
   });
 
   test('lesson room › ending removes the frame and focus lands on the notice', async ({
@@ -977,7 +1048,7 @@ test.describe('the embedded room under the test override', () => {
   }) => {
     await embeddedRoom(page, deployment, control);
     await leaveTheFrame(page);
-    await roomButton(page, 'Завершить урок').click();
+    await chooseLiveAction(page, 'Завершить урок');
 
     await page.getByRole('dialog').getByRole('button', { name: 'Завершить урок' }).click();
 
@@ -1095,7 +1166,7 @@ test.describe('pilot scenario 1 in the lesson room', () => {
     await joinInNewTab(page, 'Подключиться к уроку', diagnostics);
     await openLesson(annaPage, seed.student, seed.lessonId, control);
 
-    await roomButton(page, 'Завершить урок').click();
+    await chooseLiveAction(page, 'Завершить урок');
     await page.getByRole('dialog').getByRole('button', { name: 'Завершить урок' }).click();
 
     for (const shown of [page, annaPage]) {

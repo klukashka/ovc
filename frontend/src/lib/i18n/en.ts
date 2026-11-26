@@ -292,6 +292,10 @@ export const en: Resources = {
     declineNamed: 'Decline {name}',
     more: 'More actions for {name}',
     declineAndBlock: 'Decline and block',
+    blockTitle: 'Decline and block {name}?',
+    blockConsequence:
+      'Their request is declined, and later requests from them no longer reach you until you unblock them in Teaching settings. They see only that this request was not accepted.',
+    cancel: 'Cancel',
     accepted: 'Request accepted. The student is now in Students.',
     declined: 'Request declined.',
     blocked: 'Request declined. Requests from this student no longer reach you.',
@@ -665,28 +669,30 @@ export const en: Resources = {
     save: 'Save',
   },
   lessonCancel: {
-    title: 'Cancel the lesson',
+    title: 'Cancel the lesson?',
     scope: 'Lessons to cancel',
-    thisConsequence: 'The lesson is cancelled for everyone and stays in the history as cancelled.',
-    followingConsequence: 'This lesson and every following lesson of the series are cancelled, and the series ends.',
+    thisConsequence:
+      'The lesson is cancelled for everyone and stays in the history as cancelled. Its students are notified. It cannot be undone.',
+    followingConsequence:
+      'This lesson and every following lesson of the series are cancelled, and the series ends. Each affected student is notified once. It cannot be undone.',
     confirm: 'Cancel lesson',
     confirmFollowing: 'Cancel lessons',
   },
   lessonEnd: {
-    title: 'End the lesson',
+    title: 'End the lesson?',
     consequence: 'The room closes for everyone and the lesson ends. It cannot be opened again.',
     confirm: 'End lesson',
   },
   lessonRestart: {
-    title: 'Restart the room',
+    title: 'Restart the room?',
     consequence:
       'The room closes for everyone and a new one opens. Everyone must rejoin, and earlier links stop working.',
     confirm: 'Restart the room',
   },
   lessonEndSeries: {
-    title: 'End this series and create a new one',
+    title: 'End this series and create a new one?',
     consequence:
-      'This lesson and every following lesson of the series are cancelled, and the series ends. A new lesson then opens with the same student or group, time and weekdays.',
+      'This lesson and every following lesson of the series are cancelled, and the series ends; each affected student is notified once. A new lesson then opens with the same student or group, time and weekdays.',
     confirm: 'End the series',
   },
   time: {

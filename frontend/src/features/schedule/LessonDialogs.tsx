@@ -8,7 +8,7 @@ import {
   ActionButton,
   FormActions,
   FormAlert,
-  dangerButtonClass,
+  dangerFilledButtonClass,
   fieldClass,
   fieldMessage,
   primaryButtonClass,
@@ -515,7 +515,7 @@ function CancelForm({
         <FormAlert key={refusals}>{refusalText(t, refusal.error, refusal.retryAfter, undefined)}</FormAlert>
       )}
       <FormActions>
-        <ActionButton busy={action.busy} onClick={confirm} className={dangerButtonClass}>
+        <ActionButton busy={action.busy} onClick={confirm} className={dangerFilledButtonClass}>
           {texts.confirm}
         </ActionButton>
         <ActionButton

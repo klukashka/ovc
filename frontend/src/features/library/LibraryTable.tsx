@@ -71,6 +71,7 @@ function RowMenu({
   useReturnFocus(libraryRowOpener(key, 'menu'), menuButton);
   const items: readonly MenuItem[] = commands.map((command) => ({
     label: command === 'issue' ? t('homework.issue') : t(`library.${command}`),
+    danger: command === 'delete',
     onChoose: (): void => {
       handlers.onCommand(command, target, 'menu');
     },

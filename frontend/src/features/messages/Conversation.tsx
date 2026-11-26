@@ -3,6 +3,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
   type ReactNode,
+  type RefObject,
   createContext,
   useContext,
   useEffect,
@@ -16,7 +17,16 @@ import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 
 import { useScheduler } from '../../app/clock.ts';
-import { ActionButton, errorMessage, primaryButtonClass, quietButtonClass } from '../../components/ui/Form.tsx';
+import { ModalDialog } from '../../components/ui/Dialog.tsx';
+import {
+  ActionButton,
+  FormActions,
+  FormAlert,
+  dangerFilledButtonClass,
+  errorMessage,
+  primaryButtonClass,
+  quietButtonClass,
+} from '../../components/ui/Form.tsx';
 import { useChatWrite } from '../../components/ui/chatWrite.ts';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { FocusedNotice } from '../../components/ui/LiveNotice.tsx';
@@ -81,6 +91,87 @@ function fitComposerRows(field: HTMLTextAreaElement): void {
   while (field.scrollHeight > field.clientHeight && field.rows < composerMaximumRows) {
     field.rows += 1;
   }
+}
+
+export function DeleteMessageForm({
+  messageId,
+  texts,
+  headingId,
+  consequenceId,
+  cancelRef,
+  unavailable,
+  unavailableReason,
+  onBusy,
+  onDeleted,
+  onFailed,
+  onCancel,
+}: {
+  readonly messageId: string;
+  readonly texts: ChatTexts;
+  readonly headingId: string;
+  readonly consequenceId: string;
+  readonly cancelRef: RefObject<HTMLButtonElement | null>;
+  readonly unavailable: boolean;
+  readonly unavailableReason: string | undefined;
+  readonly onBusy: (busy: boolean) => void;
+  readonly onDeleted: () => void;
+  readonly onFailed: (error: ApiError) => void;
+  readonly onCancel: () => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const client = useApiClient();
+  const [sending, setSending] = useState(false);
+  const [failure, setFailure] = useState<ApiError | null>(null);
+
+  function confirm(): void {
+    if (sending || unavailable) return;
+    setSending(true);
+    setFailure(null);
+    onBusy(true);
+    deleteMessage(client, messageId).then(
+      () => {
+        onBusy(false);
+        onDeleted();
+      },
+      (thrown: unknown) => {
+        const error = asApiError(thrown);
+        setSending(false);
+        setFailure(error);
+        onBusy(false);
+        onFailed(error);
+      },
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <h2 id={headingId} className="text-heading">
+        {texts.deleteTitle}
+      </h2>
+      <p id={consequenceId}>{texts.deleteConsequence}</p>
+      {failure === null ? null : <FormAlert>{errorMessage(t, failure, null)}</FormAlert>}
+      <FormActions>
+        <ActionButton
+          busy={sending}
+          unavailable={unavailable}
+          unavailableReason={unavailableReason}
+          onClick={confirm}
+          className={dangerFilledButtonClass}
+        >
+          {texts.deleteConfirm}
+        </ActionButton>
+        <ActionButton
+          ref={cancelRef}
+          busy={false}
+          unavailable={sending}
+          onClick={onCancel}
+          className={quietButtonClass}
+        >
+          {texts.cancel}
+        </ActionButton>
+      </FormActions>
+    </div>
+  );
 }
 
 export const MessageKeyContext = createContext<() => string>(() => crypto.randomUUID());
@@ -169,6 +260,16 @@ export function Conversation({
   }, [validation]);
   const guard = useChatWrite(busy, !channel.writable);
   const deletion = useChatWrite(busy);
+  const [deleting, setDeleting] = useState<{ readonly message: Message; readonly channelId: string } | null>(null);
+  const [deletedMeanwhile, setDeletedMeanwhile] = useState<{
+    readonly messageId: string;
+    readonly count: number;
+  } | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
+  const deleteOpener = useRef<HTMLElement | null>(null);
+  const keepMessage = useRef<HTMLButtonElement>(null);
+  const deleteHeadingId = useId();
+  const deleteConsequenceId = useId();
   const id = useId();
   const olderThan = useRef<number | null>(null);
   const newest = useRef<number | null>(null);
@@ -432,6 +533,15 @@ export function Conversation({
       current === ownership.query &&
       !(current.state.status === 'error' && asApiError(current.state.error).status === 404)
     );
+  }
+  function shownUndeleted(messageId: string): boolean {
+    const pages = [
+      cache.getQueryData<MessagePage>(messagesKey(channel.id)),
+      ...cache
+        .getQueriesData<MessagePage>({ queryKey: aroundPrefix(channel.id), type: 'active' })
+        .map(([, page]) => page),
+    ];
+    return pages.some((page) => page?.items.some((item) => item.id === messageId && !item.deleted) ?? false);
   }
   function focusMessage(messageId: string): void {
     for (const row of list.current?.querySelectorAll<HTMLElement>('[data-row]') ?? []) {
@@ -767,9 +877,8 @@ export function Conversation({
         onDelete={
           canDelete
             ? (): void => {
-                deletion.run(() => {
-                  void remove(message);
-                });
+                deleteOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                setDeleting({ message, channelId: channel.id });
               }
             : null
         }
@@ -802,25 +911,18 @@ export function Conversation({
       />
     );
   }
-  async function remove(message: Message): Promise<void> {
+  async function settleDeletion(messageId: string): Promise<void> {
     if (!isAlive()) return;
     setFailure(null);
-    setBusy(true);
-    try {
-      await deleteMessage(client, message.id);
-      if (!isAlive()) return;
-      await reload();
-      if (isAlive()) focusMessage(message.id);
-    } catch (error: unknown) {
-      if (isAlive()) {
-        setFailure(asApiError(error));
-        await reload();
-        if (isAlive()) focusMessage(message.id);
-      }
-    } finally {
-      if (isAlive()) setBusy(false);
-    }
+    await reload();
+    if (isAlive()) focusMessage(messageId);
   }
+  useEffect(() => {
+    if (deletedMeanwhile === null) return;
+    const rows = [...(list.current?.querySelectorAll<HTMLElement>('[data-row]') ?? [])];
+    const row = rows.find((candidate) => candidate.dataset.row === deletedMeanwhile.messageId);
+    (row ?? heading.current)?.focus();
+  }, [deletedMeanwhile]);
   const phone = back !== null;
   const shownAsPhone = useRef(phone);
   useEffect(() => {
@@ -918,8 +1020,55 @@ export function Conversation({
       )}
     </>
   );
+  if (deleting !== null && !busy && (deleting.channelId !== channel.id || !shownUndeleted(deleting.message.id))) {
+    setDeleting(null);
+    if (deleting.channelId === channel.id) {
+      setDeletedMeanwhile((previous) => ({ messageId: deleting.message.id, count: (previous?.count ?? 0) + 1 }));
+    }
+  }
+  const deleteDialog = (
+    <ModalDialog
+      open={deleting !== null}
+      busy={deletingBusy}
+      labelledBy={deleteHeadingId}
+      describedBy={deleteConsequenceId}
+      returnFocus={deleteOpener}
+      initialFocus={keepMessage}
+      onClose={() => {
+        setDeleting(null);
+      }}
+    >
+      {deleting === null ? null : (
+        <DeleteMessageForm
+          messageId={deleting.message.id}
+          texts={texts}
+          headingId={deleteHeadingId}
+          consequenceId={deleteConsequenceId}
+          cancelRef={keepMessage}
+          unavailable={deletion.unavailable}
+          unavailableReason={deletion.reason}
+          onBusy={(sending) => {
+            setBusy(sending);
+            setDeletingBusy(sending);
+          }}
+          onDeleted={() => {
+            const removed = deleting.message.id;
+            setDeleting(null);
+            void settleDeletion(removed);
+          }}
+          onFailed={() => {
+            void reload();
+          }}
+          onCancel={() => {
+            setDeleting(null);
+          }}
+        />
+      )}
+    </ModalDialog>
+  );
   return (
     <section className={`flex min-w-0 flex-col gap-3 desktop:h-full desktop:min-h-0${phone ? ' min-h-0 flex-1' : ''}`}>
+      {deleteDialog}
       <div className={phone ? 'flex items-center gap-1' : 'contents'}>
         {back}
         <div className={phone ? 'flex min-w-0 flex-1 flex-col' : 'contents'}>

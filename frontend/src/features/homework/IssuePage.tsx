@@ -21,7 +21,7 @@ import {
   FormActions,
   FormAlert,
   SelectChevron,
-  dangerButtonClass,
+  dangerFilledButtonClass,
   fieldClass,
   linkClass,
   primaryButtonClass,
@@ -472,7 +472,7 @@ function DialogButtons({
   const { t } = useTranslation();
   return (
     <FormActions>
-      <ActionButton busy={busy} onClick={onConfirm} className={danger ? dangerButtonClass : primaryButtonClass}>
+      <ActionButton busy={busy} onClick={onConfirm} className={danger ? dangerFilledButtonClass : primaryButtonClass}>
         {confirm}
       </ActionButton>
       <ActionButton
@@ -711,6 +711,7 @@ function IssueActions({
       ? [
           {
             label: t('homework.actions.withdraw'),
+            danger: true,
             onChoose: (): void => {
               onOpen('withdraw');
             },

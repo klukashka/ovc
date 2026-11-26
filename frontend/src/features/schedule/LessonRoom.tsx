@@ -5,12 +5,13 @@ import { useTranslation } from 'react-i18next';
 import { useScheduler } from '../../app/clock.ts';
 import { useMediaQuery, wideLayoutQuery } from '../../app/context.ts';
 import { type Action, type ActionState, done, refusedBy, useAction } from '../../components/ui/action.ts';
+import type { MenuItem } from '../../components/ui/ActionMenu.tsx';
 import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
   FormActions,
   FormAlert,
-  dangerButtonClass,
+  dangerFilledButtonClass,
   primaryButtonClass,
   quietButtonClass,
 } from '../../components/ui/Form.tsx';
@@ -169,7 +170,7 @@ function RoomDialog({
           <p id={consequenceId}>{texts.consequence}</p>
           {refusal === null ? null : <FormAlert>{refusal}</FormAlert>}
           <FormActions>
-            <ActionButton busy={action.busy} onClick={onConfirm} className={dangerButtonClass}>
+            <ActionButton busy={action.busy} onClick={onConfirm} className={dangerFilledButtonClass}>
               {texts.confirm}
             </ActionButton>
             <ActionButton
@@ -190,45 +191,48 @@ function RoomDialog({
 
 type RoomDialogKind = 'end' | 'restart';
 
+export type RoomEntry = ReturnType<typeof useRoomEntry>;
+
 function isLessonChange(error: ApiError): boolean {
   return error.code === 'conflict' || error.code === 'lesson_not_live' || error.code === 'not_found';
 }
 
-export function LessonRoom({
+export interface LiveLessonActions {
+  readonly items: readonly MenuItem[];
+  readonly unavailable: boolean;
+  readonly dialogOpen: boolean;
+  readonly dialogs: ReactElement | null;
+}
+
+export function useLiveLessonActions({
+  lessonId,
   lesson,
   me,
-  phase,
+  entry,
+  menuButton,
   onChangedMeanwhile,
   onEnded,
 }: {
-  readonly lesson: LessonDetail;
+  readonly lessonId: string;
+  readonly lesson: LessonDetail | undefined;
   readonly me: Me;
-  readonly phase: LessonPhase;
+  readonly entry: RoomEntry;
+  readonly menuButton: RefObject<HTMLElement | null>;
   readonly onChangedMeanwhile: () => void;
   readonly onEnded: () => void;
-}): ReactElement | null {
+}): LiveLessonActions {
   const { t } = useTranslation();
   const client = useApiClient();
   const queryClient = useQueryClient();
   const wide = useMediaQuery(wideLayoutQuery);
-  const { session, enter, observeLesson, leaveRoom } = useRoomEntry(lesson.id);
-  const [refusal, setRefusal] = useState<RoomRefusal | null>(null);
-  const [outOfScope, setOutOfScope] = useState(false);
   const [dialog, setDialog] = useState<RoomDialogKind | null>(null);
   const [dialogRefusal, setDialogRefusal] = useState<string | null>(null);
   const action = useAction();
-  const mainButton = useRef<HTMLButtonElement>(null);
-  const endButton = useRef<HTMLButtonElement>(null);
-  const restartButton = useRef<HTMLButtonElement>(null);
-  const offer = roomOfferOf(lesson, phase, me.role);
-  const tutorWrites = me.role === 'tutor' && me.state === 'active';
-  const live = lesson.status === 'live';
-  const viaTab = !lesson.embed_allowed || !wide;
-
-  observeLesson(lesson);
+  const manages = me.role === 'tutor' && me.state === 'active' && lesson?.status === 'live';
+  const viaTab = lesson === undefined || !lesson.embed_allowed || !wide;
 
   const [outdatedDialogs, setOutdatedDialogs] = useState(0);
-  if (dialog !== null && !action.busy && !live) {
+  if (dialog !== null && !action.busy && !manages) {
     setDialog(null);
     setOutdatedDialogs(outdatedDialogs + 1);
   }
@@ -237,6 +241,158 @@ export function LessonRoom({
       onChangedMeanwhile();
     }
   }, [outdatedDialogs, onChangedMeanwhile]);
+
+  function dismissDialog(): void {
+    setDialog(null);
+    setDialogRefusal(null);
+    action.reset();
+  }
+
+  function openDialog(kind: RoomDialogKind): void {
+    setDialogRefusal(null);
+    action.reset();
+    setDialog(kind);
+  }
+
+  function endLesson(): void {
+    action.run(async (): Promise<ActionState> => {
+      setDialogRefusal(null);
+      const answered = await client
+        .POST('/api/v1/lessons/{id}/end', { params: { path: { id: lessonId } } })
+        .then((answer) => ({ answer, thrown: null }))
+        .catch((thrown: unknown) => ({ answer: null, thrown }));
+      if (answered.answer === null) {
+        const failure = asApiError(answered.thrown);
+        setDialogRefusal(refusalText(t, failure, null, undefined));
+        return { kind: 'refused', error: failure, retryAfter: null };
+      }
+      const { data, error, response } = answered.answer;
+      if (data === undefined) {
+        const refused = refusedBy(response, error);
+        if (refused.kind === 'refused' && isLessonChange(refused.error)) {
+          setDialog(null);
+          onChangedMeanwhile();
+          void queryClient.invalidateQueries({ queryKey: lessonKey(lessonId) });
+          return refused;
+        }
+        if (refused.kind === 'refused') {
+          setDialogRefusal(refusalText(t, refused.error, refused.retryAfter, undefined));
+        }
+        return refused;
+      }
+      await replaceLessonDetail(queryClient, data);
+      void queryClient.invalidateQueries({ queryKey: calendarKey });
+      entry.leaveRoom();
+      setDialog(null);
+      onEnded();
+      return done;
+    });
+  }
+
+  function restartRoom(): void {
+    action.run(async (): Promise<ActionState> => {
+      setDialogRefusal(null);
+      const outcome = await entry.enter('/api/v1/lessons/{id}/restart-room', viaTab);
+      const refused = refusalOf(outcome);
+      if (refused === null) {
+        setDialog(null);
+        return done;
+      }
+      if (refused.kind === 'api' && isLessonChange(refused.error)) {
+        setDialog(null);
+        onChangedMeanwhile();
+        return { kind: 'refused', error: refused.error, retryAfter: null };
+      }
+      setDialogRefusal(refusalMessage(t, refused));
+      return done;
+    });
+  }
+
+  const items: readonly MenuItem[] = manages
+    ? [
+        {
+          label: t('lesson.restartRoom'),
+          danger: true,
+          onChoose: (): void => {
+            openDialog('restart');
+          },
+        },
+        {
+          label: t('lesson.end'),
+          danger: true,
+          onChoose: (): void => {
+            openDialog('end');
+          },
+        },
+      ]
+    : [];
+
+  return {
+    items,
+    unavailable: entry.session.kind === 'joining' || action.busy,
+    dialogOpen: dialog !== null,
+    dialogs:
+      me.role === 'tutor' ? (
+        <>
+          <RoomDialog
+            open={dialog === 'end'}
+            texts={{
+              title: t('lessonEnd.title'),
+              consequence: t('lessonEnd.consequence'),
+              confirm: t('lessonEnd.confirm'),
+            }}
+            action={action}
+            returnFocus={menuButton}
+            onConfirm={endLesson}
+            onDismiss={dismissDialog}
+            refusal={dialogRefusal}
+          />
+          <RoomDialog
+            open={dialog === 'restart'}
+            texts={{
+              title: t('lessonRestart.title'),
+              consequence: t('lessonRestart.consequence'),
+              confirm: t('lessonRestart.confirm'),
+            }}
+            action={action}
+            returnFocus={menuButton}
+            onConfirm={restartRoom}
+            onDismiss={dismissDialog}
+            refusal={dialogRefusal}
+          />
+        </>
+      ) : null,
+  };
+}
+
+export function LessonRoom({
+  lesson,
+  me,
+  phase,
+  entry,
+  dialogOpen,
+}: {
+  readonly lesson: LessonDetail;
+  readonly me: Me;
+  readonly phase: LessonPhase;
+  readonly entry: RoomEntry;
+  readonly dialogOpen: boolean;
+}): ReactElement | null {
+  const { t } = useTranslation();
+  const wide = useMediaQuery(wideLayoutQuery);
+  const { session, enter } = entry;
+  const [refusal, setRefusal] = useState<RoomRefusal | null>(null);
+  const [outOfScope, setOutOfScope] = useState(false);
+  const mainButton = useRef<HTMLButtonElement>(null);
+  const offer = roomOfferOf(lesson, phase, me.role);
+  const viaTab = !lesson.embed_allowed || !wide;
+  const [sessionSeen, setSessionSeen] = useState(session.kind);
+  if (sessionSeen !== session.kind) {
+    setSessionSeen(session.kind);
+    if (session.kind === 'inTab' || session.kind === 'embedded') {
+      setRefusal(null);
+    }
+  }
 
   const shown = outOfScope ? 'none' : session.kind === 'outside' ? offer.kind : session.kind;
   const shownBefore = useRef(shown);
@@ -266,72 +422,10 @@ export function LessonRoom({
     });
   }
 
-  function dismissDialog(): void {
-    setDialog(null);
-    setDialogRefusal(null);
-    action.reset();
-  }
-
-  function endLesson(): void {
-    action.run(async (): Promise<ActionState> => {
-      setDialogRefusal(null);
-      const answered = await client
-        .POST('/api/v1/lessons/{id}/end', { params: { path: { id: lesson.id } } })
-        .then((answer) => ({ answer, thrown: null }))
-        .catch((thrown: unknown) => ({ answer: null, thrown }));
-      if (answered.answer === null) {
-        const failure = asApiError(answered.thrown);
-        setDialogRefusal(refusalText(t, failure, null, undefined));
-        return { kind: 'refused', error: failure, retryAfter: null };
-      }
-      const { data, error, response } = answered.answer;
-      if (data === undefined) {
-        const refused = refusedBy(response, error);
-        if (refused.kind === 'refused' && isLessonChange(refused.error)) {
-          setDialog(null);
-          onChangedMeanwhile();
-          void queryClient.invalidateQueries({ queryKey: lessonKey(lesson.id) });
-          return refused;
-        }
-        if (refused.kind === 'refused') {
-          setDialogRefusal(refusalText(t, refused.error, refused.retryAfter, undefined));
-        }
-        return refused;
-      }
-      await replaceLessonDetail(queryClient, data);
-      void queryClient.invalidateQueries({ queryKey: calendarKey });
-      leaveRoom();
-      setDialog(null);
-      onEnded();
-      return done;
-    });
-  }
-
-  function restartRoom(): void {
-    action.run(async (): Promise<ActionState> => {
-      setDialogRefusal(null);
-      setRefusal(null);
-      const outcome = await enter('/api/v1/lessons/{id}/restart-room', viaTab);
-      const refused = refusalOf(outcome);
-      if (refused === null) {
-        setDialog(null);
-        return done;
-      }
-      if (refused.kind === 'api' && isLessonChange(refused.error)) {
-        setDialog(null);
-        onChangedMeanwhile();
-        return { kind: 'refused', error: refused.error, retryAfter: null };
-      }
-      setDialogRefusal(refusalMessage(t, refused));
-      return done;
-    });
-  }
-
   const text = outOfScope ? null : offerText(t, offer, lesson, me);
   const refusalShown = refusal === null || (offer.kind !== 'join' && !outOfScope) ? null : refusalMessage(t, refusal);
   const showsButton = !outOfScope && (session.kind === 'joining' || session.kind === 'inTab' || offer.kind === 'join');
-  const manages = tutorWrites && live;
-  if (session.kind !== 'embedded' && !showsButton && text === null && refusalShown === null && !manages) {
+  if (session.kind !== 'embedded' && !showsButton && text === null && refusalShown === null) {
     return null;
   }
   const inTab = session.kind === 'inTab';
@@ -351,7 +445,7 @@ export function LessonRoom({
             key={session.entry}
             url={session.url}
             title={lesson.title}
-            acceptsEscape={dialog === null}
+            acceptsEscape={!dialogOpen}
             onOpenInNewTab={() => {
               join(true);
             }}
@@ -386,64 +480,6 @@ export function LessonRoom({
         </div>
       )}
       <LiveNotice message={session.kind === 'joining' ? t('lesson.joining') : null} />
-      {manages ? (
-        <div className="flex flex-wrap gap-3">
-          <ActionButton
-            ref={restartButton}
-            busy={false}
-            unavailable={session.kind === 'joining'}
-            onClick={() => {
-              setDialogRefusal(null);
-              setDialog('restart');
-            }}
-            className={quietButtonClass}
-          >
-            {t('lesson.restartRoom')}
-          </ActionButton>
-          <ActionButton
-            ref={endButton}
-            busy={false}
-            unavailable={session.kind === 'joining'}
-            onClick={() => {
-              setDialogRefusal(null);
-              setDialog('end');
-            }}
-            className={dangerButtonClass}
-          >
-            {t('lesson.end')}
-          </ActionButton>
-        </div>
-      ) : null}
-      {me.role === 'tutor' ? (
-        <>
-          <RoomDialog
-            open={dialog === 'end'}
-            texts={{
-              title: t('lessonEnd.title'),
-              consequence: t('lessonEnd.consequence'),
-              confirm: t('lessonEnd.confirm'),
-            }}
-            action={action}
-            returnFocus={endButton}
-            onConfirm={endLesson}
-            onDismiss={dismissDialog}
-            refusal={dialogRefusal}
-          />
-          <RoomDialog
-            open={dialog === 'restart'}
-            texts={{
-              title: t('lessonRestart.title'),
-              consequence: t('lessonRestart.consequence'),
-              confirm: t('lessonRestart.confirm'),
-            }}
-            action={action}
-            returnFocus={restartButton}
-            onConfirm={restartRoom}
-            onDismiss={dismissDialog}
-            refusal={dialogRefusal}
-          />
-        </>
-      ) : null}
     </section>
   );
 }

@@ -28,7 +28,8 @@ import { formatDate } from '../../lib/format/dates.ts';
 import { type Channel, type Message, deleteMessage, editMessage } from './api.ts';
 import { channelsScopeRevisionKey, channelScopeRevision, evictChannel } from './cache.ts';
 import { aroundKey, aroundPrefix, channelKey, channelsKey, messagesKey } from './keys.ts';
-import { MessageKeyContext } from './Conversation.tsx';
+import { DeleteMessageForm, MessageKeyContext } from './Conversation.tsx';
+import { chatTexts } from './texts.en.ts';
 import { MessagesPage } from './MessagesPage.tsx';
 import { MessageBody } from './MessageBody.tsx';
 
@@ -1591,20 +1592,50 @@ describe('Messages', () => {
     }
   });
 
-  test('a failed deletion returns focus to its surviving message', async () => {
-    const { server } = await fixture();
-    const row = (await screen.findByText('Message 1')).closest('li');
+  test('a failed deletion shows its refusal inside the dialog, is reported to the conversation and keeps the message', async () => {
+    const { server, api } = await fixture();
+    await screen.findByText('Message 1');
+    cleanup();
     server.chat.failNextDelete();
-    fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+    const reported: string[] = [];
+    const i18n = await createI18n('en');
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ApiClientContext value={api}>
+          <DeleteMessageForm
+            messageId="message-1"
+            texts={chatTexts}
+            headingId="delete-heading"
+            consequenceId="delete-consequence"
+            cancelRef={{ current: null }}
+            unavailable={false}
+            unavailableReason={undefined}
+            onBusy={() => undefined}
+            onDeleted={() => {
+              reported.push('deleted');
+            }}
+            onFailed={() => {
+              reported.push('failed');
+            }}
+            onCancel={() => {
+              reported.push('cancel');
+            }}
+          />
+        </ApiClientContext>
+      </I18nextProvider>,
+    );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete message' }));
 
     await waitFor(() => {
-      expect(document.activeElement).toBe(row);
+      expect(reported).toEqual(['failed']);
     });
+    const alert = await screen.findByRole('alert');
+    expect(document.activeElement).toBe(alert);
+    expect(screen.getByRole('button', { name: 'Delete message' }).getAttribute('aria-busy')).not.toBe('true');
     expect(server.chat.history(channel.id)[0]?.body).toBe('Message 1');
   });
+
   test('a held continuation cannot restore revoked rows after a channel event and fresh pagination resumes', async () => {
     const { server, cache, clock } = await fixture(0, '/messages');
     for (let index = 60; index >= 1; index -= 1) {

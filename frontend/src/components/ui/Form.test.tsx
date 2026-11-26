@@ -2,14 +2,7 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import { type ReactElement, useState } from 'react';
 import { afterEach, describe, expect, test } from 'vitest';
 
-import {
-  ActionButton,
-  FormActions,
-  FormNotice,
-  dangerButtonClass,
-  dangerFilledButtonClass,
-  quietButtonClass,
-} from './Form.tsx';
+import { ActionButton, FormActions, FormNotice, dangerFilledButtonClass, quietButtonClass } from './Form.tsx';
 
 function SavingForm(): ReactElement {
   const [saved, setSaved] = useState(false);
@@ -127,7 +120,7 @@ function isFilled(element: HTMLElement): boolean {
 }
 
 describe('dialog action rows', () => {
-  test('the final confirmation of a deletion comes first, filled with danger, then a quiet Cancel', () => {
+  test('the confirmation of a dangerous action comes first, filled with danger, then a quiet Cancel', () => {
     const row = confirmationRow(dangerFilledButtonClass);
 
     const order = [...(row.confirm.parentElement?.children ?? [])];
@@ -138,14 +131,5 @@ describe('dialog action rows', () => {
     expect(row.cancel.textContent).toBe('Cancel');
     expect([...row.cancel.classList]).toEqual(expect.arrayContaining(['border-border-strong', 'text-text']));
     expect(isFilled(row.cancel)).toBe(false);
-  });
-
-  test('a danger action that deletes nothing keeps a danger outline and no fill', () => {
-    const row = confirmationRow(dangerButtonClass);
-
-    const filled = isFilled(row.confirm);
-
-    expect(filled).toBe(false);
-    expect([...row.confirm.classList]).toEqual(expect.arrayContaining(['text-danger', 'border-danger']));
   });
 });

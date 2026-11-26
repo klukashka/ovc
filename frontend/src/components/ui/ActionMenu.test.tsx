@@ -1,4 +1,5 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { ActionMenu, type MenuItem } from './ActionMenu.tsx';
@@ -89,5 +90,32 @@ describe('an action menu with a danger item', () => {
 
     expect([...menu.children].map((child) => child.tagName)).toEqual(['BUTTON']);
     expect(menu.children[0]?.className).toContain('text-danger');
+  });
+});
+
+describe('an action menu that becomes unavailable while open', () => {
+  test('keeps its items and focus but marks them unavailable and ignores a choice', () => {
+    const chosen: string[] = [];
+    const items = itemChoices(chosen);
+    const menuOf = (unavailable: boolean): ReactElement => (
+      <ActionMenu label="More actions" unavailable={unavailable} items={items}>
+        More
+      </ActionMenu>
+    );
+    const { rerender } = render(menuOf(false));
+    act(() => {
+      screen.getByRole('button', { name: 'More actions' }).click();
+    });
+    const rename = screen.getByRole('button', { name: 'Rename' });
+    rename.focus();
+
+    rerender(menuOf(true));
+    act(() => {
+      screen.getByRole('button', { name: 'Rename' }).click();
+    });
+
+    expect(chosen).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Rename' }).getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Rename' }));
   });
 });

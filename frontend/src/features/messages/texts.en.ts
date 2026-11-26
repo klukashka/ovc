@@ -38,6 +38,10 @@ export const chatTexts = {
   cancel: 'Cancel',
   edit: 'Edit',
   delete: 'Delete',
+  deleteTitle: 'Delete this message?',
+  deleteConsequence:
+    'It is replaced by “Message deleted” for everyone in the chat, and its attachments are removed. It cannot be undone.',
+  deleteConfirm: 'Delete message',
   menu: 'Message actions',
   history: 'Messages',
   noMessages: 'No messages yet',

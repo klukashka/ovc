@@ -30,6 +30,7 @@ import {
   setTimezone,
 } from './schedule.ts';
 import { acceptSignedIn, accessToken, callApi, createCard, createGroup, endRelationship } from './tutoring.ts';
+import { expectDangerConfirmation } from './dangerActions.ts';
 
 const moscow = 'Europe/Moscow';
 const hour = 3_600_000;
@@ -138,7 +139,7 @@ function editDialog(page: Page): Locator {
 }
 
 function cancelDialog(page: Page): Locator {
-  return page.getByRole('dialog', { name: 'Отмена урока' });
+  return page.getByRole('dialog', { name: 'Отменить урок?' });
 }
 
 async function dailySeries(
@@ -240,7 +241,7 @@ async function openEndSeries(page: Page): Promise<void> {
 }
 
 function endSeriesDialog(page: Page): Locator {
-  return page.getByRole('dialog', { name: 'Завершить эту серию и создать новую' });
+  return page.getByRole('dialog', { name: 'Завершить эту серию и создать новую?' });
 }
 
 function newLessonDialog(page: Page): Locator {
@@ -499,10 +500,10 @@ test.describe('lesson page for a tutor in Russian', () => {
     await openCancel(page);
 
     const dialog = cancelDialog(page);
-    await expect(dialog.getByRole('button', { name: 'Отмена', exact: true })).toBeFocused();
+    await expectDangerConfirmation(dialog, 'Отменить урок', 'Отмена');
     await expect(dialog.getByRole('radio')).toHaveCount(0);
     await expect(dialog).toHaveAccessibleDescription(
-      'Урок будет отменён для всех и останется в истории как отменённый.',
+      'Урок будет отменён для всех и останется в истории как отменённый. Ученики получат уведомление. Это нельзя отменить.',
     );
   });
 
@@ -545,10 +546,10 @@ test.describe('lesson page for a tutor in Russian', () => {
     await openEndSeries(page);
 
     const dialog = endSeriesDialog(page);
-    await expect(dialog.getByRole('button', { name: 'Отмена', exact: true })).toBeFocused();
+    await expectDangerConfirmation(dialog, 'Завершить серию', 'Отмена');
     await expect(dialog.getByRole('radio')).toHaveCount(0);
     await expect(dialog).toHaveAccessibleDescription(
-      'Этот и все следующие уроки серии будут отменены, а серия завершится. Затем откроется новый урок с тем же учеником или группой, временем и днями недели.',
+      'Этот и все следующие уроки серии будут отменены, а серия завершится; каждый затронутый ученик получит одно уведомление. Затем откроется новый урок с тем же учеником или группой, временем и днями недели.',
     );
   });
 
