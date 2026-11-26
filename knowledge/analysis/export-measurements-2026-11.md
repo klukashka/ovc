@@ -30,7 +30,7 @@ The [export specification](../specs/files.md#building) requires the build time o
 | Run | Date | Tree | Wall time | Peak heap | Archive | Parts | `tables.xlsx` | `data.json` | Streaming share | Result |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 1 | 2026-11-26 | `41af16b` plus the staged E1d2 change | — | — | — | — | — | — | — | failed in seeding: the 100th issue answered `429`, because the seeding advanced the clock after every 100 issues while two issues seeded earlier in the same hour counted toward `IssuesPerHour`; no build ran (`--- FAIL: TestExportBuildTimeMeasurement (65.58s)`); the seeding now advances after every 50 issues |
-| 2 | 2026-11-26 | `41af16b` plus the staged E1d2 change | 170.7 s (build), 246.5 s with seeding | 45.2 MB over baseline | 4,980,667,294 bytes | 297 | 4,468,089 bytes (1,429,577 compressed) | 41,918,094 bytes (3,683,848 compressed) | 0.609 | passed (`--- PASS: TestExportBuildTimeMeasurement (246.49s)`) |
+| 2 | 2026-11-26 | `41af16b` plus the staged E1d2 change, whose backend code and tests equal those of `db28015` (only Markdown changed after the run) | 170.7 s (build), 246.5 s with seeding | 45.2 MB over baseline | 4,980,667,294 bytes | 297 | 4,468,089 bytes (1,429,577 compressed) | 41,918,094 bytes (3,683,848 compressed) | 0.609 | passed (`--- PASS: TestExportBuildTimeMeasurement (246.49s)`) |
 
 Run 2 seeded 49 library materials of 100 MB each, attached to lessons with the first ten also in an issued template, and one chat file, one answer file and one corrected file of 25 MB each, all through the routes. Through repository helpers in the measurement file only, it seeded 300 cards, 5,000 lessons, 100,000 messages and the submitted state of the submissions. Through the routes, it created 30 groups of 10 members and 500 issues to those groups, which gave about 5,000 submissions instead of the plan's estimate of 500 issues to 300 students each.
 
@@ -42,4 +42,4 @@ The decision rules give these results:
 - **Table bytes.** `tables.xlsx` and `data.json` together hold about 46 MB, under 50 % of the 200 MB allowance, so the allowance is not an owner question.
 - **Peak heap.** 45 MB, so it does not grow with the 5 GB of files.
 
-The repeated issue and submission reads stay well inside the budget at this workload. A tutor with 500 issues to 300 students each would read about 30 times more submission details. That case is not measured; by these figures it would still stay under 1 hour if the time scaled linearly with the submission count.
+The repeated issue and submission reads stay well inside the budget at this workload. An issue reaches one student or one group, and a group holds at most 30 members (`GroupMemberLimit`), so 500 issues reach at most 15,000 submissions, three times the measured 5,000. That case is not measured; by these figures it would still stay under 1 hour if the time scaled linearly with the submission count.
