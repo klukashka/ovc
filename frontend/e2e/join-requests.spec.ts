@@ -83,7 +83,7 @@ test.describe('Boris in English', () => {
     await page.getByLabel('Name', { exact: true }).fill(boris.name);
     await page.getByLabel('Email', { exact: true }).fill(boris.email);
     await page.getByLabel('Password', { exact: true }).fill(boris.password);
-    await page.getByLabel(/I agree to the processing of my personal data/).check();
+    await page.getByLabel(/^I consent to the processing of my personal data/).check();
     await page.getByRole('button', { name: 'Sign up' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Check your email' })).toBeFocused();
     await page.getByRole('main').getByRole('link', { name: 'Sign in', exact: true }).click();

@@ -32,7 +32,7 @@ import { myTutorsKey } from '../tutors/api.ts';
 import { CheckEmail } from './CheckEmail.tsx';
 import { useInvitationToken } from './InvitationToken.tsx';
 import { type SignInRefusal, RefusalMessage, refusalOf } from './SignInPage.tsx';
-import { ConsentField, LanguageChoice, browserTimezone } from './SignUpPages.tsx';
+import { AcceptanceLine, ConsentField, LanguageChoice, browserTimezone } from './SignUpPages.tsx';
 
 type PublicTutor = components['schemas']['PublicTutor'];
 
@@ -192,6 +192,7 @@ function SignUpForm({
       <LanguageChoice interfaceLanguage={isLanguage(i18n.language) ? i18n.language : 'ru'} />
       <ConsentField error={fieldMessage(t, error, 'consent')} />
       <SubmitButton busy={action.busy}>{t('invitationPage.signUpSubmit')}</SubmitButton>
+      <AcceptanceLine />
     </form>
   );
 }

@@ -46,7 +46,7 @@ async function signUpThroughTheForm(page: Page, account: TestAccount): Promise<v
   await page.getByLabel('Имя').fill(account.name);
   await page.getByLabel('Email').fill(account.email);
   await page.getByLabel('Пароль', { exact: true }).fill(account.password);
-  await page.getByLabel(/Я соглашаюсь на обработку персональных данных/).check();
+  await page.getByLabel(/^Я даю согласие на обработку моих персональных данных/).check();
   await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
 }
 
@@ -575,7 +575,7 @@ test('a student sign-up with a code that is not valid creates nothing and says s
   await page.getByLabel('Имя').fill(student.name);
   await page.getByLabel('Email').fill(student.email);
   await page.getByLabel('Пароль', { exact: true }).fill(student.password);
-  await page.getByLabel(/Я соглашаюсь на обработку персональных данных/).check();
+  await page.getByLabel(/^Я даю согласие на обработку моих персональных данных/).check();
 
   diagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/register', status: 422 });
   await page.getByRole('button', { name: 'Зарегистрироваться' }).click();

@@ -38,7 +38,7 @@ var unverifiedRecipientKinds = map[OutboxKind]bool{
 
 type ConsentVersion string
 
-const CurrentConsentVersion ConsentVersion = "2026-10"
+const CurrentConsentVersion ConsentVersion = "2026-11-26.1"
 
 const (
 	PasswordMinRunes = 10

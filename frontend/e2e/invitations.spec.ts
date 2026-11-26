@@ -126,7 +126,7 @@ const russianSignUp: SignUpLabels = {
   name: 'Имя',
   email: 'Email',
   password: 'Пароль',
-  consent: /Я соглашаюсь на обработку персональных данных/,
+  consent: /^Я даю согласие на обработку моих персональных данных/,
   submit: 'Создать аккаунт и присоединиться',
 };
 
@@ -135,7 +135,7 @@ const englishSignUp: SignUpLabels = {
   name: 'Name',
   email: 'Email',
   password: 'Password',
-  consent: /I agree to the processing of my personal data/,
+  consent: /^I consent to the processing of my personal data/,
   submit: 'Create account and join',
 };
 

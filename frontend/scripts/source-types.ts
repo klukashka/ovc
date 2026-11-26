@@ -2,7 +2,15 @@ import { readdirSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
 
 export const sourceExtensions: ReadonlySet<string> = new Set(['.ts', '.tsx', '.css']);
-export const namedDataFiles: ReadonlySet<string> = new Set(['src/lib/time/timezone-cities.json']);
+export const namedDataFiles: ReadonlySet<string> = new Set([
+  'src/lib/time/timezone-cities.json',
+  'src/legal/ru/privacy.md',
+  'src/legal/ru/consent.md',
+  'src/legal/ru/terms.md',
+  'src/legal/en/privacy.md',
+  'src/legal/en/consent.md',
+  'src/legal/en/terms.md',
+]);
 
 export const publicExtensions: ReadonlySet<string> = new Set(['.js', '.svg', '.png', '.ico', '.webp', '.woff2']);
 

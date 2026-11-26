@@ -66,7 +66,9 @@ const studentSignUpPage = lazyPage(async () => (await import('../features/auth/S
 const forgotPasswordPage = lazyPage(
   async () => (await import('../features/auth/PasswordPages.tsx')).ForgotPasswordPage,
 );
-const privacyPage = lazyPage(async () => (await import('../features/auth/PasswordPages.tsx')).PrivacyPage);
+const privacyPage = lazyPage(async () => (await import('../features/legal/LegalPage.tsx')).PrivacyPage);
+const consentPage = lazyPage(async () => (await import('../features/legal/LegalPage.tsx')).ConsentPage);
+const termsPage = lazyPage(async () => (await import('../features/legal/LegalPage.tsx')).TermsPage);
 const verifyEmailPage = lazyPage(async () => (await import('../features/auth/VerifyEmailPage.tsx')).VerifyEmailPage);
 const resetPasswordPage = lazyPage(async () => (await import('../features/auth/PasswordPages.tsx')).ResetPasswordPage);
 const invitationPage = lazyPage(async () => (await import('../features/auth/InvitationPage.tsx')).InvitationPage);
@@ -124,6 +126,8 @@ const frames: RouteObject[] = [
     children: [
       page('/forgot-password', 'page.forgotPassword', forgotPasswordPage),
       page('/privacy', 'page.privacy', privacyPage),
+      page('/consent', 'page.consent', consentPage),
+      page('/terms', 'page.terms', termsPage),
     ],
   },
   {

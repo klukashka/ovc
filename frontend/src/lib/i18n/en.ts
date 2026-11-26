@@ -136,6 +136,8 @@ export const en: Resources = {
     settingsData: 'My data',
     checkEmail: 'Check your email',
     privacy: 'Privacy policy',
+    consent: 'Consent to the processing of personal data',
+    terms: 'User agreement',
     notFound: 'Page not found',
   },
   public: {
@@ -177,9 +179,11 @@ export const en: Resources = {
     password: 'Password',
     passwordHint: 'At least 10 characters.',
     language: 'Language of the interface and emails',
-    consent: 'I agree to the processing of my personal data under the',
+    consentLead: 'I consent to the',
+    consentLink: 'processing of my personal data',
     opensInNewTab: '(opens in a new tab)',
-    privacyPolicy: 'privacy policy',
+    acceptanceLead: 'By creating an account, you accept the',
+    acceptanceLink: 'user agreement',
     submit: 'Sign up',
   },
   checkEmail: {
@@ -304,8 +308,8 @@ export const en: Resources = {
     code: 'Your tutor code',
     codeHint: 'Students enter this code to send you a join request.',
   },
-  privacy: {
-    placeholder: 'The privacy policy text will be published before launch.',
+  legal: {
+    version: 'Version {version}, {date}',
   },
   fieldErrors: {
     webp_too_large: 'WebP pictures can be at most 8 MB',

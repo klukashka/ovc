@@ -182,12 +182,3 @@ export function ResetPasswordPage(): ReactElement {
     </Page>
   );
 }
-
-export function PrivacyPage(): ReactElement {
-  const { t } = useTranslation();
-  return (
-    <Page width="reading">
-      <p className="text-text-muted">{t('privacy.placeholder')}</p>
-    </Page>
-  );
-}

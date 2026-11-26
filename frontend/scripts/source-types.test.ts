@@ -19,6 +19,14 @@ describe('source file types', () => {
     expect(unlinted).toEqual(['src/lib/time/other.json', 'src/lib/timezone-cities.json']);
   });
 
+  test('allows only the six named legal texts as Markdown in src', () => {
+    const paths = ['src/legal/ru/privacy.md', 'src/legal/en/terms.md', 'src/legal/ru/other.md', 'src/legal/privacy.md'];
+
+    const unlinted = unlintedFiles(paths, sourceExtensions);
+
+    expect(unlinted).toEqual(['src/legal/ru/other.md', 'src/legal/privacy.md']);
+  });
+
   test('allows only linted scripts and static assets in public', () => {
     const paths = ['public/theme-init.js', 'public/favicon.svg', 'public/a.mjs', 'public/b.html', 'public/c.cjs'];
 

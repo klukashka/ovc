@@ -20,6 +20,7 @@
     "src/lib/api/uploadContract.ts",
     "src/lib/api/transportContract.ts",
     "src/lib/i18n/languages.ts",
+    "src/legal/document.ts",
     "src/lib/realtime/frames.ts",
     "src/lib/realtime/socket.ts",
     "src/lib/realtime/realtimeContract.ts"

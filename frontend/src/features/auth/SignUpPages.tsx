@@ -106,9 +106,9 @@ export function ConsentField({ error }: { readonly error: string | undefined }):
           className="mt-0.5 size-4"
         />
         <span>
-          {t('signUp.consent')}{' '}
-          <Link to="/privacy" target="_blank" rel="noreferrer" className="text-accent-text underline">
-            {t('signUp.privacyPolicy')}
+          {t('signUp.consentLead')}{' '}
+          <Link to="/consent" target="_blank" rel="noopener noreferrer" className="text-accent-text underline">
+            {t('signUp.consentLink')}
             <span className="sr-only"> {t('signUp.opensInNewTab')}</span>
           </Link>
         </span>
@@ -119,6 +119,19 @@ export function ConsentField({ error }: { readonly error: string | undefined }):
         </p>
       )}
     </div>
+  );
+}
+
+export function AcceptanceLine(): ReactElement {
+  const { t } = useTranslation();
+  return (
+    <p data-acceptance-line="" className="text-small text-text-muted">
+      {t('signUp.acceptanceLead')}{' '}
+      <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-accent-text underline">
+        {t('signUp.acceptanceLink')}
+        <span className="sr-only"> {t('signUp.opensInNewTab')}</span>
+      </Link>
+    </p>
   );
 }
 
@@ -234,6 +247,7 @@ function SignUpPage({ accountRole }: { readonly accountRole: SignUpRole }): Reac
         <LanguageChoice interfaceLanguage={isLanguage(i18n.language) ? i18n.language : 'ru'} />
         <ConsentField error={fieldError('consent')} />
         <SubmitButton busy={state.kind === 'sending'}>{t('signUp.submit')}</SubmitButton>
+        <AcceptanceLine />
         <p>
           <Link to="/" className={linkClass}>
             {t('signUp.haveAccount')}

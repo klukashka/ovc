@@ -75,6 +75,20 @@ test('no recording control exists', async ({ request, deployment }) => {
   expect(ready.status()).toBe(404);
 });
 
+test('the legal document pages carry the page security headers', async ({ request, deployment }) => {
+  const paths = ['/privacy', '/consent', '/terms'];
+
+  const responses = await Promise.all(paths.map((path) => request.get(path)));
+
+  const headers = responses.map((response) => response.headers());
+  expect(headers.map((shown) => shown['content-security-policy'])).toEqual(
+    paths.map(() => contentSecurityPolicyWithTestRoom(deployment.roomOrigin)),
+  );
+  expect(headers.every((shown) => shown['content-security-policy']?.includes("frame-ancestors 'none'"))).toBe(true);
+  expect(headers.map((shown) => shown['referrer-policy'])).toEqual(['no-referrer', 'no-referrer', 'no-referrer']);
+  expect(headers.map((shown) => shown['x-content-type-options'])).toEqual(['nosniff', 'nosniff', 'nosniff']);
+});
+
 test('every page, asset and proxied API response carries the security headers', async ({ request, deployment }) => {
   const today = await request.get('/today');
   const live = await request.get('/api/v1/health/live');

@@ -34,7 +34,7 @@ test('after sign-up the result heading takes focus', async ({ page }) => {
   await page.getByLabel('Имя').fill(account.name);
   await page.getByLabel('Email').fill(account.email);
   await page.getByLabel('Пароль', { exact: true }).fill(account.password);
-  await page.getByLabel(/Я соглашаюсь на обработку персональных данных/).check();
+  await page.getByLabel(/^Я даю согласие на обработку моих персональных данных/).check();
 
   await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
 
@@ -245,7 +245,7 @@ test('the resend button keeps focus while it waits', async ({ page }) => {
   await page.getByLabel('Имя').fill(account.name);
   await page.getByLabel('Email').fill(account.email);
   await page.getByLabel('Пароль', { exact: true }).fill(account.password);
-  await page.getByLabel(/Я соглашаюсь на обработку персональных данных/).check();
+  await page.getByLabel(/^Я даю согласие на обработку моих персональных данных/).check();
   await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
   const resend = page.getByRole('button', { name: 'Отправить ещё раз' });
   await expect(resend).toBeDisabled();
