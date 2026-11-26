@@ -1721,7 +1721,7 @@ export interface components {
             /** Format: uuid */
             avatar_id: string | null;
             display_name: string;
-            name: string;
+            name: string | null;
             /** Format: uuid */
             relationship_id: string;
         };

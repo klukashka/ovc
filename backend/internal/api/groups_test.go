@@ -27,7 +27,7 @@ const (
 type groupMember struct {
 	RelationshipID string    `json:"relationship_id"`
 	DisplayName    string    `json:"display_name"`
-	Name           string    `json:"name"`
+	Name           *string   `json:"name"`
 	AvatarID       *string   `json:"avatar_id"`
 	AddedAt        time.Time `json:"added_at"`
 }
@@ -239,7 +239,7 @@ func TestTutorBuildsAGroupAndItShowsOnCardsListsAndTheStudentFilter(t *testing.T
 	if created.status != http.StatusCreated || created.headers.Get("Cache-Control") != "no-store" || group.Name != groupName || group.Colour != "moss" || group.ArchivedAt != nil {
 		t.Fatalf("creating answered %d %v %s", created.status, created.headers, created.body)
 	}
-	if !slices.Equal(memberIDsOf(group), members[:6]) || group.Members[0].DisplayName != seededCardName || group.Members[0].Name != "Member account 10" {
+	if !slices.Equal(memberIDsOf(group), members[:6]) || group.Members[0].DisplayName != seededCardName || (group.Members[0].Name == nil || *group.Members[0].Name != "Member account 10") {
 		t.Fatalf("the created group holds %+v", group.Members)
 	}
 	if patched.status != http.StatusOK || decodeGroup(t, patched).Name != "Morning club" || decodeGroup(t, patched).Colour != "plum" {

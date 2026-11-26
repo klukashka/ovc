@@ -608,6 +608,20 @@ function AddMembersDialog({
   );
 }
 
+export function MemberLabel({ member }: { readonly member: GroupMember }): ReactElement {
+  return (
+    <span className="flex min-w-0 flex-1 flex-col">
+      <Link
+        to={`/students/${encodeURIComponent(member.relationship_id)}`}
+        className="block truncate py-3 text-strong text-accent-text underline desktop:py-0"
+      >
+        {member.display_name}
+      </Link>
+      {member.name === null ? null : <span className="truncate text-small text-text-muted">{member.name}</span>}
+    </span>
+  );
+}
+
 function Members({
   group,
   memberNote,
@@ -759,15 +773,7 @@ function Members({
               className="flex flex-wrap items-center gap-3 border-t border-border py-3"
             >
               <Avatar name={member.display_name} avatarId={member.avatar_id} />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <Link
-                  to={`/students/${encodeURIComponent(member.relationship_id)}`}
-                  className="block truncate py-3 text-strong text-accent-text underline desktop:py-0"
-                >
-                  {member.display_name}
-                </Link>
-                <span className="truncate text-small text-text-muted">{member.name}</span>
-              </span>
+              <MemberLabel member={member} />
               <ActionMenu
                 label={t('groups.memberActions', { name: member.display_name })}
                 unavailable={removing || addingBack}

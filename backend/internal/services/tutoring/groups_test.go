@@ -117,7 +117,7 @@ func TestGroupListUsesBatchedMemberQueries(t *testing.T) {
 		t.Fatalf("listed %d and then %d groups", len(one), len(many))
 	}
 	for _, group := range many {
-		if group.MemberCount != groupMembers || len(group.FirstMembers) != domain.GroupPreviewMembers || group.FirstMembers[0].Name != "Member 0" {
+		if group.MemberCount != groupMembers || len(group.FirstMembers) != domain.GroupPreviewMembers || (group.FirstMembers[0].Name == nil || *group.FirstMembers[0].Name != "Member 0") {
 			t.Fatalf("a group lists %d members of %d: %+v", len(group.FirstMembers), group.MemberCount, group.FirstMembers)
 		}
 	}

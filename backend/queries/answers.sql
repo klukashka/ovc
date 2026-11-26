@@ -320,7 +320,7 @@ JOIN users AS tutor ON tutor.id = submissions.tutor_id
 JOIN attachments ON attachments.id = attachment_references.attachment_id AND attachments.state = 'bound'
 WHERE attachment_references.attachment_id = @attachment_id AND attachment_references.ref_kind = 'answer'
     AND (
-        submissions.tutor_id = sqlc.arg(viewer)::uuid
+        (submissions.tutor_id = sqlc.arg(viewer)::uuid AND relationships.state NOT IN ('reclaim_pending', 'discarded'))
         OR (submissions.student_id = sqlc.arg(viewer)::uuid AND issues.status = 'active'
             AND relationships.state IN ('active', 'provisional', 'ended') AND (tutor.state <> 'deleted' OR tutor.deleted_at > sqlc.arg(tutor_deleted_after)::timestamptz))
     )

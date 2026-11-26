@@ -42,7 +42,7 @@ func (e *MembersNotActiveError) Error() string {
 type GroupMember struct {
 	RelationshipID domain.RelationshipID
 	DisplayName    string
-	Name           string
+	Name           *string
 	AvatarID       *domain.AttachmentID
 	AddedAt        time.Time
 }
@@ -103,7 +103,7 @@ func (s *Service) ListGroups(ctx context.Context, tutor domain.UserID) ([]GroupS
 		if err != nil {
 			return err
 		}
-		summaries, err = groupSummaries(groups, first, avatars)
+		summaries, err = s.groupSummaries(ctx, tutor, groups, first, avatars)
 		return err
 	})
 	return summaries, err
@@ -112,21 +112,25 @@ func (s *Service) ListGroups(ctx context.Context, tutor domain.UserID) ([]GroupS
 func firstMemberStudents(members []repositories.FirstGroupMember) []domain.UserID {
 	students := make([]domain.UserID, 0, len(members))
 	for _, member := range members {
-		if member.StudentID != nil {
+		if member.StudentID != nil && memberShowsAccount(member.CardState, member.AccountState) {
 			students = append(students, *member.StudentID)
 		}
 	}
 	return students
 }
 
-func groupSummaries(
-	groups []repositories.Group, first []repositories.FirstGroupMember, avatars map[domain.UserID]domain.AttachmentID,
+func (s *Service) groupSummaries(
+	ctx context.Context, tutor domain.UserID, groups []repositories.Group, first []repositories.FirstGroupMember,
+	avatars map[domain.UserID]domain.AttachmentID,
 ) ([]GroupSummary, error) {
 	counts := make(map[domain.GroupID]int64, len(groups))
 	previews := make(map[domain.GroupID][]GroupMember, len(groups))
 	for _, member := range first {
 		counts[member.GroupID] = member.MemberCount
-		view, err := memberView(member.RelationshipID, member.DisplayName, member.Name, member.StudentID, member.AddedAt, avatars)
+		view, err := s.memberView(ctx, tutor, member.GroupID, memberSource{
+			relationship: member.RelationshipID, displayName: member.DisplayName, name: member.Name, student: member.StudentID,
+			addedAt: member.AddedAt, cardState: member.CardState, accountState: member.AccountState,
+		}, avatars)
 		if err != nil {
 			return nil, err
 		}
@@ -142,16 +146,38 @@ func groupSummaries(
 	return summaries, nil
 }
 
-func memberView(
-	relationship domain.RelationshipID, displayName *string, name string, student *domain.UserID, addedAt time.Time, avatars map[domain.UserID]domain.AttachmentID,
+type memberSource struct {
+	relationship domain.RelationshipID
+	displayName  *string
+	name         string
+	student      *domain.UserID
+	addedAt      time.Time
+	cardState    domain.RelationshipState
+	accountState domain.AccountState
+}
+
+func memberShowsAccount(card domain.RelationshipState, account domain.AccountState) bool {
+	return domain.CardShowsAccount(card) && account != domain.AccountDeleted
+}
+
+func (s *Service) memberView(
+	ctx context.Context, tutor domain.UserID, group domain.GroupID, source memberSource, avatars map[domain.UserID]domain.AttachmentID,
 ) (GroupMember, error) {
-	cardName, err := domain.CardName(displayName)
+	cardName, err := domain.CardName(source.displayName)
 	if err != nil {
 		return GroupMember{}, err
 	}
-	member := GroupMember{RelationshipID: relationship, DisplayName: cardName, Name: name, AddedAt: addedAt}
-	if student != nil {
-		if avatar, has := avatars[*student]; has {
+	member := GroupMember{RelationshipID: source.relationship, DisplayName: cardName, AddedAt: source.addedAt}
+	if !memberShowsAccount(source.cardState, source.accountState) {
+		s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "group.member.hidden_account",
+			slog.String("tutor_id", tutor.String()), slog.String("group_id", group.String()),
+			slog.String("relationship_id", source.relationship.String()))
+		return member, nil
+	}
+	name := source.name
+	member.Name = &name
+	if source.student != nil {
+		if avatar, has := avatars[*source.student]; has {
 			member.AvatarID = &avatar
 		}
 	}
@@ -181,7 +207,7 @@ func (s *Service) groupView(ctx context.Context, repos repositories.Repositories
 	}
 	students := make([]domain.UserID, 0, len(members))
 	for _, member := range members {
-		if member.StudentID != nil {
+		if member.StudentID != nil && memberShowsAccount(member.CardState, member.AccountState) {
 			students = append(students, *member.StudentID)
 		}
 	}
@@ -191,7 +217,10 @@ func (s *Service) groupView(ctx context.Context, repos repositories.Repositories
 	}
 	group := Group{ID: row.ID, Name: row.Name, Colour: row.Colour, ArchivedAt: row.ArchivedAt, Members: make([]GroupMember, 0, len(members))}
 	for _, member := range members {
-		view, err := memberView(member.RelationshipID, member.DisplayName, member.Name, member.StudentID, member.AddedAt, avatars)
+		view, err := s.memberView(ctx, row.TutorID, row.ID, memberSource{
+			relationship: member.RelationshipID, displayName: member.DisplayName, name: member.Name, student: member.StudentID,
+			addedAt: member.AddedAt, cardState: member.CardState, accountState: member.AccountState,
+		}, avatars)
 		if err != nil {
 			return Group{}, err
 		}

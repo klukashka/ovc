@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { I18nextProvider } from 'react-i18next';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { type ApiClient, ApiClientContext, createApiClient } from '../../lib/api/client.ts';
@@ -9,7 +10,7 @@ import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fake
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import { type GroupDetail, type GroupMember, fetchGroup } from './api.ts';
-import { AddBackNotice, ArchiveForm, RemovalForm } from './GroupPage.tsx';
+import { AddBackNotice, ArchiveForm, MemberLabel, RemovalForm } from './GroupPage.tsx';
 import { groupsTexts } from './texts.en.ts';
 
 const origin = 'https://ovc.example';
@@ -184,5 +185,37 @@ describe('the reversal of a group change whose answer is unknown', () => {
     await screen.findByText(/^Back in the group:/);
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
     expect(seeded.server.groupMemberIds(seeded.group.id)).toHaveLength(2);
+  });
+});
+
+describe('a member row', () => {
+  test('a member whose card does not show the account shows only the card name', async () => {
+    const seeded = await seededGroup(['Anna']);
+    const hidden: GroupMember = { ...memberNamed(seeded.group, 'Anna'), name: null, avatar_id: null };
+
+    await show(
+      seeded,
+      <MemoryRouter>
+        <MemberLabel member={hidden} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Anna' })).toBeDefined();
+    expect(document.querySelector('.text-text-muted')).toBeNull();
+  });
+
+  test('a member whose card shows the account shows the account name under the card name', async () => {
+    const seeded = await seededGroup(['Anna']);
+    const shown = memberNamed(seeded.group, 'Anna');
+
+    await show(
+      seeded,
+      <MemoryRouter>
+        <MemberLabel member={shown} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Anna' })).toBeDefined();
+    expect(document.querySelector('.text-text-muted')?.textContent).toBe(shown.name);
   });
 });

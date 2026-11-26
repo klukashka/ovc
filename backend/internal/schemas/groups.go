@@ -11,7 +11,7 @@ import (
 type GroupMember struct {
 	RelationshipID string    `json:"relationship_id" format:"uuid"`
 	DisplayName    string    `json:"display_name"`
-	Name           string    `json:"name"`
+	Name           *string   `json:"name" nullable:"true"`
 	AvatarID       *string   `json:"avatar_id" format:"uuid" nullable:"true"`
 	AddedAt        time.Time `json:"added_at"`
 }

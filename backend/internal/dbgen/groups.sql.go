@@ -228,7 +228,7 @@ func (q *Queries) GetTutorGroupByCreateKey(ctx context.Context, arg GetTutorGrou
 
 const listFirstGroupMembers = `-- name: ListFirstGroupMembers :many
 SELECT ranked.group_id, ranked.relationship_id, ranked.display_name, ranked.student_id, ranked.name, ranked.added_at,
-    ranked.member_count
+    ranked.member_count, card.state AS card_state, account.state AS account_state
 FROM (
     SELECT group_members.group_id, group_members.relationship_id, relationships.display_name, relationships.student_id,
         users.name, group_members.added_at,
@@ -241,6 +241,8 @@ FROM (
     JOIN users ON users.id = relationships.student_id
     WHERE group_members.tutor_id = $1 AND group_members.group_id = ANY ($2::uuid[])
 ) AS ranked
+JOIN relationships AS card ON card.id = ranked.relationship_id
+JOIN users AS account ON account.id = ranked.student_id
 WHERE ranked.position <= $3::bigint
 ORDER BY ranked.group_id, ranked.position
 `
@@ -259,6 +261,8 @@ type ListFirstGroupMembersRow struct {
 	Name           string
 	AddedAt        time.Time
 	MemberCount    int64
+	CardState      domain.RelationshipState
+	AccountState   domain.AccountState
 }
 
 func (q *Queries) ListFirstGroupMembers(ctx context.Context, arg ListFirstGroupMembersParams) ([]ListFirstGroupMembersRow, error) {
@@ -278,6 +282,8 @@ func (q *Queries) ListFirstGroupMembers(ctx context.Context, arg ListFirstGroupM
 			&i.Name,
 			&i.AddedAt,
 			&i.MemberCount,
+			&i.CardState,
+			&i.AccountState,
 		); err != nil {
 			return nil, err
 		}
@@ -319,7 +325,8 @@ func (q *Queries) ListGroupMemberIDs(ctx context.Context, arg ListGroupMemberIDs
 }
 
 const listGroupMembers = `-- name: ListGroupMembers :many
-SELECT group_members.relationship_id, relationships.display_name, relationships.student_id, users.name, group_members.added_at
+SELECT group_members.relationship_id, relationships.display_name, relationships.student_id, users.name, group_members.added_at,
+    relationships.state AS card_state, users.state AS account_state
 FROM group_members
 JOIN relationships ON relationships.id = group_members.relationship_id AND relationships.tutor_id = group_members.tutor_id
 JOIN users ON users.id = relationships.student_id
@@ -338,6 +345,8 @@ type ListGroupMembersRow struct {
 	StudentID      *domain.UserID
 	Name           string
 	AddedAt        time.Time
+	CardState      domain.RelationshipState
+	AccountState   domain.AccountState
 }
 
 func (q *Queries) ListGroupMembers(ctx context.Context, arg ListGroupMembersParams) ([]ListGroupMembersRow, error) {
@@ -355,6 +364,8 @@ func (q *Queries) ListGroupMembers(ctx context.Context, arg ListGroupMembersPara
 			&i.StudentID,
 			&i.Name,
 			&i.AddedAt,
+			&i.CardState,
+			&i.AccountState,
 		); err != nil {
 			return nil, err
 		}

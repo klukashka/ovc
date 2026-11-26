@@ -1516,7 +1516,7 @@ JOIN users AS tutor ON tutor.id = submissions.tutor_id
 JOIN attachments ON attachments.id = attachment_references.attachment_id AND attachments.state = 'bound'
 WHERE attachment_references.attachment_id = $1 AND attachment_references.ref_kind = 'answer'
     AND (
-        submissions.tutor_id = $2::uuid
+        (submissions.tutor_id = $2::uuid AND relationships.state NOT IN ('reclaim_pending', 'discarded'))
         OR (submissions.student_id = $2::uuid AND issues.status = 'active'
             AND relationships.state IN ('active', 'provisional', 'ended') AND (tutor.state <> 'deleted' OR tutor.deleted_at > $3::timestamptz))
     )

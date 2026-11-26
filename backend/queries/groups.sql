@@ -50,7 +50,8 @@ JOIN relationships ON relationships.id = removed.relationship_id AND relationshi
 SELECT relationship_id FROM group_members WHERE group_id = @group_id AND tutor_id = @tutor_id;
 
 -- name: ListGroupMembers :many
-SELECT group_members.relationship_id, relationships.display_name, relationships.student_id, users.name, group_members.added_at
+SELECT group_members.relationship_id, relationships.display_name, relationships.student_id, users.name, group_members.added_at,
+    relationships.state AS card_state, users.state AS account_state
 FROM group_members
 JOIN relationships ON relationships.id = group_members.relationship_id AND relationships.tutor_id = group_members.tutor_id
 JOIN users ON users.id = relationships.student_id
@@ -59,7 +60,7 @@ ORDER BY group_members.added_at, group_members.relationship_id;
 
 -- name: ListFirstGroupMembers :many
 SELECT ranked.group_id, ranked.relationship_id, ranked.display_name, ranked.student_id, ranked.name, ranked.added_at,
-    ranked.member_count
+    ranked.member_count, card.state AS card_state, account.state AS account_state
 FROM (
     SELECT group_members.group_id, group_members.relationship_id, relationships.display_name, relationships.student_id,
         users.name, group_members.added_at,
@@ -72,6 +73,8 @@ FROM (
     JOIN users ON users.id = relationships.student_id
     WHERE group_members.tutor_id = @tutor_id AND group_members.group_id = ANY (sqlc.arg(group_ids)::uuid[])
 ) AS ranked
+JOIN relationships AS card ON card.id = ranked.relationship_id
+JOIN users AS account ON account.id = ranked.student_id
 WHERE ranked.position <= sqlc.arg(first_members)::bigint
 ORDER BY ranked.group_id, ranked.position;
 
