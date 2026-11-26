@@ -103,7 +103,9 @@ func (f studentDeletionDigestFixture) run(t *testing.T, purge bool) <-chan pendi
 	if err != nil {
 		t.Fatal(err)
 	}
-	effects := tutoring.New(tutoring.Dependencies{Cipher: cipher, PublicURL: publicOrigin, Store: f.h.store, Clock: f.h.clock, Random: randomPerTest(t), Keys: f.h.keys, Logger: logger})
+	effects := tutoring.New(tutoring.Dependencies{
+		Cipher: cipher, PublicURL: publicOrigin, Store: f.h.store, Clock: f.h.clock, Random: randomPerTest(t), Keys: f.h.keys, Logger: logger, Exports: f.h.effects,
+	})
 	purger := accounts.NewPurger(f.h.store, f.h.files, effects, f.h.effects, logger)
 	now := f.h.now(t)
 	done := make(chan pendingAnswer, 1)

@@ -101,8 +101,8 @@ type Dependencies struct {
 }
 
 type ExportEffects interface {
-	WithdrawOwn(ctx context.Context, repos repositories.Repositories, user domain.UserID, cause domain.ExportInvalidationCause, now time.Time) error
-	DeleteForPurge(ctx context.Context, repos repositories.Repositories, user domain.UserID, now time.Time) error
+	Apply(ctx context.Context, repos repositories.Repositories, now time.Time) error
+	Purge(ctx context.Context, repos repositories.Repositories, user domain.UserID, now time.Time) error
 }
 
 type Service struct {

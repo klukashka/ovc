@@ -49,7 +49,7 @@ type Service struct {
 }
 
 type ExportWithdrawer interface {
-	WithdrawOwn(ctx context.Context, repos repositories.Repositories, user domain.UserID, cause domain.ExportInvalidationCause, now time.Time) error
+	Apply(ctx context.Context, repos repositories.Repositories, now time.Time) error
 }
 
 func New(store *repositories.Store, source clock.Source, logger *slog.Logger, exports ExportWithdrawer) *Service {
@@ -116,7 +116,17 @@ func (s *Service) Block(ctx context.Context, email string) (domain.UserID, error
 		if _, err := repos.EmailTokens.DiscardAllUnused(ctx, target.ID); err != nil {
 			return err
 		}
-		return s.exports.WithdrawOwn(ctx, repos, target.ID, domain.ExportCauseAccountBlocked, now)
+		audience, err := repos.Exports.InvalidationAudience(ctx, target.ID)
+		if err != nil {
+			return err
+		}
+		if err := repos.InvalidateOwnExport(domain.ExportCauseAccountBlocked, target.ID); err != nil {
+			return err
+		}
+		if err := repos.InvalidateExports(domain.ExportCauseAccountBlocked, audience...); err != nil {
+			return err
+		}
+		return s.exports.Apply(ctx, repos, now)
 	})
 }
 

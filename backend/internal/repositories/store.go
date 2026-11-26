@@ -45,7 +45,8 @@ type Repositories struct {
 	Exports         Exports
 	TestClock       TestClock
 
-	commit *commitHooks
+	commit        *commitHooks
+	invalidations *exportInvalidations
 }
 
 type commitHooks struct {
@@ -75,15 +76,19 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 func (s *Store) Repositories() Repositories {
-	return newRepositories(dbgen.New(s.pool))
+	return newRepositories(dbgen.New(s.pool), nil)
 }
 
 func (s *Store) WithTx(ctx context.Context, work func(Repositories) error) error {
 	hooks := &commitHooks{}
+	invalidations := newExportInvalidations()
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		repos := newRepositories(dbgen.New(tx))
+		repos := newRepositories(dbgen.New(tx), invalidations)
 		repos.commit = hooks
-		return work(repos)
+		if err := work(repos); err != nil {
+			return err
+		}
+		return invalidations.unapplied()
 	})
 	if err != nil {
 		return fmt.Errorf("transaction: %w", err)
@@ -95,7 +100,7 @@ func (s *Store) WithTx(ctx context.Context, work func(Repositories) error) error
 func (s *Store) WithReadTx(ctx context.Context, work func(Repositories) error) error {
 	options := pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}
 	err := pgx.BeginTxFunc(ctx, s.pool, options, func(tx pgx.Tx) error {
-		return work(newRepositories(dbgen.New(tx)))
+		return work(newRepositories(dbgen.New(tx), nil))
 	})
 	if err != nil {
 		return fmt.Errorf("read-only transaction: %w", err)
@@ -103,7 +108,7 @@ func (s *Store) WithReadTx(ctx context.Context, work func(Repositories) error) e
 	return nil
 }
 
-func newRepositories(queries *dbgen.Queries) Repositories {
+func newRepositories(queries *dbgen.Queries, invalidations *exportInvalidations) Repositories {
 	return Repositories{
 		Users:           Users{queries: queries},
 		TutorProfiles:   TutorProfiles{queries: queries},
@@ -116,11 +121,11 @@ func newRepositories(queries *dbgen.Queries) Repositories {
 		DailyUploads:    DailyUploads{queries: queries},
 		Outbox:          Outbox{queries: queries},
 		JobRuns:         JobRuns{queries: queries},
-		Relationships:   Relationships{queries: queries},
+		Relationships:   Relationships{queries: queries, invalidations: invalidations},
 		Invitations:     Invitations{queries: queries},
 		JoinRequests:    JoinRequests{queries: queries},
 		Blocked:         BlockedRequesters{queries: queries},
-		Groups:          Groups{queries: queries},
+		Groups:          Groups{queries: queries, invalidations: invalidations},
 		Preferences:     EmailPreferences{queries: queries},
 		Signals:         Signals{queries: queries},
 		Notifications:   Notifications{queries: queries},
@@ -135,6 +140,7 @@ func newRepositories(queries *dbgen.Queries) Repositories {
 		LessonMaterials: LessonMaterials{queries: queries},
 		Homework:        Homework{queries: queries},
 		TestClock:       TestClock{queries: queries},
+		invalidations:   invalidations,
 	}
 }
 

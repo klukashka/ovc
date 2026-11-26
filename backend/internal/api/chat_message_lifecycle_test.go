@@ -82,7 +82,7 @@ func TestStudentPurgeErasesMessagesAndFilesInBatches(t *testing.T) {
 	}
 	h.mustAnswer(t, h.deleteMessage(t, parties.studentToken, sent[1].ID), http.StatusNoContent)
 	h.mustAnswer(t, h.deleteMe(t, parties.studentToken, accountPassword), http.StatusNoContent)
-	batches := tutoring.New(tutoring.Dependencies{Store: h.store, Random: rand.Reader, Logger: slog.New(slog.DiscardHandler), PurgeBatchRows: 2})
+	batches := tutoring.New(tutoring.Dependencies{Store: h.store, Random: rand.Reader, Logger: slog.New(slog.DiscardHandler), Exports: h.effects, PurgeBatchRows: 2})
 
 	var erased []int64
 	for range 4 {
@@ -362,7 +362,7 @@ func TestAStudentPurgeBatchReadsAgainWhenItsMessagesWentMeanwhile(t *testing.T) 
 	parties := h.activeStudentInAGroup(t)
 	direct := h.directChannel(t, parties.card.ID)
 	taken := h.sent(t, parties.studentToken, direct.ID, "Taken by another purge")
-	batches := tutoring.New(tutoring.Dependencies{Store: h.store, Random: rand.Reader, Logger: slog.New(slog.DiscardHandler), PurgeBatchRows: 2})
+	batches := tutoring.New(tutoring.Dependencies{Store: h.store, Random: rand.Reader, Logger: slog.New(slog.DiscardHandler), Exports: h.effects, PurgeBatchRows: 2})
 	release := h.holdRowThen(t, "SELECT "+lockedRowPosition+" FROM messages WHERE id = $1::uuid FOR UPDATE", taken.ID,
 		"DELETE FROM messages WHERE id = $1::uuid")
 

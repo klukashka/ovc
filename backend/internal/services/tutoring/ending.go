@@ -41,7 +41,7 @@ func (s *Service) EndByTutor(ctx context.Context, actor domain.TutorActor, id do
 	}
 	var card Card
 	var ended *ending
-	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+	err = s.withExports(ctx, now, func(repos repositories.Repositories) error {
 		if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 			return err
 		}
@@ -83,7 +83,7 @@ func (s *Service) StopStudying(ctx context.Context, principal accounts.Principal
 	var ended *ending
 	var removed *repositories.Relationship
 	var lessons lessonEffects
-	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+	err = s.withExports(ctx, now, func(repos repositories.Repositories) error {
 		if err := accounts.LockActingAccount(ctx, repos, principal, now, principal.State); err != nil {
 			return err
 		}

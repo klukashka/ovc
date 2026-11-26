@@ -216,18 +216,18 @@ func newAuthHarnessWithDatabase(
 	if err != nil {
 		t.Fatal(err)
 	}
+	wall := &steppedWall{}
+	effects := export.NewEffects(export.Dependencies{Store: store, Wall: wall.Now, Random: random, Logger: logger, Cleanup: fileService})
 	tutoringService := tutoring.New(tutoring.Dependencies{
-		Store: store, Clock: shared, Random: random, Keys: keys, Cipher: cipher, PublicURL: publicOrigin, Logger: logger,
+		Store: store, Clock: shared, Random: random, Keys: keys, Cipher: cipher, PublicURL: publicOrigin, Logger: logger, Exports: effects,
 	})
 	scheduleService := schedule.New(schedule.Dependencies{Store: store, Clock: shared, Random: random, Keys: keys, Logger: logger, Addresses: fileService})
-	effects := export.NewEffects(export.Dependencies{Store: store, Random: random, Logger: logger, Cleanup: fileService})
 	service := accounts.New(accounts.Dependencies{
 		Store: store, Clock: shared, Random: random, Hasher: hasher, Keys: keys, Logger: logger,
 		Tokens: core.NewAccessTokens(keys, publicOrigin, 15*time.Minute), RefreshTTL: 30 * 24 * time.Hour,
 		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}, Avatars: fileService, Uploads: fileService,
 		Tutoring: tutoringService, Exports: effects,
 	})
-	wall := &steppedWall{}
 	exportService := export.New(export.Dependencies{
 		Store: store, Clock: shared, Wall: wall.Now, Random: random, Keys: keys, Logger: logger, Objects: serving,
 		Signer: storage.NewPresigner(local.Settings, local.Settings.Endpoint), Passwords: service, Cleanup: fileService,

@@ -37,7 +37,7 @@ var mirrorAndPurgeQueries = []string{
 	"ListStudentDeletionTutors", "LockStudentDeletionGroups", "LockStudentDeletionChannels",
 	"DeleteMembersOfChannels", "DeleteMembershipsOfUser", "LockChannelsOfMember", "DeleteTutorChannelMembersBatch",
 	"ClaimUnbindableChatUploads", "MoveSenderReadMarker", "MoveReadMarker", "LockDigestMembers", "AdvanceDigestedMarker",
-	"GetPeerReadSeq", "GetDirectPeer",
+	"GetPeerReadSeq", "GetDirectPeer", "ExportInvalidationAudience",
 }
 
 var namedQuery = regexp.MustCompile(`(?m)^-- name: (\w+) :\w+$`)

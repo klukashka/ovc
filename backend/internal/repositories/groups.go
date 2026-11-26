@@ -24,7 +24,8 @@ type (
 )
 
 type Groups struct {
-	queries *dbgen.Queries
+	queries       *dbgen.Queries
+	invalidations *exportInvalidations
 }
 
 func (r Groups) Create(ctx context.Context, group NewGroup) error {
@@ -91,11 +92,20 @@ func (r Groups) AddMembers(ctx context.Context, tutor domain.UserID, id domain.G
 }
 
 func (r Groups) RemoveMembers(ctx context.Context, tutor domain.UserID, id domain.GroupID, members []domain.RelationshipID) (int64, error) {
+	if err := r.invalidations.open(); err != nil {
+		return 0, err
+	}
 	if len(members) == 0 {
 		return 0, nil
 	}
-	rows, err := r.queries.RemoveGroupMembers(ctx, dbgen.RemoveGroupMembersParams{GroupID: id, TutorID: tutor, RelationshipIds: uuids(members)})
-	return counted(rows, err, "remove group members")
+	students, err := r.queries.RemoveGroupMembers(ctx, dbgen.RemoveGroupMembersParams{GroupID: id, TutorID: tutor, RelationshipIds: uuids(members)})
+	if err != nil {
+		return 0, done(err, "remove group members")
+	}
+	if len(students) == 0 {
+		return 0, nil
+	}
+	return int64(len(students)), r.invalidations.nameParties(domain.ExportCauseGroupMemberRemoved, tutor, students...)
 }
 
 func (r Groups) MemberIDs(ctx context.Context, tutor domain.UserID, id domain.GroupID) ([]domain.RelationshipID, error) {

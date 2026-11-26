@@ -142,11 +142,11 @@ func serve(ctx context.Context, settings core.Settings, logging *core.Logging) e
 	if err != nil {
 		return err
 	}
-	tutoringService, err := startup.NewTutoring(logging.Logger, settings, database, source, random)
+	exportEffects := startup.NewExportEffects(logging.Logger, database, random, fileService)
+	tutoringService, err := startup.NewTutoring(logging.Logger, settings, database, source, random, exportEffects)
 	if err != nil {
 		return err
 	}
-	exportEffects := startup.NewExportEffects(logging.Logger, database, random, fileService)
 	accountService, err := startup.NewAccounts(logging.Logger, settings, database, source, random, fileService, tutoringService, exportEffects)
 	if err != nil {
 		return err

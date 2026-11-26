@@ -521,7 +521,7 @@ func (s *Service) WithdrawCard(ctx context.Context, actor domain.TutorActor, id 
 		return err
 	}
 	withdrawn := false
-	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+	err = s.withExports(ctx, now, func(repos repositories.Repositories) error {
 		if err := s.lockActingTutor(ctx, repos, actor); err != nil {
 			return err
 		}

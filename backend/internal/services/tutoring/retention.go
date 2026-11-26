@@ -50,7 +50,7 @@ func (s *Service) EraseCardEmails(ctx context.Context, now time.Time) (int64, er
 
 func (s *Service) eraseCardEmail(ctx context.Context, card repositories.CardDueForErasure, dueBefore time.Time, now time.Time) (bool, error) {
 	erased := false
-	err := s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+	err := s.withExports(ctx, now, func(repos repositories.Repositories) error {
 		err := repos.TutorProfiles.Lock(ctx, card.TutorID)
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil

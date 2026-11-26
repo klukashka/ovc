@@ -52,7 +52,9 @@ func NewFiles(lifetime context.Context, logger *slog.Logger, settings core.Setti
 }
 
 func NewExportEffects(logger *slog.Logger, database *core.Database, random core.RandomSource, fileService *files.Service) export.Effects {
-	return export.NewEffects(export.Dependencies{Store: repositories.NewStore(database.Pool), Random: random, Logger: logger, Cleanup: fileService})
+	return export.NewEffects(export.Dependencies{
+		Store: repositories.NewStore(database.Pool), Wall: clock.System{}.Now, Random: random, Logger: logger, Cleanup: fileService,
+	})
 }
 
 func NewExports(
@@ -84,7 +86,9 @@ func publicHost(publicURL string) (string, error) {
 
 var errNoPublicHost = errors.New("the public address has no host")
 
-func NewTutoring(logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource) (*tutoring.Service, error) {
+func NewTutoring(
+	logger *slog.Logger, settings core.Settings, database *core.Database, source clock.Source, random core.RandomSource, exports tutoring.ExportInvalidator,
+) (*tutoring.Service, error) {
 	keys, err := core.DeriveKeys(settings.JWTSecret)
 	if err != nil {
 		return nil, err
@@ -95,7 +99,7 @@ func NewTutoring(logger *slog.Logger, settings core.Settings, database *core.Dat
 	}
 	return tutoring.New(tutoring.Dependencies{
 		Store: repositories.NewStore(database.Pool), Clock: source, Random: random, Keys: keys, Cipher: cipher,
-		PublicURL: settings.PublicURL, Logger: logger,
+		PublicURL: settings.PublicURL, Logger: logger, Exports: exports,
 	}), nil
 }
 
@@ -230,8 +234,8 @@ func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings,
 		return nil, err
 	}
 	fileService := files.New(files.Dependencies{Store: store, Objects: objects, Clock: source, Random: random, Logger: logger})
-	tutoringService := tutoring.New(tutoring.Dependencies{Store: store, Clock: source, Random: random, Cipher: cipher, Logger: logger})
-	exportEffects := export.NewEffects(export.Dependencies{Store: store, Random: random, Logger: logger, Cleanup: fileService})
+	exportEffects := export.NewEffects(export.Dependencies{Store: store, Wall: clock.System{}.Now, Random: random, Logger: logger, Cleanup: fileService})
+	tutoringService := tutoring.New(tutoring.Dependencies{Store: store, Clock: source, Random: random, Cipher: cipher, Logger: logger, Exports: exportEffects})
 	purger := accounts.NewPurger(store, fileService, tutoringService, exportEffects, logger)
 	host, err := publicHost(settings.PublicURL)
 	if err != nil {

@@ -18,6 +18,11 @@ SELECT * FROM exports WHERE id = @id;
 -- name: LockExportByBuild :one
 SELECT * FROM exports WHERE build_id = @build_id FOR UPDATE;
 
+-- name: LockExportUserBuckets :exec
+SELECT pg_advisory_xact_lock(sqlc.arg(namespace)::int4, buckets.bucket)
+FROM unnest(sqlc.arg(buckets)::int4[]) AS buckets (bucket)
+ORDER BY buckets.bucket;
+
 -- name: LockExportsOfUsers :many
 SELECT * FROM exports WHERE user_id = ANY(sqlc.arg(user_ids)::uuid[]) ORDER BY user_id FOR UPDATE;
 
@@ -78,3 +83,23 @@ DELETE FROM export_limits WHERE user_id = @user_id AND export_id = @export_id;
 
 -- name: DeleteExportLimit :execrows
 DELETE FROM export_limits WHERE user_id = @user_id;
+
+-- name: ExportInvalidationAudience :many
+SELECT relationships.student_id::uuid AS user_id FROM relationships
+WHERE relationships.tutor_id = sqlc.arg(user_id)::uuid AND relationships.state <> 'discarded' AND relationships.student_id IS NOT NULL
+UNION
+SELECT relationships.tutor_id::uuid FROM relationships
+WHERE relationships.student_id = sqlc.arg(user_id)::uuid AND relationships.state <> 'discarded'
+UNION
+SELECT others.user_id::uuid FROM channel_members AS mine
+JOIN channel_members AS others ON others.channel_id = mine.channel_id
+WHERE mine.user_id = sqlc.arg(user_id)::uuid AND others.user_id <> sqlc.arg(user_id)::uuid
+ORDER BY user_id;
+
+-- name: EarliestDeletedTutorDeletion :one
+SELECT tutors.deleted_at FROM relationships
+JOIN users AS tutors ON tutors.id = relationships.tutor_id
+WHERE relationships.student_id = @student_id AND relationships.state <> 'discarded' AND tutors.state = 'deleted'
+    AND tutors.deleted_at IS NOT NULL
+ORDER BY tutors.deleted_at
+LIMIT 1;

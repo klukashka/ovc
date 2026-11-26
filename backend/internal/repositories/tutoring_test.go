@@ -387,20 +387,43 @@ func TestRemovalSucceedsOnlyWhileProvisional(t *testing.T) {
 		cards[state] = f.card(t, card)
 	}
 
-	_, outOfScope := f.repos.Relationships.Remove(context.Background(), other, cards[domain.RelationshipProvisional], instant)
-	removed, removeErr := f.repos.Relationships.Remove(context.Background(), tutor, cards[domain.RelationshipProvisional], instant)
-	_, repeated := f.repos.Relationships.Remove(context.Background(), tutor, cards[domain.RelationshipProvisional], instant)
+	var outOfScope, removeErr, repeated, pendingErr, newCardErr error
+	var removed repositories.RemovedCard
 	refusals := map[domain.RelationshipState]error{}
-	for _, state := range []domain.RelationshipState{domain.RelationshipInvited, domain.RelationshipActive, domain.RelationshipEnded} {
-		_, refusals[state] = f.repos.Relationships.Remove(context.Background(), tutor, cards[state], instant)
-	}
-	_, pendingErr := f.repos.Relationships.Remove(context.Background(), tutor, cards[domain.RelationshipReclaimPending], instant)
-	newCard := invitedCard(40, tutor)
-	newCard.Email, newCard.Notes = removed.Email, removed.Notes
-	newCardErr := f.repos.Relationships.Create(context.Background(), newCard)
+	named := map[string][]repositories.ExportInvalidation{}
 
+	txErr := f.store.WithTx(context.Background(), func(repos repositories.Repositories) error {
+		_, outOfScope = repos.Relationships.Remove(context.Background(), other, cards[domain.RelationshipProvisional], instant)
+		named["another tutor's removal"] = repos.TakeExportInvalidations()
+		removed, removeErr = repos.Relationships.Remove(context.Background(), tutor, cards[domain.RelationshipProvisional], instant)
+		named["removal"] = repos.TakeExportInvalidations()
+		_, repeated = repos.Relationships.Remove(context.Background(), tutor, cards[domain.RelationshipProvisional], instant)
+		named["repeated removal"] = repos.TakeExportInvalidations()
+		for _, state := range []domain.RelationshipState{domain.RelationshipInvited, domain.RelationshipActive, domain.RelationshipEnded} {
+			_, refusals[state] = repos.Relationships.Remove(context.Background(), tutor, cards[state], instant)
+			named["refused "+string(state)] = repos.TakeExportInvalidations()
+		}
+		_, pendingErr = repos.Relationships.Remove(context.Background(), tutor, cards[domain.RelationshipReclaimPending], instant)
+		named["reclaim-pending removal"] = repos.TakeExportInvalidations()
+		newCard := invitedCard(40, tutor)
+		newCard.Email, newCard.Notes = removed.Email, removed.Notes
+		newCardErr = repos.Relationships.Create(context.Background(), newCard)
+		return nil
+	})
+
+	if txErr != nil {
+		t.Fatalf("the removals' transaction: %v", txErr)
+	}
 	if !errors.Is(outOfScope, repositories.ErrNotFound) || !errors.Is(repeated, repositories.ErrNotFound) {
 		t.Fatalf("another tutor's removal %v, repeated removal %v", outOfScope, repeated)
+	}
+	for call, want := range map[string][]domain.UserID{
+		"removal": {tutor, domain.UserID{31}}, "reclaim-pending removal": {tutor, domain.UserID{32}},
+		"another tutor's removal": nil, "repeated removal": nil, "refused invited": nil, "refused active": nil, "refused ended": nil,
+	} {
+		if got := discardedParties(named[call]); !slices.Equal(got, want) {
+			t.Fatalf("the %s named %v for withdrawal, want %v", call, got, want)
+		}
 	}
 	if removeErr != nil || removed.Email == nil || *removed.Email != email || removed.Notes != notes || removed.DisplayName == nil || *removed.DisplayName != "A student" {
 		t.Fatalf("removed %+v, %v", removed, removeErr)
@@ -423,6 +446,17 @@ func TestRemovalSucceedsOnlyWhileProvisional(t *testing.T) {
 	if newCardErr != nil {
 		t.Fatalf("the new card with the removed card's email: %v", newCardErr)
 	}
+}
+
+func discardedParties(entries []repositories.ExportInvalidation) []domain.UserID {
+	var parties []domain.UserID
+	for _, entry := range entries {
+		if entry.Cause != domain.ExportCauseRelationshipDiscarded || entry.Own || entry.Purged {
+			return append(parties, domain.UserID{})
+		}
+		parties = append(parties, entry.User)
+	}
+	return parties
 }
 
 func cardsAt(f tutoringFixture, t *testing.T, tutor domain.UserID, count int, firstID byte) []repositories.NewRelationship {

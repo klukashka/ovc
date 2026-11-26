@@ -120,16 +120,16 @@ type Effects struct {
 }
 
 func NewEffects(dependencies Dependencies) Effects {
-	if dependencies.Store == nil || dependencies.Random == nil || dependencies.Logger == nil || dependencies.Cleanup == nil {
-		panic("the export effects need their store, randomness, logger and cleanup")
+	if dependencies.Store == nil || dependencies.Wall == nil || dependencies.Random == nil || dependencies.Logger == nil || dependencies.Cleanup == nil {
+		panic("the export effects need their store, wall clock, randomness, logger and cleanup")
 	}
 	return Effects{service: &Service{deps: dependencies}}
 }
 
-func (e Effects) WithdrawOwn(ctx context.Context, repos repositories.Repositories, user domain.UserID, cause domain.ExportInvalidationCause, now time.Time) error {
-	return e.service.WithdrawOwn(ctx, repos, user, cause, now)
+func (e Effects) Apply(ctx context.Context, repos repositories.Repositories, now time.Time) error {
+	return e.service.Apply(ctx, repos, now)
 }
 
-func (e Effects) DeleteForPurge(ctx context.Context, repos repositories.Repositories, user domain.UserID, now time.Time) error {
-	return e.service.DeleteForPurge(ctx, repos, user, now)
+func (e Effects) Purge(ctx context.Context, repos repositories.Repositories, user domain.UserID, now time.Time) error {
+	return e.service.Purge(ctx, repos, user, now)
 }

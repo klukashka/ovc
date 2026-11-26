@@ -160,6 +160,22 @@ func (q *Queries) DueReadyExports(ctx context.Context, arg DueReadyExportsParams
 	return items, nil
 }
 
+const earliestDeletedTutorDeletion = `-- name: EarliestDeletedTutorDeletion :one
+SELECT tutors.deleted_at FROM relationships
+JOIN users AS tutors ON tutors.id = relationships.tutor_id
+WHERE relationships.student_id = $1 AND relationships.state <> 'discarded' AND tutors.state = 'deleted'
+    AND tutors.deleted_at IS NOT NULL
+ORDER BY tutors.deleted_at
+LIMIT 1
+`
+
+func (q *Queries) EarliestDeletedTutorDeletion(ctx context.Context, studentID *domain.UserID) (*time.Time, error) {
+	row := q.db.QueryRow(ctx, earliestDeletedTutorDeletion, studentID)
+	var deleted_at *time.Time
+	err := row.Scan(&deleted_at)
+	return deleted_at, err
+}
+
 const expireExport = `-- name: ExpireExport :execrows
 UPDATE exports SET state = 'expired', storage_key = NULL, updated_at = $1 WHERE id = $2 AND state = 'ready'
 `
@@ -175,6 +191,39 @@ func (q *Queries) ExpireExport(ctx context.Context, arg ExpireExportParams) (int
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const exportInvalidationAudience = `-- name: ExportInvalidationAudience :many
+SELECT relationships.student_id::uuid AS user_id FROM relationships
+WHERE relationships.tutor_id = $1::uuid AND relationships.state <> 'discarded' AND relationships.student_id IS NOT NULL
+UNION
+SELECT relationships.tutor_id::uuid FROM relationships
+WHERE relationships.student_id = $1::uuid AND relationships.state <> 'discarded'
+UNION
+SELECT others.user_id::uuid FROM channel_members AS mine
+JOIN channel_members AS others ON others.channel_id = mine.channel_id
+WHERE mine.user_id = $1::uuid AND others.user_id <> $1::uuid
+ORDER BY user_id
+`
+
+func (q *Queries) ExportInvalidationAudience(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, exportInvalidationAudience, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var user_id pgtype.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const failExport = `-- name: FailExport :execrows
@@ -400,6 +449,22 @@ func (q *Queries) LockExportOfUser(ctx context.Context, userID domain.UserID) (E
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const lockExportUserBuckets = `-- name: LockExportUserBuckets :exec
+SELECT pg_advisory_xact_lock($1::int4, buckets.bucket)
+FROM unnest($2::int4[]) AS buckets (bucket)
+ORDER BY buckets.bucket
+`
+
+type LockExportUserBucketsParams struct {
+	Namespace int32
+	Buckets   []int32
+}
+
+func (q *Queries) LockExportUserBuckets(ctx context.Context, arg LockExportUserBucketsParams) error {
+	_, err := q.db.Exec(ctx, lockExportUserBuckets, arg.Namespace, arg.Buckets)
+	return err
 }
 
 const lockExportsOfUsers = `-- name: LockExportsOfUsers :many

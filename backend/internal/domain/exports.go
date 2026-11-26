@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -37,9 +38,36 @@ const (
 type ExportInvalidationCause string
 
 const (
-	ExportCauseAccountDeleted ExportInvalidationCause = "account_deleted"
-	ExportCauseAccountBlocked ExportInvalidationCause = "account_blocked"
+	ExportCauseAccountDeleted        ExportInvalidationCause = "account_deleted"
+	ExportCauseAccountBlocked        ExportInvalidationCause = "account_blocked"
+	ExportCauseTutorDeleted          ExportInvalidationCause = "tutor_deleted"
+	ExportCauseRelationshipDiscarded ExportInvalidationCause = "relationship_discarded"
+	ExportCauseRelationshipEnded     ExportInvalidationCause = "relationship_ended"
+	ExportCauseReclaimPending        ExportInvalidationCause = "reclaim_pending"
+	ExportCauseGroupMemberRemoved    ExportInvalidationCause = "group_member_removed"
+	ExportCauseCardErased            ExportInvalidationCause = "card_erased"
+	ExportCauseCardEmailErased       ExportInvalidationCause = "card_email_erased"
 )
+
+func exportCausePrecedence() []ExportInvalidationCause {
+	return []ExportInvalidationCause{
+		ExportCauseAccountDeleted, ExportCauseAccountBlocked, ExportCauseTutorDeleted, ExportCauseRelationshipDiscarded,
+		ExportCauseRelationshipEnded, ExportCauseReclaimPending, ExportCauseGroupMemberRemoved, ExportCauseCardErased,
+		ExportCauseCardEmailErased,
+	}
+}
+
+func (c ExportInvalidationCause) rank() int {
+	order := exportCausePrecedence()
+	if position := slices.Index(order, c); position >= 0 {
+		return position
+	}
+	return len(order)
+}
+
+func (c ExportInvalidationCause) Precedes(other ExportInvalidationCause) bool {
+	return c.rank() < other.rank()
+}
 
 type UploadSubjectKind string
 
@@ -74,6 +102,9 @@ const (
 	ExportExpireBatch         = 100
 	ExportExpireRounds        = 10
 	ExportFormatVersion       = 1
+	ExportInvalidationBatch   = 1000
+	ExportUserLockNamespace   = 0x4f564345
+	ExportUserLockBucketCount = 256
 
 	JobExportsRecover JobName = "exports.recover"
 	JobExportsExpire  JobName = "exports.expire"
@@ -124,4 +155,22 @@ func ExportNotificationKey(event NotificationEvent, export ExportID, build Expor
 
 func ExportStorageKey(build ExportBuildID) string {
 	return ExportKeyPrefix + build.String() + ".zip"
+}
+
+func ExportUserLockBuckets(users ...UserID) []int32 {
+	buckets := make([]int32, 0, len(users))
+	for _, user := range users {
+		buckets = append(buckets, int32(fnv1a(user[:])%ExportUserLockBucketCount))
+	}
+	slices.Sort(buckets)
+	return slices.Compact(buckets)
+}
+
+func fnv1a(data []byte) uint32 {
+	hash := uint32(2166136261)
+	for _, value := range data {
+		hash ^= uint32(value)
+		hash *= 16777619
+	}
+	return hash
 }

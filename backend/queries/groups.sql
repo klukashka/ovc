@@ -36,9 +36,15 @@ SELECT sqlc.arg(group_id)::uuid, member.id, sqlc.arg(tutor_id)::uuid, sqlc.arg(n
 FROM unnest(sqlc.arg(relationship_ids)::uuid[]) AS member (id)
 ON CONFLICT (group_id, relationship_id) DO NOTHING;
 
--- name: RemoveGroupMembers :execrows
-DELETE FROM group_members
-WHERE group_id = @group_id AND tutor_id = @tutor_id AND relationship_id = ANY (sqlc.arg(relationship_ids)::uuid[]);
+-- name: RemoveGroupMembers :many
+WITH removed AS (
+    DELETE FROM group_members
+    WHERE group_members.group_id = @group_id AND group_members.tutor_id = @tutor_id
+        AND group_members.relationship_id = ANY (sqlc.arg(relationship_ids)::uuid[])
+    RETURNING group_members.relationship_id, group_members.tutor_id
+)
+SELECT relationships.student_id FROM removed
+JOIN relationships ON relationships.id = removed.relationship_id AND relationships.tutor_id = removed.tutor_id;
 
 -- name: ListGroupMemberIDs :many
 SELECT relationship_id FROM group_members WHERE group_id = @group_id AND tutor_id = @tutor_id;

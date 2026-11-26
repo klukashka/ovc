@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"ovc/backend/internal/domain"
+	"ovc/backend/internal/testdb"
 )
 
 const (
@@ -161,16 +162,9 @@ type contestedRow struct {
 	tuple    int16
 }
 
-const lockedRowPosition = "tableoid::oid, (ctid::text::point)[0]::int4, (ctid::text::point)[1]::int2"
+const lockedRowPosition = testdb.LockedRowPosition
 
-const contestedRowDirectWaiters = `
-    SELECT direct.pid FROM pg_locks AS direct
-    WHERE NOT direct.granted AND (
-        (direct.locktype = 'transactionid' AND direct.transactionid IN (
-            SELECT held.transactionid FROM pg_locks AS held WHERE held.pid = $1 AND held.locktype = 'transactionid' AND held.granted))
-        OR (direct.locktype = 'tuple' AND direct.database = (SELECT oid FROM pg_database WHERE datname = current_database())
-            AND direct.relation = $2 AND direct.page = $3 AND direct.tuple = $4))
-`
+const contestedRowDirectWaiters = testdb.RowDirectWaiters
 
 const contestedRowWaiters = `
 WITH RECURSIVE waiting(pid) AS (` + contestedRowDirectWaiters + `

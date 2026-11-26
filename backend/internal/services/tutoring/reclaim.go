@@ -116,7 +116,7 @@ func (s *Service) reclaim(ctx context.Context, repos repositories.Repositories, 
 		if !allowed || transition.To != domain.RelationshipReclaimPending {
 			continue
 		}
-		reclaimed, err := repos.Relationships.Reclaim(ctx, link.ID, now)
+		reclaimed, err := repos.Relationships.Reclaim(ctx, link, now)
 		if err != nil {
 			return "", nil, err
 		}
@@ -218,7 +218,7 @@ func (s *Service) DecideReclaim(ctx context.Context, principal accounts.Principa
 		return nil, err
 	}
 	var decision reclaimDecision
-	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+	err = s.withExports(ctx, now, func(repos repositories.Repositories) error {
 		if err := accounts.LockActingAccount(ctx, repos, principal, now, principal.State); err != nil {
 			return err
 		}
@@ -618,7 +618,7 @@ func (s *Service) ExpireReclaims(ctx context.Context, now time.Time) (int64, err
 func (s *Service) expireReclaim(ctx context.Context, student domain.UserID, now time.Time) (bool, reclaimDecision, error) {
 	cleared := false
 	var decision reclaimDecision
-	err := s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+	err := s.withExports(ctx, now, func(repos repositories.Repositories) error {
 		locked, err := repos.Users.LockReclaim(ctx, student)
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil

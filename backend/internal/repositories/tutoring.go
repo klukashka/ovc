@@ -56,7 +56,8 @@ type StudentListQuery struct {
 }
 
 type Relationships struct {
-	queries *dbgen.Queries
+	queries       *dbgen.Queries
+	invalidations *exportInvalidations
 }
 
 func (r Relationships) Create(ctx context.Context, relationship NewRelationship) error {
@@ -116,8 +117,19 @@ func (r Relationships) UpdateText(ctx context.Context, text CardText) (bool, err
 }
 
 func (r Relationships) Withdraw(ctx context.Context, tutor domain.UserID, id domain.RelationshipID, now time.Time) (bool, error) {
+	if err := r.invalidations.open(); err != nil {
+		return false, err
+	}
 	rows, err := r.queries.WithdrawCard(ctx, dbgen.WithdrawCardParams{Now: now, ID: id, TutorID: tutor})
-	return applied(rows, err, "withdraw card")
+	return r.namedWhenApplied(rows, err, "withdraw card", domain.ExportCauseCardErased, tutor)
+}
+
+func (r Relationships) namedWhenApplied(rows int64, err error, what string, cause domain.ExportInvalidationCause, tutor domain.UserID) (bool, error) {
+	changed, err := applied(rows, err, what)
+	if err != nil || !changed {
+		return changed, err
+	}
+	return true, r.invalidations.nameParties(cause, tutor)
 }
 
 func (r Relationships) Accounts(ctx context.Context, students []domain.UserID) ([]CardAccount, error) {
@@ -151,8 +163,15 @@ func uuids[ID ~[16]byte](ids []ID) []pgtype.UUID {
 }
 
 func (r Relationships) Remove(ctx context.Context, tutor domain.UserID, id domain.RelationshipID, now time.Time) (RemovedCard, error) {
+	if err := r.invalidations.open(); err != nil {
+		return RemovedCard{}, err
+	}
 	removed, err := r.queries.RemoveRelationship(ctx, dbgen.RemoveRelationshipParams{Now: now, ID: id, TutorID: tutor})
-	return one(removed, err, "remove provisional relationship")
+	removed, err = one(removed, err, "remove provisional relationship")
+	if err != nil {
+		return removed, err
+	}
+	return removed, r.invalidations.nameParties(domain.ExportCauseRelationshipDiscarded, removed.TutorID, removed.StudentID)
 }
 
 func (r Relationships) LinkInvited(ctx context.Context, link Link) (bool, error) {
@@ -197,8 +216,11 @@ func (r Relationships) LockForLink(ctx context.Context, tutor domain.UserID, car
 }
 
 func (r Relationships) MergeCard(ctx context.Context, tutor domain.UserID, id domain.RelationshipID, now time.Time) (bool, error) {
+	if err := r.invalidations.open(); err != nil {
+		return false, err
+	}
 	rows, err := r.queries.MergeInvitedCard(ctx, dbgen.MergeInvitedCardParams{Now: now, ID: id, TutorID: tutor})
-	return applied(rows, err, "merge invited card")
+	return r.namedWhenApplied(rows, err, "merge invited card", domain.ExportCauseCardErased, tutor)
 }
 
 func (r Relationships) ActivateLinked(ctx context.Context, link Relationship, now time.Time) (bool, error) {
@@ -238,8 +260,15 @@ func (r Relationships) ForgetPurgedStudent(ctx context.Context, student domain.U
 }
 
 func (r Relationships) End(ctx context.Context, link Relationship, by domain.EndedBy, now time.Time) (Relationship, error) {
+	if err := r.invalidations.open(); err != nil {
+		return Relationship{}, err
+	}
 	ended, err := r.queries.EndRelationship(ctx, dbgen.EndRelationshipParams{EndedBy: string(by), Now: now, ID: link.ID, TutorID: link.TutorID})
-	return one(ended, err, "end relationship")
+	ended, err = one(ended, err, "end relationship")
+	if err != nil {
+		return ended, err
+	}
+	return ended, r.invalidations.nameParties(domain.ExportCauseRelationshipEnded, ended.TutorID, ended.StudentID)
 }
 
 func (r Relationships) DeleteMemberships(ctx context.Context, link Relationship) ([]domain.GroupID, error) {
@@ -348,9 +377,16 @@ type (
 	JoinRequest        = dbgen.JoinRequest
 )
 
-func (r Relationships) Reclaim(ctx context.Context, id domain.RelationshipID, now time.Time) (bool, error) {
-	rows, err := r.queries.ReclaimProvisionalRelationship(ctx, dbgen.ReclaimProvisionalRelationshipParams{Now: now, ID: id})
-	return applied(rows, err, "move provisional relationship to reclaim pending")
+func (r Relationships) Reclaim(ctx context.Context, link Relationship, now time.Time) (bool, error) {
+	if err := r.invalidations.open(); err != nil {
+		return false, err
+	}
+	rows, err := r.queries.ReclaimProvisionalRelationship(ctx, dbgen.ReclaimProvisionalRelationshipParams{Now: now, ID: link.ID})
+	reclaimed, err := applied(rows, err, "move provisional relationship to reclaim pending")
+	if err != nil || !reclaimed {
+		return reclaimed, err
+	}
+	return true, r.invalidations.nameParties(domain.ExportCauseReclaimPending, link.TutorID, link.StudentID)
 }
 
 func (r Relationships) ReclaimPendingOf(ctx context.Context, student domain.UserID) ([]ReclaimPendingLink, error) {
@@ -377,13 +413,35 @@ func (r Relationships) LockOfTutor(ctx context.Context, tutor domain.UserID) err
 }
 
 func (r Relationships) DiscardForTutorDeletion(ctx context.Context, tutor domain.UserID, now time.Time) ([]DiscardedForTutorDeletion, error) {
+	if err := r.invalidations.open(); err != nil {
+		return nil, err
+	}
 	discarded, err := r.queries.DiscardRelationshipsForTutorDeletion(ctx, dbgen.DiscardRelationshipsForTutorDeletionParams{Now: now, TutorID: tutor})
-	return one(discarded, err, "discard relationships for tutor deletion")
+	discarded, err = one(discarded, err, "discard relationships for tutor deletion")
+	if err != nil {
+		return discarded, err
+	}
+	students := make([]*domain.UserID, 0, len(discarded))
+	for _, card := range discarded {
+		students = append(students, card.StudentID)
+	}
+	return discarded, r.invalidations.nameParties(domain.ExportCauseTutorDeleted, tutor, students...)
 }
 
 func (r Relationships) EndForTutorDeletion(ctx context.Context, tutor domain.UserID, now time.Time) ([]EndedForTutorDeletion, error) {
+	if err := r.invalidations.open(); err != nil {
+		return nil, err
+	}
 	ended, err := r.queries.EndRelationshipsForTutorDeletion(ctx, dbgen.EndRelationshipsForTutorDeletionParams{Now: now, TutorID: tutor})
-	return one(ended, err, "end relationships for tutor deletion")
+	ended, err = one(ended, err, "end relationships for tutor deletion")
+	if err != nil {
+		return ended, err
+	}
+	students := make([]*domain.UserID, 0, len(ended))
+	for _, link := range ended {
+		students = append(students, link.StudentID)
+	}
+	return ended, r.invalidations.nameParties(domain.ExportCauseTutorDeleted, tutor, students...)
 }
 
 func (r Relationships) DeleteMembershipsOfTutor(ctx context.Context, tutor domain.UserID) ([]domain.RelationshipID, error) {
@@ -663,6 +721,9 @@ func (r Relationships) DueForEmailErasure(
 }
 
 func (r Relationships) EraseEmail(ctx context.Context, card CardDueForErasure, dueBefore time.Time, now time.Time) (bool, error) {
+	if err := r.invalidations.open(); err != nil {
+		return false, err
+	}
 	rows, err := r.queries.EraseCardEmail(ctx, dbgen.EraseCardEmailParams{Now: now, ID: card.ID, TutorID: card.TutorID, DueBefore: dueBefore})
-	return applied(rows, err, "erase card email")
+	return r.namedWhenApplied(rows, err, "erase card email", domain.ExportCauseCardEmailErased, card.TutorID)
 }

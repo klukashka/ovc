@@ -52,9 +52,15 @@ func (s *Service) DeleteAccount(ctx context.Context, principal Principal, passwo
 			}
 			switch locked.State {
 			case domain.AccountUnverified:
-				progressed, err = s.unverifiedPurgeBatch(ctx, repos, user, now)
-				if err != nil || progressed > 0 {
+				if err := nameUnverifiedAudience(ctx, repos, principal.UserID); err != nil {
 					return err
+				}
+				progressed, err = s.unverifiedPurgeBatch(ctx, repos, user, now)
+				if err != nil {
+					return err
+				}
+				if progressed > 0 {
+					return s.deps.Exports.Apply(ctx, repos, now)
 				}
 				immediate = true
 				announce, err = s.purger().purge(ctx, repos, principal.UserID, now, 0)
@@ -73,7 +79,10 @@ func (s *Service) DeleteAccount(ctx context.Context, principal Principal, passwo
 				if err != nil {
 					return err
 				}
-				return s.deps.Exports.WithdrawOwn(ctx, repos, principal.UserID, domain.ExportCauseAccountDeleted, now)
+				if err := repos.InvalidateOwnExport(domain.ExportCauseAccountDeleted, principal.UserID); err != nil {
+					return err
+				}
+				return s.deps.Exports.Apply(ctx, repos, now)
 			case domain.AccountBlocked, domain.AccountDeleted:
 			}
 			return ErrUnauthenticated
@@ -92,6 +101,14 @@ func (s *Service) DeleteAccount(ctx context.Context, principal Principal, passwo
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "account.deleted", userAttribute(principal.UserID), slog.String("purge", purge))
 	announce(ctx)
 	return nil
+}
+
+func nameUnverifiedAudience(ctx context.Context, repos repositories.Repositories, user domain.UserID) error {
+	audience, err := repos.Exports.InvalidationAudience(ctx, user)
+	if err != nil {
+		return err
+	}
+	return repos.InvalidateExports(domain.ExportCauseRelationshipDiscarded, audience...)
 }
 
 func (s *Service) unverifiedPurgeBatch(ctx context.Context, repos repositories.Repositories, user repositories.User, now time.Time) (int64, error) {
@@ -173,7 +190,7 @@ func (p *Purger) purge(ctx context.Context, repos repositories.Repositories, use
 	if _, err := repos.Meetings.DeleteParticipantsOf(ctx, user); err != nil {
 		return nil, err
 	}
-	if err := p.exports.DeleteForPurge(ctx, repos, user, now); err != nil {
+	if err := p.exports.Purge(ctx, repos, user, now); err != nil {
 		return nil, err
 	}
 	if _, err := repos.Users.Delete(ctx, user); err != nil {
@@ -273,9 +290,17 @@ func (p *Purger) purgeStep(ctx context.Context, account duePurge, now time.Time,
 			finished = true
 			return nil
 		}
+		if state.State == domain.AccountUnverified {
+			if err := nameUnverifiedAudience(ctx, repos, account.id); err != nil {
+				return err
+			}
+		}
 		deleted, err := p.tutoring.PurgeBatch(ctx, repos, account.id, state.Role, now)
-		if err != nil || deleted > 0 {
+		if err != nil {
 			return err
+		}
+		if deleted > 0 {
+			return p.exports.Apply(ctx, repos, now)
 		}
 		finished, purged = true, true
 		announce, err = p.purge(ctx, repos, account.id, now, account.batches)

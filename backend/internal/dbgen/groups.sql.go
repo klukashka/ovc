@@ -457,9 +457,15 @@ func (q *Queries) LockTutorGroup(ctx context.Context, arg LockTutorGroupParams) 
 	return i, err
 }
 
-const removeGroupMembers = `-- name: RemoveGroupMembers :execrows
-DELETE FROM group_members
-WHERE group_id = $1 AND tutor_id = $2 AND relationship_id = ANY ($3::uuid[])
+const removeGroupMembers = `-- name: RemoveGroupMembers :many
+WITH removed AS (
+    DELETE FROM group_members
+    WHERE group_members.group_id = $1 AND group_members.tutor_id = $2
+        AND group_members.relationship_id = ANY ($3::uuid[])
+    RETURNING group_members.relationship_id, group_members.tutor_id
+)
+SELECT relationships.student_id FROM removed
+JOIN relationships ON relationships.id = removed.relationship_id AND relationships.tutor_id = removed.tutor_id
 `
 
 type RemoveGroupMembersParams struct {
@@ -468,12 +474,24 @@ type RemoveGroupMembersParams struct {
 	RelationshipIds []pgtype.UUID
 }
 
-func (q *Queries) RemoveGroupMembers(ctx context.Context, arg RemoveGroupMembersParams) (int64, error) {
-	result, err := q.db.Exec(ctx, removeGroupMembers, arg.GroupID, arg.TutorID, arg.RelationshipIds)
+func (q *Queries) RemoveGroupMembers(ctx context.Context, arg RemoveGroupMembersParams) ([]*domain.UserID, error) {
+	rows, err := q.db.Query(ctx, removeGroupMembers, arg.GroupID, arg.TutorID, arg.RelationshipIds)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected(), nil
+	defer rows.Close()
+	var items []*domain.UserID
+	for rows.Next() {
+		var student_id *domain.UserID
+		if err := rows.Scan(&student_id); err != nil {
+			return nil, err
+		}
+		items = append(items, student_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const unarchiveGroup = `-- name: UnarchiveGroup :execrows

@@ -77,6 +77,9 @@ func (s *Service) Request(ctx context.Context, principal accounts.Principal, pas
 		if subtle.ConstantTimeCompare([]byte(account.PasswordHash), []byte(user.PasswordHash)) != 1 {
 			return ErrUnauthenticated
 		}
+		if err := repos.Exports.LockUsersForChange(ctx, principal.UserID); err != nil {
+			return err
+		}
 		previous, found, err := lockOwnExport(ctx, repos, principal.UserID)
 		if err != nil {
 			return err

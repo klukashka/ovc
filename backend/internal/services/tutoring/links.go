@@ -255,7 +255,7 @@ func (s *Service) RemoveStudent(ctx context.Context, actor domain.TutorActor, id
 	var card Card
 	var removed repositories.Relationship
 	var lessons lessonEffects
-	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+	err = s.withExports(ctx, now, func(repos repositories.Repositories) error {
 		seen, err := repos.Relationships.ForTutor(ctx, tutor, id)
 		if errors.Is(err, repositories.ErrNotFound) {
 			return ErrCardNotFound

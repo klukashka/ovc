@@ -340,7 +340,10 @@ func (s *Service) ConfirmEmail(ctx context.Context, caller *Principal, token str
 			return err
 		}
 		outcome, announce, err = s.deps.Tutoring.OnEmailConfirmed(ctx, repos, stored.UserID, true, now)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.deps.Exports.Apply(ctx, repos, now)
 	})
 	if err != nil {
 		return Confirmation{}, err
@@ -449,7 +452,10 @@ func (s *Service) ResetPassword(ctx context.Context, token string, newPassword s
 			return nil
 		}
 		outcome, announce, err = s.deps.Tutoring.OnEmailConfirmed(ctx, repos, stored.UserID, true, now)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.deps.Exports.Apply(ctx, repos, now)
 	})
 	if err != nil {
 		return nil, err

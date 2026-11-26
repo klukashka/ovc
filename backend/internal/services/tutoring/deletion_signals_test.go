@@ -218,6 +218,7 @@ func (d countedDeletion) run(t *testing.T) deletionRun {
 	before := d.counter.statements.Load()
 	err := d.store.WithTx(ctx, func(repos repositories.Repositories) error {
 		_, err := d.service.OnAccountDeleted(ctx, repos, d.fixture.tutor, domain.RoleTutor, subMicrosecond)
+		repos.TakeExportInvalidations()
 		return err
 	})
 	if err != nil {

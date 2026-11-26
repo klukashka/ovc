@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -199,4 +200,166 @@ func (h *authHarness) unloadableTimezone(t *testing.T, user domain.UserID) {
 func (h *authHarness) signInAgain(t *testing.T, email string) string {
 	t.Helper()
 	return accessToken(t, h.login(t, email, accountPassword))
+}
+
+const (
+	firstExportEmail   = "first-export@example.org"
+	secondExportEmail  = "second-export@example.org"
+	outsiderTutorEmail = "outsider-tutor@example.org"
+	exportGroupName    = "Export group"
+	invalidatedRecord  = `"msg":"export.invalidated"`
+)
+
+type exportAccount struct {
+	id       domain.UserID
+	token    string
+	email    string
+	password string
+}
+
+type exportWorld struct {
+	tutor      exportAccount
+	first      exportAccount
+	second     exportAccount
+	outsider   exportAccount
+	firstCard  studentCard
+	secondCard studentCard
+	group      studentGroup
+}
+
+func (h *authHarness) exportAccountAs(t *testing.T, role domain.Role, id byte, email string) exportAccount {
+	t.Helper()
+	user, token := h.signedInAs(t, role, domain.AccountActive, id, email)
+	return exportAccount{id: user, token: token, email: email, password: accountPassword}
+}
+
+func (h *authHarness) exportWorld(t *testing.T) exportWorld {
+	t.Helper()
+	world := exportWorld{
+		tutor:    h.exportAccountAs(t, domain.RoleTutor, 1, tutorEmail),
+		first:    h.exportAccountAs(t, domain.RoleStudent, 2, firstExportEmail),
+		second:   h.exportAccountAs(t, domain.RoleStudent, 3, secondExportEmail),
+		outsider: h.exportAccountAs(t, domain.RoleTutor, 9, outsiderTutorEmail),
+	}
+	world.firstCard = h.linkedSignedIn(t, world.tutor.token, world.first.token, "First student", firstExportEmail)
+	world.secondCard = h.linkedSignedIn(t, world.tutor.token, world.second.token, "Second student", secondExportEmail)
+	world.group = h.newGroup(t, world.tutor.token, exportGroupName, []string{world.firstCard.ID, world.secondCard.ID})
+	return world
+}
+
+func (h *authHarness) signedInAgain(t *testing.T, account exportAccount) exportAccount {
+	t.Helper()
+	account.token = accessToken(t, h.login(t, account.email, account.password))
+	return account
+}
+
+func (h *authHarness) readyExportOf(t *testing.T, owner exportAccount) repositories.Export {
+	t.Helper()
+	if requested := h.requestExport(t, owner.token, owner.password); requested.status != http.StatusAccepted {
+		t.Fatalf("the export request answered %d %s", requested.status, requested.body)
+	}
+	h.tick(t)
+	row, found := h.exportOf(t, owner.id)
+	if !found || row.State != domain.ExportReady || row.StorageKey == nil {
+		t.Fatalf("the export of %s did not become ready: %s", owner.id, row.State)
+	}
+	return row
+}
+
+type heldBuild struct {
+	row      repositories.Export
+	held     *heldStorage
+	building <-chan error
+}
+
+func (h *authHarness) holdBuildOf(t *testing.T, held *heldStorage, owner exportAccount) heldBuild {
+	t.Helper()
+	if requested := h.requestExport(t, owner.token, owner.password); requested.status != http.StatusAccepted {
+		t.Fatalf("the export request answered %d %s", requested.status, requested.body)
+	}
+	held.holdNext(multipartPart)
+	building := h.tickInBackground(t)
+	held.awaitReached(t)
+	row, found := h.exportOf(t, owner.id)
+	if !found || row.State != domain.ExportBuilding || row.BuildID == nil || row.StorageKey == nil {
+		t.Fatalf("the held export of %s is %s", owner.id, row.State)
+	}
+	return heldBuild{row: row, held: held, building: building}
+}
+
+func (b heldBuild) finish(t *testing.T, h *authHarness) {
+	t.Helper()
+	b.held.resume()
+	awaitTick(t, b.building)
+	h.tick(t)
+}
+
+type invalidationRecord struct {
+	Message  string `json:"msg"`
+	ExportID string `json:"export_id"`
+	State    string `json:"state"`
+	Cause    string `json:"cause"`
+}
+
+func (h *authHarness) invalidationsOf(t *testing.T, exportID domain.ExportID) []invalidationRecord {
+	t.Helper()
+	var found []invalidationRecord
+	for _, line := range strings.Split(h.logs.String(), "\n") {
+		if !strings.Contains(line, invalidatedRecord) {
+			continue
+		}
+		var record invalidationRecord
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatal(err)
+		}
+		if record.ExportID == exportID.String() {
+			found = append(found, record)
+		}
+	}
+	return found
+}
+
+func (h *authHarness) exportLimitRows(t *testing.T, user domain.UserID) int64 {
+	t.Helper()
+	return h.countRows(t, "SELECT count(user_id) FROM export_limits WHERE user_id = $1::uuid", user.String())
+}
+
+func (h *authHarness) assertWithdrawn(t *testing.T, before repositories.Export, cause domain.ExportInvalidationCause, notified bool) {
+	t.Helper()
+	row, found := h.exportOf(t, before.UserID)
+	if !found || row.ID != before.ID || row.State != domain.ExportFailed || row.Failure == nil || *row.Failure != domain.ExportFailureWithdrawn {
+		t.Fatalf("the %s export of %s is %s, want it failed as withdrawn", before.State, before.UserID, row.State)
+	}
+	if before.StorageKey != nil && h.objectExists(t, *before.StorageKey) {
+		t.Fatalf("the withdrawn export of %s kept its object", before.UserID)
+	}
+	if before.State == domain.ExportReady && (row.StorageKey != nil || h.exportLimitRows(t, before.UserID) != 0) {
+		t.Fatalf("the withdrawn ready export of %s kept its key or its limit row", before.UserID)
+	}
+	if before.State == domain.ExportBuilding {
+		if _, open := h.intentOf(t, *before.BuildID); open || h.openUploads(t, *before.StorageKey) != 0 {
+			t.Fatalf("the withdrawn build of %s kept its intent or an open upload", before.UserID)
+		}
+	}
+	want := int64(0)
+	if notified {
+		want = 1
+	}
+	if got := h.exportNotifications(t, before.UserID, domain.NotificationExportFailed); got != want {
+		t.Fatalf("the owner %s got %d export.failed notifications, want %d", before.UserID, got, want)
+	}
+	if records := h.invalidationsOf(t, before.ID); len(records) != 1 || records[0].Cause != string(cause) || records[0].State != string(before.State) {
+		t.Fatalf("the withdrawal of %s was recorded as %+v, want one %s record", before.UserID, records, cause)
+	}
+}
+
+func (h *authHarness) assertStillReady(t *testing.T, before repositories.Export) {
+	t.Helper()
+	row, found := h.exportOf(t, before.UserID)
+	if !found || row.ID != before.ID || row.State != domain.ExportReady || !h.objectExists(t, *before.StorageKey) {
+		t.Fatalf("the export of %s, which nobody named, is %s", before.UserID, row.State)
+	}
+	if records := h.invalidationsOf(t, before.ID); len(records) != 0 || h.exportNotifications(t, before.UserID, domain.NotificationExportFailed) != 0 {
+		t.Fatalf("the export of %s, which nobody named, was recorded as withdrawn %+v", before.UserID, records)
+	}
 }

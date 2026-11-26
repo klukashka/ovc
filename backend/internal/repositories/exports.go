@@ -2,8 +2,11 @@ package repositories
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"ovc/backend/internal/dbgen"
@@ -50,6 +53,13 @@ func (r Exports) ByID(ctx context.Context, id domain.ExportID) (Export, error) {
 func (r Exports) LockByBuild(ctx context.Context, build domain.ExportBuildID) (Export, error) {
 	row, err := r.queries.LockExportByBuild(ctx, &build)
 	return one(row, err, "lock export by build")
+}
+
+func (r Exports) LockUsersForChange(ctx context.Context, users ...domain.UserID) error {
+	err := r.queries.LockExportUserBuckets(ctx, dbgen.LockExportUserBucketsParams{
+		Namespace: domain.ExportUserLockNamespace, Buckets: domain.ExportUserLockBuckets(users...),
+	})
+	return done(err, "lock the export users")
 }
 
 func (r Exports) LockOfUsers(ctx context.Context, users []domain.UserID) ([]Export, error) {
@@ -138,4 +148,33 @@ func (r Exports) DeleteLimitOf(ctx context.Context, user domain.UserID, export d
 func (r Exports) DeleteLimit(ctx context.Context, user domain.UserID) (bool, error) {
 	rows, err := r.queries.DeleteExportLimit(ctx, user)
 	return applied(rows, err, "delete export limit")
+}
+
+func (r Exports) InvalidationAudience(ctx context.Context, user domain.UserID) ([]domain.UserID, error) {
+	rows, err := r.queries.ExportInvalidationAudience(ctx, pgtype.UUID{Bytes: user, Valid: true})
+	if err != nil {
+		return nil, fmt.Errorf("export invalidation audience: %w", err)
+	}
+	audience := make([]domain.UserID, 0, len(rows))
+	for _, row := range rows {
+		if row.Valid {
+			audience = append(audience, domain.UserID(row.Bytes))
+		}
+	}
+	return audience, nil
+}
+
+func (r Exports) EarliestDeletedTutorClosing(ctx context.Context, student domain.UserID) (*time.Time, error) {
+	deletedAt, err := r.queries.EarliestDeletedTutorDeletion(ctx, &student)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("earliest deleted tutor of a student: %w", err)
+	}
+	if deletedAt == nil {
+		return nil, nil
+	}
+	closing := deletedAt.Add(domain.DeletedAccountRetention)
+	return &closing, nil
 }

@@ -205,6 +205,9 @@ func (s *Service) publish(ctx context.Context, claim Claim, size int64, started 
 		if err != nil && !errors.Is(err, repositories.ErrNotFound) {
 			return err
 		}
+		if _, err := repos.Exports.LockLimit(settled, claim.Export.UserID); err != nil && !errors.Is(err, repositories.ErrNotFound) {
+			return err
+		}
 		intent, err := repos.UploadIntents.Lock(settled, claim.Build.Identity())
 		if err != nil {
 			return err
@@ -212,10 +215,21 @@ func (s *Service) publish(ctx context.Context, claim Claim, size int64, started 
 		if !stillBuilding(row, found, claim.Build) || intent.CleanupRequested {
 			return s.deps.Cleanup.ConfirmAndCleanExport(settled, repos, claim.Build, now)
 		}
+		closing, err := repos.Exports.EarliestDeletedTutorClosing(settled, row.UserID)
+		if err != nil {
+			return err
+		}
+		if closing != nil && !now.Before(*closing) {
+			return s.withdrawAtTutorClosing(settled, repos, row, claim.Build, now)
+		}
+		expires := now.Add(domain.ExportRetention)
+		if closing != nil && closing.Before(expires) {
+			expires = *closing
+		}
 		if err := repos.UploadIntents.ConfirmComplete(settled, claim.Build.Identity(), claim.Object, now); err != nil {
 			return err
 		}
-		if _, err := repos.Exports.Publish(settled, row.ID, claim.Build, size, now.Add(domain.ExportRetention), now); err != nil {
+		if _, err := repos.Exports.Publish(settled, row.ID, claim.Build, size, expires, now); err != nil {
 			return err
 		}
 		if err := repos.Exports.RecordLimit(settled, row.UserID, row.ID, row.RequestedAt.Add(domain.ExportStartInterval)); err != nil {
@@ -235,6 +249,23 @@ func (s *Service) publish(ctx context.Context, claim Claim, size int64, started 
 			userAttribute(claim.Export.UserID), slog.Int64("size_bytes", size), slog.Int("files", 0), slog.Int("files_unreadable", 0),
 			slog.Int64("duration_ms", s.deps.Wall().Sub(started).Milliseconds()))
 	}
+	return nil
+}
+
+func (s *Service) withdrawAtTutorClosing(ctx context.Context, repos repositories.Repositories, row repositories.Export, build domain.ExportBuildID, now time.Time) error {
+	if _, err := repos.Exports.Fail(ctx, row.ID, domain.ExportFailureWithdrawn, now); err != nil {
+		return err
+	}
+	if err := s.deps.Cleanup.ConfirmAndCleanExport(ctx, repos, build, now); err != nil {
+		return err
+	}
+	if err := s.notifyOwner(ctx, repos, row, build, domain.NotificationExportFailed, now); err != nil {
+		return err
+	}
+	repos.AfterCommit(ctx, func(ctx context.Context) {
+		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "export.invalidated", exportAttribute(row.ID), buildAttribute(&build),
+			userAttribute(row.UserID), slog.String("state", string(row.State)), slog.String("cause", string(domain.ExportCauseTutorDeleted)))
+	})
 	return nil
 }
 

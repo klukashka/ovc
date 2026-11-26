@@ -58,7 +58,7 @@ func (s *Service) AcceptSignedIn(ctx context.Context, principal accounts.Princip
 	}
 	var link signedInLink
 	var tutor MyTutor
-	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+	err = s.withExports(ctx, now, func(repos repositories.Repositories) error {
 		if err := accounts.LockActingAccount(ctx, repos, principal, now, principal.State); err != nil {
 			return err
 		}

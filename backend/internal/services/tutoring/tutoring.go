@@ -72,8 +72,13 @@ type Dependencies struct {
 	Cipher    core.FieldCipher
 	PublicURL string
 	Logger    *slog.Logger
+	Exports   ExportInvalidator
 
 	PurgeBatchRows int32
+}
+
+type ExportInvalidator interface {
+	Apply(ctx context.Context, repos repositories.Repositories, now time.Time) error
 }
 
 type Service struct {
@@ -83,6 +88,15 @@ type Service struct {
 
 func New(dependencies Dependencies) *Service {
 	return &Service{deps: dependencies, expiry: &expiryResume{}}
+}
+
+func (s *Service) withExports(ctx context.Context, now time.Time, work func(repositories.Repositories) error) error {
+	return s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
+		if err := work(repos); err != nil {
+			return err
+		}
+		return s.deps.Exports.Apply(ctx, repos, now)
+	})
 }
 
 func (s *Service) mirror(

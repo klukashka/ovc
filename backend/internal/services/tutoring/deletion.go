@@ -56,6 +56,9 @@ func (s *Service) applyTutorDeletion(ctx context.Context, repos repositories.Rep
 	if err := repos.Relationships.LockOfTutor(ctx, tutor); err != nil {
 		return tutorDeletion{}, err
 	}
+	if err := nameExportAudience(ctx, repos, tutor, domain.ExportCauseTutorDeleted); err != nil {
+		return tutorDeletion{}, err
+	}
 	audience, err := s.audienceOfTutor(ctx, repos, tutor)
 	if err != nil {
 		return tutorDeletion{}, err
@@ -123,6 +126,14 @@ func (s *Service) applyTutorDeletion(ctx context.Context, repos repositories.Rep
 		return tutorDeletion{}, err
 	}
 	return deletion, nil
+}
+
+func nameExportAudience(ctx context.Context, repos repositories.Repositories, user domain.UserID, cause domain.ExportInvalidationCause) error {
+	audience, err := repos.Exports.InvalidationAudience(ctx, user)
+	if err != nil {
+		return err
+	}
+	return repos.InvalidateExports(cause, audience...)
 }
 
 func (s *Service) audienceOfTutor(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) (lessonAudience, error) {
@@ -294,6 +305,9 @@ func (s *Service) applyStudentDeletion(ctx context.Context, repos repositories.R
 		return nil, err
 	}
 	if err := s.lockStudentChannels(ctx, repos, student, links, now); err != nil {
+		return nil, err
+	}
+	if err := nameExportAudience(ctx, repos, student, domain.ExportCauseAccountDeleted); err != nil {
 		return nil, err
 	}
 	if err := s.settleDecidedLessons(ctx, repos, domain.PathRemoval, &decision, now); err != nil {

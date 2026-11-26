@@ -45,7 +45,9 @@ func run() int {
 		return admin.Failed(ctx, logging.Logger, os.Stderr, operator, os.Args[1:], err)
 	}
 	uploads := files.New(files.Dependencies{Store: repositories.NewStore(database.Pool), Clock: source(settings, database), Random: core.CryptoRandom(), Logger: logging.Logger, Lifetime: ctx})
-	exportEffects := export.NewEffects(export.Dependencies{Store: repositories.NewStore(database.Pool), Random: core.CryptoRandom(), Logger: logging.Logger, Cleanup: uploads})
+	exportEffects := export.NewEffects(export.Dependencies{
+		Store: repositories.NewStore(database.Pool), Wall: clock.System{}.Now, Random: core.CryptoRandom(), Logger: logging.Logger, Cleanup: uploads,
+	})
 	command := admin.Command{
 		Meetings: meetings.NewOperator(repositories.NewStore(database.Pool), source(settings, database), core.CryptoRandom(), logging.Logger.With(slog.String("operator_uid", operator.UID), slog.String("operator", operator.Name))),
 		Uploads:  uploads,
