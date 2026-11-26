@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"html"
 	"net/http"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,6 +21,12 @@ const (
 	englishInvitationSubject = "You are invited to study on OVC"
 	russianInvitationSubject = "Приглашение на занятия в OVC"
 	sendQueued               = `"msg":"invitation.send_queued"`
+	privacyPolicyURL         = publicOrigin + "/privacy"
+)
+
+var (
+	htmlLinkPattern = regexp.MustCompile(`href="([^"]*)"`)
+	textLinkPattern = regexp.MustCompile(`https?://\S+`)
 )
 
 func (h *authHarness) sendInvitation(t *testing.T, token string, card string) response {
@@ -538,8 +546,8 @@ func TestInvitationEmailEscapesTheTutorNameAndKeepsItOutOfTheSubject(t *testing.
 	if strings.Contains(message.HTML, `<a href="https://evil`) || !strings.Contains(message.HTML, `Anna &lt;a href=&#34;https://evil.example/&#34;&gt;Click&lt;/a&gt; &amp; &#34;Co&#34;`) {
 		t.Fatalf("the HTML body does not escape the tutor's name: %s", message.HTML)
 	}
-	if strings.Count(message.HTML, "<a ") != 1 || !strings.Contains(message.HTML, `<a href="`+*card.Invitation.URL+`"`) {
-		t.Fatalf("the HTML body links to anything but the invitation: %s", message.HTML)
+	if strings.Count(message.HTML, "<a ") != 2 || !slices.Equal(htmlLinks(message.HTML), []string{*card.Invitation.URL, privacyPolicyURL}) {
+		t.Fatalf("the HTML body links to anything but the invitation and the privacy policy: %s", message.HTML)
 	}
 	if !strings.Contains(message.Text, `Anna <a href="https://evil.example/">Click</a> & "Co"`) || !strings.Contains(message.Text, ": "+*card.Invitation.URL) {
 		t.Fatalf("the text body is %q", message.Text)
@@ -679,4 +687,103 @@ func TestDroppedSendIssuesTheFreshLinkLikeAQueuedOne(t *testing.T) {
 	if queued.budget != 1 {
 		t.Fatalf("the queued send counted %d sends", queued.budget)
 	}
+}
+
+func htmlLinks(body string) []string {
+	var links []string
+	for _, match := range htmlLinkPattern.FindAllStringSubmatch(body, -1) {
+		links = append(links, html.UnescapeString(match[1]))
+	}
+	return links
+}
+
+func textLinks(body string) []string {
+	return textLinkPattern.FindAllString(body, -1)
+}
+
+func hasLine(body string, line string) bool {
+	return slices.Contains(strings.Split(body, "\n"), line)
+}
+
+func TestInvitationEmailCarriesTheOperatorLineAndOnlyItsTwoLinks(t *testing.T) {
+	t.Parallel()
+	h := newAuthHarness(t)
+	englishTutor, englishToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	russianTutor, russianToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 2, "russian-tutor@example.org")
+	h.setAccount(t, englishTutor, "Anna", domain.LanguageEnglish)
+	h.setAccount(t, russianTutor, "Ирина", domain.LanguageRussian)
+	englishCard := h.newCard(t, englishToken, "New pupil", "new@example.org")
+	russianCard := h.newCard(t, russianToken, "Новый ученик", "novy@example.org")
+
+	escapedName := `Test operator &lt;b&gt;&amp; &#34;Co&#34;&lt;/b&gt;`
+	expected := map[string]struct {
+		link     string
+		htmlLine string
+		textLine string
+	}{
+		"new@example.org": {
+			link: *englishCard.Invitation.URL,
+			htmlLine: "OVC is operated by " + escapedName + ", " + testOperatorEmail +
+				`. We received your email address from the tutor who invited you and process it as described in the <a href="` + privacyPolicyURL + `"`,
+			textLine: "OVC is operated by " + testOperatorName + ", " + testOperatorEmail +
+				". We received your email address from the tutor who invited you and process it as described in the privacy policy.",
+		},
+		"novy@example.org": {
+			link: *russianCard.Invitation.URL,
+			htmlLine: "Оператор OVC — " + escapedName + ", " + testOperatorEmail +
+				`. Ваш адрес электронной почты мы получили от преподавателя, который вас пригласил, и обрабатываем его, как описано в <a href="` + privacyPolicyURL + `"`,
+			textLine: "Оператор OVC — " + testOperatorName + ", " + testOperatorEmail +
+				". Ваш адрес электронной почты мы получили от преподавателя, который вас пригласил, и обрабатываем его, как описано в политике конфиденциальности.",
+		},
+	}
+	h.sendTimes(t, englishToken, englishCard.ID, 1)
+	h.sendTimes(t, russianToken, russianCard.ID, 1)
+	h.tick(t)
+
+	for recipient, want := range expected {
+		messages := h.mailTo(t, recipient)
+		if len(messages) != 1 {
+			t.Fatalf("%s got %d emails", recipient, len(messages))
+		}
+		message := messages[0]
+		links := []string{want.link, privacyPolicyURL}
+		if !slices.Equal(htmlLinks(message.HTML), links) || !slices.Equal(textLinks(message.Text), links) {
+			t.Errorf("%s: the links are %v and %v", recipient, htmlLinks(message.HTML), textLinks(message.Text))
+		}
+		if !strings.Contains(message.HTML, want.htmlLine) || strings.Contains(message.HTML, testOperatorName) {
+			t.Errorf("%s: the HTML operator line is missing or unescaped: %s", recipient, message.HTML)
+		}
+		if !hasLine(message.Text, want.textLine) || !hasLine(message.Text, privacyPolicyURL) {
+			t.Errorf("%s: the text operator line is %q", recipient, message.Text)
+		}
+		if strings.Contains(message.Text+message.HTML, "mailto:") {
+			t.Errorf("%s: the email links the contact address", recipient)
+		}
+	}
+}
+
+func TestInvitationPageResponseIsTheSameWithAndWithoutAnEmail(t *testing.T) {
+	t.Parallel()
+	h := newAuthHarness(t)
+	_, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	emailed := h.newCard(t, token, cardName, cardEmail)
+	copied := h.newCard(t, token, "Copied link", "")
+	h.sendTimes(t, token, emailed.ID, 1)
+	h.tick(t)
+
+	emailedPage := h.invitationPage(t, linkToken(t, decodeCard(t, h.cardCall(t, token, http.MethodGet, emailed.ID, "", "")).Invitation))
+	copiedPage := h.invitationPage(t, linkToken(t, copied.Invitation))
+
+	if emailedPage.status != http.StatusOK || !sameAnswer(emailedPage, copiedPage) {
+		t.Fatalf("the invitation page answers %d %s and %d %s", emailedPage.status, emailedPage.body, copiedPage.status, copiedPage.body)
+	}
+}
+
+func hasOperatorLine(body string) bool {
+	for _, part := range []string{testOperatorEmail, privacyPolicyURL, "OVC is operated by", "Оператор OVC"} {
+		if strings.Contains(body, part) {
+			return true
+		}
+	}
+	return false
 }

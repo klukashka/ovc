@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'vitest';
 
-import { type FailedRequest, type PageActivity, PageActivityRecorder, unexpectedFailures } from './request-failures.ts';
+import {
+  type FailedRequest,
+  type PageActivity,
+  PageActivityRecorder,
+  frameLookupFailureCounts,
+  unexpectedFailures,
+} from './request-failures.ts';
 
 function cancelled(started: number, failed: number): FailedRequest {
   return {
@@ -244,5 +250,31 @@ describe('the navigation bookkeeping of a watched page', () => {
     recorder.close();
 
     expect(recorder.activity().closes).toEqual([2]);
+  });
+});
+
+describe('a request whose page the diagnostics cannot find', () => {
+  test('only a request issued before its new tab has a frame is not counted', () => {
+    const failures = {
+      beforeTheFrame: new Error(
+        'Frame for this navigation request is not available, because the request was issued before the frame is created. You can check whether the request is a navigation request by calling isNavigationRequest() method.',
+      ),
+      serviceWorker: new Error('Service Worker requests do not have an associated frame.'),
+      detached: new Error('Target page, context or browser has been closed'),
+      nameless: new Error(''),
+      notAnError: 'was issued before the frame is created',
+    };
+
+    const counted = Object.fromEntries(
+      Object.entries(failures).map(([name, thrown]) => [name, frameLookupFailureCounts(thrown)]),
+    );
+
+    expect(counted).toEqual({
+      beforeTheFrame: false,
+      serviceWorker: true,
+      detached: true,
+      nameless: true,
+      notAnError: true,
+    });
   });
 });

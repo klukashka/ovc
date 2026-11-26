@@ -255,7 +255,7 @@ func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings,
 	if err != nil {
 		return nil, err
 	}
-	relationshipEmails, err := notifications.NewRelationshipEmails(store, cipher, settings.PublicURL)
+	relationshipEmails, err := notifications.NewRelationshipEmails(store, cipher, settings.PublicURL, settings.Operator)
 	if err != nil {
 		return nil, err
 	}

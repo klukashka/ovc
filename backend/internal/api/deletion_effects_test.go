@@ -177,6 +177,9 @@ func TestTutorDeletionEndsRelationshipsDiscardsCardsAndProvisionalLinksArchivesG
 	if strings.Count(message.HTML, "<a ") != 1 || !strings.Contains(message.HTML, `<a href="`+publicOrigin+`/tutors"`) || strings.Contains(message.Text+message.HTML, cardName) {
 		t.Fatalf("the email links elsewhere or carries the card name: %s", message.HTML)
 	}
+	if hasOperatorLine(message.Text + message.HTML) {
+		t.Fatalf("the tutor-deleted email carries the operator line: %s", message.Text)
+	}
 	if hasSubject(subjects(h.mailTo(t, newcomerEmail)), tutorDeletedSubject) || len(h.mailTo(t, requestingEmail)) != 0 || h.endedEmailsQueued(t) != 0 {
 		t.Fatal("a provisional student or a requester was emailed, or an ending email was queued")
 	}

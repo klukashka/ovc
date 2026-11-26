@@ -36,7 +36,7 @@ The issue page's Analytics tab and the lesson page's recordings come [after the 
 
 ## Public addresses
 
-The legal document addresses and links below follow [ADR-0024](../../../docs/decisions/0024-legal-documents-and-student-data.md), as specified by change L0 of the [interface rework plan](../../plans/ui-rework.md) on 2026-11-23 (pending owner review): `/consent`, `/terms`, the consent link and the acceptance line are implemented by L1, and the invitation page's policy link is pending implementation by L2.
+The legal document addresses and links below follow [ADR-0024](../../../docs/decisions/0024-legal-documents-and-student-data.md), as specified by change L0 of the [interface rework plan](../../plans/ui-rework.md) on 2026-11-23 (pending owner review): `/consent`, `/terms`, the consent link and the acceptance line are implemented by L1, and the invitation page's policy link by L2.
 
 | Address | Page | Notes |
 |---|---|---|

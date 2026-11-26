@@ -32,7 +32,7 @@ import { myTutorsKey } from '../tutors/api.ts';
 import { CheckEmail } from './CheckEmail.tsx';
 import { useInvitationToken } from './InvitationToken.tsx';
 import { type SignInRefusal, RefusalMessage, refusalOf } from './SignInPage.tsx';
-import { AcceptanceLine, ConsentField, LanguageChoice, browserTimezone } from './SignUpPages.tsx';
+import { AcceptanceLine, ConsentField, LanguageChoice, LegalLink, browserTimezone } from './SignUpPages.tsx';
 
 type PublicTutor = components['schemas']['PublicTutor'];
 
@@ -74,7 +74,17 @@ function TutorProfile({ tutor }: { readonly tutor: PublicTutor }): ReactElement 
         </div>
       </div>
       <p className="wrap-anywhere">{t('invitationPage.invites', { name: tutor.name })}</p>
+      <PrivacyPolicyLink />
     </section>
+  );
+}
+
+function PrivacyPolicyLink(): ReactElement {
+  const { t } = useTranslation();
+  return (
+    <p className="text-small">
+      <LegalLink to="/privacy">{t('page.privacy')}</LegalLink>
+    </p>
   );
 }
 
@@ -513,7 +523,12 @@ export function InvitationPage(): ReactElement {
       case 'loading':
         return <DelayedLoading />;
       case 'invalid':
-        return <FormAlert>{t('invitationPage.invalid')}</FormAlert>;
+        return (
+          <>
+            <FormAlert>{t('invitationPage.invalid')}</FormAlert>
+            <PrivacyPolicyLink />
+          </>
+        );
       case 'failed':
         return (
           <LoadFailed

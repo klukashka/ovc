@@ -119,6 +119,36 @@ func RelationshipEmailText(language domain.Language, event domain.OutboxKind) (R
 	return text, found
 }
 
+type OperatorNoticeText struct {
+	Lead           string
+	ContactLead    string
+	PolicyLead     string
+	PolicyLinkText string
+	PolicyTrailing string
+}
+
+var operatorNoticeTexts = map[domain.Language]OperatorNoticeText{
+	domain.LanguageEnglish: {
+		Lead:           "OVC is operated by ",
+		ContactLead:    ", ",
+		PolicyLead:     ". We received your email address from the tutor who invited you and process it as described in the ",
+		PolicyLinkText: "privacy policy",
+		PolicyTrailing: ".",
+	},
+	domain.LanguageRussian: {
+		Lead:           "Оператор OVC — ",
+		ContactLead:    ", ",
+		PolicyLead:     ". Ваш адрес электронной почты мы получили от преподавателя, который вас пригласил, и обрабатываем его, как описано в ",
+		PolicyLinkText: "политике конфиденциальности",
+		PolicyTrailing: ".",
+	},
+}
+
+func OperatorNotice(language domain.Language) (OperatorNoticeText, bool) {
+	text, found := operatorNoticeTexts[language]
+	return text, found
+}
+
 var relationshipEndedEmailTexts = map[domain.Language]map[domain.EndedBy]RelationshipText{
 	domain.LanguageEnglish: {
 		domain.EndedByTutor: {

@@ -46,6 +46,9 @@ import (
 const (
 	publicOrigin = "https://ovc.example"
 	tutorEmail   = "tutor@example.org"
+
+	testOperatorName  = `Test operator <b>& "Co"</b>`
+	testOperatorEmail = "operator@example.test"
 )
 
 var authStart = time.Date(2030, time.March, 10, 9, 0, 0, 0, time.UTC)
@@ -295,7 +298,11 @@ func newAuthHarnessWithDatabase(
 	if err != nil {
 		t.Fatal(err)
 	}
-	relationshipEmails, err := notifications.NewRelationshipEmails(store, cipher, publicOrigin)
+	operator, err := core.NewOperator(testOperatorName, testOperatorEmail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relationshipEmails, err := notifications.NewRelationshipEmails(store, cipher, publicOrigin, operator)
 	if err != nil {
 		t.Fatal(err)
 	}

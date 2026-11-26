@@ -63,7 +63,7 @@ func (b relationshipEndedEmail) Build(ctx context.Context, row repositories.Clai
 	if err != nil {
 		return Composition{}, err
 	}
-	email, err := b.emails.render(parties.recipient.Language, text, parties.recipient.Email, parties.name, parties.actionURL, cancelled)
+	email, err := b.emails.render(parties.recipient.Language, text, parties.recipient.Email, parties.name, parties.actionURL, cancelled, nil)
 	if err != nil {
 		return Composition{}, err
 	}

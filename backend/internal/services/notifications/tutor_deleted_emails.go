@@ -52,7 +52,7 @@ func (b tutorDeletedEmail) Build(ctx context.Context, row repositories.ClaimedOu
 	if err != nil {
 		return Composition{}, err
 	}
-	email, err := b.emails.render(recipient.Language, text, recipient.Email, tutor.Name, b.emails.publicURL+myTutorsPath, cancelled)
+	email, err := b.emails.render(recipient.Language, text, recipient.Email, tutor.Name, b.emails.publicURL+myTutorsPath, cancelled, nil)
 	if err != nil {
 		return Composition{}, err
 	}

@@ -11,3 +11,7 @@
 {{end}}{{if .ActionURL}}{{.Action}}: {{.ActionURL}}
 
 {{end}}{{.Note}}
+{{with .Operator}}
+{{.Lead}}{{.Name}}{{.ContactLead}}{{.Email}}{{.PolicyLead}}{{.PolicyLinkText}}{{.PolicyTrailing}}
+{{.PolicyURL}}
+{{end}}

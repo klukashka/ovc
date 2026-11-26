@@ -119,6 +119,8 @@ func withPublicURL(env []string) []string {
 	defaults["OVC_FIELD_ENCRYPTION_KEY"] = fieldKeyForTheRun
 	defaults["OVC_UNSUBSCRIBE_SIGNING_SECRET"] = unsubscribeSecretForTheRun
 	defaults["OVC_DB_POOL_SIZE"] = strconv.Itoa(childPoolSize)
+	defaults["OVC_OPERATOR_NAME"] = "Test operator"
+	defaults["OVC_OPERATOR_EMAIL"] = "operator@example.test"
 	var result []string
 	for _, variable := range env {
 		if strings.Contains(variable, "=") {

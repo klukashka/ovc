@@ -23,7 +23,12 @@ var relationshipHTML string
 //go:embed templates/relationship.txt
 var relationshipText string
 
-const invitationPathPrefix = "/invite/"
+const (
+	invitationPathPrefix = "/invite/"
+	privacyPolicyPath    = "/privacy"
+)
+
+var errOperatorMissing = errors.New("the invitation email needs the operator's name and email")
 
 type relationshipView struct {
 	Language       domain.Language
@@ -37,6 +42,18 @@ type relationshipView struct {
 	Action         string
 	ActionURL      string
 	Note           string
+	Operator       *operatorNoticeView
+}
+
+type operatorNoticeView struct {
+	Lead           string
+	Name           string
+	ContactLead    string
+	Email          string
+	PolicyLead     string
+	PolicyLinkText string
+	PolicyURL      string
+	PolicyTrailing string
 }
 
 type RelationshipEmails struct {
@@ -44,11 +61,17 @@ type RelationshipEmails struct {
 	cipher    core.FieldCipher
 	cities    timezonecities.Table
 	publicURL string
+	operator  core.Operator
 	html      *htmltemplate.Template
 	text      *texttemplate.Template
 }
 
-func NewRelationshipEmails(store *repositories.Store, cipher core.FieldCipher, publicURL string) (*RelationshipEmails, error) {
+func NewRelationshipEmails(
+	store *repositories.Store, cipher core.FieldCipher, publicURL string, operator core.Operator,
+) (*RelationshipEmails, error) {
+	if operator.IsZero() {
+		return nil, errOperatorMissing
+	}
 	html, err := htmltemplate.New("relationship.html").Option("missingkey=error").Parse(relationshipHTML)
 	if err != nil {
 		return nil, fmt.Errorf("parse the relationship email HTML template: %w", err)
@@ -62,7 +85,8 @@ func NewRelationshipEmails(store *repositories.Store, cipher core.FieldCipher, p
 		return nil, err
 	}
 	return &RelationshipEmails{
-		store: store, cipher: cipher, cities: cities, publicURL: strings.TrimRight(publicURL, "/"), html: html, text: text,
+		store: store, cipher: cipher, cities: cities, publicURL: strings.TrimRight(publicURL, "/"), operator: operator,
+		html: html, text: text,
 	}, nil
 }
 
@@ -125,7 +149,11 @@ func (b invitationEmail) Build(ctx context.Context, row repositories.ClaimedOutb
 	if !found {
 		return Composition{}, domain.PermanentEffect(fmt.Errorf("%w: no %s text in %s", errUnknownKind, row.Kind, recipient.language))
 	}
-	email, err := b.emails.render(recipient.language, text, *invitation.Email, tutor.Name, link, cancelledList{})
+	notice, err := b.emails.operatorNotice(recipient.language)
+	if err != nil {
+		return Composition{}, err
+	}
+	email, err := b.emails.render(recipient.language, text, *invitation.Email, tutor.Name, link, cancelledList{}, notice)
 	if err != nil {
 		return Composition{}, err
 	}
@@ -163,11 +191,12 @@ func (b invitationEmail) link(invitation repositories.InvitationEmail) (string, 
 
 func (r *RelationshipEmails) render(
 	language domain.Language, text core.RelationshipText, to string, name string, actionURL string, cancelled cancelledList,
+	notice *operatorNoticeView,
 ) (Email, error) {
 	view := relationshipView{
 		Language: language, Subject: text.Subject, Intro: text.Intro, Name: strings.Join(strings.Fields(name), " "),
 		Lines: text.Lines, LessonsHeading: cancelled.heading, Lessons: cancelled.lines, More: cancelled.more,
-		Action: text.Action, ActionURL: actionURL, Note: text.Note,
+		Action: text.Action, ActionURL: actionURL, Note: text.Note, Operator: notice,
 	}
 	var html, plain bytes.Buffer
 	if err := r.html.Execute(&html, view); err != nil {
@@ -177,4 +206,16 @@ func (r *RelationshipEmails) render(
 		return Email{}, domain.PermanentEffect(fmt.Errorf("render the relationship email: %w", err))
 	}
 	return Email{To: to, Subject: text.Subject, Text: plain.String(), HTML: html.String()}, nil
+}
+
+func (r *RelationshipEmails) operatorNotice(language domain.Language) (*operatorNoticeView, error) {
+	text, found := core.OperatorNotice(language)
+	if !found {
+		return nil, domain.PermanentEffect(fmt.Errorf("%w: no operator notice in %s", errUnknownKind, language))
+	}
+	return &operatorNoticeView{
+		Lead: text.Lead, Name: r.operator.Name(), ContactLead: text.ContactLead, Email: r.operator.Email(),
+		PolicyLead: text.PolicyLead, PolicyLinkText: text.PolicyLinkText, PolicyURL: r.publicURL + privacyPolicyPath,
+		PolicyTrailing: text.PolicyTrailing,
+	}, nil
 }

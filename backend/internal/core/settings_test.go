@@ -39,6 +39,8 @@ func validValues() map[string]string {
 	values["OVC_STORAGE_"+"SECRET_KEY"] = sentinel("storage-secret-key")
 	values["OVC_FIELD_ENCRYPTION_KEY"] = sentinelFieldKey
 	values["OVC_UNSUBSCRIBE_SIGNING_SECRET"] = sentinelUnsubscribeSecret
+	values["OVC_OPERATOR_NAME"] = "Test operator"
+	values["OVC_OPERATOR_EMAIL"] = "operator@example.test"
 	return values
 }
 
@@ -686,5 +688,76 @@ func TestExportStorageEndpointRule(t *testing.T) {
 				t.Fatalf("expected a refusal naming the export endpoint, got %v", err)
 			}
 		})
+	}
+}
+
+func TestOperatorIsRequiredAndSafeForTheWorkerAndTheTestControlAPI(t *testing.T) {
+	invalid := map[string]map[string]string{
+		"missing name":               {"OVC_OPERATOR_NAME": ""},
+		"blank name":                 {"OVC_OPERATOR_NAME": "   "},
+		"over-long name":             {"OVC_OPERATOR_NAME": strings.Repeat("я", 201)},
+		"name with a line feed":      {"OVC_OPERATOR_NAME": "sentinel-operator\nBcc: x@y.example"},
+		"name with a control":        {"OVC_OPERATOR_NAME": "sentinel-operator\u0007"},
+		"name with a direction mark": {"OVC_OPERATOR_NAME": "sentinel-operator\u202e"},
+		"name with a zero-width":     {"OVC_OPERATOR_NAME": "sentinel\u200boperator"},
+		"name with a line separator": {"OVC_OPERATOR_NAME": "sentinel\u2028operator"},
+		"name of invalid UTF-8":      {"OVC_OPERATOR_NAME": "sentinel-operator\xff"},
+		"missing email":              {"OVC_OPERATOR_EMAIL": ""},
+		"two emails":                 {"OVC_OPERATOR_EMAIL": "sentinel-operator@example.test, b@example.test"},
+		"email with a display name":  {"OVC_OPERATOR_EMAIL": "Operator <sentinel-operator@example.test>"},
+		"email with a comment":       {"OVC_OPERATOR_EMAIL": "sentinel-operator@example.test (operator)"},
+		"email with CR LF":           {"OVC_OPERATOR_EMAIL": "sentinel-operator@example.test\r\nBcc: x@y.example"},
+		"over-long email":            {"OVC_OPERATOR_EMAIL": "sentinel-operator@" + strings.Repeat("a", 240) + ".test"},
+	}
+	testControl := map[string]string{
+		"OVC_TEST_CONTROL": "1", "OVC_HTTP_ADDR": "127.0.0.1:8000", "OVC_STORAGE_ENDPOINT": "http://127.0.0.1:58333",
+		"OVC_PRESENTATION_STORAGE_ENDPOINT": "http://127.0.0.1:58333", "OVC_EXPORT_STORAGE_ENDPOINT": "http://127.0.0.1:58333",
+	}
+	for name, change := range invalid {
+		t.Run(name, func(t *testing.T) {
+			values := validValues()
+			for key, value := range change {
+				values[key] = value
+			}
+			controlled := validValues()
+			for key, value := range testControl {
+				controlled[key] = value
+			}
+			for key, value := range change {
+				controlled[key] = value
+			}
+
+			_, workerErr := core.Load(lookupFrom(values), core.ProcessWorker)
+			_, controlledErr := core.Load(lookupFrom(controlled), core.ProcessAPI)
+
+			for _, refusal := range []error{workerErr, controlledErr} {
+				var settingsError *core.SettingsError
+				if !errors.As(refusal, &settingsError) || !strings.Contains(refusal.Error(), "OVC_OPERATOR_") || strings.Contains(refusal.Error(), "sentinel") {
+					t.Fatalf("expected a settings error naming the variable without its value, got %v", refusal)
+				}
+			}
+		})
+	}
+}
+
+func TestOperatorIsTrimmedAndOnlyTheWorkerAndTheTestControlAPINeedIt(t *testing.T) {
+	values := validValues()
+	values["OVC_OPERATOR_NAME"] = "  Иван Петров " + strings.Repeat("я", 187) + "  "
+	values["OVC_OPERATOR_EMAIL"] = " operator@example.test "
+	missing := validValues()
+	delete(missing, "OVC_OPERATOR_NAME")
+	delete(missing, "OVC_OPERATOR_EMAIL")
+	adminControlled := map[string]string{"OVC_DATABASE_URL": missing["OVC_DATABASE_URL"], "OVC_TEST_CONTROL": "1"}
+
+	worker, workerErr := core.Load(lookupFrom(values), core.ProcessWorker)
+	_, apiErr := core.Load(lookupFrom(missing), core.ProcessAPI)
+	_, adminErr := core.Load(lookupFrom(missing), core.ProcessAdmin)
+	_, controlledAdminErr := core.Load(lookupFrom(adminControlled), core.ProcessAdmin)
+
+	if workerErr != nil || worker.Operator.Name() != "Иван Петров "+strings.Repeat("я", 187) || worker.Operator.Email() != "operator@example.test" {
+		t.Fatalf("the worker loaded %q %q, %v", worker.Operator.Name(), worker.Operator.Email(), workerErr)
+	}
+	if apiErr != nil || adminErr != nil || controlledAdminErr != nil {
+		t.Fatalf("the API %v, ovc-admin %v and ovc-admin under test control %v needed the operator", apiErr, adminErr, controlledAdminErr)
 	}
 }

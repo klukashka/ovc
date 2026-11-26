@@ -6,6 +6,7 @@ import { type TestAccount, emailedLinkTo, newTestAccount, pageLoaded, signInThro
 import type { Deployment } from './deployment.ts';
 import { bellIn, panelRowsIn } from './notifications.ts';
 import {
+  type Diagnostics,
   chooseFromPageMenu,
   diagnosedTest as test,
   expect,
@@ -70,6 +71,43 @@ async function expectTokenNowhere(page: Page, token: string): Promise<void> {
   expect(stored.session).not.toContain(token);
   expect(stored.historyState).not.toContain(token);
   expect(stored.cookies).toBe('');
+}
+
+interface PolicyLinkObservation {
+  readonly referrerPolicy: string | undefined;
+  readonly address: string;
+  readonly href: string | null;
+  readonly target: string | null;
+  readonly rel: string | null;
+  readonly policyAddress: string;
+  readonly referrer: string;
+  readonly openerCleared: boolean;
+  readonly policyHeadings: readonly string[];
+}
+
+async function openThePolicyFrom(page: Page, link: string, diagnostics: Diagnostics): Promise<PolicyLinkObservation> {
+  const opened = await page.goto(link);
+  await page.waitForURL('**/invite');
+  const policyLink = page.getByRole('link', { name: 'Privacy policy (opens in a new tab)' });
+  await policyLink.waitFor();
+  const openedTab = page.context().waitForEvent('page');
+  await policyLink.click();
+  const policy = await openedTab;
+  await diagnostics.watch(policy);
+  await policy.getByRole('heading', { level: 1 }).waitFor();
+  const observation: PolicyLinkObservation = {
+    referrerPolicy: opened?.headers()['referrer-policy'],
+    address: page.url(),
+    href: await policyLink.getAttribute('href'),
+    target: await policyLink.getAttribute('target'),
+    rel: await policyLink.getAttribute('rel'),
+    policyAddress: policy.url(),
+    referrer: await policy.evaluate(() => document.referrer),
+    openerCleared: await policy.evaluate(() => globalThis.opener === null),
+    policyHeadings: await policy.getByRole('heading', { level: 1 }).allTextContents(),
+  };
+  await policy.close();
+  return observation;
 }
 
 function homeTutorRows(page: Page): Locator {
@@ -359,6 +397,46 @@ test.describe('in English', () => {
     await page.reload();
 
     await expect(page.getByText('Open the link from your tutor again.')).toBeVisible();
+  });
+
+  test('invitations › the page links the privacy policy in a new tab for a card with and without an email', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    diagnostics.expectFailure({ method: 'GET', path: '/api/v1/invitations/not-a-real-token', status: 404 });
+    const maria = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const invited = newTestAccount('Invited student', 'student');
+    const emailed = await createCard(deployment, maria, 'Invited student', invited.email);
+    await sendInvitation(deployment, maria, emailed.id);
+    await control.tick();
+    const links = {
+      emailed: emailedLinkTo(await control.mail(invited.email), '/invite'),
+      copied: (await createCard(deployment, maria, 'Copied link', null)).link,
+      invalid: `${deployment.origin}/invite/not-a-real-token`,
+    };
+
+    const observed: Record<string, PolicyLinkObservation> = {};
+    for (const [name, link] of Object.entries(links)) {
+      observed[name] = await openThePolicyFrom(page, link, diagnostics);
+    }
+
+    for (const [name, link] of Object.entries(links)) {
+      const observation = observed[name];
+      expect(observation, name).toEqual({
+        referrerPolicy: 'no-referrer',
+        address: `${deployment.origin}/invite`,
+        href: '/privacy',
+        target: '_blank',
+        rel: 'noopener noreferrer',
+        policyAddress: `${deployment.origin}/privacy`,
+        referrer: '',
+        openerCleared: true,
+        policyHeadings: ['Privacy policy'],
+      });
+      expect(observation?.address, name).not.toContain(invitationToken(link));
+    }
   });
 
   test('invitations › a sign-up with a taken email and its own password stays on the page and accepts', async ({

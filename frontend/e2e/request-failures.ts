@@ -143,3 +143,7 @@ export class PageActivityRecorder {
     };
   }
 }
+
+export function frameLookupFailureCounts(thrown: unknown): boolean {
+  return !(thrown instanceof Error && thrown.message.includes('was issued before the frame is created'));
+}

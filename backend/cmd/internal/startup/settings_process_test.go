@@ -140,3 +140,32 @@ func TestProcessesRefuseToStartWithoutAValidUnsubscribeSigningSecret(t *testing.
 		}
 	}
 }
+
+func TestWorkerRefusesAMissingOperatorWithoutEchoingIt(t *testing.T) {
+	t.Parallel()
+	refusals := map[string]struct {
+		variable string
+		setting  string
+	}{
+		"missing name":              {variable: "OVC_OPERATOR_NAME", setting: unsetVariable("OVC_OPERATOR_NAME")},
+		"name with a control":       {variable: "OVC_OPERATOR_NAME", setting: "OVC_OPERATOR_NAME=sentinel-operator\u0007"},
+		"missing email":             {variable: "OVC_OPERATOR_EMAIL", setting: unsetVariable("OVC_OPERATOR_EMAIL")},
+		"email with a display name": {variable: "OVC_OPERATOR_EMAIL", setting: "OVC_OPERATOR_EMAIL=Operator <sentinel-operator@example.test>"},
+	}
+	for name, refusal := range refusals {
+		for _, args := range [][]string{nil, {"check-settings"}} {
+			t.Run(name+"/"+strings.Join(args, " "), func(t *testing.T) {
+				t.Parallel()
+
+				result := runBinary(t, "worker", []string{unreachableDatabase, refusal.setting}, args...)
+
+				if result.exitCode != 1 || !strings.Contains(result.stderr, refusal.variable) || strings.Contains(result.stdout, "process.started") {
+					t.Fatalf("expected a start-up refusal naming %s, got %d %q %q", refusal.variable, result.exitCode, result.stdout, result.stderr)
+				}
+				if revealsAValue(result) {
+					t.Fatal("the refusal shows a value")
+				}
+			})
+		}
+	}
+}

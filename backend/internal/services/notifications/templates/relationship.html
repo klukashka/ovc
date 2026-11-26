@@ -15,5 +15,6 @@
 {{end}}{{if .More}}<p>{{.More}}</p>
 {{end}}{{if .ActionURL}}<p><a href="{{.ActionURL}}" style="color: #c2410c; font-weight: bold;">{{.Action}}</a></p>
 {{end}}<p style="color: #52606d; font-size: 14px;">{{.Note}}</p>
-</body>
+{{with .Operator}}<p style="color: #52606d; font-size: 14px;">{{.Lead}}{{.Name}}{{.ContactLead}}{{.Email}}{{.PolicyLead}}<a href="{{.PolicyURL}}" style="color: #52606d;">{{.PolicyLinkText}}</a>{{.PolicyTrailing}}</p>
+{{end}}</body>
 </html>

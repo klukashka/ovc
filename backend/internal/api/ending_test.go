@@ -606,4 +606,9 @@ func TestEndedEmailFollowsTheRecipientsLanguage(t *testing.T) {
 	if !strings.Contains(toTutor.Text, cardName) || !strings.Contains(toStudent.Text, "Ирина") || !strings.Contains(toStudent.HTML, `lang="ru"`) {
 		t.Fatalf("the Russian emails are %q and %q", toTutor.Text, toStudent.Text)
 	}
+	for _, message := range []mail.SinkMessage{toTutor, toStudent} {
+		if hasOperatorLine(message.Text + message.HTML) {
+			t.Fatalf("the ended email carries the operator line: %s", message.Text)
+		}
+	}
 }

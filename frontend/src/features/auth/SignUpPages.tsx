@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import { type ReactElement, type SyntheticEvent, useId, useState } from 'react';
+import { type ReactElement, type ReactNode, type SyntheticEvent, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
@@ -89,6 +89,22 @@ export function LanguageChoice({ interfaceLanguage }: { readonly interfaceLangua
   );
 }
 
+export function LegalLink({
+  to,
+  children,
+}: {
+  readonly to: '/privacy' | '/consent' | '/terms';
+  readonly children: ReactNode;
+}): ReactElement {
+  const { t } = useTranslation();
+  return (
+    <Link to={to} target="_blank" rel="noopener noreferrer" className="text-accent-text underline">
+      {children}
+      <span className="sr-only"> {t('signUp.opensInNewTab')}</span>
+    </Link>
+  );
+}
+
 export function ConsentField({ error }: { readonly error: string | undefined }): ReactElement {
   const { t } = useTranslation();
   const checkboxId = useId();
@@ -106,11 +122,7 @@ export function ConsentField({ error }: { readonly error: string | undefined }):
           className="mt-0.5 size-4"
         />
         <span>
-          {t('signUp.consentLead')}{' '}
-          <Link to="/consent" target="_blank" rel="noopener noreferrer" className="text-accent-text underline">
-            {t('signUp.consentLink')}
-            <span className="sr-only"> {t('signUp.opensInNewTab')}</span>
-          </Link>
+          {t('signUp.consentLead')} <LegalLink to="/consent">{t('signUp.consentLink')}</LegalLink>
         </span>
       </label>
       {error === undefined ? null : (
@@ -126,11 +138,7 @@ export function AcceptanceLine(): ReactElement {
   const { t } = useTranslation();
   return (
     <p data-acceptance-line="" className="text-small text-text-muted">
-      {t('signUp.acceptanceLead')}{' '}
-      <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-accent-text underline">
-        {t('signUp.acceptanceLink')}
-        <span className="sr-only"> {t('signUp.opensInNewTab')}</span>
-      </Link>
+      {t('signUp.acceptanceLead')} <LegalLink to="/terms">{t('signUp.acceptanceLink')}</LegalLink>
     </p>
   );
 }

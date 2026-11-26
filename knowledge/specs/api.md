@@ -99,7 +99,7 @@ Behavior: [accounts](accounts.md). Every operation declares its audience in code
 
 ## Students and groups
 
-The erasure marker's field and refusals below follow [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md), as specified by change L0 of the [interface rework plan](../plans/ui-rework.md) on 2026-11-23 (pending owner review); `GET /invitations/{token}` gains no field for the invitation page's policy link (pending implementation by L2).
+The erasure marker's field and refusals below follow [ADR-0024](../../docs/decisions/0024-legal-documents-and-student-data.md), as specified by change L0 of the [interface rework plan](../plans/ui-rework.md) on 2026-11-23 (pending owner review); `GET /invitations/{token}` gains no field for the invitation page's policy link.
 
 Behavior: [relationships](accounts.md#tutorstudent-relationships), [invitations](accounts.md#invitations), [provisional links and reclaim](accounts.md#provisional-links-and-reclaim), [tutor code and join requests](accounts.md#tutor-code-and-join-requests), [ending](accounts.md#ending-a-relationship), [groups](accounts.md#groups).
 

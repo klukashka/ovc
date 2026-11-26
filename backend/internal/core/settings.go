@@ -101,6 +101,7 @@ func VariableNames() []string {
 		varTestControl, varClock, varMeetingProvider, varMailBackend, varPublicURL, varFakeRoomOrigin, varSMTPHost, varSMTPPort,
 		varSMTPTLS, varSMTPUsername, varSMTPPassword, varMailFrom, varJWTSecret, varAccessTTL, varRefreshTTL,
 		varTrustedProxies, varTestDatabaseURL, varFileQuota, varRecordingQuota, varFieldKey, varUnsubscribeKey, varPresentationEndpoint, varExportEndpoint,
+		varOperatorName, varOperatorEmail,
 	}, storageVariableNames()...)
 }
 
@@ -132,6 +133,7 @@ type Settings struct {
 	ExportEndpoint  string
 	FieldKey        Secret
 	UnsubscribeKey  Secret
+	Operator        Operator
 }
 
 type TutorQuotas struct {
@@ -276,6 +278,14 @@ func Load(lookup Lookup, process Process) (Settings, error) {
 		problems = append(problems, mailProblems...)
 		settings.SMTP = smtp
 		settings.MailFrom = from
+	}
+
+	if process == ProcessWorker || (process == ProcessAPI && settings.TestControl) {
+		operator, err := operatorFrom(lookup)
+		if err != nil {
+			problems = append(problems, err)
+		}
+		settings.Operator = operator
 	}
 
 	if process == ProcessAPI {

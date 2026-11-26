@@ -1,5 +1,6 @@
 import type { ReadinessFailure, ReadinessPhase } from './navigation-readiness.ts';
 import { HttpNegativePhase, LanguageFailurePhase, type HttpNegative } from './diagnostic-expectations.ts';
+import { frameLookupFailureCounts } from './request-failures.ts';
 import {
   type RedactedFailedRequest,
   redactAddress,
@@ -173,11 +174,16 @@ export function observeBrowserContext(
     if (!valid && (phase.expectedWarningMissing() || phase.unexpectedWarnings() === 0))
       record('expectation_failure', page);
   };
+  const issuedBeforeItsFrame = new WeakSet<Request>();
   const pageOf = (request: Request): Page | null => {
     try {
       return request.frame().page();
-    } catch {
-      record('page_error', null);
+    } catch (thrown: unknown) {
+      if (frameLookupFailureCounts(thrown)) {
+        record('page_error', null);
+      } else {
+        issuedBeforeItsFrame.add(request);
+      }
       return null;
     }
   };
@@ -198,14 +204,26 @@ export function observeBrowserContext(
   });
   context.on('requestfailed', (request) => {
     const page = pageOf(request);
-    if (page === null) return;
+    if (page === null) {
+      if (issuedBeforeItsFrame.has(request))
+        record('request_failure', null, {
+          method: request.method(),
+          address: request.url(),
+          reason: request.failure()?.errorText ?? 'unknown',
+        });
+      return;
+    }
     languages.get(page)?.failure(request.url(), request.failure() !== null);
   });
   context.on('response', (response) => {
     if (response.status() < 400) return;
     const request = response.request();
     const page = pageOf(request);
-    if (page === null) return;
+    if (page === null) {
+      if (issuedBeforeItsFrame.has(request))
+        record('http_error', null, { method: request.method(), path: response.url(), status: response.status() });
+      return;
+    }
     const entry = started.get(request);
     if (entry === undefined || phases.get(page) !== entry.phase) {
       record('http_error', page, { method: request.method(), path: response.url(), status: response.status() });
