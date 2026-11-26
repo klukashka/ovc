@@ -273,7 +273,7 @@ func (s *Service) openDownload(
 	ctx context.Context, id domain.AttachmentID, claims downloadClaims, cancel context.CancelFunc, now time.Time,
 ) (Download, error) {
 	kind := referenceKindAttribute(claims.Reference.Kind)
-	file, err := s.servableFile(ctx, id, claims.Reference, now)
+	file, err := s.servableFile(ctx, s.deps.Store.Repositories(), id, claims.Reference, now)
 	if errors.Is(err, repositories.ErrNotFound) {
 		return Download{}, s.refusedDownload(ctx, id, domain.RefusedUnreferenced, kind)
 	}
@@ -315,9 +315,8 @@ func (s *Service) openDownload(
 }
 
 func (s *Service) servableFile(
-	ctx context.Context, id domain.AttachmentID, reference DownloadReference, now time.Time,
+	ctx context.Context, repos repositories.Repositories, id domain.AttachmentID, reference DownloadReference, now time.Time,
 ) (repositories.ServableFile, error) {
-	repos := s.deps.Store.Repositories()
 	if reference.Kind == domain.ReferenceMessage {
 		return repos.Attachments.ServableChat(ctx, id, reference.Item)
 	}
@@ -326,6 +325,33 @@ func (s *Service) servableFile(
 		return repositories.ServableFile{}, repositories.ErrNotFound
 	}
 	return authorization.servable(ctx, repos, id, reference.Item, now)
+}
+
+func (s *Service) ExportableFile(
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, id domain.AttachmentID, reference DownloadReference, now time.Time,
+) (repositories.ServableFile, error) {
+	if reference.Kind == domain.ReferenceMessage {
+		file, err := repos.Attachments.DownloadableChat(ctx, viewer, id)
+		if err != nil {
+			return repositories.ServableFile{}, err
+		}
+		if file.MessageID != reference.Item {
+			return repositories.ServableFile{}, repositories.ErrNotFound
+		}
+		return s.servableFile(ctx, repos, id, reference, now)
+	}
+	authorization, authorized := s.authorizationOf(reference.Kind)
+	if !authorized {
+		return repositories.ServableFile{}, repositories.ErrNotFound
+	}
+	visible, err := authorization.visible(ctx, repos, viewer, id, now)
+	if err != nil {
+		return repositories.ServableFile{}, err
+	}
+	if !slices.ContainsFunc(visible, func(candidate visibleReference) bool { return candidate.reference == reference }) {
+		return repositories.ServableFile{}, repositories.ErrNotFound
+	}
+	return s.servableFile(ctx, repos, id, reference, now)
 }
 
 func (s *Service) refusedDownload(ctx context.Context, id domain.AttachmentID, reason domain.DownloadRefusal, known ...slog.Attr) error {

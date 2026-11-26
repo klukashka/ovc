@@ -500,103 +500,129 @@ func (s *Service) MarkRead(ctx context.Context, author Author, channel domain.Ch
 }
 
 func (s *Service) History(ctx context.Context, viewer domain.UserID, channel domain.ChannelID, query HistoryQuery) (History, error) {
-	if query.AroundSeq != nil {
-		if query.Cursor != "" || query.AfterSeq != nil {
-			return History{}, &ValidationError{Path: fieldAroundSeq, Code: domain.FieldInvalid}
-		}
-		return s.around(ctx, viewer, channel, *query.AroundSeq, query.Limit)
+	listing, err := historyListing(channel, query)
+	if err != nil {
+		return History{}, err
 	}
+	now, err := s.now(ctx)
+	if err != nil {
+		return History{}, err
+	}
+	var history History
+	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
+		var err error
+		history, _, err = s.history(ctx, repos, viewer, channel, query, listing, now)
+		return err
+	})
+	return history, err
+}
+
+func (s *Service) HistoryIn(
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, channel domain.ChannelID, query HistoryQuery, now time.Time,
+) (History, []domain.UserID, error) {
+	listing, err := historyListing(channel, query)
+	if err != nil {
+		return History{}, nil, err
+	}
+	return s.withoutAddresses().history(ctx, repos, viewer, channel, query, listing, now)
+}
+
+func historyListing(channel domain.ChannelID, query HistoryQuery) (repositories.HistoryQuery, error) {
 	listing := repositories.HistoryQuery{Channel: channel, RowLimit: query.Limit + 1}
 	switch {
+	case query.AroundSeq != nil && (query.Cursor != "" || query.AfterSeq != nil):
+		return listing, &ValidationError{Path: fieldAroundSeq, Code: domain.FieldInvalid}
+	case query.AroundSeq != nil:
 	case query.Cursor != "" && query.AfterSeq != nil:
-		return History{}, &ValidationError{Path: fieldAfterSeq, Code: domain.FieldInvalid}
+		return listing, &ValidationError{Path: fieldAfterSeq, Code: domain.FieldInvalid}
 	case query.Cursor != "":
 		before, valid := decodeSeqCursor(query.Cursor)
 		if !valid {
-			return History{}, &ValidationError{Path: fieldCursor, Code: domain.FieldInvalid}
+			return listing, &ValidationError{Path: fieldCursor, Code: domain.FieldInvalid}
 		}
 		listing.Before = &before
 	case query.AfterSeq != nil:
 		listing.After = query.AfterSeq
 		listing.RowLimit = query.Limit
 	}
-	now, err := s.now(ctx)
-	if err != nil {
-		return History{}, err
-	}
-	var history History
-	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
-		if _, err := repos.Messages.Membership(ctx, channel, viewer); errors.Is(err, repositories.ErrNotFound) {
-			return ErrNotFound
-		} else if err != nil {
-			return err
-		}
-		peer, err := repos.Messages.PeerReadSeq(ctx, channel, viewer)
-		if err != nil {
-			return err
-		}
-		history.PeerReadSeq = peer
-		rows, err := repos.Messages.History(ctx, listing)
-		if err != nil {
-			return err
-		}
-		if query.AfterSeq == nil && len(rows) > int(query.Limit) {
-			rows = rows[:query.Limit]
-			next := encodeSeqCursor(rows[len(rows)-1].Seq)
-			history.NextCursor = &next
-		}
-		history.Items, err = s.messageViews(ctx, repos, viewer, rows, now)
-		return err
-	})
-	return history, err
+	return listing, nil
 }
 
-func (s *Service) around(ctx context.Context, viewer domain.UserID, channel domain.ChannelID, seq int64, limit int32) (History, error) {
-	newerCount := limit / 2
-	olderCount := limit - newerCount
-	now, err := s.now(ctx)
-	if err != nil {
-		return History{}, err
+func (s *Service) history(
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, channel domain.ChannelID, query HistoryQuery,
+	listing repositories.HistoryQuery, now time.Time,
+) (History, []domain.UserID, error) {
+	if _, err := repos.Messages.Membership(ctx, channel, viewer); errors.Is(err, repositories.ErrNotFound) {
+		return History{}, nil, ErrNotFound
+	} else if err != nil {
+		return History{}, nil, err
 	}
 	var history History
-	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
-		if _, err := repos.Messages.Membership(ctx, channel, viewer); errors.Is(err, repositories.ErrNotFound) {
-			return ErrNotFound
-		} else if err != nil {
-			return err
-		}
-		peer, err := repos.Messages.PeerReadSeq(ctx, channel, viewer)
-		if err != nil {
-			return err
-		}
-		history.PeerReadSeq = peer
-		through := seq + 1
-		older, err := repos.Messages.History(ctx, repositories.HistoryQuery{Channel: channel, Before: &through, RowLimit: olderCount + 1})
-		if err != nil {
-			return err
-		}
-		if len(older) > int(olderCount) {
-			older = older[:olderCount]
-			next := encodeSeqCursor(older[len(older)-1].Seq)
-			history.NextCursor = &next
-		}
-		newer, err := repos.Messages.History(ctx, repositories.HistoryQuery{Channel: channel, After: &seq, RowLimit: newerCount + 1})
-		if err != nil {
-			return err
-		}
-		if len(newer) > int(newerCount) {
-			newer = newer[:newerCount]
-			history.HasNewer = true
-		}
-		rows := make([]repositories.MessageRow, 0, len(older)+len(newer))
-		for index := len(older) - 1; index >= 0; index-- {
-			rows = append(rows, older[index])
-		}
-		rows = append(rows, newer...)
-		history.Items, err = s.messageViews(ctx, repos, viewer, rows, now)
-		return err
-	})
-	return history, err
+	peer, err := repos.Messages.PeerReadSeq(ctx, channel, viewer)
+	if err != nil {
+		return History{}, nil, err
+	}
+	history.PeerReadSeq = peer
+	var rows []repositories.MessageRow
+	if query.AroundSeq != nil {
+		rows, err = aroundRows(ctx, repos, channel, *query.AroundSeq, query.Limit, &history)
+	} else {
+		rows, err = historyRows(ctx, repos, listing, query, &history)
+	}
+	if err != nil {
+		return History{}, nil, err
+	}
+	items, accounts, err := s.messagePage(ctx, repos, viewer, rows, now)
+	if err != nil {
+		return History{}, nil, err
+	}
+	history.Items = items
+	return history, accounts, nil
+}
+
+func historyRows(
+	ctx context.Context, repos repositories.Repositories, listing repositories.HistoryQuery, query HistoryQuery, history *History,
+) ([]repositories.MessageRow, error) {
+	rows, err := repos.Messages.History(ctx, listing)
+	if err != nil {
+		return nil, err
+	}
+	if query.AfterSeq == nil && len(rows) > int(query.Limit) {
+		rows = rows[:query.Limit]
+		next := encodeSeqCursor(rows[len(rows)-1].Seq)
+		history.NextCursor = &next
+	}
+	return rows, nil
+}
+
+func aroundRows(
+	ctx context.Context, repos repositories.Repositories, channel domain.ChannelID, seq int64, limit int32, history *History,
+) ([]repositories.MessageRow, error) {
+	newerCount := limit / 2
+	olderCount := limit - newerCount
+	through := seq + 1
+	older, err := repos.Messages.History(ctx, repositories.HistoryQuery{Channel: channel, Before: &through, RowLimit: olderCount + 1})
+	if err != nil {
+		return nil, err
+	}
+	if len(older) > int(olderCount) {
+		older = older[:olderCount]
+		next := encodeSeqCursor(older[len(older)-1].Seq)
+		history.NextCursor = &next
+	}
+	newer, err := repos.Messages.History(ctx, repositories.HistoryQuery{Channel: channel, After: &seq, RowLimit: newerCount + 1})
+	if err != nil {
+		return nil, err
+	}
+	if len(newer) > int(newerCount) {
+		newer = newer[:newerCount]
+		history.HasNewer = true
+	}
+	rows := make([]repositories.MessageRow, 0, len(older)+len(newer))
+	for index := len(older) - 1; index >= 0; index-- {
+		rows = append(rows, older[index])
+	}
+	return append(rows, newer...), nil
 }
 
 func encodeSeqCursor(seq int64) string {

@@ -2,11 +2,9 @@ package repositories
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"ovc/backend/internal/dbgen"
@@ -162,19 +160,4 @@ func (r Exports) InvalidationAudience(ctx context.Context, user domain.UserID) (
 		}
 	}
 	return audience, nil
-}
-
-func (r Exports) EarliestDeletedTutorClosing(ctx context.Context, student domain.UserID) (*time.Time, error) {
-	deletedAt, err := r.queries.EarliestDeletedTutorDeletion(ctx, &student)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("earliest deleted tutor of a student: %w", err)
-	}
-	if deletedAt == nil {
-		return nil, nil
-	}
-	closing := deletedAt.Add(domain.DeletedAccountRetention)
-	return &closing, nil
 }

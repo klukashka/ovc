@@ -97,12 +97,12 @@ func (s *Service) Build(ctx context.Context, claim Claim) error {
 	started := s.deps.Wall()
 	bounded, cancel := context.WithTimeout(ctx, s.deps.Timing.Budget)
 	defer cancel()
-	size, upload, err := s.writeArchive(bounded, claim, started)
+	archive, upload, err := s.writeArchive(bounded, claim, started)
 	if err == nil {
 		err = s.complete(bounded, claim, upload)
 	}
 	if err == nil {
-		return s.publish(ctx, claim, size, started)
+		return s.publish(ctx, claim, archive, started)
 	}
 	result := classify(err)
 	if bounded.Err() != nil && ctx.Err() == nil && !result.stopped {
@@ -191,7 +191,7 @@ func (s *Service) authorizeComplete(ctx context.Context, claim Claim, upload sto
 	})
 }
 
-func (s *Service) publish(ctx context.Context, claim Claim, size int64, started time.Time) error {
+func (s *Service) publish(ctx context.Context, claim Claim, archive builtArchive, started time.Time) error {
 	settled, cancel := s.settlement(ctx)
 	defer cancel()
 	now, err := s.deps.Clock.Instant(settled)
@@ -215,21 +215,17 @@ func (s *Service) publish(ctx context.Context, claim Claim, size int64, started 
 		if !stillBuilding(row, found, claim.Build) || intent.CleanupRequested {
 			return s.deps.Cleanup.ConfirmAndCleanExport(settled, repos, claim.Build, now)
 		}
-		closing, err := repos.Exports.EarliestDeletedTutorClosing(settled, row.UserID)
-		if err != nil {
-			return err
-		}
-		if closing != nil && !now.Before(*closing) {
-			return s.withdrawAtTutorClosing(settled, repos, row, claim.Build, now)
+		if archive.purgeDue != nil && !now.Before(*archive.purgeDue) {
+			return s.withdrawAtPurgeDue(settled, repos, row, claim.Build, now)
 		}
 		expires := now.Add(domain.ExportRetention)
-		if closing != nil && closing.Before(expires) {
-			expires = *closing
+		if archive.purgeDue != nil && archive.purgeDue.Before(expires) {
+			expires = *archive.purgeDue
 		}
 		if err := repos.UploadIntents.ConfirmComplete(settled, claim.Build.Identity(), claim.Object, now); err != nil {
 			return err
 		}
-		if _, err := repos.Exports.Publish(settled, row.ID, claim.Build, size, expires, now); err != nil {
+		if _, err := repos.Exports.Publish(settled, row.ID, claim.Build, archive.size, expires, now); err != nil {
 			return err
 		}
 		if err := repos.Exports.RecordLimit(settled, row.UserID, row.ID, row.RequestedAt.Add(domain.ExportStartInterval)); err != nil {
@@ -245,14 +241,20 @@ func (s *Service) publish(ctx context.Context, claim Claim, size int64, started 
 		return err
 	}
 	if published {
-		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "export.built", exportAttribute(claim.Export.ID), buildAttribute(&claim.Build),
-			userAttribute(claim.Export.UserID), slog.Int64("size_bytes", size), slog.Int("files", 0), slog.Int("files_unreadable", 0),
-			slog.Int64("duration_ms", s.deps.Wall().Sub(started).Milliseconds()))
+		attributes := []slog.Attr{
+			exportAttribute(claim.Export.ID), buildAttribute(&claim.Build), userAttribute(claim.Export.UserID), slog.Int64("size_bytes", archive.size),
+			slog.Int("files", archive.files), slog.Int("files_unreadable", archive.unreadable),
+			slog.Int64("duration_ms", s.deps.Wall().Sub(started).Milliseconds()),
+		}
+		for _, counted := range archive.sheets {
+			attributes = append(attributes, slog.Int("items_"+string(counted.sheet), counted.rows))
+		}
+		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "export.built", attributes...)
 	}
 	return nil
 }
 
-func (s *Service) withdrawAtTutorClosing(ctx context.Context, repos repositories.Repositories, row repositories.Export, build domain.ExportBuildID, now time.Time) error {
+func (s *Service) withdrawAtPurgeDue(ctx context.Context, repos repositories.Repositories, row repositories.Export, build domain.ExportBuildID, now time.Time) error {
 	if _, err := repos.Exports.Fail(ctx, row.ID, domain.ExportFailureWithdrawn, now); err != nil {
 		return err
 	}
@@ -264,7 +266,7 @@ func (s *Service) withdrawAtTutorClosing(ctx context.Context, repos repositories
 	}
 	repos.AfterCommit(ctx, func(ctx context.Context) {
 		s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "export.invalidated", exportAttribute(row.ID), buildAttribute(&build),
-			userAttribute(row.UserID), slog.String("state", string(row.State)), slog.String("cause", string(domain.ExportCauseTutorDeleted)))
+			userAttribute(row.UserID), slog.String("state", string(row.State)), slog.String("cause", string(domain.ExportCausePurgeDue)))
 	})
 	return nil
 }

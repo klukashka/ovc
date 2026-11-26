@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -25,6 +26,10 @@ import (
 const insertReadyExport = `INSERT INTO exports (id, user_id, state, language, timezone, requested_at, build_id, storage_key, build_started_at,
     built_at, size_bytes, expires_at, updated_at)
 VALUES ($1, $2, 'ready', 'en', 'Europe/Moscow', $3, $4, $5, $3, $3, 1, $6, $3)`
+
+const heldExportUserLocks = `SELECT count(*) FROM pg_locks
+WHERE locktype = 'advisory' AND granted AND classid::bigint = $1
+    AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`
 
 const (
 	invalidationDeadline = 10 * time.Second
@@ -289,5 +294,73 @@ func TestAPurgeEntryOverridesAWithdrawalOfTheSameUser(t *testing.T) {
 	var queued int64
 	if err := f.database.Pool.QueryRow(context.Background(), "SELECT count(id) FROM outbox WHERE kind = $1", string(domain.KindExportObject)).Scan(&queued); err != nil || queued != 1 {
 		t.Fatalf("the purge queued %d object deletions: %v", queued, err)
+	}
+}
+
+func (f invalidationFixture) heldUserLocks(t *testing.T) int64 {
+	t.Helper()
+	var held int64
+	if err := f.database.Pool.QueryRow(context.Background(), heldExportUserLocks, int64(domain.ExportUserLockNamespace)).Scan(&held); err != nil {
+		t.Fatal(err)
+	}
+	return held
+}
+
+func usersInTwoLockBuckets() (domain.UserID, domain.UserID) {
+	first := domain.UserID{0x91}
+	for candidate := byte(0x92); ; candidate++ {
+		second := domain.UserID{candidate}
+		if domain.ExportUserLockBuckets(first)[0] != domain.ExportUserLockBuckets(second)[0] {
+			return first, second
+		}
+	}
+}
+
+func TestASecondWithdrawalInOneTransactionIsRefused(t *testing.T) {
+	t.Parallel()
+	f := newInvalidationFixture(t, testdb.New(t))
+	first, second := usersInTwoLockBuckets()
+	purged := domain.UserID{0x8f}
+	f.readyExport(t, first)
+	f.readyExport(t, purged)
+	var heldAfterFirst, heldAfterSecond int64
+
+	repeated := f.store.WithTx(context.Background(), func(repos repositories.Repositories) error {
+		if err := repos.InvalidateExports(domain.ExportCauseRelationshipEnded, first); err != nil {
+			return err
+		}
+		if err := f.effects.Apply(context.Background(), repos, invalidationStart); err != nil {
+			return err
+		}
+		heldAfterFirst = f.heldUserLocks(t)
+		if err := repos.InvalidateExports(domain.ExportCauseRelationshipEnded, second); err != nil {
+			return err
+		}
+		err := f.effects.Apply(context.Background(), repos, invalidationStart)
+		heldAfterSecond = f.heldUserLocks(t)
+		return err
+	})
+	applyThenPurge := f.store.WithTx(context.Background(), func(repos repositories.Repositories) error {
+		if err := f.effects.Apply(context.Background(), repos, invalidationStart); err != nil {
+			return err
+		}
+		return f.effects.Purge(context.Background(), repos, purged, invalidationStart)
+	})
+	keptAfterRefusals, _ := f.state(t, purged)
+	singlePurge := f.store.WithTx(context.Background(), func(repos repositories.Repositories) error {
+		return f.effects.Purge(context.Background(), repos, purged, invalidationStart)
+	})
+
+	if !errors.Is(repeated, repositories.ErrExportWithdrawalRepeated) || !errors.Is(applyThenPurge, repositories.ErrExportWithdrawalRepeated) {
+		t.Fatalf("a second withdrawal in one transaction answered %v, and a purge after a withdrawal %v", repeated, applyThenPurge)
+	}
+	if heldAfterFirst != 1 || heldAfterSecond != heldAfterFirst {
+		t.Fatalf("the transaction held %d user locks after the first withdrawal and %d after the refused one", heldAfterFirst, heldAfterSecond)
+	}
+	if state, _ := f.state(t, first); state != string(domain.ExportReady) || keptAfterRefusals != string(domain.ExportReady) {
+		t.Fatalf("the refused transactions left the exports %s and %s", state, keptAfterRefusals)
+	}
+	if singlePurge != nil || f.count(t, "SELECT count(id) FROM exports WHERE user_id = $1", purged) != 0 {
+		t.Fatalf("a single purge in its own transaction answered %v", singlePurge)
 	}
 }

@@ -70,6 +70,20 @@ type Addresses interface {
 	ReviewItemAddress(id domain.AttachmentID, revision domain.ReviewRevisionID, disposition domain.Disposition, now time.Time) (string, time.Time)
 }
 
+type noAddresses struct{}
+
+func (noAddresses) IssueSnapshotAddress(domain.AttachmentID, domain.IssueID, domain.Disposition, time.Time) (string, time.Time) {
+	return "", time.Time{}
+}
+
+func (noAddresses) AnswerAddress(domain.AttachmentID, domain.SubmissionID, domain.Disposition, time.Time) (string, time.Time) {
+	return "", time.Time{}
+}
+
+func (noAddresses) ReviewItemAddress(domain.AttachmentID, domain.ReviewRevisionID, domain.Disposition, time.Time) (string, time.Time) {
+	return "", time.Time{}
+}
+
 type Templates interface {
 	TemplateForIssue(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.TemplateID) (library.IssuableTemplate, error)
 }
@@ -92,6 +106,12 @@ type Service struct {
 func New(dependencies Dependencies) *Service {
 	dependencies.Caps = dependencies.Caps.WithDefaults()
 	return &Service{deps: dependencies}
+}
+
+func (s *Service) withoutAddresses() *Service {
+	free := *s
+	free.deps.Addresses = noAddresses{}
+	return &free
 }
 
 func (s *Service) lockTutor(ctx context.Context, repos repositories.Repositories, actor domain.TutorActor) (time.Time, error) {

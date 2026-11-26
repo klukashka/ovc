@@ -315,6 +315,7 @@ func (s *Service) MintDownload(ctx context.Context, principal accounts.Principal
 		return Download{}, err
 	}
 	var row repositories.Export
+	var lifetime time.Duration
 	err = s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {
 		found, err := repos.Exports.OfUser(ctx, principal.UserID)
 		if errors.Is(err, repositories.ErrNotFound) {
@@ -326,6 +327,10 @@ func (s *Service) MintDownload(ctx context.Context, principal accounts.Principal
 		if found.State != domain.ExportReady || found.StorageKey == nil || found.ExpiresAt == nil || found.BuiltAt == nil || !now.Before(*found.ExpiresAt) {
 			return ErrNotFound
 		}
+		lifetime = downloadLifetime(*found.ExpiresAt, now)
+		if lifetime < time.Second {
+			return ErrNotFound
+		}
 		row = found
 		return s.reserve(ctx, repos, purposeExportMints, domain.ExportDownloadWindow, domain.ExportDownloadLimit, principal.UserID, now)
 	})
@@ -333,11 +338,15 @@ func (s *Service) MintDownload(ctx context.Context, principal accounts.Principal
 		return Download{}, err
 	}
 	disposition := fmt.Sprintf(`attachment; filename="ovc-export-%s.zip"`, row.BuiltAt.UTC().Format(time.DateOnly))
-	signed, err := s.deps.Signer.PresignDownload(ctx, *row.StorageKey, downloadContentType, disposition)
+	signed, err := s.deps.Signer.PresignDownload(ctx, *row.StorageKey, downloadContentType, disposition, lifetime)
 	if err != nil {
 		s.deps.Logger.LogAttrs(ctx, slog.LevelWarn, "export.download.failed", exportAttribute(row.ID), slog.String("kind", "presign_failed"))
 		return Download{}, err
 	}
 	s.deps.Logger.LogAttrs(ctx, slog.LevelInfo, "export.download.minted", exportAttribute(row.ID))
-	return Download{URL: signed, ExpiresAt: now.Add(storage.PresignedReadLifetime)}, nil
+	return Download{URL: signed, ExpiresAt: now.Add(lifetime)}, nil
+}
+
+func downloadLifetime(expires time.Time, now time.Time) time.Duration {
+	return min(storage.PresignedReadLifetime, expires.Sub(now)).Truncate(time.Second)
 }

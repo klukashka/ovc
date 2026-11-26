@@ -175,6 +175,30 @@ func (s *Service) List(ctx context.Context, viewer domain.UserID, query Query) (
 	if err != nil {
 		return Page{}, err
 	}
+	listing, err := channelListing(viewer, query, now)
+	if err != nil {
+		return Page{}, err
+	}
+	var page Page
+	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
+		var err error
+		page, _, err = listChannels(ctx, repos, viewer, listing, query.Limit)
+		return err
+	})
+	return page, err
+}
+
+func (s *Service) ListIn(
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, query Query, now time.Time,
+) (Page, []domain.UserID, error) {
+	listing, err := channelListing(viewer, query, now)
+	if err != nil {
+		return Page{}, nil, err
+	}
+	return listChannels(ctx, repos, viewer, listing, query.Limit)
+}
+
+func channelListing(viewer domain.UserID, query Query, now time.Time) (repositories.ChannelQuery, error) {
 	listing := repositories.ChannelQuery{Now: now, Member: viewer, Limit: query.Limit + 1}
 	if query.Search != "" {
 		listing.Search = &query.Search
@@ -182,40 +206,48 @@ func (s *Service) List(ctx context.Context, viewer domain.UserID, query Query) (
 	if query.Cursor != "" {
 		after, valid := decodeCursor(query.Cursor)
 		if !valid {
-			return Page{}, &ValidationError{Path: fieldCursor, Code: domain.FieldInvalid}
+			return listing, &ValidationError{Path: fieldCursor, Code: domain.FieldInvalid}
 		}
 		listing.After = &after
 	}
+	return listing, nil
+}
+
+func listChannels(
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, listing repositories.ChannelQuery, limit int32,
+) (Page, []domain.UserID, error) {
+	rows, err := repos.Channels.List(ctx, listing)
+	if err != nil {
+		return Page{}, nil, err
+	}
 	var page Page
-	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
-		rows, err := repos.Channels.List(ctx, listing)
-		if err != nil {
-			return err
-		}
-		if len(rows) > int(query.Limit) {
-			rows = rows[:query.Limit]
-			last := rows[len(rows)-1]
-			next := encodeCursor(repositories.ChannelCursor{ActivityAt: last.LastActivityAt, ID: last.ChannelID})
-			page.NextCursor = &next
-		}
-		ids := make([]domain.ChannelID, 0, len(rows))
-		for _, row := range rows {
-			ids = append(ids, row.ChannelID)
-		}
-		last, err := lastMessages(ctx, repos, viewer, ids)
-		if err != nil {
-			return err
-		}
-		page.Items = make([]Channel, 0, len(rows))
-		for _, row := range rows {
-			channel := channelView(viewer, row)
-			channel.LastMessage = last[row.ChannelID]
-			page.Items = append(page.Items, channel)
-		}
-		page.UnreadChannels, err = repos.Channels.CountUnread(ctx, viewer, domain.UnreadChannelsCap)
-		return err
-	})
-	return page, err
+	if len(rows) > int(limit) {
+		rows = rows[:limit]
+		last := rows[len(rows)-1]
+		next := encodeCursor(repositories.ChannelCursor{ActivityAt: last.LastActivityAt, ID: last.ChannelID})
+		page.NextCursor = &next
+	}
+	ids := make([]domain.ChannelID, 0, len(rows))
+	accounts := make([]domain.UserID, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ChannelID)
+		accounts = append(accounts, channelAccounts(viewer, row)...)
+	}
+	last, senders, err := lastMessages(ctx, repos, viewer, ids)
+	if err != nil {
+		return Page{}, nil, err
+	}
+	page.Items = make([]Channel, 0, len(rows))
+	for _, row := range rows {
+		channel := channelView(viewer, row)
+		channel.LastMessage = last[row.ChannelID]
+		page.Items = append(page.Items, channel)
+	}
+	page.UnreadChannels, err = repos.Channels.CountUnread(ctx, viewer, domain.UnreadChannelsCap)
+	if err != nil {
+		return Page{}, nil, err
+	}
+	return page, append(accounts, senders...), nil
 }
 
 func (s *Service) Channel(ctx context.Context, viewer domain.UserID, id domain.ChannelID) (Channel, error) {
@@ -233,7 +265,7 @@ func (s *Service) Channel(ctx context.Context, viewer domain.UserID, id domain.C
 			return ErrNotFound
 		}
 		channel = channelView(viewer, rows[0])
-		last, err := lastMessages(ctx, repos, viewer, []domain.ChannelID{id})
+		last, _, err := lastMessages(ctx, repos, viewer, []domain.ChannelID{id})
 		if err != nil {
 			return err
 		}
@@ -268,6 +300,16 @@ func (s *Service) Channel(ctx context.Context, viewer domain.UserID, id domain.C
 
 func (s *Service) UnreadChannels(ctx context.Context, viewer domain.UserID) (int64, error) {
 	return s.deps.Store.Repositories().Channels.CountUnread(ctx, viewer, domain.UnreadChannelsCap)
+}
+
+func channelAccounts(viewer domain.UserID, row repositories.ChannelRow) []domain.UserID {
+	if row.TutorID != viewer {
+		return []domain.UserID{row.TutorID}
+	}
+	if row.CardStudentID != nil {
+		return []domain.UserID{*row.CardStudentID}
+	}
+	return nil
 }
 
 func channelView(viewer domain.UserID, row repositories.ChannelRow) Channel {

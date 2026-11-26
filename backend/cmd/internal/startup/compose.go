@@ -241,15 +241,26 @@ func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings,
 	if err != nil {
 		return nil, err
 	}
-	exportBuilder := export.NewBuilder(export.Dependencies{
-		Store: store, Clock: source, Wall: clock.System{}.Now, Random: random, Logger: logger, Objects: objects, Cleanup: fileService,
-		PublicHost: host,
-	})
-	inbox := notifications.NewInbox(notifications.InboxDependencies{Store: store, Clock: source, Logger: logger})
+	keys, err := core.DeriveKeys(settings.JWTSecret)
+	if err != nil {
+		return nil, err
+	}
 	chatService := chat.New(chat.Dependencies{
 		Store: store, Clock: source, Random: random, Addresses: fileService, Erasure: chat.DefaultErasureSettings(), Logger: logger,
 		Scheduler: core.SystemScheduler{},
 	})
+	libraryService := library.New(library.Dependencies{Store: store, Clock: source, Random: random, Keys: keys, Addresses: fileService, Logger: logger})
+	homeworkService := homework.New(homework.Dependencies{
+		Store: store, Clock: source, Random: random, Keys: keys, Addresses: fileService, Templates: libraryService, Logger: logger,
+	})
+	scheduleService := schedule.New(schedule.Dependencies{Store: store, Clock: source, Random: random, Keys: keys, Logger: logger, Addresses: fileService})
+	exportBuilder := export.NewBuilder(export.Dependencies{
+		Store: store, Clock: source, Wall: clock.System{}.Now, Random: random, Logger: logger, Objects: objects, Cleanup: fileService,
+		PublicHost: host, Content: export.Content{
+			Tutors: tutoringService, Lessons: scheduleService, Homework: homeworkService, Chat: chatService, Files: fileService,
+		},
+	})
+	inbox := notifications.NewInbox(notifications.InboxDependencies{Store: store, Clock: source, Logger: logger})
 	queue := outbox.New(store, random, logger)
 	accountEmails, err := notifications.NewAccountEmails(store, random, settings.PublicURL)
 	if err != nil {
@@ -281,18 +292,11 @@ func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings,
 	if err != nil {
 		return nil, err
 	}
-	keys, err := core.DeriveKeys(settings.JWTSecret)
-	if err != nil {
-		return nil, err
-	}
 	notifier, err := notifications.New(mailer, settings.PublicURL, builders, notifications.Dispatch{Store: store, Keys: keys, Logger: logger})
 	if err != nil {
 		return nil, err
 	}
-	lessonJobs := schedule.NewJobs(
-		schedule.New(schedule.Dependencies{Store: store, Clock: source, Random: random, Keys: keys, Logger: logger, Addresses: fileService}),
-		schedule.DefaultJobSettings(),
-	)
+	lessonJobs := schedule.NewJobs(scheduleService, schedule.DefaultJobSettings())
 	lanes := []worker.Lane{
 		{Name: domain.LaneProviderCall, Concurrency: providerLaneConcurrency, PerformMeetingRecovery: meetingService.Cleanup, Perform: lifecycle.CheckEndedHint},
 		{Name: domain.LaneEmail, Concurrency: emailLaneConcurrency, Perform: notifier.Deliver},

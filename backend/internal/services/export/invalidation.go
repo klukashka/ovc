@@ -37,6 +37,9 @@ type invalidationPass struct {
 }
 
 func (s *Service) Apply(ctx context.Context, repos repositories.Repositories, now time.Time) error {
+	if err := repos.StartExportWithdrawal(); err != nil {
+		return err
+	}
 	entries := repos.TakeExportInvalidations()
 	if len(entries) == 0 {
 		return nil

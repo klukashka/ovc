@@ -40,28 +40,61 @@ type partSink struct {
 	total        int32
 }
 
-func (s *Service) writeArchive(ctx context.Context, claim Claim, started time.Time) (int64, uploadState, error) {
+type builtArchive struct {
+	size       int64
+	purgeDue   *time.Time
+	sheets     []sheetCount
+	files      int
+	unreadable int
+}
+
+func (s *Service) writeArchive(ctx context.Context, claim Claim, started time.Time) (builtArchive, uploadState, error) {
 	created, err := s.deps.Objects.CreateMultipartUpload(ctx, claim.Object, archiveContentType)
 	if err != nil {
-		return 0, uploadState{}, err
+		return builtArchive{}, uploadState{}, err
 	}
 	upload := uploadState{id: created}
 	if err := s.recordUpload(ctx, claim, created); err != nil {
-		return 0, upload, err
+		return builtArchive{}, upload, err
 	}
 	sink := &partSink{service: s, ctx: ctx, claim: claim, started: started, lastProgress: started, upload: &upload,
 		buffer: make([]byte, 0, domain.ExportPartBytes), total: 1}
-	archive := exportformat.NewArchive(sink, domain.ExportTableBytesAllowance, claim.Started)
-	if err := s.writeContent(ctx, archive, sink, claim); err != nil {
-		return 0, upload, err
+	reader := pageReader{store: s.deps.Store, clock: s.deps.Clock, sink: sink, recorder: &purgeDueRecorder{}}
+	prepared, err := s.prepareContent(ctx, reader, claim)
+	if err != nil {
+		return builtArchive{}, upload, err
+	}
+	var student *studentBuild
+	bound := s.deps.Timing.TableAllowance
+	if prepared.role == domain.RoleStudent {
+		if student, err = s.newStudentBuild(reader, claim, prepared); err != nil {
+			return builtArchive{}, upload, err
+		}
+		if err := student.takeInventory(ctx); err != nil {
+			return builtArchive{}, upload, err
+		}
+		bound += student.fileBytes()
+	}
+	archive := exportformat.NewArchive(sink, bound, claim.Started)
+	if student != nil {
+		err = student.write(ctx, archive)
+	} else {
+		err = s.writeOwnAccount(archive, sink, claim, prepared)
+	}
+	if err != nil {
+		return builtArchive{}, upload, err
 	}
 	if err := archive.Close(); err != nil {
-		return 0, upload, err
+		return builtArchive{}, upload, err
 	}
 	if err := sink.flush(); err != nil {
-		return 0, upload, err
+		return builtArchive{}, upload, err
 	}
-	return archive.Written(), upload, nil
+	built := builtArchive{size: archive.Written(), purgeDue: reader.recorder.earliest}
+	if student != nil {
+		built.sheets, built.files, built.unreadable = student.sheetCounts(), student.files, student.unreadable
+	}
+	return built, upload, nil
 }
 
 func (p *partSink) Write(data []byte) (int, error) {
@@ -154,49 +187,66 @@ type dataCopy struct {
 	Account       accountRecord `json:"account"`
 }
 
-func (s *Service) writeContent(ctx context.Context, archive *exportformat.Archive, sink *partSink, claim Claim) error {
+type preparedContent struct {
+	text     core.ExportText
+	location *time.Location
+	account  accountRecord
+	role     domain.Role
+}
+
+func (s *Service) prepareContent(ctx context.Context, reader pageReader, claim Claim) (preparedContent, error) {
 	text, found := core.ExportTextFor(claim.Export.Language)
 	if !found {
-		return errUnknownLanguage
+		return preparedContent{}, errUnknownLanguage
 	}
 	location, err := time.LoadLocation(claim.Export.Timezone)
 	if err != nil {
-		return fmt.Errorf("load the export's timezone: %w", err)
+		return preparedContent{}, fmt.Errorf("load the export's timezone: %w", err)
 	}
-	user, err := s.deps.Store.Repositories().Users.ByID(ctx, claim.Export.UserID)
+	var user repositories.User
+	err = reader.page(ctx, func(repos repositories.Repositories, _ time.Time) ([]domain.UserID, error) {
+		var err error
+		user, err = repos.Users.ByID(ctx, claim.Export.UserID)
+		return nil, err
+	})
+	if err != nil {
+		return preparedContent{}, err
+	}
+	account := accountRecord{Name: user.Name, Email: user.Email, Role: string(user.Role), Language: string(user.Language), Timezone: user.Timezone, CreatedAt: user.CreatedAt.UTC()}
+	return preparedContent{text: text, location: location, account: account, role: user.Role}, nil
+}
+
+func (s *Service) writeOwnAccount(archive *exportformat.Archive, sink *partSink, claim Claim, prepared preparedContent) error {
+	entry, err := archive.Create(exportformat.EntryTables)
 	if err != nil {
 		return err
 	}
-	account := accountRecord{Name: user.Name, Email: user.Email, Role: string(user.Role), Language: string(user.Language), Timezone: user.Timezone, CreatedAt: user.CreatedAt.UTC()}
-	if err := writeTables(archive, claim.Started, text, location, account, user.Role); err != nil {
+	workbook := exportformat.NewWorkbook(entry, claim.Started, exportformat.RowsPerSheet)
+	if err := writeAccountSheet(workbook, prepared.text, prepared.location, prepared.account, prepared.role); err != nil {
+		return err
+	}
+	if err := workbook.Close(); err != nil {
 		return err
 	}
 	if err := writeCalendar(archive, s.deps.PublicHost, claim.Started); err != nil {
 		return err
 	}
-	if err := writeData(archive, dataCopy{FormatVersion: domain.ExportFormatVersion, ExportedAt: claim.Started.UTC(), Role: string(user.Role), Account: account}); err != nil {
+	data := dataCopy{FormatVersion: domain.ExportFormatVersion, ExportedAt: claim.Started.UTC(), Role: string(prepared.role), Account: prepared.account}
+	if err := writeData(archive, data); err != nil {
 		return err
 	}
 	return sink.progressed(1)
 }
 
-func writeTables(archive *exportformat.Archive, modified time.Time, text core.ExportText, location *time.Location, account accountRecord, role domain.Role) error {
-	entry, err := archive.Create(exportformat.EntryTables)
-	if err != nil {
-		return err
-	}
-	workbook := exportformat.NewWorkbook(entry, modified, exportformat.RowsPerSheet)
+func writeAccountSheet(workbook *exportformat.Workbook, text core.ExportText, location *time.Location, account accountRecord, role domain.Role) error {
 	headers := append([]string{}, text.Account.Headers...)
 	headers[len(headers)-1] = fmt.Sprintf(headers[len(headers)-1], location.String())
 	sheet, err := workbook.StartSheet(text.Account.Title, headers)
 	if err != nil {
 		return err
 	}
-	if err := sheet.WriteRow(exportformat.Text(account.Name), exportformat.Text(account.Email), exportformat.Text(text.RoleNames[role]),
-		exportformat.Text(account.Language), exportformat.Text(account.Timezone), exportformat.Date(account.CreatedAt.In(location))); err != nil {
-		return err
-	}
-	return workbook.Close()
+	return sheet.WriteRow(exportformat.Text(account.Name), exportformat.Text(account.Email), exportformat.Text(text.RoleNames[role]),
+		exportformat.Text(account.Language), exportformat.Text(account.Timezone), exportformat.Date(account.CreatedAt.In(location)))
 }
 
 func writeCalendar(archive *exportformat.Archive, host string, stamp time.Time) error {

@@ -42,7 +42,7 @@ type CleanupRequester interface {
 }
 
 type DownloadSigner interface {
-	PresignDownload(ctx context.Context, key string, contentType string, disposition string) (core.Secret, error)
+	PresignDownload(ctx context.Context, key string, contentType string, disposition string, lifetime time.Duration) (core.Secret, error)
 }
 
 type Dependencies struct {
@@ -58,11 +58,14 @@ type Dependencies struct {
 	Cleanup    CleanupRequester
 	PublicHost string
 	Timing     Timing
+	Content    Content
 }
 
 type Timing struct {
-	Complete time.Duration
-	Budget   time.Duration
+	Complete       time.Duration
+	Budget         time.Duration
+	TableAllowance int64
+	ReadPage       int32
 }
 
 func (t Timing) withDefaults() Timing {
@@ -71,6 +74,12 @@ func (t Timing) withDefaults() Timing {
 	}
 	if t.Budget <= 0 {
 		t.Budget = domain.ExportBuildBudget
+	}
+	if t.TableAllowance <= 0 {
+		t.TableAllowance = domain.ExportTableBytesAllowance
+	}
+	if t.ReadPage <= 0 {
+		t.ReadPage = domain.ExportReadPage
 	}
 	return t
 }
@@ -84,10 +93,17 @@ func New(dependencies Dependencies) *Service {
 	if dependencies.Passwords == nil || dependencies.Signer == nil {
 		panic("the export service of the API needs the password check and the download signer")
 	}
-	return NewBuilder(dependencies)
+	return newService(dependencies)
 }
 
 func NewBuilder(dependencies Dependencies) *Service {
+	if !dependencies.Content.complete() {
+		panic("the export builder needs the readers of the owning services")
+	}
+	return newService(dependencies)
+}
+
+func newService(dependencies Dependencies) *Service {
 	if dependencies.Store == nil || dependencies.Clock == nil || dependencies.Wall == nil || dependencies.Random == nil ||
 		dependencies.Logger == nil || dependencies.Objects == nil || dependencies.Cleanup == nil {
 		panic("the export service needs its store, clocks, randomness, logger, storage and cleanup")

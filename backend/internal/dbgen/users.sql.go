@@ -215,6 +215,20 @@ func (q *Queries) DismissTutorOnboarding(ctx context.Context, arg DismissTutorOn
 	return result.RowsAffected(), nil
 }
 
+const earliestDeletionAmong = `-- name: EarliestDeletionAmong :one
+SELECT deleted_at FROM users
+WHERE id = ANY ($1::uuid[]) AND state = 'deleted' AND deleted_at IS NOT NULL
+ORDER BY deleted_at
+LIMIT 1
+`
+
+func (q *Queries) EarliestDeletionAmong(ctx context.Context, ids []pgtype.UUID) (*time.Time, error) {
+	row := q.db.QueryRow(ctx, earliestDeletionAmong, ids)
+	var deleted_at *time.Time
+	err := row.Scan(&deleted_at)
+	return deleted_at, err
+}
+
 const getTutorByCode = `-- name: GetTutorByCode :one
 SELECT tutor_profiles.user_id, users.state FROM tutor_profiles
 JOIN users ON users.id = tutor_profiles.user_id

@@ -31,6 +31,7 @@ import (
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
 	"ovc/backend/internal/repositories"
+	"ovc/backend/internal/services/export"
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/testdb"
 	"ovc/backend/internal/teststorage"
@@ -130,10 +131,15 @@ func (s *heldStorage) awaitReached(t *testing.T) {
 
 func newHeldStorageHarness(t *testing.T, timing ...files.UploadTiming) (*authHarness, *heldStorage) {
 	t.Helper()
+	return newHeldStorageHarnessTimed(t, export.Timing{Complete: exportCompleteTimeout}, timing...)
+}
+
+func newHeldStorageHarnessTimed(t *testing.T, exportTiming export.Timing, timing ...files.UploadTiming) (*authHarness, *heldStorage) {
+	t.Helper()
 	held := &heldStorage{reached: make(chan struct{}), release: make(chan struct{})}
 	var objects storage.Store
 	var configured *files.Service
-	h := newAuthHarnessStoring(t, flowProxies(), api.NewHandler, func(local *teststorage.Storage) storage.Store {
+	h := newAuthHarnessTimed(t, testdb.New(t), flowProxies(), api.NewHandler, func(local *teststorage.Storage) storage.Store {
 		target, err := url.Parse(local.Settings.Endpoint)
 		if err != nil {
 			t.Fatal(err)
@@ -152,7 +158,7 @@ func newHeldStorageHarness(t *testing.T, timing ...files.UploadTiming) (*authHar
 		settings.Endpoint = proxy.URL
 		objects = storage.NewS3(settings)
 		return objects
-	}, func(options *api.Options, shared *clock.Shared, logger *slog.Logger, database *testdb.Database) {
+	}, exportTiming, func(options *api.Options, shared *clock.Shared, logger *slog.Logger, database *testdb.Database) {
 		if len(timing) == 0 {
 			return
 		}

@@ -2,12 +2,14 @@ package storage_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"ovc/backend/internal/adapters/storage"
 	"ovc/backend/internal/core"
@@ -56,6 +58,42 @@ func TestPresignedReadServesOneObjectForFiveMinutes(t *testing.T) {
 	}
 	if printed := fmt.Sprintf("%v %+v %#v %s", address, address, address, address); strings.Contains(printed, object) || strings.Contains(printed, "X-Amz") {
 		t.Fatal("a printed presigned read revealed the address")
+	}
+}
+
+func TestPresignedDownloadLastsTheGivenLifetime(t *testing.T) {
+	local := teststorage.New(t)
+	object := "presign/" + core.NewRandomID()
+	data := patterned(2048, 17)
+	if err := local.Store.Put(context.Background(), object, data, "application/zip"); err != nil {
+		t.Fatal(err)
+	}
+	presigner := storage.NewPresigner(local.Settings, local.Settings.Endpoint)
+
+	address, err := presigner.PresignDownload(context.Background(), object, "application/zip", `attachment; filename="export.zip"`, 90*time.Second)
+
+	if err != nil {
+		t.Fatal(core.ErrorKind(err))
+	}
+	parsed, err := url.Parse(address.Reveal())
+	if err != nil || parsed.Query().Get("X-Amz-Expires") != "90" || parsed.Query().Get("X-Amz-SignedHeaders") != "host" {
+		t.Fatal("the presigned download does not last the given ninety seconds")
+	}
+	status, body := fetchPresigned(t, address.Reveal())
+	if status != http.StatusOK || string(body) != string(data) {
+		t.Fatalf("the presigned download answered %d with %d bytes", status, len(body))
+	}
+}
+
+func TestPresignedDownloadRefusesALifetimeOutsideTheReadLifetime(t *testing.T) {
+	local := teststorage.New(t)
+	presigner := storage.NewPresigner(local.Settings, local.Settings.Endpoint)
+
+	none, noneErr := presigner.PresignDownload(context.Background(), "presign/none", "application/zip", "attachment", 0)
+	long, longErr := presigner.PresignDownload(context.Background(), "presign/long", "application/zip", "attachment", storage.PresignedReadLifetime+time.Second)
+
+	if !errors.Is(noneErr, storage.ErrPresignLifetime) || !errors.Is(longErr, storage.ErrPresignLifetime) || !none.IsZero() || !long.IsZero() {
+		t.Fatal("a presigned download outside the read lifetime was produced")
 	}
 }
 

@@ -178,6 +178,49 @@ WHERE lessons.starts_at + make_interval(mins => lessons.duration_minutes) > sqlc
 ORDER BY lessons.starts_at, lessons.id
 LIMIT sqlc.arg(row_limit)::int;
 
+-- name: ListStudentCalendarAfter :many
+WITH visible AS (
+    SELECT lessons.id FROM relationships
+    JOIN lessons ON lessons.relationship_id = relationships.id
+    WHERE relationships.student_id = sqlc.arg(student_id)::uuid AND relationships.state IN ('active', 'provisional')
+        AND lessons.status = 'scheduled'
+    UNION ALL
+    SELECT lessons.id FROM relationships
+    JOIN group_members ON group_members.relationship_id = relationships.id
+    JOIN lessons ON lessons.group_id = group_members.group_id
+    WHERE relationships.student_id = sqlc.arg(student_id)::uuid AND lessons.status = 'scheduled'
+    UNION ALL
+    SELECT lessons.id FROM lesson_roster
+    JOIN lessons ON lessons.id = lesson_roster.lesson_id
+    WHERE lesson_roster.student_id = sqlc.arg(student_id)::uuid AND lessons.status <> 'scheduled'
+        AND NOT EXISTS (
+            SELECT 1 FROM relationships AS waiting
+            WHERE waiting.id = lessons.relationship_id AND waiting.state = 'reclaim_pending'
+        )
+)
+SELECT
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
+    lessons.group_id, lesson_group.name AS group_name,
+    EXISTS (
+        SELECT 1 FROM group_members
+        JOIN relationships AS membership ON membership.id = group_members.relationship_id
+        WHERE group_members.group_id = lessons.group_id AND membership.student_id = sqlc.arg(student_id)::uuid
+    ) AS current_member,
+    teacher.name AS tutor_name, coalesce(mine.state, '')::text AS my_state, mine.colour AS my_colour, lessons.tutor_id
+FROM visible
+JOIN lessons ON lessons.id = visible.id
+JOIN users AS teacher ON teacher.id = lessons.tutor_id
+LEFT JOIN groups AS lesson_group ON lesson_group.id = lessons.group_id
+LEFT JOIN LATERAL (
+    SELECT relationships.state, relationships.colour FROM relationships
+    WHERE relationships.tutor_id = lessons.tutor_id AND relationships.student_id = sqlc.arg(student_id)::uuid
+        AND relationships.state <> 'discarded'
+    LIMIT 1
+) AS mine ON true
+WHERE (lessons.starts_at, lessons.id) > (sqlc.arg(after_starts_at)::timestamptz, sqlc.arg(after_id)::uuid)
+ORDER BY lessons.starts_at, lessons.id
+LIMIT sqlc.arg(row_limit)::int;
+
 -- name: GetStudentLessonView :one
 SELECT
     lessons.id, lessons.title, lessons.description, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,

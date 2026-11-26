@@ -17,7 +17,10 @@ import (
 
 const PresignedReadLifetime = 5 * time.Minute
 
-var ErrPresignRefused = errors.New("the storage presign produced an address that is not a plain read")
+var (
+	ErrPresignRefused  = errors.New("the storage presign produced an address that is not a plain read")
+	ErrPresignLifetime = errors.New("a presigned download lasts more than nothing and at most the presigned read lifetime")
+)
 
 type Presigner struct {
 	client *s3.PresignClient
@@ -56,14 +59,17 @@ func onlyHostSigned(headers http.Header) bool {
 	return true
 }
 
-func (p *Presigner) PresignDownload(ctx context.Context, key string, contentType string, disposition string) (core.Secret, error) {
+func (p *Presigner) PresignDownload(ctx context.Context, key string, contentType string, disposition string, lifetime time.Duration) (core.Secret, error) {
+	if lifetime <= 0 || lifetime > PresignedReadLifetime {
+		return core.Secret{}, ErrPresignLifetime
+	}
 	input := &s3.GetObjectInput{
 		Bucket:                     aws.String(p.bucket),
 		Key:                        aws.String(key),
 		ResponseContentType:        aws.String(contentType),
 		ResponseContentDisposition: aws.String(disposition),
 	}
-	signed, err := p.client.PresignGetObject(ctx, input)
+	signed, err := p.client.PresignGetObject(ctx, input, s3.WithPresignExpires(lifetime))
 	if err != nil {
 		return core.Secret{}, fmt.Errorf("presign a storage download: %w", err)
 	}

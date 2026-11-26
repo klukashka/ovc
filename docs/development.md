@@ -256,6 +256,15 @@ tools/dev-env.sh bash -c 'cd backend && go test -tags messages_search_measuremen
 tools/dev-env.sh bash -c 'cd backend && go test -tags messages_search_measurement ./internal/api -run "^TestMessagesSearchMeasurement$" -count=1 -v -args -messages-search-smoke'
 ```
 
+### Export measurements
+
+Added 2026-11-26 by change E1d1, pending owner review. `TestExportMemoryMeasurement` builds a student's export holding one library file of 100 MB and one of 25 MB through the real routes, worker and local S3, samples the heap every 10 ms during each build and fails when the peak for the larger file exceeds the peak for the smaller by more than 10 %, so memory that grows with the file fails the run; its record lives in `knowledge/analysis/export-measurements-2026-11.md`. The build-time measurement of the largest default-quota tutor export comes with change E1d2. Run the full measurement only on an idle machine, one measurement at a time, and the smoke, which uses files of 10 MB and 2.5 MB and is never evidence, with the change checks:
+
+```sh
+tools/dev-env.sh bash -c 'cd backend && go test -tags export_measurement ./internal/api -run "^TestExportMemoryMeasurement$" -count=3 -parallel=1 -timeout=30m -v'
+tools/dev-env.sh bash -c 'cd backend && go test -tags export_measurement ./internal/api -run "^TestExportMemoryMeasurement$" -count=1 -v -args -export-measurement-smoke'
+```
+
 ### Tool smoke verification
 
 Run from the repository root. Smoke exercises the real fixture and code paths with explicitly smaller datasets; it is never performance acceptance evidence. Full production admission limits and timeouts remain unchanged. Tagged tests are not assumed to be covered by an ordinary untagged gate: compile, vet and lint the tag explicitly before readiness, then run the smoke and the normal change checks.

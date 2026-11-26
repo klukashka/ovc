@@ -8,13 +8,14 @@ import (
 )
 
 type StudentFile struct {
-	Filename  string
-	MediaType string
-	SizeBytes int64
-	Width     *int32
-	Height    *int32
-	URL       string
-	ExpiresAt time.Time
+	Attachment domain.AttachmentID
+	Filename   string
+	MediaType  string
+	SizeBytes  int64
+	Width      *int32
+	Height     *int32
+	URL        string
+	ExpiresAt  time.Time
 }
 
 type StudentMaterial struct {
@@ -98,10 +99,7 @@ func studentQuestion(student *StudentBlock, block TemplateBlock) {
 }
 
 func studentFileOf(file TemplateFile) StudentFile {
-	return StudentFile{
-		Filename: file.Filename, MediaType: file.MediaType, SizeBytes: file.SizeBytes, Width: file.Width, Height: file.Height, URL: file.URL,
-		ExpiresAt: file.ExpiresAt,
-	}
+	return StudentFile(file)
 }
 
 func emptyWhenMissing(text *string) *string {

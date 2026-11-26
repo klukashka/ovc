@@ -14,6 +14,7 @@ type (
 	TutorLessonView    = dbgen.ListTutorLessonViewsRow
 	TutorCalendarItem  = dbgen.ListTutorCalendarRow
 	StudentCalendarRow = dbgen.ListStudentCalendarRow
+	StudentLessonRow   = dbgen.ListStudentCalendarAfterRow
 	StudentLessonView  = dbgen.GetStudentLessonViewRow
 	GroupLessonMember  = dbgen.ListGroupLessonMembersRow
 	RosterLessonMember = dbgen.ListRosterLessonMembersRow
@@ -306,6 +307,15 @@ func (r Lessons) StudentCalendar(
 		StudentID: pgtype.UUID{Bytes: student, Valid: true}, TutorID: optionalUUID(tutor), RangeStart: from, RangeEnd: to, RowLimit: limit,
 	})
 	return one(rows, err, "calendar of a student")
+}
+
+func (r Lessons) StudentCalendarAfter(
+	ctx context.Context, student domain.UserID, afterStartsAt time.Time, afterID domain.LessonID, limit int32,
+) ([]StudentLessonRow, error) {
+	rows, err := r.queries.ListStudentCalendarAfter(ctx, dbgen.ListStudentCalendarAfterParams{
+		StudentID: pgtype.UUID{Bytes: student, Valid: true}, AfterStartsAt: afterStartsAt, AfterID: pgtype.UUID{Bytes: afterID, Valid: true}, RowLimit: limit,
+	})
+	return one(rows, err, "calendar page of a student")
 }
 
 func (r Lessons) StudentView(ctx context.Context, student domain.UserID, id domain.LessonID) (StudentLessonView, error) {

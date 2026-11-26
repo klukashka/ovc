@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -88,10 +89,52 @@ func TestABuildReachingPublicationAfterItsTutorsClosingIsWithdrawn(t *testing.T)
 	if failedNotices != 1 || readyNotices != 0 {
 		t.Fatalf("the owner got %d export.failed and %d export.ready notifications", failedNotices, readyNotices)
 	}
-	if len(records) != 1 || records[0].Cause != string(domain.ExportCauseTutorDeleted) || records[0].State != string(domain.ExportBuilding) {
+	if len(records) != 1 || records[0].Cause != string(domain.ExportCausePurgeDue) || records[0].State != string(domain.ExportBuilding) {
 		t.Fatalf("the withdrawal was recorded as %+v", records)
 	}
 	if again.status != http.StatusAccepted {
 		t.Fatalf("a new request after the withdrawal answered %d %s", again.status, again.body)
+	}
+}
+
+const exportMintsPurpose = "export_downloads"
+
+func presignedLifetime(t *testing.T, address string) string {
+	t.Helper()
+	parsed, err := url.Parse(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parsed.Query().Get("X-Amz-Expires")
+}
+
+func TestADownloadAddressNeverOutlivesTheExportsExpiry(t *testing.T) {
+	t.Parallel()
+	h := newAuthHarness(t)
+	student, token := h.signedInAs(t, domain.RoleStudent, domain.AccountActive, 1, studentEmail)
+	h.readyExport(t, token)
+	row, _ := h.exportOf(t, student)
+	expires := *row.ExpiresAt
+	h.at(t, expires.Add(-2*time.Minute))
+	token = h.signInAgain(t, studentEmail)
+
+	twoMinutes, twoMinutesAddress := h.mintExport(t, token)
+	h.at(t, expires.Add(-1500*time.Millisecond))
+	underTwoSeconds, underTwoSecondsAddress := h.mintExport(t, token)
+	h.at(t, expires.Add(-500*time.Millisecond))
+	underOneSecond, _ := h.mintExport(t, token)
+	counted := h.countRows(t, "SELECT coalesce(sum(count), 0)::bigint FROM rate_limit_counters WHERE purpose = $1", exportMintsPurpose)
+
+	if twoMinutes.status != http.StatusOK || presignedLifetime(t, twoMinutesAddress.URL) != "120" || !twoMinutesAddress.ExpiresAt.Equal(expires) {
+		t.Fatalf("two minutes before the expiry the mint answered %d with lifetime %s until %v", twoMinutes.status,
+			presignedLifetime(t, twoMinutesAddress.URL), twoMinutesAddress.ExpiresAt)
+	}
+	if underTwoSeconds.status != http.StatusOK || presignedLifetime(t, underTwoSecondsAddress.URL) != "1" ||
+		!underTwoSecondsAddress.ExpiresAt.Equal(expires.Add(-500*time.Millisecond)) {
+		t.Fatalf("1.5 seconds before the expiry the mint answered %d with lifetime %s until %v", underTwoSeconds.status,
+			presignedLifetime(t, underTwoSecondsAddress.URL), underTwoSecondsAddress.ExpiresAt)
+	}
+	if underOneSecond.status != http.StatusNotFound || counted != 2 {
+		t.Fatalf("half a second before the expiry the mint answered %d after %d counted mints", underOneSecond.status, counted)
 	}
 }

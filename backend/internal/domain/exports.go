@@ -41,6 +41,7 @@ const (
 	ExportCauseAccountDeleted        ExportInvalidationCause = "account_deleted"
 	ExportCauseAccountBlocked        ExportInvalidationCause = "account_blocked"
 	ExportCauseTutorDeleted          ExportInvalidationCause = "tutor_deleted"
+	ExportCausePurgeDue              ExportInvalidationCause = "purge_due"
 	ExportCauseRelationshipDiscarded ExportInvalidationCause = "relationship_discarded"
 	ExportCauseRelationshipEnded     ExportInvalidationCause = "relationship_ended"
 	ExportCauseReclaimPending        ExportInvalidationCause = "reclaim_pending"
@@ -51,7 +52,7 @@ const (
 
 func exportCausePrecedence() []ExportInvalidationCause {
 	return []ExportInvalidationCause{
-		ExportCauseAccountDeleted, ExportCauseAccountBlocked, ExportCauseTutorDeleted, ExportCauseRelationshipDiscarded,
+		ExportCauseAccountDeleted, ExportCauseAccountBlocked, ExportCauseTutorDeleted, ExportCausePurgeDue, ExportCauseRelationshipDiscarded,
 		ExportCauseRelationshipEnded, ExportCauseReclaimPending, ExportCauseGroupMemberRemoved, ExportCauseCardErased,
 		ExportCauseCardEmailErased,
 	}
@@ -103,6 +104,7 @@ const (
 	ExportExpireRounds        = 10
 	ExportFormatVersion       = 1
 	ExportInvalidationBatch   = 1000
+	ExportReadPage            = 500
 	ExportUserLockNamespace   = 0x4f564345
 	ExportUserLockBucketCount = 256
 

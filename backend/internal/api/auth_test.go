@@ -197,6 +197,30 @@ func newAuthHarnessWithDatabase(
 	objectsFor func(*teststorage.Storage) storage.Store, hooks ...optionsHook,
 ) *authHarness {
 	t.Helper()
+	return newAuthHarnessTimed(t, database, trusted, newHandler, objectsFor, export.Timing{Complete: exportCompleteTimeout}, hooks...)
+}
+
+func newExportAllowanceHarness(t *testing.T, allowance int64) *authHarness {
+	t.Helper()
+	return newExportTimedHarness(t, export.Timing{TableAllowance: allowance})
+}
+
+func newExportPagedHarness(t *testing.T, pageSize int32) *authHarness {
+	t.Helper()
+	return newExportTimedHarness(t, export.Timing{ReadPage: pageSize})
+}
+
+func newExportTimedHarness(t *testing.T, timing export.Timing) *authHarness {
+	t.Helper()
+	timing.Complete = exportCompleteTimeout
+	return newAuthHarnessTimed(t, testdb.New(t), flowProxies(), api.NewHandler, func(local *teststorage.Storage) storage.Store { return local.Store }, timing)
+}
+
+func newAuthHarnessTimed(
+	t *testing.T, database *testdb.Database, trusted []netip.Prefix, newHandler func(api.Options) (http.Handler, error),
+	objectsFor func(*teststorage.Storage) storage.Store, exportTiming export.Timing, hooks ...optionsHook,
+) *authHarness {
+	t.Helper()
 	random := randomPerTest(t)
 	logs := &safeBuffer{}
 	logger := slog.New(core.NewContextHandler(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
@@ -231,11 +255,6 @@ func newAuthHarnessWithDatabase(
 		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}, Avatars: fileService, Uploads: fileService,
 		Tutoring: tutoringService, Exports: effects,
 	})
-	exportService := export.New(export.Dependencies{
-		Store: store, Clock: shared, Wall: wall.Now, Random: random, Keys: keys, Logger: logger, Objects: serving,
-		Signer: storage.NewPresigner(local.Settings, local.Settings.Endpoint), Passwords: service, Cleanup: fileService,
-		PublicHost: "ovc.example", Timing: export.Timing{Complete: exportCompleteTimeout},
-	})
 	_, unsubscribeSecret, err := core.RandomToken(random, 32)
 	if err != nil {
 		t.Fatal(err)
@@ -254,6 +273,13 @@ func newAuthHarnessWithDatabase(
 	libraryService := library.New(library.Dependencies{Store: store, Clock: shared, Random: random, Keys: keys, Addresses: fileService, Logger: logger})
 	homeworkService := homework.New(homework.Dependencies{
 		Store: store, Clock: shared, Random: random, Keys: keys, Addresses: fileService, Templates: libraryService, Logger: logger,
+	})
+	exportService := export.New(export.Dependencies{
+		Store: store, Clock: shared, Wall: wall.Now, Random: random, Keys: keys, Logger: logger, Objects: serving,
+		Signer: storage.NewPresigner(local.Settings, local.Settings.Endpoint), Passwords: service, Cleanup: fileService,
+		PublicHost: "ovc.example", Timing: exportTiming, Content: export.Content{
+			Tutors: tutoringService, Lessons: scheduleService, Homework: homeworkService, Chat: chatService, Files: fileService,
+		},
 	})
 	createGate := &providerClockGate{source: shared}
 	linkGate := &providerEntropyGate{source: random}

@@ -93,12 +93,14 @@ type StudentReviewItem struct {
 }
 
 type StudentReview struct {
+	Revision domain.ReviewRevisionID
 	Feedback string
 	Items    []StudentReviewItem
 }
 
 type StudentWork struct {
 	ID                  domain.SubmissionID
+	Issue               domain.IssueID
 	Title               string
 	Tutor               TutorRef
 	Status              domain.SubmissionStatus
@@ -111,6 +113,7 @@ type StudentWork struct {
 	Editable            []string
 	Review              *StudentReview
 	Revealed            *[]RevealedQuestion
+	tutor               domain.UserID
 }
 
 func (s *Service) Assignments(ctx context.Context, student domain.UserID, query AssignmentQuery) (AssignmentPage, error) {
@@ -122,55 +125,77 @@ func (s *Service) Assignments(ctx context.Context, student domain.UserID, query 
 	if err != nil {
 		return AssignmentPage{}, err
 	}
-	page := AssignmentPage{Items: []AssignmentItem{}}
+	var page AssignmentPage
 	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
-		if query.Tutor != nil {
-			if err := repos.Homework.StudentTutorInScope(ctx, student, *query.Tutor, now); errors.Is(err, repositories.ErrNotFound) {
-				return ErrNotFound
-			} else if err != nil {
-				return err
-			}
-		}
-		rows, err := repos.Homework.Assignments(ctx, repositories.AssignmentQuery{
-			Student: student, Group: query.Group, Relationship: query.Tutor, After: cursor.set, AfterDeadlineAt: cursor.deadline,
-			AfterInstant: cursor.instant, AfterID: cursor.id, PageSize: query.Limit + 1,
-		}, now)
-		if err != nil {
-			return err
-		}
-		if len(rows) > int(query.Limit) {
-			rows = rows[:query.Limit]
-			next := encodeAssignmentCursor(query.Group, rows[len(rows)-1])
-			page.NextCursor = &next
-		}
-		summaries, err := publishedSummaries(ctx, repos, rows)
-		if err != nil {
-			return err
-		}
-		for _, row := range rows {
-			item := AssignmentItem{
-				Submission: row.ID, Title: row.Title, Tutor: TutorRef{Relationship: row.RelationshipID, Name: row.TutorName, Colour: row.Colour},
-				Status: row.Status, Late: row.Late, IssuedBeforeReclaim: row.IssuedBeforeReclaim, Deadline: row.DeadlineAt,
-				IssuedAt: row.IssuedAt, SubmittedAt: row.SubmittedAt, CheckedAt: row.CheckedAt,
-			}
-			if row.PublishedRevisionID.Valid {
-				if summary, found := summaries[domain.ReviewRevisionID(row.PublishedRevisionID.Bytes)]; found {
-					item.FeedbackExcerpt, item.HasCorrectedFiles = domain.FeedbackExcerpt(summary.Feedback), summary.HasCorrectedFiles
-					items, err := decodeReviewItems(summary.Items)
-					if err != nil {
-						return err
-					}
-					shown := !domain.VisibleReview{Feedback: summary.Feedback, Items: items}.Empty()
-					item.FeedbackNew = domain.FeedbackNew(shown, row.FeedbackVersion, row.FeedbackSeenVersion)
-				}
-			}
-			page.Items = append(page.Items, item)
-		}
-		counts, err := repos.Homework.AssignmentCounts(ctx, student, domain.AssignmentCountCap, now)
-		page.Counts = AssignmentCounts{Todo: counts.Todo, Closed: counts.Closed}
+		var err error
+		page, err = assignments(ctx, repos, student, query, cursor, now)
 		return err
 	})
 	return page, err
+}
+
+func (s *Service) AssignmentsIn(
+	ctx context.Context, repos repositories.Repositories, student domain.UserID, query AssignmentQuery, now time.Time,
+) (AssignmentPage, error) {
+	cursor, err := parseAssignmentCursor(query.Group, query.Cursor)
+	if err != nil {
+		return AssignmentPage{}, err
+	}
+	return assignments(ctx, repos, student, query, cursor, now)
+}
+
+func assignments(
+	ctx context.Context, repos repositories.Repositories, student domain.UserID, query AssignmentQuery, cursor assignmentCursor, now time.Time,
+) (AssignmentPage, error) {
+	page := AssignmentPage{Items: []AssignmentItem{}}
+	if query.Tutor != nil {
+		if err := repos.Homework.StudentTutorInScope(ctx, student, *query.Tutor, now); errors.Is(err, repositories.ErrNotFound) {
+			return AssignmentPage{}, ErrNotFound
+		} else if err != nil {
+			return AssignmentPage{}, err
+		}
+	}
+	rows, err := repos.Homework.Assignments(ctx, repositories.AssignmentQuery{
+		Student: student, Group: query.Group, Relationship: query.Tutor, After: cursor.set, AfterDeadlineAt: cursor.deadline,
+		AfterInstant: cursor.instant, AfterID: cursor.id, PageSize: query.Limit + 1,
+	}, now)
+	if err != nil {
+		return AssignmentPage{}, err
+	}
+	if len(rows) > int(query.Limit) {
+		rows = rows[:query.Limit]
+		next := encodeAssignmentCursor(query.Group, rows[len(rows)-1])
+		page.NextCursor = &next
+	}
+	summaries, err := publishedSummaries(ctx, repos, rows)
+	if err != nil {
+		return AssignmentPage{}, err
+	}
+	for _, row := range rows {
+		item := AssignmentItem{
+			Submission: row.ID, Title: row.Title, Tutor: TutorRef{Relationship: row.RelationshipID, Name: row.TutorName, Colour: row.Colour},
+			Status: row.Status, Late: row.Late, IssuedBeforeReclaim: row.IssuedBeforeReclaim, Deadline: row.DeadlineAt,
+			IssuedAt: row.IssuedAt, SubmittedAt: row.SubmittedAt, CheckedAt: row.CheckedAt,
+		}
+		if row.PublishedRevisionID.Valid {
+			if summary, found := summaries[domain.ReviewRevisionID(row.PublishedRevisionID.Bytes)]; found {
+				item.FeedbackExcerpt, item.HasCorrectedFiles = domain.FeedbackExcerpt(summary.Feedback), summary.HasCorrectedFiles
+				items, err := decodeReviewItems(summary.Items)
+				if err != nil {
+					return AssignmentPage{}, err
+				}
+				shown := !domain.VisibleReview{Feedback: summary.Feedback, Items: items}.Empty()
+				item.FeedbackNew = domain.FeedbackNew(shown, row.FeedbackVersion, row.FeedbackSeenVersion)
+			}
+		}
+		page.Items = append(page.Items, item)
+	}
+	counts, err := repos.Homework.AssignmentCounts(ctx, student, domain.AssignmentCountCap, now)
+	if err != nil {
+		return AssignmentPage{}, err
+	}
+	page.Counts = AssignmentCounts{Todo: counts.Todo, Closed: counts.Closed}
+	return page, nil
 }
 
 func (s *Service) StudentSubmission(ctx context.Context, student domain.UserID, id domain.SubmissionID) (StudentWork, error) {
@@ -184,6 +209,16 @@ func (s *Service) StudentSubmission(ctx context.Context, student domain.UserID, 
 		return err
 	})
 	return work, err
+}
+
+func (s *Service) StudentSubmissionIn(
+	ctx context.Context, repos repositories.Repositories, student domain.UserID, id domain.SubmissionID, now time.Time,
+) (StudentWork, []domain.UserID, error) {
+	work, err := s.withoutAddresses().studentWork(ctx, repos, student, id, now)
+	if err != nil {
+		return StudentWork{}, nil, err
+	}
+	return work, []domain.UserID{work.tutor}, nil
 }
 
 func (s *Service) studentWork(
@@ -213,10 +248,10 @@ func (s *Service) studentWork(
 		return StudentWork{}, err
 	}
 	work := StudentWork{
-		ID: row.ID, Title: row.Title, Tutor: TutorRef{Relationship: row.RelationshipID, Name: row.TutorName, Colour: row.Colour},
+		ID: row.ID, Issue: row.IssueID, Title: row.Title, Tutor: TutorRef{Relationship: row.RelationshipID, Name: row.TutorName, Colour: row.Colour},
 		Status: row.Status, Late: row.Late, IssuedBeforeReclaim: row.IssuedBeforeReclaim, Deadline: row.DeadlineAt, Version: row.Version,
 		Blocks: make([]library.StudentBlock, 0, len(described)), Editable: domain.EditableQuestions(row.Status, stored),
-		Answers: make([]StudentAnswer, 0, len(answers)),
+		Answers: make([]StudentAnswer, 0, len(answers)), tutor: row.TutorID,
 	}
 	for _, block := range described {
 		work.Blocks = append(work.Blocks, studentBlockOf(block))
@@ -280,7 +315,7 @@ func (s *Service) studentReview(
 	for _, item := range visible.Shown() {
 		shown[item.QuestionID] = item
 	}
-	review := &StudentReview{Feedback: revision.Feedback, Items: []StudentReviewItem{}}
+	review := &StudentReview{Revision: id, Feedback: revision.Feedback, Items: []StudentReviewItem{}}
 	for _, block := range blocks {
 		item, found := shown[block.ID]
 		if !found {
@@ -384,7 +419,7 @@ func studentQuestion(student *library.StudentBlock, block IssueBlock) {
 
 func studentFileOf(file IssueFile) library.StudentFile {
 	return library.StudentFile{
-		Filename: file.Filename, MediaType: file.MediaType, SizeBytes: file.SizeBytes, Width: file.Width, Height: file.Height, URL: file.URL,
+		Attachment: file.Attachment, Filename: file.Filename, MediaType: file.MediaType, SizeBytes: file.SizeBytes, Width: file.Width, Height: file.Height, URL: file.URL,
 		ExpiresAt: file.ExpiresAt,
 	}
 }

@@ -160,22 +160,6 @@ func (q *Queries) DueReadyExports(ctx context.Context, arg DueReadyExportsParams
 	return items, nil
 }
 
-const earliestDeletedTutorDeletion = `-- name: EarliestDeletedTutorDeletion :one
-SELECT tutors.deleted_at FROM relationships
-JOIN users AS tutors ON tutors.id = relationships.tutor_id
-WHERE relationships.student_id = $1 AND relationships.state <> 'discarded' AND tutors.state = 'deleted'
-    AND tutors.deleted_at IS NOT NULL
-ORDER BY tutors.deleted_at
-LIMIT 1
-`
-
-func (q *Queries) EarliestDeletedTutorDeletion(ctx context.Context, studentID *domain.UserID) (*time.Time, error) {
-	row := q.db.QueryRow(ctx, earliestDeletedTutorDeletion, studentID)
-	var deleted_at *time.Time
-	err := row.Scan(&deleted_at)
-	return deleted_at, err
-}
-
 const expireExport = `-- name: ExpireExport :execrows
 UPDATE exports SET state = 'expired', storage_key = NULL, updated_at = $1 WHERE id = $2 AND state = 'ready'
 `

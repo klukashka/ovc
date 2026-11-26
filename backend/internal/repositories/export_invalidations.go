@@ -10,6 +10,7 @@ import (
 
 var (
 	ErrExportInvalidationsUnapplied = errors.New("the transaction named users whose exports it did not withdraw")
+	ErrExportWithdrawalRepeated     = errors.New("a transaction withdraws exports at most once")
 	errExportInvalidationsOutsideTx = errors.New("exports are invalidated only inside a transaction")
 )
 
@@ -21,7 +22,8 @@ type ExportInvalidation struct {
 }
 
 type exportInvalidations struct {
-	entries map[domain.UserID]ExportInvalidation
+	entries   map[domain.UserID]ExportInvalidation
+	withdrawn bool
 }
 
 func newExportInvalidations() *exportInvalidations {
@@ -32,6 +34,17 @@ func (s *exportInvalidations) open() error {
 	if s == nil {
 		return errExportInvalidationsOutsideTx
 	}
+	return nil
+}
+
+func (s *exportInvalidations) startWithdrawal() error {
+	if s == nil {
+		return errExportInvalidationsOutsideTx
+	}
+	if s.withdrawn {
+		return ErrExportWithdrawalRepeated
+	}
+	s.withdrawn = true
 	return nil
 }
 
@@ -105,6 +118,10 @@ func (r Repositories) InvalidateOwnExport(cause domain.ExportInvalidationCause, 
 
 func (r Repositories) PurgeExportOf(user domain.UserID) error {
 	return r.invalidations.name(ExportInvalidation{User: user, Own: true, Purged: true})
+}
+
+func (r Repositories) StartExportWithdrawal() error {
+	return r.invalidations.startWithdrawal()
 }
 
 func (r Repositories) TakeExportInvalidations() []ExportInvalidation {

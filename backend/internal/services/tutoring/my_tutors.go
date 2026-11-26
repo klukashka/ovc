@@ -29,10 +29,23 @@ type MyTutor struct {
 	EndedBy            *domain.EndedBy
 	AccountClosedUntil *time.Time
 	ChannelID          *domain.ChannelID
+	tutor              domain.UserID
 }
 
 func (s *Service) MyTutors(ctx context.Context, principal accounts.Principal) ([]MyTutor, error) {
 	return s.tutorsOf(ctx, s.deps.Store.Repositories(), principal.UserID, nil)
+}
+
+func (s *Service) StudentTutorsIn(ctx context.Context, repos repositories.Repositories, student domain.UserID) ([]MyTutor, []domain.UserID, error) {
+	tutors, err := s.tutorsOf(ctx, repos, student, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	referenced := make([]domain.UserID, 0, len(tutors))
+	for _, tutor := range tutors {
+		referenced = append(referenced, tutor.tutor)
+	}
+	return tutors, referenced, nil
 }
 
 func (s *Service) myTutor(ctx context.Context, repos repositories.Repositories, student domain.UserID, id domain.RelationshipID) (MyTutor, error) {
@@ -80,7 +93,7 @@ func (s *Service) tutorsOf(
 		}
 		tutor := MyTutor{
 			RelationshipID: row.ID, State: row.State, Colour: *row.Colour, EndedAt: row.EndedAt, EndedBy: row.EndedBy,
-			Tutor: TutorProfile{Name: row.Name, Subjects: row.Subjects, Bio: row.Bio},
+			Tutor: TutorProfile{Name: row.Name, Subjects: row.Subjects, Bio: row.Bio}, tutor: row.TutorID,
 		}
 		if avatar, has := avatars[row.TutorID]; has {
 			tutor.Tutor.AvatarID = &avatar

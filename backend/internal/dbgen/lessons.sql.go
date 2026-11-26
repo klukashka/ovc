@@ -1135,6 +1135,114 @@ func (q *Queries) ListStudentCalendar(ctx context.Context, arg ListStudentCalend
 	return items, nil
 }
 
+const listStudentCalendarAfter = `-- name: ListStudentCalendarAfter :many
+WITH visible AS (
+    SELECT lessons.id FROM relationships
+    JOIN lessons ON lessons.relationship_id = relationships.id
+    WHERE relationships.student_id = $1::uuid AND relationships.state IN ('active', 'provisional')
+        AND lessons.status = 'scheduled'
+    UNION ALL
+    SELECT lessons.id FROM relationships
+    JOIN group_members ON group_members.relationship_id = relationships.id
+    JOIN lessons ON lessons.group_id = group_members.group_id
+    WHERE relationships.student_id = $1::uuid AND lessons.status = 'scheduled'
+    UNION ALL
+    SELECT lessons.id FROM lesson_roster
+    JOIN lessons ON lessons.id = lesson_roster.lesson_id
+    WHERE lesson_roster.student_id = $1::uuid AND lessons.status <> 'scheduled'
+        AND NOT EXISTS (
+            SELECT 1 FROM relationships AS waiting
+            WHERE waiting.id = lessons.relationship_id AND waiting.state = 'reclaim_pending'
+        )
+)
+SELECT
+    lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,
+    lessons.group_id, lesson_group.name AS group_name,
+    EXISTS (
+        SELECT 1 FROM group_members
+        JOIN relationships AS membership ON membership.id = group_members.relationship_id
+        WHERE group_members.group_id = lessons.group_id AND membership.student_id = $1::uuid
+    ) AS current_member,
+    teacher.name AS tutor_name, coalesce(mine.state, '')::text AS my_state, mine.colour AS my_colour, lessons.tutor_id
+FROM visible
+JOIN lessons ON lessons.id = visible.id
+JOIN users AS teacher ON teacher.id = lessons.tutor_id
+LEFT JOIN groups AS lesson_group ON lesson_group.id = lessons.group_id
+LEFT JOIN LATERAL (
+    SELECT relationships.state, relationships.colour FROM relationships
+    WHERE relationships.tutor_id = lessons.tutor_id AND relationships.student_id = $1::uuid
+        AND relationships.state <> 'discarded'
+    LIMIT 1
+) AS mine ON true
+WHERE (lessons.starts_at, lessons.id) > ($2::timestamptz, $3::uuid)
+ORDER BY lessons.starts_at, lessons.id
+LIMIT $4::int
+`
+
+type ListStudentCalendarAfterParams struct {
+	StudentID     pgtype.UUID
+	AfterStartsAt time.Time
+	AfterID       pgtype.UUID
+	RowLimit      int32
+}
+
+type ListStudentCalendarAfterRow struct {
+	ID              domain.LessonID
+	Title           string
+	StartsAt        time.Time
+	DurationMinutes int16
+	Status          domain.LessonStatus
+	TookPlace       bool
+	Timezone        string
+	GroupID         *domain.GroupID
+	GroupName       *string
+	CurrentMember   bool
+	TutorName       string
+	MyState         string
+	MyColour        *domain.Colour
+	TutorID         domain.UserID
+}
+
+func (q *Queries) ListStudentCalendarAfter(ctx context.Context, arg ListStudentCalendarAfterParams) ([]ListStudentCalendarAfterRow, error) {
+	rows, err := q.db.Query(ctx, listStudentCalendarAfter,
+		arg.StudentID,
+		arg.AfterStartsAt,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStudentCalendarAfterRow
+	for rows.Next() {
+		var i ListStudentCalendarAfterRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.StartsAt,
+			&i.DurationMinutes,
+			&i.Status,
+			&i.TookPlace,
+			&i.Timezone,
+			&i.GroupID,
+			&i.GroupName,
+			&i.CurrentMember,
+			&i.TutorName,
+			&i.MyState,
+			&i.MyColour,
+			&i.TutorID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTutorCalendar = `-- name: ListTutorCalendar :many
 SELECT
     lessons.id, lessons.title, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,

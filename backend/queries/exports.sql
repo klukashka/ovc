@@ -95,11 +95,3 @@ SELECT others.user_id::uuid FROM channel_members AS mine
 JOIN channel_members AS others ON others.channel_id = mine.channel_id
 WHERE mine.user_id = sqlc.arg(user_id)::uuid AND others.user_id <> sqlc.arg(user_id)::uuid
 ORDER BY user_id;
-
--- name: EarliestDeletedTutorDeletion :one
-SELECT tutors.deleted_at FROM relationships
-JOIN users AS tutors ON tutors.id = relationships.tutor_id
-WHERE relationships.student_id = @student_id AND relationships.state <> 'discarded' AND tutors.state = 'deleted'
-    AND tutors.deleted_at IS NOT NULL
-ORDER BY tutors.deleted_at
-LIMIT 1;

@@ -37,9 +37,16 @@ var pinnedRevealedFields = map[string][]string{
 }
 
 var pinnedStudentEmbeddings = map[string]string{
-	"StudentCard":        "CardFields",
-	"StudentCardDetail":  "StudentCard",
-	"StudentCardSummary": "CardFields",
+	"StudentCard":                "CardFields",
+	"StudentCardDetail":          "StudentCard",
+	"StudentCardSummary":         "CardFields",
+	"StudentExportAnswer":        "StudentAnswer",
+	"StudentExportReviewItem":    "StudentReviewItem",
+	"StudentExportReview":        "StudentReview",
+	"StudentExportTemplateBlock": "StudentTemplateBlock",
+	"StudentExportSubmission":    "StudentSubmission",
+	"StudentExportMessage":       "Message",
+	"StudentExportLesson":        "LessonDetail",
 }
 
 type schemaField struct {

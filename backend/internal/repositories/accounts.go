@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"ovc/backend/internal/core"
@@ -368,6 +369,24 @@ func (r Users) LockReclaim(ctx context.Context, id domain.UserID) (LockedReclaim
 func (r TutorProfiles) LockAll(ctx context.Context, tutors []domain.UserID) error {
 	_, err := r.queries.LockTutorProfiles(ctx, uuids(tutors))
 	return done(err, "lock tutor profiles")
+}
+
+func (r Users) EarliestPurgeDue(ctx context.Context, ids []domain.UserID, retention time.Duration) (*time.Time, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	deletedAt, err := r.queries.EarliestDeletionAmong(ctx, uuids(ids))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("earliest purge due among accounts: %w", err)
+	}
+	if deletedAt == nil {
+		return nil, nil
+	}
+	due := deletedAt.Add(retention)
+	return &due, nil
 }
 
 func (r Users) ConfirmedAmong(ctx context.Context, ids []domain.UserID) ([]domain.UserID, error) {

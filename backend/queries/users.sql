@@ -169,3 +169,9 @@ SELECT id FROM users WHERE id = ANY (sqlc.arg(ids)::uuid[]) AND email_verified_a
 
 -- name: GetTutorStanding :one
 SELECT state, deleted_at FROM users WHERE id = @id;
+
+-- name: EarliestDeletionAmong :one
+SELECT deleted_at FROM users
+WHERE id = ANY (sqlc.arg(ids)::uuid[]) AND state = 'deleted' AND deleted_at IS NOT NULL
+ORDER BY deleted_at
+LIMIT 1;

@@ -125,31 +125,65 @@ func (s *Service) messageView(viewer domain.UserID, row repositories.MessageRow,
 	return message
 }
 
+type noAddresses struct{}
+
+func (noAddresses) ChatAddress(domain.AttachmentID, domain.MessageID, domain.Disposition, time.Time) (string, time.Time) {
+	return "", time.Time{}
+}
+
+func (s *Service) withoutAddresses() *Service {
+	free := *s
+	free.deps.Addresses = noAddresses{}
+	return &free
+}
+
+func messageAccounts(rows []repositories.MessageRow) []domain.UserID {
+	accounts := make([]domain.UserID, 0, 2*len(rows))
+	for _, row := range rows {
+		accounts = append(accounts, row.TutorID)
+		if row.SenderID != nil {
+			accounts = append(accounts, *row.SenderID)
+		}
+	}
+	return accounts
+}
+
 func (s *Service) messageViews(
 	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, rows []repositories.MessageRow, now time.Time,
 ) ([]Message, error) {
+	views, _, err := s.messagePage(ctx, repos, viewer, rows, now)
+	return views, err
+}
+
+func (s *Service) messagePage(
+	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, rows []repositories.MessageRow, now time.Time,
+) ([]Message, []domain.UserID, error) {
 	ids := make([]domain.MessageID, 0, len(rows))
 	for _, row := range rows {
 		ids = append(ids, row.ID)
 	}
 	files, err := repos.Messages.AttachmentsOf(ctx, ids)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	byMessage := map[domain.MessageID][]repositories.MessageAttachment{}
 	for _, file := range files {
 		message := domain.MessageID(file.MessageID)
 		byMessage[message] = append(byMessage[message], file)
 	}
-	quotes, err := quotesOf(ctx, repos, viewer, rows)
+	quotes, quoted, err := quotesOf(ctx, repos, viewer, rows)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	reactionRows, err := repos.Messages.ReactionsOf(ctx, ids)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	reactions := reactionViews(viewer, reactionRows)
+	accounts := append(messageAccounts(rows), messageAccounts(quoted)...)
+	for _, row := range reactionRows {
+		accounts = append(accounts, row.UserID)
+	}
 	views := make([]Message, 0, len(rows))
 	for _, row := range rows {
 		view := s.messageView(viewer, row, byMessage[row.ID], now)
@@ -159,12 +193,12 @@ func (s *Service) messageViews(
 		}
 		views = append(views, view)
 	}
-	return views, nil
+	return views, accounts, nil
 }
 
 func quotesOf(
 	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, rows []repositories.MessageRow,
-) (map[domain.MessageID]*Quote, error) {
+) (map[domain.MessageID]*Quote, []repositories.MessageRow, error) {
 	ids := make([]domain.MessageID, 0, len(rows))
 	seen := map[domain.MessageID]bool{}
 	for _, row := range rows {
@@ -175,14 +209,14 @@ func quotesOf(
 	}
 	quoted, err := repos.Messages.Views(ctx, ids)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	quotes := make(map[domain.MessageID]*Quote, len(quoted))
 	for _, row := range quoted {
 		quote := quoteOf(viewer, row)
 		quotes[row.ID] = &quote
 	}
-	return quotes, nil
+	return quotes, quoted, nil
 }
 
 func quoteOf(viewer domain.UserID, row repositories.MessageRow) Quote {
@@ -214,10 +248,10 @@ func (s *Service) viewOf(ctx context.Context, repos repositories.Repositories, v
 
 func lastMessages(
 	ctx context.Context, repos repositories.Repositories, viewer domain.UserID, channels []domain.ChannelID,
-) (map[domain.ChannelID]*LastMessage, error) {
+) (map[domain.ChannelID]*LastMessage, []domain.UserID, error) {
 	rows, err := repos.Messages.LastOf(ctx, channels)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ids := make([]domain.MessageID, 0, len(rows))
 	for _, row := range rows {
@@ -225,7 +259,7 @@ func lastMessages(
 	}
 	files, err := repos.Messages.AttachmentsOf(ctx, ids)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	counts := map[domain.MessageID]int64{}
 	for _, file := range files {
@@ -239,7 +273,7 @@ func lastMessages(
 			AttachmentCount: counts[row.ID],
 		}
 	}
-	return last, nil
+	return last, messageAccounts(rows), nil
 }
 
 func previewOf(row repositories.MessageRow) *string {
