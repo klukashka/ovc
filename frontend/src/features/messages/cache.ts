@@ -24,7 +24,7 @@ export function evictChannel(queryClient: QueryClient, id: string, inactiveOnly 
     void queryClient.cancelQueries({ queryKey: aroundPrefix(id) });
     queryClient.removeQueries({ queryKey: aroundPrefix(id) });
   }
-  void queryClient.cancelQueries({ queryKey: channelsKey });
+  if (!inactiveOnly) void queryClient.cancelQueries({ queryKey: channelsKey });
   queryClient.setQueryData<number>(channelsScopeRevisionKey, (revision) => (revision ?? 0) + 1);
   queryClient.setQueriesData<ChannelPage>({ queryKey: channelsKey }, (page) => {
     if (page === undefined) return undefined;
